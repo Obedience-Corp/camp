@@ -35,6 +35,9 @@ const (
 	EventDelete  EventType = "delete"
 	EventGather  EventType = "gather"
 	EventRename  EventType = "rename"
+	EventClaim   EventType = "claim"
+	EventRelease EventType = "release"
+	EventSync    EventType = "sync"
 )
 
 // FieldChange records a single field's old and new value within an edit event.

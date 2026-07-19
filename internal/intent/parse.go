@@ -39,6 +39,9 @@ type parsedIntent struct {
 	GatheredAt        time.Time        `yaml:"gathered_at,omitempty"`
 	GatheredInto      string           `yaml:"gathered_into,omitempty"`
 	UpdatedAt         time.Time        `yaml:"updated_at,omitempty"`
+	AssignedTo        string           `yaml:"assigned_to,omitempty"`
+	AssignedAt        time.Time        `yaml:"assigned_at,omitempty"`
+	WorkRef           []string         `yaml:"work_ref,omitempty"`
 	frontmatterExtras []frontmatterEntry
 }
 
@@ -62,6 +65,9 @@ func (p *parsedIntent) toIntent() *Intent {
 		GatheredAt:        p.GatheredAt,
 		GatheredInto:      p.GatheredInto,
 		UpdatedAt:         p.UpdatedAt,
+		AssignedTo:        p.AssignedTo,
+		AssignedAt:        p.AssignedAt,
+		WorkRef:           p.WorkRef,
 		frontmatterExtras: p.frontmatterExtras,
 	}
 
@@ -108,6 +114,9 @@ var knownFrontmatterKeys = map[string]struct{}{
 	"gathered_at":        {},
 	"gathered_into":      {},
 	"updated_at":         {},
+	"assigned_to":        {},
+	"assigned_at":        {},
+	"work_ref":           {},
 }
 
 // ParseIntent parses an intent from markdown content with YAML frontmatter.

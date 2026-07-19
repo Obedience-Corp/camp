@@ -21,16 +21,16 @@ func newIntentCountCommand() *cobra.Command {
 	var jsonOut bool
 	cmd := &cobra.Command{
 		Use:   "count",
-		Short: "Count intents by status directory",
-		Long: `Display a count of intents grouped by status directory.
+		Short: "Count ideas by status directory",
+		Long: `Display a count of ideas grouped by status directory.
 
 OUTPUT FORMATS:
   table (default)   Styled summary with counts per status
   json              Machine-readable JSON output
 
 Examples:
-  camp intent count              Show counts per status
-  camp intent count -f json      JSON output for scripting`,
+  camp idea count              Show counts per status
+  camp idea count -f json      JSON output for scripting`,
 	}
 	jsonRequested := func() bool { return intentJSONRequested(cmd, &jsonOut) }
 	cmd.Args = jsoncontract.Args(IntentJSONVersion, jsonRequested, cobra.NoArgs)
@@ -65,7 +65,7 @@ func runIntentCount(cmd *cobra.Command, args []string) error {
 
 	counts, total, err := svc.Count(ctx)
 	if err != nil {
-		return camperrors.Wrap(err, "counting intents")
+		return camperrors.Wrap(err, "counting ideas")
 	}
 
 	switch {
@@ -82,7 +82,7 @@ func outputCountTable(counts []intent.StatusCount, total int) error {
 	totalStyle := lipgloss.NewStyle().Bold(true).Foreground(ui.AccentColor)
 	dimStyle := lipgloss.NewStyle().Foreground(ui.DimColor)
 
-	fmt.Println(titleStyle.Render("Intent Counts"))
+	fmt.Println(titleStyle.Render("Idea Counts"))
 	fmt.Println()
 
 	for _, sc := range counts {

@@ -8,6 +8,7 @@ import (
 	"io/fs"
 	"os"
 	"path/filepath"
+	"regexp"
 	"sort"
 	"strconv"
 	"strings"
@@ -55,7 +56,7 @@ func newValidateCommand() *cobra.Command {
 	var jsonOut bool
 	cmd := &cobra.Command{
 		Use:   "validate [path]",
-		Short: "Validate workflow work item directories and their .workitem markers",
+		Short: "Validate workitem directories",
 		Long: `Validate that workflow work item directories carry a correct .workitem marker.
 
 Without an argument, every work item directory under workflow/ is scanned:
@@ -247,7 +248,16 @@ func requiredFieldProblems(meta wkitem.Metadata) []string {
 	return problems
 }
 
+// repairCommandSafeUnquoted matches paths that are safe to paste into a shell
+// unquoted (the kebab-case slugs camp itself generates under workflow/). A
+// hand-edited path outside this set still gets single-quoted so the command
+// remains copy-paste safe.
+var repairCommandSafeUnquoted = regexp.MustCompile(`^[A-Za-z0-9._/-]+$`)
+
 func repairCommandFor(relPath string) string {
+	if repairCommandSafeUnquoted.MatchString(relPath) {
+		return "camp workitem repair " + relPath
+	}
 	return "camp workitem repair " + remote.ShellQuote(relPath)
 }
 

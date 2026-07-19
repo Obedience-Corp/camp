@@ -186,10 +186,11 @@ func runProjectCommit(cmd *cobra.Command, args []string) error {
 		return err
 	}
 	// Prepend campaign tag unless tracing is disabled. Resolves the active
-	// workitem so the tag includes WI-<ref> when the project is linked.
+	// workitem so the tag includes WI-<ref> when the project is linked, or
+	// FE-<ref> when the worktree's primary link resolves to a festival.
 	if cfg != nil && commitPrefs.TagCommits() {
-		questID, workitemRef := resolveProjectCommitContext(ctx, campRoot, resolvedPath, projectCommitWorkitem)
-		message = commitkit.PrependContextTagsFullNamed(cfg.Name, cfg.ID, questID, "", workitemRef, message)
+		questID, festivalRef, workitemRef := resolveProjectCommitContext(ctx, campRoot, resolvedPath, projectCommitWorkitem)
+		message = commitkit.PrependContextTagsFullNamed(cfg.Name, cfg.ID, questID, festivalRef, workitemRef, message)
 	}
 
 	// Commit

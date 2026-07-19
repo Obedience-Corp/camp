@@ -30,6 +30,7 @@ camp fresh all [flags]
   -n, --dry-run         Preview without making changes
       --no-branch       Skip branch creation even if configured
       --no-color        disable colored output
+      --no-follow-up    Skip configured follow-up command workflows
       --no-prune        Skip pruning merged branches
       --no-push         Skip pushing the new branch upstream
 ```

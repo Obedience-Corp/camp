@@ -14,6 +14,7 @@ import (
 
 	"github.com/Obedience-Corp/camp/internal/config"
 	dungeonscaffold "github.com/Obedience-Corp/camp/internal/dungeon/scaffold"
+	"github.com/Obedience-Corp/camp/internal/dungeon/spelling"
 	"github.com/Obedience-Corp/camp/internal/dungeon/statuspath"
 	camperrors "github.com/Obedience-Corp/camp/internal/errors"
 	"github.com/Obedience-Corp/camp/internal/fsutil"
@@ -248,6 +249,10 @@ func computeStandardDungeonScaffoldChanges(absDir string, plan *RepairPlan) {
 	for _, relPath := range standardDungeonObeys {
 		absPath := filepath.Join(absDir, relPath)
 		if _, err := os.Stat(absPath); err == nil {
+			continue
+		}
+		hiddenRelPath := spelling.RewriteRel(strings.TrimSuffix(relPath, "/OBEY.md"), spelling.Hidden) + "/OBEY.md"
+		if _, err := os.Stat(filepath.Join(absDir, hiddenRelPath)); err == nil {
 			continue
 		}
 		if seen[relPath] {
@@ -907,16 +912,20 @@ func computeMigrationChanges(absDir string, plan *RepairPlan) {
 		rootPath := filepath.Join(absDir, root)
 		completedPath := filepath.Join(rootPath, "completed")
 		dungeonCompletedPath := filepath.Join(rootPath, "dungeon", "completed")
+		hiddenDungeonCompletedPath := filepath.Join(rootPath, spelling.Hidden, "completed")
 
 		completedInfo, completedErr := os.Stat(completedPath)
 		if completedErr != nil || !completedInfo.IsDir() {
 			continue
 		}
 
-		// dungeon/completed must exist on disk OR be planned for creation
+		// dungeon/completed (either spelling) must exist on disk OR be planned for creation
 		dungeonCompletedExists := false
 		if info, err := os.Stat(dungeonCompletedPath); err == nil && info.IsDir() {
 			dungeonCompletedExists = true
+		} else if info, err := os.Stat(hiddenDungeonCompletedPath); err == nil && info.IsDir() {
+			dungeonCompletedExists = true
+			dungeonCompletedPath = hiddenDungeonCompletedPath
 		}
 		if plannedDirs[dungeonCompletedPath] {
 			dungeonCompletedExists = true

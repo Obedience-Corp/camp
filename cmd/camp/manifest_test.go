@@ -161,7 +161,7 @@ func TestManifestCommand_AllRestrictedCommandsPresent(t *testing.T) {
 		"dungeon crawl": false,
 		"dungeon list":  false,
 		"dungeon move":  false,
-		"intent crawl":  false,
+		"idea crawl":    false,
 		"skills link":   false,
 		"skills status": false,
 		"skills unlink": false,
@@ -262,12 +262,12 @@ func TestManifestCommand_InteractiveFlags(t *testing.T) {
 	interactiveCommands := map[string]bool{
 		"init":          true,
 		"create":        true,
-		"intent add":    true,
+		"idea add":      true,
 		"switch":        true,
 		"settings":      true,
 		"move":          true,
 		"dungeon crawl": true,
-		"intent crawl":  true,
+		"idea crawl":    true,
 	}
 	if questCommandsRegistered() {
 		interactiveCommands["quest edit"] = true

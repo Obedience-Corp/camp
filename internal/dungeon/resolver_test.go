@@ -5,8 +5,10 @@ import (
 	"errors"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 
+	"github.com/Obedience-Corp/camp/internal/dungeon/spelling"
 	camperrors "github.com/Obedience-Corp/camp/internal/errors"
 )
 
@@ -165,6 +167,58 @@ func TestResolveContext_NoDungeonFound(t *testing.T) {
 	}
 	if !errors.Is(err, ErrDungeonContextNotFound) {
 		t.Fatalf("error = %v, want ErrDungeonContextNotFound", err)
+	}
+}
+
+func TestResolveContext_HiddenSpelling(t *testing.T) {
+	campaignRoot := t.TempDir()
+	nested := filepath.Join(campaignRoot, "workflow", "design")
+	if err := os.MkdirAll(nested, 0755); err != nil {
+		t.Fatalf("creating nested directory: %v", err)
+	}
+
+	hiddenDungeon := filepath.Join(campaignRoot, ".dungeon")
+	if err := os.MkdirAll(hiddenDungeon, 0755); err != nil {
+		t.Fatalf("creating hidden dungeon: %v", err)
+	}
+
+	got, err := ResolveContext(context.Background(), campaignRoot, nested)
+	if err != nil {
+		t.Fatalf("ResolveContext() error = %v", err)
+	}
+	if got.DungeonPath != mustEval(t, hiddenDungeon) {
+		t.Fatalf("DungeonPath = %q, want %q", got.DungeonPath, mustEval(t, hiddenDungeon))
+	}
+	if got.ParentPath != mustEval(t, campaignRoot) {
+		t.Fatalf("ParentPath = %q, want %q", got.ParentPath, mustEval(t, campaignRoot))
+	}
+}
+
+// TestResolveContext_BothSpellingsErrors covers the rule that replaced
+// prefer-visible-and-warn: resolving to either spelling would make everything
+// filed under the other invisible to every listing, with only a warning to say
+// so. Failing loudly with migration instructions is the supported outcome.
+func TestResolveContext_BothSpellingsErrors(t *testing.T) {
+	campaignRoot := t.TempDir()
+
+	visibleDungeon := filepath.Join(campaignRoot, "dungeon")
+	if err := os.MkdirAll(visibleDungeon, 0755); err != nil {
+		t.Fatalf("creating visible dungeon: %v", err)
+	}
+	hiddenDungeon := filepath.Join(campaignRoot, ".dungeon")
+	if err := os.MkdirAll(hiddenDungeon, 0755); err != nil {
+		t.Fatalf("creating hidden dungeon: %v", err)
+	}
+
+	got, err := ResolveContext(context.Background(), campaignRoot, campaignRoot)
+	if err == nil {
+		t.Fatalf("ResolveContext() = %+v, want a conflict error rather than a silently chosen spelling", got)
+	}
+	if !errors.Is(err, camperrors.ErrConflict) {
+		t.Fatalf("errors.Is(err, ErrConflict) = false, want true (err = %v)", err)
+	}
+	if !strings.Contains(err.Error(), spelling.MigrateCommand) {
+		t.Errorf("error should name %q so the user can get unstuck, got: %v", spelling.MigrateCommand, err)
 	}
 }
 

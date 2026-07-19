@@ -12,7 +12,7 @@ import (
 
 // devOnlyCommands is the single source of truth for commands gated behind
 // //go:build dev. Update this list when promoting a command to stable.
-var devOnlyCommands = []string{"flow", "quest"}
+var devOnlyCommands = []string{"flow", "quest", "audit", "event"}
 
 func assertDevCommandsRegistered(t *testing.T) {
 	t.Helper()
@@ -146,7 +146,10 @@ func TestRunGendocs_StripsNoOptDefValSentinelsFromDocs(t *testing.T) {
 		t.Fatalf("runGendocs: %v", err)
 	}
 
-	content, err := os.ReadFile(filepath.Join(dir, "camp_intent_add.md"))
+	// "idea" is the canonical name (Use) as of the idea/intent rename;
+	// "intent" remains a working alias but doc filenames follow the
+	// canonical command path.
+	content, err := os.ReadFile(filepath.Join(dir, "camp_idea_add.md"))
 	if err != nil {
 		t.Fatalf("read generated doc: %v", err)
 	}

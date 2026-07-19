@@ -22,7 +22,7 @@ cat <<'JSON'
   "BackendState": "Running",
   "Self": {
     "HostName": "Mac Studio",
-    "DNSName": "mac-studio.tail37114b.ts.net.",
+    "DNSName": "mac-studio.example-net.ts.net.",
     "TailscaleIPs": ["100.64.0.5"],
     "Online": true,
     "OS": "macOS"
@@ -30,7 +30,7 @@ cat <<'JSON'
   "Peer": {
     "nodekey:1": {
       "HostName": "Devbox",
-      "DNSName": "devbox.tail37114b.ts.net.",
+      "DNSName": "devbox.example-net.ts.net.",
       "TailscaleIPs": ["100.64.0.1"],
       "Online": true,
       "OS": "linux"
@@ -63,7 +63,7 @@ func TestMachineAddDiscoverYes(t *testing.T) {
 	payload := machineListJSON(t, tc)
 	row, ok := findMachine(payload.Machines, "devbox")
 	require.True(t, ok, "devbox missing from list --json: %+v", payload.Machines)
-	require.Equal(t, "devbox.tail37114b.ts.net", row.Host)
+	require.Equal(t, "devbox.example-net.ts.net", row.Host)
 	require.Equal(t, "tailscale-ssh", row.AuthMethod)
 	require.Empty(t, row.SSHUser, "tailscale-ssh needs no ssh_user")
 	require.Empty(t, row.IdentityFile, "tailscale-ssh needs no identity_file")

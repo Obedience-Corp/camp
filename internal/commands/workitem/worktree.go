@@ -102,6 +102,9 @@ func runWorktree(cmd *cobra.Command, opts worktreeOptions) error {
 	if err != nil {
 		return camperrors.Wrap(err, "resolve workitem "+opts.Selector)
 	}
+	if wkitem.NeedsAdoption(wi) {
+		return wkitem.NotAdoptedError(wi.RelativePath)
+	}
 
 	registry, err := links.Load(ctx, root)
 	if err != nil {
@@ -186,6 +189,12 @@ func createWorktree(
 				fmt.Sprintf("link it with 'camp workitem link %s --worktree %s/%s' or choose another --name",
 					name, resolved.Name, name))
 		}
+		if errors.Is(err, intworktree.ErrBranchExists) {
+			return nil, camperrors.Wrap(err,
+				fmt.Sprintf("branch %q already exists (a previous worktree may have been removed "+
+					"without deleting its branch); pass --name to pick a different name, or delete "+
+					"it with 'git branch -D %s'", name, name))
+		}
 		return nil, err
 	}
 	return result, nil
@@ -256,10 +265,7 @@ func attachWorktreeLink(ctx context.Context, root string, wi *wkitem.WorkItem, r
 	if relativeWorktreePath == "" {
 		return links.Link{}, camperrors.NewValidation("worktree", "missing worktree relative path", nil)
 	}
-	workitemID := wi.StableID
-	if workitemID == "" {
-		workitemID = wi.Key
-	}
+	workitemID := wkitem.LinkWorkitemID(wi)
 	return links.AttachPrimary(ctx, root, links.AttachOptions{
 		WorkitemID:  workitemID,
 		WorkitemKey: wi.Key,

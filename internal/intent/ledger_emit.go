@@ -2,6 +2,7 @@ package intent
 
 import (
 	"context"
+	"fmt"
 
 	"github.com/Obedience-Corp/camp/internal/ledger"
 	"github.com/Obedience-Corp/camp/pkg/ledgerkit"
@@ -36,4 +37,25 @@ func (s *IntentService) emitTransitioned(ctx context.Context, in *Intent, from, 
 	}
 	s.emitter.Emit(ctx, ledgerkit.KindTransitioned, ledgerkit.Scope{Intent: in.ID},
 		ledger.WithPayload(map[string]any{"from": string(from), "to": string(to)}))
+}
+
+// emitClaimed records an intent assignment: who claimed it and any work refs
+// stamped alongside the claim (e.g. a PR URL recorded once one is opened).
+func (s *IntentService) emitClaimed(ctx context.Context, in *Intent) {
+	if s.emitter == nil || in == nil {
+		return
+	}
+	s.emitter.Emit(ctx, ledgerkit.KindClaimed, ledgerkit.Scope{Intent: in.ID},
+		ledger.WithWhy(fmt.Sprintf("claimed by %s", in.AssignedTo)),
+		ledger.WithPayload(map[string]any{"assigned_to": in.AssignedTo, "work_ref": in.WorkRef}))
+}
+
+// emitReleased records an intent assignment being cleared, keeping the prior
+// assignee in the payload so the ledger retains who last held the claim.
+func (s *IntentService) emitReleased(ctx context.Context, in *Intent, previousAssignee string) {
+	if s.emitter == nil || in == nil {
+		return
+	}
+	s.emitter.Emit(ctx, ledgerkit.KindReleased, ledgerkit.Scope{Intent: in.ID},
+		ledger.WithPayload(map[string]any{"previous_assignee": previousAssignee}))
 }

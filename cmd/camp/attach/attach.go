@@ -36,11 +36,17 @@ func NewAttachCommand(newResolver CampaignResolverFactory) *cobra.Command {
 		Long: `Attach a non-project directory to a campaign by writing a .camp marker.
 
 The user manages the symlink (if any). camp attach only writes the marker at
-the resolved target so commands run from inside that directory know which
-campaign owns it.
+the resolved target so commands run from inside that directory can recover
+campaign context. Attachment markers may be shared by multiple campaigns;
+running attach again from another campaign adds that campaign to the marker.
 
 If the target is reached through a symlink, camp follows it once and writes
 the marker at the final directory.
+
+When several campaigns share one attachment, which campaign a command resolves
+depends on how the directory is reached: entering through a campaign-local
+symlink resolves that campaign, while a bare cd into the shared target itself
+resolves to the first campaign it was attached to.
 
 Campaign selection:
   - inside a campaign, omit --campaign to attach to the current campaign
@@ -82,7 +88,7 @@ Examples:
 
 	flags := cmd.Flags()
 	flags.StringP("campaign", "c", "", "Target campaign by name or ID; omit value to pick interactively")
-	flags.Bool("force", false, "Overwrite an existing attachment marker")
+	flags.Bool("force", false, "Rewrite an existing attachment marker")
 	flags.Lookup("campaign").NoOptDefVal = NoOptCampaign
 
 	return cmd
@@ -92,12 +98,18 @@ Examples:
 func NewDetachCommand() *cobra.Command {
 	cmd := &cobra.Command{
 		Use:     "detach <path>",
-		Short:   "Remove the attachment marker from a directory",
+		Short:   "Remove the current campaign's attachment binding",
 		GroupID: "campaign",
-		Long: `Remove the .camp attachment marker from the target directory.
+		Long: `Remove the current campaign's binding from the .camp attachment marker.
 
 Refuses on linked-project markers; use 'camp project unlink' for those.
-The user-managed symlink (if any) is not modified.
+The user-managed symlink (if any) is not modified. If run outside any campaign,
+the entire attachment marker is removed.
+
+On an attachment shared by several campaigns this removes only the current
+campaign's binding; the others keep resolving. Detaching the campaign that a
+bare cd into the shared target resolved to shifts that fallback to the next
+remaining campaign.
 
 Examples:
   camp detach docs/examples/external-repo
@@ -107,7 +119,14 @@ Examples:
 			ctx := cmd.Context()
 			input := args[0]
 
-			result, err := attach.Detach(ctx, input)
+			// A shared attachment should detach only from the campaign that
+			// resolves the current cwd. If the command is run outside any
+			// campaign, preserve the legacy remove-all behavior.
+			campaignID := ""
+			if cfg, _, cfgErr := config.LoadCampaignConfigFromCwd(ctx); cfgErr == nil {
+				campaignID = cfg.ID
+			}
+			result, err := attach.DetachForCampaign(ctx, input, campaignID)
 			if err != nil {
 				return err
 			}
@@ -134,7 +153,7 @@ func printAttachResult(r *attach.Result, campaignName string) {
 		fmt.Printf("%s %s\n", ui.WarningIcon(), ui.Warning("could not update .git/info/exclude: "+r.GitExcludeWarning))
 	}
 	fmt.Println()
-	fmt.Println(ui.Dim("  Commands run from inside the target now resolve to this campaign."))
+	fmt.Println(ui.Dim("  Commands from this campaign's symlink now resolve to this campaign."))
 }
 
 func printDetachResult(r *attach.Result) {

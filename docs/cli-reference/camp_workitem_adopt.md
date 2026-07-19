@@ -1,6 +1,6 @@
 ## camp workitem adopt
 
-Attach .workitem metadata to an existing directory
+Adopt an existing directory as a workitem
 
 ### Synopsis
 

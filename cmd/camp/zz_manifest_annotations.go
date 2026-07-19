@@ -27,18 +27,21 @@ var manifestAgentAllowedReasons = map[string]string{
 	"flow show":                  "Read-only flow structure display",
 	"flow status":                "Read-only flow statistics",
 	"gather design":              "Non-interactive with explicit selectors and --title; interactive picker otherwise",
+	"gather explore":             "Non-interactive with explicit selectors and --title; interactive picker otherwise",
 	"go":                         "Non-interactive path resolution when used with explicit arguments",
 	"id":                         "Read-only campaign ID output",
-	"intent add":                 "Programmatic create path is safe with title/body flags; agents must not use TUI-only flags",
-	"intent count":               "Read-only intent count",
-	"intent find":                "Read-only intent search",
-	"intent list":                "Read-only intent listing",
-	"intent show":                "Read-only intent detail",
+	"idea add":                   "Programmatic create path is safe with title/body flags; agents must not use TUI-only flags",
+	"idea count":                 "Read-only idea count",
+	"idea find":                  "Read-only idea search",
+	"idea list":                  "Read-only idea listing",
+	"idea show":                  "Read-only idea detail",
 	"log":                        "Read-only git log",
 	"machine add":                "Explicit id/host/auth args (or --discover with --yes/an id) are non-interactive",
 	"machine diagnose":           "Read path (socket status) is safe; never pass --reset from an agent",
 	"machine list":               "Read-only listing of ~/.obey/machines.yaml",
 	"machine remove":             "Non-interactive removal with explicit id argument",
+	"org next":                   "Non-interactive; --print/--json resolve the next org campaign without a TUI",
+	"org toggle":                 "Non-interactive; --print/--json resolve the last-visited org campaign without a TUI",
 	"project list":               "Read-only project listing",
 	"project remote list":        "Read-only project remote listing",
 	"promote":                    "Routes to a type-specific promote; needs an explicit id and --target in non-interactive use",
@@ -102,17 +105,18 @@ var manifestAgentAllowedReasons = map[string]string{
 }
 
 var manifestAllowedInteractivePaths = map[string]bool{
-	"create":        true,
-	"gather design": true,
-	"intent add":    true,
-	"switch":        true,
+	"create":         true,
+	"gather design":  true,
+	"gather explore": true,
+	"idea add":       true,
+	"switch":         true,
 }
 
 var manifestInteractivePaths = map[string]bool{
-	"dungeon crawl":  true,
-	"intent crawl":   true,
-	"intent explore": true,
-	"settings":       true,
+	"dungeon crawl": true,
+	"idea crawl":    true,
+	"idea explore":  true,
+	"settings":      true,
 }
 
 func init() {

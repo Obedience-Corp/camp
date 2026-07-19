@@ -53,6 +53,13 @@ type docFinding struct {
 	Message     string `json:"message"`
 	FixHint     string `json:"fix_hint,omitempty"`
 	AutoFixable bool   `json:"auto_fixable"`
+
+	// migrateToID/migrateToKey carry a non-destructive recovery target for a
+	// broken link whose workitem was promoted to a festival: --fix re-points
+	// the link onto that festival instead of removing it. Unexported so they
+	// stay out of the --json contract.
+	migrateToID  string
+	migrateToKey string
 }
 
 // errDoctorIssues triggers a non-zero exit from cobra after we have already
@@ -68,7 +75,7 @@ func newDoctorCommand() *cobra.Command {
 	var jsonOut, fix bool
 	cmd := &cobra.Command{
 		Use:   "doctor",
-		Short: "Report workitem link-registry health issues",
+		Short: "Report link-registry health issues",
 		Long: `Report health issues in the campaign workitem link registry.
 
 The command reads .campaign/workitems/links.yaml, scans .workitem metadata on
@@ -219,17 +226,28 @@ func collectWorkitemFindings(ctx context.Context, root string, registry *links.L
 		})
 	}
 
+	promotedTargets := promotedFestivalTargets(ctx, root)
 	primarySeen := make(map[string]string)
 	for _, link := range registry.Links {
 		if _, known := knownIDs[link.WorkitemID]; !known {
-			findings = append(findings, docFinding{
+			finding := docFinding{
 				Code:        codeBrokenLink,
 				Severity:    docSeverityError,
 				Target:      "link:" + link.ID,
 				Message:     "workitem_id " + link.WorkitemID + " is not present on disk",
 				FixHint:     "auto-fix removes the link",
 				AutoFixable: true,
-			})
+			}
+			if target, ok := promotedTargets[link.WorkitemID]; ok {
+				finding.Message = "workitem_id " + link.WorkitemID +
+					" is not present on disk; it was promoted to festival " + target.id
+				finding.FixHint = "auto-fix re-links to festival " + target.id +
+					" (or re-link manually: camp workitem link " + target.id +
+					" --worktree <scope> --replace)"
+				finding.migrateToID = target.id
+				finding.migrateToKey = target.key
+			}
+			findings = append(findings, finding)
 		}
 		scopeMissing := !scopeTargetExists(root, link.Scope.Path)
 		if scopeMissing {
@@ -339,7 +357,16 @@ func autoFixWorkitemFindings(ctx context.Context, root string, registry *links.L
 			continue
 		}
 		switch f.Code {
-		case codeBrokenLink, codeBrokenScope:
+		case codeBrokenLink:
+			id := strings.TrimPrefix(f.Target, "link:")
+			if f.migrateToID != "" {
+				if repointLinkByID(registry, id, f.migrateToID, f.migrateToKey) {
+					applied++
+				}
+			} else if registry.RemoveLinkByID(id) {
+				applied++
+			}
+		case codeBrokenScope:
 			id := strings.TrimPrefix(f.Target, "link:")
 			if registry.RemoveLinkByID(id) {
 				applied++
@@ -413,6 +440,12 @@ func workitemIDsOnDisk(ctx context.Context, root string) (map[string]struct{}, e
 		if item.Key != "" {
 			set[item.Key] = struct{}{}
 		}
+		// Festivals are first-class link targets addressed by their fest.yaml
+		// id (e.g. SC0001); keep that id "present on disk" so a link migrated
+		// onto a festival by promote is not reported as broken.
+		if item.WorkflowType == wkitem.WorkflowTypeFestival && item.SourceID != "" {
+			set[item.SourceID] = struct{}{}
+		}
 	}
 	return set, nil
 }
@@ -420,6 +453,62 @@ func workitemIDsOnDisk(ctx context.Context, root string) (map[string]struct{}, e
 func hasErrorFinding(findings []docFinding) bool {
 	for _, f := range findings {
 		if f.Severity == docSeverityError {
+			return true
+		}
+	}
+	return false
+}
+
+// festivalTarget is a resolvable festival link target: its single-segment
+// fest.yaml id and its "festival:<path>" key.
+type festivalTarget struct {
+	id  string
+	key string
+}
+
+// promotedFestivalTargets maps a promoted workitem's stable id to the festival
+// it was promoted to, for every design/explore workitem marker (including
+// shelved ones) that recorded a promoted_to festival that still exists. It lets
+// doctor offer a broken link a non-destructive migration onto that festival
+// instead of only deletion. Best-effort: unreadable markers are skipped.
+func promotedFestivalTargets(ctx context.Context, root string) map[string]festivalTarget {
+	out := map[string]festivalTarget{}
+	cfg, err := config.LoadCampaignConfig(ctx, root)
+	if err != nil {
+		return out
+	}
+	resolver := paths.NewResolverFromConfig(root, cfg)
+	for _, dir := range []string{resolver.Design(), resolver.Explore()} {
+		_ = filepath.WalkDir(dir, func(path string, d fs.DirEntry, walkErr error) error {
+			if walkErr != nil || d.IsDir() || d.Name() != wkitem.MetadataFilename {
+				return nil
+			}
+			meta, err := wkitem.LoadMetadata(ctx, filepath.Dir(path))
+			if err != nil || meta == nil || meta.ID == "" || meta.PromotedTo == "" {
+				return nil
+			}
+			promotedTo := filepath.ToSlash(meta.PromotedTo)
+			if !strings.HasPrefix(promotedTo, "festivals/") {
+				return nil
+			}
+			festID := readFestivalID(root, promotedTo)
+			if festID == "" {
+				return nil
+			}
+			out[meta.ID] = festivalTarget{id: festID, key: "festival:" + promotedTo}
+			return nil
+		})
+	}
+	return out
+}
+
+// repointLinkByID re-points the link with the given id onto a new workitem id
+// and key. Returns true when a link was updated.
+func repointLinkByID(registry *links.Links, linkID, newID, newKey string) bool {
+	for i := range registry.Links {
+		if registry.Links[i].ID == linkID {
+			registry.Links[i].WorkitemID = newID
+			registry.Links[i].WorkitemKey = newKey
 			return true
 		}
 	}

@@ -47,7 +47,7 @@ func newRepairCommand() *cobra.Command {
 	var typeOverride string
 	cmd := &cobra.Command{
 		Use:   "repair <path>",
-		Short: "Repair a workflow directory into a current-schema work item",
+		Short: "Repair a workflow directory into a workitem",
 		Long: `Repair a workflow directory so it carries a valid current-schema .workitem marker.
 
 The directory is never moved or renamed and document contents are never touched.

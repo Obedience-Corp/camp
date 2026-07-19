@@ -34,7 +34,12 @@ Examples:
 				return err
 			}
 
-			svc := workflow.NewService(cwd)
+			dungeonSpelling, err := campaignDungeonSpelling(ctx)
+			if err != nil {
+				return err
+			}
+
+			svc := workflow.NewService(cwd, workflow.WithDungeonSpelling(dungeonSpelling))
 			result, err := svc.Sync(ctx, workflow.SyncOptions{DryRun: flowSyncDryRun})
 			if err != nil {
 				return err

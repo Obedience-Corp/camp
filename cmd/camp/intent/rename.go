@@ -18,15 +18,15 @@ import (
 
 var intentRenameCmd = &cobra.Command{
 	Use:   "rename <id> <new title>",
-	Short: "Rename an intent",
-	Long: `Rename an intent: update its title and regenerate its human-readable
-filename. The intent's stable id is preserved, so references and lookups survive
+	Short: "Rename an idea",
+	Long: `Rename an idea: update its title and regenerate its human-readable
+filename. The idea's stable id is preserved, so references and lookups survive
 the rename.
 
-Resolution is by exact id (run 'camp intent list' to copy one).
+Resolution is by exact id (run 'camp idea list' to copy one).
 
 Examples:
-  camp intent rename add-dark-mode-20260119-153412 "Add a dark mode toggle"`,
+  camp idea rename add-dark-mode-20260119-153412 "Add a dark mode toggle"`,
 	Args: cobra.ExactArgs(2),
 	RunE: runIntentRename,
 }
@@ -50,7 +50,7 @@ func runIntentRename(cmd *cobra.Command, args []string) error {
 	resolver := paths.NewResolverFromConfig(campaignRoot, cfg)
 	svc := intent.NewIntentService(campaignRoot, resolver.Intents())
 	if err := svc.EnsureDirectories(ctx); err != nil {
-		return camperrors.Wrap(err, "ensuring intent directories")
+		return camperrors.Wrap(err, "ensuring idea directories")
 	}
 
 	before, err := svc.Get(ctx, id)
@@ -60,17 +60,17 @@ func runIntentRename(cmd *cobra.Command, args []string) error {
 		before, err = svc.GetNote(ctx, id)
 	}
 	if err != nil {
-		return camperrors.Wrapf(err, "intent not found: %s", id)
+		return camperrors.Wrapf(err, "idea not found: %s", id)
 	}
 	oldTitle := before.Title
 	oldPath := before.Path
 
 	renamed, err := svc.Rename(ctx, id, newTitle)
 	if err != nil {
-		return camperrors.Wrap(err, "failed to rename intent")
+		return camperrors.Wrap(err, "failed to rename idea")
 	}
 
-	fmt.Printf("✓ Intent renamed: %s\n", renamed.Path)
+	fmt.Printf("✓ Idea renamed: %s\n", renamed.Path)
 
 	if err := appendIntentAuditEvent(ctx, resolver.Intents(), audit.Event{
 		Type:  audit.EventRename,

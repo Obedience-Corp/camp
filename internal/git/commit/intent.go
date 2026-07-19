@@ -15,6 +15,11 @@ const (
 	IntentPromote IntentAction = "Promote"
 	IntentCrawl   IntentAction = "Crawl"
 	IntentRename  IntentAction = "Rename"
+	IntentClaim   IntentAction = "Claim"
+	IntentRelease IntentAction = "Release"
+	IntentSync    IntentAction = "Sync"
+	// IntentUpdate is used for multi-op session batches (e.g. explorer exit).
+	IntentUpdate IntentAction = "Update"
 )
 
 // IntentOptions configures an intent commit.

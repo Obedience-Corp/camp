@@ -10,6 +10,9 @@ import (
 	"strings"
 	"testing"
 	"time"
+	"unicode"
+
+	"github.com/spf13/pflag"
 
 	"github.com/Obedience-Corp/camp/internal/config"
 	wkitem "github.com/Obedience-Corp/camp/internal/workitem"
@@ -384,5 +387,97 @@ func TestValidateFlagsRejectsListConflicts(t *testing.T) {
 				t.Fatal("validateFlags() error = nil, want conflict")
 			}
 		})
+	}
+}
+
+func TestNeedsExplicitOutputMode(t *testing.T) {
+	tests := []struct {
+		name        string
+		interactive bool
+		jsonMode    bool
+		listMode    bool
+		printMode   bool
+		pathOutput  string
+		want        bool
+	}{
+		{name: "non-interactive with no output mode is rejected", want: true},
+		{name: "non-interactive with json", jsonMode: true},
+		{name: "non-interactive with list", listMode: true},
+		{name: "non-interactive with print", printMode: true},
+		{name: "non-interactive with path-output", pathOutput: "/tmp/selected"},
+		{name: "interactive with no output mode", interactive: true},
+		{name: "interactive with json", interactive: true, jsonMode: true},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got := needsExplicitOutputMode(tt.interactive, tt.jsonMode, tt.listMode, tt.printMode, tt.pathOutput)
+			if got != tt.want {
+				t.Fatalf("needsExplicitOutputMode() = %v, want %v", got, tt.want)
+			}
+		})
+	}
+}
+
+func TestWorkitemLongDocumentsNonInteractiveRequirement(t *testing.T) {
+	long := NewWorkitemCommand().Long
+	for _, want := range []string{"--json", "--list", "--print"} {
+		if !strings.Contains(long, want) {
+			t.Fatalf("Long does not mention %q required for non-interactive use:\n%s", want, long)
+		}
+	}
+}
+
+func TestWorkitemDescriptionsStayConcise(t *testing.T) {
+	const maxDescription = 50
+
+	cmd := NewWorkitemCommand()
+
+	cmd.Flags().VisitAll(func(f *pflag.Flag) {
+		if f.Hidden {
+			return
+		}
+		t.Run("flag/"+f.Name, func(t *testing.T) {
+			if len(f.Usage) > maxDescription {
+				t.Fatalf("--%s usage is %d chars, want <= %d: %q", f.Name, len(f.Usage), maxDescription, f.Usage)
+			}
+			if r := []rune(f.Usage); len(r) > 0 && unicode.IsLower(r[0]) {
+				t.Fatalf("--%s usage should start capitalized: %q", f.Name, f.Usage)
+			}
+		})
+	})
+
+	for _, child := range cmd.Commands() {
+		t.Run("subcommand/"+child.Name(), func(t *testing.T) {
+			if len(child.Short) > maxDescription {
+				t.Fatalf("%q Short is %d chars, want <= %d: %q", child.Name(), len(child.Short), maxDescription, child.Short)
+			}
+		})
+	}
+}
+
+func TestWorkitemSubcommandsStayRegisteredAndVisible(t *testing.T) {
+	cmd := NewWorkitemCommand()
+
+	want := []string{
+		"adopt", "commit", "commits", "create", "current", "doctor", "group",
+		"link", "links", "list", "priority", "promote", "repair", "resolve",
+		"stage", "unlink", "validate", "worktree",
+	}
+
+	for _, name := range want {
+		t.Run(name, func(t *testing.T) {
+			child, _, err := cmd.Find([]string{name})
+			if err != nil || child == cmd || child.Name() != name {
+				t.Fatalf("subcommand %q not registered: child=%v err=%v", name, child, err)
+			}
+			if child.Hidden {
+				t.Fatalf("subcommand %q is hidden: it would drop out of the agent manifest and generated docs", name)
+			}
+		})
+	}
+
+	if got := len(cmd.Commands()); got != len(want) {
+		t.Fatalf("registered subcommand count = %d, want %d", got, len(want))
 	}
 }

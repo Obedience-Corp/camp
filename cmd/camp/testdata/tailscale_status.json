@@ -2,7 +2,7 @@
   "BackendState": "Running",
   "Self": {
     "HostName": "Mac Studio",
-    "DNSName": "mac-studio.tail37114b.ts.net.",
+    "DNSName": "mac-studio.example-net.ts.net.",
     "TailscaleIPs": ["100.64.0.5"],
     "Online": true,
     "OS": "macOS"
@@ -10,7 +10,7 @@
   "Peer": {
     "nodekey:1": {
       "HostName": "Devbox",
-      "DNSName": "devbox.tail37114b.ts.net.",
+      "DNSName": "devbox.example-net.ts.net.",
       "TailscaleIPs": ["100.64.0.1"],
       "Online": true,
       "OS": "linux"

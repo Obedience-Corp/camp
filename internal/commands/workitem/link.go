@@ -34,7 +34,7 @@ func newLinkCommand() *cobra.Command {
 	)
 	cmd := &cobra.Command{
 		Use:   "link <selector> [path]",
-		Short: "Attach a workitem to a project, festival, worktree, or campaign path",
+		Short: "Create a workitem link",
 		Long: `Attach a workitem to a project, festival, worktree, or campaign path.
 
 Links are stored in .campaign/workitems/links.yaml and connect a .workitem
@@ -290,6 +290,9 @@ func inferScopeKind(rel string) links.ScopeKind {
 func workitemIDForLink(wi *wkitem.WorkItem, opts linkOptions) string {
 	if wi.StableID != "" {
 		return wi.StableID
+	}
+	if wi.WorkflowType == wkitem.WorkflowTypeFestival && wi.SourceID != "" {
+		return wi.SourceID
 	}
 	if opts.AllowMissing {
 		return opts.Selector

@@ -1,6 +1,6 @@
 ## camp workitem doctor
 
-Report workitem link-registry health issues
+Report link-registry health issues
 
 ### Synopsis
 

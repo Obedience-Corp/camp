@@ -25,7 +25,7 @@ func newStageCommand() *cobra.Command {
 	var jsonOut bool
 	cmd := &cobra.Command{
 		Use:   "stage <selector> <current|next|active|parked|clear>",
-		Short: "Set or clear the attention stage of a workitem",
+		Short: "Set or clear the attention stage",
 		Args:  jsoncontract.Args(WorkitemStageJSONVersion, func() bool { return jsonOut }, cobra.ExactArgs(2)),
 		RunE: jsoncontract.RunE(WorkitemStageJSONVersion, func() bool { return jsonOut }, func(cmd *cobra.Command, args []string) error {
 			return runStage(cmd.Context(), cmd, args[0], args[1], jsonOut)

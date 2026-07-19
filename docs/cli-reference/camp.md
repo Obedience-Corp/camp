@@ -41,6 +41,7 @@ camp [flags]
 
 ### SEE ALSO
 
+* [camp artifacts](camp_artifacts.md)	 - Manage declared artifact roots (.campaign/artifacts.yaml)
 * [camp attach](camp_attach.md)	 - Attach an external directory to a campaign
 * [camp cache](camp_cache.md)	 - Manage the navigation index cache
 * [camp clone](camp_clone.md)	 - Clone a campaign with full submodule setup
@@ -50,7 +51,7 @@ camp [flags]
 * [camp copy](camp_copy.md)	 - Copy a file or directory within the campaign
 * [camp create](camp_create.md)	 - Create a new campaign at the default campaigns directory
 * [camp date](camp_date.md)	 - Append date suffix to file or directory name
-* [camp detach](camp_detach.md)	 - Remove the attachment marker from a directory
+* [camp detach](camp_detach.md)	 - Remove the current campaign's attachment binding
 * [camp doctor](camp_doctor.md)	 - Diagnose and fix campaign health issues
 * [camp dungeon](camp_dungeon.md)	 - Manage the campaign dungeon
 * [camp festivals](camp_festivals.md)	 - List festivals across campaigns, filtered by org/tag
@@ -58,8 +59,8 @@ camp [flags]
 * [camp gather](camp_gather.md)	 - Gather related work into unified items
 * [camp go](camp_go.md)	 - Navigate to campaign directories
 * [camp id](camp_id.md)	 - Print the current campaign ID
+* [camp idea](camp_idea.md)	 - Manage campaign ideas
 * [camp init](camp_init.md)	 - Initialize a new campaign
-* [camp intent](camp_intent.md)	 - Manage campaign intents
 * [camp leverage](camp_leverage.md)	 - Compute leverage scores for campaign projects
 * [camp lifecycle](camp_lifecycle.md)	 - Manage campaign lifecycle status
 * [camp list](camp_list.md)	 - List all registered campaigns

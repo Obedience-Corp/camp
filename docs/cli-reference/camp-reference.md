@@ -49,6 +49,149 @@ camp [flags]
 ```
 ---
 
+## camp artifacts
+
+Manage declared artifact roots (.campaign/artifacts.yaml)
+
+### Synopsis
+
+Manage the campaign's declared artifact roots: directories of heavy non-git
+payloads (media, renders, datasets) that 'camp sync --from <machine>' moves
+between your machines with rsync instead of git.
+
+The declaration file (.campaign/artifacts.yaml) is committed, so every
+machine knows what belongs to the campaign. Declared roots should be
+gitignored: a root that is also git-tracked would make the same bytes both
+git content and artifact content. Manifests and per-peer sync snapshots are
+machine-local derived state under .campaign/cache (gitignored).
+
+### Examples
+
+```
+  camp artifacts list
+  camp artifacts add media/renders
+  camp artifacts add datasets --policy on-demand
+  camp artifacts remove media/renders
+  camp artifacts manifest media/renders
+```
+
+### Options
+
+```
+  -h, --help   help for artifacts
+```
+
+### Options inherited from parent commands
+
+```
+      --no-color   disable colored output
+```
+---
+
+## camp artifacts add
+
+Declare an artifact root
+
+### Synopsis
+
+Declare a campaign-relative directory as an artifact root.
+
+Policy 'always' (default) syncs the root on every 'camp sync --from
+<machine>'; 'on-demand' syncs it only when artifacts are requested
+explicitly (--artifacts-only).
+
+```
+camp artifacts add <path> [flags]
+```
+
+### Options
+
+```
+  -h, --help            help for add
+      --policy string   Sync policy: always (every peer sync) or on-demand (--artifacts-only) (default "always")
+```
+
+### Options inherited from parent commands
+
+```
+      --no-color   disable colored output
+```
+---
+
+## camp artifacts list
+
+List declared artifact roots
+
+```
+camp artifacts list [flags]
+```
+
+### Options
+
+```
+  -h, --help   help for list
+      --json   Output as JSON for scripting
+```
+
+### Options inherited from parent commands
+
+```
+      --no-color   disable colored output
+```
+---
+
+## camp artifacts manifest
+
+Print a declared root's manifest as JSON
+
+### Synopsis
+
+Walk a declared artifact root and print its manifest (relative path, size,
+mtime per file) as JSON. This is the same shape sync snapshots use, so it is
+useful for scripting and for comparing roots across machines.
+
+```
+camp artifacts manifest <path> [flags]
+```
+
+### Options
+
+```
+  -h, --help   help for manifest
+```
+
+### Options inherited from parent commands
+
+```
+      --no-color   disable colored output
+```
+---
+
+## camp artifacts remove
+
+Remove an artifact root declaration
+
+### Synopsis
+
+Remove a declared artifact root. Files on disk are not touched.
+
+```
+camp artifacts remove <path> [flags]
+```
+
+### Options
+
+```
+  -h, --help   help for remove
+```
+
+### Options inherited from parent commands
+
+```
+      --no-color   disable colored output
+```
+---
+
 ## camp attach
 
 Attach an external directory to a campaign
@@ -58,11 +201,17 @@ Attach an external directory to a campaign
 Attach a non-project directory to a campaign by writing a .camp marker.
 
 The user manages the symlink (if any). camp attach only writes the marker at
-the resolved target so commands run from inside that directory know which
-campaign owns it.
+the resolved target so commands run from inside that directory can recover
+campaign context. Attachment markers may be shared by multiple campaigns;
+running attach again from another campaign adds that campaign to the marker.
 
 If the target is reached through a symlink, camp follows it once and writes
 the marker at the final directory.
+
+When several campaigns share one attachment, which campaign a command resolves
+depends on how the directory is reached: entering through a campaign-local
+symlink resolves that campaign, while a bare cd into the shared target itself
+resolves to the first campaign it was attached to.
 
 Campaign selection:
   - inside a campaign, omit --campaign to attach to the current campaign
@@ -84,7 +233,7 @@ camp attach <path> [flags]
 
 ```
   -c, --campaign string   Target campaign by name or ID; omit value to pick interactively
-      --force             Overwrite an existing attachment marker
+      --force             Rewrite an existing attachment marker
   -h, --help              help for attach
 ```
 
@@ -257,6 +406,13 @@ EXAMPLES:
   # JSON output for scripting
   camp clone git@github.com:org/repo.git --json
 
+  # Seed from a peer machine in ~/.obey/machines.yaml: root repo and
+  # submodules clone from that machine's copy (LAN/tailnet), then origin is
+  # re-pointed to the URL above and the delta fetched. The result is an
+  # origin replica that arrived over the fast path; peer failures fall back
+  # to plain origin cloning.
+  camp clone git@github.com:org/repo.git --from studio-mac
+
 ```
 camp clone <url> [directory] [flags]
 ```
@@ -266,6 +422,7 @@ camp clone <url> [directory] [flags]
 ```
   -b, --branch string   Clone specific branch (default: repository default branch)
       --depth int       Shallow clone depth (0 = full history)
+      --from string     Seed git objects from this machine (id from ~/.obey/machines.yaml), then fetch the delta from origin
   -h, --help            help for clone
       --json            Output results as JSON for scripting
       --no-register     Skip auto-registration in global campaign registry
@@ -315,16 +472,16 @@ camp commit [flags]
 ### Options
 
 ```
-  -a, --all               Stage all changes before committing (default true)
-      --amend             Amend the previous commit
-      --auto-write        Run configured commit message writer
-  -h, --help              help for commit
-      --include-refs      Include submodule ref changes when staging at campaign root
-  -m, --message string    Commit message (required unless --auto-write)
-      --no-edit           Amend without editing the commit message (requires --amend)
-  -p, --project string    Operate on a specific project/submodule path
-      --sub               Operate on the submodule detected from current directory
-      --workitem string   explicit workitem selector for the commit tag (overrides cwd-based resolution)
+  -a, --all                   Stage all changes before committing (default true)
+      --amend                 Amend the previous commit
+      --auto-write            Run configured commit message writer
+  -h, --help                  help for commit
+      --include-refs          Include submodule ref changes when staging at campaign root
+  -m, --message stringArray   Commit message (repeatable; multiple -m are joined git-style into subject + body; required unless --auto-write)
+      --no-edit               Amend without editing the commit message (requires --amend)
+  -p, --project string        Operate on a specific project/submodule path
+      --sub                   Operate on the submodule detected from current directory
+      --workitem string       explicit workitem selector for the commit tag (overrides cwd-based resolution)
 ```
 
 ### Options inherited from parent commands
@@ -619,6 +776,7 @@ camp create <name> [flags]
   -n, --name string          Campaign display name (defaults to <name> positional)
       --no-git               Skip git repository initialization
       --no-skills            Skip linking campaign skills into .claude/skills and .agents/skills
+      --org string           Assign the new campaign to this org (created if new; defaults to the fallback org)
       --path string          Override the base campaigns directory (campaign created at <path>/<name>/)
   -t, --type string          Campaign type (product, research, tools, personal) (default "product")
 ```
@@ -678,14 +836,20 @@ camp date <path> [flags]
 
 ## camp detach
 
-Remove the attachment marker from a directory
+Remove the current campaign's attachment binding
 
 ### Synopsis
 
-Remove the .camp attachment marker from the target directory.
+Remove the current campaign's binding from the .camp attachment marker.
 
 Refuses on linked-project markers; use 'camp project unlink' for those.
-The user-managed symlink (if any) is not modified.
+The user-managed symlink (if any) is not modified. If run outside any campaign,
+the entire attachment marker is removed.
+
+On an attachment shared by several campaigns this removes only the current
+campaign's binding; the others keep resolving. Detaching the campaign that a
+bare cd into the shared target resolved to shifts that fallback to the next
+remaining campaign.
 
 Examples:
   camp detach docs/examples/external-repo
@@ -946,6 +1110,64 @@ camp dungeon list [flags]
 ```
 ---
 
+## camp dungeon migrate
+
+Convert every campaign dungeon to the hidden .dungeon spelling
+
+### Synopsis
+
+Convert every dungeon in this campaign from "dungeon" to ".dungeon".
+
+New campaigns hide the dungeon so it stops being the first thing newcomers ask
+about. This converts a campaign made before that change. A campaign uses one
+spelling throughout, so the sweep covers every dungeon at once: the campaign
+root, festivals/, .campaign/intents/, .campaign/quests/, and each workflow
+type. Dungeons are discovered on disk, so locations added since this command
+was written are included too.
+
+The move goes through git, so history and rename detection survive, and lands
+as a single commit you can revert.
+
+projects/ is never touched. Projects own their own trees, and a source
+directory named "dungeon" inside one is not a campaign dungeon.
+
+Release ordering matters when a campaign contains festivals/: this command
+also renames festivals/dungeon. Do not run it against a campaign used by a
+fest build that does not understand .dungeon. Land fest#274 and ship a fest
+release with the matching support before making this migration available to
+users.
+
+Nothing is moved unless everything can be: if any location holds both
+spellings, or a .dungeon is already in the way, the command reports it and
+exits without changing anything.
+
+```
+camp dungeon migrate [flags]
+```
+
+### Examples
+
+```
+  camp dungeon migrate            Convert and commit
+  camp dungeon migrate --dry-run  Show what would move, change nothing
+  camp dungeon migrate --no-commit  Convert, leave the changes staged
+```
+
+### Options
+
+```
+      --dry-run     Show what would move without changing anything
+  -h, --help        help for migrate
+      --no-commit   Move the directories but do not commit
+```
+
+### Options inherited from parent commands
+
+```
+      --no-color   disable colored output
+```
+---
+
 ## camp dungeon move
 
 Move dungeon items between statuses
@@ -1074,7 +1296,10 @@ single project name. Use --list to cycle a specific set of projects in one
 run, or 'camp fresh all' to cycle every project submodule in the campaign.
 
 Without configuration, syncs to the default branch and prunes.
-Configure .campaign/settings/fresh.yaml to set a default working branch.
+Configure .campaign/settings/fresh.yaml to set a default working branch, or
+follow-up command workflows (install, build, bootstrap, ...) to run once the
+cycle succeeds. Manage those with 'camp fresh configure'. Inspect the resolved
+sequence with 'camp fresh show-workflow [project-name]'.
 
 Examples:
   camp fresh                            # Sync current project (checkout default, pull, prune)
@@ -1082,7 +1307,8 @@ Examples:
   camp fresh camp -b feat/new-thing     # Sync camp project, create feature branch
   camp fresh --list camp,fest,festival  # Sync a specific set of projects
   camp fresh --no-prune                 # Sync without pruning
-  camp fresh --dry-run                  # Preview what would happen
+  camp fresh --no-follow-up             # Sync without running configured follow-ups
+  camp fresh --dry-run                  # Preview what would happen (follow-ups listed, not run)
 
 ```
 camp fresh [project-name] [flags]
@@ -1096,6 +1322,7 @@ camp fresh [project-name] [flags]
   -h, --help             help for fresh
       --list strings     Comma-separated set of projects to cycle in one run
       --no-branch        Skip branch creation even if configured
+      --no-follow-up     Skip configured follow-up command workflows
       --no-prune         Skip pruning merged branches
       --no-push          Skip pushing the new branch upstream
   -p, --project string   Project name (auto-detected from cwd)
@@ -1140,6 +1367,222 @@ camp fresh all [flags]
   -n, --dry-run         Preview without making changes
       --no-branch       Skip branch creation even if configured
       --no-color        disable colored output
+      --no-follow-up    Skip configured follow-up command workflows
+      --no-prune        Skip pruning merged branches
+      --no-push         Skip pushing the new branch upstream
+```
+---
+
+## camp fresh configure
+
+Configure the camp fresh workflow
+
+### Synopsis
+
+Configure what camp fresh does after a merge. Configuration lives in
+.campaign/settings/fresh.yaml, as campaign-wide defaults plus optional
+per-project overrides.
+
+Run without a subcommand to open the interactive setup for humans, which
+groups the fresh sequence by what you can change about each step:
+
+  Sync        checkout, pull, and safety checks; always runs
+  Settings    branch, push_upstream, prune, and prune_remote
+  Follow-ups  your own commands, run after a successful cycle
+
+Press enter on a settings step to change it, and a/e/d/K/J on a follow-up to
+add, edit, delete, or reorder it. prune and prune_remote are campaign-wide,
+so they are changed under Global defaults rather than under a project.
+
+The subcommands below cover follow-ups only, for scripts and agents; edit the
+other keys in the interactive setup or in fresh.yaml directly.
+
+The interactive setup opens on the project you are standing in, resolved the
+same way camp fresh picks its target, so the overrides you edit are the ones
+that run. Pass --project to open on a different project, and edit the global
+defaults by selecting them in the left pane.
+
+Examples:
+  camp fresh configure
+  camp fresh configure --project camp
+  camp fresh show-workflow camp
+  camp fresh configure show
+  camp fresh configure add install --run "npm install"
+  camp fresh configure add build --run "go build ./..." --project camp --dir cmd/camp
+  camp fresh configure move build --up --project camp
+  camp fresh configure remove install
+  camp fresh configure remove build --project camp
+
+```
+camp fresh configure [flags]
+```
+
+### Options
+
+```
+  -h, --help             help for configure
+      --project string   Open the setup on a project scope (default: detected from the current directory)
+```
+
+### Options inherited from parent commands
+
+```
+  -b, --branch string   Branch to create after syncing (overrides config)
+  -n, --dry-run         Preview without making changes
+      --no-branch       Skip branch creation even if configured
+      --no-color        disable colored output
+      --no-follow-up    Skip configured follow-up command workflows
+      --no-prune        Skip pruning merged branches
+      --no-push         Skip pushing the new branch upstream
+```
+---
+
+## camp fresh configure add
+
+Add a follow-up command workflow step
+
+```
+camp fresh configure add <name> [flags]
+```
+
+### Options
+
+```
+      --continue-on-error   Keep running later follow-ups if this step fails
+      --dir string          Directory relative to the project root to run the command in
+  -h, --help                help for add
+      --project string      Scope this follow-up to a single project (default: global)
+      --run string          Command to run for this follow-up step (required)
+```
+
+### Options inherited from parent commands
+
+```
+  -b, --branch string   Branch to create after syncing (overrides config)
+  -n, --dry-run         Preview without making changes
+      --no-branch       Skip branch creation even if configured
+      --no-color        disable colored output
+      --no-follow-up    Skip configured follow-up command workflows
+      --no-prune        Skip pruning merged branches
+      --no-push         Skip pushing the new branch upstream
+```
+---
+
+## camp fresh configure move
+
+Move a follow-up command workflow step
+
+```
+camp fresh configure move <name> [flags]
+```
+
+### Options
+
+```
+      --down             Move the step later in the workflow
+  -h, --help             help for move
+      --project string   Scope the move to a single project (default: global)
+      --up               Move the step earlier in the workflow
+```
+
+### Options inherited from parent commands
+
+```
+  -b, --branch string   Branch to create after syncing (overrides config)
+  -n, --dry-run         Preview without making changes
+      --no-branch       Skip branch creation even if configured
+      --no-color        disable colored output
+      --no-follow-up    Skip configured follow-up command workflows
+      --no-prune        Skip pruning merged branches
+      --no-push         Skip pushing the new branch upstream
+```
+---
+
+## camp fresh configure remove
+
+Remove a follow-up command workflow step
+
+```
+camp fresh configure remove <name> [flags]
+```
+
+### Options
+
+```
+  -h, --help             help for remove
+      --project string   Scope removal to a single project (default: global)
+```
+
+### Options inherited from parent commands
+
+```
+  -b, --branch string   Branch to create after syncing (overrides config)
+  -n, --dry-run         Preview without making changes
+      --no-branch       Skip branch creation even if configured
+      --no-color        disable colored output
+      --no-follow-up    Skip configured follow-up command workflows
+      --no-prune        Skip pruning merged branches
+      --no-push         Skip pushing the new branch upstream
+```
+---
+
+## camp fresh configure show
+
+Show configured follow-up workflows
+
+```
+camp fresh configure show [flags]
+```
+
+### Options
+
+```
+  -h, --help   help for show
+```
+
+### Options inherited from parent commands
+
+```
+  -b, --branch string   Branch to create after syncing (overrides config)
+  -n, --dry-run         Preview without making changes
+      --no-branch       Skip branch creation even if configured
+      --no-color        disable colored output
+      --no-follow-up    Skip configured follow-up command workflows
+      --no-prune        Skip pruning merged branches
+      --no-push         Skip pushing the new branch upstream
+```
+---
+
+## camp fresh show-workflow
+
+Show the fresh cycle and configured follow-up steps
+
+### Synopsis
+
+Show the ordered steps camp fresh will use, including disabled steps
+and the follow-up commands resolved for a project.
+
+With no project name, the global defaults are shown. Pass a project name to
+include its branch, pruning, and follow-up overrides.
+
+```
+camp fresh show-workflow [project-name] [flags]
+```
+
+### Options
+
+```
+  -h, --help   help for show-workflow
+```
+
+### Options inherited from parent commands
+
+```
+  -b, --branch string   Branch to create after syncing (overrides config)
+  -n, --dry-run         Preview without making changes
+      --no-branch       Skip branch creation even if configured
+      --no-color        disable colored output
+      --no-follow-up    Skip configured follow-up command workflows
       --no-prune        Skip pruning merged branches
       --no-push         Skip pushing the new branch upstream
 ```
@@ -1156,6 +1599,7 @@ Gather related work into unified items.
 Available sources:
   feedback    Import feedback observations from festivals into intents
   design      Combine selected design workitems into one gathered package
+  explore     Combine selected explore workitems into one gathered package
 
 For gathering intents by tag, hashtag, or similarity, see 'camp intent gather'.
 
@@ -1216,6 +1660,59 @@ camp gather design [selectors...] [flags]
       --dry-run        Print the planned gather, change nothing
       --force          Gather sources even when one has an active workflow run
   -h, --help           help for design
+      --json           Output result as a single JSON object
+      --no-commit      Skip the auto-commit
+      --slug string    Directory slug override (default: derived from title)
+  -t, --title string   Title for the gathered workitem (required unless prompted interactively)
+```
+
+### Options inherited from parent commands
+
+```
+      --no-color   disable colored output
+```
+---
+
+## camp gather explore
+
+Combine selected explore workitems into one gathered package
+
+### Synopsis
+
+Combine selected explore workitems into one gathered package.
+
+Sources are always chosen explicitly: pass 2 or more selectors (stable id,
+key, path, or directory slug), or run with no arguments in a terminal for an
+interactive picker. There is no automatic discovery mode.
+
+The gather process:
+  1. Create workflow/explore/<slug>/ with a fresh .workitem and a
+     generated README.md indexing the gathered packages
+  2. Move each source directory inside the new package (git history follows
+     the rename)
+  3. Stamp gathered_into/gathered_at on each source .workitem
+  4. Migrate manual priority state and re-home workitem links
+  5. Commit the move (unless --no-commit)
+
+Moved sources stop appearing as separate workitems because discovery only
+scans the top level of workflow/explore/.
+
+Examples:
+  camp gather explore pkg-one pkg-two --title "Unified topic"
+  camp gather explore pkg-one pkg-two pkg-three -t "Unified topic" --slug unified-topic
+  camp gather explore                # interactive picker (TTY only)
+  camp gather explore pkg-one pkg-two -t "Unified topic" --dry-run
+
+```
+camp gather explore [selectors...] [flags]
+```
+
+### Options
+
+```
+      --dry-run        Print the planned gather, change nothing
+      --force          Gather sources even when one has an active workflow run
+  -h, --help           help for explore
       --json           Output result as a single JSON object
       --no-commit      Skip the auto-commit
       --slug string    Directory slug override (default: derived from title)
@@ -1398,6 +1895,915 @@ camp id [flags]
 ```
 ---
 
+## camp idea
+
+Manage campaign ideas
+
+### Synopsis
+
+Manage ideas for features and improvements not yet ready for full planning.
+
+Ideas capture thoughts, bugs, features, and research topics that depend on work
+not yet completed. They serve as structured storage for ideas that aren't ready
+to become Festivals but need to be tracked.
+
+CAPTURE MODES:
+  Fast (default)    Quick capture with minimal fields
+  Deep (--edit)     Open in editor for full context
+
+IDEA LIFECYCLE:
+  inbox  → Captured, not yet reviewed
+  ready  → Reviewed/enriched, ready for promotion
+  active → Promoted to festival/design doc, work in progress
+  dungeon/* → Terminal statuses (done, killed, archived, someday)
+
+"camp intent" (the original name) keeps working as an alias for every
+command below; the storage path is .campaign/intents/ either way.
+
+Examples:
+  camp idea add "Add dark mode toggle"         Fast capture to inbox
+  camp idea add -e "Refactor auth system"      Deep capture with editor
+  camp idea list                               List all ideas
+  camp idea list --status active               List active ideas
+  camp idea edit add-dark                      Edit idea (fuzzy match)
+  camp idea show 20260119-153412-add-dark      Show idea details
+  camp idea move add-dark ready                Mark as ready
+  camp idea promote add-dark                   Promote to active via festival
+  camp idea archive add-dark                   Archive idea
+
+```
+camp idea [flags]
+```
+
+### Options
+
+```
+  -h, --help   help for idea
+```
+
+### Options inherited from parent commands
+
+```
+      --no-color   disable colored output
+```
+---
+
+## camp idea add
+
+Create a new idea
+
+### Synopsis
+
+Create a new idea with fast or deep capture mode.
+
+CAPTURE MODES:
+  Ultra-fast          Title provided as argument → immediate creation
+  Fast TUI (default)  Step-through form (title, type, concept)
+  Full TUI (--full)   Step-through form including body textarea
+  Deep (--edit)       Full template in $EDITOR
+
+Fast capture is optimized for speed - ideas are saved immediately.
+Use --full when you want to add a body description in the form.
+Use --edit when you need the complete template in your editor.
+
+PROGRAMMATIC (agent) FLAGS:
+  --body              Set idea body from a literal string
+  --body-file         Read idea body from a file (- for stdin)
+  --concept           Set the concept field (e.g., "projects/camp")
+  --note              Create a note instead of a lifecycle idea
+  --author            Override the default author attribution
+
+  --body and --body-file are mutually exclusive.
+  --full + body flags is a usage error.
+  --edit + body flags pre-fills the editor template.
+
+Examples:
+  camp idea add "Add dark mode"        Ultra-fast capture
+  camp idea add -c obey-campaign "Add dark mode"
+  camp idea add                        Fast TUI (3-step form)
+  camp idea add --campaign             Pick a target campaign interactively
+  camp idea add --full                 Full TUI (includes body)
+  camp idea add --note                 Note TUI (title + body, no type/concept)
+  camp idea add --note "Meeting note" --body "Follow up next week"
+  camp idea add -e "Complex feature"   Deep capture with editor
+  camp idea add -t feature "New API"   Set type explicitly
+  camp idea add "Fix login" --body "The login page returns 500"
+  camp idea add "Migrate DB" --body-file spec.md --concept projects/camp
+  echo "body" | camp idea add "Idea" --body-file -
+
+```
+camp idea add [title] [flags]
+```
+
+### Options
+
+```
+      --author string      Override the default author attribution
+      --body string        Set idea body as a literal string
+      --body-file string   Read idea body from file (- for stdin, 10 MiB cap)
+  -c, --campaign string    Target campaign by name or ID; omit value to pick interactively
+      --concept string     Set the concept field (e.g., projects/camp)
+  -e, --edit               Open in $EDITOR for deep capture
+      --full               Full TUI mode with body textarea
+  -h, --help               help for add
+      --json               emit a structured JSON result
+      --no-commit          Don't create a git commit
+      --note               Create a note instead of a lifecycle idea
+      --tag stringArray    Add a tag (repeatable)
+  -t, --type string        Type (idea, feature, bug, research, chore) (default "idea")
+```
+
+### Options inherited from parent commands
+
+```
+      --no-color   disable colored output
+```
+---
+
+## camp idea archive
+
+Archive an idea
+
+### Synopsis
+
+Archive an idea by moving it to dungeon/archived.
+
+This is a convenience command equivalent to:
+  camp idea move <id> archived --reason "..."
+
+Dungeon moves require a reason and append a decision record to the idea body.
+Use 'camp idea move <id> inbox' to un-archive if needed.
+
+Examples:
+  camp idea archive add-dark --reason "superseded by broader initiative"
+  camp idea archive 20260119-153412 --reason "preserve as reference"
+
+```
+camp idea archive <id> [flags]
+```
+
+### Options
+
+```
+  -h, --help            help for archive
+      --no-commit       Don't create a git commit
+      --reason string   Reason for archiving (required)
+```
+
+### Options inherited from parent commands
+
+```
+      --no-color   disable colored output
+```
+---
+
+## camp idea claim
+
+Claim an intent for an agent or session
+
+### Synopsis
+
+Assign an intent to an agent so the campaign tracks who is working it.
+
+Stamps assigned_to and assigned_at, and merges any --ref values (a PR URL,
+branch, or festival path) into work_ref. Calling claim again on an
+already-claimed intent re-stamps assigned_at and merges in new refs without
+dropping ones already recorded -- this is the expected way to record a PR URL
+once one is opened, after an initial claim at the start of work.
+
+Use 'camp intent release' to clear the assignment, and 'camp intent sync' to
+auto-close intents once their tracked PR merges.
+
+Examples:
+  camp intent claim add-dark --agent claude-code-session-1
+  camp intent claim add-dark --agent claude-code-session-1 \
+    --ref https://github.com/Obedience-Corp/camp/pull/123
+
+```
+camp idea claim <id> [flags]
+```
+
+### Options
+
+```
+      --agent string      Agent or session name claiming the intent (required)
+  -h, --help              help for claim
+      --no-commit         Don't create a git commit
+      --ref stringArray   Work reference: PR URL, branch, or festival path (repeatable)
+```
+
+### Options inherited from parent commands
+
+```
+      --no-color   disable colored output
+```
+---
+
+## camp idea convert
+
+Convert a note into an idea
+
+### Synopsis
+
+Promote a note into the idea lifecycle.
+
+A note lives outside the inbox → ready → active lifecycle. Converting it moves
+the note into inbox/ and attaches an idea type, after which it behaves like
+any other idea. This is the only bridge from a note into the lifecycle.
+
+Examples:
+  camp idea convert check-daemon-socket --type idea
+  camp idea convert check-daemon-socket -t feature
+
+```
+camp idea convert <id> [flags]
+```
+
+### Options
+
+```
+  -h, --help          help for convert
+      --no-commit     Don't create a git commit
+  -t, --type string   Type to attach (idea, feature, bug, research, chore) (default "idea")
+```
+
+### Options inherited from parent commands
+
+```
+      --no-color   disable colored output
+```
+---
+
+## camp idea count
+
+Count ideas by status directory
+
+### Synopsis
+
+Display a count of ideas grouped by status directory.
+
+OUTPUT FORMATS:
+  table (default)   Styled summary with counts per status
+  json              Machine-readable JSON output
+
+Examples:
+  camp idea count              Show counts per status
+  camp idea count -f json      JSON output for scripting
+
+```
+camp idea count [flags]
+```
+
+### Options
+
+```
+  -f, --format string   Output format: table, json (default "table")
+  -h, --help            help for count
+      --json            emit a structured JSON result
+```
+
+### Options inherited from parent commands
+
+```
+      --no-color   disable colored output
+```
+---
+
+## camp idea crawl
+
+Interactive idea triage
+
+### Synopsis
+
+Walk live ideas one at a time and decide their fate.
+
+Default scope is the working set: inbox, ready, and active. Each candidate is
+shown with a compact preview. For each one you can keep, move to another
+status, skip, or quit. Moves to dungeon statuses require a reason.
+
+Existing dungeon ideas are not crawl candidates. Use 'camp idea move' to
+restore them explicitly.
+
+Examples:
+  camp idea crawl
+  camp idea crawl --status inbox --limit 25
+  camp idea crawl --status ready --status active --sort priority
+  camp idea crawl --no-commit
+
+```
+camp idea crawl [flags]
+```
+
+### Options
+
+```
+  -h, --help             help for crawl
+      --limit int        Stop after N candidates (0 = no limit)
+      --no-commit        Apply moves and logs but do not auto-commit
+      --sort string      Sort mode: stale, updated, created, priority, title (default "stale")
+      --status strings   Restrict to live statuses (repeatable: inbox, ready, active)
+```
+
+### Options inherited from parent commands
+
+```
+      --no-color   disable colored output
+```
+---
+
+## camp idea edit
+
+Edit an existing idea
+
+### Synopsis
+
+Edit an idea in your preferred editor or programmatically via flags.
+
+If no programmatic flags are given, opens the idea in $EDITOR.
+If any programmatic flag is present, applies the update directly and
+emits an audit event — no editor is launched.
+
+PICKER / EDITOR PATH:
+  If ID is provided, opens the idea directly (supports partial matching).
+  If no ID is provided, shows a fuzzy picker to select an idea.
+
+PROGRAMMATIC FLAGS (skip $EDITOR):
+  --title            Set a new title
+  --body             Replace the body with a literal string
+  --body-file        Replace the body from a file (- for stdin)
+  --append-body      Append text to the existing body
+  --append-body-file Append text from a file (- for stdin)
+  --set-type         Change the idea type
+  --set-status       Change the idea status
+  --set-concept      Change the concept field
+  --priority         Change priority (low, medium, high)
+  --horizon          Change horizon (now, next, later, someday)
+  --author           Override the author attribution
+
+MUTUAL EXCLUSIVITY:
+  --body vs --body-file
+  --append-body vs --append-body-file
+  --body/--body-file vs --append-body/--append-body-file (replace vs append)
+
+FILTER FLAGS (for picker only, not update targets):
+  -s/--status        Filter picker by status
+  -t/--type          Filter picker by type
+  -p/--project       Filter picker by project/concept
+
+Examples:
+  camp idea edit                                Interactive picker + $EDITOR
+  camp idea edit retry-logic                    Direct edit by partial ID
+  camp idea edit --status active                Picker filtered by status
+  camp idea edit retry --title "Retry with backoff"
+  camp idea edit retry --body "New description"
+  camp idea edit retry --append-body "Additional note"
+  camp idea edit retry --set-type feature --priority high
+  echo "details" | camp idea edit retry --body-file -
+
+```
+camp idea edit [id] [flags]
+```
+
+### Options
+
+```
+      --append-body string        Append text to the existing body
+      --append-body-file string   Append text from file (- for stdin, 10 MiB cap)
+      --author string             Override the author attribution
+      --body string               Replace the idea body
+      --body-file string          Replace body from file (- for stdin, 10 MiB cap)
+  -h, --help                      help for edit
+      --horizon string            Change horizon (now, next, later, someday)
+      --no-commit                 Don't create a git commit
+      --priority string           Change priority (low, medium, high)
+  -p, --project string            Filter picker by project
+      --set-concept string        Change the concept field
+      --set-status string         Change the idea status
+      --set-type string           Change the type (idea, feature, bug, research, chore)
+  -s, --status string             Filter picker by status
+      --tag stringArray           Replace the idea's tags (repeatable)
+      --title string              Set a new title
+  -t, --type string               Filter picker by type
+```
+
+### Options inherited from parent commands
+
+```
+      --no-color   disable colored output
+```
+---
+
+## camp idea explore
+
+Interactive idea explorer
+
+### Synopsis
+
+Launch the interactive Idea Explorer TUI.
+
+The explorer provides a full-screen interface for browsing,
+filtering, and managing ideas with keyboard shortcuts.
+
+NAVIGATION
+  j/↓           Move down
+  k/↑           Move up
+  g             Go to top (preview)
+  G             Go to bottom (preview)
+  Enter/Space   Select/expand group
+  Tab           Switch focus (list/preview)
+
+ACTIONS
+  e             Edit in $EDITOR
+  o             Open with system handler
+  O             Reveal in file manager
+  n             New idea
+  p             Promote to next status
+  a             Archive idea
+  d             Delete idea
+  m             Move idea to status
+
+GATHER (Multi-Select)
+  Space         Toggle selection / enter gather mode
+  ga            Gather selected ideas
+  Escape        Exit multi-select mode
+
+FILTERS
+  /             Search ideas (fuzzy)
+  t             Filter by type
+  s             Filter by status
+  c             Filter by concept
+  C             Clear concept filter
+  Escape        Clear filter/cancel
+
+VIEW
+  v             Toggle preview pane
+  ?             Show help overlay
+  q             Quit explorer
+
+Examples:
+  camp idea explore          Launch the idea explorer
+
+```
+camp idea explore [flags]
+```
+
+### Options
+
+```
+  -h, --help   help for explore
+```
+
+### Options inherited from parent commands
+
+```
+      --no-color   disable colored output
+```
+---
+
+## camp idea find
+
+Search for ideas by title or content
+
+### Synopsis
+
+Search for ideas across all statuses by title, content, or ID.
+
+The search is case-insensitive and matches partial strings.
+Without a query, returns all ideas.
+
+OUTPUT FORMATS:
+  table (default)   Human-readable table with columns
+  simple            IDs only, one per line (for scripting)
+  json              Full metadata in JSON format
+
+Examples:
+  camp idea find                   List all ideas
+  camp idea find dark              Find ideas containing "dark"
+  camp idea find "bug fix"         Find ideas with "bug fix"
+  camp idea find -f simple auth    Get IDs of auth-related ideas
+
+```
+camp idea find [query] [flags]
+```
+
+### Options
+
+```
+  -f, --format string   Output format: table, simple, json (default "table")
+  -h, --help            help for find
+      --json            emit a structured JSON result
+  -n, --limit int       Limit results (0 = no limit)
+```
+
+### Options inherited from parent commands
+
+```
+      --no-color   disable colored output
+```
+---
+
+## camp idea gather
+
+Gather related ideas into a unified document
+
+### Synopsis
+
+Gather multiple related ideas into a single unified document.
+
+DISCOVERY MODES:
+  By IDs      Explicitly specify idea IDs to gather
+  --tag       Find ideas with a specific frontmatter tag
+  --hashtag   Find ideas containing a specific #hashtag
+  --similar   Find ideas similar to a given ID (TF-IDF)
+
+The gather process:
+  1. Find related ideas using the specified discovery method
+  2. Merge their content with full metadata preservation
+  3. Create a new unified idea in inbox status
+  4. Archive source ideas (unless --no-archive)
+
+Source ideas are preserved with a 'gathered_into' reference.
+
+Examples:
+  # Gather by explicit IDs
+  camp idea gather id1 id2 id3 --title "Auth System"
+
+  # Find and gather by tag
+  camp idea gather --tag auth --title "Auth System"
+
+  # Find and gather by hashtag
+  camp idea gather --hashtag login --title "Login System"
+
+  # Find similar ideas and gather
+  camp idea gather --similar auth-feature --title "Auth Unified"
+
+  # Gather without archiving sources
+  camp idea gather id1 id2 --title "Combined" --no-archive
+
+  # Dry run to preview what would be gathered
+  camp idea gather --tag auth --title "Auth System" --dry-run
+
+```
+camp idea gather [ids...] [flags]
+```
+
+### Options
+
+```
+      --concept string    Override concept path
+      --dry-run           Preview gather without making changes
+      --hashtag string    Find ideas by content hashtag
+  -h, --help              help for gather
+      --horizon string    Override horizon (now, next, later, someday)
+      --min-score float   Minimum similarity score (0.0-1.0) (default 0.1)
+      --no-archive        Don't archive source ideas
+      --no-commit         Don't create a git commit
+      --priority string   Override priority (low, medium, high)
+      --similar string    Find ideas similar to this ID
+      --tag string        Find ideas by frontmatter tag
+  -t, --title string      Title for the gathered idea (required)
+      --type string       Override type (idea, feature, bug, research)
+```
+
+### Options inherited from parent commands
+
+```
+      --no-color   disable colored output
+```
+---
+
+## camp idea list
+
+List ideas in the campaign
+
+### Synopsis
+
+List ideas with filtering, sorting, and output format options.
+
+By default, lists ideas in inbox, active, and ready status.
+Use --all to include dungeon ideas.
+
+OUTPUT FORMATS:
+  table (default)   Human-readable table with columns
+  simple            IDs only, one per line (for scripting)
+  json              Full metadata in JSON format
+
+Examples:
+  camp idea list                         List active ideas
+  camp idea ls --status inbox            List inbox only
+  camp idea list -f json                 JSON output
+  camp idea list -f simple | xargs ...   Pipe IDs to commands
+  camp idea list --all                   Include archived
+  camp idea list --stale                 Claimed ideas with no update in 7 days
+  camp idea list --stale --days 3        Same, with a 3 day threshold
+
+```
+camp idea list [flags]
+```
+
+### Options
+
+```
+  -a, --all              Include dungeon ideas
+      --days int         Staleness threshold in days, used with --stale (default 7)
+  -f, --format string    Output format: table, simple, json (default "table")
+  -h, --help             help for list
+      --horizon string   Filter by horizon
+      --json             emit a structured JSON result
+  -n, --limit int        Limit results (0 = no limit)
+  -p, --project string   Filter by project
+  -S, --sort string      Sort by: updated, created, priority, title (default "updated")
+      --stale            Only show claimed ideas with no update in --days (default 7)
+  -s, --status strings   Filter by status (repeatable)
+  -t, --type strings     Filter by type (repeatable)
+```
+
+### Options inherited from parent commands
+
+```
+      --no-color   disable colored output
+```
+---
+
+## camp idea move
+
+Move idea to a different status
+
+### Synopsis
+
+Transition an idea between lifecycle statuses.
+
+VALID STATUSES:
+  inbox      Captured, not yet reviewed
+  ready      Reviewed/enriched, ready to be promoted
+  active     Promoted to festival/design, work in progress
+  done       Resolved (dungeon)
+  killed     Abandoned (dungeon)
+  archived   Preserved but inactive (dungeon)
+  someday    Deferred (dungeon)
+
+PIPELINE ORDER:
+  inbox → ready → active → dungeon/done
+
+Move is an escape hatch that allows any-to-any transitions.
+Dungeon moves require a --reason flag.
+You can use short dungeon names (done) or canonical paths (dungeon/done).
+
+Examples:
+  camp idea move add-dark ready                         Mark as ready
+  camp idea move add-dark done --reason "completed"     Mark as done
+  camp idea move add-dark killed --reason "superseded"  Kill idea
+
+```
+camp idea move <id> <status> [flags]
+```
+
+### Options
+
+```
+  -h, --help            help for move
+      --no-commit       Don't create a git commit
+      --reason string   Reason for the move (required for dungeon targets)
+```
+
+### Options inherited from parent commands
+
+```
+      --no-color   disable colored output
+```
+---
+
+## camp idea note
+
+Capture a quick note
+
+### Synopsis
+
+Capture a freeform note. Notes are a separate category from ideas: they
+are stored in .campaign/intents/notes/ and do not flow through the
+inbox → ready → active lifecycle. A note carries no type or concept; tags
+organize them.
+
+Fast capture skips the TUI. Interactive capture uses the same title/body/tag
+flow as idea add, but skips the type wheel and concept picker.
+
+Examples:
+  camp idea note "check the daemon socket path"   Capture a note immediately
+  camp idea note "follow up" --body "details..."  Note with a longer body
+  echo "body" | camp idea note "idea" --body-file -
+  camp idea note                                  Note TUI (title + body)
+
+```
+camp idea note [text] [flags]
+```
+
+### Options
+
+```
+      --author string      Override the default author attribution
+      --body string        Set note body as a literal string
+      --body-file string   Read note body from file (- for stdin, 10 MiB cap)
+  -h, --help               help for note
+      --no-commit          Don't create a git commit
+  -t, --tag stringArray    Add a tag (repeatable)
+```
+
+### Options inherited from parent commands
+
+```
+      --no-color   disable colored output
+```
+---
+
+## camp idea promote
+
+Promote an idea through the pipeline
+
+### Synopsis
+
+Promote an idea to the next pipeline stage.
+
+TARGETS:
+  ready      Move from inbox to ready (reviewed/enriched)
+  festival   Move from ready to active + create festival (default)
+  design     Move from ready to active + create design doc
+
+The idea moves to active status when promoted to festival or design,
+because work is just beginning. Use --force to bypass status checks.
+
+Examples:
+  camp idea promote add-dark                       Promote ready → festival
+  camp idea promote add-dark --target design       Promote ready → design doc
+  camp idea promote add-dark --target ready         Promote inbox → ready
+  camp idea promote add-dark --force                Force promote from any status
+
+```
+camp idea promote <id> [flags]
+```
+
+### Options
+
+```
+      --dry-run         Preview promotion without making changes
+      --force           Promote even if not in expected status
+  -h, --help            help for promote
+      --no-commit       Don't create a git commit
+      --target string   Promote target: ready, festival, design (default "festival")
+```
+
+### Options inherited from parent commands
+
+```
+      --no-color   disable colored output
+```
+---
+
+## camp idea release
+
+Release an intent's assignment
+
+### Synopsis
+
+Clear an intent's assigned_to and assigned_at, returning it to the
+unclaimed pool. Any recorded work_ref entries (PR URLs, branches, festival
+paths) are left in place so a later camp intent sync can still resolve them.
+
+Examples:
+  camp intent release add-dark
+
+```
+camp idea release <id> [flags]
+```
+
+### Options
+
+```
+  -h, --help        help for release
+      --no-commit   Don't create a git commit
+```
+
+### Options inherited from parent commands
+
+```
+      --no-color   disable colored output
+```
+---
+
+## camp idea rename
+
+Rename an idea
+
+### Synopsis
+
+Rename an idea: update its title and regenerate its human-readable
+filename. The idea's stable id is preserved, so references and lookups survive
+the rename.
+
+Resolution is by exact id (run 'camp idea list' to copy one).
+
+Examples:
+  camp idea rename add-dark-mode-20260119-153412 "Add a dark mode toggle"
+
+```
+camp idea rename <id> <new title> [flags]
+```
+
+### Options
+
+```
+  -h, --help        help for rename
+      --no-commit   Don't create a git commit
+```
+
+### Options inherited from parent commands
+
+```
+      --no-color   disable colored output
+```
+---
+
+## camp idea show
+
+Show detailed idea information
+
+### Synopsis
+
+Display detailed information about a specific idea.
+
+Supports partial ID matching - you can use:
+  - Full ID: 20260119-153412-add-retry-logic
+  - Time suffix: 153412-add-retry
+  - Slug portion: add-retry
+
+OUTPUT FORMATS:
+  text (default)   Human-readable detailed view
+  json             Full metadata in JSON format
+  yaml             Full metadata in YAML format
+
+Examples:
+  camp idea show 20260119-153412...    Show by full ID
+  camp idea show retry-logic           Show by partial match
+  camp idea show retry -f json         JSON output
+  camp idea show retry -f yaml         YAML output
+
+```
+camp idea show <id> [flags]
+```
+
+### Options
+
+```
+  -f, --format string   Output format: text, json, yaml (default "text")
+  -h, --help            help for show
+      --json            emit a structured JSON result
+```
+
+### Options inherited from parent commands
+
+```
+      --no-color   disable colored output
+```
+---
+
+## camp idea sync
+
+Reconcile intents against their tracked GitHub PRs
+
+### Synopsis
+
+For every non-dungeon intent whose work_ref contains a GitHub PR URL,
+query the PR's state via the gh CLI. Intents whose PR has merged are moved to
+dungeon/done automatically, with a decision record and a ledger event. Intents
+whose PR closed without merging are reported but never auto-moved -- resolve
+those manually with 'camp intent move' or 'camp intent release'.
+
+Requires the gh CLI (https://cli.github.com) on PATH with an authenticated
+'gh auth login' session. Intents with no PR reference in work_ref are skipped
+without needing gh at all.
+
+Examples:
+  camp intent sync              Reconcile and auto-close merged PRs
+  camp intent sync --dry-run    Preview without moving anything
+
+```
+camp idea sync [flags]
+```
+
+### Options
+
+```
+      --dry-run     Preview without moving anything
+  -h, --help        help for sync
+      --no-commit   Don't create a git commit
+```
+
+### Options inherited from parent commands
+
+```
+      --no-color   disable colored output
+```
+---
+
 ## camp init
 
 Initialize a new campaign
@@ -1452,800 +2858,11 @@ camp init [path] [flags]
       --no-git               Skip git repository initialization
       --no-register          Don't add to global registry
       --no-skills            Skip linking campaign skills into .claude/skills and .agents/skills
+      --org string           Assign the new campaign to this org (created if new; defaults to the fallback org)
       --repair               Add missing files to existing campaign
   -t, --type string          Campaign type (product, research, tools, personal) (default "product")
   -v, --verbose              Show skipped optional setup details
       --yes                  Skip repair confirmation prompt (for scripting)
-```
-
-### Options inherited from parent commands
-
-```
-      --no-color   disable colored output
-```
----
-
-## camp intent
-
-Manage campaign intents
-
-### Synopsis
-
-Manage intents for ideas and features not yet ready for full planning.
-
-Intents capture ideas, bugs, features, and research topics that depend on work
-not yet completed. They serve as structured storage for ideas that aren't ready
-to become Festivals but need to be tracked.
-
-CAPTURE MODES:
-  Fast (default)    Quick capture with minimal fields
-  Deep (--edit)     Open in editor for full context
-
-INTENT LIFECYCLE:
-  inbox  → Captured, not yet reviewed
-  ready  → Reviewed/enriched, ready for promotion
-  active → Promoted to festival/design doc, work in progress
-  dungeon/* → Terminal statuses (done, killed, archived, someday)
-
-Examples:
-  camp intent add "Add dark mode toggle"         Fast capture to inbox
-  camp intent add -e "Refactor auth system"      Deep capture with editor
-  camp intent list                               List all intents
-  camp intent list --status active               List active intents
-  camp intent edit add-dark                      Edit intent (fuzzy match)
-  camp intent show 20260119-153412-add-dark      Show intent details
-  camp intent move add-dark ready                Mark as ready
-  camp intent promote add-dark                   Promote to active via festival
-  camp intent archive add-dark                   Archive intent
-
-```
-camp intent [flags]
-```
-
-### Options
-
-```
-  -h, --help   help for intent
-```
-
-### Options inherited from parent commands
-
-```
-      --no-color   disable colored output
-```
----
-
-## camp intent add
-
-Create a new intent
-
-### Synopsis
-
-Create a new intent with fast or deep capture mode.
-
-CAPTURE MODES:
-  Ultra-fast          Title provided as argument → immediate creation
-  Fast TUI (default)  Step-through form (title, type, concept)
-  Full TUI (--full)   Step-through form including body textarea
-  Deep (--edit)       Full template in $EDITOR
-
-Fast capture is optimized for speed - ideas are saved immediately.
-Use --full when you want to add a body description in the form.
-Use --edit when you need the complete template in your editor.
-
-PROGRAMMATIC (agent) FLAGS:
-  --body              Set intent body from a literal string
-  --body-file         Read intent body from a file (- for stdin)
-  --concept           Set the concept field (e.g., "projects/camp")
-  --note              Create a note instead of a lifecycle intent
-  --author            Override the default author attribution
-
-  --body and --body-file are mutually exclusive.
-  --full + body flags is a usage error.
-  --edit + body flags pre-fills the editor template.
-
-Examples:
-  camp intent add "Add dark mode"        Ultra-fast capture
-  camp intent add -c obey-campaign "Add dark mode"
-  camp intent add                        Fast TUI (3-step form)
-  camp intent add --campaign             Pick a target campaign interactively
-  camp intent add --full                 Full TUI (includes body)
-  camp intent add --note                 Note TUI (title + body, no type/concept)
-  camp intent add --note "Meeting note" --body "Follow up next week"
-  camp intent add -e "Complex feature"   Deep capture with editor
-  camp intent add -t feature "New API"   Set type explicitly
-  camp intent add "Fix login" --body "The login page returns 500"
-  camp intent add "Migrate DB" --body-file spec.md --concept projects/camp
-  echo "body" | camp intent add "Idea" --body-file -
-
-```
-camp intent add [title] [flags]
-```
-
-### Options
-
-```
-      --author string      Override the default author attribution
-      --body string        Set intent body as a literal string
-      --body-file string   Read intent body from file (- for stdin, 10 MiB cap)
-  -c, --campaign string    Target campaign by name or ID; omit value to pick interactively
-      --concept string     Set the concept field (e.g., projects/camp)
-  -e, --edit               Open in $EDITOR for deep capture
-      --full               Full TUI mode with body textarea
-  -h, --help               help for add
-      --json               emit a structured JSON result
-      --no-commit          Don't create a git commit
-      --note               Create a note instead of a lifecycle intent
-      --tag stringArray    Add a tag (repeatable)
-  -t, --type string        Intent type (idea, feature, bug, research, chore) (default "idea")
-```
-
-### Options inherited from parent commands
-
-```
-      --no-color   disable colored output
-```
----
-
-## camp intent archive
-
-Archive an intent
-
-### Synopsis
-
-Archive an intent by moving it to dungeon/archived.
-
-This is a convenience command equivalent to:
-  camp intent move <id> archived --reason "..."
-
-Dungeon moves require a reason and append a decision record to the intent body.
-Use 'camp intent move <id> inbox' to un-archive if needed.
-
-Examples:
-  camp intent archive add-dark --reason "superseded by broader initiative"
-  camp intent archive 20260119-153412 --reason "preserve as reference"
-
-```
-camp intent archive <id> [flags]
-```
-
-### Options
-
-```
-  -h, --help            help for archive
-      --no-commit       Don't create a git commit
-      --reason string   Reason for archiving (required)
-```
-
-### Options inherited from parent commands
-
-```
-      --no-color   disable colored output
-```
----
-
-## camp intent convert
-
-Convert a note into an intent
-
-### Synopsis
-
-Promote a note into the intent lifecycle.
-
-A note lives outside the inbox → ready → active lifecycle. Converting it moves
-the note into inbox/ and attaches an intent type, after which it behaves like
-any other intent. This is the only bridge from a note into the lifecycle.
-
-Examples:
-  camp intent convert check-daemon-socket --type idea
-  camp intent convert check-daemon-socket -t feature
-
-```
-camp intent convert <id> [flags]
-```
-
-### Options
-
-```
-  -h, --help          help for convert
-      --no-commit     Don't create a git commit
-  -t, --type string   Intent type to attach (idea, feature, bug, research, chore) (default "idea")
-```
-
-### Options inherited from parent commands
-
-```
-      --no-color   disable colored output
-```
----
-
-## camp intent count
-
-Count intents by status directory
-
-### Synopsis
-
-Display a count of intents grouped by status directory.
-
-OUTPUT FORMATS:
-  table (default)   Styled summary with counts per status
-  json              Machine-readable JSON output
-
-Examples:
-  camp intent count              Show counts per status
-  camp intent count -f json      JSON output for scripting
-
-```
-camp intent count [flags]
-```
-
-### Options
-
-```
-  -f, --format string   Output format: table, json (default "table")
-  -h, --help            help for count
-      --json            emit a structured JSON result
-```
-
-### Options inherited from parent commands
-
-```
-      --no-color   disable colored output
-```
----
-
-## camp intent crawl
-
-Interactive intent triage
-
-### Synopsis
-
-Walk live intents one at a time and decide their fate.
-
-Default scope is the working set: inbox, ready, and active. Each candidate is
-shown with a compact preview. For each one you can keep, move to another
-status, skip, or quit. Moves to dungeon statuses require a reason.
-
-Existing dungeon intents are not crawl candidates. Use 'camp intent move' to
-restore them explicitly.
-
-Examples:
-  camp intent crawl
-  camp intent crawl --status inbox --limit 25
-  camp intent crawl --status ready --status active --sort priority
-  camp intent crawl --no-commit
-
-```
-camp intent crawl [flags]
-```
-
-### Options
-
-```
-  -h, --help             help for crawl
-      --limit int        Stop after N candidates (0 = no limit)
-      --no-commit        Apply moves and logs but do not auto-commit
-      --sort string      Sort mode: stale, updated, created, priority, title (default "stale")
-      --status strings   Restrict to live statuses (repeatable: inbox, ready, active)
-```
-
-### Options inherited from parent commands
-
-```
-      --no-color   disable colored output
-```
----
-
-## camp intent edit
-
-Edit an existing intent
-
-### Synopsis
-
-Edit an intent in your preferred editor or programmatically via flags.
-
-If no programmatic flags are given, opens the intent in $EDITOR.
-If any programmatic flag is present, applies the update directly and
-emits an audit event — no editor is launched.
-
-PICKER / EDITOR PATH:
-  If ID is provided, opens the intent directly (supports partial matching).
-  If no ID is provided, shows a fuzzy picker to select an intent.
-
-PROGRAMMATIC FLAGS (skip $EDITOR):
-  --title            Set a new title
-  --body             Replace the body with a literal string
-  --body-file        Replace the body from a file (- for stdin)
-  --append-body      Append text to the existing body
-  --append-body-file Append text from a file (- for stdin)
-  --set-type         Change the intent type
-  --set-status       Change the intent status
-  --set-concept      Change the concept field
-  --priority         Change priority (low, medium, high)
-  --horizon          Change horizon (now, next, later, someday)
-  --author           Override the author attribution
-
-MUTUAL EXCLUSIVITY:
-  --body vs --body-file
-  --append-body vs --append-body-file
-  --body/--body-file vs --append-body/--append-body-file (replace vs append)
-
-FILTER FLAGS (for picker only, not update targets):
-  -s/--status        Filter picker by status
-  -t/--type          Filter picker by type
-  -p/--project       Filter picker by project/concept
-
-Examples:
-  camp intent edit                                Interactive picker + $EDITOR
-  camp intent edit retry-logic                    Direct edit by partial ID
-  camp intent edit --status active                Picker filtered by status
-  camp intent edit retry --title "Retry with backoff"
-  camp intent edit retry --body "New description"
-  camp intent edit retry --append-body "Additional note"
-  camp intent edit retry --set-type feature --priority high
-  echo "details" | camp intent edit retry --body-file -
-
-```
-camp intent edit [id] [flags]
-```
-
-### Options
-
-```
-      --append-body string        Append text to the existing body
-      --append-body-file string   Append text from file (- for stdin, 10 MiB cap)
-      --author string             Override the author attribution
-      --body string               Replace the intent body
-      --body-file string          Replace body from file (- for stdin, 10 MiB cap)
-  -h, --help                      help for edit
-      --horizon string            Change horizon (now, next, later, someday)
-      --no-commit                 Don't create a git commit
-      --priority string           Change priority (low, medium, high)
-  -p, --project string            Filter picker by project
-      --set-concept string        Change the concept field
-      --set-status string         Change the intent status
-      --set-type string           Change the intent type (idea, feature, bug, research, chore)
-  -s, --status string             Filter picker by status
-      --tag stringArray           Replace the intent's tags (repeatable)
-      --title string              Set a new title
-  -t, --type string               Filter picker by type
-```
-
-### Options inherited from parent commands
-
-```
-      --no-color   disable colored output
-```
----
-
-## camp intent explore
-
-Interactive intent explorer
-
-### Synopsis
-
-Launch the interactive Intent Explorer TUI.
-
-The explorer provides a full-screen interface for browsing,
-filtering, and managing intents with keyboard shortcuts.
-
-NAVIGATION
-  j/↓           Move down
-  k/↑           Move up
-  g             Go to top (preview)
-  G             Go to bottom (preview)
-  Enter/Space   Select/expand group
-  Tab           Switch focus (list/preview)
-
-ACTIONS
-  e             Edit in $EDITOR
-  o             Open with system handler
-  O             Reveal in file manager
-  n             New intent
-  p             Promote to next status
-  a             Archive intent
-  d             Delete intent
-  m             Move intent to status
-
-GATHER (Multi-Select)
-  Space         Toggle selection / enter gather mode
-  ga            Gather selected intents
-  Escape        Exit multi-select mode
-
-FILTERS
-  /             Search intents (fuzzy)
-  t             Filter by type
-  s             Filter by status
-  c             Filter by concept
-  C             Clear concept filter
-  Escape        Clear filter/cancel
-
-VIEW
-  v             Toggle preview pane
-  ?             Show help overlay
-  q             Quit explorer
-
-Examples:
-  camp intent explore          Launch the intent explorer
-
-```
-camp intent explore [flags]
-```
-
-### Options
-
-```
-  -h, --help   help for explore
-```
-
-### Options inherited from parent commands
-
-```
-      --no-color   disable colored output
-```
----
-
-## camp intent find
-
-Search for intents by title or content
-
-### Synopsis
-
-Search for intents across all statuses by title, content, or ID.
-
-The search is case-insensitive and matches partial strings.
-Without a query, returns all intents.
-
-OUTPUT FORMATS:
-  table (default)   Human-readable table with columns
-  simple            IDs only, one per line (for scripting)
-  json              Full metadata in JSON format
-
-Examples:
-  camp intent find                   List all intents
-  camp intent find dark              Find intents containing "dark"
-  camp intent find "bug fix"         Find intents with "bug fix"
-  camp intent find -f simple auth    Get IDs of auth-related intents
-
-```
-camp intent find [query] [flags]
-```
-
-### Options
-
-```
-  -f, --format string   Output format: table, simple, json (default "table")
-  -h, --help            help for find
-      --json            emit a structured JSON result
-  -n, --limit int       Limit results (0 = no limit)
-```
-
-### Options inherited from parent commands
-
-```
-      --no-color   disable colored output
-```
----
-
-## camp intent gather
-
-Gather related intents into a unified document
-
-### Synopsis
-
-Gather multiple related intents into a single unified document.
-
-DISCOVERY MODES:
-  By IDs      Explicitly specify intent IDs to gather
-  --tag       Find intents with a specific frontmatter tag
-  --hashtag   Find intents containing a specific #hashtag
-  --similar   Find intents similar to a given ID (TF-IDF)
-
-The gather process:
-  1. Find related intents using the specified discovery method
-  2. Merge their content with full metadata preservation
-  3. Create a new unified intent in inbox status
-  4. Archive source intents (unless --no-archive)
-
-Source intents are preserved with a 'gathered_into' reference.
-
-Examples:
-  # Gather by explicit IDs
-  camp intent gather id1 id2 id3 --title "Auth System"
-
-  # Find and gather by tag
-  camp intent gather --tag auth --title "Auth System"
-
-  # Find and gather by hashtag
-  camp intent gather --hashtag login --title "Login System"
-
-  # Find similar intents and gather
-  camp intent gather --similar auth-feature --title "Auth Unified"
-
-  # Gather without archiving sources
-  camp intent gather id1 id2 --title "Combined" --no-archive
-
-  # Dry run to preview what would be gathered
-  camp intent gather --tag auth --title "Auth System" --dry-run
-
-```
-camp intent gather [ids...] [flags]
-```
-
-### Options
-
-```
-      --concept string    Override concept path
-      --dry-run           Preview gather without making changes
-      --hashtag string    Find intents by content hashtag
-  -h, --help              help for gather
-      --horizon string    Override horizon (now, next, later, someday)
-      --min-score float   Minimum similarity score (0.0-1.0) (default 0.1)
-      --no-archive        Don't archive source intents
-      --no-commit         Don't create a git commit
-      --priority string   Override priority (low, medium, high)
-      --similar string    Find intents similar to this ID
-      --tag string        Find intents by frontmatter tag
-  -t, --title string      Title for the gathered intent (required)
-      --type string       Override type (idea, feature, bug, research)
-```
-
-### Options inherited from parent commands
-
-```
-      --no-color   disable colored output
-```
----
-
-## camp intent list
-
-List intents in the campaign
-
-### Synopsis
-
-List intents with filtering, sorting, and output format options.
-
-By default, lists intents in inbox, active, and ready status.
-Use --all to include dungeon intents.
-
-OUTPUT FORMATS:
-  table (default)   Human-readable table with columns
-  simple            IDs only, one per line (for scripting)
-  json              Full metadata in JSON format
-
-Examples:
-  camp intent list                         List active intents
-  camp intent ls --status inbox            List inbox only
-  camp intent list -f json                 JSON output
-  camp intent list -f simple | xargs ...   Pipe IDs to commands
-  camp intent list --all                   Include archived
-
-```
-camp intent list [flags]
-```
-
-### Options
-
-```
-  -a, --all              Include dungeon intents
-  -f, --format string    Output format: table, simple, json (default "table")
-  -h, --help             help for list
-      --horizon string   Filter by horizon
-      --json             emit a structured JSON result
-  -n, --limit int        Limit results (0 = no limit)
-  -p, --project string   Filter by project
-  -S, --sort string      Sort by: updated, created, priority, title (default "updated")
-  -s, --status strings   Filter by status (repeatable)
-  -t, --type strings     Filter by type (repeatable)
-```
-
-### Options inherited from parent commands
-
-```
-      --no-color   disable colored output
-```
----
-
-## camp intent move
-
-Move intent to a different status
-
-### Synopsis
-
-Transition an intent between lifecycle statuses.
-
-VALID STATUSES:
-  inbox      Captured, not yet reviewed
-  ready      Reviewed/enriched, ready to be promoted
-  active     Promoted to festival/design, work in progress
-  done       Resolved (dungeon)
-  killed     Abandoned (dungeon)
-  archived   Preserved but inactive (dungeon)
-  someday    Deferred (dungeon)
-
-PIPELINE ORDER:
-  inbox → ready → active → dungeon/done
-
-Move is an escape hatch that allows any-to-any transitions.
-Dungeon moves require a --reason flag.
-You can use short dungeon names (done) or canonical paths (dungeon/done).
-
-Examples:
-  camp intent move add-dark ready                         Mark as ready
-  camp intent move add-dark done --reason "completed"     Mark as done
-  camp intent move add-dark killed --reason "superseded"  Kill intent
-
-```
-camp intent move <id> <status> [flags]
-```
-
-### Options
-
-```
-  -h, --help            help for move
-      --no-commit       Don't create a git commit
-      --reason string   Reason for the move (required for dungeon targets)
-```
-
-### Options inherited from parent commands
-
-```
-      --no-color   disable colored output
-```
----
-
-## camp intent note
-
-Capture a quick note
-
-### Synopsis
-
-Capture a freeform note. Notes are a separate category from intents: they
-are stored in .campaign/intents/notes/ and do not flow through the
-inbox → ready → active lifecycle. A note carries no type or concept; tags
-organize them.
-
-Fast capture skips the TUI. Interactive capture uses the same title/body/tag
-flow as intent add, but skips the type wheel and concept picker.
-
-Examples:
-  camp intent note "check the daemon socket path"   Capture a note immediately
-  camp intent note "follow up" --body "details..."  Note with a longer body
-  echo "body" | camp intent note "idea" --body-file -
-  camp intent note                                  Note TUI (title + body)
-
-```
-camp intent note [text] [flags]
-```
-
-### Options
-
-```
-      --author string      Override the default author attribution
-      --body string        Set note body as a literal string
-      --body-file string   Read note body from file (- for stdin, 10 MiB cap)
-  -h, --help               help for note
-      --no-commit          Don't create a git commit
-  -t, --tag stringArray    Add a tag (repeatable)
-```
-
-### Options inherited from parent commands
-
-```
-      --no-color   disable colored output
-```
----
-
-## camp intent promote
-
-Promote an intent through the pipeline
-
-### Synopsis
-
-Promote an intent to the next pipeline stage.
-
-TARGETS:
-  ready      Move from inbox to ready (reviewed/enriched)
-  festival   Move from ready to active + create festival (default)
-  design     Move from ready to active + create design doc
-
-The intent moves to active status when promoted to festival or design,
-because work is just beginning. Use --force to bypass status checks.
-
-Examples:
-  camp intent promote add-dark                       Promote ready → festival
-  camp intent promote add-dark --target design       Promote ready → design doc
-  camp intent promote add-dark --target ready         Promote inbox → ready
-  camp intent promote add-dark --force                Force promote from any status
-
-```
-camp intent promote <id> [flags]
-```
-
-### Options
-
-```
-      --dry-run         Preview promotion without making changes
-      --force           Promote even if not in expected status
-  -h, --help            help for promote
-      --no-commit       Don't create a git commit
-      --target string   Promote target: ready, festival, design (default "festival")
-```
-
-### Options inherited from parent commands
-
-```
-      --no-color   disable colored output
-```
----
-
-## camp intent rename
-
-Rename an intent
-
-### Synopsis
-
-Rename an intent: update its title and regenerate its human-readable
-filename. The intent's stable id is preserved, so references and lookups survive
-the rename.
-
-Resolution is by exact id (run 'camp intent list' to copy one).
-
-Examples:
-  camp intent rename add-dark-mode-20260119-153412 "Add a dark mode toggle"
-
-```
-camp intent rename <id> <new title> [flags]
-```
-
-### Options
-
-```
-  -h, --help        help for rename
-      --no-commit   Don't create a git commit
-```
-
-### Options inherited from parent commands
-
-```
-      --no-color   disable colored output
-```
----
-
-## camp intent show
-
-Show detailed intent information
-
-### Synopsis
-
-Display detailed information about a specific intent.
-
-Supports partial ID matching - you can use:
-  - Full ID: 20260119-153412-add-retry-logic
-  - Time suffix: 153412-add-retry
-  - Slug portion: add-retry
-
-OUTPUT FORMATS:
-  text (default)   Human-readable detailed view
-  json             Full metadata in JSON format
-  yaml             Full metadata in YAML format
-
-Examples:
-  camp intent show 20260119-153412...    Show by full ID
-  camp intent show retry-logic           Show by partial match
-  camp intent show retry -f json         JSON output
-  camp intent show retry -f yaml         YAML output
-
-```
-camp intent show <id> [flags]
-```
-
-### Options
-
-```
-  -f, --format string   Output format: text, json, yaml (default "text")
-  -h, --help            help for show
-      --json            emit a structured JSON result
 ```
 
 ### Options inherited from parent commands
@@ -2627,8 +3244,9 @@ with 'camp register'. The registry lives at ~/.obey/campaign/registry.json.
 
 In a terminal, 'camp list' (with no flags) opens an interactive browser where you
 can deactivate/reactivate campaigns (cycle lifecycle status), reassign their org,
-and copy paths. Piped, with --json/--count, or with any filter/sort flag it
-prints the table instead. Home paths display as '~'.
+and copy paths. Pass an org as a positional argument to open the browser filtered
+to that org. Piped, with --json/--count, or with any filter/sort flag it prints
+the table instead. Home paths display as '~'.
 
 Output formats:
   table   - Aligned columns with headers (default)
@@ -2643,15 +3261,22 @@ Sorting options:
 
 Examples:
   camp list                  List all campaigns
+  camp list obey             Browse campaigns in the obey org
   camp list --json           Output as JSON
   camp list --format json    Output as JSON
   camp list --sort name      Sort by name
   camp list --sort org       Sort by org, then name
   camp list --format simple  Names only for scripting
   camp list --count          Print only the total number of campaigns
+  camp list --remote         Also list campaigns on machines in ~/.obey/machines.yaml
+
+--remote runs each machine's own 'camp list --json' through a login shell
+(sh -lc) so PATH entries a login profile exports (~/.profile, etc.) are
+picked up. If camp still can't be found on a machine, set
+CAMP_REMOTE_CAMP_PATH to its exact path there.
 
 ```
-camp list [flags]
+camp list [org] [flags]
 ```
 
 ### Options
@@ -2666,6 +3291,7 @@ camp list [flags]
       --json             Output as JSON (shorthand for --format json)
       --no-group         Suppress org grouping
       --org string       Only campaigns in this org
+      --remote           Also list campaigns on machines in ~/.obey/machines.yaml (ssh)
   -s, --sort string      Sort by (name, accessed, type, org) (default "accessed")
       --status string    Only campaigns in this status (active, inactive, reference)
       --tag strings      Only campaigns carrying this tag (repeat for AND)
@@ -2709,6 +3335,205 @@ camp log [flags]
 
 ```
   -h, --help   help for log
+```
+
+### Options inherited from parent commands
+
+```
+      --no-color   disable colored output
+```
+---
+
+## camp machine
+
+Manage remote machines (~/.obey/machines.yaml)
+
+### Synopsis
+
+Manage the fleet of remote machines camp can reach for 'camp switch machine:campaign'
+and 'camp list --remote'.
+
+Machines are stored in ~/.obey/machines.yaml. The current machine is always
+implicitly available as "local" and is never written to that file.
+
+'camp machine diagnose' inspects the per-machine ssh ControlMaster sockets and
+can clear a stale one (the state a sleep or network flap can leave behind, which
+would otherwise hang the next hop until ControlPersist expires).
+
+Run without a subcommand in a terminal to manage the fleet interactively: add,
+discover, edit, and remove machines, and see each one's socket state. The
+subcommands stay the interface for scripts and agents, and remain what a
+non-terminal 'camp machine' prints help for.
+
+```
+camp machine [flags]
+```
+
+### Examples
+
+```
+  camp machine
+  camp machine list
+  camp machine add devbox --host devbox.tailnet.ts.net --auth tailscale-ssh
+  camp machine add --discover
+  camp machine remove devbox
+  camp machine diagnose
+  camp machine diagnose devbox --reset
+```
+
+### Options
+
+```
+  -h, --help   help for machine
+```
+
+### Options inherited from parent commands
+
+```
+      --no-color   disable colored output
+```
+---
+
+## camp machine add
+
+Add or update a machine
+
+### Synopsis
+
+Add a machine to ~/.obey/machines.yaml, or update it if the id already exists
+(idempotent on id: a second 'add' with the same id replaces the entry rather
+than duplicating it).
+
+With --discover, camp runs 'tailscale status --json' and lets you pick a
+tailnet device instead of specifying --host/--auth by hand; the chosen device
+is saved with auth_method=tailscale-ssh. Pass an id positionally with
+--discover to select that device by its derived id non-interactively (skips
+the picker), or use --yes to take the first discovered device.
+
+```
+camp machine add [id] [flags]
+```
+
+### Examples
+
+```
+  camp machine add devbox --host devbox.tailnet.ts.net --auth tailscale-ssh
+  camp machine add buildbox --host 10.0.0.12 --auth ssh-agent --user ci
+  camp machine add --discover
+  camp machine add devbox --discover
+  camp machine add --discover --yes
+```
+
+### Options
+
+```
+      --auth string       Auth method: tailscale-ssh, ssh-agent, ssh-password (default "ssh-agent")
+      --discover          Discover devices via 'tailscale status --json' and pick one
+  -h, --help              help for add
+      --host string       SSH host or Tailscale MagicDNS name (required unless --discover)
+      --identity string   Path to SSH identity file
+      --label string      Human-readable label
+      --user string       SSH user
+      --yes               With --discover, take the first discovered device non-interactively
+```
+
+### Options inherited from parent commands
+
+```
+      --no-color   disable colored output
+```
+---
+
+## camp machine diagnose
+
+Inspect (and optionally clear) ssh ControlMaster sockets
+
+### Synopsis
+
+Report the ssh ControlMaster multiplex socket state for each configured machine
+(or one machine if an id is given):
+
+  none   no socket — the next hop opens a fresh master
+  live   socket present and the master answers 'ssh -O check'
+  stale  socket present but the master no longer answers
+
+A stale socket is what a sleep or network flap can leave behind; until it is
+removed (or ControlPersist expires) the next 'camp switch machine:...' or
+'camp list --remote' hop to that machine can hang. Pass --reset to tear down
+stale sockets so the next hop reconnects cleanly. Live and absent sockets are
+left untouched.
+
+```
+camp machine diagnose [id] [flags]
+```
+
+### Examples
+
+```
+  camp machine diagnose
+  camp machine diagnose devbox
+  camp machine diagnose --reset
+  camp machine diagnose devbox --reset --json
+```
+
+### Options
+
+```
+  -h, --help    help for diagnose
+      --json    Output as JSON
+      --reset   Tear down stale ControlMaster sockets so the next hop reconnects
+```
+
+### Options inherited from parent commands
+
+```
+      --no-color   disable colored output
+```
+---
+
+## camp machine list
+
+List configured machines
+
+### Synopsis
+
+List every machine in ~/.obey/machines.yaml, plus the implicit "local" machine
+(this machine, never persisted to the file).
+
+```
+camp machine list [flags]
+```
+
+### Options
+
+```
+  -h, --help   help for list
+      --json   Output as JSON
+```
+
+### Options inherited from parent commands
+
+```
+      --no-color   disable colored output
+```
+---
+
+## camp machine remove
+
+Remove a machine
+
+### Synopsis
+
+Remove a machine from ~/.obey/machines.yaml. Removing "local" or an unknown id is an error.
+
+```
+camp machine remove <id> [flags]
+```
+
+### Options
+
+```
+  -h, --help   help for remove
 ```
 
 ### Options inherited from parent commands
@@ -2767,11 +3592,11 @@ Group campaigns into orgs
 
 ### Synopsis
 
-Group related campaigns into orgs.
+Group related campaigns into first-class orgs.
 
-Every campaign belongs to exactly one org (default "default"). Orgs are derived:
-an org exists because a campaign names it, and disappears when its last member
-leaves.
+Every campaign belongs to exactly one org (default "default"). Orgs are first-class:
+they persist in the machine-wide registry, can hold zero members, and are deleted
+explicitly with 'camp org delete'.
 
 In a terminal, 'camp org' (no arguments) opens an interactive browser of orgs
 and their members where you can move, create, rename, and return campaigns. When
@@ -2780,9 +3605,10 @@ piped or with --json it prints the current campaign's org instead; use
 
 Commands:
   which   Print the current campaign's org
-  create  Create an org by joining campaigns (the current campaign if none named)
+  create  Create an org (optionally --empty) and optionally join campaigns
   add     Assign campaigns to an org (also reassigns; single-membership)
   remove  Return campaigns to the default org
+  delete  Delete an org (empty only unless --force)
 
 ```
 camp org [flags]
@@ -2794,8 +3620,10 @@ camp org [flags]
   camp org                                       Browse and manage orgs interactively (TTY)
   camp org which                                 Print the current campaign's org
   camp org create obey                           Add the current campaign to "obey"
+  camp org create empty-org --empty              Create an org with no members
   camp org add obey obey-campaign obey-content   Move campaigns into "obey"
   camp org remove obey-content                   Return a campaign to "default"
+  camp org delete empty-org                      Delete an empty org
 ```
 
 ### Options
@@ -2852,11 +3680,11 @@ camp org add <org> <campaign>... [flags]
 
 ## camp org create
 
-Create an org by joining campaigns (the current campaign if none named)
+Create an org (optionally empty) and join campaigns
 
 ### Synopsis
 
-Create an org by joining campaigns to it.
+Create a first-class org, optionally joining campaigns to it.
 
 Run inside a campaign with no campaign arguments to add the current campaign:
   camp org create obey
@@ -2864,7 +3692,10 @@ Run inside a campaign with no campaign arguments to add the current campaign:
 Or name the campaigns explicitly:
   camp org create obey obey-campaign obey-content
 
-Orgs remain derived: "create" assigns membership and never makes an empty org.
+Create an empty org with no members (works outside a campaign):
+  camp org create obey --empty
+
+Orgs are first-class: they persist in the registry even with zero members.
 Joining an org that already has members is allowed; there is no "already exists"
 error, and a campaign already in the org is reported as unchanged.
 
@@ -2876,14 +3707,56 @@ camp org create <org> [campaign...] [flags]
 
 ```
   camp org create obey
+  camp org create obey --empty
   camp org create client-acme acme-site other-site
 ```
 
 ### Options
 
 ```
-  -h, --help   help for create
-      --json   Output as JSON
+      --empty   Create the org with no members (do not join any campaign)
+  -h, --help    help for create
+      --json    Output as JSON
+```
+
+### Options inherited from parent commands
+
+```
+      --no-color   disable colored output
+```
+---
+
+## camp org delete
+
+Delete an org (empty only unless --force)
+
+### Synopsis
+
+Delete a first-class org from the registry.
+
+Empty orgs delete without flags. Orgs with members require --force, which
+reassigns every member to the fallback org and then deletes the org.
+
+The fallback org cannot be deleted.
+
+```
+camp org delete <name> [flags]
+```
+
+### Examples
+
+```
+  camp org delete empty-org
+  camp org delete obey --force
+  camp org delete empty-org --json
+```
+
+### Options
+
+```
+      --force   Reassign members to the fallback org, then delete
+  -h, --help    help for delete
+      --json    Output as JSON
 ```
 
 ### Options inherited from parent commands
@@ -2912,6 +3785,53 @@ camp org list [flags]
 ```
   -h, --help   help for list
       --json   Output as JSON
+```
+
+### Options inherited from parent commands
+
+```
+      --no-color   disable colored output
+```
+---
+
+## camp org next
+
+Switch to the next campaign in the current campaign's org
+
+### Synopsis
+
+Switch to the next campaign in the current campaign's org.
+
+Members are ordered by name, so the cycle is stable and predictable
+(a -> b -> c -> a). By default only active campaigns are cycled; use --all to
+include inactive and reference campaigns.
+
+Use with the corg shell function for instant navigation:
+  corg        # cd to the next campaign in this org
+
+The --print flag outputs just the target path for shell integration, and --json
+emits the resolved source and target campaigns.
+
+```
+camp org next [flags]
+```
+
+### Examples
+
+```
+  camp org next            # Print cd to the next org campaign
+  camp org next --print    # Print the target path only
+  camp org next --all      # Include inactive/reference campaigns
+  camp org next --json
+```
+
+### Options
+
+```
+      --all     Include inactive and reference campaigns in the cycle
+  -h, --help    help for next
+      --json    Output the resolved source and target campaigns as JSON
+      --print   Print the target path only (for shell integration)
 ```
 
 ### Options inherited from parent commands
@@ -3011,6 +3931,50 @@ camp org show <org> [flags]
 ```
   -h, --help   help for show
       --json   Output as JSON
+```
+
+### Options inherited from parent commands
+
+```
+      --no-color   disable colored output
+```
+---
+
+## camp org toggle
+
+Toggle back to the last-visited campaign in the current org
+
+### Synopsis
+
+Toggle back to the most recently visited other campaign in the current org.
+
+"Most recently visited" is tracked by last-access time, which camp updates on
+every 'camp switch' and 'camp org next'/'toggle'. Paired with 'camp org next',
+this gives a natural A <-> B toggle within an org. By default only active
+campaigns are considered; use --all to include inactive and reference campaigns.
+
+Use with the corg shell function for instant navigation:
+  corg t      # cd back to the last org campaign you were in
+
+```
+camp org toggle [flags]
+```
+
+### Examples
+
+```
+  camp org toggle          # Print cd to the last-visited org campaign
+  camp org toggle --print  # Print the target path only
+  camp org toggle --json
+```
+
+### Options
+
+```
+      --all     Include inactive and reference campaigns in the cycle
+  -h, --help    help for toggle
+      --json    Output the resolved source and target campaigns as JSON
+      --print   Print the target path only (for shell integration)
 ```
 
 ### Options inherited from parent commands
@@ -3143,12 +4107,17 @@ A project can be:
   - a machine-local linked workspace attached via symlink under projects/
 
 Use 'camp project add' for submodules and 'camp project link' / 'camp project unlink'
-for linked workspaces.
+for linked workspaces. Use 'camp project run' (or the 'cr -p' shell shorthand)
+to run a command inside a project from anywhere in the campaign.
 
 Examples:
   camp project list                    List all projects
   camp project add git@github.com:org/repo.git  Add a new project
   camp project link ~/code/my-project  Link an existing local workspace
+  camp project run -p fest -- just build  Run a command inside a project
+  camp project commit -p fest -m "fix"  Commit changes in a project submodule
+  camp project prune                   Delete merged branches in the cwd's project
+  camp project worktree add my-branch --project fest  Create a worktree for a project
   camp project remove api-service      Remove a project
 
 ```
@@ -3243,14 +4212,15 @@ camp project commit [flags]
 ### Options
 
 ```
-  -a, --all               Stage all changes (default true)
-      --amend             Amend the previous commit
-      --auto-write        Run configured commit message writer
-  -h, --help              help for commit
-  -m, --message string    Commit message (required unless --auto-write)
-  -p, --project string    Project name (auto-detected from cwd if not specified)
-      --sync              Sync submodule ref at campaign root after commit (opt-in)
-      --workitem string   explicit workitem selector for the commit tag (overrides cwd-based resolution)
+  -a, --all                   Stage all changes (default true)
+      --amend                 Amend the previous commit
+      --auto-write            Run configured commit message writer
+  -h, --help                  help for commit
+  -m, --message stringArray   Commit message (repeatable; multiple -m are joined git-style into subject + body; required unless --auto-write)
+      --no-sync               Do not sync submodule ref even if settings enable it
+  -p, --project string        Project name (auto-detected from cwd if not specified)
+      --sync                  Sync submodule ref at campaign root after commit (also enabled by commit.sync_project_refs setting)
+      --workitem string       explicit workitem selector for the commit tag (overrides cwd-based resolution)
 ```
 
 ### Options inherited from parent commands
@@ -3761,14 +4731,17 @@ camp project remove <name> [flags]
 
 ## camp project run
 
-Run a command inside a project directory
+Run a command inside a project directory, like cr but project-scoped
 
 ### Synopsis
 
 Run any shell command inside a project directory from anywhere in the campaign.
 
+This is the project-scoped counterpart to 'camp run' (cr): cr runs from the
+campaign root, camp project run (cr -p) runs inside a project.
+
 The project is resolved in this order:
-  1. --project / -p flag (explicit project name)
+  1. --project / -p flag (explicit project name, tab-completes registered projects)
   2. Auto-detect from current working directory
   3. Interactive fuzzy picker (if neither above applies)
 
@@ -3788,6 +4761,10 @@ Examples:
   # Simple commands (no -- needed when no flags)
   camp project run make build
 
+  # Shell shorthand (after 'eval "$(camp shell-init <shell>)"')
+  cr -p fest -- just build
+  cr -p camp go test ./...
+
 ```
 camp project run [--project <name>] [--] <command> [args...] [flags]
 ```
@@ -3795,7 +4772,8 @@ camp project run [--project <name>] [--] <command> [args...] [flags]
 ### Options
 
 ```
-  -h, --help   help for run
+  -h, --help             help for run
+  -p, --project string   Project name (auto-detected from cwd, or interactive picker if omitted)
 ```
 
 ### Options inherited from parent commands
@@ -3975,6 +4953,10 @@ Examples:
   # Explicit project
   camp project worktree add feature --project my-api
 
+  # Link a design/explore workitem so camp p commit in the worktree tags WI-*
+  camp project worktree add fest-list-watch --project fest --workitem WI-2a7950
+  camp project worktree add settings-tui --project camp --workitem workflow/design/camp-settings-tui
+
 ```
 camp project worktree add <name> [flags]
 ```
@@ -3987,6 +4969,7 @@ camp project worktree add <name> [flags]
   -p, --project string       Project name (auto-detected from cwd if not specified)
   -s, --start-point string   Base branch/commit for new branch (default: current branch)
   -t, --track string         Remote branch to track (creates new local tracking branch)
+      --workitem string      workitem selector (ref, path, or id) to primary-link to this worktree for camp p commit tags
 ```
 
 ### Options inherited from parent commands
@@ -4640,12 +5623,25 @@ With no key, prints all settings including the effective theme. With a key,
 prints just that value.
 
 Keys:
-  global.theme           Color theme in ~/.obey/campaign/config.json
-  global.editor          Preferred editor
-  global.campaigns_dir   Where camp create places new campaigns
-  global.verbose         Verbose output
-  global.no_color        Disable colored output
-  local.theme_override   Campaign-local theme override (requires a campaign)
+  global.theme               Color theme in ~/.obey/campaign/config.json
+  global.editor              Preferred editor
+  global.campaigns_dir       Where camp create places new campaigns
+  global.verbose             Verbose output
+  global.no_color            Disable colored output
+  global.commit.sync_project_refs   When true, camp p commit updates campaign-root submodule pointer (default false)
+  global.commit.disable_commit_tags When true, skip [campaign:…] tags on camp commits (default false; tags on)
+  local.theme_override       Campaign-local theme override (requires a campaign)
+  local.commit.sync_project_refs    Campaign override for project-ref sync (true/false/inherit)
+  local.commit.disable_commit_tags  Campaign override to skip commit subject tags (true/false/inherit)
+  local.campaign.name        Campaign name in .campaign/campaign.yaml
+  local.campaign.description Campaign description
+  local.campaign.mission     Campaign mission
+  local.campaign.type        Campaign type (product, research, tools, personal)
+  local.campaign.commit_hook Commit-message hook command
+  effective.commit.*         Resolved commit prefs (get only; local overrides global)
+
+The campaign.yaml list and tree fields (intents.tags, concepts) have no flat
+key and are edited only through the interactive 'camp settings' TUI.
 
 ```
 camp settings get [key] [flags]
@@ -4656,6 +5652,7 @@ camp settings get [key] [flags]
 ```
   camp settings get
   camp settings get global.theme
+  camp settings get effective.commit.sync_project_refs
   camp settings get --json
 ```
 
@@ -5337,6 +6334,15 @@ Use campaign@tab to navigate to a specific location in the target campaign:
   camp switch obey-campaign@p    # Switch and navigate to projects/
   camp switch obey/platform@f    # Switch inside org and navigate to festivals/
 
+Use machine:campaign to resolve a campaign on a machine registered in
+~/.obey/machines.yaml (via the csw shell wrapper, which hops there over ssh):
+  csw devbox:obey-campaign       # Resolve and hop to obey-campaign on devbox
+
+Remote resolution runs the far machine's own 'camp switch' through a login
+shell (sh -lc) so PATH entries a login profile exports (~/.profile, etc.) are
+picked up. If camp still can't be found there, set CAMP_REMOTE_CAMP_PATH to
+its exact path on that machine.
+
 ```
 camp switch [campaign] [flags]
 ```
@@ -5422,6 +6428,23 @@ EXAMPLES:
   # JSON output for scripting
   camp sync --json
 
+  # Accelerate over a peer machine from ~/.obey/machines.yaml: for each
+  # already-initialized submodule, fetch objects from that machine first
+  # (LAN/tailnet), then run the normal origin-based update, then pull
+  # declared artifact roots (policy=always) from the same machine.
+  # Uninitialized submodules skip the peer step and init from origin.
+  # Preflight, origin URLs, validation, and exit codes are unchanged; an
+  # unreachable peer degrades to a warning.
+  camp sync --from studio-mac
+
+  # Peer git objects only, skip artifacts / artifacts only, skip git phases
+  camp sync --from studio-mac --git-only
+  camp sync --from studio-mac --artifacts-only
+
+  # Check artifact roots against last-transfer snapshots, no transfer
+  camp sync --verify-artifacts
+  camp sync --verify-artifacts --from studio-mac
+
 ```
 camp sync [submodule...] [flags]
 ```
@@ -5429,13 +6452,17 @@ camp sync [submodule...] [flags]
 ### Options
 
 ```
-  -n, --dry-run        Show what would happen without making changes
-  -f, --force          Skip safety checks (uncommitted changes warning still shown)
-  -h, --help           help for sync
-      --json           Output results as JSON for scripting
-      --no-fetch       Skip fetching from remote (use local refs only)
-  -p, --parallel int   Number of parallel git operations (default 4)
-  -v, --verbose        Show detailed output for each submodule
+      --artifacts-only     With --from: pull declared artifact roots only, skip git phases
+  -n, --dry-run            Show what would happen without making changes
+  -f, --force              Skip safety checks (uncommitted changes warning still shown)
+      --from string        Fetch objects for already-initialized submodules (and declared artifact roots) from this machine (id from ~/.obey/machines.yaml)
+      --git-only           With --from: move git objects only, skip artifact roots
+  -h, --help               help for sync
+      --json               Output results as JSON for scripting
+      --no-fetch           Skip fetching from remote (use local refs only)
+  -p, --parallel int       Number of parallel git operations (git guards superproject ops with repo lockfiles that fail fast on contention; lower this if a slow disk surfaces transient lock errors) (default 4)
+  -v, --verbose            Show detailed output for each submodule
+      --verify-artifacts   Check artifact roots against last-transfer snapshots (no transfer)
 ```
 
 ### Options inherited from parent commands
@@ -5978,17 +7005,16 @@ View active campaign work items
 
 ### Synopsis
 
-View active campaign work items across intents, designs, explore, and festivals.
+View active campaign work items.
 
-Default mode launches an interactive TUI dashboard. Use --json for machine-readable
-output or --print to select and print a path for shell integration.
+Launches an interactive dashboard on a TTY. Non-interactive callers must pass
+--json, --list, or --print.
 
 Examples:
-  camp workitem                              # interactive dashboard
-  camp workitem --json                       # JSON output for agents/scripts
-  camp workitem --json --type design         # filter by type
-  camp workitem --json --type intent --limit 5
-  camp workitem --print                      # select and print path
+  camp workitem                       # interactive dashboard
+  camp workitem --json --type design  # JSON, filtered by type
+  camp workitem --list                # compact grouped list
+  camp workitem --print               # print a path for shell integration
 
 ```
 camp workitem [flags]
@@ -5997,20 +7023,20 @@ camp workitem [flags]
 ### Options
 
 ```
-      --attention-stage stringArray   Filter by attention stage (current, next, active, parked)
-      --category stringArray          Filter by workflow category (builtin: plan, research, pipeline, review, uncategorized; or any category defined under workflows in campaign.yaml)
+      --attention-stage stringArray   Filter by attention stage
+      --category stringArray          Filter by workflow category
       --group stringArray             Filter by workitem group
-      --group-by string               Group JSON/list sections by attention_stage, group, type, or category; --list defaults to group unless set (default "attention_stage")
+      --group-by string               Group sections (default "attention_stage")
   -h, --help                          help for workitem
       --json                          Output as JSON
-      --limit int                     Maximum number of items to return
+      --limit int                     Maximum items to return
       --list                          Output a compact grouped list
-      --print                         Print path only (for shell integration)
-      --query string                  Search query to filter items
-      --show-parked                   include parked attention-stage workitems in default output
-      --stage stringArray             Filter by lifecycle stage (none, inbox, active, ready, planning, ritual, chains)
-      --status stringArray            Filter by displayed status (current, next, active, parked, inbox, ready, plan, ritual, chains, none)
-      --type stringArray              Filter by workflow type (builtin: intent, design, explore, festival; or any slug-safe custom type produced by 'camp workitem create --type <name>')
+      --print                         Print path only
+      --query string                  Filter by search query
+      --show-parked                   Include parked workitems
+      --stage stringArray             Filter by lifecycle stage
+      --status stringArray            Filter by displayed status
+      --type stringArray              Filter by workflow type
 ```
 
 ### Options inherited from parent commands
@@ -6022,7 +7048,7 @@ camp workitem [flags]
 
 ## camp workitem adopt
 
-Attach .workitem metadata to an existing directory
+Adopt an existing directory as a workitem
 
 ### Synopsis
 
@@ -6057,7 +7083,7 @@ camp workitem adopt <dir> [flags]
 
 ## camp workitem commit
 
-Commit changes scoped to the resolved workitem
+Commit changes scoped to a workitem
 
 ### Synopsis
 
@@ -6085,7 +7111,7 @@ camp workitem commit [selector] [flags]
       --include stringArray         additional path to stage (repeatable; relative to repo root)
       --include-submodule-pointer   include dirty project submodule pointers in the plan
       --json                        emit the staging plan and commit result as JSON on stdout
-  -m, --message string              commit message (required unless --dry-run)
+  -m, --message stringArray         commit message (repeatable; multiple -m are joined git-style into subject + body; required unless --dry-run)
       --project string              force project-repo context by name (skips resolver)
       --staged                      commit whatever is already in the git index
       --workitem string             explicit workitem selector (overrides cwd-based resolution)
@@ -6100,17 +7126,22 @@ camp workitem commit [selector] [flags]
 
 ## camp workitem commits
 
-List commits referencing a workitem across linked repos
+List commits referencing a workitem
 
 ### Synopsis
 
-Search the campaign root and every linked project/repo/worktree/festival
-repo for commits whose campaign tag references this workitem's ref.
+List commits referencing this workitem, newest first.
 
-Default sort: most recent first across all repos. Use --json for structured
-output. Repos that are not git checkouts or that fail their git log invocation
-are reported under "errors" in JSON mode; table mode warns on stderr when
-repo queries fail.
+When the campaign event ledger already holds the workitem's commit evidence,
+the answer comes from a single merged ledger read (fast path). Otherwise it
+falls back to scanning the campaign root and every linked
+project/repo/worktree/festival repo for commits whose campaign tag references
+the workitem's ref (pre-ledger history).
+
+Use --json for structured output; the "source" field reports which path
+answered ("ledger" or "scan"). Repos that are not git checkouts or that fail
+their git log invocation are reported under "errors" in JSON mode; table mode
+warns on stderr when repo queries fail.
 
 ```
 camp workitem commits [selector] [flags]
@@ -6124,6 +7155,7 @@ camp workitem commits [selector] [flags]
       --limit int         maximum commits to return (default 100)
       --offset int        number of commits to skip (after sorting)
       --ref string        query by workitem ref directly (e.g. WI-abc123) — skips resolver
+      --source string     where to read commits from: auto (ledger when present, else scan), ledger, or scan (default "auto")
       --workitem string   alias for the positional <selector>
 ```
 
@@ -6136,7 +7168,7 @@ camp workitem commits [selector] [flags]
 
 ## camp workitem create
 
-Create a new workitem with v1 minimum metadata
+Create a workitem
 
 ### Synopsis
 
@@ -6173,7 +7205,7 @@ camp workitem create <slug> [flags]
 
 ## camp workitem current
 
-Get, set, or clear the local current workitem
+Get, set, or clear the current workitem
 
 ### Synopsis
 
@@ -6205,7 +7237,7 @@ camp workitem current [selector] [flags]
 
 ## camp workitem doctor
 
-Report workitem link-registry health issues
+Report link-registry health issues
 
 ### Synopsis
 
@@ -6237,7 +7269,7 @@ camp workitem doctor [flags]
 
 ## camp workitem group
 
-Set or clear the group of a workitem
+Set or clear the group
 
 ```
 camp workitem group <selector> <group|clear> [flags]
@@ -6259,7 +7291,7 @@ camp workitem group <selector> <group|clear> [flags]
 
 ## camp workitem link
 
-Attach a workitem to a project, festival, worktree, or campaign path
+Create a workitem link
 
 ### Synopsis
 
@@ -6269,6 +7301,17 @@ Links are stored in .campaign/workitems/links.yaml and connect a .workitem
 identity to an explicit scope for planning, execution, and lookup. Pass a
 workitem selector plus a path, or use --project, --festival, --worktree, or
 --cwd to derive the scope. Use --json for machine-readable link output.
+
+A primary worktree link is how design/explore workitems under workflow/ get
+into camp p commit tags: when you commit from that worktree, the resolver
+matches the link and stamps WI-<ref> on the subject.
+
+Examples:
+  camp workitem link WI-2a7950 --worktree fest/fest-list-watch
+  camp workitem link workflow/design/fest-list-watch --worktree projects/worktrees/fest/fest-list-watch
+  camp workitem link WI-2a7950 projects/worktrees/fest/fest-list-watch
+  # Or at create time:
+  camp project worktree add fest-list-watch --project fest --workitem WI-2a7950
 
 ```
 camp workitem link <selector> [path] [flags]
@@ -6285,7 +7328,7 @@ camp workitem link <selector> [path] [flags]
       --project string    project name (matches projects/<name>)
       --replace           replace an existing primary link on the same scope
       --role string       primary | related | blocked_by | supersedes (default "primary")
-      --worktree string   worktree relative path under projects/worktrees/
+      --worktree string   worktree path under projects/worktrees/ (project/name or full projects/worktrees/project/name)
 ```
 
 ### Options inherited from parent commands
@@ -6360,11 +7403,11 @@ camp workitem list [type|status|category] [flags]
       --group-by string               Group output sections by attention_stage, group, type, or category
   -h, --help                          help for list
       --json                          Output as JSON
-      --limit int                     Maximum number of items to return
+      --limit int                     Maximum number of items to return (non-interactive / --json only)
       --query string                  Search query to filter items
       --show-parked                   Include parked attention-stage workitems
       --stage stringArray             Filter by lifecycle stage (repeat for OR)
-      --status stringArray            Filter by displayed status (repeat for OR)
+      --status stringArray            Filter by displayed status: current, next, active, parked, inbox, ready, plan, ritual, chains, none (repeat for OR)
       --type stringArray              Filter by workflow type (repeat for OR)
 ```
 
@@ -6377,7 +7420,7 @@ camp workitem list [type|status|category] [flags]
 
 ## camp workitem priority
 
-Set or clear the manual priority of a workitem
+Set or clear the manual priority
 
 ### Synopsis
 
@@ -6414,7 +7457,7 @@ camp workitem priority <selector> <high|medium|low|clear> [flags]
 
 ## camp workitem promote
 
-Promote a workitem to a festival, doc, or dungeon status
+Promote a workitem to a festival, doc, or dungeon
 
 ### Synopsis
 
@@ -6452,9 +7495,46 @@ camp workitem promote [id] --target <target> [flags]
 ```
 ---
 
+## camp workitem repair
+
+Repair a workflow directory into a workitem
+
+### Synopsis
+
+Repair a workflow directory so it carries a valid current-schema .workitem marker.
+
+The directory is never moved or renamed and document contents are never touched.
+When no marker exists one is created; when a legacy or incomplete marker exists
+its schema version, kind, id, type, ref, and title are brought up to the current
+shape. The workflow type is inferred from the path segment after workflow/, the
+title from the first markdown H1 (else the humanized directory name), and id/ref
+from the same rules as create and adopt. Repair is idempotent: a directory that
+is already valid reports no changes. Use --dry-run to preview and --json for a
+machine-readable result.
+
+```
+camp workitem repair <path> [flags]
+```
+
+### Options
+
+```
+      --dry-run       report what would change without writing
+  -h, --help          help for repair
+      --json          emit a structured JSON result
+      --type string   override the workflow type inferred from the path
+```
+
+### Options inherited from parent commands
+
+```
+      --no-color   disable colored output
+```
+---
+
 ## camp workitem resolve
 
-Print the workitem the current context resolves to (read-only)
+Print the workitem for the current context
 
 ### Synopsis
 
@@ -6488,7 +7568,7 @@ camp workitem resolve [flags]
 
 ## camp workitem stage
 
-Set or clear the attention stage of a workitem
+Set or clear the attention stage
 
 ```
 camp workitem stage <selector> <current|next|active|parked|clear> [flags]
@@ -6510,7 +7590,7 @@ camp workitem stage <selector> <current|next|active|parked|clear> [flags]
 
 ## camp workitem unlink
 
-Remove one or more workitem links
+Remove workitem links
 
 ### Synopsis
 
@@ -6535,6 +7615,98 @@ camp workitem unlink [selector] [path] [flags]
       --json              emit a structured JSON result
       --project string    project scope filter
       --worktree string   worktree scope filter
+```
+
+### Options inherited from parent commands
+
+```
+      --no-color   disable colored output
+```
+---
+
+## camp workitem validate
+
+Validate workitem directories
+
+### Synopsis
+
+Validate that workflow work item directories carry a correct .workitem marker.
+
+Without an argument, every work item directory under workflow/ is scanned:
+builtin doc directories (workflow/design, workflow/explore) are always work
+items, custom type directories surface only when they carry a marker, and
+dungeon/hidden control areas are ignored. With a path argument, only that
+directory is validated.
+
+Each problem prints the exact repair command, for example
+"camp workitem repair workflow/design/foo". Use --json for stable finding
+codes. The command exits non-zero when any error-severity finding is present.
+
+```
+camp workitem validate [path] [flags]
+```
+
+### Options
+
+```
+  -h, --help   help for validate
+      --json   emit a structured JSON result
+```
+
+### Options inherited from parent commands
+
+```
+      --no-color   disable colored output
+```
+---
+
+## camp workitem worktree
+
+Create a project worktree from a workitem
+
+### Synopsis
+
+Create a git worktree for a workitem and primary-link it, so commits in
+that worktree carry the workitem's WI-* tag.
+
+This is the workitem-first counterpart to 'camp project worktree add': instead
+of naming a worktree and optionally tagging a workitem, you name a workitem and
+the worktree name, branch, and link are derived from it.
+
+Project resolution:
+  The target project is taken from the workitem's linked project (see
+  'camp workitem link --project'). When the workitem has no project link, or
+  is linked to more than one, pass --project explicitly.
+
+Re-entry:
+  If the workitem already has a primary worktree link, the existing path is
+  printed and no new worktree is created.
+
+Examples:
+  # Festival workitem already linked to a project
+  camp workitem worktree WI-2a7950
+
+  # Design/explore/intent workitem: name the project
+  camp workitem worktree workflow/design/camp-settings-tui --project camp
+
+  # Override the derived worktree name
+  camp workitem worktree WI-2a7950 --name grok-list-fix
+
+  # Print only the path (for shell integration)
+  cd "$(camp workitem worktree WI-2a7950 --print)"
+
+```
+camp workitem worktree <selector> [flags]
+```
+
+### Options
+
+```
+  -h, --help                 help for worktree
+      --name string          Worktree/branch name (derived from the workitem if omitted)
+      --print                Print only the worktree path
+  -p, --project string       Project name (inferred from the workitem's project link if omitted)
+  -s, --start-point string   Base branch/commit for the new branch (default: current branch)
 ```
 
 ### Options inherited from parent commands
