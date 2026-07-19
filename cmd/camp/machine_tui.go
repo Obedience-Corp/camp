@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"errors"
 	"os/exec"
 	"sort"
 	"strings"
@@ -136,14 +137,19 @@ type machineTUIModel struct {
 	deviceCursor   int
 	scanning       bool
 	scanErr        string
+	// scanGen is a monotonic token stamped on each beginScan. applyDevices
+	// ignores results whose gen does not match, so a late finish from an
+	// earlier overlapping scan cannot clobber a newer one.
+	scanGen uint64
 
 	overlay   machineOverlay
 	form      machineForm
 	pendingID string
 
-	// spin animates while a connection test is out. An ssh connect can take
-	// the full ConnectTimeout before it fails, and a screen that does not move
-	// for eight seconds reads as hung rather than busy.
+	// spin animates while a connection test or tailnet scan is out. An ssh
+	// connect can take the full ConnectTimeout before it fails, and a
+	// tailscale status call can sit still just as long; a screen that does
+	// not move for eight seconds reads as hung rather than busy.
 	spin spinner.Model
 
 	status    string
@@ -160,11 +166,13 @@ type socketsMsg map[string]remote.SocketDiagnosis
 
 // devicesMsg carries the result of a tailnet scan, or the error that ended it.
 // overlay reports whether the scan was for the picker; a scan that backs the
-// onboarding screen fills its list in place instead.
+// onboarding screen fills its list in place instead. gen is the scanGen the
+// scan was started with, so a stale finish can be dropped.
 type devicesMsg struct {
 	devices []discoveredDevice
 	err     error
 	overlay bool
+	gen     uint64
 }
 
 // healthMsg carries one machine's connection-test result.
@@ -222,6 +230,12 @@ func (m *machineTUIModel) testing() bool {
 		}
 	}
 	return false
+}
+
+// busy reports whether the spinner should keep ticking: either a connection
+// test or a tailnet scan is in flight.
+func (m *machineTUIModel) busy() bool {
+	return m.testing() || m.scanning
 }
 
 // tailscaleInstalled reports whether the tailscale CLI is on PATH. Discovery
@@ -314,10 +328,23 @@ func (m *machineTUIModel) Init() tea.Cmd {
 	// showing the machines the user could add. Scanning up front is what
 	// turns that screen from an instruction into a list they can act on.
 	if m.empty() && m.tailscaleReady {
-		m.scanning = true
-		cmds = append(cmds, m.scanTailnet(false))
+		cmds = append(cmds, m.beginScan(false))
 	}
 	return tea.Batch(cmds...)
+}
+
+// beginScan starts a tailnet scan with a generation token so a late result
+// from an earlier scan cannot clobber a newer one. Calling it while a scan is
+// already in flight replaces that work rather than stacking results.
+func (m *machineTUIModel) beginScan(intoOverlay bool) tea.Cmd {
+	m.scanGen++
+	gen := m.scanGen
+	m.scanning = true
+	m.scanErr = ""
+	if intoOverlay {
+		m.overlay = machineDiscoverOverlay
+	}
+	return tea.Batch(m.spin.Tick, m.scanTailnet(intoOverlay, gen))
 }
 
 // probeSockets checks every configured machine's ControlMaster socket. A
@@ -337,12 +364,13 @@ func (m *machineTUIModel) probeSockets() tea.Cmd {
 }
 
 // scanTailnet runs discovery in the background so the screen stays responsive
-// while `tailscale status --json` is out.
-func (m *machineTUIModel) scanTailnet(intoOverlay bool) tea.Cmd {
+// while `tailscale status --json` is out. gen is stamped onto the result so
+// applyDevices can drop stale finishes.
+func (m *machineTUIModel) scanTailnet(intoOverlay bool, gen uint64) tea.Cmd {
 	ctx := m.ctx
 	return func() tea.Msg {
 		devices, err := discoverTailnet(ctx, runTailscaleStatus)
-		return devicesMsg{devices: devices, err: err, overlay: intoOverlay}
+		return devicesMsg{devices: devices, err: err, overlay: intoOverlay, gen: gen}
 	}
 }
 
@@ -391,7 +419,17 @@ func parseRemoteVersion(out string) string {
 // on. The wrapper says which command ran and what it exited with, which the
 // screen already implies; what matters is ssh's own line, or camp's hint when
 // the binary is missing on the far side.
+//
+// Exit 127 is special: RunCampCommand wraps it with login-shell PATH context
+// and CAMP_REMOTE_CAMP_PATH guidance. Digging past that wrap to the bare
+// "command not found" stderr line is exactly the failure mode the health
+// check exists to surface, so preserve the outer message instead.
 func connectionFailureDetail(err error) string {
+	var cmdErr *camperrors.CommandError
+	if errors.As(err, &cmdErr) && cmdErr.ExitCode == 127 {
+		return firstLine(err.Error())
+	}
+
 	message := firstLine(err.Error())
 	if _, rest, found := strings.Cut(message, "exited with code "); found {
 		if _, detail, ok := strings.Cut(rest, ": "); ok && strings.TrimSpace(detail) != "" {

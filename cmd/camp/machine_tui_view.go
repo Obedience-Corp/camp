@@ -414,7 +414,7 @@ func (m *machineTUIModel) discoverBody() []string {
 		return []string{
 			machineTitleStyle.Render("Scanning the tailnet"),
 			"",
-			machineMuted.Render("Running 'tailscale status --json'..."),
+			machineMuted.Render(m.spin.View() + " Running 'tailscale status --json'..."),
 		}
 	}
 

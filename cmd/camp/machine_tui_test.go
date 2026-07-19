@@ -470,3 +470,135 @@ func TestParseRemoteVersionAndFailureDetail(t *testing.T) {
 		t.Errorf("connectionFailureDetail = %q", got)
 	}
 }
+
+// Exit 127 is the camp-not-found case RunCampCommand wraps with login-shell
+// PATH context and CAMP_REMOTE_CAMP_PATH. The detail must keep that guidance;
+// stripping down to bare "command not found" is the regression this guards.
+func TestConnectionFailureDetailPreservesCampNotFoundHint(t *testing.T) {
+	inner := camperrors.NewCommand("ssh buildbox -- camp --version", 127, "bash: camp: command not found", nil)
+	err := camperrors.Wrapf(inner,
+		"remote camp not found on buildbox (tried %q via sh -lc, i.e. the machine's login-shell PATH); "+
+			"if camp lives outside that PATH, set %s to its exact path on that machine",
+		"camp", remote.RemoteCampPathEnv)
+
+	got := connectionFailureDetail(err)
+	if !strings.Contains(got, remote.RemoteCampPathEnv) {
+		t.Errorf("connectionFailureDetail dropped CAMP_REMOTE_CAMP_PATH guidance: %q", got)
+	}
+	if !strings.Contains(got, "remote camp not found") {
+		t.Errorf("connectionFailureDetail dropped outer camp-not-found wrap: %q", got)
+	}
+	if got == "bash: camp: command not found" {
+		t.Errorf("connectionFailureDetail reduced exit-127 to bare stderr: %q", got)
+	}
+}
+
+// Removing the last configured machine lands mid-session on the empty
+// onboarding screen. That transition must start a scan the way Init does;
+// otherwise the body claims "no other devices" without ever looking.
+func TestRemoveLastMachineStartsOnboardingScan(t *testing.T) {
+	isolateMachines(t)
+
+	m := newMachineTUIModel(t.Context(), &machines.File{
+		Version:  1,
+		Machines: []machines.Machine{{ID: "only", Host: "only.example-net.ts.net"}},
+	})
+	if err := m.file.Save(); err != nil {
+		t.Fatalf("save: %v", err)
+	}
+	m.tailscaleReady = true
+	m.pendingID = "only"
+
+	cmd := m.removePending()
+	if cmd == nil {
+		t.Fatal("removing the last machine with tailscale ready must start a scan")
+	}
+	if !m.empty() {
+		t.Fatal("fleet should be empty after removing the only machine")
+	}
+	if !m.scanning {
+		t.Error("onboarding transition must set scanning")
+	}
+	if m.scanGen == 0 {
+		t.Error("beginScan must bump scanGen")
+	}
+}
+
+// Enter on a device already in the fleet must refuse, not open a second form
+// for the same host under a new id.
+func TestPrefillFromDeviceRefusesAlreadyConfiguredHost(t *testing.T) {
+	m := newMachineTUIModel(t.Context(), &machines.File{
+		Version:  1,
+		Machines: []machines.Machine{{ID: "devbox", Host: "devbox.example-net.ts.net"}},
+	})
+	m.devices = []discoveredDevice{
+		{HostName: "devbox", Host: "devbox.example-net.ts.net", Online: true},
+	}
+	m.deviceCursor = 0
+
+	if cmd := m.prefillFromDevice(); cmd != nil {
+		t.Fatal("prefill of an already-configured host must not open the form")
+	}
+	if m.overlay != machineNoOverlay {
+		t.Errorf("overlay = %v, want none", m.overlay)
+	}
+	if !strings.Contains(m.status, "already added as devbox") {
+		t.Errorf("status = %q, want already-added guidance", m.status)
+	}
+}
+
+// When tailscale is ready the footer must list s whenever the body does,
+// including failed and empty-device scans (not only when devices are present).
+func TestOnboardingFooterListsRescanWhenTailscaleReady(t *testing.T) {
+	m := newMachineTUIModel(t.Context(), &machines.File{Version: 1})
+	m.tailscaleReady = true
+	m.devices = nil
+	m.scanErr = "tailscale: failed to connect"
+
+	footer := m.onboardingFooter()
+	if !strings.Contains(footer, "s rescan") {
+		t.Errorf("footer with scan error missing rescan: %q", footer)
+	}
+
+	m.scanErr = ""
+	footer = m.onboardingFooter()
+	if !strings.Contains(footer, "s rescan") {
+		t.Errorf("footer with empty devices missing rescan: %q", footer)
+	}
+
+	m.tailscaleReady = false
+	footer = m.onboardingFooter()
+	if strings.Contains(footer, "s rescan") {
+		t.Errorf("footer without tailscale should not list rescan: %q", footer)
+	}
+}
+
+// A late finish from an earlier scan must not overwrite a newer result.
+func TestApplyDevicesDropsStaleGeneration(t *testing.T) {
+	m := newMachineTUIModel(t.Context(), &machines.File{Version: 1})
+	m.scanGen = 2
+	m.scanning = true
+	m.devices = []discoveredDevice{{HostName: "fresh", Host: "fresh.ts.net", Online: true}}
+
+	_, _ = m.applyDevices(devicesMsg{
+		gen:     1,
+		devices: []discoveredDevice{{HostName: "stale", Host: "stale.ts.net", Online: true}},
+	})
+	if !m.scanning {
+		t.Error("stale result must not clear scanning for the in-flight scan")
+	}
+	if len(m.devices) != 1 || m.devices[0].HostName != "fresh" {
+		t.Errorf("stale result clobbered devices: %+v", m.devices)
+	}
+
+	_, _ = m.applyDevices(devicesMsg{
+		gen:     2,
+		devices: []discoveredDevice{{HostName: "current", Host: "current.ts.net", Online: true}},
+	})
+	if m.scanning {
+		t.Error("matching gen must clear scanning")
+	}
+	if len(m.devices) != 1 || m.devices[0].HostName != "current" {
+		t.Errorf("current result not applied: %+v", m.devices)
+	}
+}

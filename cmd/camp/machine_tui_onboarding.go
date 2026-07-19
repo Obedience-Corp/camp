@@ -53,6 +53,15 @@ func (m *machineTUIModel) onboardingFooter() string {
 	if len(m.devices) > 0 {
 		return "enter add the highlighted device · a add by hand · s rescan · ? what is this · q quit"
 	}
+	// Rescan is live whenever tailscale is ready: the body tells the user
+	// "s tries the scan again" on a failed scan, and the empty-device case
+	// still accepts s. The footer must list the same key the body teaches.
+	if m.tailscaleReady {
+		if m.scanning {
+			return "scanning · a add by hand · ? what is this · q quit"
+		}
+		return "a add a machine · s rescan · ? what is this · q quit"
+	}
 	return "a add a machine · ? what is this · q quit"
 }
 
@@ -62,7 +71,7 @@ func (m *machineTUIModel) onboardingBody(width int) []string {
 	switch {
 	case m.scanning:
 		return []string{
-			machinePrimary.Render("Looking for machines on your Tailscale network..."),
+			machinePrimary.Render(m.spin.View() + " Looking for machines on your Tailscale network..."),
 		}
 
 	case !m.tailscaleReady:
@@ -91,6 +100,7 @@ func (m *machineTUIModel) onboardingBody(width int) []string {
 			machineSelected.Render("No machines yet"),
 			"",
 			machineMuted.Render("Tailscale is running but reports no other devices."),
+			machineMuted.Render("s tries the scan again in case a machine just came online."),
 			"",
 			machineAction("a", "Add a machine by hand", "For any ssh host, on the tailnet or not."),
 		}

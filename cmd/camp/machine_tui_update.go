@@ -24,7 +24,7 @@ func (m *machineTUIModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case devicesMsg:
 		return m.applyDevices(msg)
 	case spinner.TickMsg:
-		if !m.testing() {
+		if !m.busy() {
 			return m, nil
 		}
 		var cmd tea.Cmd
@@ -62,6 +62,10 @@ func healthStatusLine(id string, health machineHealth) string {
 }
 
 func (m *machineTUIModel) applyDevices(msg devicesMsg) (tea.Model, tea.Cmd) {
+	// Drop results from a scan that was superseded by a later beginScan.
+	if msg.gen != m.scanGen {
+		return m, nil
+	}
 	m.scanning = false
 	if msg.err != nil {
 		// A failed scan on the onboarding screen is not an error state: the
@@ -113,9 +117,8 @@ func (m *machineTUIModel) updateOnboarding(msg tea.KeyMsg) (tea.Model, tea.Cmd) 
 		return m, m.openAddForm()
 	case "s":
 		if m.tailscaleReady {
-			m.scanning = true
 			m.status = ""
-			return m, m.scanTailnet(false)
+			return m, m.beginScan(false)
 		}
 		m.setError(camperrors.New("tailscale is not installed; press a to add a machine by hand"))
 	case "?":
@@ -153,9 +156,7 @@ func (m *machineTUIModel) updateBrowse(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			m.setError(camperrors.New("tailscale is not installed; press a to add a machine by hand"))
 			return m, nil
 		}
-		m.scanning = true
-		m.overlay = machineDiscoverOverlay
-		return m, m.scanTailnet(true)
+		return m, m.beginScan(true)
 	case "t", "enter":
 		return m, m.testSelected()
 	case "e":
@@ -305,6 +306,13 @@ func (m *machineTUIModel) removePending() tea.Cmd {
 		return nil
 	}
 	m.setStatus(fmt.Sprintf("removed %q", id))
+	// Removing the last machine lands on the onboarding screen mid-session.
+	// Init already scanned for a cold empty start; mirror that here so the
+	// body does not claim "Tailscale reports no other devices" when we never
+	// scanned this session.
+	if m.empty() && m.tailscaleReady {
+		return m.beginScan(false)
+	}
 	return nil
 }
 
@@ -341,11 +349,19 @@ func (m *machineTUIModel) updateDiscover(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 // saving it outright. Discovery supplies a host and a derived id; the label,
 // user, and identity are still the operator's call, and seeing them before the
 // write is what keeps a discovered machine from landing half-configured.
+//
+// A host already present in the fleet is refused rather than prefilled: the
+// row already teaches "already added as X", and opening the form would let the
+// user save a second id for the same machine.
 func (m *machineTUIModel) prefillFromDevice() tea.Cmd {
 	if len(m.devices) == 0 {
 		return nil
 	}
 	device := m.devices[clampIndex(m.deviceCursor, len(m.devices))]
+	if existing, ok := m.configuredHosts()[device.Host]; ok {
+		m.setStatus(fmt.Sprintf("already added as %s · select it in the fleet and press e to edit", existing))
+		return nil
+	}
 	id, err := deriveMachineID(device)
 	if err != nil {
 		m.setError(err)
