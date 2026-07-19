@@ -138,14 +138,14 @@ func TestIntegration_DoctorFixFileFrontmatterTarget(t *testing.T) {
 	dir := "/test/doctor-migrate-file"
 	initLinksCampaign(t, tc, dir)
 	seedProject(t, tc, dir, "pa")
-	require.NoError(t, tc.WriteFile(dir+"/workflow/notes/doc.md",
-		"---\nversion: v1alpha8\nkind: workitem\nid: note-doc-2026-07-19\ntype: chore\ntitle: Doc\nref: WI-fa0001\ndraft: true\n---\n\n# Doc\n\nBody text.\n"))
-	writeRelatedProjectLinks(t, tc, dir, [][3]string{{"lnk_20260719_000001", "note-doc-2026-07-19", "projects/pa"}})
+	require.NoError(t, tc.WriteFile(dir+"/workflow/notes/migdoc.md",
+		"---\nversion: v1alpha8\nkind: workitem\nid: note-migdoc-2026-07-19\ntype: chore\ntitle: Doc\nref: WI-fa0001\ndraft: true\n---\n\n# Doc\n\nBody text.\n"))
+	writeRelatedProjectLinks(t, tc, dir, [][3]string{{"lnk_20260719_000001", "note-migdoc-2026-07-19", "projects/pa"}})
 
 	_, err := tc.RunCampInDir(dir, "workitem", "doctor", "--fix")
 	require.NoError(t, err)
 
-	doc, err := tc.ReadFile(dir + "/workflow/notes/doc.md")
+	doc, err := tc.ReadFile(dir + "/workflow/notes/migdoc.md")
 	require.NoError(t, err)
 	assert.Contains(t, doc, "projects/pa", "migrated into the file frontmatter")
 	assert.Contains(t, doc, "draft: true", "a foreign frontmatter key is preserved")

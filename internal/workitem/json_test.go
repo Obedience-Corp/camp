@@ -276,15 +276,18 @@ func TestWorkItem_PopulatedTagsProjectsRoundTrip(t *testing.T) {
 	if !strings.Contains(got, `"tags":["ux","public-launch"]`) {
 		t.Errorf("tags not preserved in order: %s", got)
 	}
-	if !strings.Contains(got, `"projects":["projects/camp","projects/fest"]`) {
-		t.Errorf("projects not preserved in order: %s", got)
+	// projects is the merged view: ApplyMetadata builds the base (primary=false,
+	// since the links registry is not available here); the output layer sets
+	// primary. Order is preserved.
+	if !strings.Contains(got, `"projects":[{"path":"projects/camp","primary":false},{"path":"projects/fest","primary":false}]`) {
+		t.Errorf("projects not preserved as merged view in order: %s", got)
 	}
 }
 
 func TestNewPayload_TagsProjectsSerialization(t *testing.T) {
 	items := []WorkItem{
-		{Key: "a", Title: "A", WorkflowType: WorkflowTypeDesign, Tags: []string{"ux"}, Projects: []string{"projects/camp"}},
-		{Key: "b", Title: "B", WorkflowType: WorkflowTypeIntent, Tags: []string{}, Projects: []string{}},
+		{Key: "a", Title: "A", WorkflowType: WorkflowTypeDesign, Tags: []string{"ux"}, Projects: []string{"projects/camp"}, ProjectRefs: []ProjectRef{{Path: "projects/camp"}}},
+		{Key: "b", Title: "B", WorkflowType: WorkflowTypeIntent, Tags: []string{}, Projects: []string{}, ProjectRefs: []ProjectRef{}},
 	}
 	got := string(mustMarshal(t, NewPayloadWithGrouping("/tmp", items, "type")))
 	if !strings.Contains(got, `"tags":["ux"]`) {
@@ -292,6 +295,12 @@ func TestNewPayload_TagsProjectsSerialization(t *testing.T) {
 	}
 	if !strings.Contains(got, `"tags":[]`) {
 		t.Errorf("empty tags should serialize as [] in payload: %s", got)
+	}
+	if !strings.Contains(got, `"projects":[{"path":"projects/camp","primary":false}]`) {
+		t.Errorf("populated projects missing merged view from payload: %s", got)
+	}
+	if !strings.Contains(got, `"projects":[]`) {
+		t.Errorf("empty projects should serialize as [] in payload: %s", got)
 	}
 	if strings.Contains(got, `"tags":null`) || strings.Contains(got, `"projects":null`) {
 		t.Errorf("payload must never contain null tags or projects: %s", got)

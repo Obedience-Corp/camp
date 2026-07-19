@@ -114,7 +114,7 @@ Examples:
 				}
 			}
 			if opts.json {
-				return outputJSON(state.campaignRoot, state.cfg, items, groupBy)
+				return outputJSON(cmd.Context(), state.campaignRoot, state.cfg, items, groupBy)
 			}
 			return outputList(cmd.OutOrStdout(), items, groupBy)
 		}),
