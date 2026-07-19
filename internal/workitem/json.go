@@ -26,7 +26,11 @@ import (
 //     attention/group vocabularies, grouping metadata, and reusable section rows.
 //   - v1alpha8: add config-derived workflow_category per item, category_vocabulary,
 //     category_counts, and category in available_group_by and section rows.
-const SchemaVersion = "workitems/v1alpha8"
+//   - v1alpha9: add tags and projects fields (free-form topic labels and
+//     campaign-relative related-project paths, both non-nil empty slices
+//     when absent). See internal/workitem/metadata.go for the marker-level
+//     v1alpha8 schema these are sourced from.
+const SchemaVersion = "workitems/v1alpha9"
 
 // Payload is the top-level JSON output for camp workitem --json.
 type Payload struct {

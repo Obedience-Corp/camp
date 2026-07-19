@@ -154,9 +154,9 @@ func TestWorkItemWorkflow_ZeroValuesAreEmitted(t *testing.T) {
 	}
 }
 
-func TestSchemaVersion_IsV1Alpha8(t *testing.T) {
-	if SchemaVersion != "workitems/v1alpha8" {
-		t.Errorf("SchemaVersion = %q, want workitems/v1alpha8", SchemaVersion)
+func TestSchemaVersion_IsV1Alpha9(t *testing.T) {
+	if SchemaVersion != "workitems/v1alpha9" {
+		t.Errorf("SchemaVersion = %q, want workitems/v1alpha9", SchemaVersion)
 	}
 }
 
@@ -229,6 +229,82 @@ func TestWorkItem_WorkflowCategoryOmitEmpty(t *testing.T) {
 	if !strings.Contains(string(data), `"workflow_category":"plan"`) {
 		t.Errorf("workflow_category should be present, got: %s", data)
 	}
+}
+
+func TestApplyMetadata_EmptyTagsProjectsNeverNull(t *testing.T) {
+	item, err := ApplyMetadata(
+		WorkItem{Key: "design:foo", RelativePath: "workflow/design/foo"},
+		&Metadata{ID: "design-foo", Type: "design"},
+	)
+	if err != nil {
+		t.Fatalf("ApplyMetadata: %v", err)
+	}
+	data, err := json.Marshal(item)
+	if err != nil {
+		t.Fatalf("marshal: %v", err)
+	}
+	var raw map[string]json.RawMessage
+	if err := json.Unmarshal(data, &raw); err != nil {
+		t.Fatalf("unmarshal: %v", err)
+	}
+	for _, field := range []string{"tags", "projects"} {
+		val, ok := raw[field]
+		if !ok {
+			t.Errorf("%s key missing, want []", field)
+			continue
+		}
+		if string(val) != "[]" {
+			t.Errorf("%s = %s, want []", field, val)
+		}
+	}
+}
+
+func TestWorkItem_PopulatedTagsProjectsRoundTrip(t *testing.T) {
+	item, err := ApplyMetadata(
+		WorkItem{Key: "design:foo", RelativePath: "workflow/design/foo"},
+		&Metadata{
+			ID:       "design-foo",
+			Type:     "design",
+			Tags:     []string{"ux", "public-launch"},
+			Projects: []string{"projects/camp", "projects/fest"},
+		},
+	)
+	if err != nil {
+		t.Fatalf("ApplyMetadata: %v", err)
+	}
+	got := string(mustMarshal(t, item))
+	if !strings.Contains(got, `"tags":["ux","public-launch"]`) {
+		t.Errorf("tags not preserved in order: %s", got)
+	}
+	if !strings.Contains(got, `"projects":["projects/camp","projects/fest"]`) {
+		t.Errorf("projects not preserved in order: %s", got)
+	}
+}
+
+func TestNewPayload_TagsProjectsSerialization(t *testing.T) {
+	items := []WorkItem{
+		{Key: "a", Title: "A", WorkflowType: WorkflowTypeDesign, Tags: []string{"ux"}, Projects: []string{"projects/camp"}},
+		{Key: "b", Title: "B", WorkflowType: WorkflowTypeIntent, Tags: []string{}, Projects: []string{}},
+	}
+	got := string(mustMarshal(t, NewPayloadWithGrouping("/tmp", items, "type")))
+	if !strings.Contains(got, `"tags":["ux"]`) {
+		t.Errorf("populated tags missing from payload: %s", got)
+	}
+	if !strings.Contains(got, `"tags":[]`) {
+		t.Errorf("empty tags should serialize as [] in payload: %s", got)
+	}
+	if strings.Contains(got, `"tags":null`) || strings.Contains(got, `"projects":null`) {
+		t.Errorf("payload must never contain null tags or projects: %s", got)
+	}
+}
+
+func mustMarshal(t *testing.T, v any) []byte {
+	t.Helper()
+	data, err := json.Marshal(v)
+	if err != nil {
+		t.Fatalf("marshal: %v", err)
+	}
+	return data
 }
 
 func containsString(vals []string, want string) bool {

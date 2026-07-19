@@ -79,6 +79,8 @@ func buildWorkflowDirItem(ctx context.Context, campaignRoot, dirPath string, wfT
 		SourceMetadata: map[string]any{
 			"has_readme": primaryDocAbs != "" && filepath.Base(primaryDocAbs) == "README.md",
 		},
+		Tags:     []string{},
+		Projects: []string{},
 	}
 	item.SortTimestamp = DeriveSortTimestamp(item.UpdatedAt, item.CreatedAt)
 	if primaryDocAbs != "" {

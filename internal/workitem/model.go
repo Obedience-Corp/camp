@@ -53,6 +53,8 @@ type WorkItem struct {
 
 	StableID     string            `json:"stable_id,omitempty"`
 	WorkflowMeta *WorkItemWorkflow `json:"workflow,omitempty"`
+	Tags         []string          `json:"tags"`
+	Projects     []string          `json:"projects"`
 }
 
 // WorkItemWorkflow carries local runtime progress when .workflow/ is present
