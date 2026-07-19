@@ -20,13 +20,23 @@ type listOptions struct {
 	stages          []string
 	attentionStages []string
 	groups          []string
+	tags            []string
+	projects        []string
 	groupBy         string
 	showParked      bool
 	limit           int
 	query           string
 }
 
-func (o listOptions) filterOptions() wkitem.FilterOptions {
+func (o listOptions) filterOptions() (wkitem.FilterOptions, error) {
+	tags, err := normalizeTags(o.tags)
+	if err != nil {
+		return wkitem.FilterOptions{}, err
+	}
+	projects, err := normalizeProjects(o.projects)
+	if err != nil {
+		return wkitem.FilterOptions{}, err
+	}
 	return wkitem.FilterOptions{
 		Types:           o.types,
 		Categories:      o.categories,
@@ -34,9 +44,11 @@ func (o listOptions) filterOptions() wkitem.FilterOptions {
 		LifecycleStages: o.stages,
 		AttentionStages: o.attentionStages,
 		Groups:          o.groups,
+		Tags:            tags,
+		Projects:        projects,
 		Query:           o.query,
 		ShowParked:      o.showParked,
-	}
+	}, nil
 }
 
 func newListCommand() *cobra.Command {
@@ -57,6 +69,7 @@ Examples:
   camp workitem list intent
   camp workitem list active
   camp workitem list --category research --query auth
+  camp workitem list --tag public-launch --tag schema
   camp workitem list festival --status ready --json`,
 		Args: cobra.MaximumNArgs(1),
 		Annotations: map[string]string{
@@ -79,7 +92,10 @@ Examples:
 			if err := validateDisplayStatuses(opts.statuses); err != nil {
 				return err
 			}
-			filters := opts.filterOptions()
+			filters, err := opts.filterOptions()
+			if err != nil {
+				return err
+			}
 			if isInteractive() && !opts.json {
 				// --limit applies only to non-TTY / --json result size, not the TUI.
 				return runTUIWithFilters(cmd.Context(), state, filters, false, "")
@@ -112,6 +128,8 @@ Examples:
 	cmd.Flags().StringArrayVar(&opts.stages, "stage", nil, "Filter by lifecycle stage (repeat for OR)")
 	cmd.Flags().StringArrayVar(&opts.attentionStages, "attention-stage", nil, "Filter by attention stage (repeat for OR)")
 	cmd.Flags().StringArrayVar(&opts.groups, "group", nil, "Filter by workitem group (repeat for OR)")
+	cmd.Flags().StringArrayVar(&opts.tags, "tag", nil, "Filter by tag (repeat; item must have ALL given tags)")
+	cmd.Flags().StringArrayVar(&opts.projects, "project", nil, "Filter by related project (repeat for OR)")
 	cmd.Flags().StringVar(&opts.groupBy, "group-by", "", "Group output sections by attention_stage, group, type, or category")
 	cmd.Flags().BoolVar(&opts.showParked, "show-parked", false, "Include parked attention-stage workitems")
 	cmd.Flags().IntVar(&opts.limit, "limit", 0, "Maximum number of items to return (non-interactive / --json only)")
