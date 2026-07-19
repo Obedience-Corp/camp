@@ -298,8 +298,13 @@ func doFestivalPromote(ctx context.Context, cmd *cobra.Command, opts runWorkitem
 		return nil, camperrors.New("festival creation failed: " + fr.CLIError)
 	}
 
-	ingestDir := filepath.Join(campaignRoot, "festivals", fr.Dest, fr.Dir, "001_INGEST", "input_specs", loc.Slug)
-	if err := promotepkg.CopyTree(loc.SourcePath, ingestDir); err != nil {
+	isFile, slug := promoteSourceShape(loc)
+	ingestDir := filepath.Join(campaignRoot, "festivals", fr.Dest, fr.Dir, "001_INGEST", "input_specs", slug)
+	copyDest := ingestDir
+	if isFile {
+		copyDest = filepath.Join(ingestDir, filepath.Base(loc.SourcePath))
+	}
+	if err := promotepkg.CopyTree(loc.SourcePath, copyDest); err != nil {
 		return nil, camperrors.Wrap(err, "copying workitem into festival ingest")
 	}
 	promotedTo := filepath.ToSlash(filepath.Join("festivals", fr.Dest, fr.Dir))
@@ -346,9 +351,10 @@ func doDocPromote(ctx context.Context, opts runWorkitemPromoteOptions, campaignR
 		return nil, camperrors.New("workitem doc is empty; use --force to promote anyway")
 	}
 
+	isFile, cleanSlug := promoteSourceShape(loc)
 	relDest := opts.Dest
 	if relDest == "" {
-		relDest = loc.Slug
+		relDest = cleanSlug
 	}
 	docsRoot := filepath.Join(campaignRoot, "docs")
 	if err := os.MkdirAll(docsRoot, 0o755); err != nil {
@@ -364,7 +370,11 @@ func doDocPromote(ctx context.Context, opts runWorkitemPromoteOptions, campaignR
 			return nil, camperrors.New("docs/" + relDest + " already exists and is not empty; use --force to overwrite")
 		}
 	}
-	if err := promotepkg.CopyTree(loc.SourcePath, destDir); err != nil {
+	copyDest := destDir
+	if isFile {
+		copyDest = filepath.Join(destDir, filepath.Base(loc.SourcePath))
+	}
+	if err := promotepkg.CopyTree(loc.SourcePath, copyDest); err != nil {
 		return nil, camperrors.Wrap(err, "copying workitem into docs")
 	}
 	promotedTo := filepath.ToSlash(filepath.Join("docs", relDest))
@@ -389,6 +399,16 @@ func doDocPromote(ctx context.Context, opts runWorkitemPromoteOptions, campaignR
 // marker), which has no stable-id links to migrate.
 func promotedWorkitemIdentity(ctx context.Context, campaignRoot string, loc *locate.Location, result *workitemPromoteResult) (id, key string) {
 	key = loc.Type + ":" + result.From
+	// A file source has no .workitem sibling; its identity is in its own
+	// frontmatter, so load it there (mirrors gather's ItemKind branch). Without
+	// this a file source yields an empty id and link migration can only match by
+	// key, never by stable ID.
+	if isFile, _ := promoteSourceShape(loc); isFile {
+		if meta, err := wkitem.LoadFrontmatterMetadata(loc.SourcePath); err == nil && meta != nil {
+			id = meta.ID
+		}
+		return id, key
+	}
 	if meta, err := wkitem.LoadMetadata(ctx, loc.SourcePath); err == nil && meta != nil {
 		id = meta.ID
 	}
@@ -474,8 +494,17 @@ func readFestivalID(campaignRoot, promotedTo string) string {
 }
 
 func recordPromotedTo(ctx context.Context, campaignRoot string, loc *locate.Location, promotedTo string) error {
-	if _, err := os.Stat(filepath.Join(loc.SourcePath, wkitem.MetadataFilename)); os.IsNotExist(err) {
+	info, statErr := os.Stat(loc.SourcePath)
+	if statErr != nil {
 		return nil
+	}
+	// A directory source needs a .workitem marker to stamp; a file source is
+	// itself the frontmatter target, so it always proceeds. wkitem.RecordPromotion
+	// picks the right surface by shape.
+	if info.IsDir() {
+		if _, err := os.Stat(filepath.Join(loc.SourcePath, wkitem.MetadataFilename)); os.IsNotExist(err) {
+			return nil
+		}
 	}
 	relPath := filepath.ToSlash(dungeoncmd.RelFromRoot(campaignRoot, loc.SourcePath))
 	if err := promotepkg.RecordPromotion(promotedTo, func(rec promotepkg.PromotionRecord) error {
@@ -518,12 +547,10 @@ type DungeonMove struct {
 // the shared dungeon plumbing. It is the single implementation behind both
 // camp workitem promote and the deprecated camp shelve alias.
 func MoveToDungeon(ctx context.Context, campaignRoot string, loc *locate.Location, status string) (DungeonMove, error) {
-	info, err := os.Stat(loc.SourcePath)
-	if err != nil {
+	// Directory and file workitems both move via the generic dungeon plumbing
+	// (statusmove + link rewriting); the shape does not matter here.
+	if _, err := os.Stat(loc.SourcePath); err != nil {
 		return DungeonMove{}, camperrors.Wrapf(err, "stat workitem %s", loc.SourcePath)
-	}
-	if !info.IsDir() {
-		return DungeonMove{}, camperrors.New(fmt.Sprintf("workitem %s is not a directory; only directory-style workitems can be moved to the dungeon", dungeoncmd.RelFromRoot(campaignRoot, loc.SourcePath)))
 	}
 
 	if loc.InDungeon && loc.Status == status {
@@ -550,7 +577,29 @@ func MoveToDungeon(ctx context.Context, campaignRoot string, loc *locate.Locatio
 	}, nil
 }
 
+// promoteSourceShape reports whether loc's source is a single file and returns a
+// container slug for it: the extension-stripped slug for a file (so a file lands
+// under <dest>/<slug>/<file>.md rather than <dest>/<file>.md/), or loc.Slug for a
+// directory.
+func promoteSourceShape(loc *locate.Location) (isFile bool, slug string) {
+	if info, err := os.Stat(loc.SourcePath); err == nil && !info.IsDir() {
+		return true, strings.TrimSuffix(loc.Slug, filepath.Ext(loc.Slug))
+	}
+	return false, loc.Slug
+}
+
+// primaryDocContent returns the promotable markdown for a source path. For a
+// file workitem the source is itself the doc; for a directory it is README.md or
+// the first top-level .md.
 func primaryDocContent(srcDir string) (string, error) {
+	if info, err := os.Stat(srcDir); err == nil && !info.IsDir() {
+		data, rerr := os.ReadFile(srcDir)
+		if rerr != nil {
+			return "", camperrors.Wrap(rerr, "reading workitem file")
+		}
+		return string(data), nil
+	}
+
 	if data, err := os.ReadFile(filepath.Join(srcDir, "README.md")); err == nil {
 		return string(data), nil
 	} else if !os.IsNotExist(err) {

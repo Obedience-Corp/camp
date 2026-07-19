@@ -143,7 +143,8 @@ func runWorkitemGather(cmd *cobra.Command, wfType string, args []string, opts ga
 	}
 	var typed []wkitem.WorkItem
 	for _, item := range items {
-		if item.WorkflowType == wkitem.WorkflowType(wfType) && item.ItemKind == wkitem.ItemKindDirectory {
+		if item.WorkflowType == wkitem.WorkflowType(wfType) &&
+			(item.ItemKind == wkitem.ItemKindDirectory || item.ItemKind == wkitem.ItemKindFile) {
 			typed = append(typed, item)
 		}
 	}
@@ -209,9 +210,18 @@ func runWorkitemGather(cmd *cobra.Command, wfType string, args []string, opts ga
 		} else if gatherBlockedByRun(run) {
 			blocked = append(blocked, filepath.Base(item.RelativePath))
 		}
-		meta, metaErr := wkitem.LoadMetadata(ctx, abs)
+		// A file workitem's identity lives in its own frontmatter, not a
+		// .workitem sibling (which for a file path could never exist), so load
+		// it through the frontmatter loader instead.
+		var meta *wkitem.Metadata
+		var metaErr error
+		if item.ItemKind == wkitem.ItemKindFile {
+			meta, metaErr = wkitem.LoadFrontmatterMetadata(abs)
+		} else {
+			meta, metaErr = wkitem.LoadMetadata(ctx, abs)
+		}
 		if metaErr != nil {
-			warnings = append(warnings, fmt.Sprintf(".workitem unreadable for %s: %v", filepath.Base(item.RelativePath), metaErr))
+			warnings = append(warnings, fmt.Sprintf("metadata unreadable for %s: %v", filepath.Base(item.RelativePath), metaErr))
 			meta = nil
 		}
 		sources = append(sources, gatherSource{Item: item, Meta: meta})
