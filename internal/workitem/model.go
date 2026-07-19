@@ -54,7 +54,19 @@ type WorkItem struct {
 	StableID     string            `json:"stable_id,omitempty"`
 	WorkflowMeta *WorkItemWorkflow `json:"workflow,omitempty"`
 	Tags         []string          `json:"tags"`
-	Projects     []string          `json:"projects"`
+	Projects     []string          `json:"-"`
+	ProjectRefs  []ProjectRef      `json:"projects"`
+}
+
+// ProjectRef is one entry in a workitem's merged projects view: a
+// campaign-relative project path from the workitem's projects: list, annotated
+// with whether that project is also the workitem-scope primary link in
+// links.yaml. It is the JSON shape of the "projects" field (workitems/v1alpha9);
+// the plain []string Projects field stays the internal semantic base that
+// ApplyMetadata populates and the merged view is derived from at output time.
+type ProjectRef struct {
+	Path    string `json:"path"`
+	Primary bool   `json:"primary"`
 }
 
 // WorkItemWorkflow carries local runtime progress when .workflow/ is present

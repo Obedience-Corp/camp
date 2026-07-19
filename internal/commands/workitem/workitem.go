@@ -18,6 +18,7 @@ import (
 	"github.com/Obedience-Corp/camp/internal/paths"
 	"github.com/Obedience-Corp/camp/internal/pathutil"
 	wkitem "github.com/Obedience-Corp/camp/internal/workitem"
+	"github.com/Obedience-Corp/camp/internal/workitem/links"
 	"github.com/Obedience-Corp/camp/internal/workitem/priority"
 	wktui "github.com/Obedience-Corp/camp/internal/workitem/tui"
 )
@@ -109,7 +110,7 @@ Examples:
 			case flagList:
 				return outputList(cmd.OutOrStdout(), items, displayGroupBy)
 			case flagJSON:
-				return outputJSON(state.campaignRoot, state.cfg, items, displayGroupBy)
+				return outputJSON(ctx, state.campaignRoot, state.cfg, items, displayGroupBy)
 			default:
 				// Non-interactive --print/--path-output: output first item path directly.
 				if len(items) == 0 {
@@ -345,7 +346,22 @@ func validateDisplayStatuses(statuses []string) error {
 	return nil
 }
 
-func outputJSON(campaignRoot string, cfg *config.CampaignConfig, items []wkitem.WorkItem, groupBy string) error {
+func outputJSON(ctx context.Context, campaignRoot string, cfg *config.CampaignConfig, items []wkitem.WorkItem, groupBy string) error {
+	// Annotate each item's projects: with its primary designation from links.yaml
+	// so the JSON projects field is the merged view. Both --json call sites
+	// (list.go, workitem.go) route through here. A malformed registry must not
+	// hard-fail this read-only listing (it was registry-independent before the
+	// merged view): fall back to no annotation and warn, mirroring doctor's
+	// continue posture. mergeProjectRefs treats a nil registry as no primaries.
+	registry, err := links.Load(ctx, campaignRoot)
+	if err != nil {
+		registry = nil
+		_, _ = fmt.Fprintf(os.Stderr,
+			"warning: could not read links.yaml (%v); showing projects without primary annotation; run `camp workitem doctor --fix`\n", err)
+	}
+	for i := range items {
+		items[i].ProjectRefs = mergeProjectRefs(items[i].Projects, registry)
+	}
 	payload := wkitem.NewPayloadWithGrouping(campaignRoot, items, groupBy)
 	payload.CategoryVocabulary = categoryVocabulary(cfg)
 	enc := json.NewEncoder(os.Stdout)

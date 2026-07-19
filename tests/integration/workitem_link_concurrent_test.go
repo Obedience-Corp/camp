@@ -38,8 +38,10 @@ func TestIntegration_LinkConcurrentNoLoss(t *testing.T) {
 	var script strings.Builder
 	script.WriteString("set -e; cd " + dir + "; pids=\"\"; ")
 	for i := 0; i < n; i++ {
+		// blocked_by (not the deprecated related+project) exercises the same
+		// concurrent many-row append path this test guards.
 		fmt.Fprintf(&script,
-			"/camp workitem link shared --project proj-%02d --role related >/tmp/link-%02d.out 2>&1 & pids=\"$pids $!\"; ",
+			"/camp workitem link shared --project proj-%02d --role blocked_by >/tmp/link-%02d.out 2>&1 & pids=\"$pids $!\"; ",
 			i, i)
 	}
 	script.WriteString("for p in $pids; do wait $p || exit $?; done")

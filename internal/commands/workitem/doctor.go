@@ -28,18 +28,19 @@ import (
 // Doctor finding codes (dotted-domain form). Stable strings; consumers
 // dispatch on them.
 const (
-	codeBrokenLink           = "workitem.link.broken"
-	codeBrokenScope          = "workitem.scope.broken"
-	codeOutOfBounds          = "workitem.scope.out-of-bounds"
-	codeScopeUnvalidatable   = "workitem.scope.unvalidatable"
-	codeDuplicatePrimary     = "workitem.link.duplicate-primary"
-	codeSchemaViolation      = "workitem.schema.violation"
-	codeCurrentMissing       = "workitem.current.missing"
-	codeMissingRefField      = "workitem.ref.missing"
-	codeWorkitemScanFailed   = "workitem.scan.failed"
-	codeRegistryParseError   = "workitem.registry.parse-error"
-	codeProjectNotFound      = "workitem.project.not-found"
-	codeProjectUnvalidatable = "workitem.project.unvalidatable"
+	codeBrokenLink               = "workitem.link.broken"
+	codeBrokenScope              = "workitem.scope.broken"
+	codeOutOfBounds              = "workitem.scope.out-of-bounds"
+	codeScopeUnvalidatable       = "workitem.scope.unvalidatable"
+	codeDuplicatePrimary         = "workitem.link.duplicate-primary"
+	codeSchemaViolation          = "workitem.schema.violation"
+	codeCurrentMissing           = "workitem.current.missing"
+	codeMissingRefField          = "workitem.ref.missing"
+	codeWorkitemScanFailed       = "workitem.scan.failed"
+	codeRegistryParseError       = "workitem.registry.parse-error"
+	codeProjectNotFound          = "workitem.project.not-found"
+	codeProjectUnvalidatable     = "workitem.project.unvalidatable"
+	codeDeprecatedRelatedProject = "workitem.link.related-project-deprecated"
 )
 
 const (
@@ -231,7 +232,14 @@ func collectWorkitemFindings(ctx context.Context, root string, registry *links.L
 	promotedTargets := promotedFestivalTargets(ctx, root)
 	primarySeen := make(map[string]string)
 	for _, link := range registry.Links {
-		if _, known := knownIDs[link.WorkitemID]; !known {
+		// A deprecated related-project link (doc 04 D005) is handled solely by
+		// the migration below: --fix moves it into the workitem's projects: and
+		// removes the row, and a row whose workitem cannot be resolved is left in
+		// place and reported. It is never removed as a broken link/scope, so no
+		// data is lost.
+		deprecatedRelatedProject := link.Role == links.RoleRelated && link.Scope.Kind == links.ScopeProject
+
+		if _, known := knownIDs[link.WorkitemID]; !known && !deprecatedRelatedProject {
 			finding := docFinding{
 				Code:        codeBrokenLink,
 				Severity:    docSeverityError,
@@ -252,7 +260,7 @@ func collectWorkitemFindings(ctx context.Context, root string, registry *links.L
 			findings = append(findings, finding)
 		}
 		scopeMissing := !scopeTargetExists(root, link.Scope.Path)
-		if scopeMissing {
+		if scopeMissing && !deprecatedRelatedProject {
 			findings = append(findings, docFinding{
 				Code:        codeBrokenScope,
 				Severity:    docSeverityError,
@@ -292,6 +300,16 @@ func collectWorkitemFindings(ctx context.Context, root string, registry *links.L
 			} else {
 				primarySeen[key] = link.ID
 			}
+		}
+		if deprecatedRelatedProject {
+			findings = append(findings, docFinding{
+				Code:        codeDeprecatedRelatedProject,
+				Severity:    docSeverityWarning,
+				Target:      "link:" + link.ID,
+				Message:     "workitem " + link.WorkitemID + " has a deprecated related-project link to " + link.Scope.Path,
+				FixHint:     "run `camp workitem doctor --fix` to migrate it into the workitem's projects: field",
+				AutoFixable: true,
+			})
 		}
 	}
 
@@ -413,6 +431,21 @@ func autoFixWorkitemFindings(ctx context.Context, root string, registry *links.L
 			}
 		case codeMissingRefField:
 			needsRefBackfill = true
+		case codeDeprecatedRelatedProject:
+			linkID := strings.TrimPrefix(f.Target, "link:")
+			link, ok := registry.FindByID(linkID)
+			if !ok {
+				continue
+			}
+			if err := migrateRelatedProjectLink(ctx, root, *link); err != nil {
+				// Unmigratable (e.g. the workitem no longer resolves): report and
+				// leave the row in place. Never delete the data.
+				if _, writeErr := fmt.Fprintf(errw, "warning: cannot migrate related-project link %s: %v\n", linkID, err); writeErr != nil {
+					return applied, writeErr
+				}
+			} else if registry.RemoveLinkByID(linkID) {
+				applied++
+			}
 		}
 	}
 	if needsRefBackfill {

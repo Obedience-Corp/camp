@@ -33,6 +33,10 @@ func ApplyMetadata(item WorkItem, md *Metadata) (WorkItem, error) {
 	}
 	item.Tags = nonNilStrings(md.Tags)
 	item.Projects = nonNilStrings(md.Projects)
+	// Build the non-nil base merged view here so ProjectRefs is [] not null even
+	// on a WorkItem that never reaches the output layer. outputJSON re-derives it
+	// with the primary annotation from links.yaml (which is unavailable here).
+	item.ProjectRefs = projectRefsBase(item.Projects)
 	return item, nil
 }
 
@@ -41,4 +45,15 @@ func nonNilStrings(s []string) []string {
 		return []string{}
 	}
 	return s
+}
+
+// projectRefsBase renders projects: as the merged view without the links-derived
+// primary annotation (every entry primary=false). It always returns a non-nil
+// slice so the JSON projects field encodes as [] rather than null.
+func projectRefsBase(projects []string) []ProjectRef {
+	refs := make([]ProjectRef, 0, len(projects))
+	for _, p := range projects {
+		refs = append(refs, ProjectRef{Path: p})
+	}
+	return refs
 }
