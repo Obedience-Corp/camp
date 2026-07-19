@@ -61,6 +61,9 @@ func TestBuildFreshWorkflowClassifiesSteps(t *testing.T) {
 
 // An unconfigured branch and a branch turned off are different answers, and
 // the pane renders them differently, so the state has to distinguish them.
+// Project-scope branch: "" is the explicit "no branch" decision SetFreshBranch
+// preserves; never-set is unset. Both resolve to "" so the raw string alone
+// cannot tell them apart.
 func TestBranchStateSeparatesUnsetFromOff(t *testing.T) {
 	unset := buildFreshWorkflow(&config.FreshConfig{}, "")
 	idx := stepIndexBySetting(t, unset, freshSettingBranch)
@@ -69,6 +72,23 @@ func TestBranchStateSeparatesUnsetFromOff(t *testing.T) {
 	}
 	if got := stepGlyph(unset[idx]); got != "○" {
 		t.Errorf("unconfigured branch glyph = %q, want ○", got)
+	}
+
+	empty := ""
+	off := buildFreshWorkflow(&config.FreshConfig{
+		Branch: "develop",
+		Projects: map[string]config.FreshProjectConfig{
+			"api": {Branch: &empty},
+		},
+	}, "api")
+	if got := off[idx].State; got != freshStateOff {
+		t.Fatalf("project explicit branch:\"\" state = %v, want off", got)
+	}
+	if got := stepGlyph(off[idx]); got != "·" {
+		t.Errorf("project explicit off branch glyph = %q, want ·", got)
+	}
+	if off[idx].Enabled {
+		t.Error("project explicit branch:\"\" must not report Enabled")
 	}
 
 	configured := buildFreshWorkflow(&config.FreshConfig{Branch: "develop"}, "")

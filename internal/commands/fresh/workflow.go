@@ -132,7 +132,7 @@ func buildFreshWorkflow(cfg *config.FreshConfig, projectName string) []freshWork
 			Enabled: branch != "",
 			Kind:    freshStepSetting,
 			Setting: freshSettingBranch,
-			State:   branchState(branch),
+			State:   branchState(cfg, projectName, branch),
 		},
 		freshWorkflowStep{
 			Title:   "Push branch upstream",
@@ -184,11 +184,25 @@ func dependentState(dependency, own bool) freshStepState {
 	return freshStateOn
 }
 
-func branchState(branch string) freshStepState {
-	if branch == "" {
-		return freshStateUnset
+// branchState distinguishes three empty-looking answers:
+//
+//   - a resolved non-empty branch → on
+//   - a project-scope explicit branch: "" (pointer to empty string) → off
+//   - never configured (no key, or inherit of an empty global) → unset
+//
+// The resolved string alone cannot tell off from unset: both resolve to "".
+// Project config stores Branch as *string so the pointer's presence is the
+// "I decided no branch" signal SetFreshBranch carefully preserves.
+func branchState(cfg *config.FreshConfig, projectName, branch string) freshStepState {
+	if branch != "" {
+		return freshStateOn
 	}
-	return freshStateOn
+	if projectName != "" {
+		if pc, ok := cfg.Projects[projectName]; ok && pc.Branch != nil && *pc.Branch == "" {
+			return freshStateOff
+		}
+	}
+	return freshStateUnset
 }
 
 func onOffDetail(on bool, detail string) string {
