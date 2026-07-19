@@ -20,6 +20,7 @@ import (
 
 func newAdoptCommand() *cobra.Command {
 	var typeFlag, title, idOverride, questSelector string
+	var tags []string
 	cmd := &cobra.Command{
 		Use:     "adopt <dir>",
 		Aliases: []string{"init"},
@@ -28,25 +29,30 @@ func newAdoptCommand() *cobra.Command {
 
 The target directory must already exist and must not already contain a
 .workitem file. The command writes that .workitem metadata file with the
-selected type, title, generated or supplied id, and optional quest link. Use
-this when a workflow directory already exists and needs to become a tracked
-workitem.`,
+selected type, title, generated or supplied id, optional quest link, and
+optional tags. Use this when a workflow directory already exists and needs to
+become a tracked workitem.`,
 		Args: cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			ctx := cmd.Context()
-			return runAdopt(ctx, cmd, args[0], typeFlag, title, idOverride, questSelector)
+			return runAdopt(ctx, cmd, args[0], typeFlag, title, idOverride, questSelector, tags)
 		},
 	}
 	cmd.Flags().StringVar(&typeFlag, "type", "feature", "workitem type (feature, bug, chore, or custom)")
 	cmd.Flags().StringVar(&title, "title", "", "human-readable title")
 	cmd.Flags().StringVar(&idOverride, "id", "", "override the generated id")
 	cmd.Flags().StringVar(&questSelector, "quest", "", questFlagHelp())
+	cmd.Flags().StringArrayVar(&tags, "tag", nil, "add a tag (repeatable, normalized to lowercase kebab-case)")
 	return cmd
 }
 
-func runAdopt(ctx context.Context, cmd *cobra.Command, dir, typeFlag, title, idOverride, questSelector string) error {
+func runAdopt(ctx context.Context, cmd *cobra.Command, dir, typeFlag, title, idOverride, questSelector string, tags []string) error {
 	if err := validateSlug(typeFlag); err != nil {
 		return camperrors.NewValidation("type", "invalid type slug: "+err.Error(), nil)
+	}
+	normalizedTags, err := normalizeTags(tags)
+	if err != nil {
+		return err
 	}
 
 	cfg, campaignRoot, err := config.LoadCampaignConfigFromCwd(ctx)
@@ -101,6 +107,7 @@ func runAdopt(ctx context.Context, cmd *cobra.Command, dir, typeFlag, title, idO
 		Title:   title,
 		Ref:     ref,
 		QuestID: questID,
+		Tags:    normalizedTags,
 	}
 	buf, err := yaml.Marshal(&meta)
 	if err != nil {

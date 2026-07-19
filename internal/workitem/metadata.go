@@ -258,3 +258,8 @@ func ValidRef(s string) bool {
 func ValidQuestID(s string) bool {
 	return questIDShape.MatchString(s)
 }
+
+// ValidTag reports whether s is a well-formed tag (lowercase kebab-case).
+func ValidTag(s string) bool {
+	return tagShape.MatchString(s)
+}

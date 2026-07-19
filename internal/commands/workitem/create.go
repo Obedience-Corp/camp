@@ -29,6 +29,7 @@ import (
 func newCreateCommand() *cobra.Command {
 	var typeFlag, title, idOverride, dirOverride, questSelector string
 	var jsonOut bool
+	var tags []string
 	cmd := &cobra.Command{
 		Use:   "create <slug>",
 		Short: "Create workitem tracking metadata",
@@ -38,7 +39,7 @@ This command does NOT create the substantive work scaffold (no design docs,
 explore notes, or festival structure). It only:
 
   1. Creates workflow/<type>/<slug>/ (or --dir/<slug>/)
-  2. Writes a .workitem marker (id, type, title, ref, optional quest)
+  2. Writes a .workitem marker (id, type, title, ref, optional quest, optional tags)
 
 Agents and humans must still add real content afterward. For explore/design
 types, the recommended structured-workflow scaffold is:
@@ -58,7 +59,7 @@ explore/design (recommended scaffold); otherwise it is empty/omitted.`,
 		},
 		RunE: jsoncontract.RunE(WorkitemCreateJSONVersion, func() bool { return jsonOut }, func(cmd *cobra.Command, args []string) error {
 			ctx := cmd.Context()
-			return runCreate(ctx, cmd, args[0], typeFlag, title, idOverride, dirOverride, questSelector, jsonOut)
+			return runCreate(ctx, cmd, args[0], typeFlag, title, idOverride, dirOverride, questSelector, tags, jsonOut)
 		}),
 	}
 	cmd.SetFlagErrorFunc(jsoncontract.FlagErrorFunc(WorkitemCreateJSONVersion, func() bool { return jsonOut }))
@@ -68,15 +69,20 @@ explore/design (recommended scaffold); otherwise it is empty/omitted.`,
 	cmd.Flags().StringVar(&dirOverride, "dir", "", "parent dir override (default: workflow/<type>)")
 	cmd.Flags().StringVar(&questSelector, "quest", "", questFlagHelp())
 	cmd.Flags().BoolVar(&jsonOut, "json", false, "emit a structured JSON result")
+	cmd.Flags().StringArrayVar(&tags, "tag", nil, "add a tag (repeatable, normalized to lowercase kebab-case)")
 	return cmd
 }
 
-func runCreate(ctx context.Context, cmd *cobra.Command, slug, typeFlag, title, idOverride, dirOverride, questSelector string, jsonOut bool) error {
+func runCreate(ctx context.Context, cmd *cobra.Command, slug, typeFlag, title, idOverride, dirOverride, questSelector string, tags []string, jsonOut bool) error {
 	if err := validateSlug(slug); err != nil {
 		return err
 	}
 	if err := validateSlug(typeFlag); err != nil {
 		return camperrors.NewValidation("type", "invalid type slug: "+err.Error(), nil)
+	}
+	normalizedTags, err := normalizeTags(tags)
+	if err != nil {
+		return err
 	}
 
 	cfg, campaignRoot, err := config.LoadCampaignConfigFromCwd(ctx)
@@ -128,6 +134,7 @@ func runCreate(ctx context.Context, cmd *cobra.Command, slug, typeFlag, title, i
 		Title:   title,
 		Ref:     ref,
 		QuestID: questID,
+		Tags:    normalizedTags,
 	}
 	buf, err := yaml.Marshal(&meta)
 	if err != nil {

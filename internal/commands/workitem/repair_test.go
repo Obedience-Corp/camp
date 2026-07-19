@@ -1,6 +1,8 @@
 package workitem
 
 import (
+	"reflect"
+	"strings"
 	"testing"
 
 	wkitem "github.com/Obedience-Corp/camp/internal/workitem"
@@ -76,6 +78,62 @@ func TestComputeRepair_LegacyInputsUpgradeToCurrent(t *testing.T) {
 				t.Errorf("version = %q, want %q (%s must upgrade to current)", plan.meta.Version, wkitem.WorkitemSchemaVersion, version)
 			}
 		})
+	}
+}
+
+func TestComputeRepair_NormalizesTags(t *testing.T) {
+	genID, genRef, inferTitle := stubGenerators()
+	current := wkitem.Metadata{
+		Version: wkitem.WorkitemSchemaVersion,
+		Kind:    "workitem",
+		ID:      "design-foo-2026-05-25",
+		Type:    "design",
+		Title:   "Kept",
+		Ref:     "WI-abc123",
+		Tags:    []string{"Public-Launch", "public launch", "schema"},
+	}
+	plan, err := computeRepair(current, true, "design", genID, genRef, inferTitle)
+	if err != nil {
+		t.Fatalf("computeRepair: %v", err)
+	}
+	want := []string{"public-launch", "schema"}
+	if !reflect.DeepEqual(plan.meta.Tags, want) {
+		t.Errorf("tags = %#v, want %#v", plan.meta.Tags, want)
+	}
+	if _, ok := changeFields(plan.changes)["tags"]; !ok {
+		t.Error("expected a tags change to be recorded")
+	}
+}
+
+func TestComputeRepair_DropsUnrecoverableTags(t *testing.T) {
+	genID, genRef, inferTitle := stubGenerators()
+	current := wkitem.Metadata{
+		Version: wkitem.WorkitemSchemaVersion,
+		Kind:    "workitem",
+		ID:      "design-foo-2026-05-25",
+		Type:    "design",
+		Title:   "Kept",
+		Ref:     "WI-abc123",
+		Tags:    []string{"---", "schema"},
+	}
+	plan, err := computeRepair(current, true, "design", genID, genRef, inferTitle)
+	if err != nil {
+		t.Fatalf("computeRepair: %v", err)
+	}
+	if want := []string{"schema"}; !reflect.DeepEqual(plan.meta.Tags, want) {
+		t.Errorf("tags = %#v, want %#v", plan.meta.Tags, want)
+	}
+	var cleared *repairChange
+	for i := range plan.changes {
+		if plan.changes[i].Field == "tags" && plan.changes[i].Action == repairActionCleared {
+			cleared = &plan.changes[i]
+		}
+	}
+	if cleared == nil {
+		t.Fatal("a dropped tag must be recorded distinctly as a cleared action, not folded into a reformatting change")
+	}
+	if !strings.Contains(cleared.From, "---") {
+		t.Errorf("cleared change should name the dropped tag, got From=%q", cleared.From)
 	}
 }
 
