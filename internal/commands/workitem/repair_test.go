@@ -137,6 +137,67 @@ func TestComputeRepair_DropsUnrecoverableTags(t *testing.T) {
 	}
 }
 
+func TestComputeRepair_NormalizesProjects(t *testing.T) {
+	genID, genRef, inferTitle := stubGenerators()
+	current := wkitem.Metadata{
+		Version:  wkitem.WorkitemSchemaVersion,
+		Kind:     "workitem",
+		ID:       "design-foo-2026-05-25",
+		Type:     "design",
+		Title:    "Kept",
+		Ref:      "WI-abc123",
+		Projects: []string{"projects/camp/", "projects/./camp", "projects/fest"},
+	}
+	plan, err := computeRepair(current, true, "design", genID, genRef, inferTitle)
+	if err != nil {
+		t.Fatalf("computeRepair: %v", err)
+	}
+	want := []string{"projects/camp", "projects/fest"}
+	if !reflect.DeepEqual(plan.meta.Projects, want) {
+		t.Errorf("projects = %#v, want %#v", plan.meta.Projects, want)
+	}
+	if _, ok := changeFields(plan.changes)["projects"]; !ok {
+		t.Error("expected a projects change to be recorded")
+	}
+}
+
+func TestComputeRepair_DropsUnrecoverableProjects(t *testing.T) {
+	genID, genRef, inferTitle := stubGenerators()
+	current := wkitem.Metadata{
+		Version:  wkitem.WorkitemSchemaVersion,
+		Kind:     "workitem",
+		ID:       "design-foo-2026-05-25",
+		Type:     "design",
+		Title:    "Kept",
+		Ref:      "WI-abc123",
+		Projects: []string{"/", "projects/camp"},
+	}
+	plan, err := computeRepair(current, true, "design", genID, genRef, inferTitle)
+	if err != nil {
+		t.Fatalf("computeRepair: %v", err)
+	}
+	if want := []string{"projects/camp"}; !reflect.DeepEqual(plan.meta.Projects, want) {
+		t.Errorf("projects = %#v, want %#v", plan.meta.Projects, want)
+	}
+	for _, p := range plan.meta.Projects {
+		if p == "" {
+			t.Fatal("repair must never write an empty projects entry")
+		}
+	}
+	var cleared *repairChange
+	for i := range plan.changes {
+		if plan.changes[i].Field == "projects" && plan.changes[i].Action == repairActionCleared {
+			cleared = &plan.changes[i]
+		}
+	}
+	if cleared == nil {
+		t.Fatal("a dropped project must be recorded distinctly as a cleared action, not folded into a reformatting change")
+	}
+	if !strings.Contains(cleared.From, "/") {
+		t.Errorf("cleared change should name the dropped project, got From=%q", cleared.From)
+	}
+}
+
 func TestComputeRepair_LegacyUpgradeAndMismatch(t *testing.T) {
 	genID, genRef, inferTitle := stubGenerators()
 	current := wkitem.Metadata{

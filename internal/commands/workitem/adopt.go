@@ -21,6 +21,7 @@ import (
 func newAdoptCommand() *cobra.Command {
 	var typeFlag, title, idOverride, questSelector string
 	var tags []string
+	var projects []string
 	cmd := &cobra.Command{
 		Use:     "adopt <dir>",
 		Aliases: []string{"init"},
@@ -29,13 +30,13 @@ func newAdoptCommand() *cobra.Command {
 
 The target directory must already exist and must not already contain a
 .workitem file. The command writes that .workitem metadata file with the
-selected type, title, generated or supplied id, optional quest link, and
-optional tags. Use this when a workflow directory already exists and needs to
-become a tracked workitem.`,
+selected type, title, generated or supplied id, optional quest link, optional
+tags, and optional related projects. Use this when a workflow directory already
+exists and needs to become a tracked workitem.`,
 		Args: cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			ctx := cmd.Context()
-			return runAdopt(ctx, cmd, args[0], typeFlag, title, idOverride, questSelector, tags)
+			return runAdopt(ctx, cmd, args[0], typeFlag, title, idOverride, questSelector, tags, projects)
 		},
 	}
 	cmd.Flags().StringVar(&typeFlag, "type", "feature", "workitem type (feature, bug, chore, or custom)")
@@ -43,15 +44,23 @@ become a tracked workitem.`,
 	cmd.Flags().StringVar(&idOverride, "id", "", "override the generated id")
 	cmd.Flags().StringVar(&questSelector, "quest", "", questFlagHelp())
 	cmd.Flags().StringArrayVar(&tags, "tag", nil, "add a tag (repeatable, normalized to lowercase kebab-case)")
+	cmd.Flags().StringArrayVar(&projects, "project", nil, "add a related project path (repeatable, e.g. projects/camp)")
 	return cmd
 }
 
-func runAdopt(ctx context.Context, cmd *cobra.Command, dir, typeFlag, title, idOverride, questSelector string, tags []string) error {
+func runAdopt(ctx context.Context, cmd *cobra.Command, dir, typeFlag, title, idOverride, questSelector string, tags, projects []string) error {
 	if err := validateSlug(typeFlag); err != nil {
 		return camperrors.NewValidation("type", "invalid type slug: "+err.Error(), nil)
 	}
 	normalizedTags, err := normalizeTags(tags)
 	if err != nil {
+		return err
+	}
+	normalizedProjects, err := normalizeProjects(projects)
+	if err != nil {
+		return err
+	}
+	if err := wkitem.ValidateProjectPaths(normalizedProjects); err != nil {
 		return err
 	}
 
@@ -100,14 +109,15 @@ func runAdopt(ctx context.Context, cmd *cobra.Command, dir, typeFlag, title, idO
 	questID := resolveQuestIDForCreate(ctx, cmd, campaignRoot, questSelector)
 
 	meta := wkitem.Metadata{
-		Version: wkitem.WorkitemSchemaVersion,
-		Kind:    "workitem",
-		ID:      id,
-		Type:    typeFlag,
-		Title:   title,
-		Ref:     ref,
-		QuestID: questID,
-		Tags:    normalizedTags,
+		Version:  wkitem.WorkitemSchemaVersion,
+		Kind:     "workitem",
+		ID:       id,
+		Type:     typeFlag,
+		Title:    title,
+		Ref:      ref,
+		QuestID:  questID,
+		Tags:     normalizedTags,
+		Projects: normalizedProjects,
 	}
 	buf, err := yaml.Marshal(&meta)
 	if err != nil {

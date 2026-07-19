@@ -30,6 +30,7 @@ func newCreateCommand() *cobra.Command {
 	var typeFlag, title, idOverride, dirOverride, questSelector string
 	var jsonOut bool
 	var tags []string
+	var projects []string
 	cmd := &cobra.Command{
 		Use:   "create <slug>",
 		Short: "Create workitem tracking metadata",
@@ -39,7 +40,8 @@ This command does NOT create the substantive work scaffold (no design docs,
 explore notes, or festival structure). It only:
 
   1. Creates workflow/<type>/<slug>/ (or --dir/<slug>/)
-  2. Writes a .workitem marker (id, type, title, ref, optional quest, optional tags)
+  2. Writes a .workitem marker (id, type, title, ref, optional quest, optional
+     tags, optional related projects)
 
 Agents and humans must still add real content afterward. For explore/design
 types, the recommended structured-workflow scaffold is:
@@ -59,7 +61,7 @@ explore/design (recommended scaffold); otherwise it is empty/omitted.`,
 		},
 		RunE: jsoncontract.RunE(WorkitemCreateJSONVersion, func() bool { return jsonOut }, func(cmd *cobra.Command, args []string) error {
 			ctx := cmd.Context()
-			return runCreate(ctx, cmd, args[0], typeFlag, title, idOverride, dirOverride, questSelector, tags, jsonOut)
+			return runCreate(ctx, cmd, args[0], typeFlag, title, idOverride, dirOverride, questSelector, tags, projects, jsonOut)
 		}),
 	}
 	cmd.SetFlagErrorFunc(jsoncontract.FlagErrorFunc(WorkitemCreateJSONVersion, func() bool { return jsonOut }))
@@ -70,10 +72,11 @@ explore/design (recommended scaffold); otherwise it is empty/omitted.`,
 	cmd.Flags().StringVar(&questSelector, "quest", "", questFlagHelp())
 	cmd.Flags().BoolVar(&jsonOut, "json", false, "emit a structured JSON result")
 	cmd.Flags().StringArrayVar(&tags, "tag", nil, "add a tag (repeatable, normalized to lowercase kebab-case)")
+	cmd.Flags().StringArrayVar(&projects, "project", nil, "add a related project path (repeatable, e.g. projects/camp)")
 	return cmd
 }
 
-func runCreate(ctx context.Context, cmd *cobra.Command, slug, typeFlag, title, idOverride, dirOverride, questSelector string, tags []string, jsonOut bool) error {
+func runCreate(ctx context.Context, cmd *cobra.Command, slug, typeFlag, title, idOverride, dirOverride, questSelector string, tags, projects []string, jsonOut bool) error {
 	if err := validateSlug(slug); err != nil {
 		return err
 	}
@@ -82,6 +85,13 @@ func runCreate(ctx context.Context, cmd *cobra.Command, slug, typeFlag, title, i
 	}
 	normalizedTags, err := normalizeTags(tags)
 	if err != nil {
+		return err
+	}
+	normalizedProjects, err := normalizeProjects(projects)
+	if err != nil {
+		return err
+	}
+	if err := wkitem.ValidateProjectPaths(normalizedProjects); err != nil {
 		return err
 	}
 
@@ -127,14 +137,15 @@ func runCreate(ctx context.Context, cmd *cobra.Command, slug, typeFlag, title, i
 	}()
 
 	meta := wkitem.Metadata{
-		Version: wkitem.WorkitemSchemaVersion,
-		Kind:    "workitem",
-		ID:      id,
-		Type:    typeFlag,
-		Title:   title,
-		Ref:     ref,
-		QuestID: questID,
-		Tags:    normalizedTags,
+		Version:  wkitem.WorkitemSchemaVersion,
+		Kind:     "workitem",
+		ID:       id,
+		Type:     typeFlag,
+		Title:    title,
+		Ref:      ref,
+		QuestID:  questID,
+		Tags:     normalizedTags,
+		Projects: normalizedProjects,
 	}
 	buf, err := yaml.Marshal(&meta)
 	if err != nil {

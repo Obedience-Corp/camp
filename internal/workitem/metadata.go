@@ -263,3 +263,10 @@ func ValidQuestID(s string) bool {
 func ValidTag(s string) bool {
 	return tagShape.MatchString(s)
 }
+
+// ValidateProjectPaths reports the first shape problem among project paths
+// (empty, absolute, escaping the campaign root, or duplicate), or nil. It is
+// the exported form of the loader's projects validation.
+func ValidateProjectPaths(paths []string) error {
+	return validateProjects(paths)
+}
