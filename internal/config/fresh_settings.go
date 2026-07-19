@@ -37,9 +37,11 @@ func SetFreshPushUpstream(ctx context.Context, campaignRoot, projectName string,
 	})
 }
 
-// SetFreshPrune writes whether merged branches are pruned. The key is global
-// only: FreshProjectConfig has no per-project counterpart, so a project scope
-// is rejected rather than silently written somewhere fresh will not read it.
+// SetFreshPrune writes whether merged branches are pruned. Global only: there
+// is no projectName parameter because FreshProjectConfig has no prune field.
+// A nil value clears the key so the built-in default (true) applies. Callers
+// that need to keep a project scope honest (and refuse a project write) live
+// in the configure TUI, which redirects those edits to Global defaults.
 func SetFreshPrune(ctx context.Context, campaignRoot string, value *bool) error {
 	return withFreshConfigLock(ctx, campaignRoot, func(mapping *yaml.Node) error {
 		return setFreshBool(mapping, "", "prune", value)
@@ -47,7 +49,8 @@ func SetFreshPrune(ctx context.Context, campaignRoot string, value *bool) error 
 }
 
 // SetFreshPruneRemote writes whether stale remote tracking refs are pruned.
-// Like prune, this key is global only.
+// Global only, same contract as SetFreshPrune: no projectName parameter, nil
+// clears the key back to the built-in default (true).
 func SetFreshPruneRemote(ctx context.Context, campaignRoot string, value *bool) error {
 	return withFreshConfigLock(ctx, campaignRoot, func(mapping *yaml.Node) error {
 		return setFreshBool(mapping, "", "prune_remote", value)

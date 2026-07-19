@@ -289,12 +289,14 @@ func (m *followUpTUIModel) updateSettingEditor(msg tea.KeyMsg) (tea.Model, tea.C
 	case "esc":
 		m.closeSettingEditor()
 		return m, nil
-	case "up", "shift+tab":
-		m.moveSettingChoice(-1)
-		return m, nil
-	case "down", "tab":
-		m.moveSettingChoice(1)
-		return m, nil
+	// j/k match browse mode. They always navigate options, even when the
+	// branch input is focused — typing a branch name that needs those letters
+	// still works via paste or arrow keys; losing vim-motion muscle memory
+	// inside the editor was the worse surprise.
+	case "up", "shift+tab", "k":
+		return m, m.moveSettingChoice(-1)
+	case "down", "tab", "j":
+		return m, m.moveSettingChoice(1)
 	case "enter":
 		return m, m.saveSettingEditor()
 	}
@@ -310,17 +312,21 @@ func (m *followUpTUIModel) updateSettingEditor(msg tea.KeyMsg) (tea.Model, tea.C
 	return m, nil
 }
 
-func (m *followUpTUIModel) moveSettingChoice(delta int) {
+// moveSettingChoice advances the option cursor and focuses the branch field
+// when landing on "create a branch...". Returns textinput.Blink so the caret
+// appears immediately — Focus alone does not schedule a blink.
+func (m *followUpTUIModel) moveSettingChoice(delta int) tea.Cmd {
 	if len(m.settingOptions) == 0 {
-		return
+		return nil
 	}
 	m.settingChoice = (m.settingChoice + delta + len(m.settingOptions)) % len(m.settingOptions)
 	m.settingError = ""
 	if m.selectedSettingAction() == freshSettingCustomBranch {
 		m.settingInput.Focus()
-		return
+		return textinput.Blink
 	}
 	m.settingInput.Blur()
+	return nil
 }
 
 func (m *followUpTUIModel) selectedSettingAction() freshSettingAction {
@@ -342,10 +348,20 @@ func (m *followUpTUIModel) saveSettingEditor() tea.Cmd {
 	projectName := scopeProjectName(scope)
 	action := m.selectedSettingAction()
 
+	// Confirm without changing must not rewrite the file. Scaffolded
+	// fresh.yaml keeps every key commented; a pure enter that materializes
+	// an explicit true is a dirty state the user never asked for.
+	if unchanged, notice := m.settingUnchanged(step, action); unchanged {
+		m.closeSettingEditor()
+		m.setNotice(notice)
+		return nil
+	}
+
 	var (
 		err     error
 		outcome string
 	)
+	project := projectName != ""
 	switch step.Setting {
 	case freshSettingBranch:
 		branch, description, verr := m.resolveBranchAction(action)
@@ -357,15 +373,15 @@ func (m *followUpTUIModel) saveSettingEditor() tea.Cmd {
 		err = config.SetFreshBranch(m.ctx, m.root, projectName, branch)
 	case freshSettingPushUpstream:
 		value := boolForAction(action)
-		outcome = settingOutcome("push_upstream", value)
+		outcome = settingOutcome("push_upstream", value, project)
 		err = config.SetFreshPushUpstream(m.ctx, m.root, projectName, value)
 	case freshSettingPrune:
 		value := boolForAction(action)
-		outcome = settingOutcome("prune", value)
+		outcome = settingOutcome("prune", value, project)
 		err = config.SetFreshPrune(m.ctx, m.root, value)
 	case freshSettingPruneRemote:
 		value := boolForAction(action)
-		outcome = settingOutcome("prune_remote", value)
+		outcome = settingOutcome("prune_remote", value, project)
 		err = config.SetFreshPruneRemote(m.ctx, m.root, value)
 	default:
 		m.closeSettingEditor()
@@ -384,6 +400,39 @@ func (m *followUpTUIModel) saveSettingEditor() tea.Cmd {
 	m.closeSettingEditor()
 	m.setStatus(fmt.Sprintf("%s in %s", outcome, workflowScopeLabel(projectName)))
 	return nil
+}
+
+// settingUnchanged reports that the selected option matches what the scope
+// already stores, so saving would only rewrite the file. Custom branches also
+// compare the typed name to the stored one.
+func (m *followUpTUIModel) settingUnchanged(step freshWorkflowStep, action freshSettingAction) (bool, string) {
+	if action != m.currentSettingAction(step) {
+		return false, ""
+	}
+	if action == freshSettingCustomBranch {
+		if strings.TrimSpace(m.settingInput.Value()) != m.settingScopeBranch() {
+			return false, ""
+		}
+	}
+
+	title := settingTitle(step.Setting)
+	switch action {
+	case freshSettingInherit:
+		if m.inProjectScope() {
+			return true, fmt.Sprintf("%s already inherits · nothing written", title)
+		}
+		return true, fmt.Sprintf("%s already at the built-in default · nothing written", title)
+	case freshSettingOn:
+		return true, fmt.Sprintf("%s already on · nothing written", title)
+	case freshSettingOff:
+		return true, fmt.Sprintf("%s already off · nothing written", title)
+	case freshSettingNoBranch:
+		return true, fmt.Sprintf("%s already cleared · nothing written", title)
+	case freshSettingCustomBranch:
+		return true, fmt.Sprintf("%s already %s · nothing written", title, m.settingScopeBranch())
+	default:
+		return true, fmt.Sprintf("%s unchanged · nothing written", title)
+	}
 }
 
 // resolveBranchAction turns the selected option into the branch value to
@@ -406,7 +455,7 @@ func (m *followUpTUIModel) resolveBranchAction(action freshSettingAction) (*stri
 }
 
 // boolForAction maps an option onto the pointer the config writers take, where
-// nil clears the key.
+// nil clears the key (project inherit, or global restore-to-built-in-default).
 func boolForAction(action freshSettingAction) *bool {
 	switch action {
 	case freshSettingOn:
@@ -420,9 +469,12 @@ func boolForAction(action freshSettingAction) *bool {
 	}
 }
 
-func settingOutcome(key string, value *bool) string {
+func settingOutcome(key string, value *bool, projectScope bool) string {
 	if value == nil {
-		return key + " now inherits the global default"
+		if projectScope {
+			return key + " now inherits the global default"
+		}
+		return key + " restored to the built-in default"
 	}
 	return fmt.Sprintf("%s set to %s", key, onOffWord(*value))
 }

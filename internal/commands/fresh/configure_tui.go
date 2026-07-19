@@ -71,8 +71,10 @@ type followUpScope struct {
 	// name is the scope's display name on its own, without decoration, so the
 	// renderer can drop badges rather than the identity when space is short.
 	name string
-	// overrideCount is the length of this project's own follow-up list.
-	// override distinguishes an explicit empty list from no list at all.
+	// overrideCount is how many fresh.yaml keys this project sets for itself
+	// (branch, push_upstream, follow-up list, …), via ProjectOverrideKeys.
+	// override is true when that count is non-zero. An explicit empty
+	// follow-up list still counts as one key, because FollowUp != nil.
 	override      bool
 	overrideCount int
 	// current marks the project detected from the working directory.
@@ -343,7 +345,9 @@ func (m *followUpTUIModel) inProjectScope() bool {
 
 // settingOptionsFor builds the choices the settings editor offers for a step.
 // A project scope gains an inherit option, since clearing the key there is a
-// real third outcome; the global scope has no one to inherit from.
+// real third outcome. The global scope has no one to inherit from, but bool
+// keys still need a third choice: "default" clears the key so the built-in
+// applies, which is distinct from writing an explicit true/false.
 func (m *followUpTUIModel) settingOptionsFor(step freshWorkflowStep) []freshSettingOption {
 	project := m.inProjectScope()
 
@@ -362,9 +366,18 @@ func (m *followUpTUIModel) settingOptionsFor(step freshWorkflowStep) []freshSett
 	}
 
 	options := make([]freshSettingOption, 0, 3)
-	if project && !step.GlobalOnly {
+	switch {
+	case project && !step.GlobalOnly:
 		options = append(options, freshSettingOption{
 			label:  "inherit from global · " + onOffWord(m.globalBoolValue(step.Setting)),
+			action: freshSettingInherit,
+		})
+	case !project:
+		// Built-in defaults for prune / prune_remote / push_upstream are true.
+		// Name the default, not the currently resolved value, so an explicit
+		// "off" does not make the default option read "default · off".
+		options = append(options, freshSettingOption{
+			label:  "default · " + onOffWord(builtInBoolDefault(step.Setting)),
 			action: freshSettingInherit,
 		})
 	}
@@ -377,6 +390,11 @@ func (m *followUpTUIModel) settingOptionsFor(step freshWorkflowStep) []freshSett
 // currentSettingAction is the option that matches what the selected scope
 // stores today, so the editor opens on the current answer rather than on a
 // default that would silently rewrite the key if the user just pressed enter.
+//
+// For global bools this must inspect the stored pointer, not the resolved
+// value: Resolve* collapses a missing key to the built-in default (true), and
+// mapping that to "on" would open the editor on an option that writes an
+// explicit true into a previously absent key.
 func (m *followUpTUIModel) currentSettingAction(step freshWorkflowStep) freshSettingAction {
 	scope := scopeProjectName(m.selectedScope())
 	pc, hasProject := m.cfg.Projects[scope]
@@ -403,13 +421,34 @@ func (m *followUpTUIModel) currentSettingAction(step freshWorkflowStep) freshSet
 			}
 			return boolAction(*pc.PushUpstream)
 		}
-		return boolAction(m.cfg.ResolveFreshPushUpstream(""))
+		if m.cfg.PushUpstream == nil {
+			return freshSettingInherit
+		}
+		return boolAction(*m.cfg.PushUpstream)
 	case freshSettingPrune:
-		return boolAction(m.cfg.ResolveFreshPrune())
+		if m.cfg.Prune == nil {
+			return freshSettingInherit
+		}
+		return boolAction(*m.cfg.Prune)
 	case freshSettingPruneRemote:
-		return boolAction(m.cfg.ResolveFreshPruneRemote())
+		if m.cfg.PruneRemote == nil {
+			return freshSettingInherit
+		}
+		return boolAction(*m.cfg.PruneRemote)
 	}
 	return freshSettingInherit
+}
+
+// builtInBoolDefault is the value Resolve* uses when a global bool key is
+// absent. Kept local so option labels do not re-derive it from a currently
+// written override.
+func builtInBoolDefault(setting freshSettingKey) bool {
+	switch setting {
+	case freshSettingPushUpstream, freshSettingPrune, freshSettingPruneRemote:
+		return true
+	default:
+		return false
+	}
 }
 
 // settingScopeBranch is the branch this scope stores on its own, used to seed
@@ -484,10 +523,13 @@ func (m *followUpTUIModel) Init() tea.Cmd {
 	return textinput.Blink
 }
 
+// configuredProjectNames lists projects that set any fresh.yaml key of their
+// own. It uses ProjectOverrideKeys so a branch-only override is not treated as
+// unconfigured — the same rule the scopes badge applies.
 func configuredProjectNames(cfg *config.FreshConfig) []string {
 	names := make([]string, 0, len(cfg.Projects))
 	for name, pc := range cfg.Projects {
-		if pc.FollowUp != nil {
+		if config.ProjectOverrideKeys(pc) > 0 {
 			names = append(names, name)
 		}
 	}

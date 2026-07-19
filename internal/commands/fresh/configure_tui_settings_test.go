@@ -19,7 +19,14 @@ func settingsModel(t *testing.T, cfg *config.FreshConfig) *followUpTUIModel {
 // not encode the sequence position of a step that may gain neighbors later.
 func stepIndexFor(t *testing.T, m *followUpTUIModel, setting freshSettingKey) int {
 	t.Helper()
-	for i, step := range m.workflowSteps() {
+	return stepIndexBySetting(t, m.workflowSteps(), setting)
+}
+
+// stepIndexBySetting is the raw-slice form of stepIndexFor for tests that call
+// buildFreshWorkflow directly without a TUI model.
+func stepIndexBySetting(t *testing.T, steps []freshWorkflowStep, setting freshSettingKey) int {
+	t.Helper()
+	for i, step := range steps {
 		if step.Kind == freshStepSetting && step.Setting == setting {
 			return i
 		}
@@ -56,7 +63,7 @@ func TestBuildFreshWorkflowClassifiesSteps(t *testing.T) {
 // the pane renders them differently, so the state has to distinguish them.
 func TestBranchStateSeparatesUnsetFromOff(t *testing.T) {
 	unset := buildFreshWorkflow(&config.FreshConfig{}, "")
-	idx := 5
+	idx := stepIndexBySetting(t, unset, freshSettingBranch)
 	if got := unset[idx].State; got != freshStateUnset {
 		t.Fatalf("unconfigured branch state = %v, want unset", got)
 	}
@@ -75,7 +82,7 @@ func TestBranchStateSeparatesUnsetFromOff(t *testing.T) {
 // something they never touched.
 func TestPushUpstreamBlockedWithoutBranch(t *testing.T) {
 	steps := buildFreshWorkflow(&config.FreshConfig{}, "")
-	push := steps[6]
+	push := steps[stepIndexBySetting(t, steps, freshSettingPushUpstream)]
 	if push.State != freshStateBlocked {
 		t.Fatalf("push state without a branch = %v, want blocked", push.State)
 	}
@@ -85,14 +92,15 @@ func TestPushUpstreamBlockedWithoutBranch(t *testing.T) {
 
 	off := false
 	steps = buildFreshWorkflow(&config.FreshConfig{Branch: "develop", PushUpstream: &off}, "")
-	if got := steps[6].State; got != freshStateOff {
+	if got := steps[stepIndexBySetting(t, steps, freshSettingPushUpstream)].State; got != freshStateOff {
 		t.Fatalf("explicitly disabled push state = %v, want off", got)
 	}
 }
 
 func TestConfigurableExcludesGlobalOnlyKeysInProjectScope(t *testing.T) {
 	steps := buildFreshWorkflow(&config.FreshConfig{}, "api")
-	prune, push := steps[3], steps[6]
+	prune := steps[stepIndexBySetting(t, steps, freshSettingPrune)]
+	push := steps[stepIndexBySetting(t, steps, freshSettingPushUpstream)]
 
 	if prune.Configurable(true) {
 		t.Error("prune reported configurable in a project scope; fresh only reads it globally")
@@ -107,7 +115,7 @@ func TestConfigurableExcludesGlobalOnlyKeysInProjectScope(t *testing.T) {
 
 func TestSettingOptionsAddInheritOnlyInProjectScope(t *testing.T) {
 	m := settingsModel(t, &config.FreshConfig{Branch: "develop"})
-	branchStep := m.workflowSteps()[5]
+	branchStep := m.workflowSteps()[stepIndexFor(t, m, freshSettingBranch)]
 
 	global := m.settingOptionsFor(branchStep)
 	if len(global) != 2 {
@@ -126,6 +134,57 @@ func TestSettingOptionsAddInheritOnlyInProjectScope(t *testing.T) {
 	}
 	if !strings.Contains(project[0].label, "develop") {
 		t.Errorf("inherit label %q does not name the value it inherits", project[0].label)
+	}
+}
+
+// An absent global bool is the built-in default, not an explicit "on". The
+// editor must open on "default" so a pure enter leaves the file alone.
+func TestGlobalBoolOptionsOfferDefaultAndOpenOnAbsentKey(t *testing.T) {
+	m := settingsModel(t, &config.FreshConfig{})
+	pruneStep := m.workflowSteps()[stepIndexFor(t, m, freshSettingPrune)]
+
+	options := m.settingOptionsFor(pruneStep)
+	if len(options) != 3 || options[0].action != freshSettingInherit {
+		t.Fatalf("global prune options = %+v, want default first", options)
+	}
+	if !strings.Contains(options[0].label, "default") {
+		t.Errorf("first option label %q does not say default", options[0].label)
+	}
+	if got := m.currentSettingAction(pruneStep); got != freshSettingInherit {
+		t.Fatalf("absent prune opens on action %v, want default/inherit", got)
+	}
+
+	on := true
+	m.cfg.Prune = &on
+	if got := m.currentSettingAction(pruneStep); got != freshSettingOn {
+		t.Fatalf("explicit prune true opens on action %v, want on", got)
+	}
+	off := false
+	m.cfg.Prune = &off
+	if got := m.currentSettingAction(pruneStep); got != freshSettingOff {
+		t.Fatalf("explicit prune false opens on action %v, want off", got)
+	}
+}
+
+func TestSettingUnchangedShortCircuitsSave(t *testing.T) {
+	m := settingsModel(t, &config.FreshConfig{})
+	m.stepCursor = stepIndexFor(t, m, freshSettingPrune)
+	step, _ := m.selectedStep()
+	m.openSettingEditor(step)
+
+	// Absent key + default selected → no write, notice status.
+	cmd := m.saveSettingEditor()
+	if cmd != nil {
+		t.Fatal("unchanged save returned a command")
+	}
+	if m.overlay != followUpNoOverlay {
+		t.Fatal("unchanged save left the editor open")
+	}
+	if m.statusLevel != statusNotice {
+		t.Errorf("status level = %v, want notice", m.statusLevel)
+	}
+	if !strings.Contains(m.status, "nothing written") {
+		t.Errorf("status %q does not say nothing was written", m.status)
 	}
 }
 
