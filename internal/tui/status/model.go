@@ -326,6 +326,8 @@ func highlightSearch(content, query string) string {
 
 	lowerQuery := strings.ToLower(query)
 	lines := strings.Split(content, "\n")
+	// Black is an intentional contrast color on the shared warning role;
+	// v0.4.5 does not expose an OnWarning semantic role.
 	highlightStyle := lipgloss.NewStyle().Background(pal.Warning).Foreground(lipgloss.Color("0"))
 
 	var result strings.Builder
