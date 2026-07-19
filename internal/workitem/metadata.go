@@ -25,16 +25,15 @@ var (
 
 const MetadataFilename = ".workitem"
 
-const WorkitemSchemaVersion = "v1alpha7"
+const WorkitemSchemaVersion = "v1alpha8"
 
 const MetadataKind = "workitem"
 
 // acceptedWorkitemVersions are loadable .workitem schema versions. v1alpha4
-// through v1alpha6 are accepted for backward compatibility; v1alpha7 is the
-// current write version (GatheredInto/GatheredAt fields); v1alpha8 adds the
-// Tags and Projects fields and is loadable ahead of the writer release, per the
-// two-phase rollout. validateMetadata additionally accepts unknown future
-// v1alphaN via the forward-compat rule.
+// through v1alpha7 are accepted for backward compatibility (v1alpha7 added the
+// GatheredInto/GatheredAt fields); v1alpha8 is the current write version and
+// adds the Tags and Projects fields. validateMetadata additionally accepts
+// unknown future v1alphaN via the forward-compat rule.
 var acceptedWorkitemVersions = map[string]bool{
 	"v1alpha4": true,
 	"v1alpha5": true,

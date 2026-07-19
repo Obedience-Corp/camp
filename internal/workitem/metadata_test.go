@@ -116,7 +116,7 @@ id: x
 type: design
 title: T
 `,
-			wantSubstr: "v1alpha7",
+			wantSubstr: WorkitemSchemaVersion,
 		},
 		{
 			name: "wrong kind",

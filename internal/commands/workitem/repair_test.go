@@ -56,6 +56,29 @@ func TestComputeRepair_CreateFromMissing(t *testing.T) {
 	}
 }
 
+func TestComputeRepair_LegacyInputsUpgradeToCurrent(t *testing.T) {
+	genID, genRef, inferTitle := stubGenerators()
+	for _, version := range []string{"v1alpha4", "v1alpha5", "v1alpha6", "v1alpha7"} {
+		t.Run(version, func(t *testing.T) {
+			current := wkitem.Metadata{
+				Version: version,
+				Kind:    "workitem",
+				ID:      "design-foo-2026-05-25",
+				Type:    "design",
+				Title:   "Kept Title",
+				Ref:     "WI-abc123",
+			}
+			plan, err := computeRepair(current, true, "design", genID, genRef, inferTitle)
+			if err != nil {
+				t.Fatalf("computeRepair: %v", err)
+			}
+			if plan.meta.Version != wkitem.WorkitemSchemaVersion {
+				t.Errorf("version = %q, want %q (%s must upgrade to current)", plan.meta.Version, wkitem.WorkitemSchemaVersion, version)
+			}
+		})
+	}
+}
+
 func TestComputeRepair_LegacyUpgradeAndMismatch(t *testing.T) {
 	genID, genRef, inferTitle := stubGenerators()
 	current := wkitem.Metadata{
