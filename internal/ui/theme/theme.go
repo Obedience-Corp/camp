@@ -170,8 +170,8 @@ func buildTheme(p brand.Palette) *huh.Theme {
 // capabilities, including adaptive, light, high-contrast, and plain modes.
 type TUIPalette struct {
 	// Primary colors
-	Accent    lipgloss.TerminalColor // Primary accent (pink/magenta)
-	AccentAlt lipgloss.TerminalColor // Secondary accent (blue)
+	Accent    lipgloss.TerminalColor // Primary accent (shared fire accent)
+	AccentAlt lipgloss.TerminalColor // Secondary accent (shared highlight)
 	Success   lipgloss.TerminalColor // Success/positive (green)
 	Warning   lipgloss.TerminalColor // Warning (orange/yellow)
 	Error     lipgloss.TerminalColor // Error/danger (red)
