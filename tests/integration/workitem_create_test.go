@@ -37,7 +37,8 @@ func TestIntegration_WorkitemCreateAndAdopt(t *testing.T) {
 
 		out, err := tc.RunCampInDir(campaignDir, "workitem", "create", "nav-design", "--type", "design", "--title", "Navigation Design")
 		require.NoError(t, err, "camp workitem create design: %s", out)
-		assert.Contains(t, out, "created workflow/design/nav-design")
+		assert.Contains(t, out, "created workitem tracking at workflow/design/nav-design")
+		assert.Contains(t, out, "directory + .workitem only")
 
 		out, err = tc.RunCampInDir(campaignDir, "complete", "de")
 		require.NoError(t, err, "completion after workitem create: %s", out)
@@ -52,9 +53,10 @@ func TestIntegration_WorkitemCreateAndAdopt(t *testing.T) {
 	t.Run("CreateBuildsDirectoryAndWorkitem", func(t *testing.T) {
 		out, err := tc.RunCampInDir(campaignDir, "workitem", "create", "demo-feature", "--type", "feature", "--title", "Demo")
 		require.NoError(t, err, "camp workitem create: %s", out)
-		assert.Contains(t, out, "created workflow/feature/demo-feature")
+		assert.Contains(t, out, "created workitem tracking at workflow/feature/demo-feature")
 		assert.Contains(t, out, "id: feature-demo-feature-")
 		assert.Contains(t, out, "type: feature")
+		assert.Contains(t, out, "optional next:")
 
 		manifest, err := tc.ReadFile(campaignDir + "/workflow/feature/demo-feature/.workitem")
 		require.NoError(t, err)
@@ -185,8 +187,8 @@ func TestIntegration_WorkitemCreateJSON(t *testing.T) {
 		"--json",
 	)
 	require.NoError(t, err, "camp workitem create --json: %s", out)
-	assert.NotContains(t, out, "created workflow/feature/agent-json")
-	assert.NotContains(t, out, "\nnext:")
+	assert.NotContains(t, out, "created workitem tracking at workflow/feature/agent-json")
+	assert.NotContains(t, out, "\n  optional next:")
 
 	var payload struct {
 		SchemaVersion string    `json:"schema_version"`
