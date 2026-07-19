@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"errors"
+	"io"
 	"os"
 	"os/exec"
 	"runtime"
@@ -29,7 +30,7 @@ Example (using the obey CLI):
 
 hooks:
   commit_message:
-    command: ob commit`)
+    command: ob commit --print-session-id`)
 
 // ErrCommitMessageHookEmptyOutput is returned when the hook succeeds but writes
 // no commit message to stdout.
@@ -92,6 +93,16 @@ func RunCommitMessageCommand(ctx context.Context, repoPath, command string) (str
 // RunCommitMessageCommandWithEnv is RunCommitMessageCommand with extra
 // environment variables passed to the subprocess (appended to os.Environ()).
 func RunCommitMessageCommandWithEnv(ctx context.Context, repoPath, command string, extraEnv []string) (string, error) {
+	return runCommitMessageCommandWithEnv(ctx, repoPath, command, extraEnv, os.Stderr)
+}
+
+func runCommitMessageCommandWithEnv(
+	ctx context.Context,
+	repoPath string,
+	command string,
+	extraEnv []string,
+	diagnosticOut io.Writer,
+) (string, error) {
 	if err := ctx.Err(); err != nil {
 		return "", err
 	}
@@ -111,7 +122,15 @@ func RunCommitMessageCommandWithEnv(ctx context.Context, repoPath, command strin
 	var stdout bytes.Buffer
 	var stderr bytes.Buffer
 	cmd.Stdout = &stdout
-	cmd.Stderr = &stderr
+	// Keep stderr available for error reporting while forwarding successful
+	// hook diagnostics to the operator. Commands such as `ob commit` report
+	// the daemon session ID on stderr so the session can be inspected while
+	// the commit-message request is running.
+	if diagnosticOut == nil {
+		cmd.Stderr = &stderr
+	} else {
+		cmd.Stderr = io.MultiWriter(&stderr, diagnosticOut)
+	}
 
 	if err := cmd.Run(); err != nil {
 		if ctx.Err() != nil {
