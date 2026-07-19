@@ -31,5 +31,14 @@ func ApplyMetadata(item WorkItem, md *Metadata) (WorkItem, error) {
 			item.SourceMetadata["quest_id"] = md.QuestID
 		}
 	}
+	item.Tags = nonNilStrings(md.Tags)
+	item.Projects = nonNilStrings(md.Projects)
 	return item, nil
+}
+
+func nonNilStrings(s []string) []string {
+	if s == nil {
+		return []string{}
+	}
+	return s
 }

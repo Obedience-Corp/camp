@@ -67,6 +67,8 @@ func discoverIntents(ctx context.Context, campaignRoot string, resolver *paths.R
 					"concept":     i.Concept,
 					"priority":    string(i.Priority),
 				},
+				Tags:     []string{},
+				Projects: []string{},
 			}
 			item.SortTimestamp = DeriveSortTimestamp(item.UpdatedAt, item.CreatedAt)
 			item.Summary = extractSummary(i.Content, 200)

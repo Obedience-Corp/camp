@@ -103,6 +103,8 @@ func discoverFestivals(ctx context.Context, campaignRoot string, resolver *paths
 				SourceMetadata: map[string]any{
 					"festival_type": meta.FestivalType,
 				},
+				Tags:     []string{},
+				Projects: []string{},
 			}
 			item.SortTimestamp = DeriveSortTimestamp(item.UpdatedAt, item.CreatedAt)
 			if primaryDocAbs != "" {

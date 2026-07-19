@@ -505,3 +505,68 @@ func TestTimestampDerivation(t *testing.T) {
 		}
 	})
 }
+
+func TestDiscovery_TagsProjectsNonNilAtConstruction(t *testing.T) {
+	requireNonNil := func(t *testing.T, name string, s []string) {
+		t.Helper()
+		if s == nil {
+			t.Errorf("%s is nil, want a non-nil empty slice so it marshals to [] not null", name)
+		}
+	}
+
+	t.Run("design via buildWorkflowDirItem", func(t *testing.T) {
+		root, resolver := setupTestCampaign(t)
+		designDir := filepath.Join(root, "workflow/design/tagless-feature")
+		if err := os.MkdirAll(designDir, 0755); err != nil {
+			t.Fatal(err)
+		}
+		writeFile(t, filepath.Join(designDir, "README.md"), "# Tagless Feature\n\nNo marker, no tags.")
+
+		items, err := discoverDesign(context.Background(), root, resolver)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if len(items) != 1 {
+			t.Fatalf("expected 1 design item, got %d", len(items))
+		}
+		requireNonNil(t, "Tags", items[0].Tags)
+		requireNonNil(t, "Projects", items[0].Projects)
+	})
+
+	t.Run("intent via discoverIntents", func(t *testing.T) {
+		root, resolver := setupTestCampaign(t)
+		writeFile(t, filepath.Join(root, ".campaign/intents/inbox/tagless-intent.md"),
+			"---\nid: tagless-20260101\ntitle: Tagless Intent\nstatus: inbox\ncreated_at: 2026-01-01\ntype: feature\n---\n\n# Tagless Intent\n\nBody.")
+
+		items, err := discoverIntents(context.Background(), root, resolver)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if len(items) != 1 {
+			t.Fatalf("expected 1 intent, got %d", len(items))
+		}
+		requireNonNil(t, "Tags", items[0].Tags)
+		requireNonNil(t, "Projects", items[0].Projects)
+	})
+
+	t.Run("festival via discoverFestivals", func(t *testing.T) {
+		root, resolver := setupTestCampaign(t)
+		festDir := filepath.Join(root, "festivals/active/tagless-fest-TG0001")
+		if err := os.MkdirAll(festDir, 0755); err != nil {
+			t.Fatal(err)
+		}
+		writeFile(t, filepath.Join(festDir, "fest.yaml"),
+			"version: \"1.0\"\nmetadata:\n  id: TG0001\n  name: tagless-fest\n  festival_type: implementation\n  created_at: 2026-03-01T00:00:00Z\n")
+		writeFile(t, filepath.Join(festDir, "FESTIVAL_GOAL.md"), "# Tagless Fest\n\nGoal.")
+
+		items, err := discoverFestivals(context.Background(), root, resolver)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if len(items) != 1 {
+			t.Fatalf("expected 1 festival, got %d", len(items))
+		}
+		requireNonNil(t, "Tags", items[0].Tags)
+		requireNonNil(t, "Projects", items[0].Projects)
+	})
+}
