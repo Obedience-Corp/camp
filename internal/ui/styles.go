@@ -1,26 +1,42 @@
 // Package ui provides styled terminal output for the camp CLI.
 package ui
 
-import "github.com/charmbracelet/lipgloss"
+import (
+	"github.com/charmbracelet/lipgloss"
 
-// Status colors for campaign states
-var (
-	SuccessColor  = lipgloss.Color("42")  // Green
-	InfoColor     = lipgloss.Color("33")  // Blue
-	WarningColor  = lipgloss.Color("220") // Yellow/amber
-	ErrorColor    = lipgloss.Color("196") // Red
-	DimColor      = lipgloss.Color("253") // Very light grey (readable on dark backgrounds)
-	BrightColor   = lipgloss.Color("255") // White
-	AccentColor   = lipgloss.Color("51")  // Cyan
-	CategoryColor = lipgloss.Color("141") // Purple
+	"github.com/Obedience-Corp/camp/internal/ui/theme"
 )
 
-// Campaign type colors
+var sharedPalette = theme.CurrentPalette()
+
+func sharedColor(value string) lipgloss.Color {
+	if value == "" {
+		// Plain mode uses Lip Gloss's Ascii profile; keep style colors
+		// non-nil for components that render whitespace backgrounds.
+		return lipgloss.Color("0")
+	}
+	return lipgloss.Color(value)
+}
+
+// Status colors use the semantic roles from obey-shared/brand.
 var (
-	ProductColor  = lipgloss.Color("42")  // Green
-	ResearchColor = lipgloss.Color("33")  // Blue
-	ToolsColor    = lipgloss.Color("220") // Yellow
-	PersonalColor = lipgloss.Color("141") // Purple
+	SuccessColor  = sharedColor(sharedPalette.StatusSuccess)
+	InfoColor     = sharedColor(sharedPalette.AccentHighlight)
+	WarningColor  = sharedColor(sharedPalette.StatusWarning)
+	ErrorColor    = sharedColor(sharedPalette.StatusError)
+	DimColor      = sharedColor(sharedPalette.TextMuted)
+	BrightColor   = sharedColor(sharedPalette.TextPrimary)
+	AccentColor   = sharedColor(sharedPalette.Accent)
+	CategoryColor = sharedColor(sharedPalette.AccentSubtle)
+)
+
+// Campaign type colors intentionally compose the shared semantic roles; the
+// category distinction is a product concern, not a second palette.
+var (
+	ProductColor  = AccentColor
+	ResearchColor = InfoColor
+	ToolsColor    = WarningColor
+	PersonalColor = CategoryColor
 )
 
 // Intent status colors - reuse existing semantic colors for consistency
@@ -97,13 +113,13 @@ func GetIntentStatusStyle(status string) lipgloss.Style {
 	}
 }
 
-// Intent type colors
+// Intent type colors intentionally compose the shared semantic roles.
 var (
-	TypeFeatureColor  = lipgloss.Color("42")  // Green - new functionality
-	TypeBugColor      = lipgloss.Color("196") // Red - something broken
-	TypeIdeaColor     = lipgloss.Color("141") // Purple - creative/exploratory
-	TypeResearchColor = lipgloss.Color("33")  // Blue - investigation
-	TypeChoreColor    = lipgloss.Color("245") // Grey - maintenance
+	TypeFeatureColor  = AccentColor
+	TypeBugColor      = ErrorColor
+	TypeIdeaColor     = CategoryColor
+	TypeResearchColor = InfoColor
+	TypeChoreColor    = DimColor
 )
 
 // GetIntentTypeStyle returns the style for an intent type
@@ -132,12 +148,12 @@ func GetConceptStyle(concept string) lipgloss.Style {
 	return lipgloss.NewStyle().Foreground(AccentColor)
 }
 
-// Workflow type colors (adaptive for light/dark terminals)
+// Workflow type colors intentionally compose the shared semantic roles.
 var (
-	WorkflowIntentColor   = lipgloss.AdaptiveColor{Light: "30", Dark: "51"}   // Cyan — raw ideas
-	WorkflowDesignColor   = lipgloss.AdaptiveColor{Light: "27", Dark: "110"}  // Blue — architecture
-	WorkflowExploreColor  = lipgloss.AdaptiveColor{Light: "178", Dark: "220"} // Yellow — investigation
-	WorkflowFestivalColor = lipgloss.AdaptiveColor{Light: "28", Dark: "82"}   // Green — active execution
+	WorkflowIntentColor   = AccentColor
+	WorkflowDesignColor   = InfoColor
+	WorkflowExploreColor  = WarningColor
+	WorkflowFestivalColor = SuccessColor
 )
 
 // GetWorkflowTypeStyle returns the style for a workflow type (intent, design, explore, festival).

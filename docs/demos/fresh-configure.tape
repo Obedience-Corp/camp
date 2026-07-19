@@ -19,7 +19,7 @@ Set Theme {"name":"termcast","background":"#0d0d11","foreground":"#f8f8f2","curs
 # ── hidden setup: branch binary on PATH, standing inside a project ──
 Hide
 Type "export PATH=/tmp/demo-bin:$PATH" Enter
-Type "export TERM=xterm-256color COLORTERM=truecolor" Enter
+Type "export TERM=xterm-256color COLORTERM=truecolor COLORFGBG=15\;0" Enter
 Type "export PS1='\033[38;5;208m❯\033[0m '" Enter
 Type "cd /tmp/campaigns/fresh-demo/projects/payments-api" Enter
 Type "clear" Enter

@@ -71,9 +71,11 @@ var (
 	dialogButtonStyle = lipgloss.NewStyle().
 				Padding(0, 2)
 
+	// Black is an intentional contrast color on the shared accent role;
+	// v0.4.5 does not expose an OnAccent semantic role.
 	dialogActiveButtonStyle = dialogButtonStyle.
 				Background(pal.Accent).
-				Foreground(lipgloss.Color("0")) // Black text on accent background
+				Foreground(lipgloss.Color("0"))
 )
 
 // View renders the confirmation dialog.

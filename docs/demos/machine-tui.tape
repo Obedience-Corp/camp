@@ -27,7 +27,7 @@ Set Theme {"name":"termcast","background":"#0d0d11","foreground":"#f8f8f2","curs
 
 Hide
 Type "export PATH=/tmp/mdemo/bin:$PATH" Enter
-Type "export TERM=xterm-256color COLORTERM=truecolor" Enter
+Type "export TERM=xterm-256color COLORTERM=truecolor COLORFGBG=15\;0" Enter
 Type "export CAMP_MACHINES_PATH=/tmp/mdemo/machines.yaml" Enter
 Type "export PS1='\033[38;5;208m❯\033[0m '" Enter
 Type "cd /tmp/mdemo" Enter

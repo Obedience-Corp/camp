@@ -300,6 +300,8 @@ func (m IntentViewerModel) applySearchHighlight(content string) string {
 		return content
 	}
 
+	// Black is an intentional contrast color on the shared warning role;
+	// v0.4.5 does not expose an OnWarning semantic role.
 	highlightStyle := lipgloss.NewStyle().
 		Background(pal.Warning).
 		Foreground(lipgloss.Color("#000000"))
