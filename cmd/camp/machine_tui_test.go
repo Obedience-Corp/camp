@@ -9,6 +9,7 @@ import (
 	"github.com/charmbracelet/lipgloss"
 	"github.com/muesli/termenv"
 
+	camperrors "github.com/Obedience-Corp/camp/internal/errors"
 	"github.com/Obedience-Corp/camp/internal/machines"
 	"github.com/Obedience-Corp/camp/internal/remote"
 )
@@ -257,16 +258,24 @@ func TestCycleAuthWrapsThroughEveryMethod(t *testing.T) {
 	}
 }
 
-func TestMachineRowTextShedsBadgeBeforeTruncatingID(t *testing.T) {
-	row := machineRow{Machine: &machines.Machine{ID: "buildbox"}}
-	if got := machineRowText(row, "live", 20); got != "buildbox · live" {
-		t.Errorf("wide row = %q", got)
+func TestFleetRowShowsHealthAndShedsItWhenNarrow(t *testing.T) {
+	m := newMachineTUIModel(t.Context(), fleetFile())
+	m.health["buildbox"] = machineHealth{State: healthReachable, Version: "0.9.2"}
+	row := machineRow{Machine: &m.file.Machines[0]}
+	if row.id() != "buildbox" {
+		row = machineRow{Machine: &m.file.Machines[1]}
 	}
-	if got := machineRowText(row, "live", 10); got != "buildbox" {
-		t.Errorf("narrow row = %q, want the badge dropped", got)
+
+	wide := m.fleetRow(row, false, 40)
+	if !strings.Contains(wide, "reachable") {
+		t.Errorf("wide row = %q, want the health badge", wide)
 	}
-	if got := machineRowText(row, "live", 5); got != "bu..." {
-		t.Errorf("very narrow row = %q", got)
+	narrow := m.fleetRow(row, false, 10)
+	if strings.Contains(narrow, "reachable") {
+		t.Errorf("narrow row = %q, want the badge dropped", narrow)
+	}
+	if !strings.Contains(narrow, "bu") {
+		t.Errorf("narrow row = %q, want the machine id kept", narrow)
 	}
 }
 
@@ -320,19 +329,24 @@ func TestSocketPathIsAbbreviatedInHumanOutput(t *testing.T) {
 		t.Skipf("no home directory: %v", err)
 	}
 
+	socket := filepath.Join(home, ".obey", "ssh-ctl", "buildbox.sock")
 	m := newMachineTUIModel(t.Context(), fleetFile())
-	m.width, m.height = 120, 30
+	m.width, m.height = 120, 34
 	m.cursor = 1
-	m.sockets = map[string]remote.SocketDiagnosis{
-		"buildbox": {MachineID: "buildbox", Socket: filepath.Join(home, ".obey", "ssh-ctl", "buildbox.sock"), State: remote.ControlNone},
-	}
 
-	pane := m.renderDetailPane(m.layout())
-	if strings.Contains(pane, home) {
-		t.Errorf("detail pane leaked the home directory:\n%s", pane)
-	}
-	if !strings.Contains(pane, "~/.obey/ssh-ctl/buildbox.sock") {
-		t.Errorf("detail pane did not show the abbreviated socket path:\n%s", pane)
+	// The path is only worth showing when the session is stuck, since that is
+	// the only state where the file itself is the thing to go look at.
+	for _, state := range []remote.ControlMasterState{remote.ControlNone, remote.ControlLive, remote.ControlStale} {
+		m.sockets = map[string]remote.SocketDiagnosis{
+			"buildbox": {MachineID: "buildbox", Socket: socket, State: state},
+		}
+		pane := m.renderDetailPane(m.layout())
+		if strings.Contains(pane, home) {
+			t.Errorf("detail pane leaked the home directory with a %q socket:\n%s", state, pane)
+		}
+		if state == remote.ControlStale && !strings.Contains(pane, "~/.obey/ssh-ctl/buildbox.sock") {
+			t.Errorf("a stuck session should name its socket file:\n%s", pane)
+		}
 	}
 
 	var table strings.Builder
@@ -343,5 +357,116 @@ func TestSocketPathIsAbbreviatedInHumanOutput(t *testing.T) {
 	}
 	if strings.Contains(table.String(), home) {
 		t.Errorf("diagnose table leaked the home directory:\n%s", table.String())
+	}
+}
+
+// An empty fleet is the state a first-time user is in, and the old screen met
+// them with two empty panes and a row they could not act on. The onboarding
+// screen has to say what a machine is for, show the commands it unlocks, and
+// offer a way to start.
+func TestOnboardingScreenExplainsAndOffersAStart(t *testing.T) {
+	lipgloss.SetColorProfile(termenv.Ascii)
+	m := newMachineTUIModel(t.Context(), &machines.File{Version: 1})
+	m.width, m.height = 100, 30
+	m.tailscaleReady = false
+
+	view := m.onboardingView()
+	for _, want := range []string{
+		"Work on campaigns that live on your other computers",
+		"camp switch",
+		"camp list --remote",
+		"No machines yet",
+		"Add a machine",
+		"Tailscale is not installed",
+	} {
+		if !strings.Contains(view, want) {
+			t.Errorf("onboarding screen missing %q:\n%s", want, view)
+		}
+	}
+}
+
+// With tailscale present the screen's job is to show the user their own
+// machines rather than tell them to go find a hostname.
+func TestOnboardingListsTailnetDevices(t *testing.T) {
+	lipgloss.SetColorProfile(termenv.Ascii)
+	m := newMachineTUIModel(t.Context(), &machines.File{Version: 1})
+	m.width, m.height = 100, 30
+	m.tailscaleReady = true
+	m.devices = []discoveredDevice{
+		{HostName: "workstation", Host: "workstation.example-net.ts.net", Online: true},
+		{HostName: "buildfarm", Host: "buildfarm.example-net.ts.net", Online: false},
+	}
+
+	view := m.onboardingView()
+	for _, want := range []string{"workstation.example-net.ts.net", "buildfarm.example-net.ts.net", "online", "offline", "enter"} {
+		if !strings.Contains(view, want) {
+			t.Errorf("device list missing %q:\n%s", want, view)
+		}
+	}
+}
+
+// A device already in the fleet has to be marked, or the same machine gets
+// added twice under two ids.
+func TestDeviceRowsMarkAlreadyConfiguredHosts(t *testing.T) {
+	lipgloss.SetColorProfile(termenv.Ascii)
+	m := newMachineTUIModel(t.Context(), &machines.File{
+		Version:  1,
+		Machines: []machines.Machine{{ID: "devbox", Host: "devbox.example-net.ts.net"}},
+	})
+	m.devices = []discoveredDevice{
+		{HostName: "devbox", Host: "devbox.example-net.ts.net", Online: true},
+		{HostName: "gpu-box", Host: "gpu-box.example-net.ts.net", Online: true},
+	}
+
+	rows := strings.Join(m.deviceRows(70), "\n")
+	if !strings.Contains(rows, "already added as devbox") {
+		t.Errorf("configured device not marked:\n%s", rows)
+	}
+	if strings.Count(rows, "already added") != 1 {
+		t.Errorf("only the configured device should be marked:\n%s", rows)
+	}
+}
+
+func TestTestSelectedRefusesLocal(t *testing.T) {
+	m := newMachineTUIModel(t.Context(), fleetFile())
+	m.cursor = 0
+
+	if cmd := m.testSelected(); cmd != nil {
+		t.Fatal("testing local should not run a command")
+	}
+	if !m.statusErr || !strings.Contains(m.status, "nothing to connect to") {
+		t.Errorf("status = %q, want a refusal naming local", m.status)
+	}
+}
+
+func TestHealthBadgeAndStatusWording(t *testing.T) {
+	if _, label, _ := healthBadge(healthReachable); label != "reachable" {
+		t.Errorf("reachable label = %q", label)
+	}
+	if _, label, _ := healthBadge(healthUntested); label != "not tested" {
+		t.Errorf("untested label = %q", label)
+	}
+
+	got := healthStatusLine("devbox", machineHealth{State: healthReachable, Version: "0.9.2"})
+	if !strings.Contains(got, "reachable") || !strings.Contains(got, "0.9.2") {
+		t.Errorf("reachable status = %q", got)
+	}
+	got = healthStatusLine("devbox", machineHealth{State: healthUnreachable, Detail: "timed out"})
+	if !strings.Contains(got, "could not reach devbox") || !strings.Contains(got, "timed out") {
+		t.Errorf("unreachable status = %q", got)
+	}
+}
+
+func TestParseRemoteVersionAndFailureDetail(t *testing.T) {
+	if got := parseRemoteVersion("camp version 0.9.2 (built 2026-01-01, commit abc)"); got != "0.9.2" {
+		t.Errorf("parseRemoteVersion = %q, want 0.9.2", got)
+	}
+	if got := parseRemoteVersion("something unexpected"); got != "something unexpected" {
+		t.Errorf("parseRemoteVersion fallback = %q", got)
+	}
+
+	err := camperrors.New(`command "ssh ci@10.0.0.12" exited with code 255: ssh: connect to host 10.0.0.12 port 22: Operation timed out`)
+	if got := connectionFailureDetail(err); got != "connect to host 10.0.0.12 port 22: Operation timed out" {
+		t.Errorf("connectionFailureDetail = %q", got)
 	}
 }

@@ -88,6 +88,9 @@ func (m *machineTUIModel) View() string {
 	if m.overlay != machineNoOverlay {
 		return m.overlayView()
 	}
+	if m.empty() {
+		return m.onboardingView()
+	}
 
 	lay := m.layout()
 	lines := []string{m.topBar(lay.width)}
@@ -99,7 +102,7 @@ func (m *machineTUIModel) View() string {
 	}
 	if lay.showFooter {
 		if status := m.statusLine(); status != "" {
-			lines = append(lines, status)
+			lines = append(lines, ui.ClampWidth(status, lay.width))
 		}
 		lines = append(lines, m.footer(lay.width))
 	}
@@ -108,117 +111,204 @@ func (m *machineTUIModel) View() string {
 
 func (m *machineTUIModel) topBar(width int) string {
 	line := machineTitleStyle.Render("Machines") + "  " +
-		machineMuted.Render("the fleet camp can reach for switch and list --remote")
+		machineMuted.Render("computers camp can open campaigns on, over ssh")
 	return ui.ClampWidth(line, width)
 }
 
 func (m *machineTUIModel) renderFleetPane(lay machineLayout) string {
 	inner := max(lay.leftWidth-4, 1)
 	lines := []string{
-		ui.ClampWidth(machineTitleStyle.Render("Fleet"), inner),
-		machineMuted.Render(ui.CountLabel(len(m.rows), "machine", "machines")),
+		ui.ClampWidth(machineTitleStyle.Render("Machines"), inner),
+		machineMuted.Render(ui.CountLabel(len(m.file.Machines), "configured", "configured")),
 	}
 	rows := max(lay.bodyRows-2, 1)
 	start, end := ui.WindowRange(m.cursor, len(m.rows), rows)
 	for i := start; i < end; i++ {
 		selected := i == m.cursor
 		prefix := ui.CursorGlyph(selected)
-		style := machinePrimary
-		if selected {
-			style = machineSelected
-		}
-		text := machineRowText(m.rows[i], m.socketState(m.rows[i]), max(inner-machinePaneTextInset-lipgloss.Width(prefix), 1))
-		lines = append(lines, prefix+style.Render(text))
+		width := max(inner-machinePaneTextInset-lipgloss.Width(prefix), 1)
+		lines = append(lines, prefix+m.fleetRow(m.rows[i], selected, width))
 	}
 	return m.finishPane(lines, inner, lay.bodyRows, true)
 }
 
-// machineRowText fits one fleet row to width, dropping the socket badge before
-// it truncates the machine id.
-func machineRowText(row machineRow, socket remote.ControlMasterState, width int) string {
+// fleetRow renders one row of the list: the machine, and whether camp could
+// reach it. Reachability leads because it is the question the screen exists to
+// answer; the ssh session-reuse state is a detail of how, and lives in the
+// pane rather than competing for the row.
+func (m *machineTUIModel) fleetRow(row machineRow, selected bool, width int) string {
 	name := row.id()
-	badge := ""
-	switch {
-	case row.Local:
-		badge = "this machine"
-	case socket == remote.ControlLive:
-		badge = "live"
-	case socket == remote.ControlStale:
-		badge = "stale"
+	column := m.nameColumnWidth()
+	style := machinePrimary
+	if selected {
+		style = machineSelected
 	}
-	if badge != "" {
-		full := name + " · " + badge
-		if lipgloss.Width(full) <= width {
-			return full
+
+	if row.Local {
+		badge := machineMuted.Render("this computer")
+		if column+lipgloss.Width("this computer") <= width {
+			return style.Render(pad(name, column)) + badge
 		}
+		return style.Render(ui.Truncate(name, width))
 	}
-	return ui.Truncate(name, width)
+
+	glyph, label, badgeStyle := healthBadge(m.health[row.Machine.ID].State)
+	if m.health[row.Machine.ID].State == healthTesting {
+		glyph = strings.TrimSpace(m.spin.View())
+	}
+	if column+lipgloss.Width(glyph+" "+label) > width {
+		return style.Render(ui.Truncate(name, width))
+	}
+	return style.Render(pad(name, column)) + badgeStyle.Render(glyph+" "+label)
 }
 
-func (m *machineTUIModel) socketState(row machineRow) remote.ControlMasterState {
-	if row.Local || row.Machine == nil {
-		return remote.ControlNone
+// nameColumnWidth sizes the id column to the widest id in the fleet, so a long
+// machine name cannot run into the status badge beside it.
+func (m *machineTUIModel) nameColumnWidth() int {
+	widest := len(machines.LocalMachineID)
+	for _, mach := range m.file.Machines {
+		if w := lipgloss.Width(mach.ID); w > widest {
+			widest = w
+		}
 	}
-	return m.sockets[row.Machine.ID].State
+	return widest + 2
+}
+
+// healthBadge maps a health state to its glyph, word, and style. "not tested"
+// is deliberately neutral rather than a warning: an untested machine is not a
+// problem, it is simply a question nobody has asked yet.
+func healthBadge(state healthState) (string, string, lipgloss.Style) {
+	switch state {
+	case healthReachable:
+		return "●", "reachable", machineOKStyle
+	case healthUnreachable:
+		return "✗", "unreachable", machineErrorStyle
+	case healthUnsupported:
+		return "!", "unsupported", machineWarn
+	case healthTesting:
+		return "◐", "testing...", machineMuted
+	default:
+		return "○", "not tested", machineMuted
+	}
 }
 
 func (m *machineTUIModel) renderDetailPane(lay machineLayout) string {
 	inner := max(lay.rightWidth-4, 1)
 	row := m.selectedRow()
 
-	lines := []string{ui.ClampWidth(machineTitleStyle.Render("Detail · "+row.id()), inner)}
 	if row.Local {
-		lines = append(lines,
-			machineMuted.Render("the current machine"),
+		return m.finishPane([]string{
+			ui.ClampWidth(machineTitleStyle.Render(row.id()), inner),
+			machineMuted.Render("this computer"),
 			"",
-			machinePrimary.Render("Always reachable, and never written to machines.yaml."),
-			machineMuted.Render("Every other row is an ssh target camp can hop to."),
-		)
-		return m.finishPane(lines, inner, lay.bodyRows, false)
+			machinePrimary.Render("Always available. camp uses it whenever you do not"),
+			machinePrimary.Render("name a machine, and it is never saved to a file."),
+			"",
+			machineMuted.Render("Every other row is a computer reached over ssh."),
+		}, inner, lay.bodyRows, false)
 	}
 
 	machine := row.Machine
-	diagnosis := m.sockets[machine.ID]
+	lines := []string{ui.ClampWidth(machineTitleStyle.Render(machine.ID), inner)}
+	if machine.Label != "" && machine.Label != machine.ID {
+		lines = append(lines, machineMuted.Render(machine.Label))
+	} else {
+		lines = append(lines, machineMuted.Render("stored in ~/.obey/machines.yaml"))
+	}
+
+	lines = append(lines, "")
+	lines = append(lines, m.healthSection(machine.ID, inner)...)
+	lines = append(lines, "", machinePrimary.Render("Work on it"))
 	lines = append(lines,
-		machineMuted.Render("stored in ~/.obey/machines.yaml"),
-		"",
-		machineDetailRow("Label", machine.Label),
-		machineDetailRow("Host", machine.Host),
-		machineDetailRow("Auth", machine.AuthMethod),
-		machineDetailRow("SSH user", machine.SSHUser),
-		machineDetailRow("Identity", machine.IdentityFile),
-		"",
-		machineSocketRow(diagnosis),
-		// Abbreviated like every other path this pane shows, and because an
-		// absolute one spells out the operator's home directory and account
-		// name in any screenshot or recording of this screen.
-		machineMuted.Render(ui.Truncate(pathutil.AbbreviateHome(diagnosis.Socket), max(inner-machineOverlayTextInset, 1))),
+		machineMuted.Render("  camp switch ")+machineSelected.Render(machine.ID)+machineMuted.Render(":<campaign>"),
+		machineMuted.Render("  camp list --remote"),
 	)
-	if diagnosis.State == remote.ControlStale {
-		lines = append(lines, "", machineWarn.Render("A stale socket can hang the next hop. Press R to clear it."))
+
+	lines = append(lines, "", machinePrimary.Render("Connection"))
+	lines = append(lines,
+		machineDetailRow("Host", machine.Host, ""),
+		machineDetailRow("Sign-in", authLabel(machine.AuthMethod), ""),
+		machineDetailRow("SSH user", machine.SSHUser, "your login name"),
+	)
+	if machine.IdentityFile != "" {
+		lines = append(lines, machineDetailRow("Key", machine.IdentityFile, ""))
 	}
-	if machine.AuthMethod == machines.AuthSSHPassword {
-		lines = append(lines, "", machineWarn.Render("Password auth cannot switch or list remotely yet."))
-	}
+
+	lines = append(lines, "")
+	lines = append(lines, m.reuseSection(machine.ID, inner)...)
 	return m.finishPane(lines, inner, lay.bodyRows, false)
 }
 
-func machineDetailRow(label, value string) string {
-	if strings.TrimSpace(value) == "" {
-		return machineMuted.Render(fmt.Sprintf("%-9s not set", label))
+// healthSection leads the pane with whether camp can reach the machine, and
+// when it cannot, with why and what to press next.
+func (m *machineTUIModel) healthSection(id string, width int) []string {
+	health := m.health[id]
+	glyph, _, style := healthBadge(health.State)
+
+	switch health.State {
+	case healthReachable:
+		headline := style.Render(glyph + " Reachable")
+		if health.Version != "" {
+			headline += machineMuted.Render("  ·  camp " + health.Version)
+		}
+		return []string{headline}
+	case healthTesting:
+		return []string{style.Render(m.spin.View() + " Testing the connection...")}
+	case healthUnreachable:
+		return []string{
+			style.Render(glyph + " Could not reach it"),
+			machineMuted.Render("  " + ui.Truncate(health.Detail, max(width-4, 20))),
+			machineMuted.Render("  e edits it · t tries again"),
+		}
+	case healthUnsupported:
+		return []string{
+			style.Render(glyph + " Cannot be used yet"),
+			machineMuted.Render("  " + ui.Truncate(health.Detail, max(width-4, 20))),
+			machineMuted.Render("  Switch it to Tailscale SSH or an agent key with e."),
+		}
+	default:
+		return []string{
+			style.Render(glyph + " Not tested yet"),
+			machineMuted.Render("  t checks whether camp can reach it."),
+		}
 	}
-	return machinePrimary.Render(fmt.Sprintf("%-9s ", label)) + machineSelected.Render(value)
 }
 
-func machineSocketRow(d remote.SocketDiagnosis) string {
-	switch d.State {
+// reuseSection explains the ControlMaster socket in terms of what it does for
+// the user, and only raises it as a problem when it actually is one.
+func (m *machineTUIModel) reuseSection(id string, width int) []string {
+	diagnosis := m.sockets[id]
+	switch diagnosis.State {
 	case remote.ControlLive:
-		return machinePrimary.Render(fmt.Sprintf("%-9s ", "Socket")) + machineOKStyle.Render("live")
+		return []string{
+			machinePrimary.Render("Connection reuse  ") + machineOKStyle.Render("open"),
+			machineMuted.Render("  Later hops to this machine are instant."),
+		}
 	case remote.ControlStale:
-		return machinePrimary.Render(fmt.Sprintf("%-9s ", "Socket")) + machineWarn.Render("stale")
+		return []string{
+			machinePrimary.Render("Connection reuse  ") + machineWarn.Render("stuck"),
+			machineMuted.Render("  A sleep or network drop left this behind. It can hang"),
+			machineMuted.Render("  the next hop until R clears it."),
+			machineMuted.Render("  " + ui.Truncate(pathutil.AbbreviateHome(diagnosis.Socket), max(width-4, 20))),
+		}
 	default:
-		return machinePrimary.Render(fmt.Sprintf("%-9s ", "Socket")) + machineMuted.Render("none · a hop opens a fresh one")
+		return []string{
+			machinePrimary.Render("Connection reuse  ") + machineMuted.Render("idle"),
+			machineMuted.Render("  The first hop opens a session camp keeps warm."),
+		}
 	}
+}
+
+// machineDetailRow renders a label/value pair, showing what camp will fall
+// back to when the value is unset rather than the bare word "not set".
+func machineDetailRow(label, value, fallback string) string {
+	if strings.TrimSpace(value) == "" {
+		if fallback == "" {
+			fallback = "not set"
+		}
+		return machineMuted.Render(fmt.Sprintf("  %-9s %s", label, fallback))
+	}
+	return machineMuted.Render(fmt.Sprintf("  %-9s ", label)) + machinePrimary.Render(value)
 }
 
 func (m *machineTUIModel) finishPane(lines []string, width, rows int, focused bool) string {
@@ -243,16 +333,23 @@ func (m *machineTUIModel) statusLine() string {
 	if m.status == "" {
 		return ""
 	}
+	// A failed hop carries ssh's whole complaint. Ending it in an ellipsis
+	// reads as a message that continues, which it does: the pane beside the
+	// list shows the same reason with room to breathe.
+	message := ui.Truncate(m.status, max(m.layout().width-4, 20))
 	if m.statusErr {
-		return machineErrorStyle.Render("✗ " + m.status)
+		return machineErrorStyle.Render("✗ " + message)
 	}
-	return machineOKStyle.Render("✓ " + m.status)
+	return machineOKStyle.Render("✓ " + message)
 }
 
+// footer groups keys by what they are for rather than listing eight of them at
+// equal weight. The action that answers "does this work" comes first, because
+// on a screen full of untested machines it is the one worth pressing.
 func (m *machineTUIModel) footer(width int) string {
-	full := "j/k: select · a: add · s: scan tailnet · e: edit · d: remove · r: refresh · R: clear socket · ?: help · q: quit"
-	mid := "j/k select · a add · s scan · e edit · d remove · r refresh · ? help · q quit"
-	short := "j/k · a/s/e/d · r · ? · q"
+	full := "t test connection  ·  e edit · d remove  ·  a add · s scan tailnet  ·  ? help · q quit"
+	mid := "t test · e edit · d remove · a add · s scan · ? help · q quit"
+	short := "t test · a add · ? help · q quit"
 	return machineHelpStyle.Render(ui.CollapseHelp(width, full, mid, short, "q: quit"))
 }
 
@@ -263,20 +360,28 @@ func (m *machineTUIModel) overlayView() string {
 	switch m.overlay {
 	case machineHelpOverlay:
 		body = []string{
-			machineTitleStyle.Render("Managing the fleet"),
+			machineTitleStyle.Render("What this is"),
 			"",
-			machinePrimary.Render("These machines are what 'camp switch machine:campaign' and"),
-			machinePrimary.Render("'camp list --remote' can reach, over ssh."),
+			machinePrimary.Render("A machine is another computer camp can reach over ssh."),
+			machinePrimary.Render("Once one is listed here you can work on campaigns that"),
+			machinePrimary.Render("live on it, without leaving this terminal:"),
 			"",
-			machinePrimary.Render("a  add a machine by hand"),
-			machinePrimary.Render("s  scan the tailnet and pick a device to prefill"),
-			machinePrimary.Render("e  edit the selected machine"),
-			machinePrimary.Render("d  remove the selected machine"),
-			machinePrimary.Render("r  re-check every ControlMaster socket"),
-			machinePrimary.Render("R  clear the selected machine's socket"),
+			machineCommand("camp switch devbox:my-campaign", "open one over there"),
+			machineCommand("camp list --remote", "campaigns everywhere"),
 			"",
-			machineMuted.Render("A socket goes stale after a sleep or a network flap."),
-			machineMuted.Render("Clearing it makes the next hop reconnect instead of hang."),
+			machineMuted.Render("Nothing runs on a machine until you hop to it."),
+			"",
+			machineTitleStyle.Render("Keys"),
+			machinePrimary.Render("  t  test whether camp can reach the selected machine"),
+			machinePrimary.Render("  a  add a machine by hand"),
+			machinePrimary.Render("  s  scan your Tailscale network and pick a device"),
+			machinePrimary.Render("  e  edit      d  remove      j/k  move"),
+			machinePrimary.Render("  r  re-check connection reuse    R  clear a stuck one"),
+			"",
+			machineTitleStyle.Render("Sign-in methods"),
+			machineMuted.Render("  Tailscale SSH   Tailscale handles the keys for you."),
+			machineMuted.Render("  ssh agent key   Uses a key your ssh agent already holds."),
+			machineMuted.Render("  password        Not supported for camp hops yet."),
 			"",
 			machineHelpStyle.Render("esc or ?  close help"),
 		}
@@ -314,28 +419,14 @@ func (m *machineTUIModel) discoverBody() []string {
 	}
 
 	body := []string{
-		machineTitleStyle.Render("Tailnet devices"),
-		machineMuted.Render("Pick one to prefill the form; nothing is saved yet."),
+		machineTitleStyle.Render("Your Tailscale network"),
+		machineMuted.Render("Pick one to fill in the form. Nothing is saved until you confirm."),
 		"",
 	}
 	// Tailnet host names repeat (phones and tablets both report "localhost"),
 	// so the columns are aligned and the DNS name is always shown: it is what
 	// actually tells two devices apart, and what the machine id derives from.
-	for i, device := range m.devices {
-		prefix := ui.CursorGlyph(i == m.deviceCursor)
-		state := machineMuted.Render("offline")
-		if device.Online {
-			state = machineOKStyle.Render("online")
-		}
-		name := pad(ui.Truncate(device.HostName, 16), 16)
-		if i == m.deviceCursor {
-			name = machineSelected.Render(name)
-		} else {
-			name = machinePrimary.Render(name)
-		}
-		host := machineMuted.Render(pad(ui.Truncate(device.Host, 34), 34))
-		body = append(body, prefix+name+" "+host+" "+state)
-	}
+	body = append(body, m.deviceRows(64)...)
 	return append(body, "", machineHelpStyle.Render("j/k move · enter use · esc cancel"))
 }
 
@@ -387,9 +478,11 @@ func (m *machineTUIModel) formFieldLines(field machineFormField, label string) [
 	focused := m.form.field == field
 
 	if field == machineFieldAuth {
-		value := machinePrimary.Render(m.form.auth)
+		// Named the way the rest of the screen names it. The file still gets
+		// the raw value; only the reading of it changes.
+		value := machinePrimary.Render(authLabel(m.form.auth))
 		if focused {
-			value = machineSelected.Render("‹ " + m.form.auth + " ›")
+			value = machineSelected.Render("‹ " + authLabel(m.form.auth) + " ›")
 		}
 		return []string{machinePrimary.Render(label), "  " + value}
 	}
