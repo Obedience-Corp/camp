@@ -31,14 +31,26 @@ func newCreateCommand() *cobra.Command {
 	var jsonOut bool
 	cmd := &cobra.Command{
 		Use:   "create <slug>",
-		Short: "Create a workitem",
-		Long: `Create a new workitem directory with minimal v1 metadata.
+		Short: "Create workitem tracking metadata",
+		Long: `Create tracking metadata for a new workitem (directory + .workitem marker).
 
-The workitem is created under workflow/<type>/<slug>/ unless --dir supplies a
-different campaign-relative parent directory. A .workitem file is written with
-the id, type, title, ref, creation metadata, and optional quest link. Use --json
-for machine-readable output containing the new workitem identity and next-step
-location.`,
+This command does NOT create the substantive work scaffold (no design docs,
+explore notes, or festival structure). It only:
+
+  1. Creates workflow/<type>/<slug>/ (or --dir/<slug>/)
+  2. Writes a .workitem marker (id, type, title, ref, optional quest)
+
+Agents and humans must still add real content afterward. For explore/design
+types, the recommended structured-workflow scaffold is:
+
+  cd workflow/<type>/<slug> && fest create workflow <slug>
+
+For other types (feature, bug, chore, …), no festival scaffold is implied;
+populate campaign-governed content under the new directory as needed.
+
+Use "camp workitem adopt" to attach a marker to an existing directory.
+Use --json for machine-readable identity. next.command is set only for
+explore/design (recommended scaffold); otherwise it is empty/omitted.`,
 		Args: jsoncontract.Args(WorkitemCreateJSONVersion, func() bool { return jsonOut }, cobra.ExactArgs(1)),
 		Annotations: map[string]string{
 			"agent_allowed": "true",
@@ -139,6 +151,7 @@ func runCreate(ctx context.Context, cmd *cobra.Command, slug, typeFlag, title, i
 		Emit(ctx, ledgerkit.KindCreated, ledgerkit.Scope{Workitem: ref, Quest: questID},
 			ledger.WithWhy(title),
 			ledger.WithPayload(map[string]any{"type": typeFlag, "title": title, "path": rel}))
+	nextCommand, nextHint, humanNextLine := createNextGuidance(typeFlag, slug, rel)
 	if jsonOut {
 		payload := struct {
 			SchemaVersion string    `json:"schema_version"`
@@ -153,7 +166,7 @@ func runCreate(ctx context.Context, cmd *cobra.Command, slug, typeFlag, title, i
 				MarkerVersion string `json:"marker_version"`
 			} `json:"workitem"`
 			Next struct {
-				Command string `json:"command"`
+				Command string `json:"command,omitempty"`
 				Cwd     string `json:"cwd"`
 				Hint    string `json:"hint"`
 			} `json:"next"`
@@ -165,9 +178,9 @@ func runCreate(ctx context.Context, cmd *cobra.Command, slug, typeFlag, title, i
 		payload.Workitem.QuestID = questID
 		payload.Workitem.RelativePath = rel
 		payload.Workitem.MarkerVersion = wkitem.WorkitemSchemaVersion
-		payload.Next.Command = "fest create workflow " + slug
+		payload.Next.Command = nextCommand
 		payload.Next.Cwd = rel
-		payload.Next.Hint = "cd " + rel + " && fest create workflow " + slug
+		payload.Next.Hint = nextHint
 		enc := json.NewEncoder(cmd.OutOrStdout())
 		enc.SetIndent("", "  ")
 		return enc.Encode(payload)
@@ -177,9 +190,35 @@ func runCreate(ctx context.Context, cmd *cobra.Command, slug, typeFlag, title, i
 		questLine = fmt.Sprintf("  quest: %s\n", questID)
 	}
 	fmt.Fprintf(cmd.OutOrStdout(),
-		"created %s\n  id: %s\n  ref: %s\n  type: %s\n%snext: cd %s && fest create workflow %s\n",
-		rel, id, ref, typeFlag, questLine, rel, slug)
+		"created workitem tracking at %s\n  id: %s\n  ref: %s\n  type: %s\n%s  note: directory + .workitem only — not a design/explore/festival scaffold\n%s",
+		rel, id, ref, typeFlag, questLine, humanNextLine)
 	return nil
+}
+
+// recommendsWorkflowScaffold reports whether fest create workflow is the
+// recommended structured next step for this workitem type (explore/design).
+func recommendsWorkflowScaffold(typeFlag string) bool {
+	switch strings.ToLower(typeFlag) {
+	case "explore", "design":
+		return true
+	default:
+		return false
+	}
+}
+
+// createNextGuidance returns JSON next.command / next.hint and the human
+// stdout next line (including trailing newline, or empty when omitted).
+// explore/design get a recommended fest scaffold; other types get tracking-only
+// guidance with no agent-executable command.
+func createNextGuidance(typeFlag, slug, rel string) (command, hint, humanNextLine string) {
+	if recommendsWorkflowScaffold(typeFlag) {
+		command = "fest create workflow " + slug
+		hint = "tracking only: marker created; recommended next: cd " + rel + " && fest create workflow " + slug
+		humanNextLine = "  recommended next: cd " + rel + " && fest create workflow " + slug + "\n"
+		return command, hint, humanNextLine
+	}
+	hint = "tracking only: marker created; add content under " + rel + " as needed (no festival scaffold implied)"
+	return "", hint, ""
 }
 
 func validateSlug(slug string) error {
