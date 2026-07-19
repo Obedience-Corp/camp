@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"errors"
+	"io"
 	"os"
 	"os/exec"
 	"runtime"
@@ -29,7 +30,7 @@ Example (using the obey CLI):
 
 hooks:
   commit_message:
-    command: ob commit`)
+    command: ob commit --print-session-id`)
 
 // ErrCommitMessageHookEmptyOutput is returned when the hook succeeds but writes
 // no commit message to stdout.
@@ -92,6 +93,16 @@ func RunCommitMessageCommand(ctx context.Context, repoPath, command string) (str
 // RunCommitMessageCommandWithEnv is RunCommitMessageCommand with extra
 // environment variables passed to the subprocess (appended to os.Environ()).
 func RunCommitMessageCommandWithEnv(ctx context.Context, repoPath, command string, extraEnv []string) (string, error) {
+	return runCommitMessageCommandWithEnv(ctx, repoPath, command, extraEnv, os.Stderr)
+}
+
+func runCommitMessageCommandWithEnv(
+	ctx context.Context,
+	repoPath string,
+	command string,
+	extraEnv []string,
+	diagnosticOut io.Writer,
+) (string, error) {
 	if err := ctx.Err(); err != nil {
 		return "", err
 	}
@@ -111,7 +122,18 @@ func RunCommitMessageCommandWithEnv(ctx context.Context, repoPath, command strin
 	var stdout bytes.Buffer
 	var stderr bytes.Buffer
 	cmd.Stdout = &stdout
-	cmd.Stderr = &stderr
+	// Tee stderr: keep a copy for error wrapping and forward live diagnostics
+	// (progress like "ob: connecting..." / "ob: generating...") to the operator
+	// while the hook runs. Tools such as `ob commit --print-session-id` may also
+	// emit session_id= on stderr when the hook finishes; that is post-completion
+	// diagnostics, not a mid-run recovery handle (a hung generation never
+	// finalizes, so no session_id appears). Operators may see stderr twice on
+	// failure (live stream + wrapped error); that is intentional for now.
+	if diagnosticOut == nil {
+		cmd.Stderr = &stderr
+	} else {
+		cmd.Stderr = io.MultiWriter(&stderr, diagnosticOut)
+	}
 
 	if err := cmd.Run(); err != nil {
 		if ctx.Err() != nil {

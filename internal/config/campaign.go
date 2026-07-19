@@ -161,7 +161,9 @@ func commentedHooksPlaceholder() []byte {
 #   commit_message:
 #     # Command run from the target repo working tree by 'camp commit --auto-write'
 #     # (-aw). Its stdout is used verbatim as the commit message. Any tool works;
-#     # 'ob commit' is one example.
-#     command: ob commit
+#     # 'ob commit --print-session-id' is one example; progress and any
+#     # session_id= line on stderr are forwarded to the terminal (session_id is
+#     # emitted when the hook finishes, not while it is generating).
+#     command: ob commit --print-session-id
 `)
 }
