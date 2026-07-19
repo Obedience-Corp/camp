@@ -180,3 +180,99 @@ func TestFilter_PreservesOrder(t *testing.T) {
 		t.Error("filter should preserve original order")
 	}
 }
+
+func TestHasAllTags(t *testing.T) {
+	cases := []struct {
+		name     string
+		itemTags []string
+		wanted   []string
+		want     bool
+	}{
+		{"empty wanted is always true", []string{"a"}, nil, true},
+		{"empty wanted with empty item is true", nil, nil, true},
+		{"single matching tag", []string{"a", "b"}, []string{"a"}, true},
+		{"single non-matching tag", []string{"a", "b"}, []string{"c"}, false},
+		{"all wanted present", []string{"a", "b", "c"}, []string{"a", "b"}, true},
+		{"one wanted missing is false, distinguishing AND from OR", []string{"a", "c"}, []string{"a", "b"}, false},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			if got := hasAllTags(tc.itemTags, tc.wanted); got != tc.want {
+				t.Errorf("hasAllTags(%v, %v) = %v, want %v", tc.itemTags, tc.wanted, got, tc.want)
+			}
+		})
+	}
+}
+
+func TestAnyMatches(t *testing.T) {
+	cases := []struct {
+		name   string
+		items  []string
+		wanted []string
+		want   bool
+	}{
+		{"empty wanted set matches nothing; match-all lives in the FilterAdvanced guard", []string{"projects/camp"}, nil, false},
+		{"single matching entry", []string{"projects/camp"}, []string{"projects/camp"}, true},
+		{"one of several entries matches", []string{"projects/fest", "projects/camp"}, []string{"projects/camp"}, true},
+		{"no matching entries", []string{"projects/obey"}, []string{"projects/camp", "projects/fest"}, false},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			if got := anyMatches(tc.items, toSet(tc.wanted)); got != tc.want {
+				t.Errorf("anyMatches(%v, toSet(%v)) = %v, want %v", tc.items, tc.wanted, got, tc.want)
+			}
+		})
+	}
+}
+
+func TestFilterAdvanced_TagsAreANDedProjectsAreORed(t *testing.T) {
+	items := []WorkItem{
+		{Title: "both-tags", Tags: []string{"a", "b"}},
+		{Title: "only-a", Tags: []string{"a"}},
+		{Title: "only-b", Tags: []string{"b"}},
+		{Title: "camp", Projects: []string{"projects/camp"}},
+		{Title: "fest", Projects: []string{"projects/fest"}},
+		{Title: "obey", Projects: []string{"projects/obey"}},
+	}
+
+	got := FilterAdvanced(items, FilterOptions{Tags: []string{"a", "b"}, ShowParked: true})
+	if len(got) != 1 || got[0].Title != "both-tags" {
+		t.Fatalf("Tags AND = %v, want only both-tags", got)
+	}
+
+	got = FilterAdvanced(items, FilterOptions{Projects: []string{"projects/camp", "projects/fest"}, ShowParked: true})
+	if len(got) != 2 || got[0].Title != "camp" || got[1].Title != "fest" {
+		t.Fatalf("Projects OR = %v, want camp and fest", got)
+	}
+}
+
+func TestFilterAdvanced_TagsProjectsCombineAcrossDimensions(t *testing.T) {
+	items := []WorkItem{
+		{Title: "match", WorkflowType: WorkflowTypeDesign, Tags: []string{"a", "b"}, Projects: []string{"projects/camp"}},
+		{Title: "wrong-type", WorkflowType: WorkflowTypeIntent, Tags: []string{"a", "b"}, Projects: []string{"projects/camp"}},
+		{Title: "missing-tag", WorkflowType: WorkflowTypeDesign, Tags: []string{"a"}, Projects: []string{"projects/camp"}},
+		{Title: "wrong-project", WorkflowType: WorkflowTypeDesign, Tags: []string{"a", "b"}, Projects: []string{"projects/obey"}},
+	}
+	got := FilterAdvanced(items, FilterOptions{
+		Types:      []string{"design"},
+		Tags:       []string{"a", "b"},
+		Projects:   []string{"projects/camp"},
+		ShowParked: true,
+	})
+	if len(got) != 1 || got[0].Title != "match" {
+		t.Fatalf("cross-dimension AND = %v, want only the item matching type, tags, and project", got)
+	}
+}
+
+func TestFilterAdvanced_NoFilterOptionsReturnsAllItems(t *testing.T) {
+	items := []WorkItem{
+		{Title: "a", Tags: []string{"x"}},
+		{Title: "b", Projects: []string{"projects/camp"}},
+	}
+	if got := FilterAdvanced(items, FilterOptions{}); len(got) != len(items) {
+		t.Fatalf("empty options should return all %d items, got %d", len(items), len(got))
+	}
+	if got := FilterAdvanced(items, FilterOptions{ShowParked: true}); len(got) != len(items) {
+		t.Fatalf("early-return guard should return all %d items, got %d", len(items), len(got))
+	}
+}

@@ -47,7 +47,7 @@ func TestRunCreate_AppendsCreateAuditEvent(t *testing.T) {
 	cmd.SetOut(os.Stdout)
 	cmd.SetErr(os.Stderr)
 
-	if err := runCreate(context.Background(), cmd, "atomic-marker", "design", "Atomic Marker", "design-atomic-marker-fixed", "", "", false); err != nil {
+	if err := runCreate(context.Background(), cmd, "atomic-marker", "design", "Atomic Marker", "design-atomic-marker-fixed", "", "", nil, nil, false); err != nil {
 		t.Fatalf("runCreate() error = %v", err)
 	}
 
@@ -90,7 +90,7 @@ func TestRunAdopt_AppendsAdoptAuditEvent(t *testing.T) {
 	cmd := &cobra.Command{}
 	cmd.SetOut(os.Stdout)
 	cmd.SetErr(os.Stderr)
-	if err := runAdopt(context.Background(), cmd, "workflow/design/legacy", "design", "Legacy", "design-legacy-fixed", ""); err != nil {
+	if err := runAdopt(context.Background(), cmd, "workflow/design/legacy", "design", "Legacy", "design-legacy-fixed", "", nil, nil); err != nil {
 		t.Fatalf("runAdopt() error = %v", err)
 	}
 

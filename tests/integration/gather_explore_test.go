@@ -74,7 +74,7 @@ func TestGatherExplore_MovesSourcesIntoGatheredPackage(t *testing.T) {
 	require.NoError(t, err)
 	assert.Contains(t, marker, "gathered_into: "+result.Gathered.ID)
 	assert.Contains(t, marker, "gathered_at:")
-	assert.Contains(t, marker, "version: v1alpha7")
+	assert.Contains(t, marker, "version: v1alpha8")
 
 	listOutput, err := tc.RunCampInDir(campaign, "workitem", "--json", "--type", "explore")
 	require.NoError(t, err)

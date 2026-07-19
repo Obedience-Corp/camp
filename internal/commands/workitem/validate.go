@@ -28,10 +28,13 @@ import (
 // Validate finding codes (dotted-domain form, stable). codeMissingRefField is
 // shared with `camp workitem doctor` so agents dispatch on one ref code.
 const (
-	codeMarkerMissing   = "workitem.marker.missing"
-	codeMarkerMalformed = "workitem.marker.malformed"
-	codeTypeMismatch    = "workitem.type.mismatch"
-	codeSchemaOutdated  = "workitem.schema.outdated"
+	codeMarkerMissing       = "workitem.marker.missing"
+	codeMarkerMalformed     = "workitem.marker.malformed"
+	codeTypeMismatch        = "workitem.type.mismatch"
+	codeSchemaOutdated      = "workitem.schema.outdated"
+	codeSchemaForwardCompat = "workitem.schema.forward-compat"
+	codeIdentityConflict    = "workitem.identity.conflict"
+	codeIdentityRefPending  = "workitem.identity.ref-pending"
 )
 
 type validateFinding struct {
@@ -118,6 +121,9 @@ func runValidate(ctx context.Context, cmd *cobra.Command, jsonOut bool, target s
 		}
 		findings = append(findings, classifyWorkflowDir(root, c.RelPath, c.PathType)...)
 	}
+	if target == "" {
+		findings = append(findings, frontmatterTypeMismatchFindings(root, resolver)...)
+	}
 	sort.SliceStable(findings, func(i, j int) bool {
 		if findings[i].Target != findings[j].Target {
 			return findings[i].Target < findings[j].Target
@@ -159,7 +165,119 @@ func classifyWorkflowDir(root, relPath, pathType string) []validateFinding {
 			Repairable:    false,
 		}}
 	}
-	return classifyMarker(relPath, pathType, true, raw)
+	findings := classifyMarker(relPath, pathType, true, raw)
+	findings = append(findings, frontmatterConflictFindings(root, relPath, raw)...)
+	return findings
+}
+
+// frontmatterConflictFindings enforces the identity-conflict rule: a document
+// frontmatter block anywhere in a marker directory's subtree that declares an
+// id/ref disagreeing with the directory .workitem is a hard error, never
+// silently resolved in either direction (doc 03).
+func frontmatterConflictFindings(root, relPath string, raw []byte) []validateFinding {
+	var dirMeta wkitem.Metadata
+	if err := yaml.Unmarshal(raw, &dirMeta); err != nil {
+		return nil // a malformed marker is already reported by classifyMarker
+	}
+	if dirMeta.ID == "" {
+		return nil // no directory identity to conflict with
+	}
+	dirAbs := filepath.Join(root, filepath.FromSlash(relPath))
+	conflicts, err := wkitem.FindFrontmatterConflicts(dirAbs, &dirMeta)
+	if err != nil {
+		return nil // best-effort; a walk error must not fail validate
+	}
+	var findings []validateFinding
+	for _, c := range conflicts {
+		fmRel := filepath.ToSlash(filepath.Join(relPath, c.RelPathFromDir))
+		switch c.Kind {
+		case wkitem.FrontmatterConflictRefPending:
+			findings = append(findings, validateFinding{
+				Code:     codeIdentityRefPending,
+				Severity: docSeverityWarning,
+				Target:   relPath,
+				Message: "frontmatter in " + fmRel + " shares the directory .workitem id but only one side declares a ref (dir ref: " +
+					refOrUnset(dirMeta.Ref) + ", frontmatter ref: " + refOrUnset(c.Ref) + "); the directory marker owns identity — reconcile by setting the directory ref to match or removing the frontmatter ref",
+				Repairable: false,
+			})
+		default:
+			findings = append(findings, validateFinding{
+				Code:     codeIdentityConflict,
+				Severity: docSeverityError,
+				Target:   relPath,
+				Message: "frontmatter in " + fmRel + " declares id/ref conflicting with the directory .workitem (dir: " +
+					dirMeta.ID + "/" + dirMeta.Ref + ", frontmatter: " + c.ID + "/" + c.Ref + ")",
+				Repairable: false,
+			})
+		}
+	}
+	return findings
+}
+
+func refOrUnset(ref string) string {
+	if ref == "" {
+		return "(unset)"
+	}
+	return ref
+}
+
+// frontmatterTypeMismatchFindings flags document frontmatter files under a
+// path-typed tree (design/explore) whose type: disagrees with the path. The
+// path decides the effective type (discovery forces it); validate surfaces the
+// disagreement rather than silently accepting either value. Files inside a
+// marker-bearing directory belong to that directory (collision rule) and are
+// skipped here; their identity is checked by the conflict rule instead.
+func frontmatterTypeMismatchFindings(root string, resolver *paths.Resolver) []validateFinding {
+	roots := []struct {
+		dir      string
+		pathType string
+	}{
+		{resolver.Design(), string(wkitem.WorkflowTypeDesign)},
+		{resolver.Explore(), string(wkitem.WorkflowTypeExplore)},
+	}
+	var findings []validateFinding
+	for _, r := range roots {
+		_ = filepath.WalkDir(r.dir, func(path string, d fs.DirEntry, err error) error {
+			if err != nil {
+				return nil
+			}
+			if d.IsDir() {
+				if path == r.dir {
+					return nil
+				}
+				name := d.Name()
+				if name == "dungeon" || strings.HasPrefix(name, ".") {
+					return filepath.SkipDir
+				}
+				if _, statErr := os.Stat(filepath.Join(path, wkitem.MetadataFilename)); statErr == nil {
+					return filepath.SkipDir
+				}
+				return nil
+			}
+			if !strings.HasSuffix(d.Name(), ".md") {
+				return nil
+			}
+			md, ferr := wkitem.LoadFrontmatterMetadata(path)
+			if ferr != nil || md == nil {
+				return nil
+			}
+			if md.Type != "" && md.Type != r.pathType {
+				rel, relErr := filepath.Rel(root, path)
+				if relErr != nil {
+					return nil
+				}
+				findings = append(findings, validateFinding{
+					Code:       codeTypeMismatch,
+					Severity:   docSeverityError,
+					Target:     filepath.ToSlash(rel),
+					Message:    "frontmatter type " + strconv.Quote(md.Type) + " does not match path type " + strconv.Quote(r.pathType),
+					Repairable: false,
+				})
+			}
+			return nil
+		})
+	}
+	return findings
 }
 
 // classifyMarker is the pure structural check: given whether a marker is present
@@ -209,6 +327,15 @@ func classifyMarker(relPath, pathType string, present bool, raw []byte) []valida
 		})
 	}
 	switch {
+	case wkitem.IsForwardCompatVersion(meta.Version):
+		// Read-only: never suggest repair, which would downgrade a newer marker
+		// and drop fields this binary does not model.
+		findings = append(findings, validateFinding{
+			Code: codeSchemaForwardCompat, Severity: docSeverityWarning, Target: relPath,
+			Message: "marker schema version " + meta.Version + " is newer than this binary (current " + wkitem.WorkitemSchemaVersion +
+				"); loaded via forward-compat. Upgrade camp to a version that models " + meta.Version + " to edit this marker safely.",
+			Repairable: false,
+		})
 	case !wkitem.IsAcceptedVersion(meta.Version):
 		malformed("unsupported .workitem schema version " + strconv.Quote(meta.Version) + "; current is " + wkitem.WorkitemSchemaVersion)
 	case !wkitem.IsCurrentVersion(meta.Version):

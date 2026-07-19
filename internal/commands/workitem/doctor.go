@@ -28,16 +28,18 @@ import (
 // Doctor finding codes (dotted-domain form). Stable strings; consumers
 // dispatch on them.
 const (
-	codeBrokenLink         = "workitem.link.broken"
-	codeBrokenScope        = "workitem.scope.broken"
-	codeOutOfBounds        = "workitem.scope.out-of-bounds"
-	codeScopeUnvalidatable = "workitem.scope.unvalidatable"
-	codeDuplicatePrimary   = "workitem.link.duplicate-primary"
-	codeSchemaViolation    = "workitem.schema.violation"
-	codeCurrentMissing     = "workitem.current.missing"
-	codeMissingRefField    = "workitem.ref.missing"
-	codeWorkitemScanFailed = "workitem.scan.failed"
-	codeRegistryParseError = "workitem.registry.parse-error"
+	codeBrokenLink           = "workitem.link.broken"
+	codeBrokenScope          = "workitem.scope.broken"
+	codeOutOfBounds          = "workitem.scope.out-of-bounds"
+	codeScopeUnvalidatable   = "workitem.scope.unvalidatable"
+	codeDuplicatePrimary     = "workitem.link.duplicate-primary"
+	codeSchemaViolation      = "workitem.schema.violation"
+	codeCurrentMissing       = "workitem.current.missing"
+	codeMissingRefField      = "workitem.ref.missing"
+	codeWorkitemScanFailed   = "workitem.scan.failed"
+	codeRegistryParseError   = "workitem.registry.parse-error"
+	codeProjectNotFound      = "workitem.project.not-found"
+	codeProjectUnvalidatable = "workitem.project.unvalidatable"
 )
 
 const (
@@ -99,7 +101,7 @@ func runDoctor(ctx context.Context, cmd *cobra.Command, jsonOut, fix bool) error
 	if err != nil {
 		return renderWorkitemDoctorError(cmd, jsonOut, camperrors.Wrap(err, "not in a campaign directory"))
 	}
-	knownIDs, err := workitemIDsOnDisk(ctx, root)
+	knownIDs, items, err := workitemIDsOnDisk(ctx, root)
 	if err != nil {
 		return renderWorkitemDoctorError(cmd, jsonOut, err)
 	}
@@ -120,7 +122,7 @@ func runDoctor(ctx context.Context, cmd *cobra.Command, jsonOut, fix bool) error
 			}
 		}
 		err = links.WithLock(ctx, root, func(registry *links.Links) error {
-			findings = collectWorkitemFindings(ctx, root, registry, knownIDs)
+			findings = collectWorkitemFindings(ctx, root, registry, knownIDs, items)
 			applied, fixErr := autoFixWorkitemFindings(ctx, root, registry, findings, cmd.ErrOrStderr())
 			if fixErr != nil {
 				return fixErr
@@ -128,14 +130,14 @@ func runDoctor(ctx context.Context, cmd *cobra.Command, jsonOut, fix bool) error
 			if applied == 0 {
 				return links.ErrSkipSave
 			}
-			knownIDs, _ = workitemIDsOnDisk(ctx, root)
-			findings = collectWorkitemFindings(ctx, root, registry, knownIDs)
+			knownIDs, items, _ = workitemIDsOnDisk(ctx, root)
+			findings = collectWorkitemFindings(ctx, root, registry, knownIDs, items)
 			return nil
 		})
 		if err != nil {
 			return renderWorkitemDoctorError(cmd, jsonOut, err)
 		}
-		knownIDs, err = workitemIDsOnDisk(ctx, root)
+		knownIDs, _, err = workitemIDsOnDisk(ctx, root)
 		if err != nil {
 			return renderWorkitemDoctorError(cmd, jsonOut, err)
 		}
@@ -166,7 +168,7 @@ func runDoctor(ctx context.Context, cmd *cobra.Command, jsonOut, fix bool) error
 			}
 			return camperrors.Wrap(loadErr, "load links registry")
 		}
-		findings = collectWorkitemFindings(ctx, root, registry, knownIDs)
+		findings = collectWorkitemFindings(ctx, root, registry, knownIDs, items)
 	}
 
 	if jsonOut {
@@ -210,7 +212,7 @@ func renderWorkitemDoctorError(cmd *cobra.Command, jsonOut bool, err error) erro
 	return jsoncontract.RenderError(cmd, WorkitemDoctorJSONVersion, err)
 }
 
-func collectWorkitemFindings(ctx context.Context, root string, registry *links.Links, knownIDs map[string]struct{}) []docFinding {
+func collectWorkitemFindings(ctx context.Context, root string, registry *links.Links, knownIDs map[string]struct{}, items []wkitem.WorkItem) []docFinding {
 	var findings []docFinding
 
 	// Schema-level validation.
@@ -314,6 +316,34 @@ func collectWorkitemFindings(ctx context.Context, root string, registry *links.L
 				FixHint:     "run camp workitem doctor --fix to backfill",
 				AutoFixable: true,
 			})
+		}
+	}
+
+	for _, item := range items {
+		for _, projectPath := range item.Projects {
+			_, statErr := os.Stat(filepath.Join(root, filepath.FromSlash(projectPath)))
+			switch {
+			case statErr == nil:
+				continue
+			case errors.Is(statErr, fs.ErrNotExist):
+				findings = append(findings, docFinding{
+					Code:        codeProjectNotFound,
+					Severity:    docSeverityWarning,
+					Target:      "workitem:" + item.RelativePath,
+					Message:     "projects entry " + projectPath + " does not exist",
+					FixHint:     "verify the project was renamed/removed intentionally; doctor --fix does not auto-remove this entry",
+					AutoFixable: false,
+				})
+			default:
+				findings = append(findings, docFinding{
+					Code:        codeProjectUnvalidatable,
+					Severity:    docSeverityWarning,
+					Target:      "workitem:" + item.RelativePath,
+					Message:     "projects entry " + projectPath + " could not be validated: " + statErr.Error(),
+					FixHint:     "resolve the filesystem error (for example a permissions issue) and re-run doctor",
+					AutoFixable: false,
+				})
+			}
 		}
 	}
 
@@ -422,15 +452,15 @@ func scopeTargetExists(root, scopePath string) bool {
 	return !errors.Is(err, fs.ErrNotExist)
 }
 
-func workitemIDsOnDisk(ctx context.Context, root string) (map[string]struct{}, error) {
+func workitemIDsOnDisk(ctx context.Context, root string) (map[string]struct{}, []wkitem.WorkItem, error) {
 	cfg, err := config.LoadCampaignConfig(ctx, root)
 	if err != nil {
-		return nil, camperrors.Wrap(err, "load campaign config")
+		return nil, nil, camperrors.Wrap(err, "load campaign config")
 	}
 	resolver := paths.NewResolverFromConfig(root, cfg)
 	items, err := wkitem.Discover(ctx, root, resolver)
 	if err != nil {
-		return nil, err
+		return nil, nil, err
 	}
 	set := make(map[string]struct{}, len(items))
 	for _, item := range items {
@@ -447,7 +477,7 @@ func workitemIDsOnDisk(ctx context.Context, root string) (map[string]struct{}, e
 			set[item.SourceID] = struct{}{}
 		}
 	}
-	return set, nil
+	return set, items, nil
 }
 
 func hasErrorFinding(findings []docFinding) bool {

@@ -116,7 +116,7 @@ id: x
 type: design
 title: T
 `,
-			wantSubstr: "v1alpha7",
+			wantSubstr: WorkitemSchemaVersion,
 		},
 		{
 			name: "wrong kind",
@@ -383,6 +383,32 @@ func TestValidateMetadata_TagsProjects(t *testing.T) {
 				t.Errorf("Field = %q, want %q", verr.Field, tc.wantField)
 			}
 		})
+	}
+}
+
+func TestValidateProjectPaths_DelegatesToLoaderCheck(t *testing.T) {
+	if err := ValidateProjectPaths([]string{"projects/camp", "projects/fest"}); err != nil {
+		t.Fatalf("well-formed project paths should be accepted: %v", err)
+	}
+	if err := ValidateProjectPaths(nil); err != nil {
+		t.Fatalf("empty list should be accepted: %v", err)
+	}
+	for _, bad := range [][]string{
+		{"../outside"},
+		{"/etc/passwd"},
+		{"projects/camp", "projects/camp"},
+	} {
+		err := ValidateProjectPaths(bad)
+		if err == nil {
+			t.Fatalf("ValidateProjectPaths(%v) should reject, got nil", bad)
+		}
+		var verr *camperrors.ValidationError
+		if !errors.As(err, &verr) {
+			t.Fatalf("expected ValidationError for %v, got %T: %v", bad, err, err)
+		}
+		if verr.Field != "projects" {
+			t.Errorf("Field = %q, want projects for %v", verr.Field, bad)
+		}
 	}
 }
 

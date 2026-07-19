@@ -134,7 +134,7 @@ func runLink(ctx context.Context, cmd *cobra.Command, opts linkOptions) error {
 
 	var knownIDs map[string]struct{}
 	if !opts.AllowMissing {
-		knownIDs, err = workitemIDsOnDisk(ctx, root)
+		knownIDs, _, err = workitemIDsOnDisk(ctx, root)
 		if err != nil {
 			return err
 		}

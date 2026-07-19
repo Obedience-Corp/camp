@@ -183,6 +183,7 @@ func TestManifestCommand_AllRestrictedCommandsPresent(t *testing.T) {
 	}
 	if workitemCommandRegistered() {
 		expectedCommands["workitem"] = false
+		expectedCommands["workitem adopt"] = false
 		expectedCommands["workitem create"] = false
 		expectedCommands["workitem current"] = false
 		expectedCommands["workitem link"] = false

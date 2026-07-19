@@ -27,8 +27,10 @@ import (
 )
 
 func newCreateCommand() *cobra.Command {
-	var typeFlag, title, idOverride, dirOverride, questSelector string
+	var typeFlag, title, idOverride, dirOverride, questSelector, fileFlag string
 	var jsonOut bool
+	var tags []string
+	var projects []string
 	cmd := &cobra.Command{
 		Use:   "create <slug>",
 		Short: "Create workitem tracking metadata",
@@ -38,7 +40,8 @@ This command does NOT create the substantive work scaffold (no design docs,
 explore notes, or festival structure). It only:
 
   1. Creates workflow/<type>/<slug>/ (or --dir/<slug>/)
-  2. Writes a .workitem marker (id, type, title, ref, optional quest)
+  2. Writes a .workitem marker (id, type, title, ref, optional quest, optional
+     tags, optional related projects)
 
 Agents and humans must still add real content afterward. For explore/design
 types, the recommended structured-workflow scaffold is:
@@ -51,14 +54,23 @@ populate campaign-governed content under the new directory as needed.
 Use "camp workitem adopt" to attach a marker to an existing directory.
 Use --json for machine-readable identity. next.command is set only for
 explore/design (recommended scaffold); otherwise it is empty/omitted.`,
-		Args: jsoncontract.Args(WorkitemCreateJSONVersion, func() bool { return jsonOut }, cobra.ExactArgs(1)),
+		Args: jsoncontract.Args(WorkitemCreateJSONVersion, func() bool { return jsonOut }, cobra.MaximumNArgs(1)),
 		Annotations: map[string]string{
 			"agent_allowed": "true",
 			"agent_reason":  "Creates workitems with --json output for automation",
 		},
 		RunE: jsoncontract.RunE(WorkitemCreateJSONVersion, func() bool { return jsonOut }, func(cmd *cobra.Command, args []string) error {
 			ctx := cmd.Context()
-			return runCreate(ctx, cmd, args[0], typeFlag, title, idOverride, dirOverride, questSelector, jsonOut)
+			if fileFlag != "" {
+				if len(args) > 0 {
+					return camperrors.NewValidation("args", "provide either a slug argument or --file, not both", nil)
+				}
+				return runCreateFile(ctx, cmd, fileFlag, typeFlag, title, idOverride, questSelector, tags, projects, jsonOut)
+			}
+			if len(args) != 1 {
+				return camperrors.NewValidation("args", "create requires a slug argument or --file <path>", nil)
+			}
+			return runCreate(ctx, cmd, args[0], typeFlag, title, idOverride, dirOverride, questSelector, tags, projects, jsonOut)
 		}),
 	}
 	cmd.SetFlagErrorFunc(jsoncontract.FlagErrorFunc(WorkitemCreateJSONVersion, func() bool { return jsonOut }))
@@ -68,15 +80,161 @@ explore/design (recommended scaffold); otherwise it is empty/omitted.`,
 	cmd.Flags().StringVar(&dirOverride, "dir", "", "parent dir override (default: workflow/<type>)")
 	cmd.Flags().StringVar(&questSelector, "quest", "", questFlagHelp())
 	cmd.Flags().BoolVar(&jsonOut, "json", false, "emit a structured JSON result")
+	cmd.Flags().StringArrayVar(&tags, "tag", nil, "add a tag (repeatable, normalized to lowercase kebab-case)")
+	cmd.Flags().StringArrayVar(&projects, "project", nil, "add a related project path (repeatable, e.g. projects/camp)")
+	cmd.Flags().StringVar(&fileFlag, "file", "", "create a new markdown file with kind: workitem frontmatter instead of a directory workitem")
 	return cmd
 }
 
-func runCreate(ctx context.Context, cmd *cobra.Command, slug, typeFlag, title, idOverride, dirOverride, questSelector string, jsonOut bool) error {
+// runCreateFile mints a new markdown file with a kind: workitem frontmatter
+// block and a minimal heading body, reusing the frontmatter construction of the
+// no-existing-frontmatter adopt branch.
+func runCreateFile(ctx context.Context, cmd *cobra.Command, filePath, typeFlag, title, idOverride, questSelector string, tags, projects []string, jsonOut bool) error {
+	if err := validateSlug(typeFlag); err != nil {
+		return camperrors.NewValidation("type", "invalid type slug: "+err.Error(), nil)
+	}
+	normalizedTags, err := normalizeTags(tags)
+	if err != nil {
+		return err
+	}
+	normalizedProjects, err := normalizeProjects(projects)
+	if err != nil {
+		return err
+	}
+	if err := wkitem.ValidateProjectPaths(normalizedProjects); err != nil {
+		return err
+	}
+
+	cfg, campaignRoot, err := config.LoadCampaignConfigFromCwd(ctx)
+	if err != nil {
+		return camperrors.Wrap(err, "not in a campaign directory")
+	}
+
+	rel := filePath
+	if filepath.IsAbs(filePath) {
+		rel, err = filepath.Rel(campaignRoot, filePath)
+		if err != nil {
+			return camperrors.Wrap(err, "resolve file relative to campaign root")
+		}
+	}
+	if err := validateParentPath(rel); err != nil {
+		return err
+	}
+	if !strings.HasSuffix(rel, ".md") {
+		return camperrors.NewValidation("file", "create --file target must be a .md file, got "+rel, nil)
+	}
+	abs := filepath.Join(campaignRoot, rel)
+	if _, statErr := os.Stat(abs); statErr == nil {
+		return camperrors.NewValidation("path",
+			"target file already exists: "+rel+" — use `camp workitem adopt --file` to stamp an existing file", nil)
+	}
+
+	slug := strings.TrimSuffix(filepath.Base(rel), filepath.Ext(rel))
+	id, err := generateID(ctx, typeFlag, slug, idOverride, campaignRoot)
+	if err != nil {
+		return err
+	}
+	ref, err := deriveUniqueRef(ctx, campaignRoot, cfg, id)
+	if err != nil {
+		return err
+	}
+	questID := resolveQuestIDForCreate(ctx, cmd, campaignRoot, questSelector)
+
+	titleText := title
+	if titleText == "" {
+		titleText = slug
+	}
+	meta := wkitem.Metadata{
+		Version:  wkitem.WorkitemSchemaVersion,
+		Kind:     "workitem",
+		ID:       id,
+		Type:     typeFlag,
+		Title:    titleText,
+		Ref:      ref,
+		QuestID:  questID,
+		Tags:     normalizedTags,
+		Projects: normalizedProjects,
+	}
+	fmBlock, err := wkitem.MarshalMetadataFrontmatter(&meta)
+	if err != nil {
+		return err
+	}
+	content := append(wkitem.FenceFrontmatter(fmBlock), []byte("# "+titleText+"\n")...)
+
+	if err := os.MkdirAll(filepath.Dir(abs), 0o755); err != nil {
+		return camperrors.Wrap(err, "create parent directory")
+	}
+	if err := writeFileLocked(ctx, abs, content); err != nil {
+		return err
+	}
+
+	invalidateNavigationCache(cmd, campaignRoot)
+	appendWorkitemAuditEvent(ctx, cmd, campaignRoot, wkaudit.Event{
+		Event: wkaudit.EventCreate,
+		ID:    id,
+		Ref:   ref,
+		Type:  typeFlag,
+		Title: titleText,
+		To:    filepath.ToSlash(rel),
+	})
+	ledger.NewFromRoot(ctx, campaignRoot, ledger.WarnTo(cmd.ErrOrStderr())).
+		Emit(ctx, ledgerkit.KindCreated, ledgerkit.Scope{Workitem: ref, Quest: questID},
+			ledger.WithWhy(titleText),
+			ledger.WithPayload(map[string]any{"type": typeFlag, "title": titleText, "path": rel, "file": true}))
+
+	if jsonOut {
+		payload := struct {
+			SchemaVersion string    `json:"schema_version"`
+			GeneratedAt   time.Time `json:"generated_at"`
+			Workitem      struct {
+				ID            string `json:"id"`
+				Ref           string `json:"ref"`
+				Type          string `json:"type"`
+				Title         string `json:"title,omitempty"`
+				RelativePath  string `json:"relative_path"`
+				ItemKind      string `json:"item_kind"`
+				MarkerVersion string `json:"marker_version"`
+			} `json:"workitem"`
+		}{SchemaVersion: WorkitemCreateJSONVersion, GeneratedAt: time.Now().UTC()}
+		payload.Workitem.ID = id
+		payload.Workitem.Ref = ref
+		payload.Workitem.Type = typeFlag
+		payload.Workitem.Title = titleText
+		payload.Workitem.RelativePath = rel
+		payload.Workitem.ItemKind = "file"
+		payload.Workitem.MarkerVersion = wkitem.WorkitemSchemaVersion
+		enc := json.NewEncoder(cmd.OutOrStdout())
+		enc.SetIndent("", "  ")
+		return enc.Encode(payload)
+	}
+
+	questLine := ""
+	if questID != "" {
+		questLine = fmt.Sprintf("  quest: %s\n", questID)
+	}
+	_, _ = fmt.Fprintf(cmd.OutOrStdout(),
+		"created file %s\n  id: %s\n  ref: %s\n  type: %s\n%s",
+		rel, id, ref, typeFlag, questLine)
+	return nil
+}
+
+func runCreate(ctx context.Context, cmd *cobra.Command, slug, typeFlag, title, idOverride, dirOverride, questSelector string, tags, projects []string, jsonOut bool) error {
 	if err := validateSlug(slug); err != nil {
 		return err
 	}
 	if err := validateSlug(typeFlag); err != nil {
 		return camperrors.NewValidation("type", "invalid type slug: "+err.Error(), nil)
+	}
+	normalizedTags, err := normalizeTags(tags)
+	if err != nil {
+		return err
+	}
+	normalizedProjects, err := normalizeProjects(projects)
+	if err != nil {
+		return err
+	}
+	if err := wkitem.ValidateProjectPaths(normalizedProjects); err != nil {
+		return err
 	}
 
 	cfg, campaignRoot, err := config.LoadCampaignConfigFromCwd(ctx)
@@ -121,13 +279,15 @@ func runCreate(ctx context.Context, cmd *cobra.Command, slug, typeFlag, title, i
 	}()
 
 	meta := wkitem.Metadata{
-		Version: wkitem.WorkitemSchemaVersion,
-		Kind:    "workitem",
-		ID:      id,
-		Type:    typeFlag,
-		Title:   title,
-		Ref:     ref,
-		QuestID: questID,
+		Version:  wkitem.WorkitemSchemaVersion,
+		Kind:     "workitem",
+		ID:       id,
+		Type:     typeFlag,
+		Title:    title,
+		Ref:      ref,
+		QuestID:  questID,
+		Tags:     normalizedTags,
+		Projects: normalizedProjects,
 	}
 	buf, err := yaml.Marshal(&meta)
 	if err != nil {

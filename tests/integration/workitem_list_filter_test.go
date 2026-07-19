@@ -50,3 +50,47 @@ func TestIntegration_WorkitemListFiltersNonTTYAndJSON(t *testing.T) {
 	require.NoError(t, err, "legacy --list: %s", legacy)
 	assert.Contains(t, legacy, "Auth Design")
 }
+
+func TestIntegration_WorkitemListTagAndProjectFilters(t *testing.T) {
+	tc := GetSharedContainer(t)
+	dir := "/test/workitem-list-tag-project"
+	_, err := tc.InitCampaign(dir, "workitem-list-tag-project", "product")
+	require.NoError(t, err)
+
+	_, err = tc.RunCampInDir(dir, "workitem", "create", "tagboth", "--type", "design",
+		"--title", "TagBoth", "--tag", "public-launch", "--tag", "schema")
+	require.NoError(t, err)
+	_, err = tc.RunCampInDir(dir, "workitem", "create", "tagone", "--type", "design",
+		"--title", "TagOne", "--tag", "public-launch")
+	require.NoError(t, err)
+	_, err = tc.RunCampInDir(dir, "workitem", "create", "projcamp", "--type", "design",
+		"--title", "ProjCamp", "--project", "projects/camp")
+	require.NoError(t, err)
+	_, err = tc.RunCampInDir(dir, "workitem", "create", "projfest", "--type", "design",
+		"--title", "ProjFest", "--project", "projects/fest")
+	require.NoError(t, err)
+
+	andText, err := tc.RunCampInDir(dir, "workitem", "list", "--tag", "public-launch", "--tag", "schema")
+	require.NoError(t, err, "tag AND list: %s", andText)
+	assert.Contains(t, andText, "TagBoth", "item carrying both tags must be listed")
+	assert.NotContains(t, andText, "TagOne", "--tag is AND: an item missing one named tag must be excluded")
+	assert.NotContains(t, andText, "ProjCamp", "an untagged item must be excluded by a tag filter")
+
+	orText, err := tc.RunCampInDir(dir, "workitem", "list", "--project", "projects/camp", "--project", "projects/fest")
+	require.NoError(t, err, "project OR list: %s", orText)
+	assert.Contains(t, orText, "ProjCamp", "--project is OR: an item touching either project must be listed")
+	assert.Contains(t, orText, "ProjFest", "--project is OR: an item touching either project must be listed")
+	assert.NotContains(t, orText, "TagBoth", "an item touching neither project must be excluded")
+
+	parityTag, err := tc.RunCampInDir(dir, "workitem", "list", "--tag", "Public-Launch")
+	require.NoError(t, err, "unnormalized --tag list: %s", parityTag)
+	assert.Contains(t, parityTag, "TagBoth", "--tag Public-Launch must normalize and match stored public-launch")
+	assert.Contains(t, parityTag, "TagOne", "--tag Public-Launch must normalize and match stored public-launch")
+
+	parityProject, err := tc.RunCampInDir(dir, "workitem", "list", "--project", "projects/camp/")
+	require.NoError(t, err, "trailing-slash --project list: %s", parityProject)
+	assert.Contains(t, parityProject, "ProjCamp", "--project projects/camp/ must normalize and match stored projects/camp")
+
+	emptyProject, err := tc.RunCampInDir(dir, "workitem", "list", "--project", "/")
+	require.Error(t, err, "--project / must fail as empty after normalization: %s", emptyProject)
+}

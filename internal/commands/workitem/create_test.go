@@ -180,7 +180,7 @@ func TestRunCreateWritesWorkitemMarker(t *testing.T) {
 	cmd.SetOut(os.Stdout)
 	cmd.SetErr(os.Stderr)
 
-	if err := runCreate(context.Background(), cmd, "atomic-marker", "design", "Atomic Marker", "", "", "", false); err != nil {
+	if err := runCreate(context.Background(), cmd, "atomic-marker", "design", "Atomic Marker", "", "", "", nil, nil, false); err != nil {
 		t.Fatalf("runCreate() error = %v", err)
 	}
 
@@ -209,7 +209,7 @@ func TestRunCreate_DeriveFailureLeavesNoTargetAndRetrySucceeds(t *testing.T) {
 	cmd := &cobra.Command{}
 	cmd.SetOut(io.Discard)
 	cmd.SetErr(io.Discard)
-	err := runCreate(ctx, cmd, "retryable", "design", "Retryable", "design-retryable-id", "", "", false)
+	err := runCreate(ctx, cmd, "retryable", "design", "Retryable", "design-retryable-id", "", "", nil, nil, false)
 	if !errors.Is(err, context.Canceled) {
 		t.Fatalf("runCreate canceled error = %v, want context.Canceled", err)
 	}
@@ -220,14 +220,14 @@ func TestRunCreate_DeriveFailureLeavesNoTargetAndRetrySucceeds(t *testing.T) {
 	cmd = &cobra.Command{}
 	cmd.SetOut(io.Discard)
 	cmd.SetErr(io.Discard)
-	if err := runCreate(context.Background(), cmd, "retryable", "design", "Retryable", "design-retryable-id", "", "", false); err != nil {
+	if err := runCreate(context.Background(), cmd, "retryable", "design", "Retryable", "design-retryable-id", "", "", nil, nil, false); err != nil {
 		t.Fatalf("immediate retry runCreate() error = %v", err)
 	}
 	if _, err := os.Stat(filepath.Join(target, ".workitem")); err != nil {
 		t.Fatalf("retry did not create marker: %v", err)
 	}
 
-	err = runCreate(context.Background(), cmd, "retryable", "design", "Retryable", "", "", "", false)
+	err = runCreate(context.Background(), cmd, "retryable", "design", "Retryable", "", "", "", nil, nil, false)
 	if err == nil || !strings.Contains(err.Error(), "use `camp workitem adopt`") {
 		t.Fatalf("second create error = %v, want adopt guidance", err)
 	}
@@ -251,7 +251,7 @@ func TestRunCreate_PreExistingNonEmptyDirRequiresAdopt(t *testing.T) {
 	cmd := &cobra.Command{}
 	cmd.SetOut(io.Discard)
 	cmd.SetErr(io.Discard)
-	err := runCreate(context.Background(), cmd, "legacy", "design", "Legacy", "", "", "", false)
+	err := runCreate(context.Background(), cmd, "legacy", "design", "Legacy", "", "", "", nil, nil, false)
 	if err == nil || !strings.Contains(err.Error(), "use `camp workitem adopt`") {
 		t.Fatalf("runCreate existing dir error = %v, want adopt guidance", err)
 	}

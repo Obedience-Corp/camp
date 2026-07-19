@@ -13,8 +13,30 @@ import (
 )
 
 func RecordPromotion(ctx context.Context, root, relPath, promotedTo string, at time.Time) error {
-	abs := filepath.Join(root, filepath.FromSlash(relPath), MetadataFilename)
+	return recordLifecycleFields(ctx, root, relPath, []FrontmatterField{
+		{After: "type", Key: "promoted_to", Value: promotedTo},
+		{After: "promoted_to", Key: "promoted_at", Value: at.UTC().Format(time.RFC3339)},
+	})
+}
 
+// recordLifecycleFields stamps scalar lifecycle keys onto a workitem, choosing
+// the right surface by shape: a directory workitem's .workitem marker, or a file
+// workitem's own frontmatter. Existing keys are updated in place so the
+// operation is idempotent. Both paths hold a per-file lock and write atomically.
+func recordLifecycleFields(ctx context.Context, root, relPath string, fields []FrontmatterField) error {
+	if err := ctx.Err(); err != nil {
+		return err
+	}
+	target := filepath.Join(root, filepath.FromSlash(relPath))
+	info, err := os.Stat(target)
+	if err != nil {
+		return camperrors.Wrapf(err, "stat %s", relPath)
+	}
+	if !info.IsDir() {
+		return StampFrontmatterFields(ctx, target, fields)
+	}
+
+	abs := filepath.Join(target, MetadataFilename)
 	release, err := fsutil.AcquireFileLock(ctx, abs+".lock")
 	if err != nil {
 		return err
@@ -25,19 +47,15 @@ func RecordPromotion(ctx context.Context, root, relPath, promotedTo string, at t
 	if err != nil {
 		return camperrors.Wrapf(err, "read %s", abs)
 	}
-
 	var doc yaml.Node
 	if err := yaml.Unmarshal(raw, &doc); err != nil {
 		return camperrors.Wrapf(err, "parse %s", abs)
 	}
-
-	if err := insertScalarAfter(&doc, "type", "promoted_to", promotedTo); err != nil {
-		return err
+	for _, f := range fields {
+		if err := insertScalarAfter(&doc, f.After, f.Key, f.Value); err != nil {
+			return err
+		}
 	}
-	if err := insertScalarAfter(&doc, "promoted_to", "promoted_at", at.UTC().Format(time.RFC3339)); err != nil {
-		return err
-	}
-
 	out, err := yaml.Marshal(&doc)
 	if err != nil {
 		return camperrors.Wrap(err, "marshal updated workitem")
