@@ -47,6 +47,18 @@ func ScanDirTimestamps(ctx context.Context, dir string) (earliest, latest time.T
 	return earliest, latest
 }
 
+// ScanFileTimestamps returns a single file's mtime as both created and updated,
+// the file-shaped analog of ScanDirTimestamps for document workitems (a single
+// markdown file rather than a directory tree). Returns zero times if the file
+// cannot be stat'd.
+func ScanFileTimestamps(ctx context.Context, path string) (created, updated time.Time) {
+	info, err := os.Stat(path)
+	if err != nil {
+		return time.Time{}, time.Time{}
+	}
+	return info.ModTime(), info.ModTime()
+}
+
 // listTrackedFiles returns tracked + untracked-but-not-ignored files under dir.
 // Falls back to filepath.WalkDir if git is unavailable.
 func listTrackedFiles(ctx context.Context, dir string) ([]string, error) {

@@ -143,3 +143,24 @@ func TestClassifyMarker_MissingIsRepairable(t *testing.T) {
 		t.Errorf("want %s, got %v", codeMarkerMissing, findingCodes(findings))
 	}
 }
+
+func TestClassifyMarker_ForwardCompatIsWarningNoRepair(t *testing.T) {
+	raw := "version: v1alpha99\nkind: workitem\nid: design-foo-2026-05-25\ntype: design\ntitle: Foo\nref: WI-abc123\n"
+	findings := classifyMarker("workflow/design/foo", "design", true, []byte(raw))
+	if len(findings) != 1 {
+		t.Fatalf("findings = %d, want exactly 1: %+v", len(findings), findings)
+	}
+	f := findings[0]
+	if f.Code != codeSchemaForwardCompat {
+		t.Errorf("code = %q, want %q", f.Code, codeSchemaForwardCompat)
+	}
+	if f.Severity != docSeverityWarning {
+		t.Errorf("severity = %q, want %q", f.Severity, docSeverityWarning)
+	}
+	if f.RepairCommand != "" {
+		t.Errorf("forward-compat finding must not suggest repair, got %q", f.RepairCommand)
+	}
+	if f.Repairable {
+		t.Error("forward-compat finding must not be repairable")
+	}
+}
