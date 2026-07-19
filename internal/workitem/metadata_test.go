@@ -5,11 +5,13 @@ import (
 	"errors"
 	"os"
 	"path/filepath"
+	"reflect"
 	"strings"
 	"testing"
 	"testing/fstest"
 
 	camperrors "github.com/Obedience-Corp/camp/internal/errors"
+	"gopkg.in/yaml.v3"
 )
 
 func mapFSWith(body string) fstest.MapFS {
@@ -263,5 +265,165 @@ title: T
 	}
 	if !errors.Is(err, context.Canceled) {
 		t.Errorf("error %v should wrap context.Canceled", err)
+	}
+}
+
+func TestMetadata_TagsProjectsRoundTrip(t *testing.T) {
+	cases := []struct {
+		name string
+		in   Metadata
+	}{
+		{"nil tags and projects", Metadata{Version: WorkitemSchemaVersion, Kind: MetadataKind, ID: "x", Type: "design"}},
+		{"populated tags and projects", Metadata{
+			Version:  WorkitemSchemaVersion,
+			Kind:     MetadataKind,
+			ID:       "x",
+			Type:     "design",
+			Tags:     []string{"public-launch", "schema"},
+			Projects: []string{"projects/camp", "projects/fest"},
+		}},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			raw, err := yaml.Marshal(&tc.in)
+			if err != nil {
+				t.Fatalf("marshal: %v", err)
+			}
+			var out Metadata
+			if err := yaml.Unmarshal(raw, &out); err != nil {
+				t.Fatalf("unmarshal: %v", err)
+			}
+			if !reflect.DeepEqual(out.Tags, tc.in.Tags) {
+				t.Errorf("Tags = %#v, want %#v", out.Tags, tc.in.Tags)
+			}
+			if !reflect.DeepEqual(out.Projects, tc.in.Projects) {
+				t.Errorf("Projects = %#v, want %#v", out.Projects, tc.in.Projects)
+			}
+		})
+	}
+}
+
+func TestValidateMetadata_VersionAcceptance(t *testing.T) {
+	cases := []struct {
+		name              string
+		version           string
+		wantErr           bool
+		wantForwardCompat bool
+	}{
+		{"unknown old version rejected", "v1alpha3", true, false},
+		{"non-alpha series rejected", "v1beta1", true, false},
+		{"malformed alpha suffix rejected", "v1alpha7x", true, false},
+		{"v1alpha4 accepted", "v1alpha4", false, false},
+		{"v1alpha5 accepted", "v1alpha5", false, false},
+		{"v1alpha6 accepted", "v1alpha6", false, false},
+		{"v1alpha7 accepted", "v1alpha7", false, false},
+		{"v1alpha8 accepted", "v1alpha8", false, false},
+		{"future version accepted via forward-compat", "v1alpha12", false, true},
+		{"leading-zero future version accepted via forward-compat", "v1alpha09", false, true},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			body := "version: " + tc.version + "\nkind: workitem\nid: x\ntype: design\ntitle: T\n"
+			md, err := LoadMetadataFS(context.Background(), mapFSWith(body), fixturePath)
+			if tc.wantErr {
+				if err == nil {
+					t.Fatalf("expected error for %s, got md=%+v", tc.version, md)
+				}
+				return
+			}
+			if err != nil {
+				t.Fatalf("expected %s to load, got %v", tc.version, err)
+			}
+			if got := IsForwardCompatVersion(md.Version); got != tc.wantForwardCompat {
+				t.Errorf("IsForwardCompatVersion(%q) = %v, want %v", md.Version, got, tc.wantForwardCompat)
+			}
+		})
+	}
+}
+
+func TestValidateMetadata_TagsProjects(t *testing.T) {
+	base := Metadata{Version: WorkitemSchemaVersion, Kind: MetadataKind, ID: "x", Type: "design"}
+	cases := []struct {
+		name      string
+		mutate    func(*Metadata)
+		wantErr   bool
+		wantField string
+	}{
+		{"malformed tag", func(m *Metadata) { m.Tags = []string{"Public-Launch"} }, true, "tags"},
+		{"duplicate tag", func(m *Metadata) { m.Tags = []string{"public-launch", "public-launch"} }, true, "tags"},
+		{"empty project", func(m *Metadata) { m.Projects = []string{""} }, true, "projects"},
+		{"absolute project", func(m *Metadata) { m.Projects = []string{"/etc/passwd"} }, true, "projects"},
+		{"escaping project", func(m *Metadata) { m.Projects = []string{"../outside"} }, true, "projects"},
+		{"duplicate project", func(m *Metadata) { m.Projects = []string{"projects/camp", "projects/camp"} }, true, "projects"},
+		{"nonexistent project accepted", func(m *Metadata) { m.Projects = []string{"projects/does-not-exist"} }, false, ""},
+		{"well-formed tags and projects", func(m *Metadata) {
+			m.Tags = []string{"ux", "perf"}
+			m.Projects = []string{"projects/camp", "projects/fest"}
+		}, false, ""},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			m := base
+			tc.mutate(&m)
+			err := validateMetadata(&m)
+			if !tc.wantErr {
+				if err != nil {
+					t.Fatalf("expected no error for %s, got %v", tc.name, err)
+				}
+				return
+			}
+			if err == nil {
+				t.Fatalf("expected error for %s, got nil", tc.name)
+			}
+			var verr *camperrors.ValidationError
+			if !errors.As(err, &verr) {
+				t.Fatalf("expected ValidationError, got %T: %v", err, err)
+			}
+			if verr.Field != tc.wantField {
+				t.Errorf("Field = %q, want %q", verr.Field, tc.wantField)
+			}
+		})
+	}
+}
+
+func TestLoadMetadata_V1Alpha7MarkerUnaffectedByReaderChanges(t *testing.T) {
+	body := `version: v1alpha7
+kind: workitem
+id: design-thing-2026-07-18
+type: design
+title: A thing
+ref: WI-abcdef
+quest_id: qst_20260718_abc123
+`
+	md, err := LoadMetadataFS(context.Background(), mapFSWith(body), fixturePath)
+	if err != nil {
+		t.Fatalf("v1alpha7 marker should load: %v", err)
+	}
+	if md == nil {
+		t.Fatal("expected metadata")
+	}
+	if md.Version != "v1alpha7" {
+		t.Errorf("Version = %q, want v1alpha7", md.Version)
+	}
+	if md.ID != "design-thing-2026-07-18" {
+		t.Errorf("ID = %q", md.ID)
+	}
+	if md.Type != "design" {
+		t.Errorf("Type = %q", md.Type)
+	}
+	if md.Title != "A thing" {
+		t.Errorf("Title = %q", md.Title)
+	}
+	if md.Ref != "WI-abcdef" {
+		t.Errorf("Ref = %q", md.Ref)
+	}
+	if md.QuestID != "qst_20260718_abc123" {
+		t.Errorf("QuestID = %q", md.QuestID)
+	}
+	if md.Tags != nil {
+		t.Errorf("Tags = %#v, want nil for a marker with no tags", md.Tags)
+	}
+	if md.Projects != nil {
+		t.Errorf("Projects = %#v, want nil for a marker with no projects", md.Projects)
 	}
 }
