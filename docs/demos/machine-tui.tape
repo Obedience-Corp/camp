@@ -10,7 +10,7 @@
 # Setup expected at $CAMP_VHS_ROOT: bin/camp (the branch build), bin/tailscale
 # (a copy of the fixture), and no machines.yaml.
 #
-# Record with: just vhs record "$PWD/docs/demos/machine-tui.tape"
+# Record with: CAMP_VHS_ROOT=/path/to/machine-fixture just vhs record docs/demos/machine-tui.tape
 Output out/machine-tui.gif
 
 Set Shell "bash"
