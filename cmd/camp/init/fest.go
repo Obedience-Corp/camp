@@ -10,9 +10,15 @@ import (
 	"github.com/Obedience-Corp/camp/internal/ui"
 )
 
-// initializeFestivals runs fest init in the campaign directory.
+// InitializeFestivals runs fest init in the campaign directory.
 // Returns true if successful, false with guidance if fest is unavailable.
-func initializeFestivals(ctx context.Context, campaignRoot string, w Writers) (bool, error) {
+//
+// Exported because `camp register` initializes campaigns too, when the user
+// accepts its offer to set one up. Both commands have to reach the same
+// implementation: the previous arrangement gave scaffold its own copy of this
+// logic, and the copies drifted until register's silently created campaigns
+// with no festivals/ directory at all.
+func InitializeFestivals(ctx context.Context, campaignRoot string, w Writers) (bool, error) {
 	if fest.IsInitialized(campaignRoot) {
 		writeLine(w.HumanOut, ui.Success("Festival Methodology already initialized"))
 		return true, nil
