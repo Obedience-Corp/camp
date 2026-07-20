@@ -128,12 +128,6 @@ func (m *Model) renderStatusBarHints() string {
 	return scrollIndicator
 }
 
-// renderStatusBar is retained for tests/callers that expect the styled status
-// line without the full chrome footer frame.
-func (m *Model) renderStatusBar() string {
-	return tui.HelpStyle.Render(m.renderStatusBarHints())
-}
-
 // totalVisualLines returns the total number of visual lines in the list.
 func (m *Model) totalVisualLines() int {
 	lines := 0
