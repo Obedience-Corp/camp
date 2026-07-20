@@ -2,6 +2,7 @@ package remote
 
 import (
 	"context"
+	"errors"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -340,5 +341,96 @@ func TestCampNotFoundHintPassesThroughNonCommandErrors(t *testing.T) {
 	got := campNotFoundHint(original, m, "camp")
 	if got != original {
 		t.Errorf("campNotFoundHint changed a non-CommandError: got %v, want unchanged %v", got, original)
+	}
+}
+
+func TestParseTailscaleCheckURL(t *testing.T) {
+	stderr := "# Tailscale SSH requires an additional check.\n# To authenticate, visit: https://login.tailscale.com/a/l623187f3a1372\n"
+	url, ok := ParseTailscaleCheckURL(stderr)
+	if !ok {
+		t.Fatal("ParseTailscaleCheckURL returned false, want true")
+	}
+	if url != "https://login.tailscale.com/a/l623187f3a1372" {
+		t.Errorf("url = %q", url)
+	}
+
+	if _, ok := ParseTailscaleCheckURL("ssh: connect to host timed out"); ok {
+		t.Error("plain timeout should not parse as Tailscale check")
+	}
+	if _, ok := ParseTailscaleCheckURL(""); ok {
+		t.Error("empty stderr should not parse")
+	}
+	// Marker without a URL is not actionable enough to claim success.
+	if _, ok := ParseTailscaleCheckURL("Tailscale SSH requires an additional check."); ok {
+		t.Error("marker without URL should return false")
+	}
+}
+
+func TestSSHTimeoutErrorPreservesTailscaleCheckURL(t *testing.T) {
+	stderr := "# Tailscale SSH requires an additional check.\n# To authenticate, visit: https://login.tailscale.com/a/abc123\n"
+	err := sshTimeoutError("lance@archdtop.ts.net", stderr, context.DeadlineExceeded)
+	if err == nil {
+		t.Fatal("expected error")
+	}
+	if !errors.Is(err, context.DeadlineExceeded) {
+		t.Errorf("should still match context.DeadlineExceeded: %v", err)
+	}
+	msg := err.Error()
+	if !strings.Contains(msg, "https://login.tailscale.com/a/abc123") {
+		t.Errorf("timeout error dropped Tailscale check URL: %v", err)
+	}
+	if !strings.Contains(msg, "browser check") {
+		t.Errorf("timeout error missing actionable check guidance: %v", err)
+	}
+	// Must not look like a bare "timed out" with no cause.
+	if strings.HasPrefix(msg, "ssh to lance@archdtop.ts.net timed out") && !strings.Contains(msg, "login.tailscale.com") {
+		t.Errorf("regressed to stderr-less timeout: %v", err)
+	}
+}
+
+func TestSSHTimeoutErrorPreservesGenericStderr(t *testing.T) {
+	err := sshTimeoutError("box", "kex_exchange_identification: Connection closed", context.DeadlineExceeded)
+	if !strings.Contains(err.Error(), "kex_exchange_identification") {
+		t.Errorf("generic stderr not preserved on timeout: %v", err)
+	}
+}
+
+func TestSSHTimeoutErrorWithoutStderr(t *testing.T) {
+	err := sshTimeoutError("box", "", context.DeadlineExceeded)
+	if !strings.Contains(err.Error(), "timed out") {
+		t.Errorf("plain timeout message = %v", err)
+	}
+}
+
+func TestSSHExitErrorAnnotatesTailscaleCheck(t *testing.T) {
+	stderr := "# Tailscale SSH requires an additional check.\n# To authenticate, visit: https://login.tailscale.com/a/xyz\n"
+	err := sshExitError("lance@box", 255, stderr, nil)
+	var cmdErr *camperrors.CommandError
+	if !errors.As(err, &cmdErr) {
+		t.Fatalf("want CommandError, got %T: %v", err, err)
+	}
+	if !strings.Contains(cmdErr.Stderr, "https://login.tailscale.com/a/xyz") {
+		t.Errorf("CommandError.Stderr = %q", cmdErr.Stderr)
+	}
+	if detail := TailscaleCheckDetail(err); detail == "" || !strings.Contains(detail, "login.tailscale.com/a/xyz") {
+		t.Errorf("TailscaleCheckDetail = %q", detail)
+	}
+}
+
+func TestTailscaleCheckDetailFromWrappedTimeout(t *testing.T) {
+	stderr := "# Tailscale SSH requires an additional check.\n# To authenticate, visit: https://login.tailscale.com/a/wrap1\n"
+	err := sshTimeoutError("host", stderr, context.DeadlineExceeded)
+	detail := TailscaleCheckDetail(err)
+	if !strings.Contains(detail, "https://login.tailscale.com/a/wrap1") {
+		t.Errorf("TailscaleCheckDetail from timeout wrap = %q", detail)
+	}
+}
+
+func TestCompactSSHStderr(t *testing.T) {
+	if got := compactSSHStderr("# ignore\nreal problem here\n"); got != "real problem here" {
+		t.Errorf("compactSSHStderr = %q", got)
+	}
+	if got := compactSSHStderr("single line"); got != "single line" {
+		t.Errorf("single line = %q", got)
 	}
 }

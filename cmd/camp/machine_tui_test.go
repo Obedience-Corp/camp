@@ -1,10 +1,12 @@
 package main
 
 import (
+	"context"
 	"os"
 	"path/filepath"
 	"strings"
 	"testing"
+	"unicode/utf8"
 
 	"github.com/charmbracelet/lipgloss"
 	"github.com/muesli/termenv"
@@ -468,6 +470,82 @@ func TestParseRemoteVersionAndFailureDetail(t *testing.T) {
 	err := camperrors.New(`command "ssh ci@10.0.0.12" exited with code 255: ssh: connect to host 10.0.0.12 port 22: Operation timed out`)
 	if got := connectionFailureDetail(err); got != "connect to host 10.0.0.12 port 22: Operation timed out" {
 		t.Errorf("connectionFailureDetail = %q", got)
+	}
+}
+
+func TestHealthDetailLinesWrapsTailscaleURL(t *testing.T) {
+	// Em dash is multi-byte; wrapping must stay on rune boundaries and honor
+	// display width (not raw byte length).
+	detail := "Tailscale SSH requires a one-time browser check — open https://login.tailscale.com/a/testhashlongtoken, approve, then retry"
+	lines := healthDetailLines(detail, 40, true)
+	if len(lines) < 2 {
+		t.Fatalf("expected wrap into multiple lines, got %v", lines)
+	}
+	joined := strings.Join(lines, "")
+	if !strings.Contains(joined, "https://login.tailscale.com/a/testhashlongtoken") {
+		t.Errorf("wrapped lines lost URL: %v", lines)
+	}
+	if !strings.Contains(joined, "—") {
+		t.Errorf("em dash corrupted by wrap: %v", lines)
+	}
+	for _, line := range lines {
+		if !utf8.ValidString(line) {
+			t.Errorf("invalid UTF-8 line: %q", line)
+		}
+		if w := lipgloss.Width(line); w > 40 {
+			t.Errorf("line display width %d > 40: %q", w, line)
+		}
+	}
+	// Non-URL details still truncate to one line.
+	got := healthDetailLines("operation timed out waiting for peer", 20, false)
+	if len(got) != 1 || lipgloss.Width(got[0]) > 20 {
+		t.Errorf("truncate path = %v", got)
+	}
+}
+
+func TestHealthSectionTailscaleCheckHeadline(t *testing.T) {
+	m := newMachineTUIModel(t.Context(), fleetFile())
+	m.health["devbox"] = machineHealth{
+		State:  healthUnreachable,
+		Detail: "Tailscale SSH requires a one-time browser check — open https://login.tailscale.com/a/x, approve, then retry",
+	}
+	// healthSection for unreachable with tailscale detail
+	// Find devbox id index - fleet has devbox first remote; health map is by id
+	lines := m.healthSection("devbox", 36)
+	joined := strings.Join(lines, "\n")
+	if !strings.Contains(joined, "Needs Tailscale SSH check") {
+		t.Errorf("headline missing check framing: %q", joined)
+	}
+	if strings.Contains(joined, "Could not reach it") {
+		t.Errorf("still uses network-unreachable headline: %q", joined)
+	}
+	if !strings.Contains(joined, "login.tailscale.com") {
+		t.Errorf("URL missing from pane: %q", joined)
+	}
+}
+
+func TestConnectionFailureDetailSurfacesTailscaleCheck(t *testing.T) {
+	stderr := "# Tailscale SSH requires an additional check.\n# To authenticate, visit: https://login.tailscale.com/a/testhash\n"
+	err := camperrors.NewCommand("ssh lance@archdtop", 255, stderr, nil)
+	// Even raw CommandError stderr (pre-annotation path) should surface the URL.
+	got := connectionFailureDetail(err)
+	if !strings.Contains(got, "https://login.tailscale.com/a/testhash") {
+		t.Errorf("connectionFailureDetail missing check URL: %q", got)
+	}
+	if !strings.Contains(got, "browser check") {
+		t.Errorf("connectionFailureDetail missing guidance: %q", got)
+	}
+
+	// Timeout wrap path: context deadline must not hide the URL.
+	timeoutErr := camperrors.Wrapf(context.DeadlineExceeded,
+		"%s (while connecting to lance@archdtop)",
+		"Tailscale SSH requires a one-time browser check — open https://login.tailscale.com/a/testhash, approve, then retry (camp cannot complete this interactively)")
+	got = connectionFailureDetail(timeoutErr)
+	if !strings.Contains(got, "https://login.tailscale.com/a/testhash") {
+		t.Errorf("timeout wrap detail missing URL: %q", got)
+	}
+	if strings.Contains(got, "context deadline exceeded") {
+		t.Errorf("detail should strip deadline noise: %q", got)
 	}
 }
 

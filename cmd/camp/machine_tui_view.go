@@ -3,6 +3,7 @@ package main
 import (
 	"fmt"
 	"strings"
+	"unicode/utf8"
 
 	"github.com/charmbracelet/lipgloss"
 
@@ -255,11 +256,26 @@ func (m *machineTUIModel) healthSection(id string, width int) []string {
 	case healthTesting:
 		return []string{style.Render(m.spin.View() + " Testing the connection...")}
 	case healthUnreachable:
-		return []string{
-			style.Render(glyph + " Could not reach it"),
-			machineMuted.Render("  " + ui.Truncate(health.Detail, max(width-4, 20))),
-			machineMuted.Render("  e edits it · t tries again"),
+		tailscaleCheck := strings.Contains(health.Detail, "login.tailscale.com")
+		headline := "Could not reach it"
+		if tailscaleCheck {
+			// Check-mode is auth policy, not network failure — do not frame it
+			// as unreachable or operators chase connectivity.
+			headline = "Needs Tailscale SSH check"
 		}
+		lines := []string{style.Render(glyph + " " + headline)}
+		// Width-aware detail: wrap long check URLs so the actionable token
+		// stays visible in a narrow pane instead of clipping off-screen.
+		detailWidth := max(width-4, 20)
+		for _, line := range healthDetailLines(health.Detail, detailWidth, tailscaleCheck) {
+			lines = append(lines, machineMuted.Render("  "+line))
+		}
+		if tailscaleCheck {
+			lines = append(lines, machineMuted.Render("  Approve in the browser, then press t to try again."))
+		} else {
+			lines = append(lines, machineMuted.Render("  e edits it · t tries again"))
+		}
+		return lines
 	case healthUnsupported:
 		return []string{
 			style.Render(glyph + " Cannot be used yet"),
@@ -272,6 +288,70 @@ func (m *machineTUIModel) healthSection(id string, width int) []string {
 			machineMuted.Render("  t checks whether camp can reach it."),
 		}
 	}
+}
+
+// healthDetailLines formats a connection-failure detail for the detail pane.
+// Tailscale check messages keep the full URL, hard-wrapped at maxWidth so a
+// narrow pane still shows the whole token. Other details still truncate.
+//
+// maxWidth is a terminal-column budget (lipgloss/display width), not raw
+// bytes, so multi-byte runes (e.g. the em dash in Tailscale guidance) are
+// not split into invalid UTF-8.
+func healthDetailLines(detail string, maxWidth int, keepFullURL bool) []string {
+	detail = strings.TrimSpace(detail)
+	if detail == "" {
+		return nil
+	}
+	if maxWidth < 8 {
+		maxWidth = 8
+	}
+	if !keepFullURL {
+		return []string{ui.Truncate(detail, maxWidth)}
+	}
+	// Prefer breaking after path separators so "https://…/a/…" remains readable.
+	var lines []string
+	for lipgloss.Width(detail) > maxWidth {
+		cut := cutDisplayWidth(detail, maxWidth)
+		if cut <= 0 {
+			_, size := utf8.DecodeRuneInString(detail)
+			cut = size
+		} else if soft := strings.LastIndexAny(detail[:cut], "/ ?&="); soft > cut/3 {
+			// soft is a byte index of a break char; advance past it.
+			cut = soft + 1
+		}
+		lines = append(lines, detail[:cut])
+		detail = detail[cut:]
+	}
+	if detail != "" {
+		lines = append(lines, detail)
+	}
+	return lines
+}
+
+// cutDisplayWidth returns a byte index into s such that s[:i] fits in at most
+// maxCols display columns and ends on a rune boundary.
+func cutDisplayWidth(s string, maxCols int) int {
+	if maxCols <= 0 || s == "" {
+		return 0
+	}
+	width := 0
+	for i := 0; i < len(s); {
+		r, size := utf8.DecodeRuneInString(s[i:])
+		rw := lipgloss.Width(string(r))
+		if rw < 1 {
+			rw = 1
+		}
+		if width+rw > maxCols {
+			if i == 0 {
+				// Single rune wider than budget — still emit it.
+				return size
+			}
+			return i
+		}
+		width += rw
+		i += size
+	}
+	return len(s)
 }
 
 // reuseSection explains the ControlMaster socket in terms of what it does for
