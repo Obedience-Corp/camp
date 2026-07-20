@@ -6,6 +6,7 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+	"unicode/utf8"
 
 	"github.com/charmbracelet/lipgloss"
 	"github.com/muesli/termenv"
@@ -473,6 +474,8 @@ func TestParseRemoteVersionAndFailureDetail(t *testing.T) {
 }
 
 func TestHealthDetailLinesWrapsTailscaleURL(t *testing.T) {
+	// Em dash is multi-byte; wrapping must stay on rune boundaries and honor
+	// display width (not raw byte length).
 	detail := "Tailscale SSH requires a one-time browser check — open https://login.tailscale.com/a/testhashlongtoken, approve, then retry"
 	lines := healthDetailLines(detail, 40, true)
 	if len(lines) < 2 {
@@ -482,14 +485,20 @@ func TestHealthDetailLinesWrapsTailscaleURL(t *testing.T) {
 	if !strings.Contains(joined, "https://login.tailscale.com/a/testhashlongtoken") {
 		t.Errorf("wrapped lines lost URL: %v", lines)
 	}
+	if !strings.Contains(joined, "—") {
+		t.Errorf("em dash corrupted by wrap: %v", lines)
+	}
 	for _, line := range lines {
-		if len(line) > 40 {
-			t.Errorf("line longer than width: %q (len=%d)", line, len(line))
+		if !utf8.ValidString(line) {
+			t.Errorf("invalid UTF-8 line: %q", line)
+		}
+		if w := lipgloss.Width(line); w > 40 {
+			t.Errorf("line display width %d > 40: %q", w, line)
 		}
 	}
 	// Non-URL details still truncate to one line.
 	got := healthDetailLines("operation timed out waiting for peer", 20, false)
-	if len(got) != 1 || len(got[0]) > 20 {
+	if len(got) != 1 || lipgloss.Width(got[0]) > 20 {
 		t.Errorf("truncate path = %v", got)
 	}
 }
