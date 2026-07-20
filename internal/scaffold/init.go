@@ -2,7 +2,6 @@ package scaffold
 
 import (
 	"context"
-	"errors"
 	"fmt"
 	"io/fs"
 	"os"
@@ -24,9 +23,6 @@ import (
 	"github.com/google/uuid"
 	"github.com/lancekrogers/guild-scaffold/pkg/scaffold"
 )
-
-// ErrFestNotInstalled indicates that the fest CLI is unavailable during init.
-var ErrFestNotInstalled = errors.New("fest not installed")
 
 // InitOptions configures the campaign initialization.
 type InitOptions struct {
@@ -416,23 +412,10 @@ workitems/current.yaml
 		}
 	}
 
-	// Initialize festivals directory via fest CLI if it doesn't exist
-	if !opts.DryRun {
-		if err := initFestivalsIfNeeded(ctx, absDir); err != nil {
-			if errors.Is(err, ErrFestNotInstalled) {
-				result.Skipped = append(result.Skipped, "festivals/ (fest not installed; run 'fest init' after installing)")
-			} else {
-				fmt.Fprintf(os.Stderr, "Warning: fest init failed: %v\n", err)
-				result.Skipped = append(result.Skipped, "festivals/ (fest init failed - run manually)")
-			}
-		} else {
-			// Check if festivals was created
-			festivalsPath := filepath.Join(absDir, "festivals")
-			if _, err := os.Stat(festivalsPath); err == nil {
-				result.DirsCreated = append(result.DirsCreated, festivalsPath)
-			}
-		}
-	}
+	// Festival Methodology setup is intentionally not done here. Scaffolding
+	// owns the campaign's own directories and files; running the fest CLI is a
+	// command-level concern, handled once by each command that initializes a
+	// campaign (see initcmd.InitializeFestivals).
 
 	// Initialize git repository if not already in one and not skipped
 	if !opts.SkipGitInit && !opts.DryRun {
@@ -540,32 +523,3 @@ func (o *InitOptions) Validate() error {
 	return nil
 }
 
-// initFestivalsIfNeeded runs `fest init` if the festivals directory doesn't exist.
-// This delegates festival scaffolding to the fest CLI for proper structure.
-func initFestivalsIfNeeded(ctx context.Context, dir string) error {
-	if ctx.Err() != nil {
-		return ctx.Err()
-	}
-
-	festivalsPath := filepath.Join(dir, "festivals")
-	if _, err := os.Stat(festivalsPath); err == nil {
-		// festivals/ already exists, skip
-		return nil
-	}
-
-	// Check if fest is available
-	festPath, err := exec.LookPath("fest")
-	if err != nil {
-		return ErrFestNotInstalled
-	}
-
-	cmd := exec.CommandContext(ctx, festPath, "init", "--path", dir)
-	cmd.Dir = dir
-	output, err := cmd.CombinedOutput()
-	if err != nil {
-		// Don't fail the whole init if fest init fails - user can run it manually
-		return camperrors.Wrapf(err, "fest init failed (run manually with 'fest init') (output: %s)", string(output))
-	}
-
-	return nil
-}
