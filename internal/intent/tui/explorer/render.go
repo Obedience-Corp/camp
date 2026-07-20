@@ -12,9 +12,9 @@ import (
 // renderIntentRow renders a single intent row with proper formatting.
 // Layout is responsive based on terminal width.
 func (m *Model) renderIntentRow(i *intent.Intent, isSelected bool, maxTitleWidth int) string {
-	cursor := tui.NoCursor
+	cursor := tui.EmptyCursor()
 	if isSelected {
-		cursor = tui.CursorIndicator
+		cursor = tui.FocusCursor()
 	}
 
 	// Checkbox for multi-select mode
@@ -353,9 +353,9 @@ func (m *Model) buildMainView() string {
 
 	for gi, group := range m.groups {
 		isGroupSelected := gi == m.cursorGroup && m.cursorItem == -1
-		cursor := tui.NoCursor
+		cursor := tui.EmptyCursor()
 		if isGroupSelected && !m.previewFocused {
-			cursor = tui.CursorIndicator
+			cursor = tui.FocusCursor()
 		}
 
 		if group.IsDungeonParent {

@@ -6,6 +6,8 @@ import (
 	"github.com/Obedience-Corp/obey-shared/brand"
 	brandlip "github.com/Obedience-Corp/obey-shared/brand/lipgloss"
 	"github.com/charmbracelet/lipgloss"
+
+	"github.com/Obedience-Corp/camp/internal/ui/theme"
 )
 
 // brandStyles adapts the shared fire theme for intent chrome.
@@ -13,11 +15,9 @@ import (
 var brandStyles = brandlip.New(themePalette())
 
 func themePalette() brand.Palette {
-	// Match camp adaptive theme resolution used by theme.TUI().
-	return brand.Resolve(brand.ModeAdaptive, brand.Capabilities{
-		IsTTY:      true,
-		ColorDepth: brand.ColorTrueColor,
-	})
+	// Use the same adaptive capability detection as theme.TUI() /
+	// theme.CurrentPalette() (TTY, color depth, NO_COLOR, dumb TERM, etc.).
+	return theme.CurrentPalette()
 }
 
 // Header renders a single-line brand chrome row:

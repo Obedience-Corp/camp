@@ -620,3 +620,21 @@ func TestDungeonParent_ShowsAggregateCount(t *testing.T) {
 		t.Errorf("expected DungeonCount=3, got %d", dungeonGroup.DungeonCount)
 	}
 }
+
+func TestRenderIntentRow_SelectedUsesFocusCursor(t *testing.T) {
+	m := makeTestModel(1, 0)
+	if len(m.filteredIntents) == 0 {
+		t.Fatal("need at least one intent")
+	}
+	selected := m.renderIntentRow(m.filteredIntents[0], true, 40)
+	unselected := m.renderIntentRow(m.filteredIntents[0], false, 40)
+
+	// Selected row must include the fire-styled caret from FocusCursor().
+	if !strings.Contains(selected, tui.FocusCursor()) {
+		t.Fatalf("selected row missing FocusCursor styling:\n%s", selected)
+	}
+	// Unselected uses EmptyCursor (space), not the fire caret string.
+	if strings.Contains(unselected, tui.FocusCursor()) {
+		t.Fatalf("unselected row unexpectedly contains FocusCursor:\n%s", unselected)
+	}
+}

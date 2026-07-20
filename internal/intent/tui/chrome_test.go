@@ -50,3 +50,16 @@ func TestStepPills_CurrentHighlighted(t *testing.T) {
 		}
 	}
 }
+
+func TestFocusCursor_UsesBrandFireStyle(t *testing.T) {
+	// FocusCursor must route through brandStyles.Fire (not the bare
+	// CursorIndicator constant). In plain/NO_COLOR terminals Fire.Render may
+	// equal the glyph, so compare to the styled helper itself.
+	want := brandStyles.Fire.Render("▸")
+	if got := FocusCursor(); got != want {
+		t.Fatalf("FocusCursor() = %q, want brand Fire-rendered caret %q", got, want)
+	}
+	if EmptyCursor() != " " {
+		t.Fatalf("EmptyCursor() = %q, want single space", EmptyCursor())
+	}
+}
