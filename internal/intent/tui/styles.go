@@ -75,12 +75,12 @@ var (
 
 	// Group header styles
 	GroupHeaderStyle = lipgloss.NewStyle().
-				Foreground(pal.AccentAlt)
+				Foreground(pal.TextSecondary)
 
 	GroupHeaderSelectedStyle = lipgloss.NewStyle().
 					Background(pal.BgSelected).
 					Bold(true).
-					Foreground(pal.AccentAlt)
+					Foreground(pal.Accent)
 
 	// Dungeon parent header style (slightly muted, distinct from normal groups)
 	DungeonHeaderStyle = lipgloss.NewStyle().
@@ -93,6 +93,7 @@ var (
 	IntentRowSelectedStyle = lipgloss.NewStyle().
 				PaddingLeft(4).
 				Background(pal.BgSelected).
+				Foreground(pal.Accent).
 				Bold(true)
 
 	// Intent field styles
@@ -120,8 +121,10 @@ var (
 	SuccessStyle = lipgloss.NewStyle().
 			Foreground(pal.Success)
 
-	// Cursor indicator
-	CursorIndicator = ">"
+	// Cursor indicator — fire-colored caret when focused; space when not.
+	// Prefer FocusCursor()/EmptyCursor() from chrome.go for rendered output;
+	// these string constants remain for callers that concatenate before styling.
+	CursorIndicator = "▸"
 	NoCursor        = " "
 
 	// Filter pill styles
@@ -132,7 +135,7 @@ var (
 
 	FilterPillActiveStyle = lipgloss.NewStyle().
 				Background(pal.Accent).
-				Foreground(pal.TextPrimary).
+				Foreground(lipgloss.Color("#0d0d11")).
 				Padding(0, 1).
 				Bold(true)
 

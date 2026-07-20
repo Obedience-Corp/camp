@@ -26,6 +26,19 @@ doctor:
 record tape:
     vhs "{{tape}}"
 
+# Record with full truecolor — strips NO_COLOR/TERM=dumb from agent shells.
+# Use this for brand/visual demos that must show fire palette in the GIF.
+record-color tape:
+    #!/usr/bin/env bash
+    set -euo pipefail
+    env -u NO_COLOR -u CLICOLOR \
+        TERM=xterm-256color \
+        COLORTERM=truecolor \
+        COLORFGBG='15;0' \
+        CLICOLOR_FORCE=1 \
+        FORCE_COLOR=1 \
+        vhs "{{tape}}"
+
 # Optimize, scan, and validate one complete evidence bundle. PTY metadata,
 # pyte snapshots, dependencies.txt, and pty-transcript.txt must already exist
 # in evidence_dir; raw GIFs stay in that evidence directory and are not uploaded.

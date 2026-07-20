@@ -145,6 +145,10 @@ var (
 				Border(lipgloss.RoundedBorder()).
 				BorderForeground(pal.Border)
 
+	previewBorderFocusStyle = lipgloss.NewStyle().
+				Border(lipgloss.RoundedBorder()).
+				BorderForeground(pal.BorderFocus)
+
 	previewTitleStyle = lipgloss.NewStyle().
 				Bold(true).
 				Foreground(pal.Accent)
@@ -156,12 +160,25 @@ var (
 
 // View renders the preview pane.
 func (p PreviewPane) View() string {
+	return p.view(false)
+}
+
+// ViewFocused renders the preview with a fire focus border.
+func (p PreviewPane) ViewFocused() string {
+	return p.view(true)
+}
+
+func (p PreviewPane) view(focused bool) string {
+	border := previewBorderStyle
+	if focused {
+		border = previewBorderFocusStyle
+	}
 	if p.content == "" {
-		return previewBorderStyle.
+		return border.
 			Width(p.width).
 			Height(p.height).
 			Align(lipgloss.Center, lipgloss.Center).
-			Render(previewEmptyStyle.Render("No intent selected"))
+			Render(previewEmptyStyle.Render("No intent selected\n\nn to capture · j/k to browse"))
 	}
 
 	title := previewTitleStyle.Render(p.title)
@@ -176,7 +193,7 @@ func (p PreviewPane) View() string {
 
 	content := lipgloss.JoinVertical(lipgloss.Left, header, "", p.viewport.View())
 
-	return previewBorderStyle.
+	return border.
 		Width(p.width).
 		Height(p.height).
 		Render(content)
