@@ -149,7 +149,7 @@ func runSkillsStatus(cmd *cobra.Command, _ []string) error {
 	}
 
 	// Project status for each project worktree (.agents/skills primary).
-	wtEntries, wtAttention, err := worktreeSkillStatusEntries(root, skillsDir, slugs)
+	wtEntries, wtAttention, err := worktreeSkillStatusEntries(ctx, root, skillsDir, slugs)
 	if err != nil {
 		return err
 	}
@@ -210,8 +210,11 @@ func runSkillsStatus(cmd *cobra.Command, _ []string) error {
 }
 
 // worktreeSkillStatusEntries builds status rows for each project worktree.
-func worktreeSkillStatusEntries(root, skillsDir string, slugs []string) ([]skillStatusEntry, bool, error) {
-	cfg, err := config.LoadCampaignConfig(context.Background(), root)
+func worktreeSkillStatusEntries(ctx context.Context, root, skillsDir string, slugs []string) ([]skillStatusEntry, bool, error) {
+	if err := ctx.Err(); err != nil {
+		return nil, false, err
+	}
+	cfg, err := config.LoadCampaignConfig(ctx, root)
 	if err != nil {
 		cfg = &config.CampaignConfig{}
 	}

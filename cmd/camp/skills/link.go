@@ -22,9 +22,14 @@ provider skills directories, so existing user skills remain intact.
 
 With neither --tool nor --path, skills are projected into every registered tool.
 Pass --worktrees with no --tool/--path to also project into every
-projects/worktrees/<project>/<name> checkout (so Grok/Claude sessions opened
-inside a worktree still see campaign skills). Use --worktrees-only to project
-into worktrees without touching campaign-root tool directories.
+projects/worktrees/<project>/<name> git checkout (so Grok/Claude sessions
+opened inside a worktree still see campaign skills). Use --worktrees-only to
+project into worktrees without touching campaign-root tool directories.
+
+Worktree discovery only includes directories with a .git file/dir. The normal
+layout is projects/worktrees/<project>/<name>/. A loose git root at
+projects/worktrees/<name>/ is also accepted; nested dirs under that root are
+not scanned as separate worktrees.
 
 Examples:
   camp skills link                     Project skills into all registered tools
@@ -92,7 +97,7 @@ func runSkillsLink(cmd *cobra.Command, _ []string) error {
 
 	// Worktrees-only: skip campaign tool directories.
 	if worktreesOnly {
-		return linkAllWorktrees(out, errOut, root, skillsDir, force, dryRun)
+		return linkAllWorktrees(ctx, out, errOut, root, skillsDir, force, dryRun)
 	}
 
 	// With neither --tool nor --path, project into every registered tool.
@@ -101,7 +106,7 @@ func runSkillsLink(cmd *cobra.Command, _ []string) error {
 			return err
 		}
 		if withWorktrees {
-			return linkAllWorktrees(out, errOut, root, skillsDir, force, dryRun)
+			return linkAllWorktrees(ctx, out, errOut, root, skillsDir, force, dryRun)
 		}
 		return nil
 	}

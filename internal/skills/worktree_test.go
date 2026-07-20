@@ -245,3 +245,54 @@ func TestEnsureGrokSkillsAliasIdempotent(t *testing.T) {
 		t.Fatalf("second ensure: %v", err)
 	}
 }
+
+func TestProjectIntoWorktreeBestEffort(t *testing.T) {
+	campaignRoot := t.TempDir()
+	wt := filepath.Join(campaignRoot, "projects", "worktrees", "camp", "x")
+	if err := os.MkdirAll(wt, 0o755); err != nil {
+		t.Fatal(err)
+	}
+
+	// No skills dir: no-op, not projected.
+	projected, err := ProjectIntoWorktreeBestEffort(campaignRoot, wt)
+	if err != nil {
+		t.Fatalf("missing skills dir: %v", err)
+	}
+	if projected {
+		t.Error("projected=true with no skills dir")
+	}
+
+	skillsDir := filepath.Join(campaignRoot, ".campaign", "skills")
+	if err := os.MkdirAll(skillsDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	// Empty skills dir: no-op.
+	projected, err = ProjectIntoWorktreeBestEffort(campaignRoot, wt)
+	if err != nil {
+		t.Fatalf("empty skills dir: %v", err)
+	}
+	if projected {
+		t.Error("projected=true with empty skills dir")
+	}
+
+	writeSkillBundle(t, skillsDir, "camp-navigation")
+	projected, err = ProjectIntoWorktreeBestEffort(campaignRoot, wt)
+	if err != nil {
+		t.Fatalf("with skills: %v", err)
+	}
+	if !projected {
+		t.Error("projected=false after successful projection")
+	}
+	if _, err := os.Lstat(filepath.Join(wt, ".agents", "skills", "camp-navigation")); err != nil {
+		t.Errorf("link missing: %v", err)
+	}
+
+	// Second call still projected (already-linked counts).
+	projected, err = ProjectIntoWorktreeBestEffort(campaignRoot, wt)
+	if err != nil {
+		t.Fatalf("idempotent: %v", err)
+	}
+	if !projected {
+		t.Error("projected=false when already linked")
+	}
+}

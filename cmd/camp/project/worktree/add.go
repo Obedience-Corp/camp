@@ -177,10 +177,11 @@ func runProjectWorktreeAdd(cmd *cobra.Command, args []string) error {
 	// Project campaign skills into the worktree so Grok/Claude sessions whose
 	// git root is the worktree still discover .campaign/skills. Failure here
 	// must not undo a successful worktree create.
-	if err := intskills.ProjectIntoWorktreeBestEffort(campRoot, result.Path); err != nil {
+	projected, err := intskills.ProjectIntoWorktreeBestEffort(campRoot, result.Path)
+	if err != nil {
 		fmt.Println(ui.Warning(fmt.Sprintf("  Skills: could not project into worktree: %v", err)))
 		fmt.Println(ui.Dim("  Fix later with: camp skills link --worktrees-only"))
-	} else {
+	} else if projected {
 		fmt.Println(ui.Dim("  Skills: projected campaign skill bundles into worktree (.agents/.claude/.grok)"))
 	}
 

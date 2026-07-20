@@ -17,6 +17,8 @@ Project worktrees under projects/worktrees/<project>/<name>/ are also supported:
 'camp project worktree add' projects skills into each new worktree automatically,
 and 'camp skills link --worktrees' repairs all of them. That way harnesses whose
 git root is the worktree (not the campaign root) still discover campaign skills.
+Only git checkouts are projected (directory must contain .git). A loose git root
+at projects/worktrees/<name>/ is accepted; package subdirs under it are not.
 
 Commands:
   link     Project per-skill symlinks into a tool-specific skills directory

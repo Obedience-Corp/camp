@@ -12,9 +12,13 @@ import (
 )
 
 // linkAllWorktrees projects skill bundles into every projects/worktrees/*/*
-// checkout under the campaign.
-func linkAllWorktrees(out, errOut io.Writer, root, skillsDir string, force, dryRun bool) error {
-	cfg, err := config.LoadCampaignConfig(context.Background(), root)
+// checkout under the campaign. ctx is used for campaign config load so
+// cancellation from the CLI propagates.
+func linkAllWorktrees(ctx context.Context, out, errOut io.Writer, root, skillsDir string, force, dryRun bool) error {
+	if err := ctx.Err(); err != nil {
+		return err
+	}
+	cfg, err := config.LoadCampaignConfig(ctx, root)
 	if err != nil {
 		// Paths defaults still work when campaign config is missing/unloadable.
 		cfg = &config.CampaignConfig{}

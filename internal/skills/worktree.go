@@ -39,14 +39,20 @@ type WorktreeProjection struct {
 }
 
 // ListWorktreeRoots returns absolute paths of project worktrees under
-// worktreesRoot, which uses the campaign layout:
+// worktreesRoot.
 //
-//	worktreesRoot/<project>/<name>/
+// Expected campaign layout (what camp project worktree add creates):
+//
+//	worktreesRoot/<project>/<name>/   # git worktree root
 //
 // Only directories that look like git checkouts (have a .git file or
 // directory) are returned, so ordinary project subdirs (src, bin,
-// node_modules, …) under a mis-nested tree are ignored. Missing
-// worktreesRoot yields an empty list, not an error.
+// node_modules, …) under a mis-nested tree are ignored.
+//
+// If worktreesRoot/<project> is itself a git root (a loose checkout without
+// the <name> level), that directory is projected and its children are not
+// scanned — nested worktrees under a git-root project dir are out of scope.
+// Missing worktreesRoot yields an empty list, not an error.
 func ListWorktreeRoots(worktreesRoot string) ([]string, error) {
 	entries, err := os.ReadDir(worktreesRoot)
 	if os.IsNotExist(err) {
@@ -62,8 +68,9 @@ func ListWorktreeRoots(worktreesRoot string) ([]string, error) {
 			continue
 		}
 		projectDir := filepath.Join(worktreesRoot, projectEntry.Name())
-		// Some checkouts land directly under worktreesRoot/<name> (no project
-		// nesting). Accept those when they are git roots.
+		// Loose checkout: worktreesRoot/<name> is itself the git root (no
+		// project nesting). Project it and do not descend — children are
+		// package dirs, not nested worktrees under this layout contract.
 		if isGitCheckoutRoot(projectDir) {
 			roots = append(roots, projectDir)
 			continue
@@ -219,26 +226,32 @@ func LinkAllWorktrees(campaignRoot, worktreesRoot, skillsDir string, dryRun, for
 }
 
 // ProjectIntoWorktreeBestEffort projects campaign skills into a newly created
-// worktree. Missing .campaign/skills or an empty skills dir is a silent
-// success (no-op). Other errors are returned so callers can warn without
-// failing worktree creation.
-func ProjectIntoWorktreeBestEffort(campaignRoot, worktreePath string) error {
+// worktree. projected is true when at least one skill bundle was created or
+// already linked under the worktree's .agents/skills (so callers can avoid a
+// false "projected" success message). Missing .campaign/skills or an empty
+// skills dir is a silent no-op (projected=false, err=nil). Other errors are
+// returned so callers can warn without failing worktree creation.
+func ProjectIntoWorktreeBestEffort(campaignRoot, worktreePath string) (projected bool, err error) {
 	skillsDir := filepath.Join(campaignRoot, campaign.CampaignDir, SkillsSubdir)
 	if _, err := os.Stat(skillsDir); err != nil {
 		if os.IsNotExist(err) {
-			return nil
+			return false, nil
 		}
-		return camperrors.Wrap(err, "stat campaign skills")
+		return false, camperrors.Wrap(err, "stat campaign skills")
 	}
 	slugs, err := DiscoverSkillSlugs(skillsDir)
 	if err != nil {
-		return err
+		return false, err
 	}
 	if len(slugs) == 0 {
-		return nil
+		return false, nil
 	}
-	_, err = ProjectIntoWorktree(worktreePath, campaignRoot, skillsDir, slugs, false, false, io.Discard)
-	return err
+	proj, err := ProjectIntoWorktree(worktreePath, campaignRoot, skillsDir, slugs, false, false, io.Discard)
+	if err != nil {
+		return false, err
+	}
+	n := proj.Agents.Created + proj.Agents.Replaced + proj.Agents.AlreadyLinked
+	return n > 0, nil
 }
 
 // InspectWorktreeProjection reports projection state for a worktree's
