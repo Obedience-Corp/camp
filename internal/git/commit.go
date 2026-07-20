@@ -8,6 +8,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"runtime"
 	"strings"
 
 	camperrors "github.com/Obedience-Corp/camp/internal/errors"
@@ -282,20 +283,113 @@ func ResetIndexToHead(ctx context.Context, repoPath string, paths []string) erro
 	cfg := DefaultRetryConfig()
 	cfg.OperationName = "reset-index"
 	return WithLockRetry(ctx, repoPath, cfg, func() error {
-		args := []string{"-C", repoPath, "reset", "-q", "HEAD", "--"}
-		args = append(args, paths...)
-		cmd := exec.CommandContext(ctx, "git", args...)
-		out, err := cmd.CombinedOutput()
-		if err != nil {
-			errType := ClassifyGitError(string(out), cmd.ProcessState.ExitCode())
-			if errType == GitErrorLock {
-				return &LockError{Path: "index.lock", Err: err}
+		// Scoped commits may expand a directory pathspec into tens of
+		// thousands of files (a dungeon migration is one example). Passing all
+		// of those paths to one git process can exceed the platform's argument
+		// size limit even though each individual path is valid.
+		//
+		// Batches are applied sequentially. A mid-loop non-lock failure can
+		// leave earlier batches already reset; re-running is safe because
+		// `git reset HEAD -- <paths>` is idempotent for this cleanup.
+		limit := resetPathspecPayloadLimit(repoPath)
+		for _, batch := range splitPathspecsForExec(paths, limit) {
+			args := []string{"-C", repoPath, "reset", "-q", "HEAD", "--"}
+			args = append(args, batch...)
+			cmd := exec.CommandContext(ctx, "git", args...)
+			out, err := cmd.CombinedOutput()
+			if err != nil {
+				errType := ClassifyGitError(string(out), cmd.ProcessState.ExitCode())
+				if errType == GitErrorLock {
+					return &LockError{Path: "index.lock", Err: err}
+				}
+				return camperrors.NewGit("reset", "", errType.String(), strings.TrimSpace(string(out)), err)
 			}
-			return camperrors.NewGit("reset", "", errType.String(), strings.TrimSpace(string(out)), err)
 		}
 		return nil
 	})
 }
+
+// platformCommandLineBudget is the max bytes we will put on a single git
+// process command line (executable + args). Unix ARG_MAX is typically
+// 256KiB–1MiB; Windows CreateProcess is 32,767 characters for the whole line.
+// We keep Unix large so huge migrations need few batches (performance), and
+// Windows conservative so fixed argv overhead cannot reintroduce the failure.
+func platformCommandLineBudget() int {
+	if runtime.GOOS == "windows" {
+		// Well below CreateProcess's 32,767-character ceiling. Go os/exec
+		// serializes argv into one command line and may quote/escape paths
+		// with spaces or special characters; the real git executable path
+		// is also longer than the literal "git" token.
+		// Unix keeps a large budget (below) so this does not affect macOS/Linux
+		// batch performance.
+		return 16 * 1024
+	}
+	// Large enough that multi-megabyte path lists become a handful of batches,
+	// not thousands of git invocations. Still far below typical ARG_MAX.
+	return 128 * 1024
+}
+
+// resetPathspecPayloadLimit is the max bytes of path arguments (+ NULs) per
+// git reset process after reserving space for fixed args
+// (`git -C <repo> reset -q HEAD --`) and a small safety margin.
+func resetPathspecPayloadLimit(repoPath string) int {
+	// Fixed argv: executable, -C, repoPath, reset, -q, HEAD, --.
+	// On Windows use a conservative stand-in for a long install path so we
+	// do not under-count the way the bare "git" token would.
+	gitToken := "git"
+	if runtime.GOOS == "windows" {
+		gitToken = `C:\Program Files\Git\cmd\git.exe`
+	}
+	fixed := len(gitToken) + 1 +
+		len("-C") + 1 +
+		len(repoPath) + 1 +
+		len("reset") + 1 +
+		len("-q") + 1 +
+		len("HEAD") + 1 +
+		len("--") + 1
+	margin := 1024
+	if runtime.GOOS == "windows" {
+		// Quoting can add two quotes per path plus escapes; keep a wide
+		// fixed margin instead of shrinking the Unix budget.
+		margin = 4 * 1024
+	}
+	payload := platformCommandLineBudget() - fixed - margin
+	if payload < minResetPathspecPayload {
+		return minResetPathspecPayload
+	}
+	return payload
+}
+
+// splitPathspecsForExec partitions paths so each batch's path payload
+// (bytes + one NUL per arg) stays within limit. A single path larger than
+// limit still forms its own batch (cannot split further).
+func splitPathspecsForExec(paths []string, limit int) [][]string {
+	if limit <= 0 {
+		limit = minResetPathspecPayload
+	}
+	var batches [][]string
+	var batch []string
+	batchBytes := 0
+
+	for _, path := range paths {
+		pathBytes := len(path) + 1 // include the argument's NUL terminator
+		if len(batch) > 0 && batchBytes+pathBytes > limit {
+			batches = append(batches, batch)
+			batch = nil
+			batchBytes = 0
+		}
+		batch = append(batch, path)
+		batchBytes += pathBytes
+	}
+	if len(batch) > 0 {
+		batches = append(batches, batch)
+	}
+	return batches
+}
+
+// minResetPathspecPayload is the floor for path payload after fixed-argv
+// reservation, so pathological repo paths cannot collapse the budget to zero.
+const minResetPathspecPayload = 4 * 1024
 
 // isLockError checks if an error is a lock-related error.
 func isLockError(err error) bool {

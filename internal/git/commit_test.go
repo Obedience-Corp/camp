@@ -7,6 +7,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"testing"
 	"time"
@@ -1050,5 +1051,76 @@ func TestStage_ReturnsRemovalFailureForStaleLock(t *testing.T) {
 	}
 	if errors.Is(err, ErrLockActive) {
 		t.Fatalf("StageAll() error = %v, did not want ErrLockActive", err)
+	}
+}
+
+func TestSplitPathspecsForExecKeepsBatchesBelowArgLimit(t *testing.T) {
+	const limit = 32 * 1024
+	paths := make([]string, 100)
+	for i := range paths {
+		paths[i] = strings.Repeat("p", 1000)
+	}
+
+	batches := splitPathspecsForExec(paths, limit)
+	if len(batches) < 2 {
+		t.Fatalf("splitPathspecsForExec() returned %d batch(es), want multiple", len(batches))
+	}
+
+	var flattened []string
+	for i, batch := range batches {
+		bytes := 0
+		for _, path := range batch {
+			bytes += len(path) + 1
+		}
+		if bytes > limit {
+			t.Errorf("batch %d is %d bytes, want at most %d", i, bytes, limit)
+		}
+		flattened = append(flattened, batch...)
+	}
+
+	if len(flattened) != len(paths) {
+		t.Fatalf("splitPathspecsForExec() returned %d paths, want %d", len(flattened), len(paths))
+	}
+	for i := range paths {
+		if flattened[i] != paths[i] {
+			t.Fatalf("path %d = %q, want %q", i, flattened[i], paths[i])
+		}
+	}
+}
+
+func TestSplitPathspecsForExecEmpty(t *testing.T) {
+	if got := splitPathspecsForExec(nil, 1024); len(got) != 0 {
+		t.Fatalf("nil paths = %v, want empty", got)
+	}
+	if got := splitPathspecsForExec([]string{}, 1024); len(got) != 0 {
+		t.Fatalf("empty paths = %v, want empty", got)
+	}
+}
+
+func TestResetPathspecPayloadLimitReservesFixedArgv(t *testing.T) {
+	shortRepo := "/r"
+	longRepo := "/" + strings.Repeat("x", 2000)
+	shortLimit := resetPathspecPayloadLimit(shortRepo)
+	longLimit := resetPathspecPayloadLimit(longRepo)
+	if longLimit >= shortLimit {
+		t.Fatalf("longer repoPath should reduce payload budget: short=%d long=%d", shortLimit, longLimit)
+	}
+	// Fixed argv for long repo must still leave a usable path budget.
+	if longLimit < minResetPathspecPayload {
+		t.Fatalf("payload limit %d below floor %d", longLimit, minResetPathspecPayload)
+	}
+	// Unix budget stays large so multi-MB path lists need few batches.
+	if runtime.GOOS != "windows" {
+		if platformCommandLineBudget() < 64*1024 {
+			t.Fatalf("unix command-line budget %d is too small for performance", platformCommandLineBudget())
+		}
+		if shortLimit < 64*1024 {
+			t.Fatalf("unix path payload for short repo %d, want generous batches", shortLimit)
+		}
+	}
+	// Windows leaves substantial room below the CreateProcess ceiling for
+	// os/exec command-line quoting and escaping.
+	if runtime.GOOS == "windows" && platformCommandLineBudget() != 16*1024 {
+		t.Fatalf("windows budget = %d, want %d", platformCommandLineBudget(), 16*1024)
 	}
 }
