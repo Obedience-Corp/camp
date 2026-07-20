@@ -143,62 +143,112 @@ func ProjectIntoWorktree(worktreeRoot, campaignRoot, skillsDir string, slugs []s
 		}
 	}
 
-	if err := EnsureGrokSkillsAlias(worktreeRoot, dryRun); err != nil {
+	grokSummary, err := ensureWorktreeGrokSkills(worktreeRoot, skillsDir, slugs, dryRun, force, errOut)
+	if err != nil {
 		out.Err = err
 		return out, err
 	}
+	// Surface grok conflicts on the agents summary so link/status aggregation
+	// already counts them (same ConflictNames path as tool dirs).
+	out.Agents.Conflicts += grokSummary.Conflicts
+	out.Agents.ConflictNames = append(out.Agents.ConflictNames, grokSummary.ConflictNames...)
+	out.Agents.Created += grokSummary.Created
+	out.Agents.Replaced += grokSummary.Replaced
+	out.Agents.AlreadyLinked += grokSummary.AlreadyLinked
 	return out, nil
 }
 
-// EnsureGrokSkillsAlias creates worktreeRoot/.grok/skills as a symlink to
-// ../.agents/skills when missing or incorrect. It never overwrites a real
-// directory or a non-managed symlink that points elsewhere without force
-// semantics — here a foreign real directory is left alone and reported as an error
-// only when it blocks a clean alias; a correct existing link is a no-op.
-func EnsureGrokSkillsAlias(worktreeRoot string, dryRun bool) error {
-	linkPath := filepath.Join(worktreeRoot, GrokSkillsRel)
-	// Target relative to the symlink's parent (.grok/): ../.agents/skills
-	const relTarget = "../.agents/skills"
-	wantAbs := filepath.Clean(filepath.Join(filepath.Dir(linkPath), relTarget))
+// grokAliasRelTarget is the symlink target for .grok/skills relative to .grok/.
+const grokAliasRelTarget = "../.agents/skills"
 
-	info, err := os.Lstat(linkPath)
-	if err == nil {
-		if info.Mode()&os.ModeSymlink == 0 {
-			if info.IsDir() {
-				// Real directory: leave it; Grok can still scan it if populated.
-				return nil
-			}
-			return camperrors.Newf("refusing to replace non-symlink at %s", linkPath)
-		}
+// ensureWorktreeGrokSkills makes Grok discover the same campaign skills as
+// .agents/skills:
+//
+//   - missing path → symlink .grok/skills → ../.agents/skills
+//   - correct symlink → no-op
+//   - wrong symlink → conflict unless force (then replace), matching ProjectSkillEntries
+//   - real directory → project per-bundle managed links into it (do not replace the dir)
+//   - plain file → conflict
+func ensureWorktreeGrokSkills(worktreeRoot, skillsDir string, slugs []string, dryRun, force bool, errOut io.Writer) (ProjectionSummary, error) {
+	linkPath := filepath.Join(worktreeRoot, GrokSkillsRel)
+	wantAbs := filepath.Clean(filepath.Join(filepath.Dir(linkPath), grokAliasRelTarget))
+
+	pathType, err := CheckPathType(linkPath)
+	if err != nil {
+		return ProjectionSummary{}, err
+	}
+
+	switch pathType {
+	case TypeDirectory:
+		// Real directory: Grok will scan it, so project managed bundles into it.
+		return ProjectSkillEntries(linkPath, skillsDir, slugs, dryRun, force)
+
+	case TypeFile:
+		return ProjectionSummary{
+			Conflicts:     1,
+			ConflictNames: []string{GrokSkillsRel},
+		}, nil
+
+	case TypeSymlink:
 		raw, readErr := os.Readlink(linkPath)
 		if readErr != nil {
-			return camperrors.Wrap(readErr, "read grok skills alias")
+			return ProjectionSummary{}, camperrors.Wrap(readErr, "read grok skills alias")
 		}
 		gotAbs := resolveSymlinkTargetAbs(linkPath, raw)
 		if filepath.Clean(gotAbs) == wantAbs {
-			return nil
+			return ProjectionSummary{AlreadyLinked: 1}, nil
 		}
-		// Wrong target: replace when not dry-run.
+		// Foreign / wrong-target symlink: require force, same as ProjectSkillEntries.
+		if !force {
+			return ProjectionSummary{
+				Conflicts:     1,
+				ConflictNames: []string{GrokSkillsRel},
+			}, nil
+		}
 		if dryRun {
-			return nil
+			return ProjectionSummary{Replaced: 1}, nil
 		}
 		if err := os.Remove(linkPath); err != nil {
-			return camperrors.Wrap(err, "remove stale grok skills alias")
+			return ProjectionSummary{}, camperrors.Wrap(err, "remove foreign grok skills alias")
 		}
-	} else if !os.IsNotExist(err) {
-		return camperrors.Wrap(err, "stat grok skills alias")
-	}
+		if err := createGrokSkillsAlias(worktreeRoot, dryRun); err != nil {
+			return ProjectionSummary{}, err
+		}
+		return ProjectionSummary{Replaced: 1}, nil
 
+	case TypeMissing:
+		if err := createGrokSkillsAlias(worktreeRoot, dryRun); err != nil {
+			return ProjectionSummary{}, err
+		}
+		return ProjectionSummary{Created: 1}, nil
+
+	default:
+		return ProjectionSummary{}, camperrors.Newf("unsupported path type for %s", linkPath)
+	}
+}
+
+// createGrokSkillsAlias writes worktreeRoot/.grok/skills → ../.agents/skills.
+func createGrokSkillsAlias(worktreeRoot string, dryRun bool) error {
+	linkPath := filepath.Join(worktreeRoot, GrokSkillsRel)
 	if dryRun {
 		return nil
 	}
 	if err := os.MkdirAll(filepath.Dir(linkPath), 0o755); err != nil {
 		return camperrors.Wrap(err, "create .grok directory")
 	}
-	if err := os.Symlink(relTarget, linkPath); err != nil {
+	if err := os.Symlink(grokAliasRelTarget, linkPath); err != nil {
 		return camperrors.Wrap(err, "create grok skills alias")
 	}
 	return nil
+}
+
+// EnsureGrokSkillsAlias creates worktreeRoot/.grok/skills as a symlink to
+// ../.agents/skills when missing. Prefer ensureWorktreeGrokSkills from
+// ProjectIntoWorktree (handles force, directory projection, and conflicts).
+// Kept for tests and callers that only need the default alias path with force.
+func EnsureGrokSkillsAlias(worktreeRoot string, dryRun bool) error {
+	_, err := ensureWorktreeGrokSkills(worktreeRoot, "", nil, dryRun, true, io.Discard)
+	return err
 }
 
 // LinkAllWorktrees projects skill bundles into every worktree under

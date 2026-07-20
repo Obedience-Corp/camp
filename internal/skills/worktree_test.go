@@ -103,8 +103,9 @@ func TestProjectIntoWorktree(t *testing.T) {
 	if err != nil {
 		t.Fatalf("ProjectIntoWorktree: %v", err)
 	}
-	if proj.Agents.Created != 2 {
-		t.Errorf("agents created = %d, want 2", proj.Agents.Created)
+	// 2 skill bundles under .agents + 1 for creating .grok/skills alias.
+	if proj.Agents.Created != 3 {
+		t.Errorf("agents created = %d, want 3 (2 skills + grok alias)", proj.Agents.Created)
 	}
 	if proj.Claude.Created != 2 {
 		t.Errorf("claude created = %d, want 2", proj.Claude.Created)
@@ -158,8 +159,9 @@ func TestProjectIntoWorktree(t *testing.T) {
 	if err != nil {
 		t.Fatalf("second ProjectIntoWorktree: %v", err)
 	}
-	if proj2.Agents.AlreadyLinked != 2 || proj2.Agents.Created != 0 {
-		t.Errorf("second run agents: created=%d linked=%d, want created=0 linked=2",
+	// 2 skill links already linked + grok alias already linked.
+	if proj2.Agents.AlreadyLinked != 3 || proj2.Agents.Created != 0 {
+		t.Errorf("second run agents: created=%d linked=%d, want created=0 linked=3",
 			proj2.Agents.Created, proj2.Agents.AlreadyLinked)
 	}
 }
@@ -193,8 +195,9 @@ func TestLinkAllWorktrees(t *testing.T) {
 		if r.Err != nil {
 			t.Errorf("worktree %s: %v", r.Path, r.Err)
 		}
-		if r.Agents.Created != 1 {
-			t.Errorf("%s agents created = %d", r.RelPath, r.Agents.Created)
+		// 1 skill bundle + 1 grok alias create.
+		if r.Agents.Created != 2 {
+			t.Errorf("%s agents created = %d, want 2", r.RelPath, r.Agents.Created)
 		}
 		if _, err := os.Lstat(filepath.Join(r.Path, ".agents/skills", "alpha")); err != nil {
 			t.Errorf("missing projection in %s: %v", r.Path, err)
@@ -243,6 +246,77 @@ func TestEnsureGrokSkillsAliasIdempotent(t *testing.T) {
 	}
 	if err := EnsureGrokSkillsAlias(wt, false); err != nil {
 		t.Fatalf("second ensure: %v", err)
+	}
+}
+
+func TestEnsureWorktreeGrokSkillsForeignSymlinkRequiresForce(t *testing.T) {
+	wt := t.TempDir()
+	if err := os.MkdirAll(filepath.Join(wt, ".grok"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	linkPath := filepath.Join(wt, GrokSkillsRel)
+	if err := os.Symlink("/somewhere/else", linkPath); err != nil {
+		t.Fatal(err)
+	}
+
+	summary, err := ensureWorktreeGrokSkills(wt, "", nil, false, false, io.Discard)
+	if err != nil {
+		t.Fatalf("unexpected err: %v", err)
+	}
+	if summary.Conflicts != 1 {
+		t.Fatalf("conflicts = %d, want 1", summary.Conflicts)
+	}
+	// Link must still point at foreign target.
+	raw, _ := os.Readlink(linkPath)
+	if raw != "/somewhere/else" {
+		t.Errorf("foreign symlink was modified without force: %q", raw)
+	}
+
+	summary, err = ensureWorktreeGrokSkills(wt, "", nil, false, true, io.Discard)
+	if err != nil {
+		t.Fatalf("force replace: %v", err)
+	}
+	if summary.Replaced != 1 {
+		t.Errorf("replaced = %d, want 1", summary.Replaced)
+	}
+	raw, err = os.Readlink(linkPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if raw != grokAliasRelTarget {
+		t.Errorf("after force target = %q, want %q", raw, grokAliasRelTarget)
+	}
+}
+
+func TestEnsureWorktreeGrokSkillsProjectsIntoRealDirectory(t *testing.T) {
+	campaignRoot := t.TempDir()
+	skillsDir := filepath.Join(campaignRoot, ".campaign", "skills")
+	writeSkillBundle(t, skillsDir, "camp-navigation")
+	slugs, _ := DiscoverSkillSlugs(skillsDir)
+
+	wt := filepath.Join(campaignRoot, "projects", "worktrees", "camp", "dir-grok")
+	grokSkills := filepath.Join(wt, GrokSkillsRel)
+	if err := os.MkdirAll(grokSkills, 0o755); err != nil {
+		t.Fatal(err)
+	}
+
+	summary, err := ensureWorktreeGrokSkills(wt, skillsDir, slugs, false, false, io.Discard)
+	if err != nil {
+		t.Fatalf("project into dir: %v", err)
+	}
+	if summary.Created != 1 {
+		t.Errorf("created = %d, want 1", summary.Created)
+	}
+	if _, err := os.Lstat(filepath.Join(grokSkills, "camp-navigation")); err != nil {
+		t.Errorf("managed link missing in .grok/skills dir: %v", err)
+	}
+	// Directory must remain a directory, not be replaced by a symlink.
+	info, err := os.Lstat(grokSkills)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if info.Mode()&os.ModeSymlink != 0 || !info.IsDir() {
+		t.Error(".grok/skills should remain a real directory")
 	}
 }
 
