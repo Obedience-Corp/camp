@@ -7048,30 +7048,37 @@ camp workitem [flags]
 
 ## camp workitem adopt
 
-Adopt an existing directory as a workitem
+Adopt an existing directory or file as a workitem
 
 ### Synopsis
 
-Attach workitem metadata to an existing campaign directory without moving it.
+Attach workitem metadata to an existing campaign directory or markdown file.
 
-The target directory must already exist and must not already contain a
-.workitem file. The command writes that .workitem metadata file with the
-selected type, title, generated or supplied id, and optional quest link. Use
-this when a workflow directory already exists and needs to become a tracked
-workitem.
+With a directory argument, writes a .workitem marker (the directory must exist
+and must not already contain a .workitem). With --file <path.md>, stamps a
+kind: workitem frontmatter block onto an existing markdown file without ever
+rewriting its body: it prepends a block when the file has none, merges camp's
+keys into a foreign block (refusing an ambiguous foreign tags: key without
+--force), and updates tags/projects when the file is already a workitem. In all
+cases it sets the selected type, title, generated or supplied id, optional quest
+link, optional tags, and optional related projects.
 
 ```
-camp workitem adopt <dir> [flags]
+camp workitem adopt [dir] [flags]
 ```
 
 ### Options
 
 ```
-  -h, --help           help for adopt
-      --id string      override the generated id
-      --quest string   quest ID to associate (requires dev-profile camp; forward-compatible flag)
-      --title string   human-readable title
-      --type string    workitem type (feature, bug, chore, or custom) (default "feature")
+      --file string           stamp kind: workitem frontmatter onto a markdown file instead of adopting a directory
+      --force                 with --file, take ownership of an existing foreign tags: key (union conforming values, drop and report non-conforming ones)
+  -h, --help                  help for adopt
+      --id string             override the generated id
+      --project stringArray   add a related project path (repeatable, e.g. projects/camp)
+      --quest string          quest ID to associate (requires dev-profile camp; forward-compatible flag)
+      --tag stringArray       add a tag (repeatable, normalized to lowercase kebab-case)
+      --title string          human-readable title
+      --type string           workitem type (feature, bug, chore, or custom) (default "feature")
 ```
 
 ### Options inherited from parent commands
@@ -7168,17 +7175,30 @@ camp workitem commits [selector] [flags]
 
 ## camp workitem create
 
-Create a workitem
+Create workitem tracking metadata
 
 ### Synopsis
 
-Create a new workitem directory with minimal v1 metadata.
+Create tracking metadata for a new workitem (directory + .workitem marker).
 
-The workitem is created under workflow/<type>/<slug>/ unless --dir supplies a
-different campaign-relative parent directory. A .workitem file is written with
-the id, type, title, ref, creation metadata, and optional quest link. Use --json
-for machine-readable output containing the new workitem identity and next-step
-location.
+This command does NOT create the substantive work scaffold (no design docs,
+explore notes, or festival structure). It only:
+
+  1. Creates workflow/<type>/<slug>/ (or --dir/<slug>/)
+  2. Writes a .workitem marker (id, type, title, ref, optional quest, optional
+     tags, optional related projects)
+
+Agents and humans must still add real content afterward. For explore/design
+types, the recommended structured-workflow scaffold is:
+
+  cd workflow/<type>/<slug> && fest create workflow <slug>
+
+For other types (feature, bug, chore, …), no festival scaffold is implied;
+populate campaign-governed content under the new directory as needed.
+
+Use "camp workitem adopt" to attach a marker to an existing directory.
+Use --json for machine-readable identity. next.command is set only for
+explore/design (recommended scaffold); otherwise it is empty/omitted.
 
 ```
 camp workitem create <slug> [flags]
@@ -7187,13 +7207,16 @@ camp workitem create <slug> [flags]
 ### Options
 
 ```
-      --dir string     parent dir override (default: workflow/<type>)
-  -h, --help           help for create
-      --id string      override the generated id
-      --json           emit a structured JSON result
-      --quest string   quest ID to associate (requires dev-profile camp; forward-compatible flag)
-      --title string   human-readable title
-      --type string    workitem type (feature, bug, chore, or custom) (default "feature")
+      --dir string            parent dir override (default: workflow/<type>)
+      --file string           create a new markdown file with kind: workitem frontmatter instead of a directory workitem
+  -h, --help                  help for create
+      --id string             override the generated id
+      --json                  emit a structured JSON result
+      --project stringArray   add a related project path (repeatable, e.g. projects/camp)
+      --quest string          quest ID to associate (requires dev-profile camp; forward-compatible flag)
+      --tag stringArray       add a tag (repeatable, normalized to lowercase kebab-case)
+      --title string          human-readable title
+      --type string           workitem type (feature, bug, chore, or custom) (default "feature")
 ```
 
 ### Options inherited from parent commands
@@ -7306,6 +7329,11 @@ A primary worktree link is how design/explore workitems under workflow/ get
 into camp p commit tags: when you commit from that worktree, the resolver
 matches the link and stamps WI-<ref> on the subject.
 
+Note: role:related links to a project scope are no longer accepted; a workitem's
+related projects live in its own projects: field. Use "camp workitem
+create/adopt --project <path>" (or edit the .workitem/frontmatter) instead of
+"--role related --project".
+
 Examples:
   camp workitem link WI-2a7950 --worktree fest/fest-list-watch
   camp workitem link workflow/design/fest-list-watch --worktree projects/worktrees/fest/fest-list-watch
@@ -7388,6 +7416,7 @@ Examples:
   camp workitem list intent
   camp workitem list active
   camp workitem list --category research --query auth
+  camp workitem list --tag public-launch --tag schema
   camp workitem list festival --status ready --json
 
 ```
@@ -7404,10 +7433,12 @@ camp workitem list [type|status|category] [flags]
   -h, --help                          help for list
       --json                          Output as JSON
       --limit int                     Maximum number of items to return (non-interactive / --json only)
+      --project stringArray           Filter by related project (repeat for OR)
       --query string                  Search query to filter items
       --show-parked                   Include parked attention-stage workitems
       --stage stringArray             Filter by lifecycle stage (repeat for OR)
       --status stringArray            Filter by displayed status: current, next, active, parked, inbox, ready, plan, ritual, chains, none (repeat for OR)
+      --tag stringArray               Filter by tag (repeat; item must have ALL given tags)
       --type stringArray              Filter by workflow type (repeat for OR)
 ```
 
