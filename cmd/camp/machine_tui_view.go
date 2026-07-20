@@ -255,11 +255,22 @@ func (m *machineTUIModel) healthSection(id string, width int) []string {
 	case healthTesting:
 		return []string{style.Render(m.spin.View() + " Testing the connection...")}
 	case healthUnreachable:
-		return []string{
-			style.Render(glyph + " Could not reach it"),
-			machineMuted.Render("  " + ui.Truncate(health.Detail, max(width-4, 20))),
-			machineMuted.Render("  e edits it · t tries again"),
+		// Tailscale check URLs are long; prefer wrapping the actionable detail
+		// over hard-truncating the only thing the operator needs to open.
+		detail := health.Detail
+		if !strings.Contains(detail, "login.tailscale.com") {
+			detail = ui.Truncate(detail, max(width-4, 20))
 		}
+		lines := []string{
+			style.Render(glyph + " Could not reach it"),
+			machineMuted.Render("  " + detail),
+		}
+		if strings.Contains(health.Detail, "login.tailscale.com") {
+			lines = append(lines, machineMuted.Render("  Approve in the browser, then press t to try again."))
+		} else {
+			lines = append(lines, machineMuted.Render("  e edits it · t tries again"))
+		}
+		return lines
 	case healthUnsupported:
 		return []string{
 			style.Render(glyph + " Cannot be used yet"),

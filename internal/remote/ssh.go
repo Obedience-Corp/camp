@@ -201,9 +201,11 @@ func ShellQuote(s string) string {
 
 // Run execs `ssh <opts> <target> <remoteCmd>` and returns stdout. The call is
 // bounded by ctx (and DefaultTimeout if ctx has no earlier deadline). A
-// timeout is a wrapped context error; a non-zero exit is a *camperrors.
-// CommandError carrying the exit code and trimmed remote stderr, so callers
-// can distinguish failure shapes (e.g. RunCampCommand's "binary not found"
+// timeout is a wrapped context error that still carries any captured stderr
+// (so a Tailscale SSH check URL is not discarded when the hop times out
+// waiting for browser approval); a non-zero exit is a *camperrors.CommandError
+// carrying the exit code and trimmed remote stderr, so callers can
+// distinguish failure shapes (e.g. RunCampCommand's "binary not found"
 // detection) without re-parsing the error string.
 func Run(ctx context.Context, target string, opts []string, remoteCmd string) ([]byte, error) {
 	ctx, cancel := context.WithTimeout(ctx, DefaultTimeout)
@@ -215,17 +217,138 @@ func Run(ctx context.Context, target string, opts []string, remoteCmd string) ([
 	cmd.Stdout = &stdout
 	cmd.Stderr = &stderr
 	if err := cmd.Run(); err != nil {
+		trimmed := strings.TrimSpace(stderr.String())
 		if ctx.Err() != nil {
-			return nil, camperrors.Wrapf(ctx.Err(), "ssh to %s timed out", target)
+			return nil, sshTimeoutError(target, trimmed, ctx.Err())
 		}
 		exitCode := 0
 		var exitErr *exec.ExitError
 		if errors.As(err, &exitErr) {
 			exitCode = exitErr.ExitCode()
 		}
-		return nil, camperrors.NewCommand("ssh "+target, exitCode, strings.TrimSpace(stderr.String()), err)
+		return nil, sshExitError(target, exitCode, trimmed, err)
 	}
 	return stdout.Bytes(), nil
+}
+
+// tailscaleCheckMarker is the distinctive first line Tailscale SSH prints when
+// check mode requires a human browser approval before the hop can proceed.
+const tailscaleCheckMarker = "Tailscale SSH requires an additional check"
+
+// ParseTailscaleCheckURL extracts the login.tailscale.com check URL from ssh
+// stderr (or any text that embeds it). Returns false when the marker or URL is
+// absent. Tailscale prints:
+//
+//	# Tailscale SSH requires an additional check.
+//	# To authenticate, visit: https://login.tailscale.com/a/...
+//
+// camp runs with BatchMode=yes and cannot complete that browser step; callers
+// surface the URL so the operator can approve once and retry. Also accepts
+// camp's own annotated wording so re-parsing a already-classified error still
+// yields the URL.
+func ParseTailscaleCheckURL(text string) (string, bool) {
+	if text == "" {
+		return "", false
+	}
+	hasMarker := strings.Contains(text, tailscaleCheckMarker) ||
+		strings.Contains(text, "Tailscale SSH requires a one-time browser check")
+	if !hasMarker {
+		return "", false
+	}
+	const prefix = "https://login.tailscale.com/"
+	idx := strings.Index(text, prefix)
+	if idx < 0 {
+		return "", false
+	}
+	rest := text[idx:]
+	end := strings.IndexAny(rest, " \t\r\n\"'")
+	if end < 0 {
+		return rest, true
+	}
+	if end == 0 {
+		return "", false
+	}
+	return rest[:end], true
+}
+
+// TailscaleCheckDetail returns a single-line, actionable explanation when err
+// (or its chain) is a Tailscale SSH check-mode failure. Empty string means the
+// failure is something else and callers should use their generic formatting.
+func TailscaleCheckDetail(err error) string {
+	if err == nil {
+		return ""
+	}
+	var cmdErr *camperrors.CommandError
+	if errors.As(err, &cmdErr) {
+		if url, ok := ParseTailscaleCheckURL(cmdErr.Stderr); ok {
+			return formatTailscaleCheckDetail(url)
+		}
+	}
+	if url, ok := ParseTailscaleCheckURL(err.Error()); ok {
+		return formatTailscaleCheckDetail(url)
+	}
+	return ""
+}
+
+func formatTailscaleCheckDetail(url string) string {
+	return "Tailscale SSH requires a one-time browser check — open " + url +
+		", approve, then retry (camp cannot complete this interactively)"
+}
+
+// sshTimeoutError keeps stderr on the timeout path. The previous behaviour
+// returned only "ssh to X timed out", which hid the Tailscale check URL that
+// ssh had already printed while waiting for browser approval.
+func sshTimeoutError(target, stderr string, err error) error {
+	if url, ok := ParseTailscaleCheckURL(stderr); ok {
+		// Wrap preserves errors.Is(err, context.DeadlineExceeded) while
+		// putting the check URL first so connectionFailureDetail / %v show it.
+		return camperrors.Wrapf(err, "%s (while connecting to %s)", formatTailscaleCheckDetail(url), target)
+	}
+	if stderr != "" {
+		return camperrors.Wrapf(err, "ssh to %s timed out: %s", target, compactSSHStderr(stderr))
+	}
+	return camperrors.Wrapf(err, "ssh to %s timed out", target)
+}
+
+// sshExitError annotates non-zero ssh exits. Tailscale check mode sometimes
+// exits (instead of hanging until our deadline) with the same marker+URL in
+// stderr; prefer that over the raw multi-line banner.
+func sshExitError(target string, exitCode int, stderr string, err error) error {
+	if url, ok := ParseTailscaleCheckURL(stderr); ok {
+		return camperrors.NewCommand("ssh "+target, exitCode, formatTailscaleCheckDetail(url), err)
+	}
+	return camperrors.NewCommand("ssh "+target, exitCode, stderr, err)
+}
+
+// compactSSHStderr collapses multi-line ssh noise into one short detail for
+// timeout messages. Skips empty and #-comment lines (Tailscale banners use
+// those) so the first real failure line wins when present.
+func compactSSHStderr(stderr string) string {
+	stderr = strings.TrimSpace(stderr)
+	if stderr == "" {
+		return ""
+	}
+	if !strings.Contains(stderr, "\n") {
+		return stderr
+	}
+	var firstComment string
+	for _, line := range strings.Split(stderr, "\n") {
+		line = strings.TrimSpace(line)
+		if line == "" {
+			continue
+		}
+		if strings.HasPrefix(line, "#") {
+			if firstComment == "" {
+				firstComment = strings.TrimSpace(strings.TrimPrefix(strings.TrimPrefix(line, "# "), "#"))
+			}
+			continue
+		}
+		return line
+	}
+	if firstComment != "" {
+		return firstComment
+	}
+	return strings.ReplaceAll(stderr, "\n", " ")
 }
 
 // RemoteCampPathEnv, when set, is the exact camp invocation used on the far

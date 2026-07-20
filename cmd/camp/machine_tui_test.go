@@ -1,6 +1,7 @@
 package main
 
 import (
+	"context"
 	"os"
 	"path/filepath"
 	"strings"
@@ -468,6 +469,31 @@ func TestParseRemoteVersionAndFailureDetail(t *testing.T) {
 	err := camperrors.New(`command "ssh ci@10.0.0.12" exited with code 255: ssh: connect to host 10.0.0.12 port 22: Operation timed out`)
 	if got := connectionFailureDetail(err); got != "connect to host 10.0.0.12 port 22: Operation timed out" {
 		t.Errorf("connectionFailureDetail = %q", got)
+	}
+}
+
+func TestConnectionFailureDetailSurfacesTailscaleCheck(t *testing.T) {
+	stderr := "# Tailscale SSH requires an additional check.\n# To authenticate, visit: https://login.tailscale.com/a/testhash\n"
+	err := camperrors.NewCommand("ssh lance@archdtop", 255, stderr, nil)
+	// Even raw CommandError stderr (pre-annotation path) should surface the URL.
+	got := connectionFailureDetail(err)
+	if !strings.Contains(got, "https://login.tailscale.com/a/testhash") {
+		t.Errorf("connectionFailureDetail missing check URL: %q", got)
+	}
+	if !strings.Contains(got, "browser check") {
+		t.Errorf("connectionFailureDetail missing guidance: %q", got)
+	}
+
+	// Timeout wrap path: context deadline must not hide the URL.
+	timeoutErr := camperrors.Wrapf(context.DeadlineExceeded,
+		"%s (while connecting to lance@archdtop)",
+		"Tailscale SSH requires a one-time browser check — open https://login.tailscale.com/a/testhash, approve, then retry (camp cannot complete this interactively)")
+	got = connectionFailureDetail(timeoutErr)
+	if !strings.Contains(got, "https://login.tailscale.com/a/testhash") {
+		t.Errorf("timeout wrap detail missing URL: %q", got)
+	}
+	if strings.Contains(got, "context deadline exceeded") {
+		t.Errorf("detail should strip deadline noise: %q", got)
 	}
 }
 

@@ -420,11 +420,19 @@ func parseRemoteVersion(out string) string {
 // screen already implies; what matters is ssh's own line, or camp's hint when
 // the binary is missing on the far side.
 //
+// Tailscale SSH check mode is special: the host is reachable, but BatchMode
+// cannot complete the browser approval. Prefer the extracted check URL over a
+// generic "timed out" / "unreachable" line so the operator knows what to do.
+//
 // Exit 127 is special: RunCampCommand wraps it with login-shell PATH context
 // and CAMP_REMOTE_CAMP_PATH guidance. Digging past that wrap to the bare
 // "command not found" stderr line is exactly the failure mode the health
 // check exists to surface, so preserve the outer message instead.
 func connectionFailureDetail(err error) string {
+	if detail := remote.TailscaleCheckDetail(err); detail != "" {
+		return detail
+	}
+
 	var cmdErr *camperrors.CommandError
 	if errors.As(err, &cmdErr) && cmdErr.ExitCode == 127 {
 		return firstLine(err.Error())
@@ -436,7 +444,16 @@ func connectionFailureDetail(err error) string {
 			message = detail
 		}
 	}
-	return strings.TrimPrefix(strings.TrimSpace(message), "ssh: ")
+	// Drop a trailing ": context deadline exceeded" from wrapped timeouts so
+	// the pane leads with the real cause when stderr was preserved.
+	message = strings.TrimSpace(message)
+	if before, found := strings.CutSuffix(message, ": context deadline exceeded"); found {
+		message = strings.TrimSpace(before)
+	}
+	if before, found := strings.CutSuffix(message, ": context canceled"); found {
+		message = strings.TrimSpace(before)
+	}
+	return strings.TrimPrefix(message, "ssh: ")
 }
 
 func firstLine(s string) string {
