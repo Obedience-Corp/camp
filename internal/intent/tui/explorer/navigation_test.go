@@ -423,8 +423,8 @@ func TestView_ProtectsTopRowFromFullscreenOverflow(t *testing.T) {
 	if len(lines) > m.height {
 		t.Fatalf("View output = %d lines, exceeds terminal height %d", len(lines), m.height)
 	}
-	if !strings.Contains(lines[0], "Intent Explorer") {
-		t.Fatalf("top row was not preserved: %q", lines[0])
+	if !strings.Contains(lines[0], "intent") {
+		t.Fatalf("top row brand chrome was not preserved: %q", lines[0])
 	}
 }
 
