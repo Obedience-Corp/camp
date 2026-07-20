@@ -316,7 +316,13 @@ func ResetIndexToHead(ctx context.Context, repoPath string, paths []string) erro
 // Windows conservative so fixed argv overhead cannot reintroduce the failure.
 func platformCommandLineBudget() int {
 	if runtime.GOOS == "windows" {
-		return 32767
+		// Well below CreateProcess's 32,767-character ceiling. Go os/exec
+		// serializes argv into one command line and may quote/escape paths
+		// with spaces or special characters; the real git executable path
+		// is also longer than the literal "git" token.
+		// Unix keeps a large budget (below) so this does not affect macOS/Linux
+		// batch performance.
+		return 16 * 1024
 	}
 	// Large enough that multi-megabyte path lists become a handful of batches,
 	// not thousands of git invocations. Still far below typical ARG_MAX.
@@ -327,8 +333,14 @@ func platformCommandLineBudget() int {
 // git reset process after reserving space for fixed args
 // (`git -C <repo> reset -q HEAD --`) and a small safety margin.
 func resetPathspecPayloadLimit(repoPath string) int {
-	// Fixed argv: git, -C, repoPath, reset, -q, HEAD, --  (each +1 for separator/NUL).
-	fixed := len("git") + 1 +
+	// Fixed argv: executable, -C, repoPath, reset, -q, HEAD, --.
+	// On Windows use a conservative stand-in for a long install path so we
+	// do not under-count the way the bare "git" token would.
+	gitToken := "git"
+	if runtime.GOOS == "windows" {
+		gitToken = `C:\Program Files\Git\cmd\git.exe`
+	}
+	fixed := len(gitToken) + 1 +
 		len("-C") + 1 +
 		len(repoPath) + 1 +
 		len("reset") + 1 +
@@ -337,8 +349,9 @@ func resetPathspecPayloadLimit(repoPath string) int {
 		len("--") + 1
 	margin := 1024
 	if runtime.GOOS == "windows" {
-		// Extra headroom for quoting / CreateProcess encoding.
-		margin = 2048
+		// Quoting can add two quotes per path plus escapes; keep a wide
+		// fixed margin instead of shrinking the Unix budget.
+		margin = 4 * 1024
 	}
 	payload := platformCommandLineBudget() - fixed - margin
 	if payload < minResetPathspecPayload {

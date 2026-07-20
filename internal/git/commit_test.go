@@ -1118,8 +1118,9 @@ func TestResetPathspecPayloadLimitReservesFixedArgv(t *testing.T) {
 			t.Fatalf("unix path payload for short repo %d, want generous batches", shortLimit)
 		}
 	}
-	// Windows total line budget stays at CreateProcess ceiling.
-	if runtime.GOOS == "windows" && platformCommandLineBudget() != 32767 {
-		t.Fatalf("windows budget = %d, want 32767", platformCommandLineBudget())
+	// Windows leaves substantial room below the CreateProcess ceiling for
+	// os/exec command-line quoting and escaping.
+	if runtime.GOOS == "windows" && platformCommandLineBudget() != 16*1024 {
+		t.Fatalf("windows budget = %d, want %d", platformCommandLineBudget(), 16*1024)
 	}
 }
