@@ -37,5 +37,8 @@ __debug_bin*
 .envrc
 CLAUDE.md
 .claude/
+# Local agent harness skill projections (worktree projection / camp skills link)
+.agents/
+.grok/
 dist/
 projects/worktrees/

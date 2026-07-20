@@ -12,6 +12,7 @@ import (
 	camperrors "github.com/Obedience-Corp/camp/internal/errors"
 	"github.com/Obedience-Corp/camp/internal/paths"
 	"github.com/Obedience-Corp/camp/internal/project"
+	intskills "github.com/Obedience-Corp/camp/internal/skills"
 	"github.com/Obedience-Corp/camp/internal/ui"
 	wkitem "github.com/Obedience-Corp/camp/internal/workitem"
 	"github.com/Obedience-Corp/camp/internal/workitem/links"
@@ -171,6 +172,16 @@ func runProjectWorktreeAdd(cmd *cobra.Command, args []string) error {
 		}
 		fmt.Printf("  Workitem: %s (%s)\n", ui.Value(link.WorkitemID), ui.Dim(link.WorkitemKey))
 		fmt.Println(ui.Dim("  camp p commit in this worktree will include WI-* in the campaign tag"))
+	}
+
+	// Project campaign skills into the worktree so Grok/Claude sessions whose
+	// git root is the worktree still discover .campaign/skills. Failure here
+	// must not undo a successful worktree create.
+	if err := intskills.ProjectIntoWorktreeBestEffort(campRoot, result.Path); err != nil {
+		fmt.Println(ui.Warning(fmt.Sprintf("  Skills: could not project into worktree: %v", err)))
+		fmt.Println(ui.Dim("  Fix later with: camp skills link --worktrees-only"))
+	} else {
+		fmt.Println(ui.Dim("  Skills: projected campaign skill bundles into worktree (.agents/.claude/.grok)"))
 	}
 
 	fmt.Println()
