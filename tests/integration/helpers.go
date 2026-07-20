@@ -13,6 +13,7 @@ import (
 	"os/exec"
 	"path/filepath"
 	"runtime"
+	"strings"
 	"testing"
 	"time"
 
@@ -256,6 +257,44 @@ func buildCampBinaryShared() (string, error) {
 // buildFestBinaryShared builds the fest binary from the sibling fest project.
 // Returns ("", error) if the fest source is not found or build fails — callers
 // should treat this as non-fatal since fest is optional for most integration tests.
+// locateFestSource finds the fest checkout to build the container's fest binary
+// from, starting at the camp project root.
+//
+// fest normally sits beside camp as a sibling submodule (projects/camp,
+// projects/fest), but camp is routinely developed from a worktree under
+// projects/worktrees/camp/<branch>, where the sibling lookup lands on
+// projects/worktrees/camp/fest and misses. Every fest-gated test then skipped,
+// silently, and a green run meant nothing for that coverage. Walking the
+// ancestors finds projects/fest from either layout.
+//
+// CAMP_TEST_FEST_SRC overrides the search for checkouts that live elsewhere.
+func locateFestSource(projectRoot string) (string, error) {
+	if override := os.Getenv("CAMP_TEST_FEST_SRC"); override != "" {
+		abs, err := filepath.Abs(override)
+		if err != nil {
+			return "", fmt.Errorf("failed to resolve CAMP_TEST_FEST_SRC: %w", err)
+		}
+		if _, err := os.Stat(filepath.Join(abs, "cmd", "fest")); err != nil {
+			return "", fmt.Errorf("CAMP_TEST_FEST_SRC=%s has no cmd/fest: %w", abs, err)
+		}
+		return abs, nil
+	}
+
+	searched := []string{}
+	for dir := projectRoot; ; dir = filepath.Dir(dir) {
+		candidate := filepath.Join(dir, "fest")
+		searched = append(searched, candidate)
+		if _, err := os.Stat(filepath.Join(candidate, "cmd", "fest")); err == nil {
+			return candidate, nil
+		}
+		if parent := filepath.Dir(dir); parent == dir {
+			break
+		}
+	}
+	return "", fmt.Errorf("fest source not found; searched %s (set CAMP_TEST_FEST_SRC to override)",
+		strings.Join(searched, ", "))
+}
+
 func buildFestBinaryShared() (string, error) {
 	cwd, err := os.Getwd()
 	if err != nil {
@@ -269,16 +308,9 @@ func buildFestBinaryShared() (string, error) {
 		return "", fmt.Errorf("failed to get absolute path: %w", err)
 	}
 
-	// fest lives alongside camp as a sibling submodule under projects/
-	festRoot := filepath.Join(projectRoot, "..", "fest")
-	festRoot, err = filepath.Abs(festRoot)
+	festRoot, err := locateFestSource(projectRoot)
 	if err != nil {
-		return "", fmt.Errorf("failed to get fest absolute path: %w", err)
-	}
-
-	// Verify fest source exists
-	if _, err := os.Stat(filepath.Join(festRoot, "cmd", "fest")); err != nil {
-		return "", fmt.Errorf("fest source not found at %s: %w", festRoot, err)
+		return "", err
 	}
 
 	binDir, err := os.MkdirTemp("", "fest-integration-bin-*")
