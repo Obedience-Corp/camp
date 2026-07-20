@@ -30,6 +30,11 @@ var festAvailable bool
 // skip if false.
 var sccAvailable bool
 
+// legacyCampSkip is set to a non-empty reason when the pinned pre-reader camp
+// binary (/camp-legacy) could not be built (e.g. its commit is absent in a
+// shallow clone). The criterion-17 rollout-contract test skips with this reason.
+var legacyCampSkip string
+
 // TestMain builds a pool of identical containers once and shares them across all
 // integration tests. Reusing containers avoids per-test create/destroy cost; a
 // pool (rather than a single container) lets tests run concurrently via

@@ -59,9 +59,10 @@ type TestContainer struct {
 // sharedBinaries holds host paths to the test binaries built once in TestMain
 // and copied into every pooled container.
 type sharedBinaries struct {
-	camp string
-	fest string // "" when fest is unavailable
-	scc  string // "" when scc is unavailable
+	camp       string
+	fest       string // "" when fest is unavailable
+	scc        string // "" when scc is unavailable
+	campLegacy string // "" when the pinned pre-reader binary is unavailable
 }
 
 // buildSharedBinaries builds the camp/fest/scc binaries on the host exactly once.
@@ -105,7 +106,77 @@ func buildSharedBinaries() (sharedBinaries, func(), error) {
 		sccAvailable = true
 	}
 
+	// Pinned pre-reader binary for the criterion-17 rollout-contract test. Cached
+	// across runs in TempDir (so not added to dirs for cleanup); a skip reason is
+	// recorded instead of a hard failure when the pinned commit is unavailable.
+	if legacyBin, skip := buildLegacyCampBinaryShared(); skip != "" {
+		fmt.Fprintf(os.Stderr, "WARN: %s\n", skip)
+		legacyCampSkip = skip
+	} else {
+		bins.campLegacy = legacyBin
+	}
+
 	return bins, cleanup, nil
+}
+
+// legacyCampCommit pins the pre-reader camp binary for the criterion-17 rollout
+// contract test: commit 1f06e423 is release v0.3.0-rc.2, the newest shipped
+// binary whose allowlist stops at v1alpha6 with no forward-compat rule.
+const legacyCampCommit = "1f06e423"
+
+// buildLegacyCampBinaryShared builds the pinned pre-reader camp binary once and
+// caches it across runs at a stable TempDir path keyed by commit and arch. It
+// returns a non-empty skip reason (and empty path) when the pinned commit is not
+// present in this clone (e.g. a shallow CI checkout) or the build fails, so the
+// criterion-17 test skips with a clear message rather than a cryptic failure that
+// blocks the whole suite. It stays entirely inside the integration harness: no
+// host unit test depends on git history.
+func buildLegacyCampBinaryShared() (path string, skip string) {
+	cwd, err := os.Getwd()
+	if err != nil {
+		return "", fmt.Sprintf("pre-reader binary unavailable: %v", err)
+	}
+	projectRoot, err := filepath.Abs(filepath.Join(cwd, "../.."))
+	if err != nil {
+		return "", fmt.Sprintf("pre-reader binary unavailable: %v", err)
+	}
+
+	cached := filepath.Join(os.TempDir(), fmt.Sprintf("camp-legacy-%s-%s", legacyCampCommit, runtime.GOARCH))
+	if _, statErr := os.Stat(cached); statErr == nil {
+		return cached, ""
+	}
+
+	// cat-file -e fails on a shallow clone that lacks the pinned commit.
+	if err := runCommand(fmt.Sprintf("git -C %s cat-file -e %s^{commit}", projectRoot, legacyCampCommit)); err != nil {
+		return "", fmt.Sprintf("pre-reader binary skipped: commit %s (v0.3.0-rc.2) not in this clone (shallow?)", legacyCampCommit)
+	}
+
+	srcDir, err := os.MkdirTemp("", "camp-legacy-src-*")
+	if err != nil {
+		return "", fmt.Sprintf("pre-reader binary skipped: %v", err)
+	}
+	defer os.RemoveAll(srcDir)
+	// git archive extracts the source tree at the pinned commit with no worktree
+	// or .git entry to clean up afterward.
+	if err := runCommand(fmt.Sprintf("git -C %s archive %s | tar -x -C %s", projectRoot, legacyCampCommit, srcDir)); err != nil {
+		return "", fmt.Sprintf("pre-reader binary skipped: extract %s failed: %v", legacyCampCommit, err)
+	}
+
+	// Build to a pid-suffixed temp path then rename into the cache, so an
+	// interrupted or racing build never leaves a partial binary at the cached
+	// path. GOTOOLCHAIN=auto lets go fetch whatever toolchain the rc.2 go.mod pins.
+	tmpBin := fmt.Sprintf("%s.tmp.%d", cached, os.Getpid())
+	build := fmt.Sprintf("cd %s && GOTOOLCHAIN=auto GOOS=linux GOARCH=%s go build -tags=dev -o %s ./cmd/camp",
+		srcDir, runtime.GOARCH, tmpBin)
+	if err := runCommand(build); err != nil {
+		_ = os.Remove(tmpBin)
+		return "", fmt.Sprintf("pre-reader binary skipped: build %s failed: %v", legacyCampCommit, err)
+	}
+	if err := os.Rename(tmpBin, cached); err != nil {
+		_ = os.Remove(tmpBin)
+		return "", fmt.Sprintf("pre-reader binary skipped: cache %s failed: %v", legacyCampCommit, err)
+	}
+	return cached, ""
 }
 
 // newPooledContainer starts one container and provisions it identically to every
@@ -162,6 +233,12 @@ func newPooledContainer(ctx context.Context, bins sharedBinaries) (*TestContaine
 		if err := container.CopyFileToContainer(ctx, bins.scc, "/usr/local/bin/scc", 0o755); err != nil {
 			container.Terminate(ctx)
 			return nil, fmt.Errorf("failed to copy scc binary into container: %w", err)
+		}
+	}
+	if bins.campLegacy != "" {
+		if err := container.CopyFileToContainer(ctx, bins.campLegacy, "/camp-legacy", 0o755); err != nil {
+			container.Terminate(ctx)
+			return nil, fmt.Errorf("failed to copy legacy camp binary into container: %w", err)
 		}
 	}
 
