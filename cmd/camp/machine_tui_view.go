@@ -255,17 +255,21 @@ func (m *machineTUIModel) healthSection(id string, width int) []string {
 	case healthTesting:
 		return []string{style.Render(m.spin.View() + " Testing the connection...")}
 	case healthUnreachable:
-		// Tailscale check URLs are long; prefer wrapping the actionable detail
-		// over hard-truncating the only thing the operator needs to open.
-		detail := health.Detail
-		if !strings.Contains(detail, "login.tailscale.com") {
-			detail = ui.Truncate(detail, max(width-4, 20))
+		tailscaleCheck := strings.Contains(health.Detail, "login.tailscale.com")
+		headline := "Could not reach it"
+		if tailscaleCheck {
+			// Check-mode is auth policy, not network failure — do not frame it
+			// as unreachable or operators chase connectivity.
+			headline = "Needs Tailscale SSH check"
 		}
-		lines := []string{
-			style.Render(glyph + " Could not reach it"),
-			machineMuted.Render("  " + detail),
+		lines := []string{style.Render(glyph + " " + headline)}
+		// Width-aware detail: wrap long check URLs so the actionable token
+		// stays visible in a narrow pane instead of clipping off-screen.
+		detailWidth := max(width-4, 20)
+		for _, line := range healthDetailLines(health.Detail, detailWidth, tailscaleCheck) {
+			lines = append(lines, machineMuted.Render("  "+line))
 		}
-		if strings.Contains(health.Detail, "login.tailscale.com") {
+		if tailscaleCheck {
 			lines = append(lines, machineMuted.Render("  Approve in the browser, then press t to try again."))
 		} else {
 			lines = append(lines, machineMuted.Render("  e edits it · t tries again"))
@@ -283,6 +287,36 @@ func (m *machineTUIModel) healthSection(id string, width int) []string {
 			machineMuted.Render("  t checks whether camp can reach it."),
 		}
 	}
+}
+
+// healthDetailLines formats a connection-failure detail for the detail pane.
+// Tailscale check messages keep the full URL, hard-wrapped at maxWidth so a
+// narrow pane still shows the whole token. Other details still truncate.
+func healthDetailLines(detail string, maxWidth int, keepFullURL bool) []string {
+	detail = strings.TrimSpace(detail)
+	if detail == "" {
+		return nil
+	}
+	if maxWidth < 8 {
+		maxWidth = 8
+	}
+	if !keepFullURL {
+		return []string{ui.Truncate(detail, maxWidth)}
+	}
+	// Prefer breaking after path separators so "https://…/a/…" remains readable.
+	var lines []string
+	for len(detail) > maxWidth {
+		cut := maxWidth
+		if i := strings.LastIndexAny(detail[:maxWidth], "/ ?&="); i > maxWidth/3 {
+			cut = i + 1
+		}
+		lines = append(lines, detail[:cut])
+		detail = detail[cut:]
+	}
+	if detail != "" {
+		lines = append(lines, detail)
+	}
+	return lines
 }
 
 // reuseSection explains the ControlMaster socket in terms of what it does for
