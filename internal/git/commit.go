@@ -282,19 +282,51 @@ func ResetIndexToHead(ctx context.Context, repoPath string, paths []string) erro
 	cfg := DefaultRetryConfig()
 	cfg.OperationName = "reset-index"
 	return WithLockRetry(ctx, repoPath, cfg, func() error {
-		args := []string{"-C", repoPath, "reset", "-q", "HEAD", "--"}
-		args = append(args, paths...)
-		cmd := exec.CommandContext(ctx, "git", args...)
-		out, err := cmd.CombinedOutput()
-		if err != nil {
-			errType := ClassifyGitError(string(out), cmd.ProcessState.ExitCode())
-			if errType == GitErrorLock {
-				return &LockError{Path: "index.lock", Err: err}
+		// Scoped commits may expand a directory pathspec into tens of
+		// thousands of files (a dungeon migration is one example). Passing all
+		// of those paths to one git process can exceed the platform's argument
+		// size limit even though each individual path is valid.
+		for _, batch := range splitPathspecsForExec(paths) {
+			args := []string{"-C", repoPath, "reset", "-q", "HEAD", "--"}
+			args = append(args, batch...)
+			cmd := exec.CommandContext(ctx, "git", args...)
+			out, err := cmd.CombinedOutput()
+			if err != nil {
+				errType := ClassifyGitError(string(out), cmd.ProcessState.ExitCode())
+				if errType == GitErrorLock {
+					return &LockError{Path: "index.lock", Err: err}
+				}
+				return camperrors.NewGit("reset", "", errType.String(), strings.TrimSpace(string(out)), err)
 			}
-			return camperrors.NewGit("reset", "", errType.String(), strings.TrimSpace(string(out)), err)
 		}
 		return nil
 	})
+}
+
+// Keep reset invocations comfortably below common Unix ARG_MAX values. The
+// paths are already expanded before this point, so a single migration can
+// otherwise create a multi-megabyte argv.
+const resetPathspecArgLimit = 32 * 1024
+
+func splitPathspecsForExec(paths []string) [][]string {
+	var batches [][]string
+	var batch []string
+	batchBytes := 0
+
+	for _, path := range paths {
+		pathBytes := len(path) + 1 // include the argument's NUL terminator
+		if len(batch) > 0 && batchBytes+pathBytes > resetPathspecArgLimit {
+			batches = append(batches, batch)
+			batch = nil
+			batchBytes = 0
+		}
+		batch = append(batch, path)
+		batchBytes += pathBytes
+	}
+	if len(batch) > 0 {
+		batches = append(batches, batch)
+	}
+	return batches
 }
 
 // isLockError checks if an error is a lock-related error.

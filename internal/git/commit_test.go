@@ -1052,3 +1052,36 @@ func TestStage_ReturnsRemovalFailureForStaleLock(t *testing.T) {
 		t.Fatalf("StageAll() error = %v, did not want ErrLockActive", err)
 	}
 }
+
+func TestSplitPathspecsForExecKeepsBatchesBelowArgLimit(t *testing.T) {
+	paths := make([]string, 100)
+	for i := range paths {
+		paths[i] = strings.Repeat("p", 1000)
+	}
+
+	batches := splitPathspecsForExec(paths)
+	if len(batches) < 2 {
+		t.Fatalf("splitPathspecsForExec() returned %d batch(es), want multiple", len(batches))
+	}
+
+	var flattened []string
+	for i, batch := range batches {
+		bytes := 0
+		for _, path := range batch {
+			bytes += len(path) + 1
+		}
+		if bytes > resetPathspecArgLimit {
+			t.Errorf("batch %d is %d bytes, want at most %d", i, bytes, resetPathspecArgLimit)
+		}
+		flattened = append(flattened, batch...)
+	}
+
+	if len(flattened) != len(paths) {
+		t.Fatalf("splitPathspecsForExec() returned %d paths, want %d", len(flattened), len(paths))
+	}
+	for i := range paths {
+		if flattened[i] != paths[i] {
+			t.Fatalf("path %d = %q, want %q", i, flattened[i], paths[i])
+		}
+	}
+}
