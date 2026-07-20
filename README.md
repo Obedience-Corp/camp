@@ -10,19 +10,15 @@
 
 Campaign workspace manager — group every project, tool, and piece of context you care about into a single campaign, and navigate between them instantly.
 
-## Features
+<p align="center">
+  <img src="docs/images/demos/cgo-navigation.gif" alt="cgo jumping between projects, festivals, and design directories, plus csw to switch campaigns" width="700">
+</p>
+<p align="center"><em><code>cgo</code>: jump anywhere in the workspace with fuzzy matching, from any shell.</em></p>
 
-- **Navigation** — Category shortcuts, fuzzy finding, pins, and a cached index for instant project lookups (`go`, `pin`, `shortcuts`, `cache`)
-- **Project Management** — Git submodules, linked local workspaces, worktrees, and scaffolding (`project add/link/list/new/remote/remove/run/unlink/worktree/prune`)
-- **Planning** — Intents, promotion, dungeon for deprioritized work, and a unified work-item dashboard (`intent`, `promote`, `dungeon`, `gather`, `workitem`)
-- **Productivity** — Leverage scoring to identify high-impact work (`leverage`)
-- **Git Integration** — Campaign-level git operations with submodule fan-out (`stage`, `commit`, `log`, `push [all]`, `pull [all]`, `status [all]`, `fresh [all]`, `refs-sync`)
-- **Campaign Ops** — Health checks, file operations, cross-campaign tools (`doctor`, `copy`, `move`, `sync`, `transfer`)
-- **Shell Integration** — Native `cd` behavior with zsh, bash, and fish (`shell-init`)
-- **Tab Completion** — Smart completion for categories, projects, and paths
-- **Plugins** — Discover camp plugins on `PATH` (`plugins`)
-
-Note: `flow` is a hidden low-level status engine. Use `camp promote` for lifecycle promotion.
+<p align="center">
+  <img src="docs/images/demos/tui-workitems.gif" alt="The camp wi dashboard: intents, designs, explores, and festivals in one unified list, narrowed by search" width="700">
+</p>
+<p align="center"><em><code>camp wi</code>: one queue for every kind of work in the campaign.</em></p>
 
 ## Installation
 
@@ -81,6 +77,20 @@ cgo p          # Jump to projects/
 cgo f          # Jump to festivals/
 cgo p api      # Fuzzy find "api" in projects/
 ```
+
+## Features
+
+- **Navigation** — Category shortcuts, fuzzy finding, pins, and a cached index for instant project lookups (`go`, `pin`, `shortcuts`, `cache`)
+- **Project Management** — Git submodules, linked local workspaces, worktrees, and scaffolding (`project add/link/list/new/remote/remove/run/unlink/worktree/prune`)
+- **Planning** — Intents, promotion, dungeon for deprioritized work, and a unified work-item dashboard (`intent`, `promote`, `dungeon`, `gather`, `workitem`)
+- **Productivity** — Leverage scoring to identify high-impact work (`leverage`)
+- **Git Integration** — Campaign-level git operations with submodule fan-out (`stage`, `commit`, `log`, `push [all]`, `pull [all]`, `status [all]`, `fresh [all]`, `refs-sync`)
+- **Campaign Ops** — Health checks, file operations, cross-campaign tools (`doctor`, `copy`, `move`, `sync`, `transfer`)
+- **Shell Integration** — Native `cd` behavior with zsh, bash, and fish (`shell-init`)
+- **Tab Completion** — Smart completion for categories, projects, and paths
+- **Plugins** — Discover camp plugins on `PATH` (`plugins`)
+
+Note: `flow` is a hidden low-level status engine. Use `camp promote` for lifecycle promotion.
 
 ## Category Shortcuts
 
