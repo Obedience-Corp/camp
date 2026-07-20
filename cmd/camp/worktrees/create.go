@@ -178,7 +178,7 @@ func runWorktreesCreate(cmd *cobra.Command, args []string) error {
 		fmt.Println(ui.Dim("  camp p commit in this worktree will include WI-* in the campaign tag"))
 	}
 
-	projected, err := intskills.ProjectIntoWorktreeBestEffort(campRoot, result.Path)
+	projected, err := intskills.ProjectIntoWorktreeBestEffort(ctx, campRoot, result.Path)
 	if err != nil {
 		fmt.Println(ui.Warning(fmt.Sprintf("  Skills: could not project into worktree: %v", err)))
 		fmt.Println(ui.Dim("  Fix later with: camp skills link --worktrees-only"))

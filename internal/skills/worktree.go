@@ -1,6 +1,8 @@
 package skills
 
 import (
+	"context"
+	"fmt"
 	"io"
 	"os"
 	"path/filepath"
@@ -9,6 +11,7 @@ import (
 
 	"github.com/Obedience-Corp/camp/internal/campaign"
 	camperrors "github.com/Obedience-Corp/camp/internal/errors"
+	"github.com/Obedience-Corp/camp/internal/git"
 )
 
 // WorktreeSkillDestRels are the tool skill directories projected into each
@@ -23,6 +26,15 @@ var WorktreeSkillDestRels = []string{
 // GrokSkillsRel is the Grok-preferred skills path inside a worktree. It is a
 // symlink to .agents/skills (same pattern as campaign-root .grok/skills).
 const GrokSkillsRel = ".grok/skills"
+
+// worktreeSkillExcludePatterns are installed into the target worktree's
+// .git/info/exclude (local, not committed) so projected harness dirs do not
+// show up as untracked files in fest/festival/obey/etc. checkouts.
+var worktreeSkillExcludePatterns = []string{
+	".agents/",
+	".claude/",
+	".grok/",
+}
 
 // WorktreeProjection is one worktree destination after projection.
 type WorktreeProjection struct {
@@ -104,11 +116,13 @@ func isGitCheckoutRoot(path string) bool {
 
 // ProjectIntoWorktree projects skill bundles from skillsDir into a single
 // worktree root (.agents/skills and .claude/skills), then ensures
-// .grok/skills → .agents/skills so Grok discovers the same set.
+// .grok/skills → .agents/skills so Grok discovers the same set. It also
+// installs local .git/info/exclude patterns so projected dirs are not
+// untracked noise in the target project checkout.
 //
 // campaignRoot is used only for ValidateDestination; it must contain the
 // worktree. An empty slugs list is a successful no-op.
-func ProjectIntoWorktree(worktreeRoot, campaignRoot, skillsDir string, slugs []string, dryRun, force bool, errOut io.Writer) (WorktreeProjection, error) {
+func ProjectIntoWorktree(ctx context.Context, worktreeRoot, campaignRoot, skillsDir string, slugs []string, dryRun, force bool, errOut io.Writer) (WorktreeProjection, error) {
 	out := WorktreeProjection{Path: worktreeRoot}
 	if rel, err := filepath.Rel(campaignRoot, worktreeRoot); err == nil && !strings.HasPrefix(rel, "..") {
 		out.RelPath = rel
@@ -118,6 +132,10 @@ func ProjectIntoWorktree(worktreeRoot, campaignRoot, skillsDir string, slugs []s
 
 	if len(slugs) == 0 {
 		return out, nil
+	}
+	if err := ctx.Err(); err != nil {
+		out.Err = err
+		return out, err
 	}
 
 	for _, rel := range WorktreeSkillDestRels {
@@ -155,7 +173,30 @@ func ProjectIntoWorktree(worktreeRoot, campaignRoot, skillsDir string, slugs []s
 	out.Agents.Created += grokSummary.Created
 	out.Agents.Replaced += grokSummary.Replaced
 	out.Agents.AlreadyLinked += grokSummary.AlreadyLinked
+
+	if !dryRun {
+		if err := ensureWorktreeSkillExcludes(ctx, worktreeRoot, errOut); err != nil {
+			// Projection still succeeded; exclude is hygiene for the target repo.
+			if errOut != nil {
+				fmt.Fprintf(errOut, "warning: could not update local git excludes in %s: %v\n", worktreeRoot, err)
+			}
+		}
+	}
 	return out, nil
+}
+
+// ensureWorktreeSkillExcludes adds local (non-committed) exclude patterns for
+// projected harness directories via .git/info/exclude.
+func ensureWorktreeSkillExcludes(ctx context.Context, worktreeRoot string, errOut io.Writer) error {
+	if err := ctx.Err(); err != nil {
+		return err
+	}
+	for _, pattern := range worktreeSkillExcludePatterns {
+		if _, err := git.EnsureInfoExclude(ctx, worktreeRoot, pattern); err != nil {
+			return camperrors.Wrapf(err, "ensure info/exclude %q", pattern)
+		}
+	}
+	return nil
 }
 
 // grokAliasRelTarget is the symlink target for .grok/skills relative to .grok/.
@@ -255,7 +296,7 @@ func EnsureGrokSkillsAlias(worktreeRoot string, dryRun bool) error {
 // worktreesRoot. Per-worktree errors are recorded on WorktreeProjection.Err;
 // a top-level error is returned only when the worktree list or skill discovery
 // cannot be read.
-func LinkAllWorktrees(campaignRoot, worktreesRoot, skillsDir string, dryRun, force bool, errOut io.Writer) ([]WorktreeProjection, error) {
+func LinkAllWorktrees(ctx context.Context, campaignRoot, worktreesRoot, skillsDir string, dryRun, force bool, errOut io.Writer) ([]WorktreeProjection, error) {
 	slugs, err := DiscoverSkillSlugs(skillsDir)
 	if err != nil {
 		return nil, camperrors.Wrap(err, "discover skill bundles")
@@ -266,7 +307,10 @@ func LinkAllWorktrees(campaignRoot, worktreesRoot, skillsDir string, dryRun, for
 	}
 	results := make([]WorktreeProjection, 0, len(roots))
 	for _, root := range roots {
-		proj, projErr := ProjectIntoWorktree(root, campaignRoot, skillsDir, slugs, dryRun, force, errOut)
+		if err := ctx.Err(); err != nil {
+			return results, err
+		}
+		proj, projErr := ProjectIntoWorktree(ctx, root, campaignRoot, skillsDir, slugs, dryRun, force, errOut)
 		if projErr != nil && proj.Err == nil {
 			proj.Err = projErr
 		}
@@ -281,7 +325,7 @@ func LinkAllWorktrees(campaignRoot, worktreesRoot, skillsDir string, dryRun, for
 // false "projected" success message). Missing .campaign/skills or an empty
 // skills dir is a silent no-op (projected=false, err=nil). Other errors are
 // returned so callers can warn without failing worktree creation.
-func ProjectIntoWorktreeBestEffort(campaignRoot, worktreePath string) (projected bool, err error) {
+func ProjectIntoWorktreeBestEffort(ctx context.Context, campaignRoot, worktreePath string) (projected bool, err error) {
 	skillsDir := filepath.Join(campaignRoot, campaign.CampaignDir, SkillsSubdir)
 	if _, err := os.Stat(skillsDir); err != nil {
 		if os.IsNotExist(err) {
@@ -296,7 +340,7 @@ func ProjectIntoWorktreeBestEffort(campaignRoot, worktreePath string) (projected
 	if len(slugs) == 0 {
 		return false, nil
 	}
-	proj, err := ProjectIntoWorktree(worktreePath, campaignRoot, skillsDir, slugs, false, false, io.Discard)
+	proj, err := ProjectIntoWorktree(ctx, worktreePath, campaignRoot, skillsDir, slugs, false, false, io.Discard)
 	if err != nil {
 		return false, err
 	}
@@ -304,10 +348,26 @@ func ProjectIntoWorktreeBestEffort(campaignRoot, worktreePath string) (projected
 	return n > 0, nil
 }
 
-// InspectWorktreeProjection reports projection state for a worktree's
-// .agents/skills directory (primary harness path).
+// InspectWorktreeProjection reports aggregate projection state across all
+// managed worktree harness surfaces: .agents/skills, .claude/skills, and
+// .grok/skills. A worktree is fully linked only when every surface is healthy.
 func InspectWorktreeProjection(worktreeRoot, skillsDir string, slugs []string) (ProjectionState, error) {
-	dest := filepath.Join(worktreeRoot, ".agents/skills")
+	agents, err := inspectToolSkillDest(filepath.Join(worktreeRoot, ".agents/skills"), skillsDir, slugs)
+	if err != nil {
+		return ProjectionState{}, err
+	}
+	claude, err := inspectToolSkillDest(filepath.Join(worktreeRoot, ".claude/skills"), skillsDir, slugs)
+	if err != nil {
+		return ProjectionState{}, err
+	}
+	grok, err := inspectGrokSkillDest(worktreeRoot, skillsDir, slugs)
+	if err != nil {
+		return ProjectionState{}, err
+	}
+	return mergeWorktreeProjectionStates(agents, claude, grok), nil
+}
+
+func inspectToolSkillDest(dest, skillsDir string, slugs []string) (ProjectionState, error) {
 	pathType, err := CheckPathType(dest)
 	if err != nil {
 		return ProjectionState{}, err
@@ -322,4 +382,61 @@ func InspectWorktreeProjection(worktreeRoot, skillsDir string, slugs []string) (
 	default:
 		return ProjectionState{TotalSkills: len(slugs)}, nil
 	}
+}
+
+func inspectGrokSkillDest(worktreeRoot, skillsDir string, slugs []string) (ProjectionState, error) {
+	linkPath := filepath.Join(worktreeRoot, GrokSkillsRel)
+	wantAbs := filepath.Clean(filepath.Join(filepath.Dir(linkPath), grokAliasRelTarget))
+	pathType, err := CheckPathType(linkPath)
+	if err != nil {
+		return ProjectionState{}, err
+	}
+	switch pathType {
+	case TypeMissing:
+		return ProjectionState{TotalSkills: len(slugs)}, nil
+	case TypeFile:
+		return ProjectionState{TotalSkills: len(slugs), Conflicts: 1}, nil
+	case TypeSymlink:
+		raw, readErr := os.Readlink(linkPath)
+		if readErr != nil {
+			return ProjectionState{}, camperrors.Wrap(readErr, "read grok skills alias")
+		}
+		gotAbs := resolveSymlinkTargetAbs(linkPath, raw)
+		if filepath.Clean(gotAbs) == wantAbs {
+			// Correct alias: treat as fully linked for this surface.
+			return ProjectionState{TotalSkills: len(slugs), Linked: len(slugs)}, nil
+		}
+		return ProjectionState{TotalSkills: len(slugs), Conflicts: 1}, nil
+	case TypeDirectory:
+		return InspectSkillProjection(linkPath, skillsDir, slugs)
+	default:
+		return ProjectionState{TotalSkills: len(slugs)}, nil
+	}
+}
+
+// mergeWorktreeProjectionStates combines per-surface states. Linked is the
+// minimum across surfaces (all must be healthy); Broken/Mismatched/Conflicts sum.
+func mergeWorktreeProjectionStates(states ...ProjectionState) ProjectionState {
+	if len(states) == 0 {
+		return ProjectionState{}
+	}
+	out := ProjectionState{TotalSkills: states[0].TotalSkills, Linked: states[0].Linked}
+	for i, s := range states {
+		if i == 0 {
+			out.Broken = s.Broken
+			out.Mismatched = s.Mismatched
+			out.Conflicts = s.Conflicts
+			continue
+		}
+		if s.Linked < out.Linked {
+			out.Linked = s.Linked
+		}
+		out.Broken += s.Broken
+		out.Mismatched += s.Mismatched
+		out.Conflicts += s.Conflicts
+		if s.TotalSkills > out.TotalSkills {
+			out.TotalSkills = s.TotalSkills
+		}
+	}
+	return out
 }

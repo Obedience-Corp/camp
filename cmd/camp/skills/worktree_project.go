@@ -26,7 +26,7 @@ func linkAllWorktrees(ctx context.Context, out, errOut io.Writer, root, skillsDi
 	resolver := paths.NewResolver(root, cfg.Paths())
 	wtRoot := resolver.Worktrees()
 
-	results, err := intskills.LinkAllWorktrees(root, wtRoot, skillsDir, dryRun, force, errOut)
+	results, err := intskills.LinkAllWorktrees(ctx, root, wtRoot, skillsDir, dryRun, force, errOut)
 	if err != nil {
 		return err
 	}
