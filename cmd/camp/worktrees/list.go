@@ -197,22 +197,56 @@ func listWorktreeProjectTargets(ctx context.Context, campRoot, filterProject str
 	if filterProject != "" {
 		return worktreeProjectTargets(ctx, campRoot, filterProject)
 	}
+	if err := ctx.Err(); err != nil {
+		return nil, err
+	}
 
 	projects, err := project.List(ctx, campRoot)
 	if err != nil {
 		return nil, camperrors.Wrap(err, "failed to list projects")
 	}
 
-	cwd, err := os.Getwd()
-	if err == nil {
-		if resolvedCwd, resolveErr := filepath.EvalSymlinks(cwd); resolveErr == nil {
-			cwd = resolvedCwd
-		}
+	// Reuse the loaded project set for campaign-wide results so we never call
+	// project.List twice on the unscoped path.
+	all := targetsFromProjects(campRoot, projects)
+
+	cwd := resolveListCwd()
+	if cwd == "" {
+		return all, nil
+	}
+
+	campReal := normalizePath(campRoot)
+	// Campaign root is the common "list everything" case — skip detection work.
+	if sameNormalizedPath(cwd, campReal) {
+		return all, nil
 	}
 
 	// Match registered project paths before consulting git worktree entries.
 	// This avoids generic project resolution fallbacks (for example, treating a
 	// submodule worktree as an unregistered projects/worktrees project).
+	if match := matchRegisteredProject(cwd, campRoot, projects); match != nil {
+		return []worktreeProjectTarget{*match}, nil
+	}
+
+	// Linked worktrees created by camp live under projects/worktrees/. Under the
+	// campaign but outside that tree (festivals/, docs/, etc.) there is nothing
+	// to detect — avoid N git worktree list calls. Paths outside the campaign
+	// still scan so a loose external worktree cwd can resolve if detection
+	// reaches here.
+	if pathWithin(cwd, campReal) && !pathWithin(cwd, filepath.Join(campReal, "projects", "worktrees")) {
+		return all, nil
+	}
+
+	if match := matchLinkedWorktree(ctx, cwd, campRoot, projects); match != nil {
+		return []worktreeProjectTarget{*match}, nil
+	}
+
+	return all, nil
+}
+
+// matchRegisteredProject returns the registered project whose checkout contains
+// cwd, preferring the longest matching path (nested monorepo projects win).
+func matchRegisteredProject(cwd, campRoot string, projects []project.Project) *worktreeProjectTarget {
 	var (
 		match     *worktreeProjectTarget
 		matchPath string
@@ -223,22 +257,30 @@ func listWorktreeProjectTargets(ctx context.Context, campRoot, filterProject str
 			path: project.ResolveProjectPath(campRoot, proj),
 		}
 		logicalPath := filepath.Join(campRoot, proj.Path)
-		if pathWithin(cwd, target.path) || pathWithin(cwd, logicalPath) {
-			if match == nil || len(target.path) > len(matchPath) {
-				candidate := target
-				match = &candidate
-				matchPath = target.path
-			}
+		if !pathWithin(cwd, target.path) && !pathWithin(cwd, logicalPath) {
+			continue
+		}
+		scorePath := normalizePath(target.path)
+		if match == nil || len(scorePath) > len(matchPath) {
+			candidate := target
+			match = &candidate
+			matchPath = scorePath
 		}
 	}
-	if match != nil {
-		return []worktreeProjectTarget{*match}, nil
-	}
+	return match
+}
 
-	// A linked git worktree lives beside the registered project path rather
-	// than underneath it. Match the current directory against git's worktree
-	// entries so projects/worktrees/<project>/<name> remains project-aware too.
+// matchLinkedWorktree returns the project that owns the linked git worktree
+// containing cwd. Longest entry path wins when multiple entries nest.
+func matchLinkedWorktree(ctx context.Context, cwd, campRoot string, projects []project.Project) *worktreeProjectTarget {
+	var (
+		match     *worktreeProjectTarget
+		matchPath string
+	)
 	for _, proj := range projects {
+		if err := ctx.Err(); err != nil {
+			return nil
+		}
 		target := worktreeProjectTarget{
 			name: proj.Name,
 			path: project.ResolveProjectPath(campRoot, proj),
@@ -248,7 +290,7 @@ func listWorktreeProjectTargets(ctx context.Context, campRoot, filterProject str
 			continue
 		}
 		for _, entry := range entries {
-			entryPath := filepath.Clean(entry.Path)
+			entryPath := normalizePath(entry.Path)
 			if entryPath == "" || !pathWithin(cwd, entryPath) {
 				continue
 			}
@@ -259,14 +301,55 @@ func listWorktreeProjectTargets(ctx context.Context, campRoot, filterProject str
 			}
 		}
 	}
-	if match != nil {
-		return []worktreeProjectTarget{*match}, nil
-	}
-
-	return worktreeProjectTargets(ctx, campRoot, "")
+	return match
 }
 
+// targetsFromProjects maps registered projects to worktree scan roots without
+// re-listing projects from disk.
+func targetsFromProjects(campRoot string, projects []project.Project) []worktreeProjectTarget {
+	targets := make([]worktreeProjectTarget, 0, len(projects))
+	for _, proj := range projects {
+		targets = append(targets, worktreeProjectTarget{
+			name: proj.Name,
+			path: project.ResolveProjectPath(campRoot, proj),
+		})
+	}
+	return targets
+}
+
+func resolveListCwd() string {
+	cwd, err := os.Getwd()
+	if err != nil {
+		return ""
+	}
+	return normalizePath(cwd)
+}
+
+// normalizePath cleans and, when possible, resolves symlinks so containment
+// checks compare stable forms (macOS campaign roots often live behind a link).
+func normalizePath(p string) string {
+	if p == "" {
+		return ""
+	}
+	p = filepath.Clean(p)
+	if resolved, err := filepath.EvalSymlinks(p); err == nil {
+		return resolved
+	}
+	return p
+}
+
+func sameNormalizedPath(a, b string) bool {
+	if a == "" || b == "" {
+		return false
+	}
+	return normalizePath(a) == normalizePath(b)
+}
+
+// pathWithin reports whether child is parent or a path under parent.
+// Both sides are cleaned and symlink-resolved when possible.
 func pathWithin(child, parent string) bool {
+	child = normalizePath(child)
+	parent = normalizePath(parent)
 	if child == "" || parent == "" {
 		return false
 	}
@@ -303,15 +386,7 @@ func worktreeProjectTargets(ctx context.Context, campRoot, filterProject string)
 	if err != nil {
 		return nil, camperrors.Wrap(err, "failed to list projects")
 	}
-
-	targets := make([]worktreeProjectTarget, 0, len(projects))
-	for _, proj := range projects {
-		targets = append(targets, worktreeProjectTarget{
-			name: proj.Name,
-			path: project.ResolveProjectPath(campRoot, proj),
-		})
-	}
-	return targets, nil
+	return targetsFromProjects(campRoot, projects), nil
 }
 
 // disambiguateWorktreeNames rewrites the Name of any worktrees that share a
