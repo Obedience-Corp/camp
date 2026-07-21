@@ -2,7 +2,8 @@
 #
 # The fixture is created in the hidden setup so the recording is reproducible
 # and contains no customer data or machine-specific project paths.
-# Record with: CAMP_VHS_ROOT=/path/to/worktree-list-fixture vhs docs/demos/worktree-list.tape
+# Record with: just vhs record-color docs/demos/worktree-list.tape
+# (or unset NO_COLOR/CLICOLOR and enable truecolor before running vhs).
 Output out/worktree-list.gif
 
 Set Shell "bash"
@@ -21,7 +22,8 @@ Set Theme {"name":"termcast","background":"#0d0d11","foreground":"#f8f8f2","curs
 Hide
 Type "export HOME=$CAMP_VHS_ROOT/home" Enter
 Type "export PATH=$CAMP_VHS_ROOT/bin:$PATH" Enter
-Type "export TERM=xterm-256color COLORTERM=truecolor COLORFGBG=15\;0" Enter
+Type "unset NO_COLOR CLICOLOR" Enter
+Type "export TERM=xterm-256color COLORTERM=truecolor COLORFGBG=15\;0 CLICOLOR_FORCE=1 FORCE_COLOR=1" Enter
 Type "export PS1='\033[38;5;208m❯\033[0m '" Enter
 Type "camp shell-init bash > $CAMP_VHS_ROOT/shell-init.bash && source $CAMP_VHS_ROOT/shell-init.bash" Enter
 Type "camp init $CAMP_VHS_ROOT/campaign --name worktree-list-demo --description 'Project-aware worktree listing' --mission 'Keep worktrees easy to find' --no-register --no-skills" Enter
