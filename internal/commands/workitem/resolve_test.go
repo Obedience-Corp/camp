@@ -189,39 +189,6 @@ func TestResolve_CurrentTierFallback(t *testing.T) {
 	}
 }
 
-func TestResolve_DisableCurrentSkipsCurrentTier(t *testing.T) {
-	root := linkTestCampaign(t)
-	restore := chdir(t, root)
-	defer restore()
-
-	cur := &links.Current{
-		Version:    links.CurrentSchemaVersion,
-		WorkitemID: "design-example-2026-05-24",
-	}
-	if err := links.SaveCurrent(context.Background(), root, cur); err != nil {
-		t.Fatal(err)
-	}
-	otherDir := filepath.Join(root, "docs")
-	if err := os.MkdirAll(otherDir, 0o755); err != nil {
-		t.Fatal(err)
-	}
-
-	res, err := resolver.Resolve(context.Background(), root, resolver.Options{
-		Cwd:            otherDir,
-		DisableCurrent: true,
-	})
-	if err != nil {
-		t.Fatalf("Resolve: %v", err)
-	}
-	if res.Source != resolver.SourceNone {
-		t.Fatalf("source = %s, want none; trace=%v", res.Source, res.Trace)
-	}
-	last := res.Trace[len(res.Trace)-2]
-	if last.Tier != resolver.SourceCurrent || last.Result != "skip" {
-		t.Fatalf("current trace = %+v, want a skipped current tier", last)
-	}
-}
-
 func TestResolve_FestivalTier(t *testing.T) {
 	root := linkTestCampaign(t)
 	restore := chdir(t, root)

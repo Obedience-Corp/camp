@@ -24,6 +24,9 @@ type CommitContext struct {
 // qst_ segments but without the staging machinery. It is the shared entry
 // point for auto-commit paths (intent and note capture) that want
 // `camp commit`-style context inheritance.
+// Like the generic commit wrappers, it intentionally does not consult
+// current.yaml; callers that need the session-wide selection should use
+// camp workitem commit.
 //
 // Resolution is best-effort: any failure yields a zero-valued field rather
 // than an error, so callers always fall back to a bare campaign tag. cwd
@@ -36,8 +39,9 @@ func ResolveCommitContext(ctx context.Context, campaignRoot, cwd string, errw io
 
 	festivalID := inferFestivalIDFromCwd(campaignRoot, cwd)
 	res, err := resolver.Resolve(ctx, campaignRoot, resolver.Options{
-		Cwd:        cwd,
-		FestivalID: festivalID,
+		Cwd:            cwd,
+		FestivalID:     festivalID,
+		DisableCurrent: true,
 	})
 	if err != nil || res == nil || res.Workitem == nil {
 		return CommitContext{}
