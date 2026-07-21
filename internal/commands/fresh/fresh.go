@@ -176,8 +176,16 @@ type freshSyncState struct {
 	defaultBranch string
 	baseRef       string
 	displayRef    string
-	detached      bool
-	worktreePath  string
+	// detached is true when this path must sync via origin/<default> rather
+	// than checking out the local default branch (another worktree holds it
+	// and could not be reclaimed).
+	detached bool
+	// worktreePath is the other worktree that held (or still holds) the
+	// default branch, when known.
+	worktreePath string
+	// reclaimed is true when fresh detached that other worktree so the
+	// default branch can be checked out here normally.
+	reclaimed bool
 }
 
 func executeFresh(ctx context.Context, name, path string, opts freshOptions) error {
@@ -205,6 +213,56 @@ func executeFresh(ctx context.Context, name, path string, opts freshOptions) err
 		return camperrors.Wrap(err, "prepare fresh sync state")
 	}
 
+	// When another worktree holds the default branch, free it if that tree is
+	// clean so this project path can check out main/master normally. Leaving
+	// main stuck on a finished feature worktree is the failure mode after
+	// camp project worktree add --start-point main.
+	if syncState.worktreePath != "" {
+		if opts.dryRun {
+			// Dry-run still inspects dirtiness (status is non-mutating) so the
+			// plan matches what a real run would do.
+			reclaimed, reclaimErr := canReclaimDefaultBranchWorktree(ctx, syncState.worktreePath)
+			if reclaimErr != nil {
+				return reclaimErr
+			}
+			if reclaimed {
+				syncState.reclaimed = true
+				syncState.detached = false
+				syncState.baseRef = defaultBranch
+				syncState.displayRef = defaultBranch
+				fmt.Printf("%s── Would free %-23s %s\n", prefix, defaultBranch,
+					freshStepDim.Render(fmt.Sprintf("(detach clean worktree %s)", filepath.Base(syncState.worktreePath))))
+			} else {
+				fmt.Printf("%s── Would free %-23s %s\n", prefix, defaultBranch,
+					freshStepDim.Render(fmt.Sprintf(
+						"skipped · %s has uncommitted changes; would sync detached",
+						filepath.Base(syncState.worktreePath))))
+			}
+		} else {
+			reclaimed, reclaimErr := reclaimDefaultBranchWorktree(ctx, syncState.worktreePath)
+			if reclaimErr != nil {
+				return reclaimErr
+			}
+			if reclaimed {
+				syncState.reclaimed = true
+				syncState.detached = false
+				syncState.baseRef = defaultBranch
+				syncState.displayRef = defaultBranch
+				fmt.Printf("%s── Free %-28s %s\n", prefix, defaultBranch,
+					freshStepGreen.Render("done")+" "+freshStepDim.Render(
+						fmt.Sprintf("(detached %s so %s is free here)",
+							filepath.Base(syncState.worktreePath), defaultBranch)))
+			} else {
+				// Dirty worktree: keep detached-sync fallback, but make the
+				// reason obvious instead of a raw git checkout error later.
+				fmt.Printf("%s── Free %-28s %s\n", prefix, defaultBranch,
+					freshStepDim.Render(fmt.Sprintf(
+						"skipped · %s has uncommitted changes; syncing detached",
+						filepath.Base(syncState.worktreePath))))
+			}
+		}
+	}
+
 	if syncState.detached {
 		note := freshSyncWorktreeNote(syncState)
 		if opts.dryRun {
@@ -224,13 +282,20 @@ func executeFresh(ctx context.Context, name, path string, opts freshOptions) err
 			fmt.Printf("%s── Checkout %-25s %s\n", prefix, syncState.displayRef,
 				freshStepGreen.Render("done")+" "+freshStepDim.Render(note))
 		}
-	} else if currentBranch == defaultBranch {
+	} else if currentBranch == defaultBranch && !syncState.reclaimed {
 		fmt.Printf("%s── Checkout %-24s %s\n", prefix, defaultBranch, freshStepDim.Render("already on it"))
 	} else if opts.dryRun {
 		fmt.Printf("%s── Would checkout %-19s %s\n", prefix, defaultBranch,
-			freshStepDim.Render(fmt.Sprintf("(currently on %s)", currentBranch)))
+			freshStepDim.Render(fmt.Sprintf("(currently on %s)", emptyBranchLabel(currentBranch))))
 	} else {
 		if err := git.Checkout(ctx, path, defaultBranch); err != nil {
+			// Surface a clearer message than git's raw "already used by worktree".
+			if isBranchInUseByWorktree(err) {
+				return camperrors.Wrapf(err,
+					"checkout %s: another worktree holds this branch; "+
+						"detach it with `git -C <worktree> checkout --detach` then re-run camp fresh",
+					defaultBranch)
+			}
 			return camperrors.Wrapf(err, "checkout %s", defaultBranch)
 		}
 		fmt.Printf("%s── Checkout %-24s %s\n", prefix, defaultBranch, freshStepGreen.Render("done"))
@@ -374,7 +439,10 @@ func resolveFreshSyncState(ctx context.Context, path, currentBranch, defaultBran
 		displayRef:    defaultBranch,
 	}
 
-	entry, err := findBranchInOtherWorktree(ctx, path, currentBranch, defaultBranch)
+	// Always scan for another worktree holding the default branch — even when
+	// this path is already on it is impossible, but when this path is detached
+	// or on a feature branch, main often sits stuck on a finished worktree.
+	entry, err := findBranchInOtherWorktree(ctx, path, defaultBranch)
 	if err != nil {
 		return state, err
 	}
@@ -382,6 +450,8 @@ func resolveFreshSyncState(ctx context.Context, path, currentBranch, defaultBran
 		return state, nil
 	}
 
+	// Prefer reclaim + normal checkout; until reclaim succeeds, plan for a
+	// detached origin/<default> sync so fresh does not hard-fail.
 	state.baseRef = "origin/" + defaultBranch
 	state.displayRef = state.baseRef + " (detached)"
 	state.detached = true
@@ -390,18 +460,22 @@ func resolveFreshSyncState(ctx context.Context, path, currentBranch, defaultBran
 	return state, nil
 }
 
-func findBranchInOtherWorktree(ctx context.Context, path, currentBranch, branch string) (*worktree.GitWorktreeEntry, error) {
-	if currentBranch == branch {
-		return nil, nil
-	}
-
+// findBranchInOtherWorktree returns the first worktree (other than path) that
+// has branch checked out. path is the project working tree being freshened.
+func findBranchInOtherWorktree(ctx context.Context, path, branch string) (*worktree.GitWorktreeEntry, error) {
 	entries, err := worktree.NewGitWorktree(path).List(ctx)
 	if err != nil {
 		return nil, err
 	}
 
+	self := worktreeToplevel(ctx, path)
 	for _, entry := range entries {
 		if entry.Branch != branch {
+			continue
+		}
+		// Skip the worktree that is path itself (path form can differ for
+		// submodules: projects/camp vs .git/modules/projects/camp).
+		if sameWorktreePath(self, worktreeToplevel(ctx, entry.Path)) {
 			continue
 		}
 		entryCopy := entry
@@ -411,11 +485,83 @@ func findBranchInOtherWorktree(ctx context.Context, path, currentBranch, branch 
 	return nil, nil
 }
 
+// canReclaimDefaultBranchWorktree reports whether occupyingPath is clean
+// enough to detach without losing work (used by dry-run planning).
+func canReclaimDefaultBranchWorktree(ctx context.Context, occupyingPath string) (bool, error) {
+	dirty, err := git.HasNonSubmoduleChanges(ctx, occupyingPath)
+	if err != nil {
+		return false, camperrors.Wrapf(err, "check worktree %s for uncommitted changes", occupyingPath)
+	}
+	return !dirty, nil
+}
+
+// reclaimDefaultBranchWorktree detaches a clean worktree so its branch ref
+// can be checked out elsewhere. Returns (false, nil) when the worktree has
+// uncommitted changes and must not be touched; (true, nil) after a successful
+// detach.
+func reclaimDefaultBranchWorktree(ctx context.Context, occupyingPath string) (bool, error) {
+	ok, err := canReclaimDefaultBranchWorktree(ctx, occupyingPath)
+	if err != nil || !ok {
+		return ok, err
+	}
+	// Detach at HEAD: keeps the same commit checked out, frees the branch name.
+	if err := git.CheckoutDetached(ctx, occupyingPath, "HEAD"); err != nil {
+		return false, camperrors.Wrapf(err, "detach worktree %s to free its branch", occupyingPath)
+	}
+	return true, nil
+}
+
+func worktreeToplevel(ctx context.Context, path string) string {
+	out, err := git.Output(ctx, path, "rev-parse", "--show-toplevel")
+	if err != nil || strings.TrimSpace(out) == "" {
+		abs, absErr := filepath.Abs(path)
+		if absErr != nil {
+			return filepath.Clean(path)
+		}
+		return abs
+	}
+	return filepath.Clean(strings.TrimSpace(out))
+}
+
+func sameWorktreePath(a, b string) bool {
+	if a == "" || b == "" {
+		return false
+	}
+	a = filepath.Clean(a)
+	b = filepath.Clean(b)
+	if a == b {
+		return true
+	}
+	// Resolve symlinks when possible (submodule / worktree path forms).
+	ra, errA := filepath.EvalSymlinks(a)
+	rb, errB := filepath.EvalSymlinks(b)
+	if errA == nil && errB == nil {
+		return ra == rb
+	}
+	return false
+}
+
+func emptyBranchLabel(branch string) string {
+	if branch == "" {
+		return "detached HEAD"
+	}
+	return branch
+}
+
+func isBranchInUseByWorktree(err error) bool {
+	if err == nil {
+		return false
+	}
+	msg := strings.ToLower(err.Error())
+	return strings.Contains(msg, "already used by worktree") ||
+		strings.Contains(msg, "is already checked out at")
+}
+
 func freshSyncWorktreeNote(state freshSyncState) string {
 	if state.worktreePath == "" {
 		return ""
 	}
-	return fmt.Sprintf("(%s in %s)", state.defaultBranch, filepath.Base(state.worktreePath))
+	return fmt.Sprintf("(%s still in %s)", state.defaultBranch, filepath.Base(state.worktreePath))
 }
 
 func pruneResultNames(results []prune.Result, statuses ...prune.Status) []string {

@@ -499,3 +499,49 @@ git -C %[2]s push origin main
 	remoteHeads := tc.GitOutput(t, bareDir, "show-ref", "--verify", "refs/heads/feature-remote")
 	assert.Contains(t, remoteHeads, "refs/heads/feature-remote")
 }
+
+// TestFresh_ReclaimsDefaultBranchFromOtherWorktree proves that when main is
+// checked out in a clean feature worktree (the common leftover after
+// worktree add --start-point main), camp fresh detaches that worktree and
+// checks out main on the primary project path instead of failing with
+// "already used by worktree" or leaving the primary on detached origin/main.
+func TestFresh_ReclaimsDefaultBranchFromOtherWorktree(t *testing.T) {
+	skipIfShort(t)
+	tc := GetSharedContainer(t)
+	const name = "fresh-reclaim-main"
+	_, projectDir, _ := setupFreshCampaignWithSubmodule(t, tc, name)
+
+	// Primary starts on a feature branch; main is held by a finished worktree.
+	tc.Shell(t, fmt.Sprintf(`
+set -e
+git -C %[1]s checkout -b feature-active
+printf 'work\n' > %[1]s/feature.txt
+git -C %[1]s add .
+git -C %[1]s commit -m 'feature work'
+`, projectDir))
+
+	stuckWT := worktreePath(name, "stuck-main")
+	tc.Shell(t, fmt.Sprintf(`
+set -e
+git -C %[1]s worktree add %[2]s main
+`, projectDir, stuckWT))
+
+	// Confirm main is locked before fresh.
+	branchOnStuck := tc.GitOutput(t, stuckWT, "rev-parse", "--abbrev-ref", "HEAD")
+	require.Equal(t, "main", branchOnStuck, "precondition: stuck worktree should hold main")
+
+	// --no-prune so the reclaimed worktree is not removed after detach
+	// (prune deletes clean detached worktrees that match merged history).
+	output, err := tc.RunCampInDir(projectDir, "fresh", "--no-branch", "--no-push", "--no-follow-up", "--no-prune")
+	require.NoError(t, err, "camp fresh should reclaim main:\n%s", output)
+	assert.Contains(t, output, "Free", "fresh should report freeing the default branch")
+	assert.Contains(t, output, "stuck-main", "fresh should name the occupying worktree")
+
+	// Primary is on main (not detached origin/main).
+	primary := tc.GitOutput(t, projectDir, "rev-parse", "--abbrev-ref", "HEAD")
+	assert.Equal(t, "main", primary, "primary project path should hold main after fresh")
+
+	// Occupying worktree was detached so main is free for the primary path.
+	stuck := tc.GitOutput(t, stuckWT, "rev-parse", "--abbrev-ref", "HEAD")
+	assert.Equal(t, "HEAD", stuck, "occupying worktree should be detached, got %s", stuck)
+}
