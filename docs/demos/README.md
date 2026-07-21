@@ -9,6 +9,7 @@ evidence bundles.
 | --- | --- | --- | --- |
 | Fresh configure | [fresh-configure.tape](fresh-configure.tape) | [fresh-configure.gif](fresh-configure.gif) | [fresh-configure.manifest.json](fresh-configure.manifest.json) |
 | Machine/status | [machine-tui.tape](machine-tui.tape) | [machine-tui.gif](machine-tui.gif) | [machine-tui.manifest.json](machine-tui.manifest.json) |
+| Project-aware worktree list | [worktree-list.tape](worktree-list.tape) | [worktree-list.gif](worktree-list.gif) | — |
 
 The private evidence runs are `camp/fresh-configure/1d5415b8` and
 `camp/machine-tui/1d5415b8`. Each manifest records the source revision,
