@@ -37,14 +37,21 @@ var (
 
 var worktreesListCmd = &cobra.Command{
 	Use:   "list",
-	Short: "List all worktrees",
-	Long: `List all worktrees in the campaign, organized by project.
+	Short: "List worktrees for the current project or campaign",
+	Long: `List worktrees in the campaign, organized by project.
+
+When run from a project checkout or one of its git worktrees, only that
+project's worktrees are shown. Outside a project context, all worktrees are
+shown unless --project is supplied.
 
 Examples:
-  # List all worktrees
+  # List worktrees for the current project
   camp worktrees list
 
-  # List worktrees for specific project
+  # List all worktrees from the campaign root
+  cd /path/to/campaign && camp worktrees list
+
+  # Filter from outside a project
   camp worktrees list --project my-api
 
   # Show only stale worktrees
@@ -60,7 +67,7 @@ func init() {
 	Cmd.AddCommand(worktreesListCmd)
 
 	worktreesListCmd.Flags().StringVarP(&listProject, "project", "p", "",
-		"Filter by project name")
+		"Filter by project name (overrides automatic project detection)")
 	worktreesListCmd.Flags().BoolVar(&listStale, "stale", false,
 		"Show only stale worktrees")
 	worktreesListCmd.Flags().BoolVar(&listJSON, "json", false,
@@ -127,7 +134,7 @@ func runWorktreesList(cmd *cobra.Command, args []string) error {
 func listWorktrees(ctx context.Context, campRoot string, filterProject string, staleOnly bool) (*WorktreeListResult, error) {
 	var allWorktrees []WorktreeListItem
 
-	projectTargets, err := worktreeProjectTargets(ctx, campRoot, filterProject)
+	projectTargets, err := listWorktreeProjectTargets(ctx, campRoot, filterProject)
 	if err != nil {
 		return nil, err
 	}
@@ -180,6 +187,94 @@ func listWorktrees(ctx context.Context, campRoot string, filterProject string, s
 		Total:      len(allWorktrees),
 		StaleCount: staleCount,
 	}, nil
+}
+
+// listWorktreeProjectTargets resolves the scan scope for the list command.
+// An explicit --project always wins. Without it, a project checkout or one of
+// its linked worktrees scopes the list to that project; otherwise the command
+// retains its campaign-wide behavior.
+func listWorktreeProjectTargets(ctx context.Context, campRoot, filterProject string) ([]worktreeProjectTarget, error) {
+	if filterProject != "" {
+		return worktreeProjectTargets(ctx, campRoot, filterProject)
+	}
+
+	projects, err := project.List(ctx, campRoot)
+	if err != nil {
+		return nil, camperrors.Wrap(err, "failed to list projects")
+	}
+
+	cwd, err := os.Getwd()
+	if err == nil {
+		if resolvedCwd, resolveErr := filepath.EvalSymlinks(cwd); resolveErr == nil {
+			cwd = resolvedCwd
+		}
+	}
+
+	// Match registered project paths before consulting git worktree entries.
+	// This avoids generic project resolution fallbacks (for example, treating a
+	// submodule worktree as an unregistered projects/worktrees project).
+	var (
+		match     *worktreeProjectTarget
+		matchPath string
+	)
+	for _, proj := range projects {
+		target := worktreeProjectTarget{
+			name: proj.Name,
+			path: project.ResolveProjectPath(campRoot, proj),
+		}
+		logicalPath := filepath.Join(campRoot, proj.Path)
+		if pathWithin(cwd, target.path) || pathWithin(cwd, logicalPath) {
+			if match == nil || len(target.path) > len(matchPath) {
+				candidate := target
+				match = &candidate
+				matchPath = target.path
+			}
+		}
+	}
+	if match != nil {
+		return []worktreeProjectTarget{*match}, nil
+	}
+
+	// A linked git worktree lives beside the registered project path rather
+	// than underneath it. Match the current directory against git's worktree
+	// entries so projects/worktrees/<project>/<name> remains project-aware too.
+	for _, proj := range projects {
+		target := worktreeProjectTarget{
+			name: proj.Name,
+			path: project.ResolveProjectPath(campRoot, proj),
+		}
+		entries, listErr := worktree.NewGitWorktree(target.path).List(ctx)
+		if listErr != nil {
+			continue
+		}
+		for _, entry := range entries {
+			entryPath := filepath.Clean(entry.Path)
+			if entryPath == "" || !pathWithin(cwd, entryPath) {
+				continue
+			}
+			if match == nil || len(entryPath) > len(matchPath) {
+				candidate := target
+				match = &candidate
+				matchPath = entryPath
+			}
+		}
+	}
+	if match != nil {
+		return []worktreeProjectTarget{*match}, nil
+	}
+
+	return worktreeProjectTargets(ctx, campRoot, "")
+}
+
+func pathWithin(child, parent string) bool {
+	if child == "" || parent == "" {
+		return false
+	}
+	if child == parent {
+		return true
+	}
+	rel, err := filepath.Rel(parent, child)
+	return err == nil && rel != ".." && !strings.HasPrefix(rel, ".."+string(filepath.Separator))
 }
 
 // worktreeProjectTarget is a registered campaign project used as a scan root
