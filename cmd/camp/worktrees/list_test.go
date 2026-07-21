@@ -1,6 +1,8 @@
 package worktrees
 
 import (
+	"context"
+	"errors"
 	"io"
 	"os"
 	"path/filepath"
@@ -213,5 +215,19 @@ func TestTargetsFromProjects(t *testing.T) {
 	}
 	if got[1].name != "fest" || got[1].path != filepath.Join(campRoot, "projects/fest") {
 		t.Errorf("second = %#v", got[1])
+	}
+}
+
+func TestMatchLinkedWorktree_ContextCanceled(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+	// Non-empty projects so the loop checks ctx before any git I/O.
+	projects := []project.Project{{Name: "camp", Path: "projects/camp"}}
+	got, err := matchLinkedWorktree(ctx, "/campaign/projects/worktrees/camp/x", "/campaign", projects)
+	if !errors.Is(err, context.Canceled) {
+		t.Fatalf("err = %v, want context.Canceled", err)
+	}
+	if got != nil {
+		t.Fatalf("match = %#v, want nil", got)
 	}
 }

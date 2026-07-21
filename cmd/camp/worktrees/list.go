@@ -237,7 +237,11 @@ func listWorktreeProjectTargets(ctx context.Context, campRoot, filterProject str
 		return all, nil
 	}
 
-	if match := matchLinkedWorktree(ctx, cwd, campRoot, projects); match != nil {
+	match, err := matchLinkedWorktree(ctx, cwd, campRoot, projects)
+	if err != nil {
+		return nil, err
+	}
+	if match != nil {
 		return []worktreeProjectTarget{*match}, nil
 	}
 
@@ -272,14 +276,16 @@ func matchRegisteredProject(cwd, campRoot string, projects []project.Project) *w
 
 // matchLinkedWorktree returns the project that owns the linked git worktree
 // containing cwd. Longest entry path wins when multiple entries nest.
-func matchLinkedWorktree(ctx context.Context, cwd, campRoot string, projects []project.Project) *worktreeProjectTarget {
+// Context cancellation is returned as an error so callers never treat cancel
+// as a silent fall-through to campaign-wide targets.
+func matchLinkedWorktree(ctx context.Context, cwd, campRoot string, projects []project.Project) (*worktreeProjectTarget, error) {
 	var (
 		match     *worktreeProjectTarget
 		matchPath string
 	)
 	for _, proj := range projects {
 		if err := ctx.Err(); err != nil {
-			return nil
+			return nil, err
 		}
 		target := worktreeProjectTarget{
 			name: proj.Name,
@@ -287,6 +293,10 @@ func matchLinkedWorktree(ctx context.Context, cwd, campRoot string, projects []p
 		}
 		entries, listErr := worktree.NewGitWorktree(target.path).List(ctx)
 		if listErr != nil {
+			// Prefer cancellation over a generic list failure when both apply.
+			if err := ctx.Err(); err != nil {
+				return nil, err
+			}
 			continue
 		}
 		for _, entry := range entries {
@@ -301,7 +311,7 @@ func matchLinkedWorktree(ctx context.Context, cwd, campRoot string, projects []p
 			}
 		}
 	}
-	return match
+	return match, nil
 }
 
 // targetsFromProjects maps registered projects to worktree scan roots without
