@@ -67,27 +67,58 @@ func ComputeScore(result *SCCResult, actualPeople int, elapsedMonths float64) *L
 
 // ProjectScoreParams configures project-level score policy.
 type ProjectScoreParams struct {
-	AuthorFilter    string
-	PeopleOverride  int
+	// AuthorFilter is the raw --author string (kept for diagnostics).
+	AuthorFilter string
+	// AuthorMatch is the expanded personal filter (emails + author IDs).
+	// When Filter is non-empty, personal scoring is applied.
+	AuthorMatch AuthorMatch
+	// Resolver maps emails to canonical author IDs for ownership.
+	Resolver *AuthorResolver
+	// PeopleOverride forces team size when > 0.
+	PeopleOverride int
+	// FallbackElapsed is used when git date range is unavailable.
 	FallbackElapsed float64
 }
 
 // ComputeProjectScore computes the leverage score for one resolved project.
+//
+// Personal mode (AuthorMatch.Filter set):
+//   - Actual effort is the author's commit span in this project's GitDir only
+//     (project row). Campaign aggregation must union spans across unique git
+//     dirs — never sum these project actuals for the personal headline.
+//   - Estimated effort is scaled by blame ownership fraction for the author.
 func ComputeProjectScore(ctx context.Context, proj ResolvedProject, result *SCCResult, params ProjectScoreParams) *LeverageScore {
 	var projActualPM float64
 	var projPeople int
 	var projElapsed float64
 
-	if params.AuthorFilter != "" {
+	if params.AuthorMatch.Filter != "" || params.AuthorFilter != "" {
+		match := params.AuthorMatch
+		if match.Filter == "" {
+			match = ExpandAuthorFilter(params.Resolver, params.AuthorFilter)
+		}
 		projPeople = 1
-		first, last, gitErr := AuthorDateRange(ctx, proj.GitDir, params.AuthorFilter)
+		first, last, gitErr := AuthorDateRangeMatch(ctx, proj.GitDir, match)
 		if gitErr == nil {
 			projElapsed = ElapsedMonths(first, last)
 		}
 		if projElapsed <= 0 {
-			projElapsed = 0.1
+			projElapsed = minAuthorMonths
 		}
 		projActualPM = projElapsed
+
+		score := ComputeScore(result, projPeople, projElapsed)
+		score.ProjectName = proj.Name
+		score.AuthorCount = proj.AuthorCount
+		score.ActualPersonMonths = projActualPM
+
+		ownership := AuthorOwnershipFraction(proj, match, params.Resolver)
+		ScaleScoreForAuthor(score, ownership)
+		if score.ActualPersonMonths > 0 {
+			estPM := score.EstimatedPeople * score.EstimatedMonths
+			score.FullLeverage = estPM / score.ActualPersonMonths
+		}
+		return score
 	} else if params.PeopleOverride > 0 {
 		projPeople = params.PeopleOverride
 		first, last, gitErr := GitDateRange(ctx, proj.GitDir)

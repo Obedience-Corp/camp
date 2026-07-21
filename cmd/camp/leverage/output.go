@@ -1,6 +1,7 @@
 package leverage
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
 	"sort"
@@ -160,7 +161,7 @@ func leverageOutputTable(cmd *cobra.Command, agg *intleverage.LeverageScore, sco
 	return nil
 }
 
-func leverageOutputByAuthor(cmd *cobra.Command, agg *intleverage.LeverageScore, resolved []intleverage.ResolvedProject, resolver *intleverage.AuthorResolver, opts leverageOutputOpts) error {
+func leverageOutputByAuthor(cmd *cobra.Command, ctx context.Context, agg *intleverage.LeverageScore, scores []*intleverage.LeverageScore, resolved []intleverage.ResolvedProject, resolver *intleverage.AuthorResolver, opts leverageOutputOpts) error {
 	out := cmd.OutOrStdout()
 	headerStyle := lipgloss.NewStyle().Bold(true).Foreground(ui.CategoryColor)
 
@@ -168,48 +169,92 @@ func leverageOutputByAuthor(cmd *cobra.Command, agg *intleverage.LeverageScore, 
 		displayName string
 		authorID    string
 		lines       int
-		weightedPM  float64
+		estPM       float64
+		actualPM    float64
+		leverage    float64
 	}
 
+	// Map authorID → lines owned + ownership-weighted estimated PM.
 	byID := make(map[string]*authorAgg)
-	for _, proj := range resolved {
+	var campaignLines int
+	for i, proj := range resolved {
+		var score *intleverage.LeverageScore
+		if i < len(scores) {
+			score = scores[i]
+		}
+		projEstPM := 0.0
+		if score != nil {
+			// When --by-author is used without --author, scores are full-tree.
+			// Recompute from unscaled people×months.
+			projEstPM = score.EstimatedPeople * score.EstimatedMonths
+		}
+
+		// Sum lines once for ownership fractions within this project.
+		totalLines := 0
 		for _, a := range proj.Authors {
-			authorID := resolver.Resolve(a.Email)
-			if existing, ok := byID[authorID]; ok {
-				existing.lines += a.Lines
-				existing.weightedPM += a.WeightedPM
+			totalLines += a.Lines
+		}
+
+		for _, a := range proj.Authors {
+			if resolver.IsExcluded(a.Email) {
 				continue
 			}
-			byID[authorID] = &authorAgg{
-				displayName: resolver.DisplayName(authorID),
-				authorID:    authorID,
-				lines:       a.Lines,
-				weightedPM:  a.WeightedPM,
+			authorID := resolver.Resolve(a.Email)
+			entry, ok := byID[authorID]
+			if !ok {
+				entry = &authorAgg{
+					displayName: resolver.DisplayName(authorID),
+					authorID:    authorID,
+				}
+				byID[authorID] = entry
+			}
+			entry.lines += a.Lines
+			campaignLines += a.Lines
+			if totalLines > 0 && projEstPM > 0 {
+				entry.estPM += projEstPM * (float64(a.Lines) / float64(totalLines))
 			}
 		}
 	}
 
+	// Personal actual PM: union of commit spans across unique git dirs (not sum).
+	// Drop authors under 1% of campaign blamed lines (same threshold as effort calc).
 	authors := make([]*authorAgg, 0, len(byID))
-	for _, a := range byID {
-		authors = append(authors, a)
+	for authorID, entry := range byID {
+		if campaignLines > 0 && float64(entry.lines)/float64(campaignLines)*100 < 1.0 {
+			continue
+		}
+		match := intleverage.AuthorMatch{
+			Filter:    authorID,
+			AuthorIDs: map[string]bool{authorID: true},
+			Emails:    authorEmailsForID(resolver, authorID),
+		}
+		if len(match.Emails) == 0 {
+			match.Emails = []string{authorID}
+		}
+		actualPM, err := intleverage.AuthorActualPersonMonths(ctx, resolved, match)
+		if err != nil || actualPM <= 0 {
+			actualPM = 0.1
+		}
+		entry.actualPM = actualPM
+		if actualPM > 0 {
+			entry.leverage = entry.estPM / actualPM
+		}
+		authors = append(authors, entry)
 	}
 	sort.Slice(authors, func(i, j int) bool {
-		return authors[i].weightedPM > authors[j].weightedPM
+		return authors[i].leverage > authors[j].leverage
 	})
 
-	headers := []string{"AUTHOR", "ID", "LINES OWNED", "WEIGHTED PM", "LEVERAGE SHARE"}
+	headers := []string{"AUTHOR", "ID", "LINES OWNED", "EST PM", "ACTUAL PM", "LEVERAGE"}
 	var rows [][]string
 	for _, a := range authors {
-		levShare := 0.0
-		if agg.ActualPersonMonths > 0 {
-			levShare = (a.weightedPM / agg.ActualPersonMonths) * agg.FullLeverage
-		}
 		rows = append(rows, []string{
 			a.displayName,
 			a.authorID,
 			fmtInt(a.lines),
-			fmt.Sprintf("%.2f", a.weightedPM),
-			fmtScore(levShare) + "x",
+			fmt.Sprintf("%.1f", a.estPM),
+			fmt.Sprintf("%.1f", a.actualPM),
+			fmtScore(a.leverage) + "x",
 		})
 	}
 
@@ -233,7 +278,7 @@ func leverageOutputByAuthor(cmd *cobra.Command, agg *intleverage.LeverageScore, 
 			switch col {
 			case 0:
 				return lipgloss.NewStyle().Foreground(ui.AccentColor)
-			case 4:
+			case 5:
 				return lipgloss.NewStyle().Foreground(ui.SuccessColor)
 			default:
 				return lipgloss.NewStyle()
@@ -242,9 +287,30 @@ func leverageOutputByAuthor(cmd *cobra.Command, agg *intleverage.LeverageScore, 
 
 	fmt.Fprintln(out, t)
 	fmt.Fprintln(out)
-	fmt.Fprintln(out, ui.Dim("Weighted PM = author's date span × (author's LOC / total LOC)"))
-	fmt.Fprintln(out, ui.Dim("Leverage Share = (author's weighted PM / total actual PM) × campaign leverage"))
+	fmt.Fprintln(out, ui.Dim("Est PM = project COCOMO person-months × author LOC share (per project, summed)"))
+	fmt.Fprintln(out, ui.Dim("Actual PM = union of author's commit span across unique git repos (not summed per project)"))
+	fmt.Fprintln(out, ui.Dim("Leverage = Est PM / Actual PM"))
 	return nil
+}
+
+// authorEmailsForID returns configured emails for a canonical author ID.
+func authorEmailsForID(resolver *intleverage.AuthorResolver, authorID string) []string {
+	if resolver == nil {
+		return nil
+	}
+	// ExpandAuthorFilter with the ID as filter reuses group matching.
+	match := intleverage.ExpandAuthorFilter(resolver, authorID)
+	var emails []string
+	for _, e := range match.Emails {
+		if e != authorID {
+			emails = append(emails, e)
+		}
+	}
+	// Prefer configured emails only; fall back to ID if nothing else.
+	if len(emails) == 0 {
+		return []string{authorID}
+	}
+	return emails
 }
 
 func fmtInt(n int) string {

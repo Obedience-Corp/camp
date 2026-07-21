@@ -156,8 +156,9 @@ func runLeverageDir(cmd *cobra.Command, targetDir string) error {
 	}
 	proj = resolved[0]
 
+	authorMatch := intleverage.ExpandAuthorFilter(setup.Resolver, authorFilter)
 	if authorFilter != "" {
-		hasCommits, gitErr := intleverage.AuthorHasCommits(ctx, proj.GitDir, authorFilter)
+		hasCommits, gitErr := intleverage.AuthorHasCommitsMatch(ctx, proj.GitDir, authorMatch)
 		if gitErr != nil || !hasCommits {
 			return camperrors.New(fmt.Sprintf("no commits for author %q in %s", authorFilter, proj.Name))
 		}
@@ -188,13 +189,18 @@ func runLeverageDir(cmd *cobra.Command, targetDir string) error {
 
 	score := intleverage.ComputeProjectScore(ctx, proj, result, intleverage.ProjectScoreParams{
 		AuthorFilter:    authorFilter,
+		AuthorMatch:     authorMatch,
+		Resolver:        setup.Resolver,
 		PeopleOverride:  peopleOverride,
 		FallbackElapsed: elapsed,
 	})
 	scores := []*intleverage.LeverageScore{score}
+	scoredProjects := []intleverage.ResolvedProject{proj}
 
 	effectivePeople := cfg.ActualPeople
-	if effectivePeople == 0 {
+	if authorFilter != "" {
+		effectivePeople = 1
+	} else if effectivePeople == 0 {
 		effectivePeople = proj.AuthorCount
 		if effectivePeople == 0 {
 			effectivePeople = 1
@@ -202,7 +208,16 @@ func runLeverageDir(cmd *cobra.Command, targetDir string) error {
 	}
 	agg := intleverage.AggregateScores(scores, effectivePeople, elapsed)
 
-	if score.ActualPersonMonths > 0 {
+	if authorFilter != "" {
+		authorPM, pmErr := intleverage.AuthorActualPersonMonths(ctx, scoredProjects, authorMatch)
+		if pmErr == nil && authorPM > 0 {
+			estPM := agg.EstimatedPeople * agg.EstimatedMonths
+			agg.ActualPersonMonths = authorPM
+			agg.ActualPeople = 1
+			agg.FullLeverage = estPM / authorPM
+			agg.SimpleLeverage = agg.EstimatedPeople
+		}
+	} else if score.ActualPersonMonths > 0 {
 		estPM := agg.EstimatedPeople * agg.EstimatedMonths
 		agg.ActualPersonMonths = score.ActualPersonMonths
 		agg.FullLeverage = estPM / score.ActualPersonMonths
@@ -218,7 +233,7 @@ func runLeverageDir(cmd *cobra.Command, targetDir string) error {
 		return leverageOutputJSON(cmd, agg, scores)
 	}
 	if byAuthor {
-		return leverageOutputByAuthor(cmd, agg, resolved, setup.Resolver, opts)
+		return leverageOutputByAuthor(cmd, ctx, agg, scores, scoredProjects, setup.Resolver, opts)
 	}
 
 	return leverageOutputTable(cmd, agg, scores, cfg, setup.AutoDetected, recentLeverage{}, opts)

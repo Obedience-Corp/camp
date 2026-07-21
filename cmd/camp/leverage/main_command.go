@@ -87,8 +87,12 @@ func runLeverage(cmd *cobra.Command, args []string) error {
 	now := time.Now()
 	elapsed := intleverage.ElapsedMonths(cfg.ProjectStart, now)
 
+	authorMatch := intleverage.ExpandAuthorFilter(setup.Resolver, authorFilter)
+
 	var scores []*intleverage.LeverageScore
 	var snapshotInputs []intleverage.CurrentSnapshotInput
+	// Keep projects aligned with scores for personal aggregate rewrite.
+	var scoredProjects []intleverage.ResolvedProject
 	for _, proj := range resolved {
 		if ctx.Err() != nil {
 			return ctx.Err()
@@ -106,10 +110,13 @@ func runLeverage(cmd *cobra.Command, args []string) error {
 
 		score := intleverage.ComputeProjectScore(ctx, proj, result, intleverage.ProjectScoreParams{
 			AuthorFilter:    authorFilter,
+			AuthorMatch:     authorMatch,
+			Resolver:        setup.Resolver,
 			PeopleOverride:  peopleOverride,
 			FallbackElapsed: elapsed,
 		})
 		scores = append(scores, score)
+		scoredProjects = append(scoredProjects, proj)
 		snapshotInputs = append(snapshotInputs, intleverage.CurrentSnapshotInput{
 			Project: proj,
 			Result:  result,
@@ -122,7 +129,10 @@ func runLeverage(cmd *cobra.Command, args []string) error {
 	}
 
 	effectivePeople := cfg.ActualPeople
-	if effectivePeople == 0 {
+	if authorFilter != "" {
+		// Personal mode is always one effective person for simple leverage.
+		effectivePeople = 1
+	} else if effectivePeople == 0 {
 		for _, s := range scores {
 			if s.AuthorCount > effectivePeople {
 				effectivePeople = s.AuthorCount
@@ -135,7 +145,20 @@ func runLeverage(cmd *cobra.Command, args []string) error {
 
 	agg := intleverage.AggregateScores(scores, effectivePeople, elapsed)
 
-	if authorFilter == "" && peopleOverride == 0 {
+	if authorFilter != "" {
+		// Personal headline: union author calendar across unique git dirs
+		// (never sum per-project spans) with already ownership-scaled estimates.
+		authorPM, pmErr := intleverage.AuthorActualPersonMonths(ctx, scoredProjects, authorMatch)
+		if pmErr == nil && authorPM > 0 {
+			estPM := agg.EstimatedPeople * agg.EstimatedMonths
+			agg.ActualPersonMonths = authorPM
+			agg.ActualPeople = 1
+			agg.FullLeverage = estPM / authorPM
+			if effectivePeople > 0 {
+				agg.SimpleLeverage = agg.EstimatedPeople / float64(effectivePeople)
+			}
+		}
+	} else if peopleOverride == 0 {
 		campaignPM, pmErr := intleverage.CampaignActualPersonMonths(ctx, resolved, setup.Resolver)
 		if pmErr == nil && campaignPM > 0 {
 			estPM := agg.EstimatedPeople * agg.EstimatedMonths
@@ -170,7 +193,7 @@ func runLeverage(cmd *cobra.Command, args []string) error {
 	}
 
 	if byAuthor {
-		return leverageOutputByAuthor(cmd, agg, resolved, setup.Resolver, opts)
+		return leverageOutputByAuthor(cmd, ctx, agg, scores, scoredProjects, setup.Resolver, opts)
 	}
 
 	return leverageOutputTable(cmd, agg, scores, cfg, setup.AutoDetected, recent, opts)
