@@ -159,28 +159,6 @@ func TestPathWithin(t *testing.T) {
 	}
 }
 
-func TestPathWithin_SymlinkParent(t *testing.T) {
-	root := t.TempDir()
-	realCamp := filepath.Join(root, "real", "campaign")
-	if err := os.MkdirAll(filepath.Join(realCamp, "projects", "camp"), 0o755); err != nil {
-		t.Fatal(err)
-	}
-	linkCamp := filepath.Join(root, "link-campaign")
-	if err := os.Symlink(realCamp, linkCamp); err != nil {
-		t.Skipf("symlink not supported: %v", err)
-	}
-
-	// cwd form resolved; parent still the symlink form — must match.
-	child := filepath.Join(realCamp, "projects", "camp")
-	parent := filepath.Join(linkCamp, "projects", "camp")
-	if !pathWithin(child, parent) {
-		t.Fatalf("pathWithin resolved child under symlink parent should be true\nchild=%s\nparent=%s", child, parent)
-	}
-	if !sameNormalizedPath(linkCamp, realCamp) {
-		t.Fatalf("sameNormalizedPath(%q, %q) = false", linkCamp, realCamp)
-	}
-}
-
 func TestMatchRegisteredProject(t *testing.T) {
 	campRoot := "/campaign"
 	projects := []project.Project{

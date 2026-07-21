@@ -180,3 +180,42 @@ git -C %[5]s worktree add %[3]s/projects/worktrees/other/other-context -b other-
 	assert.Contains(t, out, "other-context")
 	assert.NotContains(t, out, "proj-context")
 }
+
+// TestWorktreesList_ScopesViaSymlinkedProjectPath proves path normalization
+// keeps project detection stable when the project checkout is reached through
+// a symlink (common on macOS). Filesystem mutation stays in the container
+// harness per repo test policy — not host TempDir/Symlink unit tests.
+func TestWorktreesList_ScopesViaSymlinkedProjectPath(t *testing.T) {
+	tc := GetSharedContainer(t)
+	campPath, projPath := setupWorktreeNavCampaign(t, tc, "wt-list-symlink-scope")
+	otherBare := "/test/wt-list-symlink-scope-other-origin.git"
+	otherSeed := "/test/wt-list-symlink-scope-other-seed"
+	otherPath := campPath + "/projects/other"
+	projLink := "/test/wt-list-symlink-scope-proj-link"
+
+	tc.Shell(t, fmt.Sprintf(`
+set -e
+git init --bare %[1]s
+git clone %[1]s %[2]s
+git -C %[2]s config user.email test@test.com
+git -C %[2]s config user.name Test
+printf '# Other\n' > %[2]s/README.md
+git -C %[2]s add . && git -C %[2]s commit -m 'init other'
+git -C %[2]s branch -M main
+git -C %[2]s push origin main
+git --git-dir %[1]s symbolic-ref HEAD refs/heads/main
+cd %[3]s
+GIT_ALLOW_PROTOCOL=file git submodule add %[1]s projects/other
+git commit -m 'add other'
+git -C %[4]s worktree add %[3]s/projects/worktrees/proj/proj-sym -b proj-sym
+git -C %[5]s worktree add %[3]s/projects/worktrees/other/other-sym -b other-sym
+ln -sfn %[4]s %[6]s
+`, otherBare, otherSeed, campPath, projPath, otherPath, projLink))
+
+	// cwd is the symlink form; registered project path is the real checkout.
+	// normalizePath/pathWithin must still scope to proj only.
+	out, err := tc.RunCampInDir(projLink, "worktrees", "list")
+	require.NoError(t, err, "symlink project-context list: %s", out)
+	assert.Contains(t, out, "proj-sym")
+	assert.NotContains(t, out, "other-sym")
+}
