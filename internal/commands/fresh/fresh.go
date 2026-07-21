@@ -208,7 +208,7 @@ func executeFresh(ctx context.Context, name, path string, opts freshOptions) err
 	}
 
 	currentBranch := git.CurrentBranch(ctx, path)
-	syncState, err := resolveFreshSyncState(ctx, path, currentBranch, defaultBranch)
+	syncState, err := resolveFreshSyncState(ctx, path, defaultBranch)
 	if err != nil {
 		return camperrors.Wrap(err, "prepare fresh sync state")
 	}
@@ -217,50 +217,8 @@ func executeFresh(ctx context.Context, name, path string, opts freshOptions) err
 	// clean so this project path can check out main/master normally. Leaving
 	// main stuck on a finished feature worktree is the failure mode after
 	// camp project worktree add --start-point main.
-	if syncState.worktreePath != "" {
-		if opts.dryRun {
-			// Dry-run still inspects dirtiness (status is non-mutating) so the
-			// plan matches what a real run would do.
-			reclaimed, reclaimErr := canReclaimDefaultBranchWorktree(ctx, syncState.worktreePath)
-			if reclaimErr != nil {
-				return reclaimErr
-			}
-			if reclaimed {
-				syncState.reclaimed = true
-				syncState.detached = false
-				syncState.baseRef = defaultBranch
-				syncState.displayRef = defaultBranch
-				fmt.Printf("%s── Would free %-23s %s\n", prefix, defaultBranch,
-					freshStepDim.Render(fmt.Sprintf("(detach clean worktree %s)", filepath.Base(syncState.worktreePath))))
-			} else {
-				fmt.Printf("%s── Would free %-23s %s\n", prefix, defaultBranch,
-					freshStepDim.Render(fmt.Sprintf(
-						"skipped · %s has uncommitted changes; would sync detached",
-						filepath.Base(syncState.worktreePath))))
-			}
-		} else {
-			reclaimed, reclaimErr := reclaimDefaultBranchWorktree(ctx, syncState.worktreePath)
-			if reclaimErr != nil {
-				return reclaimErr
-			}
-			if reclaimed {
-				syncState.reclaimed = true
-				syncState.detached = false
-				syncState.baseRef = defaultBranch
-				syncState.displayRef = defaultBranch
-				fmt.Printf("%s── Free %-28s %s\n", prefix, defaultBranch,
-					freshStepGreen.Render("done")+" "+freshStepDim.Render(
-						fmt.Sprintf("(detached %s so %s is free here)",
-							filepath.Base(syncState.worktreePath), defaultBranch)))
-			} else {
-				// Dirty worktree: keep detached-sync fallback, but make the
-				// reason obvious instead of a raw git checkout error later.
-				fmt.Printf("%s── Free %-28s %s\n", prefix, defaultBranch,
-					freshStepDim.Render(fmt.Sprintf(
-						"skipped · %s has uncommitted changes; syncing detached",
-						filepath.Base(syncState.worktreePath))))
-			}
-		}
+	if err := maybeReclaimDefaultBranch(ctx, &syncState, opts.dryRun, prefix); err != nil {
+		return err
 	}
 
 	if syncState.detached {
@@ -432,16 +390,16 @@ func executeFresh(ctx context.Context, name, path string, opts freshOptions) err
 	return nil
 }
 
-func resolveFreshSyncState(ctx context.Context, path, currentBranch, defaultBranch string) (freshSyncState, error) {
+func resolveFreshSyncState(ctx context.Context, path, defaultBranch string) (freshSyncState, error) {
 	state := freshSyncState{
 		defaultBranch: defaultBranch,
 		baseRef:       defaultBranch,
 		displayRef:    defaultBranch,
 	}
 
-	// Always scan for another worktree holding the default branch — even when
-	// this path is already on it is impossible, but when this path is detached
-	// or on a feature branch, main often sits stuck on a finished worktree.
+	// Scan for another worktree holding the default branch. When this path is
+	// detached or on a feature branch, main often sits stuck on a finished
+	// worktree left over from camp project worktree add --start-point main.
 	entry, err := findBranchInOtherWorktree(ctx, path, defaultBranch)
 	if err != nil {
 		return state, err
@@ -458,6 +416,84 @@ func resolveFreshSyncState(ctx context.Context, path, currentBranch, defaultBran
 	state.worktreePath = entry.Path
 
 	return state, nil
+}
+
+// maybeReclaimDefaultBranch frees the default branch from another clean
+// worktree when possible. Dry-run still inspects dirtiness (status is
+// non-mutating) so the printed plan matches a real run. On success, mutates
+// state so the primary path checks out the real default branch; on dirty
+// skip, leaves the detached-origin fallback in place.
+func maybeReclaimDefaultBranch(ctx context.Context, state *freshSyncState, dryRun bool, prefix string) error {
+	if state == nil || state.worktreePath == "" {
+		return nil
+	}
+
+	var (
+		reclaimed bool
+		err       error
+	)
+	if dryRun {
+		reclaimed, err = canReclaimDefaultBranchWorktree(ctx, state.worktreePath)
+	} else {
+		reclaimed, err = reclaimDefaultBranchWorktree(ctx, state.worktreePath)
+	}
+	if err != nil {
+		return err
+	}
+	if reclaimed {
+		applyReclaimDecision(state)
+	}
+	printReclaimStep(prefix, *state, reclaimed, dryRun)
+	return nil
+}
+
+// applyReclaimDecision flips a detached-fallback plan to a normal default-branch
+// checkout after the occupying worktree has been (or would be) freed.
+func applyReclaimDecision(state *freshSyncState) {
+	if state == nil {
+		return
+	}
+	state.reclaimed = true
+	state.detached = false
+	state.baseRef = state.defaultBranch
+	state.displayRef = state.defaultBranch
+}
+
+// reclaimStepDetail returns the step label and dim detail for a free/reclaim
+// line. Pure so dry-run and real paths cannot drift and unit tests can lock copy.
+func reclaimStepDetail(branch, worktreePath string, reclaimed, dryRun bool) (label, detail string) {
+	base := filepath.Base(worktreePath)
+	if dryRun {
+		label = fmt.Sprintf("Would free %-23s", branch)
+		if reclaimed {
+			detail = fmt.Sprintf("(detach clean worktree %s)", base)
+		} else {
+			detail = fmt.Sprintf("skipped · %s has uncommitted changes; would sync detached", base)
+		}
+		return label, detail
+	}
+	label = fmt.Sprintf("Free %-28s", branch)
+	if reclaimed {
+		detail = fmt.Sprintf("(detached %s so %s is free here)", base, branch)
+	} else {
+		detail = fmt.Sprintf("skipped · %s has uncommitted changes; syncing detached", base)
+	}
+	return label, detail
+}
+
+func printReclaimStep(prefix string, state freshSyncState, reclaimed, dryRun bool) {
+	label, detail := reclaimStepDetail(state.defaultBranch, state.worktreePath, reclaimed, dryRun)
+	if dryRun {
+		fmt.Printf("%s── %s %s\n", prefix, label, freshStepDim.Render(detail))
+		return
+	}
+	if reclaimed {
+		fmt.Printf("%s── %s %s\n", prefix, label,
+			freshStepGreen.Render("done")+" "+freshStepDim.Render(detail))
+		return
+	}
+	// Dirty worktree: keep detached-sync fallback, but make the reason obvious.
+	fmt.Printf("%s── %s %s\n", prefix, label, freshStepDim.Render(detail))
 }
 
 // findBranchInOtherWorktree returns the first worktree (other than path) that
