@@ -375,17 +375,6 @@ func HopFailureDetail(err error) string {
 	return classifySSHFailure(errText(err))
 }
 
-// HostKeyMismatchDetail is true when err is an H10 host-key verification failure.
-func HostKeyMismatchDetail(err error) string {
-	if err == nil {
-		return ""
-	}
-	if !isHostKeyMismatch(errText(err)) {
-		return ""
-	}
-	return formatHostKeyMismatch(errText(err))
-}
-
 func errText(err error) string {
 	var cmdErr *camperrors.CommandError
 	if errors.As(err, &cmdErr) && cmdErr.Stderr != "" {

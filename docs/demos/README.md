@@ -9,6 +9,7 @@ evidence bundles.
 | --- | --- | --- | --- |
 | Fresh configure | [fresh-configure.tape](fresh-configure.tape) | [fresh-configure.gif](fresh-configure.gif) | [fresh-configure.manifest.json](fresh-configure.manifest.json) |
 | Machine/status | [machine-tui.tape](machine-tui.tape) | [machine-tui.gif](machine-tui.gif) | [machine-tui.manifest.json](machine-tui.manifest.json) |
+| Machine dual-auth CLI | [machine-dual-auth.tape](machine-dual-auth.tape) | [machine-dual-auth.gif](machine-dual-auth.gif) | (WI-ca06e1 record-time proof; private gist optional) |
 
 The private evidence runs are `camp/fresh-configure/1d5415b8` and
 `camp/machine-tui/1d5415b8`. Each manifest records the source revision,
@@ -21,8 +22,24 @@ run the real VHS tapes from the repository root:
 
 ```sh
 CAMP_VHS_ROOT=/path/to/fresh-configure-fixture just vhs record docs/demos/fresh-configure.tape
-CAMP_VHS_ROOT=/path/to/machine-fixture just vhs record docs/demos/machine-tui.tape
+CAMP_VHS_ROOT=/path/to/machine-fixture vhs docs/demos/machine-tui.tape
+CAMP_VHS_ROOT=/path/to/machine-fixture vhs docs/demos/machine-dual-auth.tape
 ```
+
+Machine fixture layout (disposable, no live tailnet):
+
+```sh
+FIXTURE=$(mktemp -d)
+mkdir -p "$FIXTURE/bin" "$FIXTURE/home"
+cp bin/camp "$FIXTURE/bin/camp"
+cp docs/demos/fixtures/tailscale "$FIXTURE/bin/tailscale"
+chmod +x "$FIXTURE/bin"/*
+: > "$FIXTURE/machines.yaml"
+export CAMP_VHS_ROOT="$FIXTURE"
+```
+
+`machine-dual-auth` proves discover defaults to `ssh-agent` and
+`--auth tailscale-ssh --user` is honored against the fixture tailnet stub.
 
 The tapes set a fake `HOME`, fixture `PATH`, and non-sensitive terminal
 identity. They write raw output under `out/`; keep raw recordings and PTY
