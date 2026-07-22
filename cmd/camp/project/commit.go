@@ -30,6 +30,10 @@ var projectCommitCmd = &cobra.Command{
 Auto-detects the current project from your working directory,
 or use --project to specify a project by name.
 
+Commit tags use explicit --workitem or context from the current path. They do
+not inherit the per-machine current workitem selection, which can be stale;
+use 'camp workitem commit' when you want current.yaml scoping.
+
 Examples:
   # From within a project directory
   cd projects/my-api

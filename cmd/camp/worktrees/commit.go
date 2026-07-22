@@ -32,6 +32,10 @@ var worktreesCommitCmd = &cobra.Command{
 
 Auto-detects the worktree from your current directory.
 
+Commit tags use explicit --workitem or context from the current path. They do
+not inherit the per-machine current workitem selection, which can be stale;
+use 'camp workitem commit' when you want current.yaml scoping.
+
 Examples:
   # From within a worktree
   cd projects/worktrees/my-api/feature-auth

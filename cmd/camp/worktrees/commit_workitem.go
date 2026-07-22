@@ -11,8 +11,9 @@ import (
 
 func resolveWorktreeCommitContext(ctx context.Context, campaignRoot, cwd, explicit string) (questID, festivalRef, workitemRef string) {
 	res, err := resolver.Resolve(ctx, campaignRoot, resolver.Options{
-		Explicit: explicit,
-		Cwd:      cwd,
+		Explicit:       explicit,
+		Cwd:            cwd,
+		DisableCurrent: true,
 	})
 	if err != nil || res == nil || res.Workitem == nil {
 		return "", "", ""
@@ -27,8 +28,9 @@ func resolveWorktreeCommitContext(ctx context.Context, campaignRoot, cwd, explic
 
 func workitemEnvForWorktreeCommit(ctx context.Context, campaignRoot, cwd, explicit string) []string {
 	res, err := resolver.Resolve(ctx, campaignRoot, resolver.Options{
-		Explicit: explicit,
-		Cwd:      cwd,
+		Explicit:       explicit,
+		Cwd:            cwd,
+		DisableCurrent: true,
 	})
 	if err != nil || res == nil || res.Workitem == nil {
 		return nil
