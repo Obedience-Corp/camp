@@ -32,10 +32,15 @@ func Target(m *machines.Machine) string {
 	return m.Host
 }
 
-// authArgs mirrors the app's ssh_auth_args (connection.rs:217-239) for the
-// agent/key case: BatchMode=yes (never prompt), plus IdentitiesOnly and -i when
-// an identity file is configured. Password auth is rejected upstream by
-// EnsureKeyAuth, so its interactive-prompt args are never emitted.
+// authArgs builds OpenSSH auth-related options for a hop. Per the dual-auth
+// contract (design WI-ca06e1 D1.2/D3): BatchMode stays on for both OpenSSH and
+// Tailscale SSH so agents never hang on interactive prompts. Client argv may
+// legitimately converge across auth methods — Tailscale SSH authenticates
+// server-side; distinct product behavior is prerequisites + error
+// classification (see classifySSHFailure), not artificial flag divergence.
+//
+// Identity handling applies when identity_file is set (typical for
+// ssh-agent). Password auth is rejected upstream by EnsureKeyAuth.
 //
 // The identity path is tilde-expanded here: OpenSSH's IdentityFile config
 // directive expands a leading ~, but whether ssh expands ~ in a -i argument is
@@ -49,6 +54,82 @@ func authArgs(m *machines.Machine) []string {
 		args = append(args, "-o", "IdentitiesOnly=yes", "-i", expandTilde(m.IdentityFile))
 	}
 	return args
+}
+
+// AuthDisplayName is the operator-facing label for a machines.yaml auth_method
+// (D7). Wire values stay in the file; this is display and diagnose only.
+func AuthDisplayName(auth string) string {
+	switch auth {
+	case machines.AuthSSHAgent:
+		return "OpenSSH (keys / agent)"
+	case machines.AuthTailscaleSSH:
+		return "Tailscale SSH (identity)"
+	case machines.AuthSSHPassword:
+		return "password (not supported for terminal hop)"
+	default:
+		if auth == "" {
+			return "OpenSSH (keys / agent)"
+		}
+		return auth
+	}
+}
+
+// ProbeCommand returns a copy-paste BatchMode ssh line the operator can run
+// outside camp to isolate hop failures (D7). It mirrors camp's target and
+// identity options, not the full ControlMaster multiplex path.
+func ProbeCommand(m *machines.Machine) string {
+	if m == nil {
+		return ""
+	}
+	parts := []string{"ssh", "-o", "BatchMode=yes"}
+	if m.IdentityFile != "" {
+		parts = append(parts, "-o", "IdentitiesOnly=yes", "-i", expandTilde(m.IdentityFile))
+	}
+	parts = append(parts, Target(m), "true")
+	return strings.Join(parts, " ")
+}
+
+// AuthModeHint returns an optional one-line diagnose note for the machine's
+// auth_method (D7). Empty when no extra guidance is needed.
+func AuthModeHint(m *machines.Machine) string {
+	if m == nil {
+		return ""
+	}
+	switch m.AuthMethod {
+	case machines.AuthTailscaleSSH:
+		return "Tailscale SSH: if hop fails, look for a login.tailscale.com check URL — approve in a browser, then retry (camp cannot complete check-mode under BatchMode)"
+	case machines.AuthSSHAgent:
+		if m.IdentityFile == "" {
+			return "OpenSSH: ensure ssh-agent has keys (`ssh-add -l`) or set identity_file; Tailnet reachability alone is not login"
+		}
+		return "OpenSSH: hop uses identity_file / agent; peer must accept publickey (not Tailscale check-mode alone)"
+	case machines.AuthSSHPassword:
+		return "password auth is not supported for terminal hop; re-add with ssh-agent or tailscale-ssh"
+	default:
+		return ""
+	}
+}
+
+// FormatHopFailure returns the best operator-facing hop error, optionally
+// prefixed with the machine's auth mode so diagnose / list / TUI share one
+// classification path (design 04 §B).
+func FormatHopFailure(err error, m *machines.Machine) string {
+	if err == nil {
+		return ""
+	}
+	detail := HopFailureDetail(err)
+	if detail == "" {
+		return ""
+	}
+	if m == nil || m.AuthMethod == "" {
+		return detail
+	}
+	// Avoid double-prefixing if the message already names the mode.
+	label := AuthDisplayName(m.AuthMethod)
+	if strings.Contains(detail, label) || strings.Contains(detail, m.AuthMethod) {
+		return detail
+	}
+	return label + ": " + detail
 }
 
 // expandTilde resolves a leading ~ or ~/ to the current user's home directory,
@@ -278,14 +359,45 @@ func TailscaleCheckDetail(err error) string {
 	if err == nil {
 		return ""
 	}
-	var cmdErr *camperrors.CommandError
-	if errors.As(err, &cmdErr) {
-		if url, ok := ParseTailscaleCheckURL(cmdErr.Stderr); ok {
-			return formatTailscaleCheckDetail(url)
-		}
-	}
-	if url, ok := ParseTailscaleCheckURL(err.Error()); ok {
+	if url, ok := ParseTailscaleCheckURL(errText(err)); ok {
 		return formatTailscaleCheckDetail(url)
+	}
+	return ""
+}
+
+// HopFailureDetail returns the best operator-facing classification for a hop
+// error: Tailscale check-mode, host-key mismatch (H10), or publickey denial.
+// Empty means callers should fall back to generic formatting.
+func HopFailureDetail(err error) string {
+	if err == nil {
+		return ""
+	}
+	return classifySSHFailure(errText(err))
+}
+
+func errText(err error) string {
+	var cmdErr *camperrors.CommandError
+	if errors.As(err, &cmdErr) && cmdErr.Stderr != "" {
+		return cmdErr.Stderr + "\n" + err.Error()
+	}
+	return err.Error()
+}
+
+// classifySSHFailure maps ssh stderr (or annotated error text) to a single
+// actionable line. Order: check-mode (must win over timeout noise), host-key
+// mismatch (never report as auth failure), publickey permission denied.
+func classifySSHFailure(text string) string {
+	if text == "" {
+		return ""
+	}
+	if url, ok := ParseTailscaleCheckURL(text); ok {
+		return formatTailscaleCheckDetail(url)
+	}
+	if isHostKeyMismatch(text) {
+		return formatHostKeyMismatch(text)
+	}
+	if isPermissionDenied(text) {
+		return formatPermissionDenied()
 	}
 	return ""
 }
@@ -295,14 +407,52 @@ func formatTailscaleCheckDetail(url string) string {
 		", approve, then retry (camp cannot complete this interactively)"
 }
 
+func isHostKeyMismatch(text string) bool {
+	lower := strings.ToLower(text)
+	return strings.Contains(text, "REMOTE HOST IDENTIFICATION HAS CHANGED") ||
+		strings.Contains(text, "Host key verification failed") ||
+		strings.Contains(lower, "host key mismatch")
+}
+
+func formatHostKeyMismatch(text string) string {
+	host := hostFromKnownHostsMessage(text)
+	if host != "" {
+		return "SSH host key mismatch for " + host +
+			" — remove the stale known_hosts entry with `ssh-keygen -R " + host +
+			"` and retry (not an auth failure; common after reinstall or flipping Tailscale SSH vs sshd)"
+	}
+	return "SSH host key mismatch — remove the stale known_hosts entry with `ssh-keygen -R <host>` and retry (not an auth failure; common after reinstall or flipping Tailscale SSH vs sshd)"
+}
+
+// hostFromKnownHostsMessage extracts a host token from OpenSSH's changed-key
+// banner when present ("Host key for X has changed").
+func hostFromKnownHostsMessage(text string) string {
+	const marker = "Host key for "
+	if idx := strings.Index(text, marker); idx >= 0 {
+		rest := text[idx+len(marker):]
+		if end := strings.IndexAny(rest, " \t\r\n"); end > 0 {
+			return rest[:end]
+		}
+	}
+	return ""
+}
+
+func isPermissionDenied(text string) bool {
+	return strings.Contains(strings.ToLower(text), "permission denied")
+}
+
+func formatPermissionDenied() string {
+	return "SSH permission denied (publickey) — check ssh-agent keys (`ssh-add -l`), identity_file, remote authorized_keys, and ssh_user; for Tailscale SSH use auth_method=tailscale-ssh and complete any check URL"
+}
+
 // sshTimeoutError keeps stderr on the timeout path. The previous behaviour
 // returned only "ssh to X timed out", which hid the Tailscale check URL that
 // ssh had already printed while waiting for browser approval.
 func sshTimeoutError(target, stderr string, err error) error {
-	if url, ok := ParseTailscaleCheckURL(stderr); ok {
+	if detail := classifySSHFailure(stderr); detail != "" {
 		// Wrap preserves errors.Is(err, context.DeadlineExceeded) while
-		// putting the check URL first so connectionFailureDetail / %v show it.
-		return camperrors.Wrapf(err, "%s (while connecting to %s)", formatTailscaleCheckDetail(url), target)
+		// putting the classified cause first so connectionFailureDetail / %v show it.
+		return camperrors.Wrapf(err, "%s (while connecting to %s)", detail, target)
 	}
 	if stderr != "" {
 		return camperrors.Wrapf(err, "ssh to %s timed out: %s", target, compactSSHStderr(stderr))
@@ -312,10 +462,10 @@ func sshTimeoutError(target, stderr string, err error) error {
 
 // sshExitError annotates non-zero ssh exits. Tailscale check mode sometimes
 // exits (instead of hanging until our deadline) with the same marker+URL in
-// stderr; prefer that over the raw multi-line banner.
+// stderr; prefer classified messages over the raw multi-line banner.
 func sshExitError(target string, exitCode int, stderr string, err error) error {
-	if url, ok := ParseTailscaleCheckURL(stderr); ok {
-		return camperrors.NewCommand("ssh "+target, exitCode, formatTailscaleCheckDetail(url), err)
+	if detail := classifySSHFailure(stderr); detail != "" {
+		return camperrors.NewCommand("ssh "+target, exitCode, detail, err)
 	}
 	return camperrors.NewCommand("ssh "+target, exitCode, stderr, err)
 }

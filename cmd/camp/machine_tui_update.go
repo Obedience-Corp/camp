@@ -371,7 +371,9 @@ func (m *machineTUIModel) prefillFromDevice() tea.Cmd {
 
 	form := newMachineForm()
 	form.fromDiscovery = true
-	form.auth = machines.AuthTailscaleSSH
+	// D2: discover pre-fills OpenSSH (keys/agent); operator can cycle to
+	// Tailscale SSH before saving.
+	form.auth = machines.AuthSSHAgent
 	form.input(machineFieldID).SetValue(id)
 	form.input(machineFieldLabel).SetValue(device.HostName)
 	form.input(machineFieldHost).SetValue(device.Host)

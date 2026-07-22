@@ -91,7 +91,7 @@ func (m *machineTUIModel) onboardingBody(width int) []string {
 			machineAction("a", "Add a machine", "Its hostname, your ssh user, and a key your agent already holds."),
 			"",
 			machineWarn.Render("Tailscale did not answer:"),
-			machineMuted.Render("  "+ui.Truncate(m.scanErr, max(width-8, 20))),
+			machineMuted.Render("  " + ui.Truncate(m.scanErr, max(width-8, 20))),
 			machineMuted.Render("  s tries the scan again."),
 		}
 

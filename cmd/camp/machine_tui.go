@@ -44,27 +44,18 @@ const (
 )
 
 // machineAuthCycle is the order the auth field cycles through, matching the
-// three values ~/.obey/machines.yaml accepts.
+// three values ~/.obey/machines.yaml accepts. OpenSSH first (D2 default).
 var machineAuthCycle = []string{
-	machines.AuthTailscaleSSH,
 	machines.AuthSSHAgent,
+	machines.AuthTailscaleSSH,
 	machines.AuthSSHPassword,
 }
 
 // authLabel names an auth method the way it is explained to a person rather
 // than the way it is spelled in the file. The raw value is still what gets
-// written; this is display only.
+// written; this is display only (D7 labels).
 func authLabel(auth string) string {
-	switch auth {
-	case machines.AuthTailscaleSSH:
-		return "Tailscale SSH"
-	case machines.AuthSSHAgent:
-		return "ssh agent key"
-	case machines.AuthSSHPassword:
-		return "password"
-	default:
-		return auth
-	}
+	return remote.AuthDisplayName(auth)
 }
 
 // healthState is what the last connection attempt established. It is
@@ -391,7 +382,7 @@ func (m *machineTUIModel) testMachine(target machines.Machine) tea.Cmd {
 		if err != nil {
 			return healthMsg{id: target.ID, health: machineHealth{
 				State:  healthUnreachable,
-				Detail: connectionFailureDetail(err),
+				Detail: connectionFailureDetailFor(err, &target),
 			}}
 		}
 		return healthMsg{id: target.ID, health: machineHealth{
@@ -429,7 +420,16 @@ func parseRemoteVersion(out string) string {
 // "command not found" stderr line is exactly the failure mode the health
 // check exists to surface, so preserve the outer message instead.
 func connectionFailureDetail(err error) string {
-	if detail := remote.TailscaleCheckDetail(err); detail != "" {
+	return connectionFailureDetailFor(err, nil)
+}
+
+// connectionFailureDetailFor reduces a failed hop to an actionable line.
+// When m is set, the detail is prefixed with the auth mode label (D3/D7).
+func connectionFailureDetailFor(err error, m *machines.Machine) string {
+	if detail := remote.FormatHopFailure(err, m); detail != "" {
+		return detail
+	}
+	if detail := remote.HopFailureDetail(err); detail != "" {
 		return detail
 	}
 

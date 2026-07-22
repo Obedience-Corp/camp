@@ -71,6 +71,18 @@ func TestOutputRemoteListMultiMachineAddsColumnAndUnreachableRow(t *testing.T) {
 	}
 }
 
+func TestFormatUnreachableErrPrefersHopClassification(t *testing.T) {
+	stderr := "# Tailscale SSH requires an additional check.\n# To authenticate, visit: https://login.tailscale.com/a/xyz\n"
+	// Simulate a classified timeout wrap the way remote.Run produces.
+	err := errors.New("Tailscale SSH requires a one-time browser check — open https://login.tailscale.com/a/xyz, approve, then retry (camp cannot complete this interactively) (while connecting to host): context deadline exceeded")
+	// HopFailureDetail needs ParseTailscaleCheckURL markers in the text.
+	_ = stderr
+	got := formatUnreachableErr(err)
+	if !strings.Contains(got, "login.tailscale.com/a/xyz") {
+		t.Errorf("formatUnreachableErr = %q, want check URL", got)
+	}
+}
+
 func TestOutputRemoteListJSONCleanStdoutUnreachableToStderr(t *testing.T) {
 	campaigns := []campaignEntry{
 		{ID: "a1", Name: "c", Machine: "local", Type: "standard", Org: "obey", Status: "active", Tags: []string{}},

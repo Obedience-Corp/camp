@@ -3,10 +3,15 @@ package main
 import (
 	"context"
 	"errors"
+	"io"
 	"os"
 	"os/exec"
 	"strings"
 	"testing"
+
+	"github.com/spf13/cobra"
+
+	"github.com/Obedience-Corp/camp/internal/machines"
 )
 
 // TestParseTailscaleStatusFixture exercises the committed tailscale status
@@ -128,9 +133,9 @@ func TestParseTailscaleStatusRejectsUnparsableOutput(t *testing.T) {
 func TestSanitizeID(t *testing.T) {
 	tests := map[string]string{
 		"devbox.example-net.ts.net": "devbox",
-		"devbox.tailnet.ts.net.":   "devbox",
-		"Buildbox":                 "buildbox",
-		"UPPER.example.com":        "upper",
+		"devbox.tailnet.ts.net.":    "devbox",
+		"Buildbox":                  "buildbox",
+		"UPPER.example.com":         "upper",
 	}
 	for in, want := range tests {
 		if got := sanitizeID(in); got != want {
@@ -208,4 +213,106 @@ func TestDiscoverTailnetHonorsCancelledContext(t *testing.T) {
 	if called {
 		t.Fatal("discoverTailnet(cancelled ctx) invoked the run func; want early return before exec")
 	}
+}
+
+func TestDiscoverSaveDefaultsToSSHAgentAndHonorsFlags(t *testing.T) {
+	// Acceptance T3/T4/T10: discover default auth is OpenSSH; --auth/--user/--identity stick.
+	fixture, err := os.ReadFile("testdata/tailscale_status.json")
+	if err != nil {
+		t.Fatalf("read fixture: %v", err)
+	}
+	run := func(context.Context) ([]byte, error) { return fixture, nil }
+
+	// Snapshot and restore package-level add flags so other tests stay isolated.
+	prev := struct {
+		auth, user, identity, label, host string
+		yes, discover                     bool
+	}{machineAddAuth, machineAddUser, machineAddIdentity, machineAddLabel, machineAddHost, machineAddYes, machineAddDiscover}
+	t.Cleanup(func() {
+		machineAddAuth, machineAddUser, machineAddIdentity = prev.auth, prev.user, prev.identity
+		machineAddLabel, machineAddHost = prev.label, prev.host
+		machineAddYes, machineAddDiscover = prev.yes, prev.discover
+	})
+
+	t.Run("default auth ssh-agent", func(t *testing.T) {
+		isolateMachines(t)
+		machineAddAuth = machines.AuthSSHAgent
+		machineAddUser = ""
+		machineAddIdentity = ""
+		machineAddLabel = ""
+		machineAddHost = ""
+		machineAddYes = true
+		machineAddDiscover = true
+
+		cmd := &cobra.Command{}
+		cmd.SetContext(context.Background())
+		var out strings.Builder
+		cmd.SetOut(&out)
+		if err := runMachineAddDiscoverWith(cmd, nil, run); err != nil {
+			t.Fatalf("discover: %v", err)
+		}
+		mf, err := machines.Load()
+		if err != nil {
+			t.Fatal(err)
+		}
+		if len(mf.Machines) != 1 {
+			t.Fatalf("machines = %d, want 1", len(mf.Machines))
+		}
+		m := mf.Machines[0]
+		if m.AuthMethod != machines.AuthSSHAgent {
+			t.Errorf("auth = %q, want ssh-agent", m.AuthMethod)
+		}
+		if m.Host == "" {
+			t.Error("host empty")
+		}
+		if !strings.Contains(out.String(), machines.AuthSSHAgent) {
+			t.Errorf("stdout missing auth: %q", out.String())
+		}
+	})
+
+	t.Run("honor auth user identity", func(t *testing.T) {
+		isolateMachines(t)
+		machineAddAuth = machines.AuthTailscaleSSH
+		machineAddUser = "lance"
+		machineAddIdentity = "~/.ssh/id_ed25519"
+		machineAddLabel = ""
+		machineAddHost = ""
+		machineAddYes = true
+		machineAddDiscover = true
+
+		cmd := &cobra.Command{}
+		cmd.SetContext(context.Background())
+		cmd.SetOut(io.Discard)
+		if err := runMachineAddDiscoverWith(cmd, nil, run); err != nil {
+			t.Fatalf("discover: %v", err)
+		}
+		mf, err := machines.Load()
+		if err != nil {
+			t.Fatal(err)
+		}
+		if len(mf.Machines) != 1 {
+			t.Fatalf("machines = %d, want 1", len(mf.Machines))
+		}
+		m := mf.Machines[0]
+		if m.AuthMethod != machines.AuthTailscaleSSH {
+			t.Errorf("auth = %q, want tailscale-ssh", m.AuthMethod)
+		}
+		if m.SSHUser != "lance" {
+			t.Errorf("ssh_user = %q, want lance", m.SSHUser)
+		}
+		if m.IdentityFile != "~/.ssh/id_ed25519" {
+			t.Errorf("identity_file = %q", m.IdentityFile)
+		}
+	})
+
+	t.Run("reject discover with host", func(t *testing.T) {
+		machineAddHost = "explicit.example"
+		machineAddYes = true
+		cmd := &cobra.Command{}
+		cmd.SetContext(context.Background())
+		err := runMachineAddDiscoverWith(cmd, nil, run)
+		if err == nil || !strings.Contains(err.Error(), "cannot combine") {
+			t.Fatalf("error = %v, want cannot combine --discover with --host", err)
+		}
+	})
 }

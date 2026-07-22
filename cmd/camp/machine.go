@@ -62,9 +62,13 @@ and 'camp list --remote'.
 Machines are stored in ~/.obey/machines.yaml. The current machine is always
 implicitly available as "local" and is never written to that file.
 
-'camp machine diagnose' inspects the per-machine ssh ControlMaster sockets and
-can clear a stale one (the state a sleep or network flap can leave behind, which
-would otherwise hang the next hop until ControlPersist expires).
+Network vs login: Tailscale (or LAN) is how you reach the host; SSH auth is how
+you log in. Prefer OpenSSH keys/agent (auth_method=ssh-agent) by default;
+Tailscale SSH (auth_method=tailscale-ssh) is opt-in identity login. Terminal
+hops always use BatchMode (agents never hang on password prompts).
+
+'camp machine diagnose' reports auth mode, a copy-paste ssh probe, and
+ControlMaster socket state (and can clear a stale socket with --reset).
 
 Run without a subcommand in a terminal to manage the fleet interactively: add,
 discover, edit, and remove machines, and see each one's socket state. The
@@ -74,8 +78,10 @@ non-terminal 'camp machine' prints help for.`,
 	RunE: runMachineTUI,
 	Example: `  camp machine
   camp machine list
+  camp machine add buildbox --host 10.0.0.12 --auth ssh-agent --user ci
   camp machine add devbox --host devbox.tailnet.ts.net --auth tailscale-ssh
   camp machine add --discover
+  camp machine add --discover --auth tailscale-ssh --user lance
   camp machine remove devbox
   camp machine diagnose
   camp machine diagnose devbox --reset`,
@@ -98,13 +104,15 @@ var machineAddCmd = &cobra.Command{
 than duplicating it).
 
 With --discover, camp runs 'tailscale status --json' and lets you pick a
-tailnet device instead of specifying --host/--auth by hand; the chosen device
-is saved with auth_method=tailscale-ssh. Pass an id positionally with
---discover to select that device by its derived id non-interactively (skips
-the picker), or use --yes to take the first discovered device.`,
-	Example: `  camp machine add devbox --host devbox.tailnet.ts.net --auth tailscale-ssh
-  camp machine add buildbox --host 10.0.0.12 --auth ssh-agent --user ci
+tailnet device (network identity only). Default auth is OpenSSH keys/agent
+(ssh-agent); pass --auth tailscale-ssh for Tailscale identity login. --user and
+--identity are honored with --discover. Pass an id positionally with --discover
+to select that device by its derived id non-interactively (skips the picker),
+or use --yes to take the first discovered device.`,
+	Example: `  camp machine add buildbox --host 10.0.0.12 --auth ssh-agent --user ci
+  camp machine add devbox --host devbox.tailnet.ts.net --auth tailscale-ssh
   camp machine add --discover
+  camp machine add --discover --auth tailscale-ssh --user lance
   camp machine add devbox --discover
   camp machine add --discover --yes`,
 	Args: cobra.MaximumNArgs(1),
@@ -122,13 +130,16 @@ var machineRemoveCmd = &cobra.Command{
 
 var machineDiagnoseCmd = &cobra.Command{
 	Use:   "diagnose [id]",
-	Short: "Inspect (and optionally clear) ssh ControlMaster sockets",
-	Long: `Report the ssh ControlMaster multiplex socket state for each configured machine
-(or one machine if an id is given):
+	Short: "Inspect machine auth, probe line, and ssh ControlMaster sockets",
+	Long: `Report how each configured machine is set up to hop (or one machine if an id
+is given):
 
-  none   no socket — the next hop opens a fresh master
-  live   socket present and the master answers 'ssh -O check'
-  stale  socket present but the master no longer answers
+  auth     OpenSSH (keys/agent) or Tailscale SSH (identity)
+  probe    copy-paste BatchMode ssh line to test outside camp
+  socket   ControlMaster multiplex state:
+             none   no socket — the next hop opens a fresh master
+             live   socket present and the master answers 'ssh -O check'
+             stale  socket present but the master no longer answers
 
 A stale socket is what a sleep or network flap can leave behind; until it is
 removed (or ControlPersist expires) the next 'camp switch machine:...' or
@@ -295,14 +306,20 @@ func runMachineRemove(cmd *cobra.Command, args []string) error {
 	return err
 }
 
-// machineDiagnoseRow is one machine's ControlMaster status in
-// `camp machine diagnose --json`. Reset is true when --reset cleared a stale
-// socket for this machine on this run.
+// machineDiagnoseRow is one machine's status in `camp machine diagnose --json`.
+// Reset is true when --reset cleared a stale socket for this machine on this run.
 type machineDiagnoseRow struct {
-	ID     string `json:"id"`
-	Socket string `json:"socket"`
-	State  string `json:"state"`
-	Reset  bool   `json:"reset"`
+	ID           string `json:"id"`
+	Host         string `json:"host,omitempty"`
+	AuthMethod   string `json:"auth_method,omitempty"`
+	AuthLabel    string `json:"auth_label,omitempty"`
+	SSHUser      string `json:"ssh_user,omitempty"`
+	IdentityFile string `json:"identity_file,omitempty"`
+	Probe        string `json:"probe,omitempty"`
+	Hint         string `json:"hint,omitempty"`
+	Socket       string `json:"socket"`
+	State        string `json:"state"`
+	Reset        bool   `json:"reset"`
 }
 
 func runMachineDiagnose(cmd *cobra.Command, args []string) error {
@@ -336,7 +353,18 @@ func runMachineDiagnose(cmd *cobra.Command, args []string) error {
 	for i := range targets {
 		m := &targets[i]
 		d := remote.CheckControlMaster(ctx, m)
-		row := machineDiagnoseRow{ID: m.ID, Socket: d.Socket, State: string(d.State)}
+		row := machineDiagnoseRow{
+			ID:           m.ID,
+			Host:         m.Host,
+			AuthMethod:   m.AuthMethod,
+			AuthLabel:    remote.AuthDisplayName(m.AuthMethod),
+			SSHUser:      m.SSHUser,
+			IdentityFile: m.IdentityFile,
+			Probe:        remote.ProbeCommand(m),
+			Hint:         remote.AuthModeHint(m),
+			Socket:       d.Socket,
+			State:        string(d.State),
+		}
 		if machineDiagnoseReset && d.State == remote.ControlStale {
 			if err := remote.ResetControlMaster(ctx, m); err != nil {
 				return err
@@ -362,26 +390,43 @@ func renderMachineDiagnoseTable(w io.Writer, rows []machineDiagnoseRow) error {
 		_, err := fmt.Fprintln(w, ui.Dim("No machines configured; nothing to diagnose."))
 		return err
 	}
-	tw := tabwriter.NewWriter(w, 0, 0, 2, ' ', 0)
-	if _, err := fmt.Fprintf(tw, "%s\t%s\t%s\n", ui.Label("ID"), ui.Label("STATE"), ui.Label("SOCKET")); err != nil {
-		return err
-	}
 	reset := 0
-	for _, r := range rows {
+	for i, r := range rows {
+		if i > 0 {
+			if _, err := fmt.Fprintln(w); err != nil {
+				return err
+			}
+		}
 		state := r.State
 		if r.Reset {
 			state = r.State + " (was stale, cleared)"
 			reset++
 		}
-		// The human table abbreviates $HOME, which spells out the operator's
-		// account name in any pasted output. --json keeps the absolute path,
-		// since a consumer needs the real one.
-		if _, err := fmt.Fprintf(tw, "%s\t%s\t%s\n", ui.Label(r.ID), state, ui.Dim(pathutil.AbbreviateHome(r.Socket))); err != nil {
-			return err
+		// Human output abbreviates $HOME so pastes do not leak full paths.
+		// --json keeps absolute paths for consumers.
+		lines := []string{
+			fmt.Sprintf("%s  %s", ui.Label("ID"), r.ID),
+			fmt.Sprintf("%s  %s", ui.Label("HOST"), r.Host),
+			fmt.Sprintf("%s  %s (%s)", ui.Label("AUTH"), r.AuthLabel, r.AuthMethod),
 		}
-	}
-	if err := tw.Flush(); err != nil {
-		return err
+		if r.SSHUser != "" {
+			lines = append(lines, fmt.Sprintf("%s  %s", ui.Label("USER"), r.SSHUser))
+		}
+		if r.IdentityFile != "" {
+			lines = append(lines, fmt.Sprintf("%s  %s", ui.Label("IDENTITY"), pathutil.AbbreviateHome(r.IdentityFile)))
+		}
+		lines = append(lines,
+			fmt.Sprintf("%s  %s", ui.Label("SOCKET"), state+" · "+pathutil.AbbreviateHome(r.Socket)),
+			fmt.Sprintf("%s  %s", ui.Label("PROBE"), r.Probe),
+		)
+		if r.Hint != "" {
+			lines = append(lines, fmt.Sprintf("%s  %s", ui.Label("HINT"), r.Hint))
+		}
+		for _, line := range lines {
+			if _, err := fmt.Fprintln(w, line); err != nil {
+				return err
+			}
+		}
 	}
 	if !machineDiagnoseReset && machineDiagnoseHasStale(rows) {
 		if _, err := fmt.Fprintln(w, ui.Dim("Stale socket(s) found. Run 'camp machine diagnose --reset' to clear them.")); err != nil {

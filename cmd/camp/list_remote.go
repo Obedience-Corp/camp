@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"strings"
 	"sync"
 	"text/tabwriter"
 
@@ -151,9 +152,25 @@ func outputRemoteList(stdout, stderr io.Writer, campaigns []campaignEntry, resul
 func warnUnreachable(stderr io.Writer, results []remoteResult) {
 	for _, r := range results {
 		if r.err != nil {
-			_, _ = fmt.Fprintln(stderr, ui.Warning(fmt.Sprintf("machine %s unreachable: %v", r.machineID, r.err)))
+			_, _ = fmt.Fprintln(stderr, ui.Warning(fmt.Sprintf("machine %s unreachable: %s", r.machineID, formatUnreachableErr(r.err))))
 		}
 	}
+}
+
+// formatUnreachableErr prefers classified hop failures (check-mode, host-key,
+// publickey) over multi-line wrapped ssh noise so list --remote stays readable.
+func formatUnreachableErr(err error) string {
+	if err == nil {
+		return ""
+	}
+	if detail := remote.HopFailureDetail(err); detail != "" {
+		return detail
+	}
+	msg := strings.TrimSpace(err.Error())
+	if line, _, ok := strings.Cut(msg, "\n"); ok {
+		msg = strings.TrimSpace(line)
+	}
+	return msg
 }
 
 func renderRemoteTable(stdout io.Writer, campaigns []campaignEntry, results []remoteResult) error {
@@ -176,7 +193,7 @@ func renderRemoteTable(stdout io.Writer, campaigns []campaignEntry, results []re
 	}
 	for _, r := range results {
 		if r.err != nil {
-			p("%s\t%s\t\t\t\t\n", ui.Dim(r.machineID), ui.Dim(fmt.Sprintf("(unreachable: %v)", r.err)))
+			p("%s\t%s\t\t\t\t\n", ui.Dim(r.machineID), ui.Dim(fmt.Sprintf("(unreachable: %s)", formatUnreachableErr(r.err))))
 		}
 	}
 	if werr != nil {

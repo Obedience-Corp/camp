@@ -230,8 +230,8 @@ func TestPrefillFromDeviceOpensFormWithoutSaving(t *testing.T) {
 	if got := m.form.value(machineFieldHost); got != "workstation.example-net.ts.net" {
 		t.Errorf("host = %q, want the device host", got)
 	}
-	if m.form.auth != machines.AuthTailscaleSSH {
-		t.Errorf("auth = %q, want tailscale-ssh for a discovered device", m.form.auth)
+	if m.form.auth != machines.AuthSSHAgent {
+		t.Errorf("auth = %q, want ssh-agent (OpenSSH default) for a discovered device", m.form.auth)
 	}
 	if !m.form.fromDiscovery {
 		t.Error("the form should record that it came from discovery")
