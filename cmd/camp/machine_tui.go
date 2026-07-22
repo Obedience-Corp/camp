@@ -44,27 +44,18 @@ const (
 )
 
 // machineAuthCycle is the order the auth field cycles through, matching the
-// three values ~/.obey/machines.yaml accepts.
+// three values ~/.obey/machines.yaml accepts. OpenSSH first (D2 default).
 var machineAuthCycle = []string{
-	machines.AuthTailscaleSSH,
 	machines.AuthSSHAgent,
+	machines.AuthTailscaleSSH,
 	machines.AuthSSHPassword,
 }
 
 // authLabel names an auth method the way it is explained to a person rather
 // than the way it is spelled in the file. The raw value is still what gets
-// written; this is display only.
+// written; this is display only (D7 labels).
 func authLabel(auth string) string {
-	switch auth {
-	case machines.AuthTailscaleSSH:
-		return "Tailscale SSH"
-	case machines.AuthSSHAgent:
-		return "ssh agent key"
-	case machines.AuthSSHPassword:
-		return "password"
-	default:
-		return auth
-	}
+	return remote.AuthDisplayName(auth)
 }
 
 // healthState is what the last connection attempt established. It is
@@ -429,7 +420,7 @@ func parseRemoteVersion(out string) string {
 // "command not found" stderr line is exactly the failure mode the health
 // check exists to surface, so preserve the outer message instead.
 func connectionFailureDetail(err error) string {
-	if detail := remote.TailscaleCheckDetail(err); detail != "" {
+	if detail := remote.HopFailureDetail(err); detail != "" {
 		return detail
 	}
 

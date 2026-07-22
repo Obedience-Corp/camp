@@ -35,9 +35,40 @@ func TestOptsAuthArgs(t *testing.T) {
 		t.Errorf("agent opts should not carry -i without an identity file: %v", agent)
 	}
 
+	// D1.2: Tailscale SSH and OpenSSH legitimately share BatchMode argv; the
+	// product distinction is error classification, not flag theater.
+	ts := Opts(&machines.Machine{AuthMethod: machines.AuthTailscaleSSH})
+	if !slices.Contains(ts, "BatchMode=yes") {
+		t.Errorf("tailscale-ssh opts missing BatchMode=yes: %v", ts)
+	}
+
 	withKey := Opts(&machines.Machine{AuthMethod: machines.AuthSSHAgent, IdentityFile: "/home/lance/.ssh/id_ed25519"})
 	if !slices.Contains(withKey, "IdentitiesOnly=yes") || !slices.Contains(withKey, "/home/lance/.ssh/id_ed25519") {
 		t.Errorf("identity-file opts missing IdentitiesOnly/-i: %v", withKey)
+	}
+}
+
+func TestAuthDisplayName(t *testing.T) {
+	if got := AuthDisplayName(machines.AuthSSHAgent); !strings.Contains(got, "OpenSSH") {
+		t.Errorf("ssh-agent label = %q", got)
+	}
+	if got := AuthDisplayName(machines.AuthTailscaleSSH); !strings.Contains(got, "Tailscale") {
+		t.Errorf("tailscale-ssh label = %q", got)
+	}
+}
+
+func TestProbeCommand(t *testing.T) {
+	got := ProbeCommand(&machines.Machine{
+		Host: "devbox.ts.net", SSHUser: "lance", AuthMethod: machines.AuthSSHAgent,
+	})
+	if !strings.Contains(got, "BatchMode=yes") || !strings.Contains(got, "lance@devbox.ts.net") || !strings.HasSuffix(got, " true") {
+		t.Errorf("ProbeCommand = %q", got)
+	}
+	withID := ProbeCommand(&machines.Machine{
+		Host: "h", IdentityFile: "/tmp/id", AuthMethod: machines.AuthSSHAgent,
+	})
+	if !strings.Contains(withID, "-i") || !strings.Contains(withID, "/tmp/id") {
+		t.Errorf("ProbeCommand with identity = %q", withID)
 	}
 }
 
@@ -423,6 +454,33 @@ func TestTailscaleCheckDetailFromWrappedTimeout(t *testing.T) {
 	detail := TailscaleCheckDetail(err)
 	if !strings.Contains(detail, "https://login.tailscale.com/a/wrap1") {
 		t.Errorf("TailscaleCheckDetail from timeout wrap = %q", detail)
+	}
+}
+
+func TestSSHExitErrorClassifiesHostKeyMismatch(t *testing.T) {
+	stderr := "@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@\n" +
+		"@    WARNING: REMOTE HOST IDENTIFICATION HAS CHANGED!     @\n" +
+		"@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@\n" +
+		"Host key for devbox.ts.net has changed and you have requested strict checking.\n" +
+		"Host key verification failed.\n"
+	err := sshExitError("lance@devbox.ts.net", 255, stderr, nil)
+	detail := HopFailureDetail(err)
+	if !strings.Contains(detail, "host key mismatch") && !strings.Contains(detail, "Host key mismatch") && !strings.Contains(strings.ToLower(detail), "host key") {
+		t.Fatalf("HopFailureDetail = %q, want host-key classification", detail)
+	}
+	if !strings.Contains(detail, "ssh-keygen -R") {
+		t.Errorf("host-key detail missing known_hosts remedy: %q", detail)
+	}
+	if strings.Contains(strings.ToLower(detail), "permission denied") {
+		t.Errorf("host-key must not be classified as auth failure: %q", detail)
+	}
+}
+
+func TestSSHExitErrorClassifiesPermissionDenied(t *testing.T) {
+	err := sshExitError("box", 255, "Permission denied (publickey).", nil)
+	detail := HopFailureDetail(err)
+	if !strings.Contains(strings.ToLower(detail), "permission denied") {
+		t.Errorf("HopFailureDetail = %q", detail)
 	}
 }
 

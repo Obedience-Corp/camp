@@ -243,20 +243,30 @@ func runMachineAddDiscover(cmd *cobra.Command, args []string) error {
 		label = dev.HostName
 	}
 
+	// D2: discover fills network identity (host/id/label); auth defaults to
+	// OpenSSH (ssh-agent) like manual add. --auth / --user / --identity are
+	// honored (previously silently ignored on the discover path).
+	auth, err := normalizeAuthMethod(machineAddAuth)
+	if err != nil {
+		return err
+	}
+
 	mf, err := machines.Load()
 	if err != nil {
 		return err
 	}
 	mf.Upsert(machines.Machine{
-		ID:         id,
-		Label:      label,
-		Host:       dev.Host,
-		AuthMethod: machines.AuthTailscaleSSH,
+		ID:           id,
+		Label:        label,
+		Host:         dev.Host,
+		AuthMethod:   auth,
+		SSHUser:      machineAddUser,
+		IdentityFile: machineAddIdentity,
 	})
 	if err := mf.Save(); err != nil {
 		return err
 	}
-	_, err = fmt.Fprintf(cmd.OutOrStdout(), "%s machine %q saved (%s, tailscale-ssh)\n", ui.SuccessIcon(), id, dev.Host)
+	_, err = fmt.Fprintf(cmd.OutOrStdout(), "%s machine %q saved (%s, %s)\n", ui.SuccessIcon(), id, dev.Host, auth)
 	return err
 }
 
