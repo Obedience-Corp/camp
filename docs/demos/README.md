@@ -22,8 +22,18 @@ run the real VHS tapes from the repository root:
 
 ```sh
 CAMP_VHS_ROOT=/path/to/fresh-configure-fixture just vhs record docs/demos/fresh-configure.tape
-CAMP_VHS_ROOT=/path/to/machine-fixture vhs docs/demos/machine-tui.tape
-CAMP_VHS_ROOT=/path/to/machine-fixture vhs docs/demos/machine-dual-auth.tape
+
+# Machine TUI must use full truecolor (fire palette). Agent shells often set
+# NO_COLOR — use record-color or an equivalent env strip:
+CAMP_VHS_ROOT=/path/to/machine-fixture just vhs record-color docs/demos/machine-tui.tape
+# If the just module cwd loses the tape path, run from repo root:
+env -u NO_COLOR -u CLICOLOR TERM=xterm-256color COLORTERM=truecolor \
+  FORCE_COLOR=1 CLICOLOR_FORCE=1 CAMP_VHS_ROOT=/path/to/machine-fixture \
+  vhs "$(pwd)/docs/demos/machine-tui.tape"
+
+CAMP_VHS_ROOT=/path/to/machine-fixture \
+  env -u NO_COLOR TERM=xterm-256color COLORTERM=truecolor FORCE_COLOR=1 \
+  vhs "$(pwd)/docs/demos/machine-dual-auth.tape"
 ```
 
 Machine fixture layout (disposable, no live tailnet):
