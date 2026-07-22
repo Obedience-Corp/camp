@@ -53,6 +53,10 @@ func runLeverage(cmd *cobra.Command, args []string) error {
 	authorFilter, _ := cmd.Flags().GetString("author")
 	byAuthor, _ := cmd.Flags().GetBool("by-author")
 
+	if authorFilter != "" && byAuthor {
+		return camperrors.New("--author and --by-author are mutually exclusive: use --by-author for the full per-author breakdown, or --author for personal leverage")
+	}
+
 	setup, err := initLeverageSetup(ctx)
 	if err != nil {
 		return err
@@ -148,8 +152,11 @@ func runLeverage(cmd *cobra.Command, args []string) error {
 	if authorFilter != "" {
 		// Personal headline: union author calendar across unique git dirs
 		// (never sum per-project spans) with already ownership-scaled estimates.
-		authorPM, pmErr := intleverage.AuthorActualPersonMonths(ctx, scoredProjects, authorMatch)
-		if pmErr == nil && authorPM > 0 {
+		authorPM, pmErr := intleverage.AuthorActualPersonMonths(ctx, scoredProjects, authorMatch, setup.Resolver)
+		if pmErr != nil {
+			return camperrors.Wrap(pmErr, "computing personal actual person-months")
+		}
+		if authorPM > 0 {
 			estPM := agg.EstimatedPeople * agg.EstimatedMonths
 			agg.ActualPersonMonths = authorPM
 			agg.ActualPeople = 1

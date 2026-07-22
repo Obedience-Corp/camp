@@ -47,10 +47,17 @@ Important details:
 
 - `--author` expands through `.campaign/leverage/authors.json` so all emails in a
   matched identity group are included (e.g. work + personal addresses).
+- Configured identity matching is **exact** on author ID / email local-part (and
+  word-wise on display name). A filter of `alice` does **not** match `malice`.
+  After a configured match, the raw filter is **not** retained as a git substring.
 - Monorepo subprojects that share a `GitDir` contribute **once** to actual effort.
 - Project table rows may still show per-repo spans; the **campaign footer** uses the
   union actual above.
 - Standing-tree COCOMO is scaled by **blame ownership**, not by “any commit in repo.”
+- `--author` and `--by-author` are **mutually exclusive**. Use `--by-author` alone
+  for the full per-author table; use `--author` alone for personal leverage.
+- Operational git failures and cancellation are returned; only the expected
+  “no commits for this author” outcome is suppressed per email/repo.
 
 ### Simple Leverage (headcount-based)
 

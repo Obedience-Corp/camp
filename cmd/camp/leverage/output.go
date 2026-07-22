@@ -216,28 +216,21 @@ func leverageOutputByAuthor(cmd *cobra.Command, ctx context.Context, agg *intlev
 		}
 	}
 
-	// Personal actual PM: union of commit spans across unique git dirs (not sum).
+	// One git pass per unique GitDir for all authors (not authors×repos×emails).
+	spans, spanErr := intleverage.CollectMergedAuthorSpans(ctx, resolved, resolver)
+	if spanErr != nil {
+		return camperrors.Wrap(spanErr, "collecting author date spans")
+	}
+
 	// Drop authors under 1% of campaign blamed lines (same threshold as effort calc).
 	authors := make([]*authorAgg, 0, len(byID))
 	for authorID, entry := range byID {
 		if campaignLines > 0 && float64(entry.lines)/float64(campaignLines)*100 < 1.0 {
 			continue
 		}
-		match := intleverage.AuthorMatch{
-			Filter:    authorID,
-			AuthorIDs: map[string]bool{authorID: true},
-			Emails:    authorEmailsForID(resolver, authorID),
-		}
-		if len(match.Emails) == 0 {
-			match.Emails = []string{authorID}
-		}
-		actualPM, err := intleverage.AuthorActualPersonMonths(ctx, resolved, match)
-		if err != nil || actualPM <= 0 {
-			actualPM = 0.1
-		}
-		entry.actualPM = actualPM
-		if actualPM > 0 {
-			entry.leverage = entry.estPM / actualPM
+		entry.actualPM = spans.PersonMonths(authorID)
+		if entry.actualPM > 0 {
+			entry.leverage = entry.estPM / entry.actualPM
 		}
 		authors = append(authors, entry)
 	}
@@ -290,27 +283,8 @@ func leverageOutputByAuthor(cmd *cobra.Command, ctx context.Context, agg *intlev
 	fmt.Fprintln(out, ui.Dim("Est PM = project COCOMO person-months × author LOC share (per project, summed)"))
 	fmt.Fprintln(out, ui.Dim("Actual PM = union of author's commit span across unique git repos (not summed per project)"))
 	fmt.Fprintln(out, ui.Dim("Leverage = Est PM / Actual PM"))
+	fmt.Fprintln(out, ui.Dim("--author and --by-author are mutually exclusive"))
 	return nil
-}
-
-// authorEmailsForID returns configured emails for a canonical author ID.
-func authorEmailsForID(resolver *intleverage.AuthorResolver, authorID string) []string {
-	if resolver == nil {
-		return nil
-	}
-	// ExpandAuthorFilter with the ID as filter reuses group matching.
-	match := intleverage.ExpandAuthorFilter(resolver, authorID)
-	var emails []string
-	for _, e := range match.Emails {
-		if e != authorID {
-			emails = append(emails, e)
-		}
-	}
-	// Prefer configured emails only; fall back to ID if nothing else.
-	if len(emails) == 0 {
-		return []string{authorID}
-	}
-	return emails
 }
 
 func fmtInt(n int) string {

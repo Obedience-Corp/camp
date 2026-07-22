@@ -127,6 +127,10 @@ func runLeverageDir(cmd *cobra.Command, targetDir string) error {
 	authorFilter, _ := cmd.Flags().GetString("author")
 	byAuthor, _ := cmd.Flags().GetBool("by-author")
 
+	if authorFilter != "" && byAuthor {
+		return camperrors.New("--author and --by-author are mutually exclusive: use --by-author for the full per-author breakdown, or --author for personal leverage")
+	}
+
 	gitRoot := detectGitRoot(ctx, targetDir)
 
 	setup, err := initDirectorySetup(ctx, targetDir, gitRoot)
@@ -209,8 +213,11 @@ func runLeverageDir(cmd *cobra.Command, targetDir string) error {
 	agg := intleverage.AggregateScores(scores, effectivePeople, elapsed)
 
 	if authorFilter != "" {
-		authorPM, pmErr := intleverage.AuthorActualPersonMonths(ctx, scoredProjects, authorMatch)
-		if pmErr == nil && authorPM > 0 {
+		authorPM, pmErr := intleverage.AuthorActualPersonMonths(ctx, scoredProjects, authorMatch, setup.Resolver)
+		if pmErr != nil {
+			return camperrors.Wrap(pmErr, "computing personal actual person-months")
+		}
+		if authorPM > 0 {
 			estPM := agg.EstimatedPeople * agg.EstimatedMonths
 			agg.ActualPersonMonths = authorPM
 			agg.ActualPeople = 1

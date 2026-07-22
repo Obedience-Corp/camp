@@ -4,6 +4,7 @@ import (
 	"context"
 	"strings"
 	"time"
+	"unicode"
 
 	camperrors "github.com/Obedience-Corp/camp/internal/errors"
 )
@@ -15,23 +16,28 @@ type AuthorMatch struct {
 	Filter string
 
 	// AuthorIDs are canonical resolver IDs matched by the filter.
-	// Empty when the filter only matches as a raw git --author substring
-	// (no authors.json group).
+	// When non-empty, matching is identity-group exclusive (no raw substring).
 	AuthorIDs map[string]bool
 
-	// Emails are concrete addresses to query with git log --author=
-	// (group emails plus the raw filter when useful).
+	// Emails are concrete addresses for git log --author= queries.
+	// Populated from configured identity groups, or the raw filter when no
+	// configured identity matched.
 	Emails []string
+
+	// Configured is true when at least one authors.json identity matched.
+	// When true, the raw filter is not used as a git substring (avoids
+	// collisions like "alice" matching "malice").
+	Configured bool
 }
 
 // ExpandAuthorFilter resolves an --author flag against the author config.
 //
 // Matching is case-insensitive substring against author ID, display name, and
 // configured emails. When a configured identity matches, all of its emails are
-// included so personal mode does not miss alternate commit addresses.
+// included and the raw filter is NOT retained as a git substring.
 //
-// When nothing in the config matches, the raw filter is still used as a single
-// git author substring (preserving prior behavior for ad-hoc emails).
+// When nothing in the config matches, the raw filter is used as a single git
+// author substring (ad-hoc email / name search).
 func ExpandAuthorFilter(resolver *AuthorResolver, filter string) AuthorMatch {
 	filter = strings.TrimSpace(filter)
 	m := AuthorMatch{
@@ -63,19 +69,13 @@ func ExpandAuthorFilter(resolver *AuthorResolver, filter string) AuthorMatch {
 			if identity.Exclude {
 				continue
 			}
-			matched := strings.Contains(strings.ToLower(id), lower) ||
-				strings.Contains(strings.ToLower(identity.DisplayName), lower)
-			if !matched {
-				for _, email := range identity.Emails {
-					if strings.Contains(strings.ToLower(email), lower) {
-						matched = true
-						break
-					}
-				}
-			}
-			if !matched {
+			// Avoid naive substring matching on IDs/emails (e.g. "alice" must
+			// not select "malice"). Use exact ID/email/local-part and word-wise
+			// display-name matching instead.
+			if !identityMatchesFilter(id, identity, lower) {
 				continue
 			}
+			m.Configured = true
 			m.AuthorIDs[id] = true
 			for _, email := range identity.Emails {
 				addEmail(email)
@@ -83,16 +83,19 @@ func ExpandAuthorFilter(resolver *AuthorResolver, filter string) AuthorMatch {
 		}
 	}
 
-	// Always keep the raw filter for git substring match (covers unlisted emails
-	// and partial strings like "lancekrogers").
+	if m.Configured {
+		// Identity-group match: use only group emails / IDs. Do not append the
+		// raw filter as a git substring (would include "malice" for "alice").
+		return m
+	}
+
+	// No configured identity: raw filter is the sole git author query.
 	addEmail(filter)
 
-	// If we only matched via raw filter, seed AuthorIDs from resolver so ownership
-	// lookups work when the filter is an exact configured email. Skip excluded
-	// identities (bots/test accounts) so they do not become "personal" targets.
-	if len(m.AuthorIDs) == 0 && resolver != nil && !resolver.IsExcluded(filter) {
+	// Seed AuthorIDs from resolver so ownership lookups work for exact emails
+	// that are not grouped. Skip excluded identities.
+	if resolver != nil && !resolver.IsExcluded(filter) {
 		id := resolver.Resolve(filter)
-		// Resolve falls back to lowercase email for unknowns — still useful as a key.
 		if id != "" {
 			m.AuthorIDs[id] = true
 		}
@@ -101,27 +104,78 @@ func ExpandAuthorFilter(resolver *AuthorResolver, filter string) AuthorMatch {
 	return m
 }
 
-// MatchesAuthor reports whether email belongs to the matched personal filter set.
-func (m AuthorMatch) MatchesAuthor(resolver *AuthorResolver, email string) bool {
-	if m.Filter == "" {
+// identityMatchesFilter reports whether a configured identity matches filter
+// (already lowercased). Matching is intentionally stricter than raw git
+// --author substring so short filters do not collide across identities.
+func identityMatchesFilter(id string, identity AuthorIdentity, filterLower string) bool {
+	if filterLower == "" {
 		return false
 	}
-	if resolver != nil && len(m.AuthorIDs) > 0 {
-		if m.AuthorIDs[resolver.Resolve(email)] {
-			return true
-		}
-	}
-	lowerEmail := strings.ToLower(strings.TrimSpace(email))
-	lowerFilter := strings.ToLower(m.Filter)
-	if strings.Contains(lowerEmail, lowerFilter) {
+	if strings.ToLower(id) == filterLower {
 		return true
 	}
-	for _, e := range m.Emails {
-		if strings.EqualFold(e, email) || strings.Contains(lowerEmail, strings.ToLower(e)) {
+	if containsWord(strings.ToLower(identity.DisplayName), filterLower) {
+		return true
+	}
+	for _, email := range identity.Emails {
+		el := strings.ToLower(strings.TrimSpace(email))
+		if el == filterLower {
+			return true
+		}
+		// Local-part exact: "alice" matches alice@example.com, not malice@…
+		if at := strings.IndexByte(el, '@'); at > 0 {
+			local := el[:at]
+			if local == filterLower {
+				return true
+			}
+		}
+	}
+	return false
+}
+
+// containsWord reports whether word appears as a whole alphanumeric token in text.
+func containsWord(text, word string) bool {
+	if text == "" || word == "" {
+		return false
+	}
+	fields := strings.FieldsFunc(text, func(r rune) bool {
+		return !unicode.IsLetter(r) && !unicode.IsNumber(r)
+	})
+	for _, f := range fields {
+		if f == word {
 			return true
 		}
 	}
 	return false
+}
+
+// MatchesAuthor reports whether email belongs to the matched personal filter set.
+//
+// When a configured identity matched (or AuthorIDs is non-empty from resolve),
+// membership is by canonical author ID only — never by raw substring on the
+// filter string.
+func (m AuthorMatch) MatchesAuthor(resolver *AuthorResolver, email string) bool {
+	if m.Filter == "" {
+		return false
+	}
+
+	if len(m.AuthorIDs) > 0 {
+		if resolver != nil {
+			return m.AuthorIDs[resolver.Resolve(email)]
+		}
+		// No resolver: exact email match against the expanded email list.
+		for _, e := range m.Emails {
+			if strings.EqualFold(e, email) {
+				return true
+			}
+		}
+		return false
+	}
+
+	// Ad-hoc filter with no IDs: substring match on email (legacy git behavior).
+	lowerEmail := strings.ToLower(strings.TrimSpace(email))
+	lowerFilter := strings.ToLower(m.Filter)
+	return strings.Contains(lowerEmail, lowerFilter)
 }
 
 // AuthorHasCommitsMatch reports whether any matched identity has commits in gitDir.
@@ -129,8 +183,6 @@ func AuthorHasCommitsMatch(ctx context.Context, gitDir string, match AuthorMatch
 	if err := ctx.Err(); err != nil {
 		return false, err
 	}
-	// Prefer distinct email queries so alternate addresses are found.
-	// Fall back to raw filter substring (single git call) when emails empty.
 	queries := match.Emails
 	if len(queries) == 0 && match.Filter != "" {
 		queries = []string{match.Filter}
@@ -147,8 +199,24 @@ func AuthorHasCommitsMatch(ctx context.Context, gitDir string, match AuthorMatch
 	return false, nil
 }
 
+// isNoAuthorCommits reports whether err is the expected "no commits for author"
+// outcome (as opposed to cancellation or git operational failure).
+func isNoAuthorCommits(err error) bool {
+	if err == nil {
+		return false
+	}
+	msg := err.Error()
+	return strings.Contains(msg, "no commits by ") ||
+		strings.Contains(msg, "no commits matching author filter") ||
+		strings.Contains(msg, "no valid commit dates by ")
+}
+
 // AuthorDateRangeMatch returns the earliest and latest commit dates across all
 // matched author emails in gitDir.
+//
+// "No commits for this author" on an individual email is skipped so alternate
+// addresses can still contribute. Context cancellation and operational git
+// failures are returned immediately.
 func AuthorDateRangeMatch(ctx context.Context, gitDir string, match AuthorMatch) (first, last time.Time, err error) {
 	if err := ctx.Err(); err != nil {
 		return time.Time{}, time.Time{}, err
@@ -161,9 +229,19 @@ func AuthorDateRangeMatch(ctx context.Context, gitDir string, match AuthorMatch)
 
 	var found bool
 	for _, q := range queries {
+		if err := ctx.Err(); err != nil {
+			return time.Time{}, time.Time{}, err
+		}
 		f, l, qErr := AuthorDateRange(ctx, gitDir, q)
 		if qErr != nil {
-			continue
+			if ctx.Err() != nil {
+				return time.Time{}, time.Time{}, ctx.Err()
+			}
+			if isNoAuthorCommits(qErr) {
+				continue
+			}
+			// Operational failure (repo missing, git broken, etc.).
+			return time.Time{}, time.Time{}, qErr
 		}
 		found = true
 		if first.IsZero() || f.Before(first) {
@@ -203,12 +281,79 @@ func AuthorOwnershipFraction(proj ResolvedProject, match AuthorMatch, resolver *
 	return float64(authorLines) / float64(totalLines)
 }
 
+// MergedAuthorSpans maps canonical author ID → commit date span merged across
+// unique git directories. Built with one git log pass per git dir.
+type MergedAuthorSpans map[string]*authorDateSpan
+
+// CollectMergedAuthorSpans computes per-author date spans across projects with
+// one gitDirAuthors call per unique GitDir (not per author × email).
+func CollectMergedAuthorSpans(ctx context.Context, projects []ResolvedProject, resolver *AuthorResolver) (MergedAuthorSpans, error) {
+	if err := ctx.Err(); err != nil {
+		return nil, err
+	}
+	if resolver == nil {
+		resolver = NewAuthorResolver(nil)
+	}
+
+	uniqueGitDirs := make(map[string]struct{})
+	for _, p := range projects {
+		if p.GitDir != "" {
+			uniqueGitDirs[p.GitDir] = struct{}{}
+		}
+	}
+
+	merged := make(MergedAuthorSpans)
+	for gitDir := range uniqueGitDirs {
+		if err := ctx.Err(); err != nil {
+			return nil, err
+		}
+		byID, err := gitDirAuthors(ctx, gitDir, resolver)
+		if err != nil {
+			if ctx.Err() != nil {
+				return nil, ctx.Err()
+			}
+			return nil, err
+		}
+		for authorID, span := range byID {
+			if span == nil {
+				continue
+			}
+			existing, ok := merged[authorID]
+			if !ok {
+				cp := *span
+				merged[authorID] = &cp
+				continue
+			}
+			existing.merge(span)
+		}
+	}
+	return merged, nil
+}
+
+// PersonMonths returns elapsed months for authorID, floored at minAuthorMonths.
+// Missing authors return minAuthorMonths.
+func (s MergedAuthorSpans) PersonMonths(authorID string) float64 {
+	span, ok := s[authorID]
+	if !ok || span == nil || span.earliest.IsZero() {
+		return minAuthorMonths
+	}
+	months := ElapsedMonths(span.earliest, span.latest)
+	if months < minAuthorMonths {
+		return minAuthorMonths
+	}
+	return months
+}
+
 // AuthorActualPersonMonths computes personal actual effort as the union of the
 // matched author's commit date spans across unique git directories.
 //
-// This intentionally does NOT sum per-project spans (which multi-counts parallel
-// multi-repo work and monorepo subprojects that share a GitDir).
-func AuthorActualPersonMonths(ctx context.Context, projects []ResolvedProject, match AuthorMatch) (float64, error) {
+// When match.AuthorIDs is non-empty and resolver is non-nil, spans are taken from
+// CollectMergedAuthorSpans (one git pass per repo). Otherwise falls back to
+// per-email AuthorDateRangeMatch for ad-hoc filters.
+//
+// Operational git errors and cancellation are returned. A true "no commits in
+// any repo" outcome yields minAuthorMonths (not an error).
+func AuthorActualPersonMonths(ctx context.Context, projects []ResolvedProject, match AuthorMatch, resolver *AuthorResolver) (float64, error) {
 	if err := ctx.Err(); err != nil {
 		return 0, err
 	}
@@ -216,6 +361,33 @@ func AuthorActualPersonMonths(ctx context.Context, projects []ResolvedProject, m
 		return minAuthorMonths, nil
 	}
 
+	// Fast path: configured / resolved author IDs → single pass per git dir.
+	if resolver != nil && len(match.AuthorIDs) > 0 {
+		spans, err := CollectMergedAuthorSpans(ctx, projects, resolver)
+		if err != nil {
+			return 0, err
+		}
+		var merged authorDateSpan
+		var any bool
+		for id := range match.AuthorIDs {
+			span, ok := spans[id]
+			if !ok || span == nil || span.earliest.IsZero() {
+				continue
+			}
+			any = true
+			merged.merge(span)
+		}
+		if !any {
+			return minAuthorMonths, nil
+		}
+		months := ElapsedMonths(merged.earliest, merged.latest)
+		if months < minAuthorMonths {
+			months = minAuthorMonths
+		}
+		return months, nil
+	}
+
+	// Ad-hoc filter: query unique git dirs with the expanded email/filter list.
 	uniqueGitDirs := make(map[string]struct{})
 	for _, p := range projects {
 		if p.GitDir != "" {
@@ -231,7 +403,10 @@ func AuthorActualPersonMonths(ctx context.Context, projects []ResolvedProject, m
 		}
 		first, last, err := AuthorDateRangeMatch(ctx, gitDir, match)
 		if err != nil {
-			continue
+			if isNoAuthorCommits(err) {
+				continue
+			}
+			return 0, err
 		}
 		any = true
 		merged.merge(&authorDateSpan{earliest: first, latest: last})
@@ -263,8 +438,6 @@ func ScaleScoreForAuthor(score *LeverageScore, ownership float64) {
 	}
 	score.EstimatedPeople *= ownership
 	score.EstimatedCost *= ownership
-	// Keep TotalCode/TotalLines as full-tree inventory for transparency, but scale
-	// is applied on cost/people which drive leverage.
 	if score.ActualPeople > 0 {
 		score.SimpleLeverage = score.EstimatedPeople / score.ActualPeople
 	}
