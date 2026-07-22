@@ -62,6 +62,40 @@ func TestExpandAuthorFilter_AdHocKeepsRawFilter(t *testing.T) {
 	if len(match.Emails) != 1 || match.Emails[0] != "someone@unlisted.dev" {
 		t.Fatalf("ad-hoc emails = %v", match.Emails)
 	}
+	if len(match.AuthorIDs) != 0 {
+		t.Fatalf("ad-hoc filter must leave AuthorIDs empty (got %v) so partial filters use git substring path", match.AuthorIDs)
+	}
+}
+
+func TestExpandAuthorFilter_PartialAdHocNoCanonicalID(t *testing.T) {
+	// Documented partial form: alice@co must not invent AuthorIDs["alice@co"].
+	cfg := &AuthorConfig{
+		Authors: map[string]AuthorIdentity{
+			"bob": {DisplayName: "Bob", Emails: []string{"bob@example.com"}},
+		},
+	}
+	match := ExpandAuthorFilter(NewAuthorResolver(cfg), "alice@co")
+	if match.Configured {
+		t.Fatal("partial unlisted filter should not be configured")
+	}
+	if len(match.AuthorIDs) != 0 {
+		t.Fatalf("AuthorIDs must stay empty for ad-hoc partial filters, got %v", match.AuthorIDs)
+	}
+}
+
+func TestExpandAuthorFilter_FullDisplayName(t *testing.T) {
+	cfg := &AuthorConfig{
+		Authors: map[string]AuthorIdentity{
+			"alice-smith": {
+				DisplayName: "Alice Smith",
+				Emails:      []string{"alice@example.com"},
+			},
+		},
+	}
+	match := ExpandAuthorFilter(NewAuthorResolver(cfg), "Alice Smith")
+	if !match.Configured || !match.AuthorIDs["alice-smith"] {
+		t.Fatalf("full display name should match: configured=%v ids=%v", match.Configured, match.AuthorIDs)
+	}
 }
 
 func TestExpandAuthorFilter_ExcludedNotConfigured(t *testing.T) {

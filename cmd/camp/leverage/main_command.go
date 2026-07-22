@@ -53,6 +53,9 @@ func runLeverage(cmd *cobra.Command, args []string) error {
 	authorFilter, _ := cmd.Flags().GetString("author")
 	byAuthor, _ := cmd.Flags().GetBool("by-author")
 
+	// Explicit CLI conflict only. Config AuthorEmail is applied after setup and
+	// is suppressed when --by-author is requested so the breakdown still works
+	// in campaigns that set a personal default.
 	if authorFilter != "" && byAuthor {
 		return camperrors.New("--author and --by-author are mutually exclusive: use --by-author for the full per-author breakdown, or --author for personal leverage")
 	}
@@ -70,7 +73,8 @@ func runLeverage(cmd *cobra.Command, args []string) error {
 		cfg.ActualPeople = peopleOverride
 	}
 
-	if authorFilter == "" && cfg.AuthorEmail != "" {
+	// Apply configured personal default only when not doing a by-author breakdown.
+	if authorFilter == "" && !byAuthor && cfg.AuthorEmail != "" {
 		authorFilter = cfg.AuthorEmail
 	}
 

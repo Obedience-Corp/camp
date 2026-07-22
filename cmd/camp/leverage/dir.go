@@ -142,7 +142,8 @@ func runLeverageDir(cmd *cobra.Command, targetDir string) error {
 	if peopleOverride > 0 {
 		cfg.ActualPeople = peopleOverride
 	}
-	if authorFilter == "" && cfg.AuthorEmail != "" {
+	// Suppress configured AuthorEmail when --by-author is requested (same as campaign path).
+	if authorFilter == "" && !byAuthor && cfg.AuthorEmail != "" {
 		authorFilter = cfg.AuthorEmail
 	}
 
@@ -163,7 +164,10 @@ func runLeverageDir(cmd *cobra.Command, targetDir string) error {
 	authorMatch := intleverage.ExpandAuthorFilter(setup.Resolver, authorFilter)
 	if authorFilter != "" {
 		hasCommits, gitErr := intleverage.AuthorHasCommitsMatch(ctx, proj.GitDir, authorMatch)
-		if gitErr != nil || !hasCommits {
+		if gitErr != nil {
+			return camperrors.Wrapf(gitErr, "checking author commits in %s", proj.Name)
+		}
+		if !hasCommits {
 			return camperrors.New(fmt.Sprintf("no commits for author %q in %s", authorFilter, proj.Name))
 		}
 	}

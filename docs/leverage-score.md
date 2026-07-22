@@ -54,10 +54,16 @@ Important details:
 - Project table rows may still show per-repo spans; the **campaign footer** uses the
   union actual above.
 - Standing-tree COCOMO is scaled by **blame ownership**, not by “any commit in repo.”
-- `--author` and `--by-author` are **mutually exclusive**. Use `--by-author` alone
-  for the full per-author table; use `--author` alone for personal leverage.
-- Operational git failures and cancellation are returned; only the expected
-  “no commits for this author” outcome is suppressed per email/repo.
+- `--author` and `--by-author` are **mutually exclusive** when both are passed on
+  the CLI. A configured `author_email` default is **not** applied when
+  `--by-author` is used, so the breakdown still works in personal-default campaigns.
+- Full display names match exactly (e.g. `Alice Smith`); single-token display
+  words also match (`Alice` → `Alice Smith`).
+- Ad-hoc / partial filters (e.g. `alice@co`) use git `--author` substring search
+  and do **not** invent a canonical author ID (avoids false 0.1 PM floors).
+- Operational git failures and cancellation are returned from author presence
+  and date-range queries; only the expected “no commits for this author”
+  outcome is treated as a soft miss.
 
 ### Simple Leverage (headcount-based)
 

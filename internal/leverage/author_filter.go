@@ -32,12 +32,13 @@ type AuthorMatch struct {
 
 // ExpandAuthorFilter resolves an --author flag against the author config.
 //
-// Matching is case-insensitive substring against author ID, display name, and
-// configured emails. When a configured identity matches, all of its emails are
-// included and the raw filter is NOT retained as a git substring.
+// When a configured identity matches, all of its emails are included and the
+// raw filter is NOT retained as a git substring.
 //
 // When nothing in the config matches, the raw filter is used as a single git
-// author substring (ad-hoc email / name search).
+// author substring (ad-hoc search). AuthorIDs stays empty in that case so
+// actual-PM uses the ad-hoc git path (partial filters like "alice@co" keep
+// working). Only configured identity matches populate AuthorIDs.
 func ExpandAuthorFilter(resolver *AuthorResolver, filter string) AuthorMatch {
 	filter = strings.TrimSpace(filter)
 	m := AuthorMatch{
@@ -70,8 +71,8 @@ func ExpandAuthorFilter(resolver *AuthorResolver, filter string) AuthorMatch {
 				continue
 			}
 			// Avoid naive substring matching on IDs/emails (e.g. "alice" must
-			// not select "malice"). Use exact ID/email/local-part and word-wise
-			// display-name matching instead.
+			// not select "malice"). Use exact ID/email/local-part and
+			// full/word display-name matching instead.
 			if !identityMatchesFilter(id, identity, lower) {
 				continue
 			}
@@ -90,17 +91,10 @@ func ExpandAuthorFilter(resolver *AuthorResolver, filter string) AuthorMatch {
 	}
 
 	// No configured identity: raw filter is the sole git author query.
+	// Leave AuthorIDs empty so AuthorActualPersonMonths uses AuthorDateRangeMatch
+	// (git --author substring) instead of CollectMergedAuthorSpans keyed by
+	// full canonical emails — partial filters like "alice@co" must still work.
 	addEmail(filter)
-
-	// Seed AuthorIDs from resolver so ownership lookups work for exact emails
-	// that are not grouped. Skip excluded identities.
-	if resolver != nil && !resolver.IsExcluded(filter) {
-		id := resolver.Resolve(filter)
-		if id != "" {
-			m.AuthorIDs[id] = true
-		}
-	}
-
 	return m
 }
 
@@ -114,7 +108,13 @@ func identityMatchesFilter(id string, identity AuthorIdentity, filterLower strin
 	if strings.ToLower(id) == filterLower {
 		return true
 	}
-	if containsWord(strings.ToLower(identity.DisplayName), filterLower) {
+	displayLower := strings.ToLower(strings.TrimSpace(identity.DisplayName))
+	// Exact full display name (supports "Alice Smith").
+	if normalizeSpace(displayLower) == normalizeSpace(filterLower) {
+		return true
+	}
+	// Single-token display match ("Alice" matches display "Alice Smith").
+	if containsWord(displayLower, filterLower) {
 		return true
 	}
 	for _, email := range identity.Emails {
@@ -131,6 +131,11 @@ func identityMatchesFilter(id string, identity AuthorIdentity, filterLower strin
 		}
 	}
 	return false
+}
+
+// normalizeSpace lowercases is already applied; collapse internal whitespace.
+func normalizeSpace(s string) string {
+	return strings.Join(strings.Fields(s), " ")
 }
 
 // containsWord reports whether word appears as a whole alphanumeric token in text.
@@ -151,9 +156,9 @@ func containsWord(text, word string) bool {
 
 // MatchesAuthor reports whether email belongs to the matched personal filter set.
 //
-// When a configured identity matched (or AuthorIDs is non-empty from resolve),
-// membership is by canonical author ID only — never by raw substring on the
-// filter string.
+// When AuthorIDs is non-empty (configured identity match only), membership is by
+// canonical author ID. Ad-hoc filters leave AuthorIDs empty and use substring
+// match on the email (same as git --author).
 func (m AuthorMatch) MatchesAuthor(resolver *AuthorResolver, email string) bool {
 	if m.Filter == "" {
 		return false
