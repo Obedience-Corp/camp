@@ -115,6 +115,76 @@ func TestIntegration_CommitTags_NoContext(t *testing.T) {
 		"subject should still carry the campaign tag: %s", subject)
 }
 
+func TestIntegration_CommitTags_CampCommitIgnoresCurrentSelection(t *testing.T) {
+	tc := GetSharedContainer(t)
+	dir := "/test/commit-tags-current-camp"
+	initCommitTagsCampaign(t, tc, dir)
+	ref := seedDesignWorkitemWithRef(t, tc, dir, "stale-camp")
+
+	out, err := tc.RunCampInDir(dir, "workitem", "current", "stale-camp")
+	require.NoError(t, err, "set current workitem: %s", out)
+	require.NoError(t, tc.WriteFile(dir+"/docs/notes.md", "unrelated\n"))
+	_, _, err = tc.ExecCommand("git", "-C", dir, "add", "-A")
+	require.NoError(t, err)
+
+	out, err = tc.RunCampInDir(dir+"/docs", "commit", "-m", "docs: unrelated change")
+	require.NoError(t, err, "camp commit: %s", out)
+
+	subject := lastCommitSubject(t, tc, dir)
+	assert.NotContains(t, subject, ref,
+		"camp commit must not inherit current.yaml: %s", subject)
+	assert.NotContains(t, subject, "WI-",
+		"camp commit without path context must not include WI-: %s", subject)
+}
+
+func TestIntegration_CommitTags_CampPCommitIgnoresCurrentSelection(t *testing.T) {
+	tc := GetSharedContainer(t)
+	dir := "/test/commit-tags-current-project"
+	initCommitTagsCampaign(t, tc, dir)
+	ref := seedDesignWorkitemWithRef(t, tc, dir, "stale-project")
+	require.NoError(t, tc.CreateGitRepo(dir+"/projects/camp-current"))
+
+	out, err := tc.RunCampInDir(dir, "workitem", "current", "stale-project")
+	require.NoError(t, err, "set current workitem: %s", out)
+	require.NoError(t, tc.WriteFile(dir+"/projects/camp-current/foo.go", "package current\n"))
+
+	out, err = tc.RunCampInDir(dir+"/projects/camp-current",
+		"p", "commit", "-m", "feat: unrelated project change")
+	require.NoError(t, err, "camp p commit: %s", out)
+
+	subject := lastCommitSubject(t, tc, dir+"/projects/camp-current")
+	assert.NotContains(t, subject, ref,
+		"camp p commit must not inherit current.yaml: %s", subject)
+	assert.NotContains(t, subject, "WI-",
+		"camp p commit without path context must not include WI-: %s", subject)
+}
+
+func TestIntegration_CommitTags_WorktreeCommitIgnoresCurrentSelection(t *testing.T) {
+	tc := GetSharedContainer(t)
+	dir := "/test/commit-tags-current-worktree"
+	initCommitTagsCampaign(t, tc, dir)
+	ref := seedDesignWorkitemWithRef(t, tc, dir, "stale-worktree")
+
+	_, err := tc.RunCampInDir(dir, "project", "new", "camp-current")
+	require.NoError(t, err, "camp project new")
+	out, err := tc.RunCampInDir(dir, "workitem", "current", "stale-worktree")
+	require.NoError(t, err, "set current workitem: %s", out)
+	out, err = tc.RunCampInDir(dir, "project", "worktree", "add", "current-wt",
+		"--project", "camp-current")
+	require.NoError(t, err, "camp project worktree add: %s", out)
+
+	wtPath := dir + "/projects/worktrees/camp-current/current-wt"
+	require.NoError(t, tc.WriteFile(wtPath+"/foo.go", "package current\n"))
+	out, err = tc.RunCampInDir(wtPath, "worktrees", "commit", "-m", "feat: unrelated worktree change")
+	require.NoError(t, err, "camp worktrees commit: %s", out)
+
+	subject := lastCommitSubject(t, tc, wtPath)
+	assert.NotContains(t, subject, ref,
+		"camp worktrees commit must not inherit current.yaml: %s", subject)
+	assert.NotContains(t, subject, "WI-",
+		"camp worktrees commit without path context must not include WI-: %s", subject)
+}
+
 func TestIntegration_CommitTags_ExplicitOverride(t *testing.T) {
 	tc := GetSharedContainer(t)
 	dir := "/test/commit-tags-override"
@@ -330,6 +400,57 @@ func TestIntegration_AutoWriteEnv(t *testing.T) {
 
 	subject := lastCommitSubject(t, tc, dir)
 	assert.Contains(t, subject, "auto: from hook", "commit subject should come from hook: %s", subject)
+}
+
+func TestIntegration_AutoWriteEnv_IgnoresCurrentSelection(t *testing.T) {
+	tc := GetSharedContainer(t)
+	dir := "/test/commit-tags-current-autowrite"
+	initCommitTagsCampaign(t, tc, dir)
+	ref := seedDesignWorkitemWithRef(t, tc, dir, "stale-autowrite")
+
+	out, err := tc.RunCampInDir(dir, "workitem", "current", "stale-autowrite")
+	require.NoError(t, err, "set current workitem: %s", out)
+	require.NoError(t, tc.WriteFile("/tmp/commit_hook_current.sh",
+		"#!/bin/sh\nenv | grep '^CAMP_WORKITEM_' > /tmp/env_dump_current\necho 'auto: no current'\n"))
+	_, _, scriptErr := tc.ExecCommand("chmod", "+x", "/tmp/commit_hook_current.sh")
+	require.NoError(t, scriptErr)
+	hookYAML := "\nhooks:\n  commit_message:\n    command: /tmp/commit_hook_current.sh\n"
+	_, _, hookErr := tc.ExecCommand("sh", "-c",
+		"cat >> "+dir+"/.campaign/campaign.yaml <<EOF"+hookYAML+"EOF")
+	require.NoError(t, hookErr)
+	require.NoError(t, tc.WriteFile(dir+"/docs/unrelated.md", "no current context\n"))
+	_, _, addErr := tc.ExecCommand("git", "-C", dir, "add", "-A")
+	require.NoError(t, addErr)
+
+	out, err = tc.RunCampInDir(dir+"/docs", "commit", "--auto-write")
+	require.NoError(t, err, "camp commit --auto-write: %s", out)
+
+	dump, err := tc.ReadFile("/tmp/env_dump_current")
+	require.NoError(t, err, "env dump should exist")
+	assert.NotContains(t, dump, "CAMP_WORKITEM_",
+		"auto-write hook must not receive current.yaml context: %s", dump)
+	subject := lastCommitSubject(t, tc, dir)
+	assert.NotContains(t, subject, ref,
+		"auto-write commit must not inherit current.yaml: %s", subject)
+	assert.Contains(t, subject, "auto: no current", "commit subject should come from hook: %s", subject)
+}
+
+func TestIntegration_CommitTags_AutoCommitIgnoresCurrentSelection(t *testing.T) {
+	tc := GetSharedContainer(t)
+	dir := "/test/commit-tags-current-auto"
+	initCommitTagsCampaign(t, tc, dir)
+	ref := seedDesignWorkitemWithRef(t, tc, dir, "stale-auto")
+
+	out, err := tc.RunCampInDir(dir, "workitem", "current", "stale-auto")
+	require.NoError(t, err, "set current workitem: %s", out)
+	out, err = tc.RunCampInDir(dir, "intent", "note", "unrelated auto-commit")
+	require.NoError(t, err, "camp intent note: %s", out)
+
+	subject := lastCommitSubject(t, tc, dir)
+	assert.NotContains(t, subject, ref,
+		"intent auto-commit must not inherit current.yaml: %s", subject)
+	assert.NotContains(t, subject, "WI-",
+		"intent auto-commit without path context must not include WI-: %s", subject)
 }
 
 // fest commit and fest-side workitem resolution are deferred until camp is

@@ -13,6 +13,9 @@ import (
 // and returns the captured quest id and ref for inclusion in the commit
 // tag. Resolution failures are non-fatal: empty strings are returned so the
 // caller can still produce a quest- and workitem-free tag.
+// Generic camp commits intentionally do not inherit current.yaml; callers
+// that want session-wide workitem scoping should use camp workitem commit or
+// pass --workitem explicitly.
 //
 // explicit, when non-empty, is the user-supplied --workitem selector.
 //
@@ -21,7 +24,8 @@ import (
 // disk so future commits inherit it. A stderr warning notifies the user.
 func resolveCommitContext(ctx context.Context, campaignRoot, explicit string) (questID, festivalRef, workitemRef string) {
 	res, err := resolver.Resolve(ctx, campaignRoot, resolver.Options{
-		Explicit: explicit,
+		Explicit:       explicit,
+		DisableCurrent: true,
 	})
 	if err != nil || res == nil || res.Workitem == nil {
 		return "", "", ""
@@ -39,7 +43,8 @@ func resolveCommitContext(ctx context.Context, campaignRoot, explicit string) (q
 // workitem context resolves so the hook sees no leaked vars.
 func workitemEnvForCommit(ctx context.Context, campaignRoot, explicit string) []string {
 	res, err := resolver.Resolve(ctx, campaignRoot, resolver.Options{
-		Explicit: explicit,
+		Explicit:       explicit,
+		DisableCurrent: true,
 	})
 	if err != nil || res == nil || res.Workitem == nil {
 		return nil

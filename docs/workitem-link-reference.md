@@ -117,6 +117,12 @@ Tier 3 uses longest-prefix matching: a link on `projects/myrepo/internal/api` wi
 
 Resolution is read-only. It never mutates `current.yaml`.
 
+The generic commit wrappers (`camp commit`, `camp project commit`, and
+`camp worktrees commit`) and intent/note auto-commits intentionally stop before
+the `current.yaml` tier. This prevents a stale per-machine selection from
+adding an unrelated `WI-` tag. Use `camp workitem commit` when you want the
+explicit current-workitem fallback.
+
 If a primary path link, festival link, or `current.yaml` selection points to a
 workitem that no longer exists, the resolver records that tier as an error in
 the trace and continues to the next tier where one exists. Operational errors
