@@ -316,6 +316,7 @@ type machineDiagnoseRow struct {
 	SSHUser      string `json:"ssh_user,omitempty"`
 	IdentityFile string `json:"identity_file,omitempty"`
 	Probe        string `json:"probe,omitempty"`
+	Hint         string `json:"hint,omitempty"`
 	Socket       string `json:"socket"`
 	State        string `json:"state"`
 	Reset        bool   `json:"reset"`
@@ -360,6 +361,7 @@ func runMachineDiagnose(cmd *cobra.Command, args []string) error {
 			SSHUser:      m.SSHUser,
 			IdentityFile: m.IdentityFile,
 			Probe:        remote.ProbeCommand(m),
+			Hint:         remote.AuthModeHint(m),
 			Socket:       d.Socket,
 			State:        string(d.State),
 		}
@@ -417,6 +419,9 @@ func renderMachineDiagnoseTable(w io.Writer, rows []machineDiagnoseRow) error {
 			fmt.Sprintf("%s  %s", ui.Label("SOCKET"), state+" · "+pathutil.AbbreviateHome(r.Socket)),
 			fmt.Sprintf("%s  %s", ui.Label("PROBE"), r.Probe),
 		)
+		if r.Hint != "" {
+			lines = append(lines, fmt.Sprintf("%s  %s", ui.Label("HINT"), r.Hint))
+		}
 		for _, line := range lines {
 			if _, err := fmt.Fprintln(w, line); err != nil {
 				return err

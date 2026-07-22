@@ -222,10 +222,16 @@ func runTailscaleStatus(ctx context.Context) ([]byte, error) {
 }
 
 func runMachineAddDiscover(cmd *cobra.Command, args []string) error {
+	return runMachineAddDiscoverWith(cmd, args, runTailscaleStatus)
+}
+
+// runMachineAddDiscoverWith is the testable discover path: production passes
+// runTailscaleStatus; tests inject a fixture so no live tailscale is required.
+func runMachineAddDiscoverWith(cmd *cobra.Command, args []string, run tailscaleStatusFunc) error {
 	if machineAddHost != "" {
 		return camperrors.New("cannot combine --discover with --host")
 	}
-	devices, err := discoverTailnet(cmd.Context(), runTailscaleStatus)
+	devices, err := discoverTailnet(cmd.Context(), run)
 	if err != nil {
 		return err
 	}

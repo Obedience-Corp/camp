@@ -3356,9 +3356,13 @@ and 'camp list --remote'.
 Machines are stored in ~/.obey/machines.yaml. The current machine is always
 implicitly available as "local" and is never written to that file.
 
-'camp machine diagnose' inspects the per-machine ssh ControlMaster sockets and
-can clear a stale one (the state a sleep or network flap can leave behind, which
-would otherwise hang the next hop until ControlPersist expires).
+Network vs login: Tailscale (or LAN) is how you reach the host; SSH auth is how
+you log in. Prefer OpenSSH keys/agent (auth_method=ssh-agent) by default;
+Tailscale SSH (auth_method=tailscale-ssh) is opt-in identity login. Terminal
+hops always use BatchMode (agents never hang on password prompts).
+
+'camp machine diagnose' reports auth mode, a copy-paste ssh probe, and
+ControlMaster socket state (and can clear a stale socket with --reset).
 
 Run without a subcommand in a terminal to manage the fleet interactively: add,
 discover, edit, and remove machines, and see each one's socket state. The
@@ -3374,8 +3378,10 @@ camp machine [flags]
 ```
   camp machine
   camp machine list
+  camp machine add buildbox --host 10.0.0.12 --auth ssh-agent --user ci
   camp machine add devbox --host devbox.tailnet.ts.net --auth tailscale-ssh
   camp machine add --discover
+  camp machine add --discover --auth tailscale-ssh --user lance
   camp machine remove devbox
   camp machine diagnose
   camp machine diagnose devbox --reset
@@ -3405,10 +3411,11 @@ Add a machine to ~/.obey/machines.yaml, or update it if the id already exists
 than duplicating it).
 
 With --discover, camp runs 'tailscale status --json' and lets you pick a
-tailnet device instead of specifying --host/--auth by hand; the chosen device
-is saved with auth_method=tailscale-ssh. Pass an id positionally with
---discover to select that device by its derived id non-interactively (skips
-the picker), or use --yes to take the first discovered device.
+tailnet device (network identity only). Default auth is OpenSSH keys/agent
+(ssh-agent); pass --auth tailscale-ssh for Tailscale identity login. --user and
+--identity are honored with --discover. Pass an id positionally with --discover
+to select that device by its derived id non-interactively (skips the picker),
+or use --yes to take the first discovered device.
 
 ```
 camp machine add [id] [flags]
@@ -3417,9 +3424,10 @@ camp machine add [id] [flags]
 ### Examples
 
 ```
-  camp machine add devbox --host devbox.tailnet.ts.net --auth tailscale-ssh
   camp machine add buildbox --host 10.0.0.12 --auth ssh-agent --user ci
+  camp machine add devbox --host devbox.tailnet.ts.net --auth tailscale-ssh
   camp machine add --discover
+  camp machine add --discover --auth tailscale-ssh --user lance
   camp machine add devbox --discover
   camp machine add --discover --yes
 ```
@@ -3446,16 +3454,19 @@ camp machine add [id] [flags]
 
 ## camp machine diagnose
 
-Inspect (and optionally clear) ssh ControlMaster sockets
+Inspect machine auth, probe line, and ssh ControlMaster sockets
 
 ### Synopsis
 
-Report the ssh ControlMaster multiplex socket state for each configured machine
-(or one machine if an id is given):
+Report how each configured machine is set up to hop (or one machine if an id
+is given):
 
-  none   no socket — the next hop opens a fresh master
-  live   socket present and the master answers 'ssh -O check'
-  stale  socket present but the master no longer answers
+  auth     OpenSSH (keys/agent) or Tailscale SSH (identity)
+  probe    copy-paste BatchMode ssh line to test outside camp
+  socket   ControlMaster multiplex state:
+             none   no socket — the next hop opens a fresh master
+             live   socket present and the master answers 'ssh -O check'
+             stale  socket present but the master no longer answers
 
 A stale socket is what a sleep or network flap can leave behind; until it is
 removed (or ControlPersist expires) the next 'camp switch machine:...' or
@@ -6036,8 +6047,15 @@ Manage campaign skill directory links
 Manage campaign skill bundle projection for tool interoperability.
 
 Skills are centralized in .campaign/skills/ and projected into tool ecosystems
-(Claude, agents, etc.) as per-bundle symlinks. This keeps a single source of
-truth while preserving existing provider-native skills directories.
+(Claude, agents, Grok, etc.) as per-bundle symlinks. This keeps a single source
+of truth while preserving existing provider-native skills directories.
+
+Project worktrees under projects/worktrees/<project>/<name>/ are also supported:
+'camp project worktree add' projects skills into each new worktree automatically,
+and 'camp skills link --worktrees' repairs all of them. That way harnesses whose
+git root is the worktree (not the campaign root) still discover campaign skills.
+Only git checkouts are projected (directory must contain .git). A loose git root
+at projects/worktrees/<name>/ is accepted; package subdirs under it are not.
 
 Commands:
   link     Project per-skill symlinks into a tool-specific skills directory
@@ -6047,6 +6065,8 @@ Commands:
 Examples:
   camp skills link --tool claude    Project skills into .claude/skills/
   camp skills link --tool agents    Project skills into .agents/skills/
+  camp skills link --worktrees      Project into tools and every project worktree
+  camp skills link --worktrees-only Project into project worktrees only
   camp skills status                Show all skill projection states
   camp skills unlink --tool claude  Remove projected symlinks from .claude/skills/
 
@@ -6080,9 +6100,20 @@ This command creates one symlink per skill bundle. It does not replace entire
 provider skills directories, so existing user skills remain intact.
 
 With neither --tool nor --path, skills are projected into every registered tool.
+Pass --worktrees with no --tool/--path to also project into every
+projects/worktrees/<project>/<name> git checkout (so Grok/Claude sessions
+opened inside a worktree still see campaign skills). Use --worktrees-only to
+project into worktrees without touching campaign-root tool directories.
+
+Worktree discovery only includes directories with a .git file/dir. The normal
+layout is projects/worktrees/<project>/<name>/. A loose git root at
+projects/worktrees/<name>/ is also accepted; nested dirs under that root are
+not scanned as separate worktrees.
 
 Examples:
   camp skills link                     Project skills into all registered tools
+  camp skills link --worktrees         Project into tools and every project worktree
+  camp skills link --worktrees-only    Project into every project worktree only
   camp skills link --tool claude       Project skills into .claude/skills/
   camp skills link --tool agents       Project skills into .agents/skills/
   camp skills link --path custom/dir   Project skills into custom/dir
@@ -6096,11 +6127,13 @@ camp skills link [flags]
 ### Options
 
 ```
-  -n, --dry-run       Show what would happen without making changes
-  -f, --force         Replace conflicting symlink entries (never files/directories)
-  -h, --help          help for link
-  -p, --path string   Custom destination directory
-  -t, --tool string   Tool to link: claude, agents
+  -n, --dry-run          Show what would happen without making changes
+  -f, --force            Replace conflicting symlink entries (never files/directories)
+  -h, --help             help for link
+  -p, --path string      Custom destination directory
+  -t, --tool string      Tool to link: claude, agents
+      --worktrees        Also project into every projects/worktrees/*/* worktree
+      --worktrees-only   Project only into project worktrees (skip campaign tool dirs)
 ```
 
 ### Options inherited from parent commands

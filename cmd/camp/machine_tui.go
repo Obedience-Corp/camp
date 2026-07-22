@@ -382,7 +382,7 @@ func (m *machineTUIModel) testMachine(target machines.Machine) tea.Cmd {
 		if err != nil {
 			return healthMsg{id: target.ID, health: machineHealth{
 				State:  healthUnreachable,
-				Detail: connectionFailureDetail(err),
+				Detail: connectionFailureDetailFor(err, &target),
 			}}
 		}
 		return healthMsg{id: target.ID, health: machineHealth{
@@ -420,6 +420,15 @@ func parseRemoteVersion(out string) string {
 // "command not found" stderr line is exactly the failure mode the health
 // check exists to surface, so preserve the outer message instead.
 func connectionFailureDetail(err error) string {
+	return connectionFailureDetailFor(err, nil)
+}
+
+// connectionFailureDetailFor reduces a failed hop to an actionable line.
+// When m is set, the detail is prefixed with the auth mode label (D3/D7).
+func connectionFailureDetailFor(err error, m *machines.Machine) string {
+	if detail := remote.FormatHopFailure(err, m); detail != "" {
+		return detail
+	}
 	if detail := remote.HopFailureDetail(err); detail != "" {
 		return detail
 	}

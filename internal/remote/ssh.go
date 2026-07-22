@@ -89,6 +89,49 @@ func ProbeCommand(m *machines.Machine) string {
 	return strings.Join(parts, " ")
 }
 
+// AuthModeHint returns an optional one-line diagnose note for the machine's
+// auth_method (D7). Empty when no extra guidance is needed.
+func AuthModeHint(m *machines.Machine) string {
+	if m == nil {
+		return ""
+	}
+	switch m.AuthMethod {
+	case machines.AuthTailscaleSSH:
+		return "Tailscale SSH: if hop fails, look for a login.tailscale.com check URL — approve in a browser, then retry (camp cannot complete check-mode under BatchMode)"
+	case machines.AuthSSHAgent:
+		if m.IdentityFile == "" {
+			return "OpenSSH: ensure ssh-agent has keys (`ssh-add -l`) or set identity_file; Tailnet reachability alone is not login"
+		}
+		return "OpenSSH: hop uses identity_file / agent; peer must accept publickey (not Tailscale check-mode alone)"
+	case machines.AuthSSHPassword:
+		return "password auth is not supported for terminal hop; re-add with ssh-agent or tailscale-ssh"
+	default:
+		return ""
+	}
+}
+
+// FormatHopFailure returns the best operator-facing hop error, optionally
+// prefixed with the machine's auth mode so diagnose / list / TUI share one
+// classification path (design 04 §B).
+func FormatHopFailure(err error, m *machines.Machine) string {
+	if err == nil {
+		return ""
+	}
+	detail := HopFailureDetail(err)
+	if detail == "" {
+		return ""
+	}
+	if m == nil || m.AuthMethod == "" {
+		return detail
+	}
+	// Avoid double-prefixing if the message already names the mode.
+	label := AuthDisplayName(m.AuthMethod)
+	if strings.Contains(detail, label) || strings.Contains(detail, m.AuthMethod) {
+		return detail
+	}
+	return label + ": " + detail
+}
+
 // expandTilde resolves a leading ~ or ~/ to the current user's home directory,
 // matching OpenSSH's IdentityFile expansion. A ~otheruser/ prefix is left
 // untouched for ssh to resolve, and a path with no leading tilde (including one

@@ -72,6 +72,25 @@ func TestProbeCommand(t *testing.T) {
 	}
 }
 
+func TestAuthModeHint(t *testing.T) {
+	if got := AuthModeHint(&machines.Machine{AuthMethod: machines.AuthTailscaleSSH}); !strings.Contains(got, "login.tailscale.com") {
+		t.Errorf("tailscale hint = %q", got)
+	}
+	if got := AuthModeHint(&machines.Machine{AuthMethod: machines.AuthSSHAgent}); !strings.Contains(got, "OpenSSH") {
+		t.Errorf("agent hint = %q", got)
+	}
+}
+
+func TestFormatHopFailurePrefixesAuth(t *testing.T) {
+	stderr := "# Tailscale SSH requires an additional check.\n# To authenticate, visit: https://login.tailscale.com/a/abc\n"
+	err := sshTimeoutError("host", stderr, context.DeadlineExceeded)
+	m := &machines.Machine{AuthMethod: machines.AuthSSHAgent}
+	got := FormatHopFailure(err, m)
+	if !strings.Contains(got, "OpenSSH") || !strings.Contains(got, "login.tailscale.com/a/abc") {
+		t.Errorf("FormatHopFailure = %q", got)
+	}
+}
+
 func TestAuthArgsExpandsIdentityTilde(t *testing.T) {
 	home := t.TempDir()
 	t.Setenv("HOME", home)
