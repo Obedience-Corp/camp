@@ -56,6 +56,12 @@ type Options struct {
 
 	// Remote name used when RefreshRemote is true. Empty means "origin".
 	RemoteName string
+
+	// PreserveDetachedWorktrees lists detached worktree paths that this prune
+	// pass must retain even when their commits are merged into BaseRef. This is
+	// used when a caller detached a worktree as part of the surrounding
+	// operation and must not immediately undo that work by deleting it.
+	PreserveDetachedWorktrees []string
 }
 
 // Result holds the outcome for a single branch.
@@ -279,6 +285,11 @@ func deleteDetachedWorktrees(ctx context.Context, path, baseRef string, opts Opt
 	}
 	if gitDir, err := git.Output(ctx, path, "rev-parse", "--absolute-git-dir"); err == nil {
 		skipPaths[filepath.Clean(gitDir)] = struct{}{}
+	}
+	for _, preserved := range opts.PreserveDetachedWorktrees {
+		if preserved = strings.TrimSpace(preserved); preserved != "" {
+			skipPaths[filepath.Clean(preserved)] = struct{}{}
+		}
 	}
 
 	removedAny := false

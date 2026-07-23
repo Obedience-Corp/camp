@@ -293,6 +293,13 @@ func executeFresh(ctx context.Context, name, path string, opts freshOptions) err
 			BaseRef:       syncState.baseRef,
 			RefreshRemote: true,
 		}
+		// Reclaiming the default branch detaches its former worktree. Preserve
+		// that exact worktree during this prune pass: fresh created the detached
+		// state as a safe branch handoff, so it must not immediately classify
+		// the worktree as merged and remove it.
+		if syncState.reclaimed && syncState.worktreePath != "" {
+			pruneOpts.PreserveDetachedWorktrees = []string{syncState.worktreePath}
+		}
 		pr := prune.Execute(ctx, name, path, pruneOpts)
 		if pr.Error != "" {
 			return camperrors.Wrapf(errors.New(pr.Error), "prune merged branches")
