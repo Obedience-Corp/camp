@@ -405,3 +405,109 @@ func TestWriteGotoSelection(t *testing.T) {
 		t.Errorf("no path-output should be a no-op, got %v", err)
 	}
 }
+
+func TestGotoSelectionFor(t *testing.T) {
+	local := campaignEntry{Name: "x", Path: "/abs/x", Machine: ""}
+	if got := gotoSelectionFor(local); got != "/abs/x" {
+		t.Errorf("local = %q", got)
+	}
+	localTagged := campaignEntry{Name: "x", Path: "/abs/x", Machine: "local"}
+	if got := gotoSelectionFor(localTagged); got != "/abs/x" {
+		t.Errorf("local machine tag = %q", got)
+	}
+	remote := campaignEntry{Name: "lance-arch", Path: "/remote/p", Machine: "archdtop"}
+	if got := gotoSelectionFor(remote); got != "ssh-hop:archdtop:lance-arch" {
+		t.Errorf("remote = %q", got)
+	}
+}
+
+func TestListTUI_RemoteToggleMergeAndStrip(t *testing.T) {
+	m := newTestListModel(t)
+	m.machinesConfigured = true
+	localN := len(m.all)
+
+	// Simulate async load result.
+	next, _ := m.Update(remoteLoadedMsg{
+		rows: []campaignEntry{
+			{ID: "r1", Name: "lance-arch", Org: "obey", Status: config.StatusActive, Machine: "archdtop", Path: "/r"},
+		},
+		results: []remoteResult{{machineID: "archdtop"}},
+	})
+	m = next.(listTUIModel)
+	if !m.remoteOn {
+		t.Fatal("remoteOn should be true after load")
+	}
+	if len(m.all) != localN+1 {
+		t.Fatalf("all len = %d, want %d", len(m.all), localN+1)
+	}
+	// Toggle off via key r.
+	m = lkey(m, "r")
+	if m.remoteOn {
+		t.Error("remoteOn should be false after toggle off")
+	}
+	for _, e := range m.all {
+		if isRemoteListEntry(e) {
+			t.Errorf("remote row still present after toggle off: %+v", e)
+		}
+	}
+	if len(m.all) != localN {
+		t.Errorf("local count after strip = %d, want %d", len(m.all), localN)
+	}
+}
+
+func TestListTUI_RemoteMutateGuarded(t *testing.T) {
+	m := newTestListModel(t)
+	m.machinesConfigured = true
+	next, _ := m.Update(remoteLoadedMsg{
+		rows: []campaignEntry{
+			{ID: "r1", Name: "remote-camp", Org: "obey", Status: config.StatusActive, Machine: "archdtop", Path: "/r"},
+		},
+	})
+	m = next.(listTUIModel)
+	// Move cursor to last (remote) row.
+	m.cursor = len(m.visible) - 1
+	if !isRemoteListEntry(m.visible[m.cursor]) {
+		t.Fatal("expected cursor on remote row")
+	}
+	m = lkey(m, "s")
+	if !m.statusErr || !strings.Contains(m.status, "read-only") {
+		t.Errorf("status cycle on remote should refuse, got %q (err=%v)", m.status, m.statusErr)
+	}
+	m = lkey(m, "m")
+	if m.overlay != listOverlayNone {
+		t.Error("move overlay must not open on remote row")
+	}
+	if !m.statusErr || !strings.Contains(m.status, "read-only") {
+		t.Errorf("org move on remote should refuse, got %q", m.status)
+	}
+}
+
+func TestListTUI_Go_RemoteWritesSSHHop(t *testing.T) {
+	m := newTestListModel(t)
+	m.gotoEnabled = true
+	m.machinesConfigured = true
+	next, _ := m.Update(remoteLoadedMsg{
+		rows: []campaignEntry{
+			{ID: "r1", Name: "lance-arch", Org: "obey", Status: config.StatusActive, Machine: "archdtop", Path: "/remote/p"},
+		},
+	})
+	m = next.(listTUIModel)
+	m.cursor = len(m.visible) - 1
+	m = lkey(m, "g")
+	if !m.quitting {
+		t.Fatal("g should quit")
+	}
+	if m.gotoPath != "ssh-hop:archdtop:lance-arch" {
+		t.Errorf("gotoPath = %q, want ssh-hop marker", m.gotoPath)
+	}
+}
+
+func TestListTUI_FooterMentionsRemotesWhenConfigured(t *testing.T) {
+	m := newTestListModel(t)
+	m.machinesConfigured = true
+	m.width, m.height = 120, 30
+	out := m.View()
+	if !strings.Contains(out, "r: remotes") && !strings.Contains(out, "r remotes") {
+		t.Errorf("footer should mention r remotes when machines configured:\n%s", out)
+	}
+}

@@ -173,7 +173,18 @@ function camp --description "Camp CLI wrapper with directory-changing support"
                 set -l dest (cat "$tmp")
                 rm -f "$tmp"
                 if test -n "$dest"
-                    cd "$dest"
+                    # Remote go writes ssh-hop:<machine>:<campaign>; hop via switch.
+                    if string match -q 'ssh-hop:*' -- $dest
+                        set -l sel (string replace -r '^ssh-hop:' '' -- $dest)
+                        set -l line (command camp switch $sel --shell-connect)
+                        set -l hop_status $status
+                        if test "$hop_status" -ne 0
+                            return $hop_status
+                        end
+                        eval "$line"
+                    else
+                        cd "$dest"
+                    end
                 end
             else
                 rm -f "$tmp"

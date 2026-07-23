@@ -16,6 +16,7 @@ import (
 	"github.com/Obedience-Corp/camp/internal/machines"
 	"github.com/Obedience-Corp/camp/internal/ui"
 	"github.com/spf13/cobra"
+	"golang.org/x/term"
 )
 
 type campaignEntry struct {
@@ -33,6 +34,10 @@ type campaignEntry struct {
 	Machine string `json:"machine,omitempty"`
 }
 
+// stderrIsTTY is overridden in tests so the R2 machines hint can be asserted
+// without a real terminal.
+var stderrIsTTY = func() bool { return term.IsTerminal(int(os.Stderr.Fd())) }
+
 var listCmd = &cobra.Command{
 	Use:   "list [org]",
 	Short: "List all registered campaigns",
@@ -43,9 +48,15 @@ with 'camp register'. The registry lives at ~/.obey/campaign/registry.json.
 
 In a terminal, 'camp list' (with no flags) opens an interactive browser where you
 can deactivate/reactivate campaigns (cycle lifecycle status), reassign their org,
-and copy paths. Pass an org as a positional argument to open the browser filtered
-to that org. Piped, with --json/--count, or with any filter/sort flag it prints
-the table instead. Home paths display as '~'.
+and copy paths. When machines are configured in ~/.obey/machines.yaml, press 'r'
+to load remote campaigns into the browser (not on open). Pass an org as a
+positional argument to open the browser filtered to that org. Piped, with
+--json/--count, or with any filter/sort flag it prints the table instead. Home
+paths display as '~'.
+
+Shell integration (recommended for go/hop from the browser):
+  eval "$(camp shell-init zsh)"   # or bash / fish
+  camp list                       # interactive browser; g hops remote rows
 
 Output formats:
   table   - Aligned columns with headers (default)
@@ -72,7 +83,10 @@ Examples:
 --remote runs each machine's own 'camp list --json' through a login shell
 (sh -lc) so PATH entries a login profile exports (~/.profile, etc.) are
 picked up. If camp still can't be found on a machine, set
-CAMP_REMOTE_CAMP_PATH to its exact path there.`,
+CAMP_REMOTE_CAMP_PATH to its exact path there.
+
+For interactive hop to a remote campaign from the picker, use csw after
+shell-init (see 'camp switch --help').`,
 	Aliases: []string{"ls"},
 	Args:    cobra.MaximumNArgs(1),
 	RunE:    runList,
@@ -184,18 +198,12 @@ func renderListTable(cmd *cobra.Command, positionalOrg string) error {
 		for i := range campaigns {
 			campaigns[i].Machine = machines.LocalMachineID
 		}
-		mf, err := machines.Load()
+		remoteRows, results, err := loadRemoteCampaigns(ctx, filter)
 		if err != nil {
 			return err
 		}
-		remoteResults = fanOutRemote(ctx, mf.Machines, enumerateRemoteFor(filter))
-		for _, r := range remoteResults {
-			if r.err == nil {
-				campaigns = append(campaigns, r.rows...)
-			}
-			// A failed result becomes a labeled muted row in the human render
-			// (task 2); it never contaminates the local/reachable rows here.
-		}
+		remoteResults = results
+		campaigns = append(campaigns, remoteRows...)
 		// Correctness backstop: a version-skewed or looser remote may return rows
 		// outside the requested --org/--tag/--status, so re-apply the local filter
 		// to the combined set. Idempotent for the already-filtered local rows.
@@ -226,6 +234,8 @@ func renderListTable(cmd *cobra.Command, positionalOrg string) error {
 	if listRemote {
 		return outputRemoteList(os.Stdout, cmd.ErrOrStderr(), campaigns, remoteResults, formatStr)
 	}
+	// R2: human table only, when machines exist and stderr is a TTY.
+	maybeEmitMachinesHint(cmd.ErrOrStderr(), formatStr)
 	if formatStr == "json" {
 		return outputCampaigns(os.Stdout, campaigns, formatStr)
 	}
@@ -233,6 +243,24 @@ func renderListTable(cmd *cobra.Command, positionalOrg string) error {
 		return outputGrouped(campaigns, formatStr, reg.FallbackOrg())
 	}
 	return outputCampaigns(os.Stdout, campaigns, formatStr)
+}
+
+// maybeEmitMachinesHint prints one muted stderr line when the human table path
+// runs without --remote and machines.yaml has at least one machine. JSON/simple/
+// count and non-TTY stderr stay silent (R2). Best-effort: load failure skips hint.
+func maybeEmitMachinesHint(stderr io.Writer, format string) {
+	if format != "table" {
+		return
+	}
+	if !stderrIsTTY() {
+		return
+	}
+	mf, err := machines.Load()
+	if err != nil || len(mf.Machines) == 0 {
+		return
+	}
+	_, _ = fmt.Fprintln(stderr, ui.Dim(fmt.Sprintf(
+		"%d machine(s) configured — camp list --remote", len(mf.Machines))))
 }
 
 func loadVerifiedListRegistry(ctx context.Context) (*config.Registry, *config.VerificationReport, error) {

@@ -115,7 +115,7 @@ camp() {
       ;;
     list|ls)
       shift
-      local arg passthrough cmd_status tmp
+      local arg passthrough cmd_status tmp dest line sel
       passthrough=0
       for arg in "$@"; do
         case "$arg" in
@@ -146,7 +146,17 @@ camp() {
         dest=$(cat "$tmp")
         rm -f "$tmp"
         if [ -n "$dest" ]; then
-          cd "$dest" || return 1
+          # Remote go writes ssh-hop:<machine>:<campaign>; hop via switch.
+          case "$dest" in
+            ssh-hop:*)
+              sel="${dest#ssh-hop:}"
+              line=$(command camp switch "$sel" --shell-connect) || return $?
+              eval "$line"
+              ;;
+            *)
+              cd "$dest" || return 1
+              ;;
+          esac
         fi
       else
         rm -f "$tmp"
