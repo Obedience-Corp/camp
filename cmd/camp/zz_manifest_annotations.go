@@ -94,6 +94,7 @@ var manifestAgentAllowedReasons = map[string]string{
 	"workitem group":             "Non-interactive group update with explicit selector",
 	"workitem priority":          "Non-interactive priority update with explicit selector",
 	"workitem promote":           "Non-interactive promote fully specified by --target and flags",
+	"workitem rename":            "Non-interactive rename fully specified by positional args and flags",
 	"workitem repair":            "Idempotent, non-destructive marker repair with --json and --dry-run",
 	"workitem resolve":           "Read-only workitem context resolution",
 	"workitem stage":             "Non-interactive attention-stage update with explicit selector",

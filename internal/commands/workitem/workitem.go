@@ -150,6 +150,7 @@ Examples:
 	cmd.AddCommand(newStageCommand())
 	cmd.AddCommand(newGroupCommand())
 	cmd.AddCommand(newPromoteCommand())
+	cmd.AddCommand(newRenameCommand())
 	cmd.AddCommand(newDoctorCommand())
 	cmd.AddCommand(newValidateCommand())
 	cmd.AddCommand(newRepairCommand())
