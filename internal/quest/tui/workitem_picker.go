@@ -214,7 +214,7 @@ func (p workitemPicker) view() string {
 	return b.String()
 }
 
-const noneRowLabel = "(none — skip binding)"
+const noneRowLabel = "(none - skip binding)"
 
 func (p workitemPicker) renderRow(cursorIndex int, text string) string {
 	if p.cursor == cursorIndex {
