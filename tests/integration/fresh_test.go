@@ -530,8 +530,10 @@ git -C %[1]s worktree add %[2]s main
 	branchOnStuck := tc.GitOutput(t, stuckWT, "rev-parse", "--abbrev-ref", "HEAD")
 	require.Equal(t, "main", branchOnStuck, "precondition: stuck worktree should hold main")
 
-	// --no-prune so the reclaimed worktree is not removed after detach
-	// (prune deletes clean detached worktrees that match merged history).
+	// --no-prune keeps this test focused on the reclaim handoff itself. The
+	// reclaim-then-prune preservation contract (the detached worktree surviving
+	// the same run's prune pass) is locked by
+	// TestFresh_ReclaimedWorktreePreservedDuringPrune.
 	output, err := tc.RunCampInDir(projectDir, "fresh", "--no-branch", "--no-push", "--no-follow-up", "--no-prune")
 	require.NoError(t, err, "camp fresh should reclaim main:\n%s", output)
 	assert.Contains(t, output, "Free", "fresh should report freeing the default branch")
@@ -544,4 +546,62 @@ git -C %[1]s worktree add %[2]s main
 	// Occupying worktree was detached so main is free for the primary path.
 	stuck := tc.GitOutput(t, stuckWT, "rev-parse", "--abbrev-ref", "HEAD")
 	assert.Equal(t, "HEAD", stuck, "occupying worktree should be detached, got %s", stuck)
+}
+
+// TestFresh_ReclaimedWorktreePreservedDuringPrune locks the reclaim-then-prune
+// contract. Reclaiming the default branch detaches its former worktree at merged
+// history, so the same run's prune pass would immediately delete it unless fresh
+// preserves that exact path (PreserveDetachedWorktrees in fresh.go). With prune
+// ENABLED, the reclaimed worktree must survive while an unrelated merged detached
+// worktree is still removed. This fails without the preserve wiring.
+func TestFresh_ReclaimedWorktreePreservedDuringPrune(t *testing.T) {
+	skipIfShort(t)
+	tc := GetSharedContainer(t)
+	const name = "fresh-reclaim-prune"
+	_, projectDir, _ := setupFreshCampaignWithSubmodule(t, tc, name)
+
+	// Primary starts on a feature branch; main is held by a finished worktree.
+	tc.Shell(t, fmt.Sprintf(`
+set -e
+git -C %[1]s checkout -b feature-active
+printf 'work\n' > %[1]s/feature.txt
+git -C %[1]s add .
+git -C %[1]s commit -m 'feature work'
+`, projectDir))
+
+	stuckWT := worktreePath(name, "stuck-main")
+	// A separate clean, merged, detached worktree that a normal prune removes.
+	// It is not the reclaimed path, so it must NOT be preserved.
+	mergedWT := worktreePath(name, "merged-detached")
+	tc.Shell(t, fmt.Sprintf(`
+set -e
+git -C %[1]s worktree add %[2]s main
+git -C %[1]s worktree add --detach %[3]s main
+`, projectDir, stuckWT, mergedWT))
+
+	require.Equal(t, "main", tc.GitOutput(t, stuckWT, "rev-parse", "--abbrev-ref", "HEAD"),
+		"precondition: stuck worktree should hold main")
+	require.Equal(t, "HEAD", tc.GitOutput(t, mergedWT, "rev-parse", "--abbrev-ref", "HEAD"),
+		"precondition: sibling worktree should be detached")
+
+	// Prune ENABLED (no --no-prune): this is the exact path the fix protects.
+	output, err := tc.RunCampInDir(projectDir, "fresh", "--no-branch", "--no-push", "--no-follow-up")
+	require.NoError(t, err, "camp fresh should reclaim main with prune enabled:\n%s", output)
+
+	// Primary reclaimed main.
+	assert.Equal(t, "main", tc.GitOutput(t, projectDir, "rev-parse", "--abbrev-ref", "HEAD"),
+		"primary project path should hold main after fresh")
+
+	// The reclaimed (now detached) worktree must survive the prune pass.
+	stuckExists, err := tc.CheckDirExists(stuckWT)
+	require.NoError(t, err)
+	require.True(t, stuckExists, "reclaimed worktree must be preserved during prune, not deleted")
+	assert.Equal(t, "HEAD", tc.GitOutput(t, stuckWT, "rev-parse", "--abbrev-ref", "HEAD"),
+		"reclaimed worktree should remain detached after fresh")
+
+	// The unrelated merged detached worktree must still be pruned, proving the
+	// preserve list is scoped to the reclaimed path and does not disable prune.
+	mergedExists, err := tc.CheckDirExists(mergedWT)
+	require.NoError(t, err)
+	assert.False(t, mergedExists, "unrelated merged detached worktree should still be removed by prune")
 }
