@@ -146,6 +146,7 @@ Examples:
 	cmd.AddCommand(newWorktreeCommand())
 	cmd.AddCommand(newCurrentCommand())
 	cmd.AddCommand(newResolveCommand())
+	cmd.AddCommand(newIDCommand())
 	cmd.AddCommand(newPriorityCommand())
 	cmd.AddCommand(newStageCommand())
 	cmd.AddCommand(newGroupCommand())

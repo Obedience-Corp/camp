@@ -88,6 +88,7 @@ var manifestAgentAllowedReasons = map[string]string{
 	"workitem create":            "Non-interactive workitem creation with explicit slug",
 	"workitem current":           "Non-interactive current-workitem selection and query",
 	"workitem doctor":            "Read path (--json) is safe; never pass --fix from an agent",
+	"workitem id":                "Read-only identifier lookup with a bare-id stdout contract and --json for automation",
 	"workitem link":              "Non-interactive workitem link operation",
 	"workitem links":             "Read-only workitem link listing",
 	"workitem list":              "Read-only filtered listing with non-interactive compact and JSON output",
