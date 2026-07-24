@@ -369,6 +369,11 @@ func (m *machineTUIModel) scanTailnet(intoOverlay bool, gen uint64) tea.Cmd {
 // round trip answers everything the screen needs: whether ssh authenticates,
 // whether the host resolves, and whether camp is installed over there, which
 // is the failure a socket state can never show.
+//
+// The hop is reuse-only so testing a machine cannot rewrite the socket column
+// next to it: probeSockets runs once at Init and no healthMsg refreshes it, so
+// a ControlMaster=auto probe would silently replace a stale socket while the
+// screen kept displaying "stale" for the rest of the session.
 func (m *machineTUIModel) testMachine(target machines.Machine) tea.Cmd {
 	ctx := m.ctx
 	return func() tea.Msg {
@@ -378,7 +383,7 @@ func (m *machineTUIModel) testMachine(target machines.Machine) tea.Cmd {
 				Detail: "camp cannot hop to a password-auth machine yet",
 			}}
 		}
-		out, err := remote.RunCampCommand(ctx, &target, "--version")
+		out, err := remote.RunCampCommandReuseOnly(ctx, &target, "--version")
 		if err != nil {
 			return healthMsg{id: target.ID, health: machineHealth{
 				State:  healthUnreachable,
