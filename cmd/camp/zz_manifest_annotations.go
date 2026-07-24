@@ -99,6 +99,7 @@ var manifestAgentAllowedReasons = map[string]string{
 	"workitem repair":            "Idempotent, non-destructive marker repair with --json and --dry-run",
 	"workitem resolve":           "Read-only workitem context resolution",
 	"workitem stage":             "Non-interactive attention-stage update with explicit selector",
+	"workitem sweep":             "Fully specified by flags; promotes every workitem with a completed run, no interactive selection",
 	"workitem unlink":            "Non-interactive workitem unlink operation",
 	"workitem validate":          "Read-only structural validator with --json output",
 	"workitem worktree":          "Creates an isolated worktree for a workitem with an explicit selector; --print yields a cd-able path",
