@@ -323,3 +323,83 @@ func TestLoadLocalRun_HostWrapperSmoke(t *testing.T) {
 		t.Errorf("expected WorkflowID=wf-host via host wrapper, got %+v", got)
 	}
 }
+
+// TestLatestRunID covers the runs[] index selection that decides WHICH run the
+// post-completion path replays, and therefore which items the tier-1 sweep
+// considers eligible. LoadLocalRunFS's fixtures only ever carry one completed
+// run, so the multi-entry ordering rules are pinned directly here.
+//
+// The string compare on ended_at is safe because fest writes RFC 3339 UTC
+// (Zulu) timestamps, which sort lexicographically in time order.
+func TestLatestRunID(t *testing.T) {
+	tests := []struct {
+		name string
+		runs []localRunIndex
+		want string
+	}{
+		{
+			name: "no runs",
+			runs: nil,
+			want: "",
+		},
+		{
+			name: "single run",
+			runs: []localRunIndex{{RunID: "run-001", EndedAt: "2026-07-24T19:00:00Z"}},
+			want: "run-001",
+		},
+		{
+			name: "newest ended_at wins regardless of list order",
+			runs: []localRunIndex{
+				{RunID: "run-003", EndedAt: "2026-07-24T21:00:00Z"},
+				{RunID: "run-001", EndedAt: "2026-07-24T19:00:00Z"},
+				{RunID: "run-002", EndedAt: "2026-07-24T20:00:00Z"},
+			},
+			want: "run-003",
+		},
+		{
+			name: "tie on ended_at breaks to the last list entry",
+			runs: []localRunIndex{
+				{RunID: "run-001", EndedAt: "2026-07-24T19:00:00Z"},
+				{RunID: "run-002", EndedAt: "2026-07-24T19:00:00Z"},
+			},
+			want: "run-002",
+		},
+		{
+			name: "all ended_at empty falls back to the last entry (fest appends newest last)",
+			runs: []localRunIndex{
+				{RunID: "run-001"},
+				{RunID: "run-002"},
+			},
+			want: "run-002",
+		},
+		{
+			name: "entries with no run_id are skipped",
+			runs: []localRunIndex{
+				{RunID: "", EndedAt: "2026-07-24T23:00:00Z"},
+				{RunID: "run-001", EndedAt: "2026-07-24T19:00:00Z"},
+			},
+			want: "run-001",
+		},
+		{
+			name: "every entry missing run_id yields no latest",
+			runs: []localRunIndex{{EndedAt: "2026-07-24T19:00:00Z"}, {}},
+			want: "",
+		},
+		{
+			name: "a dated run beats an undated one written after it",
+			runs: []localRunIndex{
+				{RunID: "run-001", EndedAt: "2026-07-24T19:00:00Z"},
+				{RunID: "run-002"},
+			},
+			want: "run-001",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if got := latestRunID(tt.runs); got != tt.want {
+				t.Errorf("latestRunID() = %q, want %q", got, tt.want)
+			}
+		})
+	}
+}

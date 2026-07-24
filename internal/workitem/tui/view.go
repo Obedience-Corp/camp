@@ -542,7 +542,8 @@ func renderPreview(item workitem.WorkItem, width, height int) string {
 			previewLabelStyle.Render("stable id:"),
 			previewValueStyle.Render(truncate(item.StableID, maxValueWidth))))
 	}
-	if item.WorkflowMeta != nil && (item.WorkflowMeta.WorkflowID != "" || item.WorkflowMeta.TotalSteps > 0 || item.WorkflowMeta.RunStatus != "") {
+	if item.WorkflowMeta != nil && (item.WorkflowMeta.WorkflowID != "" || item.WorkflowMeta.TotalSteps > 0 ||
+		item.WorkflowMeta.RunStatus != "" || item.WorkflowMeta.LatestRunStatus != "") {
 		b.WriteString("\n")
 		b.WriteString(previewLabelStyle.Render("WORKFLOW"))
 		b.WriteString("\n")
@@ -559,8 +560,16 @@ func renderPreview(item workitem.WorkItem, width, height int) string {
 			}
 			b.WriteString(fmt.Sprintf("  progress  %s\n", previewValueStyle.Render(progress)))
 		}
-		if item.WorkflowMeta.RunStatus != "" {
-			b.WriteString(fmt.Sprintf("  status    %s\n", previewValueStyle.Render(item.WorkflowMeta.RunStatus)))
+		// RunStatus carries a live run's state; once fest clears active_run_id the
+		// terminal state lives in LatestRunStatus instead. The loader populates
+		// exactly one of the two, so falling back reports whichever applies —
+		// without it a completed workitem renders progress steps and no status.
+		status := item.WorkflowMeta.RunStatus
+		if status == "" {
+			status = item.WorkflowMeta.LatestRunStatus
+		}
+		if status != "" {
+			fmt.Fprintf(&b, "  status    %s\n", previewValueStyle.Render(status))
 		}
 		if item.WorkflowMeta.DocHashChanged {
 			b.WriteString(fmt.Sprintf("  %s\n", previewLabelStyle.Render("⚠ workflow doc changed since run started")))
