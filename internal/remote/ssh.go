@@ -159,14 +159,39 @@ func expandTilde(path string) string {
 // Conceptually mirrors the app's ssh_base_args (connection.rs:241-255); host
 // details beyond the machine's identity_file are left to the user's ~/.ssh/config.
 func Opts(m *machines.Machine) []string {
-	opts := []string{
+	opts := append(baseOpts(),
+		"-o", "ControlMaster=auto",
+		"-o", "ControlPath="+controlPath(m),
+		"-o", "ControlPersist=30s",
+	)
+	return append(opts, authArgs(m)...)
+}
+
+// OptsReuseOnly returns ssh options for a hop that must not change m's
+// ControlMaster socket. ControlMaster=no still reuses a live master when one
+// exists (one auth, no extra handshake), but it never opens a master, and —
+// unlike ControlMaster=auto — never unlinks a stale socket to replace it with a
+// fresh one. That last part is why this exists: any surface that reports socket
+// state must hop this way, or its own probe heals the stale socket it is
+// reporting, and the operator is told to reset a socket that no longer exists.
+// ControlPersist is omitted because nothing here creates a master to persist,
+// and the path comes from ControlSocketPath (not controlPath) so a read-only
+// diagnostic does not create ~/.obey/ssh-ctl as a side effect.
+func OptsReuseOnly(m *machines.Machine) []string {
+	opts := append(baseOpts(),
+		"-o", "ControlMaster=no",
+		"-o", "ControlPath="+ControlSocketPath(m),
+	)
+	return append(opts, authArgs(m)...)
+}
+
+// baseOpts returns the ssh options shared by every camp hop, excluding the
+// ControlMaster settings (which differ by hop kind) and auth args.
+func baseOpts() []string {
+	return []string{
 		"-o", "StrictHostKeyChecking=accept-new",
 		"-o", "ConnectTimeout=8",
-		"-o", "ControlMaster=auto",
-		"-o", "ControlPath=" + controlPath(m),
-		"-o", "ControlPersist=30s",
 	}
-	return append(opts, authArgs(m)...)
 }
 
 // controlDir is ~/.obey/ssh-ctl, the directory holding one ControlMaster socket
@@ -532,11 +557,23 @@ func remoteCampBinary() string {
 // bash/zsh because POSIX guarantees /bin/sh exists; the user's actual login
 // shell is whatever their own account is configured to run.
 func RunCampCommand(ctx context.Context, m *machines.Machine, args string) ([]byte, error) {
+	return runCampCommand(ctx, m, args, Opts(m))
+}
+
+// RunCampCommandReuseOnly is RunCampCommand for callers that also report m's
+// ControlMaster state (`camp machine diagnose`, the machine screen). It hops
+// with OptsReuseOnly so the probe cannot create or replace the very socket
+// being reported alongside it.
+func RunCampCommandReuseOnly(ctx context.Context, m *machines.Machine, args string) ([]byte, error) {
+	return runCampCommand(ctx, m, args, OptsReuseOnly(m))
+}
+
+func runCampCommand(ctx context.Context, m *machines.Machine, args string, opts []string) ([]byte, error) {
 	if err := EnsureKeyAuth(m); err != nil {
 		return nil, err
 	}
 	binary := remoteCampBinary()
-	out, err := Run(ctx, Target(m), Opts(m), campRemoteCommandLine(binary, args))
+	out, err := Run(ctx, Target(m), opts, campRemoteCommandLine(binary, args))
 	if err != nil {
 		return nil, campNotFoundHint(err, m, binary)
 	}

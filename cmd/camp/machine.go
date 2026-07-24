@@ -331,8 +331,11 @@ type machineDiagnoseRow struct {
 // best-effort: any failure (unreachable, camp missing, ancient binary without
 // `version --json`) reports as an empty version, never a diagnose error —
 // diagnose must keep working against exactly the broken machines it exists for.
+// The hop is reuse-only: under ControlMaster=auto this probe would unlink a
+// stale socket and open a fresh master, so diagnose would heal the exact stale
+// state it is reporting and the follow-up --reset would find nothing to clear.
 func probeRemoteCampVersion(ctx context.Context, m *machines.Machine) (versionStr, commit string) {
-	out, err := remote.RunCampCommand(ctx, m, "version --json")
+	out, err := remote.RunCampCommandReuseOnly(ctx, m, "version --json")
 	if err != nil {
 		return "", ""
 	}
