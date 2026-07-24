@@ -76,6 +76,34 @@ func TestIntegration_FreshMergedBackstop_WorktreeLinkReported(t *testing.T) {
 	assert.True(t, stays, "report mode must not move the workitem")
 }
 
+// TestIntegration_FreshMergedBackstop_PromptFallsBackToReportOnNonTTY verifies
+// the default (prompt) reports rather than prompts/promotes on a non-TTY run,
+// so agents never get an auto-promote path (FESTIVAL_RULES rule 2).
+func TestIntegration_FreshMergedBackstop_PromptFallsBackToReportOnNonTTY(t *testing.T) {
+	skipIfShort(t)
+	tc := GetSharedContainer(t)
+	campaignPath, projectDir, _ := setupFreshCampaignWithSubmodule(t, tc, "backstop-prompt-nontty")
+
+	createBackstopWorkitem(t, tc, campaignPath, "myfeature")
+	require.NoError(t, tc.WriteFile(campaignPath+"/projects/worktrees/test-project/myfeature/.keep", ""))
+	out, err := tc.RunCampInDir(campaignPath, "workitem", "link", "design-myfeature", "--worktree", "projects/worktrees/test-project/myfeature")
+	require.NoError(t, err, "link: %s", out)
+	// No fresh.yaml written: merged_workitems defaults to "prompt".
+	_, _, err = tc.ExecCommand("sh", "-c", "cd "+campaignPath+" && git add -A && git commit -q -m 'link'")
+	require.NoError(t, err)
+
+	mergeAndPruneBranch(t, tc, projectDir, "myfeature")
+
+	output, err := tc.RunCampInDir(campaignPath, "fresh", "test-project", "--no-push")
+	require.NoError(t, err, "fresh: %s", output)
+
+	assert.Contains(t, output, "promote when done", "default prompt must fall back to report on a non-TTY:\n%s", output)
+	assert.Contains(t, output, "camp workitem promote design-myfeature --target completed")
+	stays, err := tc.CheckDirExists(campaignPath + "/workflow/design/myfeature")
+	require.NoError(t, err)
+	assert.True(t, stays, "non-TTY prompt must not auto-promote")
+}
+
 // TestIntegration_FreshMergedBackstop_OffIsSilent verifies merged_workitems: off
 // produces no backstop output even when a linked branch merged.
 func TestIntegration_FreshMergedBackstop_OffIsSilent(t *testing.T) {

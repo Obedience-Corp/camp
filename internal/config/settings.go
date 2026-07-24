@@ -345,17 +345,17 @@ func (c *FreshConfig) ResolveFreshCompletedRuns() string {
 	}
 }
 
-// ResolveFreshMergedWorkitems resolves merged_workitems using the global config.
-// Global only, same shape as CompletedRuns. This sequence (tier-2 mapping +
-// report) defaults to "off" until the interactive prompt lands in
-// 02_fresh_prompt_flow, which changes the default to the spec value "prompt".
-// Any unrecognized value falls back to the default rather than failing.
+// ResolveFreshMergedWorkitems resolves merged_workitems using the global config
+// or the spec default ("prompt"). Global only, same shape as CompletedRuns. Any
+// unrecognized/empty value falls back to the default rather than failing.
+// "prompt" asks on a TTY and falls back to report on a non-TTY (agents never get
+// an auto path); "report" prints the exact promote command; "off" does nothing.
 func (c *FreshConfig) ResolveFreshMergedWorkitems() string {
 	switch c.MergedWorkitems {
 	case "prompt", "report", "off":
 		return c.MergedWorkitems
 	default:
-		return "off"
+		return "prompt"
 	}
 }
 

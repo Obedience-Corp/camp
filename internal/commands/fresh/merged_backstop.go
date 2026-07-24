@@ -8,6 +8,8 @@ import (
 	"path/filepath"
 	"strings"
 
+	"github.com/charmbracelet/huh"
+
 	"github.com/Obedience-Corp/camp/internal/campaign"
 	wkcmd "github.com/Obedience-Corp/camp/internal/commands/workitem"
 	"github.com/Obedience-Corp/camp/internal/config"
@@ -15,6 +17,7 @@ import (
 	"github.com/Obedience-Corp/camp/internal/git"
 	"github.com/Obedience-Corp/camp/internal/paths"
 	"github.com/Obedience-Corp/camp/internal/ui"
+	"github.com/Obedience-Corp/camp/internal/ui/theme"
 	wkitem "github.com/Obedience-Corp/camp/internal/workitem"
 	"github.com/Obedience-Corp/camp/internal/workitem/links"
 	"github.com/Obedience-Corp/camp/pkg/commitkit"
@@ -34,14 +37,15 @@ func backstopRoot(ctx context.Context, opts freshOptions) string {
 	return root
 }
 
-// reportMergedBackstop runs the tier-2 merged-branch backstop for one project
-// after prune: map the just-deleted branches to still-active workitems, drop
-// matches with open work elsewhere, and (mode "report", and "prompt" until the
-// interactive prompt lands in 02_fresh_prompt_flow) print the exact promote
-// command for each surviving match. Mode "off" or an empty root/branch list is
-// a no-op. Inference evidence never auto-promotes; a failure is reported to out
-// and never fails the fresh cycle.
-func reportMergedBackstop(ctx context.Context, out io.Writer, root, projectPath string, deletedBranches []string, beforeSHA, mode string) {
+// handleMergedBackstop runs the tier-2 merged-branch backstop for one project
+// after prune: map the just-deleted branches to still-active workitems and drop
+// matches with open work elsewhere. On a TTY with mode "prompt" it asks per
+// surviving match and promotes (with EvidenceMergedBranch) on accept; in mode
+// "report", or "prompt" on a non-TTY (agents never get an auto path), it prints
+// the exact promote command. Mode "off" or an empty root/branch list is a no-op.
+// Inference evidence never auto-promotes; a failure is reported to out and never
+// fails the fresh cycle.
+func handleMergedBackstop(ctx context.Context, out io.Writer, root, projectPath string, deletedBranches []string, beforeSHA, mode string) {
 	if mode == "off" || root == "" || len(deletedBranches) == 0 {
 		return
 	}
@@ -58,13 +62,95 @@ func reportMergedBackstop(ctx context.Context, out io.Writer, root, projectPath 
 		_, _ = fmt.Fprintf(out, "%s merged-branch backstop skipped: %v\n", ui.WarningIcon(), err)
 		return
 	}
+
+	proj := projectRelPath(root, projectPath)
+	surviving := make([]MergedBackstopMatch, 0, len(matches))
 	for _, m := range matches {
-		if HasOpenWork(root, registry, m.Workitem, m.ScopePath, projectRelPath(root, projectPath)) {
+		if HasOpenWork(root, registry, m.Workitem, m.ScopePath, proj) {
 			continue
 		}
+		surviving = append(surviving, m)
+	}
+	if len(surviving) == 0 {
+		return
+	}
+
+	// FESTIVAL_RULES rule 2: inference evidence prompts on a TTY or reports; it
+	// never acts on its own. A non-TTY (agent) run always reports.
+	if mode == "prompt" && ui.IsTerminal() {
+		promoteMergedMatches(ctx, out, root, surviving)
+		return
+	}
+	for _, m := range surviving {
 		_, _ = fmt.Fprintf(out, "%s workitem %s had a merged branch and is still active; promote when done:\n    %s\n",
 			ui.InfoIcon(), backstopWorkitemLabel(m.Workitem), backstopPromoteCommand(m.Workitem))
 	}
+}
+
+// promoteMergedMatches asks per surviving match and promotes on accept. A
+// declined item offers a "skip all remaining" shortcut. A cancelled prompt
+// (Ctrl+C) is treated as skip. Every accept goes through the shared promote path
+// with EvidenceMergedBranch; nothing is promoted without an explicit accept.
+func promoteMergedMatches(ctx context.Context, out io.Writer, root string, matches []MergedBackstopMatch) {
+	skipAll := false
+	for i, m := range matches {
+		if skipAll {
+			break
+		}
+		promote, err := confirmMergedPromote(ctx, backstopPromptTitle(m))
+		if err != nil {
+			_, _ = fmt.Fprintf(out, "%s prompt failed for %s: %v\n", ui.WarningIcon(), backstopWorkitemLabel(m.Workitem), err)
+			continue
+		}
+		if promote {
+			if perr := wkcmd.PromoteMergedWorkitem(ctx, out, root, m.Workitem, wkitem.EvidenceMergedBranch); perr != nil {
+				_, _ = fmt.Fprintf(out, "%s promote failed for %s: %v\n", ui.WarningIcon(), backstopWorkitemLabel(m.Workitem), perr)
+			} else {
+				_, _ = fmt.Fprintf(out, "%s promoted %s to completed\n", ui.SuccessIcon(), backstopWorkitemLabel(m.Workitem))
+			}
+			continue
+		}
+		if i < len(matches)-1 {
+			if all, aerr := confirmMergedSkipAll(ctx, len(matches)-i-1); aerr == nil && all {
+				skipAll = true
+			}
+		}
+	}
+}
+
+// backstopPromptTitle is the per-item prompt question.
+func backstopPromptTitle(m MergedBackstopMatch) string {
+	return fmt.Sprintf("Workitem %s had a merged branch and is still active. Promote to completed?", backstopWorkitemLabel(m.Workitem))
+}
+
+func confirmMergedPromote(ctx context.Context, title string) (bool, error) {
+	var promote bool
+	form := huh.NewForm(huh.NewGroup(
+		huh.NewConfirm().Title(title).Affirmative("Promote").Negative("Skip").Value(&promote),
+	))
+	if err := theme.RunForm(ctx, form); err != nil {
+		if theme.IsCancelled(err) {
+			return false, nil
+		}
+		return false, err
+	}
+	return promote, nil
+}
+
+func confirmMergedSkipAll(ctx context.Context, remaining int) (bool, error) {
+	var skipAll bool
+	form := huh.NewForm(huh.NewGroup(
+		huh.NewConfirm().
+			Title(fmt.Sprintf("Skip all %d remaining without asking?", remaining)).
+			Affirmative("Skip all").Negative("Keep asking").Value(&skipAll),
+	))
+	if err := theme.RunForm(ctx, form); err != nil {
+		if theme.IsCancelled(err) {
+			return false, nil
+		}
+		return false, err
+	}
+	return skipAll, nil
 }
 
 // backstopPromoteCommand renders the exact, copy-pasteable promote command using

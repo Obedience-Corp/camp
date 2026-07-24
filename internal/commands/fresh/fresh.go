@@ -370,7 +370,7 @@ func executeFresh(ctx context.Context, name, path string, opts freshOptions) err
 		// this project's just-deleted branches and the pre-pull beforeSHA. This
 		// is inference evidence, so it only reports (or, in a later sequence,
 		// prompts), never auto-promotes.
-		reportMergedBackstop(ctx, os.Stdout, backstopRoot(ctx, opts), path,
+		handleMergedBackstop(ctx, os.Stdout, backstopRoot(ctx, opts), path,
 			deletedNames, beforeSHA, opts.mergedWorkitems)
 	}
 
