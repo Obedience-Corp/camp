@@ -72,14 +72,19 @@ type ProjectRef struct {
 // WorkItemWorkflow carries local runtime progress when .workflow/ is present
 // (sourced from the fest local runtime, populated by camp's localrun loader).
 type WorkItemWorkflow struct {
-	WorkflowID     string `json:"workflow_id,omitempty"`
-	ActiveRunID    string `json:"active_run_id,omitempty"`
-	CurrentStep    int    `json:"current_step"`
-	TotalSteps     int    `json:"total_steps"`
-	CompletedSteps int    `json:"completed_steps"`
-	RunStatus      string `json:"run_status,omitempty"`
-	Blocked        bool   `json:"blocked"`
-	DocHashChanged bool   `json:"doc_hash_changed"`
+	WorkflowID  string `json:"workflow_id,omitempty"`
+	ActiveRunID string `json:"active_run_id,omitempty"`
+	// LatestRunID / LatestRunStatus report the most recent run's terminal state
+	// when there is no active run (fest clears active_run_id on completion).
+	// Additive JSON fields (omitempty); existing readers ignore them.
+	LatestRunID     string `json:"latest_run_id,omitempty"`
+	LatestRunStatus string `json:"latest_run_status,omitempty"`
+	CurrentStep     int    `json:"current_step"`
+	TotalSteps      int    `json:"total_steps"`
+	CompletedSteps  int    `json:"completed_steps"`
+	RunStatus       string `json:"run_status,omitempty"`
+	Blocked         bool   `json:"blocked"`
+	DocHashChanged  bool   `json:"doc_hash_changed"`
 }
 
 // AbsPath resolves the item's absolute path from the campaign root.

@@ -20,9 +20,12 @@ const runStatusCompleted = "completed"
 // EvidenceWorkflowRunCompleted. ActiveRunID is the run whose completion made
 // the item eligible, carried through for the promote event's evidence payload.
 type SweepCandidate struct {
-	Item        WorkItem
-	Reason      string
-	ActiveRunID string
+	Item   WorkItem
+	Reason string
+	// RunID is the completed run whose terminal state made the item eligible.
+	// Because fest clears active_run_id on completion, this is the workitem's
+	// latest run (not an active run), carried through for the promote evidence.
+	RunID string
 }
 
 // PlanSweep returns the subset of items eligible for tier-1 (loop-completion)
@@ -37,19 +40,28 @@ func PlanSweep(items []WorkItem) []SweepCandidate {
 		if !sweepEligibleType(item.WorkflowType) {
 			continue
 		}
-		if item.WorkflowMeta == nil || item.WorkflowMeta.RunStatus != runStatusCompleted {
+		wf := item.WorkflowMeta
+		if wf == nil {
 			continue
 		}
-		if item.WorkflowMeta.ActiveRunID == "" {
+		// Eligible iff the LATEST run reached completed AND no newer run is
+		// active. fest clears active_run_id on completion, so a genuinely
+		// completed workitem has ActiveRunID == "" and LatestRunStatus ==
+		// "completed"; a run started afterward repoints ActiveRunID and makes it
+		// ineligible again (the multi-run caveat).
+		if wf.ActiveRunID != "" {
+			continue
+		}
+		if wf.LatestRunStatus != runStatusCompleted || wf.LatestRunID == "" {
 			continue
 		}
 		if inDungeonPath(item.RelativePath) {
 			continue
 		}
 		out = append(out, SweepCandidate{
-			Item:        item,
-			Reason:      EvidenceWorkflowRunCompleted,
-			ActiveRunID: item.WorkflowMeta.ActiveRunID,
+			Item:   item,
+			Reason: EvidenceWorkflowRunCompleted,
+			RunID:  wf.LatestRunID,
 		})
 	}
 	return out

@@ -86,8 +86,8 @@ func TestSweepPlanEnvelopeShape(t *testing.T) {
 			WorkflowType: wkitem.WorkflowTypeDesign,
 			RelativePath: "workflow/design/alpha",
 		},
-		Reason:      wkitem.EvidenceWorkflowRunCompleted,
-		ActiveRunID: "run-007",
+		Reason: wkitem.EvidenceWorkflowRunCompleted,
+		RunID:  "run-007",
 	}}
 
 	var buf bytes.Buffer
@@ -102,7 +102,7 @@ func TestSweepPlanEnvelopeShape(t *testing.T) {
 	raw := buf.String()
 	for _, key := range []string{
 		`"schema_version"`, `"dry_run"`, `"candidates"`, `"items"`,
-		`"id"`, `"type"`, `"from"`, `"to"`, `"evidence"`, `"active_run_id"`,
+		`"id"`, `"type"`, `"from"`, `"to"`, `"evidence"`, `"run_id"`,
 	} {
 		if !bytes.Contains(buf.Bytes(), []byte(key)) {
 			t.Errorf("envelope missing key %s in output:\n%s", key, raw)
@@ -124,7 +124,7 @@ func TestSweepPlanEnvelopeShape(t *testing.T) {
 	}
 	it := decoded.Items[0]
 	if it.Type != "design" || it.From != "workflow/design/alpha" ||
-		it.Evidence != wkitem.EvidenceWorkflowRunCompleted || it.ActiveRunID != "run-007" {
+		it.Evidence != wkitem.EvidenceWorkflowRunCompleted || it.RunID != "run-007" {
 		t.Errorf("item did not map from candidate: %+v", it)
 	}
 	if it.To == "" {

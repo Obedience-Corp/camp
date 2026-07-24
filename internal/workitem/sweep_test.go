@@ -6,10 +6,12 @@ import (
 	"testing/fstest"
 )
 
-// completedMeta builds a WorkItemWorkflow in the completed state with a
-// non-empty active run id, the shape a real loop-completion produces.
+// completedMeta builds a WorkItemWorkflow in the REAL post-completion shape fest
+// produces: active_run_id is CLEARED on completion, and the completed run
+// survives as the latest run. (The previous fixtures set active_run_id at the
+// completed run, a state fest never emits; that bug is what this PR fixes.)
 func completedMeta() *WorkItemWorkflow {
-	return &WorkItemWorkflow{ActiveRunID: "run-001", RunStatus: "completed"}
+	return &WorkItemWorkflow{LatestRunStatus: "completed", LatestRunID: "run-001"}
 }
 
 func TestPlanSweep_Eligibility(t *testing.T) {
@@ -47,16 +49,16 @@ func TestPlanSweep_Eligibility(t *testing.T) {
 			wantIncluded: false,
 		},
 		{
-			name: "run status active is excluded",
+			name: "a newer run is active is excluded (multi-run: latest completed but a new run started)",
 			item: WorkItem{
 				WorkflowType: WorkflowTypeDesign,
 				RelativePath: "workflow/design/foo",
-				WorkflowMeta: &WorkItemWorkflow{ActiveRunID: "run-001", RunStatus: "active"},
+				WorkflowMeta: &WorkItemWorkflow{ActiveRunID: "run-002", RunStatus: "active", LatestRunStatus: "completed", LatestRunID: "run-001"},
 			},
 			wantIncluded: false,
 		},
 		{
-			name: "run status blocked is excluded",
+			name: "an active (blocked) run is excluded",
 			item: WorkItem{
 				WorkflowType: WorkflowTypeExplore,
 				RelativePath: "workflow/explore/foo",
@@ -65,20 +67,20 @@ func TestPlanSweep_Eligibility(t *testing.T) {
 			wantIncluded: false,
 		},
 		{
-			name: "run status abandoned is excluded",
+			name: "latest run abandoned is excluded (not completed)",
 			item: WorkItem{
 				WorkflowType: WorkflowTypeDesign,
 				RelativePath: "workflow/design/foo",
-				WorkflowMeta: &WorkItemWorkflow{ActiveRunID: "run-001", RunStatus: "abandoned"},
+				WorkflowMeta: &WorkItemWorkflow{LatestRunStatus: "abandoned", LatestRunID: "run-001"},
 			},
 			wantIncluded: false,
 		},
 		{
-			name: "completed with empty active run id is excluded as malformed",
+			name: "latest completed but empty latest run id is excluded as malformed",
 			item: WorkItem{
 				WorkflowType: WorkflowTypeDesign,
 				RelativePath: "workflow/design/foo",
-				WorkflowMeta: &WorkItemWorkflow{ActiveRunID: "", RunStatus: "completed"},
+				WorkflowMeta: &WorkItemWorkflow{LatestRunStatus: "completed", LatestRunID: ""},
 			},
 			wantIncluded: false,
 		},
@@ -147,7 +149,7 @@ func TestPlanSweep_CandidatePayload(t *testing.T) {
 	item := WorkItem{
 		WorkflowType: WorkflowTypeDesign,
 		RelativePath: "workflow/design/foo",
-		WorkflowMeta: &WorkItemWorkflow{ActiveRunID: "run-042", RunStatus: "completed"},
+		WorkflowMeta: &WorkItemWorkflow{LatestRunStatus: "completed", LatestRunID: "run-042"},
 	}
 	got := PlanSweep([]WorkItem{item})
 	if len(got) != 1 {
@@ -156,8 +158,8 @@ func TestPlanSweep_CandidatePayload(t *testing.T) {
 	if got[0].Reason != EvidenceWorkflowRunCompleted {
 		t.Errorf("Reason = %q, want %q", got[0].Reason, EvidenceWorkflowRunCompleted)
 	}
-	if got[0].ActiveRunID != "run-042" {
-		t.Errorf("ActiveRunID = %q, want run-042", got[0].ActiveRunID)
+	if got[0].RunID != "run-042" {
+		t.Errorf("RunID = %q, want run-042", got[0].RunID)
 	}
 	if got[0].Item.RelativePath != item.RelativePath {
 		t.Errorf("Item.RelativePath = %q, want %q", got[0].Item.RelativePath, item.RelativePath)
@@ -168,7 +170,7 @@ func TestPlanSweep_MixedSliceReturnsOnlyEligible(t *testing.T) {
 	items := []WorkItem{
 		{WorkflowType: WorkflowTypeFestival, RelativePath: "festivals/active/x-FA0001", WorkflowMeta: completedMeta()},
 		{WorkflowType: WorkflowTypeDesign, RelativePath: "workflow/design/keep", WorkflowMeta: completedMeta()},
-		{WorkflowType: WorkflowTypeExplore, RelativePath: "workflow/explore/drop", WorkflowMeta: &WorkItemWorkflow{ActiveRunID: "run-001", RunStatus: "active"}},
+		{WorkflowType: WorkflowTypeExplore, RelativePath: "workflow/explore/drop", WorkflowMeta: &WorkItemWorkflow{ActiveRunID: "run-001", RunStatus: "active"}}, // a run is active -> excluded
 		{WorkflowType: WorkflowTypeExplore, RelativePath: "workflow/explore/keep2", WorkflowMeta: completedMeta()},
 	}
 	got := PlanSweep(items)
@@ -241,5 +243,64 @@ summary:
 	}
 	if cands := PlanSweep([]WorkItem{item}); len(cands) != 0 {
 		t.Errorf("expected multi-run item excluded (active run), got %d candidates", len(cands))
+	}
+}
+
+// TestLoadLocalRunFS_LatestRunWhenActiveCleared verifies the REAL post-completion
+// shape: fest clears active_run_id and the completed run survives in runs[].
+// LoadLocalRunFS must surface the latest run's terminal status (replayed from
+// its events), and PlanSweep must treat the item as eligible. This is the
+// scenario the previous fixtures never modeled (the bug this PR fixes).
+func TestLoadLocalRunFS_LatestRunWhenActiveCleared(t *testing.T) {
+	const base = "campaign-root"
+	fsys := fstest.MapFS{
+		// No active_run_id: fest cleared it on completion. The completed run is
+		// indexed in runs[].
+		base + "/.workflow/workflow.yaml": {Data: []byte(`workflow_id: wf-done
+runs:
+    - run_id: run-001
+      status: completed
+      ended_at: "2026-07-24T19:00:00Z"
+`)},
+		base + "/.workflow/runs/run-001/run.yaml": {Data: []byte(`status: completed
+summary:
+  total_steps: 2
+`)},
+		base + "/.workflow/runs/run-001/progress_events.jsonl": {Data: []byte(`{"event_type":"wf_step_start"}
+{"event_type":"wf_step_done"}
+{"event_type":"wf_step_start"}
+{"event_type":"wf_step_done"}
+{"event_type":"workflow_run_completed"}
+`)},
+	}
+
+	got, err := LoadLocalRunFS(context.Background(), fsys, base)
+	if err != nil {
+		t.Fatalf("LoadLocalRunFS: %v", err)
+	}
+	if got == nil {
+		t.Fatal("expected progress, got nil")
+	}
+	if got.ActiveRunID != "" {
+		t.Errorf("ActiveRunID = %q, want empty (fest cleared it on completion)", got.ActiveRunID)
+	}
+	if got.LatestRunID != "run-001" {
+		t.Errorf("LatestRunID = %q, want run-001", got.LatestRunID)
+	}
+	if got.LatestRunStatus != "completed" {
+		t.Errorf("LatestRunStatus = %q, want completed (replayed from events)", got.LatestRunStatus)
+	}
+
+	item := WorkItem{
+		WorkflowType: WorkflowTypeDesign,
+		RelativePath: "workflow/design/done",
+		WorkflowMeta: &WorkItemWorkflow{ActiveRunID: got.ActiveRunID, LatestRunID: got.LatestRunID, LatestRunStatus: got.LatestRunStatus},
+	}
+	cands := PlanSweep([]WorkItem{item})
+	if len(cands) != 1 {
+		t.Fatalf("expected the completed item eligible, got %d candidates", len(cands))
+	}
+	if cands[0].RunID != "run-001" {
+		t.Errorf("candidate RunID = %q, want run-001", cands[0].RunID)
 	}
 }
