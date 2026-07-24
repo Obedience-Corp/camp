@@ -59,6 +59,7 @@ camp workitem [flags]
 * [camp workitem list](camp_workitem_list.md)	 - List or browse filtered workitems
 * [camp workitem priority](camp_workitem_priority.md)	 - Set or clear the manual priority
 * [camp workitem promote](camp_workitem_promote.md)	 - Promote a workitem to a festival, doc, or dungeon
+* [camp workitem rename](camp_workitem_rename.md)	 - Rename a workitem and repair references
 * [camp workitem repair](camp_workitem_repair.md)	 - Repair a workflow directory into a workitem
 * [camp workitem resolve](camp_workitem_resolve.md)	 - Print the workitem for the current context
 * [camp workitem stage](camp_workitem_stage.md)	 - Set or clear the attention stage
