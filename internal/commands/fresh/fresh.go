@@ -368,10 +368,12 @@ func executeFresh(ctx context.Context, name, path string, opts freshOptions) err
 
 		// Tier-2 merged-branch backstop: per project, right after prune, using
 		// this project's just-deleted branches and the pre-pull beforeSHA. This
-		// is inference evidence, so it only reports (or, in a later sequence,
-		// prompts), never auto-promotes.
-		reportMergedBackstop(ctx, os.Stdout, backstopRoot(ctx, opts), path,
-			deletedNames, beforeSHA, opts.mergedWorkitems)
+		// is inference evidence, so it only reports or prompts, never
+		// auto-promotes. A dry-run downgrades to report-only (mirroring the
+		// tier-1 sweep) so it never reaches the prompt/promote path, matching
+		// the tier-1 dry-run contract.
+		handleMergedBackstop(ctx, os.Stdout, backstopRoot(ctx, opts), path,
+			deletedNames, beforeSHA, resolveBackstopMode(opts.mergedWorkitems, opts.dryRun))
 	}
 
 	// Step 4: Create branch (optional)

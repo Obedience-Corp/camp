@@ -3,12 +3,61 @@ package fresh
 import (
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 
 	wkitem "github.com/Obedience-Corp/camp/internal/workitem"
 	"github.com/Obedience-Corp/camp/internal/workitem/links"
 	"github.com/Obedience-Corp/camp/pkg/commitkit"
 )
+
+func TestBackstopPromoteCommand(t *testing.T) {
+	got := backstopPromoteCommand(wkitem.WorkItem{StableID: "design-foo-01", Key: "design:workflow/design/foo"})
+	if want := "camp workitem promote design-foo-01 --target completed"; got != want {
+		t.Errorf("promote command = %q, want %q", got, want)
+	}
+	// Falls back to Key when there is no StableID.
+	got = backstopPromoteCommand(wkitem.WorkItem{Key: "design:foo"})
+	if want := "camp workitem promote design:foo --target completed"; got != want {
+		t.Errorf("promote command (no StableID) = %q, want %q", got, want)
+	}
+}
+
+// TestResolveBackstopMode_DryRunNeverPrompts is the regression guard for the
+// dry-run mutation bug: a dry-run must downgrade to "report", so the prompt path
+// (the only path that can reach PromoteMergedWorkitem) is unreachable on a
+// dry-run regardless of TTY.
+func TestResolveBackstopMode_DryRunNeverPrompts(t *testing.T) {
+	tests := []struct {
+		configured string
+		dryRun     bool
+		want       string
+	}{
+		{"prompt", true, "report"},  // the bug: dry-run must NOT prompt/promote
+		{"prompt", false, "prompt"}, // normal run keeps prompt
+		{"report", true, "report"},
+		{"off", true, "off"}, // dry-run does not resurrect an opted-out backstop
+		{"off", false, "off"},
+	}
+	for _, tc := range tests {
+		if got := resolveBackstopMode(tc.configured, tc.dryRun); got != tc.want {
+			t.Errorf("resolveBackstopMode(%q, %v) = %q, want %q", tc.configured, tc.dryRun, got, tc.want)
+		}
+	}
+	// The prompt path is the sole caller of PromoteMergedWorkitem, and it only
+	// runs when the resolved mode is "prompt"; since dry-run never yields
+	// "prompt", a dry-run can never reach a promote.
+	if resolveBackstopMode("prompt", true) == "prompt" {
+		t.Fatal("dry-run resolved to prompt: a dry-run could reach PromoteMergedWorkitem")
+	}
+}
+
+func TestBackstopPromptTitle(t *testing.T) {
+	title := backstopPromptTitle(MergedBackstopMatch{Workitem: wkitem.WorkItem{Title: "Fix login", StableID: "design-x"}})
+	if !strings.Contains(title, "Fix login") || !strings.Contains(title, "Promote to completed?") {
+		t.Errorf("prompt title missing label or question: %q", title)
+	}
+}
 
 func taggedSubject(ref, msg string) string {
 	return commitkit.PrependContextTagsFullNamed("obey-campaign", "8deed8b4", "", "", ref, msg)

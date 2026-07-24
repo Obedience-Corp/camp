@@ -11,6 +11,11 @@ import (
 // (tier 2) prompts or reports and never reuses this constant.
 const EvidenceWorkflowRunCompleted = "workflow_run_completed"
 
+// EvidenceMergedBranch names the tier-2 (inference) evidence kind: a branch or
+// worktree linked to the workitem merged. It never auto-promotes; a human
+// accepting a camp fresh prompt is the only path that records it.
+const EvidenceMergedBranch = "merged_branch"
+
 // runStatusCompleted is the RunStatus value the localrun replay assigns after a
 // workflow_run_completed event (internal/workitem/localrun.go).
 const runStatusCompleted = "completed"

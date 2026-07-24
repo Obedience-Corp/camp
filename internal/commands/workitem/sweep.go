@@ -321,6 +321,26 @@ func RunFreshSweep(ctx context.Context, out io.Writer, mode string) error {
 	return nil
 }
 
+// PromoteMergedWorkitem promotes wi to its local dungeon/completed with the
+// given evidence, reusing the sweep's per-item move + audit + ledger + commit
+// path. Used by camp fresh's tier-2 merged-branch backstop when a human accepts
+// the prompt; evidence is EvidenceMergedBranch. Never called on inference
+// evidence without an explicit human accept upstream. Takes the already-resolved
+// cfg and root from the caller so a non-root cwd cannot resolve a different
+// campaign than the one fresh is operating on.
+func PromoteMergedWorkitem(ctx context.Context, out io.Writer, cfg *config.CampaignConfig, root string, wi wkitem.WorkItem, evidence string) error {
+	cmd := &cobra.Command{}
+	cmd.SetContext(ctx)
+	cmd.SetOut(out)
+	cmd.SetErr(out)
+	var result workitemSweepResult
+	item := sweepOne(ctx, cmd, cfg, root, wkitem.SweepCandidate{Item: wi, Reason: evidence}, &result)
+	if item.Error != "" {
+		return camperrors.New(item.Error)
+	}
+	return nil
+}
+
 func emitSweepResult(cmd *cobra.Command, result *workitemSweepResult, jsonOut bool) error {
 	if jsonOut {
 		enc := json.NewEncoder(cmd.OutOrStdout())
