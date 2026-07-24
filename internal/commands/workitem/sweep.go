@@ -131,10 +131,10 @@ func newSweepResult(dryRun bool, candidates int) workitemSweepResult {
 
 // executeSweepCandidates runs the per-item promote loop with error isolation,
 // filling result. Shared by the sweep command and camp fresh.
-func executeSweepCandidates(ctx context.Context, cmd *cobra.Command, cfg *config.CampaignConfig, root string, candidates []wkitem.SweepCandidate, result *workitemSweepResult) {
+func executeSweepCandidates(ctx context.Context, cmd *cobra.Command, cfg *config.CampaignConfig, root string, candidates []wkitem.SweepCandidate, result *workitemSweepResult) error {
 	for _, cand := range candidates {
-		if ctx.Err() != nil {
-			return
+		if err := ctx.Err(); err != nil {
+			return err
 		}
 		item := sweepOne(ctx, cmd, cfg, root, cand, result)
 		result.Items = append(result.Items, item)
@@ -145,6 +145,7 @@ func executeSweepCandidates(ctx context.Context, cmd *cobra.Command, cfg *config
 		}
 	}
 	result.Committed = result.Failed == 0 && result.Swept > 0
+	return nil
 }
 
 func runWorkitemSweep(cmd *cobra.Command, opts sweepOptions) error {
@@ -160,10 +161,15 @@ func runWorkitemSweep(cmd *cobra.Command, opts sweepOptions) error {
 		return emitSweepResult(cmd, &result, opts.JSON)
 	}
 
-	executeSweepCandidates(ctx, cmd, cfg, root, candidates, &result)
+	// A mid-sweep context cancellation must propagate, never report as a clean
+	// success; emit whatever completed before surfacing the cancellation.
+	sweepErr := executeSweepCandidates(ctx, cmd, cfg, root, candidates, &result)
 
 	if err := emitSweepResult(cmd, &result, opts.JSON); err != nil {
 		return err
+	}
+	if sweepErr != nil {
+		return sweepErr
 	}
 	// Table mode follows camp fresh: any per-item failure is a non-zero exit.
 	// JSON mode follows camp workitem commits: per-item failures live in the
@@ -302,9 +308,12 @@ func RunFreshSweep(ctx context.Context, out io.Writer, mode string) error {
 	cmd.SetOut(out)
 	cmd.SetErr(out)
 	result := newSweepResult(false, len(candidates))
-	executeSweepCandidates(ctx, cmd, cfg, root, candidates, &result)
+	sweepErr := executeSweepCandidates(ctx, cmd, cfg, root, candidates, &result)
 	if err := emitSweepResult(cmd, &result, false); err != nil {
 		return err
+	}
+	if sweepErr != nil {
+		return sweepErr
 	}
 	if result.Failed > 0 {
 		return camperrors.Newf("%d workitem(s) failed to sweep", result.Failed)

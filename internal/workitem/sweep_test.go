@@ -150,7 +150,7 @@ func TestSweepBannerText(t *testing.T) {
 	}{
 		{0, ""},
 		{-3, ""},
-		{1, "1 workitem have completed runs; run camp workitem sweep"},
+		{1, "1 workitem has completed runs; run camp workitem sweep"},
 		{2, "2 workitems have completed runs; run camp workitem sweep"},
 	}
 	for _, tc := range tests {
