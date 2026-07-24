@@ -273,8 +273,15 @@ func executeFresh(ctx context.Context, name, path string, opts freshOptions) err
 	// Capture the default branch SHA before the pull so the tier-2 backstop can
 	// scan commits newly reachable from the default branch after prune (the
 	// pruned branch refs themselves are gone by the time prune returns).
-	beforeSHAOut, _ := git.Output(ctx, path, "rev-parse", "HEAD")
+	beforeSHAOut, beforeSHAErr := git.Output(ctx, path, "rev-parse", "HEAD")
 	beforeSHA := strings.TrimSpace(beforeSHAOut)
+	if beforeSHAErr != nil || beforeSHA == "" {
+		// Best-effort: without a pre-pull HEAD the tier-2 commit-tag scan is
+		// skipped for this project (worktree-link matching still works). Log
+		// rather than fail the fresh cycle.
+		fmt.Fprintln(os.Stderr, ui.Dim(fmt.Sprintf(
+			"  merged-branch backstop: could not capture pre-pull HEAD for %s; commit-tag scan skipped (%v)", name, beforeSHAErr)))
+	}
 
 	// Step 2: Pull (ff-only)
 	if !syncState.detached {
@@ -363,7 +370,7 @@ func executeFresh(ctx context.Context, name, path string, opts freshOptions) err
 		// this project's just-deleted branches and the pre-pull beforeSHA. This
 		// is inference evidence, so it only reports (or, in a later sequence,
 		// prompts), never auto-promotes.
-		reportMergedBackstop(ctx, os.Stdout, backstopRoot(opts), path,
+		reportMergedBackstop(ctx, os.Stdout, backstopRoot(ctx, opts), path,
 			deletedNames, beforeSHA, opts.mergedWorkitems)
 	}
 

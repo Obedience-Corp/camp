@@ -23,11 +23,11 @@ import (
 // backstopRoot resolves the campaign root for the backstop: the threaded
 // campRoot when set, else a cwd detect (fresh runs at or under the campaign
 // root). Empty on failure disables the backstop for this project.
-func backstopRoot(opts freshOptions) string {
+func backstopRoot(ctx context.Context, opts freshOptions) string {
 	if opts.campRoot != "" {
 		return opts.campRoot
 	}
-	root, err := campaign.DetectCached(context.Background())
+	root, err := campaign.DetectCached(ctx)
 	if err != nil {
 		return ""
 	}
@@ -59,7 +59,7 @@ func reportMergedBackstop(ctx context.Context, out io.Writer, root, projectPath 
 		return
 	}
 	for _, m := range matches {
-		if HasOpenWork(root, registry, m.Workitem, m.ScopePath) {
+		if HasOpenWork(root, registry, m.Workitem, m.ScopePath, projectRelPath(root, projectPath)) {
 			continue
 		}
 		_, _ = fmt.Fprintf(out, "%s workitem %s had a merged branch and is still active; promote when done:\n    %s\n",
@@ -293,21 +293,31 @@ func refFromItem(wi wkitem.WorkItem) string {
 // HasOpenWork reports whether wi still has open work beyond the branch that just
 // merged, in which case a tier-2 match must be suppressed (doc 03 conservatism
 // guard: one merged PR out of several open ones is progress, not completion). A
-// workitem linked to a second project/repo, or with a still-existing worktree
+// workitem linked to a DIFFERENT project/repo, or with a still-existing worktree
 // other than the just-merged one, is "open." A stale worktree link whose
-// directory is already gone does not count as open.
-func HasOpenWork(root string, registry *links.Links, wi wkitem.WorkItem, justMergedScopePath string) bool {
+// directory is already gone does not count as open. mergedScopePath is the
+// scope that just merged (the matched worktree link's path, or the project path
+// for a commit-tag match); projectPath is the just-pruned project's
+// campaign-relative path, so the just-merged project's own project/repo link is
+// not mistaken for other open work.
+func HasOpenWork(root string, registry *links.Links, wi wkitem.WorkItem, mergedScopePath, projectPath string) bool {
 	for _, link := range registry.Links {
 		if !linkMatchesBackstopItem(link, wi) {
 			continue
 		}
 		switch link.Scope.Kind {
 		case links.ScopeProject, links.ScopeRepo:
-			if link.Scope.Path != justMergedScopePath {
+			// A project/repo link is open work only when it points at a
+			// DIFFERENT project than the one whose branch just merged. The
+			// just-merged project's own link is not "other" work (compare
+			// against projectPath, not the matched worktree's scope path).
+			if link.Scope.Path != projectPath {
 				return true
 			}
 		case links.ScopeWorktree:
-			if link.Scope.Path == justMergedScopePath {
+			// Skip the worktree that just merged; any OTHER worktree that still
+			// exists on disk is open work.
+			if link.Scope.Path == mergedScopePath {
 				continue
 			}
 			if worktreeDirExists(root, link.Scope.Path) {

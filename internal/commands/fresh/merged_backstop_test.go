@@ -102,7 +102,7 @@ func TestHasOpenWork(t *testing.T) {
 		reg := &links.Links{Links: []links.Link{
 			{WorkitemID: "design-foo-01", Scope: links.LinkScope{Kind: links.ScopeProject, Path: mergedPath}},
 		}}
-		if HasOpenWork("/root", reg, wi, mergedPath) {
+		if HasOpenWork("/root", reg, wi, mergedPath, mergedPath) {
 			t.Errorf("single-scope workitem should not be suppressed")
 		}
 	})
@@ -112,7 +112,7 @@ func TestHasOpenWork(t *testing.T) {
 			{WorkitemID: "design-foo-01", Scope: links.LinkScope{Kind: links.ScopeProject, Path: mergedPath}},
 			{WorkitemID: "design-foo-01", Scope: links.LinkScope{Kind: links.ScopeProject, Path: "projects/festival-app"}},
 		}}
-		if !HasOpenWork("/root", reg, wi, mergedPath) {
+		if !HasOpenWork("/root", reg, wi, mergedPath, mergedPath) {
 			t.Errorf("workitem linked to a second project must be suppressed (open work elsewhere)")
 		}
 	})
@@ -123,7 +123,7 @@ func TestHasOpenWork(t *testing.T) {
 			{WorkitemID: "design-foo-01", Scope: links.LinkScope{Kind: links.ScopeProject, Path: mergedPath}},
 			{WorkitemID: "design-foo-01", Scope: links.LinkScope{Kind: links.ScopeWorktree, Path: "projects/worktrees/camp/gone"}},
 		}}
-		if HasOpenWork(root, reg, wi, mergedPath) {
+		if HasOpenWork(root, reg, wi, mergedPath, mergedPath) {
 			t.Errorf("a worktree link whose directory no longer exists must not count as open")
 		}
 	})
@@ -138,8 +138,28 @@ func TestHasOpenWork(t *testing.T) {
 			{WorkitemID: "design-foo-01", Scope: links.LinkScope{Kind: links.ScopeProject, Path: mergedPath}},
 			{WorkitemID: "design-foo-01", Scope: links.LinkScope{Kind: links.ScopeWorktree, Path: filepath.ToSlash(wtRel)}},
 		}}
-		if !HasOpenWork(root, reg, wi, mergedPath) {
+		if !HasOpenWork(root, reg, wi, mergedPath, mergedPath) {
 			t.Errorf("an existing other worktree must count as open work")
+		}
+	})
+
+	// Regression (review #496): a workitem whose only links are the just-merged
+	// project AND its own (still-present) worktree must NOT read as open. Before
+	// the fix, the project link's path was compared against the worktree scope
+	// path and never matched, so the report never fired.
+	t.Run("project link + just-merged worktree link is not open", func(t *testing.T) {
+		root := t.TempDir()
+		wtRel := filepath.ToSlash(filepath.Join("projects", "worktrees", "camp", "myfeature"))
+		if err := os.MkdirAll(filepath.Join(root, filepath.FromSlash(wtRel)), 0o755); err != nil {
+			t.Fatal(err)
+		}
+		reg := &links.Links{Links: []links.Link{
+			{WorkitemID: "design-foo-01", Scope: links.LinkScope{Kind: links.ScopeProject, Path: mergedPath}},
+			{WorkitemID: "design-foo-01", Scope: links.LinkScope{Kind: links.ScopeWorktree, Path: wtRel}},
+		}}
+		// merged scope = the worktree that just merged; project = mergedPath.
+		if HasOpenWork(root, reg, wi, wtRel, mergedPath) {
+			t.Errorf("project link + its own just-merged worktree must NOT count as open work")
 		}
 	})
 }
