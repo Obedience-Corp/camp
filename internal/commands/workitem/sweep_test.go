@@ -1,9 +1,13 @@
 package workitem
 
 import (
+	"bytes"
+	"encoding/json"
 	"os"
 	"path/filepath"
 	"testing"
+
+	"github.com/spf13/cobra"
 
 	wkitem "github.com/Obedience-Corp/camp/internal/workitem"
 )
@@ -57,5 +61,73 @@ func TestResolveSweepLocation_FestivalsHomeNotYetSupported(t *testing.T) {
 	const want = "not inside a workitem; cwd must be under workflow/<type>/<slug>/"
 	if err.Error() != want {
 		t.Errorf("error = %q, want %q", err.Error(), want)
+	}
+}
+
+func TestWorkitemSweepJSONVersion(t *testing.T) {
+	if WorkitemSweepJSONVersion != "workitem-sweep/v1alpha1" {
+		t.Errorf("WorkitemSweepJSONVersion = %q, want workitem-sweep/v1alpha1", WorkitemSweepJSONVersion)
+	}
+}
+
+// TestSweepPlanEnvelopeShape builds the dry-run plan from a constructed
+// []SweepCandidate (no discovery pass) and asserts the --json envelope's field
+// names and per-item mapping, so a contract change is a deliberate edit. Uses a
+// temp root only for DetectFromCwd's symlink/path resolution; it mutates
+// nothing (creates empty dirs so EvalSymlinks resolves).
+func TestSweepPlanEnvelopeShape(t *testing.T) {
+	root := t.TempDir()
+	if err := os.MkdirAll(filepath.Join(root, "workflow", "design", "alpha"), 0o755); err != nil {
+		t.Fatalf("mkdir fixture: %v", err)
+	}
+	candidates := []wkitem.SweepCandidate{{
+		Item: wkitem.WorkItem{
+			Key:          "design:workflow/design/alpha",
+			WorkflowType: wkitem.WorkflowTypeDesign,
+			RelativePath: "workflow/design/alpha",
+		},
+		Reason:      wkitem.EvidenceWorkflowRunCompleted,
+		ActiveRunID: "run-007",
+	}}
+
+	var buf bytes.Buffer
+	cmd := &cobra.Command{}
+	cmd.SetOut(&buf)
+	result := workitemSweepResult{SchemaVersion: WorkitemSweepJSONVersion, DryRun: true, Candidates: len(candidates)}
+	if err := emitSweepPlan(cmd, root, candidates, &result, true); err != nil {
+		t.Fatalf("emitSweepPlan: %v", err)
+	}
+
+	// Field-name contract: assert the raw JSON keys, not just the decoded shape.
+	raw := buf.String()
+	for _, key := range []string{
+		`"schema_version"`, `"dry_run"`, `"candidates"`, `"items"`,
+		`"id"`, `"type"`, `"from"`, `"to"`, `"evidence"`, `"active_run_id"`,
+	} {
+		if !bytes.Contains(buf.Bytes(), []byte(key)) {
+			t.Errorf("envelope missing key %s in output:\n%s", key, raw)
+		}
+	}
+
+	var decoded workitemSweepResult
+	if err := json.Unmarshal(buf.Bytes(), &decoded); err != nil {
+		t.Fatalf("unmarshal envelope: %v\n%s", err, raw)
+	}
+	if decoded.SchemaVersion != WorkitemSweepJSONVersion {
+		t.Errorf("schema_version = %q, want %q", decoded.SchemaVersion, WorkitemSweepJSONVersion)
+	}
+	if !decoded.DryRun || decoded.Candidates != 1 {
+		t.Errorf("envelope top-level fields wrong: %+v", decoded)
+	}
+	if len(decoded.Items) != 1 {
+		t.Fatalf("want 1 item, got %d", len(decoded.Items))
+	}
+	it := decoded.Items[0]
+	if it.Type != "design" || it.From != "workflow/design/alpha" ||
+		it.Evidence != wkitem.EvidenceWorkflowRunCompleted || it.ActiveRunID != "run-007" {
+		t.Errorf("item did not map from candidate: %+v", it)
+	}
+	if it.To == "" {
+		t.Errorf("dry-run item should carry a destination, got empty")
 	}
 }

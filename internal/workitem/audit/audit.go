@@ -41,6 +41,10 @@ type Event struct {
 	Target       string    `json:"target,omitempty"`
 	PromotedTo   string    `json:"promoted_to,omitempty"`
 	GatheredInto string    `json:"gathered_into,omitempty"`
+	// Evidence names why an automated transition fired, e.g.
+	// "workflow_run_completed" for a tier-1 sweep promote. Empty for manual
+	// promotes. Additive and omitempty: existing readers ignore it.
+	Evidence string `json:"evidence,omitempty"`
 }
 
 func AppendEvent(ctx context.Context, campaignRoot string, e Event) error {
