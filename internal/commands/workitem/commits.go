@@ -177,7 +177,7 @@ func runCommitsQuery(ctx context.Context, cmd *cobra.Command, flags commitsFlags
 	// git-log fan-out across every linked repo. In auto, an empty or unreadable
 	// ledger falls back to the cross-repo tag scan; --source scan forces the scan
 	// (the exhaustive git --all view) and --source ledger forces the ledger.
-	aliases := workitemAliases(ref, wi)
+	aliases := WorkitemAliases(ref, wi)
 	var records []CommitRecord
 	var queryErrs []commitsQueryError
 	answered := commitsSourceScan
@@ -223,10 +223,10 @@ func runCommitsQuery(ctx context.Context, cmd *cobra.Command, flags commitsFlags
 	return emitCommitsQueryWarnings(cmd.ErrOrStderr(), queryErrs)
 }
 
-// workitemAliases returns the identifier forms a ledger event's scope.workitem
+// WorkitemAliases returns the identifier forms a ledger event's scope.workitem
 // might carry for this workitem (D007 workitem-id normalization): the ref, the
 // stable id, the workitem key, and the on-disk directory slug all name it.
-func workitemAliases(ref string, wi *wkitem.WorkItem) map[string]bool {
+func WorkitemAliases(ref string, wi *wkitem.WorkItem) map[string]bool {
 	aliases := map[string]bool{}
 	if ref != "" {
 		aliases[ref] = true

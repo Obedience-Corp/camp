@@ -217,6 +217,11 @@ type FreshConfig struct {
 	// at the root, not per project), so there is no per-project override, the
 	// same shape as Prune.
 	CompletedRuns string `yaml:"completed_runs,omitempty"`
+	// MergedWorkitems controls the tier-2 merged-branch backstop run per project
+	// in camp fresh: "prompt" asks on a TTY (reports otherwise), "report" prints
+	// the exact promote commands, "off" does nothing. Inference-tier evidence
+	// never auto-promotes. Global only, same shape as CompletedRuns.
+	MergedWorkitems string `yaml:"merged_workitems,omitempty"`
 	// FollowUp lists command workflow steps run, in order, after a successful
 	// sync/prune/branch cycle. A project override in Projects replaces this
 	// list entirely; it is never merged with it.
@@ -337,6 +342,20 @@ func (c *FreshConfig) ResolveFreshCompletedRuns() string {
 		return c.CompletedRuns
 	default:
 		return "sweep"
+	}
+}
+
+// ResolveFreshMergedWorkitems resolves merged_workitems using the global config.
+// Global only, same shape as CompletedRuns. This sequence (tier-2 mapping +
+// report) defaults to "off" until the interactive prompt lands in
+// 02_fresh_prompt_flow, which changes the default to the spec value "prompt".
+// Any unrecognized value falls back to the default rather than failing.
+func (c *FreshConfig) ResolveFreshMergedWorkitems() string {
+	switch c.MergedWorkitems {
+	case "prompt", "report", "off":
+		return c.MergedWorkitems
+	default:
+		return "off"
 	}
 }
 

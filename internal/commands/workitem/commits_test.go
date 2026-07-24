@@ -48,13 +48,13 @@ func TestWorkitemAliasesCollectsRefIdKeyAndSlug(t *testing.T) {
 		Key:          "design/camp-list-tui",
 		RelativePath: "workflow/design/camp-list-tui",
 	}
-	got := workitemAliases("WI-abc123", wi)
+	got := WorkitemAliases("WI-abc123", wi)
 	for _, want := range []string{"WI-abc123", "design-camp-list-tui-2026-06-24", "design/camp-list-tui", "camp-list-tui"} {
 		if !got[want] {
 			t.Fatalf("aliases missing %q; got %v", want, got)
 		}
 	}
-	if workitemAliases("", nil)["."] {
+	if WorkitemAliases("", nil)["."] {
 		t.Fatal("empty inputs should not alias the current dir")
 	}
 }
