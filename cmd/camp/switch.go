@@ -457,13 +457,38 @@ func runRemoteSwitch(ctx context.Context, cmd *cobra.Command, msel cmdutil.Parse
 	}
 	root, err := remote.ResolveRoot(ctx, m, msel.Remainder)
 	if err != nil {
-		return err
+		return withRemoteSuggestions(err, msel)
 	}
 	if shellConnect {
 		return emitShellConnect(cmd.OutOrStdout(), true, root, m)
 	}
 	return camperrors.New("resolved " + msel.Machine + ":" + msel.Remainder + " -> " + root +
 		"; run via the csw shell wrapper to hop there")
+}
+
+// withRemoteSuggestions augments a remote resolve failure with near matches
+// from the per-machine completion cache. Cache-only on purpose: the failed
+// resolve already paid one SSH round-trip, and suggestions must not add
+// another. A cold cache simply yields no suggestions.
+func withRemoteSuggestions(err error, msel cmdutil.ParsedMachineSelector) error {
+	names, ok := readMachineCacheCampaigns(msel.Machine)
+	if !ok || len(names) == 0 {
+		return err
+	}
+	query := cmdutil.ParseSwitchSelector(msel.Remainder).Campaign
+	if query == "" {
+		return err
+	}
+	matches := navfuzzy.Filter(names, query)
+	if len(matches) == 0 {
+		return err
+	}
+	limit := min(len(matches), 3)
+	suggestions := make([]string, 0, limit)
+	for _, match := range matches[:limit] {
+		suggestions = append(suggestions, msel.Machine+":"+match.Target)
+	}
+	return camperrors.Wrapf(err, "did you mean %s?", strings.Join(suggestions, ", "))
 }
 
 type switchOutput struct {

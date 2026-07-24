@@ -145,11 +145,7 @@ func (m listTUIModel) updateBrowse(key tea.KeyMsg) (tea.Model, tea.Cmd) {
 		}
 		m.remoteLoading = true
 		m.setStatus("loading remotes…", false)
-		filter := listFilter{org: m.orgFilter}
-		if !m.activeOnly {
-			filter.all = true
-		}
-		return m, loadRemoteCampaignsCmd(m.ctx, filter)
+		return m, loadRemoteCampaignsCmd(m.ctx, m.remoteListFilter())
 	}
 	return m, nil
 }
