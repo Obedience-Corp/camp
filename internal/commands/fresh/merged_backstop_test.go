@@ -3,12 +3,32 @@ package fresh
 import (
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 
 	wkitem "github.com/Obedience-Corp/camp/internal/workitem"
 	"github.com/Obedience-Corp/camp/internal/workitem/links"
 	"github.com/Obedience-Corp/camp/pkg/commitkit"
 )
+
+func TestBackstopPromoteCommand(t *testing.T) {
+	got := backstopPromoteCommand(wkitem.WorkItem{StableID: "design-foo-01", Key: "design:workflow/design/foo"})
+	if want := "camp workitem promote design-foo-01 --target completed"; got != want {
+		t.Errorf("promote command = %q, want %q", got, want)
+	}
+	// Falls back to Key when there is no StableID.
+	got = backstopPromoteCommand(wkitem.WorkItem{Key: "design:foo"})
+	if want := "camp workitem promote design:foo --target completed"; got != want {
+		t.Errorf("promote command (no StableID) = %q, want %q", got, want)
+	}
+}
+
+func TestBackstopPromptTitle(t *testing.T) {
+	title := backstopPromptTitle(MergedBackstopMatch{Workitem: wkitem.WorkItem{Title: "Fix login", StableID: "design-x"}})
+	if !strings.Contains(title, "Fix login") || !strings.Contains(title, "Promote to completed?") {
+		t.Errorf("prompt title missing label or question: %q", title)
+	}
+}
 
 func taggedSubject(ref, msg string) string {
 	return commitkit.PrependContextTagsFullNamed("obey-campaign", "8deed8b4", "", "", ref, msg)
