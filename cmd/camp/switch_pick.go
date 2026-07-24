@@ -119,14 +119,14 @@ func switchPickPreview(p switchPick, cfg *config.CampaignConfig, currentPath str
 	if p.Kind == switchPickRemote {
 		var b strings.Builder
 		pad := "  "
-		b.WriteString(fmt.Sprintf("%s%s · %s\n", pad, p.Machine, p.Name))
+		fmt.Fprintf(&b, "%s%s · %s\n", pad, p.Machine, p.Name)
 		if p.Org != "" {
-			b.WriteString(fmt.Sprintf("%sOrg: %s\n", pad, p.Org))
+			fmt.Fprintf(&b, "%sOrg: %s\n", pad, p.Org)
 		}
 		if p.Path != "" {
-			b.WriteString(fmt.Sprintf("%sPath: %s\n", pad, p.Path))
+			fmt.Fprintf(&b, "%sPath: %s\n", pad, p.Path)
 		}
-		b.WriteString(fmt.Sprintf("\n%s(remote — select to hop via shell-connect)\n", pad))
+		fmt.Fprintf(&b, "\n%s(remote — select to hop via shell-connect)\n", pad)
 		return b.String()
 	}
 	return formatSwitchLocalPreview(p.Local, cfg, currentPath, w)
@@ -138,25 +138,22 @@ func formatSwitchLocalPreview(c config.RegisteredCampaign, cfg *config.CampaignC
 	var b strings.Builder
 	pad := "  "
 
-	b.WriteString(fmt.Sprintf("%s%s", pad, c.Name))
+	fmt.Fprintf(&b, "%s%s", pad, c.Name)
 	if c.Type != "" {
-		b.WriteString(fmt.Sprintf("  (%s)", c.Type))
+		fmt.Fprintf(&b, "  (%s)", c.Type)
 	}
 	b.WriteByte('\n')
 
 	if cfg != nil && cfg.Mission != "" {
-		b.WriteString(fmt.Sprintf("%s%s\n", pad, cfg.Mission))
+		fmt.Fprintf(&b, "%s%s\n", pad, cfg.Mission)
 	}
 	if cfg != nil && cfg.Description != "" {
-		b.WriteString(fmt.Sprintf("%s%s\n", pad, cfg.Description))
+		fmt.Fprintf(&b, "%s%s\n", pad, cfg.Description)
 	}
 	if cfg != nil && len(cfg.Projects) > 0 {
 		b.WriteByte('\n')
-		b.WriteString(fmt.Sprintf("%sProjects: (%d)\n", pad, len(cfg.Projects)))
-		lineWidth := w - 6
-		if lineWidth < 20 {
-			lineWidth = 20
-		}
+		fmt.Fprintf(&b, "%sProjects: (%d)\n", pad, len(cfg.Projects))
+		lineWidth := max(w-6, 20)
 		line := pad + "  "
 		for i, p := range cfg.Projects {
 			name := p.Name
@@ -175,12 +172,12 @@ func formatSwitchLocalPreview(c config.RegisteredCampaign, cfg *config.CampaignC
 	}
 
 	b.WriteByte('\n')
-	b.WriteString(fmt.Sprintf("%sPath: %s\n", pad, c.Path))
+	fmt.Fprintf(&b, "%sPath: %s\n", pad, c.Path)
 	if !c.LastAccess.IsZero() {
-		b.WriteString(fmt.Sprintf("%sLast: %s\n", pad, c.LastAccess.Format("Jan 2 15:04")))
+		fmt.Fprintf(&b, "%sLast: %s\n", pad, c.LastAccess.Format("Jan 2 15:04"))
 	}
 	if c.Path == currentPath {
-		b.WriteString(fmt.Sprintf("\n%s(current)\n", pad))
+		fmt.Fprintf(&b, "\n%s(current)\n", pad)
 	}
 	return b.String()
 }
