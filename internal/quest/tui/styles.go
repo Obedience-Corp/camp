@@ -25,4 +25,8 @@ var (
 
 	FieldValueStyle = lipgloss.NewStyle().
 			Foreground(pal.TextPrimary)
+
+	SelectedStyle = lipgloss.NewStyle().
+			Bold(true).
+			Foreground(pal.Accent)
 )
