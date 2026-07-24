@@ -47,7 +47,20 @@ func outputList(w io.Writer, items []wkitem.WorkItem, groupBy string) error {
 			}
 		}
 	}
+	if line := sweepBannerLine(items); line != "" {
+		if _, err := fmt.Fprintln(w, line); err != nil {
+			return err
+		}
+	}
 	return nil
+}
+
+// sweepBannerLine returns the read-only "N workitems have completed runs"
+// banner for the listed items, or "" when none are sweep-eligible. Pure: it
+// calls only wkitem.PlanSweep for the count, never any sweep mutation path, so
+// camp wi stays read-only.
+func sweepBannerLine(items []wkitem.WorkItem) string {
+	return wkitem.SweepBannerText(len(wkitem.PlanSweep(items)))
 }
 
 func listSectionHeader(section listview.Section) string {

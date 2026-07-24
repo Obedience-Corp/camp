@@ -131,14 +131,21 @@ Examples:
 			doPush := !freshNoPush && cfg.ResolveFreshPushUpstream(result.Name)
 			followUps := resolveFreshFollowUps(cfg, result.Name, freshNoFollowUp)
 
-			return executeFresh(ctx, result.Name, result.Path, freshOptions{
+			if err := executeFresh(ctx, result.Name, result.Path, freshOptions{
 				branch:      branch,
 				prune:       doPrune,
 				pruneRemote: cfg.ResolveFreshPruneRemote(),
 				push:        doPush,
 				followUps:   followUps,
 				dryRun:      freshDryRun,
-			})
+			}); err != nil {
+				return err
+			}
+
+			// Campaign-root workitem sweep runs once, after the project's
+			// git-hygiene cycle, never inside executeFresh.
+			runCampaignWorkitemSweep(ctx, cfg, freshDryRun)
+			return nil
 		},
 	}
 

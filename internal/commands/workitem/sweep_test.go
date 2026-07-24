@@ -2,6 +2,7 @@ package workitem
 
 import (
 	"bytes"
+	"context"
 	"encoding/json"
 	"os"
 	"path/filepath"
@@ -9,8 +10,30 @@ import (
 
 	"github.com/spf13/cobra"
 
+	"github.com/Obedience-Corp/camp/internal/config"
 	wkitem "github.com/Obedience-Corp/camp/internal/workitem"
 )
+
+// TestExecuteSweepCandidates_ContextCancelledPropagates locks that a mid-sweep
+// context cancellation is surfaced, never swallowed into a clean success.
+func TestExecuteSweepCandidates_ContextCancelledPropagates(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+
+	var result workitemSweepResult
+	candidates := []wkitem.SweepCandidate{{
+		Item:   wkitem.WorkItem{WorkflowType: wkitem.WorkflowTypeDesign, RelativePath: "workflow/design/foo"},
+		Reason: wkitem.EvidenceWorkflowRunCompleted,
+	}}
+
+	err := executeSweepCandidates(ctx, &cobra.Command{}, &config.CampaignConfig{}, t.TempDir(), candidates, &result)
+	if err == nil {
+		t.Fatal("expected context cancellation to propagate, got nil")
+	}
+	if result.Swept != 0 || result.Committed {
+		t.Errorf("cancelled sweep must not report success: swept=%d committed=%v", result.Swept, result.Committed)
+	}
+}
 
 // TestResolveSweepLocation_WorkflowHome locks today's pass-through behavior:
 // a design item resolves to its type-local dungeon at workflow/design/dungeon,
@@ -94,8 +117,9 @@ func TestSweepPlanEnvelopeShape(t *testing.T) {
 	cmd := &cobra.Command{}
 	cmd.SetOut(&buf)
 	result := workitemSweepResult{SchemaVersion: WorkitemSweepJSONVersion, DryRun: true, Candidates: len(candidates)}
-	if err := emitSweepPlan(cmd, root, candidates, &result, true); err != nil {
-		t.Fatalf("emitSweepPlan: %v", err)
+	fillSweepPlan(root, candidates, &result)
+	if err := emitSweepResult(cmd, &result, true); err != nil {
+		t.Fatalf("emitSweepResult: %v", err)
 	}
 
 	// Field-name contract: assert the raw JSON keys, not just the decoded shape.

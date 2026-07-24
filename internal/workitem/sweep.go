@@ -1,6 +1,7 @@
 package workitem
 
 import (
+	"fmt"
 	"path/filepath"
 	"strings"
 )
@@ -53,6 +54,21 @@ func PlanSweep(items []WorkItem) []SweepCandidate {
 		})
 	}
 	return out
+}
+
+// SweepBannerText returns the read-only banner reporting n workitems with
+// completed runs awaiting sweep, or "" when n <= 0. Singular "workitem" for
+// n == 1, matching spec doc 03's example wording. Shared by camp wi and camp
+// fresh (report mode) so the wording lives in exactly one place.
+func SweepBannerText(n int) string {
+	if n <= 0 {
+		return ""
+	}
+	noun, verb := "workitems", "have"
+	if n == 1 {
+		noun, verb = "workitem", "has"
+	}
+	return fmt.Sprintf("%d %s %s completed runs; run camp workitem sweep", n, noun, verb)
 }
 
 // sweepEligibleType excludes the workflow types that fest owns (festivals) or
