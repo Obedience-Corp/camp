@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"io"
 	"path/filepath"
 	"time"
 
@@ -103,37 +104,39 @@ per-item error) and stays exit 0 so the structured result is the contract.`,
 	return cmd
 }
 
-func runWorkitemSweep(cmd *cobra.Command, opts sweepOptions) error {
-	ctx := cmd.Context()
-
+// gatherSweepCandidates loads the campaign and returns the eligible tier-1
+// candidates from one discovery pass. Shared by the sweep command and camp
+// fresh's completed_runs handling so both plan against the same read.
+func gatherSweepCandidates(ctx context.Context) (*config.CampaignConfig, string, []wkitem.SweepCandidate, error) {
 	cfg, root, err := config.LoadCampaignConfigFromCwd(ctx)
 	if err != nil {
-		return camperrors.Wrap(err, "not in a campaign directory")
+		return nil, "", nil, camperrors.Wrap(err, "not in a campaign directory")
 	}
-
 	resolver := paths.NewResolverFromConfig(root, cfg)
 	items, err := wkitem.Discover(ctx, root, resolver)
 	if err != nil {
-		return camperrors.Wrap(err, "discovering workitems")
+		return nil, "", nil, camperrors.Wrap(err, "discovering workitems")
 	}
-	candidates := wkitem.PlanSweep(items)
+	return cfg, root, wkitem.PlanSweep(items), nil
+}
 
-	result := workitemSweepResult{
+func newSweepResult(dryRun bool, candidates int) workitemSweepResult {
+	return workitemSweepResult{
 		SchemaVersion: WorkitemSweepJSONVersion,
 		GeneratedAt:   time.Now().UTC(),
-		DryRun:        opts.DryRun,
-		Candidates:    len(candidates),
+		DryRun:        dryRun,
+		Candidates:    candidates,
 	}
+}
 
-	if opts.DryRun {
-		return emitSweepPlan(cmd, root, candidates, &result, opts.JSON)
-	}
-
+// executeSweepCandidates runs the per-item promote loop with error isolation,
+// filling result. Shared by the sweep command and camp fresh.
+func executeSweepCandidates(ctx context.Context, cmd *cobra.Command, cfg *config.CampaignConfig, root string, candidates []wkitem.SweepCandidate, result *workitemSweepResult) {
 	for _, cand := range candidates {
 		if ctx.Err() != nil {
-			return ctx.Err()
+			return
 		}
-		item := sweepOne(ctx, cmd, cfg, root, cand, &result)
+		item := sweepOne(ctx, cmd, cfg, root, cand, result)
 		result.Items = append(result.Items, item)
 		if item.Error != "" {
 			result.Failed++
@@ -142,6 +145,22 @@ func runWorkitemSweep(cmd *cobra.Command, opts sweepOptions) error {
 		}
 	}
 	result.Committed = result.Failed == 0 && result.Swept > 0
+}
+
+func runWorkitemSweep(cmd *cobra.Command, opts sweepOptions) error {
+	ctx := cmd.Context()
+	cfg, root, candidates, err := gatherSweepCandidates(ctx)
+	if err != nil {
+		return err
+	}
+	result := newSweepResult(opts.DryRun, len(candidates))
+
+	if opts.DryRun {
+		fillSweepPlan(root, candidates, &result)
+		return emitSweepResult(cmd, &result, opts.JSON)
+	}
+
+	executeSweepCandidates(ctx, cmd, cfg, root, candidates, &result)
 
 	if err := emitSweepResult(cmd, &result, opts.JSON); err != nil {
 		return err
@@ -234,9 +253,9 @@ func sweepOne(ctx context.Context, cmd *cobra.Command, cfg *config.CampaignConfi
 	return entry
 }
 
-// emitSweepPlan renders the dry-run plan: what each candidate would move where,
-// mutating nothing.
-func emitSweepPlan(cmd *cobra.Command, root string, candidates []wkitem.SweepCandidate, result *workitemSweepResult, jsonOut bool) error {
+// fillSweepPlan populates result.Items with the dry-run plan: what each
+// candidate would move where, mutating nothing. The caller emits result.
+func fillSweepPlan(root string, candidates []wkitem.SweepCandidate, result *workitemSweepResult) {
 	for _, cand := range candidates {
 		entry := workitemSweepResultItem{
 			ID:          cand.Item.Key,
@@ -252,7 +271,45 @@ func emitSweepPlan(cmd *cobra.Command, root string, candidates []wkitem.SweepCan
 		}
 		result.Items = append(result.Items, entry)
 	}
-	return emitSweepResult(cmd, result, jsonOut)
+}
+
+// Fresh sweep modes for camp fresh's completed_runs setting.
+const (
+	FreshSweepModeReport = "report"
+	FreshSweepModeSweep  = "sweep"
+)
+
+// RunFreshSweep runs the tier-1 workitem sweep for camp fresh, reusing the same
+// internals as camp workitem sweep. mode "report" prints the read-only banner;
+// mode "sweep" executes the promotion. Callers must not pass "off" (an opted-out
+// campaign must pay for no discovery pass, which the caller guards). When nothing
+// is eligible, RunFreshSweep is silent and mutates nothing.
+func RunFreshSweep(ctx context.Context, out io.Writer, mode string) error {
+	cfg, root, candidates, err := gatherSweepCandidates(ctx)
+	if err != nil {
+		return err
+	}
+	if len(candidates) == 0 {
+		return nil
+	}
+	if mode == FreshSweepModeReport {
+		_, err := fmt.Fprintln(out, wkitem.SweepBannerText(len(candidates)))
+		return err
+	}
+
+	cmd := &cobra.Command{}
+	cmd.SetContext(ctx)
+	cmd.SetOut(out)
+	cmd.SetErr(out)
+	result := newSweepResult(false, len(candidates))
+	executeSweepCandidates(ctx, cmd, cfg, root, candidates, &result)
+	if err := emitSweepResult(cmd, &result, false); err != nil {
+		return err
+	}
+	if result.Failed > 0 {
+		return camperrors.Newf("%d workitem(s) failed to sweep", result.Failed)
+	}
+	return nil
 }
 
 func emitSweepResult(cmd *cobra.Command, result *workitemSweepResult, jsonOut bool) error {

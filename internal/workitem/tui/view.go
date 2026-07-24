@@ -146,7 +146,11 @@ func (m Model) renderFooter() string {
 	if len(keys)+len(count)+2 > m.width {
 		keys = "j/k / f filter s status c category P tab r ? q"
 	}
-	return footerStyle.Render(fmt.Sprintf("%s  %s", count, keys))
+	footer := fmt.Sprintf("%s  %s", count, keys)
+	if banner := workitem.SweepBannerText(m.sweepEligible); banner != "" {
+		footer = fmt.Sprintf("%s  |  %s", footer, banner)
+	}
+	return footerStyle.Render(footer)
 }
 
 func (m Model) renderStatusFilter() string {

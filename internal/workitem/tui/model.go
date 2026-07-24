@@ -167,6 +167,11 @@ type Model struct {
 	storePath     string
 	priorityMode  bool
 	stageMode     bool
+
+	// sweepEligible is the count of workitems with a completed run awaiting
+	// sweep, computed once at construction from the full item list. Drives the
+	// read-only footer banner; never triggers a mutation.
+	sweepEligible int
 }
 
 // New creates the dashboard model from a pre-discovered item list.
@@ -191,6 +196,7 @@ func New(ctx context.Context, items []workitem.WorkItem, campaignRoot string, re
 		priorityStore: store,
 		storePath:     storePath,
 		showParked:    includeParked,
+		sweepEligible: len(workitem.PlanSweep(items)),
 	}
 }
 
