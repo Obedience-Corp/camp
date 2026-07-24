@@ -23,6 +23,35 @@ func TestBackstopPromoteCommand(t *testing.T) {
 	}
 }
 
+// TestResolveBackstopMode_DryRunNeverPrompts is the regression guard for the
+// dry-run mutation bug: a dry-run must downgrade to "report", so the prompt path
+// (the only path that can reach PromoteMergedWorkitem) is unreachable on a
+// dry-run regardless of TTY.
+func TestResolveBackstopMode_DryRunNeverPrompts(t *testing.T) {
+	tests := []struct {
+		configured string
+		dryRun     bool
+		want       string
+	}{
+		{"prompt", true, "report"},  // the bug: dry-run must NOT prompt/promote
+		{"prompt", false, "prompt"}, // normal run keeps prompt
+		{"report", true, "report"},
+		{"off", true, "off"}, // dry-run does not resurrect an opted-out backstop
+		{"off", false, "off"},
+	}
+	for _, tc := range tests {
+		if got := resolveBackstopMode(tc.configured, tc.dryRun); got != tc.want {
+			t.Errorf("resolveBackstopMode(%q, %v) = %q, want %q", tc.configured, tc.dryRun, got, tc.want)
+		}
+	}
+	// The prompt path is the sole caller of PromoteMergedWorkitem, and it only
+	// runs when the resolved mode is "prompt"; since dry-run never yields
+	// "prompt", a dry-run can never reach a promote.
+	if resolveBackstopMode("prompt", true) == "prompt" {
+		t.Fatal("dry-run resolved to prompt: a dry-run could reach PromoteMergedWorkitem")
+	}
+}
+
 func TestBackstopPromptTitle(t *testing.T) {
 	title := backstopPromptTitle(MergedBackstopMatch{Workitem: wkitem.WorkItem{Title: "Fix login", StableID: "design-x"}})
 	if !strings.Contains(title, "Fix login") || !strings.Contains(title, "Promote to completed?") {

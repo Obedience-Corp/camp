@@ -325,12 +325,10 @@ func RunFreshSweep(ctx context.Context, out io.Writer, mode string) error {
 // given evidence, reusing the sweep's per-item move + audit + ledger + commit
 // path. Used by camp fresh's tier-2 merged-branch backstop when a human accepts
 // the prompt; evidence is EvidenceMergedBranch. Never called on inference
-// evidence without an explicit human accept upstream.
-func PromoteMergedWorkitem(ctx context.Context, out io.Writer, root string, wi wkitem.WorkItem, evidence string) error {
-	cfg, _, err := config.LoadCampaignConfigFromCwd(ctx)
-	if err != nil {
-		return camperrors.Wrap(err, "not in a campaign directory")
-	}
+// evidence without an explicit human accept upstream. Takes the already-resolved
+// cfg and root from the caller so a non-root cwd cannot resolve a different
+// campaign than the one fresh is operating on.
+func PromoteMergedWorkitem(ctx context.Context, out io.Writer, cfg *config.CampaignConfig, root string, wi wkitem.WorkItem, evidence string) error {
 	cmd := &cobra.Command{}
 	cmd.SetContext(ctx)
 	cmd.SetOut(out)

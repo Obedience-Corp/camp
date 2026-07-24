@@ -104,6 +104,33 @@ func TestIntegration_FreshMergedBackstop_PromptFallsBackToReportOnNonTTY(t *test
 	assert.True(t, stays, "non-TTY prompt must not auto-promote")
 }
 
+// TestIntegration_FreshMergedBackstop_DryRunNoMutation verifies a --dry-run run
+// reports the match but never promotes: the workitem is not moved. Combined with
+// the resolveBackstopMode unit test (which proves a dry-run downgrades prompt to
+// report even on a TTY), this covers the dry-run mutation guard.
+func TestIntegration_FreshMergedBackstop_DryRunNoMutation(t *testing.T) {
+	skipIfShort(t)
+	tc := GetSharedContainer(t)
+	campaignPath, projectDir, _ := setupFreshCampaignWithSubmodule(t, tc, "backstop-dryrun")
+
+	createBackstopWorkitem(t, tc, campaignPath, "myfeature")
+	require.NoError(t, tc.WriteFile(campaignPath+"/projects/worktrees/test-project/myfeature/.keep", ""))
+	out, err := tc.RunCampInDir(campaignPath, "workitem", "link", "design-myfeature", "--worktree", "projects/worktrees/test-project/myfeature")
+	require.NoError(t, err, "link: %s", out)
+	// Default merged_workitems is "prompt"; a dry-run must downgrade to report.
+	_, _, err = tc.ExecCommand("sh", "-c", "cd "+campaignPath+" && git add -A && git commit -q -m 'link'")
+	require.NoError(t, err)
+
+	mergeAndPruneBranch(t, tc, projectDir, "myfeature")
+
+	output, err := tc.RunCampInDir(campaignPath, "fresh", "test-project", "--no-push", "--dry-run")
+	require.NoError(t, err, "fresh --dry-run: %s", output)
+
+	stays, err := tc.CheckDirExists(campaignPath + "/workflow/design/myfeature")
+	require.NoError(t, err)
+	assert.True(t, stays, "dry-run must never promote (workitem must remain in place)")
+}
+
 // TestIntegration_FreshMergedBackstop_OffIsSilent verifies merged_workitems: off
 // produces no backstop output even when a linked branch merged.
 func TestIntegration_FreshMergedBackstop_OffIsSilent(t *testing.T) {

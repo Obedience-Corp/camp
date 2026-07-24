@@ -45,11 +45,30 @@ func backstopRoot(ctx context.Context, opts freshOptions) string {
 // the exact promote command. Mode "off" or an empty root/branch list is a no-op.
 // Inference evidence never auto-promotes; a failure is reported to out and never
 // fails the fresh cycle.
+// resolveBackstopMode downgrades a dry-run to report-only so a dry-run never
+// reaches the prompt/promote path (mirroring the tier-1 sweep's dry-run
+// contract): the user still sees WHAT would be prompted, but nothing mutates.
+// "off" stays off; "report" stays report.
+func resolveBackstopMode(configured string, dryRun bool) string {
+	if dryRun && configured != "off" {
+		return "report"
+	}
+	return configured
+}
+
 func handleMergedBackstop(ctx context.Context, out io.Writer, root, projectPath string, deletedBranches []string, beforeSHA, mode string) {
 	if mode == "off" || root == "" || len(deletedBranches) == 0 {
 		return
 	}
-	matches, err := MapMergedBranchesToWorkitems(ctx, root, projectPath, deletedBranches, beforeSHA)
+	// Load the campaign config once, keyed by the threaded root, so a non-root
+	// cwd with a threaded campRoot cannot resolve a different campaign than the
+	// mapping and promote paths operate on.
+	cfg, err := config.LoadCampaignConfig(ctx, root)
+	if err != nil {
+		_, _ = fmt.Fprintf(out, "%s merged-branch backstop skipped: %v\n", ui.WarningIcon(), err)
+		return
+	}
+	matches, err := MapMergedBranchesToWorkitems(ctx, cfg, root, projectPath, deletedBranches, beforeSHA)
 	if err != nil {
 		_, _ = fmt.Fprintf(out, "%s merged-branch backstop skipped: %v\n", ui.WarningIcon(), err)
 		return
@@ -78,7 +97,7 @@ func handleMergedBackstop(ctx context.Context, out io.Writer, root, projectPath 
 	// FESTIVAL_RULES rule 2: inference evidence prompts on a TTY or reports; it
 	// never acts on its own. A non-TTY (agent) run always reports.
 	if mode == "prompt" && ui.IsTerminal() {
-		promoteMergedMatches(ctx, out, root, surviving)
+		promoteMergedMatches(ctx, out, cfg, root, surviving)
 		return
 	}
 	for _, m := range surviving {
@@ -91,7 +110,7 @@ func handleMergedBackstop(ctx context.Context, out io.Writer, root, projectPath 
 // declined item offers a "skip all remaining" shortcut. A cancelled prompt
 // (Ctrl+C) is treated as skip. Every accept goes through the shared promote path
 // with EvidenceMergedBranch; nothing is promoted without an explicit accept.
-func promoteMergedMatches(ctx context.Context, out io.Writer, root string, matches []MergedBackstopMatch) {
+func promoteMergedMatches(ctx context.Context, out io.Writer, cfg *config.CampaignConfig, root string, matches []MergedBackstopMatch) {
 	skipAll := false
 	for i, m := range matches {
 		if skipAll {
@@ -103,7 +122,7 @@ func promoteMergedMatches(ctx context.Context, out io.Writer, root string, match
 			continue
 		}
 		if promote {
-			if perr := wkcmd.PromoteMergedWorkitem(ctx, out, root, m.Workitem, wkitem.EvidenceMergedBranch); perr != nil {
+			if perr := wkcmd.PromoteMergedWorkitem(ctx, out, cfg, root, m.Workitem, wkitem.EvidenceMergedBranch); perr != nil {
 				_, _ = fmt.Fprintf(out, "%s promote failed for %s: %v\n", ui.WarningIcon(), backstopWorkitemLabel(m.Workitem), perr)
 			} else {
 				_, _ = fmt.Fprintf(out, "%s promoted %s to completed\n", ui.SuccessIcon(), backstopWorkitemLabel(m.Workitem))
@@ -212,7 +231,7 @@ type MergedBackstopMatch struct {
 // doc 03's scope boundary. Pure of prompt/UI concerns; git calls are I/O so it
 // takes ctx. Returns no error on "no matches": absence of evidence is not an
 // error.
-func MapMergedBranchesToWorkitems(ctx context.Context, root, projectPath string, prunedBranches []string, beforeSHA string) ([]MergedBackstopMatch, error) {
+func MapMergedBranchesToWorkitems(ctx context.Context, cfg *config.CampaignConfig, root, projectPath string, prunedBranches []string, beforeSHA string) ([]MergedBackstopMatch, error) {
 	if len(prunedBranches) == 0 {
 		return nil, nil
 	}
@@ -220,10 +239,6 @@ func MapMergedBranchesToWorkitems(ctx context.Context, root, projectPath string,
 	registry, err := links.Load(ctx, root)
 	if err != nil {
 		return nil, camperrors.Wrap(err, "load link registry")
-	}
-	cfg, _, err := config.LoadCampaignConfigFromCwd(ctx)
-	if err != nil {
-		return nil, camperrors.Wrap(err, "load campaign config")
 	}
 	items, err := wkitem.Discover(ctx, root, paths.NewResolverFromConfig(root, cfg))
 	if err != nil {
