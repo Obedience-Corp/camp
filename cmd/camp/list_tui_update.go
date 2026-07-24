@@ -1,6 +1,8 @@
 package main
 
 import (
+	"context"
+	"fmt"
 	"strings"
 
 	tea "github.com/charmbracelet/bubbletea"
@@ -14,11 +16,44 @@ func (m listTUIModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.input.Width = max(msg.Width-8, 4)
 		}
 		return m, nil
+	case remoteLoadedMsg:
+		return m.applyRemoteLoaded(msg)
 	case tea.KeyMsg:
 		if m.overlay != listOverlayNone {
 			return m.updateOverlay(msg)
 		}
 		return m.updateBrowse(msg)
+	}
+	return m, nil
+}
+
+func (m listTUIModel) applyRemoteLoaded(msg remoteLoadedMsg) (tea.Model, tea.Cmd) {
+	m.remoteLoading = false
+	if msg.err != nil {
+		m.setStatus("remote load failed: "+msg.err.Error(), true)
+		return m, nil
+	}
+	// Drop any prior remote rows, then append the fresh fan-out.
+	locals := make([]campaignEntry, 0, m.localCount)
+	for _, e := range m.all {
+		if !isRemoteListEntry(e) {
+			locals = append(locals, e)
+		}
+	}
+	m.all = append(locals, msg.rows...)
+	m.remoteOn = true
+	m.rebuildVisible()
+
+	var unreach []string
+	for _, r := range msg.results {
+		if r.err != nil {
+			unreach = append(unreach, r.machineID)
+		}
+	}
+	if len(unreach) > 0 {
+		m.setStatus(fmt.Sprintf("loaded remotes (%d unreachable: %s)", len(unreach), strings.Join(unreach, ", ")), false)
+	} else {
+		m.setStatus(fmt.Sprintf("loaded %d remote campaign(s)", len(msg.rows)), false)
 	}
 	return m, nil
 }
@@ -37,7 +72,7 @@ func (m listTUIModel) updateBrowse(key tea.KeyMsg) (tea.Model, tea.Cmd) {
 			m.setStatus("go needs shell integration: run eval \"$(camp shell-init <shell>)\"", true)
 			return m, nil
 		}
-		m.gotoPath = m.visible[m.cursor].Path
+		m.gotoPath = gotoSelectionFor(m.visible[m.cursor])
 		m.quitting = true
 		return m, tea.Quit
 	case "down", "j":
@@ -52,6 +87,10 @@ func (m listTUIModel) updateBrowse(key tea.KeyMsg) (tea.Model, tea.Cmd) {
 		return m, nil
 	case "s":
 		if len(m.visible) > 0 {
+			if isRemoteListEntry(m.visible[m.cursor]) {
+				m.setStatus("remote campaigns are read-only here", true)
+				return m, nil
+			}
 			if err := m.cycleStatus(); err != nil {
 				m.setError(err)
 			}
@@ -59,6 +98,10 @@ func (m listTUIModel) updateBrowse(key tea.KeyMsg) (tea.Model, tea.Cmd) {
 		return m, nil
 	case "m":
 		if len(m.visible) > 0 {
+			if isRemoteListEntry(m.visible[m.cursor]) {
+				m.setStatus("remote campaigns are read-only here", true)
+				return m, nil
+			}
 			m.overlay = listOverlayMove
 			m.input.SetValue("")
 			m.input.Placeholder = "target org"
@@ -78,8 +121,46 @@ func (m listTUIModel) updateBrowse(key tea.KeyMsg) (tea.Model, tea.Cmd) {
 		m.activeOnly = !m.activeOnly
 		m.rebuildVisible()
 		return m, nil
+	case "r":
+		if !m.machinesConfigured {
+			m.setStatus("no machines configured (~/.obey/machines.yaml)", true)
+			return m, nil
+		}
+		if m.remoteLoading {
+			return m, nil
+		}
+		if m.remoteOn {
+			// Toggle off: strip remote rows.
+			locals := make([]campaignEntry, 0, m.localCount)
+			for _, e := range m.all {
+				if !isRemoteListEntry(e) {
+					locals = append(locals, e)
+				}
+			}
+			m.all = locals
+			m.remoteOn = false
+			m.rebuildVisible()
+			m.setStatus("showing local campaigns", false)
+			return m, nil
+		}
+		m.remoteLoading = true
+		m.setStatus("loading remotes…", false)
+		filter := listFilter{org: m.orgFilter}
+		if !m.activeOnly {
+			filter.all = true
+		}
+		return m, loadRemoteCampaignsCmd(m.ctx, filter)
 	}
 	return m, nil
+}
+
+// loadRemoteCampaignsCmd runs the shared fan-out off the UI thread so the
+// "loading remotes…" status line can paint (required; never block Update).
+func loadRemoteCampaignsCmd(ctx context.Context, filter listFilter) tea.Cmd {
+	return func() tea.Msg {
+		rows, results, err := loadRemoteCampaigns(ctx, filter)
+		return remoteLoadedMsg{rows: rows, results: results, err: err}
+	}
 }
 
 func (m listTUIModel) updateOverlay(key tea.KeyMsg) (tea.Model, tea.Cmd) {
@@ -95,7 +176,9 @@ func (m listTUIModel) updateOverlay(key tea.KeyMsg) (tea.Model, tea.Cmd) {
 		value := strings.TrimSpace(m.input.Value())
 		if value != "" && len(m.visible) > 0 {
 			e := m.visible[m.cursor]
-			if err := m.assignOrg(e.ID, e.Name, value); err != nil {
+			if isRemoteListEntry(e) {
+				m.setStatus("remote campaigns are read-only here", true)
+			} else if err := m.assignOrg(e.ID, e.Name, value); err != nil {
 				m.setError(err)
 			}
 		}

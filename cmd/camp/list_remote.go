@@ -9,6 +9,7 @@ import (
 	"sync"
 	"text/tabwriter"
 
+	"github.com/Obedience-Corp/camp/cmd/camp/cmdutil"
 	camperrors "github.com/Obedience-Corp/camp/internal/errors"
 	"github.com/Obedience-Corp/camp/internal/machines"
 	"github.com/Obedience-Corp/camp/internal/remote"
@@ -102,6 +103,39 @@ func enumerateRemoteFor(f listFilter) enumerateFunc {
 		// keystroke path ever doing a live ssh.
 		writeMachineCacheCampaigns(m.ID, names)
 		return rows, nil
+	}
+}
+
+// loadRemoteCampaigns is the shared live fan-out used by list --remote, the list
+// TUI remote toggle, and the switch picker. It loads machines.yaml, enumerates
+// every machine, and returns successful rows plus the full result set (including
+// per-machine errors). A missing/empty fleet returns empty slices, not an error.
+// Callers re-filter as needed; this does not re-apply the local filter backstop.
+func loadRemoteCampaigns(ctx context.Context, filter listFilter) ([]campaignEntry, []remoteResult, error) {
+	mf, err := machines.Load()
+	if err != nil {
+		return nil, nil, err
+	}
+	if len(mf.Machines) == 0 {
+		return nil, nil, nil
+	}
+	results := fanOutRemote(ctx, mf.Machines, enumerateRemoteFor(filter))
+	var rows []campaignEntry
+	for _, r := range results {
+		if r.err == nil {
+			rows = append(rows, r.rows...)
+		}
+	}
+	return rows, results, nil
+}
+
+// listFilterFromScope maps a switch CampaignScope onto the list filter used for
+// remote enumerate (active-only by default; --all / --status / --org forwarded).
+func listFilterFromScope(scope cmdutil.CampaignScope) listFilter {
+	return listFilter{
+		org:    scope.Org,
+		status: scope.Status,
+		all:    scope.All,
 	}
 }
 

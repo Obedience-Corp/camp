@@ -30,13 +30,15 @@ Without arguments, opens an interactive picker to select a campaign.
 With an argument, looks up the campaign by name or ID prefix.
 Use --org or org/campaign to resolve inside one organization.
 
-Use with the cgo shell function for instant navigation:
-  cgo switch                 # Interactive campaign picker
-  cgo switch my-campaign     # Switch by name
-  cgo switch a1b2             # Switch by ID prefix
-  cgo switch obey/platform    # Switch by org-scoped selector
+Use with the shell-init wrappers for instant navigation (recommended):
+  eval "$(camp shell-init zsh)"   # or bash / fish — once per shell
+  csw                            # Interactive picker (local + remote machines)
+  csw my-campaign                # Switch by name
+  csw a1b2                       # Switch by ID prefix
+  csw obey/platform              # Switch by org-scoped selector
+  csw archdtop:lance-arch        # Hop to a remote campaign over ssh
 
-The --print flag outputs just the path for shell integration:
+The --print flag outputs just the path for shell integration (local only):
   cd "$(camp switch --print)"
 
 Use campaign@tab to navigate to a specific location in the target campaign:
@@ -44,19 +46,23 @@ Use campaign@tab to navigate to a specific location in the target campaign:
   camp switch obey/platform@f    # Switch inside org and navigate to festivals/
 
 Use machine:campaign to resolve a campaign on a machine registered in
-~/.obey/machines.yaml (via the csw shell wrapper, which hops there over ssh):
-  csw devbox:obey-campaign       # Resolve and hop to obey-campaign on devbox
+~/.obey/machines.yaml. The interactive picker also lists remote campaigns when
+machines are configured (locals open instantly; remotes append as they load).
+Bare 'command camp switch machine:…' resolves without hopping — use the csw
+shell wrapper (or --shell-connect under shell-init) to hop.
 
 Remote resolution runs the far machine's own 'camp switch' through a login
 shell (sh -lc) so PATH entries a login profile exports (~/.profile, etc.) are
 picked up. If camp still can't be found there, set CAMP_REMOTE_CAMP_PATH to
 its exact path on that machine.`,
-	Example: `  camp switch                        # Interactive picker
-  camp switch obey-campaign          # Switch by name
+	Example: `  eval "$(camp shell-init zsh)"
+  csw                                # Interactive picker (local + remotes)
+  csw obey-campaign                  # Switch by name
+  csw archdtop:lance-arch            # Hop to remote campaign
   camp switch --org obey platform    # Switch by name within an org
   camp switch obey/platform          # Switch by scoped selector
   camp switch a1b2                   # Switch by ID prefix
-  camp switch --print                # Picker, output path only
+  camp switch --print                # Picker, output path only (local)
   camp switch obey-campaign@p        # Switch and navigate to projects/
   camp switch --all old-reference    # Include inactive/reference campaigns
   camp switch --org obey platform --json`,
@@ -287,7 +293,11 @@ func runSwitch(cmd *cobra.Command, args []string) error {
 	if err != nil {
 		return camperrors.Wrap(err, "load registry")
 	}
-	if reg.Len() == 0 {
+	hasMachines := false
+	if mf, merr := machines.Load(); merr == nil && len(mf.Machines) > 0 {
+		hasMachines = true
+	}
+	if reg.Len() == 0 && !hasMachines {
 		return camperrors.Newf("no campaigns registered (use 'camp init' to create one)")
 	}
 
@@ -302,6 +312,9 @@ func runSwitch(cmd *cobra.Command, args []string) error {
 		}
 		if msel.Machine != "" && msel.Machine != machines.LocalMachineID {
 			return runRemoteSwitch(ctx, cmd, msel, printOnly, shellConnect, jsonOut)
+		}
+		if reg.Len() == 0 {
+			return camperrors.Newf("no campaigns registered (use 'camp init' to create one)")
 		}
 		// Local (no "machine:" prefix, or "local:"): Remainder equals args[0]
 		// verbatim for the no-colon case, so local resolution stays byte-identical.
@@ -328,11 +341,17 @@ func runSwitch(cmd *cobra.Command, args []string) error {
 		if !tui.IsTerminal() {
 			return camperrors.New("campaign name required in non-interactive mode (use 'camp switch <name>' or run interactively)")
 		}
-		c, err := cmdutil.PickCampaignWithOptions(ctx, reg, cmdutil.PickCampaignOptions{Scope: scope})
+		pick, err := pickSwitchTarget(ctx, reg, pickSwitchTargetOptions{Scope: scope})
 		if err != nil {
 			return err
 		}
-		selected = c
+		if pick.Kind == switchPickRemote {
+			return runRemoteSwitch(ctx, cmd, cmdutil.ParsedMachineSelector{
+				Machine:   pick.Machine,
+				Remainder: pick.Name,
+			}, printOnly, shellConnect, jsonOut)
+		}
+		selected = pick.Local
 	}
 	if targetPath == "" {
 		targetPath = selected.Path

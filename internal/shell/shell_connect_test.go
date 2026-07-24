@@ -34,3 +34,63 @@ func TestSwitchBranchEvalsShellConnect(t *testing.T) {
 		})
 	}
 }
+
+func TestListBranchHandlesSSHHopMarker(t *testing.T) {
+	cases := []struct {
+		name   string
+		output string
+		start  string
+		end    string
+		// Distinct markers that must appear in the list arm for remote go.
+		needles []string
+	}{
+		{
+			name:   "zsh",
+			output: generateZsh(),
+			start:  "list|ls)",
+			end:    "festivals)",
+			needles: []string{
+				"ssh-hop:",
+				`sel="${dest#ssh-hop:}"`,
+				`command camp switch "$sel" --shell-connect`,
+				`cd "$dest"`,
+			},
+		},
+		{
+			name:   "bash",
+			output: generateBash(),
+			start:  "list|ls)",
+			end:    "festivals)",
+			needles: []string{
+				"ssh-hop:",
+				`sel="${dest#ssh-hop:}"`,
+				`command camp switch "$sel" --shell-connect`,
+				`cd "$dest"`,
+			},
+		},
+		{
+			name:   "fish",
+			output: generateFish(),
+			start:  "case list ls",
+			end:    "case festivals",
+			needles: []string{
+				"ssh-hop:",
+				`string replace -r '^ssh-hop:'`,
+				"command camp switch $sel --shell-connect",
+				`cd "$dest"`,
+			},
+		},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			// Scope to the list arm so switch-branch shell-connect does not
+			// falsely satisfy the markers.
+			section := shellWrapperSection(t, tc.output, tc.start, tc.end)
+			for _, n := range tc.needles {
+				if !strings.Contains(section, n) {
+					t.Errorf("%s list arm missing %q", tc.name, n)
+				}
+			}
+		})
+	}
+}
