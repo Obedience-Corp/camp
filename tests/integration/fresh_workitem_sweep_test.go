@@ -107,7 +107,7 @@ func TestIntegration_FreshSweep_ReportPrintsBanner(t *testing.T) {
 	out, err := tc.RunCampInDir(campaignPath, "fresh", "test-project", "--no-push")
 	require.NoError(t, err, "fresh: %s", out)
 
-	assert.Contains(t, out, "have completed runs; run camp workitem sweep", "report prints the banner")
+	assert.Contains(t, out, "completed runs; run camp workitem sweep", "report prints the banner")
 	assert.Equal(t, 0, countSweepEvidence(t, tc, campaignPath), "report must not sweep")
 	stays, err := tc.CheckDirExists(campaignPath + "/workflow/design/done-feature")
 	require.NoError(t, err)

@@ -64,11 +64,11 @@ func SweepBannerText(n int) string {
 	if n <= 0 {
 		return ""
 	}
-	noun := "workitems"
+	noun, verb := "workitems", "have"
 	if n == 1 {
-		noun = "workitem"
+		noun, verb = "workitem", "has"
 	}
-	return fmt.Sprintf("%d %s have completed runs; run camp workitem sweep", n, noun)
+	return fmt.Sprintf("%d %s %s completed runs; run camp workitem sweep", n, noun, verb)
 }
 
 // sweepEligibleType excludes the workflow types that fest owns (festivals) or
