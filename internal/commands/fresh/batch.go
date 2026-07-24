@@ -9,6 +9,7 @@ import (
 	"github.com/charmbracelet/lipgloss"
 	"github.com/spf13/cobra"
 
+	"github.com/Obedience-Corp/camp/internal/campaign"
 	"github.com/Obedience-Corp/camp/internal/config"
 	camperrors "github.com/Obedience-Corp/camp/internal/errors"
 	"github.com/Obedience-Corp/camp/internal/project"
@@ -108,6 +109,10 @@ func runFreshBatch(ctx context.Context, cfg *config.FreshConfig, targets []fresh
 	fmt.Println(ui.Info(header))
 	fmt.Println()
 
+	// campRoot for the per-project merged-branch backstop; best-effort (the
+	// backstop no-ops on "off" and self-resolves the root if this is empty).
+	batchCampRoot, _ := campaign.DetectCached(ctx)
+
 	var succeeded, failed int
 	var failedNames []string
 
@@ -122,12 +127,14 @@ func runFreshBatch(ctx context.Context, cfg *config.FreshConfig, targets []fresh
 		followUps := resolveFreshFollowUps(cfg, t.name, flags.noFollowUp)
 
 		err := executeFresh(ctx, t.name, t.path, freshOptions{
-			branch:      branch,
-			prune:       doPrune,
-			pruneRemote: cfg.ResolveFreshPruneRemote(),
-			push:        doPush,
-			followUps:   followUps,
-			dryRun:      flags.dryRun,
+			branch:          branch,
+			prune:           doPrune,
+			pruneRemote:     cfg.ResolveFreshPruneRemote(),
+			push:            doPush,
+			followUps:       followUps,
+			dryRun:          flags.dryRun,
+			campRoot:        batchCampRoot,
+			mergedWorkitems: cfg.ResolveFreshMergedWorkitems(),
 		})
 		if err != nil {
 			fmt.Printf("  %s %s: %s\n", red.Render("FAILED"), t.name, err)

@@ -132,12 +132,14 @@ Examples:
 			followUps := resolveFreshFollowUps(cfg, result.Name, freshNoFollowUp)
 
 			if err := executeFresh(ctx, result.Name, result.Path, freshOptions{
-				branch:      branch,
-				prune:       doPrune,
-				pruneRemote: cfg.ResolveFreshPruneRemote(),
-				push:        doPush,
-				followUps:   followUps,
-				dryRun:      freshDryRun,
+				branch:          branch,
+				prune:           doPrune,
+				pruneRemote:     cfg.ResolveFreshPruneRemote(),
+				push:            doPush,
+				followUps:       followUps,
+				dryRun:          freshDryRun,
+				campRoot:        campRoot,
+				mergedWorkitems: cfg.ResolveFreshMergedWorkitems(),
 			}); err != nil {
 				return err
 			}
@@ -171,12 +173,14 @@ Examples:
 }
 
 type freshOptions struct {
-	branch      string
-	prune       bool
-	pruneRemote bool
-	push        bool
-	followUps   []config.FollowUpConfig
-	dryRun      bool
+	branch          string
+	prune           bool
+	pruneRemote     bool
+	push            bool
+	followUps       []config.FollowUpConfig
+	dryRun          bool
+	campRoot        string
+	mergedWorkitems string
 }
 
 type freshSyncState struct {
@@ -266,6 +270,12 @@ func executeFresh(ctx context.Context, name, path string, opts freshOptions) err
 		fmt.Printf("%s── Checkout %-24s %s\n", prefix, defaultBranch, freshStepGreen.Render("done"))
 	}
 
+	// Capture the default branch SHA before the pull so the tier-2 backstop can
+	// scan commits newly reachable from the default branch after prune (the
+	// pruned branch refs themselves are gone by the time prune returns).
+	beforeSHAOut, _ := git.Output(ctx, path, "rev-parse", "HEAD")
+	beforeSHA := strings.TrimSpace(beforeSHAOut)
+
 	// Step 2: Pull (ff-only)
 	if !syncState.detached {
 		if opts.dryRun {
@@ -348,6 +358,13 @@ func executeFresh(ctx context.Context, name, path string, opts freshOptions) err
 			}
 			fmt.Printf("%s── Prune remote tracking refs      %s\n", prefix, style.Render(detail))
 		}
+
+		// Tier-2 merged-branch backstop: per project, right after prune, using
+		// this project's just-deleted branches and the pre-pull beforeSHA. This
+		// is inference evidence, so it only reports (or, in a later sequence,
+		// prompts), never auto-promotes.
+		reportMergedBackstop(ctx, os.Stdout, backstopRoot(opts), path,
+			deletedNames, beforeSHA, opts.mergedWorkitems)
 	}
 
 	// Step 4: Create branch (optional)
