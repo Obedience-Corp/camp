@@ -14,6 +14,17 @@ func TestWorkitemEnv_NilReturnsNil(t *testing.T) {
 	}
 }
 
+func TestWithCommitAmendEnv(t *testing.T) {
+	base := []string{"CAMP_WORKITEM_REF=WI-abcdef"}
+	if got := commitkit.WithCommitAmendEnv(base, false); len(got) != 1 || got[0] != base[0] {
+		t.Fatalf("WithCommitAmendEnv(amend=false) = %v, want %v", got, base)
+	}
+	got := commitkit.WithCommitAmendEnv(base, true)
+	if value, ok := envValue(got, "CAMP_COMMIT_AMEND"); !ok || value != "1" {
+		t.Fatalf("WithCommitAmendEnv(amend=true) = %v, want CAMP_COMMIT_AMEND=1", got)
+	}
+}
+
 func TestWorkitemEnv_AllFiveBaseVarsPresent(t *testing.T) {
 	wi := &workitem.WorkItem{
 		StableID:     "design-timeline-2026-05-24",

@@ -163,7 +163,8 @@ func commentedHooksPlaceholder() []byte {
 #     # (-aw). Its stdout is used verbatim as the commit message. Any tool works;
 #     # 'ob commit --print-session-id' is one example; progress and any
 #     # session_id= line on stderr are forwarded to the terminal (session_id is
-#     # emitted when the hook finishes, not while it is generating).
+#     # emitted when the hook finishes, not while it is generating). Amend
+#     # auto-write invocations receive CAMP_COMMIT_AMEND=1.
 #     command: ob commit --print-session-id
 `)
 }

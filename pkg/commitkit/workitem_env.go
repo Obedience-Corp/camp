@@ -6,6 +6,18 @@ import (
 	wkitem "github.com/Obedience-Corp/camp/internal/workitem"
 )
 
+const commitAmendEnv = "CAMP_COMMIT_AMEND=1"
+
+// WithCommitAmendEnv adds the Camp-to-writer amend signal when amend is true.
+// Writers use this explicit contract instead of inferring amend mode from an
+// empty staged index.
+func WithCommitAmendEnv(env []string, amend bool) []string {
+	if !amend {
+		return env
+	}
+	return append(env, commitAmendEnv)
+}
+
 // WorkitemEnv builds the CAMP_WORKITEM_* environment variables that the
 // auto-write commit-message hook receives. Returns nil when wi is nil so the
 // caller's "no workitem context" branch is just `append(env, nil...)`.

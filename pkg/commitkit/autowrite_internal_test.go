@@ -11,12 +11,13 @@ func TestRunCommitMessageCommandForwardsDiagnostics(t *testing.T) {
 	t.Parallel()
 
 	tests := []struct {
-		name              string
-		command           string
-		wantMessage       string
-		wantErr           bool
-		wantDiagContains  []string
-		wantErrContains   []string
+		name             string
+		command          string
+		extraEnv         []string
+		wantMessage      string
+		wantErr          bool
+		wantDiagContains []string
+		wantErrContains  []string
 	}{
 		{
 			name:        "success forwards stderr and returns stdout",
@@ -25,6 +26,12 @@ func TestRunCommitMessageCommandForwardsDiagnostics(t *testing.T) {
 			wantDiagContains: []string{
 				"session_id=session-123\n",
 			},
+		},
+		{
+			name:        "passes explicit amend contract to writer",
+			command:     `test "$CAMP_COMMIT_AMEND" = "1" && printf 'fix: amended\n'`,
+			extraEnv:    WithCommitAmendEnv(nil, true),
+			wantMessage: "fix: amended",
 		},
 		{
 			// MultiWriter dual-path contract: live forward AND error wrapping.
@@ -51,9 +58,9 @@ func TestRunCommitMessageCommandForwardsDiagnostics(t *testing.T) {
 			var diagnostics bytes.Buffer
 			message, err := runCommitMessageCommandWithEnv(
 				context.Background(),
-				t.TempDir(),
+				".",
 				tt.command,
-				nil,
+				tt.extraEnv,
 				&diagnostics,
 			)
 
