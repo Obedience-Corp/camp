@@ -54,6 +54,7 @@ camp workitem [flags]
 * [camp workitem current](camp_workitem_current.md)	 - Get, set, or clear the current workitem
 * [camp workitem doctor](camp_workitem_doctor.md)	 - Report link-registry health issues
 * [camp workitem group](camp_workitem_group.md)	 - Set or clear the group
+* [camp workitem id](camp_workitem_id.md)	 - Print the identifier of a workitem
 * [camp workitem link](camp_workitem_link.md)	 - Create a workitem link
 * [camp workitem links](camp_workitem_links.md)	 - List workitem links
 * [camp workitem list](camp_workitem_list.md)	 - List or browse filtered workitems
