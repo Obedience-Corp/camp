@@ -25,6 +25,17 @@ func setupQuestCampaign(t *testing.T) (context.Context, string, *Service) {
 	return ctx, root, NewService(root)
 }
 
+// mustDungeonStatusDir resolves the quest dungeon bucket for a status, failing
+// the test on the (unexpected) spelling-resolution error.
+func mustDungeonStatusDir(t *testing.T, ctx context.Context, root string, status Status) string {
+	t.Helper()
+	dir, err := DungeonStatusDir(ctx, root, status)
+	if err != nil {
+		t.Fatalf("DungeonStatusDir(%s) error = %v", status, err)
+	}
+	return dir
+}
+
 func TestListSkipsCorruptQuest(t *testing.T) {
 	ctx, root, svc := setupQuestCampaign(t)
 
@@ -44,7 +55,7 @@ func TestListSkipsCorruptQuest(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	corruptDungeon := filepath.Join(DungeonStatusDir(root, StatusCompleted), "corrupt-dungeon")
+	corruptDungeon := filepath.Join(mustDungeonStatusDir(t, ctx, root, StatusCompleted), "corrupt-dungeon")
 	if err := os.MkdirAll(corruptDungeon, 0o755); err != nil {
 		t.Fatal(err)
 	}
@@ -300,7 +311,7 @@ func TestServiceCreatePauseResumeCompleteRestore(t *testing.T) {
 	if completed.Quest.Status != StatusCompleted {
 		t.Fatalf("completed quest status = %q, want %q", completed.Quest.Status, StatusCompleted)
 	}
-	if got := filepath.Dir(completed.Quest.Path); got != filepath.Join(DungeonStatusDir(root, StatusCompleted), completed.Quest.Slug) {
+	if got := filepath.Dir(completed.Quest.Path); got != filepath.Join(mustDungeonStatusDir(t, ctx, root, StatusCompleted), completed.Quest.Slug) {
 		t.Fatalf("completed quest directory = %q", got)
 	}
 

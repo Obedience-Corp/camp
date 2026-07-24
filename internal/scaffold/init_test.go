@@ -200,13 +200,16 @@ func TestInit(t *testing.T) {
 			t.Errorf("stable init should not create quest scaffold, stat err = %v", err)
 		}
 	case "dev":
+		// The quest dungeon follows the campaign's spelling like every other
+		// dungeon, so a hidden-default campaign scaffolds ".dungeon", not the
+		// legacy visible "dungeon".
 		expectedQuestPaths := []string{
 			quest.RootDirName,
 			filepath.Join(quest.RootDirName, quest.DefaultDirName, quest.FileName),
-			filepath.Join(quest.RootDirName, "dungeon", "OBEY.md"),
-			filepath.Join(quest.RootDirName, "dungeon", "completed", ".gitkeep"),
-			filepath.Join(quest.RootDirName, "dungeon", "archived", ".gitkeep"),
-			filepath.Join(quest.RootDirName, "dungeon", "someday", ".gitkeep"),
+			filepath.Join(quest.RootDirName, ".dungeon", "OBEY.md"),
+			filepath.Join(quest.RootDirName, ".dungeon", "completed", ".gitkeep"),
+			filepath.Join(quest.RootDirName, ".dungeon", "archived", ".gitkeep"),
+			filepath.Join(quest.RootDirName, ".dungeon", "someday", ".gitkeep"),
 		}
 		for _, relPath := range expectedQuestPaths {
 			path := filepath.Join(campaignDir, relPath)
