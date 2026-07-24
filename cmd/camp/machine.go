@@ -1,6 +1,7 @@
 package main
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -14,6 +15,7 @@ import (
 	"github.com/Obedience-Corp/camp/internal/pathutil"
 	"github.com/Obedience-Corp/camp/internal/remote"
 	"github.com/Obedience-Corp/camp/internal/ui"
+	"github.com/Obedience-Corp/camp/internal/version"
 )
 
 // machineJSON mirrors machines.Machine's field names for JSON output
@@ -320,6 +322,38 @@ type machineDiagnoseRow struct {
 	Socket       string `json:"socket"`
 	State        string `json:"state"`
 	Reset        bool   `json:"reset"`
+	CampVersion  string `json:"camp_version,omitempty"`
+	CampCommit   string `json:"camp_commit,omitempty"`
+	VersionSkew  bool   `json:"version_skew"`
+}
+
+// probeRemoteCampVersion asks the machine's own camp for its version. It is
+// best-effort: any failure (unreachable, camp missing, ancient binary without
+// `version --json`) reports as an empty version, never a diagnose error —
+// diagnose must keep working against exactly the broken machines it exists for.
+func probeRemoteCampVersion(ctx context.Context, m *machines.Machine) (versionStr, commit string) {
+	out, err := remote.RunCampCommand(ctx, m, "version --json")
+	if err != nil {
+		return "", ""
+	}
+	var info version.Info
+	if err := json.Unmarshal(out, &info); err != nil {
+		return "", ""
+	}
+	return info.Version, info.Commit
+}
+
+// campVersionSkew reports whether a probed remote version differs from this
+// binary. Same version string but different commits (the dev-build case) also
+// counts — two "dev" builds from different commits are not the same camp.
+func campVersionSkew(local version.Info, remoteVersion, remoteCommit string) bool {
+	if remoteVersion == "" {
+		return false
+	}
+	if remoteVersion != local.Version {
+		return true
+	}
+	return remoteCommit != "" && local.Commit != "" && remoteCommit != local.Commit
 }
 
 func runMachineDiagnose(cmd *cobra.Command, args []string) error {
@@ -349,10 +383,12 @@ func runMachineDiagnose(cmd *cobra.Command, args []string) error {
 		}
 	}
 
+	localInfo := version.Get()
 	rows := make([]machineDiagnoseRow, 0, len(targets))
 	for i := range targets {
 		m := &targets[i]
 		d := remote.CheckControlMaster(ctx, m)
+		remoteVersion, remoteCommit := probeRemoteCampVersion(ctx, m)
 		row := machineDiagnoseRow{
 			ID:           m.ID,
 			Host:         m.Host,
@@ -364,6 +400,9 @@ func runMachineDiagnose(cmd *cobra.Command, args []string) error {
 			Hint:         remote.AuthModeHint(m),
 			Socket:       d.Socket,
 			State:        string(d.State),
+			CampVersion:  remoteVersion,
+			CampCommit:   remoteCommit,
+			VersionSkew:  campVersionSkew(localInfo, remoteVersion, remoteCommit),
 		}
 		if machineDiagnoseReset && d.State == remote.ControlStale {
 			if err := remote.ResetControlMaster(ctx, m); err != nil {
@@ -419,6 +458,16 @@ func renderMachineDiagnoseTable(w io.Writer, rows []machineDiagnoseRow) error {
 			fmt.Sprintf("%s  %s", ui.Label("SOCKET"), state+" · "+pathutil.AbbreviateHome(r.Socket)),
 			fmt.Sprintf("%s  %s", ui.Label("PROBE"), r.Probe),
 		)
+		switch {
+		case r.CampVersion == "":
+			lines = append(lines, fmt.Sprintf("%s  %s", ui.Label("CAMP"),
+				ui.Dim("unavailable (unreachable, or camp missing / too old for 'version --json')")))
+		case r.VersionSkew:
+			lines = append(lines, fmt.Sprintf("%s  %s", ui.Label("CAMP"),
+				campVersionDisplay(r)+"  ⚠ differs from this machine ("+campLocalVersionDisplay()+"); remote errors may not match current behavior"))
+		default:
+			lines = append(lines, fmt.Sprintf("%s  %s", ui.Label("CAMP"), campVersionDisplay(r)))
+		}
 		if r.Hint != "" {
 			lines = append(lines, fmt.Sprintf("%s  %s", ui.Label("HINT"), r.Hint))
 		}
@@ -439,6 +488,23 @@ func renderMachineDiagnoseTable(w io.Writer, rows []machineDiagnoseRow) error {
 		}
 	}
 	return nil
+}
+
+// campVersionDisplay formats a probed remote camp version, appending the
+// commit only when it disambiguates (dev builds all report version "dev").
+func campVersionDisplay(r machineDiagnoseRow) string {
+	if r.CampCommit != "" {
+		return r.CampVersion + " (" + r.CampCommit + ")"
+	}
+	return r.CampVersion
+}
+
+func campLocalVersionDisplay() string {
+	info := version.Get()
+	if info.Commit != "" {
+		return info.Version + " (" + info.Commit + ")"
+	}
+	return info.Version
 }
 
 func machineDiagnoseHasStale(rows []machineDiagnoseRow) bool {

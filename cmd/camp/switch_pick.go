@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"os"
 	"sort"
 	"strings"
 	"sync"
@@ -210,7 +211,7 @@ func pickSwitchTarget(ctx context.Context, reg *config.Registry, opts pickSwitch
 	if header == "" {
 		header = "  ↑/↓ navigate • type to filter • esc cancel"
 		if hasMachines {
-			header = "  ↑/↓ navigate • type to filter • remotes loading… • esc cancel"
+			header = "  ↑/↓ navigate • type to filter • esc cancel • remotes append when ready"
 		}
 	}
 
@@ -231,24 +232,34 @@ func pickSwitchTarget(ctx context.Context, reg *config.Registry, opts pickSwitch
 		return cfg
 	}
 
+	// Load outcome is reported on stderr after the picker closes: the
+	// fuzzyfinder header is fixed at open, so mid-flight failures cannot be
+	// rendered inside the TUI without fighting it for the terminal.
+	var loadErr error
+	var loadUnreachable []string
 	if hasMachines {
 		go func() {
 			rows, results, err := loader(ctx, listFilterFromScope(opts.Scope))
 			mu.Lock()
 			defer mu.Unlock()
 			if err != nil {
-				// Keep locals; surface failure only in header isn't possible mid-flight
-				// without a second channel — remotes simply don't append.
+				loadErr = err
 				return
 			}
-			remotes := remoteSwitchPicks(rows)
-			items = append(items, remotes...)
-			if unreach := unreachableMachineIDs(results); len(unreach) > 0 {
-				// Header is fixed at open; unreachable info lives in previews only.
-				// Locals remain selectable regardless.
-				_ = unreach
-			}
+			loadUnreachable = unreachableMachineIDs(results)
+			items = append(items, remoteSwitchPicks(rows)...)
 		}()
+	}
+	reportRemoteLoad := func() {
+		mu.RLock()
+		defer mu.RUnlock()
+		if loadErr != nil {
+			fmt.Fprintf(os.Stderr, "warning: remote campaigns unavailable: %v\n", loadErr)
+			return
+		}
+		for _, id := range loadUnreachable {
+			fmt.Fprintf(os.Stderr, "warning: machine %s unreachable; its campaigns were not listed\n", id)
+		}
 	}
 
 	findOpts := []fuzzyfinder.Option{
@@ -289,6 +300,7 @@ func pickSwitchTarget(ctx context.Context, reg *config.Registry, opts pickSwitch
 		},
 		findOpts...,
 	)
+	reportRemoteLoad()
 	if err != nil {
 		if errors.Is(err, fuzzyfinder.ErrAbort) {
 			return switchPick{}, camperrors.Newf("cancelled")

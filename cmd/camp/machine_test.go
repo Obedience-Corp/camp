@@ -6,6 +6,7 @@ import (
 	"testing"
 
 	"github.com/Obedience-Corp/camp/internal/machines"
+	"github.com/Obedience-Corp/camp/internal/version"
 )
 
 func TestValidateMachineID(t *testing.T) {
@@ -129,5 +130,40 @@ func TestToMachineJSONRoundTripsAllFields(t *testing.T) {
 	}
 	if got != want {
 		t.Fatalf("toMachineJSON() = %+v, want %+v", got, want)
+	}
+}
+
+func TestCampVersionSkew(t *testing.T) {
+	local := version.Info{Version: "v0.9.0", Commit: "abc1234"}
+	dev := version.Info{Version: "dev", Commit: "abc1234"}
+	tests := []struct {
+		name          string
+		local         version.Info
+		remoteVersion string
+		remoteCommit  string
+		want          bool
+	}{
+		{"probe failed reports no skew", local, "", "", false},
+		{"same version and commit", local, "v0.9.0", "abc1234", false},
+		{"older remote release", local, "v0.8.0", "def5678", true},
+		{"dev builds from different commits", dev, "dev", "def5678", true},
+		{"same version, remote commit unknown", local, "v0.9.0", "", false},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if got := campVersionSkew(tt.local, tt.remoteVersion, tt.remoteCommit); got != tt.want {
+				t.Errorf("campVersionSkew(%+v, %q, %q) = %v, want %v",
+					tt.local, tt.remoteVersion, tt.remoteCommit, got, tt.want)
+			}
+		})
+	}
+}
+
+func TestCampVersionDisplay(t *testing.T) {
+	if got := campVersionDisplay(machineDiagnoseRow{CampVersion: "dev", CampCommit: "abc1234"}); got != "dev (abc1234)" {
+		t.Errorf("with commit = %q", got)
+	}
+	if got := campVersionDisplay(machineDiagnoseRow{CampVersion: "v0.9.0"}); got != "v0.9.0" {
+		t.Errorf("without commit = %q", got)
 	}
 }

@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"os"
+	"slices"
 	"strings"
 
 	"github.com/charmbracelet/bubbles/textinput"
@@ -78,10 +79,12 @@ func listTUIRequested(cmd *cobra.Command, isTTY bool) bool {
 	if interactive, _ := cmd.Flags().GetBool("interactive"); interactive {
 		return true
 	}
-	for _, f := range []string{"sort", "org", "tag", "status", "all", "group", "no-group", "remote"} {
-		if cmd.Flags().Changed(f) {
-			return false
-		}
+	// --remote is deliberately NOT a shaping flag: in a TTY it opens the same
+	// browser (remotes auto-load when machines are configured); piped and
+	// --json runs still take the table path via the isTTY/format checks above.
+	shaping := []string{"sort", "org", "tag", "status", "all", "group", "no-group"}
+	if slices.ContainsFunc(shaping, cmd.Flags().Changed) {
+		return false
 	}
 	return isTTY
 }
@@ -144,9 +147,22 @@ func newListTUIModel(ctx context.Context, reg *config.Registry, orgFilter string
 	m := listTUIModel{ctx: ctx, input: ti, orgFilter: orgFilter}
 	if mf, err := machines.Load(); err == nil && len(mf.Machines) > 0 {
 		m.machinesConfigured = true
+		// Remotes load automatically on open (fail-open, async); `r` hides or
+		// reloads them. remoteLoading here lets the first frame show progress.
+		m.remoteLoading = true
 	}
 	m.loadFromRegistry(reg)
 	return m
+}
+
+// remoteListFilter mirrors the browser's current view (org + active-only) for
+// the remote fan-out so local and remote rows filter consistently.
+func (m listTUIModel) remoteListFilter() listFilter {
+	filter := listFilter{org: m.orgFilter}
+	if !m.activeOnly {
+		filter.all = true
+	}
+	return filter
 }
 
 func (m *listTUIModel) loadFromRegistry(reg *config.Registry) {
@@ -204,7 +220,12 @@ func (m *listTUIModel) reload() error {
 	return nil
 }
 
-func (m listTUIModel) Init() tea.Cmd { return textinput.Blink }
+func (m listTUIModel) Init() tea.Cmd {
+	if m.remoteLoading {
+		return tea.Batch(textinput.Blink, loadRemoteCampaignsCmd(m.ctx, m.remoteListFilter()))
+	}
+	return textinput.Blink
+}
 
 func (m *listTUIModel) cycleStatus() error {
 	e := m.visible[m.cursor]
