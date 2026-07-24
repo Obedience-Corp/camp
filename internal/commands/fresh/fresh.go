@@ -362,7 +362,7 @@ func executeFresh(ctx context.Context, name, path string, opts freshOptions) err
 		// Tier-2 merged-branch backstop: per project, right after prune, using
 		// this project's just-deleted branches and the pre-pull beforeSHA. This
 		// is inference evidence, so it only reports (or, in a later sequence,
-		// prompts) — never auto-promotes.
+		// prompts), never auto-promotes.
 		reportMergedBackstop(ctx, os.Stdout, backstopRoot(opts), path,
 			deletedNames, beforeSHA, opts.mergedWorkitems)
 	}
