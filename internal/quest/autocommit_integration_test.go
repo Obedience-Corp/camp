@@ -122,7 +122,7 @@ func TestAutoCommitLifecycle(t *testing.T) {
 	}
 
 	// Sanity: quest is in the completed dungeon bucket.
-	expectedDungeonParent := DungeonStatusDir(root, StatusCompleted)
+	expectedDungeonParent := mustDungeonStatusDir(t, ctx, root, StatusCompleted)
 	if !strings.HasPrefix(newQuestDir, expectedDungeonParent) {
 		t.Errorf("completed quest dir %q should be under dungeon/completed, got parent %q", newQuestDir, expectedDungeonParent)
 	}
