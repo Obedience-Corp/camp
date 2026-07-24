@@ -138,6 +138,11 @@ func runFreshBatch(ctx context.Context, cfg *config.FreshConfig, targets []fresh
 		}
 	}
 
+	// Campaign-root workitem sweep runs once for the whole batch, after every
+	// project's git-hygiene cycle and before the summary, never inside the loop.
+	// This covers both camp fresh all and camp fresh --list a,b,c.
+	runCampaignWorkitemSweep(ctx, cfg, flags.dryRun)
+
 	fmt.Println()
 	fmt.Println(ui.Separator(50))
 	if failed == 0 {

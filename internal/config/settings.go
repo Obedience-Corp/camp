@@ -211,6 +211,12 @@ type FreshConfig struct {
 	Prune *bool `yaml:"prune,omitempty"`
 	// PruneRemote controls whether to prune stale remote tracking refs.
 	PruneRemote *bool `yaml:"prune_remote,omitempty"`
+	// CompletedRuns controls the tier-1 workitem sweep run once per camp fresh:
+	// "sweep" (default) promotes items with a completed run, "report" prints a
+	// read-only banner, "off" does nothing. Campaign-root scoped (workitems live
+	// at the root, not per project), so there is no per-project override, the
+	// same shape as Prune.
+	CompletedRuns string `yaml:"completed_runs,omitempty"`
 	// FollowUp lists command workflow steps run, in order, after a successful
 	// sync/prune/branch cycle. A project override in Projects replaces this
 	// list entirely; it is never merged with it.
@@ -318,6 +324,20 @@ func (c *FreshConfig) ResolveFreshPrune() bool {
 		return *c.Prune
 	}
 	return true
+}
+
+// ResolveFreshCompletedRuns resolves completed_runs using the global config or
+// default ("sweep"). Global only: workitems live at the campaign root, not per
+// project, so there is no per-project override, matching Prune's shape. Any
+// unrecognized or empty value defaults to "sweep" (never fail closed to "off"
+// on a typo).
+func (c *FreshConfig) ResolveFreshCompletedRuns() string {
+	switch c.CompletedRuns {
+	case "sweep", "report", "off":
+		return c.CompletedRuns
+	default:
+		return "sweep"
+	}
 }
 
 // ResolveFreshPruneRemote resolves prune_remote using the global config or default (true).

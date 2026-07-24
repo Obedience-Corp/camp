@@ -143,6 +143,23 @@ func TestPlanSweep_Eligibility(t *testing.T) {
 	}
 }
 
+func TestSweepBannerText(t *testing.T) {
+	tests := []struct {
+		n    int
+		want string
+	}{
+		{0, ""},
+		{-3, ""},
+		{1, "1 workitem have completed runs; run camp workitem sweep"},
+		{2, "2 workitems have completed runs; run camp workitem sweep"},
+	}
+	for _, tc := range tests {
+		if got := SweepBannerText(tc.n); got != tc.want {
+			t.Errorf("SweepBannerText(%d) = %q, want %q", tc.n, got, tc.want)
+		}
+	}
+}
+
 func TestPlanSweep_CandidatePayload(t *testing.T) {
 	item := WorkItem{
 		WorkflowType: WorkflowTypeDesign,

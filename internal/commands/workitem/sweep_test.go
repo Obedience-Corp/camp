@@ -94,8 +94,9 @@ func TestSweepPlanEnvelopeShape(t *testing.T) {
 	cmd := &cobra.Command{}
 	cmd.SetOut(&buf)
 	result := workitemSweepResult{SchemaVersion: WorkitemSweepJSONVersion, DryRun: true, Candidates: len(candidates)}
-	if err := emitSweepPlan(cmd, root, candidates, &result, true); err != nil {
-		t.Fatalf("emitSweepPlan: %v", err)
+	fillSweepPlan(root, candidates, &result)
+	if err := emitSweepResult(cmd, &result, true); err != nil {
+		t.Fatalf("emitSweepResult: %v", err)
 	}
 
 	// Field-name contract: assert the raw JSON keys, not just the decoded shape.
