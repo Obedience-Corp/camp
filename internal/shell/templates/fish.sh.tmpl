@@ -91,10 +91,20 @@ function camp --description "Camp CLI wrapper with directory-changing support"
             end
         case workitem wi workitems
             set -l rest $argv[2..-1]
+            # A workitem subcommand (resolve, id, stage, rename, ...) is always
+            # the first token and is a bare word; the interactive dashboard
+            # takes no positional argument (only filter flags). Only the
+            # dashboard understands --path-output, so pass any subcommand
+            # invocation through verbatim. This is forward-compatible: new
+            # subcommands need no wrapper regeneration.
+            if test (count $rest) -gt 0; and not string match -qr -- '^-' $rest[1]
+                command camp workitem $rest
+                return $status
+            end
             set -l passthrough 0
             for arg in $rest
                 switch "$arg"
-                    case --help -h --json '--json=*' --print '--print=*'
+                    case --help -h --json '--json=*' --print '--print=*' --list
                         set passthrough 1
                         break
                 end

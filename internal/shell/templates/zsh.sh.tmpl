@@ -73,10 +73,22 @@ camp() {
       ;;
     workitem|wi|workitems)
       shift
+      # A workitem subcommand (resolve, id, stage, rename, ...) is always the
+      # first token and is a bare word; the interactive dashboard takes no
+      # positional argument (only filter flags). Only the dashboard understands
+      # --path-output, so pass any subcommand invocation through verbatim. This
+      # is forward-compatible: new subcommands need no wrapper regeneration.
+      case "${1:-}" in
+        ""|-*) ;;
+        *)
+          command camp workitem "$@"
+          return
+          ;;
+      esac
       local arg passthrough=0
       for arg in "$@"; do
         case "$arg" in
-          --help|-h|--json|--json=*|--print|--print=*)
+          --help|-h|--json|--json=*|--print|--print=*|--list)
             passthrough=1
             break
             ;;
