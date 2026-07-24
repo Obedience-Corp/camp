@@ -59,22 +59,12 @@ func reportMergedBackstop(ctx context.Context, out io.Writer, root, projectPath 
 		return
 	}
 	for _, m := range matches {
-		if HasOpenWork(root, registry, m.Workitem, mergedScopePath(projectPath, root)) {
+		if HasOpenWork(root, registry, m.Workitem, m.ScopePath) {
 			continue
 		}
 		_, _ = fmt.Fprintf(out, "%s workitem %s had a merged branch and is still active; promote when done:\n    %s\n",
 			ui.InfoIcon(), backstopWorkitemLabel(m.Workitem), backstopPromoteCommand(m.Workitem))
 	}
-}
-
-// mergedScopePath is the campaign-relative project path used to match project/
-// repo scope links for the open-work guard.
-func mergedScopePath(projectPath, root string) string {
-	rel, err := filepath.Rel(root, projectPath)
-	if err != nil {
-		return projectPath
-	}
-	return filepath.ToSlash(rel)
 }
 
 // backstopPromoteCommand renders the exact, copy-pasteable promote command using
@@ -120,6 +110,11 @@ type MergedBackstopMatch struct {
 	// evidence is the merged commit reachable from the default branch.
 	Branch string
 	Signal string
+	// ScopePath is the campaign-relative scope whose work just merged: the
+	// worktree link's path for a worktree match, or the project path for a
+	// commit-tag match. The open-work guard uses it to avoid counting the
+	// just-merged scope itself as "other open work."
+	ScopePath string
 }
 
 // MapMergedBranchesToWorkitems maps the branches camp fresh's prune step just
@@ -154,14 +149,16 @@ func MapMergedBranchesToWorkitems(ctx context.Context, root, projectPath string,
 	matchedKeys := map[string]bool{}
 	var unmatchedBranches []string
 
+	projectScope := projectRelPath(root, projectPath)
+
 	// Signal 1: worktree-scope links, per pruned branch.
 	for _, branch := range prunedBranches {
-		wi, ok := matchWorktreeLinkBranch(registry.Links, active, branch)
+		wi, scopePath, ok := matchWorktreeLinkBranch(registry.Links, active, branch)
 		if !ok {
 			unmatchedBranches = append(unmatchedBranches, branch)
 			continue
 		}
-		matches = append(matches, MergedBackstopMatch{Workitem: wi, Branch: branch, Signal: SignalWorktreeLink})
+		matches = append(matches, MergedBackstopMatch{Workitem: wi, Branch: branch, Signal: SignalWorktreeLink, ScopePath: scopePath})
 		matchedKeys[wi.Key] = true
 	}
 
@@ -178,7 +175,7 @@ func MapMergedBranchesToWorkitems(ctx context.Context, root, projectPath string,
 				continue
 			}
 			if refMatchesActiveItem(refs, wi) {
-				matches = append(matches, MergedBackstopMatch{Workitem: wi, Signal: SignalCommitTag})
+				matches = append(matches, MergedBackstopMatch{Workitem: wi, Signal: SignalCommitTag, ScopePath: projectScope})
 				matchedKeys[wi.Key] = true
 			}
 		}
@@ -205,7 +202,7 @@ func activeBackstopItems(items []wkitem.WorkItem) []wkitem.WorkItem {
 // directory basename equals branch. Only ScopeWorktree links carry a
 // branch<->workitem correlation (via the shared name at creation); repo/project
 // scope links carry none, so they are ignored here.
-func matchWorktreeLinkBranch(all []links.Link, active []wkitem.WorkItem, branch string) (wkitem.WorkItem, bool) {
+func matchWorktreeLinkBranch(all []links.Link, active []wkitem.WorkItem, branch string) (wkitem.WorkItem, string, bool) {
 	for _, link := range all {
 		if link.Scope.Kind != links.ScopeWorktree {
 			continue
@@ -214,10 +211,19 @@ func matchWorktreeLinkBranch(all []links.Link, active []wkitem.WorkItem, branch 
 			continue
 		}
 		if wi, ok := resolveLinkedActiveItem(link, active); ok {
-			return wi, true
+			return wi, link.Scope.Path, true
 		}
 	}
-	return wkitem.WorkItem{}, false
+	return wkitem.WorkItem{}, "", false
+}
+
+// projectRelPath returns projectPath relative to the campaign root, slash-form.
+func projectRelPath(root, projectPath string) string {
+	rel, err := filepath.Rel(root, projectPath)
+	if err != nil {
+		return projectPath
+	}
+	return filepath.ToSlash(rel)
 }
 
 // resolveLinkedActiveItem resolves a link to a still-active workitem by stable

@@ -42,18 +42,18 @@ func TestMatchWorktreeLinkBranch(t *testing.T) {
 		{WorkitemID: "design-foo-01", Scope: links.LinkScope{Kind: links.ScopeRepo, Path: "projects/other/foo"}},
 	}
 
-	wi, ok := matchWorktreeLinkBranch(linkList, active, "foo")
+	wi, _, ok := matchWorktreeLinkBranch(linkList, active, "foo")
 	if !ok || wi.Key != "design:workflow/design/foo" {
 		t.Fatalf("expected worktree-link match for branch foo, got ok=%v wi=%+v", ok, wi)
 	}
 
-	if _, ok := matchWorktreeLinkBranch(linkList, active, "unrelated"); ok {
+	if _, _, ok := matchWorktreeLinkBranch(linkList, active, "unrelated"); ok {
 		t.Errorf("expected no match for a branch with no worktree link")
 	}
 
 	// Repo-scope only (no worktree link) must not match by basename.
 	repoOnly := []links.Link{{WorkitemID: "design-foo-01", Scope: links.LinkScope{Kind: links.ScopeRepo, Path: "projects/other/foo"}}}
-	if _, ok := matchWorktreeLinkBranch(repoOnly, active, "foo"); ok {
+	if _, _, ok := matchWorktreeLinkBranch(repoOnly, active, "foo"); ok {
 		t.Errorf("repo-scope link must not match a branch by basename")
 	}
 }
