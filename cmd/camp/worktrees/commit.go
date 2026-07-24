@@ -141,6 +141,7 @@ func runWorktreesCommit(cmd *cobra.Command, args []string) error {
 	if wtCommitAutoWrite {
 		fmt.Println(ui.Info("Writing commit message..."))
 		extraEnv := workitemEnvForWorktreeCommit(ctx, campRoot, wtCtx.WorktreePath, wtCommitWorkitem)
+		extraEnv = commitkit.WithCommitAmendEnv(extraEnv, wtCommitAmend)
 		message, err = commitkit.AutoWriteCommitMessageWithEnv(ctx, campRoot, wtCtx.WorktreePath, extraEnv)
 		if err != nil {
 			return err
