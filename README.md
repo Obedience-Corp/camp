@@ -62,6 +62,30 @@ The eval hook provides:
 
 After adding the eval line, restart your shell or run `source ~/.zshrc` (or equivalent).
 
+### Finding the installed binary
+
+Shell integration defines `camp` as a **shell function** (so `camp go` / `cgo` can `cd` in your current shell). That means plain `which camp` usually prints the function body, not a filesystem path.
+
+Use these instead:
+
+```bash
+# zsh — path of the external binary (skips shell functions)
+whence -p camp
+# or: which -p camp
+
+# bash
+type -P camp
+
+# show the function plus every binary on PATH
+type -a camp
+
+# resolve symlinks to the real file
+realpath "$(whence -p camp)"   # zsh
+realpath "$(type -P camp)"     # bash
+```
+
+To run the binary without the wrapper (scripts, debugging): `command camp version`.
+
 ## Quick Start
 
 ```bash
@@ -408,8 +432,12 @@ camp project <TAB>       # Completes: add commit link list new prune remote remo
 #### Troubleshooting
 
 ```bash
-# Verify camp is in PATH
-which camp
+# Verify the camp binary is on PATH (do not use plain `which camp` —
+# after shell-init it prints the wrapper function, not the binary path)
+whence -p camp            # zsh: external binary only
+type -P camp              # bash: external binary only
+type -a camp              # function + every binary on PATH
+realpath "$(whence -p camp)"  # follow symlinks to the real install
 
 # Test shell-init output
 camp shell-init zsh
