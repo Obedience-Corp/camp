@@ -42,8 +42,15 @@ var legacyCampSkip string
 func TestMain(m *testing.M) {
 	size := poolSize()
 
+	cleanupTransport, err := startDedicatedColimaDockerTransport()
+	if err != nil {
+		os.Stderr.WriteString("Failed to create isolated Docker transport: " + err.Error() + "\n")
+		os.Exit(1)
+	}
+
 	bins, cleanupBins, err := buildSharedBinaries()
 	if err != nil {
+		cleanupTransport()
 		os.Stderr.WriteString("Failed to build test binaries: " + err.Error() + "\n")
 		os.Exit(1)
 	}
@@ -78,6 +85,7 @@ func TestMain(m *testing.M) {
 		for _, c := range poolMembers {
 			c.Cleanup()
 		}
+		cleanupTransport()
 		os.Stderr.WriteString("Failed to create container pool: " + buildErr.Error() + "\n")
 		os.Exit(1)
 	}
@@ -87,6 +95,7 @@ func TestMain(m *testing.M) {
 	for _, c := range poolMembers {
 		c.Cleanup()
 	}
+	cleanupTransport()
 	os.Exit(code)
 }
 
