@@ -19,15 +19,7 @@ func addFreshEligibleWorkitem(t *testing.T, tc *TestContainer, campaignPath, slu
 	out, err := tc.RunCampInDir(campaignPath,
 		"workitem", "create", slug, "--type", "design", "--title", slug, "--id", "design-"+slug)
 	require.NoError(t, err, "workitem create: %s", out)
-	base := campaignPath + "/workflow/design/" + slug + "/.workflow"
-	require.NoError(t, tc.WriteFile(base+"/workflow.yaml", "workflow_id: wf-"+slug+"\nactive_run_id: r1\n"))
-	require.NoError(t, tc.WriteFile(base+"/runs/r1/run.yaml", "status: active\nsummary:\n  total_steps: 1\n"))
-	require.NoError(t, tc.WriteFile(base+"/runs/r1/progress_events.jsonl",
-		`{"event_type":"workflow_run_started"}
-{"event_type":"wf_step_start"}
-{"event_type":"wf_step_done"}
-{"event_type":"workflow_run_completed"}
-`))
+	stampCompletedRun(t, tc, campaignPath, "design", slug)
 	_, _, err = tc.ExecCommand("sh", "-c", "cd "+campaignPath+" && git add -A && git commit -q -m 'add eligible workitem'")
 	require.NoError(t, err)
 }
