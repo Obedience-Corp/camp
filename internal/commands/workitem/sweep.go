@@ -57,15 +57,15 @@ type workitemSweepResult struct {
 }
 
 type workitemSweepResultItem struct {
-	ID          string `json:"id,omitempty"`
-	Ref         string `json:"ref,omitempty"`
-	Type        string `json:"type"`
-	From        string `json:"from"`
-	To          string `json:"to,omitempty"`
-	Evidence    string `json:"evidence,omitempty"`
-	ActiveRunID string `json:"active_run_id,omitempty"`
-	Committed   bool   `json:"committed"`
-	Error       string `json:"error,omitempty"`
+	ID        string `json:"id,omitempty"`
+	Ref       string `json:"ref,omitempty"`
+	Type      string `json:"type"`
+	From      string `json:"from"`
+	To        string `json:"to,omitempty"`
+	Evidence  string `json:"evidence,omitempty"`
+	RunID     string `json:"run_id,omitempty"`
+	Committed bool   `json:"committed"`
+	Error     string `json:"error,omitempty"`
 }
 
 func newSweepCommand() *cobra.Command {
@@ -189,9 +189,9 @@ func runWorkitemSweep(cmd *cobra.Command, opts sweepOptions) error {
 // move landing.
 func sweepOne(ctx context.Context, cmd *cobra.Command, cfg *config.CampaignConfig, root string, cand wkitem.SweepCandidate, result *workitemSweepResult) workitemSweepResultItem {
 	entry := workitemSweepResultItem{
-		Type:        string(cand.Item.WorkflowType),
-		Evidence:    cand.Reason,
-		ActiveRunID: cand.ActiveRunID,
+		Type:     string(cand.Item.WorkflowType),
+		Evidence: cand.Reason,
+		RunID:    cand.RunID,
 	}
 
 	loc, err := resolveSweepLocation(root, cand.Item)
@@ -234,7 +234,7 @@ func sweepOne(ctx context.Context, cmd *cobra.Command, cfg *config.CampaignConfi
 			ledger.WithWhy("sweep promote to completed"),
 			ledger.WithPayload(map[string]any{
 				"target": "completed", "from": entry.From, "to": entry.To,
-				"evidence": cand.Reason, "active_run_id": cand.ActiveRunID,
+				"evidence": cand.Reason, "run_id": cand.RunID,
 			}))
 
 	destPaths := append([]string{moveRes.TargetPath}, moveRes.CreatedFiles...)
@@ -264,11 +264,11 @@ func sweepOne(ctx context.Context, cmd *cobra.Command, cfg *config.CampaignConfi
 func fillSweepPlan(root string, candidates []wkitem.SweepCandidate, result *workitemSweepResult) {
 	for _, cand := range candidates {
 		entry := workitemSweepResultItem{
-			ID:          cand.Item.Key,
-			Type:        string(cand.Item.WorkflowType),
-			From:        filepath.ToSlash(cand.Item.RelativePath),
-			Evidence:    cand.Reason,
-			ActiveRunID: cand.ActiveRunID,
+			ID:       cand.Item.Key,
+			Type:     string(cand.Item.WorkflowType),
+			From:     filepath.ToSlash(cand.Item.RelativePath),
+			Evidence: cand.Reason,
+			RunID:    cand.RunID,
 		}
 		if loc, err := resolveSweepLocation(root, cand.Item); err == nil {
 			entry.To = filepath.ToSlash(dungeoncmd.RelFromRoot(root, filepath.Join(loc.DungeonPath, "completed")))

@@ -38,21 +38,40 @@ const (
 // Camp and fest are separate Go modules; this is a thin duplicate of the
 // fields camp needs from fest's localstore. Fest is the source of truth.
 type LocalRunProgress struct {
-	WorkflowID     string
-	ActiveRunID    string
-	RunStatus      string
-	CurrentStep    int
-	TotalSteps     int
-	CompletedSteps int
-	Blocked        bool
-	DocHashChanged bool
+	WorkflowID  string
+	ActiveRunID string
+	RunStatus   string
+	// LatestRunID / LatestRunStatus surface the most recent run's terminal
+	// state when there is no active run. fest clears active_run_id from
+	// workflow.yaml the instant a run completes (see fest localstore), so a
+	// genuinely completed standalone workflow has an empty ActiveRunID and its
+	// completed run survives only in the manifest's runs[] index. The status is
+	// verified by replaying that run's events (events are authoritative), with
+	// the manifest used only as the index of which run is latest.
+	LatestRunID     string
+	LatestRunStatus string
+	CurrentStep     int
+	TotalSteps      int
+	CompletedSteps  int
+	Blocked         bool
+	DocHashChanged  bool
 }
 
 type localWorkflowManifest struct {
-	WorkflowID  string `yaml:"workflow_id"`
-	ActiveRunID string `yaml:"active_run_id"`
-	DocHash     string `yaml:"doc_hash"`
-	DocPath     string `yaml:"doc_path"`
+	WorkflowID  string          `yaml:"workflow_id"`
+	ActiveRunID string          `yaml:"active_run_id"`
+	DocHash     string          `yaml:"doc_hash"`
+	DocPath     string          `yaml:"doc_path"`
+	Runs        []localRunIndex `yaml:"runs"`
+}
+
+// localRunIndex is one entry in workflow.yaml's runs[] list: the index fest
+// keeps of every run, newest appended last. Used only to find WHICH run is
+// latest; its cached status is not trusted (the run's events are replayed).
+type localRunIndex struct {
+	RunID   string `yaml:"run_id"`
+	Status  string `yaml:"status"`
+	EndedAt string `yaml:"ended_at"`
 }
 
 type localRunManifest struct {
@@ -103,24 +122,32 @@ func LoadLocalRunFS(ctx context.Context, fsys fs.FS, base string) (*LocalRunProg
 	}
 
 	if mf.ActiveRunID != "" {
-		runDir := filepath.Join(base, ".workflow", "runs", mf.ActiveRunID)
-		runYAML, runErr := fs.ReadFile(fsys, filepath.Join(runDir, "run.yaml"))
-		if runErr == nil {
-			var rm localRunManifest
-			if uErr := yaml.Unmarshal(runYAML, &rm); uErr != nil {
-				return nil, camperrors.Wrapf(uErr, "parsing %s/run.yaml", runDir)
-			}
-			replayed, repErr := replayLocalRunFSE(ctx, fsys, filepath.Join(runDir, "progress_events.jsonl"), rm)
-			if repErr != nil {
-				return nil, repErr
-			}
-			out.RunStatus = replayed.Status
-			out.CurrentStep = replayed.Summary.CurrentStep
-			out.CompletedSteps = replayed.Summary.CompletedSteps
-			out.Blocked = replayed.Summary.Blocked
+		rm, ok, rErr := readReplayedRun(ctx, fsys, base, mf.ActiveRunID)
+		if rErr != nil {
+			return nil, rErr
+		}
+		if ok {
+			out.RunStatus = rm.Status
+			out.CurrentStep = rm.Summary.CurrentStep
+			out.CompletedSteps = rm.Summary.CompletedSteps
+			out.Blocked = rm.Summary.Blocked
 			out.TotalSteps = rm.Summary.TotalSteps
-		} else if !errors.Is(runErr, fs.ErrNotExist) {
-			return nil, camperrors.Wrapf(runErr, "reading run manifest")
+		}
+	} else if latest := latestRunID(mf.Runs); latest != "" {
+		// No active run: fest cleared active_run_id on completion, so surface the
+		// latest run's terminal state from the replayed events (not the manifest
+		// cache). This is the signal the tier-1 sweep keys eligibility on.
+		rm, ok, rErr := readReplayedRun(ctx, fsys, base, latest)
+		if rErr != nil {
+			return nil, rErr
+		}
+		if ok {
+			out.LatestRunID = latest
+			out.LatestRunStatus = rm.Status
+			out.CurrentStep = rm.Summary.CurrentStep
+			out.CompletedSteps = rm.Summary.CompletedSteps
+			out.Blocked = rm.Summary.Blocked
+			out.TotalSteps = rm.Summary.TotalSteps
 		}
 	}
 
@@ -132,6 +159,48 @@ func LoadLocalRunFS(ctx context.Context, fsys fs.FS, base string) (*LocalRunProg
 	}
 
 	return out, nil
+}
+
+// readReplayedRun reads runs/<runID>/run.yaml and replays its events, returning
+// the authoritative state. ok is false when the run directory has no run.yaml
+// (nothing to report), which is not an error.
+func readReplayedRun(ctx context.Context, fsys fs.FS, base, runID string) (localRunManifest, bool, error) {
+	runDir := filepath.Join(base, ".workflow", "runs", runID)
+	runYAML, runErr := fs.ReadFile(fsys, filepath.Join(runDir, "run.yaml"))
+	if errors.Is(runErr, fs.ErrNotExist) {
+		return localRunManifest{}, false, nil
+	}
+	if runErr != nil {
+		return localRunManifest{}, false, camperrors.Wrapf(runErr, "reading run manifest")
+	}
+	var rm localRunManifest
+	if uErr := yaml.Unmarshal(runYAML, &rm); uErr != nil {
+		return localRunManifest{}, false, camperrors.Wrapf(uErr, "parsing %s/run.yaml", runDir)
+	}
+	replayed, repErr := replayLocalRunFSE(ctx, fsys, filepath.Join(runDir, "progress_events.jsonl"), rm)
+	if repErr != nil {
+		return localRunManifest{}, false, repErr
+	}
+	// Replay does not carry TotalSteps; keep it from the run.yaml cache.
+	replayed.Summary.TotalSteps = rm.Summary.TotalSteps
+	return replayed, true, nil
+}
+
+// latestRunID picks the most recent run from the manifest's runs[] index: the
+// run with the newest ended_at, tie-broken by list order (fest appends newest
+// last). Returns "" when there are no runs. The chosen run's status is verified
+// by replay elsewhere; this only decides WHICH run is latest.
+func latestRunID(runs []localRunIndex) string {
+	latest, latestEnded := "", ""
+	for _, r := range runs {
+		if r.RunID == "" {
+			continue
+		}
+		if latest == "" || r.EndedAt >= latestEnded {
+			latest, latestEnded = r.RunID, r.EndedAt
+		}
+	}
+	return latest
 }
 
 func replayLocalRunFSE(ctx context.Context, fsys fs.FS, eventsPath string, cache localRunManifest) (localRunManifest, error) {

@@ -16,14 +16,14 @@ import (
 // (internal/commands/workitem/sweep.go). Kept local so a schema change here is a
 // deliberate, reviewable edit.
 type sweepResultItem struct {
-	ID          string `json:"id"`
-	Type        string `json:"type"`
-	From        string `json:"from"`
-	To          string `json:"to"`
-	Evidence    string `json:"evidence"`
-	ActiveRunID string `json:"active_run_id"`
-	Committed   bool   `json:"committed"`
-	Error       string `json:"error"`
+	ID        string `json:"id"`
+	Type      string `json:"type"`
+	From      string `json:"from"`
+	To        string `json:"to"`
+	Evidence  string `json:"evidence"`
+	RunID     string `json:"run_id"`
+	Committed bool   `json:"committed"`
+	Error     string `json:"error"`
 }
 
 type sweepResult struct {
@@ -36,15 +36,19 @@ type sweepResult struct {
 	Items         []sweepResultItem `json:"items"`
 }
 
-// stampCompletedRun writes a fest-style .workflow/ runtime whose active run has
-// completed, making the workitem at <campaign>/workflow/<wkType>/<slug>
-// eligible for tier-1 sweep. Only the active run's events are replayed by camp's
-// localrun loader, so a single completed run is enough.
+// stampCompletedRun writes the REAL post-completion .workflow/ shape fest
+// produces: active_run_id is CLEARED and the completed run survives in the
+// manifest's runs[] index, its terminal status verifiable by replaying its
+// events. This makes the workitem at <campaign>/workflow/<wkType>/<slug>
+// eligible for tier-1 sweep. (Hand-written fixtures previously left active_run_id
+// pointed at the completed run, a state fest never emits; that is the bug this
+// PR fixes.)
 func stampCompletedRun(t *testing.T, tc *TestContainer, campaignPath, wkType, slug string) {
 	t.Helper()
 	base := campaignPath + "/workflow/" + wkType + "/" + slug + "/.workflow"
-	require.NoError(t, tc.WriteFile(base+"/workflow.yaml", "workflow_id: wf-"+slug+"\nactive_run_id: r1\n"))
-	require.NoError(t, tc.WriteFile(base+"/runs/r1/run.yaml", "status: active\nsummary:\n  total_steps: 1\n"))
+	require.NoError(t, tc.WriteFile(base+"/workflow.yaml",
+		"workflow_id: wf-"+slug+"\nruns:\n    - run_id: r1\n      status: completed\n      ended_at: \"2026-07-24T19:00:00Z\"\n"))
+	require.NoError(t, tc.WriteFile(base+"/runs/r1/run.yaml", "status: completed\nsummary:\n  total_steps: 1\n"))
 	require.NoError(t, tc.WriteFile(base+"/runs/r1/progress_events.jsonl",
 		`{"event_type":"workflow_run_started"}
 {"event_type":"wf_step_start"}
@@ -90,6 +94,47 @@ func runSweepJSON(t *testing.T, tc *TestContainer, path string, extraArgs ...str
 	return res
 }
 
+// TestIntegration_WorkitemSweep_EndToEndFestDrivenCompletion is the acceptance
+// bar for the latest-run eligibility fix: it drives the REAL fest binary to
+// complete a standalone loop (so active_run_id is genuinely cleared, the shape
+// hand-written fixtures never modeled), then asserts camp workitem sweep
+// actually promotes the completed workitem.
+func TestIntegration_WorkitemSweep_EndToEndFestDrivenCompletion(t *testing.T) {
+	if !festAvailable {
+		t.Skip("fest binary not available in container; skipping fest-driven e2e sweep test")
+	}
+	tc := GetSharedContainer(t)
+	path := setupDungeonCampaign(t, tc, "sweep-e2e-fest")
+	createSweepWorkitem(t, tc, path, "design", "e2e-feature")
+	wi := path + "/workflow/design/e2e-feature"
+
+	// Drive a real fest standalone loop (1 step) to completion.
+	_, _, err := tc.ExecCommand("sh", "-c",
+		"cd "+wi+" && fest create workflow e2e --steps '{\"title\":\"E2E\",\"steps\":[{\"name\":\"s1\",\"goal\":\"g1\"}]}'")
+	require.NoError(t, err)
+	_, _, err = tc.ExecCommand("sh", "-c", "cd "+wi+" && fest workflow advance")
+	require.NoError(t, err)
+
+	// Real post-completion shape: fest clears active_run_id on completion.
+	wf, err := tc.ReadFile(wi + "/.workflow/workflow.yaml")
+	require.NoError(t, err)
+	assert.NotContains(t, wf, "active_run_id:",
+		"fest must clear active_run_id on completion (the shape the sweep now keys on):\n%s", wf)
+
+	commitFixture(t, tc, path)
+
+	// The sweep must fire on the genuinely fest-completed workitem.
+	res := runSweepJSON(t, tc, path)
+	assert.Equal(t, 1, res.Swept, "a fest-completed workitem must be swept: %+v", res)
+	require.Len(t, res.Items, 1)
+	assert.Equal(t, "workflow_run_completed", res.Items[0].Evidence)
+	assert.NotEmpty(t, res.Items[0].RunID, "the completed run's id must be recorded as evidence")
+
+	exists, err := tc.CheckDirExists(wi)
+	require.NoError(t, err)
+	assert.False(t, exists, "swept item's source dir should be gone (moved to the dungeon)")
+}
+
 // Scenario 1: zero eligible items -> empty result, exit 0, no commit.
 func TestIntegration_WorkitemSweep_ZeroEligible(t *testing.T) {
 	tc := GetSharedContainer(t)
@@ -123,7 +168,7 @@ func TestIntegration_WorkitemSweep_SingleEligibleMovesAndCommits(t *testing.T) {
 	assert.Equal(t, 1, res.Swept)
 	assert.Equal(t, 0, res.Failed)
 	assert.Equal(t, "workflow_run_completed", res.Items[0].Evidence)
-	assert.Equal(t, "r1", res.Items[0].ActiveRunID)
+	assert.Equal(t, "r1", res.Items[0].RunID)
 	assert.True(t, res.Items[0].Committed)
 	assert.Contains(t, res.Items[0].To, "dungeon/completed")
 
