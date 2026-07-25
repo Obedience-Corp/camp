@@ -110,3 +110,47 @@ func TestLoadFreshConfig_ContextCanceled(t *testing.T) {
 		t.Fatal("LoadFreshConfig() expected context error")
 	}
 }
+
+func TestResolveFreshCompletedRuns(t *testing.T) {
+	tests := []struct {
+		name string
+		set  string
+		want string
+	}{
+		{"empty defaults to sweep", "", "sweep"},
+		{"typo defaults to sweep (never fails closed to off)", "swep", "sweep"},
+		{"explicit sweep", "sweep", "sweep"},
+		{"explicit report", "report", "report"},
+		{"explicit off", "off", "off"},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			c := &FreshConfig{CompletedRuns: tc.set}
+			if got := c.ResolveFreshCompletedRuns(); got != tc.want {
+				t.Errorf("ResolveFreshCompletedRuns() = %q, want %q", got, tc.want)
+			}
+		})
+	}
+}
+
+func TestResolveFreshMergedWorkitems(t *testing.T) {
+	tests := []struct {
+		name string
+		set  string
+		want string
+	}{
+		{"empty defaults to prompt", "", "prompt"},
+		{"typo defaults to prompt", "prmpt", "prompt"},
+		{"explicit prompt", "prompt", "prompt"},
+		{"explicit report", "report", "report"},
+		{"explicit off", "off", "off"},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			c := &FreshConfig{MergedWorkitems: tc.set}
+			if got := c.ResolveFreshMergedWorkitems(); got != tc.want {
+				t.Errorf("ResolveFreshMergedWorkitems() = %q, want %q", got, tc.want)
+			}
+		})
+	}
+}

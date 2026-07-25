@@ -1,6 +1,7 @@
 package workitem
 
 import (
+	"fmt"
 	"path/filepath"
 	"strings"
 )
@@ -9,6 +10,11 @@ import (
 // kind. It is the only auto-promotion evidence tier; merged-branch evidence
 // (tier 2) prompts or reports and never reuses this constant.
 const EvidenceWorkflowRunCompleted = "workflow_run_completed"
+
+// EvidenceMergedBranch names the tier-2 (inference) evidence kind: a branch or
+// worktree linked to the workitem merged. It never auto-promotes; a human
+// accepting a camp fresh prompt is the only path that records it.
+const EvidenceMergedBranch = "merged_branch"
 
 // runStatusCompleted is the RunStatus value the localrun replay assigns after a
 // workflow_run_completed event (internal/workitem/localrun.go).
@@ -65,6 +71,21 @@ func PlanSweep(items []WorkItem) []SweepCandidate {
 		})
 	}
 	return out
+}
+
+// SweepBannerText returns the read-only banner reporting n workitems with
+// completed runs awaiting sweep, or "" when n <= 0. Singular "workitem" for
+// n == 1, matching spec doc 03's example wording. Shared by camp wi and camp
+// fresh (report mode) so the wording lives in exactly one place.
+func SweepBannerText(n int) string {
+	if n <= 0 {
+		return ""
+	}
+	noun, verb := "workitems", "have"
+	if n == 1 {
+		noun, verb = "workitem", "has"
+	}
+	return fmt.Sprintf("%d %s %s completed runs; run camp workitem sweep", n, noun, verb)
 }
 
 // sweepEligibleType excludes the workflow types that fest owns (festivals) or

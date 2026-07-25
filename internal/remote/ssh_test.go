@@ -183,6 +183,42 @@ func TestOptsControlMaster(t *testing.T) {
 	}
 }
 
+// TestOptsReuseOnlyDoesNotDisturbSocket pins the property that makes diagnose
+// truthful: the probe hop reuses a master but never creates or replaces one.
+// ControlMaster=auto would unlink a stale socket and open a fresh master, which
+// is exactly the state diagnose exists to report.
+func TestOptsReuseOnlyDoesNotDisturbSocket(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+
+	m := &machines.Machine{ID: "devbox", Host: "devbox.ts.net", AuthMethod: machines.AuthSSHAgent}
+	opts := OptsReuseOnly(m)
+
+	if !slices.Contains(opts, "ControlMaster=no") {
+		t.Errorf("OptsReuseOnly must set ControlMaster=no, got: %v", opts)
+	}
+	for _, banned := range []string{"ControlMaster=auto", "ControlPersist=30s"} {
+		if slices.Contains(opts, banned) {
+			t.Errorf("OptsReuseOnly must not set %q (it would open a master): %v", banned, opts)
+		}
+	}
+	// The ControlPath still points at the per-machine socket, so a live master
+	// is reused rather than paying a second handshake.
+	var ctlPath string
+	for _, o := range opts {
+		if after, ok := strings.CutPrefix(o, "ControlPath="); ok {
+			ctlPath = after
+		}
+	}
+	if !strings.HasSuffix(ctlPath, "/ssh-ctl/devbox.sock") {
+		t.Errorf("ControlPath not the per-machine socket: %q", ctlPath)
+	}
+	// A read-only diagnostic must not create the socket dir just by building opts.
+	if _, err := os.Stat(filepath.Join(home, ".obey", "ssh-ctl")); !os.IsNotExist(err) {
+		t.Errorf("OptsReuseOnly created the socket dir (stat err = %v); it must be side-effect free", err)
+	}
+}
+
 func TestEnsureKeyAuth(t *testing.T) {
 	if err := EnsureKeyAuth(&machines.Machine{ID: "dev", AuthMethod: machines.AuthSSHAgent}); err != nil {
 		t.Errorf("agent auth rejected: %v", err)

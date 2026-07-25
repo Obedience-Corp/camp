@@ -211,6 +211,17 @@ type FreshConfig struct {
 	Prune *bool `yaml:"prune,omitempty"`
 	// PruneRemote controls whether to prune stale remote tracking refs.
 	PruneRemote *bool `yaml:"prune_remote,omitempty"`
+	// CompletedRuns controls the tier-1 workitem sweep run once per camp fresh:
+	// "sweep" (default) promotes items with a completed run, "report" prints a
+	// read-only banner, "off" does nothing. Campaign-root scoped (workitems live
+	// at the root, not per project), so there is no per-project override, the
+	// same shape as Prune.
+	CompletedRuns string `yaml:"completed_runs,omitempty"`
+	// MergedWorkitems controls the tier-2 merged-branch backstop run per project
+	// in camp fresh: "prompt" asks on a TTY (reports otherwise), "report" prints
+	// the exact promote commands, "off" does nothing. Inference-tier evidence
+	// never auto-promotes. Global only, same shape as CompletedRuns.
+	MergedWorkitems string `yaml:"merged_workitems,omitempty"`
 	// FollowUp lists command workflow steps run, in order, after a successful
 	// sync/prune/branch cycle. A project override in Projects replaces this
 	// list entirely; it is never merged with it.
@@ -318,6 +329,34 @@ func (c *FreshConfig) ResolveFreshPrune() bool {
 		return *c.Prune
 	}
 	return true
+}
+
+// ResolveFreshCompletedRuns resolves completed_runs using the global config or
+// default ("sweep"). Global only: workitems live at the campaign root, not per
+// project, so there is no per-project override, matching Prune's shape. Any
+// unrecognized or empty value defaults to "sweep" (never fail closed to "off"
+// on a typo).
+func (c *FreshConfig) ResolveFreshCompletedRuns() string {
+	switch c.CompletedRuns {
+	case "sweep", "report", "off":
+		return c.CompletedRuns
+	default:
+		return "sweep"
+	}
+}
+
+// ResolveFreshMergedWorkitems resolves merged_workitems using the global config
+// or the spec default ("prompt"). Global only, same shape as CompletedRuns. Any
+// unrecognized/empty value falls back to the default rather than failing.
+// "prompt" asks on a TTY and falls back to report on a non-TTY (agents never get
+// an auto path); "report" prints the exact promote command; "off" does nothing.
+func (c *FreshConfig) ResolveFreshMergedWorkitems() string {
+	switch c.MergedWorkitems {
+	case "prompt", "report", "off":
+		return c.MergedWorkitems
+	default:
+		return "prompt"
+	}
 }
 
 // ResolveFreshPruneRemote resolves prune_remote using the global config or default (true).
