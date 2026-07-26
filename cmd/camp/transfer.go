@@ -54,7 +54,30 @@ func runTransfer(cmd *cobra.Command, args []string) error {
 		return err
 	}
 
-	srcPath, err := transfer.ResolveCrossCampaignPath(ctx, root, args[0])
+	src, err := transfer.ParseEndpointDefault(args[0])
+	if err != nil {
+		return camperrors.Wrap(err, "resolve source")
+	}
+	dest, err := transfer.ParseEndpointDefault(args[1])
+	if err != nil {
+		return camperrors.Wrap(err, "resolve destination")
+	}
+	for _, e := range []transfer.Endpoint{src, dest} {
+		if e.Shadowed {
+			_, _ = fmt.Fprintln(cmd.ErrOrStderr(), transfer.ShadowNote(e.Machine))
+		}
+	}
+	if src.IsRemote() && dest.IsRemote() {
+		// Brokering a copy between two far machines would need them to reach
+		// each other, which D003 says camp diagnoses rather than manages.
+		return transfer.BothRemoteError(src, dest)
+	}
+	if src.IsRemote() || dest.IsRemote() {
+		return camperrors.New("cross-machine transfer is not implemented yet; " +
+			"the grammar parses but the transport lands in a follow-up")
+	}
+
+	srcPath, err := transfer.ResolveCrossCampaignPath(ctx, root, src.Spec)
 	if err != nil {
 		return camperrors.Wrap(err, "resolve source")
 	}
@@ -62,13 +85,13 @@ func runTransfer(cmd *cobra.Command, args []string) error {
 		return camperrors.Wrap(err, "source")
 	}
 
-	destPath, err := transfer.ResolveCrossCampaignPath(ctx, root, args[1])
+	destPath, err := transfer.ResolveCrossCampaignPath(ctx, root, dest.Spec)
 	if err != nil {
 		return camperrors.Wrap(err, "resolve destination")
 	}
 
 	// If dest is a directory or ends with /, place source inside it
-	destArg := args[1]
+	destArg := dest.Spec
 	// Strip campaign prefix for trailing slash check
 	if idx := strings.Index(destArg, ":"); idx >= 0 {
 		destArg = destArg[idx+1:]
