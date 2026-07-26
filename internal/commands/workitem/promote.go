@@ -304,13 +304,8 @@ func doDungeonPromote(ctx context.Context, campaignRoot string, loc *locate.Loca
 	// link left behind only resolves to a workitem the selector cannot see
 	// (`camp p commit` silently stops stamping the ref). So the links go with
 	// the workitem, reported rather than dropped quietly.
-	dropped, err := unlinkShelvedWorkitem(ctx, campaignRoot, oldID, oldKey)
-	if err != nil {
-		return nil, camperrors.Wrap(err, "release workitem links on dungeon move")
-	}
-	if len(dropped) > 0 {
-		ci.destPaths = append(ci.destPaths, links.LinksPath(campaignRoot))
-		result.ReleasedLinks = dropped
+	if err := releaseLinksForShelvedSource(ctx, campaignRoot, oldID, oldKey, ci, result); err != nil {
+		return nil, err
 	}
 	return ci, nil
 }
@@ -441,6 +436,10 @@ func doDocPromote(ctx context.Context, opts runWorkitemPromoteOptions, campaignR
 		return nil, camperrors.New("workitem doc is empty; use --force to promote anyway")
 	}
 
+	// Capture identity before the source is shelved: the marker is read from
+	// loc.SourcePath, which appendShelve moves.
+	oldID, oldKey := promotedWorkitemIdentity(ctx, campaignRoot, loc, result)
+
 	isFile, cleanSlug := promoteSourceShape(loc)
 	relDest := opts.Dest
 	if relDest == "" {
@@ -480,7 +479,41 @@ func doDocPromote(ctx context.Context, opts runWorkitemPromoteOptions, campaignR
 		description: fmt.Sprintf("Promote workitem %s to %s", loc.Slug, promotedTo),
 		destPaths:   []string{destDir},
 	}
-	return appendShelve(ctx, opts, campaignRoot, loc, ci, result)
+	ci, err = appendShelve(ctx, opts, campaignRoot, loc, ci, result)
+	if err != nil {
+		return nil, err
+	}
+
+	// Shelving the source ends the workitem's active life exactly as a dungeon
+	// target does, so its links go the same way. --keep leaves the source in
+	// place and resolvable, so there is nothing to release.
+	//
+	// This cannot live inside appendShelve: the festival path shelves too, but
+	// its rows have somewhere to go and migratePromotedLinks re-points them
+	// afterward. A doc has no workitem identity to carry them.
+	if !opts.Keep {
+		if err := releaseLinksForShelvedSource(ctx, campaignRoot, oldID, oldKey, ci, result); err != nil {
+			return nil, err
+		}
+	}
+	return ci, nil
+}
+
+// releaseLinksForShelvedSource drops the links a workitem held once its source
+// has been shelved, recording them on result and adding links.yaml to the
+// commit when anything changed.
+func releaseLinksForShelvedSource(ctx context.Context, campaignRoot, oldID, oldKey string,
+	ci *commitInputs, result *workitemPromoteResult,
+) error {
+	dropped, err := unlinkShelvedWorkitem(ctx, campaignRoot, oldID, oldKey)
+	if err != nil {
+		return camperrors.Wrap(err, "release workitem links on shelve")
+	}
+	if len(dropped) > 0 {
+		ci.destPaths = append(ci.destPaths, links.LinksPath(campaignRoot))
+		result.ReleasedLinks = append(result.ReleasedLinks, dropped...)
+	}
+	return nil
 }
 
 // promotedWorkitemIdentity returns the stable id and key that links may

@@ -257,7 +257,14 @@ func collectWorkitemFindings(ctx context.Context, root string, registry *links.L
 			// is corrupt" into "this is leftover housekeeping". Promote now
 			// releases these itself, so this path covers workitems dungeoned
 			// before that landed.
-			if dungeonPath, ok := shelved[link.WorkitemID]; ok {
+			//
+			// A festival target outranks that framing and is handled below: the
+			// source sits in a dungeon because doFestivalPromote put it there,
+			// and the row has somewhere real to go rather than being cleanup.
+			// Keeping it at error severity leaves doctor's exit code pointed at
+			// the one case that still needs a decision.
+			_, hasFestivalTarget := promotedTargets[link.WorkitemID]
+			if dungeonPath, ok := shelved[link.WorkitemID]; ok && !hasFestivalTarget {
 				finding.Code = codeWorkitemShelved
 				finding.Severity = docSeverityWarning
 				finding.Message = "workitem " + link.WorkitemID + " is shelved at " + dungeonPath +

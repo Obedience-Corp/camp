@@ -205,3 +205,115 @@ func TestPrintReleasedLinks(t *testing.T) {
 		t.Fatalf("nothing released should print nothing, got %q", quiet.String())
 	}
 }
+
+// runPromote drives the real command so identity capture, commit inputs, and
+// report wiring are exercised together rather than only unlinkShelvedWorkitem
+// in isolation.
+func runPromote(t *testing.T, target string, extra ...string) (string, error) {
+	t.Helper()
+	var stdout bytes.Buffer
+	cmd := &cobra.Command{}
+	cmd.SetOut(&stdout)
+	cmd.SetErr(&bytes.Buffer{})
+	cmd.SetContext(context.Background())
+
+	opts := runWorkitemPromoteOptions{
+		ID: "design-example-2026-05-24", Target: target, NoCommit: true, Force: true,
+	}
+	for _, e := range extra {
+		if e == "--keep" {
+			opts.Keep = true
+		}
+	}
+	err := runWorkitemPromote(cmd, opts)
+	return stdout.String(), err
+}
+
+// End-to-end through the promote command: a dungeon target must release the
+// links and say so.
+func TestPromoteToDungeon_ReleasesLinksEndToEnd(t *testing.T) {
+	root := linkTestCampaign(t)
+	restore := chdir(t, root)
+	defer restore()
+
+	id := seedExampleLink(t, root)
+
+	out, err := runPromote(t, "completed")
+	if err != nil {
+		t.Fatalf("promote: %v (%s)", err, out)
+	}
+	if !strings.Contains(out, "released link "+id) {
+		t.Fatalf("promote must report the released link, got %q", out)
+	}
+	if !strings.Contains(out, "undo:") {
+		t.Fatalf("promote must name the undo, got %q", out)
+	}
+
+	registry, lerr := links.Load(context.Background(), root)
+	if lerr != nil {
+		t.Fatal(lerr)
+	}
+	if _, ok := registry.FindByID(id); ok {
+		t.Fatal("dungeon promote left the link in place")
+	}
+}
+
+// --target doc shelves the source too, so it has the same lifecycle boundary.
+// Before this was fixed the doc path only shelved, leaving links pointing at a
+// workitem the selector could no longer see.
+func TestPromoteToDoc_ReleasesLinksWhenSourceIsShelved(t *testing.T) {
+	root := linkTestCampaign(t)
+	restore := chdir(t, root)
+	defer restore()
+
+	id := seedExampleLink(t, root)
+	if err := os.WriteFile(filepath.Join(root, "workflow", "design", "example", "README.md"),
+		[]byte("# Example\n\nbody\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	out, err := runPromote(t, "doc")
+	if err != nil {
+		t.Fatalf("promote: %v (%s)", err, out)
+	}
+	if !strings.Contains(out, "released link "+id) {
+		t.Fatalf("doc promote must release links when it shelves the source, got %q", out)
+	}
+
+	registry, lerr := links.Load(context.Background(), root)
+	if lerr != nil {
+		t.Fatal(lerr)
+	}
+	if _, ok := registry.FindByID(id); ok {
+		t.Fatal("doc promote left a link to a shelved workitem")
+	}
+}
+
+// --keep leaves the source active and resolvable, so the link must survive.
+func TestPromoteToDoc_KeepPreservesLinks(t *testing.T) {
+	root := linkTestCampaign(t)
+	restore := chdir(t, root)
+	defer restore()
+
+	id := seedExampleLink(t, root)
+	if err := os.WriteFile(filepath.Join(root, "workflow", "design", "example", "README.md"),
+		[]byte("# Example\n\nbody\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	out, err := runPromote(t, "doc", "--keep")
+	if err != nil {
+		t.Fatalf("promote: %v (%s)", err, out)
+	}
+	if strings.Contains(out, "released link") {
+		t.Fatalf("--keep leaves the source resolvable; nothing should be released: %q", out)
+	}
+
+	registry, lerr := links.Load(context.Background(), root)
+	if lerr != nil {
+		t.Fatal(lerr)
+	}
+	if _, ok := registry.FindByID(id); !ok {
+		t.Fatal("--keep must not release links")
+	}
+}
