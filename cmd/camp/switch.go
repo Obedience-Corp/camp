@@ -289,6 +289,17 @@ func runSwitch(cmd *cobra.Command, args []string) error {
 		return err
 	}
 
+	// The hop-back gesture is handled before the registry is even loaded, for
+	// two reasons. It is checked before selector parsing because "-" is
+	// otherwise a legal campaign query that reaches the fuzzy tier and matches
+	// an arbitrary hyphenated campaign, differently on every invocation. And it
+	// is checked before the "no campaigns registered" guard because hop-back
+	// resolves against the ORIGIN machine's registry, so a local registry is not
+	// a precondition and pointing the operator at `camp init` would be wrong.
+	if len(args) == 1 && args[0] == hopBackSelector {
+		return runHopBack(ctx, cmd, printOnly, shellConnect, jsonOut)
+	}
+
 	reg, err := config.LoadRegistry(ctx)
 	if err != nil {
 		return camperrors.Wrap(err, "load registry")
@@ -306,12 +317,6 @@ func runSwitch(cmd *cobra.Command, args []string) error {
 	targetTab := ""
 
 	if len(args) == 1 {
-		// The hop-back gesture is checked before selector parsing: "-" is
-		// otherwise a legal campaign query that reaches the fuzzy tier and
-		// matches an arbitrary hyphenated campaign, differently every run.
-		if args[0] == hopBackSelector {
-			return runHopBack(ctx, cmd, printOnly, shellConnect, jsonOut)
-		}
 		msel, err := cmdutil.ParseMachineSelector(args[0])
 		if err != nil {
 			return err
@@ -414,45 +419,6 @@ func emitShellConnect(w io.Writer, isRemote bool, path string, m *machines.Machi
 	_, err := fmt.Fprintf(w, "exec ssh -t %s %s %s\n",
 		strings.Join(quoted, " "), remote.ShellQuote(remote.Target(m)), remote.ShellQuote(inner))
 	return err
-}
-
-func switchScopeFromFlags(cmd *cobra.Command) (cmdutil.CampaignScope, error) {
-	org, _ := cmd.Flags().GetString("org")
-	status, _ := cmd.Flags().GetString("status")
-	all, _ := cmd.Flags().GetBool("all")
-	if org != "" {
-		if err := config.ValidateName("org", org); err != nil {
-			return cmdutil.CampaignScope{}, err
-		}
-	}
-	if status != "" {
-		if err := config.ValidateStatus(status); err != nil {
-			return cmdutil.CampaignScope{}, err
-		}
-	}
-	if status != "" && all {
-		return cmdutil.CampaignScope{}, camperrors.New("cannot use --status with --all")
-	}
-	return cmdutil.CampaignScope{Org: org, Status: status, All: all}, nil
-}
-
-func parseSwitchArg(raw string, scope cmdutil.CampaignScope) (cmdutil.ParsedSwitchSelector, error) {
-	parsed := cmdutil.ParseSwitchSelector(raw)
-	if parsed.Org != "" {
-		if err := config.ValidateName("org", parsed.Org); err != nil {
-			return parsed, err
-		}
-		if strings.Contains(parsed.Campaign, "/") {
-			return parsed, camperrors.New("switch selector may contain at most one org separator")
-		}
-		if parsed.Campaign == "" {
-			return parsed, camperrors.New("campaign name required after org selector")
-		}
-		if scope.Org != "" && scope.Org != parsed.Org {
-			return parsed, camperrors.New(fmt.Sprintf("selector org %q conflicts with --org %q", parsed.Org, scope.Org))
-		}
-	}
-	return parsed, nil
 }
 
 type switchOutput struct {

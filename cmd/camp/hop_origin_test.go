@@ -642,3 +642,33 @@ func TestIsSelfMachine(t *testing.T) {
 		}
 	})
 }
+
+func TestRunSwitchHopBackWorksWithNoLocalRegistry(t *testing.T) {
+	// Hop-back resolves the campaign on the ORIGIN machine, so this machine
+	// having no registry is not a precondition. Before the check was hoisted,
+	// an empty registry produced "no campaigns registered (use 'camp init'…)",
+	// pointing the operator at an unrelated command.
+	t.Setenv("CAMP_REGISTRY_PATH", filepath.Join(t.TempDir(), "registry.json"))
+	t.Setenv("CAMP_MACHINES_PATH", filepath.Join(t.TempDir(), "machines.yaml"))
+	t.Setenv(HopOriginEnvVar, "")
+
+	cmd, _, _ := newHopBackCmd()
+	cmd.SetArgs([]string{"-"})
+	cmd.Flags().Bool("print", false, "")
+	cmd.Flags().Bool("json", false, "")
+	cmd.Flags().Bool("shell-connect", false, "")
+	cmd.Flags().String("org", "", "")
+	cmd.Flags().String("status", "", "")
+	cmd.Flags().Bool("all", false, "")
+
+	err := runSwitch(cmd, []string{"-"})
+	if err == nil {
+		t.Fatal("want the hop-back error, got nil")
+	}
+	if strings.Contains(err.Error(), "no campaigns registered") {
+		t.Errorf("hop-back was gated on the local registry: %v", err)
+	}
+	if !strings.Contains(err.Error(), "did not start from a camp hop") {
+		t.Errorf("error = %v, want the hop-back precondition message", err)
+	}
+}
