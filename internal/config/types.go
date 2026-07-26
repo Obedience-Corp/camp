@@ -45,6 +45,8 @@ type CampaignConfig struct {
 	Intents IntentsConfig `yaml:"intents,omitempty"`
 	// Workflows holds the campaign workflow-category taxonomy.
 	Workflows WorkflowsConfig `yaml:"workflows,omitempty"`
+	// Commit holds campaign-scoped commit behavior, including the staging guards.
+	Commit CommitConfig `yaml:"commit,omitempty"`
 
 	// Jumps holds the loaded jumps configuration (from .campaign/settings/jumps.yaml).
 	// This field is not serialized to campaign.yaml - it's loaded separately.
