@@ -8,6 +8,7 @@ import (
 	"os/exec"
 	"os/user"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/spf13/cobra"
@@ -438,7 +439,8 @@ func hopBackFailure(err error, m *machines.Machine, registered bool) error {
 	if registered {
 		return camperrors.Wrapf(err, "run 'camp machine diagnose %s' to check reachability", m.ID)
 	}
-	return camperrors.Wrapf(err, "the origin is not registered here, probe it with: %s", remote.ProbeCommand(m))
+	return camperrors.Wrapf(err, "the origin is not registered here, probe it with: %s%s",
+		remote.ProbeCommand(m), hopBackHintSuffix())
 }
 
 // isSelfMachine reports whether a selector's machine segment names THIS
@@ -469,4 +471,60 @@ func isSelfMachine(ctx context.Context, id string) bool {
 		return false
 	}
 	return suggestedMachineID(host) == id
+}
+
+// originHintOnce bounds the unregistered-origin hint to one appearance per
+// process. Camp has no session daemon and constraints forbid adding one, so
+// "once per session" is not implementable without inventing a store for a
+// cosmetic problem; once per process is the honest bound, and the surfaces are
+// commands an operator runs deliberately rather than a prompt that redraws.
+var originHintOnce sync.Once
+
+// OriginHint returns the one-line suggestion to adopt the machine this session
+// was hopped from, or "" when it should stay silent. It is a suggestion, so it
+// behaves like one: quiet unless it can be acted on, and never more than once.
+//
+// Silent when: no payload, a malformed payload, the origin is already in the
+// fleet, the operator declined it, or the hint has already been shown. Callers
+// additionally suppress it for --json and non-TTY output; that is their
+// decision to make, not this function's.
+func OriginHint() string {
+	hint := ""
+	originHintOnce.Do(func() {
+		hint = originHintText()
+	})
+	return hint
+}
+
+func originHintText() string {
+	raw := strings.TrimSpace(os.Getenv(HopOriginEnvVar))
+	if raw == "" {
+		return ""
+	}
+	origin, err := ParseHopOrigin(raw)
+	if err != nil {
+		return ""
+	}
+	mf, err := machines.Load()
+	if err != nil {
+		return ""
+	}
+	want := machines.NormalizeHost(origin.Host)
+	for _, m := range mf.Machines {
+		if machines.NormalizeHost(m.Host) == want {
+			return ""
+		}
+	}
+	if declined, err := machines.LoadDeclined(); err == nil {
+		if _, was := declined.IsDeclined(origin.Host); was {
+			return ""
+		}
+	}
+	return "origin " + origin.Host + " is not in your fleet; run 'camp machine adopt' to add it"
+}
+
+// resetOriginHintForTest re-arms the once-per-process bound so a table test can
+// exercise more than one row.
+func resetOriginHintForTest() {
+	originHintOnce = sync.Once{}
 }

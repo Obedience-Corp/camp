@@ -201,9 +201,19 @@ func runMachineList(cmd *cobra.Command, _ []string) error {
 		return err
 	}
 	if machineListJSON {
+		// JSON consumers get data, never advice: the hint is suppressed here
+		// rather than inside OriginHint, because whether advice belongs in the
+		// output is the caller's decision.
 		return writeMachineListJSON(cmd.OutOrStdout(), mf)
 	}
-	return renderMachineListTable(cmd.OutOrStdout(), mf.Machines)
+	if err := renderMachineListTable(cmd.OutOrStdout(), mf.Machines); err != nil {
+		return err
+	}
+	if hint := OriginHint(); hint != "" {
+		_, err := fmt.Fprintln(cmd.OutOrStdout(), ui.Dim(hint))
+		return err
+	}
+	return nil
 }
 
 func writeMachineListJSON(w io.Writer, mf *machines.File) error {

@@ -203,6 +203,14 @@ func newMachineTUIModel(ctx context.Context, mf *machines.File) *machineTUIModel
 		spin:           newMachineSpinner(),
 	}
 	m.rebuildRows("")
+	// The fleet screen is where an operator looks at machines, so it is where
+	// an unregistered origin is worth mentioning. It names the command rather
+	// than offering a key: the adopt confirmation is a huh form that takes over
+	// the terminal, and this model already owns it. One preview, one consent
+	// surface, nothing to keep in sync.
+	if hint := OriginHint(); hint != "" {
+		m.setStatus(hint)
+	}
 	return m
 }
 

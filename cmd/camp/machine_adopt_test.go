@@ -283,3 +283,124 @@ func TestDeclineFileLivesBesideMachinesFile(t *testing.T) {
 func timeFixture() time.Time {
 	return time.Date(2026, 7, 26, 9, 14, 22, 0, time.UTC)
 }
+
+func TestOriginHintSuppression(t *testing.T) {
+	tests := []struct {
+		name     string
+		payload  string
+		fleet    string
+		declined bool
+		want     bool
+	}{
+		{name: "no payload", want: false},
+		{name: "malformed payload", payload: "v1;host=a;host=b;user=c", want: false},
+		{name: "unregistered origin", payload: adoptPayload, want: true},
+		{
+			name:    "already registered under any id",
+			payload: adoptPayload,
+			fleet: `version: 1
+machines:
+    - id: whatever
+      host: ORIGIN-BOX.tail37114b.ts.net.
+      auth_method: ssh-agent
+`,
+			want: false,
+		},
+		{name: "declined origin stays quiet", payload: adoptPayload, declined: true, want: false},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			dir := isolateFleet(t)
+			resetOriginHintForTest()
+			t.Setenv(HopOriginEnvVar, tt.payload)
+			if tt.fleet != "" {
+				if err := os.WriteFile(filepath.Join(dir, "machines.yaml"), []byte(tt.fleet), 0o600); err != nil {
+					t.Fatal(err)
+				}
+			}
+			if tt.declined {
+				f, err := machines.LoadDeclined()
+				if err != nil {
+					t.Fatal(err)
+				}
+				f.Decline("origin-box", "origin-box.tail37114b.ts.net", timeFixture())
+				if err := f.Save(); err != nil {
+					t.Fatal(err)
+				}
+			}
+
+			hint := OriginHint()
+			if got := hint != ""; got != tt.want {
+				t.Errorf("OriginHint() = %q, want present=%v", hint, tt.want)
+			}
+			if tt.want && !strings.Contains(hint, "camp machine adopt") {
+				t.Errorf("hint must name the command: %q", hint)
+			}
+		})
+	}
+}
+
+func TestOriginHintFiresAtMostOncePerProcess(t *testing.T) {
+	isolateFleet(t)
+	resetOriginHintForTest()
+	t.Setenv(HopOriginEnvVar, adoptPayload)
+
+	if first := OriginHint(); first == "" {
+		t.Fatal("first call should produce the hint")
+	}
+	if second := OriginHint(); second != "" {
+		t.Errorf("second call must stay quiet, got %q", second)
+	}
+}
+
+func TestMachineListJSONNeverCarriesTheHint(t *testing.T) {
+	// JSON consumers get data, not advice.
+	isolateFleet(t)
+	resetOriginHintForTest()
+	t.Setenv(HopOriginEnvVar, adoptPayload)
+
+	var buf bytes.Buffer
+	mf, err := machines.Load()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := writeMachineListJSON(&buf, mf); err != nil {
+		t.Fatal(err)
+	}
+	if strings.Contains(buf.String(), "camp machine adopt") {
+		t.Errorf("json output carried the hint: %s", buf.String())
+	}
+}
+
+func TestMachineTUIShowsOriginHintAtOpen(t *testing.T) {
+	isolateFleet(t)
+	resetOriginHintForTest()
+	t.Setenv(HopOriginEnvVar, adoptPayload)
+
+	mf, err := machines.Load()
+	if err != nil {
+		t.Fatal(err)
+	}
+	model := newMachineTUIModel(context.Background(), mf)
+	if !strings.Contains(model.status, "camp machine adopt") {
+		t.Errorf("status line = %q, want the adopt hint", model.status)
+	}
+	if model.statusErr {
+		t.Error("a suggestion must not render as an error")
+	}
+}
+
+func TestMachineTUIStaysQuietWithoutAnOrigin(t *testing.T) {
+	isolateFleet(t)
+	resetOriginHintForTest()
+	t.Setenv(HopOriginEnvVar, "")
+
+	mf, err := machines.Load()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if status := newMachineTUIModel(context.Background(), mf).status; status != "" {
+		t.Errorf("status = %q, want empty", status)
+	}
+}
