@@ -199,3 +199,43 @@ func TestIntegration_ArtifactsAddEmptyRootIsClean(t *testing.T) {
 	gitignore := readGitignore(t, tc, campPath)
 	assert.Equal(t, 1, countRuleLines(gitignore, "empty-root/"))
 }
+
+// --dry-run never reaches File.Add, so path and policy validation has to run
+// before the survey or an impossible declaration would be reported as viable.
+func TestIntegration_ArtifactsAddDryRunStillValidates(t *testing.T) {
+	tc := GetSharedContainer(t)
+	campPath := setupArtifactsCampaign(t, tc, "artifacts-dryrun-invalid")
+
+	cases := []struct {
+		name string
+		args []string
+		want string
+	}{
+		{
+			name: "escaping path",
+			args: []string{"artifacts", "add", "../outside", "--dry-run"},
+			want: "escapes the campaign root",
+		},
+		{
+			name: "path under .campaign",
+			args: []string{"artifacts", "add", ".campaign/cache", "--dry-run"},
+			want: "may not live under .campaign",
+		},
+		{
+			name: "unknown policy",
+			args: []string{"artifacts", "add", "media/renders", "--policy", "sometimes", "--dry-run"},
+			want: "unknown policy",
+		},
+	}
+
+	for _, tc2 := range cases {
+		t.Run(tc2.name, func(t *testing.T) {
+			stdout, stderr, exitCode, err := tc.RunCampSplitInDir(campPath, tc2.args...)
+			require.NoError(t, err)
+			assert.NotEqual(t, 0, exitCode, "stdout:\n%s", stdout)
+			assert.Contains(t, stdout+stderr, tc2.want)
+			assert.NotContains(t, stdout, "would be declared",
+				"an invalid declaration must not be reported as viable")
+		})
+	}
+}

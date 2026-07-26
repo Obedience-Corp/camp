@@ -178,6 +178,15 @@ func runArtifactsAdd(cmd *cobra.Command, args []string) error {
 	if err != nil {
 		return camperrors.Wrap(err, "not in a campaign")
 	}
+	// Validate before doing any work. Add validates too, but --dry-run never
+	// reaches Add, and reporting on a declaration that could never succeed
+	// would be worse than a plain error.
+	if err := artifacts.ValidateRootPath(args[0]); err != nil {
+		return err
+	}
+	if err := artifacts.ValidatePolicy(artifactsOpts.policy); err != nil {
+		return err
+	}
 	normalized := artifacts.NormalizeRootPath(args[0])
 
 	// Survey before declaring so --dry-run and the mixed-root report share one
