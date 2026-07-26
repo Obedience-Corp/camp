@@ -348,6 +348,12 @@ type machineDiagnoseRow struct {
 	CampVersion  string `json:"camp_version,omitempty"`
 	CampCommit   string `json:"camp_commit,omitempty"`
 	VersionSkew  bool   `json:"version_skew"`
+	// ReverseCapable reports whether THIS machine accepts inbound ssh, which is
+	// the only half of reverse reachability camp can observe without executing
+	// on the far side. Additive with omitempty on the hint so existing --json
+	// consumers are unaffected.
+	ReverseCapable bool   `json:"reverse_capable"`
+	ReverseHint    string `json:"reverse_hint,omitempty"`
 }
 
 // probeRemoteCampVersion asks the machine's own camp for its version. It is
@@ -414,6 +420,7 @@ func runMachineDiagnose(cmd *cobra.Command, args []string) error {
 	for i := range targets {
 		m := &targets[i]
 		d := remote.CheckControlMaster(ctx, m)
+		reverse := checkReverseReachability(ctx, defaultReverseProbes())
 		remoteVersion, remoteCommit := probeRemoteCampVersion(ctx, m)
 		// Diagnose is the only surface that pays for a live probe, so it is the
 		// only one that can warm the cache the hop path reads.
@@ -432,6 +439,12 @@ func runMachineDiagnose(cmd *cobra.Command, args []string) error {
 			CampVersion:  remoteVersion,
 			CampCommit:   remoteCommit,
 			VersionSkew:  campVersionSkew(localInfo, remoteVersion, remoteCommit),
+			// What this machine can honestly say about being reachable FROM
+			// that one. Identical for every row (it is a fact about here, not
+			// about them), and reported per row because that is where an
+			// operator is already looking when a hop-back fails.
+			ReverseCapable: reverse.Capable,
+			ReverseHint:    reverse.Hint,
 		}
 		if machineDiagnoseReset && d.State == remote.ControlStale {
 			if err := remote.ResetControlMaster(ctx, m); err != nil {
@@ -496,6 +509,13 @@ func renderMachineDiagnoseTable(w io.Writer, rows []machineDiagnoseRow) error {
 				campVersionDisplay(r)+"  ⚠ differs from this machine ("+campLocalVersionDisplay()+"); remote errors may not match current behavior"))
 		default:
 			lines = append(lines, fmt.Sprintf("%s  %s", ui.Label("CAMP"), campVersionDisplay(r)))
+		}
+		if r.ReverseHint != "" {
+			mark := "✗"
+			if r.ReverseCapable {
+				mark = "✓"
+			}
+			lines = append(lines, fmt.Sprintf("%s  %s %s", ui.Label("REVERSE"), mark, r.ReverseHint))
 		}
 		if r.Hint != "" {
 			lines = append(lines, fmt.Sprintf("%s  %s", ui.Label("HINT"), r.Hint))
