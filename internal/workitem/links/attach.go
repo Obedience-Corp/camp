@@ -58,7 +58,15 @@ func AttachPrimary(ctx context.Context, campaignRoot string, opts AttachOptions)
 	err := WithLock(ctx, campaignRoot, func(registry *Links) error {
 		// Drop rows whose scope target is provably gone while the registry is
 		// open anyway. See Dead for why this is the only signal trusted here.
-		pruned = PruneDead(campaignRoot, registry)
+		//
+		// A caller with nowhere to report to does not prune. Reporting is the
+		// price of removing a row the user did not ask about, so a missing
+		// Report writer makes the removal silent -- and silence is the one
+		// outcome this must not have. Skipping leaves the rows for the next
+		// reporting caller or for doctor.
+		if opts.Report != nil {
+			pruned = PruneDead(campaignRoot, registry)
+		}
 
 		id, idErr := NewLinkID(registry)
 		if idErr != nil {
@@ -101,7 +109,12 @@ func ReportPruned(w io.Writer, pruned []Pruned) {
 		_, _ = fmt.Fprintf(w, "removed dead link %s (%s:%s): %s\n",
 			p.Link.ID, p.Link.Scope.Kind, p.Link.Scope.Path, p.Reason)
 	}
-	_, _ = fmt.Fprintf(w, "  undo: git checkout -- .campaign/workitems/links.yaml\n")
+	// The prune and the caller's own write land in one save, so the undo is
+	// not surgical. Say so: a user who runs it expecting to keep the link they
+	// just made would otherwise lose it silently, which is the same failure
+	// this reporting exists to prevent.
+	_, _ = fmt.Fprintf(w,
+		"  undo: git checkout -- .campaign/workitems/links.yaml (reverts this whole write, new link included)\n")
 }
 
 // WorktreeScopePath returns the campaign-relative path for a project worktree

@@ -176,3 +176,64 @@ func TestWorktreeScopePath(t *testing.T) {
 		t.Fatalf("WorktreeScopePath = %q", got)
 	}
 }
+
+// Reporting is the price of removing a row the user did not ask about, so a
+// caller with nowhere to report to must not prune at all. Otherwise the one
+// outcome the design forbids -- a silent removal -- is a nil field away.
+func TestAttachPrimary_DoesNotPruneWithoutAReportWriter(t *testing.T) {
+	ctx := context.Background()
+	root := t.TempDir()
+	if err := os.MkdirAll(filepath.Join(root, ".campaign", "workitems"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+
+	deadPath := "workflow/design/deleted"
+	if err := os.MkdirAll(filepath.Join(root, filepath.FromSlash(deadPath)), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	dead, err := AttachPrimary(ctx, root, AttachOptions{
+		WorkitemID: "design-deleted-2026-07-01",
+		Scope:      LinkScope{Kind: ScopeCampaignPath, Path: deadPath},
+		CreatedBy:  "test",
+	})
+	if err != nil {
+		t.Fatalf("seed dead link: %v", err)
+	}
+	if err := os.RemoveAll(filepath.Join(root, filepath.FromSlash(deadPath))); err != nil {
+		t.Fatal(err)
+	}
+
+	livePath := "projects/worktrees/fest/live"
+	if err := os.MkdirAll(filepath.Join(root, filepath.FromSlash(livePath)), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	// No Report writer.
+	if _, err := AttachPrimary(ctx, root, AttachOptions{
+		WorkitemID: "design-live-2026-07-26",
+		Scope:      LinkScope{Kind: ScopeWorktree, Path: livePath},
+		CreatedBy:  "test",
+	}); err != nil {
+		t.Fatalf("attach failed: %v", err)
+	}
+
+	reg, err := Load(ctx, root)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, ok := reg.FindByID(dead.ID); !ok {
+		t.Fatal("pruned silently with no Report writer; the row should have been left for a reporting caller or doctor")
+	}
+}
+
+func TestReportPruned_UndoSaysItRevertsTheWholeWrite(t *testing.T) {
+	var out strings.Builder
+	ReportPruned(&out, []Pruned{{
+		Link:   Link{ID: "lnk_20260726_eeeeee", Scope: LinkScope{Kind: ScopeCampaignPath, Path: "workflow/design/gone"}},
+		Reason: "campaign_path workflow/design/gone no longer exists",
+	}})
+	// The prune shares a save with the caller's write, so an undo that looks
+	// surgical would cost the user the link they just created.
+	if !strings.Contains(out.String(), "reverts this whole write") {
+		t.Fatalf("undo must say it is not surgical, got %q", out.String())
+	}
+}
