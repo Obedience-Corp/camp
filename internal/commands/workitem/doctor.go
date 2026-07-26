@@ -33,6 +33,7 @@ const (
 	codeOutOfBounds              = "workitem.scope.out-of-bounds"
 	codeScopeUnvalidatable       = "workitem.scope.unvalidatable"
 	codeScopeNotLocal            = "workitem.scope.not-on-this-machine"
+	codeWorkitemShelved          = "workitem.link.shelved"
 	codeDuplicatePrimary         = "workitem.link.duplicate-primary"
 	codeSchemaViolation          = "workitem.schema.violation"
 	codeCurrentMissing           = "workitem.current.missing"
@@ -231,6 +232,7 @@ func collectWorkitemFindings(ctx context.Context, root string, registry *links.L
 	}
 
 	promotedTargets := promotedFestivalTargets(ctx, root)
+	shelved := dungeonedWorkitems(ctx, root)
 	primarySeen := make(map[string]string)
 	for _, link := range registry.Links {
 		// A deprecated related-project link (doc 04 D005) is handled solely by
@@ -248,6 +250,19 @@ func collectWorkitemFindings(ctx context.Context, root string, registry *links.L
 				Message:     "workitem_id " + link.WorkitemID + " is not present on disk",
 				FixHint:     "auto-fix removes the link",
 				AutoFixable: true,
+			}
+			// A link is an active workitem's attachment to a working location,
+			// so a shelved workitem should not hold one. Removal is the right
+			// action either way; saying which case this is turns "your registry
+			// is corrupt" into "this is leftover housekeeping". Promote now
+			// releases these itself, so this path covers workitems dungeoned
+			// before that landed.
+			if dungeonPath, ok := shelved[link.WorkitemID]; ok {
+				finding.Code = codeWorkitemShelved
+				finding.Severity = docSeverityWarning
+				finding.Message = "workitem " + link.WorkitemID + " is shelved at " + dungeonPath +
+					"; a workitem that is no longer active should not hold links"
+				finding.FixHint = "auto-fix removes the link"
 			}
 			if target, ok := promotedTargets[link.WorkitemID]; ok {
 				finding.Message = "workitem_id " + link.WorkitemID +
@@ -423,7 +438,7 @@ func autoFixWorkitemFindings(ctx context.Context, root string, registry *links.L
 			continue
 		}
 		switch f.Code {
-		case codeBrokenLink:
+		case codeBrokenLink, codeWorkitemShelved:
 			id := strings.TrimPrefix(f.Target, "link:")
 			if f.migrateToID != "" {
 				if repointLinkByID(registry, id, f.migrateToID, f.migrateToKey) {

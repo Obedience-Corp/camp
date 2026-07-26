@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"io"
 	"os"
 	"path/filepath"
 	"strings"
@@ -51,6 +52,18 @@ type workitemPromoteResult struct {
 	Committed     bool     `json:"committed"`
 	CommitMessage string   `json:"commit_message,omitempty"`
 	Warnings      []string `json:"warnings,omitempty"`
+	// ReleasedLinks are the links dropped because the workitem is no longer
+	// active. Reported so an automatic removal is never silent.
+	ReleasedLinks []releasedLink `json:"released_links,omitempty"`
+}
+
+// releasedLink records a link that promote removed, in enough detail to put it
+// back by hand.
+type releasedLink struct {
+	ID        string `json:"id"`
+	ScopeKind string `json:"scope_kind"`
+	ScopePath string `json:"scope_path"`
+	Role      string `json:"role"`
 }
 
 type commitInputs struct {
@@ -232,8 +245,29 @@ func runWorkitemPromote(cmd *cobra.Command, opts runWorkitemPromoteOptions) erro
 	if opts.JSON {
 		return emitPromoteJSON(cmd, result)
 	}
-	_, err = fmt.Fprintf(cmd.OutOrStdout(), "%s Promoted workitem %s to %s\n", ui.SuccessIcon(), result.ID, result.To)
-	return err
+	if _, err = fmt.Fprintf(cmd.OutOrStdout(), "%s Promoted workitem %s to %s\n",
+		ui.SuccessIcon(), result.ID, result.To); err != nil {
+		return err
+	}
+	return printReleasedLinks(cmd.OutOrStdout(), result)
+}
+
+// printReleasedLinks names every link promote dropped and how to restore it.
+// Removing a row the user did not ask about is only acceptable because it is
+// reported at the moment it happens.
+func printReleasedLinks(w io.Writer, result workitemPromoteResult) error {
+	for _, l := range result.ReleasedLinks {
+		if _, err := fmt.Fprintf(w, "  released link %s (%s:%s); %s is no longer active\n",
+			l.ID, l.ScopeKind, l.ScopePath, result.ID); err != nil {
+			return err
+		}
+	}
+	if len(result.ReleasedLinks) > 0 {
+		if _, err := fmt.Fprintf(w, "  undo: git checkout -- .campaign/workitems/links.yaml\n"); err != nil {
+			return err
+		}
+	}
+	return nil
 }
 
 func emitPromoteJSON(cmd *cobra.Command, result workitemPromoteResult) error {
@@ -246,6 +280,10 @@ func emitPromoteJSON(cmd *cobra.Command, result workitemPromoteResult) error {
 }
 
 func doDungeonPromote(ctx context.Context, campaignRoot string, loc *locate.Location, status string, result *workitemPromoteResult) (*commitInputs, error) {
+	// Capture identity before the move: workitem_key encodes the source path,
+	// which is about to change.
+	oldID, oldKey := promotedWorkitemIdentity(ctx, campaignRoot, loc, result)
+
 	moveRes, err := MoveToDungeon(ctx, campaignRoot, loc, status)
 	if err != nil {
 		return nil, err
@@ -253,12 +291,64 @@ func doDungeonPromote(ctx context.Context, campaignRoot string, loc *locate.Loca
 	result.To = moveRes.ToRel
 
 	dest := append([]string{moveRes.TargetPath}, moveRes.CreatedFiles...)
-	return &commitInputs{
+	ci := &commitInputs{
 		description: fmt.Sprintf("Promote workitem %s to %s", loc.Slug, status),
 		sourcePaths: []string{loc.SourcePath},
 		destPaths:   dest,
 		rewritten:   moveRes.Svc.RewrittenLinkFiles(),
-	}, nil
+	}
+
+	// A link attaches an active workitem to a working location -- usually a
+	// worktree, which is temporary by construction. Shelving the workitem ends
+	// that: nothing should still be checked out "for" completed work, and a
+	// link left behind only resolves to a workitem the selector cannot see
+	// (`camp p commit` silently stops stamping the ref). So the links go with
+	// the workitem, reported rather than dropped quietly.
+	dropped, err := unlinkShelvedWorkitem(ctx, campaignRoot, oldID, oldKey)
+	if err != nil {
+		return nil, camperrors.Wrap(err, "release workitem links on dungeon move")
+	}
+	if len(dropped) > 0 {
+		ci.destPaths = append(ci.destPaths, links.LinksPath(campaignRoot))
+		result.ReleasedLinks = dropped
+	}
+	return ci, nil
+}
+
+// unlinkShelvedWorkitem removes every link pointing at a workitem that just
+// moved into a dungeon and returns them so the caller can report what went.
+func unlinkShelvedWorkitem(ctx context.Context, campaignRoot, oldID, oldKey string) ([]releasedLink, error) {
+	if oldID == "" && oldKey == "" {
+		return nil, nil
+	}
+
+	var dropped []releasedLink
+	err := links.WithLock(ctx, campaignRoot, func(reg *links.Links) error {
+		kept := reg.Links[:0]
+		for _, l := range reg.Links {
+			matches := (oldID != "" && l.WorkitemID == oldID) ||
+				(oldKey != "" && l.WorkitemKey == oldKey)
+			if matches {
+				dropped = append(dropped, releasedLink{
+					ID:        l.ID,
+					ScopeKind: string(l.Scope.Kind),
+					ScopePath: l.Scope.Path,
+					Role:      string(l.Role),
+				})
+				continue
+			}
+			kept = append(kept, l)
+		}
+		if len(dropped) == 0 {
+			return links.ErrSkipSave
+		}
+		reg.Links = kept
+		return nil
+	})
+	if err != nil {
+		return nil, err
+	}
+	return dropped, nil
 }
 
 func doFestivalPromote(ctx context.Context, cmd *cobra.Command, opts runWorkitemPromoteOptions, campaignRoot string, loc *locate.Location, result *workitemPromoteResult) (*commitInputs, error) {
