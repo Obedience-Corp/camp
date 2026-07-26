@@ -4,7 +4,6 @@ import (
 	"encoding/json"
 	"fmt"
 	"os"
-	"os/exec"
 	"path/filepath"
 	"strings"
 
@@ -133,7 +132,7 @@ func runArtifactsList(cmd *cobra.Command, _ []string) error {
 			Path:       artifacts.NormalizeRootPath(r.Path),
 			Policy:     r.EffectivePolicy(),
 			Exists:     exists,
-			Gitignored: verr == nil && isGitignored(cmd, campRoot, r.Path),
+			Gitignored: verr == nil && artifacts.IsGitignored(cmd.Context(), campRoot, r.Path),
 		})
 	}
 
@@ -187,12 +186,12 @@ func runArtifactsAdd(cmd *cobra.Command, args []string) error {
 	normalized := artifacts.NormalizeRootPath(args[0])
 	_, _ = fmt.Fprintf(cmd.OutOrStdout(), "%s Declared artifact root %s\n", ui.SuccessIcon(), normalized)
 
-	if hasTrackedFiles(cmd, campRoot, normalized) {
+	if artifacts.HasTrackedFiles(cmd.Context(), campRoot, normalized) {
 		_, _ = fmt.Fprintf(cmd.ErrOrStderr(),
 			"%s %s contains git-tracked files; artifact roots must not overlap git content (untrack them or pick another directory)\n",
 			ui.WarningIcon(), normalized)
 	}
-	if !isGitignored(cmd, campRoot, normalized) {
+	if !artifacts.IsGitignored(cmd.Context(), campRoot, normalized) {
 		_, _ = fmt.Fprintf(cmd.ErrOrStderr(),
 			"%s %s is not gitignored; add it to .gitignore so artifact bytes never land in git\n",
 			ui.WarningIcon(), normalized)
@@ -250,21 +249,4 @@ func runArtifactsManifest(cmd *cobra.Command, args []string) error {
 	}
 	_, err = cmd.OutOrStdout().Write(data)
 	return err
-}
-
-// isGitignored reports whether git ignores the path (the recommended state
-// for artifact roots).
-func isGitignored(cmd *cobra.Command, campRoot, rel string) bool {
-	check := exec.CommandContext(cmd.Context(), "git", "-C", campRoot, "check-ignore", "-q", "--",
-		filepath.FromSlash(artifacts.NormalizeRootPath(rel)))
-	return check.Run() == nil
-}
-
-// hasTrackedFiles reports whether git tracks anything under the path (a
-// class conflict: the same bytes would be both git content and artifacts).
-func hasTrackedFiles(cmd *cobra.Command, campRoot, rel string) bool {
-	ls := exec.CommandContext(cmd.Context(), "git", "-C", campRoot, "ls-files", "--",
-		filepath.FromSlash(artifacts.NormalizeRootPath(rel)))
-	out, err := ls.Output()
-	return err == nil && len(strings.TrimSpace(string(out))) > 0
 }
