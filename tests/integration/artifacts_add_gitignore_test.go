@@ -132,8 +132,12 @@ func TestIntegration_ArtifactsAddMixedRootReportsSplit(t *testing.T) {
 
 	assert.Contains(t, output, "Declared artifact root videos (mixed)")
 	assert.Contains(t, output, "2 git-tracked files stay with git and are excluded from artifact sync")
-	assert.Contains(t, output, "2 untracked files")
-	assert.Contains(t, output, "are the artifact set")
+	// The byte figure must describe the artifact set alone. The fixture's two
+	// tracked files hold 21 bytes and its two untracked files hold 26, so a
+	// report of 47 B would mean tracked content was counted as artifacts.
+	assert.Contains(t, output, "2 untracked files (26 B) are the artifact set")
+	assert.NotContains(t, output, "(47 B) are the artifact set",
+		"the artifact-set size must exclude git-tracked bytes")
 	assert.Contains(t, output, ".gitignore not modified: ignoring this root would hide tracked content")
 
 	assert.Equal(t, before, readGitignore(t, tc, campPath),

@@ -252,8 +252,10 @@ func printArtifactsMixed(cmd *cobra.Command, normalized string, survey artifacts
 	_, _ = fmt.Fprintf(out, "%s Declared artifact root %s (mixed)\n", ui.SuccessIcon(), normalized)
 	_, _ = fmt.Fprintf(out, "  %s git-tracked files stay with git and are excluded from artifact sync\n",
 		ui.FormatCount(survey.Tracked))
+	// The byte figure describes the artifact set, not the directory: tracked
+	// scripts sitting beside the footage are git's and rsync never carries them.
 	_, _ = fmt.Fprintf(out, "  %s untracked files (%s) are the artifact set\n",
-		ui.FormatCount(survey.Untracked), ui.FormatBytes(survey.TotalBytes))
+		ui.FormatCount(survey.Untracked), ui.FormatBytes(survey.UntrackedBytes))
 	_, _ = fmt.Fprintf(out, "  .gitignore not modified: ignoring this root would hide tracked content\n")
 }
 
@@ -273,6 +275,10 @@ func reportCleanRoot(cmd *cobra.Command, campRoot, normalized string) error {
 	}
 
 	if artifacts.IsGitignored(cmd.Context(), campRoot, normalized) {
+		// Already ignored, by an existing rule or a parent's. Say so rather
+		// than printing nothing, so the absence of an "Added ..." line does
+		// not read as camp having silently skipped the step.
+		_, _ = fmt.Fprintf(out, "  Already gitignored; .gitignore not modified\n")
 		return nil
 	}
 

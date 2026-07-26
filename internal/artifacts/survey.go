@@ -25,6 +25,11 @@ type RootSurvey struct {
 	Untracked int
 	// Ignored files are already invisible to git.
 	Ignored int
+	// UntrackedBytes is the size of the artifact set alone. Reported when
+	// describing what rsync would carry, which is not the same number as the
+	// directory's total: tracked scripts and ignored scratch files live in the
+	// same directory but are not artifacts.
+	UntrackedBytes int64
 	// TotalBytes is the size of every counted file, from lstat. Symlinks
 	// report their own size and are never followed.
 	TotalBytes int64
@@ -55,33 +60,36 @@ func SurveyRoot(ctx context.Context, campRoot, rel string) (RootSurvey, error) {
 	}
 	normalized := NormalizeRootPath(rel)
 
-	classes := []struct {
-		args  []string
-		count *int
-	}{
-		{args: []string{"-c"}},
-		{args: []string{"-o", "--exclude-standard"}},
-		{args: []string{"-o", "-i", "--exclude-standard"}},
+	// One query per class, in the order the counts are assigned below.
+	classes := [][]string{
+		{"-c"},                             // tracked
+		{"-o", "--exclude-standard"},       // untracked: the artifact set
+		{"-o", "-i", "--exclude-standard"}, // ignored
 	}
 
 	var survey RootSurvey
 	counts := []*int{&survey.Tracked, &survey.Untracked, &survey.Ignored}
+	const untrackedClass = 1
 	seen := make(map[string]bool)
 
 	for i, class := range classes {
-		paths, err := lsFiles(ctx, campRoot, normalized, class.args)
+		paths, err := lsFiles(ctx, campRoot, normalized, class)
 		if err != nil {
 			return RootSurvey{}, err
 		}
 		*counts[i] = len(paths)
 		for _, p := range paths {
+			size := fileSize(campRoot, p)
+			if i == untrackedClass {
+				survey.UntrackedBytes += size
+			}
 			// A path can in principle surface in more than one query; size it
 			// once so TotalBytes cannot double-count.
 			if seen[p] {
 				continue
 			}
 			seen[p] = true
-			survey.TotalBytes += fileSize(campRoot, p)
+			survey.TotalBytes += size
 		}
 	}
 	return survey, nil
