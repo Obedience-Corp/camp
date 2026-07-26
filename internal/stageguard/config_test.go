@@ -363,3 +363,12 @@ func TestResolveScopeEmptyConfiguredPaths(t *testing.T) {
 
 func strPtr(s string) *string { return &s }
 func intPtr(i int) *int       { return &i }
+
+// A malformed glob must fail config resolution rather than silently never
+// matching, which would leave the user believing a path is exempt.
+func TestApplyGuardsConfigRejectsMalformedAllowGlob(t *testing.T) {
+	guards := config.GuardsConfig{Allow: []string{"docs/[a-.pdf"}}
+	if _, err := applyGuardsConfig(guards, false, ""); err == nil {
+		t.Fatal("applyGuardsConfig() = nil error, want validation error for a bad glob")
+	}
+}

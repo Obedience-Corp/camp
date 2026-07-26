@@ -149,6 +149,13 @@ func classifyEntry(entry statusEntry) (untracked, ok bool) {
 		// Ignored; only reachable with --ignored, which this package never passes.
 		return false, false
 	default:
+		// Everything else is in the index, including a file the user staged by
+		// hand that has never been committed ("A "). Such a file has no history
+		// to bifurcate, so the design's tracked-file rationale does not reach
+		// it, but the outcome is the same for a mechanical reason: the guard
+		// excludes by staging everything *except* a path, which cannot un-add
+		// something already in the index. Camp reports it and commits it rather
+		// than silently reversing an explicit git add.
 		return false, true
 	}
 }

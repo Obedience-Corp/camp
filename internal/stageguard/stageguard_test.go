@@ -443,3 +443,32 @@ func rootCandidates(n int, size int64) []Candidate {
 	}
 	return candidates
 }
+
+func TestValidateAllow(t *testing.T) {
+	cases := []struct {
+		name    string
+		allow   []string
+		wantErr bool
+	}{
+		{name: "unclosed character class", allow: []string{"docs/[a-.pdf"}, wantErr: true},
+		{name: "bad pattern among good ones", allow: []string{"*.psd", "[", "docs/**"}, wantErr: true},
+		{name: "nil allowlist", allow: nil, wantErr: false},
+		{name: "blank entries are skipped", allow: []string{"", "   "}, wantErr: false},
+		{name: "exact path", allow: []string{"docs/handbook.pdf"}, wantErr: false},
+		{name: "double star suffix", allow: []string{"testdata/**"}, wantErr: false},
+		{name: "extension glob", allow: []string{"*.psd"}, wantErr: false},
+		{name: "character class", allow: []string{"assets/[abc]*.bin"}, wantErr: false},
+	}
+
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			err := ValidateAllow(tc.allow)
+			if tc.wantErr && err == nil {
+				t.Fatal("ValidateAllow() = nil, want error")
+			}
+			if !tc.wantErr && err != nil {
+				t.Fatalf("ValidateAllow() error = %v", err)
+			}
+		})
+	}
+}

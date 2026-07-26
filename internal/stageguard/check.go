@@ -5,6 +5,8 @@ import (
 	"path"
 	"sort"
 	"strings"
+
+	camperrors "github.com/Obedience-Corp/camp/internal/errors"
 )
 
 // dominantPrefixShare is the fraction of a batch one directory must hold to be
@@ -232,6 +234,27 @@ func matchesOne(p, pattern string) bool {
 		}
 	}
 	return false
+}
+
+// ValidateAllow reports the first malformed glob in an allowlist.
+//
+// Matching deliberately ignores pattern errors so one bad entry cannot break
+// evaluation of the rest, which means a typo would otherwise be invisible: the
+// user believes a path is exempt, the guard silently disagrees, and the file
+// gets excluded from their commit anyway. Config resolution calls this so the
+// mistake surfaces where it can be fixed.
+func ValidateAllow(allow []string) error {
+	for _, pattern := range allow {
+		trimmed := strings.TrimSpace(pattern)
+		if trimmed == "" {
+			continue
+		}
+		probe := strings.TrimSuffix(trimmed, "/**")
+		if _, err := path.Match(probe, "probe"); err != nil {
+			return camperrors.Wrapf(err, "invalid allow glob %q", pattern)
+		}
+	}
+	return nil
 }
 
 // SortViolations orders violations for stable reporting: bulk first because it

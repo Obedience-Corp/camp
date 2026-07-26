@@ -80,6 +80,9 @@ func defaultLimits(scopeProject bool) GuardLimits {
 func applyGuardsConfig(g config.GuardsConfig, scopeProject bool, projectName string) (GuardLimits, error) {
 	limits := defaultLimits(scopeProject)
 	limits.Allow = g.ResolveAllow(projectName)
+	if err := ValidateAllow(limits.Allow); err != nil {
+		return GuardLimits{}, camperrors.NewValidation("commit.guards.allow", err.Error(), err)
+	}
 
 	if raw := g.ResolveMaxFileSize(projectName); raw != "" {
 		size, err := ParseByteSize(raw)
