@@ -10,7 +10,11 @@ import (
 	"strings"
 	"time"
 
+	"github.com/spf13/cobra"
+
 	camperrors "github.com/Obedience-Corp/camp/internal/errors"
+	"github.com/Obedience-Corp/camp/internal/machines"
+	"github.com/Obedience-Corp/camp/internal/remote"
 )
 
 // HopOriginEnvVar carries the origin machine identity into a hopped session.
@@ -308,4 +312,98 @@ func suggestedMachineID(host string) string {
 		return ""
 	}
 	return id
+}
+
+// hopBackSelector is the reserved argument for the hop-back gesture. It is
+// checked before selector parsing because `-` is otherwise a legal campaign
+// query that reaches the fuzzy tier and matches an arbitrary hyphenated
+// campaign name, differently on every invocation.
+const hopBackSelector = "-"
+
+// transientOriginSuffix namespaces the in-memory machine built from a payload.
+// The id becomes a ControlMaster socket name, so colliding with a REGISTERED
+// machine id would make ssh reuse that machine's live master and land the hop
+// on the wrong host. A registered id ending in "-origin" would have to be
+// created deliberately.
+const transientOriginSuffix = "-origin"
+
+// runHopBack implements `camp switch -`: return to the machine and campaign this
+// session was hopped from. Registration-independent by design — the origin need
+// never have been adopted here — so it reads the payload and builds a transient
+// machine rather than consulting ~/.obey/machines.yaml. Nothing is written.
+func runHopBack(ctx context.Context, cmd *cobra.Command, printOnly, shellConnect, jsonOut bool) error {
+	raw := os.Getenv(HopOriginEnvVar)
+	if strings.TrimSpace(raw) == "" {
+		return camperrors.New("camp switch -: this session did not start from a camp hop (" +
+			HopOriginEnvVar + " is not set)")
+	}
+	origin, err := ParseHopOrigin(raw)
+	if err != nil {
+		return camperrors.New("camp switch -: " + HopOriginEnvVar + " is malformed (" + err.Error() +
+			"); hop back with 'camp switch <machine>:<campaign>'")
+	}
+	if origin.Campaign == "" {
+		return camperrors.New("camp switch -: origin campaign unknown (the outbound hop did not start " +
+			"inside a campaign); hop back with 'camp switch <machine>:<campaign>'")
+	}
+
+	m, registered := originTarget(origin)
+	if err := guardRemoteOutputFlags(m.ID, printOnly, jsonOut); err != nil {
+		return err
+	}
+	root, err := hopBackResolveRoot(ctx, m, origin.Campaign)
+	if err != nil {
+		return hopBackFailure(err, m, registered)
+	}
+	return emitHopOrRefuse(ctx, cmd, m, origin.Campaign, root, shellConnect)
+}
+
+// originTarget resolves the payload to a machine to hop to. A registered entry
+// matching the origin host wins: it carries the operator's own identity_file,
+// ssh_user, and auth_method, all better information than the payload has. This
+// is the expected steady state once a fleet is mutually adopted.
+//
+// Otherwise the machine is transient and in-memory. AuthMethod is left empty on
+// purpose: the hop argv is identical for tailscale-ssh and ssh-agent (authArgs
+// branches only on IdentityFile), EnsureKeyAuth rejects only ssh-password, and
+// failure classification reads ssh's own stderr. Guessing an auth mode would put
+// a wrong label on the one message an operator reads when a hop breaks.
+func originTarget(origin HopOrigin) (*machines.Machine, bool) {
+	want := strings.ToLower(normalizeDNSName(origin.Host))
+	if mf, err := machines.Load(); err == nil {
+		for i := range mf.Machines {
+			if strings.ToLower(normalizeDNSName(mf.Machines[i].Host)) == want {
+				return &mf.Machines[i], true
+			}
+		}
+	}
+	return &machines.Machine{
+		ID:      transientOriginID(origin.Host),
+		Label:   origin.Host,
+		Host:    origin.Host,
+		SSHUser: origin.User,
+	}, false
+}
+
+// transientOriginID derives the in-memory machine's id. It is only two things:
+// a ControlMaster path component and a name in error text. Both tolerate a
+// generic value; neither tolerates an empty one, which would collapse the socket
+// path to ~/.obey/ssh-ctl/.sock and share one socket across every degenerate
+// origin — the exact cross-host reuse the suffix exists to prevent.
+func transientOriginID(host string) string {
+	if id := suggestedMachineID(host); id != "" {
+		return id + transientOriginSuffix
+	}
+	return strings.TrimPrefix(transientOriginSuffix, "-")
+}
+
+// hopBackFailure explains an unreachable origin. The diagnostic pointer differs
+// by registration because `camp machine diagnose` only knows registered
+// machines: pointing an operator at it for a transient origin sends them to a
+// command that answers "unknown machine".
+func hopBackFailure(err error, m *machines.Machine, registered bool) error {
+	if registered {
+		return camperrors.Wrapf(err, "run 'camp machine diagnose %s' to check reachability", m.ID)
+	}
+	return camperrors.Wrapf(err, "the origin is not registered here, probe it with: %s", remote.ProbeCommand(m))
 }

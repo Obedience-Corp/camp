@@ -3,8 +3,13 @@ package main
 import (
 	"bytes"
 	"context"
+	"errors"
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
+
+	"github.com/spf13/cobra"
 
 	"github.com/Obedience-Corp/camp/internal/machines"
 )
@@ -334,5 +339,256 @@ func TestEmitShellConnectWithoutOriginIsUnchanged(t *testing.T) {
 	}
 	if !strings.Contains(out, `'cd '\''/srv/campaigns/obey'\'' && exec $SHELL -l'`) {
 		t.Errorf("remote command shape changed without an origin: %q", out)
+	}
+}
+
+// newHopBackCmd returns a cobra command whose streams are captured, so a row of
+// the decision table can assert exact stdout and stderr rather than "an error
+// happened".
+func newHopBackCmd() (*cobra.Command, *bytes.Buffer, *bytes.Buffer) {
+	var out, errb bytes.Buffer
+	cmd := &cobra.Command{}
+	cmd.SetOut(&out)
+	cmd.SetErr(&errb)
+	return cmd, &out, &errb
+}
+
+const testOriginPayload = "v1;host=mac-studio.tail37114b.ts.net;user=lancerogers;campaign=obey-campaign;id=mac-studio"
+
+func TestRunHopBackDecisionTable(t *testing.T) {
+	tests := []struct {
+		name         string
+		payload      string
+		setPayload   bool
+		printOnly    bool
+		jsonOut      bool
+		shellConnect bool
+		resolveErr   error
+		wantErr      string
+		wantStdout   string
+	}{
+		{
+			name:    "no origin in this session",
+			wantErr: "camp switch -: this session did not start from a camp hop (CAMP_HOP_ORIGIN is not set)",
+		},
+		{
+			name:       "empty payload reads as absent",
+			payload:    "   ",
+			setPayload: true,
+			wantErr:    "this session did not start from a camp hop",
+		},
+		{
+			name:       "malformed payload names the reason",
+			payload:    "v1;host=a;host=b;user=c",
+			setPayload: true,
+			wantErr:    `camp switch -: CAMP_HOP_ORIGIN is malformed (duplicate key "host"); hop back with 'camp switch <machine>:<campaign>'`,
+		},
+		{
+			name:       "unknown version is malformed, never half-parsed",
+			payload:    "v2;host=a;user=b;campaign=c",
+			setPayload: true,
+			wantErr:    "malformed (unknown payload version)",
+		},
+		{
+			name:       "origin campaign unknown",
+			payload:    "v1;host=mac.ts.net;user=lance",
+			setPayload: true,
+			wantErr:    "camp switch -: origin campaign unknown (the outbound hop did not start inside a campaign); hop back with 'camp switch <machine>:<campaign>'",
+		},
+		{
+			name:       "--print is refused like any remote target",
+			payload:    testOriginPayload,
+			setPayload: true,
+			printOnly:  true,
+			wantErr:    "--print is local-only; use the csw shell wrapper to hop there",
+		},
+		{
+			name:       "--json is refused like any remote target",
+			payload:    testOriginPayload,
+			setPayload: true,
+			jsonOut:    true,
+			wantErr:    "--json is not supported for a remote (machine:) switch; use the csw shell wrapper",
+		},
+		{
+			name:       "bare invocation resolves then refuses to hop",
+			payload:    testOriginPayload,
+			setPayload: true,
+			wantErr:    "; run via the csw shell wrapper to hop there",
+		},
+		{
+			name:         "shell-connect emits the reverse hop line",
+			payload:      testOriginPayload,
+			setPayload:   true,
+			shellConnect: true,
+			wantStdout:   "exec ssh -t ",
+		},
+		{
+			name:       "unreachable transient origin points at a probe, not diagnose",
+			payload:    testOriginPayload,
+			setPayload: true,
+			resolveErr: errors.New("connection refused"),
+			wantErr:    "the origin is not registered here, probe it with: ssh -o BatchMode=yes lancerogers@mac-studio.tail37114b.ts.net true",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if tt.setPayload {
+				t.Setenv(HopOriginEnvVar, tt.payload)
+			} else {
+				t.Setenv(HopOriginEnvVar, "")
+			}
+			// Point machines.yaml at an absent file so the transient path is
+			// exercised deterministically, regardless of the developer's fleet.
+			t.Setenv("CAMP_MACHINES_PATH", filepath.Join(t.TempDir(), "machines.yaml"))
+
+			restore := hopBackResolveRoot
+			hopBackResolveRoot = func(_ context.Context, m *machines.Machine, campaign string) (string, error) {
+				if tt.resolveErr != nil {
+					return "", tt.resolveErr
+				}
+				return "/home/lancerogers/Dev/AI/" + campaign, nil
+			}
+			t.Cleanup(func() { hopBackResolveRoot = restore })
+
+			cmd, stdout, _ := newHopBackCmd()
+			err := runHopBack(context.Background(), cmd, tt.printOnly, tt.shellConnect, tt.jsonOut)
+
+			if tt.wantErr != "" {
+				if err == nil {
+					t.Fatalf("want error containing %q, got nil (stdout %q)", tt.wantErr, stdout.String())
+				}
+				if !strings.Contains(err.Error(), tt.wantErr) {
+					t.Errorf("error\n got %q\nwant it to contain %q", err.Error(), tt.wantErr)
+				}
+				if stdout.Len() != 0 {
+					t.Errorf("a failing hop-back must write nothing to stdout, got %q", stdout.String())
+				}
+				return
+			}
+			if err != nil {
+				t.Fatalf("unexpected error: %v", err)
+			}
+			if !strings.Contains(stdout.String(), tt.wantStdout) {
+				t.Errorf("stdout\n got %q\nwant it to contain %q", stdout.String(), tt.wantStdout)
+			}
+		})
+	}
+}
+
+func TestRunHopBackNeverWritesMachinesFile(t *testing.T) {
+	// Registration-independence is the point of the gesture (D008): hopping back
+	// must work from a machine that has never heard of the origin, and must not
+	// quietly register it either.
+	dir := t.TempDir()
+	path := filepath.Join(dir, "machines.yaml")
+	t.Setenv("CAMP_MACHINES_PATH", path)
+	t.Setenv(HopOriginEnvVar, testOriginPayload)
+
+	restore := hopBackResolveRoot
+	hopBackResolveRoot = func(context.Context, *machines.Machine, string) (string, error) {
+		return "/srv/obey-campaign", nil
+	}
+	t.Cleanup(func() { hopBackResolveRoot = restore })
+
+	cmd, _, _ := newHopBackCmd()
+	if err := runHopBack(context.Background(), cmd, false, true, false); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := os.Stat(path); !os.IsNotExist(err) {
+		t.Errorf("hop-back created %s; it must never write the fleet file", path)
+	}
+}
+
+func TestRunHopBackReverseLineCarriesItsOwnOrigin(t *testing.T) {
+	// The toggle property: the session the reverse hop lands in must know the
+	// machine it just left, or a second `csw -` would claim the session did not
+	// start from a hop.
+	t.Setenv("CAMP_MACHINES_PATH", filepath.Join(t.TempDir(), "machines.yaml"))
+	t.Setenv(HopOriginEnvVar, testOriginPayload)
+
+	restore := hopBackResolveRoot
+	hopBackResolveRoot = func(context.Context, *machines.Machine, string) (string, error) {
+		return "/srv/obey-campaign", nil
+	}
+	t.Cleanup(func() { hopBackResolveRoot = restore })
+
+	cmd, stdout, _ := newHopBackCmd()
+	if err := runHopBack(context.Background(), cmd, false, true, false); err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(stdout.String(), "export "+HopOriginEnvVar+"=") {
+		t.Errorf("reverse hop line carries no origin, so the gesture would be one-way: %q", stdout.String())
+	}
+}
+
+func TestTransientOriginID(t *testing.T) {
+	tests := map[string]string{
+		"mac-studio.tail37114b.ts.net": "mac-studio-origin",
+		"Mac-Studio.local":             "mac-studio-origin",
+		// An id that cannot be derived must still produce a non-empty socket
+		// component: "" would collapse the ControlPath to ~/.obey/ssh-ctl/.sock
+		// and share one socket across every degenerate origin.
+		"100.72.165.77": "origin",
+		"":              "origin",
+	}
+	for host, want := range tests {
+		if got := transientOriginID(host); got != want {
+			t.Errorf("transientOriginID(%q) = %q, want %q", host, got, want)
+		}
+	}
+}
+
+func TestOriginTargetPrefersRegisteredEntry(t *testing.T) {
+	// A registered entry carries the operator's own identity_file and
+	// auth_method, which is better information than the payload has.
+	dir := t.TempDir()
+	path := filepath.Join(dir, "machines.yaml")
+	if err := os.WriteFile(path, []byte(`version: 1
+machines:
+    - id: studio
+      host: MAC-STUDIO.tail37114b.ts.net.
+      auth_method: tailscale-ssh
+      ssh_user: someoneelse
+      identity_file: /keys/id_ed25519
+`), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("CAMP_MACHINES_PATH", path)
+
+	origin, err := ParseHopOrigin(testOriginPayload)
+	if err != nil {
+		t.Fatal(err)
+	}
+	m, registered := originTarget(origin)
+	if !registered {
+		t.Fatal("host match should have been found despite case and trailing-dot differences")
+	}
+	if m.ID != "studio" {
+		t.Errorf("id = %q, want the registered id", m.ID)
+	}
+	if m.IdentityFile != "/keys/id_ed25519" {
+		t.Errorf("registered identity_file was dropped: %+v", m)
+	}
+}
+
+func TestOriginTargetTransientLeavesAuthMethodEmpty(t *testing.T) {
+	// Guessing an auth mode would put a wrong label in front of a hop failure
+	// (FormatHopFailure prefixes by AuthMethod), and the argv is identical
+	// either way, so empty is the honest value.
+	t.Setenv("CAMP_MACHINES_PATH", filepath.Join(t.TempDir(), "machines.yaml"))
+	origin, err := ParseHopOrigin(testOriginPayload)
+	if err != nil {
+		t.Fatal(err)
+	}
+	m, registered := originTarget(origin)
+	if registered {
+		t.Fatal("no machines file, so the origin cannot be registered")
+	}
+	if m.AuthMethod != "" {
+		t.Errorf("AuthMethod = %q, want empty", m.AuthMethod)
+	}
+	if m.Host != "mac-studio.tail37114b.ts.net" || m.SSHUser != "lancerogers" {
+		t.Errorf("transient machine = %+v", m)
 	}
 }

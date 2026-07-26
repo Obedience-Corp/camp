@@ -13,7 +13,6 @@ import (
 	"github.com/spf13/cobra"
 
 	"github.com/Obedience-Corp/camp/cmd/camp/cmdutil"
-	"github.com/Obedience-Corp/camp/internal/campaign"
 	"github.com/Obedience-Corp/camp/internal/config"
 	"github.com/Obedience-Corp/camp/internal/machines"
 	"github.com/Obedience-Corp/camp/internal/nav"
@@ -307,6 +306,12 @@ func runSwitch(cmd *cobra.Command, args []string) error {
 	targetTab := ""
 
 	if len(args) == 1 {
+		// The hop-back gesture is checked before selector parsing: "-" is
+		// otherwise a legal campaign query that reaches the fuzzy tier and
+		// matches an arbitrary hyphenated campaign, differently every run.
+		if args[0] == hopBackSelector {
+			return runHopBack(ctx, cmd, printOnly, shellConnect, jsonOut)
+		}
 		msel, err := cmdutil.ParseMachineSelector(args[0])
 		if err != nil {
 			return err
@@ -444,84 +449,6 @@ func parseSwitchArg(raw string, scope cmdutil.CampaignScope) (cmdutil.ParsedSwit
 		}
 	}
 	return parsed, nil
-}
-
-// runRemoteSwitch resolves a machine:campaign selector by asking the remote
-// machine's own `camp switch --print` for the absolute campaign root over ssh (so
-// the remote registry decides the path), then emits the interactive ssh hop line
-// under --shell-connect. --print is local-only: it MUST print nothing for a remote
-// target so `cd "$(camp switch x --print)"` fails loudly instead of cd-ing wrong.
-func runRemoteSwitch(ctx context.Context, cmd *cobra.Command, msel cmdutil.ParsedMachineSelector, printOnly, shellConnect, jsonOut bool) error {
-	if printOnly {
-		return camperrors.New("remote target " + msel.Machine +
-			": --print is local-only; use the csw shell wrapper to hop there")
-	}
-	if jsonOut {
-		return camperrors.New("--json is not supported for a remote (machine:) switch; use the csw shell wrapper")
-	}
-	mf, err := machines.Load()
-	if err != nil {
-		return err
-	}
-	m, _, found := mf.Lookup(msel.Machine)
-	if !found {
-		return camperrors.New("unknown machine \"" + msel.Machine + "\"; add it to ~/.obey/machines.yaml")
-	}
-	root, err := remote.ResolveRoot(ctx, m, msel.Remainder)
-	if err != nil {
-		return withRemoteSuggestions(err, msel)
-	}
-	if shellConnect {
-		return emitShellConnect(cmd.OutOrStdout(), true, root, m, hopOriginForEmit(ctx, cmd))
-	}
-	return camperrors.New("resolved " + msel.Machine + ":" + msel.Remainder + " -> " + root +
-		"; run via the csw shell wrapper to hop there")
-}
-
-// hopOriginForEmit builds the CAMP_HOP_ORIGIN payload describing THIS machine,
-// for the session on the far side. Every failure yields "" (no export), never
-// an error: the operator asked to hop, not to advertise an origin, so a machine
-// with no reachable name still hops exactly as it does today. A warning goes to
-// stderr because stdout is eval'd by the shell wrapper and must stay one line.
-func hopOriginForEmit(ctx context.Context, cmd *cobra.Command) string {
-	originCampaign := ""
-	if root, err := campaign.DetectCached(ctx); err == nil {
-		if cfg, err := config.LoadCampaignConfig(ctx, root); err == nil {
-			originCampaign = cfg.Name
-		}
-	}
-	origin, err := buildHopOrigin(ctx, originCampaign, runTailscaleStatusForSelf)
-	if err != nil {
-		_, _ = fmt.Fprintf(cmd.ErrOrStderr(),
-			"camp: warning: hop origin unavailable (%v); 'camp switch -' will not work from that session\n", err)
-		return ""
-	}
-	return origin
-}
-
-// withRemoteSuggestions augments a remote resolve failure with near matches
-// from the per-machine completion cache. Cache-only on purpose: the failed
-// resolve already paid one SSH round-trip, and suggestions must not add
-// another. A cold cache simply yields no suggestions.
-func withRemoteSuggestions(err error, msel cmdutil.ParsedMachineSelector) error {
-	names, ok := readMachineCacheCampaigns(msel.Machine)
-	if !ok || len(names) == 0 {
-		return err
-	}
-	query := cmdutil.ParseSwitchSelector(msel.Remainder).Campaign
-	if query == "" {
-		return err
-	}
-	matches := navfuzzy.Filter(names, query)
-	if len(matches) == 0 {
-		return err
-	}
-	limit := min(len(matches), 3)
-	suggestions := make([]string, 0, limit)
-	for _, match := range matches[:limit] {
-		suggestions = append(suggestions, msel.Machine+":"+match.Target)
-	}
-	return camperrors.Wrapf(err, "did you mean %s?", strings.Join(suggestions, ", "))
 }
 
 type switchOutput struct {
