@@ -10,6 +10,7 @@ import (
 	"github.com/Obedience-Corp/camp/internal/artifacts"
 	"github.com/Obedience-Corp/camp/internal/campaign"
 	camperrors "github.com/Obedience-Corp/camp/internal/errors"
+	"github.com/Obedience-Corp/camp/internal/fsutil"
 	"github.com/Obedience-Corp/camp/internal/ui"
 	"github.com/spf13/cobra"
 )
@@ -72,8 +73,10 @@ useful for scripting and for comparing roots across machines.`,
 }
 
 var artifactsOpts struct {
-	json   bool
-	policy string
+	json        bool
+	policy      string
+	dryRun      bool
+	noGitignore bool
 }
 
 func init() {
@@ -81,6 +84,10 @@ func init() {
 		"Output as JSON for scripting")
 	artifactsAddCmd.Flags().StringVar(&artifactsOpts.policy, "policy", artifacts.PolicyAlways,
 		"Sync policy: always (every peer sync) or on-demand (--artifacts-only)")
+	artifactsAddCmd.Flags().BoolVar(&artifactsOpts.dryRun, "dry-run", false,
+		"Report what declaring this root would cover; write nothing")
+	artifactsAddCmd.Flags().BoolVar(&artifactsOpts.noGitignore, "no-gitignore", false,
+		"Declare the root without adding its .gitignore rule")
 
 	artifactsCmd.AddCommand(artifactsListCmd)
 	artifactsCmd.AddCommand(artifactsAddCmd)
@@ -162,12 +169,30 @@ func runArtifactsList(cmd *cobra.Command, _ []string) error {
 	return nil
 }
 
+// gitignoreRuleComment explains, in the file itself, why the rule is there.
+const gitignoreRuleComment = "# Camp artifact root (synced with 'camp sync', not git)"
+
 func runArtifactsAdd(cmd *cobra.Command, args []string) error {
 	ctx := cmd.Context()
 	campRoot, err := campaign.DetectCached(ctx)
 	if err != nil {
 		return camperrors.Wrap(err, "not in a campaign")
 	}
+	normalized := artifacts.NormalizeRootPath(args[0])
+
+	// Survey before declaring so --dry-run and the mixed-root report share one
+	// source of truth, and so a user asking "what would this cover" gets the
+	// same numbers the real run would act on.
+	survey, err := artifacts.SurveyRoot(ctx, campRoot, normalized)
+	if err != nil {
+		return err
+	}
+
+	if artifactsOpts.dryRun {
+		printArtifactsDryRun(cmd, normalized, survey)
+		return nil
+	}
+
 	cfg, err := artifacts.Load(campRoot)
 	if err != nil {
 		return err
@@ -183,19 +208,78 @@ func runArtifactsAdd(cmd *cobra.Command, args []string) error {
 		return err
 	}
 
-	normalized := artifacts.NormalizeRootPath(args[0])
-	_, _ = fmt.Fprintf(cmd.OutOrStdout(), "%s Declared artifact root %s\n", ui.SuccessIcon(), normalized)
+	if survey.Mixed() {
+		printArtifactsMixed(cmd, normalized, survey)
+		return nil
+	}
+	return reportCleanRoot(cmd, campRoot, normalized)
+}
 
-	if artifacts.HasTrackedFiles(cmd.Context(), campRoot, normalized) {
-		_, _ = fmt.Fprintf(cmd.ErrOrStderr(),
-			"%s %s contains git-tracked files; artifact roots must not overlap git content (untrack them or pick another directory)\n",
-			ui.WarningIcon(), normalized)
+// printArtifactsDryRun renders the pre-declaration report: what the root holds
+// and how declaring it would split those files.
+func printArtifactsDryRun(cmd *cobra.Command, normalized string, survey artifacts.RootSurvey) {
+	out := cmd.OutOrStdout()
+	policy := artifactsOpts.policy
+	if policy == "" {
+		policy = artifacts.PolicyAlways
 	}
-	if !artifacts.IsGitignored(cmd.Context(), campRoot, normalized) {
-		_, _ = fmt.Fprintf(cmd.ErrOrStderr(),
-			"%s %s is not gitignored; add it to .gitignore so artifact bytes never land in git\n",
-			ui.WarningIcon(), normalized)
+	_, _ = fmt.Fprintf(out, "%s would be declared as an artifact root (policy: %s)\n", normalized, policy)
+	// Counts are right-aligned to a common width so the breakdown lines up
+	// under the total, per design doc 03's sample. Wider counts widen the
+	// column rather than breaking the alignment.
+	_, _ = fmt.Fprintf(out, "%7s files, %s total\n",
+		ui.FormatCount(survey.TotalFiles()), ui.FormatBytes(survey.TotalBytes))
+	_, _ = fmt.Fprintf(out, "%7s tracked      excluded from artifact sync\n", ui.FormatCount(survey.Tracked))
+	_, _ = fmt.Fprintf(out, "%7s untracked    the artifact set\n", ui.FormatCount(survey.Untracked))
+	_, _ = fmt.Fprintf(out, "%7s ignored\n", ui.FormatCount(survey.Ignored))
+	_, _ = fmt.Fprintf(out, "\nNothing was written. Re-run without --dry-run to declare it.\n")
+}
+
+// printArtifactsMixed reports a root that holds tracked content. Camp never
+// gitignores such a root: the rule would hide tracked files from git without
+// untracking them, so the split is reported and the file is left alone.
+func printArtifactsMixed(cmd *cobra.Command, normalized string, survey artifacts.RootSurvey) {
+	out := cmd.OutOrStdout()
+	_, _ = fmt.Fprintf(out, "%s Declared artifact root %s (mixed)\n", ui.SuccessIcon(), normalized)
+	_, _ = fmt.Fprintf(out, "  %s git-tracked files stay with git and are excluded from artifact sync\n",
+		ui.FormatCount(survey.Tracked))
+	_, _ = fmt.Fprintf(out, "  %s untracked files (%s) are the artifact set\n",
+		ui.FormatCount(survey.Untracked), ui.FormatBytes(survey.TotalBytes))
+	_, _ = fmt.Fprintf(out, "  .gitignore not modified: ignoring this root would hide tracked content\n")
+}
+
+// reportCleanRoot handles a root with no tracked content: the case where a
+// blanket ignore rule is exactly right and camp can act without judgment.
+func reportCleanRoot(cmd *cobra.Command, campRoot, normalized string) error {
+	out := cmd.OutOrStdout()
+	_, _ = fmt.Fprintf(out, "%s Declared artifact root %s\n", ui.SuccessIcon(), normalized)
+
+	if artifactsOpts.noGitignore {
+		if !artifacts.IsGitignored(cmd.Context(), campRoot, normalized) {
+			_, _ = fmt.Fprintf(cmd.ErrOrStderr(),
+				"%s %s is not gitignored; add it to .gitignore so artifact bytes never land in git\n",
+				ui.WarningIcon(), normalized)
+		}
+		return nil
 	}
+
+	if artifacts.IsGitignored(cmd.Context(), campRoot, normalized) {
+		return nil
+	}
+
+	rule := normalized + "/"
+	wrote, err := fsutil.AppendGitignoreEntryIfMissing(
+		filepath.Join(campRoot, ".gitignore"), rule, gitignoreRuleComment)
+	if err != nil {
+		return camperrors.Wrapf(err, "add %q to .gitignore", rule)
+	}
+	if !wrote {
+		return nil
+	}
+
+	_, _ = fmt.Fprintf(out, "%s Added '%s' to .gitignore\n", ui.SuccessIcon(), rule)
+	_, _ = fmt.Fprintf(out, "  Everything in this root now lives outside git and syncs between your\n")
+	_, _ = fmt.Fprintf(out, "  machines with 'camp sync'. Undo: camp artifacts remove %s\n", normalized)
 	return nil
 }
 

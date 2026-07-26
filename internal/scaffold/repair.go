@@ -748,20 +748,9 @@ var campaignGitignoreRequiredRules = []string{
 // operation is append-only and never rewrites the file wholesale.
 func appendGitignoreEntryIfMissing(absDir, entry string) error {
 	gitignorePath := filepath.Join(absDir, config.CampaignDir, ".gitignore")
-	raw, err := os.ReadFile(gitignorePath)
-	if err != nil {
-		return err
-	}
-	if gitignoreHasRule(string(raw), entry) {
-		return nil
-	}
-	suffix := "\n"
-	if len(raw) > 0 && raw[len(raw)-1] != '\n' {
-		suffix = "\n\n"
-	}
-	addition := suffix + campaignGitignoreRuleComment(entry) + "\n" + entry + "\n"
 	// TODO(seq06-lock): concurrent repair runs can still race this read-modify-write append.
-	return fsutil.WriteFileAtomically(gitignorePath, append(raw, []byte(addition)...), 0o644)
+	_, err := fsutil.AppendGitignoreEntryIfMissing(gitignorePath, entry, campaignGitignoreRuleComment(entry))
+	return err
 }
 
 func campaignGitignoreRuleComment(entry string) string {
@@ -781,20 +770,7 @@ func campaignGitignoreRuleComment(entry string) string {
 // like `not-<entry>` or commented-out `# <entry>` do NOT count as
 // present because git would still track the file.
 func gitignoreHasRule(content, entry string) bool {
-	target := strings.TrimSpace(entry)
-	if target == "" {
-		return false
-	}
-	for _, line := range strings.Split(content, "\n") {
-		trimmed := strings.TrimSpace(line)
-		if trimmed == "" || strings.HasPrefix(trimmed, "#") {
-			continue
-		}
-		if trimmed == target {
-			return true
-		}
-	}
-	return false
+	return fsutil.HasGitignoreRule(content, entry)
 }
 
 const rootGitignoreWorktreesComment = "# Git worktrees (machine-local)"
