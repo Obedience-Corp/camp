@@ -1,6 +1,9 @@
 package stageguard
 
 import (
+	"context"
+	"os"
+	"path/filepath"
 	"testing"
 
 	"github.com/Obedience-Corp/camp/internal/config"
@@ -370,5 +373,45 @@ func TestApplyGuardsConfigRejectsMalformedAllowGlob(t *testing.T) {
 	guards := config.GuardsConfig{Allow: []string{"docs/[a-.pdf"}}
 	if _, err := applyGuardsConfig(guards, false, ""); err == nil {
 		t.Fatal("applyGuardsConfig() = nil error, want validation error for a bad glob")
+	}
+}
+
+// A .campaign/ directory with no campaign.yaml is a campaign mid-scaffold.
+// Staging into it must still work: camp init and quest scaffolding stage files
+// into a campaign they are still building, and the guard is a safety net
+// rather than a precondition for camp functioning.
+func TestResolveLimitsMissingCampaignConfigFallsBackToDefaults(t *testing.T) {
+	dir := t.TempDir()
+	if err := os.MkdirAll(filepath.Join(dir, ".campaign"), 0o755); err != nil {
+		t.Fatalf("create .campaign: %v", err)
+	}
+
+	limits, err := ResolveLimits(context.Background(), dir)
+	if err != nil {
+		t.Fatalf("ResolveLimits() error = %v; a campaign mid-scaffold must not fail staging", err)
+	}
+	if limits.MaxFileSize != DefaultMaxFileSize {
+		t.Errorf("MaxFileSize = %d, want the campaign-root default %d", limits.MaxFileSize, DefaultMaxFileSize)
+	}
+	if limits.LargeFiles != ModeAuto || limits.Bulk != ModeBlock {
+		t.Errorf("modes = (%q, %q), want the shipped defaults", limits.LargeFiles, limits.Bulk)
+	}
+}
+
+// A malformed config is a different case: the user has configuration they
+// believe is in effect, so silently substituting defaults could disable a
+// guard they deliberately set.
+func TestResolveLimitsMalformedCampaignConfigPropagates(t *testing.T) {
+	dir := t.TempDir()
+	campaignDir := filepath.Join(dir, ".campaign")
+	if err := os.MkdirAll(campaignDir, 0o755); err != nil {
+		t.Fatalf("create .campaign: %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(campaignDir, "campaign.yaml"), []byte("\tnot: [valid"), 0o644); err != nil {
+		t.Fatalf("write campaign.yaml: %v", err)
+	}
+
+	if _, err := ResolveLimits(context.Background(), dir); err == nil {
+		t.Fatal("ResolveLimits() = nil error for a malformed campaign.yaml, want an error")
 	}
 }

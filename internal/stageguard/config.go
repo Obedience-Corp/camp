@@ -2,6 +2,7 @@ package stageguard
 
 import (
 	"context"
+	"errors"
 	"math"
 	"path/filepath"
 	"strconv"
@@ -45,6 +46,20 @@ func ResolveLimits(ctx context.Context, repoPath string) (GuardLimits, error) {
 
 	cfg, err := config.LoadCampaignConfig(ctx, campaignRoot)
 	if err != nil {
+		// A .campaign/ directory with no campaign.yaml is a campaign mid-
+		// scaffold, not a broken one. The guard is a safety net, not a
+		// precondition for staging: refusing to stage until the config exists
+		// would break `camp init` and quest scaffolding, which stage files
+		// into a campaign they are still building. Fall back to defaults.
+		//
+		// A malformed or unreadable config is different and still propagates:
+		// there the user has configuration they believe is in effect, and
+		// silently substituting defaults could disable a guard they set.
+		var notFound *camperrors.NotFoundError
+		if errors.As(err, &notFound) {
+			scopeProject, _ := resolveScope(campaignRoot, repoPath, config.DefaultCampaignPaths())
+			return defaultLimits(scopeProject), nil
+		}
 		return GuardLimits{}, camperrors.Wrapf(err, "load campaign config at %s", campaignRoot)
 	}
 
@@ -125,14 +140,15 @@ func applyGuardsConfig(g config.GuardsConfig, scopeProject bool, projectName str
 // default, and a worktree keys to the project it belongs to so a per-project
 // override applies to work done in either place.
 func resolveScope(campaignRoot, repoPath string, paths config.CampaignPaths) (scopeProject bool, projectName string) {
-	rootAbs, err := filepath.Abs(campaignRoot)
-	if err != nil {
-		rootAbs = campaignRoot
-	}
-	repoAbs, err := filepath.Abs(repoPath)
-	if err != nil {
-		repoAbs = repoPath
-	}
+	// Both sides are resolved through symlinks before comparison. Campaign
+	// detection may return a resolved path while the caller holds the logical
+	// one (on macOS /var is a symlink to /private/var, and a campaign under a
+	// symlinked home or /tmp hits the same split). Comparing the two spellings
+	// directly makes filepath.Rel emit "..", which would classify the campaign
+	// root itself as a project and silently apply the higher project threshold
+	// exactly where the lower campaign-root one belongs.
+	rootAbs := resolvePath(campaignRoot)
+	repoAbs := resolvePath(repoPath)
 
 	rel, err := filepath.Rel(rootAbs, repoAbs)
 	if err != nil || strings.HasPrefix(rel, "..") {
@@ -151,6 +167,21 @@ func resolveScope(campaignRoot, repoPath string, paths config.CampaignPaths) (sc
 	}
 	segments := strings.Split(rel, "/")
 	return true, segments[len(segments)-1]
+}
+
+// resolvePath makes a path absolute and resolves symlinks. A path that cannot
+// be resolved (it may not exist yet) keeps its absolute form, which is still
+// better than the raw input for comparison.
+func resolvePath(p string) string {
+	abs, err := filepath.Abs(p)
+	if err != nil {
+		abs = p
+	}
+	resolved, err := filepath.EvalSymlinks(abs)
+	if err != nil {
+		return abs
+	}
+	return resolved
 }
 
 // firstSegmentUnder returns the first path segment of rel below container, if

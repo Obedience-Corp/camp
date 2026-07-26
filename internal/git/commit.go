@@ -419,13 +419,40 @@ func CommitAll(ctx context.Context, repoPath, message string) error {
 
 // Stage adds files to the git index (staging area) with automatic lock handling.
 // If files is empty, stages all changes (git add .).
+//
+// Stage-everything forms run the staging guard first; see StageWithGuard. This
+// signature is kept so existing callers compile unchanged, and it discards the
+// guard's outcome. Callers that render what the guard did use StageWithGuard.
 func Stage(ctx context.Context, repoPath string, files []string) error {
+	_, err := StageWithGuard(ctx, repoPath, files)
+	return err
+}
+
+// StageWithGuard stages like Stage and returns what the staging guard decided.
+//
+// The guard runs before anything is staged, so a refusal leaves the index
+// exactly as it was. Over-threshold untracked files are folded into the
+// pathspec as exclusions rather than staged and removed, which keeps staging a
+// single git invocation and composes with exclusions the caller already built.
+//
+// A nil outcome means the guard had nothing to say: the call named explicit
+// paths, the guard is off, or nothing crossed a limit.
+func StageWithGuard(ctx context.Context, repoPath string, files []string) (*StageOutcome, error) {
+	outcome, excluded, err := runStageGuard(ctx, repoPath, files)
+	if err != nil {
+		return nil, err
+	}
+	staged := applyGuardExclusions(files, excluded)
+
 	cfg := DefaultRetryConfig()
 	cfg.OperationName = "stage"
 
-	return WithLockRetry(ctx, repoPath, cfg, func() error {
-		return executeStage(ctx, repoPath, files)
-	})
+	if err := WithLockRetry(ctx, repoPath, cfg, func() error {
+		return executeStage(ctx, repoPath, staged)
+	}); err != nil {
+		return nil, err
+	}
+	return outcome, nil
 }
 
 // executeStage runs the actual git add command.
