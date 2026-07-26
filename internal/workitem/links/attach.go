@@ -66,14 +66,11 @@ func AttachPrimary(ctx context.Context, campaignRoot string, opts AttachOptions)
 		if err := registry.AddLink(out, opts.Replace); err != nil {
 			return err
 		}
-		if errs := Validate(ctx, registry, ValidateOptions{
+		return AsError(ValidateOne(ctx, registry, out.ID, ValidateOptions{
 			CampaignRoot: campaignRoot,
 			AllowMissing: opts.AllowMissing,
 			Now:          out.CreatedAt,
-		}); len(errs) > 0 {
-			return camperrors.NewValidation(errs[0].Field, errs[0].Message, nil)
-		}
-		return nil
+		}))
 	})
 	if err != nil {
 		return Link{}, err

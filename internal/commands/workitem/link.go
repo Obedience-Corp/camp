@@ -176,15 +176,12 @@ func runLink(ctx context.Context, cmd *cobra.Command, opts linkOptions) error {
 		if err := registry.AddLink(link, opts.Replace); err != nil {
 			return err
 		}
-		if errs := links.Validate(ctx, registry, links.ValidateOptions{
+		return links.AsError(links.ValidateOne(ctx, registry, link.ID, links.ValidateOptions{
 			CampaignRoot: root,
 			WorkitemIDs:  knownIDs,
 			AllowMissing: opts.AllowMissing,
 			Now:          link.CreatedAt,
-		}); len(errs) > 0 {
-			return camperrors.NewValidation(errs[0].Field, errs[0].Message, nil)
-		}
-		return nil
+		}))
 	})
 	if err != nil {
 		return err
