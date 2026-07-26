@@ -8,7 +8,7 @@ import (
 	"testing"
 )
 
-func writeLinks(t *testing.T, root string, scopePaths ...string) {
+func writeLinks(t *testing.T, root string, kind string, scopePaths ...string) {
 	t.Helper()
 	if err := os.MkdirAll(filepath.Join(root, ".campaign", "workitems"), 0o755); err != nil {
 		t.Fatal(err)
@@ -18,7 +18,7 @@ func writeLinks(t *testing.T, root string, scopePaths ...string) {
 	for i, p := range scopePaths {
 		b.WriteString("  - id: lnk_20260726_00000" + string(rune('a'+i)) + "\n")
 		b.WriteString("    workitem_id: design-demo-2026-07-26\n")
-		b.WriteString("    scope:\n      kind: worktree\n      path: " + p + "\n")
+		b.WriteString("    scope:\n      kind: " + kind + "\n      path: " + p + "\n")
 		b.WriteString("    role: primary\n")
 		b.WriteString("    created_at: 2026-07-26T00:00:00Z\n")
 		b.WriteString("    created_by: test\n")
@@ -31,11 +31,11 @@ func writeLinks(t *testing.T, root string, scopePaths ...string) {
 
 func TestStaleLinks_QuietWhenEveryScopeExists(t *testing.T) {
 	root := t.TempDir()
-	live := "projects/worktrees/fest/live"
+	live := "workflow/design/live"
 	if err := os.MkdirAll(filepath.Join(root, filepath.FromSlash(live)), 0o755); err != nil {
 		t.Fatal(err)
 	}
-	writeLinks(t, root, live)
+	writeLinks(t, root, "campaign_path", live)
 
 	got, err := StaleLinks(context.Background(), root)
 	if err != nil {
@@ -62,13 +62,13 @@ func TestStaleLinks_CountsAndPluralizes(t *testing.T) {
 		gone []string
 		want string
 	}{
-		{name: "one", gone: []string{"projects/worktrees/fest/a"}, want: "1 workitem link points"},
-		{name: "several", gone: []string{"projects/worktrees/fest/a", "projects/worktrees/fest/b"}, want: "2 workitem links point"},
+		{name: "one", gone: []string{"workflow/design/a"}, want: "1 workitem link points"},
+		{name: "several", gone: []string{"workflow/design/a", "workflow/design/b"}, want: "2 workitem links point"},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
 			root := t.TempDir()
-			writeLinks(t, root, tc.gone...)
+			writeLinks(t, root, "campaign_path", tc.gone...)
 
 			got, err := StaleLinks(context.Background(), root)
 			if err != nil {
@@ -87,5 +87,21 @@ func TestStaleLinks_CountsAndPluralizes(t *testing.T) {
 				t.Fatalf("ID = %q, want %q", got.ID, StaleLinksID)
 			}
 		})
+	}
+}
+
+// Worktrees are gitignored as machine-local, so on a campaign synced across two
+// machines every worktree the other machine owns is absent here. Counting those
+// would make the notice permanent and unactionable.
+func TestStaleLinks_IgnoresMachineLocalScopes(t *testing.T) {
+	root := t.TempDir()
+	writeLinks(t, root, "worktree", "projects/worktrees/fest/on-my-laptop")
+
+	got, err := StaleLinks(context.Background(), root)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got != nil {
+		t.Fatalf("a missing worktree must not raise a notice, got %+v", got)
 	}
 }

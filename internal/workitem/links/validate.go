@@ -2,6 +2,7 @@ package links
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"regexp"
 	"strings"
@@ -202,7 +203,14 @@ func validateOneLink(link Link, opts ValidateOptions, now time.Time,
 		addErr("scope.path", "must not contain ..")
 	} else if opts.CampaignRoot != "" && !opts.AllowMissing {
 		if err := quest.ValidateLinkPath(opts.CampaignRoot, link.Scope.Path); err != nil {
-			addErr("scope.path", err.Error())
+			// "the target must exist" is not an invariant for a machine-local
+			// scope: a worktree living on the user's other machine is absent
+			// here and correct there. Escaping the campaign root still is one,
+			// so only the existence half is relaxed.
+			outOfBounds := errors.Is(err, camperrors.ErrInvalidInput)
+			if outOfBounds || !MachineLocal(opts.CampaignRoot, link.Scope) {
+				addErr("scope.path", err.Error())
+			}
 		}
 	}
 	if msg, ok := checkKindPathPrefix(link.Scope); !ok {

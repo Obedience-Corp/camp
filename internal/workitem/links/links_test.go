@@ -317,7 +317,9 @@ func TestValidateOne_StaleRowDoesNotBlockNewLink(t *testing.T) {
 	stale := makeValidLink(t, root)
 	stale.ID = genLinkID(t)
 	stale.WorkitemID = "design-deleted-2026-05-01"
-	stale.Scope = LinkScope{Kind: ScopeWorktree, Path: "projects/worktrees/gone/removed"}
+	// A tracked path, so its absence is authoritative. A worktree would be
+	// machine-local and correctly exempt from the existence check entirely.
+	stale.Scope = LinkScope{Kind: ScopeCampaignPath, Path: "workflow/design/removed"}
 
 	fresh := makeValidLink(t, root)
 	l := &Links{Version: LinksSchemaVersion, Links: []Link{stale, fresh}}
@@ -351,6 +353,27 @@ func TestValidateOne_StillEnforcesRegistryWideUniqueness(t *testing.T) {
 	}
 	if !found {
 		t.Fatalf("expected duplicate-primary finding for the subject link, got %v", errs)
+	}
+}
+
+// "the scope target exists" is not an invariant for a machine-local scope: the
+// worktree may live on the user's other machine. Escaping the campaign root
+// still is one.
+func TestValidate_ExemptsMachineLocalScopesFromExistence(t *testing.T) {
+	root := t.TempDir()
+
+	worktree := makeValidLink(t, root)
+	worktree.Scope = LinkScope{Kind: ScopeWorktree, Path: "projects/worktrees/fest/elsewhere"}
+	l := &Links{Version: LinksSchemaVersion, Links: []Link{worktree}}
+	if errs := Validate(context.Background(), l, ValidateOptions{CampaignRoot: root}); len(errs) != 0 {
+		t.Fatalf("a worktree absent from this machine is not a violation: %v", errs)
+	}
+
+	tracked := makeValidLink(t, root)
+	tracked.Scope = LinkScope{Kind: ScopeCampaignPath, Path: "workflow/design/removed"}
+	l = &Links{Version: LinksSchemaVersion, Links: []Link{tracked}}
+	if errs := Validate(context.Background(), l, ValidateOptions{CampaignRoot: root}); len(errs) == 0 {
+		t.Fatal("a missing tracked path is still a violation")
 	}
 }
 

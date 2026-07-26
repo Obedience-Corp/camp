@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"io"
 	"path/filepath"
 
 	"github.com/Obedience-Corp/camp/cmd/camp/cmdutil"
@@ -166,7 +167,7 @@ func runProjectWorktreeAdd(cmd *cobra.Command, args []string) error {
 	fmt.Printf("  Branch: %s\n", ui.Value(result.Branch))
 
 	if linkTarget != nil {
-		link, lerr := attachWorktreeLink(ctx, campRoot, linkTarget, filepath.ToSlash(result.RelativePath))
+		link, lerr := attachWorktreeLink(ctx, campRoot, linkTarget, filepath.ToSlash(result.RelativePath), cmd.ErrOrStderr())
 		if lerr != nil {
 			return camperrors.Wrap(lerr, "worktree created but workitem link failed")
 		}
@@ -195,7 +196,7 @@ func runProjectWorktreeAdd(cmd *cobra.Command, args []string) error {
 // (and therefore camp p commit) picks up the workitem ref inside that tree.
 // The workitem is resolved and validated by the caller before the worktree is
 // created, so a bad selector never leaves a dangling worktree behind.
-func attachWorktreeLink(ctx context.Context, campRoot string, wi *wkitem.WorkItem, relativeWorktreePath string) (links.Link, error) {
+func attachWorktreeLink(ctx context.Context, campRoot string, wi *wkitem.WorkItem, relativeWorktreePath string, report io.Writer) (links.Link, error) {
 	scopePath := relativeWorktreePath
 	if scopePath == "" {
 		return links.Link{}, camperrors.NewValidation("worktree", "missing worktree relative path", nil)
@@ -209,5 +210,6 @@ func attachWorktreeLink(ctx context.Context, campRoot string, wi *wkitem.WorkIte
 		},
 		CreatedBy: "camp_project_worktree_add",
 		Replace:   true,
+		Report:    report,
 	})
 }

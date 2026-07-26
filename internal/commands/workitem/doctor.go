@@ -32,6 +32,7 @@ const (
 	codeBrokenScope              = "workitem.scope.broken"
 	codeOutOfBounds              = "workitem.scope.out-of-bounds"
 	codeScopeUnvalidatable       = "workitem.scope.unvalidatable"
+	codeScopeNotLocal            = "workitem.scope.not-on-this-machine"
 	codeDuplicatePrimary         = "workitem.link.duplicate-primary"
 	codeSchemaViolation          = "workitem.schema.violation"
 	codeCurrentMissing           = "workitem.current.missing"
@@ -261,14 +262,31 @@ func collectWorkitemFindings(ctx context.Context, root string, registry *links.L
 		}
 		scopeMissing := !scopeTargetExists(root, link.Scope.Path)
 		if scopeMissing && !deprecatedRelatedProject {
-			findings = append(findings, docFinding{
-				Code:        codeBrokenScope,
-				Severity:    docSeverityError,
-				Target:      "link:" + link.ID,
-				Message:     "scope path " + link.Scope.Path + " does not exist",
-				FixHint:     "remove the link or restore the directory; auto-fix removes the link",
-				AutoFixable: true,
-			})
+			// links.yaml is tracked, so removing a row propagates to every
+			// machine this campaign syncs to. A missing worktree or an
+			// uninitialized submodule is absent *here*, not gone, and deleting
+			// its link would destroy a row that is correct elsewhere. Report
+			// those and leave them alone.
+			if links.MachineLocal(root, link.Scope) {
+				findings = append(findings, docFinding{
+					Code:     codeScopeNotLocal,
+					Severity: docSeverityWarning,
+					Target:   "link:" + link.ID,
+					Message: "scope path " + link.Scope.Path + " is not on this machine" +
+						" (" + string(link.Scope.Kind) + " scopes are machine-local)",
+					FixHint: "expected if the worktree or submodule lives on another machine;" +
+						" remove it explicitly with `camp workitem unlink --id " + link.ID + "` if it is really gone",
+				})
+			} else {
+				findings = append(findings, docFinding{
+					Code:        codeBrokenScope,
+					Severity:    docSeverityError,
+					Target:      "link:" + link.ID,
+					Message:     "scope path " + link.Scope.Path + " does not exist",
+					FixHint:     "remove the link or restore the directory; auto-fix removes the link",
+					AutoFixable: true,
+				})
+			}
 		}
 		if err := quest.ValidateLinkPath(root, link.Scope.Path); err != nil {
 			switch {

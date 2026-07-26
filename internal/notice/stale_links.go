@@ -2,8 +2,6 @@ package notice
 
 import (
 	"context"
-	"os"
-	"path/filepath"
 	"strconv"
 
 	"github.com/Obedience-Corp/camp/internal/workitem/links"
@@ -12,13 +10,18 @@ import (
 // StaleLinksID identifies the stale-workitem-links signal.
 const StaleLinksID = "workitem-links-stale"
 
-// StaleLinks reports a notice when links.yaml has rows whose scope path is gone
-// from disk -- a deleted worktree, a renamed design directory.
+// StaleLinks reports a notice when links.yaml has rows whose scope target is
+// authoritatively gone -- a deleted design directory, a removed festival.
 //
-// Writers no longer refuse on stale rows (see links.ValidateOne), so rot that
-// used to announce itself by breaking the next `camp workitem link` is now
-// silent. This is what makes it visible again, on a command the user already
-// runs, pointing at the repair that already exists.
+// Writers prune these as they go and say so, so the notice is the backstop for
+// a campaign that has not written a link since the rot appeared, not the
+// primary surface.
+//
+// It deliberately ignores machine-local scopes. Worktrees are gitignored by
+// camp's own scaffold and submodules may simply be uncloned, so on a campaign
+// synced across two machines every row the other machine owns would be counted
+// here. That notice would be permanent, unactionable, and would train the user
+// to ignore the next one. See links.MachineLocal.
 //
 // It stays stat-level as the package requires: one read of links.yaml plus one
 // stat per row. Broken workitem_id references need the on-disk workitem set,
@@ -35,10 +38,10 @@ func StaleLinks(ctx context.Context, campaignRoot string) (*Notice, error) {
 		if ctx.Err() != nil {
 			return nil, ctx.Err()
 		}
-		if link.Scope.Path == "" {
+		if link.Scope.Path == "" || links.MachineLocal(campaignRoot, link.Scope) {
 			continue
 		}
-		if _, err := os.Stat(filepath.Join(campaignRoot, filepath.FromSlash(link.Scope.Path))); os.IsNotExist(err) {
+		if !links.ScopeTargetExists(campaignRoot, link.Scope) {
 			stale++
 		}
 	}
