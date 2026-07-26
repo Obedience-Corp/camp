@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"io"
 	"path/filepath"
 
 	camperrors "github.com/Obedience-Corp/camp/internal/errors"
@@ -170,7 +171,7 @@ func runWorktreesCreate(cmd *cobra.Command, args []string) error {
 	fmt.Printf("  Branch: %s\n", ui.Value(result.Branch))
 
 	if linkTarget != nil {
-		link, lerr := attachWorktreeLink(ctx, campRoot, linkTarget, filepath.ToSlash(result.RelativePath))
+		link, lerr := attachWorktreeLink(ctx, campRoot, linkTarget, filepath.ToSlash(result.RelativePath), cmd.ErrOrStderr())
 		if lerr != nil {
 			return camperrors.Wrap(lerr, "worktree created but workitem link failed")
 		}
@@ -195,7 +196,7 @@ func runWorktreesCreate(cmd *cobra.Command, args []string) error {
 // attachWorktreeLink attaches a primary worktree link for an already-resolved
 // workitem so the resolver (and therefore camp p commit) picks up the workitem
 // ref inside that tree.
-func attachWorktreeLink(ctx context.Context, campRoot string, wi *wkitem.WorkItem, relativeWorktreePath string) (links.Link, error) {
+func attachWorktreeLink(ctx context.Context, campRoot string, wi *wkitem.WorkItem, relativeWorktreePath string, report io.Writer) (links.Link, error) {
 	return links.AttachPrimary(ctx, campRoot, links.AttachOptions{
 		WorkitemID:  wkitem.LinkWorkitemID(wi),
 		WorkitemKey: wi.Key,
@@ -205,5 +206,6 @@ func attachWorktreeLink(ctx context.Context, campRoot string, wi *wkitem.WorkIte
 		},
 		CreatedBy: "camp_worktrees_create",
 		Replace:   true,
+		Report:    report,
 	})
 }

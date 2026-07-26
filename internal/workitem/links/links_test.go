@@ -306,6 +306,103 @@ func TestValidate_HappyPath(t *testing.T) {
 	}
 }
 
+// A stale row -- one whose scope path was deleted -- must not make a valid new
+// link unwritable. Before ValidateOne, a single deleted worktree failed every
+// subsequent `camp workitem link` and `camp project worktree add --workitem` in
+// the campaign, and the error named the stale row's path rather than anything
+// the user had touched.
+func TestValidateOne_StaleRowDoesNotBlockNewLink(t *testing.T) {
+	root := t.TempDir()
+
+	stale := makeValidLink(t, root)
+	stale.ID = genLinkID(t)
+	stale.WorkitemID = "design-deleted-2026-05-01"
+	// A tracked path, so its absence is authoritative. A worktree would be
+	// machine-local and correctly exempt from the existence check entirely.
+	stale.Scope = LinkScope{Kind: ScopeCampaignPath, Path: "workflow/design/removed"}
+
+	fresh := makeValidLink(t, root)
+	l := &Links{Version: LinksSchemaVersion, Links: []Link{stale, fresh}}
+	opts := ValidateOptions{CampaignRoot: root}
+
+	if errs := Validate(context.Background(), l, opts); len(errs) == 0 {
+		t.Fatal("expected whole-registry Validate to report the stale row")
+	}
+	if errs := ValidateOne(context.Background(), l, fresh.ID, opts); len(errs) != 0 {
+		t.Fatalf("stale row blocked a valid new link: %v", errs)
+	}
+	if errs := ValidateOne(context.Background(), l, stale.ID, opts); len(errs) == 0 {
+		t.Fatal("ValidateOne must still report the stale row when it is the subject")
+	}
+}
+
+// Uniqueness spans the registry, so ValidateOne still has to see the other rows.
+func TestValidateOne_StillEnforcesRegistryWideUniqueness(t *testing.T) {
+	root := t.TempDir()
+	existing := makeValidLink(t, root)
+	dup := makeValidLink(t, root) // same scope, also primary
+	dup.WorkitemID = "design-other-2026-05-24"
+	l := &Links{Version: LinksSchemaVersion, Links: []Link{existing, dup}}
+
+	errs := ValidateOne(context.Background(), l, dup.ID, ValidateOptions{CampaignRoot: root})
+	found := false
+	for _, e := range errs {
+		if e.Field == "role" && strings.Contains(e.Message, "duplicate primary") {
+			found = true
+		}
+	}
+	if !found {
+		t.Fatalf("expected duplicate-primary finding for the subject link, got %v", errs)
+	}
+}
+
+// "the scope target exists" is not an invariant for a machine-local scope: the
+// worktree may live on the user's other machine. Escaping the campaign root
+// still is one.
+func TestValidate_ExemptsMachineLocalScopesFromExistence(t *testing.T) {
+	root := t.TempDir()
+
+	worktree := makeValidLink(t, root)
+	worktree.Scope = LinkScope{Kind: ScopeWorktree, Path: "projects/worktrees/fest/elsewhere"}
+	l := &Links{Version: LinksSchemaVersion, Links: []Link{worktree}}
+	if errs := Validate(context.Background(), l, ValidateOptions{CampaignRoot: root}); len(errs) != 0 {
+		t.Fatalf("a worktree absent from this machine is not a violation: %v", errs)
+	}
+
+	tracked := makeValidLink(t, root)
+	tracked.Scope = LinkScope{Kind: ScopeCampaignPath, Path: "workflow/design/removed"}
+	l = &Links{Version: LinksSchemaVersion, Links: []Link{tracked}}
+	if errs := Validate(context.Background(), l, ValidateOptions{CampaignRoot: root}); len(errs) == 0 {
+		t.Fatal("a missing tracked path is still a violation")
+	}
+}
+
+func TestValidateOne_UnknownIDIsAnError(t *testing.T) {
+	l := &Links{Version: LinksSchemaVersion, Links: []Link{}}
+	errs := ValidateOne(context.Background(), l, "lnk_20260726_abcdef", ValidateOptions{})
+	if len(errs) != 1 || errs[0].Field != "id" {
+		t.Fatalf("expected a single id error, got %v", errs)
+	}
+}
+
+// AsError reports every failure, not just the first, so fixing a link is one
+// round trip instead of one per problem.
+func TestAsError_ReportsAllFailures(t *testing.T) {
+	if err := AsError(nil); err != nil {
+		t.Fatalf("AsError(nil) = %v, want nil", err)
+	}
+	errs := []ValidationError{
+		{Field: "role", Message: "unknown role: bogus"},
+		{Field: "created_by", Message: "required"},
+	}
+	msg := AsError(errs).Error()
+	for _, want := range []string{"unknown role: bogus", "created_by: required"} {
+		if !strings.Contains(msg, want) {
+			t.Fatalf("AsError message %q missing %q", msg, want)
+		}
+	}
+}
+
 func TestValidate_CreatedAtAllowsHistoricalAndRejectsFutureSkew(t *testing.T) {
 	root := t.TempDir()
 	now := time.Date(2026, 5, 27, 12, 0, 0, 0, time.UTC)

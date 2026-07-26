@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"io"
 	"path"
 	"path/filepath"
 	"strings"
@@ -145,7 +146,7 @@ func runWorktree(cmd *cobra.Command, opts worktreeOptions) error {
 		return err
 	}
 
-	link, err := attachWorktreeLink(ctx, root, wi, filepath.ToSlash(result.RelativePath))
+	link, err := attachWorktreeLink(ctx, root, wi, filepath.ToSlash(result.RelativePath), cmd.ErrOrStderr())
 	if err != nil {
 		return camperrors.Wrap(err, "worktree created but workitem link failed")
 	}
@@ -261,7 +262,7 @@ func linkMatchesWorkitem(link links.Link, wi *wkitem.WorkItem) bool {
 
 // attachWorktreeLink primary-links the worktree so the resolver (and therefore
 // camp p commit) picks up the workitem ref inside that tree.
-func attachWorktreeLink(ctx context.Context, root string, wi *wkitem.WorkItem, relativeWorktreePath string) (links.Link, error) {
+func attachWorktreeLink(ctx context.Context, root string, wi *wkitem.WorkItem, relativeWorktreePath string, report io.Writer) (links.Link, error) {
 	if relativeWorktreePath == "" {
 		return links.Link{}, camperrors.NewValidation("worktree", "missing worktree relative path", nil)
 	}
@@ -275,6 +276,7 @@ func attachWorktreeLink(ctx context.Context, root string, wi *wkitem.WorkItem, r
 		},
 		CreatedBy: "camp_workitem_worktree",
 		Replace:   true,
+		Report:    report,
 	})
 }
 

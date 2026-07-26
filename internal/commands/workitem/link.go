@@ -157,7 +157,13 @@ func runLink(ctx context.Context, cmd *cobra.Command, opts linkOptions) error {
 	}
 
 	var link links.Link
+	var pruned []links.Pruned
 	err = links.WithLock(ctx, root, func(registry *links.Links) error {
+		// Drop rows whose scope target is provably gone. Machine-local scopes
+		// are never touched (see links.MachineLocal), and a missing workitem is
+		// left to `camp workitem doctor` (see links.Dead).
+		pruned = links.PruneDead(root, registry)
+
 		// Generate the ID inside the lock so the collision retry sees
 		// the current registry state, not a stale snapshot.
 		id, idErr := generateLinkID(registry)
@@ -176,19 +182,17 @@ func runLink(ctx context.Context, cmd *cobra.Command, opts linkOptions) error {
 		if err := registry.AddLink(link, opts.Replace); err != nil {
 			return err
 		}
-		if errs := links.Validate(ctx, registry, links.ValidateOptions{
+		return links.AsError(links.ValidateOne(ctx, registry, link.ID, links.ValidateOptions{
 			CampaignRoot: root,
 			WorkitemIDs:  knownIDs,
 			AllowMissing: opts.AllowMissing,
 			Now:          link.CreatedAt,
-		}); len(errs) > 0 {
-			return camperrors.NewValidation(errs[0].Field, errs[0].Message, nil)
-		}
-		return nil
+		}))
 	})
 	if err != nil {
 		return err
 	}
+	links.ReportPruned(cmd.ErrOrStderr(), pruned)
 
 	ledger.NewFromRoot(ctx, root, ledger.WarnTo(cmd.ErrOrStderr())).
 		Emit(ctx, ledgerkit.KindCreated, ledgerkit.Scope{Workitem: link.WorkitemID},
