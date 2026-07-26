@@ -407,3 +407,31 @@ func hopBackFailure(err error, m *machines.Machine, registered bool) error {
 	}
 	return camperrors.Wrapf(err, "the origin is not registered here, probe it with: %s", remote.ProbeCommand(m))
 }
+
+// isSelfMachine reports whether a selector's machine segment names THIS
+// machine, by comparing against the id derived from this machine's reachable
+// name — character for character the derivation that fills the payload's id
+// field, so the two answers cannot disagree.
+//
+// Ordering matters and is deliberate. This is checked only AFTER
+// machines.LocalMachineID and only for a selector that would otherwise hop, so
+// the detection cost (a tailscale probe) never lands on a successful local
+// switch. A registered machine still wins: a machines.yaml entry pointing at
+// this machine is a misconfiguration that `camp machine adopt` refuses to
+// create, and honoring the operator's explicit file here is better than
+// second-guessing it on every hop.
+func isSelfMachine(ctx context.Context, id string) bool {
+	if id == "" {
+		return false
+	}
+	if mf, err := machines.Load(); err == nil {
+		if _, _, found := mf.Lookup(id); found {
+			return false
+		}
+	}
+	host, err := detectReachableName(ctx, runTailscaleStatusForSelf)
+	if err != nil || host == "" {
+		return false
+	}
+	return suggestedMachineID(host) == id
+}

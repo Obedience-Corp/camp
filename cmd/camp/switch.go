@@ -316,7 +316,11 @@ func runSwitch(cmd *cobra.Command, args []string) error {
 		if err != nil {
 			return err
 		}
-		if msel.Machine != "" && msel.Machine != machines.LocalMachineID {
+		// A selector naming THIS machine resolves locally. Without this, the
+		// same string that works on the host ("archdtop:notes" typed on the
+		// mac) would try to ssh archdtop to itself once you are on it, which is
+		// the shape agents and humans both produce after a hop.
+		if msel.Machine != "" && msel.Machine != machines.LocalMachineID && !isSelfMachine(ctx, msel.Machine) {
 			return runRemoteSwitch(ctx, cmd, msel, printOnly, shellConnect, jsonOut)
 		}
 		if reg.Len() == 0 {

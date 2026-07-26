@@ -592,3 +592,53 @@ func TestOriginTargetTransientLeavesAuthMethodEmpty(t *testing.T) {
 		t.Errorf("transient machine = %+v", m)
 	}
 }
+
+func TestIsSelfMachine(t *testing.T) {
+	// This machine's own derived id, computed the same way the payload builder
+	// computes it, so the test asserts the shared derivation rather than a
+	// hardcoded hostname.
+	host, err := detectReachableName(context.Background(), nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	self := suggestedMachineID(host)
+	if self == "" {
+		t.Skip("this machine's hostname does not derive a valid id")
+	}
+
+	t.Run("self id matches", func(t *testing.T) {
+		t.Setenv("CAMP_MACHINES_PATH", filepath.Join(t.TempDir(), "machines.yaml"))
+		if !isSelfMachine(context.Background(), self) {
+			t.Errorf("isSelfMachine(%q) = false, want true", self)
+		}
+	})
+
+	t.Run("another machine does not match", func(t *testing.T) {
+		t.Setenv("CAMP_MACHINES_PATH", filepath.Join(t.TempDir(), "machines.yaml"))
+		if isSelfMachine(context.Background(), "definitely-not-this-machine") {
+			t.Error("a foreign id must not read as self")
+		}
+	})
+
+	t.Run("empty id is not self", func(t *testing.T) {
+		if isSelfMachine(context.Background(), "") {
+			t.Error("empty id must not read as self")
+		}
+	})
+
+	t.Run("a registered entry wins over self detection", func(t *testing.T) {
+		// A machines.yaml row pointing at this machine is a misconfiguration
+		// adopt refuses to create; honoring the operator's explicit file beats
+		// second-guessing it on every hop.
+		dir := t.TempDir()
+		path := filepath.Join(dir, "machines.yaml")
+		if err := os.WriteFile(path, []byte("version: 1\nmachines:\n    - id: "+self+
+			"\n      host: somewhere.else\n      auth_method: ssh-agent\n"), 0o600); err != nil {
+			t.Fatal(err)
+		}
+		t.Setenv("CAMP_MACHINES_PATH", path)
+		if isSelfMachine(context.Background(), self) {
+			t.Error("a registered entry must take precedence over self detection")
+		}
+	})
+}
