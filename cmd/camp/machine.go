@@ -410,6 +410,9 @@ func runMachineDiagnose(cmd *cobra.Command, args []string) error {
 		m := &targets[i]
 		d := remote.CheckControlMaster(ctx, m)
 		remoteVersion, remoteCommit := probeRemoteCampVersion(ctx, m)
+		// Diagnose is the only surface that pays for a live probe, so it is the
+		// only one that can warm the cache the hop path reads.
+		writeMachineVersionCache(m.ID, remoteVersion, remoteCommit)
 		row := machineDiagnoseRow{
 			ID:           m.ID,
 			Host:         m.Host,
