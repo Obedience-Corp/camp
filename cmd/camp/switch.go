@@ -13,6 +13,7 @@ import (
 	"github.com/spf13/cobra"
 
 	"github.com/Obedience-Corp/camp/cmd/camp/cmdutil"
+	"github.com/Obedience-Corp/camp/internal/campaign"
 	"github.com/Obedience-Corp/camp/internal/config"
 	"github.com/Obedience-Corp/camp/internal/machines"
 	"github.com/Obedience-Corp/camp/internal/nav"
@@ -365,23 +366,34 @@ func runSwitch(cmd *cobra.Command, args []string) error {
 	}
 
 	if shellConnect {
-		return emitShellConnect(cmd.OutOrStdout(), false, targetPath, nil)
+		return emitShellConnect(cmd.OutOrStdout(), false, targetPath, nil, "")
 	}
 	return emitSwitchSelection(cmd, selected, targetPath, targetTab, printOnly, jsonOut)
 }
 
 // emitShellConnect prints exactly one shell line for the camp() wrapper to eval.
 // Local: `cd -- '<abs-path>'` (identical effect to today's --print + wrapper cd).
-// Remote: `exec ssh -t <opts> '<target>' '<cd root && exec $SHELL -l>'`, where exec
-// replaces the shell (so quitting the remote shell returns the user locally), -t
-// forces a PTY, and $SHELL expands on the REMOTE side because the whole remote
-// command is single-quoted here so the local shell never touches the '$'.
-func emitShellConnect(w io.Writer, isRemote bool, path string, m *machines.Machine) error {
+// Remote: `exec ssh -t <opts> '<target>' '<export origin && cd root && exec $SHELL -l>'`,
+// where exec replaces the shell (so quitting the remote shell returns the user
+// locally), -t forces a PTY, and $SHELL expands on the REMOTE side because the
+// whole remote command is single-quoted here so the local shell never touches
+// the '$'.
+//
+// origin is a complete CAMP_HOP_ORIGIN payload or "". It is exported before the
+// cd so it survives into the login shell that replaces this process image: an
+// exported variable is part of the new image's envp, and login rc files may
+// extend the environment but do not reset an unrelated inherited variable.
+// Assembly and validation happen before the call, so this function's only job
+// stays rendering one line.
+func emitShellConnect(w io.Writer, isRemote bool, path string, m *machines.Machine, origin string) error {
 	if !isRemote {
 		_, err := fmt.Fprintf(w, "cd -- %s\n", remote.ShellQuote(path))
 		return err
 	}
 	inner := "cd " + remote.ShellQuote(path) + " && exec $SHELL -l"
+	if origin != "" {
+		inner = "export " + HopOriginEnvVar + "=" + remote.ShellQuote(origin) + " && " + inner
+	}
 	// Quote every opt token, not just target/inner: ControlPath (under $HOME) and
 	// an -i identity file may hold spaces/metacharacters, which would otherwise
 	// split the eval'd line into the wrong argv before ssh ever runs.
@@ -460,10 +472,31 @@ func runRemoteSwitch(ctx context.Context, cmd *cobra.Command, msel cmdutil.Parse
 		return withRemoteSuggestions(err, msel)
 	}
 	if shellConnect {
-		return emitShellConnect(cmd.OutOrStdout(), true, root, m)
+		return emitShellConnect(cmd.OutOrStdout(), true, root, m, hopOriginForEmit(ctx, cmd))
 	}
 	return camperrors.New("resolved " + msel.Machine + ":" + msel.Remainder + " -> " + root +
 		"; run via the csw shell wrapper to hop there")
+}
+
+// hopOriginForEmit builds the CAMP_HOP_ORIGIN payload describing THIS machine,
+// for the session on the far side. Every failure yields "" (no export), never
+// an error: the operator asked to hop, not to advertise an origin, so a machine
+// with no reachable name still hops exactly as it does today. A warning goes to
+// stderr because stdout is eval'd by the shell wrapper and must stay one line.
+func hopOriginForEmit(ctx context.Context, cmd *cobra.Command) string {
+	originCampaign := ""
+	if root, err := campaign.DetectCached(ctx); err == nil {
+		if cfg, err := config.LoadCampaignConfig(ctx, root); err == nil {
+			originCampaign = cfg.Name
+		}
+	}
+	origin, err := buildHopOrigin(ctx, originCampaign, runTailscaleStatusForSelf)
+	if err != nil {
+		_, _ = fmt.Fprintf(cmd.ErrOrStderr(),
+			"camp: warning: hop origin unavailable (%v); 'camp switch -' will not work from that session\n", err)
+		return ""
+	}
+	return origin
 }
 
 // withRemoteSuggestions augments a remote resolve failure with near matches
