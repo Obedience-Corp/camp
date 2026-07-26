@@ -1,6 +1,8 @@
 package main
 
 import (
+	"context"
+	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -10,6 +12,7 @@ import (
 
 	"github.com/Obedience-Corp/camp/internal/campaign"
 	"github.com/Obedience-Corp/camp/internal/config"
+	"github.com/Obedience-Corp/camp/internal/machines"
 	"github.com/Obedience-Corp/camp/internal/transfer"
 	"github.com/spf13/cobra"
 )
@@ -73,8 +76,7 @@ func runTransfer(cmd *cobra.Command, args []string) error {
 		return transfer.BothRemoteError(src, dest)
 	}
 	if src.IsRemote() || dest.IsRemote() {
-		return camperrors.New("cross-machine transfer is not implemented yet; " +
-			"the grammar parses but the transport lands in a follow-up")
+		return runRemoteTransfer(ctx, cmd, root, src, dest, force)
 	}
 
 	srcPath, err := transfer.ResolveCrossCampaignPath(ctx, root, src.Spec)
@@ -204,4 +206,48 @@ func completeCampaignPath(campRoot, pathPrefix, colonPrefix string) ([]string, c
 		completions = append(completions, colonPrefix+prefix+name+suffix)
 	}
 	return completions, cobra.ShellCompDirectiveNoSpace | cobra.ShellCompDirectiveNoFileComp
+}
+
+// runRemoteTransfer moves one file between this machine and a fleet member. The
+// far campaign root is resolved by the remote's own camp, never computed here.
+func runRemoteTransfer(ctx context.Context, cmd *cobra.Command, root string, src, dest transfer.Endpoint, force bool) error {
+	remoteEnd, localSpec, pull := dest, src.Spec, false
+	if src.IsRemote() {
+		remoteEnd, localSpec, pull = src, dest.Spec, true
+	}
+
+	mf, err := machines.Load()
+	if err != nil {
+		return err
+	}
+	m, _, found := mf.Lookup(remoteEnd.Machine)
+	if !found {
+		return camperrors.New("unknown machine \"" + remoteEnd.Machine + "\"; add it to ~/.obey/machines.yaml")
+	}
+
+	localPath := transfer.ResolveCampaignRelative(root, localSpec)
+	if pull && transfer.IsDestDir(localPath) {
+		localPath = filepath.Join(localPath, filepath.Base(remoteEnd.Path))
+	}
+	if !pull {
+		if err := transfer.ValidatePathExists(localPath); err != nil {
+			return camperrors.Wrap(err, "source")
+		}
+	}
+
+	if err := transfer.CopyRemote(ctx, transfer.CopyOptions{
+		Machine:  m,
+		Endpoint: remoteEnd,
+		Local:    localPath,
+		Pull:     pull,
+		Force:    force,
+	}); err != nil {
+		if errors.Is(err, transfer.ErrDestinationExists) {
+			return camperrors.Newf("destination exists on %s, not overwritten (use --force)", m.ID)
+		}
+		return camperrors.Wrapf(err, "run 'camp machine diagnose %s' to check reachability", m.ID)
+	}
+
+	_, err = fmt.Printf("Transferred %s -> %s\n", src.Spec, dest.Spec)
+	return err
 }
