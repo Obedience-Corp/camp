@@ -152,10 +152,13 @@ func runCommit(cmd *cobra.Command, args []string) error {
 	// Stage if requested
 	if stageAll {
 		fmt.Println(ui.Info("Staging changes..."))
+		var guardOutcome *git.StageOutcome
 		if target.IsSubmodule || commitIncludeRefs {
-			if err := executor.StageAll(ctx); err != nil {
+			outcome, err := git.StageWithGuard(ctx, target.Path, nil)
+			if err != nil {
 				return err
 			}
+			guardOutcome = outcome
 		} else {
 			// Campaign root: exclude submodule refs to prevent accidental
 			// ref changes from polluting content commits.
@@ -163,9 +166,11 @@ func runCommit(cmd *cobra.Command, args []string) error {
 			if pathErr != nil {
 				return pathErr
 			}
-			if err := git.StageAllExcluding(ctx, target.Path, paths); err != nil {
+			outcome, err := git.StageAllExcludingWithGuard(ctx, target.Path, paths)
+			if err != nil {
 				return err
 			}
+			guardOutcome = outcome
 			// git add rejects exclude pathspecs whose target contains
 			// gitignored entries, so worktrees are unstaged after staging
 			// instead of excluded up front.
@@ -174,6 +179,24 @@ func runCommit(cmd *cobra.Command, args []string) error {
 					return err
 				}
 			}
+		}
+
+		// Act on what the guard decided and tell the user. Runs after staging
+		// so the declaration it may write lands in this same commit.
+		handling, err := cmdutil.HandleStageOutcome(ctx, cmd.OutOrStdout(), campRoot, target.Path, guardOutcome)
+		if err != nil {
+			return err
+		}
+		// The excluded file is still an unstaged worktree change, so the
+		// ordinary has-changes check would say yes and git would then reject
+		// the empty commit. Report the no-op instead of failing.
+		empty, err := cmdutil.GuardExcludedEverything(ctx, target.Path, handling)
+		if err != nil {
+			return err
+		}
+		if empty && !commitAmend {
+			cmdutil.ReportNothingLeftToCommit(cmd.OutOrStdout())
+			return nil
 		}
 	}
 

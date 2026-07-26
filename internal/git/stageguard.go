@@ -1,7 +1,10 @@
 package git
 
 import (
+	"bytes"
 	"context"
+	"os"
+	"os/exec"
 	"strings"
 
 	camperrors "github.com/Obedience-Corp/camp/internal/errors"
@@ -192,4 +195,31 @@ func applyGuardExclusions(files []string, excluded []string) []string {
 		files = append(files, ":(exclude,literal)"+p)
 	}
 	return files
+}
+
+// StagedPathsUnder returns the staged paths beneath a repo-relative directory.
+// Used to report which files inside a newly declared artifact root still
+// belong to git, which is the difference between telling a user their notes
+// are versioned and leaving them to assume otherwise.
+func StagedPathsUnder(ctx context.Context, repoPath, dir string) ([]string, error) {
+	if ctx.Err() != nil {
+		return nil, ctx.Err()
+	}
+	cmd := exec.CommandContext(ctx, "git", "-C", repoPath,
+		"diff", "--cached", "--name-only", "-z", "--", dir)
+	cmd.Env = gitEnv(os.Environ())
+
+	out, err := cmd.Output()
+	if err != nil {
+		return nil, camperrors.Wrapf(err, "list staged paths under %s", dir)
+	}
+
+	fields := bytes.Split(bytes.TrimRight(out, "\x00"), []byte{0})
+	paths := make([]string, 0, len(fields))
+	for _, f := range fields {
+		if len(f) > 0 {
+			paths = append(paths, string(f))
+		}
+	}
+	return paths, nil
 }

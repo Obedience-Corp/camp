@@ -665,19 +665,30 @@ func StageFiles(ctx context.Context, repoPath string, files ...string) error {
 // StageAllExcluding stages all changes except paths matching the given exclusions.
 // Uses git literal pathspec exclusions for atomic single-operation staging.
 func StageAllExcluding(ctx context.Context, repoPath string, excludePaths []string) error {
+	_, err := StageAllExcludingWithGuard(ctx, repoPath, excludePaths)
+	return err
+}
+
+// StageAllExcludingWithGuard stages like StageAllExcluding and returns what the
+// staging guard decided.
+//
+// The caller's exclusions and the guard's are applied in one git invocation:
+// the campaign root always excludes submodule refs, and staging twice would
+// leave a window where the index holds bytes the guard has already ruled out.
+func StageAllExcludingWithGuard(ctx context.Context, repoPath string, excludePaths []string) (*StageOutcome, error) {
 	if ctx.Err() != nil {
-		return ctx.Err()
+		return nil, ctx.Err()
 	}
 
 	if len(excludePaths) == 0 {
-		return StageAll(ctx, repoPath)
+		return StageWithGuard(ctx, repoPath, nil)
 	}
 
 	files := []string{"--", "."}
 	for _, p := range excludePaths {
 		files = append(files, ":(exclude,literal)"+p)
 	}
-	return Stage(ctx, repoPath, files)
+	return StageWithGuard(ctx, repoPath, files)
 }
 
 // HasStagedChanges checks if there are any staged changes ready to commit.

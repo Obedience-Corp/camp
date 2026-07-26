@@ -7,6 +7,7 @@ import (
 	"path/filepath"
 	"strings"
 
+	"github.com/Obedience-Corp/camp/cmd/camp/cmdutil"
 	"github.com/Obedience-Corp/camp/internal/artifacts"
 	"github.com/Obedience-Corp/camp/internal/campaign"
 	camperrors "github.com/Obedience-Corp/camp/internal/errors"
@@ -169,9 +170,6 @@ func runArtifactsList(cmd *cobra.Command, _ []string) error {
 	return nil
 }
 
-// gitignoreRuleComment explains, in the file itself, why the rule is there.
-const gitignoreRuleComment = "# Camp artifact root (synced with 'camp sync', not git)"
-
 func runArtifactsAdd(cmd *cobra.Command, args []string) error {
 	ctx := cmd.Context()
 	campRoot, err := campaign.DetectCached(ctx)
@@ -284,7 +282,7 @@ func reportCleanRoot(cmd *cobra.Command, campRoot, normalized string) error {
 
 	rule := normalized + "/"
 	wrote, err := fsutil.AppendGitignoreEntryIfMissing(
-		filepath.Join(campRoot, ".gitignore"), rule, gitignoreRuleComment)
+		filepath.Join(campRoot, ".gitignore"), rule, cmdutil.GitignoreRuleComment)
 	if err != nil {
 		return camperrors.Wrapf(err, "add %q to .gitignore", rule)
 	}

@@ -152,8 +152,24 @@ func runProjectCommit(cmd *cobra.Command, args []string) error {
 	// Stage if requested
 	if projectCommitAll {
 		fmt.Println(ui.Info("Staging changes..."))
-		if err := executor.StageAll(ctx); err != nil {
-			return camperrors.Wrap(err, "failed to stage")
+		guardOutcome, stageErr := git.StageWithGuard(ctx, resolvedPath, nil)
+		if stageErr != nil {
+			return camperrors.Wrap(stageErr, "failed to stage")
+		}
+		// A project exclusion is never silent: camp cannot fix a large file
+		// here (an artifact root would keep it off the project's remote), so
+		// the least it owes the user is saying what it left out and why.
+		handling, hErr := cmdutil.HandleStageOutcome(ctx, cmd.OutOrStdout(), campRoot, resolvedPath, guardOutcome)
+		if hErr != nil {
+			return hErr
+		}
+		empty, eErr := cmdutil.GuardExcludedEverything(ctx, resolvedPath, handling)
+		if eErr != nil {
+			return eErr
+		}
+		if empty && !projectCommitAmend {
+			cmdutil.ReportNothingLeftToCommit(cmd.OutOrStdout())
+			return nil
 		}
 	}
 
