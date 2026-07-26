@@ -71,7 +71,15 @@ func emitHopOrRefuse(ctx context.Context, cmd *cobra.Command, m *machines.Machin
 		_, _ = fmt.Fprintln(cmd.ErrOrStderr(), ui.Dim("camp: "+warning))
 	}
 	if shellConnect {
-		return emitShellConnect(cmd.OutOrStdout(), true, root, m, hopOriginForEmit(ctx, cmd))
+		if err := emitShellConnect(cmd.OutOrStdout(), true, root, m, hopOriginForEmit(ctx, cmd)); err != nil {
+			return err
+		}
+		// After the line is written, never before: the operator is waiting on
+		// that line, and this is bookkeeping. It rides the ControlMaster socket
+		// the resolve already opened, so it costs no new connection.
+		selfID, names := selfSnapshot(ctx)
+		pushSelfSnapshot(ctx, m, selfID, names)
+		return nil
 	}
 	return camperrors.New("resolved " + m.ID + ":" + remainder + " -> " + root +
 		"; run via the csw shell wrapper to hop there")

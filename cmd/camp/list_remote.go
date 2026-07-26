@@ -102,6 +102,11 @@ func enumerateRemoteFor(f listFilter) enumerateFunc {
 		// Warm the completion cache so `csw <id>:<tab>` has campaigns without the
 		// keystroke path ever doing a live ssh.
 		writeMachineCacheCampaigns(m.ID, names)
+		// A successful enumerate proves this machine can reach m, so it is also
+		// the moment to tell m about us. Silent on every failure.
+		if selfID, selfNames := selfSnapshot(ctx); selfID != "" {
+			pushSelfSnapshot(ctx, m, selfID, selfNames)
+		}
 		return rows, nil
 	}
 }

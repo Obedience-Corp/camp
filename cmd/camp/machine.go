@@ -177,6 +177,9 @@ func init() {
 	machineCmd.AddCommand(machineRemoveCmd)
 	machineCmd.AddCommand(machineDiagnoseCmd)
 	machineCmd.AddCommand(machineAdoptCmd)
+	machineCmd.AddCommand(machineCachePutCmd)
+	machineCachePutCmd.Flags().StringSliceVar(&cachePutCampaigns, "campaigns", nil,
+		"Comma-separated campaign names on the calling machine")
 	machineAdoptCmd.Flags().BoolVar(&machineAdoptForce, "force", false,
 		"Skip the reminder that you declined this origin before (never skips the confirmation)")
 
