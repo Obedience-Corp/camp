@@ -35,13 +35,18 @@ func TestGuardConstantsMatchStageguard(t *testing.T) {
 	assert.Equal(t, stageguard.ModeOff, commitkit.ModeOff)
 }
 
+// nonexistentRepo is a path that is never created. Every use below is guarded
+// by an already-cancelled context, so nothing should ever reach the disk.
+const nonexistentRepo = "/nonexistent/stageguard-ctx-check"
+
 func TestCheckStagingHonorsCanceledContext(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	cancel()
 
-	// A cancelled context short-circuits before git runs, so the path never
-	// has to exist for this to return.
-	_, err := commitkit.CheckStaging(ctx, t.TempDir(), commitkit.GuardLimits{})
+	// A cancelled context short-circuits before any filesystem or git access,
+	// so the path deliberately does not exist: if this ever returns something
+	// other than context.Canceled, the short-circuit regressed.
+	_, err := commitkit.CheckStaging(ctx, nonexistentRepo, commitkit.GuardLimits{})
 	require.Error(t, err)
 	assert.ErrorIs(t, err, context.Canceled)
 }
@@ -50,7 +55,7 @@ func TestResolveLimitsHonorsCanceledContext(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	cancel()
 
-	_, err := commitkit.ResolveLimits(ctx, t.TempDir())
+	_, err := commitkit.ResolveLimits(ctx, nonexistentRepo)
 	require.Error(t, err)
 	assert.ErrorIs(t, err, context.Canceled)
 }
@@ -59,7 +64,7 @@ func TestStageAllHonorsCanceledContext(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	cancel()
 
-	err := commitkit.StageAll(ctx, t.TempDir())
+	err := commitkit.StageAll(ctx, nonexistentRepo)
 	require.Error(t, err)
 	assert.ErrorIs(t, err, context.Canceled)
 }
