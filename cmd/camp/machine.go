@@ -176,6 +176,9 @@ func init() {
 	machineCmd.AddCommand(machineAddCmd)
 	machineCmd.AddCommand(machineRemoveCmd)
 	machineCmd.AddCommand(machineDiagnoseCmd)
+	machineCmd.AddCommand(machineAdoptCmd)
+	machineAdoptCmd.Flags().BoolVar(&machineAdoptForce, "force", false,
+		"Skip the reminder that you declined this origin before (never skips the confirmation)")
 
 	machineListCmd.Flags().BoolVar(&machineListJSON, "json", false, "Output as JSON")
 
