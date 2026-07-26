@@ -161,6 +161,11 @@ func LoadCampaignName(ctx context.Context, campaignRoot string) (string, error) 
 
 // StageAll stages all changes in the repository at repoPath.
 // Uses automatic lock retry with stale lock cleanup.
+//
+// It takes no limits by design. The staging guard runs inside the staging
+// chokepoint and resolves its own thresholds from repoPath, so a caller
+// inherits large-file and bulk protection here without passing anything and
+// without a code change. Use CheckStaging only to preflight.
 func StageAll(ctx context.Context, repoPath string) error {
 	if ctx.Err() != nil {
 		return ctx.Err()
