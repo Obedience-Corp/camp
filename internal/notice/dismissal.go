@@ -104,6 +104,12 @@ func FilterDismissed(campaignRoot string, notices []Notice) []Notice {
 		// is not.
 		return notices
 	}
+	return f.Filter(notices)
+}
+
+// Filter drops notices this dismissal set covers. Separated from the disk load
+// so the decision is testable without a filesystem.
+func (f *DismissalFile) Filter(notices []Notice) []Notice {
 	kept := make([]Notice, 0, len(notices))
 	for _, n := range notices {
 		if !f.IsDismissed(n.ID) {
