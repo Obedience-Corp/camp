@@ -143,6 +143,12 @@ func ParseHopOrigin(payload string) (HopOrigin, error) {
 		if err != nil {
 			return HopOrigin{}, err
 		}
+		// Reject C0 controls after decode so encode/parse stay symmetric:
+		// encode percent-encodes them, but a handcrafted env could still
+		// inject %0A/%0D and break the one-line shell-connect contract.
+		if hopOriginHasC0(val) {
+			return HopOrigin{}, camperrors.New("field \"" + key + "\" contains a control character")
+		}
 		switch key {
 		case "host":
 			o.Host = val
@@ -163,6 +169,18 @@ func ParseHopOrigin(payload string) (HopOrigin, error) {
 		return HopOrigin{}, camperrors.New("missing user")
 	}
 	return o, nil
+}
+
+// hopOriginHasC0 reports whether s contains a C0 control byte (including
+// newline/CR). Mirrors the encode-side newline guard so a hostile env cannot
+// smuggle controls past ParseHopOrigin via percent-encoding.
+func hopOriginHasC0(s string) bool {
+	for i := 0; i < len(s); i++ {
+		if s[i] < 0x20 {
+			return true
+		}
+	}
+	return false
 }
 
 // hopOriginEncode percent-encodes everything outside the unreserved set, which
@@ -416,10 +434,12 @@ func hopBackFailure(err error, m *machines.Machine, registered bool) error {
 // Ordering matters and is deliberate. This is checked only AFTER
 // machines.LocalMachineID and only for a selector that would otherwise hop, so
 // the detection cost (a tailscale probe) never lands on a successful local
-// switch. A registered machine still wins: a machines.yaml entry pointing at
-// this machine is a misconfiguration that `camp machine adopt` refuses to
-// create, and honoring the operator's explicit file here is better than
-// second-guessing it on every hop.
+// switch. A registered id wins over self-detection: Lookup(id) only — any
+// machines.yaml row whose id equals the selector suppresses local resolve,
+// regardless of that row's host. That honors the operator's explicit id
+// mapping; adopt refuses to create a true self-row, but a shared fleet file
+// that lists every node under its real id (including this one) will hop via
+// ssh rather than short-circuit locally.
 func isSelfMachine(ctx context.Context, id string) bool {
 	if id == "" {
 		return false

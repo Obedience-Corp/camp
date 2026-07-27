@@ -138,6 +138,11 @@ func TestParseHopOriginErrors(t *testing.T) {
 		{"missing host", "v1;user=b", "missing host"},
 		{"missing user", "v1;host=a", "missing user"},
 		{"over size bound", "v1;host=a;user=b;campaign=" + strings.Repeat("x", hopOriginMaxTotal), "exceeds 1024 bytes"},
+		// Percent-decoded C0 controls must fail closed so encode/parse stay
+		// symmetric and a handcrafted env cannot smuggle newlines into Host.
+		{"newline in host via %0A", "v1;host=box%0Aevil;user=u", "control character"},
+		{"CR in user via %0D", "v1;host=a;user=u%0D", "control character"},
+		{"tab in campaign via %09", "v1;host=a;user=b;campaign=c%09d", "control character"},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
