@@ -3,7 +3,10 @@ package transfer
 import (
 	"context"
 	"errors"
+	"os"
 	"os/exec"
+	"path/filepath"
+	"slices"
 	"strings"
 	"testing"
 
@@ -181,5 +184,156 @@ func TestCopyRemoteMissingBothBinaries(t *testing.T) {
 		if !strings.Contains(err.Error(), want) {
 			t.Errorf("error must name which binary is missing where: %v", err)
 		}
+	}
+}
+
+// rsync honors --force through --ignore-existing. scp has no portable
+// equivalent, so without an explicit look the fallback silently overwrote the
+// destination and still reported success -- the opposite of what the command
+// promises without --force.
+func TestCopyRemoteScpFallbackRefusesToClobberLocalDestination(t *testing.T) {
+	dest := filepath.Join(t.TempDir(), "x.md")
+	if err := os.WriteFile(dest, []byte("do not lose me"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+
+	var calls []string
+	opts := CopyOptions{
+		Machine:  testMachine(),
+		Pull:     true,
+		LookPath: func(string) (string, error) { return "/usr/bin/found", nil },
+		Run: func(_ context.Context, name string, _ ...string) ([]byte, error) {
+			calls = append(calls, name)
+			if name == "rsync" {
+				return []byte("rsync: connection unexpectedly closed"), runExit(t, 12)
+			}
+			return nil, nil
+		},
+	}
+
+	err := copyWithFallback(context.Background(), opts, "remote:src", dest)
+	if !errors.Is(err, ErrDestinationExists) {
+		t.Fatalf("err = %v, want ErrDestinationExists", err)
+	}
+	if slices.Contains(calls, "scp") {
+		t.Errorf("scp ran despite an occupied destination: %v", calls)
+	}
+	body, readErr := os.ReadFile(dest)
+	if readErr != nil || string(body) != "do not lose me" {
+		t.Errorf("destination was modified: %q (%v)", body, readErr)
+	}
+}
+
+// A push writes on the far machine, so the same guard has to be one ssh.
+func TestCopyRemoteScpFallbackRefusesToClobberRemoteDestination(t *testing.T) {
+	var calls []string
+	opts := CopyOptions{
+		Machine:  testMachine(),
+		LookPath: func(string) (string, error) { return "/usr/bin/found", nil },
+		Run: func(_ context.Context, name string, args ...string) ([]byte, error) {
+			calls = append(calls, name)
+			switch name {
+			case "rsync":
+				return []byte("rsync: connection unexpectedly closed"), runExit(t, 12)
+			case "ssh":
+				if !slices.Contains(args, "test") {
+					t.Errorf("ssh probe should run test -e, got %v", args)
+				}
+				return nil, nil // exit 0: the file is there
+			}
+			return nil, nil
+		},
+	}
+
+	err := copyWithFallback(context.Background(), opts, "/local/x.md", "archdtop:/remote/x.md")
+	if !errors.Is(err, ErrDestinationExists) {
+		t.Fatalf("err = %v, want ErrDestinationExists", err)
+	}
+	if !slices.Contains(calls, "ssh") {
+		t.Errorf("no existence probe ran before scp: %v", calls)
+	}
+	if slices.Contains(calls, "scp") {
+		t.Errorf("scp ran despite an occupied destination: %v", calls)
+	}
+}
+
+func TestCopyRemoteScpFallbackCopiesWhenRemoteDestinationIsFree(t *testing.T) {
+	var calls []string
+	opts := CopyOptions{
+		Machine:  testMachine(),
+		LookPath: func(string) (string, error) { return "/usr/bin/found", nil },
+		Run: func(_ context.Context, name string, _ ...string) ([]byte, error) {
+			calls = append(calls, name)
+			switch name {
+			case "rsync":
+				return []byte("rsync: connection unexpectedly closed"), runExit(t, 12)
+			case "ssh":
+				return nil, runExit(t, 1) // test -e says "not there"
+			}
+			return nil, nil
+		},
+	}
+	if err := copyWithFallback(context.Background(), opts, "/local/x.md", "archdtop:/remote/x.md"); err != nil {
+		t.Fatalf("a free destination must copy: %v", err)
+	}
+	if !slices.Contains(calls, "scp") {
+		t.Errorf("scp never ran: %v", calls)
+	}
+}
+
+// --force is the consent the guard exists to require, so it must not pay for a
+// probe it would ignore.
+func TestCopyRemoteScpFallbackSkipsTheProbeUnderForce(t *testing.T) {
+	var calls []string
+	opts := CopyOptions{
+		Machine:  testMachine(),
+		Force:    true,
+		LookPath: func(string) (string, error) { return "/usr/bin/found", nil },
+		Run: func(_ context.Context, name string, _ ...string) ([]byte, error) {
+			calls = append(calls, name)
+			if name == "rsync" {
+				return []byte("rsync: connection unexpectedly closed"), runExit(t, 12)
+			}
+			return nil, nil
+		},
+	}
+	if err := copyWithFallback(context.Background(), opts, "/local/x.md", "archdtop:/remote/x.md"); err != nil {
+		t.Fatal(err)
+	}
+	if slices.Contains(calls, "ssh") {
+		t.Errorf("--force should not probe: %v", calls)
+	}
+	if !slices.Contains(calls, "scp") {
+		t.Errorf("scp never ran: %v", calls)
+	}
+}
+
+// A probe that fails for any reason other than "not there" says nothing about
+// the destination, and must not be read as permission to overwrite it.
+func TestCopyRemoteScpFallbackTreatsAFailedProbeAsAnError(t *testing.T) {
+	var calls []string
+	opts := CopyOptions{
+		Machine:  testMachine(),
+		LookPath: func(string) (string, error) { return "/usr/bin/found", nil },
+		Run: func(_ context.Context, name string, _ ...string) ([]byte, error) {
+			calls = append(calls, name)
+			switch name {
+			case "rsync":
+				return []byte("rsync: connection unexpectedly closed"), runExit(t, 12)
+			case "ssh":
+				return []byte("permission denied"), runExit(t, 255)
+			}
+			return nil, nil
+		},
+	}
+	err := copyWithFallback(context.Background(), opts, "/local/x.md", "archdtop:/remote/x.md")
+	if err == nil {
+		t.Fatal("an unreadable destination must not be overwritten")
+	}
+	if errors.Is(err, ErrDestinationExists) {
+		t.Errorf("a probe failure is not the same as an occupied destination: %v", err)
+	}
+	if slices.Contains(calls, "scp") {
+		t.Errorf("scp ran after an inconclusive probe: %v", calls)
 	}
 }

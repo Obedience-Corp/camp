@@ -1,6 +1,11 @@
 package transfer
 
-import "github.com/Obedience-Corp/camp/internal/machines"
+import (
+	"context"
+
+	"github.com/Obedience-Corp/camp/internal/config"
+	"github.com/Obedience-Corp/camp/internal/machines"
+)
 
 // LocalPrefix forces the campaign reading of an endpoint whose leading segment
 // would otherwise be read as a machine id. It is spelled "local" to match
@@ -101,6 +106,23 @@ func BothRemoteError(src, dest Endpoint) error {
 // campaign check that only runs when a machine already matched, so the common
 // case (no fleet configured) costs one cheap file read that Load already caches
 // behind an absent-file fast path.
-func ParseEndpointDefault(spec string) (Endpoint, error) {
-	return ParseEndpoint(spec, registeredMachine, nil)
+func ParseEndpointDefault(ctx context.Context, spec string) (Endpoint, error) {
+	return ParseEndpoint(spec, registeredMachine, registeredCampaign(ctx))
+}
+
+// registeredCampaign reports whether head also names a campaign, which is what
+// makes a spec ambiguous and worth a note. The registry is only read after a
+// machine id already matched, so an unconfigured fleet never pays for it.
+func registeredCampaign(ctx context.Context) campaignLookupFunc {
+	return func(head string) bool {
+		if head == "" {
+			return false
+		}
+		reg, err := config.LoadRegistry(ctx)
+		if err != nil {
+			return false
+		}
+		_, found := reg.GetByName(head)
+		return found
+	}
 }

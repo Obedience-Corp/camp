@@ -57,11 +57,11 @@ func runTransfer(cmd *cobra.Command, args []string) error {
 		return err
 	}
 
-	src, err := transfer.ParseEndpointDefault(args[0])
+	src, err := transfer.ParseEndpointDefault(ctx, args[0])
 	if err != nil {
 		return camperrors.Wrap(err, "resolve source")
 	}
-	dest, err := transfer.ParseEndpointDefault(args[1])
+	dest, err := transfer.ParseEndpointDefault(ctx, args[1])
 	if err != nil {
 		return camperrors.Wrap(err, "resolve destination")
 	}

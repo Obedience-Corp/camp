@@ -2,6 +2,7 @@ package transfer
 
 import (
 	"context"
+	"os"
 	"os/exec"
 	"path"
 	"strings"
@@ -99,6 +100,24 @@ func copyWithFallback(ctx context.Context, opts CopyOptions, src, dest string) e
 		return camperrors.New("rsync not found on " + opts.Machine.ID + " and scp not found locally; " +
 			"install rsync on both machines, or scp on this one")
 	}
+
+	// scp has no portable no-clobber flag, so the guard rsync gets from
+	// --ignore-existing has to be a separate look. Without this the fallback
+	// silently overwrote the destination and still reported "Transferred",
+	// which is the opposite of what the command promises without --force.
+	//
+	// This is a check-then-copy, not an atomic claim: it establishes the
+	// operator's consent, not exclusion against a concurrent writer.
+	if !opts.Force {
+		exists, err := opts.destinationExists(ctx, dest)
+		if err != nil {
+			return err
+		}
+		if exists {
+			return ErrDestinationExists
+		}
+	}
+
 	out, runErr := opts.Run(ctx, "scp", opts.scpArgs(src, dest)...)
 	if runErr != nil {
 		return camperrors.Wrapf(runErr, "%s %s: %s", opts.direction(), opts.Machine.ID, trimOutput(out))
@@ -157,6 +176,36 @@ func (o CopyOptions) scpArgs(src, dest string) []string {
 	args := append([]string{}, remote.Opts(o.Machine)...)
 	args = append(args, "-o", "ServerAliveInterval=15", "-o", "ServerAliveCountMax=4")
 	return append(args, quoteRemote(src), quoteRemote(dest))
+}
+
+// destinationExists reports whether dest is already occupied. A pull writes
+// locally, so it is a stat; a push writes on the far machine, so it is one ssh
+// using the same option set as the copy, which the ControlMaster socket already
+// opened for the resolve.
+func (o CopyOptions) destinationExists(ctx context.Context, dest string) (bool, error) {
+	host, remotePath, isRemote := strings.Cut(dest, ":")
+	if !isRemote {
+		if _, err := os.Stat(dest); err == nil {
+			return true, nil
+		} else if !os.IsNotExist(err) {
+			return false, camperrors.Wrapf(err, "check destination %s", dest)
+		}
+		return false, nil
+	}
+
+	args := append([]string{}, remote.Opts(o.Machine)...)
+	args = append(args, host, "test", "-e", remote.ShellQuote(remotePath))
+	out, err := o.Run(ctx, "ssh", args...)
+	if err == nil {
+		return true, nil
+	}
+	// `test -e` exits 1 for "not there"; anything else is a real failure and
+	// must not be read as permission to overwrite.
+	var exitErr *exec.ExitError
+	if asExitError(err, &exitErr) && exitErr.ExitCode() == 1 {
+		return false, nil
+	}
+	return false, camperrors.Wrapf(err, "check destination on %s: %s", o.Machine.ID, trimOutput(out))
 }
 
 func quoteRemote(spec string) string {
