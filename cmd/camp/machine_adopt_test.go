@@ -386,8 +386,16 @@ func TestMachineTUIShowsOriginHintAtOpen(t *testing.T) {
 	if !strings.Contains(model.status, "camp machine adopt") {
 		t.Errorf("status line = %q, want the adopt hint", model.status)
 	}
-	if model.statusErr {
+	if model.statusKind == statusError {
 		t.Error("a suggestion must not render as an error")
+	}
+	// Nor as a success. This is the first screen after a hop, and a check mark
+	// beside "not in your fleet" reads as something that worked.
+	if model.statusKind != statusAdvice {
+		t.Errorf("status kind = %v, want %v", model.statusKind, statusAdvice)
+	}
+	if line := model.statusLine(); strings.Contains(line, "\u2713") {
+		t.Errorf("advisory rendered with a success glyph: %q", line)
 	}
 }
 
