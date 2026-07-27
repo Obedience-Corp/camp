@@ -7,16 +7,6 @@ import (
 	camperrors "github.com/Obedience-Corp/camp/internal/errors"
 )
 
-// silentExit mirrors main's decision so the rule is testable without spawning a
-// process. Keep the condition here identical to main().
-func silentExit(err error) (int, bool) {
-	var cmdErr *camperrors.CommandError
-	if ok := errors.As(err, &cmdErr); ok && cmdErr.ExitCode != 0 && error(cmdErr) == err {
-		return cmdErr.ExitCode, true
-	}
-	return 0, false
-}
-
 func TestSilentExitOnlyForDirectlyReturnedCommandErrors(t *testing.T) {
 	direct := camperrors.NewCommand("camp sync", 3, "", nil)
 
