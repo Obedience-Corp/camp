@@ -92,6 +92,11 @@ func TestHopSkewWarningMatrix(t *testing.T) {
 						t.Errorf("warning %q missing %q", got, want)
 					}
 				}
+				// When versions match, the commit is the only disambiguator —
+				// the warning must surface it rather than "dev" vs "dev".
+				if tt.ver == local.Version && tt.commit != "" && !strings.Contains(got, tt.commit) {
+					t.Errorf("warning %q missing commit disambiguation %q", got, tt.commit)
+				}
 			}
 		})
 	}
@@ -118,6 +123,19 @@ func TestVersionCacheCorruptIsIgnored(t *testing.T) {
 	}
 	if hopSkewWarning("archdtop") != "" {
 		t.Error("corrupt cache must not produce a warning")
+	}
+}
+
+func TestVersionCacheEmptyVersionIsMiss(t *testing.T) {
+	// Defense in depth: an empty version field must not be treated as a probe
+	// answer even if the file is otherwise well-formed and fresh.
+	t.Setenv("XDG_CONFIG_HOME", t.TempDir())
+	seedVersionCache(t, "archdtop", "", "deadbeef", time.Minute)
+	if _, ok := readMachineVersionCache("archdtop"); ok {
+		t.Error("empty version must read as a miss")
+	}
+	if hopSkewWarning("archdtop") != "" {
+		t.Error("empty version must not produce a warning")
 	}
 }
 

@@ -38,6 +38,8 @@ func versionCachePath(id string) string {
 
 // writeMachineVersionCache records a probe result. Best-effort: a failure just
 // means the next hop does not warn, which is the same as today's behavior.
+// A failed probe (empty version) is a no-op on purpose — it leaves any prior
+// still-fresh entry in place rather than wiping a known-good answer with silence.
 func writeMachineVersionCache(id, versionStr, commit string) {
 	if id == "" || versionStr == "" {
 		return
@@ -54,14 +56,17 @@ func writeMachineVersionCache(id, versionStr, commit string) {
 }
 
 // readMachineVersionCache returns a fresh cached probe, or false. Absent,
-// corrupt, and stale are all the same answer: no opinion.
+// corrupt, empty version, and stale are all the same answer: no opinion.
+// Empty version is defense in depth: writeMachineVersionCache already refuses
+// to record failed probes, but a hand-written or half-written cache file must
+// not read as a real answer.
 func readMachineVersionCache(id string) (versionCacheEntry, bool) {
 	data, err := os.ReadFile(versionCachePath(id))
 	if err != nil {
 		return versionCacheEntry{}, false
 	}
 	var e versionCacheEntry
-	if json.Unmarshal(data, &e) != nil || !e.fresh(time.Now()) {
+	if json.Unmarshal(data, &e) != nil || e.Version == "" || !e.fresh(time.Now()) {
 		return versionCacheEntry{}, false
 	}
 	return e, true
@@ -82,7 +87,10 @@ func hopSkewWarning(id string) string {
 	}
 	// Says only that they differ. The skew check does not order versions, and
 	// the remote is as likely to be ahead as behind, so naming a direction
-	// would be wrong half the time.
-	return "camp on " + id + " is " + entry.Version + ", this machine is " + local.Version +
+	// would be wrong half the time. Reuse the diagnose display helpers so
+	// matching versions with different commits (e.g. two "dev" builds) still
+	// disambiguate with the commit short hash.
+	remoteDisp := campVersionDisplay(machineDiagnoseRow{CampVersion: entry.Version, CampCommit: entry.Commit})
+	return "camp on " + id + " is " + remoteDisp + ", this machine is " + campLocalVersionDisplay() +
 		"; features may not match (run 'camp machine diagnose " + id + "' to re-check)"
 }
