@@ -416,11 +416,14 @@ func runMachineDiagnose(cmd *cobra.Command, args []string) error {
 	}
 
 	localInfo := version.Get()
+	// Reverse reachability is a fact about this machine, identical for every
+	// row. Probing it inside the loop cost N loopback dials and N tailscale
+	// probes against a 2s budget each to learn the same answer.
+	reverse := checkReverseReachability(ctx, defaultReverseProbes())
 	rows := make([]machineDiagnoseRow, 0, len(targets))
 	for i := range targets {
 		m := &targets[i]
 		d := remote.CheckControlMaster(ctx, m)
-		reverse := checkReverseReachability(ctx, defaultReverseProbes())
 		remoteVersion, remoteCommit := probeRemoteCampVersion(ctx, m)
 		// Diagnose is the only surface that pays for a live probe, so it is the
 		// only one that can warm the cache the hop path reads.
