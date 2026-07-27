@@ -80,6 +80,9 @@ func hopSkewWarning(id string) string {
 	if !campVersionSkew(local, entry.Version, entry.Commit) {
 		return ""
 	}
+	// Says only that they differ. The skew check does not order versions, and
+	// the remote is as likely to be ahead as behind, so naming a direction
+	// would be wrong half the time.
 	return "camp on " + id + " is " + entry.Version + ", this machine is " + local.Version +
-		"; features added since may not work there (run 'camp machine diagnose " + id + "' to re-check)"
+		"; features may not match (run 'camp machine diagnose " + id + "' to re-check)"
 }
