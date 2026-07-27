@@ -16,9 +16,10 @@ import (
 	"github.com/Obedience-Corp/camp/internal/remote"
 )
 
-// hopBackResolveRoot is the seam that lets the hop-back decision table be tested
-// without a live ssh. Production is remote.ResolveRoot; tests substitute a stub.
-var hopBackResolveRoot = remote.ResolveRoot
+// resolveRemoteRoot is the seam every remote switch resolves through, hop-back
+// and machine:campaign alike, so both can be tested without a live ssh.
+// Production is remote.ResolveRoot; tests substitute a stub.
+var resolveRemoteRoot = remote.ResolveRoot
 
 // runRemoteSwitch resolves a machine:campaign selector by asking the remote
 // machine's own `camp switch --print` for the absolute campaign root over ssh (so
@@ -37,7 +38,7 @@ func runRemoteSwitch(ctx context.Context, cmd *cobra.Command, msel cmdutil.Parse
 	if !found {
 		return camperrors.New("unknown machine \"" + msel.Machine + "\"; add it to ~/.obey/machines.yaml")
 	}
-	root, err := hopBackResolveRoot(ctx, m, msel.Remainder)
+	root, err := resolveRemoteRoot(ctx, m, msel.Remainder)
 	if err != nil {
 		return withRemoteSuggestions(err, msel)
 	}

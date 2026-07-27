@@ -351,7 +351,7 @@ func runHopBack(ctx context.Context, cmd *cobra.Command, printOnly, shellConnect
 	if err := guardRemoteOutputFlags(m.ID, printOnly, jsonOut); err != nil {
 		return err
 	}
-	root, err := hopBackResolveRoot(ctx, m, origin.Campaign)
+	root, err := resolveRemoteRoot(ctx, m, origin.Campaign)
 	if err != nil {
 		return hopBackFailure(err, m, registered)
 	}

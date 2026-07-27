@@ -442,14 +442,14 @@ func TestRunHopBackDecisionTable(t *testing.T) {
 			// exercised deterministically, regardless of the developer's fleet.
 			t.Setenv("CAMP_MACHINES_PATH", filepath.Join(t.TempDir(), "machines.yaml"))
 
-			restore := hopBackResolveRoot
-			hopBackResolveRoot = func(_ context.Context, m *machines.Machine, campaign string) (string, error) {
+			restore := resolveRemoteRoot
+			resolveRemoteRoot = func(_ context.Context, m *machines.Machine, campaign string) (string, error) {
 				if tt.resolveErr != nil {
 					return "", tt.resolveErr
 				}
 				return "/home/lancerogers/Dev/AI/" + campaign, nil
 			}
-			t.Cleanup(func() { hopBackResolveRoot = restore })
+			t.Cleanup(func() { resolveRemoteRoot = restore })
 
 			cmd, stdout, _ := newHopBackCmd()
 			err := runHopBack(context.Background(), cmd, tt.printOnly, tt.shellConnect, tt.jsonOut)
@@ -485,11 +485,11 @@ func TestRunHopBackNeverWritesMachinesFile(t *testing.T) {
 	t.Setenv("CAMP_MACHINES_PATH", path)
 	t.Setenv(HopOriginEnvVar, testOriginPayload)
 
-	restore := hopBackResolveRoot
-	hopBackResolveRoot = func(context.Context, *machines.Machine, string) (string, error) {
+	restore := resolveRemoteRoot
+	resolveRemoteRoot = func(context.Context, *machines.Machine, string) (string, error) {
 		return "/srv/obey-campaign", nil
 	}
-	t.Cleanup(func() { hopBackResolveRoot = restore })
+	t.Cleanup(func() { resolveRemoteRoot = restore })
 
 	cmd, _, _ := newHopBackCmd()
 	if err := runHopBack(context.Background(), cmd, false, true, false); err != nil {
@@ -507,11 +507,11 @@ func TestRunHopBackReverseLineCarriesItsOwnOrigin(t *testing.T) {
 	t.Setenv("CAMP_MACHINES_PATH", filepath.Join(t.TempDir(), "machines.yaml"))
 	t.Setenv(HopOriginEnvVar, testOriginPayload)
 
-	restore := hopBackResolveRoot
-	hopBackResolveRoot = func(context.Context, *machines.Machine, string) (string, error) {
+	restore := resolveRemoteRoot
+	resolveRemoteRoot = func(context.Context, *machines.Machine, string) (string, error) {
 		return "/srv/obey-campaign", nil
 	}
-	t.Cleanup(func() { hopBackResolveRoot = restore })
+	t.Cleanup(func() { resolveRemoteRoot = restore })
 
 	cmd, stdout, _ := newHopBackCmd()
 	if err := runHopBack(context.Background(), cmd, false, true, false); err != nil {
