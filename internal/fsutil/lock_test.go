@@ -21,6 +21,12 @@ import (
 // wait longer than that for a slot. A flaky gate is worse than a slow one,
 // because the honest response to a red gate becomes "run it again" rather than
 // "read it".
+//
+// This outer budget coexists with AcquireFileLock's independent
+// defaultLockTimeout (5s in lock.go). A contending waiter can still fail with
+// ErrTimeout from that internal bound while the test context has time left;
+// lengthening only this budget does not extend the production wait. "Stuck"
+// may therefore surface as the 5s timeout rather than this 60s deadline.
 const lockLivenessBudget = 60 * time.Second
 
 func TestAcquireFileLock_RemovesStaleLock(t *testing.T) {

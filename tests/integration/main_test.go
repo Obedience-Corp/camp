@@ -173,9 +173,12 @@ func GetSharedContainer(t *testing.T) *TestContainer {
 	// A run whose infrastructure has already collapsed should say so once and
 	// stop, rather than reporting the same fault as N test failures. See
 	// failInfrastructure for why this distinction matters.
+	//
+	// The first double-Reset failure uses t.Fatalf (the real infra death).
+	// Later checkouts t.Skip so the summary is 1 fail + N skips, not hundreds
+	// of identical hard fails with a contradictory "Skipped:" banner.
 	if msg := infraFailure(); msg != "" {
-		t.Fatalf("%s\n\nSkipped: the container infrastructure failed earlier in "+
-			"this run. This is not a failure of this test.", msg)
+		t.Skip(msg)
 	}
 
 	c := <-containerPool
