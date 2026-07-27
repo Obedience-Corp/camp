@@ -5,6 +5,7 @@ package integration
 
 import (
 	"context"
+	"fmt"
 	"os"
 	"runtime"
 	"strconv"
@@ -118,6 +119,44 @@ func poolSize() int {
 	return n
 }
 
+// Infrastructure failure is tracked separately from test failure.
+//
+// When the Docker daemon runs out of headroom, every pooled checkout fails the
+// same way, and each one surfaces as an ordinary test failure. A real run
+// produced 474 of 572 tests "failing" for this reason, on a branch where
+// nothing was wrong: the failing run gave up after 142s where a passing run of
+// the same suite took 471s. That signal actively misleads, because the natural
+// reading of 474 failures is that the branch broke something fundamental, and
+// ruling that out costs a full re-run plus separate investigation.
+//
+// The fix is not to make acquisition more reliable, which is not in this
+// harness's gift, but to make its failure legible and to stop early: one
+// unmistakable message beats hundreds of plausible ones.
+var (
+	infraMu     sync.Mutex
+	infraReason string
+)
+
+// failInfrastructure records the first infrastructure fault of the run.
+func failInfrastructure(reason string) {
+	infraMu.Lock()
+	defer infraMu.Unlock()
+	if infraReason == "" {
+		infraReason = "INFRASTRUCTURE FAILURE (not a test failure): " + reason +
+			"\n\nThe container pool could not be used. Common cause: the Docker " +
+			"daemon is out of headroom, often because several suites or gates are " +
+			"running at once. Re-run the suite on an idle machine, or lower " +
+			"CAMP_TEST_POOL_SIZE."
+	}
+}
+
+// infraFailure returns the recorded fault, or "" when the run is healthy.
+func infraFailure() string {
+	infraMu.Lock()
+	defer infraMu.Unlock()
+	return infraReason
+}
+
 // GetSharedContainer checks a container out of the pool for the calling test,
 // marks the test parallel, and resets the container to a clean state. The
 // container is returned to the pool when the test and all its subtests finish.
@@ -131,12 +170,25 @@ func GetSharedContainer(t *testing.T) *TestContainer {
 		t.Fatal("container pool not initialized - TestMain not called?")
 	}
 
+	// A run whose infrastructure has already collapsed should say so once and
+	// stop, rather than reporting the same fault as N test failures. See
+	// failInfrastructure for why this distinction matters.
+	if msg := infraFailure(); msg != "" {
+		t.Fatalf("%s\n\nSkipped: the container infrastructure failed earlier in "+
+			"this run. This is not a failure of this test.", msg)
+	}
+
 	c := <-containerPool
 
 	if err := c.Reset(); err != nil {
-		// Return the container so the pool does not leak a slot, then fail.
-		containerPool <- c
-		t.Fatalf("failed to reset container: %v", err)
+		// One retry absorbs a transient blip; a second failure means the
+		// daemon or the container is genuinely gone.
+		if retryErr := c.Reset(); retryErr != nil {
+			containerPool <- c
+			failInfrastructure(fmt.Sprintf(
+				"could not reset a pooled container: %v (retry: %v)", err, retryErr))
+			t.Fatalf("%s", infraFailure())
+		}
 	}
 
 	// Register cleanup only after a successful checkout so the container is
