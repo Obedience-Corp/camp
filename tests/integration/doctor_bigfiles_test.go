@@ -196,3 +196,29 @@ func TestIntegration_DoctorBigFilesFixIsReadOnly(t *testing.T) {
 	assert.Contains(t, stillThere, "media/raw/footage.mov",
 		"the finding must survive --fix; this check only reports")
 }
+
+// Camp's own state tree must never be reported. It is gitignored and claimed
+// by no artifact root, so without an explicit skip the sweep would call it
+// "owned by no system" and suggest `camp artifacts add .campaign` — which
+// ValidateRootPath rejects. A finding whose only remedy is refused teaches the
+// user the check is wrong.
+func TestIntegration_DoctorBigFilesSkipsCampaignState(t *testing.T) {
+	tc := GetSharedContainer(t)
+	campPath := setupBigFilesCampaign(t, tc, "doctor-bigfiles-state")
+
+	tc.Shell(t, fmt.Sprintf(`
+		cd %s
+		mkdir -p .campaign/cache
+		dd if=/dev/zero of=.campaign/graph.db bs=1024 count=3072 2>/dev/null
+		dd if=/dev/zero of=.campaign/cache/blob.bin bs=1024 count=3072 2>/dev/null
+	`, campPath))
+
+	found := bigFilesFindings(t, tc, campPath)
+	for path := range found {
+		assert.NotContains(t, path, ".campaign",
+			"camp's own state tree must never be reported as unowned user content")
+	}
+
+	// The real findings still fire, so the skip is scoped rather than blunt.
+	assert.Contains(t, found, "media/raw/footage.mov")
+}

@@ -27,7 +27,6 @@ import (
 const (
 	neverSyncedIDPrefix = "artifact-root-never-synced:"
 	missingRootID       = "artifact-roots-missing-locally"
-	driftIDPrefix       = "artifact-root-drift:"
 )
 
 // ArtifactRootNeverSynced reports a declared root that has never left this

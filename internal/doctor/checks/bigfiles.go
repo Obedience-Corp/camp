@@ -264,6 +264,16 @@ func shouldSkipDir(rel string, roots []string) bool {
 	if base == ".git" {
 		return true
 	}
+	// Camp's own state tree is never user content. Skipping it is not a
+	// convenience: .campaign holds machine-local derived state (the graph
+	// database, peer snapshots, caches) that is gitignored and claimed by no
+	// artifact root, so the sweep would classify it as "owned by no system"
+	// and suggest `camp artifacts add .campaign` — a remedy ValidateRootPath
+	// refuses outright. A finding whose only fix is rejected is worse than no
+	// finding: it teaches the user this check is wrong.
+	if rel == artifacts.CampaignStateDir || strings.HasPrefix(rel, artifacts.CampaignStateDir+"/") {
+		return true
+	}
 	for _, root := range roots {
 		if rel == root || strings.HasPrefix(rel, root+"/") {
 			return true
