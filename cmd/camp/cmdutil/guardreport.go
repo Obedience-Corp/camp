@@ -55,6 +55,9 @@ type DeclaredRoot struct {
 	// KeptWithGit names the files under this root that were still staged, so
 	// the report can say what git still owns.
 	KeptWithGit string
+	// KeptWithGitCount is how many those names cover, so the sentence agrees
+	// in number.
+	KeptWithGitCount int
 	// Existing is true when the root was already declared and camp reused it.
 	Existing bool
 }
@@ -172,7 +175,9 @@ func declareRootsForExclusions(
 	// Ask git what is still staged under each root, so the report names the
 	// files that remain git's rather than guessing from the exclusion list.
 	for _, root := range order {
-		byRoot[root].KeptWithGit = stagedNamesUnder(ctx, campRoot, root)
+		names, n := stagedNamesUnder(ctx, campRoot, root)
+		byRoot[root].KeptWithGit = names
+		byRoot[root].KeptWithGitCount = n
 	}
 
 	handling.Declared = append(handling.Declared, collectRoots(order, byRoot)...)
@@ -189,10 +194,10 @@ func collectRoots(order []string, byRoot map[string]*DeclaredRoot) []DeclaredRoo
 
 // stagedNamesUnder renders the staged file names beneath a root as a human
 // list ("script.md and notes.md"), or "" when nothing under it is staged.
-func stagedNamesUnder(ctx context.Context, campRoot, root string) string {
+func stagedNamesUnder(ctx context.Context, campRoot, root string) (string, int) {
 	paths, err := git.StagedPathsUnder(ctx, campRoot, root)
 	if err != nil || len(paths) == 0 {
-		return ""
+		return "", 0
 	}
 	names := make([]string, 0, len(paths))
 	for _, p := range paths {
@@ -200,11 +205,11 @@ func stagedNamesUnder(ctx context.Context, campRoot, root string) string {
 	}
 	switch len(names) {
 	case 1:
-		return names[0]
+		return names[0], 1
 	case 2:
-		return names[0] + " and " + names[1]
+		return names[0] + " and " + names[1], 2
 	default:
-		return fmt.Sprintf("%s and %s more", names[0], ui.FormatCount(len(names)-1))
+		return fmt.Sprintf("%s and %s more", names[0], ui.FormatCount(len(names)-1)), len(names)
 	}
 }
 
@@ -285,7 +290,11 @@ func renderDeclaredRoot(out io.Writer, campRoot string, d DeclaredRoot) {
 	// their directory is now "artifact content" and has no way to know the
 	// notes they wrote beside the footage are still versioned.
 	if kept := d.KeptWithGit; kept != "" {
-		_, _ = fmt.Fprintf(out, "  %s stay with git\n", kept)
+		verb := "stay"
+		if d.KeptWithGitCount == 1 {
+			verb = "stays"
+		}
+		_, _ = fmt.Fprintf(out, "  %s %s with git\n", kept, verb)
 	}
 	_, _ = fmt.Fprintf(out, "  Undo: camp artifacts remove %s\n", d.Root)
 

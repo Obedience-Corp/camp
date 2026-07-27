@@ -57,7 +57,8 @@ func TestIntegration_GuardAutoDeclaresMixedRoot(t *testing.T) {
 	// Design doc 02's "script.md and notes.md stay with git" line. Without it
 	// the user has been told their directory is now artifact content and has
 	// no way to know the note they just wrote is still versioned.
-	assert.Contains(t, output, "stay with git")
+	assert.Contains(t, output, "stays with git",
+		"one file takes the singular verb")
 	assert.Contains(t, output, "notes.md")
 
 	committed := tc.GitOutput(t, campPath, "show", "--name-only", "--format=", "HEAD")
