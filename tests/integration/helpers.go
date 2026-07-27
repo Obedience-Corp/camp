@@ -243,16 +243,19 @@ func newPooledContainer(ctx context.Context, bins sharedBinaries) (*TestContaine
 		}
 	}
 
-	// Install git (required for project operations)
-	exitCode, output, err := container.Exec(ctx, []string{"apk", "add", "--no-cache", "git"})
+	// Install git (required for project operations) and jq (so --json output
+	// is validated by a real JSON consumer rather than only by our own
+	// unmarshaler, which would accept shapes a caller's parser rejects).
+	// One apk invocation: each one is a container round trip per pool member.
+	exitCode, output, err := container.Exec(ctx, []string{"apk", "add", "--no-cache", "git", "jq"})
 	if err != nil {
 		container.Terminate(ctx)
-		return nil, fmt.Errorf("failed to install git: %w", err)
+		return nil, fmt.Errorf("failed to install container packages: %w", err)
 	}
 	if exitCode != 0 {
 		outputBytes, _ := io.ReadAll(output)
 		container.Terminate(ctx)
-		return nil, fmt.Errorf("apk add git failed with exit code %d: %s", exitCode, string(outputBytes))
+		return nil, fmt.Errorf("apk add git jq failed with exit code %d: %s", exitCode, string(outputBytes))
 	}
 
 	// Configure git (required for submodule operations)

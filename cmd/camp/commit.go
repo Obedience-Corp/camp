@@ -59,6 +59,7 @@ var (
 	commitWorkitem    string
 	commitNoEdit      bool
 	commitLarge       bool
+	commitJSONOut     bool
 )
 
 func init() {
@@ -72,6 +73,7 @@ func init() {
 	commitCmd.Flags().BoolVar(&commitAutoWrite, "auto-write", false, "Run configured commit message writer")
 	commitCmd.Flags().StringVar(&commitWorkitem, "workitem", "", "explicit workitem selector for the commit tag (overrides cwd-based resolution)")
 	commitCmd.Flags().BoolVar(&commitLarge, "commit-large", false, "Commit over-threshold files instead of keeping them out of git")
+	commitCmd.Flags().BoolVar(&commitJSONOut, "json", false, "Emit a JSON result on stdout; human output goes to stderr")
 
 	rootCmd.AddCommand(commitCmd)
 	commitCmd.GroupID = "git"
@@ -100,6 +102,16 @@ func completeProjectFlag(cmd *cobra.Command, args []string, toComplete string) (
 func runCommit(cmd *cobra.Command, args []string) error {
 	ctx := cmd.Context()
 
+	// Under --json, stdout carries exactly one document and nothing else.
+	// Human lines go to stderr rather than being dropped, so a person watching
+	// a scripted run still sees what happened. fest has the interleave bug
+	// this avoids; the point of doing it here is not to recreate it.
+	humanOut := cmd.OutOrStdout()
+	if commitJSONOut {
+		humanOut = cmd.ErrOrStderr()
+	}
+	jsonResult := newCommitJSONResult("")
+
 	// Join repeated -m values git-style before any tag prepending so the tag
 	// lands on the subject line.
 	commitMessage := commitkit.JoinMessages(commitMessages)
@@ -117,7 +129,7 @@ func runCommit(cmd *cobra.Command, args []string) error {
 	}
 
 	if target.IsSubmodule {
-		fmt.Println(ui.Info(fmt.Sprintf("Operating on submodule: %s", target.Name)))
+		_, _ = fmt.Fprintln(humanOut, ui.Info(fmt.Sprintf("Operating on submodule: %s", target.Name)))
 	}
 
 	if commitAutoWrite && commitMessage != "" {
@@ -153,7 +165,7 @@ func runCommit(cmd *cobra.Command, args []string) error {
 
 	// Stage if requested
 	if stageAll {
-		fmt.Println(ui.Info("Staging changes..."))
+		_, _ = fmt.Fprintln(humanOut, ui.Info("Staging changes..."))
 		var guardOutcome *git.StageOutcome
 		if target.IsSubmodule || commitIncludeRefs {
 			outcome, err := git.StageWithGuardOptions(ctx, target.Path, nil, git.StageOptions{CommitLarge: commitLarge})
@@ -185,10 +197,11 @@ func runCommit(cmd *cobra.Command, args []string) error {
 
 		// Act on what the guard decided and tell the user. Runs after staging
 		// so the declaration it may write lands in this same commit.
-		handling, err := cmdutil.HandleStageOutcome(ctx, cmd.OutOrStdout(), campRoot, target.Path, guardOutcome)
+		handling, err := cmdutil.HandleStageOutcome(ctx, humanOut, campRoot, target.Path, guardOutcome)
 		if err != nil {
 			return err
 		}
+		jsonResult.applyGuardHandling(handling)
 		// The excluded file is still an unstaged worktree change, so the
 		// ordinary has-changes check would say yes and git would then reject
 		// the empty commit. Report the no-op instead of failing.
@@ -197,13 +210,13 @@ func runCommit(cmd *cobra.Command, args []string) error {
 			return err
 		}
 		if empty && !commitAmend {
-			cmdutil.ReportNothingLeftToCommit(cmd.OutOrStdout())
-			return nil
+			cmdutil.ReportNothingLeftToCommit(humanOut)
+			return commitJSONNoop(cmd, jsonResult)
 		}
 	}
 
 	// Show what will be committed
-	cmdutil.ShowStagedSummary(ctx, target.Path)
+	cmdutil.ShowStagedSummaryTo(humanOut, ctx, target.Path)
 
 	// Refuse root content commits that would accidentally sweep pre-staged
 	// submodule gitlinks into this commit's message/tag context. The user can
@@ -224,12 +237,12 @@ func runCommit(cmd *cobra.Command, args []string) error {
 		return err
 	}
 	if !hasChanges && !commitAmend {
-		fmt.Println(ui.Success("Nothing to commit, working tree clean"))
-		return nil
+		_, _ = fmt.Fprintln(humanOut, ui.Success("Nothing to commit, working tree clean"))
+		return commitJSONNoop(cmd, jsonResult)
 	}
 
 	if commitAutoWrite {
-		fmt.Println(ui.Info("Writing commit message..."))
+		_, _ = fmt.Fprintln(humanOut, ui.Info("Writing commit message..."))
 		var hookErr error
 		extraEnv := workitemEnvForCommit(ctx, campRoot, commitWorkitem)
 		extraEnv = commitkit.WithCommitAmendEnv(extraEnv, commitAmend)
@@ -255,7 +268,7 @@ func runCommit(cmd *cobra.Command, args []string) error {
 	}
 
 	// Perform commit
-	fmt.Println(ui.Info("Committing changes..."))
+	_, _ = fmt.Fprintln(humanOut, ui.Info("Committing changes..."))
 	opts := &git.CommitOptions{
 		Message: message,
 		Amend:   commitAmend,
@@ -270,13 +283,13 @@ func runCommit(cmd *cobra.Command, args []string) error {
 					return camperrors.Wrap(driftErr, "check unstaged submodule refs")
 				}
 				if len(driftRefs) > 0 {
-					fmt.Println(ui.Warning("Nothing to commit (submodule ref changes are excluded by default)"))
-					fmt.Println(ui.Dim("  Use 'camp refs-sync' to commit only the submodule pointers."))
-					fmt.Println(ui.Dim("  Use 'camp commit --include-refs -m \"...\"' to include them in this commit."))
+					_, _ = fmt.Fprintln(humanOut, ui.Warning("Nothing to commit (submodule ref changes are excluded by default)"))
+					_, _ = fmt.Fprintln(humanOut, ui.Dim("  Use 'camp refs-sync' to commit only the submodule pointers."))
+					_, _ = fmt.Fprintln(humanOut, ui.Dim("  Use 'camp commit --include-refs -m \"...\"' to include them in this commit."))
 					return nil
 				}
 			}
-			fmt.Println(ui.Success("Nothing to commit"))
+			_, _ = fmt.Fprintln(humanOut, ui.Success("Nothing to commit"))
 			return nil
 		}
 		return err
@@ -290,8 +303,26 @@ func runCommit(cmd *cobra.Command, args []string) error {
 			CommitEvidence(ctx, ledgerkit.Scope{Workitem: workitemRef, Festival: festivalRef}, campRoot, target.Path, sha, message)
 	}
 
-	fmt.Println(ui.Success("Changes committed successfully"))
+	_, _ = fmt.Fprintln(humanOut, ui.Success("Changes committed successfully"))
+
+	if commitJSONOut {
+		jsonResult.Repo = target.Path
+		if err := jsonResult.finalize(ctx, target.Path); err != nil {
+			return err
+		}
+		return jsonResult.emit(cmd.OutOrStdout())
+	}
 	return nil
+}
+
+// commitJSONNoop emits the document for a run that legitimately produced no
+// commit, so a machine caller always receives one document per invocation
+// rather than having to treat "no output" as a distinct outcome.
+func commitJSONNoop(cmd *cobra.Command, result *commitJSONResult) error {
+	if !commitJSONOut {
+		return nil
+	}
+	return result.emit(cmd.OutOrStdout())
 }
 
 func worktreesRelPath(ctx context.Context, campRoot string) string {

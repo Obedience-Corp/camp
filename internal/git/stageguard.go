@@ -243,3 +243,31 @@ func StagedPathsUnder(ctx context.Context, repoPath, dir string) ([]string, erro
 	}
 	return paths, nil
 }
+
+// FullHash returns the full 40-character commit hash of HEAD.
+//
+// Machine callers get the full hash rather than the abbreviated one the human
+// output shows: an abbreviation is display formatting, and a consumer that
+// stores it has to guess how many characters stay unambiguous as the repo grows.
+func FullHash(ctx context.Context, repoPath string) (string, error) {
+	out, err := Output(ctx, repoPath, "rev-parse", "HEAD")
+	if err != nil {
+		return "", err
+	}
+	return strings.TrimSpace(out), nil
+}
+
+// CommitPathCount returns how many paths the HEAD commit touched.
+func CommitPathCount(ctx context.Context, repoPath string) (int, error) {
+	out, err := Output(ctx, repoPath, "show", "--name-only", "--format=", "HEAD")
+	if err != nil {
+		return 0, err
+	}
+	n := 0
+	for _, line := range strings.Split(out, "\n") {
+		if strings.TrimSpace(line) != "" {
+			n++
+		}
+	}
+	return n, nil
+}
