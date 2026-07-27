@@ -58,6 +58,7 @@ var (
 	commitAutoWrite   bool
 	commitWorkitem    string
 	commitNoEdit      bool
+	commitLarge       bool
 )
 
 func init() {
@@ -70,6 +71,7 @@ func init() {
 	commitCmd.Flags().BoolVar(&commitIncludeRefs, "include-refs", false, "Include submodule ref changes when staging at campaign root")
 	commitCmd.Flags().BoolVar(&commitAutoWrite, "auto-write", false, "Run configured commit message writer")
 	commitCmd.Flags().StringVar(&commitWorkitem, "workitem", "", "explicit workitem selector for the commit tag (overrides cwd-based resolution)")
+	commitCmd.Flags().BoolVar(&commitLarge, "commit-large", false, "Commit over-threshold files instead of keeping them out of git")
 
 	rootCmd.AddCommand(commitCmd)
 	commitCmd.GroupID = "git"
@@ -154,7 +156,7 @@ func runCommit(cmd *cobra.Command, args []string) error {
 		fmt.Println(ui.Info("Staging changes..."))
 		var guardOutcome *git.StageOutcome
 		if target.IsSubmodule || commitIncludeRefs {
-			outcome, err := git.StageWithGuard(ctx, target.Path, nil)
+			outcome, err := git.StageWithGuardOptions(ctx, target.Path, nil, git.StageOptions{CommitLarge: commitLarge})
 			if err != nil {
 				return err
 			}
@@ -166,7 +168,7 @@ func runCommit(cmd *cobra.Command, args []string) error {
 			if pathErr != nil {
 				return pathErr
 			}
-			outcome, err := git.StageAllExcludingWithGuard(ctx, target.Path, paths)
+			outcome, err := git.StageAllExcludingWithGuardOptions(ctx, target.Path, paths, git.StageOptions{CommitLarge: commitLarge})
 			if err != nil {
 				return err
 			}

@@ -15,6 +15,7 @@ import (
 	"github.com/Obedience-Corp/camp/internal/config"
 	camperrors "github.com/Obedience-Corp/camp/internal/errors"
 	"github.com/Obedience-Corp/camp/internal/jsoncontract"
+	"github.com/Obedience-Corp/camp/internal/stageguard"
 )
 
 // SettingsJSONVersion is the schema version of camp settings get --json.
@@ -45,6 +46,15 @@ const (
 	settingsKeyLocalCampaignType        = "local.campaign.type"
 	settingsKeyLocalCampaignCommitHook  = "local.campaign.commit_hook"
 
+	// Staging guard keys. Campaign-scoped because the thresholds describe the
+	// campaign's own content, and every default the guard applies has to be
+	// reversible in one command.
+	settingsKeyLocalGuardMaxFileSize        = "local.commit.guards.max_file_size"
+	settingsKeyLocalGuardMaxProjectFileSize = "local.commit.guards.max_project_file_size"
+	settingsKeyLocalGuardMaxAddedFiles      = "local.commit.guards.max_added_files"
+	settingsKeyLocalGuardLargeFiles         = "local.commit.guards.large_files"
+	settingsKeyLocalGuardBulk               = "local.commit.guards.bulk"
+
 	// Commit behavior (global defaults + local overrides + effective view).
 	settingsKeyGlobalCommitSyncRefs       = "global.commit.sync_project_refs"
 	settingsKeyGlobalCommitDisableTags    = "global.commit.disable_commit_tags"
@@ -73,6 +83,11 @@ func settingsKeys() []string {
 		settingsKeyLocalCampaignMission,
 		settingsKeyLocalCampaignType,
 		settingsKeyLocalCampaignCommitHook,
+		settingsKeyLocalGuardMaxFileSize,
+		settingsKeyLocalGuardMaxProjectFileSize,
+		settingsKeyLocalGuardMaxAddedFiles,
+		settingsKeyLocalGuardLargeFiles,
+		settingsKeyLocalGuardBulk,
 	}
 }
 
@@ -80,7 +95,10 @@ func isCampaignScalarKey(key string) bool {
 	switch key {
 	case settingsKeyLocalCampaignName, settingsKeyLocalCampaignDescription,
 		settingsKeyLocalCampaignMission, settingsKeyLocalCampaignType,
-		settingsKeyLocalCampaignCommitHook:
+		settingsKeyLocalCampaignCommitHook,
+		settingsKeyLocalGuardMaxFileSize, settingsKeyLocalGuardMaxProjectFileSize,
+		settingsKeyLocalGuardMaxAddedFiles, settingsKeyLocalGuardLargeFiles,
+		settingsKeyLocalGuardBulk:
 		return true
 	default:
 		return false
@@ -288,6 +306,16 @@ func campaignScalarGet(ctx context.Context, key string) (any, error) {
 		return string(cfg.Type), nil
 	case settingsKeyLocalCampaignCommitHook:
 		return cfg.Hooks.CommitMessage.Command, nil
+	case settingsKeyLocalGuardMaxFileSize:
+		return cfg.Commit.Guards.MaxFileSize, nil
+	case settingsKeyLocalGuardMaxProjectFileSize:
+		return cfg.Commit.Guards.MaxProjectFileSize, nil
+	case settingsKeyLocalGuardMaxAddedFiles:
+		return cfg.Commit.Guards.MaxAddedFiles, nil
+	case settingsKeyLocalGuardLargeFiles:
+		return cfg.Commit.Guards.LargeFiles, nil
+	case settingsKeyLocalGuardBulk:
+		return cfg.Commit.Guards.Bulk, nil
 	default:
 		return nil, errSettingsUnknownKey(key)
 	}
@@ -495,9 +523,64 @@ func applyCampaignScalarKey(cfg *config.CampaignConfig, key, value string) (stri
 	case settingsKeyLocalCampaignCommitHook:
 		cfg.Hooks.CommitMessage.Command = strings.TrimSpace(value)
 		return cfg.Hooks.CommitMessage.Command, nil
+	case settingsKeyLocalGuardMaxFileSize, settingsKeyLocalGuardMaxProjectFileSize:
+		return applyGuardSizeKey(cfg, key, value)
+	case settingsKeyLocalGuardMaxAddedFiles:
+		return applyGuardCountKey(cfg, key, value)
+	case settingsKeyLocalGuardLargeFiles, settingsKeyLocalGuardBulk:
+		return applyGuardModeKey(cfg, key, value)
 	default:
 		return "", errSettingsUnknownKey(key)
 	}
+}
+
+// applyGuardSizeKey validates a byte-size setting with the same parser the
+// guard uses, so a value accepted here can never be rejected at commit time.
+func applyGuardSizeKey(cfg *config.CampaignConfig, key, value string) (string, error) {
+	trimmed := strings.TrimSpace(value)
+	if _, err := stageguard.ParseByteSize(trimmed); err != nil {
+		return "", camperrors.NewValidation(key,
+			fmt.Sprintf("%v (examples: 10MiB, 50MB, 1048576)", err), err)
+	}
+	if key == settingsKeyLocalGuardMaxFileSize {
+		cfg.Commit.Guards.MaxFileSize = trimmed
+	} else {
+		cfg.Commit.Guards.MaxProjectFileSize = trimmed
+	}
+	return trimmed, nil
+}
+
+// applyGuardCountKey validates the bulk trigger count.
+func applyGuardCountKey(cfg *config.CampaignConfig, key, value string) (string, error) {
+	trimmed := strings.TrimSpace(value)
+	n, err := strconv.Atoi(trimmed)
+	if err != nil || n < 0 {
+		return "", camperrors.NewValidation(key,
+			fmt.Sprintf("must be a non-negative whole number, got %q", value), nil)
+	}
+	cfg.Commit.Guards.MaxAddedFiles = n
+	return trimmed, nil
+}
+
+// applyGuardModeKey validates a guard mode. The bulk guard deliberately has no
+// "auto": camp cannot infer whether a large untracked tree wants gitignore or
+// an artifact root, so offering the mode would promise a decision it cannot make.
+func applyGuardModeKey(cfg *config.CampaignConfig, key, value string) (string, error) {
+	trimmed := strings.ToLower(strings.TrimSpace(value))
+	if key == settingsKeyLocalGuardBulk {
+		if trimmed != string(stageguard.ModeBlock) && trimmed != string(stageguard.ModeOff) {
+			return "", camperrors.NewValidation(key,
+				fmt.Sprintf("must be block or off, got %q", value), nil)
+		}
+		cfg.Commit.Guards.Bulk = trimmed
+		return trimmed, nil
+	}
+	if !stageguard.Mode(trimmed).Valid() {
+		return "", camperrors.NewValidation(key,
+			fmt.Sprintf("must be auto, block, or off, got %q", value), nil)
+	}
+	cfg.Commit.Guards.LargeFiles = trimmed
+	return trimmed, nil
 }
 
 func setGlobalSetting(ctx context.Context, cmd *cobra.Command, key, value string) error {

@@ -20,6 +20,19 @@ import (
 // already decided do not belong in the commit, and a failure in that window
 // would leave it there.
 
+// StageOptions carries per-invocation overrides of the guard's decision.
+type StageOptions struct {
+	// CommitLarge forces over-threshold files and bulk directories into the
+	// index for this invocation, and declares nothing.
+	//
+	// The name is the inverse of what it would have been under a blocking
+	// guard. With auto-handling, the thing a user needs to override is camp's
+	// decision to EXCLUDE ("no, this release binary belongs in git"), so
+	// naming it --allow-large would read as "skip the safety check", which is
+	// backwards.
+	CommitLarge bool
+}
+
 // StageOutcome is what the guard decided about a staging operation, returned
 // so the CLI can report it. Rendering belongs to the caller: camp's commit
 // command writes remedy menus, fest renders the same values its own way.
@@ -128,8 +141,15 @@ func isStageEverything(files []string) bool {
 // a repository the guard cannot read (not a repo yet, git unavailable) must
 // still be stageable, because the guard is a safety net rather than a
 // precondition for camp working at all.
-func runStageGuard(ctx context.Context, repoPath string, files []string) (*StageOutcome, []string, error) {
+func runStageGuard(ctx context.Context, repoPath string, files []string, opts StageOptions) (*StageOutcome, []string, error) {
 	if !isStageEverything(files) {
+		return nil, nil, nil
+	}
+	// --commit-large is the user overruling camp's decision to exclude, which
+	// is the thing that actually needs an override once handling is automatic.
+	// It suppresses detection entirely rather than excluding-then-restoring,
+	// so the index ends up exactly as an unguarded stage would leave it.
+	if opts.CommitLarge {
 		return nil, nil, nil
 	}
 

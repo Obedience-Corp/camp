@@ -438,7 +438,13 @@ func Stage(ctx context.Context, repoPath string, files []string) error {
 // A nil outcome means the guard had nothing to say: the call named explicit
 // paths, the guard is off, or nothing crossed a limit.
 func StageWithGuard(ctx context.Context, repoPath string, files []string) (*StageOutcome, error) {
-	outcome, excluded, err := runStageGuard(ctx, repoPath, files)
+	return StageWithGuardOptions(ctx, repoPath, files, StageOptions{})
+}
+
+// StageWithGuardOptions stages like StageWithGuard under explicit guard
+// overrides, such as --commit-large.
+func StageWithGuardOptions(ctx context.Context, repoPath string, files []string, opts StageOptions) (*StageOutcome, error) {
+	outcome, excluded, err := runStageGuard(ctx, repoPath, files, opts)
 	if err != nil {
 		return nil, err
 	}
@@ -676,19 +682,27 @@ func StageAllExcluding(ctx context.Context, repoPath string, excludePaths []stri
 // the campaign root always excludes submodule refs, and staging twice would
 // leave a window where the index holds bytes the guard has already ruled out.
 func StageAllExcludingWithGuard(ctx context.Context, repoPath string, excludePaths []string) (*StageOutcome, error) {
+	return StageAllExcludingWithGuardOptions(ctx, repoPath, excludePaths, StageOptions{})
+}
+
+// StageAllExcludingWithGuardOptions stages all changes except excludePaths,
+// under explicit guard overrides.
+func StageAllExcludingWithGuardOptions(
+	ctx context.Context, repoPath string, excludePaths []string, opts StageOptions,
+) (*StageOutcome, error) {
 	if ctx.Err() != nil {
 		return nil, ctx.Err()
 	}
 
 	if len(excludePaths) == 0 {
-		return StageWithGuard(ctx, repoPath, nil)
+		return StageWithGuardOptions(ctx, repoPath, nil, opts)
 	}
 
 	files := []string{"--", "."}
 	for _, p := range excludePaths {
 		files = append(files, ":(exclude,literal)"+p)
 	}
-	return StageWithGuard(ctx, repoPath, files)
+	return StageWithGuardOptions(ctx, repoPath, files, opts)
 }
 
 // HasStagedChanges checks if there are any staged changes ready to commit.

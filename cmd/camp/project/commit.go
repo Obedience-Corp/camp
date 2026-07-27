@@ -53,6 +53,7 @@ var (
 	projectCommitNoSync    bool
 	projectCommitAutoWrite bool
 	projectCommitWorkitem  string
+	projectCommitLarge     bool
 )
 
 func init() {
@@ -64,6 +65,7 @@ func init() {
 	projectCommitCmd.Flags().BoolVar(&projectCommitNoSync, "no-sync", false, "Do not sync submodule ref even if settings enable it")
 	projectCommitCmd.Flags().BoolVar(&projectCommitAutoWrite, "auto-write", false, "Run configured commit message writer")
 	projectCommitCmd.Flags().StringVar(&projectCommitWorkitem, "workitem", "", "explicit workitem selector for the commit tag (overrides cwd-based resolution)")
+	projectCommitCmd.Flags().BoolVar(&projectCommitLarge, "commit-large", false, "Commit over-threshold files instead of keeping them out of git")
 
 	if err := projectCommitCmd.RegisterFlagCompletionFunc("project", cmdutil.CompleteProjectName); err != nil {
 		panic(err)
@@ -152,7 +154,7 @@ func runProjectCommit(cmd *cobra.Command, args []string) error {
 	// Stage if requested
 	if projectCommitAll {
 		fmt.Println(ui.Info("Staging changes..."))
-		guardOutcome, stageErr := git.StageWithGuard(ctx, resolvedPath, nil)
+		guardOutcome, stageErr := git.StageWithGuardOptions(ctx, resolvedPath, nil, git.StageOptions{CommitLarge: projectCommitLarge})
 		if stageErr != nil {
 			return camperrors.Wrap(stageErr, "failed to stage")
 		}

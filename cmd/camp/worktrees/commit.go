@@ -1,6 +1,7 @@
 package worktrees
 
 import (
+	"context"
 	"errors"
 	"fmt"
 
@@ -23,6 +24,7 @@ var (
 	wtCommitAmend     bool
 	wtCommitAutoWrite bool
 	wtCommitWorkitem  string
+	wtCommitLarge     bool
 )
 
 var worktreesCommitCmd = &cobra.Command{
@@ -60,6 +62,8 @@ func init() {
 		"Amend the previous commit")
 	worktreesCommitCmd.Flags().BoolVar(&wtCommitAutoWrite, "auto-write", false,
 		"Run configured commit message writer")
+	worktreesCommitCmd.Flags().BoolVar(&wtCommitLarge, "commit-large", false,
+		"Commit over-threshold files instead of keeping them out of git")
 	worktreesCommitCmd.Flags().StringVar(&wtCommitWorkitem, "workitem", "",
 		"explicit workitem selector for the commit tag (overrides cwd-based resolution)")
 }
@@ -120,7 +124,7 @@ func runWorktreesCommit(cmd *cobra.Command, args []string) error {
 	// Stage if requested
 	if wtCommitAll {
 		fmt.Println(ui.Info("Staging changes..."))
-		if err := executor.StageAll(ctx); err != nil {
+		if err := stageWorktreeWithGuard(ctx, cmd, campRoot, wtCtx.WorktreePath); err != nil {
 			return camperrors.Wrap(err, "failed to stage")
 		}
 	}
@@ -177,4 +181,21 @@ func runWorktreesCommit(cmd *cobra.Command, args []string) error {
 	fmt.Println(ui.Success("Changes committed in worktree"))
 
 	return nil
+}
+
+// stageWorktreeWithGuard stages a worktree through the guarded chokepoint and
+// reports what the guard decided.
+//
+// A worktree is project scope, so camp never declares an artifact root here:
+// it excludes, says what it left out, and offers the three ways forward. The
+// reporting is shared with `camp commit` and `camp p commit` so the same
+// situation never reads differently depending on which command found it.
+func stageWorktreeWithGuard(ctx context.Context, cmd *cobra.Command, campRoot, worktreePath string) error {
+	outcome, err := git.StageWithGuardOptions(ctx, worktreePath, nil,
+		git.StageOptions{CommitLarge: wtCommitLarge})
+	if err != nil {
+		return err
+	}
+	_, err = cmdutil.HandleStageOutcome(ctx, cmd.OutOrStdout(), campRoot, worktreePath, outcome)
+	return err
 }

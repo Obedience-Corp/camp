@@ -2,6 +2,7 @@ package cmdutil
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"io"
 	"path/filepath"
@@ -433,4 +434,76 @@ func (h *GuardHandling) ExcludedAnything() bool {
 // everything they changed was kept out of git, and exits the caller cleanly.
 func ReportNothingLeftToCommit(out io.Writer) {
 	_, _ = fmt.Fprintf(out, "%s Nothing left to commit: everything changed was kept out of git\n", ui.SuccessIcon())
+}
+
+// RenderGuardRefusal writes the full report for a guard refusal, in place of
+// the one-line error a caller would otherwise print.
+//
+// A refusal is the one moment the package spends the user's attention, so it
+// has to pay for it: what was found, where, that nothing was staged, and the
+// three ways out. A bare "staging refused" would leave the user to discover
+// all of that themselves.
+//
+// It reports whether it rendered, so the caller can suppress the ordinary
+// error print rather than showing both.
+func RenderGuardRefusal(out io.Writer, err error, commandName string) bool {
+	var blocked *git.GuardBlockedError
+	if !errors.As(err, &blocked) {
+		return false
+	}
+	switch blocked.Kind {
+	case stageguard.Bulk:
+		renderBulkRefusal(out, blocked, commandName)
+	default:
+		renderLargeFileRefusal(out, blocked, commandName)
+	}
+	return true
+}
+
+func renderBulkRefusal(out io.Writer, blocked *git.GuardBlockedError, commandName string) {
+	var total int
+	var bytes int64
+	var worst stageguard.GuardViolation
+	for _, v := range blocked.Violations {
+		total += v.Count
+		bytes += v.TotalBytes
+		if v.Count > worst.Count {
+			worst = v
+		}
+	}
+
+	_, _ = fmt.Fprintf(out, "Error: %s untracked files (%s) would be committed\n\n",
+		ui.FormatCount(total), ui.FormatBytes(bytes))
+	_, _ = fmt.Fprintf(out, "  %s/   %s files, %s\n\n",
+		worst.CommonPrefix, ui.FormatCount(worst.Count), ui.FormatBytes(worst.TotalBytes))
+	_, _ = fmt.Fprintf(out, "Nothing was staged. Camp does not guess on bulk directories:\n\n")
+	// The gitignore line interpolates the detected prefix. No directory name
+	// is hardcoded anywhere in the logic or the copy: size and shape decide,
+	// never a name camp was taught to recognize.
+	_, _ = fmt.Fprintf(out, "  gitignore it        echo '%s/' >> .gitignore\n", worst.CommonPrefix)
+	_, _ = fmt.Fprintf(out, "  keep and sync it    camp artifacts add %s\n", worst.CommonPrefix)
+	_, _ = fmt.Fprintf(out, "  commit it anyway    %s --commit-large -m \"...\"\n", commandName)
+	_, _ = fmt.Fprintf(out, "  turn the guard off  camp settings set local.commit.guards.bulk off\n")
+}
+
+func renderLargeFileRefusal(out io.Writer, blocked *git.GuardBlockedError, commandName string) {
+	_, _ = fmt.Fprintf(out, "Error: %s over the %s limit would be committed\n\n",
+		pluralFiles(len(blocked.Violations)), ui.FormatBytes(blocked.Limits.MaxFileSize))
+	for _, v := range blocked.Violations {
+		_, _ = fmt.Fprintf(out, "  %s   %s\n", v.Path, ui.FormatBytes(v.Size))
+	}
+	_, _ = fmt.Fprintf(out, "\nNothing was staged. commit.guards.large_files is set to block:\n\n")
+	for _, v := range blocked.Violations {
+		_, _ = fmt.Fprintf(out, "  keep and sync it    camp artifacts add %s\n",
+			filepath.ToSlash(filepath.Dir(v.Path)))
+	}
+	_, _ = fmt.Fprintf(out, "  commit it anyway    %s --commit-large -m \"...\"\n", commandName)
+	_, _ = fmt.Fprintf(out, "  handle it for me    camp settings set local.commit.guards.large_files auto\n")
+}
+
+func pluralFiles(n int) string {
+	if n == 1 {
+		return "1 file"
+	}
+	return ui.FormatCount(n) + " files"
 }
