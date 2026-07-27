@@ -3,11 +3,15 @@ package main
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"io"
+
+	"github.com/spf13/cobra"
 
 	"github.com/Obedience-Corp/camp/cmd/camp/cmdutil"
 	camperrors "github.com/Obedience-Corp/camp/internal/errors"
 	"github.com/Obedience-Corp/camp/internal/git"
+	"github.com/Obedience-Corp/camp/internal/stageguard"
 )
 
 // CommitJSONVersion is the schema version of `camp commit --json`.
@@ -53,14 +57,28 @@ type excludedFileJSON struct {
 	//                        root (campaign root, .campaign/, a repo root)
 	//   project_large_file   over the threshold inside a project, where an
 	//                        artifact root would keep it off the remote
+	//
+	// A refusal, where nothing was staged at all, uses its own two:
+	//
+	//   size_guard_blocked   over the threshold under large_files: block
+	//   bulk_guard           a bulk directory refused the whole commit; Path
+	//                        is the directory and Size its total
 	Reason string `json:"reason"`
 	// ArtifactRoot is the root camp declared, set only for size_guard.
 	ArtifactRoot string `json:"artifact_root,omitempty"`
 }
 
-// Exclusion reasons. size_guard is the auto-handled case; the other two come
-// from the refusal paths and are already named in GuardHandling.
-const reasonSizeGuard = "size_guard"
+// Exclusion reasons. size_guard is the auto-handled case; the next two come
+// from the refusal paths and are already named in GuardHandling. The last two
+// describe a refusal, where nothing was staged at all.
+const (
+	reasonSizeGuard = "size_guard"
+	// reasonSizeGuardBlocked is an over-threshold file under large_files:
+	// block, where camp refused rather than excluding-and-continuing.
+	reasonSizeGuardBlocked = "size_guard_blocked"
+	// reasonBulkGuard is a bulk directory that refused the whole commit.
+	reasonBulkGuard = "bulk_guard"
+)
 
 // newCommitJSONResult builds the document with every slice initialized.
 //
@@ -122,4 +140,50 @@ func (r *commitJSONResult) emit(out io.Writer) error {
 	encoder := json.NewEncoder(out)
 	encoder.SetIndent("", "  ")
 	return encoder.Encode(r)
+}
+
+// applyGuardRefusal records a refusal: nothing was staged, no commit exists,
+// and the document says which files caused it.
+//
+// Without this, `camp commit --json` on a refusal emits an exit code and an
+// empty stdout, leaving a machine caller unable to tell a refusal from a
+// crash. The schema carries an `ok` field precisely so a well-formed document
+// can describe a run that produced no commit.
+func (r *commitJSONResult) applyGuardRefusal(blocked *git.GuardBlockedError) {
+	r.OK = false
+	r.Commit = ""
+	r.Staged = 0
+	r.Repo = blocked.RepoPath
+
+	reason := reasonSizeGuardBlocked
+	if blocked.Kind == stageguard.Bulk {
+		reason = reasonBulkGuard
+	}
+	for _, v := range blocked.Violations {
+		path := v.Path
+		size := v.Size
+		if v.Kind == stageguard.Bulk {
+			// A bulk violation describes a directory, not one file; report the
+			// prefix and its total so the caller sees what was refused.
+			path = v.CommonPrefix
+			size = v.TotalBytes
+		}
+		r.Excluded = append(r.Excluded, excludedFileJSON{
+			Path: path, Size: size, Reason: reason,
+		})
+	}
+}
+
+// reportGuardRefusalJSON emits the refusal document under --json and returns
+// the error either way, so the human path and the exit code are unchanged.
+func reportGuardRefusalJSON(cmd *cobra.Command, result *commitJSONResult, err error) error {
+	var blocked *git.GuardBlockedError
+	if !commitJSONOut || !errors.As(err, &blocked) {
+		return err
+	}
+	result.applyGuardRefusal(blocked)
+	if emitErr := result.emit(cmd.OutOrStdout()); emitErr != nil {
+		return emitErr
+	}
+	return err
 }

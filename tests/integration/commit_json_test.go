@@ -153,3 +153,60 @@ func TestIntegration_CommitHumanPathUnchangedWithoutJSON(t *testing.T) {
 	assert.NotContains(t, stdout, "schema_version",
 		"the human path must not emit machine output")
 }
+
+// A refusal must still produce a well-formed document. Without one, a machine
+// caller sees exit 1 and empty stdout, and cannot tell a deliberate refusal
+// from a crash.
+func TestIntegration_CommitJSONEmitsDocumentOnRefusal(t *testing.T) {
+	tc := GetSharedContainer(t)
+	campPath := setupGuardCampaign(t, tc, "commit-json-refused")
+	writeGuardConfig(t, tc, campPath, "    max_added_files: 50")
+
+	tc.Shell(t, fmt.Sprintf(`
+		cd %s
+		mkdir -p vendor_tree
+		for i in $(seq 1 120); do printf 'x' > vendor_tree/f$i.js; done
+	`, campPath))
+
+	stdout, _, exitCode, err := tc.RunCampSplitInDir(campPath, "commit", "--json", "-m", "vendor")
+	require.NoError(t, err)
+	assert.NotEqual(t, 0, exitCode, "a refusal must still fail the command")
+
+	var doc commitJSONDoc
+	require.NoError(t, json.Unmarshal([]byte(stdout), &doc),
+		"a refusal must still emit one document on stdout; got:\n%s", stdout)
+
+	assert.False(t, doc.OK, "ok must be false when nothing was committed")
+	assert.Empty(t, doc.Commit, "a refusal carries no commit hash")
+	assert.Equal(t, 0, doc.Staged)
+	require.Len(t, doc.Excluded, 1)
+	assert.Equal(t, "vendor_tree", doc.Excluded[0].Path,
+		"a bulk refusal names the directory, not a file")
+	assert.Equal(t, "bulk_guard", doc.Excluded[0].Reason)
+	assert.Empty(t, doc.ArtifactRootsDeclared)
+}
+
+// The same for a large_files: block refusal, which names the file.
+func TestIntegration_CommitJSONEmitsDocumentOnBlockMode(t *testing.T) {
+	tc := GetSharedContainer(t)
+	campPath := setupGuardCampaign(t, tc, "commit-json-blocked")
+	writeGuardConfig(t, tc, campPath, "    max_file_size: 1MiB\n    large_files: block")
+
+	tc.Shell(t, fmt.Sprintf(`
+		cd %s
+		mkdir -p media
+		dd if=/dev/zero of=media/footage.mov bs=1024 count=3072 2>/dev/null
+	`, campPath))
+
+	stdout, _, exitCode, err := tc.RunCampSplitInDir(campPath, "commit", "--json", "-m", "blocked")
+	require.NoError(t, err)
+	assert.NotEqual(t, 0, exitCode)
+
+	var doc commitJSONDoc
+	require.NoError(t, json.Unmarshal([]byte(stdout), &doc), "got:\n%s", stdout)
+
+	assert.False(t, doc.OK)
+	require.Len(t, doc.Excluded, 1)
+	assert.Equal(t, "media/footage.mov", doc.Excluded[0].Path)
+	assert.Equal(t, "size_guard_blocked", doc.Excluded[0].Reason)
+}

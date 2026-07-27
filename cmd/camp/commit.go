@@ -182,7 +182,7 @@ func runCommit(cmd *cobra.Command, args []string) error {
 			}
 			outcome, err := git.StageAllExcludingWithGuardOptions(ctx, target.Path, paths, git.StageOptions{CommitLarge: commitLarge})
 			if err != nil {
-				return err
+				return reportGuardRefusalJSON(cmd, jsonResult, err)
 			}
 			guardOutcome = outcome
 			// git add rejects exclude pathspecs whose target contains
