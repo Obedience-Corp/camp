@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"github.com/spf13/cobra"
+	"gopkg.in/yaml.v3"
 
 	camperrors "github.com/Obedience-Corp/camp/internal/errors"
 	"github.com/Obedience-Corp/camp/internal/machines"
@@ -15,6 +16,11 @@ import (
 )
 
 var machineAdoptForce bool
+
+// adoptIsTerminal and adoptConfirm are production seams for the consent path.
+// Tests swap them so cancel vs explicit-No can be asserted without a real TTY.
+var adoptIsTerminal = ui.IsTerminal
+var adoptConfirm = confirmForm
 
 var machineAdoptCmd = &cobra.Command{
 	Use:   "adopt",
@@ -30,8 +36,9 @@ interactive act, and there is no flag that skips the confirmation.
 Adopting records how to REACH a machine. It does not make that machine reachable:
 that depends on its own sshd or tailnet policy. Verify with 'camp machine diagnose'.
 
-Declining is remembered, so hints stay quiet until you ask again. Re-running this
-command always works; --force only skips the reminder that you declined before.`,
+Answering No is remembered, so hints stay quiet until you ask again. Esc/cancel
+aborts without writing decline memory. Re-running this command always works;
+--force only skips the reminder that you declined before.`,
 	Args: cobra.NoArgs,
 	RunE: runMachineAdopt,
 }
@@ -48,7 +55,13 @@ func runMachineAdopt(cmd *cobra.Command, _ []string) error {
 	if err != nil {
 		return err
 	}
-	if self, err := isSelfOrigin(ctx, origin); err == nil && self {
+	// Fail closed on detection errors: a skipped self-guard could write a
+	// machines.yaml row pointing at this host and break self-reference resolve.
+	self, err := isSelfOrigin(ctx, origin)
+	if err != nil {
+		return camperrors.Wrap(err, "camp machine adopt: cannot determine whether this origin is this machine")
+	}
+	if self {
 		return camperrors.New("camp machine adopt: this origin is this machine (" + origin.Host +
 			"); nothing to adopt")
 	}
@@ -77,7 +90,7 @@ func runMachineAdopt(cmd *cobra.Command, _ []string) error {
 			d.DeclinedAt.Format("2006-01-02"))
 	}
 
-	if !ui.IsTerminal() {
+	if !adoptIsTerminal() {
 		return camperrors.New("camp machine adopt requires an interactive terminal: registering a " +
 			"machine is an explicit consent step and cannot be automated")
 	}
@@ -85,8 +98,13 @@ func runMachineAdopt(cmd *cobra.Command, _ []string) error {
 	if _, err := fmt.Fprint(cmd.OutOrStdout(), adoptPreview(origin, entry)); err != nil {
 		return err
 	}
-	ok, err := confirmForm(ctx, fmt.Sprintf("Add machine %q?", entry.ID))
+	ok, canceled, err := adoptConfirm(ctx, fmt.Sprintf("Add machine %q?", entry.ID))
 	if err != nil {
+		return err
+	}
+	if canceled {
+		// Esc/abort is not a deliberate decline — leave decline memory alone.
+		_, err := fmt.Fprintln(cmd.OutOrStdout(), "Not adopted.")
 		return err
 	}
 	if !ok {
@@ -161,8 +179,9 @@ func adoptEntry(mf *machines.File, origin HopOrigin) (machines.Machine, error) {
 	}, nil
 }
 
-// adoptPreview renders exactly the YAML that will be appended, plus the
-// reachability caveat. The operator approves the bytes, not a summary of them.
+// adoptPreview renders the YAML that will be appended (via the same
+// yaml.Marshal path File.Save uses), plus the reachability caveat. The
+// operator approves the bytes, not a hand-formatted summary of them.
 func adoptPreview(origin HopOrigin, entry machines.Machine) string {
 	var b strings.Builder
 	b.WriteString("\nOrigin from this session:\n\n")
@@ -172,12 +191,17 @@ func adoptPreview(origin HopOrigin, entry machines.Machine) string {
 		fmt.Fprintf(&b, "  campaign  %s\n", origin.Campaign)
 	}
 	b.WriteString("\nThis entry will be appended to ~/.obey/machines.yaml:\n\n")
-	fmt.Fprintf(&b, "    - id: %s\n", entry.ID)
-	fmt.Fprintf(&b, "      label: %s\n", entry.Label)
-	fmt.Fprintf(&b, "      host: %s\n", entry.Host)
-	fmt.Fprintf(&b, "      auth_method: %s\n", entry.AuthMethod)
-	if entry.SSHUser != "" {
-		fmt.Fprintf(&b, "      ssh_user: %s\n", entry.SSHUser)
+	// Marshal the row the same way Save does so quoting/escaping match disk.
+	yml, err := yaml.Marshal([]machines.Machine{entry})
+	if err != nil {
+		// Unreachable for a well-formed Machine; keep the preview usable.
+		fmt.Fprintf(&b, "    - id: %s\n      host: %s\n", entry.ID, entry.Host)
+	} else {
+		for _, line := range strings.Split(strings.TrimRight(string(yml), "\n"), "\n") {
+			b.WriteString("    ")
+			b.WriteString(line)
+			b.WriteByte('\n')
+		}
 	}
 	fmt.Fprintf(&b, "\n  auth_method is a default; change it with 'camp machine add %s --auth tailscale-ssh'\n", entry.ID)
 	fmt.Fprintf(&b, "\nAdopting records how to reach %s. It does not make %s reachable:\n", entry.ID, entry.ID)

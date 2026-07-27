@@ -160,6 +160,89 @@ func TestAdoptRefusesSelfHost(t *testing.T) {
 	}
 }
 
+func TestAdoptSelfOriginDetectionErrorFailsClosed(t *testing.T) {
+	// Detection errors must refuse adopt rather than skip the self-guard and
+	// risk writing a row that points at this machine.
+	isolateFleet(t)
+	t.Setenv(HopOriginEnvVar, adoptPayload)
+	cmd, out, _ := newAdoptCmd(t)
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+	cmd.SetContext(ctx)
+
+	err := runMachineAdopt(cmd, nil)
+	if err == nil {
+		t.Fatal("want fail-closed error when self-origin detection fails")
+	}
+	if !strings.Contains(err.Error(), "cannot determine whether this origin is this machine") {
+		t.Errorf("error = %v, want the fail-closed wrap", err)
+	}
+	if out.Len() != 0 {
+		t.Errorf("stdout must stay empty, got %q", out.String())
+	}
+	if _, statErr := os.Stat(machines.MachinesPath()); !os.IsNotExist(statErr) {
+		t.Error("fail-closed adopt must not write the fleet file")
+	}
+}
+
+func TestAdoptCancelDoesNotWriteDecline(t *testing.T) {
+	// Esc/abort is not a deliberate No — decline memory must stay empty.
+	isolateFleet(t)
+	t.Setenv(HopOriginEnvVar, adoptPayload)
+	cmd, out, _ := newAdoptCmd(t)
+
+	prevTerm, prevConfirm := adoptIsTerminal, adoptConfirm
+	t.Cleanup(func() {
+		adoptIsTerminal, adoptConfirm = prevTerm, prevConfirm
+	})
+	adoptIsTerminal = func() bool { return true }
+	adoptConfirm = func(context.Context, string) (bool, bool, error) {
+		return false, true, nil // canceled
+	}
+
+	if err := runMachineAdopt(cmd, nil); err != nil {
+		t.Fatalf("cancel is not an error: %v", err)
+	}
+	if !strings.Contains(out.String(), "Not adopted.") {
+		t.Errorf("stdout = %q, want Not adopted", out.String())
+	}
+	if _, err := os.Stat(machines.DeclinedPath()); !os.IsNotExist(err) {
+		t.Error("cancel must not create declined_origins.yaml")
+	}
+	if _, err := os.Stat(machines.MachinesPath()); !os.IsNotExist(err) {
+		t.Error("cancel must not write machines.yaml")
+	}
+}
+
+func TestAdoptExplicitNoWritesDecline(t *testing.T) {
+	isolateFleet(t)
+	t.Setenv(HopOriginEnvVar, adoptPayload)
+	cmd, out, _ := newAdoptCmd(t)
+
+	prevTerm, prevConfirm := adoptIsTerminal, adoptConfirm
+	t.Cleanup(func() {
+		adoptIsTerminal, adoptConfirm = prevTerm, prevConfirm
+	})
+	adoptIsTerminal = func() bool { return true }
+	adoptConfirm = func(context.Context, string) (bool, bool, error) {
+		return false, false, nil // explicit No
+	}
+
+	if err := runMachineAdopt(cmd, nil); err != nil {
+		t.Fatalf("explicit No is not an error: %v", err)
+	}
+	if !strings.Contains(out.String(), "if you change your mind") {
+		t.Errorf("stdout = %q, want the durable-decline message", out.String())
+	}
+	f, err := machines.LoadDeclined()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, ok := f.IsDeclined("origin-box.tail37114b.ts.net"); !ok {
+		t.Error("explicit No must record decline memory")
+	}
+}
+
 func TestAdoptEntryMapping(t *testing.T) {
 	origin, err := ParseHopOrigin(adoptPayload)
 	if err != nil {

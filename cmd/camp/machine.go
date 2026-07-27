@@ -209,9 +209,14 @@ func runMachineList(cmd *cobra.Command, _ []string) error {
 	if err := renderMachineListTable(cmd.OutOrStdout(), mf.Machines); err != nil {
 		return err
 	}
-	if hint := OriginHint(); hint != "" {
-		_, err := fmt.Fprintln(cmd.OutOrStdout(), ui.Dim(hint))
-		return err
+	// OriginHint's contract is non-TTY silence: piped/redirected list stays pure
+	// data, and the once-per-process token is not burned on non-interactive paths.
+	// --json already returns above; this covers bare table output without a TTY.
+	if ui.IsTerminal() {
+		if hint := OriginHint(); hint != "" {
+			_, err := fmt.Fprintln(cmd.OutOrStdout(), ui.Dim(hint))
+			return err
+		}
 	}
 	return nil
 }
