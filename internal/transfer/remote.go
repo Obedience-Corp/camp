@@ -81,9 +81,17 @@ func copyWithFallback(ctx context.Context, opts CopyOptions, src, dest string) e
 	if opts.LookPath == nil {
 		opts.LookPath = exec.LookPath
 	}
-	if _, err := opts.LookPath("rsync"); err == nil {
+	localRsyncOK := true
+	if _, err := opts.LookPath("rsync"); err != nil {
+		localRsyncOK = false
+	}
+	if localRsyncOK {
 		out, runErr := opts.Run(ctx, "rsync", opts.rsyncArgs(src, dest)...)
 		if runErr == nil {
+			// Empty itemize with --ignore-existing is treated as no-clobber.
+			// That is an inference from the current argv set (only
+			// --ignore-existing produces a quiet successful no-op); if flags
+			// grow later, map empty itemize through a distinct outcome first.
 			if !opts.Force && !rsyncCopied(out) {
 				return ErrDestinationExists
 			}
@@ -97,6 +105,10 @@ func copyWithFallback(ctx context.Context, opts CopyOptions, src, dest string) e
 	}
 
 	if _, err := opts.LookPath("scp"); err != nil {
+		if !localRsyncOK {
+			return camperrors.New("rsync not found locally and scp not found locally; " +
+				"install rsync (preferred) or scp on this machine")
+		}
 		return camperrors.New("rsync not found on " + opts.Machine.ID + " and scp not found locally; " +
 			"install rsync on both machines, or scp on this one")
 	}
@@ -132,12 +144,37 @@ func (o CopyOptions) endpoints(ctx context.Context) (src, dest string, err error
 	if err != nil {
 		return "", "", err
 	}
-	remotePath := path.Join(root, o.Endpoint.Path)
+	remotePath, err := joinWithinRemoteRoot(root, o.Endpoint.Path)
+	if err != nil {
+		return "", "", err
+	}
 	target := remote.Target(o.Machine) + ":" + remotePath
 	if o.Pull {
 		return target, o.Local, nil
 	}
 	return o.Local, target, nil
+}
+
+// joinWithinRemoteRoot joins a campaign-relative path onto a remote campaign
+// root, rejecting absolute paths and ".." escapes. path.Join alone would drop
+// prior segments on an absolute element and walk out of the campaign on "..".
+func joinWithinRemoteRoot(root, rel string) (string, error) {
+	if rel == "" {
+		return "", camperrors.New("remote path is empty")
+	}
+	if path.IsAbs(rel) || strings.HasPrefix(rel, "/") {
+		return "", camperrors.New("remote path must stay within the campaign (absolute path rejected)")
+	}
+	cleaned := path.Clean(rel)
+	if cleaned == ".." || strings.HasPrefix(cleaned, "../") {
+		return "", camperrors.New("remote path escapes the campaign root")
+	}
+	// Clean can also yield "." for empty-ish input; path.Join(root, ".") is fine
+	// but still not a file transfer target we want to allow as Endpoint.Path.
+	if cleaned == "." {
+		return "", camperrors.New("remote path is empty")
+	}
+	return path.Join(root, cleaned), nil
 }
 
 func (o CopyOptions) direction() string {

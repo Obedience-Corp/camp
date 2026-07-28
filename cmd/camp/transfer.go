@@ -13,25 +13,38 @@ import (
 	"github.com/Obedience-Corp/camp/internal/campaign"
 	"github.com/Obedience-Corp/camp/internal/config"
 	"github.com/Obedience-Corp/camp/internal/machines"
+	"github.com/Obedience-Corp/camp/internal/remote"
 	"github.com/Obedience-Corp/camp/internal/transfer"
 	"github.com/spf13/cobra"
 )
 
 var transferCmd = &cobra.Command{
 	Use:   "transfer <src> <dest>",
-	Short: "Copy files between campaigns",
-	Long: `Copy files between different campaigns using campaign:path syntax.
+	Short: "Copy files between campaigns (and machines)",
+	Long: `Copy files between campaigns, and between this machine and a registered
+fleet machine.
 
 Transfer always copies — it never moves or deletes the source.
-Either the source or destination (or both) can use "campaign:path"
-notation to reference a different registered campaign. Paths without
-a campaign prefix resolve relative to the current campaign root.
 
-At least one side must reference a different campaign. For copies
-within the same campaign, use 'camp copy' instead.`,
-	Example: `  camp transfer docs/my-doc.md other-campaign:docs/my-doc.md     # push
-  camp transfer other-campaign:docs/my-doc.md docs/              # pull
-  camp transfer other:festivals/plan.md festivals/planned/       # pull into dir`,
+Local forms:
+  campaign:path     another registered campaign on this machine
+  path              relative to the current campaign root
+  local:campaign:path
+                    force the campaign reading when campaign name collides
+                    with a registered machine id
+
+Machine forms (one side only; both-remote is refused):
+  machine:campaign:path
+                    file on a machine registered in ~/.obey/machines.yaml
+
+At least one side must reference a different campaign or machine. For copies
+within the same campaign on this machine, use 'camp copy' instead.`,
+	Example: `  camp transfer docs/my-doc.md other-campaign:docs/my-doc.md     # local push
+  camp transfer other-campaign:docs/my-doc.md docs/              # local pull
+  camp transfer other:festivals/plan.md festivals/planned/       # pull into dir
+  camp transfer docs/x.md archdtop:obey-campaign:docs/x.md       # push to machine
+  camp transfer archdtop:obey-campaign:docs/x.md docs/x.md       # pull from machine
+  camp transfer local:other:docs/x.md archdtop:camp:docs/x.md    # local: escape hatch`,
 	Args: cobra.ExactArgs(2),
 	RunE: runTransfer,
 	ValidArgsFunction: func(cmd *cobra.Command, args []string, toComplete string) ([]string, cobra.ShellCompDirective) {
@@ -224,14 +237,30 @@ func runRemoteTransfer(ctx context.Context, cmd *cobra.Command, root string, src
 	if !found {
 		return camperrors.New("unknown machine \"" + remoteEnd.Machine + "\"; add it to ~/.obey/machines.yaml")
 	}
+	// Same auth precondition as hop/switch: password-auth machines fail here
+	// with an actionable message instead of a BatchMode transport failure.
+	if err := remote.EnsureKeyAuth(m); err != nil {
+		return err
+	}
 
-	localPath := transfer.ResolveCampaignRelative(root, localSpec)
+	// Cross-campaign local resolution (other-campaign:path, local:other:path →
+	// Spec "other:path") matches the local transfer path. ResolveCampaignRelative
+	// alone would treat the colon as a literal filename under the current root.
+	localPath, err := transfer.ResolveCrossCampaignPath(ctx, root, localSpec)
+	if err != nil {
+		return camperrors.Wrap(err, "resolve local path")
+	}
 	if pull && transfer.IsDestDir(localPath) {
 		localPath = filepath.Join(localPath, filepath.Base(remoteEnd.Path))
 	}
 	if !pull {
 		if err := transfer.ValidatePathExists(localPath); err != nil {
 			return camperrors.Wrap(err, "source")
+		}
+	} else {
+		// Parity with local transfer: create missing parent dirs before the copy.
+		if err := os.MkdirAll(filepath.Dir(localPath), 0o755); err != nil {
+			return camperrors.Wrap(err, "create destination directory")
 		}
 	}
 
@@ -243,6 +272,11 @@ func runRemoteTransfer(ctx context.Context, cmd *cobra.Command, root string, src
 		Force:    force,
 	}); err != nil {
 		if errors.Is(err, transfer.ErrDestinationExists) {
+			// Phrase by where the destination lives — m.ID is always the far
+			// machine, so a pull must not blame the remote for a local path.
+			if pull {
+				return camperrors.Newf("destination %q already exists (use --force to overwrite)", localPath)
+			}
 			return camperrors.Newf("destination exists on %s, not overwritten (use --force)", m.ID)
 		}
 		return camperrors.Wrapf(err, "run 'camp machine diagnose %s' to check reachability", m.ID)

@@ -171,6 +171,8 @@ func TestCopyRemoteDoesNotFallBackOnARealFailure(t *testing.T) {
 }
 
 func TestCopyRemoteMissingBothBinaries(t *testing.T) {
+	// Local rsync was never found, so the message must blame this machine —
+	// not the remote, which was never probed for rsync.
 	opts := CopyOptions{
 		Machine:  testMachine(),
 		LookPath: func(string) (string, error) { return "", errors.New("not found") },
@@ -180,10 +182,73 @@ func TestCopyRemoteMissingBothBinaries(t *testing.T) {
 	if err == nil {
 		t.Fatal("want an error")
 	}
-	for _, want := range []string{"rsync not found on archdtop", "scp not found locally"} {
+	for _, want := range []string{"rsync not found locally", "scp not found locally"} {
 		if !strings.Contains(err.Error(), want) {
 			t.Errorf("error must name which binary is missing where: %v", err)
 		}
+	}
+	if strings.Contains(err.Error(), "on archdtop") {
+		t.Errorf("must not blame the remote when local rsync was never attempted: %v", err)
+	}
+}
+
+func TestCopyRemoteMissingRemoteRsyncAndLocalScp(t *testing.T) {
+	// Local rsync ran and hit the remote-missing signature; scp is also gone.
+	opts := CopyOptions{
+		Machine: testMachine(),
+		LookPath: func(name string) (string, error) {
+			if name == "rsync" {
+				return "/usr/bin/rsync", nil
+			}
+			return "", errors.New("not found")
+		},
+		Run: func(_ context.Context, name string, _ ...string) ([]byte, error) {
+			if name == "rsync" {
+				return []byte("rsync: connection unexpectedly closed"), runExit(t, 12)
+			}
+			return nil, nil
+		},
+	}
+	err := copyWithFallback(context.Background(), opts, "s", "d")
+	if err == nil {
+		t.Fatal("want an error")
+	}
+	if !strings.Contains(err.Error(), "rsync not found on archdtop") {
+		t.Errorf("remote-missing signature should blame remote: %v", err)
+	}
+}
+
+func TestJoinWithinRemoteRoot(t *testing.T) {
+	tests := []struct {
+		name    string
+		root    string
+		rel     string
+		want    string
+		wantErr string
+	}{
+		{name: "simple", root: "/srv/camp", rel: "docs/x.md", want: "/srv/camp/docs/x.md"},
+		{name: "cleans dots", root: "/srv/camp", rel: "docs/./x.md", want: "/srv/camp/docs/x.md"},
+		{name: "absolute rejected", root: "/srv/camp", rel: "/etc/passwd", wantErr: "absolute"},
+		{name: "dotdot rejected", root: "/srv/camp", rel: "../../.ssh/id_rsa", wantErr: "escapes"},
+		{name: "empty rejected", root: "/srv/camp", rel: "", wantErr: "empty"},
+		{name: "dot alone rejected", root: "/srv/camp", rel: ".", wantErr: "empty"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got, err := joinWithinRemoteRoot(tt.root, tt.rel)
+			if tt.wantErr != "" {
+				if err == nil || !strings.Contains(err.Error(), tt.wantErr) {
+					t.Fatalf("err = %v, want containing %q", err, tt.wantErr)
+				}
+				return
+			}
+			if err != nil {
+				t.Fatal(err)
+			}
+			if got != tt.want {
+				t.Errorf("got %q, want %q", got, tt.want)
+			}
+		})
 	}
 }
 
