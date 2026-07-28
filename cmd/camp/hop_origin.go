@@ -149,14 +149,29 @@ func ParseHopOrigin(payload string) (HopOrigin, error) {
 		if hopOriginHasC0(val) {
 			return HopOrigin{}, camperrors.New("field \"" + key + "\" contains a control character")
 		}
+		// Re-apply encode-side field caps on the wire form (raw, pre-decode
+		// length matches encodeHopOrigin's len(encoded) checks). Required
+		// fields fail closed; optional fields drop, same as encode.
 		switch key {
 		case "host":
+			if len(raw) > hopOriginMaxHost {
+				return HopOrigin{}, camperrors.New("field \"host\" is too long")
+			}
 			o.Host = val
 		case "user":
+			if len(raw) > hopOriginMaxUser {
+				return HopOrigin{}, camperrors.New("field \"user\" is too long")
+			}
 			o.User = val
 		case "campaign":
+			if len(raw) > hopOriginMaxCampaign {
+				continue
+			}
 			o.Campaign = val
 		case "id":
+			if len(raw) > hopOriginMaxID {
+				continue
+			}
 			o.ID = val
 		}
 		// Unknown keys are ignored so additive v1 fields do not break older

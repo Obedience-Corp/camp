@@ -143,6 +143,10 @@ func TestParseHopOriginErrors(t *testing.T) {
 		{"newline in host via %0A", "v1;host=box%0Aevil;user=u", "control character"},
 		{"CR in user via %0D", "v1;host=a;user=u%0D", "control character"},
 		{"tab in campaign via %09", "v1;host=a;user=b;campaign=c%09d", "control character"},
+		// Field caps match encodeHopOrigin: required refuse, optional drop
+		// (optional over-cap is covered by TestParseHopOriginDropsOverlongOptional).
+		{"over-long host", "v1;host=" + strings.Repeat("a", hopOriginMaxHost+1) + ";user=u", "too long"},
+		{"over-long user", "v1;host=a;user=" + strings.Repeat("u", hopOriginMaxUser+1), "too long"},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
@@ -166,6 +170,26 @@ func TestParseHopOriginIgnoresUnknownKeys(t *testing.T) {
 	}
 	if got.Host != "a" || got.User != "b" || got.ID != "c" {
 		t.Errorf("unknown key changed the parse: %+v", got)
+	}
+}
+
+func TestParseHopOriginDropsOverlongOptional(t *testing.T) {
+	// Encode drops optional fields over cap rather than truncating; parse must
+	// do the same so a handcrafted env cannot force an over-long campaign/id.
+	payload := "v1;host=a;user=b;campaign=" + strings.Repeat("c", hopOriginMaxCampaign+1) +
+		";id=" + strings.Repeat("i", hopOriginMaxID+1)
+	got, err := ParseHopOrigin(payload)
+	if err != nil {
+		t.Fatalf("ParseHopOrigin: %v", err)
+	}
+	if got.Host != "a" || got.User != "b" {
+		t.Errorf("required fields = %+v", got)
+	}
+	if got.Campaign != "" {
+		t.Errorf("over-long campaign must be dropped, got %q", got.Campaign)
+	}
+	if got.ID != "" {
+		t.Errorf("over-long id must be dropped, got %q", got.ID)
 	}
 }
 
