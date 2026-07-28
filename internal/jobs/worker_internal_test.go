@@ -248,7 +248,7 @@ func TestExhaustedJobIsParkedInFailed(t *testing.T) {
 
 	// Simulate three abandoned attempts: claim without completing, then let
 	// reclaim age it back to pending each time.
-	for range maxAttempts {
+	for range MaxAttempts {
 		if _, _, err := Claim(ctx, root, "."); err != nil {
 			t.Fatal(err)
 		}
@@ -262,8 +262,8 @@ func TestExhaustedJobIsParkedInFailed(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(pending) != 1 || pending[0].Attempts < maxAttempts {
-		t.Fatalf("setup: want one pending job with >= %d attempts, got %+v", maxAttempts, pending)
+	if len(pending) != 1 || pending[0].Attempts < MaxAttempts {
+		t.Fatalf("setup: want one pending job with >= %d attempts, got %+v", MaxAttempts, pending)
 	}
 
 	if err := parkExhausted(root, "."); err != nil {

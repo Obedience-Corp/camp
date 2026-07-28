@@ -335,6 +335,16 @@ func sortedJobFiles(dir string) ([]string, error) {
 	return names, nil
 }
 
+// marshalJob encodes a job the way Enqueue does, so a requeued file is
+// byte-comparable with one written fresh.
+func marshalJob(job *Job) ([]byte, error) {
+	data, err := json.MarshalIndent(job, "", "  ")
+	if err != nil {
+		return nil, camperrors.Wrapf(err, "encode job %s", job.ID)
+	}
+	return data, nil
+}
+
 func readJob(path string) (*Job, error) {
 	data, err := os.ReadFile(path)
 	if err != nil {

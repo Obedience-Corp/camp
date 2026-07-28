@@ -31,6 +31,7 @@ CHECKS PERFORMED:
   working     Working directory cleanliness
   commits     Parent-submodule commit alignment
   lock        Stale git index.lock files
+  jobs        Failed, stuck, or lost deferred commits
 
 EXIT CODES:
   0  All checks passed (no warnings or errors)
@@ -86,7 +87,7 @@ func init() {
 	doctorCmd.Flags().BoolVar(&doctorOpts.submodulesOnly, "submodules-only", false,
 		"Only check submodule health")
 	doctorCmd.Flags().StringSliceVarP(&doctorOpts.checks, "check", "c", nil,
-		"Run specific check(s) only (orphan, url, integrity, head, working, commits, lock)")
+		"Run specific check(s) only (orphan, url, integrity, head, working, commits, lock, artifacts, jobs, bigfiles)")
 	doctorCmd.Flags().BoolVar(&doctorOpts.noDrain, "no-drain", false,
 		"Do not wait for camp's queued commits first")
 
@@ -148,6 +149,35 @@ func runDoctor(cmd *cobra.Command, args []string) error {
 	return exitDoctorWithCode(result)
 }
 
+// issueIcon matches the icon to the severity.
+//
+// Previously anything that was not an error drew the warning icon, so an
+// informational row looked like a problem. A check that reports "here is
+// something you may want to know" must not read as "something is wrong", or
+// users learn to ignore the warning icon everywhere else too.
+func issueIcon(severity doctor.Severity) string {
+	switch severity {
+	case doctor.SeverityError:
+		return ui.ErrorIcon()
+	case doctor.SeverityWarning:
+		return ui.WarningIcon()
+	default:
+		return ui.InfoIcon()
+	}
+}
+
+// issueLine renders an issue's location and description.
+//
+// Submodule is empty for root-level issues, and an unconditional "%s: %s"
+// printed those as ": description" with a stray leading colon. Every check that
+// reports on the campaign itself rather than a submodule hit it.
+func issueLine(issue doctor.Issue) string {
+	if issue.Submodule == "" {
+		return issue.Description
+	}
+	return issue.Submodule + ": " + issue.Description
+}
+
 // registerChecks registers all health checks with the doctor.
 // OrphanCheck runs first because orphaned gitlinks can break other checks.
 //
@@ -163,6 +193,7 @@ func registerChecks(d *doctor.Doctor, requested ...string) {
 	d.RegisterCheck(checks.NewLockCheck())
 	d.RegisterCheck(checks.NewLedgerCheck())
 	d.RegisterCheck(checks.NewArtifactsCheck())
+	d.RegisterCheck(checks.NewJobsCheck())
 
 	// bigfiles is opt-in. Every other check here is a git invocation costing
 	// milliseconds; this one walks the whole campaign, measured at 17.9s over
@@ -212,7 +243,7 @@ func outputDoctorJSON(result *doctor.DoctorResult, drainWaited time.Duration) er
 }
 
 // outputDoctorText outputs results in human-readable format.
-func outputDoctorText(result *doctor.DoctorResult, verbose, fixAttempted bool) {
+func outputDoctorText(result *doctor.DoctorResult, _ bool, fixAttempted bool) {
 	// Header
 	fmt.Println()
 	fmt.Println(ui.Header("Campaign Health Report"))
@@ -231,12 +262,13 @@ func outputDoctorText(result *doctor.DoctorResult, verbose, fixAttempted bool) {
 		fmt.Println()
 		fmt.Println(ui.Category("Issues Found:"))
 		for i, issue := range result.Issues {
-			icon := ui.WarningIcon()
-			if issue.Severity == doctor.SeverityError {
-				icon = ui.ErrorIcon()
-			}
-			fmt.Printf("  %d. %s %s: %s\n", i+1, icon, issue.Submodule, issue.Description)
-			if verbose && issue.FixCommand != "" {
+			icon := issueIcon(issue.Severity)
+			fmt.Printf("  %d. %s %s\n", i+1, icon, issueLine(issue))
+			// Shown without --verbose. A health report whose actionable half
+			// is behind a flag tells the user something is wrong and then
+			// makes them go find out what to do about it, which is most of
+			// the reason people stop running doctor.
+			if issue.FixCommand != "" {
 				fmt.Printf("     %s %s\n", ui.Dim("Fix:"), ui.Dim(issue.FixCommand))
 			}
 		}
@@ -247,7 +279,7 @@ func outputDoctorText(result *doctor.DoctorResult, verbose, fixAttempted bool) {
 		fmt.Println()
 		fmt.Println(ui.Category("Fixed Issues:"))
 		for i, issue := range result.Fixed {
-			fmt.Printf("  %d. %s %s: %s\n", i+1, ui.SuccessIcon(), issue.Submodule, issue.Description)
+			fmt.Printf("  %d. %s %s\n", i+1, ui.SuccessIcon(), issueLine(issue))
 		}
 	}
 

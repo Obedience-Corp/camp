@@ -55,6 +55,7 @@ var rootCmd = &cobra.Command{
 			return
 		}
 		ui.SetNoColor(noColor)
+		maybeWarnFailedJobs(cmd)
 	},
 	RunE: func(cmd *cobra.Command, args []string) error {
 		// When invoked without subcommand, show help

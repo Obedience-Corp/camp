@@ -158,8 +158,10 @@ func refusal(e *jobs.DrainTimeoutError, verb string) string {
 		countPhrase(len(e.Blocking)), e.Waited.Round(time.Second))
 	for _, job := range e.Blocking {
 		fmt.Fprintf(&b, "  %s", jobs.Describe(job))
-		if job.Attempts > 0 {
-			fmt.Fprintf(&b, " (attempt %d of 3)", job.Attempts+1)
+		// Never failed here: a drain only ever waits on pending and running
+		// jobs, so the count is always forward-looking.
+		if note := jobs.AttemptNote(job.Attempts, false); note != "" {
+			fmt.Fprintf(&b, " (%s)", note)
 		}
 		b.WriteString("\n")
 	}

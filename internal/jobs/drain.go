@@ -365,6 +365,27 @@ func Describe(job Job) string {
 	return string(job.Kind) + " in " + job.Repo
 }
 
+// AttemptNote renders a job's attempt count, or "" when there is nothing worth
+// saying.
+//
+// The two states need opposite tenses, and conflating them produces the
+// nonsense "attempt 4 of 3": a job parked in failed/ has already used all
+// MaxAttempts tries, so counting the next one describes a run that will never
+// happen. A pending job's count is forward-looking, a failed job's is final.
+func AttemptNote(attempts int, failed bool) string {
+	switch {
+	case failed:
+		if attempts <= 1 {
+			return "gave up after 1 attempt"
+		}
+		return fmt.Sprintf("gave up after %d attempts", attempts)
+	case attempts <= 0:
+		return ""
+	default:
+		return fmt.Sprintf("attempt %d of %d", attempts+1, MaxAttempts)
+	}
+}
+
 // firstLine returns the first non-empty line of a message, trimmed.
 func firstLine(message string) string {
 	for line := range strings.SplitSeq(message, "\n") {

@@ -13,10 +13,14 @@ import (
 	camperrors "github.com/Obedience-Corp/camp/internal/errors"
 )
 
-// maxAttempts is how many times a job may be reclaimed before it is parked in
+// MaxAttempts is how many times a job may be reclaimed before it is parked in
 // failed/. A job that has died three times is not going to succeed on the
 // fourth; retrying forever would hide a real problem behind a busy queue.
-const maxAttempts = 3
+//
+// Exported because every message that mentions an attempt count renders it
+// ("attempt 2 of 3"), and a hardcoded 3 in the copy would silently disagree
+// with the worker the day this changes.
+const MaxAttempts = 3
 
 // Run serves every lane with pending work and returns when none is left.
 //
@@ -194,7 +198,7 @@ func enqueueFollowUp(ctx context.Context, campaignRoot string, job *Job) {
 //
 // Reclaim consults the job file's mtime, not the lock: by the time this runs
 // we already hold the lane, so any running job here belongs to a worker that
-// is gone. A job that has burned maxAttempts moves to failed/ rather than
+// is gone. A job that has burned MaxAttempts moves to failed/ rather than
 // cycling forever, because a queue that retries a poisoned job indefinitely
 // hides the failure behind apparent activity.
 func reclaimLane(ctx context.Context, campaignRoot, repo string) {
@@ -228,7 +232,7 @@ func parkExhausted(campaignRoot, repo string) error {
 		if readErr != nil {
 			continue
 		}
-		if job.Attempts < maxAttempts {
+		if job.Attempts < MaxAttempts {
 			continue
 		}
 		if err := failJobFile(campaignRoot, repo, path, name); err != nil {
