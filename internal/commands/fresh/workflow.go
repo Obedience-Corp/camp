@@ -104,7 +104,7 @@ func buildFreshWorkflow(cfg *config.FreshConfig, projectName string) []freshWork
 	steps := []freshWorkflowStep{
 		{Title: "Safety checks", Detail: "no merge/rebase in progress; worktree is clean", Enabled: true},
 		{Title: "Checkout default branch", Detail: "reclaim default branch from a clean worktree if needed, then check it out (detached origin/ fallback when dirty)", Enabled: true},
-		{Title: "Pull", Detail: "fast-forward only", Enabled: true},
+		{Title: "Sync default branch", Detail: "fetch origin; preserve local-only commits before realigning", Enabled: true},
 	}
 
 	steps = append(steps,

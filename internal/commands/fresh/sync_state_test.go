@@ -6,6 +6,21 @@ import (
 	"testing"
 )
 
+func TestFreshRecoveryBranchBase(t *testing.T) {
+	got := freshRecoveryBranchBase("1c00a37a0247b1474ee2c5a4f3ccd13c7d876909")
+	if want := "camp-fresh-recovery-1c00a37a0247"; got != want {
+		t.Fatalf("freshRecoveryBranchBase() = %q, want %q", got, want)
+	}
+}
+
+func TestFreshRecoveryUndo(t *testing.T) {
+	got := freshRecoveryUndo("main", "camp-fresh-recovery-1c00a37a0247")
+	want := "Undo: git switch main && git reset --hard camp-fresh-recovery-1c00a37a0247"
+	if got != want {
+		t.Fatalf("freshRecoveryUndo() = %q, want %q", got, want)
+	}
+}
+
 func TestSameWorktreePath(t *testing.T) {
 	if !sameWorktreePath("/a/b", "/a/b") {
 		t.Error("identical paths should match")

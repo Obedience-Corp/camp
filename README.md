@@ -288,7 +288,7 @@ camp pull all              # Pull all submodules
 camp status                # Show git status of the campaign
 camp status all            # Dashboard of all submodules (branch, dirty/clean, push status, unmerged branches)
 camp status all --view     # Interactive TUI viewer with per-repo detail
-camp fresh                 # Post-merge branch cycling: checkout default, pull, prune, optional new branch
+camp fresh                 # Post-merge branch cycling: fetch, safely sync default, prune, optional new branch
 camp fresh all             # Same cycle across every project in the campaign
 ```
 

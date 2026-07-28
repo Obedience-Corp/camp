@@ -1292,8 +1292,9 @@ Post-merge branch cycling: sync to default branch and optionally create a new wo
 
 Reset one or more projects to a fresh state after merging a PR.
 
-Performs the post-merge cycle: checkout default branch, pull latest,
-prune merged branches, and optionally create a new working branch.
+Performs the post-merge cycle: checkout the default branch, fetch origin,
+sync to the remote default while preserving local-only commits, prune merged
+branches, and optionally create a new working branch.
 
 Auto-detects the current project from your working directory, or accepts a
 single project name. Use --list to cycle a specific set of projects in one
@@ -1306,7 +1307,7 @@ cycle succeeds. Manage those with 'camp fresh configure'. Inspect the resolved
 sequence with 'camp fresh show-workflow [project-name]'.
 
 Examples:
-  camp fresh                            # Sync current project (checkout default, pull, prune)
+  camp fresh                            # Sync current project (checkout default, fetch, prune)
   camp fresh --branch develop           # Sync and create develop branch
   camp fresh camp -b feat/new-thing     # Sync camp project, create feature branch
   camp fresh --list camp,fest,festival  # Sync a specific set of projects
@@ -1345,7 +1346,7 @@ Run fresh across all project submodules
 
 ### Synopsis
 
-Run the fresh cycle (checkout default, pull, prune, optional branch)
+Run the fresh cycle (fetch and safely sync default, prune, optional branch)
 across every project submodule in the campaign.
 
 Examples:
@@ -1390,7 +1391,7 @@ per-project overrides.
 Run without a subcommand to open the interactive setup for humans, which
 groups the fresh sequence by what you can change about each step:
 
-  Sync        checkout, pull, and safety checks; always runs
+  Sync        checkout, fetch, and safe default-branch realignment; always runs
   Settings    branch, push_upstream, prune, and prune_remote
   Follow-ups  your own commands, run after a successful cycle
 
