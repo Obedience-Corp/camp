@@ -24,7 +24,19 @@ func TestCheckReverseReachabilityCauseMatrix(t *testing.T) {
 				SSHDListening: no,
 				RemoteLoginOn: func(context.Context) (bool, bool) { return false, true },
 			},
-			wantHint: "macOS Remote Login is off",
+			wantHint:  "macOS Remote Login is off",
+			forbidden: "nothing can ssh in",
+		},
+		{
+			name: "darwin, Remote Login on but nothing listening",
+			probes: reverseProbes{
+				GOOS:          "darwin",
+				SSHDListening: no,
+				RemoteLoginOn: func(context.Context) (bool, bool) { return true, true },
+			},
+			// Already on: must not tell the operator to enable Remote Login again.
+			wantHint:  "Remote Login reports on but nothing is accepting on port 22",
+			forbidden: "enable",
 		},
 		{
 			name: "darwin, state unreadable, no sshd",
@@ -65,8 +77,36 @@ func TestCheckReverseReachabilityCauseMatrix(t *testing.T) {
 			if !strings.Contains(got.Hint, tt.wantHint) {
 				t.Errorf("hint %q must contain %q", got.Hint, tt.wantHint)
 			}
-			if tt.forbidden != "" && strings.Contains(got.Hint, tt.forbidden) {
-				t.Errorf("hint %q must not claim %q when the state is unknowable", got.Hint, tt.forbidden)
+			if tt.forbidden != "" && strings.Contains(strings.ToLower(got.Hint), strings.ToLower(tt.forbidden)) {
+				t.Errorf("hint %q must not contain %q", got.Hint, tt.forbidden)
+			}
+		})
+	}
+}
+
+func TestParseRemoteLoginOutput(t *testing.T) {
+	tests := []struct {
+		name         string
+		out          string
+		wantOn       bool
+		wantKnowable bool
+	}{
+		{name: "classic On", out: "Remote Login: On\n", wantOn: true, wantKnowable: true},
+		{name: "classic Off", out: "Remote Login: Off\n", wantOn: false, wantKnowable: true},
+		{name: "lowercase", out: "remote login: on", wantOn: true, wantKnowable: true},
+		{name: "extra padding", out: "  Remote Login:   Off  \n", wantOn: false, wantKnowable: true},
+		// "Off" contains "on" as a substring; a naive Contains("on") would misread it.
+		// The line parser must stay exact.
+		{name: "garbage success", out: "something on somewhere\n", wantKnowable: false},
+		{name: "empty", out: "", wantKnowable: false},
+		{name: "multiline with On", out: "header\nRemote Login: On\nfooter\n", wantOn: true, wantKnowable: true},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			on, knowable := parseRemoteLoginOutput(tt.out)
+			if knowable != tt.wantKnowable || on != tt.wantOn {
+				t.Errorf("parseRemoteLoginOutput(%q) = (%v, %v), want (%v, %v)",
+					tt.out, on, knowable, tt.wantOn, tt.wantKnowable)
 			}
 		})
 	}

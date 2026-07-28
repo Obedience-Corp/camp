@@ -4,6 +4,7 @@ import (
 	"context"
 	"net"
 	"os/exec"
+	"regexp"
 	"runtime"
 	"strings"
 	"time"
@@ -50,19 +51,37 @@ func checkReverseReachability(ctx context.Context, p reverseProbes) reverseRepor
 	listening := p.SSHDListening != nil && p.SSHDListening(ctx)
 	if !listening {
 		if goos == "darwin" {
-			if on, knowable := remoteLoginState(ctx, p); knowable && !on {
-				return reverseReport{Hint: "macOS Remote Login is off, so nothing can ssh in; " +
-					"enable it in System Settings > General > Sharing > Remote Login"}
+			on, knowable := remoteLoginState(ctx, p)
+			switch {
+			case knowable && !on:
+				// Softened absolute claim: classic sshd is off, but Tailscale SSH
+				// can still accept on the tailnet IP without system Remote Login.
+				return reverseReport{Hint: "macOS Remote Login is off (system sshd will not " +
+					"accept on :22); enable it in System Settings > General > Sharing > Remote Login " +
+					"for classic ssh hops. Tailscale SSH, if enabled separately, may still work"}
+			case knowable && on:
+				// Remote Login already on but nothing answers: do not tell the
+				// operator to enable it again — point at sshd/port/firewall.
+				return reverseReport{Hint: "Remote Login reports on but nothing is accepting on " +
+					"port 22; check that sshd is running, listening on the expected port, and not " +
+					"blocked by a local firewall"}
+			default:
+				// State unreadable: never claim it is off. Point at the settings
+				// surface without asserting the current value.
+				return reverseReport{Hint: "no sshd is listening on this machine; check " +
+					"System Settings > General > Sharing > Remote Login and that sshd is " +
+					"accepting on port 22 so other machines can hop here via classic ssh"}
 			}
-			return reverseReport{Hint: "no sshd is listening on this machine; enable " +
-				"System Settings > General > Sharing > Remote Login so other machines can hop here"}
 		}
 		return reverseReport{Hint: "no sshd is listening on this machine; start it " +
-			"(for example 'sudo systemctl enable --now sshd') so other machines can hop here"}
+			"(for example 'sudo systemctl enable --now sshd') so other machines can hop here " +
+			"via classic ssh (Tailscale SSH, if enabled, may still work without system sshd)"}
 	}
 
 	// sshd answers, so the local half is satisfied. Everything left is policy on
 	// the other side, which is exactly the part camp must not manage.
+	// Capable stays true (local sshd half); the hint names the remaining local
+	// problem so operators do not treat the green mark as "reverse is fine".
 	if p.TailscaleUp != nil && !p.TailscaleUp(ctx) {
 		return reverseReport{Capable: true, Hint: "sshd is listening, but tailscale is not up here, " +
 			"so tailnet peers cannot route to this machine; run 'tailscale up'"}
@@ -91,15 +110,37 @@ func sshdListening(ctx context.Context) bool {
 	return true
 }
 
+// remoteLoginLine matches the English systemsetup line, requiring a word-boundary
+// state so "Off" is not a false positive for substring "on".
+var remoteLoginLine = regexp.MustCompile(`(?i)remote\s+login:\s*(on|off)\s*$`)
+
 // remoteLoginOn reads macOS Remote Login state. `systemsetup -getremotelogin`
 // needs no privileges for a read, and a failure reports "not knowable" rather
 // than "off", so an unreadable state never produces a confident wrong hint.
+// Parsing is line-based and exact on On/Off rather than a bare Contains("on").
 func remoteLoginOn(ctx context.Context) (bool, bool) {
 	out, err := exec.CommandContext(ctx, "systemsetup", "-getremotelogin").Output()
 	if err != nil {
 		return false, false
 	}
-	return strings.Contains(strings.ToLower(string(out)), "on"), true
+	return parseRemoteLoginOutput(string(out))
+}
+
+// parseRemoteLoginOutput is the pure half of remoteLoginOn, unit-tested with
+// fixture strings so localized or garbage success output stays unknowable.
+func parseRemoteLoginOutput(out string) (on, knowable bool) {
+	for _, line := range strings.Split(out, "\n") {
+		line = strings.TrimSpace(line)
+		if line == "" {
+			continue
+		}
+		m := remoteLoginLine.FindStringSubmatch(line)
+		if m == nil {
+			continue
+		}
+		return strings.EqualFold(m[1], "on"), true
+	}
+	return false, false
 }
 
 // tailscaleUpLocally reports whether this machine's tailscale backend is
