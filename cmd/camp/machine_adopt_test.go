@@ -3,6 +3,7 @@ package main
 import (
 	"bytes"
 	"context"
+	"errors"
 	"os"
 	"path/filepath"
 	"strings"
@@ -182,6 +183,80 @@ func TestAdoptSelfOriginDetectionErrorFailsClosed(t *testing.T) {
 	}
 	if _, statErr := os.Stat(machines.MachinesPath()); !os.IsNotExist(statErr) {
 		t.Error("fail-closed adopt must not write the fleet file")
+	}
+}
+
+func TestIsSelfOriginDualNameMatrix(t *testing.T) {
+	// The dual-name guard exists because detectReachableName prefers tailnet
+	// when available: a payload built while tailscale was down carries the bare
+	// hostname, and a single comparison against today's tailnet name would miss
+	// it. Both names are this machine, so both must count — and this is
+	// injectable so the matrix does not depend on a live tailnet or hostname.
+	const (
+		tailnet = "mac-studio.tail37114b.ts.net"
+		bare    = "Mac-Studio.local"
+		other   = "archdtop.tail37114b.ts.net"
+	)
+	prevTail, prevBare := adoptDetectTailnet, adoptDetectBare
+	t.Cleanup(func() {
+		adoptDetectTailnet, adoptDetectBare = prevTail, prevBare
+	})
+	adoptDetectTailnet = func(context.Context) (string, error) { return tailnet, nil }
+	adoptDetectBare = func(context.Context) (string, error) { return bare, nil }
+
+	tests := []struct {
+		name   string
+		host   string
+		want   bool
+		wantErr string
+		// override detectors for error rows
+		tailnetErr, bareErr error
+	}{
+		{name: "matches tailnet only", host: tailnet, want: true},
+		{name: "matches bare only", host: bare, want: true},
+		{name: "matches neither", host: other, want: false},
+		{name: "empty host", host: "", want: false},
+		{
+			name:       "tailnet probe error fails closed",
+			host:       other,
+			wantErr:    "tailnet down",
+			tailnetErr: errors.New("tailnet down"),
+		},
+		{
+			name:    "bare probe error after tailnet miss fails closed",
+			host:    other,
+			wantErr: "hostname failed",
+			bareErr: errors.New("hostname failed"),
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			adoptDetectTailnet = func(context.Context) (string, error) {
+				if tt.tailnetErr != nil {
+					return "", tt.tailnetErr
+				}
+				return tailnet, nil
+			}
+			adoptDetectBare = func(context.Context) (string, error) {
+				if tt.bareErr != nil {
+					return "", tt.bareErr
+				}
+				return bare, nil
+			}
+			got, err := isSelfOrigin(context.Background(), HopOrigin{Host: tt.host, User: "u"})
+			if tt.wantErr != "" {
+				if err == nil || !strings.Contains(err.Error(), tt.wantErr) {
+					t.Fatalf("err = %v, want containing %q", err, tt.wantErr)
+				}
+				return
+			}
+			if err != nil {
+				t.Fatalf("isSelfOrigin: %v", err)
+			}
+			if got != tt.want {
+				t.Errorf("isSelfOrigin(%q) = %v, want %v", tt.host, got, tt.want)
+			}
+		})
 	}
 }
 

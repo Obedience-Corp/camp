@@ -22,6 +22,16 @@ var machineAdoptForce bool
 var adoptIsTerminal = ui.IsTerminal
 var adoptConfirm = confirmForm
 
+// adoptDetectTailnet / adoptDetectBare are the dual reachable-name probes used
+// by isSelfOrigin. Production uses tailscale Self + os.Hostname; tests inject
+// pure functions so the dual-name matrix is covered without a live tailnet.
+var adoptDetectTailnet = func(ctx context.Context) (string, error) {
+	return detectReachableName(ctx, runTailscaleStatusForSelf)
+}
+var adoptDetectBare = func(ctx context.Context) (string, error) {
+	return detectReachableName(ctx, nil)
+}
+
 var machineAdoptCmd = &cobra.Command{
 	Use:   "adopt",
 	Short: "Register the machine this session was hopped from",
@@ -236,14 +246,14 @@ func isSelfOrigin(ctx context.Context, origin HopOrigin) (bool, error) {
 	if want == "" {
 		return false, nil
 	}
-	tailnet, err := detectReachableName(ctx, runTailscaleStatusForSelf)
+	tailnet, err := adoptDetectTailnet(ctx)
 	if err != nil {
 		return false, err
 	}
 	if machines.NormalizeHost(tailnet) == want {
 		return true, nil
 	}
-	bare, err := detectReachableName(ctx, nil)
+	bare, err := adoptDetectBare(ctx)
 	if err != nil {
 		return false, err
 	}
