@@ -897,6 +897,7 @@ CHECKS PERFORMED:
   working     Working directory cleanliness
   commits     Parent-submodule commit alignment
   lock        Stale git index.lock files
+  jobs        Failed, stuck, or lost deferred commits
 
 EXIT CODES:
   0  All checks passed (no warnings or errors)
@@ -927,7 +928,7 @@ camp doctor [flags]
 ### Options
 
 ```
-  -c, --check strings     Run specific check(s) only (orphan, url, integrity, head, working, commits, lock)
+  -c, --check strings     Run specific check(s) only (orphan, url, integrity, head, working, commits, lock, artifacts, jobs, bigfiles)
   -f, --fix               Attempt automatic fixes for detected issues
   -h, --help              help for doctor
       --json              Output results as JSON
@@ -2895,13 +2896,117 @@ Camp defers its own bookkeeping commits so they do not hold your terminal. The
 queue lives under .campaign/cache/jobs and is machine-local and disposable:
 git is the record, this is only the work still on its way there.
 
-Workers normally start themselves when a command enqueues work, so 'jobs run'
-is mostly for debugging and for the detached child camp spawns.
+Run bare to see what is queued, running, or failed. Nothing here is required in
+normal use: workers start themselves, and every command that touches git
+history waits for the queue before it runs.
+
+Examples:
+  camp jobs                    # what is queued, running, or failed
+  camp jobs --json             # the same, for scripts and agents
+  camp jobs retry all          # requeue everything that failed
+  camp jobs drop <id>          # give up on one job, keeping its content
+  camp jobs drain              # wait for every lane, then exit
+
+```
+camp jobs [flags]
+```
 
 ### Options
 
 ```
   -h, --help   help for jobs
+      --json   Emit a structured JSON result
+```
+
+### Options inherited from parent commands
+
+```
+      --no-color   disable colored output
+```
+---
+
+## camp jobs drain
+
+Wait until every lane is empty
+
+### Synopsis
+
+Block until no queued commit is outstanding anywhere in the campaign.
+
+Commands that touch git history already do this for the repo they act on, so
+this is for the cases that are not one command: before archiving a machine,
+before a manual git operation camp does not wrap, or to watch the queue finish.
+
+Artifact manifest jobs are exempt here as everywhere: they carry the commit
+they describe, so they are correct whenever they land.
+
+```
+camp jobs drain [flags]
+```
+
+### Options
+
+```
+  -h, --help   help for drain
+```
+
+### Options inherited from parent commands
+
+```
+      --no-color   disable colored output
+```
+---
+
+## camp jobs drop
+
+Give up on failed jobs, keeping their content
+
+### Synopsis
+
+Discard failed jobs without discarding what they were going to commit.
+
+Only the job file is removed. The intent, manifest, or marker the job was going
+to commit stays in your working tree, uncommitted, for the next ordinary commit
+to pick up. Dropping a job means "stop trying to commit this for me", never
+"throw away my work".
+
+```
+camp jobs drop <id|all> [flags]
+```
+
+### Options
+
+```
+  -h, --help   help for drop
+```
+
+### Options inherited from parent commands
+
+```
+      --no-color   disable colored output
+```
+---
+
+## camp jobs retry
+
+Requeue failed jobs
+
+### Synopsis
+
+Move failed jobs back to pending and start a worker for them.
+
+Attempts reset, because a retry is you deciding the cause is gone. Keeping the
+count would let a job that failed three times for a reason you have since fixed
+be parked again on its first new attempt.
+
+```
+camp jobs retry <id|all> [flags]
+```
+
+### Options
+
+```
+  -h, --help   help for retry
 ```
 
 ### Options inherited from parent commands
@@ -2919,9 +3024,14 @@ Serve every lane with pending work, then exit
 
 Serve every lane with pending work and exit when none is left.
 
-This is the entrypoint camp spawns detached after enqueuing. Running it by
-hand is safe: lanes are locked per repo, so a second worker simply finds the
-lanes taken and exits.
+This is both the entrypoint camp spawns detached after enqueuing work, and the
+way to run the queue in the foreground when something looks wrong. Running it
+by hand is safe at any time: lanes are locked per repo, so a second worker
+finds the lanes taken and exits rather than duplicating anything.
+
+It prints nothing on success. Per-job transitions go to
+.campaign/cache/jobs/worker.log, which is where a detached worker's story is;
+'camp jobs' is the surface for looking at what is still outstanding.
 
 ```
 camp jobs run [flags]

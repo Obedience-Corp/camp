@@ -10,13 +10,26 @@ Camp defers its own bookkeeping commits so they do not hold your terminal. The
 queue lives under .campaign/cache/jobs and is machine-local and disposable:
 git is the record, this is only the work still on its way there.
 
-Workers normally start themselves when a command enqueues work, so 'jobs run'
-is mostly for debugging and for the detached child camp spawns.
+Run bare to see what is queued, running, or failed. Nothing here is required in
+normal use: workers start themselves, and every command that touches git
+history waits for the queue before it runs.
+
+Examples:
+  camp jobs                    # what is queued, running, or failed
+  camp jobs --json             # the same, for scripts and agents
+  camp jobs retry all          # requeue everything that failed
+  camp jobs drop <id>          # give up on one job, keeping its content
+  camp jobs drain              # wait for every lane, then exit
+
+```
+camp jobs [flags]
+```
 
 ### Options
 
 ```
   -h, --help   help for jobs
+      --json   Emit a structured JSON result
 ```
 
 ### Options inherited from parent commands
@@ -28,4 +41,7 @@ is mostly for debugging and for the detached child camp spawns.
 ### SEE ALSO
 
 * [camp](camp.md)	 - Campaign management CLI for multi-project AI workspaces
+* [camp jobs drain](camp_jobs_drain.md)	 - Wait until every lane is empty
+* [camp jobs drop](camp_jobs_drop.md)	 - Give up on failed jobs, keeping their content
+* [camp jobs retry](camp_jobs_retry.md)	 - Requeue failed jobs
 * [camp jobs run](camp_jobs_run.md)	 - Serve every lane with pending work, then exit

@@ -6,9 +6,14 @@ Serve every lane with pending work, then exit
 
 Serve every lane with pending work and exit when none is left.
 
-This is the entrypoint camp spawns detached after enqueuing. Running it by
-hand is safe: lanes are locked per repo, so a second worker simply finds the
-lanes taken and exits.
+This is both the entrypoint camp spawns detached after enqueuing work, and the
+way to run the queue in the foreground when something looks wrong. Running it
+by hand is safe at any time: lanes are locked per repo, so a second worker
+finds the lanes taken and exits rather than duplicating anything.
+
+It prints nothing on success. Per-job transitions go to
+.campaign/cache/jobs/worker.log, which is where a detached worker's story is;
+'camp jobs' is the surface for looking at what is still outstanding.
 
 ```
 camp jobs run [flags]
