@@ -107,7 +107,9 @@ camp artifacts add <path> [flags]
 ### Options
 
 ```
+      --dry-run         Report what declaring this root would cover; write nothing
   -h, --help            help for add
+      --no-gitignore    Declare the root without adding its .gitignore rule
       --policy string   Sync policy: always (every peer sync) or on-demand (--artifacts-only) (default "always")
 ```
 
@@ -479,9 +481,12 @@ camp commit [flags]
   -a, --all                   Stage all changes before committing (default true)
       --amend                 Amend the previous commit
       --auto-write            Run configured commit message writer
+      --commit-large          Commit over-threshold files instead of keeping them out of git
   -h, --help                  help for commit
       --include-refs          Include submodule ref changes when staging at campaign root
+      --json                  Emit a JSON result on stdout; human output goes to stderr
   -m, --message stringArray   Commit message (repeatable; multiple -m are joined git-style into subject + body; required unless --auto-write)
+      --no-drain              Do not wait for camp's queued commits first
       --no-edit               Amend without editing the commit message (requires --amend)
   -p, --project string        Operate on a specific project/submodule path
       --sub                   Operate on the submodule detected from current directory
@@ -926,6 +931,7 @@ camp doctor [flags]
   -f, --fix               Attempt automatic fixes for detected issues
   -h, --help              help for doctor
       --json              Output results as JSON
+      --no-drain          Do not wait for camp's queued commits first
       --submodules-only   Only check submodule health
   -v, --verbose           Show detailed information for each check
 ```
@@ -1326,6 +1332,7 @@ camp fresh [project-name] [flags]
   -h, --help             help for fresh
       --list strings     Comma-separated set of projects to cycle in one run
       --no-branch        Skip branch creation even if configured
+      --no-drain         Do not wait for camp's queued commits first
       --no-follow-up     Skip configured follow-up command workflows
       --no-prune         Skip pruning merged branches
       --no-push          Skip pushing the new branch upstream
@@ -2876,6 +2883,64 @@ camp init [path] [flags]
 ```
 ---
 
+## camp jobs
+
+Inspect and run camp's deferred commit queue
+
+### Synopsis
+
+Inspect and run the deferred commit queue.
+
+Camp defers its own bookkeeping commits so they do not hold your terminal. The
+queue lives under .campaign/cache/jobs and is machine-local and disposable:
+git is the record, this is only the work still on its way there.
+
+Workers normally start themselves when a command enqueues work, so 'jobs run'
+is mostly for debugging and for the detached child camp spawns.
+
+### Options
+
+```
+  -h, --help   help for jobs
+```
+
+### Options inherited from parent commands
+
+```
+      --no-color   disable colored output
+```
+---
+
+## camp jobs run
+
+Serve every lane with pending work, then exit
+
+### Synopsis
+
+Serve every lane with pending work and exit when none is left.
+
+This is the entrypoint camp spawns detached after enqueuing. Running it by
+hand is safe: lanes are locked per repo, so a second worker simply finds the
+lanes taken and exits.
+
+```
+camp jobs run [flags]
+```
+
+### Options
+
+```
+      --campaign string   Campaign root to serve (defaults to the detected campaign)
+  -h, --help              help for run
+```
+
+### Options inherited from parent commands
+
+```
+      --no-color   disable colored output
+```
+---
+
 ## camp leverage
 
 Compute leverage scores for campaign projects
@@ -3248,9 +3313,15 @@ with 'camp register'. The registry lives at ~/.obey/campaign/registry.json.
 
 In a terminal, 'camp list' (with no flags) opens an interactive browser where you
 can deactivate/reactivate campaigns (cycle lifecycle status), reassign their org,
-and copy paths. Pass an org as a positional argument to open the browser filtered
-to that org. Piped, with --json/--count, or with any filter/sort flag it prints
-the table instead. Home paths display as '~'.
+and copy paths. When machines are configured in ~/.obey/machines.yaml, press 'r'
+to load remote campaigns into the browser (not on open). Pass an org as a
+positional argument to open the browser filtered to that org. Piped, with
+--json/--count, or with any filter/sort flag it prints the table instead. Home
+paths display as '~'.
+
+Shell integration (recommended for go/hop from the browser):
+  eval "$(camp shell-init zsh)"   # or bash / fish
+  camp list                       # interactive browser; g hops remote rows
 
 Output formats:
   table   - Aligned columns with headers (default)
@@ -3278,6 +3349,9 @@ Examples:
 (sh -lc) so PATH entries a login profile exports (~/.profile, etc.) are
 picked up. If camp still can't be found on a machine, set
 CAMP_REMOTE_CAMP_PATH to its exact path there.
+
+For interactive hop to a remote campaign from the picker, use csw after
+shell-init (see 'camp switch --help').
 
 ```
 camp list [org] [flags]
@@ -3592,6 +3666,105 @@ camp move <src> <dest> [flags]
 ```
   -f, --force   Overwrite destination without prompting
   -h, --help    help for move
+```
+
+### Options inherited from parent commands
+
+```
+      --no-color   disable colored output
+```
+---
+
+## camp notify
+
+Manage campaign state notices
+
+### Synopsis
+
+Manage the advisory notices camp surfaces on commands you already run.
+
+Notices describe campaign state you may not know is true, such as a declared
+artifact root that has never synced. Each one carries its own dismiss command.
+
+Dismissals are stored in .campaign/notices.yaml, which is committed: a
+dismissal you make on one machine travels to your others, the same way the
+artifact declarations it concerns do.
+
+### Options
+
+```
+  -h, --help   help for notify
+```
+
+### Options inherited from parent commands
+
+```
+      --no-color   disable colored output
+```
+---
+
+## camp notify dismiss
+
+Stop showing a notice
+
+### Synopsis
+
+Dismiss a notice by id.
+
+Dismissal is per signature, not per kind. Dismissing the notice for one
+artifact root does not silence a root you declare later: that one has its own
+id and notifies on its own terms.
+
+```
+camp notify dismiss <notice-id> [flags]
+```
+
+### Options
+
+```
+  -h, --help   help for dismiss
+```
+
+### Options inherited from parent commands
+
+```
+      --no-color   disable colored output
+```
+---
+
+## camp notify list
+
+List dismissed notices
+
+```
+camp notify list [flags]
+```
+
+### Options
+
+```
+  -h, --help   help for list
+```
+
+### Options inherited from parent commands
+
+```
+      --no-color   disable colored output
+```
+---
+
+## camp notify restore
+
+Show a dismissed notice again
+
+```
+camp notify restore <notice-id> [flags]
+```
+
+### Options
+
+```
+  -h, --help   help for restore
 ```
 
 ### Options inherited from parent commands
@@ -4234,8 +4407,10 @@ camp project commit [flags]
   -a, --all                   Stage all changes (default true)
       --amend                 Amend the previous commit
       --auto-write            Run configured commit message writer
+      --commit-large          Commit over-threshold files instead of keeping them out of git
   -h, --help                  help for commit
   -m, --message stringArray   Commit message (repeatable; multiple -m are joined git-style into subject + body; required unless --auto-write)
+      --no-drain              Do not wait for camp's queued commits first
       --no-sync               Do not sync submodule ref even if settings enable it
   -p, --project string        Project name (auto-detected from cwd if not specified)
       --sync                  Sync submodule ref at campaign root after commit (also enabled by commit.sync_project_refs setting)
@@ -6300,6 +6475,7 @@ camp status [flags] [-- <git-flags>]
 
 ```
   -h, --help             help for status
+      --no-drain         Do not wait for camp's queued commits first
   -p, --project string   Status of a specific project path
   -s, --short            Give output in short format
       --show-refs        Show campaign root submodule ref changes
@@ -6362,13 +6538,15 @@ Without arguments, opens an interactive picker to select a campaign.
 With an argument, looks up the campaign by name or ID prefix.
 Use --org or org/campaign to resolve inside one organization.
 
-Use with the cgo shell function for instant navigation:
-  cgo switch                 # Interactive campaign picker
-  cgo switch my-campaign     # Switch by name
-  cgo switch a1b2             # Switch by ID prefix
-  cgo switch obey/platform    # Switch by org-scoped selector
+Use with the shell-init wrappers for instant navigation (recommended):
+  eval "$(camp shell-init zsh)"   # or bash / fish — once per shell
+  csw                            # Interactive picker (local + remote machines)
+  csw my-campaign                # Switch by name
+  csw a1b2                       # Switch by ID prefix
+  csw obey/platform              # Switch by org-scoped selector
+  csw archdtop:lance-arch        # Hop to a remote campaign over ssh
 
-The --print flag outputs just the path for shell integration:
+The --print flag outputs just the path for shell integration (local only):
   cd "$(camp switch --print)"
 
 Use campaign@tab to navigate to a specific location in the target campaign:
@@ -6376,8 +6554,10 @@ Use campaign@tab to navigate to a specific location in the target campaign:
   camp switch obey/platform@f    # Switch inside org and navigate to festivals/
 
 Use machine:campaign to resolve a campaign on a machine registered in
-~/.obey/machines.yaml (via the csw shell wrapper, which hops there over ssh):
-  csw devbox:obey-campaign       # Resolve and hop to obey-campaign on devbox
+~/.obey/machines.yaml. The interactive picker also lists remote campaigns when
+machines are configured (locals open instantly; remotes append as they load).
+Bare 'command camp switch machine:…' resolves without hopping — use the csw
+shell wrapper (or --shell-connect under shell-init) to hop.
 
 Remote resolution runs the far machine's own 'camp switch' through a login
 shell (sh -lc) so PATH entries a login profile exports (~/.profile, etc.) are
@@ -6391,12 +6571,14 @@ camp switch [campaign] [flags]
 ### Examples
 
 ```
-  camp switch                        # Interactive picker
-  camp switch obey-campaign          # Switch by name
+  eval "$(camp shell-init zsh)"
+  csw                                # Interactive picker (local + remotes)
+  csw obey-campaign                  # Switch by name
+  csw archdtop:lance-arch            # Hop to remote campaign
   camp switch --org obey platform    # Switch by name within an org
   camp switch obey/platform          # Switch by scoped selector
   camp switch a1b2                   # Switch by ID prefix
-  camp switch --print                # Picker, output path only
+  camp switch --print                # Picker, output path only (local)
   camp switch obey-campaign@p        # Switch and navigate to projects/
   camp switch --all old-reference    # Include inactive/reference campaigns
   camp switch --org obey platform --json
@@ -6500,6 +6682,7 @@ camp sync [submodule...] [flags]
       --git-only           With --from: move git objects only, skip artifact roots
   -h, --help               help for sync
       --json               Output results as JSON for scripting
+      --no-drain           Do not wait for camp's queued commits first
       --no-fetch           Skip fetching from remote (use local refs only)
   -p, --parallel int       Number of parallel git operations (git guards superproject ops with repo lockfiles that fail fast on contention; lower this if a slow disk surfaces transient lock errors) (default 4)
   -v, --verbose            Show detailed output for each submodule
@@ -7738,6 +7921,45 @@ camp workitem stage <selector> <current|next|active|parked|clear> [flags]
 ```
   -h, --help   help for stage
       --json   emit a structured JSON result
+```
+
+### Options inherited from parent commands
+
+```
+      --no-color   disable colored output
+```
+---
+
+## camp workitem sweep
+
+Promote workitems with completed runs
+
+### Synopsis
+
+Promote every workitem whose active workflow run has completed to its
+local dungeon (tier-1 evidence-driven completion).
+
+Only loop-completion evidence (workflow_run_completed) drives this sweep, and it
+only ever auto-promotes; merged-branch evidence is handled separately by camp
+fresh, which prompts. Festivals and intents are excluded.
+
+Each eligible item moves independently: a failure on one (dirty git state, a
+path collision at its destination) is reported and the sweep continues to the
+next. Use --dry-run to see the plan without moving anything, and --json for a
+structured result. In table mode any per-item failure yields a non-zero exit,
+matching camp fresh; --json reports failures in the payload (failed count and
+per-item error) and stays exit 0 so the structured result is the contract.
+
+```
+camp workitem sweep [flags]
+```
+
+### Options
+
+```
+      --dry-run   Print the sweep plan, change nothing
+  -h, --help      help for sweep
+      --json      Output result as a single JSON object
 ```
 
 ### Options inherited from parent commands

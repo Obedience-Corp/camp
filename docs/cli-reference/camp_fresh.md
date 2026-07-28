@@ -40,6 +40,7 @@ camp fresh [project-name] [flags]
   -h, --help             help for fresh
       --list strings     Comma-separated set of projects to cycle in one run
       --no-branch        Skip branch creation even if configured
+      --no-drain         Do not wait for camp's queued commits first
       --no-follow-up     Skip configured follow-up command workflows
       --no-prune         Skip pruning merged branches
       --no-push          Skip pushing the new branch upstream

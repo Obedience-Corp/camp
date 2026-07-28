@@ -48,6 +48,7 @@ camp doctor [flags]
   -f, --fix               Attempt automatic fixes for detected issues
   -h, --help              help for doctor
       --json              Output results as JSON
+      --no-drain          Do not wait for camp's queued commits first
       --submodules-only   Only check submodule health
   -v, --verbose           Show detailed information for each check
 ```
