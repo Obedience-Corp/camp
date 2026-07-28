@@ -5,9 +5,11 @@ import (
 	"errors"
 	"fmt"
 	"os"
+	"time"
 
 	"github.com/Obedience-Corp/camp/internal/campaign"
 	"github.com/Obedience-Corp/camp/internal/config"
+	"github.com/Obedience-Corp/camp/internal/drain"
 	camperrors "github.com/Obedience-Corp/camp/internal/errors"
 	"github.com/Obedience-Corp/camp/internal/jsoncontract"
 	"github.com/Obedience-Corp/camp/internal/peer"
@@ -83,7 +85,11 @@ EXAMPLES:
 
 const SyncJSONVersion = "sync/v1alpha1"
 
-var syncOpts struct {
+// syncFlags is named for the same reason doctorOptions is: tests save and
+// restore syncOpts, and an anonymous type makes every added field a compile
+// error in files that have nothing to do with the change. It is distinct from
+// syncOptions, which is the subset the formatters take.
+type syncFlags struct {
 	dryRun          bool
 	force           bool
 	verbose         bool
@@ -94,7 +100,16 @@ var syncOpts struct {
 	gitOnly         bool
 	artifactsOnly   bool
 	verifyArtifacts bool
+	noDrain         bool
 }
+
+var syncOpts syncFlags
+
+// syncDrainWaited is how long the last sync spent waiting on the queue,
+// reported by --json. It lives here rather than threading through the
+// formatter's options struct because the formatter is shared with the
+// human path, which shows the wait as it happens instead.
+var syncDrainWaited time.Duration
 
 func init() {
 	syncCmd.Flags().BoolVarP(&syncOpts.dryRun, "dry-run", "n", false,
@@ -117,6 +132,8 @@ func init() {
 		"With --from: pull declared artifact roots only, skip git phases")
 	syncCmd.Flags().BoolVar(&syncOpts.verifyArtifacts, "verify-artifacts", false,
 		"Check artifact roots against last-transfer snapshots (no transfer)")
+	syncCmd.Flags().BoolVar(&syncOpts.noDrain, "no-drain", false,
+		"Do not wait for camp's queued commits first")
 
 	rootCmd.AddCommand(syncCmd)
 	syncCmd.GroupID = "campaign"
@@ -144,6 +161,17 @@ func runSync(cmd *cobra.Command, args []string) error {
 	}
 	if err := validateSyncFlagCombos(); err != nil {
 		return err
+	}
+
+	// Every lane: sync's preflight reads each submodule's working tree and
+	// unpushed state, so a queued commit that has not landed reads as
+	// uncommitted changes and aborts the sync for a reason the user cannot see.
+	if !syncOpts.noDrain {
+		waited, err := drain.AllLanes(ctx, campRoot, drain.Write)
+		if err != nil {
+			return err
+		}
+		syncDrainWaited = waited
 	}
 	if syncOpts.verifyArtifacts {
 		// Verify is purely local (tree vs recorded snapshots): --from only

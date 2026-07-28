@@ -48,6 +48,47 @@ func (k Kind) Valid() bool {
 	return k == KindCommitPaths || k == KindCommitTree
 }
 
+// Class says whether a drain waits for a job.
+//
+// It is a separate axis from Kind because the two answer different questions:
+// Kind is how the worker executes the job, Class is whether anyone downstream
+// depends on it having executed. A manifest and an intent capture are both
+// commit-paths jobs, but one is a record that is correct whenever it lands and
+// the other is content a later push must not miss.
+type Class string
+
+const (
+	// ClassCommit is ordinary deferred work: a drain waits for it, because a
+	// command that reads or writes history would otherwise see a state camp
+	// has already promised to change.
+	ClassCommit Class = "commit"
+	// ClassManifest is an artifact manifest, exempt from every drain.
+	//
+	// A manifest carries describes_commit, so it is correct whichever commit
+	// eventually holds it and has no ordering relationship to anything. The
+	// exemption is what makes hashing inside the worker safe at all: without
+	// it, a first-pass hash of a large artifact root would leak straight back
+	// onto the user's critical path through the next drain, which is the
+	// latency this subsystem exists to remove.
+	ClassManifest Class = "manifest"
+)
+
+// Blocking reports whether a drain waits for this class.
+//
+// Everything except manifest blocks, including the empty string and any value
+// this build does not recognize. That direction is deliberate: mistaking a
+// blocking job for an exempt one silently breaks the ordering barrier and the
+// user sees a push that is missing a commit, while mistaking an exempt job for
+// a blocking one costs a wait. Only the cheap mistake is available by default.
+func (c Class) Blocking() bool { return c != ClassManifest }
+
+// validClass reports whether c is a class this build assigns meaning to.
+// Enqueue rejects anything else so a typo cannot quietly become "blocking",
+// which would look like ordinary slowness rather than a bug.
+func validClass(c Class) bool {
+	return c == "" || c == ClassCommit || c == ClassManifest
+}
+
 // Job is one unit of deferred work. Exactly one lives in each queue file.
 //
 // There is deliberately no state field. State is which directory the file is
@@ -61,6 +102,9 @@ type Job struct {
 	Seq int `json:"seq"`
 	// Kind selects how the worker executes this job.
 	Kind Kind `json:"kind"`
+	// Class says whether a drain waits for this job. Empty means commit, so
+	// omitting the field is the safe default rather than the fast one.
+	Class Class `json:"class,omitempty"`
 	// Repo is campaign-relative: "." is the campaign root, "projects/camp" a
 	// submodule. Jobs never span repos.
 	Repo string `json:"repo"`
@@ -112,6 +156,10 @@ func (j *Job) Validate() error {
 	if !j.Kind.Valid() {
 		return camperrors.NewValidation("kind",
 			"must be "+string(KindCommitPaths)+" or "+string(KindCommitTree), nil)
+	}
+	if !validClass(j.Class) {
+		return camperrors.NewValidation("class",
+			"must be "+string(ClassCommit)+", "+string(ClassManifest)+", or empty", nil)
 	}
 	if err := validateRepo(j.Repo); err != nil {
 		return err

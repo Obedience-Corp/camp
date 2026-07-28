@@ -2,6 +2,7 @@ package main
 
 import (
 	"github.com/Obedience-Corp/camp/internal/campaign"
+	"github.com/Obedience-Corp/camp/internal/drain"
 	"github.com/spf13/cobra"
 )
 
@@ -41,8 +42,18 @@ func runPushAllCmd(cmd *cobra.Command, args []string) error {
 	}
 
 	// Extract --no-recurse before passing remaining args to git.
-	var noRecurse bool
+	var noRecurse, noDrain bool
 	args, noRecurse = extractFlag(args, "--no-recurse")
+	args, noDrain = extractFlag(args, "--no-drain")
+
+	// Every lane, not just the root's: push all publishes every repo, so a
+	// queued submodule commit left behind here is exactly the case the user
+	// ran this command to avoid.
+	if !noDrain {
+		if _, err := drain.AllLanes(ctx, campRoot, drain.Write); err != nil {
+			return err
+		}
+	}
 
 	return runPushAll(ctx, campRoot, args, noRecurse)
 }

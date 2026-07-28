@@ -168,9 +168,16 @@ var executeJob = execute
 // Enqueued after completion so a follow-up can never run against a commit that
 // did not happen. The follow-up carries no Then of its own, which validation
 // enforces, so chaining is bounded at one level.
+//
+// Class is inherited rather than declared on Follow. A follow-up exists only to
+// record its parent's commit, so it is exactly as drain-relevant as the parent;
+// giving it an independent class would let a manifest's gitlink follow-up block
+// the drains the manifest itself is exempt from, defeating the exemption one
+// level down.
 func enqueueFollowUp(ctx context.Context, campaignRoot string, job *Job) {
 	follow := Job{
 		Kind:  job.Then.Kind,
+		Class: job.Class,
 		Repo:  job.Then.Repo,
 		Paths: job.Then.Paths,
 		Message: fmt.Sprintf("[camp] record %s after %s",

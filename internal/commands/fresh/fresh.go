@@ -13,6 +13,7 @@ import (
 
 	"github.com/Obedience-Corp/camp/internal/campaign"
 	"github.com/Obedience-Corp/camp/internal/config"
+	"github.com/Obedience-Corp/camp/internal/drain"
 	camperrors "github.com/Obedience-Corp/camp/internal/errors"
 	"github.com/Obedience-Corp/camp/internal/git"
 	"github.com/Obedience-Corp/camp/internal/project"
@@ -38,6 +39,7 @@ func NewFreshCommand() *cobra.Command {
 		freshDryRun      bool
 		freshProjectFlag string
 		freshList        []string
+		freshNoDrain     bool
 	)
 
 	freshCmd := &cobra.Command{
@@ -74,6 +76,15 @@ Examples:
 			campRoot, err := campaign.DetectCached(ctx)
 			if err != nil {
 				return camperrors.Wrap(err, "not in a campaign")
+			}
+
+			// fresh checks out and pulls against a HEAD the queue may still be
+			// moving, and it may cycle several projects in one run, so it waits
+			// on every lane rather than the one it happens to start in.
+			if !freshNoDrain {
+				if _, err := drain.AllLanes(ctx, campRoot, drain.Write); err != nil {
+					return err
+				}
 			}
 
 			// Load fresh config
@@ -161,6 +172,7 @@ Examples:
 	freshCmd.Flags().StringVarP(&freshProjectFlag, "project", "p", "", "Project name (auto-detected from cwd)")
 	freshCmd.RegisterFlagCompletionFunc("project", completeProjectName)
 	freshCmd.Flags().StringSliceVar(&freshList, "list", nil, "Comma-separated set of projects to cycle in one run")
+	freshCmd.Flags().BoolVar(&freshNoDrain, "no-drain", false, "Do not wait for camp's queued commits first")
 	_ = freshCmd.RegisterFlagCompletionFunc("list", completeProjectName)
 	freshCmd.MarkFlagsMutuallyExclusive("project", "list")
 

@@ -170,6 +170,7 @@ func StageAll(ctx context.Context, repoPath string) error {
 	if ctx.Err() != nil {
 		return ctx.Err()
 	}
+	drainQuietly(ctx, repoPath)
 	return git.StageAll(ctx, repoPath)
 }
 
@@ -179,6 +180,7 @@ func StageFiles(ctx context.Context, repoPath string, files ...string) error {
 	if ctx.Err() != nil {
 		return ctx.Err()
 	}
+	drainQuietly(ctx, repoPath)
 	return git.StageFiles(ctx, repoPath, files...)
 }
 
@@ -198,6 +200,7 @@ func Commit(ctx context.Context, repoPath string, opts CommitOptions) error {
 	if ctx.Err() != nil {
 		return ctx.Err()
 	}
+	drainQuietly(ctx, repoPath)
 	return git.Commit(ctx, repoPath, &git.CommitOptions{
 		Message:    opts.Message,
 		Amend:      opts.Amend,

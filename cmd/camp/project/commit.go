@@ -11,6 +11,7 @@ import (
 	"github.com/Obedience-Corp/camp/cmd/camp/cmdutil"
 	"github.com/Obedience-Corp/camp/internal/campaign"
 	"github.com/Obedience-Corp/camp/internal/config"
+	"github.com/Obedience-Corp/camp/internal/drain"
 	"github.com/Obedience-Corp/camp/internal/git"
 	"github.com/Obedience-Corp/camp/internal/ledger"
 	"github.com/Obedience-Corp/camp/internal/paths"
@@ -54,6 +55,7 @@ var (
 	projectCommitAutoWrite bool
 	projectCommitWorkitem  string
 	projectCommitLarge     bool
+	projectCommitNoDrain   bool
 )
 
 func init() {
@@ -66,6 +68,7 @@ func init() {
 	projectCommitCmd.Flags().BoolVar(&projectCommitAutoWrite, "auto-write", false, "Run configured commit message writer")
 	projectCommitCmd.Flags().StringVar(&projectCommitWorkitem, "workitem", "", "explicit workitem selector for the commit tag (overrides cwd-based resolution)")
 	projectCommitCmd.Flags().BoolVar(&projectCommitLarge, "commit-large", false, "Commit over-threshold files instead of keeping them out of git")
+	projectCommitCmd.Flags().BoolVar(&projectCommitNoDrain, "no-drain", false, "Do not wait for camp's queued commits first")
 
 	if err := projectCommitCmd.RegisterFlagCompletionFunc("project", cmdutil.CompleteProjectName); err != nil {
 		panic(err)
@@ -126,6 +129,16 @@ func runProjectCommit(cmd *cobra.Command, args []string) error {
 			relPath, _ = filepath.Rel(campRoot, resolvedPath)
 		}
 		fmt.Printf("Project: %s\n", ui.Value(relPath))
+	}
+
+	// Drain this repository's lane before staging, so anything camp already
+	// promised to commit here is in history rather than racing the user's
+	// commit. A worktree drains as its own lane, which is what its own path
+	// resolves to.
+	if !projectCommitNoDrain {
+		if _, err := drain.Repo(ctx, resolvedPath, drain.Commit); err != nil {
+			return err
+		}
 	}
 
 	// Create executor for the submodule

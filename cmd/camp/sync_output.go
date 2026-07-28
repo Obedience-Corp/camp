@@ -358,6 +358,10 @@ func formatSyncJSON(result *sync.SyncResult, preflight *sync.PreflightResult) {
 		"urlChanges":    urlChanges,
 		"updateResults": updateResults,
 		"warnings":      warnings,
+		// Camel-cased to match this document's existing keys rather than the
+		// snake_case camp uses in newer schemas. An agent parsing sync output
+		// already reads camelCase here; one odd key would be the surprise.
+		"drainWaitedMs": syncDrainWaited.Milliseconds(),
 	}
 
 	// Peer-transport keys appear only when the feature ran, keeping default

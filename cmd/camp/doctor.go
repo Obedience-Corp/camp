@@ -3,13 +3,16 @@ package main
 import (
 	"encoding/json"
 	"fmt"
-	camperrors "github.com/Obedience-Corp/camp/internal/errors"
 	"os"
 	"strings"
+	"time"
+
+	camperrors "github.com/Obedience-Corp/camp/internal/errors"
 
 	"github.com/Obedience-Corp/camp/internal/campaign"
 	"github.com/Obedience-Corp/camp/internal/doctor"
 	"github.com/Obedience-Corp/camp/internal/doctor/checks"
+	"github.com/Obedience-Corp/camp/internal/drain"
 	"github.com/Obedience-Corp/camp/internal/jsoncontract"
 	"github.com/Obedience-Corp/camp/internal/ui"
 	"github.com/spf13/cobra"
@@ -59,13 +62,19 @@ EXAMPLES:
 
 const DoctorJSONVersion = "doctor/v1alpha1"
 
-var doctorOpts struct {
+// doctorOptions is named rather than anonymous so tests that save and restore
+// doctorOpts name the type instead of restating every field, which made adding
+// one a compile error in three unrelated test files.
+type doctorOptions struct {
 	fix            bool
 	verbose        bool
 	jsonOutput     bool
 	submodulesOnly bool
 	checks         []string
+	noDrain        bool
 }
+
+var doctorOpts doctorOptions
 
 func init() {
 	doctorCmd.Flags().BoolVarP(&doctorOpts.fix, "fix", "f", false,
@@ -78,6 +87,8 @@ func init() {
 		"Only check submodule health")
 	doctorCmd.Flags().StringSliceVarP(&doctorOpts.checks, "check", "c", nil,
 		"Run specific check(s) only (orphan, url, integrity, head, working, commits, lock)")
+	doctorCmd.Flags().BoolVar(&doctorOpts.noDrain, "no-drain", false,
+		"Do not wait for camp's queued commits first")
 
 	rootCmd.AddCommand(doctorCmd)
 	doctorCmd.GroupID = "campaign"
@@ -91,6 +102,18 @@ func runDoctor(cmd *cobra.Command, args []string) error {
 	campRoot, err := campaign.DetectCached(ctx)
 	if err != nil {
 		return camperrors.Wrap(err, "not in a campaign")
+	}
+
+	// Doctor inspects working-tree and commit alignment, so a queued commit
+	// makes it report a discrepancy camp is already fixing. Read-only, so a
+	// slow queue warns and the checks still run.
+	var doctorDrainWaited time.Duration
+	if !doctorOpts.noDrain {
+		waited, err := drain.AllLanes(ctx, campRoot, drain.Read)
+		if err != nil {
+			return err
+		}
+		doctorDrainWaited = waited
 	}
 
 	// Build doctor with options
@@ -113,7 +136,7 @@ func runDoctor(cmd *cobra.Command, args []string) error {
 
 	// Output results
 	if doctorOpts.jsonOutput {
-		if err := outputDoctorJSON(result); err != nil {
+		if err := outputDoctorJSON(result, doctorDrainWaited); err != nil {
 			return err
 		}
 		return exitDoctorWithCode(result)
@@ -163,11 +186,15 @@ func requestedCheck(requested []string, id string) bool {
 
 type doctorJSONPayload struct {
 	SchemaVersion string `json:"schema_version"`
+	// DrainWaitedMs is how long doctor waited on the deferred queue before
+	// inspecting anything, so an agent can tell a slow queue from a stuck one
+	// without timing the process itself.
+	DrainWaitedMs int64 `json:"drain_waited_ms"`
 	*doctor.DoctorResult
 }
 
 // outputDoctorJSON outputs results as JSON.
-func outputDoctorJSON(result *doctor.DoctorResult) error {
+func outputDoctorJSON(result *doctor.DoctorResult, drainWaited time.Duration) error {
 	payloadResult := *result
 	if payloadResult.Issues == nil {
 		payloadResult.Issues = []doctor.Issue{}
@@ -179,6 +206,7 @@ func outputDoctorJSON(result *doctor.DoctorResult) error {
 	encoder.SetIndent("", "  ")
 	return encoder.Encode(doctorJSONPayload{
 		SchemaVersion: DoctorJSONVersion,
+		DrainWaitedMs: drainWaited.Milliseconds(),
 		DoctorResult:  &payloadResult,
 	})
 }

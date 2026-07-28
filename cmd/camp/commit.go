@@ -11,6 +11,7 @@ import (
 	"github.com/Obedience-Corp/camp/cmd/camp/cmdutil"
 	"github.com/Obedience-Corp/camp/internal/campaign"
 	"github.com/Obedience-Corp/camp/internal/config"
+	"github.com/Obedience-Corp/camp/internal/drain"
 	"github.com/Obedience-Corp/camp/internal/git"
 	"github.com/Obedience-Corp/camp/internal/ledger"
 	"github.com/Obedience-Corp/camp/internal/ui"
@@ -60,6 +61,7 @@ var (
 	commitNoEdit      bool
 	commitLarge       bool
 	commitJSONOut     bool
+	commitNoDrain     bool
 )
 
 func init() {
@@ -74,6 +76,7 @@ func init() {
 	commitCmd.Flags().StringVar(&commitWorkitem, "workitem", "", "explicit workitem selector for the commit tag (overrides cwd-based resolution)")
 	commitCmd.Flags().BoolVar(&commitLarge, "commit-large", false, "Commit over-threshold files instead of keeping them out of git")
 	commitCmd.Flags().BoolVar(&commitJSONOut, "json", false, "Emit a JSON result on stdout; human output goes to stderr")
+	commitCmd.Flags().BoolVar(&commitNoDrain, "no-drain", false, "Do not wait for camp's queued commits first")
 
 	rootCmd.AddCommand(commitCmd)
 	commitCmd.GroupID = "git"
@@ -140,6 +143,19 @@ func runCommit(cmd *cobra.Command, args []string) error {
 	}
 	if commitAmend && commitMessage == "" && !commitAutoWrite && !commitNoEdit {
 		return camperrors.New("amend without a message requires --no-edit or --message")
+	}
+
+	// Drain before anything is staged, so the barrier holds: everything
+	// enqueued before this command is in history before the user's commit
+	// rather than interleaved with it. Job-aware, because a deferred
+	// --auto-write message writer is unbounded and refusing the user's next
+	// commit for it would be camp's fault, not theirs.
+	if !commitNoDrain {
+		waited, err := drain.Repo(ctx, target.Path, drain.Commit)
+		if err != nil {
+			return err
+		}
+		jsonResult.DrainWaitedMs = waited.Milliseconds()
 	}
 
 	stageAll := effectiveCommitAll(cmd, commitAmend, commitAll)
