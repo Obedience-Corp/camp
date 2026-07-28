@@ -178,8 +178,10 @@ func init() {
 	machineCmd.AddCommand(machineDiagnoseCmd)
 	machineCmd.AddCommand(machineAdoptCmd)
 	machineCmd.AddCommand(machineCachePutCmd)
-	machineCachePutCmd.Flags().StringSliceVar(&cachePutCampaigns, "campaigns", nil,
-		"Comma-separated campaign names on the calling machine")
+	// StringArray (not StringSlice): each --campaigns is one name intact, so
+	// names may contain commas. The push path emits repeated flags to match.
+	machineCachePutCmd.Flags().StringArrayVar(&cachePutCampaigns, "campaigns", nil,
+		"Campaign name on the calling machine (repeatable; names may contain commas)")
 	machineAdoptCmd.Flags().BoolVar(&machineAdoptForce, "force", false,
 		"Skip the reminder that you declined this origin before (never skips the confirmation)")
 

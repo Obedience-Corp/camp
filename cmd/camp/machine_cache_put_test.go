@@ -11,6 +11,7 @@ import (
 
 	"github.com/spf13/cobra"
 
+	"github.com/Obedience-Corp/camp/internal/config"
 	"github.com/Obedience-Corp/camp/internal/machines"
 )
 
@@ -21,15 +22,20 @@ func TestSanitizeSnapshotNames(t *testing.T) {
 		want    []string
 		wantErr bool
 	}{
-		{name: "comma separated", in: []string{"a,b,c"}, want: []string{"a", "b", "c"}},
-		{name: "trims and drops empties", in: []string{" a , ,b "}, want: []string{"a", "b"}},
+		// Wire format is repeated --campaigns flags; each element is one name.
+		// Commas inside a name are allowed (they are no longer the delimiter).
+		{name: "repeated flags", in: []string{"a", "b", "c"}, want: []string{"a", "b", "c"}},
+		{name: "name with comma intact", in: []string{"foo,bar", "baz"}, want: []string{"foo,bar", "baz"}},
+		{name: "trims and drops empties", in: []string{" a ", "", "b "}, want: []string{"a", "b"}},
 		{name: "empty input is an error", in: nil, wantErr: true},
-		{name: "only separators is an error", in: []string{",,"}, wantErr: true},
+		{name: "only empties is an error", in: []string{"", "  "}, wantErr: true},
 		// A name is display and completion data on the receiver, never a path.
 		{name: "path separator rejected", in: []string{"a/b"}, wantErr: true},
 		{name: "colon rejected", in: []string{"a:b"}, wantErr: true},
 		{name: "newline rejected", in: []string{"a\nb"}, wantErr: true},
 		{name: "null byte rejected", in: []string{"a\x00b"}, wantErr: true},
+		// One invalid fails the whole receive (hard reject on put).
+		{name: "one bad fails all", in: []string{"good", "bad/path"}, wantErr: true},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
@@ -43,10 +49,22 @@ func TestSanitizeSnapshotNames(t *testing.T) {
 			if err != nil {
 				t.Fatal(err)
 			}
-			if strings.Join(got, ",") != strings.Join(tt.want, ",") {
+			if strings.Join(got, "\x00") != strings.Join(tt.want, "\x00") {
 				t.Errorf("got %v, want %v", got, tt.want)
 			}
 		})
+	}
+}
+
+func TestFilterSnapshotNamesForPushSkipsInvalid(t *testing.T) {
+	// Outbound soft-filter: drop bad names, keep the rest — never fail the push.
+	got := filterSnapshotNamesForPush([]string{"good", "bad/path", "also-good", "has:colon", ""})
+	want := []string{"good", "also-good"}
+	if strings.Join(got, ",") != strings.Join(want, ",") {
+		t.Errorf("got %v, want %v", got, want)
+	}
+	if got := filterSnapshotNamesForPush([]string{"bad/a", "x:y"}); len(got) != 0 {
+		t.Errorf("all-invalid must yield empty, got %v", got)
 	}
 }
 
@@ -85,7 +103,8 @@ func TestCachePutRejectsHostileMachineID(t *testing.T) {
 
 func TestCachePutWritesSnapshotEntry(t *testing.T) {
 	t.Setenv("XDG_CONFIG_HOME", t.TempDir())
-	cachePutCampaigns = []string{"alpha,beta"}
+	// Repeated flags: each element is one name (including names with commas).
+	cachePutCampaigns = []string{"alpha", "beta", "foo,bar"}
 	t.Cleanup(func() { cachePutCampaigns = nil })
 
 	cmd := &cobra.Command{}
@@ -105,7 +124,7 @@ func TestCachePutWritesSnapshotEntry(t *testing.T) {
 	if !ok {
 		t.Fatal("pushed snapshot did not read back")
 	}
-	if strings.Join(names, ",") != "alpha,beta" {
+	if strings.Join(names, "\x00") != "alpha\x00beta\x00foo,bar" {
 		t.Errorf("names = %v", names)
 	}
 }
@@ -218,14 +237,86 @@ func TestPushCarriesNamesOnly(t *testing.T) {
 	t.Cleanup(func() { pushSnapshotRun = restore })
 
 	m := &machines.Machine{ID: "archdtop", Host: "archdtop.ts.net", SSHUser: "lance", IdentityFile: "/keys/secret"}
-	pushSelfSnapshot(context.Background(), m, "mac-studio", []string{"obey-campaign"})
+	pushSelfSnapshot(context.Background(), m, "mac-studio", []string{"obey-campaign", "foo,bar", "bad/skip"})
 
-	for _, forbidden := range []string{"/keys/secret", "/Users/", "8deed8b4", "archdtop.ts.net", "org", "path"} {
+	for _, forbidden := range []string{"/keys/secret", "/Users/", "8deed8b4", "archdtop.ts.net", "org", "path", "bad/skip"} {
 		if strings.Contains(sent, forbidden) {
 			t.Errorf("push argv leaked %q: %s", forbidden, sent)
 		}
 	}
 	if !strings.Contains(sent, "obey-campaign") || !strings.Contains(sent, "mac-studio") {
 		t.Errorf("push argv missing the names it should carry: %s", sent)
+	}
+	// Repeated --campaigns, not a single comma-joined flag value.
+	if !strings.Contains(sent, "--campaigns") || strings.Count(sent, "--campaigns") < 2 {
+		t.Errorf("want repeated --campaigns flags, got %s", sent)
+	}
+	if !strings.Contains(sent, "foo,bar") {
+		t.Errorf("name with comma must survive as one flag value: %s", sent)
+	}
+}
+
+func TestPushSoftFiltersInvalidNames(t *testing.T) {
+	// One invalid registry name must not cancel the whole silent push.
+	var sent string
+	calls := 0
+	restore := pushSnapshotRun
+	pushSnapshotRun = func(_ context.Context, _ *machines.Machine, args string) ([]byte, error) {
+		calls++
+		sent = args
+		return nil, nil
+	}
+	t.Cleanup(func() { pushSnapshotRun = restore })
+
+	m := &machines.Machine{ID: "archdtop", Host: "archdtop.ts.net"}
+	pushSelfSnapshot(context.Background(), m, "mac-studio", []string{"good", "evil/path", "also-good"})
+	if calls != 1 {
+		t.Fatalf("calls = %d, want 1 (soft-filter continues)", calls)
+	}
+	if !strings.Contains(sent, "good") || !strings.Contains(sent, "also-good") {
+		t.Errorf("valid names missing from push: %s", sent)
+	}
+	if strings.Contains(sent, "evil") {
+		t.Errorf("invalid name leaked into push: %s", sent)
+	}
+}
+
+func TestSelfSnapshotNamesOnlyInvariant(t *testing.T) {
+	// selfSnapshot must emit campaign names only — never host, user, paths,
+	// orgs, or other registry fields that would leak to every hop target.
+	dir := t.TempDir()
+	t.Setenv("CAMP_REGISTRY_PATH", dir+"/registry.json")
+	t.Setenv("XDG_CONFIG_HOME", dir)
+
+	// Force hostname fallback (no live tailscale) so the id is derived, but
+	// the names list is what we assert.
+	reg := config.NewRegistry()
+	if err := reg.RegisterWithOrg("aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee", "obey-campaign",
+		"/secret/path/to/obey", config.CampaignTypeProduct, "secret-org"); err != nil {
+		t.Fatal(err)
+	}
+	if err := reg.RegisterWithOrg("ffffffff-0000-1111-2222-333333333333", "social-fitness",
+		"/Users/someone/.campaigns/social", config.CampaignTypeProduct, "other-org"); err != nil {
+		t.Fatal(err)
+	}
+	if err := config.SaveRegistry(context.Background(), reg); err != nil {
+		t.Fatal(err)
+	}
+
+	id, names := selfSnapshot(context.Background())
+	if id == "" {
+		t.Fatal("selfSnapshot id empty (hostname detection failed?)")
+	}
+	if strings.Join(names, ",") != "obey-campaign,social-fitness" {
+		t.Errorf("names = %v, want sorted campaign names only", names)
+	}
+	blob := id + " " + strings.Join(names, " ")
+	for _, forbidden := range []string{
+		"/secret/", "/Users/", "secret-org", "other-org",
+		"aaaaaaaa", "ffffffff", "ssh", "IdentityFile", "host",
+	} {
+		if strings.Contains(blob, forbidden) {
+			t.Errorf("selfSnapshot leaked %q: id=%q names=%v", forbidden, id, names)
+		}
 	}
 }

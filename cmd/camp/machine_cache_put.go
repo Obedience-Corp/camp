@@ -62,32 +62,59 @@ func runMachineCachePut(cmd *cobra.Command, args []string) error {
 	return nil
 }
 
-// sanitizeSnapshotNames validates and bounds the pushed names. Names are display
-// and completion data on the receiver, never resolved as paths, and the
-// separator and control-character rules keep them that way.
+// invalidSnapshotName reports whether a campaign name is unsafe for the
+// completion cache wire format. Rejected characters would either escape path
+// boundaries if ever mis-resolved, or break shell/argv framing.
+func invalidSnapshotName(name string) bool {
+	return name == "" || len(name) > 255 || strings.ContainsAny(name, "/:\x00\n\r")
+}
+
+// sanitizeSnapshotNames validates and bounds names on the RECEIVE path.
+// Each element of raw is one campaign name (repeated --campaigns flags via
+// StringArray); commas are allowed inside a name because the wire format no
+// longer joins on them. Invalid names fail the whole put — the receiver must
+// not write a half-trusted cache entry.
 func sanitizeSnapshotNames(raw []string) ([]string, error) {
 	out := make([]string, 0, len(raw))
 	total := 0
-	for _, chunk := range raw {
-		for _, name := range strings.Split(chunk, ",") {
-			name = strings.TrimSpace(name)
-			if name == "" {
-				continue
-			}
-			if len(name) > 255 || strings.ContainsAny(name, "/:\x00\n\r") {
-				return nil, camperrors.New("invalid campaign name in snapshot: " + name)
-			}
-			if len(out) >= snapshotMaxNames || total+len(name) > snapshotMaxBytes {
-				return out, nil
-			}
-			out = append(out, name)
-			total += len(name)
+	for _, name := range raw {
+		name = strings.TrimSpace(name)
+		if name == "" {
+			continue
 		}
+		if invalidSnapshotName(name) {
+			return nil, camperrors.New("invalid campaign name in snapshot: " + name)
+		}
+		if len(out) >= snapshotMaxNames || total+len(name) > snapshotMaxBytes {
+			return out, nil
+		}
+		out = append(out, name)
+		total += len(name)
 	}
 	if len(out) == 0 {
-		return nil, camperrors.New("no campaign names given (use --campaigns a,b,c)")
+		return nil, camperrors.New("no campaign names given (use --campaigns name, repeatable)")
 	}
 	return out, nil
+}
+
+// filterSnapshotNamesForPush soft-filters names on the OUTBOUND path. One bad
+// registry entry must not cancel the whole silent push: skip invalids, keep
+// the rest, and still bound by the same caps as the receiver.
+func filterSnapshotNamesForPush(raw []string) []string {
+	out := make([]string, 0, len(raw))
+	total := 0
+	for _, name := range raw {
+		name = strings.TrimSpace(name)
+		if invalidSnapshotName(name) {
+			continue
+		}
+		if len(out) >= snapshotMaxNames || total+len(name) > snapshotMaxBytes {
+			return out
+		}
+		out = append(out, name)
+		total += len(name)
+	}
+	return out
 }
 
 // snapshotPushTimeout bounds a push. It rides an already-established
@@ -117,14 +144,24 @@ func pushSelfSnapshot(ctx context.Context, m *machines.Machine, selfID string, n
 	if validateMachineID(selfID) != nil {
 		return
 	}
-	safe, err := sanitizeSnapshotNames(names)
-	if err != nil || len(safe) == 0 {
+	// Soft-filter on the way out: one bad local registry name must not abort
+	// the whole silent push. The receiver still hard-rejects invalid payloads.
+	safe := filterSnapshotNamesForPush(names)
+	if len(safe) == 0 {
 		return
 	}
 	ctx, cancel := context.WithTimeout(ctx, snapshotPushTimeout)
 	defer cancel()
-	_, _ = pushSnapshotRun(ctx, m, "machine cache-put "+remote.ShellQuote(selfID)+
-		" --campaigns "+remote.ShellQuote(strings.Join(safe, ",")))
+	// Repeated --campaigns flags, not comma-joined: campaign names may contain
+	// commas, and StringArray on the receiver treats each flag as one name.
+	var b strings.Builder
+	b.WriteString("machine cache-put ")
+	b.WriteString(remote.ShellQuote(selfID))
+	for _, name := range safe {
+		b.WriteString(" --campaigns ")
+		b.WriteString(remote.ShellQuote(name))
+	}
+	_, _ = pushSnapshotRun(ctx, m, b.String())
 }
 
 // selfSnapshot returns this machine's id and campaign names for a push, or
