@@ -2,7 +2,6 @@ package main
 
 import (
 	"context"
-	"errors"
 	"fmt"
 	"os"
 	"os/signal"
@@ -12,7 +11,6 @@ import (
 	// packages; its path keeps it first under gofmt.
 	"github.com/Obedience-Corp/camp/cmd/camp/cmdutil"
 	_ "github.com/Obedience-Corp/camp/internal/bginit"
-	camperrors "github.com/Obedience-Corp/camp/internal/errors"
 )
 
 func main() {
@@ -20,11 +18,8 @@ func main() {
 	defer stop()
 
 	if err := Execute(ctx); err != nil {
-		// If a child process exited with a specific code (e.g. camp run),
-		// propagate that code without printing a redundant error message.
-		var cmdErr *camperrors.CommandError
-		if errors.As(err, &cmdErr) && cmdErr.ExitCode != 0 {
-			os.Exit(cmdErr.ExitCode)
+		if code, silent := silentExit(err); silent {
+			os.Exit(code)
 		}
 		// A staging-guard refusal is the one moment this package spends the
 		// user's attention, so it prints the full report (what was found,
