@@ -132,25 +132,60 @@ func poolSize() int {
 // The fix is not to make acquisition more reliable, which is not in this
 // harness's gift, but to make its failure legible and to stop early: one
 // unmistakable message beats hundreds of plausible ones.
+//
+// Arming is thresholded on *distinct* pool members (not one double-Reset). A
+// single wedged container must not poison healthy siblings: only when enough
+// different members fail do we treat the run as infrastructure death. Pool
+// size 1 keeps threshold 1 so a solo container still fails closed.
 var (
-	infraMu     sync.Mutex
-	infraReason string
+	infraMu             sync.Mutex
+	infraReason         string
+	infraFailedMembers  map[*TestContainer]string // first double-Reset reason per member
 )
 
-// failInfrastructure records the first infrastructure fault of the run.
-func failInfrastructure(reason string) {
-	infraMu.Lock()
-	defer infraMu.Unlock()
-	if infraReason == "" {
-		infraReason = "INFRASTRUCTURE FAILURE (not a test failure): " + reason +
-			"\n\nThe container pool could not be used. Common cause: the Docker " +
-			"daemon is out of headroom, often because several suites or gates are " +
-			"running at once. Re-run the suite on an idle machine, or lower " +
-			"CAMP_TEST_POOL_SIZE."
+// infraMemberThreshold is how many distinct pool members must double-fail
+// Reset before the run is declared infrastructure-dead.
+func infraMemberThreshold() int {
+	if containerPool == nil {
+		return 1
 	}
+	// cap(pool) is the fixed pool size set in TestMain.
+	if n := cap(containerPool); n >= 2 {
+		return 2
+	}
+	return 1
 }
 
-// infraFailure returns the recorded fault, or "" when the run is healthy.
+// recordMemberResetFailure notes a double-Reset failure on member c. Returns
+// (armed, message): armed means the run-level infra banner is set and later
+// checkouts should skip; !armed means only this member is bad so far and the
+// caller should fail this test locally without killing the suite.
+func recordMemberResetFailure(c *TestContainer, reason string) (armed bool, message string) {
+	infraMu.Lock()
+	defer infraMu.Unlock()
+	if infraReason != "" {
+		return true, infraReason
+	}
+	if infraFailedMembers == nil {
+		infraFailedMembers = make(map[*TestContainer]string)
+	}
+	if _, seen := infraFailedMembers[c]; !seen {
+		infraFailedMembers[c] = reason
+	}
+	if len(infraFailedMembers) < infraMemberThreshold() {
+		return false, ""
+	}
+	infraReason = "INFRASTRUCTURE FAILURE (not a test failure): " + reason +
+		"\n\nThe container pool could not be used (" +
+		strconv.Itoa(len(infraFailedMembers)) + " distinct members failed Reset). " +
+		"Common cause: the Docker daemon is out of headroom, often because " +
+		"several suites or gates are running at once. Re-run the suite on an " +
+		"idle machine, or lower CAMP_TEST_POOL_SIZE."
+	return true, infraReason
+}
+
+// infraFailure returns the recorded run-level fault, or "" when the run is
+// still healthy (including when only a single pool member has failed).
 func infraFailure() string {
 	infraMu.Lock()
 	defer infraMu.Unlock()
@@ -184,13 +219,19 @@ func GetSharedContainer(t *testing.T) *TestContainer {
 	c := <-containerPool
 
 	if err := c.Reset(); err != nil {
-		// One retry absorbs a transient blip; a second failure means the
-		// daemon or the container is genuinely gone.
+		// One retry absorbs a transient blip; a second failure means this
+		// member is gone. Only arm run-level infra death after enough
+		// *distinct* members fail (see recordMemberResetFailure) so one
+		// wedged container does not skip the rest of a healthy pool.
 		if retryErr := c.Reset(); retryErr != nil {
 			containerPool <- c
-			failInfrastructure(fmt.Sprintf(
-				"could not reset a pooled container: %v (retry: %v)", err, retryErr))
-			t.Fatalf("%s", infraFailure())
+			reason := fmt.Sprintf("could not reset a pooled container: %v (retry: %v)", err, retryErr)
+			if armed, msg := recordMemberResetFailure(c, reason); armed {
+				t.Fatalf("%s", msg)
+			}
+			t.Fatalf("could not reset one pooled container (member-local; "+
+				"run continues on other pool members until %d distinct members fail): %v (retry: %v)",
+				infraMemberThreshold(), err, retryErr)
 		}
 	}
 

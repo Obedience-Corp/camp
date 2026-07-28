@@ -172,20 +172,30 @@ func TestAcquireFileLock_ContextCancellationWhileWaiting(t *testing.T) {
 	}
 	defer release()
 
+	// Signal from inside the wait path (after a failed tryAcquire, before
+	// select on ctx.Done), not before AcquireFileLock returns. Closing early
+	// let cancel win between schedule and first acquire and collapsed this
+	// into the already-canceled path covered by TestAcquireFileLock_ContextCancellation.
+	waiting := make(chan struct{})
+	var once sync.Once
+	prev := onContendedLock
+	onContendedLock = func() {
+		once.Do(func() { close(waiting) })
+	}
+	t.Cleanup(func() { onContendedLock = prev })
+
 	ctx, cancel := context.WithCancel(context.Background())
 	done := make(chan error, 1)
-	waiting := make(chan struct{})
 	go func() {
-		// Signal that the goroutine is scheduled and about to block, rather
-		// than sleeping in the parent and hoping. A sleep makes the test
-		// assert that the scheduler ran this goroutine within 50ms, which is
-		// not the property under test and is exactly what fails under load.
-		close(waiting)
 		_, err := AcquireFileLock(ctx, lockPath)
 		done <- err
 	}()
 
-	<-waiting
+	select {
+	case <-waiting:
+	case <-time.After(lockLivenessBudget):
+		t.Fatal("waiter never entered the contended wait path")
+	}
 	cancel()
 	select {
 	case err := <-done:
