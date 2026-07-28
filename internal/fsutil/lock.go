@@ -27,6 +27,13 @@ const (
 	lockRetryDelay = 20 * time.Millisecond
 )
 
+// onContendedLock is an optional test hook invoked after a failed acquire
+// attempt when the lock is held, immediately before the wait/select. Production
+// leaves it nil. Tests use it to signal "inside the wait path" without racing
+// the cancel that would otherwise fire between goroutine start and first
+// tryAcquire.
+var onContendedLock func()
+
 // AcquireFileLock takes an exclusive lock on lockPath via O_CREATE|O_EXCL.
 // The returned release closure removes the lock file. Locks older than 30s
 // are treated as stale and removed before retrying.
@@ -46,6 +53,9 @@ func AcquireFileLock(ctx context.Context, lockPath string) (func(), error) {
 		if time.Now().After(deadline) {
 			return nil, camperrors.Wrap(camperrors.ErrTimeout,
 				"timeout acquiring lock at "+lockPath+" (another camp invocation holds it?)")
+		}
+		if f := onContendedLock; f != nil {
+			f()
 		}
 		select {
 		case <-ctx.Done():
