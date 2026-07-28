@@ -7,6 +7,7 @@ import (
 	"path/filepath"
 	"sort"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	camperrors "github.com/Obedience-Corp/camp/internal/errors"
@@ -37,6 +38,7 @@ func Run(ctx context.Context, campaignRoot string) error {
 			return nil
 		}
 
+		var served atomic.Bool
 		var wg sync.WaitGroup
 		sem := make(chan struct{}, laneCap)
 		for _, lane := range lanes {
@@ -49,31 +51,48 @@ func Run(ctx context.Context, campaignRoot string) error {
 					return
 				}
 				defer func() { <-sem }()
-				runLane(ctx, campaignRoot, lane)
+				if runLane(ctx, campaignRoot, lane) {
+					served.Store(true)
+				}
 			}(lane)
 		}
 		wg.Wait()
 
-		// Loop rather than return: lanes enqueued while we worked deserve
-		// service from this process rather than waiting for the next spawn.
-		// The len == 0 branch above is the exit.
+		// If a whole pass took no lane, every lane with work is held by
+		// another live worker and this process has no role. Returning is not
+		// an optimization: without it the loop rediscovers the same held lanes
+		// forever and burns a core doing nothing, and a queue whose second
+		// worker spins is worse than one that never started it.
+		//
+		// The work is not dropped. The worker holding those lanes runs its own
+		// check-after-release before exiting, so anything queued behind it is
+		// still served.
+		if !served.Load() {
+			return nil
+		}
+
+		// Otherwise loop: lanes enqueued while we worked deserve service from
+		// this process rather than waiting for the next spawn.
 	}
 }
 
-// runLane drains one lane, holding its lock for the duration.
-func runLane(ctx context.Context, campaignRoot, repo string) {
+// runLane drains one lane, holding its lock for the duration. It reports
+// whether this process actually took the lane, so Run can tell "nothing left
+// to do" apart from "someone else is doing it".
+func runLane(ctx context.Context, campaignRoot, repo string) (served bool) {
 	queueDir := QueueDir(campaignRoot)
 	slug := LaneSlug(repo)
 
 	for {
 		if ctx.Err() != nil {
-			return
+			return served
 		}
 
 		lock, ok, err := acquireLane(queueDir, slug)
 		if err != nil || !ok {
-			return // a live worker owns this lane; not ours to serve
+			return served // a live worker owns this lane; not ours to serve
 		}
+		served = true
 
 		// Startup reclaim happens after winning the lock, never before: a
 		// running job in a lane we now hold was abandoned by definition,
@@ -84,7 +103,7 @@ func runLane(ctx context.Context, campaignRoot, repo string) {
 		for {
 			if ctx.Err() != nil {
 				lock.release()
-				return
+				return served
 			}
 			job, complete, err := Claim(ctx, campaignRoot, repo)
 			if err != nil {
@@ -128,7 +147,7 @@ func runLane(ctx context.Context, campaignRoot, repo string) {
 		// true.
 		empty, err := laneEmpty(campaignRoot, repo)
 		if err != nil || empty {
-			return
+			return served
 		}
 	}
 }

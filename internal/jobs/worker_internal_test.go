@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"strings"
 	"sync"
 	"sync/atomic"
 	"testing"
@@ -336,5 +337,107 @@ func TestConcurrentWorkersServeEachJobOnce(t *testing.T) {
 		if c != 1 {
 			t.Errorf("job %s served %d times, want once", id, c)
 		}
+	}
+}
+
+// A second worker must not spin when every lane with work is already held.
+func TestRunDoesNotSpinWhenAllLanesAreHeld(t *testing.T) {
+	withFastTiming(t, 10*time.Second, time.Second)
+	root := testCampaign(t)
+	ctx := context.Background()
+
+	if _, err := Enqueue(ctx, root, Job{
+		Kind: KindCommitPaths, Repo: ".", Paths: []string{"a.md"},
+	}); err != nil {
+		t.Fatal(err)
+	}
+
+	// Another live worker owns the only lane with work.
+	held, ok, err := acquireLane(QueueDir(root), LaneSlug("."))
+	if err != nil || !ok {
+		t.Fatalf("setup acquire = (%v, %v)", ok, err)
+	}
+	defer held.release()
+
+	done := make(chan error, 1)
+	go func() { done <- Run(ctx, root) }()
+
+	select {
+	case err := <-done:
+		if err != nil {
+			t.Fatalf("Run() error = %v", err)
+		}
+	case <-time.After(2 * time.Second):
+		t.Fatal("Run() did not return; it is spinning on a lane owned by another worker")
+	}
+}
+
+// SpawnIfNeeded's guards decide whether a detached worker starts at all. They
+// are tested separately from the spawn itself: starting a real process in a
+// unit test would be slow and racy, while the guards are where the decisions
+// live and where a mistake is expensive in both directions. Spawning when a
+// worker already exists wastes a process; failing to spawn strands work.
+func TestSpawnIfNeededGuards(t *testing.T) {
+	withFastTiming(t, time.Second, 10*time.Millisecond)
+	ctx := context.Background()
+
+	t.Run("empty lane does not spawn", func(t *testing.T) {
+		root := testCampaign(t)
+		SpawnIfNeeded(ctx, root, ".")
+		assertNoWorkerStarted(t, root)
+	})
+
+	t.Run("lane held by a live worker does not spawn", func(t *testing.T) {
+		root := testCampaign(t)
+		if _, err := Enqueue(ctx, root, Job{
+			Kind: KindCommitPaths, Repo: ".", Paths: []string{"a.md"},
+		}); err != nil {
+			t.Fatal(err)
+		}
+		lock, ok, err := acquireLane(QueueDir(root), LaneSlug("."))
+		if err != nil || !ok {
+			t.Fatalf("setup acquire = (%v, %v)", ok, err)
+		}
+		defer lock.release()
+
+		if !laneLockFresh(QueueDir(root), LaneSlug(".")) {
+			t.Fatal("setup: the lane lock should read as fresh")
+		}
+		SpawnIfNeeded(ctx, root, ".")
+		assertNoWorkerStarted(t, root)
+	})
+
+	t.Run("at the cap does not spawn", func(t *testing.T) {
+		root := testCampaign(t)
+		if _, err := Enqueue(ctx, root, Job{
+			Kind: KindCommitPaths, Repo: "projects/z", Paths: []string{"a.md"},
+		}); err != nil {
+			t.Fatal(err)
+		}
+		// Fill the cap with locks for other lanes.
+		for i := range laneCap {
+			lock, ok, err := acquireLane(QueueDir(root), LaneSlug(fmt.Sprintf("projects/held%d", i)))
+			if err != nil || !ok {
+				t.Fatalf("setup acquire %d = (%v, %v)", i, ok, err)
+			}
+			defer lock.release()
+		}
+		if got := countFreshLaneLocks(QueueDir(root)); got < laneCap {
+			t.Fatalf("setup: %d fresh locks, want at least %d", got, laneCap)
+		}
+		SpawnIfNeeded(ctx, root, "projects/z")
+		assertNoWorkerStarted(t, root)
+	})
+}
+
+// assertNoWorkerStarted checks the worker log records no spawn.
+func assertNoWorkerStarted(t *testing.T, root string) {
+	t.Helper()
+	data, err := os.ReadFile(WorkerLogPath(root))
+	if err != nil {
+		return // no log at all means nothing was spawned
+	}
+	if strings.Contains(string(data), "spawned") {
+		t.Errorf("a worker was spawned when the guards should have prevented it:\n%s", data)
 	}
 }
