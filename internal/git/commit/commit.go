@@ -7,12 +7,21 @@ import (
 	"io"
 
 	"github.com/Obedience-Corp/camp/internal/config"
+	"github.com/Obedience-Corp/camp/internal/defercommit"
 	"github.com/Obedience-Corp/camp/internal/git"
 )
 
 // Result contains the outcome of a commit attempt.
+// errDeferred is the internal signal that stageAndCommit queued the commit
+// instead of making it. It never escapes this package: doCommit turns it into
+// a Result, because a deferral is an outcome rather than a failure.
+var errDeferred = errors.New("commit deferred to the queue")
+
 type Result struct {
-	Committed bool   // True if commit succeeded
+	Committed bool // True if commit succeeded
+	// Deferred is true when the commit was queued rather than made. The
+	// content is already on disk; git will have it once the worker runs.
+	Deferred  bool
 	NoChanges bool   // True if there was nothing to commit
 	Err       error  // Set when a commit attempt failed
 	Message   string // User-facing message
@@ -106,6 +115,12 @@ func doCommit(ctx context.Context, opts Options, action, subject, description st
 	}
 
 	if err := stageAndCommit(ctx, opts, commitMsg); err != nil {
+		if errors.Is(err, errDeferred) {
+			return Result{
+				Deferred: true,
+				Message:  "queued (" + subject + ")",
+			}
+		}
 		if errors.Is(err, git.ErrNoChanges) {
 			return Result{
 				Committed: false,
@@ -132,6 +147,24 @@ func doCommit(ctx context.Context, opts Options, action, subject, description st
 // When SelectiveOnly is true and no paths exist, returns ErrNoChanges instead
 // of falling back to CommitAll. Otherwise all changes are staged (legacy behavior).
 func stageAndCommit(ctx context.Context, opts Options, message string) error {
+	// Camp's own bookkeeping is the work the deferred queue exists for: the
+	// user asked to capture an intent or move a workitem, not to wait for a
+	// commit. When it is safe, the file is already written and the commit
+	// becomes a queued job, so the terminal returns now.
+	//
+	// Not silent: the caller reports a deferred result the same way it reports
+	// a committed one, because camp acting on its own has to say so.
+	if allowed, _ := defercommit.AllowedForPaths(
+		ctx, opts.CampaignRoot, opts.CampaignRoot, opts.Files, opts.PreStaged); allowed {
+		if _, err := defercommit.EnqueuePaths(
+			ctx, opts.CampaignRoot, opts.CampaignRoot, message, opts.Files); err == nil {
+			defercommit.SpawnWorker(ctx, opts.CampaignRoot, opts.CampaignRoot)
+			return errDeferred
+		}
+		// A queue that cannot be written must not cost the user their commit.
+		// Fall through to the synchronous path exactly as before.
+	}
+
 	commitScope := append(append([]string{}, opts.Files...), opts.PreStaged...)
 	if len(commitScope) == 0 {
 		if opts.SelectiveOnly {

@@ -360,8 +360,31 @@ func TestIntegration_CommitTags_NonNoteActionNeverEmitsNoteRef(t *testing.T) {
 	assert.NotContains(t, subject, "-NT-", "non-note commit must never carry an NT- segment: %s", subject)
 }
 
+// runAutoWriteCommit runs `camp commit --auto-write` and waits for it to land.
+//
+// --auto-write defers: the message writer runs in a detached worker after the
+// command returns, so anything the writer produces (a commit, a file it wrote)
+// does not exist yet when the command exits. Every test that asserts on such a
+// side effect has to wait, and the helper exists so that is not something each
+// test has to remember. Two tests here read a hook's env dump, and only one of
+// them failed first; the other was equally racy and passed by luck.
+func runAutoWriteCommit(t *testing.T, tc *TestContainer, campaignDir, workDir string) string {
+	t.Helper()
+	out, err := tc.RunCampInDir(workDir, "commit", "--auto-write")
+	require.NoError(t, err, "camp commit --auto-write: %s", out)
+	if strings.Contains(out, "staged and queued") {
+		drained, drainErr := tc.RunCampInDir(campaignDir, "jobs", "drain")
+		require.NoError(t, drainErr, "camp jobs drain: %s", drained)
+	}
+	return out
+}
+
 func TestIntegration_AutoWriteEnv(t *testing.T) {
 	tc := GetSharedContainer(t)
+	// The writer's environment contract must hold on the deferred path too,
+	// which is the one where it is easy to lose: the worker has no working
+	// directory to re-derive the workitem from.
+	tc.EnableDeferral()
 	dir := "/test/commit-tags-autowrite"
 	initCommitTagsCampaign(t, tc, dir)
 	_ = seedDesignWorkitemWithRef(t, tc, dir, "envtest")
@@ -383,8 +406,7 @@ func TestIntegration_AutoWriteEnv(t *testing.T) {
 	require.NoError(t, addErr)
 
 	wiDir := dir + "/workflow/design/envtest"
-	out, err := tc.RunCampInDir(wiDir, "commit", "--auto-write")
-	require.NoError(t, err, "camp commit --auto-write: %s", out)
+	runAutoWriteCommit(t, tc, dir, wiDir)
 
 	dump, err := tc.ReadFile("/tmp/env_dump")
 	require.NoError(t, err, "env dump should exist")
@@ -404,6 +426,7 @@ func TestIntegration_AutoWriteEnv(t *testing.T) {
 
 func TestIntegration_AutoWriteEnv_IgnoresCurrentSelection(t *testing.T) {
 	tc := GetSharedContainer(t)
+	tc.EnableDeferral()
 	dir := "/test/commit-tags-current-autowrite"
 	initCommitTagsCampaign(t, tc, dir)
 	ref := seedDesignWorkitemWithRef(t, tc, dir, "stale-autowrite")
@@ -422,8 +445,7 @@ func TestIntegration_AutoWriteEnv_IgnoresCurrentSelection(t *testing.T) {
 	_, _, addErr := tc.ExecCommand("git", "-C", dir, "add", "-A")
 	require.NoError(t, addErr)
 
-	out, err = tc.RunCampInDir(dir+"/docs", "commit", "--auto-write")
-	require.NoError(t, err, "camp commit --auto-write: %s", out)
+	runAutoWriteCommit(t, tc, dir, dir+"/docs")
 
 	dump, err := tc.ReadFile("/tmp/env_dump_current")
 	require.NoError(t, err, "env dump should exist")

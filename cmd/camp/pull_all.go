@@ -2,6 +2,7 @@ package main
 
 import (
 	"github.com/Obedience-Corp/camp/internal/campaign"
+	"github.com/Obedience-Corp/camp/internal/drain"
 	pullsvc "github.com/Obedience-Corp/camp/internal/pull"
 	"github.com/spf13/cobra"
 )
@@ -46,9 +47,16 @@ func runPullAllCmd(cmd *cobra.Command, args []string) error {
 	}
 
 	// Extract camp-specific flags before passing remaining args to git.
-	var noRecurse, useDefault bool
+	var noRecurse, useDefault, noDrain bool
 	args, noRecurse = extractFlag(args, "--no-recurse")
 	args, useDefault = extractFlag(args, "--default-branch")
+	args, noDrain = extractFlag(args, "--no-drain")
+
+	if !noDrain {
+		if _, err := drain.AllLanes(ctx, campRoot, drain.Write); err != nil {
+			return err
+		}
+	}
 
 	return runPullAll(ctx, campRoot, args, pullsvc.Options{
 		NoRecurse:     noRecurse,

@@ -1,0 +1,23 @@
+## camp notify list
+
+List dismissed notices
+
+```
+camp notify list [flags]
+```
+
+### Options
+
+```
+  -h, --help   help for list
+```
+
+### Options inherited from parent commands
+
+```
+      --no-color   disable colored output
+```
+
+### SEE ALSO
+
+* [camp notify](camp_notify.md)	 - Manage campaign state notices

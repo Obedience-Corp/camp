@@ -4,13 +4,17 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"os"
 	"path/filepath"
 
+	"github.com/Obedience-Corp/camp/internal/defercommit"
 	camperrors "github.com/Obedience-Corp/camp/internal/errors"
+	"github.com/Obedience-Corp/camp/internal/jobs"
 
 	"github.com/Obedience-Corp/camp/cmd/camp/cmdutil"
 	"github.com/Obedience-Corp/camp/internal/campaign"
 	"github.com/Obedience-Corp/camp/internal/config"
+	"github.com/Obedience-Corp/camp/internal/drain"
 	"github.com/Obedience-Corp/camp/internal/git"
 	"github.com/Obedience-Corp/camp/internal/ledger"
 	"github.com/Obedience-Corp/camp/internal/paths"
@@ -54,6 +58,7 @@ var (
 	projectCommitAutoWrite bool
 	projectCommitWorkitem  string
 	projectCommitLarge     bool
+	projectCommitNoDrain   bool
 )
 
 func init() {
@@ -66,6 +71,7 @@ func init() {
 	projectCommitCmd.Flags().BoolVar(&projectCommitAutoWrite, "auto-write", false, "Run configured commit message writer")
 	projectCommitCmd.Flags().StringVar(&projectCommitWorkitem, "workitem", "", "explicit workitem selector for the commit tag (overrides cwd-based resolution)")
 	projectCommitCmd.Flags().BoolVar(&projectCommitLarge, "commit-large", false, "Commit over-threshold files instead of keeping them out of git")
+	projectCommitCmd.Flags().BoolVar(&projectCommitNoDrain, "no-drain", false, "Do not wait for camp's queued commits first")
 
 	if err := projectCommitCmd.RegisterFlagCompletionFunc("project", cmdutil.CompleteProjectName); err != nil {
 		panic(err)
@@ -128,6 +134,16 @@ func runProjectCommit(cmd *cobra.Command, args []string) error {
 		fmt.Printf("Project: %s\n", ui.Value(relPath))
 	}
 
+	// Drain this repository's lane before staging, so anything camp already
+	// promised to commit here is in history rather than racing the user's
+	// commit. A worktree drains as its own lane, which is what its own path
+	// resolves to.
+	if !projectCommitNoDrain {
+		if _, err := drain.Repo(ctx, resolvedPath, drain.Commit); err != nil {
+			return err
+		}
+	}
+
 	// Create executor for the submodule
 	executor, err := git.NewExecutor(resolvedPath)
 	if err != nil {
@@ -187,6 +203,20 @@ func runProjectCommit(cmd *cobra.Command, args []string) error {
 
 	// Show what's staged
 	cmdutil.ShowStagedSummary(ctx, resolvedPath)
+
+	// Deferral point, same as camp commit: staging and the guard already ran
+	// in the foreground; only the writer and the commit object move.
+	if projectCommitAutoWrite {
+		deferred, deferErr := cmdutil.TryDeferAutoWrite(
+			ctx, os.Stdout, campRoot, resolvedPath, false, projectCommitAmend,
+			projectDeferOptions(ctx, campRoot, resolvedPath, relPath, cfg))
+		if deferErr != nil {
+			return deferErr
+		}
+		if deferred {
+			return nil
+		}
+	}
 
 	if projectCommitAutoWrite {
 		fmt.Println(ui.Info("Writing commit message..."))
@@ -268,11 +298,7 @@ func syncParentRef(ctx context.Context, campRoot, relPath string, cfg *config.Ca
 		return nil
 	}
 
-	projName := filepath.Base(relPath)
-	msg := fmt.Sprintf("update %s submodule ref", projName)
-	if cfg != nil && prefs.TagCommits() {
-		msg = git.PrependContextTagsFull(cfg.Name, cfg.ID, "", "", "", msg)
-	}
+	msg := submoduleRefMessage(relPath, cfg, prefs)
 
 	opts := &git.CommitOptions{Message: msg}
 	if err := git.CommitScoped(ctx, campRoot, []string{relPath}, opts); err != nil {
@@ -290,4 +316,65 @@ func syncParentRef(ctx context.Context, campRoot, relPath string, cfg *config.Ca
 
 	fmt.Println(ui.Success("✓ Campaign root synced (" + relPath + ")"))
 	return nil
+}
+
+// projectDeferOptions builds what a deferred project commit must carry.
+//
+// The campaign tag and the writer's environment both come from the user's
+// working directory, and the follow-up encodes the sync decision their flags
+// and settings made. A detached worker can re-derive none of the three.
+//
+// The follow-up is how commit.sync_project_refs survives deferral: the worker
+// enqueues it only after the project commit lands, so the gitlink it records is
+// the commit that just happened. There is deliberately no synchronous fallback
+// when sync is enabled; delegated work does not come back to the terminal.
+func projectDeferOptions(
+	ctx context.Context,
+	campRoot, resolvedPath, relPath string,
+	cfg *config.CampaignConfig,
+) defercommit.EnqueueOptions {
+	opts := defercommit.EnqueueOptions{
+		WriterEnv: workitemEnvForProjectCommit(ctx, campRoot, resolvedPath, projectCommitWorkitem),
+	}
+
+	prefs, err := config.EffectiveCommitPrefs(ctx, campRoot)
+	if err != nil {
+		return opts
+	}
+	if cfg != nil && prefs.TagCommits() {
+		questID, festivalRef, workitemRef := resolveProjectCommitContext(
+			ctx, campRoot, resolvedPath, projectCommitWorkitem)
+		opts.MessagePrefix = commitkit.FormatContextTagsFullNamed(
+			cfg.Name, cfg.ID, questID, festivalRef, workitemRef)
+	}
+
+	if (prefs.SyncProjectRefs || projectCommitSync) && !projectCommitNoSync && relPath != "" {
+		opts.Then = &jobs.Follow{
+			Kind:  jobs.KindCommitPaths,
+			Repo:  ".",
+			Paths: []string{filepath.ToSlash(relPath)},
+			// Composed here, by the same function the synchronous path uses,
+			// so the two cannot drift. The worker records what it is given.
+			Message: submoduleRefMessage(relPath, cfg, prefs),
+		}
+	}
+	return opts
+}
+
+// submoduleRefMessage is the commit message a submodule pointer update carries.
+//
+// One function, because the synchronous sync and the deferred follow-up must
+// produce the same commit. A deferred pointer commit worded differently would
+// let anyone read which code path ran off git history, which is an
+// implementation detail that has no business being permanent.
+//
+// The tag carries no quest, festival, or workitem on purpose: a pointer update
+// is bookkeeping about a commit that already carries that context, not work in
+// its own right.
+func submoduleRefMessage(relPath string, cfg *config.CampaignConfig, prefs config.CommitPrefs) string {
+	msg := fmt.Sprintf("update %s submodule ref", filepath.Base(relPath))
+	if cfg != nil && prefs.TagCommits() {
+		msg = git.PrependContextTagsFull(cfg.Name, cfg.ID, "", "", "", msg)
+	}
+	return msg
 }

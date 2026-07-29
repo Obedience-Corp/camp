@@ -4,8 +4,8 @@ import (
 	"context"
 	"testing"
 
-	"github.com/Obedience-Corp/camp/internal/workitem/links"
 	wkitem "github.com/Obedience-Corp/camp/internal/workitem"
+	"github.com/Obedience-Corp/camp/internal/workitem/links"
 )
 
 func TestSanitizeWorktreeName(t *testing.T) {

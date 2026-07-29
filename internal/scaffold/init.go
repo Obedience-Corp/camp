@@ -522,4 +522,3 @@ func (o *InitOptions) Validate() error {
 	}
 	return nil
 }
-

@@ -155,7 +155,6 @@ func TestEmitCommitsJSONIncludesSource(t *testing.T) {
 	}
 }
 
-
 func TestLedgerCommitDatePrefersPayload(t *testing.T) {
 	ev := &ledgerkit.Event{
 		TS: "2026-01-01T00:00:00Z",

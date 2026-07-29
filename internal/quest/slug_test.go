@@ -33,4 +33,3 @@ func TestGenerateIDFormat(t *testing.T) {
 		t.Fatalf("GenerateID() = %q, want qst_20260119_<6 chars>", got)
 	}
 }
-

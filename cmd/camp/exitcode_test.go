@@ -61,13 +61,7 @@ func runDoctorExitCodeFailure(t *testing.T) error {
 	t.Setenv(campaign.EnvCacheDisable, "1")
 
 	oldOpts := doctorOpts
-	doctorOpts = struct {
-		fix            bool
-		verbose        bool
-		jsonOutput     bool
-		submodulesOnly bool
-		checks         []string
-	}{}
+	doctorOpts = doctorOptions{}
 	t.Cleanup(func() { doctorOpts = oldOpts })
 
 	cmd := newDoctorJSONTestCommand()
@@ -87,18 +81,7 @@ func runSyncExitCodePreflightFailure(t *testing.T) error {
 	t.Setenv(campaign.EnvCacheDisable, "1")
 
 	oldOpts := syncOpts
-	syncOpts = struct {
-		dryRun          bool
-		force           bool
-		verbose         bool
-		parallel        int
-		noFetch         bool
-		json            bool
-		from            string
-		gitOnly         bool
-		artifactsOnly   bool
-		verifyArtifacts bool
-	}{}
+	syncOpts = syncFlags{}
 	t.Cleanup(func() { syncOpts = oldOpts })
 
 	cmd := newSyncExitCodeTestCommand()

@@ -39,12 +39,12 @@ Examples:
 }
 
 var (
-	pruneProjectFlag    string
-	pruneDryRun         bool
-	pruneForce          bool
-	pruneRemote         bool
-	pruneRemoteDelete   bool
-	pruneDiscardDirty   bool
+	pruneProjectFlag  string
+	pruneDryRun       bool
+	pruneForce        bool
+	pruneRemote       bool
+	pruneRemoteDelete bool
+	pruneDiscardDirty bool
 )
 
 func init() {

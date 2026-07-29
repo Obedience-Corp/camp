@@ -6,6 +6,7 @@ import (
 	"os"
 
 	"github.com/Obedience-Corp/camp/internal/campaign"
+	"github.com/Obedience-Corp/camp/internal/drain"
 	camperrors "github.com/Obedience-Corp/camp/internal/errors"
 	"github.com/Obedience-Corp/camp/internal/git"
 	pullsvc "github.com/Obedience-Corp/camp/internal/pull"
@@ -54,7 +55,7 @@ func runPull(cmd *cobra.Command, args []string) error {
 	}
 
 	// Extract camp-specific flags, pass rest to git
-	gitArgs, sub, project := git.ExtractSubFlags(args)
+	gitArgs, sub, project, noDrain := git.ExtractSubFlags(args)
 
 	target, err := git.ResolveTarget(ctx, campRoot, sub, project)
 	if err != nil {
@@ -63,6 +64,14 @@ func runPull(cmd *cobra.Command, args []string) error {
 
 	if target.IsSubmodule {
 		fmt.Fprintln(os.Stderr, ui.Info(fmt.Sprintf("Submodule: %s", target.Name)))
+	}
+
+	// A merge or rebase against a HEAD the queue is about to move is how a
+	// deferred commit turns into a conflict the user did not cause.
+	if !noDrain {
+		if _, err := drain.Repo(ctx, target.Path, drain.Write); err != nil {
+			return err
+		}
 	}
 
 	if _, err := pullsvc.RunGitPullWithLockRetry(ctx, target.Path, gitArgs, true, pullsvc.DefaultIO()); err != nil {

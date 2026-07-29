@@ -107,11 +107,16 @@ func HasPullStrategyFlag(gitArgs []string) bool {
 	return false
 }
 
-// ExtractSubFlags extracts --sub and --project flags from a raw args slice.
-// Returns the remaining args (to pass to git) and the flag values.
+// ExtractSubFlags extracts --sub, --project, and --no-drain from a raw args
+// slice. Returns the remaining args (to pass to git) and the flag values.
 // This is used by commands with DisableFlagParsing that need to extract
 // camp-specific flags before passing the rest to git.
-func ExtractSubFlags(args []string) (remaining []string, sub bool, project string) {
+//
+// --no-drain belongs here rather than on each command because it is peeled at
+// exactly the same moment and for the same reason as the others: git has no
+// such flag, so leaving it in the passthrough args would make git reject the
+// command with a message about a flag camp invented.
+func ExtractSubFlags(args []string) (remaining []string, sub bool, project string, noDrain bool) {
 	remaining = make([]string, 0, len(args))
 
 	for i := 0; i < len(args); i++ {
@@ -120,10 +125,13 @@ func ExtractSubFlags(args []string) (remaining []string, sub bool, project strin
 		switch {
 		case arg == "--":
 			remaining = append(remaining, args[i:]...)
-			return remaining, sub, project
+			return remaining, sub, project, noDrain
 
 		case arg == "--sub":
 			sub = true
+
+		case arg == "--no-drain":
+			noDrain = true
 
 		case arg == "--project":
 			// Next arg is the project path
@@ -140,7 +148,7 @@ func ExtractSubFlags(args []string) (remaining []string, sub bool, project strin
 		}
 	}
 
-	return remaining, sub, project
+	return remaining, sub, project, noDrain
 }
 
 func sameFilesystemPath(a, b string) bool {

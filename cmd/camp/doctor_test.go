@@ -24,13 +24,7 @@ func TestDoctorJSONReturnsFailureCodeAfterValidJSON(t *testing.T) {
 	t.Setenv(campaign.EnvCacheDisable, "1")
 
 	oldOpts := doctorOpts
-	doctorOpts = struct {
-		fix            bool
-		verbose        bool
-		jsonOutput     bool
-		submodulesOnly bool
-		checks         []string
-	}{}
+	doctorOpts = doctorOptions{}
 	t.Cleanup(func() { doctorOpts = oldOpts })
 
 	cmd := newDoctorJSONTestCommand()
@@ -135,7 +129,7 @@ func TestOutputDoctorJSONUsesSnakeCaseKeysAndSchemaVersion(t *testing.T) {
 	}
 
 	stdout, err := captureDoctorJSONStdout(t, func() error {
-		return outputDoctorJSON(result)
+		return outputDoctorJSON(result, 0)
 	})
 	if err != nil {
 		t.Fatalf("outputDoctorJSON: %v", err)
@@ -190,7 +184,7 @@ func TestOutputDoctorJSONEmitsEmptyArraysNotNull(t *testing.T) {
 	result := &doctor.DoctorResult{Success: true, CheckResults: map[string]bool{}}
 
 	stdout, err := captureDoctorJSONStdout(t, func() error {
-		return outputDoctorJSON(result)
+		return outputDoctorJSON(result, 0)
 	})
 	if err != nil {
 		t.Fatalf("outputDoctorJSON: %v", err)

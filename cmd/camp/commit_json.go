@@ -43,6 +43,10 @@ type commitJSONResult struct {
 	// ArtifactRootsDeclared lists roots camp declared during this commit.
 	// Always an array, never null.
 	ArtifactRootsDeclared []string `json:"artifact_roots_declared"`
+	// DrainWaitedMs is how long this commit waited for camp's own queued
+	// commits before staging. An agent running commands in sequence needs to
+	// tell a slow queue from a stuck one, and total runtime cannot say which.
+	DrainWaitedMs int64 `json:"drain_waited_ms"`
 }
 
 // excludedFileJSON is one file the guard kept out of the commit.

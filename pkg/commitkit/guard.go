@@ -19,10 +19,11 @@ import (
 // code change at all. What is here is for the cases that want to look before
 // staging, or to render violations their own way.
 //
-// Deliberately absent: DrainJobs, which flushes deferred commit jobs. It needs
-// the job queue that phase 002 of this work introduces, so it is added with
-// the queue rather than stubbed here. See the deferred-commits design under
-// workflow/design/camp-artifact-commit-updates-2026-07-25/deferred-commits/.
+// The queue's own contract lives next door in drain.go. Same shape and same
+// reason: Stage, StageAll, StageFiles, and Commit already wait for camp's
+// deferred commits, so a consumer inherits the ordering guarantee from a
+// version bump; DrainJobs is exported for the callers that want to wait
+// explicitly, or to see the timeout.
 
 // GuardLimits is the staging policy for one repository: per-file size
 // threshold, bulk trigger, allowlist, and the mode of each guard.

@@ -11,6 +11,7 @@ import (
 	camperrors "github.com/Obedience-Corp/camp/internal/errors"
 
 	"github.com/Obedience-Corp/camp/internal/campaign"
+	"github.com/Obedience-Corp/camp/internal/drain"
 	"github.com/Obedience-Corp/camp/internal/git"
 	"github.com/Obedience-Corp/camp/internal/ui"
 	"github.com/charmbracelet/lipgloss"
@@ -56,7 +57,7 @@ func runPush(cmd *cobra.Command, args []string) error {
 	}
 
 	// Extract camp-specific flags, pass rest to git
-	gitArgs, sub, project := git.ExtractSubFlags(args)
+	gitArgs, sub, project, noDrain := git.ExtractSubFlags(args)
 
 	target, err := git.ResolveTarget(ctx, campRoot, sub, project)
 	if err != nil {
@@ -65,6 +66,15 @@ func runPush(cmd *cobra.Command, args []string) error {
 
 	if target.IsSubmodule {
 		fmt.Fprintln(os.Stderr, ui.Info(fmt.Sprintf("Submodule: %s", target.Name)))
+	}
+
+	// Drain before the push, not after: a bookkeeping commit that lands after
+	// the push stays local, and nothing in the output would say so. This is the
+	// drain point the whole ordering barrier exists for.
+	if !noDrain {
+		if _, err := drain.Repo(ctx, target.Path, drain.Write); err != nil {
+			return err
+		}
 	}
 
 	fullArgs := append([]string{"-C", target.Path, "push"}, gitArgs...)

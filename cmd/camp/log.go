@@ -3,13 +3,15 @@ package main
 import (
 	"errors"
 	"fmt"
-	camperrors "github.com/Obedience-Corp/camp/internal/errors"
 	"os"
 	"os/exec"
 	"os/signal"
 	"syscall"
 
+	camperrors "github.com/Obedience-Corp/camp/internal/errors"
+
 	"github.com/Obedience-Corp/camp/internal/campaign"
+	"github.com/Obedience-Corp/camp/internal/drain"
 	"github.com/Obedience-Corp/camp/internal/git"
 	"github.com/Obedience-Corp/camp/internal/ui"
 	"github.com/spf13/cobra"
@@ -54,7 +56,7 @@ func runLog(cmd *cobra.Command, args []string) error {
 	}
 
 	// Extract camp-specific flags, pass rest to git
-	gitArgs, sub, project := git.ExtractSubFlags(args)
+	gitArgs, sub, project, noDrain := git.ExtractSubFlags(args)
 
 	target, err := git.ResolveTarget(ctx, campRoot, sub, project)
 	if err != nil {
@@ -63,6 +65,16 @@ func runLog(cmd *cobra.Command, args []string) error {
 
 	if target.IsSubmodule {
 		fmt.Fprintln(os.Stderr, ui.Info(fmt.Sprintf("Submodule: %s", target.Name)))
+	}
+
+	// Read-only, so a slow queue warns rather than refusing. It still drains:
+	// log is one of the two commands people run to check whether something
+	// committed, and showing a log that is missing a commit camp has already
+	// promised is exactly the confusion deferral must not create.
+	if !noDrain {
+		if _, err := drain.Repo(ctx, target.Path, drain.Read); err != nil {
+			return err
+		}
 	}
 
 	fullArgs := append([]string{"-C", target.Path, "log"}, gitArgs...)

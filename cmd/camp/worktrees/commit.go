@@ -4,7 +4,10 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"os"
 
+	"github.com/Obedience-Corp/camp/internal/defercommit"
+	"github.com/Obedience-Corp/camp/internal/drain"
 	camperrors "github.com/Obedience-Corp/camp/internal/errors"
 
 	"github.com/Obedience-Corp/camp/cmd/camp/cmdutil"
@@ -23,6 +26,7 @@ var (
 	wtCommitAll       bool
 	wtCommitAmend     bool
 	wtCommitAutoWrite bool
+	wtCommitNoDrain   bool
 	wtCommitWorkitem  string
 	wtCommitLarge     bool
 )
@@ -60,6 +64,8 @@ func init() {
 		"Stage all changes before committing")
 	worktreesCommitCmd.Flags().BoolVar(&wtCommitAmend, "amend", false,
 		"Amend the previous commit")
+	worktreesCommitCmd.Flags().BoolVar(&wtCommitNoDrain, "no-drain", false,
+		"Do not wait for camp's queued commits first")
 	worktreesCommitCmd.Flags().BoolVar(&wtCommitAutoWrite, "auto-write", false,
 		"Run configured commit message writer")
 	worktreesCommitCmd.Flags().BoolVar(&wtCommitLarge, "commit-large", false,
@@ -98,6 +104,15 @@ func runWorktreesCommit(cmd *cobra.Command, args []string) error {
 	fmt.Printf("Worktree: %s/%s\n", ui.Value(wtCtx.Project), ui.Value(wtCtx.WorktreeName))
 	fmt.Printf("Branch:   %s\n", ui.Value(wtCtx.Branch))
 	fmt.Println()
+
+	// A worktree is its own lane, and this command writes history in it. It
+	// was the one commit surface with no drain, so a queued commit there could
+	// land in the middle of the user's.
+	if !wtCommitNoDrain {
+		if _, err := drain.Repo(ctx, wtCtx.WorktreePath, drain.Commit); err != nil {
+			return err
+		}
+	}
 
 	// Create executor for the worktree
 	executor, err := git.NewExecutor(wtCtx.WorktreePath)
@@ -146,6 +161,24 @@ func runWorktreesCommit(cmd *cobra.Command, args []string) error {
 
 	// Show what's staged
 	cmdutil.ShowStagedSummary(ctx, wtCtx.WorktreePath)
+
+	// Deferral point. A worktree is its own lane, so a queued commit here
+	// cannot serialize against the project it belongs to.
+	if wtCommitAutoWrite {
+		deferred, deferErr := cmdutil.TryDeferAutoWrite(
+			ctx, os.Stdout, campRoot, wtCtx.WorktreePath, false, wtCommitAmend,
+			defercommit.EnqueueOptions{
+				WriterEnv: workitemEnvForWorktreeCommit(
+					ctx, campRoot, wtCtx.WorktreePath, wtCommitWorkitem),
+				MessagePrefix: worktreeCommitTagPrefix(ctx, campRoot, wtCtx.WorktreePath),
+			})
+		if deferErr != nil {
+			return deferErr
+		}
+		if deferred {
+			return nil
+		}
+	}
 
 	if wtCommitAutoWrite {
 		fmt.Println(ui.Info("Writing commit message..."))
@@ -214,4 +247,20 @@ func stageWorktreeWithGuard(
 		return false, err
 	}
 	return cmdutil.GuardExcludedEverything(ctx, worktreePath, handling)
+}
+
+// worktreeCommitTagPrefix resolves the campaign tag a worktree commit carries,
+// so a deferred one ends up with the same subject as its synchronous twin.
+func worktreeCommitTagPrefix(ctx context.Context, campRoot, worktreePath string) string {
+	cfg, err := config.LoadCampaignConfig(ctx, campRoot)
+	if err != nil || cfg == nil {
+		return ""
+	}
+	prefs, err := config.EffectiveCommitPrefs(ctx, campRoot)
+	if err != nil || !prefs.TagCommits() {
+		return ""
+	}
+	questID, festivalRef, workitemRef := resolveWorktreeCommitContext(
+		ctx, campRoot, worktreePath, wtCommitWorkitem)
+	return commitkit.FormatContextTagsFullNamed(cfg.Name, cfg.ID, questID, festivalRef, workitemRef)
 }

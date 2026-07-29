@@ -4,6 +4,7 @@ import (
 	"fmt"
 
 	"github.com/Obedience-Corp/camp/internal/campaign"
+	"github.com/Obedience-Corp/camp/internal/drain"
 	camperrors "github.com/Obedience-Corp/camp/internal/errors"
 	"github.com/Obedience-Corp/camp/internal/git"
 	"github.com/Obedience-Corp/camp/internal/ui"
@@ -41,12 +42,14 @@ var (
 	stageSub         bool
 	stageProject     string
 	stageIncludeRefs bool
+	stageNoDrain     bool
 )
 
 func init() {
 	stageCmd.Flags().BoolVar(&stageSub, "sub", false, "Operate on the submodule detected from current directory")
 	stageCmd.Flags().StringVarP(&stageProject, "project", "p", "", "Operate on a specific project/submodule path")
 	stageCmd.Flags().BoolVar(&stageIncludeRefs, "include-refs", false, "Include submodule ref changes when staging at campaign root")
+	stageCmd.Flags().BoolVar(&stageNoDrain, "no-drain", false, "Do not wait for camp's queued commits first")
 
 	rootCmd.AddCommand(stageCmd)
 	stageCmd.GroupID = "git"
@@ -71,6 +74,16 @@ func runStage(cmd *cobra.Command, args []string) error {
 
 	if target.IsSubmodule {
 		fmt.Println(ui.Info(fmt.Sprintf("Operating on submodule: %s", target.Name)))
+	}
+
+	// Same barrier as camp commit, for the same reason: stage is the front
+	// half of a commit, and the user finishes it by hand. A queued commit that
+	// lands between the two would put their commit on a different HEAD than
+	// the one they staged against.
+	if !stageNoDrain {
+		if _, err := drain.Repo(ctx, target.Path, drain.Commit); err != nil {
+			return err
+		}
 	}
 
 	executor, err := git.NewExecutor(target.Path)

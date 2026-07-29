@@ -186,6 +186,7 @@ func StageAllWithOutcome(ctx context.Context, repoPath string) (*StageOutcome, e
 	if ctx.Err() != nil {
 		return nil, ctx.Err()
 	}
+	drainQuietly(ctx, repoPath)
 	return git.StageWithGuard(ctx, repoPath, nil)
 }
 
@@ -210,6 +211,7 @@ func StageFilesWithOutcome(ctx context.Context, repoPath string, files ...string
 	if len(files) == 0 {
 		return nil, git.ErrNoFilesSpecified
 	}
+	drainQuietly(ctx, repoPath)
 	return git.StageWithGuard(ctx, repoPath, files)
 }
 
@@ -229,6 +231,7 @@ func Commit(ctx context.Context, repoPath string, opts CommitOptions) error {
 	if ctx.Err() != nil {
 		return ctx.Err()
 	}
+	drainQuietly(ctx, repoPath)
 	return git.Commit(ctx, repoPath, &git.CommitOptions{
 		Message:    opts.Message,
 		Amend:      opts.Amend,
@@ -244,6 +247,11 @@ func CommitAll(ctx context.Context, repoPath, message string) error {
 	if ctx.Err() != nil {
 		return ctx.Err()
 	}
+	// Drains like the other history-moving entrypoints. Missing it here made
+	// the guarantee depend on which function a consumer happened to call,
+	// which is exactly what wiring the drain into all of them was meant to
+	// stop.
+	drainQuietly(ctx, repoPath)
 	return git.CommitAll(ctx, repoPath, message)
 }
 

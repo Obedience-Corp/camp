@@ -6,11 +6,13 @@ import (
 	"fmt"
 	"strings"
 
+	"github.com/Obedience-Corp/camp/internal/defercommit"
 	camperrors "github.com/Obedience-Corp/camp/internal/errors"
 
 	"github.com/Obedience-Corp/camp/cmd/camp/cmdutil"
 	"github.com/Obedience-Corp/camp/internal/campaign"
 	"github.com/Obedience-Corp/camp/internal/config"
+	"github.com/Obedience-Corp/camp/internal/drain"
 	"github.com/Obedience-Corp/camp/internal/git"
 	"github.com/Obedience-Corp/camp/internal/ledger"
 	"github.com/Obedience-Corp/camp/internal/ui"
@@ -60,6 +62,7 @@ var (
 	commitNoEdit      bool
 	commitLarge       bool
 	commitJSONOut     bool
+	commitNoDrain     bool
 )
 
 func init() {
@@ -74,12 +77,32 @@ func init() {
 	commitCmd.Flags().StringVar(&commitWorkitem, "workitem", "", "explicit workitem selector for the commit tag (overrides cwd-based resolution)")
 	commitCmd.Flags().BoolVar(&commitLarge, "commit-large", false, "Commit over-threshold files instead of keeping them out of git")
 	commitCmd.Flags().BoolVar(&commitJSONOut, "json", false, "Emit a JSON result on stdout; human output goes to stderr")
+	commitCmd.Flags().BoolVar(&commitNoDrain, "no-drain", false, "Do not wait for camp's queued commits first")
 
 	rootCmd.AddCommand(commitCmd)
 	commitCmd.GroupID = "git"
 
 	// Register completion for --project flag
 	commitCmd.RegisterFlagCompletionFunc("project", completeProjectFlag)
+}
+
+// commitTagPrefix resolves the campaign tag this commit would carry.
+//
+// A deferred commit must end up with the same subject line its synchronous
+// twin would have, and the tag depends on the campaign, quest, festival, and
+// workitem resolved from the user's working directory. The worker has none of
+// that, so the prefix is computed here and recorded on the job.
+func commitTagPrefix(ctx context.Context, campRoot string) string {
+	cfg, err := config.LoadCampaignConfig(ctx, campRoot)
+	if err != nil || cfg == nil {
+		return ""
+	}
+	prefs, err := config.EffectiveCommitPrefs(ctx, campRoot)
+	if err != nil || !prefs.TagCommits() {
+		return ""
+	}
+	questID, festivalRef, workitemRef := resolveCommitContext(ctx, campRoot, commitWorkitem)
+	return commitkit.FormatContextTagsFullNamed(cfg.Name, cfg.ID, questID, festivalRef, workitemRef)
 }
 
 // completeProjectFlag provides tab completion for the --project flag.
@@ -140,6 +163,19 @@ func runCommit(cmd *cobra.Command, args []string) error {
 	}
 	if commitAmend && commitMessage == "" && !commitAutoWrite && !commitNoEdit {
 		return camperrors.New("amend without a message requires --no-edit or --message")
+	}
+
+	// Drain before anything is staged, so the barrier holds: everything
+	// enqueued before this command is in history before the user's commit
+	// rather than interleaved with it. Job-aware, because a deferred
+	// --auto-write message writer is unbounded and refusing the user's next
+	// commit for it would be camp's fault, not theirs.
+	if !commitNoDrain {
+		waited, err := drain.Repo(ctx, target.Path, drain.Commit)
+		if err != nil {
+			return err
+		}
+		jsonResult.DrainWaitedMs = waited.Milliseconds()
 	}
 
 	stageAll := effectiveCommitAll(cmd, commitAmend, commitAll)
@@ -246,6 +282,25 @@ func runCommit(cmd *cobra.Command, args []string) error {
 	if !hasChanges && !commitAmend {
 		_, _ = fmt.Fprintln(humanOut, ui.Success("Nothing to commit, working tree clean"))
 		return commitJSONNoop(cmd, jsonResult)
+	}
+
+	// Deferral point. Everything the user watches has already happened:
+	// staging, the guard, any artifact-root declaration. Only the message
+	// writer and the commit object move to the background, which is the part
+	// that can take an LLM call.
+	if commitAutoWrite {
+		deferred, deferErr := cmdutil.TryDeferAutoWrite(
+			ctx, humanOut, campRoot, target.Path, commitJSONOut, commitAmend,
+			defercommit.EnqueueOptions{
+				WriterEnv:     workitemEnvForCommit(ctx, campRoot, commitWorkitem),
+				MessagePrefix: commitTagPrefix(ctx, campRoot),
+			})
+		if deferErr != nil {
+			return deferErr
+		}
+		if deferred {
+			return nil
+		}
 	}
 
 	if commitAutoWrite {

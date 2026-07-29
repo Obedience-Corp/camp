@@ -334,7 +334,7 @@ func TestMergeStaged_MovesAgreedAndNewFiles(t *testing.T) {
 	if len(late) != 0 {
 		t.Errorf("late conflicts = %v, want none", late)
 	}
-	assertArtifact(t, camp, "media/agreed.bin", "peer-v2")     // agreed -> updated
+	assertArtifact(t, camp, "media/agreed.bin", "peer-v2")    // agreed -> updated
 	assertArtifact(t, camp, "media/sub/new.bin", "brand new") // new nested file -> created
 }
 

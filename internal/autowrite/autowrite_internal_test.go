@@ -1,4 +1,12 @@
-package commitkit
+// Package autowrite runs the configured commit message writer.
+//
+// It lives in internal/ rather than pkg/commitkit because two callers need it
+// and one of them cannot reach commitkit: the deferred-commit worker in
+// internal/jobs generates a message for a queued --auto-write commit, and
+// commitkit already imports internal/jobs for DrainJobs. Extracting the
+// implementation here is what breaks that cycle; pkg/commitkit re-exports it
+// unchanged, so the public API is exactly what it was.
+package autowrite
 
 import (
 	"bytes"

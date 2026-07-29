@@ -3,19 +3,18 @@ package commitkit
 import (
 	"path/filepath"
 
+	"github.com/Obedience-Corp/camp/internal/autowrite"
 	wkitem "github.com/Obedience-Corp/camp/internal/workitem"
 )
-
-const commitAmendEnv = "CAMP_COMMIT_AMEND=1"
 
 // WithCommitAmendEnv adds the Camp-to-writer amend signal when amend is true.
 // Writers use this explicit contract instead of inferring amend mode from an
 // empty staged index.
+//
+// Re-exported: the signal is part of what the writer receives, so it lives with
+// the writer in internal/autowrite.
 func WithCommitAmendEnv(env []string, amend bool) []string {
-	if !amend {
-		return env
-	}
-	return append(env, commitAmendEnv)
+	return autowrite.WithCommitAmendEnv(env, amend)
 }
 
 // WorkitemEnv builds the CAMP_WORKITEM_* environment variables that the

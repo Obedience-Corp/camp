@@ -26,12 +26,25 @@ import (
 // or the dual-spelling resolution override this fixture explicitly via
 // WriteGlobalConfig.
 func (tc *TestContainer) Reset() error {
+	// A deferral opt-in belongs to one test only.
+	tc.deferral = false
+
 	// Remove all test artifacts and recreate clean directories. Include both
 	// current and legacy config homes so registry/global settings never leak
 	// between tests that share a pooled container.
 	exitCode, _, err := tc.container.Exec(tc.ctx, []string{
 		"sh", "-c",
-		"rm -rf /test /campaigns /root/.obey /root/.config/camp /root/.camp /tmp/create-* 2>/dev/null; " +
+		// Kill detached deferred-commit workers first. Camp spawns them with
+		// setsid so they outlive the command that started them, which is the
+		// point in production and a leak in a pooled container: a worker from
+		// the previous test would still be scanning directories the next test
+		// is creating. Clearing files alone does not stop a running process.
+		// The bracket is not cosmetic: pkill -f matches full command lines,
+		// and this very shell's command line contains the pattern. Written
+		// plainly it kills itself and the rest of the reset never runs, which
+		// presents as every later test failing in its setup.
+		"pkill -f '[j]obs run' 2>/dev/null; " +
+			"rm -rf /test /campaigns /root/.obey /root/.config/camp /root/.camp /tmp/create-* 2>/dev/null; " +
 			"mkdir -p /test /campaigns /root/.config/camp /root/.obey/campaign; sync; " +
 			`printf '{"dungeon_hidden": false}' > /root/.obey/campaign/config.json`,
 	})
@@ -85,7 +98,8 @@ func (tc *TestContainer) RunCampInDir(dir string, args ...string) (string, error
 		quotedArgs[i] = "'" + escaped + "'"
 	}
 	// Use sh -c to change directory first, redirect stderr to stdout for error capture
-	cmdStr := fmt.Sprintf("cd %s && /camp %s 2>&1", dir, strings.Join(quotedArgs, " "))
+	cmdStr := fmt.Sprintf("cd %s && %s/camp %s 2>&1",
+		dir, tc.campEnvPrefix(), strings.Join(quotedArgs, " "))
 	cmd := []string{"sh", "-c", cmdStr}
 
 	exitCode, reader, err := tc.container.Exec(tc.ctx, cmd)
@@ -306,8 +320,8 @@ func (tc *TestContainer) RunCampSplit(args ...string) (stdout, stderr string, ex
 		quotedArgs[i] = "'" + escaped + "'"
 	}
 	cmdStr := fmt.Sprintf(
-		"/camp %s >/tmp/_camp_stdout 2>/tmp/_camp_stderr; echo $? >/tmp/_camp_exitcode",
-		strings.Join(quotedArgs, " "),
+		"%s/camp %s >/tmp/_camp_stdout 2>/tmp/_camp_stderr; echo $? >/tmp/_camp_exitcode",
+		tc.campEnvPrefix(), strings.Join(quotedArgs, " "),
 	)
 	if _, _, err = tc.ExecCommand("sh", "-c", cmdStr); err != nil {
 		return "", "", -1, fmt.Errorf("RunCampSplit exec failed: %w", err)
@@ -334,8 +348,8 @@ func (tc *TestContainer) RunCampSplitInDir(dir string, args ...string) (stdout, 
 		quotedArgs[i] = "'" + escaped + "'"
 	}
 	cmdStr := fmt.Sprintf(
-		"cd %s && /camp %s >/tmp/_camp_stdout 2>/tmp/_camp_stderr; echo $? >/tmp/_camp_exitcode",
-		dir, strings.Join(quotedArgs, " "),
+		"cd %s && %s/camp %s >/tmp/_camp_stdout 2>/tmp/_camp_stderr; echo $? >/tmp/_camp_exitcode",
+		dir, tc.campEnvPrefix(), strings.Join(quotedArgs, " "),
 	)
 	if _, _, err = tc.ExecCommand("sh", "-c", cmdStr); err != nil {
 		return "", "", -1, fmt.Errorf("RunCampSplitInDir exec failed: %w", err)

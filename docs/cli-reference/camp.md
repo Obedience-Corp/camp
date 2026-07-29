@@ -61,12 +61,14 @@ camp [flags]
 * [camp id](camp_id.md)	 - Print the current campaign ID
 * [camp idea](camp_idea.md)	 - Manage campaign ideas
 * [camp init](camp_init.md)	 - Initialize a new campaign
+* [camp jobs](camp_jobs.md)	 - Inspect and run camp's deferred commit queue
 * [camp leverage](camp_leverage.md)	 - Compute leverage scores for campaign projects
 * [camp lifecycle](camp_lifecycle.md)	 - Manage campaign lifecycle status
 * [camp list](camp_list.md)	 - List all registered campaigns
 * [camp log](camp_log.md)	 - Show git log of the campaign
 * [camp machine](camp_machine.md)	 - Manage remote machines (~/.obey/machines.yaml)
 * [camp move](camp_move.md)	 - Move a file or directory within the campaign
+* [camp notify](camp_notify.md)	 - Manage campaign state notices
 * [camp org](camp_org.md)	 - Group campaigns into orgs
 * [camp pin](camp_pin.md)	 - Pin a directory
 * [camp pins](camp_pins.md)	 - List all pinned directories
@@ -89,7 +91,7 @@ camp [flags]
 * [camp switch](camp_switch.md)	 - Switch to a different campaign
 * [camp sync](camp_sync.md)	 - Safely synchronize submodules
 * [camp tag](camp_tag.md)	 - Label campaigns with tags
-* [camp transfer](camp_transfer.md)	 - Copy files between campaigns
+* [camp transfer](camp_transfer.md)	 - Copy files between campaigns (and machines)
 * [camp unpin](camp_unpin.md)	 - Remove a saved pin
 * [camp unregister](camp_unregister.md)	 - Remove campaign from registry
 * [camp version](camp_version.md)	 - Show version information
