@@ -283,6 +283,81 @@ func TestPromoteRail_ExploreAcceptsReady(t *testing.T) {
 	assert.Contains(t, marker, "type: explore", "a resident keeps its original workflow type")
 }
 
+// TestPromoteRail_RepairsMismatchedMarkerType covers a valid marker whose type
+// disagrees with the workflow path. The path type is authoritative: reference
+// migration keys the move on it, while resident resolution afterwards reads the
+// marker, so an unrepaired mismatch would re-home priority onto a key no rail
+// command can resolve. Rail entry must canonicalize the marker before moving.
+func TestPromoteRail_RepairsMismatchedMarkerType(t *testing.T) {
+	tc := GetSharedContainer(t)
+	path := setupRailCampaign(t, tc, "rail-mismarked")
+
+	out, err := tc.RunCampInDir(path, "workitem", "priority",
+		"design-rail-feature-fixed", "high")
+	require.NoError(t, err, "priority set should succeed: %s", out)
+
+	_, _, err = tc.ExecCommand("sh", "-c",
+		"sed -i 's/^type: design$/type: explore/' "+path+"/workflow/design/rail-feature/.workitem"+
+			" && cd "+path+" && git add -A && git commit -m 'mismark type'")
+	require.NoError(t, err)
+	fixture, err := tc.ReadFile(path + "/workflow/design/rail-feature/.workitem")
+	require.NoError(t, err)
+	require.Contains(t, fixture, "type: explore", "fixture must start with the mismatched type")
+
+	railTo(t, tc, path+"/workflow/design/rail-feature", "ready")
+
+	marker, err := tc.ReadFile(path + "/festivals/ready/rail-feature/.workitem")
+	require.NoError(t, err)
+	assert.Contains(t, marker, "type: design", "the marker must be repaired to the authoritative path type")
+	assert.NotContains(t, marker, "type: explore", "the mismatched type must not survive rail entry")
+	assert.Contains(t, marker, "id: design-rail-feature-fixed", "repair must preserve the existing id")
+
+	priorities, err := tc.ReadFile(path + "/.campaign/settings/workitems.json")
+	require.NoError(t, err)
+	assert.Contains(t, priorities, "design:festivals/ready/rail-feature",
+		"the migrated priority key and the repaired marker must agree on the type")
+
+	// The proof the fracture is gone: resident resolution reads the repaired
+	// marker, so the same workitem must resolve and advance.
+	railTo(t, tc, path+"/festivals/ready/rail-feature", "active")
+	after, err := tc.ReadFile(path + "/.campaign/settings/workitems.json")
+	require.NoError(t, err)
+	assert.Contains(t, after, "design:festivals/active/rail-feature",
+		"the advance must re-key the same priority entry again")
+}
+
+// TestPromoteRail_MalformedMarkerFailsBeforeMoving covers the marker the repair
+// planner refuses: unparseable YAML. Moving first would strand a resident
+// nothing can resolve, so the promote must fail with the source untouched.
+func TestPromoteRail_MalformedMarkerFailsBeforeMoving(t *testing.T) {
+	tc := GetSharedContainer(t)
+	path := setupRailCampaign(t, tc, "rail-malformed")
+
+	require.NoError(t, tc.WriteFile(path+"/workflow/design/rail-feature/.workitem",
+		"kind: [unclosed\n"))
+	_, _, err := tc.ExecCommand("sh", "-c", "cd "+path+" && git add -A && git commit -m 'corrupt marker'")
+	require.NoError(t, err)
+
+	_, stderr, exitCode, err := tc.RunCampSplitInDir(path+"/workflow/design/rail-feature",
+		"workitem", "promote", "--target", "ready")
+	require.NoError(t, err)
+	assert.NotZero(t, exitCode, "a promote with an unparseable marker must fail")
+	assert.Contains(t, stderr, "cannot parse existing .workitem",
+		"the failure must name the marker so the operator knows what to fix")
+
+	exists, err := tc.CheckDirExists(path + "/workflow/design/rail-feature")
+	require.NoError(t, err)
+	assert.True(t, exists, "failing before the move leaves the workitem in place")
+
+	exists, err = tc.CheckDirExists(path + "/festivals/ready/rail-feature")
+	require.NoError(t, err)
+	assert.False(t, exists, "nothing may land on the stage when the marker cannot be repaired")
+
+	status, _, err := tc.ExecCommand("sh", "-c", "cd "+path+" && git status --porcelain")
+	require.NoError(t, err)
+	assert.Empty(t, strings.TrimSpace(status), "a refused promote must not dirty the tree")
+}
+
 // TestPromoteRail_RejectsOccupiedDestination guards against clobbering a
 // resident that already holds the slug on that stage.
 func TestPromoteRail_RejectsOccupiedDestination(t *testing.T) {

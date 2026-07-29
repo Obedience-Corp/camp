@@ -4,7 +4,6 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"io/fs"
 	"os"
 	"path"
 	"path/filepath"
@@ -156,8 +155,8 @@ func migrateRailReferences(ctx context.Context, root, oldKey, newKey, oldRel, ne
 	return linksChanged
 }
 
-// ensureResidentMarker guarantees the workitem carries a .workitem marker before
-// it enters the rail.
+// ensureResidentMarker guarantees the workitem carries a canonical .workitem
+// marker before it enters the rail.
 //
 // Directory workitems are not uniformly stamped: promote tolerates an unmarked
 // directory today (recordPromotedTo skips the stamp when the marker is absent,
@@ -166,23 +165,27 @@ func migrateRailReferences(ctx context.Context, root, oldKey, newKey, oldRel, ne
 // stage rather than a workflow type and so cannot supply the type. Minting the
 // marker at rail entry is what reconciles the two.
 //
-// It reuses the camp workitem repair planner so a marker minted here is byte-
-// identical to the one doctor --fix would write, including id generation and
-// unique-ref derivation.
+// An existing marker is repaired, not trusted. The path type is authoritative
+// here: migrateRailReferences keys the moved workitem on loc.Type, while
+// resident resolution after the move reads the marker, so a marker carrying a
+// different type would leave priority, links, and current pointing at a key no
+// rail command resolves. A marker that cannot be parsed fails the promote
+// before anything moves, so the workitem stays where every repair tool can
+// still reach it.
+//
+// It reuses the camp workitem repair planner so a marker minted or repaired
+// here is byte-identical to the one doctor --fix would write, including id
+// generation and unique-ref derivation. Repair is idempotent: an already
+// canonical marker plans no changes and is not rewritten.
 func ensureResidentMarker(ctx context.Context, cfg *config.CampaignConfig, root, relPath, typeName string) error {
-	absDir := filepath.Join(root, filepath.FromSlash(relPath))
-	_, err := os.Stat(filepath.Join(absDir, wkitem.MetadataFilename))
-	if err == nil {
-		return nil
-	}
-	if !errors.Is(err, fs.ErrNotExist) {
-		return camperrors.Wrapf(err, "checking %s marker in %s", wkitem.MetadataFilename, relPath)
-	}
-
 	plan, err := planRepair(ctx, root, cfg, relPath, typeName)
 	if err != nil {
-		return camperrors.Wrapf(err, "minting %s marker for %s", wkitem.MetadataFilename, relPath)
+		return camperrors.Wrapf(err, "repairing %s marker for %s", wkitem.MetadataFilename, relPath)
 	}
+	if len(plan.changes) == 0 {
+		return nil
+	}
+	absDir := filepath.Join(root, filepath.FromSlash(relPath))
 	if err := writeMarker(absDir, plan.meta); err != nil {
 		return camperrors.Wrapf(err, "writing %s marker for %s", wkitem.MetadataFilename, relPath)
 	}
