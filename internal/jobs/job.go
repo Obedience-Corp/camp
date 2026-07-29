@@ -177,6 +177,11 @@ type Job struct {
 	// KindManifest job captures. The carrier commit is usually later; this
 	// field is what keeps the record unambiguous.
 	DescribesCommit string `json:"describes_commit,omitempty"`
+	// Machine is the identity whose committed manifest a KindManifest job
+	// writes. Captured at enqueue rather than read at execution: a worker
+	// serves whatever is in the lane, and one spawned under another
+	// environment must not write this machine's record under its own name.
+	Machine string `json:"machine,omitempty"`
 	// CreatedAt is the enqueuing process's clock, RFC3339 with millis.
 	CreatedAt string `json:"created_at"`
 	// Attempts counts how many times this job has been claimed.
@@ -281,6 +286,10 @@ func (j *Job) Validate() error {
 		if strings.TrimSpace(j.DescribesCommit) == "" {
 			return camperrors.NewValidation("describes_commit",
 				"a manifest job requires the commit it describes; without it the record is ambiguous", nil)
+		}
+		if strings.TrimSpace(j.Machine) == "" {
+			return camperrors.NewValidation("machine",
+				"a manifest job requires the machine identity captured at enqueue", nil)
 		}
 		if j.Class != ClassManifest {
 			return camperrors.NewValidation("class",

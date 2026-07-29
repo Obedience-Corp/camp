@@ -21,10 +21,10 @@ import (
 // commits nothing: the committed record is already correct, and rewriting it
 // would churn a byte-identical file through history.
 func executeManifest(ctx context.Context, campaignRoot, repoPath string, job *Job) error {
-	machine, err := artifacts.MachineName()
-	if err != nil {
-		return err
-	}
+	// The identity was captured at enqueue; a worker spawned under any other
+	// environment still writes the enqueuer's record under the enqueuer's
+	// name.
+	machine := job.Machine
 	prev, _, err := artifacts.LoadCommitted(campaignRoot, machine, job.ManifestRoot)
 	if err != nil {
 		return err
@@ -60,10 +60,14 @@ func executeManifest(ctx context.Context, campaignRoot, repoPath string, job *Jo
 // with a stale SHA, so the dedupe keeps the latest describes_commit and the
 // queue from accumulating one job per keystroke.
 func EnqueueManifest(ctx context.Context, campaignRoot, rootRel, describesCommit string) error {
+	machine, err := artifacts.MachineName()
+	if err != nil {
+		return err
+	}
 	pending, err := List(campaignRoot, statePending, ".")
 	if err == nil {
 		for _, j := range pending {
-			if j.Kind == KindManifest && j.ManifestRoot == artifacts.NormalizeRootPath(rootRel) {
+			if j.Kind == KindManifest && j.ManifestRoot == artifacts.NormalizeRootPath(rootRel) && j.Machine == machine {
 				// A claim racing this remove wins the rename and the remove
 				// sees ENOENT; both jobs then run and the newer record lands
 				// last. Duplicate work, never a wrong record.
@@ -77,6 +81,7 @@ func EnqueueManifest(ctx context.Context, campaignRoot, rootRel, describesCommit
 		Repo:            ".",
 		ManifestRoot:    artifacts.NormalizeRootPath(rootRel),
 		DescribesCommit: describesCommit,
+		Machine:         machine,
 	})
 	return err
 }
