@@ -9,8 +9,6 @@ import (
 	"sync"
 	"sync/atomic"
 	"time"
-
-	camperrors "github.com/Obedience-Corp/camp/internal/errors"
 )
 
 // MaxAttempts is how many times a job may be reclaimed before it is parked in
@@ -295,6 +293,3 @@ func logWorker(campaignRoot, format string, args ...any) {
 		time.Now().UTC().Format("2006-01-02T15:04:05.000Z"),
 		fmt.Sprintf(format, args...))
 }
-
-// errNotWired reports a job kind whose execution lands in a later sequence.
-var errNotWired = camperrors.New("job kind not wired yet")

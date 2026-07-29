@@ -31,7 +31,17 @@ func (tc *TestContainer) Reset() error {
 	// between tests that share a pooled container.
 	exitCode, _, err := tc.container.Exec(tc.ctx, []string{
 		"sh", "-c",
-		"rm -rf /test /campaigns /root/.obey /root/.config/camp /root/.camp /tmp/create-* 2>/dev/null; " +
+		// Kill detached deferred-commit workers first. Camp spawns them with
+		// setsid so they outlive the command that started them, which is the
+		// point in production and a leak in a pooled container: a worker from
+		// the previous test would still be scanning directories the next test
+		// is creating. Clearing files alone does not stop a running process.
+		// The bracket is not cosmetic: pkill -f matches full command lines,
+		// and this very shell's command line contains the pattern. Written
+		// plainly it kills itself and the rest of the reset never runs, which
+		// presents as every later test failing in its setup.
+		"pkill -f '[j]obs run' 2>/dev/null; " +
+			"rm -rf /test /campaigns /root/.obey /root/.config/camp /root/.camp /tmp/create-* 2>/dev/null; " +
 			"mkdir -p /test /campaigns /root/.config/camp /root/.obey/campaign; sync; " +
 			`printf '{"dungeon_hidden": false}' > /root/.obey/campaign/config.json`,
 	})

@@ -124,6 +124,14 @@ type Job struct {
 	// AutoWrite makes the worker run the configured message writer against the
 	// captured tree rather than the live worktree.
 	AutoWrite bool `json:"auto_write,omitempty"`
+	// Env carries CAMP_* variables the message writer needs, as "KEY=VALUE".
+	//
+	// It has to be recorded rather than re-derived. The workitem context comes
+	// from the enqueuing process's working directory, and the worker is a
+	// detached child with no meaningful cwd, so anything not captured here is
+	// simply lost: a deferred commit would silently drop the workitem tag that
+	// the same commit made in the foreground would have carried.
+	Env []string `json:"env,omitempty"`
 	// Then is an optional follow-up the worker enqueues after this job lands.
 	// One level only; a follow-up may not carry its own.
 	Then *Follow `json:"then,omitempty"`
@@ -161,6 +169,9 @@ func (j *Job) Validate() error {
 		return camperrors.NewValidation("class",
 			"must be "+string(ClassCommit)+", "+string(ClassManifest)+", or empty", nil)
 	}
+	if err := validateEnv(j.Env); err != nil {
+		return err
+	}
 	if err := validateRepo(j.Repo); err != nil {
 		return err
 	}
@@ -196,6 +207,30 @@ func (f *Follow) validate() error {
 		return err
 	}
 	return validatePathsField("then.paths", f.Paths)
+}
+
+// envKeyPrefix bounds what a job may put in the writer's environment.
+const envKeyPrefix = "CAMP_"
+
+// validateEnv rejects environment entries a job has no business setting.
+//
+// A job file lives on disk and is hand-editable, and the worker feeds these
+// straight into a subprocess. Restricting to CAMP_* keeps a queue file from
+// becoming a way to set PATH or LD_PRELOAD for a process the user did not
+// start and is not watching. The writer only ever needs camp's own variables.
+func validateEnv(env []string) error {
+	for _, entry := range env {
+		key, _, found := strings.Cut(entry, "=")
+		if !found || key == "" {
+			return camperrors.NewValidation("env",
+				"entry "+entry+" must be KEY=VALUE", nil)
+		}
+		if !strings.HasPrefix(key, envKeyPrefix) {
+			return camperrors.NewValidation("env",
+				"variable "+key+" is not a "+envKeyPrefix+"* variable; a queued job may only set camp's own", nil)
+		}
+	}
+	return nil
 }
 
 // validateRepo checks a job's repo field.

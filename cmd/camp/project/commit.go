@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"os"
 	"path/filepath"
 
 	camperrors "github.com/Obedience-Corp/camp/internal/errors"
@@ -200,6 +201,20 @@ func runProjectCommit(cmd *cobra.Command, args []string) error {
 
 	// Show what's staged
 	cmdutil.ShowStagedSummary(ctx, resolvedPath)
+
+	// Deferral point, same as camp commit: staging and the guard already ran
+	// in the foreground; only the writer and the commit object move.
+	if projectCommitAutoWrite {
+		writerEnv := workitemEnvForProjectCommit(ctx, campRoot, resolvedPath, projectCommitWorkitem)
+		deferred, deferErr := cmdutil.TryDeferAutoWrite(
+			ctx, os.Stdout, campRoot, resolvedPath, false, projectCommitAmend, writerEnv)
+		if deferErr != nil {
+			return deferErr
+		}
+		if deferred {
+			return nil
+		}
+	}
 
 	if projectCommitAutoWrite {
 		fmt.Println(ui.Info("Writing commit message..."))

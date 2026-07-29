@@ -1,0 +1,158 @@
+// Package defercommit decides whether an --auto-write commit defers, and
+// enqueues it when it does.
+//
+// It exists so the three commit commands (camp commit, camp p commit,
+// camp worktrees commit) cannot answer that question differently. The decision
+// has five reasons to say no and each one is a correctness rule rather than a
+// preference, so a copy of this logic that drifted by one condition would
+// silently either skip a user's git hook or break the synchronous contract
+// `--json` consumers depend on.
+package defercommit
+
+import (
+	"context"
+	"os"
+	"strings"
+
+	"github.com/Obedience-Corp/camp/internal/git"
+	"github.com/Obedience-Corp/camp/internal/jobs"
+)
+
+// EnvNoDefer forces every deferred commit to run inline.
+//
+// Test harnesses and agents that need strict determinism set it and get exactly
+// the behavior camp had before deferral existed. It is the honest escape hatch:
+// deferral changes when a commit exists, and a caller that cannot tolerate that
+// should be able to turn it off without also turning off --auto-write.
+const EnvNoDefer = "CAMP_NO_DEFER"
+
+// Refusal says why a commit will not defer, for the caller to report.
+type Refusal string
+
+const (
+	// RefusedDisabled is CAMP_NO_DEFER=1.
+	RefusedDisabled Refusal = "CAMP_NO_DEFER is set"
+	// RefusedHooks is a repository with commit hooks. A hook is the user's own
+	// code expecting to run at commit time, against the tree being committed.
+	// Deferring past it would either skip it or run it minutes later against a
+	// different working tree.
+	RefusedHooks Refusal = "this repository has commit hooks"
+	// RefusedJSON is --json, whose contract is that the document always carries
+	// a real commit hash and never a promise.
+	RefusedJSON Refusal = "--json is synchronous by contract"
+	// RefusedAmend is --amend. An amend replaces HEAD rather than extending it,
+	// so its parent is HEAD~1 and the atomic ref move this relies on would be
+	// comparing against the wrong commit.
+	RefusedAmend Refusal = "--amend rewrites the current commit"
+	// RefusedNoCampaign is a repository outside any campaign, where there is no
+	// queue to enqueue into.
+	RefusedNoCampaign Refusal = "not in a campaign"
+)
+
+// Request is everything the decision needs.
+type Request struct {
+	// CampaignRoot is the campaign the queue lives in. Empty means none.
+	CampaignRoot string
+	// RepoPath is the absolute path of the repository being committed.
+	RepoPath string
+	// JSON is true when the caller is emitting a machine document.
+	JSON bool
+	// Amend is true for --amend.
+	Amend bool
+}
+
+// Allowed reports whether an --auto-write commit in this repository may defer,
+// and why not when it may not.
+//
+// Ordered cheapest first, but the order is also the order a user would want to
+// hear about: their own configuration before camp's internal constraints.
+func Allowed(ctx context.Context, req Request) (bool, Refusal) {
+	if Disabled() {
+		return false, RefusedDisabled
+	}
+	if req.JSON {
+		return false, RefusedJSON
+	}
+	if req.Amend {
+		return false, RefusedAmend
+	}
+	if req.CampaignRoot == "" || jobs.RepoForPath(req.CampaignRoot, req.RepoPath) == "" {
+		return false, RefusedNoCampaign
+	}
+	// Last because it is the only one that shells out to git.
+	if git.HasCommitHooks(ctx, req.RepoPath) {
+		return false, RefusedHooks
+	}
+	return true, ""
+}
+
+// Disabled reports whether CAMP_NO_DEFER asks for inline behavior.
+//
+// Any value other than the empty string and "0" counts, because someone
+// exporting CAMP_NO_DEFER=false is asking for it off, not on. Guessing the
+// other way would defer for a user who explicitly said not to.
+func Disabled() bool {
+	v := strings.TrimSpace(os.Getenv(EnvNoDefer))
+	return v != "" && v != "0"
+}
+
+// Enqueued is what a deferred commit produced.
+type Enqueued struct {
+	// Job is the queued job, with its allocated identity.
+	Job *jobs.Job
+	// Tree is the captured tree SHA.
+	Tree string
+	// Parent is the HEAD the tree was captured against.
+	Parent string
+}
+
+// Enqueue captures the staged tree and queues a commit against it.
+//
+// writerEnv carries the CAMP_* variables the message writer would have received
+// had this commit run in the foreground. They are recorded on the job because
+// the worker cannot re-derive them: the workitem context comes from the
+// enqueuing process's working directory, and a detached worker has none.
+//
+// Called after staging has already happened in the foreground, so the index
+// holds exactly what the user asked to commit. The tree is captured here rather
+// than in the worker because it is the snapshot: an immutable, content
+// addressed object that cannot be affected by anything the user does next.
+//
+// The parent is recorded for the same reason the tree is. At execution time the
+// worker moves HEAD only if it still points at this commit, so a queued commit
+// can never silently discard work someone else committed in the gap.
+func Enqueue(ctx context.Context, campaignRoot, repoPath string, writerEnv []string) (*Enqueued, error) {
+	if ctx.Err() != nil {
+		return nil, ctx.Err()
+	}
+
+	tree, err := git.WriteTree(ctx, repoPath)
+	if err != nil {
+		return nil, err
+	}
+	parent, err := git.FullHash(ctx, repoPath)
+	if err != nil {
+		return nil, err
+	}
+
+	repo := jobs.RepoForPath(campaignRoot, repoPath)
+	job, err := jobs.Enqueue(ctx, campaignRoot, jobs.Job{
+		Kind:      jobs.KindCommitTree,
+		Class:     jobs.ClassCommit,
+		Repo:      repo,
+		Tree:      tree,
+		Parent:    parent,
+		AutoWrite: true,
+		Env:       writerEnv,
+	})
+	if err != nil {
+		return nil, err
+	}
+
+	// Spawn after the job is durable, never before: a worker that started
+	// first could find the lane empty and exit, leaving the job for the next
+	// command to discover.
+	jobs.SpawnIfNeeded(ctx, campaignRoot, repo)
+
+	return &Enqueued{Job: job, Tree: tree, Parent: parent}, nil
+}

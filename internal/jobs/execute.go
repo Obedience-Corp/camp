@@ -9,6 +9,7 @@ import (
 	"strings"
 	"syscall"
 
+	"github.com/Obedience-Corp/camp/internal/autowrite"
 	camperrors "github.com/Obedience-Corp/camp/internal/errors"
 	"github.com/Obedience-Corp/camp/internal/git"
 )
@@ -34,11 +35,7 @@ func execute(ctx context.Context, campaignRoot string, job *Job) error {
 	case KindCommitPaths:
 		return executeCommitPaths(ctx, repoPath, job)
 	case KindCommitTree:
-		// Sequence 03 wires this. Returning a clear error rather than a
-		// silent success keeps a mis-enqueued job visible in failed/ instead
-		// of vanishing.
-		return camperrors.Wrapf(errNotWired,
-			"commit-tree execution arrives in sequence 03 (job %s)", job.ID)
+		return executeCommitTree(ctx, campaignRoot, repoPath, job)
 	default:
 		return camperrors.Newf("unknown job kind %q in job %s", job.Kind, job.ID)
 	}
@@ -65,6 +62,115 @@ func executeCommitPaths(ctx context.Context, repoPath string, job *Job) error {
 	default:
 		return err
 	}
+}
+
+// executeCommitTree builds a commit from the job's captured tree and moves HEAD
+// to it.
+//
+// Nothing here touches the real index or the working tree. The tree was
+// captured at enqueue and is immutable, so this produces exactly the commit the
+// user staged however long ago, regardless of what they have done since.
+func executeCommitTree(ctx context.Context, campaignRoot, repoPath string, job *Job) error {
+	if strings.TrimSpace(job.Tree) == "" || strings.TrimSpace(job.Parent) == "" {
+		return camperrors.Newf("job %s has no captured tree or parent", job.ID)
+	}
+
+	message, err := messageForTree(ctx, campaignRoot, repoPath, job)
+	if err != nil {
+		return err
+	}
+
+	newSHA, err := git.CommitTree(ctx, repoPath, job.Tree, job.Parent, message)
+	if err != nil {
+		return err
+	}
+
+	if err := git.UpdateHeadFrom(ctx, repoPath, newSHA, job.Parent,
+		"camp: deferred commit "+job.ID); err != nil {
+		// The ref move can fail two ways and they need opposite handling.
+		//
+		// If HEAD is already this commit, a previous attempt succeeded and
+		// died before the queue file was unlinked. Treating that as a failure
+		// would park a job whose work is done, and the user would be told a
+		// commit failed while looking at it in their log.
+		if head, headErr := git.FullHash(ctx, repoPath); headErr == nil && head == newSHA {
+			return nil
+		}
+		// Otherwise HEAD genuinely moved. Fail, and never rebase: the queued
+		// commit was built against a tree the user staged, and replaying it
+		// onto someone else's commit would produce a result nobody chose.
+		return camperrors.Wrapf(err,
+			"HEAD moved since this commit was queued; %s was not applied (expected parent %s)",
+			shortSHA(newSHA), shortSHA(job.Parent))
+	}
+	return nil
+}
+
+// messageForTree returns the commit message for a commit-tree job, running the
+// configured writer when the job asked for one.
+//
+// The writer runs against a temporary index materializing the captured tree, so
+// what it sees is the snapshot being committed rather than whatever the working
+// tree looks like now. That is the difference between a deferred message that
+// describes the commit and one that describes an unrelated later state.
+func messageForTree(ctx context.Context, campaignRoot, repoPath string, job *Job) (string, error) {
+	if !job.AutoWrite {
+		if strings.TrimSpace(job.Message) == "" {
+			return "", camperrors.Newf("job %s has no message", job.ID)
+		}
+		return job.Message, nil
+	}
+	message, err := writeMessage(ctx, campaignRoot, repoPath, job)
+	if err != nil {
+		return "", err
+	}
+	if strings.TrimSpace(message) == "" {
+		return "", camperrors.Newf("the commit message writer produced no message for job %s", job.ID)
+	}
+	return message, nil
+}
+
+// writeMessage runs the configured writer against the job's captured tree.
+//
+// The temp index is the point. The writer's job is to describe *this* commit,
+// and by the time it runs the working tree and the real index may both have
+// moved on. Materializing the captured tree into a scratch index and pointing
+// GIT_INDEX_FILE at it means `git diff --cached` inside the writer shows the
+// snapshot being committed rather than whatever the user is doing now.
+//
+// A variable so tests can drive the worker's lifecycle without a configured
+// writer; runWriter is always what runs in production.
+var writeMessage = runWriter
+
+func runWriter(ctx context.Context, campaignRoot, repoPath string, job *Job) (string, error) {
+	tmp, err := os.CreateTemp("", "camp-job-index-*")
+	if err != nil {
+		return "", camperrors.Wrap(err, "create a scratch index for the message writer")
+	}
+	indexPath := tmp.Name()
+	_ = tmp.Close()
+	// git refuses to read-tree into a file it did not create, so the empty
+	// placeholder goes away before git is asked to write there.
+	_ = os.Remove(indexPath)
+	defer func() { _ = os.Remove(indexPath) }()
+
+	env := append(os.Environ(), "GIT_INDEX_FILE="+indexPath)
+	if err := git.RunWithEnv(ctx, repoPath, env, "read-tree", job.Tree); err != nil {
+		return "", camperrors.Wrapf(err, "materialize tree %s for the message writer", shortSHA(job.Tree))
+	}
+
+	// The job's own variables first, GIT_INDEX_FILE last so a malformed job
+	// cannot point the writer at a different index than the one just built.
+	writerEnv := append(append([]string(nil), job.Env...), "GIT_INDEX_FILE="+indexPath)
+	return autowrite.AutoWriteCommitMessageWithEnv(ctx, campaignRoot, repoPath, writerEnv)
+}
+
+// shortSHA abbreviates a hash for a message a human reads.
+func shortSHA(sha string) string {
+	if len(sha) > 8 {
+		return sha[:8]
+	}
+	return sha
 }
 
 // resolveRepoPath turns a campaign-relative repo into an absolute path,

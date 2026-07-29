@@ -257,6 +257,22 @@ func runCommit(cmd *cobra.Command, args []string) error {
 		return commitJSONNoop(cmd, jsonResult)
 	}
 
+	// Deferral point. Everything the user watches has already happened:
+	// staging, the guard, any artifact-root declaration. Only the message
+	// writer and the commit object move to the background, which is the part
+	// that can take an LLM call.
+	if commitAutoWrite {
+		writerEnv := workitemEnvForCommit(ctx, campRoot, commitWorkitem)
+		deferred, deferErr := cmdutil.TryDeferAutoWrite(
+			ctx, humanOut, campRoot, target.Path, commitJSONOut, commitAmend, writerEnv)
+		if deferErr != nil {
+			return deferErr
+		}
+		if deferred {
+			return nil
+		}
+	}
+
 	if commitAutoWrite {
 		_, _ = fmt.Fprintln(humanOut, ui.Info("Writing commit message..."))
 		var hookErr error

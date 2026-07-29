@@ -1,0 +1,189 @@
+// Package autowrite runs the configured commit message writer.
+//
+// It lives in internal/ rather than pkg/commitkit because two callers need it
+// and one of them cannot reach commitkit: the deferred-commit worker in
+// internal/jobs generates a message for a queued --auto-write commit, and
+// commitkit already imports internal/jobs for DrainJobs. Extracting the
+// implementation here is what breaks that cycle; pkg/commitkit re-exports it
+// unchanged, so the public API is exactly what it was.
+package autowrite
+
+import (
+	"bytes"
+	"context"
+	"errors"
+	"io"
+	"os"
+	"os/exec"
+	"runtime"
+	"strings"
+
+	"github.com/Obedience-Corp/camp/internal/config"
+	camperrors "github.com/Obedience-Corp/camp/internal/errors"
+)
+
+// ErrCommitMessageHookNotConfigured is returned when --auto-write is requested
+// but .campaign/campaign.yaml does not configure hooks.commit_message.command.
+var ErrCommitMessageHookNotConfigured = errors.New(`auto-write commit message command is not configured
+
+Configure a command in .campaign/campaign.yaml. It is run from the target
+repository's working tree and its stdout is used verbatim as the commit
+message, so any tool that emits a message on stdout works.
+
+hooks:
+  commit_message:
+    command: <your-commit-message-tool>
+
+Example (using the obey CLI):
+
+hooks:
+  commit_message:
+    command: ob commit --print-session-id`)
+
+// ErrCommitMessageHookEmptyOutput is returned when the hook succeeds but writes
+// no commit message to stdout.
+var ErrCommitMessageHookEmptyOutput = errors.New("auto-write commit message command produced no message")
+
+// commitAmendEnv is the Camp-to-writer amend signal.
+const commitAmendEnv = "CAMP_COMMIT_AMEND=1"
+
+// WithCommitAmendEnv adds the amend signal when amend is true. Writers use this
+// explicit contract instead of inferring amend mode from an empty staged index.
+func WithCommitAmendEnv(env []string, amend bool) []string {
+	if !amend {
+		return env
+	}
+	return append(env, commitAmendEnv)
+}
+
+// CommitMessageHook is the configured commit message writer command.
+type CommitMessageHook struct {
+	Command string
+}
+
+// LoadCommitMessageHook loads hooks.commit_message.command from campaign config.
+func LoadCommitMessageHook(ctx context.Context, campaignRoot string) (*CommitMessageHook, error) {
+	if err := ctx.Err(); err != nil {
+		return nil, err
+	}
+
+	cfg, err := config.LoadCampaignConfig(ctx, campaignRoot)
+	if err != nil {
+		return nil, camperrors.Wrapf(err, "commitkit: load campaign config at %s", campaignRoot)
+	}
+
+	command := strings.TrimSpace(cfg.Hooks.CommitMessage.Command)
+	if command == "" {
+		return nil, ErrCommitMessageHookNotConfigured
+	}
+
+	return &CommitMessageHook{Command: command}, nil
+}
+
+// AutoWriteCommitMessage runs the configured commit message hook from repoPath.
+func AutoWriteCommitMessage(ctx context.Context, campaignRoot, repoPath string) (string, error) {
+	return AutoWriteCommitMessageWithEnv(ctx, campaignRoot, repoPath, nil)
+}
+
+// AutoWriteCommitMessageWithEnv is AutoWriteCommitMessage with extra
+// environment variables passed to the hook subprocess. extraEnv entries are
+// appended to os.Environ() — they take precedence on duplicate keys.
+//
+// Use commitkit.WorkitemEnv (and any future *Env helpers) to build the
+// extraEnv slice so the variable contract stays in one place.
+func AutoWriteCommitMessageWithEnv(ctx context.Context, campaignRoot, repoPath string, extraEnv []string) (string, error) {
+	if err := ctx.Err(); err != nil {
+		return "", err
+	}
+
+	hook, err := LoadCommitMessageHook(ctx, campaignRoot)
+	if err != nil {
+		return "", err
+	}
+
+	return RunCommitMessageCommandWithEnv(ctx, repoPath, hook.Command, extraEnv)
+}
+
+// RunCommitMessageCommand executes command exactly as configured from repoPath
+// and returns trimmed stdout as the raw commit message.
+func RunCommitMessageCommand(ctx context.Context, repoPath, command string) (string, error) {
+	return RunCommitMessageCommandWithEnv(ctx, repoPath, command, nil)
+}
+
+// RunCommitMessageCommandWithEnv is RunCommitMessageCommand with extra
+// environment variables passed to the subprocess (appended to os.Environ()).
+func RunCommitMessageCommandWithEnv(ctx context.Context, repoPath, command string, extraEnv []string) (string, error) {
+	return runCommitMessageCommandWithEnv(ctx, repoPath, command, extraEnv, os.Stderr)
+}
+
+func runCommitMessageCommandWithEnv(
+	ctx context.Context,
+	repoPath string,
+	command string,
+	extraEnv []string,
+	diagnosticOut io.Writer,
+) (string, error) {
+	if err := ctx.Err(); err != nil {
+		return "", err
+	}
+
+	command = strings.TrimSpace(command)
+	if command == "" {
+		return "", ErrCommitMessageHookNotConfigured
+	}
+
+	name, args := shellCommand(command)
+	cmd := exec.CommandContext(ctx, name, args...)
+	cmd.Dir = repoPath
+	if len(extraEnv) > 0 {
+		cmd.Env = append(os.Environ(), extraEnv...)
+	}
+
+	var stdout bytes.Buffer
+	var stderr bytes.Buffer
+	cmd.Stdout = &stdout
+	// Tee stderr: keep a copy for error wrapping and forward live diagnostics
+	// (progress like "ob: connecting..." / "ob: generating...") to the operator
+	// while the hook runs. Tools such as `ob commit --print-session-id` may also
+	// emit session_id= on stderr when the hook finishes; that is post-completion
+	// diagnostics, not a mid-run recovery handle (a hung generation never
+	// finalizes, so no session_id appears). Operators may see stderr twice on
+	// failure (live stream + wrapped error); that is intentional for now.
+	if diagnosticOut == nil {
+		cmd.Stderr = &stderr
+	} else {
+		cmd.Stderr = io.MultiWriter(&stderr, diagnosticOut)
+	}
+
+	if err := cmd.Run(); err != nil {
+		if ctx.Err() != nil {
+			return "", ctx.Err()
+		}
+		msg := strings.TrimSpace(stderr.String())
+		if msg != "" {
+			return "", camperrors.Wrapf(err, "auto-write commit message command failed: %s", msg)
+		}
+		return "", camperrors.Wrap(err, "auto-write commit message command failed")
+	}
+
+	message := strings.TrimSpace(stdout.String())
+	if message == "" {
+		return "", ErrCommitMessageHookEmptyOutput
+	}
+
+	return message, nil
+}
+
+func shellCommand(command string) (string, []string) {
+	if runtime.GOOS == "windows" {
+		if comspec := os.Getenv("ComSpec"); comspec != "" {
+			return comspec, []string{"/C", command}
+		}
+		return "cmd", []string{"/C", command}
+	}
+
+	if shell := os.Getenv("SHELL"); shell != "" {
+		return shell, []string{"-lc", command}
+	}
+	return "/bin/sh", []string{"-lc", command}
+}

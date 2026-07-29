@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"os"
 
 	camperrors "github.com/Obedience-Corp/camp/internal/errors"
 
@@ -141,6 +142,20 @@ func runWorktreesCommit(cmd *cobra.Command, args []string) error {
 
 	// Show what's staged
 	cmdutil.ShowStagedSummary(ctx, wtCtx.WorktreePath)
+
+	// Deferral point. A worktree is its own lane, so a queued commit here
+	// cannot serialize against the project it belongs to.
+	if wtCommitAutoWrite {
+		writerEnv := workitemEnvForWorktreeCommit(ctx, campRoot, wtCtx.WorktreePath, wtCommitWorkitem)
+		deferred, deferErr := cmdutil.TryDeferAutoWrite(
+			ctx, os.Stdout, campRoot, wtCtx.WorktreePath, false, wtCommitAmend, writerEnv)
+		if deferErr != nil {
+			return deferErr
+		}
+		if deferred {
+			return nil
+		}
+	}
 
 	if wtCommitAutoWrite {
 		fmt.Println(ui.Info("Writing commit message..."))

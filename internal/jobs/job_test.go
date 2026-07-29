@@ -17,6 +17,36 @@ func TestJobValidateRejects(t *testing.T) {
 		{name: "absolute repo", job: Job{Kind: KindCommitPaths, Repo: "/tmp/x", Paths: []string{"a"}}},
 		{name: "escaping repo", job: Job{Kind: KindCommitPaths, Repo: "../x", Paths: []string{"a"}}},
 
+		// A job file is on disk and hand-editable, and the worker feeds Env
+		// straight into a subprocess it starts detached. Anything outside
+		// CAMP_* would make the queue a way to set PATH or LD_PRELOAD for a
+		// process the user did not start and is not watching.
+		{
+			name: "env sets a variable outside camp's namespace",
+			job: Job{Kind: KindCommitPaths, Repo: ".", Paths: []string{"a"},
+				Env: []string{"PATH=/tmp/evil"}},
+		},
+		{
+			name: "env smuggles a loader variable past a camp-looking one",
+			job: Job{Kind: KindCommitPaths, Repo: ".", Paths: []string{"a"},
+				Env: []string{"CAMP_WORKITEM_REF=WI-abc123", "LD_PRELOAD=/tmp/evil.so"}},
+		},
+		{
+			name: "env entry is not KEY=VALUE",
+			job: Job{Kind: KindCommitPaths, Repo: ".", Paths: []string{"a"},
+				Env: []string{"CAMP_WORKITEM_REF"}},
+		},
+		{
+			name: "env entry has an empty key",
+			job: Job{Kind: KindCommitPaths, Repo: ".", Paths: []string{"a"},
+				Env: []string{"=value"}},
+		},
+		{
+			name: "unknown class",
+			job: Job{Kind: KindCommitPaths, Repo: ".", Paths: []string{"a"},
+				Class: "manifets"},
+		},
+
 		{name: "commit-paths with no paths", job: Job{Kind: KindCommitPaths, Repo: "."}},
 		{name: "commit-paths with empty path", job: Job{Kind: KindCommitPaths, Repo: ".", Paths: []string{""}}},
 		{
@@ -125,6 +155,22 @@ func TestJobValidateAccepts(t *testing.T) {
 				t.Errorf("Validate() error = %v, want nil", err)
 			}
 		})
+	}
+}
+
+// The variables a deferred writer legitimately needs are accepted, so the
+// restriction protects without breaking the one real use.
+func TestJobValidateAcceptsCampEnv(t *testing.T) {
+	job := Job{
+		Kind: KindCommitTree, Repo: ".", Tree: "deadbeef", AutoWrite: true,
+		Env: []string{
+			"CAMP_WORKITEM_REF=WI-abc123",
+			"CAMP_WORKITEM_PATH=workflow/design/thing",
+			"CAMP_COMMIT_AMEND=1",
+		},
+	}
+	if err := job.Validate(); err != nil {
+		t.Fatalf("a job carrying only CAMP_* variables was rejected: %v", err)
 	}
 }
 
