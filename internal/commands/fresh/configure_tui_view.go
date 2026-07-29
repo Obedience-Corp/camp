@@ -453,7 +453,7 @@ func (m *followUpTUIModel) overlayView() string {
 		}
 		body = []string{
 			freshTUITitleStyle.Render(title + " · " + workflowScopeLabel(scopeProjectName(m.selectedScope()))),
-			freshMuted.Render("This command runs after checkout, pull, prune, and branch setup."),
+			freshMuted.Render("This command runs after default-branch sync, prune, and branch setup."),
 		}
 		if note := m.forkNotice(); note != "" {
 			body = append(body, freshMuted.Render(note))

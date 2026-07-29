@@ -97,7 +97,7 @@ func (m *followUpTUIModel) updateBrowse(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 // activateSelectedStep opens the editor that fits the row under the cursor.
 // Rows with nothing to configure explain themselves rather than failing: the
 // pane already groups them under a header that says so, and a red error for
-// pressing enter on "Pull" would be noise.
+// pressing enter on "Sync default branch" would be noise.
 func (m *followUpTUIModel) activateSelectedStep() (tea.Model, tea.Cmd) {
 	step, ok := m.selectedStep()
 	if !ok {
