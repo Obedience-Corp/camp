@@ -20,6 +20,7 @@ import (
 	lifecyclepkg "github.com/Obedience-Corp/camp/cmd/camp/lifecycle"
 	navigationpkg "github.com/Obedience-Corp/camp/cmd/camp/navigation"
 	orgpkg "github.com/Obedience-Corp/camp/cmd/camp/org"
+	packpkg "github.com/Obedience-Corp/camp/cmd/camp/pack"
 	projectpkg "github.com/Obedience-Corp/camp/cmd/camp/project"
 	promotepkg "github.com/Obedience-Corp/camp/cmd/camp/promote"
 	refspkg "github.com/Obedience-Corp/camp/cmd/camp/refs"
@@ -247,6 +248,8 @@ func init() {
 	workflowCmd := workflowcmd.NewWorkflowCommand()
 	workflowCmd.GroupID = "planning"
 	rootCmd.AddCommand(workflowCmd)
+	rootCmd.AddCommand(packpkg.Cmd)
+	rootCmd.AddCommand(packpkg.UnbundleCmd)
 
 	attachResolverFactory := func(stderr io.Writer, usageLine string) attachpkg.CampaignResolver {
 		return attachpkg.NewResolver(stderr, usageLine)
