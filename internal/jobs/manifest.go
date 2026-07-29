@@ -23,9 +23,16 @@ import (
 func executeManifest(ctx context.Context, campaignRoot, repoPath string, job *Job) error {
 	// The identity was captured at enqueue; a worker spawned under any other
 	// environment still writes the enqueuer's record under the enqueuer's
-	// name.
+	// name. Both path components were validated at claim, and the root is
+	// re-checked at the moment of use because the walk is about to happen.
 	machine := job.Machine
-	prev, _, err := artifacts.LoadCommitted(campaignRoot, machine, job.ManifestRoot)
+	if _, err := artifacts.EnsureRootWithin(campaignRoot, job.ManifestRoot); err != nil {
+		return err
+	}
+	// The baseline is the record as git has it, never the working-tree file:
+	// a crashed attempt leaves its write uncommitted, and comparing against
+	// that would let the retry skip the commit forever.
+	prev, _, err := artifacts.LoadCommittedAtHead(ctx, campaignRoot, machine, job.ManifestRoot)
 	if err != nil {
 		return err
 	}
@@ -33,6 +40,23 @@ func executeManifest(ctx context.Context, campaignRoot, repoPath string, job *Jo
 	if err != nil {
 		return err
 	}
+
+	// The stat fingerprint captured at enqueue is what ties the observation
+	// to the described commit. If the root moved between the commit and this
+	// run, the pre-edit bytes are gone and no record of them can be made;
+	// the truthful record is the observed state anchored to the newest
+	// commit at observation time, said out loud in the worker log.
+	describes := job.DescribesCommit
+	if job.StateFingerprint != "" && artifacts.FingerprintFiles(m.Files) != job.StateFingerprint {
+		head, headErr := git.FullHash(ctx, repoPath)
+		if headErr != nil {
+			return headErr
+		}
+		logWorker(campaignRoot, "manifest-relabel root=%s described=%s now=%s: the root changed after enqueue; the record reflects the observed state",
+			job.ManifestRoot, shortSHA(job.DescribesCommit), shortSHA(head))
+		describes = head
+	}
+
 	// The heartbeat goroutine on the lane lock keeps the worker alive through
 	// a long first-pass hash; no progress plumbing is needed for liveness.
 	if err := artifacts.HashManifest(ctx, campaignRoot, m, prev, nil); err != nil {
@@ -41,12 +65,12 @@ func executeManifest(ctx context.Context, campaignRoot, repoPath string, job *Jo
 	if prev != nil && artifacts.SameFiles(prev.Files, m.Files) {
 		return nil
 	}
-	rel, err := artifacts.WriteCommitted(campaignRoot, machine, m, job.DescribesCommit)
+	rel, err := artifacts.WriteCommitted(campaignRoot, machine, m, describes)
 	if err != nil {
 		return err
 	}
 	err = git.CommitScoped(ctx, repoPath, []string{rel}, &git.CommitOptions{
-		Message: "manifest: " + job.ManifestRoot + " at " + shortSHA(job.DescribesCommit),
+		Message: "manifest: " + job.ManifestRoot + " at " + shortSHA(describes),
 	})
 	if errors.Is(err, git.ErrNoChanges) {
 		return nil // a drain or ordinary commit already carried the file
@@ -64,6 +88,20 @@ func EnqueueManifest(ctx context.Context, campaignRoot, rootRel, describesCommit
 	if err != nil {
 		return err
 	}
+	// artifacts.yaml is hand-editable; a root that escapes the campaign is
+	// refused before it can become a queued promise to walk it.
+	if err := artifacts.ValidateRootPath(rootRel); err != nil {
+		return err
+	}
+	if _, err := artifacts.EnsureRootWithin(campaignRoot, rootRel); err != nil {
+		return err
+	}
+	// One stat walk, no content reads: the fingerprint is what lets the
+	// worker prove the root still holds what it held at this commit.
+	snapshot, err := artifacts.BuildManifest(ctx, campaignRoot, rootRel)
+	if err != nil {
+		return err
+	}
 	pending, err := List(campaignRoot, statePending, ".")
 	if err == nil {
 		for _, j := range pending {
@@ -76,12 +114,13 @@ func EnqueueManifest(ctx context.Context, campaignRoot, rootRel, describesCommit
 		}
 	}
 	_, err = Enqueue(ctx, campaignRoot, Job{
-		Kind:            KindManifest,
-		Class:           ClassManifest,
-		Repo:            ".",
-		ManifestRoot:    artifacts.NormalizeRootPath(rootRel),
-		DescribesCommit: describesCommit,
-		Machine:         machine,
+		Kind:             KindManifest,
+		Class:            ClassManifest,
+		Repo:             ".",
+		ManifestRoot:     artifacts.NormalizeRootPath(rootRel),
+		DescribesCommit:  describesCommit,
+		Machine:          machine,
+		StateFingerprint: artifacts.FingerprintFiles(snapshot.Files),
 	})
 	return err
 }

@@ -21,6 +21,7 @@ import (
 	"path/filepath"
 	"strings"
 
+	"github.com/Obedience-Corp/camp/internal/artifacts"
 	camperrors "github.com/Obedience-Corp/camp/internal/errors"
 )
 
@@ -182,6 +183,13 @@ type Job struct {
 	// serves whatever is in the lane, and one spawned under another
 	// environment must not write this machine's record under its own name.
 	Machine string `json:"machine,omitempty"`
+	// StateFingerprint is the stat-level fingerprint of the root at enqueue
+	// (artifacts.FingerprintFiles). The worker recomputes it before hashing:
+	// a mismatch means the root moved after the described commit, the
+	// pre-edit bytes are unrecoverable, and the record is relabelled to the
+	// commit current at observation rather than silently claiming to
+	// describe state it never saw.
+	StateFingerprint string `json:"state_fingerprint,omitempty"`
 	// CreatedAt is the enqueuing process's clock, RFC3339 with millis.
 	CreatedAt string `json:"created_at"`
 	// Attempts counts how many times this job has been claimed.
@@ -279,17 +287,19 @@ func (j *Job) Validate() error {
 				"commit-tree requires a message or auto_write", nil)
 		}
 	case KindManifest:
-		if strings.TrimSpace(j.ManifestRoot) == "" {
-			return camperrors.NewValidation("manifest_root",
-				"a manifest job requires the declared root it records", nil)
+		// Queue files are hand-editable, so both path components are
+		// re-validated wherever they are read, not only where camp wrote
+		// them: an edited root or machine must never walk or write outside
+		// the campaign's trees.
+		if err := artifacts.ValidateRootPath(j.ManifestRoot); err != nil {
+			return camperrors.NewValidation("manifest_root", err.Error(), err)
 		}
 		if strings.TrimSpace(j.DescribesCommit) == "" {
 			return camperrors.NewValidation("describes_commit",
 				"a manifest job requires the commit it describes; without it the record is ambiguous", nil)
 		}
-		if strings.TrimSpace(j.Machine) == "" {
-			return camperrors.NewValidation("machine",
-				"a manifest job requires the machine identity captured at enqueue", nil)
+		if err := artifacts.ValidateMachineSegment(j.Machine); err != nil {
+			return camperrors.NewValidation("machine", err.Error(), err)
 		}
 		if j.Class != ClassManifest {
 			return camperrors.NewValidation("class",

@@ -236,3 +236,92 @@ func latestUserCommit(t *testing.T, tc *TestContainer, repoPath string) string {
 	t.Fatal("no non-manifest commit in recent history")
 	return ""
 }
+
+// Review finding 1: a crash after WriteCommitted but before the commit left
+// the record on disk and uncommitted. Comparing against the working-tree file
+// made the retry skip the commit forever; the baseline must be HEAD.
+func TestIntegration_ManifestCrashRetryStillCommits(t *testing.T) {
+	tc := GetSharedContainer(t)
+	campPath := "/campaigns/manifest-crash"
+	_, err := tc.InitCampaign(campPath, "manifest-crash", "product")
+	require.NoError(t, err)
+	const machine = "machine-a"
+
+	tc.Shell(t, fmt.Sprintf(`cd %s && mkdir -p media && printf 'crash-content' > media/f.bin`, campPath))
+	campAs(t, tc, machine, campPath, "artifacts add media")
+	campAs(t, tc, machine, campPath, `commit -m "declare"`)
+	settleJobs(t, tc, machine, campPath)
+
+	// The crash state, exactly: the carrier commit undone, the written record
+	// still on disk. A crafted retry job stands in for the reclaimed one.
+	described := strings.TrimSpace(tc.Shell(t, fmt.Sprintf(
+		`cd %s && git show HEAD:.campaign/artifacts/manifests/%s/media.json | grep describes_commit | cut -d'"' -f4`,
+		campPath, machine)))
+	require.NotEmpty(t, described)
+	tc.Shell(t, fmt.Sprintf(`
+		set -e
+		cd %[1]s
+		git reset -q --soft HEAD~1
+		LANE=.campaign/cache/jobs/pending/%%2E
+		mkdir -p "$LANE"
+		cat > "$LANE/0000009.json" <<JSON
+{
+  "id": "job-crash-retry",
+  "seq": 9,
+  "kind": "manifest",
+  "class": "manifest",
+  "repo": ".",
+  "manifest_root": "media",
+  "describes_commit": "%[2]s",
+  "machine": "%[3]s",
+  "created_at": "2026-07-29T00:00:00.000Z",
+  "attempts": 1
+}
+JSON
+	`, campPath, described, machine))
+	settleJobs(t, tc, machine, campPath)
+
+	inHead := tc.Shell(t, fmt.Sprintf(
+		`cd %s && git show HEAD:.campaign/artifacts/manifests/%s/media.json 2>/dev/null | grep -c describes_commit || true`,
+		campPath, machine))
+	assert.Equal(t, "1", strings.TrimSpace(inHead),
+		"the retry of a crashed attempt must commit the record, not skip because the file already exists")
+}
+
+// Review finding 3: an artifact edit between the described commit and the
+// worker's read used to be silently absorbed under the earlier SHA. The
+// enqueue-time stat fingerprint detects it; the record then reflects the
+// observed state, relabelled to the commit current at observation, and the
+// divergence is said out loud in the worker log.
+func TestIntegration_ManifestDetectsPostCommitArtifactEdit(t *testing.T) {
+	tc := GetSharedContainer(t)
+	campPath := "/campaigns/manifest-race"
+	_, err := tc.InitCampaign(campPath, "manifest-race", "product")
+	require.NoError(t, err)
+	const machine = "machine-a"
+
+	tc.Shell(t, fmt.Sprintf(`cd %s && mkdir -p media && printf 'original-bytes' > media/f.bin`, campPath))
+	campAs(t, tc, machine, campPath, "artifacts add media")
+	campAs(t, tc, machine, campPath, `commit -m "declare"`)
+	settleJobs(t, tc, machine, campPath)
+
+	// Pin the lane so the job cannot run, commit, then edit the root: the
+	// exact race the fingerprint exists to catch.
+	tc.Shell(t, fmt.Sprintf(`touch "%s/.campaign/cache/jobs/worker-%%2E.lock"`, campPath))
+	tc.Shell(t, fmt.Sprintf(`cd %s && printf 'raced change\n' >> README.md && printf 'grow media' >> media/f.bin`, campPath))
+	campAs(t, tc, machine, campPath, `commit -m "commit before the edit"`)
+	tc.Shell(t, fmt.Sprintf(`cd %s && printf 'edited-after-commit' > media/f.bin`, campPath))
+	tc.Shell(t, fmt.Sprintf(`rm -f "%s/.campaign/cache/jobs/worker-%%2E.lock"`, campPath))
+	settleJobs(t, tc, machine, campPath)
+
+	logOut := tc.Shell(t, fmt.Sprintf(`grep -c manifest-relabel %s/.campaign/cache/jobs/worker.log || true`, campPath))
+	assert.NotEqual(t, "0", strings.TrimSpace(logOut),
+		"the divergence must be detected and said out loud in the worker log")
+
+	wantHash := strings.TrimSpace(tc.Shell(t, fmt.Sprintf(
+		`cd %s && sha256sum media/f.bin | cut -d' ' -f1`, campPath)))
+	record := tc.Shell(t, fmt.Sprintf(
+		`cd %s && git show HEAD:.campaign/artifacts/manifests/%s/media.json`, campPath, machine))
+	assert.Contains(t, record, wantHash,
+		"the record must truthfully hash the observed bytes, never claim state it did not see")
+}

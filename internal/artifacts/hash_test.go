@@ -197,3 +197,23 @@ func TestHashManifestToleratesAVanishedFile(t *testing.T) {
 		t.Errorf("vanished file hash = %q, want unknown", got)
 	}
 }
+
+func TestDecodeCommittedRefusesAMismatchedRoot(t *testing.T) {
+	data := []byte(`{"version":1,"root":"other","describes_commit":"abc","files":[{"path":"f","size":1,"mtime_unix_nano":1,"hash_sha256":"aa"}]}`)
+	m, describes, err := decodeCommitted(data, "media")
+	if err != nil || m != nil || describes != "" {
+		t.Errorf("a record embedding another root must degrade to first pass, got m=%v describes=%q err=%v", m, describes, err)
+	}
+}
+
+func TestFingerprintFilesChangesWithStatState(t *testing.T) {
+	a := []FileEntry{{Path: "f", Size: 1, MTime: 10}}
+	same := []FileEntry{{Path: "f", Size: 1, MTime: 10}}
+	moved := []FileEntry{{Path: "f", Size: 1, MTime: 11}}
+	if FingerprintFiles(a) != FingerprintFiles(same) {
+		t.Error("identical stat state must fingerprint identically")
+	}
+	if FingerprintFiles(a) == FingerprintFiles(moved) {
+		t.Error("a moved mtime must change the fingerprint")
+	}
+}

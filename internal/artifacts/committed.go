@@ -2,8 +2,12 @@ package artifacts
 
 import (
 	"context"
+	"crypto/sha256"
+	"encoding/hex"
 	"encoding/json"
+	"fmt"
 	"os"
+	"os/exec"
 	"path/filepath"
 
 	camperrors "github.com/Obedience-Corp/camp/internal/errors"
@@ -46,8 +50,15 @@ func CommittedManifestRelPath(machine, rootRel string) string {
 	return filepath.ToSlash(filepath.Join(CommittedRelDir, machine, snapshotSlug(rootRel)+".json"))
 }
 
-// LoadCommitted reads one machine's committed manifest for a root. A missing
-// file is (nil, "", nil): no record yet, which callers treat as a first pass.
+// LoadCommitted reads one machine's committed manifest for a root from the
+// working tree. A missing file is (nil, "", nil): no record yet, which
+// callers treat as a first pass.
+//
+// This is the status-path variant for the drift surfaces, where one file read
+// per root is the cost contract. The worker's correctness decisions use
+// LoadCommittedAtHead instead: the working-tree file may be a crashed
+// attempt's uncommitted write, and treating that as the record would let a
+// retry skip the commit forever.
 func LoadCommitted(campaignRoot, machine, rootRel string) (*Manifest, string, error) {
 	path := filepath.Join(campaignRoot, filepath.FromSlash(CommittedManifestRelPath(machine, rootRel)))
 	data, err := os.ReadFile(path)
@@ -57,13 +68,54 @@ func LoadCommitted(campaignRoot, machine, rootRel string) (*Manifest, string, er
 	if err != nil {
 		return nil, "", camperrors.Wrapf(err, "read committed manifest for %s", rootRel)
 	}
+	return decodeCommitted(data, rootRel)
+}
+
+// LoadCommittedAtHead reads the record as git has it at HEAD, which is the
+// only baseline a manifest job may trust: it proves the previous record
+// actually landed in history rather than merely reaching the filesystem.
+func LoadCommittedAtHead(ctx context.Context, campaignRoot, machine, rootRel string) (*Manifest, string, error) {
+	rel := CommittedManifestRelPath(machine, rootRel)
+	show := exec.CommandContext(ctx, "git", "-C", campaignRoot, "show", "HEAD:"+rel)
+	out, err := show.Output()
+	if err != nil {
+		// Not in HEAD: no committed record yet, a first pass.
+		return nil, "", nil
+	}
+	return decodeCommitted(out, rootRel)
+}
+
+// decodeCommitted parses a committed record, refusing one whose embedded root
+// is not the root that was asked for: queue files and manifests are
+// hand-editable, and a mismatched record must degrade to a first pass rather
+// than carry another root's hashes forward.
+func decodeCommitted(data []byte, rootRel string) (*Manifest, string, error) {
 	var c committedManifest
 	if err := json.Unmarshal(data, &c); err != nil {
-		// An unreadable record degrades to a first pass rather than wedging
-		// the manifest job forever: the next write replaces it.
+		return nil, "", nil
+	}
+	if c.Root != NormalizeRootPath(rootRel) {
 		return nil, "", nil
 	}
 	return &Manifest{Version: c.Version, Root: c.Root, Files: c.Files}, c.DescribesCommit, nil
+}
+
+// ValidateMachineSegment rejects a machine identity that could escape the
+// committed manifest tree. Same rules as peer ids, which face the same join.
+func ValidateMachineSegment(machine string) error {
+	return ValidatePeerID(machine)
+}
+
+// FingerprintFiles is a stat-level fingerprint of a file list: one hash over
+// every (path, size, mtime, kind) tuple, in sorted order. It exists so a
+// manifest job can prove at execution that the root still holds what it held
+// at enqueue, without reading a single content byte at enqueue time.
+func FingerprintFiles(files []FileEntry) string {
+	h := sha256.New()
+	for _, f := range files {
+		_, _ = fmt.Fprintf(h, "%s\x00%d\x00%d\x00%t\x00", f.Path, f.Size, f.MTime, f.Symlink)
+	}
+	return hex.EncodeToString(h.Sum(nil))
 }
 
 // WriteCommitted durably writes one machine's committed manifest for a root
