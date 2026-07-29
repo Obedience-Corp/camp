@@ -53,19 +53,38 @@ type WorkItem struct {
 
 	StableID     string            `json:"stable_id,omitempty"`
 	WorkflowMeta *WorkItemWorkflow `json:"workflow,omitempty"`
+	Tags         []string          `json:"tags"`
+	Projects     []string          `json:"-"`
+	ProjectRefs  []ProjectRef      `json:"projects"`
+}
+
+// ProjectRef is one entry in a workitem's merged projects view: a
+// campaign-relative project path from the workitem's projects: list, annotated
+// with whether that project is also the workitem-scope primary link in
+// links.yaml. It is the JSON shape of the "projects" field (workitems/v1alpha9);
+// the plain []string Projects field stays the internal semantic base that
+// ApplyMetadata populates and the merged view is derived from at output time.
+type ProjectRef struct {
+	Path    string `json:"path"`
+	Primary bool   `json:"primary"`
 }
 
 // WorkItemWorkflow carries local runtime progress when .workflow/ is present
 // (sourced from the fest local runtime, populated by camp's localrun loader).
 type WorkItemWorkflow struct {
-	WorkflowID     string `json:"workflow_id,omitempty"`
-	ActiveRunID    string `json:"active_run_id,omitempty"`
-	CurrentStep    int    `json:"current_step"`
-	TotalSteps     int    `json:"total_steps"`
-	CompletedSteps int    `json:"completed_steps"`
-	RunStatus      string `json:"run_status,omitempty"`
-	Blocked        bool   `json:"blocked"`
-	DocHashChanged bool   `json:"doc_hash_changed"`
+	WorkflowID  string `json:"workflow_id,omitempty"`
+	ActiveRunID string `json:"active_run_id,omitempty"`
+	// LatestRunID / LatestRunStatus report the most recent run's terminal state
+	// when there is no active run (fest clears active_run_id on completion).
+	// Additive JSON fields (omitempty); existing readers ignore them.
+	LatestRunID     string `json:"latest_run_id,omitempty"`
+	LatestRunStatus string `json:"latest_run_status,omitempty"`
+	CurrentStep     int    `json:"current_step"`
+	TotalSteps      int    `json:"total_steps"`
+	CompletedSteps  int    `json:"completed_steps"`
+	RunStatus       string `json:"run_status,omitempty"`
+	Blocked         bool   `json:"blocked"`
+	DocHashChanged  bool   `json:"doc_hash_changed"`
 }
 
 // AbsPath resolves the item's absolute path from the campaign root.

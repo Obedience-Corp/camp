@@ -157,6 +157,168 @@ func skipIfShort(t *testing.T) {
 	}
 }
 
+func advanceFreshRemote(t *testing.T, tc *TestContainer, name, bareDir, filename string) string {
+	t.Helper()
+	peerDir := "/test/" + name + "-peer"
+	tc.Shell(t, fmt.Sprintf(`
+set -e
+git clone %[1]s %[2]s
+git -C %[2]s config user.email peer@test.com
+git -C %[2]s config user.name Peer
+printf 'remote update\n' > %[2]s/%[3]s
+git -C %[2]s add %[3]s
+git -C %[2]s commit -m 'Remote update'
+git -C %[2]s push origin main
+`, bareDir, peerDir, filename))
+	return tc.GitOutput(t, bareDir, "rev-parse", "refs/heads/main")
+}
+
+func TestFresh_FastForwardsBehindDefaultBranch(t *testing.T) {
+	skipIfShort(t)
+	tc := GetSharedContainer(t)
+	const name = "fresh-behind-default"
+	_, projectDir, bareDir := setupFreshCampaignWithSubmodule(t, tc, name)
+	remoteTip := advanceFreshRemote(t, tc, name, bareDir, "remote.txt")
+
+	output, err := tc.RunCampInDir(projectDir, "fresh", "--no-branch", "--no-push", "--no-follow-up", "--no-prune")
+	require.NoError(t, err, "camp fresh should fast-forward a behind-only default branch:\n%s", output)
+	assert.Equal(t, remoteTip, tc.GitOutput(t, projectDir, "rev-parse", "main"))
+	assert.Contains(t, output, "updated 1 commit(s)")
+	assert.Empty(t, tc.GitOutput(t, projectDir, "for-each-ref", "--format=%(refname:short)", "refs/heads/camp-fresh-recovery-*"))
+}
+
+func TestFresh_PreservesAndRealignsAheadOnlyDefaultBranch(t *testing.T) {
+	skipIfShort(t)
+	tc := GetSharedContainer(t)
+	const name = "fresh-ahead-default"
+	_, projectDir, _ := setupFreshCampaignWithSubmodule(t, tc, name)
+
+	tc.Shell(t, fmt.Sprintf(`
+set -e
+printf 'local work\n' > %[1]s/local.txt
+git -C %[1]s add local.txt
+git -C %[1]s commit -m 'Local main work'
+`, projectDir))
+	oldTip := tc.GitOutput(t, projectDir, "rev-parse", "main")
+	recovery := freshRecoveryPrefixForTest(oldTip)
+
+	output, err := tc.RunCampInDir(projectDir, "fresh", "--no-branch", "--no-push", "--no-follow-up", "--no-prune")
+	require.NoError(t, err, "camp fresh should preserve and realign ahead-only main:\n%s", output)
+	assert.Equal(t, tc.GitOutput(t, projectDir, "rev-parse", "origin/main"), tc.GitOutput(t, projectDir, "rev-parse", "main"))
+	assert.Equal(t, oldTip, tc.GitOutput(t, projectDir, "rev-parse", recovery))
+	assert.Contains(t, output, recovery)
+	assert.Contains(t, output, "1 local-only commit(s)")
+	assert.Contains(t, output, "Undo: git switch main && git reset --hard "+recovery)
+
+	// Retrying the same recovery state is idempotent: reuse the existing ref
+	// instead of allocating a suffixed duplicate.
+	tc.Shell(t, fmt.Sprintf("git -C %s reset --hard %s", projectDir, recovery))
+	retryOutput, err := tc.RunCampInDir(projectDir, "fresh", "--no-branch", "--no-push", "--no-follow-up", "--no-prune")
+	require.NoError(t, err, "camp fresh should reuse an existing matching recovery branch:\n%s", retryOutput)
+	assert.Contains(t, retryOutput, "already preserved")
+	assert.Empty(t, tc.GitOutput(t, projectDir, "for-each-ref", "--format=%(refname:short)", "refs/heads/"+recovery+"-2"))
+}
+
+func TestFresh_PreservesAndRealignsDivergedDefaultBranch(t *testing.T) {
+	skipIfShort(t)
+	tc := GetSharedContainer(t)
+	const name = "fresh-diverged-default"
+	_, projectDir, bareDir := setupFreshCampaignWithSubmodule(t, tc, name)
+
+	tc.Shell(t, fmt.Sprintf(`
+set -e
+printf 'local work\n' > %[1]s/local.txt
+git -C %[1]s add local.txt
+git -C %[1]s commit -m 'Local main work'
+`, projectDir))
+	oldTip := tc.GitOutput(t, projectDir, "rev-parse", "main")
+	remoteTip := advanceFreshRemote(t, tc, name, bareDir, "remote.txt")
+	recovery := freshRecoveryPrefixForTest(oldTip)
+
+	output, err := tc.RunCampInDir(projectDir, "fresh", "--no-branch", "--no-push", "--no-follow-up", "--no-prune")
+	require.NoError(t, err, "camp fresh should preserve and realign diverged main:\n%s", output)
+	assert.Equal(t, remoteTip, tc.GitOutput(t, projectDir, "rev-parse", "main"))
+	assert.Equal(t, oldTip, tc.GitOutput(t, projectDir, "rev-parse", recovery))
+	assert.Equal(t, "main", tc.GitOutput(t, projectDir, "rev-parse", "--abbrev-ref", "HEAD"))
+	assert.Empty(t, tc.GitOutput(t, projectDir, "status", "--porcelain"))
+	assert.Contains(t, output, "Realign")
+}
+
+func TestFresh_DryRunReportsDivergenceWithoutMovingLocalRefs(t *testing.T) {
+	skipIfShort(t)
+	tc := GetSharedContainer(t)
+	const name = "fresh-diverged-dry-run"
+	_, projectDir, bareDir := setupFreshCampaignWithSubmodule(t, tc, name)
+
+	tc.Shell(t, fmt.Sprintf(`
+set -e
+printf 'local work\n' > %[1]s/local.txt
+git -C %[1]s add local.txt
+git -C %[1]s commit -m 'Local main work'
+`, projectDir))
+	oldTip := tc.GitOutput(t, projectDir, "rev-parse", "main")
+	_ = advanceFreshRemote(t, tc, name, bareDir, "remote.txt")
+	recovery := freshRecoveryPrefixForTest(oldTip)
+
+	output, err := tc.RunCampInDir(projectDir, "fresh", "--dry-run", "--no-branch", "--no-push", "--no-follow-up", "--no-prune")
+	require.NoError(t, err, "camp fresh dry-run should report the divergence plan:\n%s", output)
+	assert.Equal(t, oldTip, tc.GitOutput(t, projectDir, "rev-parse", "main"))
+	assert.Empty(t, tc.GitOutput(t, projectDir, "for-each-ref", "--format=%(refname:short)", "refs/heads/camp-fresh-recovery-*"))
+	assert.Contains(t, output, "Would preserve")
+	assert.Contains(t, output, recovery)
+	assert.Contains(t, output, "Would realign")
+}
+
+func TestFresh_RecoveryBranchCollisionUsesSuffix(t *testing.T) {
+	skipIfShort(t)
+	tc := GetSharedContainer(t)
+	const name = "fresh-recovery-collision"
+	_, projectDir, _ := setupFreshCampaignWithSubmodule(t, tc, name)
+
+	tc.Shell(t, fmt.Sprintf(`
+set -e
+printf 'local work\n' > %[1]s/local.txt
+git -C %[1]s add local.txt
+git -C %[1]s commit -m 'Local main work'
+`, projectDir))
+	oldTip := tc.GitOutput(t, projectDir, "rev-parse", "main")
+	baseRecovery := freshRecoveryPrefixForTest(oldTip)
+	tc.Shell(t, fmt.Sprintf("git -C %s branch %s HEAD^", projectDir, baseRecovery))
+
+	output, err := tc.RunCampInDir(projectDir, "fresh", "--no-branch", "--no-push", "--no-follow-up", "--no-prune")
+	require.NoError(t, err, "camp fresh should suffix a colliding recovery branch:\n%s", output)
+	assert.NotEqual(t, oldTip, tc.GitOutput(t, projectDir, "rev-parse", baseRecovery))
+	assert.Equal(t, oldTip, tc.GitOutput(t, projectDir, "rev-parse", baseRecovery+"-2"))
+	assert.Contains(t, output, baseRecovery+"-2")
+}
+
+func TestFresh_MissingRemoteDefaultDoesNotMoveLocalMain(t *testing.T) {
+	skipIfShort(t)
+	tc := GetSharedContainer(t)
+	const name = "fresh-missing-remote-default"
+	_, projectDir, bareDir := setupFreshCampaignWithSubmodule(t, tc, name)
+
+	tc.Shell(t, fmt.Sprintf(`
+set -e
+printf 'local work\n' > %[1]s/local.txt
+git -C %[1]s add local.txt
+git -C %[1]s commit -m 'Local main work'
+git --git-dir %[2]s update-ref -d refs/heads/main
+git -C %[1]s update-ref -d refs/remotes/origin/main
+`, projectDir, bareDir))
+	oldTip := tc.GitOutput(t, projectDir, "rev-parse", "main")
+
+	output, err := tc.RunCampInDir(projectDir, "fresh", "--no-branch", "--no-push", "--no-follow-up", "--no-prune")
+	require.Error(t, err, "camp fresh should fail when origin has no default ref:\n%s", output)
+	assert.Equal(t, oldTip, tc.GitOutput(t, projectDir, "rev-parse", "main"))
+	assert.Empty(t, tc.GitOutput(t, projectDir, "for-each-ref", "--format=%(refname:short)", "refs/heads/camp-fresh-recovery-*"))
+	assert.Contains(t, output, "refs/remotes/origin/main")
+}
+
+func freshRecoveryPrefixForTest(sha string) string {
+	return "camp-fresh-recovery-" + sha[:12]
+}
+
 func TestFresh_CreatesAndPushesNewBranch(t *testing.T) {
 	skipIfShort(t)
 	tc := GetSharedContainer(t)
@@ -498,4 +660,110 @@ git -C %[2]s push origin main
 
 	remoteHeads := tc.GitOutput(t, bareDir, "show-ref", "--verify", "refs/heads/feature-remote")
 	assert.Contains(t, remoteHeads, "refs/heads/feature-remote")
+}
+
+// TestFresh_ReclaimsDefaultBranchFromOtherWorktree proves that when main is
+// checked out in a clean feature worktree (the common leftover after
+// worktree add --start-point main), camp fresh detaches that worktree and
+// checks out main on the primary project path instead of failing with
+// "already used by worktree" or leaving the primary on detached origin/main.
+func TestFresh_ReclaimsDefaultBranchFromOtherWorktree(t *testing.T) {
+	skipIfShort(t)
+	tc := GetSharedContainer(t)
+	const name = "fresh-reclaim-main"
+	_, projectDir, _ := setupFreshCampaignWithSubmodule(t, tc, name)
+
+	// Primary starts on a feature branch; main is held by a finished worktree.
+	tc.Shell(t, fmt.Sprintf(`
+set -e
+git -C %[1]s checkout -b feature-active
+printf 'work\n' > %[1]s/feature.txt
+git -C %[1]s add .
+git -C %[1]s commit -m 'feature work'
+`, projectDir))
+
+	stuckWT := worktreePath(name, "stuck-main")
+	tc.Shell(t, fmt.Sprintf(`
+set -e
+git -C %[1]s worktree add %[2]s main
+`, projectDir, stuckWT))
+
+	// Confirm main is locked before fresh.
+	branchOnStuck := tc.GitOutput(t, stuckWT, "rev-parse", "--abbrev-ref", "HEAD")
+	require.Equal(t, "main", branchOnStuck, "precondition: stuck worktree should hold main")
+
+	// --no-prune keeps this test focused on the reclaim handoff itself. The
+	// reclaim-then-prune preservation contract (the detached worktree surviving
+	// the same run's prune pass) is locked by
+	// TestFresh_ReclaimedWorktreePreservedDuringPrune.
+	output, err := tc.RunCampInDir(projectDir, "fresh", "--no-branch", "--no-push", "--no-follow-up", "--no-prune")
+	require.NoError(t, err, "camp fresh should reclaim main:\n%s", output)
+	assert.Contains(t, output, "Free", "fresh should report freeing the default branch")
+	assert.Contains(t, output, "stuck-main", "fresh should name the occupying worktree")
+
+	// Primary is on main (not detached origin/main).
+	primary := tc.GitOutput(t, projectDir, "rev-parse", "--abbrev-ref", "HEAD")
+	assert.Equal(t, "main", primary, "primary project path should hold main after fresh")
+
+	// Occupying worktree was detached so main is free for the primary path.
+	stuck := tc.GitOutput(t, stuckWT, "rev-parse", "--abbrev-ref", "HEAD")
+	assert.Equal(t, "HEAD", stuck, "occupying worktree should be detached, got %s", stuck)
+}
+
+// TestFresh_ReclaimedWorktreePreservedDuringPrune locks the reclaim-then-prune
+// contract. Reclaiming the default branch detaches its former worktree at merged
+// history, so the same run's prune pass would immediately delete it unless fresh
+// preserves that exact path (PreserveDetachedWorktrees in fresh.go). With prune
+// ENABLED, the reclaimed worktree must survive while an unrelated merged detached
+// worktree is still removed. This fails without the preserve wiring.
+func TestFresh_ReclaimedWorktreePreservedDuringPrune(t *testing.T) {
+	skipIfShort(t)
+	tc := GetSharedContainer(t)
+	const name = "fresh-reclaim-prune"
+	_, projectDir, _ := setupFreshCampaignWithSubmodule(t, tc, name)
+
+	// Primary starts on a feature branch; main is held by a finished worktree.
+	tc.Shell(t, fmt.Sprintf(`
+set -e
+git -C %[1]s checkout -b feature-active
+printf 'work\n' > %[1]s/feature.txt
+git -C %[1]s add .
+git -C %[1]s commit -m 'feature work'
+`, projectDir))
+
+	stuckWT := worktreePath(name, "stuck-main")
+	// A separate clean, merged, detached worktree that a normal prune removes.
+	// It is not the reclaimed path, so it must NOT be preserved.
+	mergedWT := worktreePath(name, "merged-detached")
+	tc.Shell(t, fmt.Sprintf(`
+set -e
+git -C %[1]s worktree add %[2]s main
+git -C %[1]s worktree add --detach %[3]s main
+`, projectDir, stuckWT, mergedWT))
+
+	require.Equal(t, "main", tc.GitOutput(t, stuckWT, "rev-parse", "--abbrev-ref", "HEAD"),
+		"precondition: stuck worktree should hold main")
+	require.Equal(t, "HEAD", tc.GitOutput(t, mergedWT, "rev-parse", "--abbrev-ref", "HEAD"),
+		"precondition: sibling worktree should be detached")
+
+	// Prune ENABLED (no --no-prune): this is the exact path the fix protects.
+	output, err := tc.RunCampInDir(projectDir, "fresh", "--no-branch", "--no-push", "--no-follow-up")
+	require.NoError(t, err, "camp fresh should reclaim main with prune enabled:\n%s", output)
+
+	// Primary reclaimed main.
+	assert.Equal(t, "main", tc.GitOutput(t, projectDir, "rev-parse", "--abbrev-ref", "HEAD"),
+		"primary project path should hold main after fresh")
+
+	// The reclaimed (now detached) worktree must survive the prune pass.
+	stuckExists, err := tc.CheckDirExists(stuckWT)
+	require.NoError(t, err)
+	require.True(t, stuckExists, "reclaimed worktree must be preserved during prune, not deleted")
+	assert.Equal(t, "HEAD", tc.GitOutput(t, stuckWT, "rev-parse", "--abbrev-ref", "HEAD"),
+		"reclaimed worktree should remain detached after fresh")
+
+	// The unrelated merged detached worktree must still be pruned, proving the
+	// preserve list is scoped to the reclaimed path and does not disable prune.
+	mergedExists, err := tc.CheckDirExists(mergedWT)
+	require.NoError(t, err)
+	assert.False(t, mergedExists, "unrelated merged detached worktree should still be removed by prune")
 }

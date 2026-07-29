@@ -324,11 +324,14 @@ func TestIntentAddModel_ViewRendersCorrectly(t *testing.T) {
 	if view == "" {
 		t.Error("View should not be empty")
 	}
-	if !containsText(view, "Create Intent") {
-		t.Error("View should contain 'Create Intent' title")
+	if !containsText(view, "intent") {
+		t.Error("View should contain brand chrome 'intent'")
+	}
+	if !containsText(view, "create") {
+		t.Error("View should contain create mode title")
 	}
 	if !containsText(view, "Title") {
-		t.Error("View should contain 'Title' prompt")
+		t.Error("View should contain 'Title' step")
 	}
 }
 

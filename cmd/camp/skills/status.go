@@ -1,14 +1,17 @@
 package skills
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
 	"os"
 	"path/filepath"
 
 	"github.com/Obedience-Corp/camp/internal/campaign"
+	"github.com/Obedience-Corp/camp/internal/config"
 	camperrors "github.com/Obedience-Corp/camp/internal/errors"
 	"github.com/Obedience-Corp/camp/internal/jsoncontract"
+	"github.com/Obedience-Corp/camp/internal/paths"
 	intskills "github.com/Obedience-Corp/camp/internal/skills"
 	"github.com/spf13/cobra"
 )
@@ -86,10 +89,10 @@ func runSkillsStatus(cmd *cobra.Command, _ []string) error {
 	hasAttention := false
 
 	toolNames := intskills.ToolNames()
-	paths := intskills.ToolPaths()
+	toolPaths := intskills.ToolPaths()
 
 	for _, tool := range toolNames {
-		relPath := paths[tool]
+		relPath := toolPaths[tool]
 		destPath := filepath.Join(root, relPath)
 
 		pathType, err := intskills.CheckPathType(destPath)
@@ -145,6 +148,16 @@ func runSkillsStatus(cmd *cobra.Command, _ []string) error {
 		entries = append(entries, entry)
 	}
 
+	// Project status for each project worktree (.agents/skills primary).
+	wtEntries, wtAttention, err := worktreeSkillStatusEntries(ctx, root, skillsDir, slugs)
+	if err != nil {
+		return err
+	}
+	entries = append(entries, wtEntries...)
+	if wtAttention {
+		hasAttention = true
+	}
+
 	if skillsStatusJSON {
 		data, err := json.MarshalIndent(entries, "", "  ")
 		if err != nil {
@@ -154,10 +167,10 @@ func runSkillsStatus(cmd *cobra.Command, _ []string) error {
 			return err
 		}
 	} else {
-		if _, err := fmt.Fprintf(out, "%-10s %-20s %s\n", "Tool", "Path", "Status"); err != nil {
+		if _, err := fmt.Fprintf(out, "%-10s %-52s %s\n", "Tool", "Path", "Status"); err != nil {
 			return err
 		}
-		if _, err := fmt.Fprintf(out, "%-10s %-20s %s\n", "----", "----", "------"); err != nil {
+		if _, err := fmt.Fprintf(out, "%-10s %-52s %s\n", "----", "----", "------"); err != nil {
 			return err
 		}
 
@@ -166,7 +179,7 @@ func runSkillsStatus(cmd *cobra.Command, _ []string) error {
 			if e.Target != "" {
 				status = fmt.Sprintf("%s -> %s", status, e.Target)
 			}
-			if _, err := fmt.Fprintf(out, "%-10s %-20s %s\n", e.Tool, e.Path, status); err != nil {
+			if _, err := fmt.Fprintf(out, "%-10s %-52s %s\n", e.Tool, e.Path, status); err != nil {
 				return err
 			}
 		}
@@ -194,4 +207,62 @@ func runSkillsStatus(cmd *cobra.Command, _ []string) error {
 	}
 
 	return nil
+}
+
+// worktreeSkillStatusEntries builds status rows for each project worktree.
+func worktreeSkillStatusEntries(ctx context.Context, root, skillsDir string, slugs []string) ([]skillStatusEntry, bool, error) {
+	if err := ctx.Err(); err != nil {
+		return nil, false, err
+	}
+	cfg, err := config.LoadCampaignConfig(ctx, root)
+	if err != nil {
+		cfg = &config.CampaignConfig{}
+	}
+	resolver := paths.NewResolver(root, cfg.Paths())
+	wtRoot := resolver.Worktrees()
+	roots, err := intskills.ListWorktreeRoots(wtRoot)
+	if err != nil {
+		return nil, false, err
+	}
+
+	var entries []skillStatusEntry
+	hasAttention := false
+	for _, wtPath := range roots {
+		rel, err := filepath.Rel(root, wtPath)
+		if err != nil {
+			rel = wtPath
+		}
+		entry := skillStatusEntry{
+			Tool: "worktree",
+			Path: filepath.ToSlash(rel),
+		}
+		projState, err := intskills.InspectWorktreeProjection(wtPath, skillsDir, slugs)
+		if err != nil {
+			return nil, false, camperrors.Wrapf(err, "inspect worktree %s", rel)
+		}
+		switch {
+		case projState.Conflicts > 0:
+			entry.State = fmt.Sprintf("blocked (%d conflict)", projState.Conflicts)
+			entry.Suggestion = fmt.Sprintf("resolve conflicting entries in %s/.agents/skills then rerun link --worktrees-only", rel)
+			hasAttention = true
+		case projState.Broken > 0:
+			entry.State = fmt.Sprintf("broken (%d)", projState.Broken)
+			entry.Suggestion = "run 'camp skills link --worktrees-only --force' to repair worktree skill links"
+			hasAttention = true
+		case projState.Mismatched > 0:
+			entry.State = fmt.Sprintf("mismatched (%d)", projState.Mismatched)
+			entry.Suggestion = "run 'camp skills link --worktrees-only --force' to update worktree skill links"
+			hasAttention = true
+		case projState.Linked == 0:
+			entry.State = "not linked"
+			entry.Suggestion = "run 'camp skills link --worktrees-only' to project skills into worktrees"
+		case projState.Linked < projState.TotalSkills:
+			entry.State = fmt.Sprintf("partial (%d/%d)", projState.Linked, projState.TotalSkills)
+			entry.Suggestion = "run 'camp skills link --worktrees-only' to sync missing worktree skill links"
+		default:
+			entry.State = fmt.Sprintf("linked (%d/%d)", projState.Linked, projState.TotalSkills)
+		}
+		entries = append(entries, entry)
+	}
+	return entries, hasAttention, nil
 }

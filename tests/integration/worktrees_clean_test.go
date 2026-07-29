@@ -67,6 +67,42 @@ rm -rf $GITDIR
 	assert.False(t, exists, "stale worktree directory should be removed")
 }
 
+// TestWorktreesClean_StaleOutsidePreferredLayout is the #436 regression for
+// clean: a linked worktree outside projects/worktrees/<project>/ must still
+// be found via git worktree list and removed when its gitdir target is gone.
+// Preferred-layout-only scans left these entries invisible after list was
+// fixed in #446.
+//
+// The checkout's .git pointer is broken while git's admin entry is left in
+// place so git worktree list still enumerates the path. (Deleting the admin
+// dir removes the entry from git's list entirely; preferred-layout FS scan
+// would not see a loose path either.)
+func TestWorktreesClean_StaleOutsidePreferredLayout(t *testing.T) {
+	tc := GetSharedContainer(t)
+	campPath, projPath := setupWorktreeCleanCampaign(t, tc, "wt-clean-loose-stale")
+
+	// loose-stale lives OUTSIDE preferred layout (sibling under worktrees/),
+	// mirroring a worktree created without camp.
+	loosePath := campPath + "/projects/worktrees/loose-stale"
+	tc.Shell(t, fmt.Sprintf(`
+set -e
+git -C %[1]s worktree add %[2]s -b loose-stale
+# Keep admin so git still lists this worktree; break the checkout pointer.
+printf 'gitdir: /nonexistent/loose-stale-gitdir\n' > %[2]s/.git
+test -d %[2]s
+git -C %[1]s worktree list --porcelain | grep -F 'worktree %[2]s'
+`, projPath, loosePath))
+
+	out, err := tc.RunCampInDir(campPath, "worktrees", "clean", "--all", "--yes")
+	require.NoError(t, err, "output:\n%s", out)
+	assert.Contains(t, out, "removed", "clean should report removal of non-preferred stale worktree:\n%s", out)
+	assert.Contains(t, out, "loose-stale", "clean output should name the non-preferred worktree:\n%s", out)
+
+	exists, err := tc.CheckDirExists(loosePath)
+	require.NoError(t, err)
+	assert.False(t, exists, "stale worktree outside preferred layout must be removed via git enumeration")
+}
+
 func TestWorktreesClean_DirtyWorktreeSkipped(t *testing.T) {
 	tc := GetSharedContainer(t)
 	campPath, _ := setupWorktreeCleanCampaign(t, tc, "wt-clean-dirty")

@@ -17,7 +17,7 @@ func newAllCommand(freshCmd *cobra.Command) *cobra.Command {
 	return &cobra.Command{
 		Use:   "all",
 		Short: "Run fresh across all project submodules",
-		Long: `Run the fresh cycle (checkout default, pull, prune, optional branch)
+		Long: `Run the fresh cycle (fetch and safely sync default, prune, optional branch)
 across every project submodule in the campaign.
 
 Examples:

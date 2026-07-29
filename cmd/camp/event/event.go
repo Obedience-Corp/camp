@@ -1,3 +1,5 @@
+//go:build dev
+
 // Package event implements the `camp event` command group, whose `add`
 // subcommand is the explicit campaign-ledger capture primitive: a one-command
 // way to record an action that never touches git (media production and other

@@ -9,6 +9,8 @@ import (
 	"slices"
 	"strings"
 
+	"github.com/Obedience-Corp/camp/internal/config"
+	"github.com/Obedience-Corp/camp/internal/dungeon/spelling"
 	"github.com/Obedience-Corp/camp/internal/editor"
 	camperrors "github.com/Obedience-Corp/camp/internal/errors"
 	"github.com/Obedience-Corp/camp/internal/fsutil"
@@ -33,14 +35,43 @@ func QuestsDir(campaignRoot string) string {
 	return filepath.Join(campaignRoot, RootDirName)
 }
 
-// DungeonDir returns the root quest dungeon path.
-func DungeonDir(campaignRoot string) string {
-	return filepath.Join(QuestsDir(campaignRoot), "dungeon")
+// DungeonDir resolves the root quest dungeon path, honoring the campaign's
+// established dungeon spelling (visible "dungeon" vs hidden ".dungeon") instead
+// of hardcoding one. An existing quest dungeon wins; otherwise the campaign's
+// established spelling is used, falling back to the dungeon_hidden default. It
+// returns a spelling.ConflictError when both spellings exist under the quests
+// directory, the same loud failure the rest of camp uses.
+func DungeonDir(ctx context.Context, campaignRoot string) (string, error) {
+	name, err := resolveDungeonName(ctx, campaignRoot)
+	if err != nil {
+		return "", err
+	}
+	return filepath.Join(QuestsDir(campaignRoot), name), nil
 }
 
-// DungeonStatusDir returns the quest dungeon bucket for the given status.
-func DungeonStatusDir(campaignRoot string, status Status) string {
-	return filepath.Join(DungeonDir(campaignRoot), status.String())
+// DungeonStatusDir resolves the quest dungeon bucket for the given status.
+func DungeonStatusDir(ctx context.Context, campaignRoot string, status Status) (string, error) {
+	dir, err := DungeonDir(ctx, campaignRoot)
+	if err != nil {
+		return "", err
+	}
+	return filepath.Join(dir, status.String()), nil
+}
+
+// resolveDungeonName selects the quest dungeon spelling. It mirrors how the
+// workflow and intent packages resolve their own dungeon spelling: an existing
+// dungeon under the quests directory wins, then the campaign's established
+// spelling, then the dungeon_hidden default.
+func resolveDungeonName(ctx context.Context, campaignRoot string) (string, error) {
+	globalCfg, err := config.LoadGlobalConfig(ctx)
+	if err != nil {
+		return "", camperrors.Wrap(err, "load global config for dungeon spelling")
+	}
+	campaignName, err := spelling.CampaignName(ctx, campaignRoot, globalCfg.ResolveDungeonHidden())
+	if err != nil {
+		return "", err
+	}
+	return spelling.NameForNew(ctx, QuestsDir(campaignRoot), campaignName)
 }
 
 // DefaultQuestPath returns the default quest metadata path.
@@ -130,7 +161,7 @@ func List(ctx context.Context, campaignRoot string, includeDungeon bool) ([]*Que
 		return nil, camperrors.Wrap(err, "read quests dir")
 	}
 	for _, entry := range rootEntries {
-		if !entry.IsDir() || entry.Name() == "dungeon" {
+		if !entry.IsDir() || spelling.IsDungeonName(entry.Name()) {
 			continue
 		}
 		q, err := Load(ctx, QuestPathForDir(filepath.Join(QuestsDir(campaignRoot), entry.Name())))
@@ -145,8 +176,12 @@ func List(ctx context.Context, campaignRoot string, includeDungeon bool) ([]*Que
 	}
 
 	if includeDungeon {
+		dungeonRoot, err := DungeonDir(ctx, campaignRoot)
+		if err != nil {
+			return nil, err
+		}
 		for _, status := range []Status{StatusCompleted, StatusArchived} {
-			statusDir := DungeonStatusDir(campaignRoot, status)
+			statusDir := filepath.Join(dungeonRoot, status.String())
 			entries, err := os.ReadDir(statusDir)
 			if err != nil {
 				if errors.Is(err, os.ErrNotExist) {

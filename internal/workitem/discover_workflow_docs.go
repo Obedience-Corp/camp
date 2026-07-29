@@ -79,6 +79,8 @@ func buildWorkflowDirItem(ctx context.Context, campaignRoot, dirPath string, wfT
 		SourceMetadata: map[string]any{
 			"has_readme": primaryDocAbs != "" && filepath.Base(primaryDocAbs) == "README.md",
 		},
+		Tags:     []string{},
+		Projects: []string{},
 	}
 	item.SortTimestamp = DeriveSortTimestamp(item.UpdatedAt, item.CreatedAt)
 	if primaryDocAbs != "" {
@@ -124,6 +126,8 @@ func buildWorkflowDirItem(ctx context.Context, campaignRoot, dirPath string, wfT
 		item.WorkflowMeta.TotalSteps = run.TotalSteps
 		item.WorkflowMeta.CompletedSteps = run.CompletedSteps
 		item.WorkflowMeta.RunStatus = run.RunStatus
+		item.WorkflowMeta.LatestRunID = run.LatestRunID
+		item.WorkflowMeta.LatestRunStatus = run.LatestRunStatus
 		item.WorkflowMeta.Blocked = run.Blocked
 		item.WorkflowMeta.DocHashChanged = run.DocHashChanged
 	}

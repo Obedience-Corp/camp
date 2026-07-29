@@ -30,6 +30,10 @@ var projectCommitCmd = &cobra.Command{
 Auto-detects the current project from your working directory,
 or use --project to specify a project by name.
 
+Commit tags use explicit --workitem or context from the current path. They do
+not inherit the per-machine current workitem selection, which can be stale;
+use 'camp workitem commit' when you want current.yaml scoping.
+
 Examples:
   # From within a project directory
   cd projects/my-api
@@ -170,6 +174,7 @@ func runProjectCommit(cmd *cobra.Command, args []string) error {
 		fmt.Println(ui.Info("Writing commit message..."))
 		var hookErr error
 		extraEnv := workitemEnvForProjectCommit(ctx, campRoot, resolvedPath, projectCommitWorkitem)
+		extraEnv = commitkit.WithCommitAmendEnv(extraEnv, projectCommitAmend)
 		message, hookErr = commitkit.AutoWriteCommitMessageWithEnv(ctx, campRoot, resolvedPath, extraEnv)
 		if hookErr != nil {
 			return hookErr
@@ -186,10 +191,11 @@ func runProjectCommit(cmd *cobra.Command, args []string) error {
 		return err
 	}
 	// Prepend campaign tag unless tracing is disabled. Resolves the active
-	// workitem so the tag includes WI-<ref> when the project is linked.
+	// workitem so the tag includes WI-<ref> when the project is linked, or
+	// FE-<ref> when the worktree's primary link resolves to a festival.
 	if cfg != nil && commitPrefs.TagCommits() {
-		questID, workitemRef := resolveProjectCommitContext(ctx, campRoot, resolvedPath, projectCommitWorkitem)
-		message = commitkit.PrependContextTagsFullNamed(cfg.Name, cfg.ID, questID, "", workitemRef, message)
+		questID, festivalRef, workitemRef := resolveProjectCommitContext(ctx, campRoot, resolvedPath, projectCommitWorkitem)
+		message = commitkit.PrependContextTagsFullNamed(cfg.Name, cfg.ID, questID, festivalRef, workitemRef, message)
 	}
 
 	// Commit

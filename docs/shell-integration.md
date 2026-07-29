@@ -198,6 +198,31 @@ Using best match: api-service
 - Array syntax: `$argv[1]`, `$argv[2..-1]`
 - Excellent built-in completion support
 
+## Finding the installed binary
+
+`camp shell-init` defines a shell function named `camp` that wraps the real
+binary so navigation commands can change your working directory. Because of
+that, plain `which camp` usually prints the function body, not a path.
+
+```bash
+# zsh — external binary only (skips shell functions)
+whence -p camp
+# or: which -p camp
+
+# bash
+type -P camp
+
+# function + every binary on PATH
+type -a camp
+
+# resolve symlinks to the real install location
+realpath "$(whence -p camp)"   # zsh
+realpath "$(type -P camp)"     # bash
+```
+
+Run the binary without the wrapper with `command camp ...` (for example
+`command camp version`).
+
 ## Troubleshooting
 
 ### cgo not found
@@ -205,8 +230,9 @@ Using best match: api-service
 Make sure you added the shell-init line to your config and restarted your shell:
 
 ```bash
-# Check if camp is available
-which camp
+# Check if the camp binary is on PATH (not the shell function)
+whence -p camp   # zsh
+type -P camp     # bash
 
 # Re-source your config
 source ~/.zshrc  # or ~/.bashrc, config.fish

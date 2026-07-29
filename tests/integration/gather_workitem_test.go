@@ -89,6 +89,11 @@ func TestGatherDesign_MovesSourcesIntoGatheredPackage(t *testing.T) {
 	assert.Contains(t, marker, "gathered_into: "+result.Gathered.ID)
 	assert.Contains(t, marker, "gathered_at:")
 
+	// The gathered package's own marker is stamped with the current schema version.
+	pkgMarker, err := tc.ReadFile(campaign + "/workflow/design/unified-auth/.workitem")
+	require.NoError(t, err)
+	assert.Contains(t, pkgMarker, "version: v1alpha8")
+
 	// Discovery lists the gathered package but not the moved sources.
 	listOutput, err := tc.RunCampInDir(campaign, "workitem", "--json", "--type", "design")
 	require.NoError(t, err)

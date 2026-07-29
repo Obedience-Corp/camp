@@ -69,7 +69,7 @@ func TestIntegration_WorkflowCreateCustomWorkflow(t *testing.T) {
 		"--title", "Compare LLMs",
 	)
 	require.NoError(t, err, "camp workitem create custom type: %s", out)
-	assert.Contains(t, out, "created workflow/research/compare-llms")
+	assert.Contains(t, out, "created workitem tracking at workflow/research/compare-llms")
 
 	out, err = tc.RunCampInDir(campaignDir, "complete", "re")
 	require.NoError(t, err, "camp complete re: %s", out)

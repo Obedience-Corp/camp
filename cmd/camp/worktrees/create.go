@@ -2,7 +2,9 @@ package worktrees
 
 import (
 	"context"
+	"errors"
 	"fmt"
+	"io"
 	"path/filepath"
 
 	camperrors "github.com/Obedience-Corp/camp/internal/errors"
@@ -11,7 +13,9 @@ import (
 	"github.com/Obedience-Corp/camp/internal/config"
 	"github.com/Obedience-Corp/camp/internal/paths"
 	"github.com/Obedience-Corp/camp/internal/project"
+	intskills "github.com/Obedience-Corp/camp/internal/skills"
 	"github.com/Obedience-Corp/camp/internal/ui"
+	wkitem "github.com/Obedience-Corp/camp/internal/workitem"
 	"github.com/Obedience-Corp/camp/internal/workitem/links"
 	"github.com/Obedience-Corp/camp/internal/workitem/selector"
 	"github.com/Obedience-Corp/camp/internal/worktree"
@@ -97,6 +101,19 @@ func runWorktreesCreate(cmd *cobra.Command, args []string) error {
 		return err
 	}
 
+	// Resolve and validate the workitem before creating anything, so a bad or
+	// unadopted selector fails fast instead of leaving a dangling worktree.
+	var linkTarget *wkitem.WorkItem
+	if createWorkitem != "" {
+		linkTarget, err = selector.Resolve(ctx, campRoot, createWorkitem, selector.ResolveOptions{})
+		if err != nil {
+			return camperrors.Wrap(err, "resolve workitem "+createWorkitem)
+		}
+		if wkitem.NeedsAdoption(linkTarget) {
+			return wkitem.NotAdoptedError(linkTarget.RelativePath)
+		}
+	}
+
 	// Build options based on new semantics:
 	// - Default: create new branch with worktree name, based on current branch
 	// - --branch: checkout existing branch
@@ -138,6 +155,13 @@ func runWorktreesCreate(cmd *cobra.Command, args []string) error {
 	// Execute creation
 	result, err := creator.Create(ctx, opts)
 	if err != nil {
+		if errors.Is(err, worktree.ErrBranchExists) {
+			return camperrors.Wrap(err, fmt.Sprintf(
+				"branch %q already exists (a previous worktree may have been removed "+
+					"without deleting its branch); reuse it with --branch %s, choose a "+
+					"different name, or delete it with 'git branch -D %s'",
+				opts.Branch, opts.Branch, opts.Branch))
+		}
 		return err
 	}
 
@@ -146,13 +170,21 @@ func runWorktreesCreate(cmd *cobra.Command, args []string) error {
 	fmt.Printf("  Path:   %s\n", ui.Value(result.Path))
 	fmt.Printf("  Branch: %s\n", ui.Value(result.Branch))
 
-	if createWorkitem != "" {
-		link, lerr := linkWorktreeToWorkitem(ctx, campRoot, createWorkitem, filepath.ToSlash(result.RelativePath))
+	if linkTarget != nil {
+		link, lerr := attachWorktreeLink(ctx, campRoot, linkTarget, filepath.ToSlash(result.RelativePath), cmd.ErrOrStderr())
 		if lerr != nil {
 			return camperrors.Wrap(lerr, "worktree created but workitem link failed")
 		}
 		fmt.Printf("  Workitem: %s (%s)\n", ui.Value(link.WorkitemID), ui.Dim(link.WorkitemKey))
 		fmt.Println(ui.Dim("  camp p commit in this worktree will include WI-* in the campaign tag"))
+	}
+
+	projected, err := intskills.ProjectIntoWorktreeBestEffort(ctx, campRoot, result.Path)
+	if err != nil {
+		fmt.Println(ui.Warning(fmt.Sprintf("  Skills: could not project into worktree: %v", err)))
+		fmt.Println(ui.Dim("  Fix later with: camp skills link --worktrees-only"))
+	} else if projected {
+		fmt.Println(ui.Dim("  Skills: projected campaign skill bundles into worktree (.agents/.claude/.grok)"))
 	}
 
 	fmt.Println()
@@ -161,17 +193,12 @@ func runWorktreesCreate(cmd *cobra.Command, args []string) error {
 	return nil
 }
 
-func linkWorktreeToWorkitem(ctx context.Context, campRoot, selectorQuery, relativeWorktreePath string) (links.Link, error) {
-	wi, err := selector.Resolve(ctx, campRoot, selectorQuery, selector.ResolveOptions{})
-	if err != nil {
-		return links.Link{}, camperrors.Wrap(err, "resolve workitem "+selectorQuery)
-	}
-	workitemID := wi.StableID
-	if workitemID == "" {
-		workitemID = wi.Key
-	}
+// attachWorktreeLink attaches a primary worktree link for an already-resolved
+// workitem so the resolver (and therefore camp p commit) picks up the workitem
+// ref inside that tree.
+func attachWorktreeLink(ctx context.Context, campRoot string, wi *wkitem.WorkItem, relativeWorktreePath string, report io.Writer) (links.Link, error) {
 	return links.AttachPrimary(ctx, campRoot, links.AttachOptions{
-		WorkitemID:  workitemID,
+		WorkitemID:  wkitem.LinkWorkitemID(wi),
 		WorkitemKey: wi.Key,
 		Scope: links.LinkScope{
 			Kind: links.ScopeWorktree,
@@ -179,5 +206,6 @@ func linkWorktreeToWorkitem(ctx context.Context, campRoot, selectorQuery, relati
 		},
 		CreatedBy: "camp_worktrees_create",
 		Replace:   true,
+		Report:    report,
 	})
 }

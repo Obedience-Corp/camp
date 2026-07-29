@@ -107,6 +107,32 @@ func (tc *TestContainer) RunCampInDir(dir string, args ...string) (string, error
 	return string(output), nil
 }
 
+// RunLegacyCampInDir runs the pinned pre-reader camp binary (/camp-legacy) from
+// dir. Used only by the criterion-17 rollout-contract test to prove a pre-reader
+// binary hard-fails on a v1alpha8 marker. Mirrors RunCampInDir: the returned
+// error is non-nil on a non-zero exit, with the merged stdout/stderr as output.
+func (tc *TestContainer) RunLegacyCampInDir(dir string, args ...string) (string, error) {
+	quotedArgs := make([]string, len(args))
+	for i, arg := range args {
+		escaped := strings.ReplaceAll(arg, "'", "'\"'\"'")
+		quotedArgs[i] = "'" + escaped + "'"
+	}
+	cmdStr := fmt.Sprintf("cd %s && /camp-legacy %s 2>&1", dir, strings.Join(quotedArgs, " "))
+	exitCode, reader, err := tc.container.Exec(tc.ctx, []string{"sh", "-c", cmdStr})
+	if err != nil {
+		return "", fmt.Errorf("failed to execute legacy camp: %w", err)
+	}
+	rawOutput, err := io.ReadAll(reader)
+	if err != nil {
+		return "", fmt.Errorf("failed to read output: %w", err)
+	}
+	output := demuxDockerOutput(rawOutput)
+	if exitCode != 0 {
+		return string(output), fmt.Errorf("legacy camp exited with code %d: %s", exitCode, output)
+	}
+	return string(output), nil
+}
+
 // InitCampaign creates a new campaign via camp init and initializes it as a git repo
 func (tc *TestContainer) InitCampaign(path, name, campType string) (string, error) {
 	args := []string{"init", path, "--name", name, "-d", "Test campaign", "-m", "Test mission"}

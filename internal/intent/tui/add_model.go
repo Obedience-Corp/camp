@@ -839,23 +839,35 @@ func (m IntentAddModel) View() string {
 		return m.tagOverlay.View()
 	}
 
+	width := m.width
+	if width < 40 {
+		width = 72
+	}
+
 	var b strings.Builder
 
-	header := "Create Intent"
+	title := "create"
 	if m.noteMode {
-		header = "Create Note"
+		title = "note"
 	}
-	b.WriteString(TitleStyle.Render(header))
+	right := ""
 	if m.savedCount > 0 {
-		b.WriteString(SuccessStyle.Render(fmt.Sprintf("  [%d saved]", m.savedCount)))
+		right = fmt.Sprintf("%d saved", m.savedCount)
 	}
-	b.WriteString("\n\n")
-
-	// Show progress summary
-	b.WriteString(m.viewProgress())
+	b.WriteString(Header(title, right, width))
 	b.WriteString("\n")
 
-	// Show current step
+	// Step pills
+	b.WriteString(StepPills(m.stepLabels(), m.stepIndex()))
+	b.WriteString("\n\n")
+
+	// Show progress summary of completed fields
+	if prog := m.viewProgress(); prog != "" {
+		b.WriteString(prog)
+		b.WriteString("\n")
+	}
+
+	// Show current step body
 	switch m.step {
 	case addStepTitle:
 		b.WriteString(m.viewTitleStep())
@@ -868,6 +880,40 @@ func (m IntentAddModel) View() string {
 	}
 
 	return b.String()
+}
+
+// stepLabels returns the ordered step names for the current mode.
+func (m IntentAddModel) stepLabels() []string {
+	if m.noteMode {
+		return []string{"Title", "Body"}
+	}
+	return []string{"Title", "Type", "Concept", "Body"}
+}
+
+// stepIndex maps the internal step enum onto stepLabels.
+func (m IntentAddModel) stepIndex() int {
+	if m.noteMode {
+		switch m.step {
+		case addStepTitle:
+			return 0
+		case addStepBody:
+			return 1
+		default:
+			return 0
+		}
+	}
+	switch m.step {
+	case addStepTitle:
+		return 0
+	case addStepType:
+		return 1
+	case addStepConcept:
+		return 2
+	case addStepBody:
+		return 3
+	default:
+		return 0
+	}
 }
 
 // viewProgress shows the progress through steps.
@@ -900,11 +946,11 @@ func (m IntentAddModel) viewProgress() string {
 func (m IntentAddModel) viewTitleStep() string {
 	var b strings.Builder
 
-	label := "Title:\n"
+	label := "Title"
 	if m.noteMode {
-		label = "Note:\n"
+		label = "Note"
 	}
-	b.WriteString(label)
+	b.WriteString(HelpStyle.Render(label) + "\n")
 	b.WriteString(m.titleInput.View())
 	b.WriteString("\n")
 
@@ -915,9 +961,9 @@ func (m IntentAddModel) viewTitleStep() string {
 	}
 
 	b.WriteString("\n")
-	help := "Enter: continue • Ctrl+N: save & new • Esc: cancel"
+	help := "enter continue · ctrl+n save & new · esc cancel"
 	if m.noteMode {
-		help = "Enter: add body • Ctrl+N: save title-only & new • Esc: cancel"
+		help = "enter add body · ctrl+n save title-only & new · esc cancel"
 	}
 	b.WriteString(HelpStyle.Render(help))
 
@@ -928,30 +974,25 @@ func (m IntentAddModel) viewTitleStep() string {
 func (m IntentAddModel) viewTypeStep() string {
 	var b strings.Builder
 
-	b.WriteString("Select type:\n")
+	b.WriteString(HelpStyle.Render("Select type") + "\n")
 
-	normalStyle := lipgloss.NewStyle()
+	normalStyle := lipgloss.NewStyle().Foreground(pal.TextPrimary)
 	selectedStyle := lipgloss.NewStyle().
 		Bold(true).
 		Foreground(pal.Accent).
 		Background(pal.BgSelected)
 
 	for i, t := range intentTypes {
-		cursor := "  "
 		if i == m.typeIdx {
-			cursor = "> "
-		}
-		line := cursor + t
-		if i == m.typeIdx {
-			b.WriteString(selectedStyle.Render(line))
+			b.WriteString(selectedStyle.Render("▸ " + t))
 		} else {
-			b.WriteString(normalStyle.Render(line))
+			b.WriteString(normalStyle.Render("  " + t))
 		}
 		b.WriteString("\n")
 	}
 
 	b.WriteString("\n")
-	b.WriteString(HelpStyle.Render("j/k: navigate • Enter: select • Ctrl+N: save & new • Ctrl+T: tags • Esc: cancel"))
+	b.WriteString(HelpStyle.Render("j/k navigate · enter select · ctrl+n save & new · ctrl+t tags · esc cancel"))
 
 	return b.String()
 }
@@ -962,7 +1003,7 @@ func (m IntentAddModel) viewConceptStep() string {
 
 	b.WriteString(m.conceptPicker.View())
 	b.WriteString("\n")
-	b.WriteString(HelpStyle.Render("Tab: skip • Enter: select • Ctrl+N: save & new • Ctrl+T: tags • Esc: cancel"))
+	b.WriteString(HelpStyle.Render("tab skip · enter select · ctrl+n save & new · ctrl+t tags · esc cancel"))
 
 	return b.String()
 }

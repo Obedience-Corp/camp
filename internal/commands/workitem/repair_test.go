@@ -1,6 +1,8 @@
 package workitem
 
 import (
+	"reflect"
+	"strings"
 	"testing"
 
 	wkitem "github.com/Obedience-Corp/camp/internal/workitem"
@@ -53,6 +55,146 @@ func TestComputeRepair_CreateFromMissing(t *testing.T) {
 		if _, ok := fields[want]; !ok {
 			t.Errorf("missing change for field %q", want)
 		}
+	}
+}
+
+func TestComputeRepair_LegacyInputsUpgradeToCurrent(t *testing.T) {
+	genID, genRef, inferTitle := stubGenerators()
+	for _, version := range []string{"v1alpha4", "v1alpha5", "v1alpha6", "v1alpha7"} {
+		t.Run(version, func(t *testing.T) {
+			current := wkitem.Metadata{
+				Version: version,
+				Kind:    "workitem",
+				ID:      "design-foo-2026-05-25",
+				Type:    "design",
+				Title:   "Kept Title",
+				Ref:     "WI-abc123",
+			}
+			plan, err := computeRepair(current, true, "design", genID, genRef, inferTitle)
+			if err != nil {
+				t.Fatalf("computeRepair: %v", err)
+			}
+			if plan.meta.Version != wkitem.WorkitemSchemaVersion {
+				t.Errorf("version = %q, want %q (%s must upgrade to current)", plan.meta.Version, wkitem.WorkitemSchemaVersion, version)
+			}
+		})
+	}
+}
+
+func TestComputeRepair_NormalizesTags(t *testing.T) {
+	genID, genRef, inferTitle := stubGenerators()
+	current := wkitem.Metadata{
+		Version: wkitem.WorkitemSchemaVersion,
+		Kind:    "workitem",
+		ID:      "design-foo-2026-05-25",
+		Type:    "design",
+		Title:   "Kept",
+		Ref:     "WI-abc123",
+		Tags:    []string{"Public-Launch", "public launch", "schema"},
+	}
+	plan, err := computeRepair(current, true, "design", genID, genRef, inferTitle)
+	if err != nil {
+		t.Fatalf("computeRepair: %v", err)
+	}
+	want := []string{"public-launch", "schema"}
+	if !reflect.DeepEqual(plan.meta.Tags, want) {
+		t.Errorf("tags = %#v, want %#v", plan.meta.Tags, want)
+	}
+	if _, ok := changeFields(plan.changes)["tags"]; !ok {
+		t.Error("expected a tags change to be recorded")
+	}
+}
+
+func TestComputeRepair_DropsUnrecoverableTags(t *testing.T) {
+	genID, genRef, inferTitle := stubGenerators()
+	current := wkitem.Metadata{
+		Version: wkitem.WorkitemSchemaVersion,
+		Kind:    "workitem",
+		ID:      "design-foo-2026-05-25",
+		Type:    "design",
+		Title:   "Kept",
+		Ref:     "WI-abc123",
+		Tags:    []string{"---", "schema"},
+	}
+	plan, err := computeRepair(current, true, "design", genID, genRef, inferTitle)
+	if err != nil {
+		t.Fatalf("computeRepair: %v", err)
+	}
+	if want := []string{"schema"}; !reflect.DeepEqual(plan.meta.Tags, want) {
+		t.Errorf("tags = %#v, want %#v", plan.meta.Tags, want)
+	}
+	var cleared *repairChange
+	for i := range plan.changes {
+		if plan.changes[i].Field == "tags" && plan.changes[i].Action == repairActionCleared {
+			cleared = &plan.changes[i]
+		}
+	}
+	if cleared == nil {
+		t.Fatal("a dropped tag must be recorded distinctly as a cleared action, not folded into a reformatting change")
+	}
+	if !strings.Contains(cleared.From, "---") {
+		t.Errorf("cleared change should name the dropped tag, got From=%q", cleared.From)
+	}
+}
+
+func TestComputeRepair_NormalizesProjects(t *testing.T) {
+	genID, genRef, inferTitle := stubGenerators()
+	current := wkitem.Metadata{
+		Version:  wkitem.WorkitemSchemaVersion,
+		Kind:     "workitem",
+		ID:       "design-foo-2026-05-25",
+		Type:     "design",
+		Title:    "Kept",
+		Ref:      "WI-abc123",
+		Projects: []string{"projects/camp/", "projects/./camp", "projects/fest"},
+	}
+	plan, err := computeRepair(current, true, "design", genID, genRef, inferTitle)
+	if err != nil {
+		t.Fatalf("computeRepair: %v", err)
+	}
+	want := []string{"projects/camp", "projects/fest"}
+	if !reflect.DeepEqual(plan.meta.Projects, want) {
+		t.Errorf("projects = %#v, want %#v", plan.meta.Projects, want)
+	}
+	if _, ok := changeFields(plan.changes)["projects"]; !ok {
+		t.Error("expected a projects change to be recorded")
+	}
+}
+
+func TestComputeRepair_DropsUnrecoverableProjects(t *testing.T) {
+	genID, genRef, inferTitle := stubGenerators()
+	current := wkitem.Metadata{
+		Version:  wkitem.WorkitemSchemaVersion,
+		Kind:     "workitem",
+		ID:       "design-foo-2026-05-25",
+		Type:     "design",
+		Title:    "Kept",
+		Ref:      "WI-abc123",
+		Projects: []string{"/", "projects/camp"},
+	}
+	plan, err := computeRepair(current, true, "design", genID, genRef, inferTitle)
+	if err != nil {
+		t.Fatalf("computeRepair: %v", err)
+	}
+	if want := []string{"projects/camp"}; !reflect.DeepEqual(plan.meta.Projects, want) {
+		t.Errorf("projects = %#v, want %#v", plan.meta.Projects, want)
+	}
+	for _, p := range plan.meta.Projects {
+		if p == "" {
+			t.Fatal("repair must never write an empty projects entry")
+		}
+	}
+	var cleared *repairChange
+	for i := range plan.changes {
+		if plan.changes[i].Field == "projects" && plan.changes[i].Action == repairActionCleared {
+			cleared = &plan.changes[i]
+		}
+	}
+	if cleared == nil {
+		t.Fatal("a dropped project must be recorded distinctly as a cleared action, not folded into a reformatting change")
+	}
+	if !strings.Contains(cleared.From, "/") {
+		t.Errorf("cleared change should name the dropped project, got From=%q", cleared.From)
 	}
 }
 

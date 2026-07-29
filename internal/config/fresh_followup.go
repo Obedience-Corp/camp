@@ -133,6 +133,46 @@ func SetFreshFollowUps(ctx context.Context, campaignRoot, projectName string, en
 	})
 }
 
+// ReorderFreshFollowUps moves the named follow-up one position in the
+// effective workflow. It returns a new slice and leaves entries unchanged.
+// A positive delta moves the step later; a negative delta moves it earlier.
+// Core fresh steps are intentionally outside this helper: follow-ups are the
+// user-defined portion of the workflow and can be safely reordered without
+// violating fresh's sync and branch dependencies.
+func ReorderFreshFollowUps(entries []FollowUpConfig, name string, delta int) ([]FollowUpConfig, error) {
+	if delta != -1 && delta != 1 {
+		return nil, camperrors.NewValidation("delta", "must be -1 or 1", nil)
+	}
+
+	idx := -1
+	for i, entry := range entries {
+		if entry.Name == name {
+			idx = i
+			break
+		}
+	}
+	if idx < 0 {
+		names := make([]string, 0, len(entries))
+		for _, entry := range entries {
+			names = append(names, entry.Name)
+		}
+		return nil, &FollowUpNotFoundError{Name: name, Scope: "workflow", ValidNames: names}
+	}
+
+	target := idx + delta
+	if target < 0 || target >= len(entries) {
+		direction := "first"
+		if delta > 0 {
+			direction = "last"
+		}
+		return nil, camperrors.Newf("follow-up %q is already the %s step", name, direction)
+	}
+
+	ordered := append([]FollowUpConfig(nil), entries...)
+	ordered[idx], ordered[target] = ordered[target], ordered[idx]
+	return ordered, nil
+}
+
 // withFreshConfigLock loads fresh.yaml as a raw YAML document (creating an
 // empty mapping document if the file is missing or has no parseable
 // mapping content), runs mutate against its top-level mapping, then writes
@@ -219,17 +259,9 @@ func mutateFreshDoc(configPath string, mutate func(mapping *yaml.Node) error) er
 // mapping/sequence node along the path is created; when false, a missing
 // node returns (nil, nil) rather than an error.
 func followUpSequence(mapping *yaml.Node, projectName string, create bool) (*yaml.Node, error) {
-	target := mapping
-	if projectName != "" {
-		projectsNode, err := mappingChild(target, "projects", yaml.MappingNode, "!!map", create)
-		if err != nil || projectsNode == nil {
-			return nil, err
-		}
-		projectNode, err := mappingChild(projectsNode, projectName, yaml.MappingNode, "!!map", create)
-		if err != nil || projectNode == nil {
-			return nil, err
-		}
-		target = projectNode
+	target, err := freshScopeMapping(mapping, projectName, create)
+	if err != nil || target == nil {
+		return nil, err
 	}
 	return mappingChild(target, "follow_up", yaml.SequenceNode, "!!seq", create)
 }
@@ -284,22 +316,12 @@ func pruneEmptyFollowUpScope(mapping *yaml.Node, projectName string, seq *yaml.N
 		return
 	}
 
-	projectsNode, _ := mappingChild(mapping, "projects", yaml.MappingNode, "!!map", false)
-	if projectsNode == nil {
-		return
-	}
-	projectNode, _ := mappingChild(projectsNode, projectName, yaml.MappingNode, "!!map", false)
+	projectNode, _ := freshScopeMapping(mapping, projectName, false)
 	if projectNode == nil {
 		return
 	}
-
 	removeMappingKey(projectNode, "follow_up")
-	if len(projectNode.Content) == 0 {
-		removeMappingKey(projectsNode, projectName)
-	}
-	if len(projectsNode.Content) == 0 {
-		removeMappingKey(mapping, "projects")
-	}
+	pruneEmptyProjectScope(mapping, projectName)
 }
 
 // findFollowUpIndex returns the index of the entry named name within seq, or

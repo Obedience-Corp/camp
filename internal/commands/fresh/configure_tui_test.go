@@ -8,7 +8,7 @@ import (
 	"github.com/Obedience-Corp/camp/internal/project"
 )
 
-func TestConfiguredProjectNamesOnlyIncludesFollowUpOverrides(t *testing.T) {
+func TestConfiguredProjectNamesIncludesAnyOverrideKey(t *testing.T) {
 	cfg := &config.FreshConfig{
 		Projects: map[string]config.FreshProjectConfig{
 			"zeta":  {FollowUp: []config.FollowUpConfig{{Name: "build"}}},
@@ -19,7 +19,9 @@ func TestConfiguredProjectNamesOnlyIncludesFollowUpOverrides(t *testing.T) {
 	}
 
 	got := configuredProjectNames(cfg)
-	want := []string{"empty", "zeta"}
+	// alpha has only a branch override; empty has an explicit empty follow-up
+	// list. Both deviate from global defaults and must appear.
+	want := []string{"alpha", "empty", "zeta"}
 	if len(got) != len(want) {
 		t.Fatalf("configuredProjectNames() = %v, want %v", got, want)
 	}
@@ -82,7 +84,7 @@ func TestFollowUpTUIModelVisualizesResolvedWorkflow(t *testing.T) {
 	projects := []project.Project{{Name: "web-app"}, {Name: "camp"}}
 	m := newFollowUpTUIModel(context.Background(), "/campaign", projects, cfg)
 
-	if got := m.scopes[0].label; got != "Global defaults" {
+	if got := m.scopes[0].name; got != "Global defaults" {
 		t.Fatalf("global scope label = %q", got)
 	}
 	if len(m.workflowSteps()) != 9 {

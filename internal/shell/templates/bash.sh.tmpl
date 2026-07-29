@@ -74,11 +74,23 @@ camp() {
       ;;
     workitem|wi|workitems)
       shift
+      # A workitem subcommand (resolve, id, stage, rename, ...) is always the
+      # first token and is a bare word; the interactive dashboard takes no
+      # positional argument (only filter flags). Only the dashboard understands
+      # --path-output, so pass any subcommand invocation through verbatim. This
+      # is forward-compatible: new subcommands need no wrapper regeneration.
+      case "${1:-}" in
+        ""|-*) ;;
+        *)
+          command camp workitem "$@"
+          return
+          ;;
+      esac
       local arg passthrough
       passthrough=0
       for arg in "$@"; do
         case "$arg" in
-          --help|-h|--json|--json=*|--print|--print=*)
+          --help|-h|--json|--json=*|--print|--print=*|--list)
             passthrough=1
             break
             ;;
@@ -115,7 +127,7 @@ camp() {
       ;;
     list|ls)
       shift
-      local arg passthrough cmd_status tmp
+      local arg passthrough cmd_status tmp dest line sel
       passthrough=0
       for arg in "$@"; do
         case "$arg" in
@@ -146,7 +158,17 @@ camp() {
         dest=$(cat "$tmp")
         rm -f "$tmp"
         if [ -n "$dest" ]; then
-          cd "$dest" || return 1
+          # Remote go writes ssh-hop:<machine>:<campaign>; hop via switch.
+          case "$dest" in
+            ssh-hop:*)
+              sel="${dest#ssh-hop:}"
+              line=$(command camp switch "$sel" --shell-connect) || return $?
+              eval "$line"
+              ;;
+            *)
+              cd "$dest" || return 1
+              ;;
+          esac
         fi
       else
         rm -f "$tmp"
@@ -300,6 +322,39 @@ cr() {
 # Usage: csw [name]
 csw() {
   camp switch "$@"
+}
+
+# Camp workitem shorthand.
+# Routes through the camp() wrapper, so selecting a work item cd's to it.
+# Usage: cwi [filters]
+cwi() {
+  camp workitem "$@"
+}
+
+# Cycle through campaigns in the current campaign's org.
+# Usage:
+#   corg        cd to the next campaign in this org (stable, name-ordered)
+#   corg t      cd back to the last-visited campaign in this org
+#   corg --all  include inactive/reference campaigns in the cycle
+# Inspection flags (--print/--json/--help) print without changing directory.
+corg() {
+  local action=next line arg
+  case "${1:-}" in
+    t|toggle|back)
+      action=toggle
+      shift
+      ;;
+  esac
+  for arg in "$@"; do
+    case "$arg" in
+      --help|-h|--print|--print=*|--json|--json=*)
+        command camp org "$action" "$@"
+        return
+        ;;
+    esac
+  done
+  line=$(command camp org "$action" --shell-connect "$@") || return $?
+  [ -n "$line" ] && eval "$line"
 }
 
 # Quick intent capture

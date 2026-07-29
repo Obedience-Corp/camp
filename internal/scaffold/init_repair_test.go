@@ -417,7 +417,8 @@ func TestInit_RepairRestoresQuestScaffold(t *testing.T) {
 
 	removed := []string{
 		filepath.Join(campaignDir, quest.RootDirName, quest.DefaultDirName, quest.FileName),
-		filepath.Join(campaignDir, quest.RootDirName, "dungeon", "OBEY.md"),
+		// Hidden-default campaign: the quest dungeon uses ".dungeon" like the rest.
+		filepath.Join(campaignDir, quest.RootDirName, ".dungeon", "OBEY.md"),
 	}
 	for _, path := range removed {
 		if err := os.Remove(path); err != nil {

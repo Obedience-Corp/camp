@@ -6,23 +6,19 @@
 
 <p align="center"><a href="https://github.com/Obedience-Corp/camp/stargazers"><img src="https://img.shields.io/github/stars/Obedience-Corp/camp?style=social" alt="Star camp on GitHub"></a></p>
 
-> **One place for all your context and all your work.** Part of [Festival](https://github.com/Obedience-Corp/festival). Camp handles the workspace — your projects, tools, intents, and context. [fest](https://github.com/Obedience-Corp/fest) handles the planning and execution inside it.
+> **Easily manage hundreds of projects and millions of planning documents.** Part of [Festival](https://github.com/Obedience-Corp/festival). Camp handles the workspace — your projects, tools, intents, and context. [fest](https://github.com/Obedience-Corp/fest) handles the planning and execution inside it.
 
-Campaign workspace manager — group every project, tool, and piece of context you care about into a single campaign, and navigate between them instantly.
+Campaign workspace manager — create multi-project context workspaces instantly and easily navigate between workspaces, projects and workstations.
 
-## Features
+<p align="center">
+  <img src="docs/images/demos/cgo-navigation.gif" alt="cgo jumping between projects, festivals, and design directories, plus csw to switch campaigns" width="700">
+</p>
+<p align="center"><em><code>cgo</code>: jump anywhere in the workspace with fuzzy matching, from any shell.</em></p>
 
-- **Navigation** — Category shortcuts, fuzzy finding, pins, and a cached index for instant project lookups (`go`, `pin`, `shortcuts`, `cache`)
-- **Project Management** — Git submodules, linked local workspaces, worktrees, and scaffolding (`project add/link/list/new/remote/remove/run/unlink/worktree/prune`)
-- **Planning** — Intents, promotion, dungeon for deprioritized work, and a unified work-item dashboard (`intent`, `promote`, `dungeon`, `gather`, `workitem`)
-- **Productivity** — Leverage scoring to identify high-impact work (`leverage`)
-- **Git Integration** — Campaign-level git operations with submodule fan-out (`stage`, `commit`, `log`, `push [all]`, `pull [all]`, `status [all]`, `fresh [all]`, `refs-sync`)
-- **Campaign Ops** — Health checks, file operations, cross-campaign tools (`doctor`, `copy`, `move`, `sync`, `transfer`)
-- **Shell Integration** — Native `cd` behavior with zsh, bash, and fish (`shell-init`)
-- **Tab Completion** — Smart completion for categories, projects, and paths
-- **Plugins** — Discover camp plugins on `PATH` (`plugins`)
-
-Note: `flow` is a hidden low-level status engine. Use `camp promote` for lifecycle promotion.
+<p align="center">
+  <img src="docs/images/demos/tui-workitems.gif" alt="The camp wi dashboard: intents, designs, explores, and festivals in one unified list, narrowed by search" width="700">
+</p>
+<p align="center"><em><code>camp wi</code>: one queue for every kind of work in the campaign.</em></p>
 
 ## Installation
 
@@ -66,6 +62,30 @@ The eval hook provides:
 
 After adding the eval line, restart your shell or run `source ~/.zshrc` (or equivalent).
 
+### Finding the installed binary
+
+Shell integration defines `camp` as a **shell function** (so `camp go` / `cgo` can `cd` in your current shell). That means plain `which camp` usually prints the function body, not a filesystem path.
+
+Use these instead:
+
+```bash
+# zsh — path of the external binary (skips shell functions)
+whence -p camp
+# or: which -p camp
+
+# bash
+type -P camp
+
+# show the function plus every binary on PATH
+type -a camp
+
+# resolve symlinks to the real file
+realpath "$(whence -p camp)"   # zsh
+realpath "$(type -P camp)"     # bash
+```
+
+To run the binary without the wrapper (scripts, debugging): `command camp version`.
+
 ## Quick Start
 
 ```bash
@@ -81,6 +101,20 @@ cgo p          # Jump to projects/
 cgo f          # Jump to festivals/
 cgo p api      # Fuzzy find "api" in projects/
 ```
+
+## Features
+
+- **Navigation** — Category shortcuts, fuzzy finding, pins, and a cached index for instant project lookups (`go`, `pin`, `shortcuts`, `cache`)
+- **Project Management** — Git submodules, linked local workspaces, worktrees, and scaffolding (`project add/link/list/new/remote/remove/run/unlink/worktree/prune`)
+- **Planning** — Intents, promotion, dungeon for deprioritized work, and a unified work-item dashboard (`intent`, `promote`, `dungeon`, `gather`, `workitem`)
+- **Productivity** — Leverage scoring to identify high-impact work (`leverage`)
+- **Git Integration** — Campaign-level git operations with submodule fan-out (`stage`, `commit`, `log`, `push [all]`, `pull [all]`, `status [all]`, `fresh [all]`, `refs-sync`)
+- **Campaign Ops** — Health checks, file operations, cross-campaign tools (`doctor`, `copy`, `move`, `sync`, `transfer`)
+- **Shell Integration** — Native `cd` behavior with zsh, bash, and fish (`shell-init`)
+- **Tab Completion** — Smart completion for categories, projects, and paths
+- **Plugins** — Discover camp plugins on `PATH` (`plugins`)
+
+Note: `flow` is a hidden low-level status engine. Use `camp promote` for lifecycle promotion.
 
 ## Category Shortcuts
 
@@ -254,7 +288,7 @@ camp pull all              # Pull all submodules
 camp status                # Show git status of the campaign
 camp status all            # Dashboard of all submodules (branch, dirty/clean, push status, unmerged branches)
 camp status all --view     # Interactive TUI viewer with per-repo detail
-camp fresh                 # Post-merge branch cycling: checkout default, pull, prune, optional new branch
+camp fresh                 # Post-merge branch cycling: fetch, safely sync default, prune, optional new branch
 camp fresh all             # Same cycle across every project in the campaign
 ```
 
@@ -398,8 +432,12 @@ camp project <TAB>       # Completes: add commit link list new prune remote remo
 #### Troubleshooting
 
 ```bash
-# Verify camp is in PATH
-which camp
+# Verify the camp binary is on PATH (do not use plain `which camp` —
+# after shell-init it prints the wrapper function, not the binary path)
+whence -p camp            # zsh: external binary only
+type -P camp              # bash: external binary only
+type -a camp              # function + every binary on PATH
+realpath "$(whence -p camp)"  # follow symlinks to the real install
 
 # Test shell-init output
 camp shell-init zsh

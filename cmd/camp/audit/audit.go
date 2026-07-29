@@ -1,3 +1,5 @@
+//go:build dev
+
 // Package audit implements the `camp audit` command group: the bypass-tolerance
 // doctor (D004). `camp audit doctor` scans linked repos for commits with no
 // captured intent linkage and reports them informationally (untagged commits

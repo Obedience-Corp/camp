@@ -47,18 +47,20 @@ camp workitem [flags]
 ### SEE ALSO
 
 * [camp](camp.md)	 - Campaign management CLI for multi-project AI workspaces
-* [camp workitem adopt](camp_workitem_adopt.md)	 - Adopt an existing directory as a workitem
+* [camp workitem adopt](camp_workitem_adopt.md)	 - Adopt an existing directory or file as a workitem
 * [camp workitem commit](camp_workitem_commit.md)	 - Commit changes scoped to a workitem
 * [camp workitem commits](camp_workitem_commits.md)	 - List commits referencing a workitem
-* [camp workitem create](camp_workitem_create.md)	 - Create a workitem
+* [camp workitem create](camp_workitem_create.md)	 - Create workitem tracking metadata
 * [camp workitem current](camp_workitem_current.md)	 - Get, set, or clear the current workitem
 * [camp workitem doctor](camp_workitem_doctor.md)	 - Report link-registry health issues
 * [camp workitem group](camp_workitem_group.md)	 - Set or clear the group
+* [camp workitem id](camp_workitem_id.md)	 - Print the identifier of a workitem
 * [camp workitem link](camp_workitem_link.md)	 - Create a workitem link
 * [camp workitem links](camp_workitem_links.md)	 - List workitem links
 * [camp workitem list](camp_workitem_list.md)	 - List or browse filtered workitems
 * [camp workitem priority](camp_workitem_priority.md)	 - Set or clear the manual priority
 * [camp workitem promote](camp_workitem_promote.md)	 - Promote a workitem to a festival, doc, or dungeon
+* [camp workitem rename](camp_workitem_rename.md)	 - Rename a workitem and repair references
 * [camp workitem repair](camp_workitem_repair.md)	 - Repair a workflow directory into a workitem
 * [camp workitem resolve](camp_workitem_resolve.md)	 - Print the workitem for the current context
 * [camp workitem stage](camp_workitem_stage.md)	 - Set or clear the attention stage

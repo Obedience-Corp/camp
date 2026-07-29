@@ -26,6 +26,9 @@ mod release '.justfiles/release.just'
 [doc('Install camp to $GOBIN (stable, dev, current)')]
 mod install '.justfiles/install.just'
 
+[doc('Record terminal workflows with VHS')]
+mod vhs '.justfiles/vhs.just'
+
 [private]
 default:
     @echo "camp CLI - Campaign Management Tool"

@@ -244,164 +244,6 @@ camp attach <path> [flags]
 ```
 ---
 
-## camp audit
-
-Inspect the campaign audit trail
-
-### Synopsis
-
-Inspect the campaign audit trail.
-
-'camp audit doctor' scans linked repos for commits with no captured intent
-linkage and reports them informationally. Untagged commits are a normal mode
-for wrapper-opt-out workflows, not a violation.
-
-### Options
-
-```
-  -h, --help   help for audit
-```
-
-### Options inherited from parent commands
-
-```
-      --no-color   disable colored output
-```
----
-
-## camp audit backfill
-
-Derive a source:backfill event stream from history (opt-in write)
-
-### Synopsis
-
-Derive ledger events from a campaign's existing history - tagged commits across
-linked repos, intent frontmatter, and festival status histories - so a pre-ledger
-campaign (or the pre-ledger history of this one) renders on the same timeline as
-new activity.
-
-Backfill is optional and never required. It is idempotent and live-wins: a fact
-already captured live or by a prior backfill is skipped, so consecutive runs
-produce zero new events. Dry-run by default; --apply writes the source:backfill
-events into the standard shard layout.
-
-```
-camp audit backfill [flags]
-```
-
-### Options
-
-```
-      --apply   write the derived source:backfill events into the ledger
-  -h, --help    help for backfill
-      --json    emit a structured JSON result
-```
-
-### Options inherited from parent commands
-
-```
-      --no-color   disable colored output
-```
----
-
-## camp audit doctor
-
-Scan linked repos for unattributed commits (informational)
-
-### Synopsis
-
-Scan the campaign root and every linked project repo, classifying each
-commit as tagged, degraded, or untagged (no captured intent linkage).
-
-Output is informational: untagged commits are surfaced, never scolded, and the
-command exits 0 even when findings exist. Use --window to bound each repo to its
-most recent N commits (default: full history).
-
-```
-camp audit doctor [flags]
-```
-
-### Options
-
-```
-  -h, --help         help for doctor
-      --json         emit a structured JSON report
-      --window int   scan only the most recent N commits per repo (0 = full history)
-```
-
-### Options inherited from parent commands
-
-```
-      --no-color   disable colored output
-```
----
-
-## camp audit reconcile
-
-Fill ledger gaps from state files (opt-in write)
-
-### Synopsis
-
-Derive the events implied by campaign state files (intent statuses and
-festival status histories), diff them against the ledger, and report the gaps -
-facts the ledger does not yet capture. This covers users who never commit at all.
-
-By default this is a dry run. Pass --apply to append the missing facts as
-reconciled events (idempotent: reconciled ids are content-derived, so re-running
-does not duplicate).
-
-```
-camp audit reconcile [flags]
-```
-
-### Options
-
-```
-      --apply   append the missing facts as reconciled events
-  -h, --help    help for reconcile
-      --json    emit a structured JSON result
-```
-
-### Options inherited from parent commands
-
-```
-      --no-color   disable colored output
-```
----
-
-## camp audit repair
-
-Attribute a commit to a workitem or festival after the fact
-
-### Synopsis
-
-Attribute an already-landed commit to a workitem or festival by appending a
-repaired event. This never rewrites git history; it only records the attribution
-in the ledger (D004). Use it to claim an untagged commit surfaced by
-'camp audit doctor' for a piece of work.
-
-```
-camp audit repair --sha <sha> (--workitem <id> | --festival <id>) --why <reason> [flags]
-```
-
-### Options
-
-```
-      --festival string   festival to attribute the commit to
-  -h, --help              help for repair
-      --repo string       evidence repo label (default: campaign-root)
-      --sha string        commit sha to attribute (required)
-      --why string        reason for the attribution (required)
-      --workitem string   workitem to attribute the commit to
-```
-
-### Options inherited from parent commands
-
-```
-      --no-color   disable colored output
-```
----
-
 ## camp cache
 
 Manage the navigation index cache
@@ -614,6 +456,10 @@ machines. Use --include-refs to stage them explicitly.
 
 Use --sub to commit in the submodule detected from your current directory.
 Use -p/--project to commit in a specific project (e.g., -p projects/camp).
+
+Commit tags use explicit --workitem or context from the current path. They do
+not inherit the per-machine current workitem selection, which can be stale;
+use 'camp workitem commit' when you want current.yaml scoping.
 
 Examples:
   camp commit -m "Add new feature"
@@ -1386,77 +1232,6 @@ camp dungeon move <item>... [status] [flags]
 ```
 ---
 
-## camp event
-
-Record and inspect campaign ledger events
-
-### Synopsis
-
-Record and inspect campaign event-ledger entries.
-
-The ledger is the append-only trail of high-intent actions across a campaign.
-Most events are captured automatically by state-changing camp/fest commands;
-'camp event add' is the explicit escape hatch for actions that never touch git.
-
-### Options
-
-```
-  -h, --help   help for event
-```
-
-### Options inherited from parent commands
-
-```
-      --no-color   disable colored output
-```
----
-
-## camp event add
-
-Record an explicit campaign ledger event
-
-### Synopsis
-
-Record an explicit campaign ledger event for an out-of-band action.
-
-Scope is inferred from the current directory (the workitem or festival you are
-in); flags override inference. Evidence may be a campaign-relative path, a URL,
-or a repo@sha commit reference, and may be repeated.
-
-Examples:
-  # A media-production decision, with the produced file as evidence
-  camp event add --type decided "chose H.265 for the trailer" \
-    --why "smaller files, target players all support it" \
-    --evidence renders/trailer_final_v3.mp4
-
-  # A quick note-to-trail from inside a workitem directory
-  camp event add --type created "kicked off the color grade pass"
-
-```
-camp event add <title> [flags]
-```
-
-### Options
-
-```
-      --action string          join an existing action id (default: a fresh action per invocation)
-      --evidence stringArray   evidence ref: <path> | <url> | <repo>@<sha> (repeatable)
-      --festival string        festival id to scope the event (overrides cwd inference)
-  -h, --help                   help for add
-      --json                   emit a structured JSON result
-      --quest string           quest id to scope the event
-      --type string            event kind (required): created, transitioned, completed, decided, evidence_attached, reconciled, repaired
-      --why string             the reason for the action (rendered prominently)
-      --workitem string        workitem selector to scope the event (overrides cwd inference)
-```
-
-### Options inherited from parent commands
-
-```
-      --no-color   disable colored output
-```
----
-
 ## camp festivals
 
 List festivals across campaigns, filtered by org/tag
@@ -1517,8 +1292,9 @@ Post-merge branch cycling: sync to default branch and optionally create a new wo
 
 Reset one or more projects to a fresh state after merging a PR.
 
-Performs the post-merge cycle: checkout default branch, pull latest,
-prune merged branches, and optionally create a new working branch.
+Performs the post-merge cycle: checkout the default branch, fetch origin,
+sync to the remote default while preserving local-only commits, prune merged
+branches, and optionally create a new working branch.
 
 Auto-detects the current project from your working directory, or accepts a
 single project name. Use --list to cycle a specific set of projects in one
@@ -1531,7 +1307,7 @@ cycle succeeds. Manage those with 'camp fresh configure'. Inspect the resolved
 sequence with 'camp fresh show-workflow [project-name]'.
 
 Examples:
-  camp fresh                            # Sync current project (checkout default, pull, prune)
+  camp fresh                            # Sync current project (checkout default, fetch, prune)
   camp fresh --branch develop           # Sync and create develop branch
   camp fresh camp -b feat/new-thing     # Sync camp project, create feature branch
   camp fresh --list camp,fest,festival  # Sync a specific set of projects
@@ -1570,7 +1346,7 @@ Run fresh across all project submodules
 
 ### Synopsis
 
-Run the fresh cycle (checkout default, pull, prune, optional branch)
+Run the fresh cycle (fetch and safely sync default, prune, optional branch)
 across every project submodule in the campaign.
 
 Examples:
@@ -1604,24 +1380,41 @@ camp fresh all [flags]
 
 ## camp fresh configure
 
-Configure camp fresh follow-up commands
+Configure the camp fresh workflow
 
 ### Synopsis
 
-Manage the follow-up command workflows camp fresh runs after a
-successful sync/prune/branch cycle. Configuration lives in
-.campaign/settings/fresh.yaml: a global default list, plus optional
-per-project override lists that replace the global list entirely.
+Configure what camp fresh does after a merge. Configuration lives in
+.campaign/settings/fresh.yaml, as campaign-wide defaults plus optional
+per-project overrides.
 
-Run without a subcommand to open the interactive setup for humans. Use
-show, add, and remove for scripts and agents.
+Run without a subcommand to open the interactive setup for humans, which
+groups the fresh sequence by what you can change about each step:
+
+  Sync        checkout, fetch, and safe default-branch realignment; always runs
+  Settings    branch, push_upstream, prune, and prune_remote
+  Follow-ups  your own commands, run after a successful cycle
+
+Press enter on a settings step to change it, and a/e/d/K/J on a follow-up to
+add, edit, delete, or reorder it. prune and prune_remote are campaign-wide,
+so they are changed under Global defaults rather than under a project.
+
+The subcommands below cover follow-ups only, for scripts and agents; edit the
+other keys in the interactive setup or in fresh.yaml directly.
+
+The interactive setup opens on the project you are standing in, resolved the
+same way camp fresh picks its target, so the overrides you edit are the ones
+that run. Pass --project to open on a different project, and edit the global
+defaults by selecting them in the left pane.
 
 Examples:
   camp fresh configure
+  camp fresh configure --project camp
   camp fresh show-workflow camp
   camp fresh configure show
   camp fresh configure add install --run "npm install"
   camp fresh configure add build --run "go build ./..." --project camp --dir cmd/camp
+  camp fresh configure move build --up --project camp
   camp fresh configure remove install
   camp fresh configure remove build --project camp
 
@@ -1632,7 +1425,8 @@ camp fresh configure [flags]
 ### Options
 
 ```
-  -h, --help   help for configure
+  -h, --help             help for configure
+      --project string   Open the setup on a project scope (default: detected from the current directory)
 ```
 
 ### Options inherited from parent commands
@@ -1664,6 +1458,36 @@ camp fresh configure add <name> [flags]
   -h, --help                help for add
       --project string      Scope this follow-up to a single project (default: global)
       --run string          Command to run for this follow-up step (required)
+```
+
+### Options inherited from parent commands
+
+```
+  -b, --branch string   Branch to create after syncing (overrides config)
+  -n, --dry-run         Preview without making changes
+      --no-branch       Skip branch creation even if configured
+      --no-color        disable colored output
+      --no-follow-up    Skip configured follow-up command workflows
+      --no-prune        Skip pruning merged branches
+      --no-push         Skip pushing the new branch upstream
+```
+---
+
+## camp fresh configure move
+
+Move a follow-up command workflow step
+
+```
+camp fresh configure move <name> [flags]
+```
+
+### Options
+
+```
+      --down             Move the step later in the workflow
+  -h, --help             help for move
+      --project string   Scope the move to a single project (default: global)
+      --up               Move the step earlier in the workflow
 ```
 
 ### Options inherited from parent commands
@@ -3537,16 +3361,32 @@ and 'camp list --remote'.
 Machines are stored in ~/.obey/machines.yaml. The current machine is always
 implicitly available as "local" and is never written to that file.
 
-'camp machine diagnose' inspects the per-machine ssh ControlMaster sockets and
-can clear a stale one (the state a sleep or network flap can leave behind, which
-would otherwise hang the next hop until ControlPersist expires).
+Network vs login: Tailscale (or LAN) is how you reach the host; SSH auth is how
+you log in. Prefer OpenSSH keys/agent (auth_method=ssh-agent) by default;
+Tailscale SSH (auth_method=tailscale-ssh) is opt-in identity login. Terminal
+hops always use BatchMode (agents never hang on password prompts).
+
+'camp machine diagnose' reports auth mode, a copy-paste ssh probe, and
+ControlMaster socket state (and can clear a stale socket with --reset).
+
+Run without a subcommand in a terminal to manage the fleet interactively: add,
+discover, edit, and remove machines, and see each one's socket state. The
+subcommands stay the interface for scripts and agents, and remain what a
+non-terminal 'camp machine' prints help for.
+
+```
+camp machine [flags]
+```
 
 ### Examples
 
 ```
+  camp machine
   camp machine list
+  camp machine add buildbox --host 10.0.0.12 --auth ssh-agent --user ci
   camp machine add devbox --host devbox.tailnet.ts.net --auth tailscale-ssh
   camp machine add --discover
+  camp machine add --discover --auth tailscale-ssh --user lance
   camp machine remove devbox
   camp machine diagnose
   camp machine diagnose devbox --reset
@@ -3576,10 +3416,11 @@ Add a machine to ~/.obey/machines.yaml, or update it if the id already exists
 than duplicating it).
 
 With --discover, camp runs 'tailscale status --json' and lets you pick a
-tailnet device instead of specifying --host/--auth by hand; the chosen device
-is saved with auth_method=tailscale-ssh. Pass an id positionally with
---discover to select that device by its derived id non-interactively (skips
-the picker), or use --yes to take the first discovered device.
+tailnet device (network identity only). Default auth is OpenSSH keys/agent
+(ssh-agent); pass --auth tailscale-ssh for Tailscale identity login. --user and
+--identity are honored with --discover. Pass an id positionally with --discover
+to select that device by its derived id non-interactively (skips the picker),
+or use --yes to take the first discovered device.
 
 ```
 camp machine add [id] [flags]
@@ -3588,9 +3429,10 @@ camp machine add [id] [flags]
 ### Examples
 
 ```
-  camp machine add devbox --host devbox.tailnet.ts.net --auth tailscale-ssh
   camp machine add buildbox --host 10.0.0.12 --auth ssh-agent --user ci
+  camp machine add devbox --host devbox.tailnet.ts.net --auth tailscale-ssh
   camp machine add --discover
+  camp machine add --discover --auth tailscale-ssh --user lance
   camp machine add devbox --discover
   camp machine add --discover --yes
 ```
@@ -3617,16 +3459,19 @@ camp machine add [id] [flags]
 
 ## camp machine diagnose
 
-Inspect (and optionally clear) ssh ControlMaster sockets
+Inspect machine auth, probe line, and ssh ControlMaster sockets
 
 ### Synopsis
 
-Report the ssh ControlMaster multiplex socket state for each configured machine
-(or one machine if an id is given):
+Report how each configured machine is set up to hop (or one machine if an id
+is given):
 
-  none   no socket — the next hop opens a fresh master
-  live   socket present and the master answers 'ssh -O check'
-  stale  socket present but the master no longer answers
+  auth     OpenSSH (keys/agent) or Tailscale SSH (identity)
+  probe    copy-paste BatchMode ssh line to test outside camp
+  socket   ControlMaster multiplex state:
+             none   no socket — the next hop opens a fresh master
+             live   socket present and the master answers 'ssh -O check'
+             stale  socket present but the master no longer answers
 
 A stale socket is what a sleep or network flap can leave behind; until it is
 removed (or ControlPersist expires) the next 'camp switch machine:...' or
@@ -3965,6 +3810,53 @@ camp org list [flags]
 ```
 ---
 
+## camp org next
+
+Switch to the next campaign in the current campaign's org
+
+### Synopsis
+
+Switch to the next campaign in the current campaign's org.
+
+Members are ordered by name, so the cycle is stable and predictable
+(a -> b -> c -> a). By default only active campaigns are cycled; use --all to
+include inactive and reference campaigns.
+
+Use with the corg shell function for instant navigation:
+  corg        # cd to the next campaign in this org
+
+The --print flag outputs just the target path for shell integration, and --json
+emits the resolved source and target campaigns.
+
+```
+camp org next [flags]
+```
+
+### Examples
+
+```
+  camp org next            # Print cd to the next org campaign
+  camp org next --print    # Print the target path only
+  camp org next --all      # Include inactive/reference campaigns
+  camp org next --json
+```
+
+### Options
+
+```
+      --all     Include inactive and reference campaigns in the cycle
+  -h, --help    help for next
+      --json    Output the resolved source and target campaigns as JSON
+      --print   Print the target path only (for shell integration)
+```
+
+### Options inherited from parent commands
+
+```
+      --no-color   disable colored output
+```
+---
+
 ## camp org remove
 
 Return campaigns to the default org
@@ -4055,6 +3947,50 @@ camp org show <org> [flags]
 ```
   -h, --help   help for show
       --json   Output as JSON
+```
+
+### Options inherited from parent commands
+
+```
+      --no-color   disable colored output
+```
+---
+
+## camp org toggle
+
+Toggle back to the last-visited campaign in the current org
+
+### Synopsis
+
+Toggle back to the most recently visited other campaign in the current org.
+
+"Most recently visited" is tracked by last-access time, which camp updates on
+every 'camp switch' and 'camp org next'/'toggle'. Paired with 'camp org next',
+this gives a natural A <-> B toggle within an org. By default only active
+campaigns are considered; use --all to include inactive and reference campaigns.
+
+Use with the corg shell function for instant navigation:
+  corg t      # cd back to the last org campaign you were in
+
+```
+camp org toggle [flags]
+```
+
+### Examples
+
+```
+  camp org toggle          # Print cd to the last-visited org campaign
+  camp org toggle --print  # Print the target path only
+  camp org toggle --json
+```
+
+### Options
+
+```
+      --all     Include inactive and reference campaigns in the cycle
+  -h, --help    help for toggle
+      --json    Output the resolved source and target campaigns as JSON
+      --print   Print the target path only (for shell integration)
 ```
 
 ### Options inherited from parent commands
@@ -4276,6 +4212,10 @@ Commit changes within a project submodule.
 
 Auto-detects the current project from your working directory,
 or use --project to specify a project by name.
+
+Commit tags use explicit --workitem or context from the current path. They do
+not inherit the per-machine current workitem selection, which can be stale;
+use 'camp workitem commit' when you want current.yaml scoping.
 
 Examples:
   # From within a project directory
@@ -6116,8 +6056,15 @@ Manage campaign skill directory links
 Manage campaign skill bundle projection for tool interoperability.
 
 Skills are centralized in .campaign/skills/ and projected into tool ecosystems
-(Claude, agents, etc.) as per-bundle symlinks. This keeps a single source of
-truth while preserving existing provider-native skills directories.
+(Claude, agents, Grok, etc.) as per-bundle symlinks. This keeps a single source
+of truth while preserving existing provider-native skills directories.
+
+Project worktrees under projects/worktrees/<project>/<name>/ are also supported:
+'camp project worktree add' projects skills into each new worktree automatically,
+and 'camp skills link --worktrees' repairs all of them. That way harnesses whose
+git root is the worktree (not the campaign root) still discover campaign skills.
+Only git checkouts are projected (directory must contain .git). A loose git root
+at projects/worktrees/<name>/ is accepted; package subdirs under it are not.
 
 Commands:
   link     Project per-skill symlinks into a tool-specific skills directory
@@ -6127,6 +6074,8 @@ Commands:
 Examples:
   camp skills link --tool claude    Project skills into .claude/skills/
   camp skills link --tool agents    Project skills into .agents/skills/
+  camp skills link --worktrees      Project into tools and every project worktree
+  camp skills link --worktrees-only Project into project worktrees only
   camp skills status                Show all skill projection states
   camp skills unlink --tool claude  Remove projected symlinks from .claude/skills/
 
@@ -6160,9 +6109,20 @@ This command creates one symlink per skill bundle. It does not replace entire
 provider skills directories, so existing user skills remain intact.
 
 With neither --tool nor --path, skills are projected into every registered tool.
+Pass --worktrees with no --tool/--path to also project into every
+projects/worktrees/<project>/<name> git checkout (so Grok/Claude sessions
+opened inside a worktree still see campaign skills). Use --worktrees-only to
+project into worktrees without touching campaign-root tool directories.
+
+Worktree discovery only includes directories with a .git file/dir. The normal
+layout is projects/worktrees/<project>/<name>/. A loose git root at
+projects/worktrees/<name>/ is also accepted; nested dirs under that root are
+not scanned as separate worktrees.
 
 Examples:
   camp skills link                     Project skills into all registered tools
+  camp skills link --worktrees         Project into tools and every project worktree
+  camp skills link --worktrees-only    Project into every project worktree only
   camp skills link --tool claude       Project skills into .claude/skills/
   camp skills link --tool agents       Project skills into .agents/skills/
   camp skills link --path custom/dir   Project skills into custom/dir
@@ -6176,11 +6136,13 @@ camp skills link [flags]
 ### Options
 
 ```
-  -n, --dry-run       Show what would happen without making changes
-  -f, --force         Replace conflicting symlink entries (never files/directories)
-  -h, --help          help for link
-  -p, --path string   Custom destination directory
-  -t, --tool string   Tool to link: claude, agents
+  -n, --dry-run          Show what would happen without making changes
+  -f, --force            Replace conflicting symlink entries (never files/directories)
+  -h, --help             help for link
+  -p, --path string      Custom destination directory
+  -t, --tool string      Tool to link: claude, agents
+      --worktrees        Also project into every projects/worktrees/*/* worktree
+      --worktrees-only   Project only into project worktrees (skip campaign tool dirs)
 ```
 
 ### Options inherited from parent commands
@@ -7128,30 +7090,37 @@ camp workitem [flags]
 
 ## camp workitem adopt
 
-Adopt an existing directory as a workitem
+Adopt an existing directory or file as a workitem
 
 ### Synopsis
 
-Attach workitem metadata to an existing campaign directory without moving it.
+Attach workitem metadata to an existing campaign directory or markdown file.
 
-The target directory must already exist and must not already contain a
-.workitem file. The command writes that .workitem metadata file with the
-selected type, title, generated or supplied id, and optional quest link. Use
-this when a workflow directory already exists and needs to become a tracked
-workitem.
+With a directory argument, writes a .workitem marker (the directory must exist
+and must not already contain a .workitem). With --file <path.md>, stamps a
+kind: workitem frontmatter block onto an existing markdown file without ever
+rewriting its body: it prepends a block when the file has none, merges camp's
+keys into a foreign block (refusing an ambiguous foreign tags: key without
+--force), and updates tags/projects when the file is already a workitem. In all
+cases it sets the selected type, title, generated or supplied id, optional quest
+link, optional tags, and optional related projects.
 
 ```
-camp workitem adopt <dir> [flags]
+camp workitem adopt [dir] [flags]
 ```
 
 ### Options
 
 ```
-  -h, --help           help for adopt
-      --id string      override the generated id
-      --quest string   quest ID to associate (requires dev-profile camp; forward-compatible flag)
-      --title string   human-readable title
-      --type string    workitem type (feature, bug, chore, or custom) (default "feature")
+      --file string           stamp kind: workitem frontmatter onto a markdown file instead of adopting a directory
+      --force                 with --file, take ownership of an existing foreign tags: key (union conforming values, drop and report non-conforming ones)
+  -h, --help                  help for adopt
+      --id string             override the generated id
+      --project stringArray   add a related project path (repeatable, e.g. projects/camp)
+      --quest string          quest ID to associate (requires dev-profile camp; forward-compatible flag)
+      --tag stringArray       add a tag (repeatable, normalized to lowercase kebab-case)
+      --title string          human-readable title
+      --type string           workitem type (feature, bug, chore, or custom) (default "feature")
 ```
 
 ### Options inherited from parent commands
@@ -7248,17 +7217,30 @@ camp workitem commits [selector] [flags]
 
 ## camp workitem create
 
-Create a workitem
+Create workitem tracking metadata
 
 ### Synopsis
 
-Create a new workitem directory with minimal v1 metadata.
+Create tracking metadata for a new workitem (directory + .workitem marker).
 
-The workitem is created under workflow/<type>/<slug>/ unless --dir supplies a
-different campaign-relative parent directory. A .workitem file is written with
-the id, type, title, ref, creation metadata, and optional quest link. Use --json
-for machine-readable output containing the new workitem identity and next-step
-location.
+This command does NOT create the substantive work scaffold (no design docs,
+explore notes, or festival structure). It only:
+
+  1. Creates workflow/<type>/<slug>/ (or --dir/<slug>/)
+  2. Writes a .workitem marker (id, type, title, ref, optional quest, optional
+     tags, optional related projects)
+
+Agents and humans must still add real content afterward. For explore/design
+types, the recommended structured-workflow scaffold is:
+
+  cd workflow/<type>/<slug> && fest create workflow <slug>
+
+For other types (feature, bug, chore, …), no festival scaffold is implied;
+populate campaign-governed content under the new directory as needed.
+
+Use "camp workitem adopt" to attach a marker to an existing directory.
+Use --json for machine-readable identity. next.command is set only for
+explore/design (recommended scaffold); otherwise it is empty/omitted.
 
 ```
 camp workitem create <slug> [flags]
@@ -7267,13 +7249,16 @@ camp workitem create <slug> [flags]
 ### Options
 
 ```
-      --dir string     parent dir override (default: workflow/<type>)
-  -h, --help           help for create
-      --id string      override the generated id
-      --json           emit a structured JSON result
-      --quest string   quest ID to associate (requires dev-profile camp; forward-compatible flag)
-      --title string   human-readable title
-      --type string    workitem type (feature, bug, chore, or custom) (default "feature")
+      --dir string            parent dir override (default: workflow/<type>)
+      --file string           create a new markdown file with kind: workitem frontmatter instead of a directory workitem
+  -h, --help                  help for create
+      --id string             override the generated id
+      --json                  emit a structured JSON result
+      --project stringArray   add a related project path (repeatable, e.g. projects/camp)
+      --quest string          quest ID to associate (requires dev-profile camp; forward-compatible flag)
+      --tag stringArray       add a tag (repeatable, normalized to lowercase kebab-case)
+      --title string          human-readable title
+      --type string           workitem type (feature, bug, chore, or custom) (default "feature")
 ```
 
 ### Options inherited from parent commands
@@ -7369,6 +7354,52 @@ camp workitem group <selector> <group|clear> [flags]
 ```
 ---
 
+## camp workitem id
+
+Print the identifier of a workitem
+
+### Synopsis
+
+Print the stable identifier of a workitem.
+
+With no argument, the workitem is detected from the current context using the
+same tiered resolution as `camp workitem resolve` (explicit selector, cwd
+ancestor, linked scope, festival, current-workitem pointer). With an argument,
+the workitem is resolved through the shared selector family: workitem ref,
+stable id, key, campaign-relative path, directory slug, or festival id. A
+filesystem path (absolute or relative to the current directory) is accepted and
+translated to the campaign-relative form the selector expects.
+
+The bare stable id is written to stdout for shell scripting; it is the id sibling
+of `camp workitem --print`, which prints a path. Use --key for the
+path-derived key instead, or --json for a structured object.
+
+Examples:
+  camp workitem id                       # id of the workitem for the cwd
+  camp workitem id design-x-2026-05-24   # echoes back the stable id
+  camp workitem id ./workflow/design/x   # resolves a filesystem path
+  camp workitem id --key                 # print the <type>:<path> key form
+  camp workitem id --json SC0001         # structured object for a festival
+
+```
+camp workitem id [selector-or-path] [flags]
+```
+
+### Options
+
+```
+  -h, --help   help for id
+      --json   emit a structured JSON result
+      --key    print the path-derived key instead of the stable id
+```
+
+### Options inherited from parent commands
+
+```
+      --no-color   disable colored output
+```
+---
+
 ## camp workitem link
 
 Create a workitem link
@@ -7385,6 +7416,11 @@ workitem selector plus a path, or use --project, --festival, --worktree, or
 A primary worktree link is how design/explore workitems under workflow/ get
 into camp p commit tags: when you commit from that worktree, the resolver
 matches the link and stamps WI-<ref> on the subject.
+
+Note: role:related links to a project scope are no longer accepted; a workitem's
+related projects live in its own projects: field. Use "camp workitem
+create/adopt --project <path>" (or edit the .workitem/frontmatter) instead of
+"--role related --project".
 
 Examples:
   camp workitem link WI-2a7950 --worktree fest/fest-list-watch
@@ -7468,6 +7504,7 @@ Examples:
   camp workitem list intent
   camp workitem list active
   camp workitem list --category research --query auth
+  camp workitem list --tag public-launch --tag schema
   camp workitem list festival --status ready --json
 
 ```
@@ -7484,10 +7521,12 @@ camp workitem list [type|status|category] [flags]
   -h, --help                          help for list
       --json                          Output as JSON
       --limit int                     Maximum number of items to return (non-interactive / --json only)
+      --project stringArray           Filter by related project (repeat for OR)
       --query string                  Search query to filter items
       --show-parked                   Include parked attention-stage workitems
       --stage stringArray             Filter by lifecycle stage (repeat for OR)
       --status stringArray            Filter by displayed status: current, next, active, parked, inbox, ready, plan, ritual, chains, none (repeat for OR)
+      --tag stringArray               Filter by tag (repeat; item must have ALL given tags)
       --type stringArray              Filter by workflow type (repeat for OR)
 ```
 
@@ -7566,6 +7605,47 @@ camp workitem promote [id] --target <target> [flags]
       --keep            On festival/doc, do not move the source workitem to the dungeon
       --no-commit       Skip the auto-commit
       --target string   Promotion target: festival, doc, completed, archived, someday
+```
+
+### Options inherited from parent commands
+
+```
+      --no-color   disable colored output
+```
+---
+
+## camp workitem rename
+
+Rename a workitem and repair references
+
+### Synopsis
+
+Rename the workitem matched by <selector> so its directory (or file)
+basename becomes <new-name>. Identity is preserved: the stable id, ref, title,
+type, and lifecycle status do not change; only the path basename moves.
+
+References are repaired in the same commit as the move:
+  - relative markdown links pointing at the workitem are rewritten
+  - the workitem link registry (links.yaml) key and any scope paths under the
+    renamed directory are updated
+  - manual priority and attention-stage entries are re-keyed on disk
+  - the current-workitem pointer is updated when it referenced the old path key
+
+Festivals and intents are managed by their own tooling and cannot be renamed
+here. For file workitems, pass the full new filename; the original extension is
+kept when omitted.
+
+```
+camp workitem rename <selector> <new-name> [flags]
+```
+
+### Options
+
+```
+      --dry-run     Print the planned rename, change nothing
+  -h, --help        help for rename
+      --json        Output result as a single JSON object
+      --no-commit   Skip the auto-commit
 ```
 
 ### Options inherited from parent commands

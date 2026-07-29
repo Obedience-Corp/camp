@@ -35,6 +35,10 @@ type Options struct {
 	Cwd        string
 	FestivalID string
 	AllowFuzzy bool
+	// DisableCurrent prevents the per-machine current.yaml fallback. Generic
+	// commit wrappers use this to avoid silently attributing unrelated changes
+	// to a stale session-wide workitem selection.
+	DisableCurrent bool
 }
 
 // TraceStep records what one tier of the resolver did. Surfaced via --json
@@ -81,6 +85,12 @@ func Resolve(ctx context.Context, root string, opts Options) (*Resolution, error
 	}
 
 	result := &Resolution{Source: SourceNone, Reason: "no tier matched"}
+	currentTier := func() (*workitem.WorkItem, TraceStep, error) {
+		if opts.DisableCurrent {
+			return nil, TraceStep{Tier: SourceCurrent, Result: "skip", Detail: "current.yaml disabled by caller"}, nil
+		}
+		return resolveCurrent(ctx, root)
+	}
 	tiers := []resolveTier{
 		{SourceExplicit, func() (*workitem.WorkItem, TraceStep, error) {
 			return resolveExplicit(ctx, root, opts)
@@ -94,9 +104,7 @@ func Resolve(ctx context.Context, root string, opts Options) (*Resolution, error
 		{SourceFestival, func() (*workitem.WorkItem, TraceStep, error) {
 			return resolveFestival(ctx, root, opts.FestivalID)
 		}, ""},
-		{SourceCurrent, func() (*workitem.WorkItem, TraceStep, error) {
-			return resolveCurrent(ctx, root)
-		}, ""},
+		{SourceCurrent, currentTier, ""},
 	}
 	for _, tier := range tiers {
 		wi, step, err := tier.fn()

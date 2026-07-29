@@ -10,6 +10,7 @@ import (
 	"path"
 	"path/filepath"
 	"strconv"
+	"strings"
 	"time"
 
 	"github.com/spf13/cobra"
@@ -210,6 +211,38 @@ func computeRepair(
 			meta.Title = title
 			set("title", "", title)
 		}
+	}
+	if len(meta.Tags) > 0 {
+		kept, dropped := normalizeExistingTags(meta.Tags)
+		survivors := make([]string, 0, len(meta.Tags))
+		for _, t := range meta.Tags {
+			if normalizeTag(t) != "" {
+				survivors = append(survivors, t)
+			}
+		}
+		if len(dropped) > 0 {
+			changes = append(changes, repairChange{Field: "tags", Action: repairActionCleared, From: strings.Join(dropped, ",")})
+		}
+		if strings.Join(kept, ",") != strings.Join(survivors, ",") {
+			set("tags", strings.Join(survivors, ","), strings.Join(kept, ","))
+		}
+		meta.Tags = kept
+	}
+	if len(meta.Projects) > 0 {
+		kept, dropped := normalizeExistingProjects(meta.Projects)
+		survivors := make([]string, 0, len(meta.Projects))
+		for _, p := range meta.Projects {
+			if normalizeProject(p) != "" {
+				survivors = append(survivors, p)
+			}
+		}
+		if len(dropped) > 0 {
+			changes = append(changes, repairChange{Field: "projects", Action: repairActionCleared, From: strings.Join(dropped, ",")})
+		}
+		if strings.Join(kept, ",") != strings.Join(survivors, ",") {
+			set("projects", strings.Join(survivors, ","), strings.Join(kept, ","))
+		}
+		meta.Projects = kept
 	}
 
 	return markerRepair{meta: meta, changes: changes, created: !exists}, nil

@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"os"
+	"slices"
 	"strings"
 
 	"github.com/charmbracelet/bubbles/textinput"
@@ -12,6 +13,7 @@ import (
 
 	"github.com/Obedience-Corp/camp/internal/config"
 	camperrors "github.com/Obedience-Corp/camp/internal/errors"
+	"github.com/Obedience-Corp/camp/internal/machines"
 	"github.com/Obedience-Corp/camp/internal/pathutil"
 	"github.com/Obedience-Corp/camp/internal/ui"
 	"github.com/spf13/cobra"
@@ -37,6 +39,12 @@ type listTUIModel struct {
 	cursor     int
 	activeOnly bool
 
+	// Remote toggle (R1): default local-only; key r loads/strips remote rows.
+	remoteOn           bool
+	remoteLoading      bool
+	machinesConfigured bool
+	localCount         int // length of m.all before remote rows were appended
+
 	overlay listOverlay
 	input   textinput.Model
 
@@ -49,6 +57,13 @@ type listTUIModel struct {
 	width    int
 	height   int
 	quitting bool
+}
+
+// remoteLoadedMsg is delivered when the async fan-out for key r completes.
+type remoteLoadedMsg struct {
+	rows    []campaignEntry
+	results []remoteResult
+	err     error
 }
 
 // listTUIRequested decides whether bare `camp list` opens the browser. Machine or
@@ -64,10 +79,12 @@ func listTUIRequested(cmd *cobra.Command, isTTY bool) bool {
 	if interactive, _ := cmd.Flags().GetBool("interactive"); interactive {
 		return true
 	}
-	for _, f := range []string{"sort", "org", "tag", "status", "all", "group", "no-group", "remote"} {
-		if cmd.Flags().Changed(f) {
-			return false
-		}
+	// --remote is deliberately NOT a shaping flag: in a TTY it opens the same
+	// browser (remotes auto-load when machines are configured); piped and
+	// --json runs still take the table path via the isTTY/format checks above.
+	shaping := []string{"sort", "org", "tag", "status", "all", "group", "no-group"}
+	if slices.ContainsFunc(shaping, cmd.Flags().Changed) {
+		return false
 	}
 	return isTTY
 }
@@ -100,8 +117,8 @@ func runListTUI(cmd *cobra.Command, positionalOrg string) error {
 }
 
 // writeGotoSelection persists the campaign the user chose to go to, for the
-// shell function to cd into. No-op unless a path-output file was supplied and a
-// selection was made.
+// shell function to cd into (local absolute path) or hop (ssh-hop: marker).
+// No-op unless a path-output file was supplied and a selection was made.
 func writeGotoSelection(final tea.Model, pathOutput string) error {
 	m, ok := final.(listTUIModel)
 	if !ok || pathOutput == "" || m.gotoPath == "" {
@@ -110,17 +127,60 @@ func writeGotoSelection(final tea.Model, pathOutput string) error {
 	return os.WriteFile(pathOutput, []byte(m.gotoPath), 0o600)
 }
 
+// gotoSelectionFor returns the path-output payload for a list row: absolute path
+// for local campaigns, ssh-hop:<machine>:<name> for remote rows.
+func gotoSelectionFor(e campaignEntry) string {
+	if e.Machine != "" && e.Machine != machines.LocalMachineID {
+		return "ssh-hop:" + e.Machine + ":" + e.Name
+	}
+	return e.Path
+}
+
+// isRemoteListEntry reports whether a row came from a remote machine fan-out.
+func isRemoteListEntry(e campaignEntry) bool {
+	return e.Machine != "" && e.Machine != machines.LocalMachineID
+}
+
 func newListTUIModel(ctx context.Context, reg *config.Registry, orgFilter string) listTUIModel {
 	ti := textinput.New()
 	ti.Prompt = "> "
 	m := listTUIModel{ctx: ctx, input: ti, orgFilter: orgFilter}
+	if mf, err := machines.Load(); err == nil && len(mf.Machines) > 0 {
+		m.machinesConfigured = true
+		// Remotes load automatically on open (fail-open, async); `r` hides or
+		// reloads them. remoteLoading here lets the first frame show progress.
+		m.remoteLoading = true
+	}
 	m.loadFromRegistry(reg)
 	return m
 }
 
+// remoteListFilter mirrors the browser's current view (org + active-only) for
+// the remote fan-out so local and remote rows filter consistently.
+func (m listTUIModel) remoteListFilter() listFilter {
+	filter := listFilter{org: m.orgFilter}
+	if !m.activeOnly {
+		filter.all = true
+	}
+	return filter
+}
+
 func (m *listTUIModel) loadFromRegistry(reg *config.Registry) {
 	m.fallback = reg.FallbackOrg()
+	// Preserve remote rows across registry reload after local mutate.
+	var remotes []campaignEntry
+	if m.remoteOn {
+		for _, e := range m.all {
+			if isRemoteListEntry(e) {
+				remotes = append(remotes, e)
+			}
+		}
+	}
 	m.all = sortCampaigns(reg.Campaigns, "org", m.fallback)
+	m.localCount = len(m.all)
+	if m.remoteOn {
+		m.all = append(m.all, remotes...)
+	}
 	m.rebuildVisible()
 }
 
@@ -160,7 +220,12 @@ func (m *listTUIModel) reload() error {
 	return nil
 }
 
-func (m listTUIModel) Init() tea.Cmd { return textinput.Blink }
+func (m listTUIModel) Init() tea.Cmd {
+	if m.remoteLoading {
+		return tea.Batch(textinput.Blink, loadRemoteCampaignsCmd(m.ctx, m.remoteListFilter()))
+	}
+	return textinput.Blink
+}
 
 func (m *listTUIModel) cycleStatus() error {
 	e := m.visible[m.cursor]

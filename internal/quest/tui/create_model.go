@@ -22,6 +22,7 @@ const (
 	createStepPurpose
 	createStepDescription
 	createStepTags
+	createStepWorkitem
 	createStepDone
 )
 
@@ -30,6 +31,9 @@ type CreateOptions struct {
 	DefaultName    string
 	DefaultPurpose string
 	DefaultTags    string
+	// Choices are the workitems offered by the optional binding picker. When
+	// empty, the picker step is skipped entirely and the flow ends at tags.
+	Choices []WorkitemChoice
 }
 
 // CreateResult contains the collected quest data.
@@ -38,6 +42,9 @@ type CreateResult struct {
 	Purpose     string
 	Description string
 	Tags        string
+	// WorkitemPath is the campaign-relative path of the workitem the user chose
+	// to bind, or empty when the binding step was skipped.
+	WorkitemPath string
 }
 
 // editorFinishedMsg is sent when the external editor closes.
@@ -57,6 +64,7 @@ type QuestCreateModel struct {
 	purposeInput textinput.Model
 	tagsInput    textinput.Model
 	vimEditor    *vim.Editor
+	picker       workitemPicker
 
 	result    *CreateResult
 	cancelled bool
@@ -104,6 +112,7 @@ func NewQuestCreateModel(ctx context.Context, opts CreateOptions) QuestCreateMod
 		purposeInput: pi,
 		tagsInput:    ti,
 		vimEditor:    vimEd,
+		picker:       newWorkitemPicker(opts.Choices),
 	}
 }
 
@@ -127,6 +136,7 @@ func (m QuestCreateModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.nameInput.Width = min(msg.Width-10, 80)
 		m.purposeInput.Width = min(msg.Width-10, 80)
 		m.tagsInput.Width = min(msg.Width-10, 80)
+		m.picker.setWidth(msg.Width)
 		w, h := m.calculateDescriptionSize()
 		m.vimEditor.SetSize(w, h)
 		return m, nil
@@ -152,6 +162,8 @@ func (m QuestCreateModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			return m.updateDescription(msg)
 		case createStepTags:
 			return m.updateTags(msg)
+		case createStepWorkitem:
+			return m.updateWorkitem(msg)
 		}
 	}
 
@@ -269,6 +281,11 @@ func (m QuestCreateModel) finish() (QuestCreateModel, tea.Cmd) {
 		Description: strings.TrimSpace(m.vimEditor.Content()),
 		Tags:        strings.TrimSpace(m.tagsInput.Value()),
 	}
+	if m.picker.active() {
+		m.step = createStepWorkitem
+		m.tagsInput.Blur()
+		return m, m.picker.filter.Focus()
+	}
 	m.step = createStepDone
 	return m, tea.Quit
 }
@@ -335,6 +352,8 @@ func (m QuestCreateModel) View() string {
 		b.WriteString(m.viewDescriptionStep())
 	case createStepTags:
 		b.WriteString(m.viewTagsStep())
+	case createStepWorkitem:
+		b.WriteString(m.picker.view())
 	}
 
 	return b.String()

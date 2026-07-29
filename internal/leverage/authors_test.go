@@ -348,6 +348,23 @@ func TestAuthorHasCommits(t *testing.T) {
 	}
 }
 
+func TestAuthorHasCommits_PropagatesCancellation(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+	_, err := AuthorHasCommits(ctx, "/tmp", "alice@example.com")
+	if err == nil {
+		t.Fatal("expected error from cancelled context")
+	}
+}
+
+func TestAuthorHasCommits_OperationalFailure(t *testing.T) {
+	// Non-repo path must surface as an error, not (false, nil).
+	_, err := AuthorHasCommits(context.Background(), "/nonexistent-not-a-git-repo", "alice@example.com")
+	if err == nil {
+		t.Fatal("expected operational git error for non-repo path")
+	}
+}
+
 func TestAuthorDateRange(t *testing.T) {
 	dir := initGitRepo(t)
 	commitFile(t, dir, "a.go", "package a\n", "Alice", "alice@example.com")

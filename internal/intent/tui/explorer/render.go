@@ -12,9 +12,9 @@ import (
 // renderIntentRow renders a single intent row with proper formatting.
 // Layout is responsive based on terminal width.
 func (m *Model) renderIntentRow(i *intent.Intent, isSelected bool, maxTitleWidth int) string {
-	cursor := tui.NoCursor
+	cursor := tui.EmptyCursor()
 	if isSelected {
-		cursor = tui.CursorIndicator
+		cursor = tui.FocusCursor()
 	}
 
 	// Checkbox for multi-select mode
@@ -88,9 +88,9 @@ func (m *Model) renderIntentRow(i *intent.Intent, isSelected bool, maxTitleWidth
 	return tui.IntentRowStyle.Render(row)
 }
 
-// renderStatusBar renders the status bar adapted to terminal width.
-func (m *Model) renderStatusBar() string {
-	// Scroll indicator when list is scrollable
+// renderStatusBarHints returns plain (unstyled) footer key hints for chrome.Footer.
+// Scroll percentage is included when the list is scrollable.
+func (m *Model) renderStatusBarHints() string {
 	scrollIndicator := ""
 	if m.listHeight > 0 && m.totalVisualLines() > m.listHeight {
 		total := m.totalVisualLines() - m.listHeight
@@ -98,35 +98,34 @@ func (m *Model) renderStatusBar() string {
 		if total > 0 {
 			pct = m.scrollOffset * 100 / total
 		}
-		scrollIndicator = tui.HelpStyle.Render(fmt.Sprintf("[%d%%] ", pct))
+		scrollIndicator = fmt.Sprintf("[%d%%] ", pct)
 	}
 
-	// Add multi-select mode hints
 	if m.multiSelectMode {
 		count := len(m.selectedIntents)
 		switch m.layoutMode {
 		case layoutNarrow:
-			return scrollIndicator + tui.HelpStyle.Render(fmt.Sprintf("Space: select . ga: gather (%d) . Esc: cancel", count))
+			return scrollIndicator + fmt.Sprintf("space select · ga gather (%d) · esc cancel", count)
 		default:
-			return scrollIndicator + tui.HelpStyle.Render(fmt.Sprintf("Space: toggle select . ga: gather %d intents . Esc: exit multi-select . ?: help", count))
+			return scrollIndicator + fmt.Sprintf("space toggle · ga gather %d · esc exit multi · ? help", count)
 		}
 	}
 
 	switch m.layoutMode {
 	case layoutNarrow:
-		return scrollIndicator + tui.HelpStyle.Render("j/k . v . / . tab: filter . n . ? . q")
+		return scrollIndicator + "j/k · v · / · tab filter · n new · ? · q"
 	case layoutNormal:
 		if m.shouldShowPreview() {
-			return scrollIndicator + tui.HelpStyle.Render("j/k: nav . v: hide preview . tab: focus . /: search . n: new . q: quit")
+			return scrollIndicator + "j/k nav · v hide preview · tab focus · / search · n new · q quit"
 		}
-		return scrollIndicator + tui.HelpStyle.Render("j/k: nav . v: preview . /: search . tab: filter . n: new . Space: gather mode . q: quit")
+		return scrollIndicator + "j/k nav · v preview · / search · tab filter · n new · space gather · q quit"
 	case layoutWide:
 		if m.shouldShowPreview() {
-			return scrollIndicator + tui.HelpStyle.Render("j/k: navigate . v: hide preview . tab: switch focus . /: search . f: full view . n: new . ?: help . q: quit")
+			return scrollIndicator + "j/k navigate · v hide preview · tab focus · / search · f full · n new · ? help · q quit"
 		}
-		return scrollIndicator + tui.HelpStyle.Render("j/k: navigate . v: preview . /: search . tab: filter . n: new . Space: gather mode . f: full . ?: help . q: quit")
+		return scrollIndicator + "j/k navigate · v preview · / search · tab filter · n new · space gather · f full · ? help · q quit"
 	}
-	return ""
+	return scrollIndicator
 }
 
 // totalVisualLines returns the total number of visual lines in the list.
@@ -195,16 +194,20 @@ func (m *Model) renderActiveFilters() string {
 // viewActionMenu renders the main view with action menu overlay.
 func (m *Model) viewActionMenu() string {
 	var b strings.Builder
-	b.WriteString(tui.TitleStyle.Render("Intent Explorer"))
-	b.WriteString("\n\n")
+	w := m.width
+	if w < 40 {
+		w = 80
+	}
+	b.WriteString(tui.Header("actions", "", w))
+	b.WriteString("\n")
 
 	if selected := m.SelectedIntent(); selected != nil {
-		b.WriteString("Selected: " + selected.Title + "\n\n")
+		b.WriteString(tui.HelpStyle.Render("Selected: ") + tui.IntentTitleStyle.Render(selected.Title) + "\n\n")
 	}
 
 	b.WriteString(m.actionMenu.View())
 	b.WriteString("\n\n")
-	b.WriteString(tui.HelpStyle.Render("j/k: navigate . Enter: select . Esc: cancel"))
+	b.WriteString(tui.Footer("j/k navigate · enter select · esc cancel", w))
 
 	return b.String()
 }
@@ -241,23 +244,29 @@ func (m *Model) viewGatherDialog() string {
 // buildMainView renders the main explorer view with groups and intents.
 // The output is always exactly m.height lines: header + list + footer.
 func (m *Model) buildMainView() string {
-	// Step 1: Build header
+	// Step 1: Build header chrome + search/filters
 	var header strings.Builder
-	header.WriteString(tui.TitleStyle.Render("Intent Explorer"))
+	right := ""
 	if m.multiSelectMode && len(m.selectedIntents) > 0 {
-		header.WriteString("  ")
-		header.WriteString(tui.SelectionCountStyle.Render(fmt.Sprintf("%d selected", len(m.selectedIntents))))
+		right = fmt.Sprintf("%d selected", len(m.selectedIntents))
+	} else if m.shouldShowPreview() && m.previewFocused {
+		right = "preview"
+	} else {
+		n := len(m.filteredIntents)
+		if n == 1 {
+			right = "1 intent"
+		} else {
+			right = fmt.Sprintf("%d intents", n)
+		}
 	}
-	if m.shouldShowPreview() && m.previewFocused {
-		header.WriteString(tui.HelpStyle.Render(" [preview focused]"))
-	}
+	header.WriteString(tui.Header("explore", right, m.width))
 
 	if m.focus == focusSearch || m.searchInput.Value() != "" {
 		header.WriteString("\n")
 		header.WriteString(m.searchInput.View())
 		if m.focus == focusSearch {
 			header.WriteString("  ")
-			header.WriteString(tui.HelpStyle.Render("(enter to navigate filtered list, esc to clear)"))
+			header.WriteString(tui.HelpStyle.Render("(enter navigate · esc clear)"))
 		}
 	}
 
@@ -272,8 +281,9 @@ func (m *Model) buildMainView() string {
 
 	headerStr := header.String()
 
-	// Step 2: Build footer
-	footerStr := m.renderStatusBar()
+	// Step 2: Build footer chrome + status
+	footerHints := m.renderStatusBarHints()
+	footerStr := tui.Footer(footerHints, m.width)
 	if m.statusMessage != "" {
 		footerStr += "\n" + tui.ErrorStyle.Render(m.statusMessage)
 	}
@@ -322,13 +332,13 @@ func (m *Model) buildMainView() string {
 			listLines = append(listLines,
 				"",
 				tui.HelpStyle.Render("  No intents match current filters."),
-				tui.HelpStyle.Render("  Press Escape to clear filters."),
+				tui.HelpStyle.Render("  esc clears filters · n creates one"),
 			)
 		} else {
 			listLines = append(listLines,
 				"",
-				tui.HelpStyle.Render("  No intents found."),
-				tui.HelpStyle.Render("  Press 'n' to create one."),
+				tui.HelpStyle.Render("  No intents yet."),
+				tui.HelpStyle.Render("  Press n to capture one."),
 			)
 		}
 	}
@@ -337,16 +347,16 @@ func (m *Model) buildMainView() string {
 
 	for gi, group := range m.groups {
 		isGroupSelected := gi == m.cursorGroup && m.cursorItem == -1
-		cursor := tui.NoCursor
+		cursor := tui.EmptyCursor()
 		if isGroupSelected && !m.previewFocused {
-			cursor = tui.CursorIndicator
+			cursor = tui.FocusCursor()
 		}
 
 		if group.IsDungeonParent {
 			// Dungeon parent: show aggregate count, expand/collapse indicator
-			indicator := ">"
+			indicator := "›"
 			if group.Expanded {
-				indicator = "v"
+				indicator = "▾"
 			}
 			hdr := fmt.Sprintf("%s %s %s (%d)", cursor, indicator, group.Name, group.DungeonCount)
 			if isGroupSelected && !m.previewFocused {
@@ -357,9 +367,9 @@ func (m *Model) buildMainView() string {
 			continue
 		}
 
-		indicator := ">"
+		indicator := "›"
 		if group.Expanded {
-			indicator = "v"
+			indicator = "▾"
 		}
 
 		if group.IsDungeonChild {
@@ -422,6 +432,9 @@ func (m *Model) buildMainView() string {
 	// Step 8: Combine list and preview
 	if m.shouldShowPreview() {
 		previewView := m.previewPane.View()
+		if m.previewFocused {
+			previewView = m.previewPane.ViewFocused()
+		}
 		listView = lipgloss.JoinHorizontal(
 			lipgloss.Top,
 			listView,

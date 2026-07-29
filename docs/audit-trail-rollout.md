@@ -6,6 +6,10 @@ state-changing camp commands. Existing campaigns with history predating the
 ledger can derive a trail on demand. Nothing here is required, and none of it
 touches git history.
 
+`camp audit` and `camp event` are dev-only commands (`//go:build dev`); a
+stable camp build does not include them. Use a `dev`-profile build to run
+anything below.
+
 ## Recommended run order
 
 1. `camp audit backfill` (dry run) - shows how many events would be derived from

@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"io"
 	"path/filepath"
 
 	"github.com/Obedience-Corp/camp/cmd/camp/cmdutil"
@@ -12,7 +13,9 @@ import (
 	camperrors "github.com/Obedience-Corp/camp/internal/errors"
 	"github.com/Obedience-Corp/camp/internal/paths"
 	"github.com/Obedience-Corp/camp/internal/project"
+	intskills "github.com/Obedience-Corp/camp/internal/skills"
 	"github.com/Obedience-Corp/camp/internal/ui"
+	wkitem "github.com/Obedience-Corp/camp/internal/workitem"
 	"github.com/Obedience-Corp/camp/internal/workitem/links"
 	"github.com/Obedience-Corp/camp/internal/workitem/selector"
 	intworktree "github.com/Obedience-Corp/camp/internal/worktree"
@@ -104,6 +107,19 @@ func runProjectWorktreeAdd(cmd *cobra.Command, args []string) error {
 		return err
 	}
 
+	// Resolve and validate the workitem before creating anything, so a bad or
+	// unadopted selector fails fast instead of leaving a dangling worktree.
+	var linkTarget *wkitem.WorkItem
+	if wtAddWorkitem != "" {
+		linkTarget, err = selector.Resolve(ctx, campRoot, wtAddWorkitem, selector.ResolveOptions{})
+		if err != nil {
+			return camperrors.Wrap(err, "resolve workitem "+wtAddWorkitem)
+		}
+		if wkitem.NeedsAdoption(linkTarget) {
+			return wkitem.NotAdoptedError(linkTarget.RelativePath)
+		}
+	}
+
 	resolver := paths.NewResolver(campRoot, cfg.Paths())
 	creator := intworktree.NewCreator(resolver, cfg)
 	opts := &intworktree.CreateOptions{
@@ -136,6 +152,13 @@ func runProjectWorktreeAdd(cmd *cobra.Command, args []string) error {
 
 	result, err := creator.Create(ctx, opts)
 	if err != nil {
+		if errors.Is(err, intworktree.ErrBranchExists) {
+			return camperrors.Wrap(err, fmt.Sprintf(
+				"branch %q already exists (a previous worktree may have been removed "+
+					"without deleting its branch); reuse it with --branch %s, choose a "+
+					"different name, or delete it with 'git branch -D %s'",
+				opts.Branch, opts.Branch, opts.Branch))
+		}
 		return err
 	}
 
@@ -143,13 +166,24 @@ func runProjectWorktreeAdd(cmd *cobra.Command, args []string) error {
 	fmt.Printf("  Path:   %s\n", ui.Value(result.Path))
 	fmt.Printf("  Branch: %s\n", ui.Value(result.Branch))
 
-	if wtAddWorkitem != "" {
-		link, lerr := linkWorktreeToWorkitem(ctx, campRoot, wtAddWorkitem, filepath.ToSlash(result.RelativePath))
+	if linkTarget != nil {
+		link, lerr := attachWorktreeLink(ctx, campRoot, linkTarget, filepath.ToSlash(result.RelativePath), cmd.ErrOrStderr())
 		if lerr != nil {
 			return camperrors.Wrap(lerr, "worktree created but workitem link failed")
 		}
 		fmt.Printf("  Workitem: %s (%s)\n", ui.Value(link.WorkitemID), ui.Dim(link.WorkitemKey))
 		fmt.Println(ui.Dim("  camp p commit in this worktree will include WI-* in the campaign tag"))
+	}
+
+	// Project campaign skills into the worktree so Grok/Claude sessions whose
+	// git root is the worktree still discover .campaign/skills. Failure here
+	// must not undo a successful worktree create.
+	projected, err := intskills.ProjectIntoWorktreeBestEffort(ctx, campRoot, result.Path)
+	if err != nil {
+		fmt.Println(ui.Warning(fmt.Sprintf("  Skills: could not project into worktree: %v", err)))
+		fmt.Println(ui.Dim("  Fix later with: camp skills link --worktrees-only"))
+	} else if projected {
+		fmt.Println(ui.Dim("  Skills: projected campaign skill bundles into worktree (.agents/.claude/.grok)"))
 	}
 
 	fmt.Println()
@@ -158,23 +192,17 @@ func runProjectWorktreeAdd(cmd *cobra.Command, args []string) error {
 	return nil
 }
 
-// linkWorktreeToWorkitem attaches a primary worktree link so the resolver
+// attachWorktreeLink attaches a primary worktree link so the resolver
 // (and therefore camp p commit) picks up the workitem ref inside that tree.
-func linkWorktreeToWorkitem(ctx context.Context, campRoot, selectorQuery, relativeWorktreePath string) (links.Link, error) {
-	wi, err := selector.Resolve(ctx, campRoot, selectorQuery, selector.ResolveOptions{})
-	if err != nil {
-		return links.Link{}, camperrors.Wrap(err, "resolve workitem "+selectorQuery)
-	}
-	workitemID := wi.StableID
-	if workitemID == "" {
-		workitemID = wi.Key
-	}
+// The workitem is resolved and validated by the caller before the worktree is
+// created, so a bad selector never leaves a dangling worktree behind.
+func attachWorktreeLink(ctx context.Context, campRoot string, wi *wkitem.WorkItem, relativeWorktreePath string, report io.Writer) (links.Link, error) {
 	scopePath := relativeWorktreePath
 	if scopePath == "" {
 		return links.Link{}, camperrors.NewValidation("worktree", "missing worktree relative path", nil)
 	}
 	return links.AttachPrimary(ctx, campRoot, links.AttachOptions{
-		WorkitemID:  workitemID,
+		WorkitemID:  wkitem.LinkWorkitemID(wi),
 		WorkitemKey: wi.Key,
 		Scope: links.LinkScope{
 			Kind: links.ScopeWorktree,
@@ -182,5 +210,6 @@ func linkWorktreeToWorkitem(ctx context.Context, campRoot, selectorQuery, relati
 		},
 		CreatedBy: "camp_project_worktree_add",
 		Replace:   true,
+		Report:    report,
 	})
 }

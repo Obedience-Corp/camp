@@ -404,6 +404,9 @@ func TestSaveCampaignConfig_AppendsHooksPlaceholderWhenEmpty(t *testing.T) {
 	if !bytes.Contains(data, []byte(want)) {
 		t.Errorf("campaign.yaml missing commented hooks placeholder; got:\n%s", string(data))
 	}
+	if !bytes.Contains(data, []byte("command: ob commit --print-session-id")) {
+		t.Errorf("campaign.yaml missing discoverable ob session-id example; got:\n%s", string(data))
+	}
 
 	// Round-trip must still load with empty Hooks (comments are ignored by yaml).
 	loaded, err := LoadCampaignConfig(ctx, tmpDir)

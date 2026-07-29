@@ -12,6 +12,7 @@ import (
 	"github.com/Obedience-Corp/camp/internal/fest"
 	wkitem "github.com/Obedience-Corp/camp/internal/workitem"
 	"github.com/Obedience-Corp/camp/internal/workitem/links"
+	"github.com/Obedience-Corp/camp/internal/workitem/locate"
 )
 
 func promoteCampaign(t *testing.T) string {
@@ -37,6 +38,23 @@ func writeFile(t *testing.T, path, content string) {
 	}
 	if err := os.WriteFile(path, []byte(content), 0o644); err != nil {
 		t.Fatalf("WriteFile(%s): %v", path, err)
+	}
+}
+
+func TestPromotedWorkitemIdentity_FileSourceResolvesID(t *testing.T) {
+	dir := t.TempDir()
+	fpath := filepath.Join(dir, "note.md")
+	writeFile(t, fpath, "---\nversion: v1alpha8\nkind: workitem\nid: note-x-2026-07-19\ntype: design\ntitle: X\nref: WI-abc123\n---\n\n# X\n")
+
+	loc := &locate.Location{SourcePath: fpath, Type: "design"}
+	result := &workitemPromoteResult{From: "workflow/design/note.md"}
+	id, key := promotedWorkitemIdentity(context.Background(), dir, loc, result)
+
+	if id != "note-x-2026-07-19" {
+		t.Errorf("file source id = %q, want note-x-2026-07-19 (must resolve via frontmatter, not a .workitem sibling)", id)
+	}
+	if key != "design:workflow/design/note.md" {
+		t.Errorf("key = %q, want design:workflow/design/note.md", key)
 	}
 }
 

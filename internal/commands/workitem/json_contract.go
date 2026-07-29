@@ -5,6 +5,8 @@ const (
 	WorkitemCreateJSONVersion = "workitem-create/v1alpha1"
 	// WorkitemResolveJSONVersion is the schema version of camp workitem resolve --json.
 	WorkitemResolveJSONVersion = "workitem-resolve/v1alpha1"
+	// WorkitemIDJSONVersion is the schema version of camp workitem id --json.
+	WorkitemIDJSONVersion = "workitem-id/v1alpha1"
 	// WorkitemPriorityJSONVersion is the schema version of camp workitem priority --json.
 	WorkitemPriorityJSONVersion = "workitem-priority/v1alpha1"
 	// WorkitemStageJSONVersion is the schema version of camp workitem stage --json.
@@ -25,4 +27,8 @@ const (
 	WorkitemRepairJSONVersion = "workitem-repair/v1alpha1"
 	// WorkitemGatherJSONVersion is the schema version of camp gather <type> --json.
 	WorkitemGatherJSONVersion = "workitem-gather/v1alpha1"
+	// WorkitemRenameJSONVersion is the schema version of camp workitem rename --json.
+	WorkitemRenameJSONVersion = "workitem-rename/v1alpha1"
+	// WorkitemSweepJSONVersion is the schema version of camp workitem sweep --json.
+	WorkitemSweepJSONVersion = "workitem-sweep/v1alpha1"
 )

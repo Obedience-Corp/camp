@@ -17,16 +17,42 @@ import (
 // offered for completion before it is treated as stale (id-only) again.
 const machineCompletionTTL = 60 * time.Second
 
+// machineSnapshotTTL bounds a PUSHED snapshot instead. The two differ because
+// their refresh events differ: a pulled entry is replaced the next time the user
+// runs `camp list --remote`, which is often, while a pushed one is replaced by
+// the next hop from that host, which may be tomorrow. A 60s bound would make a
+// pushed snapshot unusable within a minute of arriving, i.e. never usable.
+//
+// The data is campaign NAMES, which change on the order of days, and the cost of
+// staleness is a completion suggestion for a renamed campaign. The cost of being
+// too short is the feature not working. Asymmetric costs, so this leans long.
+const machineSnapshotTTL = 24 * time.Hour
+
+// snapshotSource marks an entry that was pushed to us rather than pulled by us.
+const snapshotSource = "push"
+
 // machineCacheEntry is the on-disk per-machine completion cache: the remote
 // machine's campaign names and when they were fetched. It is a derived cache
 // (gitignored), warmed by `camp list --remote`, read on the keystroke path.
 type machineCacheEntry struct {
 	Campaigns []string `json:"campaigns"`
 	FetchedAt int64    `json:"fetched_at"` // unix nanoseconds
+	// Source is "" for entries this machine pulled and "push" for a snapshot a
+	// host sent us. It is omitempty and read with a plain json.Unmarshal, so a
+	// camp that predates this field ignores it and applies the shorter TTL,
+	// degrading to today's behavior rather than erroring.
+	Source string `json:"source,omitempty"`
 }
 
 func (e machineCacheEntry) fresh(now time.Time) bool {
-	return now.Sub(time.Unix(0, e.FetchedAt)) <= machineCompletionTTL
+	return now.Sub(time.Unix(0, e.FetchedAt)) <= e.ttl()
+}
+
+func (e machineCacheEntry) ttl() time.Duration {
+	if e.Source == snapshotSource {
+		return machineSnapshotTTL
+	}
+	return machineCompletionTTL
 }
 
 func machineCacheDir() string {
@@ -56,12 +82,28 @@ func readMachineCacheCampaigns(id string) ([]string, bool) {
 // means the next completion is a miss). Called from the `camp list --remote`
 // fan-out so real usage keeps completion data fresh without the keystroke path
 // ever doing a live ssh.
+// writeMachineSnapshotCampaigns records names a HOST pushed to us. It shares the
+// file with the pulled path deliberately: one read on the keystroke path stays
+// one os.ReadFile, and a pull always overwrites a push because data that came
+// from the machine itself is authoritative over another machine's guess.
+func writeMachineSnapshotCampaigns(id string, campaigns []string) {
+	writeMachineCacheEntry(id, machineCacheEntry{
+		Campaigns: campaigns,
+		FetchedAt: time.Now().UnixNano(),
+		Source:    snapshotSource,
+	})
+}
+
 func writeMachineCacheCampaigns(id string, campaigns []string) {
+	writeMachineCacheEntry(id, machineCacheEntry{Campaigns: campaigns, FetchedAt: time.Now().UnixNano()})
+}
+
+func writeMachineCacheEntry(id string, entry machineCacheEntry) {
 	dir := machineCacheDir()
 	if os.MkdirAll(dir, 0o700) != nil {
 		return
 	}
-	data, err := json.Marshal(machineCacheEntry{Campaigns: campaigns, FetchedAt: time.Now().UnixNano()})
+	data, err := json.Marshal(entry)
 	if err != nil {
 		return
 	}

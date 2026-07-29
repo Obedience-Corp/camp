@@ -1,6 +1,7 @@
 package main
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -11,8 +12,10 @@ import (
 	"github.com/Obedience-Corp/camp/internal/config"
 	camperrors "github.com/Obedience-Corp/camp/internal/errors"
 	"github.com/Obedience-Corp/camp/internal/machines"
+	"github.com/Obedience-Corp/camp/internal/pathutil"
 	"github.com/Obedience-Corp/camp/internal/remote"
 	"github.com/Obedience-Corp/camp/internal/ui"
+	"github.com/Obedience-Corp/camp/internal/version"
 )
 
 // machineJSON mirrors machines.Machine's field names for JSON output
@@ -61,12 +64,41 @@ and 'camp list --remote'.
 Machines are stored in ~/.obey/machines.yaml. The current machine is always
 implicitly available as "local" and is never written to that file.
 
-'camp machine diagnose' inspects the per-machine ssh ControlMaster sockets and
-can clear a stale one (the state a sleep or network flap can leave behind, which
-would otherwise hang the next hop until ControlPersist expires).`,
-	Example: `  camp machine list
+Network vs login: Tailscale (or LAN) is how you reach the host; SSH auth is how
+you log in. Prefer OpenSSH keys/agent (auth_method=ssh-agent) by default;
+Tailscale SSH (auth_method=tailscale-ssh) is opt-in identity login. Terminal
+hops always use BatchMode (agents never hang on password prompts).
+
+'camp machine diagnose' reports auth mode, a copy-paste ssh probe, and
+ControlMaster socket state (and can clear a stale socket with --reset).
+
+The mesh model, in one paragraph: hopping exports CAMP_HOP_ORIGIN into the
+remote login shell, a single v1 line naming where the shell came from, which is
+what lets 'camp switch -' return without either machine storing state about the
+other. A payload does not register anything: if the origin is unknown here,
+camp names 'camp machine adopt', which previews and asks, requires a TTY, and
+remembers a decline. Reachability need not be symmetric -- a machine you cannot
+dial still appears in completion, because visibility travels as a snapshot
+pushed during a successful enumerate rather than as a live query. Camp will
+never install a key, register a machine unattended, or claim a host is reachable
+on the strength of tailnet membership alone.
+
+See docs/machine-mesh.md for the reachability matrix (notably: the Tailscale SSH
+server does not run in sandboxed macOS GUI builds, so a mac accepts OpenSSH keys
+instead) and docs/transfer.md for the machine-first transfer grammar.
+
+Run without a subcommand in a terminal to manage the fleet interactively: add,
+discover, edit, and remove machines, and see each one's socket state. The
+subcommands stay the interface for scripts and agents, and remain what a
+non-terminal 'camp machine' prints help for.`,
+	Args: cobra.NoArgs,
+	RunE: runMachineTUI,
+	Example: `  camp machine
+  camp machine list
+  camp machine add buildbox --host 10.0.0.12 --auth ssh-agent --user ci
   camp machine add devbox --host devbox.tailnet.ts.net --auth tailscale-ssh
   camp machine add --discover
+  camp machine add --discover --auth tailscale-ssh --user lance
   camp machine remove devbox
   camp machine diagnose
   camp machine diagnose devbox --reset`,
@@ -89,13 +121,15 @@ var machineAddCmd = &cobra.Command{
 than duplicating it).
 
 With --discover, camp runs 'tailscale status --json' and lets you pick a
-tailnet device instead of specifying --host/--auth by hand; the chosen device
-is saved with auth_method=tailscale-ssh. Pass an id positionally with
---discover to select that device by its derived id non-interactively (skips
-the picker), or use --yes to take the first discovered device.`,
-	Example: `  camp machine add devbox --host devbox.tailnet.ts.net --auth tailscale-ssh
-  camp machine add buildbox --host 10.0.0.12 --auth ssh-agent --user ci
+tailnet device (network identity only). Default auth is OpenSSH keys/agent
+(ssh-agent); pass --auth tailscale-ssh for Tailscale identity login. --user and
+--identity are honored with --discover. Pass an id positionally with --discover
+to select that device by its derived id non-interactively (skips the picker),
+or use --yes to take the first discovered device.`,
+	Example: `  camp machine add buildbox --host 10.0.0.12 --auth ssh-agent --user ci
+  camp machine add devbox --host devbox.tailnet.ts.net --auth tailscale-ssh
   camp machine add --discover
+  camp machine add --discover --auth tailscale-ssh --user lance
   camp machine add devbox --discover
   camp machine add --discover --yes`,
 	Args: cobra.MaximumNArgs(1),
@@ -113,13 +147,16 @@ var machineRemoveCmd = &cobra.Command{
 
 var machineDiagnoseCmd = &cobra.Command{
 	Use:   "diagnose [id]",
-	Short: "Inspect (and optionally clear) ssh ControlMaster sockets",
-	Long: `Report the ssh ControlMaster multiplex socket state for each configured machine
-(or one machine if an id is given):
+	Short: "Inspect machine auth, probe line, and ssh ControlMaster sockets",
+	Long: `Report how each configured machine is set up to hop (or one machine if an id
+is given):
 
-  none   no socket — the next hop opens a fresh master
-  live   socket present and the master answers 'ssh -O check'
-  stale  socket present but the master no longer answers
+  auth     OpenSSH (keys/agent) or Tailscale SSH (identity)
+  probe    copy-paste BatchMode ssh line to test outside camp
+  socket   ControlMaster multiplex state:
+             none   no socket — the next hop opens a fresh master
+             live   socket present and the master answers 'ssh -O check'
+             stale  socket present but the master no longer answers
 
 A stale socket is what a sleep or network flap can leave behind; until it is
 removed (or ControlPersist expires) the next 'camp switch machine:...' or
@@ -154,6 +191,14 @@ func init() {
 	machineCmd.AddCommand(machineAddCmd)
 	machineCmd.AddCommand(machineRemoveCmd)
 	machineCmd.AddCommand(machineDiagnoseCmd)
+	machineCmd.AddCommand(machineAdoptCmd)
+	machineCmd.AddCommand(machineCachePutCmd)
+	// StringArray (not StringSlice): each --campaigns is one name intact, so
+	// names may contain commas. The push path emits repeated flags to match.
+	machineCachePutCmd.Flags().StringArrayVar(&cachePutCampaigns, "campaigns", nil,
+		"Campaign name on the calling machine (repeatable; names may contain commas)")
+	machineAdoptCmd.Flags().BoolVar(&machineAdoptForce, "force", false,
+		"Skip the reminder that you declined this origin before (never skips the confirmation)")
 
 	machineListCmd.Flags().BoolVar(&machineListJSON, "json", false, "Output as JSON")
 
@@ -176,9 +221,24 @@ func runMachineList(cmd *cobra.Command, _ []string) error {
 		return err
 	}
 	if machineListJSON {
+		// JSON consumers get data, never advice: the hint is suppressed here
+		// rather than inside OriginHint, because whether advice belongs in the
+		// output is the caller's decision.
 		return writeMachineListJSON(cmd.OutOrStdout(), mf)
 	}
-	return renderMachineListTable(cmd.OutOrStdout(), mf.Machines)
+	if err := renderMachineListTable(cmd.OutOrStdout(), mf.Machines); err != nil {
+		return err
+	}
+	// OriginHint's contract is non-TTY silence: piped/redirected list stays pure
+	// data, and the once-per-process token is not burned on non-interactive paths.
+	// --json already returns above; this covers bare table output without a TTY.
+	if ui.IsTerminal() {
+		if hint := OriginHint(); hint != "" {
+			_, err := fmt.Fprintln(cmd.OutOrStdout(), ui.Dim(hint))
+			return err
+		}
+	}
+	return nil
 }
 
 func writeMachineListJSON(w io.Writer, mf *machines.File) error {
@@ -286,14 +346,61 @@ func runMachineRemove(cmd *cobra.Command, args []string) error {
 	return err
 }
 
-// machineDiagnoseRow is one machine's ControlMaster status in
-// `camp machine diagnose --json`. Reset is true when --reset cleared a stale
-// socket for this machine on this run.
+// machineDiagnoseRow is one machine's status in `camp machine diagnose --json`.
+// Reset is true when --reset cleared a stale socket for this machine on this run.
 type machineDiagnoseRow struct {
-	ID     string `json:"id"`
-	Socket string `json:"socket"`
-	State  string `json:"state"`
-	Reset  bool   `json:"reset"`
+	ID           string `json:"id"`
+	Host         string `json:"host,omitempty"`
+	AuthMethod   string `json:"auth_method,omitempty"`
+	AuthLabel    string `json:"auth_label,omitempty"`
+	SSHUser      string `json:"ssh_user,omitempty"`
+	IdentityFile string `json:"identity_file,omitempty"`
+	Probe        string `json:"probe,omitempty"`
+	Hint         string `json:"hint,omitempty"`
+	Socket       string `json:"socket"`
+	State        string `json:"state"`
+	Reset        bool   `json:"reset"`
+	CampVersion  string `json:"camp_version,omitempty"`
+	CampCommit   string `json:"camp_commit,omitempty"`
+	VersionSkew  bool   `json:"version_skew"`
+	// ReverseCapable reports whether THIS machine accepts inbound ssh, which is
+	// the only half of reverse reachability camp can observe without executing
+	// on the far side. Additive with omitempty on the hint so existing --json
+	// consumers are unaffected.
+	ReverseCapable bool   `json:"reverse_capable"`
+	ReverseHint    string `json:"reverse_hint,omitempty"`
+}
+
+// probeRemoteCampVersion asks the machine's own camp for its version. It is
+// best-effort: any failure (unreachable, camp missing, ancient binary without
+// `version --json`) reports as an empty version, never a diagnose error —
+// diagnose must keep working against exactly the broken machines it exists for.
+// The hop is reuse-only: under ControlMaster=auto this probe would unlink a
+// stale socket and open a fresh master, so diagnose would heal the exact stale
+// state it is reporting and the follow-up --reset would find nothing to clear.
+func probeRemoteCampVersion(ctx context.Context, m *machines.Machine) (versionStr, commit string) {
+	out, err := remote.RunCampCommandReuseOnly(ctx, m, "version --json")
+	if err != nil {
+		return "", ""
+	}
+	var info version.Info
+	if err := json.Unmarshal(out, &info); err != nil {
+		return "", ""
+	}
+	return info.Version, info.Commit
+}
+
+// campVersionSkew reports whether a probed remote version differs from this
+// binary. Same version string but different commits (the dev-build case) also
+// counts — two "dev" builds from different commits are not the same camp.
+func campVersionSkew(local version.Info, remoteVersion, remoteCommit string) bool {
+	if remoteVersion == "" {
+		return false
+	}
+	if remoteVersion != local.Version {
+		return true
+	}
+	return remoteCommit != "" && local.Commit != "" && remoteCommit != local.Commit
 }
 
 func runMachineDiagnose(cmd *cobra.Command, args []string) error {
@@ -323,11 +430,40 @@ func runMachineDiagnose(cmd *cobra.Command, args []string) error {
 		}
 	}
 
+	localInfo := version.Get()
+	// Reverse reachability is a fact about this machine, identical for every
+	// row. Probing it inside the loop cost N loopback dials and N tailscale
+	// probes against a 2s budget each to learn the same answer.
+	reverse := checkReverseReachability(ctx, defaultReverseProbes())
 	rows := make([]machineDiagnoseRow, 0, len(targets))
 	for i := range targets {
 		m := &targets[i]
 		d := remote.CheckControlMaster(ctx, m)
-		row := machineDiagnoseRow{ID: m.ID, Socket: d.Socket, State: string(d.State)}
+		remoteVersion, remoteCommit := probeRemoteCampVersion(ctx, m)
+		// Diagnose is the only surface that pays for a live probe, so it is the
+		// only one that can warm the cache the hop path reads.
+		writeMachineVersionCache(m.ID, remoteVersion, remoteCommit)
+		row := machineDiagnoseRow{
+			ID:           m.ID,
+			Host:         m.Host,
+			AuthMethod:   m.AuthMethod,
+			AuthLabel:    remote.AuthDisplayName(m.AuthMethod),
+			SSHUser:      m.SSHUser,
+			IdentityFile: m.IdentityFile,
+			Probe:        remote.ProbeCommand(m),
+			Hint:         remote.AuthModeHint(m),
+			Socket:       d.Socket,
+			State:        string(d.State),
+			CampVersion:  remoteVersion,
+			CampCommit:   remoteCommit,
+			VersionSkew:  campVersionSkew(localInfo, remoteVersion, remoteCommit),
+			// What this machine can honestly say about being reachable FROM
+			// that one. Identical for every row (it is a fact about here, not
+			// about them), and reported per row because that is where an
+			// operator is already looking when a hop-back fails.
+			ReverseCapable: reverse.Capable,
+			ReverseHint:    reverse.Hint,
+		}
 		if machineDiagnoseReset && d.State == remote.ControlStale {
 			if err := remote.ResetControlMaster(ctx, m); err != nil {
 				return err
@@ -353,23 +489,60 @@ func renderMachineDiagnoseTable(w io.Writer, rows []machineDiagnoseRow) error {
 		_, err := fmt.Fprintln(w, ui.Dim("No machines configured; nothing to diagnose."))
 		return err
 	}
-	tw := tabwriter.NewWriter(w, 0, 0, 2, ' ', 0)
-	if _, err := fmt.Fprintf(tw, "%s\t%s\t%s\n", ui.Label("ID"), ui.Label("STATE"), ui.Label("SOCKET")); err != nil {
-		return err
-	}
 	reset := 0
-	for _, r := range rows {
+	for i, r := range rows {
+		if i > 0 {
+			if _, err := fmt.Fprintln(w); err != nil {
+				return err
+			}
+		}
 		state := r.State
 		if r.Reset {
 			state = r.State + " (was stale, cleared)"
 			reset++
 		}
-		if _, err := fmt.Fprintf(tw, "%s\t%s\t%s\n", ui.Label(r.ID), state, ui.Dim(r.Socket)); err != nil {
-			return err
+		// Human output abbreviates $HOME so pastes do not leak full paths.
+		// --json keeps absolute paths for consumers.
+		lines := []string{
+			fmt.Sprintf("%s  %s", ui.Label("ID"), r.ID),
+			fmt.Sprintf("%s  %s", ui.Label("HOST"), r.Host),
+			fmt.Sprintf("%s  %s (%s)", ui.Label("AUTH"), r.AuthLabel, r.AuthMethod),
 		}
-	}
-	if err := tw.Flush(); err != nil {
-		return err
+		if r.SSHUser != "" {
+			lines = append(lines, fmt.Sprintf("%s  %s", ui.Label("USER"), r.SSHUser))
+		}
+		if r.IdentityFile != "" {
+			lines = append(lines, fmt.Sprintf("%s  %s", ui.Label("IDENTITY"), pathutil.AbbreviateHome(r.IdentityFile)))
+		}
+		lines = append(lines,
+			fmt.Sprintf("%s  %s", ui.Label("SOCKET"), state+" · "+pathutil.AbbreviateHome(r.Socket)),
+			fmt.Sprintf("%s  %s", ui.Label("PROBE"), r.Probe),
+		)
+		switch {
+		case r.CampVersion == "":
+			lines = append(lines, fmt.Sprintf("%s  %s", ui.Label("CAMP"),
+				ui.Dim("unavailable (unreachable, or camp missing / too old for 'version --json')")))
+		case r.VersionSkew:
+			lines = append(lines, fmt.Sprintf("%s  %s", ui.Label("CAMP"),
+				campVersionDisplay(r)+"  ⚠ differs from this machine ("+campLocalVersionDisplay()+"); remote errors may not match current behavior"))
+		default:
+			lines = append(lines, fmt.Sprintf("%s  %s", ui.Label("CAMP"), campVersionDisplay(r)))
+		}
+		if r.ReverseHint != "" {
+			mark := "✗"
+			if r.ReverseCapable {
+				mark = "✓"
+			}
+			lines = append(lines, fmt.Sprintf("%s  %s %s", ui.Label("REVERSE"), mark, r.ReverseHint))
+		}
+		if r.Hint != "" {
+			lines = append(lines, fmt.Sprintf("%s  %s", ui.Label("HINT"), r.Hint))
+		}
+		for _, line := range lines {
+			if _, err := fmt.Fprintln(w, line); err != nil {
+				return err
+			}
+		}
 	}
 	if !machineDiagnoseReset && machineDiagnoseHasStale(rows) {
 		if _, err := fmt.Fprintln(w, ui.Dim("Stale socket(s) found. Run 'camp machine diagnose --reset' to clear them.")); err != nil {
@@ -382,6 +555,23 @@ func renderMachineDiagnoseTable(w io.Writer, rows []machineDiagnoseRow) error {
 		}
 	}
 	return nil
+}
+
+// campVersionDisplay formats a probed remote camp version, appending the
+// commit only when it disambiguates (dev builds all report version "dev").
+func campVersionDisplay(r machineDiagnoseRow) string {
+	if r.CampCommit != "" {
+		return r.CampVersion + " (" + r.CampCommit + ")"
+	}
+	return r.CampVersion
+}
+
+func campLocalVersionDisplay() string {
+	info := version.Get()
+	if info.Commit != "" {
+		return info.Version + " (" + info.Commit + ")"
+	}
+	return info.Version
 }
 
 func machineDiagnoseHasStale(rows []machineDiagnoseRow) bool {

@@ -29,6 +29,10 @@ func setListRegistry(t *testing.T) {
 	t.Helper()
 	path := filepath.Join(t.TempDir(), "registry.json")
 	t.Setenv("CAMP_REGISTRY_PATH", path)
+	// Isolate from the runner's real fleet: without this, a developer machine
+	// with ~/.obey/machines.yaml constructs every test model in remote-loading
+	// state (remotes auto-load on open when machines are configured).
+	t.Setenv("CAMP_MACHINES_PATH", filepath.Join(t.TempDir(), "no-machines.yaml"))
 	if err := os.WriteFile(path, []byte(listFixture), 0o644); err != nil {
 		t.Fatalf("write fixture: %v", err)
 	}
@@ -139,12 +143,20 @@ func TestListTUIRequested(t *testing.T) {
 			t.Error("a shaping flag should print the table, not open the browser")
 		}
 	})
-	t.Run("remote in a TTY forces the fan-out path", func(t *testing.T) {
+	t.Run("remote in a TTY opens the browser", func(t *testing.T) {
 		listJSON, listCount = false, false
 		c := listTestCmd()
 		_ = c.Flags().Set("remote", "true")
-		if listTUIRequested(c, true) {
-			t.Error("--remote must force the text fan-out path, not open the local browser")
+		if !listTUIRequested(c, true) {
+			t.Error("--remote in a TTY should open the browser (remotes auto-load); table is for pipes/--json")
+		}
+	})
+	t.Run("remote piped prints the table", func(t *testing.T) {
+		listJSON, listCount = false, false
+		c := listTestCmd()
+		_ = c.Flags().Set("remote", "true")
+		if listTUIRequested(c, false) {
+			t.Error("piped --remote must keep the scriptable table path")
 		}
 	})
 }
@@ -403,5 +415,162 @@ func TestWriteGotoSelection(t *testing.T) {
 
 	if err := writeGotoSelection(listTUIModel{gotoPath: "/x"}, ""); err != nil {
 		t.Errorf("no path-output should be a no-op, got %v", err)
+	}
+}
+
+func TestGotoSelectionFor(t *testing.T) {
+	local := campaignEntry{Name: "x", Path: "/abs/x", Machine: ""}
+	if got := gotoSelectionFor(local); got != "/abs/x" {
+		t.Errorf("local = %q", got)
+	}
+	localTagged := campaignEntry{Name: "x", Path: "/abs/x", Machine: "local"}
+	if got := gotoSelectionFor(localTagged); got != "/abs/x" {
+		t.Errorf("local machine tag = %q", got)
+	}
+	remote := campaignEntry{Name: "lance-arch", Path: "/remote/p", Machine: "archdtop"}
+	if got := gotoSelectionFor(remote); got != "ssh-hop:archdtop:lance-arch" {
+		t.Errorf("remote = %q", got)
+	}
+}
+
+func TestListTUI_RemoteToggleMergeAndStrip(t *testing.T) {
+	m := newTestListModel(t)
+	m.machinesConfigured = true
+	localN := len(m.all)
+
+	// Simulate async load result.
+	next, _ := m.Update(remoteLoadedMsg{
+		rows: []campaignEntry{
+			{ID: "r1", Name: "lance-arch", Org: "obey", Status: config.StatusActive, Machine: "archdtop", Path: "/r"},
+		},
+		results: []remoteResult{{machineID: "archdtop"}},
+	})
+	m = next.(listTUIModel)
+	if !m.remoteOn {
+		t.Fatal("remoteOn should be true after load")
+	}
+	if len(m.all) != localN+1 {
+		t.Fatalf("all len = %d, want %d", len(m.all), localN+1)
+	}
+	// Toggle off via key r.
+	m = lkey(m, "r")
+	if m.remoteOn {
+		t.Error("remoteOn should be false after toggle off")
+	}
+	for _, e := range m.all {
+		if isRemoteListEntry(e) {
+			t.Errorf("remote row still present after toggle off: %+v", e)
+		}
+	}
+	if len(m.all) != localN {
+		t.Errorf("local count after strip = %d, want %d", len(m.all), localN)
+	}
+}
+
+func TestListTUI_RemoteMutateGuarded(t *testing.T) {
+	m := newTestListModel(t)
+	m.machinesConfigured = true
+	next, _ := m.Update(remoteLoadedMsg{
+		rows: []campaignEntry{
+			{ID: "r1", Name: "remote-camp", Org: "obey", Status: config.StatusActive, Machine: "archdtop", Path: "/r"},
+		},
+	})
+	m = next.(listTUIModel)
+	// Move cursor to last (remote) row.
+	m.cursor = len(m.visible) - 1
+	if !isRemoteListEntry(m.visible[m.cursor]) {
+		t.Fatal("expected cursor on remote row")
+	}
+	m = lkey(m, "s")
+	if !m.statusErr || !strings.Contains(m.status, "read-only") {
+		t.Errorf("status cycle on remote should refuse, got %q (err=%v)", m.status, m.statusErr)
+	}
+	m = lkey(m, "m")
+	if m.overlay != listOverlayNone {
+		t.Error("move overlay must not open on remote row")
+	}
+	if !m.statusErr || !strings.Contains(m.status, "read-only") {
+		t.Errorf("org move on remote should refuse, got %q", m.status)
+	}
+}
+
+func TestListTUI_Go_RemoteWritesSSHHop(t *testing.T) {
+	m := newTestListModel(t)
+	m.gotoEnabled = true
+	m.machinesConfigured = true
+	next, _ := m.Update(remoteLoadedMsg{
+		rows: []campaignEntry{
+			{ID: "r1", Name: "lance-arch", Org: "obey", Status: config.StatusActive, Machine: "archdtop", Path: "/remote/p"},
+		},
+	})
+	m = next.(listTUIModel)
+	m.cursor = len(m.visible) - 1
+	m = lkey(m, "g")
+	if !m.quitting {
+		t.Fatal("g should quit")
+	}
+	if m.gotoPath != "ssh-hop:archdtop:lance-arch" {
+		t.Errorf("gotoPath = %q, want ssh-hop marker", m.gotoPath)
+	}
+}
+
+func TestListTUI_AutoLoadsRemotesOnOpen(t *testing.T) {
+	setListRegistry(t)
+	mpath := filepath.Join(t.TempDir(), "machines.yaml")
+	fleet := "version: 1\nmachines:\n  - id: archdtop\n    host: archdtop.example\n    auth_method: tailscale-ssh\n"
+	if err := os.WriteFile(mpath, []byte(fleet), 0o644); err != nil {
+		t.Fatalf("write machines fixture: %v", err)
+	}
+	t.Setenv("CAMP_MACHINES_PATH", mpath)
+
+	reg, err := config.LoadRegistry(context.Background())
+	if err != nil {
+		t.Fatalf("load registry: %v", err)
+	}
+	m := newListTUIModel(context.Background(), reg, "")
+	if !m.machinesConfigured {
+		t.Fatal("machinesConfigured should be true with a seeded fleet")
+	}
+	if !m.remoteLoading {
+		t.Fatal("remotes should auto-load on open when machines are configured")
+	}
+	if m.Init() == nil {
+		t.Fatal("Init should return the auto-load command")
+	}
+	m.width, m.height = 120, 30
+	if !strings.Contains(m.View(), "loading remotes") {
+		t.Error("first frame should show the remote loading state")
+	}
+}
+
+func TestListTUI_NoAutoLoadWithoutMachines(t *testing.T) {
+	m := newTestListModel(t) // setListRegistry isolates the fleet path
+	if m.machinesConfigured || m.remoteLoading {
+		t.Fatalf("no fleet configured: machinesConfigured=%v remoteLoading=%v, want false/false",
+			m.machinesConfigured, m.remoteLoading)
+	}
+}
+
+func TestListTUI_RemoteListFilterMirrorsView(t *testing.T) {
+	m := newTestListModel(t)
+	m.orgFilter = "obey"
+	m.activeOnly = false
+	f := m.remoteListFilter()
+	if f.org != "obey" || !f.all {
+		t.Errorf("filter = %+v, want org=obey all=true", f)
+	}
+	m.activeOnly = true
+	if f := m.remoteListFilter(); f.all {
+		t.Error("active-only view must not request all statuses from remotes")
+	}
+}
+
+func TestListTUI_FooterMentionsRemotesWhenConfigured(t *testing.T) {
+	m := newTestListModel(t)
+	m.machinesConfigured = true
+	m.width, m.height = 120, 30
+	out := m.View()
+	if !strings.Contains(out, "r: remotes") && !strings.Contains(out, "r remotes") {
+		t.Errorf("footer should mention r remotes when machines configured:\n%s", out)
 	}
 }

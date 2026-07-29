@@ -292,6 +292,11 @@ func CountAuthors(ctx context.Context, gitDir string, resolver *AuthorResolver) 
 }
 
 // AuthorHasCommits returns true if the given author email has commits in the repo.
+//
+// A successful git log with empty output means the author has no commits
+// (false, nil). Context cancellation and operational git failures (bad repo,
+// permission errors, etc.) are returned as errors — callers must not treat
+// them as "no commits".
 func AuthorHasCommits(ctx context.Context, gitDir, authorEmail string) (bool, error) {
 	if err := ctx.Err(); err != nil {
 		return false, err
@@ -301,7 +306,13 @@ func AuthorHasCommits(ctx context.Context, gitDir, authorEmail string) (bool, er
 		"--author="+authorEmail, "--oneline", "-1")
 	out, err := cmd.Output()
 	if err != nil {
-		return false, nil
+		if ctx.Err() != nil {
+			return false, ctx.Err()
+		}
+		if ee, ok := err.(*exec.ExitError); ok {
+			return false, camperrors.Newf("git log --author in %s: %w\nstderr: %s", gitDir, err, ee.Stderr)
+		}
+		return false, camperrors.Wrapf(err, "git log --author in %s", gitDir)
 	}
 	return strings.TrimSpace(string(out)) != "", nil
 }

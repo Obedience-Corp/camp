@@ -312,7 +312,7 @@ func RunFlow(ctx context.Context, p Params, w Writers, isInteractive bool) error
 	var festInitialized bool
 	if !p.DryRun {
 		var festErr error
-		festInitialized, festErr = initializeFestivals(ctx, result.CampaignRoot, w)
+		festInitialized, festErr = InitializeFestivals(ctx, result.CampaignRoot, w)
 		if festErr != nil && !errors.Is(festErr, fest.ErrFestNotFound) {
 			return festErr
 		}

@@ -28,7 +28,10 @@ func EnsureQuestDungeon(ctx context.Context, campaignRoot string) (*ScaffoldResu
 
 	result := &ScaffoldResult{}
 
-	dungeonRoot := DungeonPath(campaignRoot)
+	dungeonRoot, err := DungeonDir(ctx, campaignRoot)
+	if err != nil {
+		return nil, camperrors.Wrap(err, "resolving quest dungeon spelling")
+	}
 	dungeonResult, err := dungeonscaffold.Init(ctx, dungeonRoot, dungeonscaffold.InitOptions{})
 	if err != nil {
 		return nil, camperrors.Wrap(err, "initializing quest dungeon")
@@ -168,11 +171,6 @@ func RootPath(campaignRoot string) string {
 // DefaultPath returns the default quest metadata file path.
 func DefaultPath(campaignRoot string) string {
 	return DefaultQuestPath(campaignRoot)
-}
-
-// DungeonPath returns the quest dungeon root.
-func DungeonPath(campaignRoot string) string {
-	return DungeonDir(campaignRoot)
 }
 
 func appendUnique(dst []string, items ...string) []string {

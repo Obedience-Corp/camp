@@ -20,8 +20,8 @@ func TestResolveCommitContext_GracefulOutsideCampaign(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	questID, ref := resolveCommitContext(context.Background(), filepath.Join(tmp, "no-campaign"), "")
-	if questID != "" || ref != "" {
-		t.Fatalf("expected empty strings for non-campaign root, got quest=%q ref=%q", questID, ref)
+	questID, festivalRef, ref := resolveCommitContext(context.Background(), filepath.Join(tmp, "no-campaign"), "")
+	if questID != "" || festivalRef != "" || ref != "" {
+		t.Fatalf("expected empty strings for non-campaign root, got quest=%q festival=%q ref=%q", questID, festivalRef, ref)
 	}
 }

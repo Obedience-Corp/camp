@@ -4,6 +4,7 @@ import (
 	"context"
 	"crypto/rand"
 	"fmt"
+	"io"
 	"time"
 
 	camperrors "github.com/Obedience-Corp/camp/internal/errors"
@@ -25,6 +26,10 @@ type AttachOptions struct {
 	Replace bool
 	// AllowMissing skips ValidateLinkPath existence checks (migrations).
 	AllowMissing bool
+	// Report receives a line for each dead row the write pruned. Never nil in
+	// command code: pruning a row the user did not ask about is only acceptable
+	// because it is reported.
+	Report io.Writer
 }
 
 // AttachPrimary records a primary workitem→scope link in links.yaml.
@@ -49,7 +54,20 @@ func AttachPrimary(ctx context.Context, campaignRoot string, opts AttachOptions)
 	}
 
 	var out Link
+	var pruned []Pruned
 	err := WithLock(ctx, campaignRoot, func(registry *Links) error {
+		// Drop rows whose scope target is provably gone while the registry is
+		// open anyway. See Dead for why this is the only signal trusted here.
+		//
+		// A caller with nowhere to report to does not prune. Reporting is the
+		// price of removing a row the user did not ask about, so a missing
+		// Report writer makes the removal silent -- and silence is the one
+		// outcome this must not have. Skipping leaves the rows for the next
+		// reporting caller or for doctor.
+		if opts.Report != nil {
+			pruned = PruneDead(campaignRoot, registry)
+		}
+
 		id, idErr := NewLinkID(registry)
 		if idErr != nil {
 			return idErr
@@ -66,19 +84,37 @@ func AttachPrimary(ctx context.Context, campaignRoot string, opts AttachOptions)
 		if err := registry.AddLink(out, opts.Replace); err != nil {
 			return err
 		}
-		if errs := Validate(ctx, registry, ValidateOptions{
+		return AsError(ValidateOne(ctx, registry, out.ID, ValidateOptions{
 			CampaignRoot: campaignRoot,
 			AllowMissing: opts.AllowMissing,
 			Now:          out.CreatedAt,
-		}); len(errs) > 0 {
-			return camperrors.NewValidation(errs[0].Field, errs[0].Message, nil)
-		}
-		return nil
+		}))
 	})
 	if err != nil {
 		return Link{}, err
 	}
+	ReportPruned(opts.Report, pruned)
 	return out, nil
+}
+
+// ReportPruned writes one line per dropped row plus the undo, so a user who did
+// not ask for the cleanup can see exactly what went, why, and how to put it
+// back. Naming the reason matters: a worktree link dropped because its workitem
+// is gone otherwise reads as camp deleting worktree links.
+func ReportPruned(w io.Writer, pruned []Pruned) {
+	if w == nil || len(pruned) == 0 {
+		return
+	}
+	for _, p := range pruned {
+		_, _ = fmt.Fprintf(w, "removed dead link %s (%s:%s): %s\n",
+			p.Link.ID, p.Link.Scope.Kind, p.Link.Scope.Path, p.Reason)
+	}
+	// The prune and the caller's own write land in one save, so the undo is
+	// not surgical. Say so: a user who runs it expecting to keep the link they
+	// just made would otherwise lose it silently, which is the same failure
+	// this reporting exists to prevent.
+	_, _ = fmt.Fprintf(w,
+		"  undo: git checkout -- .campaign/workitems/links.yaml (reverts this whole write, new link included)\n")
 }
 
 // WorktreeScopePath returns the campaign-relative path for a project worktree

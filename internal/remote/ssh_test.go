@@ -2,6 +2,7 @@ package remote
 
 import (
 	"context"
+	"errors"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -34,9 +35,59 @@ func TestOptsAuthArgs(t *testing.T) {
 		t.Errorf("agent opts should not carry -i without an identity file: %v", agent)
 	}
 
+	// D1.2: Tailscale SSH and OpenSSH legitimately share BatchMode argv; the
+	// product distinction is error classification, not flag theater.
+	ts := Opts(&machines.Machine{AuthMethod: machines.AuthTailscaleSSH})
+	if !slices.Contains(ts, "BatchMode=yes") {
+		t.Errorf("tailscale-ssh opts missing BatchMode=yes: %v", ts)
+	}
+
 	withKey := Opts(&machines.Machine{AuthMethod: machines.AuthSSHAgent, IdentityFile: "/home/lance/.ssh/id_ed25519"})
 	if !slices.Contains(withKey, "IdentitiesOnly=yes") || !slices.Contains(withKey, "/home/lance/.ssh/id_ed25519") {
 		t.Errorf("identity-file opts missing IdentitiesOnly/-i: %v", withKey)
+	}
+}
+
+func TestAuthDisplayName(t *testing.T) {
+	if got := AuthDisplayName(machines.AuthSSHAgent); !strings.Contains(got, "OpenSSH") {
+		t.Errorf("ssh-agent label = %q", got)
+	}
+	if got := AuthDisplayName(machines.AuthTailscaleSSH); !strings.Contains(got, "Tailscale") {
+		t.Errorf("tailscale-ssh label = %q", got)
+	}
+}
+
+func TestProbeCommand(t *testing.T) {
+	got := ProbeCommand(&machines.Machine{
+		Host: "devbox.ts.net", SSHUser: "lance", AuthMethod: machines.AuthSSHAgent,
+	})
+	if !strings.Contains(got, "BatchMode=yes") || !strings.Contains(got, "lance@devbox.ts.net") || !strings.HasSuffix(got, " true") {
+		t.Errorf("ProbeCommand = %q", got)
+	}
+	withID := ProbeCommand(&machines.Machine{
+		Host: "h", IdentityFile: "/tmp/id", AuthMethod: machines.AuthSSHAgent,
+	})
+	if !strings.Contains(withID, "-i") || !strings.Contains(withID, "/tmp/id") {
+		t.Errorf("ProbeCommand with identity = %q", withID)
+	}
+}
+
+func TestAuthModeHint(t *testing.T) {
+	if got := AuthModeHint(&machines.Machine{AuthMethod: machines.AuthTailscaleSSH}); !strings.Contains(got, "login.tailscale.com") {
+		t.Errorf("tailscale hint = %q", got)
+	}
+	if got := AuthModeHint(&machines.Machine{AuthMethod: machines.AuthSSHAgent}); !strings.Contains(got, "OpenSSH") {
+		t.Errorf("agent hint = %q", got)
+	}
+}
+
+func TestFormatHopFailurePrefixesAuth(t *testing.T) {
+	stderr := "# Tailscale SSH requires an additional check.\n# To authenticate, visit: https://login.tailscale.com/a/abc\n"
+	err := sshTimeoutError("host", stderr, context.DeadlineExceeded)
+	m := &machines.Machine{AuthMethod: machines.AuthSSHAgent}
+	got := FormatHopFailure(err, m)
+	if !strings.Contains(got, "OpenSSH") || !strings.Contains(got, "login.tailscale.com/a/abc") {
+		t.Errorf("FormatHopFailure = %q", got)
 	}
 }
 
@@ -129,6 +180,42 @@ func TestOptsControlMaster(t *testing.T) {
 	}
 	if !strings.HasSuffix(ctlPath, "/ssh-ctl/devbox.sock") {
 		t.Errorf("ControlPath not the per-machine socket: %q", ctlPath)
+	}
+}
+
+// TestOptsReuseOnlyDoesNotDisturbSocket pins the property that makes diagnose
+// truthful: the probe hop reuses a master but never creates or replaces one.
+// ControlMaster=auto would unlink a stale socket and open a fresh master, which
+// is exactly the state diagnose exists to report.
+func TestOptsReuseOnlyDoesNotDisturbSocket(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+
+	m := &machines.Machine{ID: "devbox", Host: "devbox.ts.net", AuthMethod: machines.AuthSSHAgent}
+	opts := OptsReuseOnly(m)
+
+	if !slices.Contains(opts, "ControlMaster=no") {
+		t.Errorf("OptsReuseOnly must set ControlMaster=no, got: %v", opts)
+	}
+	for _, banned := range []string{"ControlMaster=auto", "ControlPersist=30s"} {
+		if slices.Contains(opts, banned) {
+			t.Errorf("OptsReuseOnly must not set %q (it would open a master): %v", banned, opts)
+		}
+	}
+	// The ControlPath still points at the per-machine socket, so a live master
+	// is reused rather than paying a second handshake.
+	var ctlPath string
+	for _, o := range opts {
+		if after, ok := strings.CutPrefix(o, "ControlPath="); ok {
+			ctlPath = after
+		}
+	}
+	if !strings.HasSuffix(ctlPath, "/ssh-ctl/devbox.sock") {
+		t.Errorf("ControlPath not the per-machine socket: %q", ctlPath)
+	}
+	// A read-only diagnostic must not create the socket dir just by building opts.
+	if _, err := os.Stat(filepath.Join(home, ".obey", "ssh-ctl")); !os.IsNotExist(err) {
+		t.Errorf("OptsReuseOnly created the socket dir (stat err = %v); it must be side-effect free", err)
 	}
 }
 
@@ -340,5 +427,123 @@ func TestCampNotFoundHintPassesThroughNonCommandErrors(t *testing.T) {
 	got := campNotFoundHint(original, m, "camp")
 	if got != original {
 		t.Errorf("campNotFoundHint changed a non-CommandError: got %v, want unchanged %v", got, original)
+	}
+}
+
+func TestParseTailscaleCheckURL(t *testing.T) {
+	stderr := "# Tailscale SSH requires an additional check.\n# To authenticate, visit: https://login.tailscale.com/a/l623187f3a1372\n"
+	url, ok := ParseTailscaleCheckURL(stderr)
+	if !ok {
+		t.Fatal("ParseTailscaleCheckURL returned false, want true")
+	}
+	if url != "https://login.tailscale.com/a/l623187f3a1372" {
+		t.Errorf("url = %q", url)
+	}
+
+	if _, ok := ParseTailscaleCheckURL("ssh: connect to host timed out"); ok {
+		t.Error("plain timeout should not parse as Tailscale check")
+	}
+	if _, ok := ParseTailscaleCheckURL(""); ok {
+		t.Error("empty stderr should not parse")
+	}
+	// Marker without a URL is not actionable enough to claim success.
+	if _, ok := ParseTailscaleCheckURL("Tailscale SSH requires an additional check."); ok {
+		t.Error("marker without URL should return false")
+	}
+}
+
+func TestSSHTimeoutErrorPreservesTailscaleCheckURL(t *testing.T) {
+	stderr := "# Tailscale SSH requires an additional check.\n# To authenticate, visit: https://login.tailscale.com/a/abc123\n"
+	err := sshTimeoutError("lance@archdtop.ts.net", stderr, context.DeadlineExceeded)
+	if err == nil {
+		t.Fatal("expected error")
+	}
+	if !errors.Is(err, context.DeadlineExceeded) {
+		t.Errorf("should still match context.DeadlineExceeded: %v", err)
+	}
+	msg := err.Error()
+	if !strings.Contains(msg, "https://login.tailscale.com/a/abc123") {
+		t.Errorf("timeout error dropped Tailscale check URL: %v", err)
+	}
+	if !strings.Contains(msg, "browser check") {
+		t.Errorf("timeout error missing actionable check guidance: %v", err)
+	}
+	// Must not look like a bare "timed out" with no cause.
+	if strings.HasPrefix(msg, "ssh to lance@archdtop.ts.net timed out") && !strings.Contains(msg, "login.tailscale.com") {
+		t.Errorf("regressed to stderr-less timeout: %v", err)
+	}
+}
+
+func TestSSHTimeoutErrorPreservesGenericStderr(t *testing.T) {
+	err := sshTimeoutError("box", "kex_exchange_identification: Connection closed", context.DeadlineExceeded)
+	if !strings.Contains(err.Error(), "kex_exchange_identification") {
+		t.Errorf("generic stderr not preserved on timeout: %v", err)
+	}
+}
+
+func TestSSHTimeoutErrorWithoutStderr(t *testing.T) {
+	err := sshTimeoutError("box", "", context.DeadlineExceeded)
+	if !strings.Contains(err.Error(), "timed out") {
+		t.Errorf("plain timeout message = %v", err)
+	}
+}
+
+func TestSSHExitErrorAnnotatesTailscaleCheck(t *testing.T) {
+	stderr := "# Tailscale SSH requires an additional check.\n# To authenticate, visit: https://login.tailscale.com/a/xyz\n"
+	err := sshExitError("lance@box", 255, stderr, nil)
+	var cmdErr *camperrors.CommandError
+	if !errors.As(err, &cmdErr) {
+		t.Fatalf("want CommandError, got %T: %v", err, err)
+	}
+	if !strings.Contains(cmdErr.Stderr, "https://login.tailscale.com/a/xyz") {
+		t.Errorf("CommandError.Stderr = %q", cmdErr.Stderr)
+	}
+	if detail := TailscaleCheckDetail(err); detail == "" || !strings.Contains(detail, "login.tailscale.com/a/xyz") {
+		t.Errorf("TailscaleCheckDetail = %q", detail)
+	}
+}
+
+func TestTailscaleCheckDetailFromWrappedTimeout(t *testing.T) {
+	stderr := "# Tailscale SSH requires an additional check.\n# To authenticate, visit: https://login.tailscale.com/a/wrap1\n"
+	err := sshTimeoutError("host", stderr, context.DeadlineExceeded)
+	detail := TailscaleCheckDetail(err)
+	if !strings.Contains(detail, "https://login.tailscale.com/a/wrap1") {
+		t.Errorf("TailscaleCheckDetail from timeout wrap = %q", detail)
+	}
+}
+
+func TestSSHExitErrorClassifiesHostKeyMismatch(t *testing.T) {
+	stderr := "@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@\n" +
+		"@    WARNING: REMOTE HOST IDENTIFICATION HAS CHANGED!     @\n" +
+		"@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@\n" +
+		"Host key for devbox.ts.net has changed and you have requested strict checking.\n" +
+		"Host key verification failed.\n"
+	err := sshExitError("lance@devbox.ts.net", 255, stderr, nil)
+	detail := HopFailureDetail(err)
+	if !strings.Contains(detail, "host key mismatch") && !strings.Contains(detail, "Host key mismatch") && !strings.Contains(strings.ToLower(detail), "host key") {
+		t.Fatalf("HopFailureDetail = %q, want host-key classification", detail)
+	}
+	if !strings.Contains(detail, "ssh-keygen -R") {
+		t.Errorf("host-key detail missing known_hosts remedy: %q", detail)
+	}
+	if strings.Contains(strings.ToLower(detail), "permission denied") {
+		t.Errorf("host-key must not be classified as auth failure: %q", detail)
+	}
+}
+
+func TestSSHExitErrorClassifiesPermissionDenied(t *testing.T) {
+	err := sshExitError("box", 255, "Permission denied (publickey).", nil)
+	detail := HopFailureDetail(err)
+	if !strings.Contains(strings.ToLower(detail), "permission denied") {
+		t.Errorf("HopFailureDetail = %q", detail)
+	}
+}
+
+func TestCompactSSHStderr(t *testing.T) {
+	if got := compactSSHStderr("# ignore\nreal problem here\n"); got != "real problem here" {
+		t.Errorf("compactSSHStderr = %q", got)
+	}
+	if got := compactSSHStderr("single line"); got != "single line" {
+		t.Errorf("single line = %q", got)
 	}
 }

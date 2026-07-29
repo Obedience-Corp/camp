@@ -18,7 +18,7 @@ All worktrees are created in a centralized location:
 
 Commands:
   create    Create a new worktree for a project
-  list      List all worktrees
+  list      List worktrees for the current project or campaign
   info      Show information about a worktree
   commit    Commit changes in a worktree
   clean     Remove stale worktrees
@@ -30,10 +30,13 @@ Examples:
   # Create a worktree with new branch based on main
   camp worktrees create my-api experiment --start-point main
 
-  # List all worktrees
+  # List worktrees for the current project, when inside one
   camp worktrees list
 
-  # List worktrees for a specific project
+  # List all worktrees from outside a project
+  cd /path/to/campaign && camp worktrees list
+
+  # Filter worktrees for a specific project
   camp worktrees list --project my-api
 
   # Show current worktree info (when inside one)

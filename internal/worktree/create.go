@@ -90,6 +90,12 @@ func (c *Creator) Create(ctx context.Context, opts *CreateOptions) (*CreateResul
 		if branchName == "" {
 			branchName = opts.Name
 		}
+		// Detect a leftover branch before git does, so callers can surface an
+		// actionable hint instead of a raw "fatal: a branch named ... already
+		// exists" from git worktree add.
+		if git.LocalBranchExists(ctx, branchName) {
+			return nil, BranchAlreadyExists(opts.Project, branchName)
+		}
 		if err := git.Add(ctx, wtPath, branchName, true, opts.StartPoint); err != nil {
 			return nil, err
 		}

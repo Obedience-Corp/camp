@@ -179,8 +179,12 @@ func (m listTUIModel) renderRange(start, end int, headers bool, cw int) []string
 
 func (m listTUIModel) rowLine(e campaignEntry, selected bool, cw int) string {
 	prefix := "  " + ui.CursorGlyph(selected)
+	displayName := e.Name
+	if isRemoteListEntry(e) {
+		displayName = e.Machine + " · " + e.Name
+	}
 	if cw <= 0 {
-		name := styleName(fmt.Sprintf("%-*s", listNameMax, e.Name), selected)
+		name := styleName(fmt.Sprintf("%-*s", listNameMax, displayName), selected)
 		return prefix + name + "  " + listStatusCell(e.Status) + "  " +
 			listMutedStyle.Render(pathutil.AbbreviateHome(e.Path))
 	}
@@ -191,7 +195,7 @@ func (m listTUIModel) rowLine(e campaignEntry, selected bool, cw int) string {
 	}
 
 	nameW, statusOn, pathW := listColumns(rem)
-	row := prefix + styleName(fmt.Sprintf("%-*s", nameW, ui.Truncate(e.Name, nameW)), selected)
+	row := prefix + styleName(fmt.Sprintf("%-*s", nameW, ui.Truncate(displayName, nameW)), selected)
 	if statusOn {
 		row += "  " + listStatusCell(e.Status)
 	}
@@ -229,16 +233,23 @@ func (m listTUIModel) topBar() string {
 	if m.activeOnly {
 		mode = "active only"
 	}
+	if m.remoteOn {
+		mode += " + remotes"
+	} else if m.remoteLoading {
+		mode += " · loading remotes…"
+	}
 	return listTitleStyle.Render("Campaigns") + "  " +
 		listMutedStyle.Render(fmt.Sprintf("%s  .  showing: %s", ui.CountLabel(len(m.all), "campaign", "campaigns"), mode))
 }
 
 func (m listTUIModel) footer(cw int) string {
-	help := ui.CollapseHelp(cw,
-		"g: go . j/k: move . s: status . m: org . y: copy . f: filter . q: quit",
-		"j/k move . g go . f filter . q quit",
-		"q quit",
-	)
+	long := "g: go . j/k: move . s: status . m: org . y: copy . f: filter . q: quit"
+	mid := "j/k move . g go . f filter . q quit"
+	if m.machinesConfigured {
+		long = "g: go . j/k: move . s: status . m: org . y: copy . f: filter . r: remotes . q: quit"
+		mid = "j/k move . g go . r remotes . q quit"
+	}
+	help := ui.CollapseHelp(cw, long, mid, "q quit")
 	return listHelpStyle.Render(help)
 }
 

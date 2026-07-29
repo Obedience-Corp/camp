@@ -252,3 +252,110 @@ func TestLeverage_ConfigValidationCOCOMO(t *testing.T) {
 	require.Error(t, err, "expected rejection: %s", output)
 	assert.Contains(t, output, "invalid COCOMO type", output)
 }
+
+// setupMultiRepoAuthorCampaign builds two projects with overlapping commit
+// history from the same author so personal --author mode can prove actual PM
+// is unioned across git dirs (not summed).
+func setupMultiRepoAuthorCampaign(t *testing.T, tc *TestContainer, name string) string {
+	t.Helper()
+
+	root := "/campaigns/" + name
+	_, err := tc.InitCampaign(root, name, "")
+	require.NoError(t, err, "camp init should succeed")
+
+	// Project alpha: commits spanning ~8 months (Jan → Sep).
+	// Project beta: commits spanning overlapping Mar → Jul.
+	// Naive sum ≈ 12 months; union ≈ 8 months.
+	tc.Shell(t, fmt.Sprintf(`
+		set -e
+		for project in alpha beta; do
+			mkdir -p %s/projects/$project
+		done
+
+		# alpha: Jan and Sep
+		cd %s/projects/alpha
+		git init -q
+		git config user.email alice@example.com
+		git config user.name Alice
+		echo 'package alpha' > main.go
+		git add main.go
+		GIT_AUTHOR_DATE='2025-01-01T12:00:00 +0000' GIT_COMMITTER_DATE='2025-01-01T12:00:00 +0000' \
+			git commit -q -m "alpha start"
+		echo 'package alpha // mid' > main.go
+		git add main.go
+		GIT_AUTHOR_DATE='2025-09-01T12:00:00 +0000' GIT_COMMITTER_DATE='2025-09-01T12:00:00 +0000' \
+			git commit -q -m "alpha end"
+
+		# beta: Mar and Jul (subset of alpha span)
+		cd %s/projects/beta
+		git init -q
+		git config user.email alice@example.com
+		git config user.name Alice
+		echo 'package beta' > main.go
+		git add main.go
+		GIT_AUTHOR_DATE='2025-03-01T12:00:00 +0000' GIT_COMMITTER_DATE='2025-03-01T12:00:00 +0000' \
+			git commit -q -m "beta start"
+		echo 'package beta // mid' > main.go
+		git add main.go
+		GIT_AUTHOR_DATE='2025-07-01T12:00:00 +0000' GIT_COMMITTER_DATE='2025-07-01T12:00:00 +0000' \
+			git commit -q -m "beta end"
+	`, root, root, root))
+
+	return root
+}
+
+// TestLeverage_AuthorFilterUnionsActualPM verifies --author does not multi-count
+// calendar time across repositories (the core personal-mode regression).
+func TestLeverage_AuthorFilterUnionsActualPM(t *testing.T) {
+	if !sccAvailable {
+		t.Fatal("scc binary failed to build at container init time")
+	}
+
+	tc := GetSharedContainer(t)
+	root := setupMultiRepoAuthorCampaign(t, tc, "leverage-author-union")
+
+	output, err := tc.RunCampInDir(root, "leverage", "--author", "alice@example.com", "--json")
+	require.NoError(t, err, "camp leverage --author should succeed: %s", output)
+
+	jsonStart := strings.Index(output, "{")
+	require.GreaterOrEqual(t, jsonStart, 0, "no JSON in output: %s", output)
+
+	var result struct {
+		Campaign struct {
+			ActualPersonMonths float64 `json:"actual_person_months"`
+			FullLeverage       float64 `json:"full_leverage"`
+		} `json:"campaign"`
+		Projects []struct {
+			ActualPersonMonths float64 `json:"actual_person_months"`
+		} `json:"projects"`
+	}
+	require.NoError(t, json.Unmarshal([]byte(output[jsonStart:]), &result), output)
+
+	// Union of Jan–Sep ≈ 8 months. Sum of project spans ≈ 8+4 = 12.
+	// Accept a band around 8; must stay well below naive sum.
+	assert.Greater(t, result.Campaign.ActualPersonMonths, 7.0, "actual PM too small: %+v", result.Campaign)
+	assert.Less(t, result.Campaign.ActualPersonMonths, 9.5, "actual PM multi-counted (want ~8, got %.2f)", result.Campaign.ActualPersonMonths)
+
+	var sumProjectActual float64
+	for _, p := range result.Projects {
+		sumProjectActual += p.ActualPersonMonths
+	}
+	assert.Less(t, result.Campaign.ActualPersonMonths, sumProjectActual-0.5,
+		"campaign actual (%.2f) should be less than sum of project actuals (%.2f)",
+		result.Campaign.ActualPersonMonths, sumProjectActual)
+}
+
+// TestLeverage_AuthorAndByAuthorMutuallyExclusive guards the flag combination
+// that would otherwise re-apportion ownership-scaled estimates.
+func TestLeverage_AuthorAndByAuthorMutuallyExclusive(t *testing.T) {
+	if !sccAvailable {
+		t.Fatal("scc binary failed to build at container init time")
+	}
+
+	tc := GetSharedContainer(t)
+	root := setupLeverageCampaign(t, tc, "leverage-author-by-author")
+
+	output, err := tc.RunCampInDir(root, "leverage", "--author", "test@test.com", "--by-author")
+	require.Error(t, err, "expected mutual exclusion error: %s", output)
+	assert.Contains(t, output, "mutually exclusive", output)
+}

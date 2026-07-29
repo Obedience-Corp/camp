@@ -22,7 +22,7 @@ cat <<'JSON'
   "BackendState": "Running",
   "Self": {
     "HostName": "Mac Studio",
-    "DNSName": "mac-studio.tail37114b.ts.net.",
+    "DNSName": "mac-studio.example-net.ts.net.",
     "TailscaleIPs": ["100.64.0.5"],
     "Online": true,
     "OS": "macOS"
@@ -30,7 +30,7 @@ cat <<'JSON'
   "Peer": {
     "nodekey:1": {
       "HostName": "Devbox",
-      "DNSName": "devbox.tail37114b.ts.net.",
+      "DNSName": "devbox.example-net.ts.net.",
       "TailscaleIPs": ["100.64.0.1"],
       "Online": true,
       "OS": "linux"
@@ -52,7 +52,7 @@ exit 1
 
 // TestMachineAddDiscoverYes proves --discover --yes runs fully non-interactively
 // (no TTY in the container) by taking the first (sorted) discovered device and
-// writing it through machines.Save with auth_method=tailscale-ssh.
+// writing it through machines.Save with the OpenSSH default.
 func TestMachineAddDiscoverYes(t *testing.T) {
 	tc := GetSharedContainer(t)
 	installStubTailscale(t, tc)
@@ -63,21 +63,21 @@ func TestMachineAddDiscoverYes(t *testing.T) {
 	payload := machineListJSON(t, tc)
 	row, ok := findMachine(payload.Machines, "devbox")
 	require.True(t, ok, "devbox missing from list --json: %+v", payload.Machines)
-	require.Equal(t, "devbox.tail37114b.ts.net", row.Host)
-	require.Equal(t, "tailscale-ssh", row.AuthMethod)
-	require.Empty(t, row.SSHUser, "tailscale-ssh needs no ssh_user")
-	require.Empty(t, row.IdentityFile, "tailscale-ssh needs no identity_file")
+	require.Equal(t, "devbox.example-net.ts.net", row.Host)
+	require.Equal(t, "ssh-agent", row.AuthMethod)
+	require.Empty(t, row.SSHUser, "default OpenSSH discovery needs no ssh_user")
+	require.Empty(t, row.IdentityFile, "default OpenSSH discovery needs no identity_file")
 }
 
 // TestMachineAddDiscoverByID proves the positional-id selection path (picking a
-// discovered device by its derived id without the interactive picker) and that
-// re-running --discover against the same device updates in place rather than
-// duplicating — the same Upsert idempotency manual `add` gets.
+// discovered device by its derived id without the interactive picker), honors
+// an explicit auth override, and updates in place rather than duplicating on a
+// repeat run — the same Upsert idempotency manual `add` gets.
 func TestMachineAddDiscoverByID(t *testing.T) {
 	tc := GetSharedContainer(t)
 	installStubTailscale(t, tc)
 
-	out, err := tc.RunCamp("machine", "add", "--discover", "devbox")
+	out, err := tc.RunCamp("machine", "add", "--discover", "devbox", "--auth", "tailscale-ssh")
 	require.NoError(t, err, "machine add --discover devbox failed: %s", out)
 
 	payload := machineListJSON(t, tc)
@@ -85,7 +85,7 @@ func TestMachineAddDiscoverByID(t *testing.T) {
 	require.True(t, ok, "devbox missing from list --json: %+v", payload.Machines)
 	require.Equal(t, "tailscale-ssh", row.AuthMethod)
 
-	out, err = tc.RunCamp("machine", "add", "--discover", "devbox")
+	out, err = tc.RunCamp("machine", "add", "--discover", "devbox", "--auth", "tailscale-ssh")
 	require.NoError(t, err, "second machine add --discover devbox failed: %s", out)
 	payload = machineListJSON(t, tc)
 	count := 0

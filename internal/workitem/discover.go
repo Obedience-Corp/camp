@@ -52,6 +52,16 @@ func Discover(ctx context.Context, campaignRoot string, resolver *paths.Resolver
 		return nil, err
 	}
 
+	frontmatterDocs, err := discoverWorkflowFrontmatterDocs(ctx, campaignRoot, resolver)
+	if err != nil {
+		return nil, err
+	}
+	items = append(items, frontmatterDocs...)
+
+	if err := ctx.Err(); err != nil {
+		return nil, err
+	}
+
 	festivals, err := discoverFestivals(ctx, campaignRoot, resolver)
 	if err != nil {
 		return nil, err

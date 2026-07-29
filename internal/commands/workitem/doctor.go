@@ -28,16 +28,21 @@ import (
 // Doctor finding codes (dotted-domain form). Stable strings; consumers
 // dispatch on them.
 const (
-	codeBrokenLink         = "workitem.link.broken"
-	codeBrokenScope        = "workitem.scope.broken"
-	codeOutOfBounds        = "workitem.scope.out-of-bounds"
-	codeScopeUnvalidatable = "workitem.scope.unvalidatable"
-	codeDuplicatePrimary   = "workitem.link.duplicate-primary"
-	codeSchemaViolation    = "workitem.schema.violation"
-	codeCurrentMissing     = "workitem.current.missing"
-	codeMissingRefField    = "workitem.ref.missing"
-	codeWorkitemScanFailed = "workitem.scan.failed"
-	codeRegistryParseError = "workitem.registry.parse-error"
+	codeBrokenLink               = "workitem.link.broken"
+	codeBrokenScope              = "workitem.scope.broken"
+	codeOutOfBounds              = "workitem.scope.out-of-bounds"
+	codeScopeUnvalidatable       = "workitem.scope.unvalidatable"
+	codeScopeNotLocal            = "workitem.scope.not-on-this-machine"
+	codeWorkitemShelved          = "workitem.link.shelved"
+	codeDuplicatePrimary         = "workitem.link.duplicate-primary"
+	codeSchemaViolation          = "workitem.schema.violation"
+	codeCurrentMissing           = "workitem.current.missing"
+	codeMissingRefField          = "workitem.ref.missing"
+	codeWorkitemScanFailed       = "workitem.scan.failed"
+	codeRegistryParseError       = "workitem.registry.parse-error"
+	codeProjectNotFound          = "workitem.project.not-found"
+	codeProjectUnvalidatable     = "workitem.project.unvalidatable"
+	codeDeprecatedRelatedProject = "workitem.link.related-project-deprecated"
 )
 
 const (
@@ -53,6 +58,13 @@ type docFinding struct {
 	Message     string `json:"message"`
 	FixHint     string `json:"fix_hint,omitempty"`
 	AutoFixable bool   `json:"auto_fixable"`
+
+	// migrateToID/migrateToKey carry a non-destructive recovery target for a
+	// broken link whose workitem was promoted to a festival: --fix re-points
+	// the link onto that festival instead of removing it. Unexported so they
+	// stay out of the --json contract.
+	migrateToID  string
+	migrateToKey string
 }
 
 // errDoctorIssues triggers a non-zero exit from cobra after we have already
@@ -92,7 +104,7 @@ func runDoctor(ctx context.Context, cmd *cobra.Command, jsonOut, fix bool) error
 	if err != nil {
 		return renderWorkitemDoctorError(cmd, jsonOut, camperrors.Wrap(err, "not in a campaign directory"))
 	}
-	knownIDs, err := workitemIDsOnDisk(ctx, root)
+	knownIDs, items, err := workitemIDsOnDisk(ctx, root)
 	if err != nil {
 		return renderWorkitemDoctorError(cmd, jsonOut, err)
 	}
@@ -113,7 +125,7 @@ func runDoctor(ctx context.Context, cmd *cobra.Command, jsonOut, fix bool) error
 			}
 		}
 		err = links.WithLock(ctx, root, func(registry *links.Links) error {
-			findings = collectWorkitemFindings(ctx, root, registry, knownIDs)
+			findings = collectWorkitemFindings(ctx, root, registry, knownIDs, items)
 			applied, fixErr := autoFixWorkitemFindings(ctx, root, registry, findings, cmd.ErrOrStderr())
 			if fixErr != nil {
 				return fixErr
@@ -121,14 +133,14 @@ func runDoctor(ctx context.Context, cmd *cobra.Command, jsonOut, fix bool) error
 			if applied == 0 {
 				return links.ErrSkipSave
 			}
-			knownIDs, _ = workitemIDsOnDisk(ctx, root)
-			findings = collectWorkitemFindings(ctx, root, registry, knownIDs)
+			knownIDs, items, _ = workitemIDsOnDisk(ctx, root)
+			findings = collectWorkitemFindings(ctx, root, registry, knownIDs, items)
 			return nil
 		})
 		if err != nil {
 			return renderWorkitemDoctorError(cmd, jsonOut, err)
 		}
-		knownIDs, err = workitemIDsOnDisk(ctx, root)
+		knownIDs, _, err = workitemIDsOnDisk(ctx, root)
 		if err != nil {
 			return renderWorkitemDoctorError(cmd, jsonOut, err)
 		}
@@ -159,7 +171,7 @@ func runDoctor(ctx context.Context, cmd *cobra.Command, jsonOut, fix bool) error
 			}
 			return camperrors.Wrap(loadErr, "load links registry")
 		}
-		findings = collectWorkitemFindings(ctx, root, registry, knownIDs)
+		findings = collectWorkitemFindings(ctx, root, registry, knownIDs, items)
 	}
 
 	if jsonOut {
@@ -203,7 +215,7 @@ func renderWorkitemDoctorError(cmd *cobra.Command, jsonOut bool, err error) erro
 	return jsoncontract.RenderError(cmd, WorkitemDoctorJSONVersion, err)
 }
 
-func collectWorkitemFindings(ctx context.Context, root string, registry *links.Links, knownIDs map[string]struct{}) []docFinding {
+func collectWorkitemFindings(ctx context.Context, root string, registry *links.Links, knownIDs map[string]struct{}, items []wkitem.WorkItem) []docFinding {
 	var findings []docFinding
 
 	// Schema-level validation.
@@ -219,28 +231,84 @@ func collectWorkitemFindings(ctx context.Context, root string, registry *links.L
 		})
 	}
 
+	promotedTargets := promotedFestivalTargets(ctx, root)
+	shelved := dungeonedWorkitems(ctx, root)
 	primarySeen := make(map[string]string)
 	for _, link := range registry.Links {
-		if _, known := knownIDs[link.WorkitemID]; !known {
-			findings = append(findings, docFinding{
+		// A deprecated related-project link (doc 04 D005) is handled solely by
+		// the migration below: --fix moves it into the workitem's projects: and
+		// removes the row, and a row whose workitem cannot be resolved is left in
+		// place and reported. It is never removed as a broken link/scope, so no
+		// data is lost.
+		deprecatedRelatedProject := link.Role == links.RoleRelated && link.Scope.Kind == links.ScopeProject
+
+		if _, known := knownIDs[link.WorkitemID]; !known && !deprecatedRelatedProject {
+			finding := docFinding{
 				Code:        codeBrokenLink,
 				Severity:    docSeverityError,
 				Target:      "link:" + link.ID,
 				Message:     "workitem_id " + link.WorkitemID + " is not present on disk",
 				FixHint:     "auto-fix removes the link",
 				AutoFixable: true,
-			})
+			}
+			// A link is an active workitem's attachment to a working location,
+			// so a shelved workitem should not hold one. Removal is the right
+			// action either way; saying which case this is turns "your registry
+			// is corrupt" into "this is leftover housekeeping". Promote now
+			// releases these itself, so this path covers workitems dungeoned
+			// before that landed.
+			//
+			// A festival target outranks that framing and is handled below: the
+			// source sits in a dungeon because doFestivalPromote put it there,
+			// and the row has somewhere real to go rather than being cleanup.
+			// Keeping it at error severity leaves doctor's exit code pointed at
+			// the one case that still needs a decision.
+			_, hasFestivalTarget := promotedTargets[link.WorkitemID]
+			if dungeonPath, ok := shelved[link.WorkitemID]; ok && !hasFestivalTarget {
+				finding.Code = codeWorkitemShelved
+				finding.Severity = docSeverityWarning
+				finding.Message = "workitem " + link.WorkitemID + " is shelved at " + dungeonPath +
+					"; a workitem that is no longer active should not hold links"
+				finding.FixHint = "auto-fix removes the link"
+			}
+			if target, ok := promotedTargets[link.WorkitemID]; ok {
+				finding.Message = "workitem_id " + link.WorkitemID +
+					" is not present on disk; it was promoted to festival " + target.id
+				finding.FixHint = "auto-fix re-links to festival " + target.id +
+					" (or re-link manually: camp workitem link " + target.id +
+					" --worktree <scope> --replace)"
+				finding.migrateToID = target.id
+				finding.migrateToKey = target.key
+			}
+			findings = append(findings, finding)
 		}
 		scopeMissing := !scopeTargetExists(root, link.Scope.Path)
-		if scopeMissing {
-			findings = append(findings, docFinding{
-				Code:        codeBrokenScope,
-				Severity:    docSeverityError,
-				Target:      "link:" + link.ID,
-				Message:     "scope path " + link.Scope.Path + " does not exist",
-				FixHint:     "remove the link or restore the directory; auto-fix removes the link",
-				AutoFixable: true,
-			})
+		if scopeMissing && !deprecatedRelatedProject {
+			// links.yaml is tracked, so removing a row propagates to every
+			// machine this campaign syncs to. A missing worktree or an
+			// uninitialized submodule is absent *here*, not gone, and deleting
+			// its link would destroy a row that is correct elsewhere. Report
+			// those and leave them alone.
+			if links.MachineLocal(root, link.Scope) {
+				findings = append(findings, docFinding{
+					Code:     codeScopeNotLocal,
+					Severity: docSeverityWarning,
+					Target:   "link:" + link.ID,
+					Message: "scope path " + link.Scope.Path + " is not on this machine" +
+						" (" + string(link.Scope.Kind) + " scopes are machine-local)",
+					FixHint: "expected if the worktree or submodule lives on another machine;" +
+						" remove it explicitly with `camp workitem unlink --id " + link.ID + "` if it is really gone",
+				})
+			} else {
+				findings = append(findings, docFinding{
+					Code:        codeBrokenScope,
+					Severity:    docSeverityError,
+					Target:      "link:" + link.ID,
+					Message:     "scope path " + link.Scope.Path + " does not exist",
+					FixHint:     "remove the link or restore the directory; auto-fix removes the link",
+					AutoFixable: true,
+				})
+			}
 		}
 		if err := quest.ValidateLinkPath(root, link.Scope.Path); err != nil {
 			switch {
@@ -273,6 +341,16 @@ func collectWorkitemFindings(ctx context.Context, root string, registry *links.L
 				primarySeen[key] = link.ID
 			}
 		}
+		if deprecatedRelatedProject {
+			findings = append(findings, docFinding{
+				Code:        codeDeprecatedRelatedProject,
+				Severity:    docSeverityWarning,
+				Target:      "link:" + link.ID,
+				Message:     "workitem " + link.WorkitemID + " has a deprecated related-project link to " + link.Scope.Path,
+				FixHint:     "run `camp workitem doctor --fix` to migrate it into the workitem's projects: field",
+				AutoFixable: true,
+			})
+		}
 	}
 
 	// Workitems missing the ref field added in v1alpha6. Sorted by path so
@@ -296,6 +374,34 @@ func collectWorkitemFindings(ctx context.Context, root string, registry *links.L
 				FixHint:     "run camp workitem doctor --fix to backfill",
 				AutoFixable: true,
 			})
+		}
+	}
+
+	for _, item := range items {
+		for _, projectPath := range item.Projects {
+			_, statErr := os.Stat(filepath.Join(root, filepath.FromSlash(projectPath)))
+			switch {
+			case statErr == nil:
+				continue
+			case errors.Is(statErr, fs.ErrNotExist):
+				findings = append(findings, docFinding{
+					Code:        codeProjectNotFound,
+					Severity:    docSeverityWarning,
+					Target:      "workitem:" + item.RelativePath,
+					Message:     "projects entry " + projectPath + " does not exist",
+					FixHint:     "verify the project was renamed/removed intentionally; doctor --fix does not auto-remove this entry",
+					AutoFixable: false,
+				})
+			default:
+				findings = append(findings, docFinding{
+					Code:        codeProjectUnvalidatable,
+					Severity:    docSeverityWarning,
+					Target:      "workitem:" + item.RelativePath,
+					Message:     "projects entry " + projectPath + " could not be validated: " + statErr.Error(),
+					FixHint:     "resolve the filesystem error (for example a permissions issue) and re-run doctor",
+					AutoFixable: false,
+				})
+			}
 		}
 	}
 
@@ -339,7 +445,16 @@ func autoFixWorkitemFindings(ctx context.Context, root string, registry *links.L
 			continue
 		}
 		switch f.Code {
-		case codeBrokenLink, codeBrokenScope:
+		case codeBrokenLink, codeWorkitemShelved:
+			id := strings.TrimPrefix(f.Target, "link:")
+			if f.migrateToID != "" {
+				if repointLinkByID(registry, id, f.migrateToID, f.migrateToKey) {
+					applied++
+				}
+			} else if registry.RemoveLinkByID(id) {
+				applied++
+			}
+		case codeBrokenScope:
 			id := strings.TrimPrefix(f.Target, "link:")
 			if registry.RemoveLinkByID(id) {
 				applied++
@@ -356,6 +471,21 @@ func autoFixWorkitemFindings(ctx context.Context, root string, registry *links.L
 			}
 		case codeMissingRefField:
 			needsRefBackfill = true
+		case codeDeprecatedRelatedProject:
+			linkID := strings.TrimPrefix(f.Target, "link:")
+			link, ok := registry.FindByID(linkID)
+			if !ok {
+				continue
+			}
+			if err := migrateRelatedProjectLink(ctx, root, *link); err != nil {
+				// Unmigratable (e.g. the workitem no longer resolves): report and
+				// leave the row in place. Never delete the data.
+				if _, writeErr := fmt.Fprintf(errw, "warning: cannot migrate related-project link %s: %v\n", linkID, err); writeErr != nil {
+					return applied, writeErr
+				}
+			} else if registry.RemoveLinkByID(linkID) {
+				applied++
+			}
 		}
 	}
 	if needsRefBackfill {
@@ -395,15 +525,15 @@ func scopeTargetExists(root, scopePath string) bool {
 	return !errors.Is(err, fs.ErrNotExist)
 }
 
-func workitemIDsOnDisk(ctx context.Context, root string) (map[string]struct{}, error) {
+func workitemIDsOnDisk(ctx context.Context, root string) (map[string]struct{}, []wkitem.WorkItem, error) {
 	cfg, err := config.LoadCampaignConfig(ctx, root)
 	if err != nil {
-		return nil, camperrors.Wrap(err, "load campaign config")
+		return nil, nil, camperrors.Wrap(err, "load campaign config")
 	}
 	resolver := paths.NewResolverFromConfig(root, cfg)
 	items, err := wkitem.Discover(ctx, root, resolver)
 	if err != nil {
-		return nil, err
+		return nil, nil, err
 	}
 	set := make(map[string]struct{}, len(items))
 	for _, item := range items {
@@ -413,13 +543,75 @@ func workitemIDsOnDisk(ctx context.Context, root string) (map[string]struct{}, e
 		if item.Key != "" {
 			set[item.Key] = struct{}{}
 		}
+		// Festivals are first-class link targets addressed by their fest.yaml
+		// id (e.g. SC0001); keep that id "present on disk" so a link migrated
+		// onto a festival by promote is not reported as broken.
+		if item.WorkflowType == wkitem.WorkflowTypeFestival && item.SourceID != "" {
+			set[item.SourceID] = struct{}{}
+		}
 	}
-	return set, nil
+	return set, items, nil
 }
 
 func hasErrorFinding(findings []docFinding) bool {
 	for _, f := range findings {
 		if f.Severity == docSeverityError {
+			return true
+		}
+	}
+	return false
+}
+
+// festivalTarget is a resolvable festival link target: its single-segment
+// fest.yaml id and its "festival:<path>" key.
+type festivalTarget struct {
+	id  string
+	key string
+}
+
+// promotedFestivalTargets maps a promoted workitem's stable id to the festival
+// it was promoted to, for every design/explore workitem marker (including
+// shelved ones) that recorded a promoted_to festival that still exists. It lets
+// doctor offer a broken link a non-destructive migration onto that festival
+// instead of only deletion. Best-effort: unreadable markers are skipped.
+func promotedFestivalTargets(ctx context.Context, root string) map[string]festivalTarget {
+	out := map[string]festivalTarget{}
+	cfg, err := config.LoadCampaignConfig(ctx, root)
+	if err != nil {
+		return out
+	}
+	resolver := paths.NewResolverFromConfig(root, cfg)
+	for _, dir := range []string{resolver.Design(), resolver.Explore()} {
+		_ = filepath.WalkDir(dir, func(path string, d fs.DirEntry, walkErr error) error {
+			if walkErr != nil || d.IsDir() || d.Name() != wkitem.MetadataFilename {
+				return nil
+			}
+			meta, err := wkitem.LoadMetadata(ctx, filepath.Dir(path))
+			if err != nil || meta == nil || meta.ID == "" || meta.PromotedTo == "" {
+				return nil
+			}
+			promotedTo := filepath.ToSlash(meta.PromotedTo)
+			if !strings.HasPrefix(promotedTo, "festivals/") {
+				return nil
+			}
+			festID := readFestivalID(root, promotedTo)
+			if festID == "" {
+				return nil
+			}
+			out[meta.ID] = festivalTarget{id: festID, key: "festival:" + promotedTo}
+			return nil
+		})
+	}
+	return out
+}
+
+// repointLinkByID re-points the link with the given id onto a new workitem id
+// and key. Returns true when a link was updated.
+func repointLinkByID(registry *links.Links, linkID, newID, newKey string) bool {
+	for i := range registry.Links {
+		if registry.Links[i].ID == linkID {
+			registry.Links[i].WorkitemID = newID
+			registry.Links[i].WorkitemKey = newKey
 			return true
 		}
 	}

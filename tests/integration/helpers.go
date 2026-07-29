@@ -13,6 +13,7 @@ import (
 	"os/exec"
 	"path/filepath"
 	"runtime"
+	"strings"
 	"testing"
 	"time"
 
@@ -59,9 +60,10 @@ type TestContainer struct {
 // sharedBinaries holds host paths to the test binaries built once in TestMain
 // and copied into every pooled container.
 type sharedBinaries struct {
-	camp string
-	fest string // "" when fest is unavailable
-	scc  string // "" when scc is unavailable
+	camp       string
+	fest       string // "" when fest is unavailable
+	scc        string // "" when scc is unavailable
+	campLegacy string // "" when the pinned pre-reader binary is unavailable
 }
 
 // buildSharedBinaries builds the camp/fest/scc binaries on the host exactly once.
@@ -105,7 +107,77 @@ func buildSharedBinaries() (sharedBinaries, func(), error) {
 		sccAvailable = true
 	}
 
+	// Pinned pre-reader binary for the criterion-17 rollout-contract test. Cached
+	// across runs in TempDir (so not added to dirs for cleanup); a skip reason is
+	// recorded instead of a hard failure when the pinned commit is unavailable.
+	if legacyBin, skip := buildLegacyCampBinaryShared(); skip != "" {
+		fmt.Fprintf(os.Stderr, "WARN: %s\n", skip)
+		legacyCampSkip = skip
+	} else {
+		bins.campLegacy = legacyBin
+	}
+
 	return bins, cleanup, nil
+}
+
+// legacyCampCommit pins the pre-reader camp binary for the criterion-17 rollout
+// contract test: commit 1f06e423 is release v0.3.0-rc.2, the newest shipped
+// binary whose allowlist stops at v1alpha6 with no forward-compat rule.
+const legacyCampCommit = "1f06e423"
+
+// buildLegacyCampBinaryShared builds the pinned pre-reader camp binary once and
+// caches it across runs at a stable TempDir path keyed by commit and arch. It
+// returns a non-empty skip reason (and empty path) when the pinned commit is not
+// present in this clone (e.g. a shallow CI checkout) or the build fails, so the
+// criterion-17 test skips with a clear message rather than a cryptic failure that
+// blocks the whole suite. It stays entirely inside the integration harness: no
+// host unit test depends on git history.
+func buildLegacyCampBinaryShared() (path string, skip string) {
+	cwd, err := os.Getwd()
+	if err != nil {
+		return "", fmt.Sprintf("pre-reader binary unavailable: %v", err)
+	}
+	projectRoot, err := filepath.Abs(filepath.Join(cwd, "../.."))
+	if err != nil {
+		return "", fmt.Sprintf("pre-reader binary unavailable: %v", err)
+	}
+
+	cached := filepath.Join(os.TempDir(), fmt.Sprintf("camp-legacy-%s-%s", legacyCampCommit, runtime.GOARCH))
+	if _, statErr := os.Stat(cached); statErr == nil {
+		return cached, ""
+	}
+
+	// cat-file -e fails on a shallow clone that lacks the pinned commit.
+	if err := runCommand(fmt.Sprintf("git -C %s cat-file -e %s^{commit}", projectRoot, legacyCampCommit)); err != nil {
+		return "", fmt.Sprintf("pre-reader binary skipped: commit %s (v0.3.0-rc.2) not in this clone (shallow?)", legacyCampCommit)
+	}
+
+	srcDir, err := os.MkdirTemp("", "camp-legacy-src-*")
+	if err != nil {
+		return "", fmt.Sprintf("pre-reader binary skipped: %v", err)
+	}
+	defer os.RemoveAll(srcDir)
+	// git archive extracts the source tree at the pinned commit with no worktree
+	// or .git entry to clean up afterward.
+	if err := runCommand(fmt.Sprintf("git -C %s archive %s | tar -x -C %s", projectRoot, legacyCampCommit, srcDir)); err != nil {
+		return "", fmt.Sprintf("pre-reader binary skipped: extract %s failed: %v", legacyCampCommit, err)
+	}
+
+	// Build to a pid-suffixed temp path then rename into the cache, so an
+	// interrupted or racing build never leaves a partial binary at the cached
+	// path. GOTOOLCHAIN=auto lets go fetch whatever toolchain the rc.2 go.mod pins.
+	tmpBin := fmt.Sprintf("%s.tmp.%d", cached, os.Getpid())
+	build := fmt.Sprintf("cd %s && GOTOOLCHAIN=auto GOOS=linux GOARCH=%s go build -tags=dev -o %s ./cmd/camp",
+		srcDir, runtime.GOARCH, tmpBin)
+	if err := runCommand(build); err != nil {
+		_ = os.Remove(tmpBin)
+		return "", fmt.Sprintf("pre-reader binary skipped: build %s failed: %v", legacyCampCommit, err)
+	}
+	if err := os.Rename(tmpBin, cached); err != nil {
+		_ = os.Remove(tmpBin)
+		return "", fmt.Sprintf("pre-reader binary skipped: cache %s failed: %v", legacyCampCommit, err)
+	}
+	return cached, ""
 }
 
 // newPooledContainer starts one container and provisions it identically to every
@@ -162,6 +234,12 @@ func newPooledContainer(ctx context.Context, bins sharedBinaries) (*TestContaine
 		if err := container.CopyFileToContainer(ctx, bins.scc, "/usr/local/bin/scc", 0o755); err != nil {
 			container.Terminate(ctx)
 			return nil, fmt.Errorf("failed to copy scc binary into container: %w", err)
+		}
+	}
+	if bins.campLegacy != "" {
+		if err := container.CopyFileToContainer(ctx, bins.campLegacy, "/camp-legacy", 0o755); err != nil {
+			container.Terminate(ctx)
+			return nil, fmt.Errorf("failed to copy legacy camp binary into container: %w", err)
 		}
 	}
 
@@ -256,6 +334,44 @@ func buildCampBinaryShared() (string, error) {
 // buildFestBinaryShared builds the fest binary from the sibling fest project.
 // Returns ("", error) if the fest source is not found or build fails — callers
 // should treat this as non-fatal since fest is optional for most integration tests.
+// locateFestSource finds the fest checkout to build the container's fest binary
+// from, starting at the camp project root.
+//
+// fest normally sits beside camp as a sibling submodule (projects/camp,
+// projects/fest), but camp is routinely developed from a worktree under
+// projects/worktrees/camp/<branch>, where the sibling lookup lands on
+// projects/worktrees/camp/fest and misses. Every fest-gated test then skipped,
+// silently, and a green run meant nothing for that coverage. Walking the
+// ancestors finds projects/fest from either layout.
+//
+// CAMP_TEST_FEST_SRC overrides the search for checkouts that live elsewhere.
+func locateFestSource(projectRoot string) (string, error) {
+	if override := os.Getenv("CAMP_TEST_FEST_SRC"); override != "" {
+		abs, err := filepath.Abs(override)
+		if err != nil {
+			return "", fmt.Errorf("failed to resolve CAMP_TEST_FEST_SRC: %w", err)
+		}
+		if _, err := os.Stat(filepath.Join(abs, "cmd", "fest")); err != nil {
+			return "", fmt.Errorf("CAMP_TEST_FEST_SRC=%s has no cmd/fest: %w", abs, err)
+		}
+		return abs, nil
+	}
+
+	searched := []string{}
+	for dir := projectRoot; ; dir = filepath.Dir(dir) {
+		candidate := filepath.Join(dir, "fest")
+		searched = append(searched, candidate)
+		if _, err := os.Stat(filepath.Join(candidate, "cmd", "fest")); err == nil {
+			return candidate, nil
+		}
+		if parent := filepath.Dir(dir); parent == dir {
+			break
+		}
+	}
+	return "", fmt.Errorf("fest source not found; searched %s (set CAMP_TEST_FEST_SRC to override)",
+		strings.Join(searched, ", "))
+}
+
 func buildFestBinaryShared() (string, error) {
 	cwd, err := os.Getwd()
 	if err != nil {
@@ -269,16 +385,9 @@ func buildFestBinaryShared() (string, error) {
 		return "", fmt.Errorf("failed to get absolute path: %w", err)
 	}
 
-	// fest lives alongside camp as a sibling submodule under projects/
-	festRoot := filepath.Join(projectRoot, "..", "fest")
-	festRoot, err = filepath.Abs(festRoot)
+	festRoot, err := locateFestSource(projectRoot)
 	if err != nil {
-		return "", fmt.Errorf("failed to get fest absolute path: %w", err)
-	}
-
-	// Verify fest source exists
-	if _, err := os.Stat(filepath.Join(festRoot, "cmd", "fest")); err != nil {
-		return "", fmt.Errorf("fest source not found at %s: %w", festRoot, err)
+		return "", err
 	}
 
 	binDir, err := os.MkdirTemp("", "fest-integration-bin-*")

@@ -46,6 +46,11 @@ A primary worktree link is how design/explore workitems under workflow/ get
 into camp p commit tags: when you commit from that worktree, the resolver
 matches the link and stamps WI-<ref> on the subject.
 
+Note: role:related links to a project scope are no longer accepted; a workitem's
+related projects live in its own projects: field. Use "camp workitem
+create/adopt --project <path>" (or edit the .workitem/frontmatter) instead of
+"--role related --project".
+
 Examples:
   camp workitem link WI-2a7950 --worktree fest/fest-list-watch
   camp workitem link workflow/design/fest-list-watch --worktree projects/worktrees/fest/fest-list-watch
@@ -126,6 +131,17 @@ func runLink(ctx context.Context, cmd *cobra.Command, opts linkOptions) error {
 		return err
 	}
 
+	// role:related + scope.kind:project is the deprecated overlap (doc 04): that
+	// fact now lives only in the workitem's projects: field, so reject new such
+	// rows at the command layer. AddLink stays a pure registry primitive the
+	// doctor migration can still call to remove existing rows.
+	if role == links.RoleRelated && scope.Kind == links.ScopeProject {
+		return camperrors.NewValidation("role",
+			"role:related + scope.kind:project links are deprecated; use the workitem's own "+
+				"`projects:` field instead (e.g. `camp workitem create/adopt --project "+
+				scope.Path+"`, or edit the .workitem/frontmatter directly)", nil)
+	}
+
 	if !opts.AllowMissing {
 		if err := quest.ValidateLinkPath(root, scope.Path); err != nil {
 			return camperrors.Wrap(err, "scope path")
@@ -134,14 +150,20 @@ func runLink(ctx context.Context, cmd *cobra.Command, opts linkOptions) error {
 
 	var knownIDs map[string]struct{}
 	if !opts.AllowMissing {
-		knownIDs, err = workitemIDsOnDisk(ctx, root)
+		knownIDs, _, err = workitemIDsOnDisk(ctx, root)
 		if err != nil {
 			return err
 		}
 	}
 
 	var link links.Link
+	var pruned []links.Pruned
 	err = links.WithLock(ctx, root, func(registry *links.Links) error {
+		// Drop rows whose scope target is provably gone. Machine-local scopes
+		// are never touched (see links.MachineLocal), and a missing workitem is
+		// left to `camp workitem doctor` (see links.Dead).
+		pruned = links.PruneDead(root, registry)
+
 		// Generate the ID inside the lock so the collision retry sees
 		// the current registry state, not a stale snapshot.
 		id, idErr := generateLinkID(registry)
@@ -160,19 +182,17 @@ func runLink(ctx context.Context, cmd *cobra.Command, opts linkOptions) error {
 		if err := registry.AddLink(link, opts.Replace); err != nil {
 			return err
 		}
-		if errs := links.Validate(ctx, registry, links.ValidateOptions{
+		return links.AsError(links.ValidateOne(ctx, registry, link.ID, links.ValidateOptions{
 			CampaignRoot: root,
 			WorkitemIDs:  knownIDs,
 			AllowMissing: opts.AllowMissing,
 			Now:          link.CreatedAt,
-		}); len(errs) > 0 {
-			return camperrors.NewValidation(errs[0].Field, errs[0].Message, nil)
-		}
-		return nil
+		}))
 	})
 	if err != nil {
 		return err
 	}
+	links.ReportPruned(cmd.ErrOrStderr(), pruned)
 
 	ledger.NewFromRoot(ctx, root, ledger.WarnTo(cmd.ErrOrStderr())).
 		Emit(ctx, ledgerkit.KindCreated, ledgerkit.Scope{Workitem: link.WorkitemID},
@@ -290,6 +310,9 @@ func inferScopeKind(rel string) links.ScopeKind {
 func workitemIDForLink(wi *wkitem.WorkItem, opts linkOptions) string {
 	if wi.StableID != "" {
 		return wi.StableID
+	}
+	if wi.WorkflowType == wkitem.WorkflowTypeFestival && wi.SourceID != "" {
+		return wi.SourceID
 	}
 	if opts.AllowMissing {
 		return opts.Selector

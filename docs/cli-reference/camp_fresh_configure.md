@@ -1,23 +1,40 @@
 ## camp fresh configure
 
-Configure camp fresh follow-up commands
+Configure the camp fresh workflow
 
 ### Synopsis
 
-Manage the follow-up command workflows camp fresh runs after a
-successful sync/prune/branch cycle. Configuration lives in
-.campaign/settings/fresh.yaml: a global default list, plus optional
-per-project override lists that replace the global list entirely.
+Configure what camp fresh does after a merge. Configuration lives in
+.campaign/settings/fresh.yaml, as campaign-wide defaults plus optional
+per-project overrides.
 
-Run without a subcommand to open the interactive setup for humans. Use
-show, add, and remove for scripts and agents.
+Run without a subcommand to open the interactive setup for humans, which
+groups the fresh sequence by what you can change about each step:
+
+  Sync        checkout, fetch, and safe default-branch realignment; always runs
+  Settings    branch, push_upstream, prune, and prune_remote
+  Follow-ups  your own commands, run after a successful cycle
+
+Press enter on a settings step to change it, and a/e/d/K/J on a follow-up to
+add, edit, delete, or reorder it. prune and prune_remote are campaign-wide,
+so they are changed under Global defaults rather than under a project.
+
+The subcommands below cover follow-ups only, for scripts and agents; edit the
+other keys in the interactive setup or in fresh.yaml directly.
+
+The interactive setup opens on the project you are standing in, resolved the
+same way camp fresh picks its target, so the overrides you edit are the ones
+that run. Pass --project to open on a different project, and edit the global
+defaults by selecting them in the left pane.
 
 Examples:
   camp fresh configure
+  camp fresh configure --project camp
   camp fresh show-workflow camp
   camp fresh configure show
   camp fresh configure add install --run "npm install"
   camp fresh configure add build --run "go build ./..." --project camp --dir cmd/camp
+  camp fresh configure move build --up --project camp
   camp fresh configure remove install
   camp fresh configure remove build --project camp
 
@@ -28,7 +45,8 @@ camp fresh configure [flags]
 ### Options
 
 ```
-  -h, --help   help for configure
+  -h, --help             help for configure
+      --project string   Open the setup on a project scope (default: detected from the current directory)
 ```
 
 ### Options inherited from parent commands
@@ -47,5 +65,6 @@ camp fresh configure [flags]
 
 * [camp fresh](camp_fresh.md)	 - Post-merge branch cycling: sync to default branch and optionally create a new working branch
 * [camp fresh configure add](camp_fresh_configure_add.md)	 - Add a follow-up command workflow step
+* [camp fresh configure move](camp_fresh_configure_move.md)	 - Move a follow-up command workflow step
 * [camp fresh configure remove](camp_fresh_configure_remove.md)	 - Remove a follow-up command workflow step
 * [camp fresh configure show](camp_fresh_configure_show.md)	 - Show configured follow-up workflows

@@ -461,8 +461,8 @@ func TestWorkitemSubcommandsStayRegisteredAndVisible(t *testing.T) {
 
 	want := []string{
 		"adopt", "commit", "commits", "create", "current", "doctor", "group",
-		"link", "links", "list", "priority", "promote", "repair", "resolve",
-		"stage", "unlink", "validate", "worktree",
+		"id", "link", "links", "list", "priority", "promote", "rename", "repair",
+		"resolve", "stage", "sweep", "unlink", "validate", "worktree",
 	}
 
 	for _, name := range want {

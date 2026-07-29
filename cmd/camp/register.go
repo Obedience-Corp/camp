@@ -2,13 +2,16 @@ package main
 
 import (
 	"bufio"
+	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
 
+	initcmd "github.com/Obedience-Corp/camp/cmd/camp/init"
 	"github.com/Obedience-Corp/camp/internal/config"
 	camperrors "github.com/Obedience-Corp/camp/internal/errors"
+	"github.com/Obedience-Corp/camp/internal/fest"
 	"github.com/Obedience-Corp/camp/internal/scaffold"
 	"github.com/Obedience-Corp/camp/internal/ui"
 	"github.com/spf13/cobra"
@@ -84,6 +87,15 @@ func runRegister(cmd *cobra.Command, args []string) error {
 			result, err := scaffold.Init(ctx, absPath, opts)
 			if err != nil {
 				return err
+			}
+			// Scaffolding alone leaves a campaign without festivals/, which is
+			// the same campaign `camp init` would have set up completely. A
+			// missing fest CLI is reported by InitializeFestivals and is not
+			// fatal, matching how init treats it.
+			if _, festErr := initcmd.InitializeFestivals(ctx, result.CampaignRoot, initcmd.Writers{HumanOut: os.Stdout}); festErr != nil {
+				if !errors.Is(festErr, fest.ErrFestNotFound) {
+					return festErr
+				}
 			}
 			fmt.Printf("%s Initialized and registered campaign at %s\n", ui.SuccessIcon(), ui.Value(result.CampaignRoot))
 			return nil

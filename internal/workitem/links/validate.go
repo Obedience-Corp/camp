@@ -2,6 +2,7 @@ package links
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"regexp"
 	"strings"
@@ -92,6 +93,72 @@ func Validate(ctx context.Context, l *Links, opts ValidateOptions) []ValidationE
 	return errs
 }
 
+// ValidateOne returns the rule failures for the single link with id linkID,
+// evaluated in the context of the rest of the registry.
+//
+// Writers use this instead of Validate. A write must be judged on what it
+// introduces, not on the state it inherits: validating the whole registry on
+// every insert means one stale row -- a worktree the user deleted, a workitem
+// that was renamed -- fails every subsequent `camp workitem link` and
+// `camp project worktree add --workitem` campaign-wide, for a reason that has
+// nothing to do with what the user asked for. Pre-existing rot is
+// `camp workitem doctor`'s job, and it can repair what it finds.
+//
+// Registry-wide invariants the new link participates in (unique id, one primary
+// per scope) are still enforced, because the other rows are their other half.
+func ValidateOne(ctx context.Context, l *Links, linkID string, opts ValidateOptions) []ValidationError {
+	if err := ctx.Err(); err != nil {
+		return []ValidationError{{Field: "context", Message: err.Error()}}
+	}
+	if l == nil {
+		return []ValidationError{{Field: "links", Message: "nil registry"}}
+	}
+
+	subject, found := l.FindByID(linkID)
+	if !found {
+		return []ValidationError{{Field: "id", Message: "link " + linkID + " is not in the registry"}}
+	}
+
+	now := opts.Now
+	if now.IsZero() {
+		now = time.Now()
+	}
+
+	// Seed the uniqueness maps from every *other* row so duplicate detection
+	// still sees the whole registry, then validate the subject against them.
+	seenIDs := make(map[string]struct{}, len(l.Links))
+	primaryKey := func(s LinkScope) string { return string(s.Kind) + "::" + s.Path }
+	seenPrimary := make(map[string]string, len(l.Links))
+	for _, link := range l.Links {
+		if link.ID == linkID {
+			continue
+		}
+		seenIDs[link.ID] = struct{}{}
+		if link.Role == RolePrimary {
+			seenPrimary[primaryKey(link.Scope)] = link.ID
+		}
+	}
+
+	return validateOneLink(*subject, opts, now, seenIDs, seenPrimary, primaryKey)
+}
+
+// AsError folds validation failures into one error suitable for a command to
+// return. All failures are reported rather than only the first, so a caller
+// fixing a link does not have to rediscover the next problem one run at a time.
+func AsError(errs []ValidationError) error {
+	if len(errs) == 0 {
+		return nil
+	}
+	if len(errs) == 1 {
+		return camperrors.NewValidation(errs[0].Field, errs[0].Message, nil)
+	}
+	parts := make([]string, 0, len(errs))
+	for _, e := range errs {
+		parts = append(parts, e.Field+": "+e.Message)
+	}
+	return camperrors.NewValidation("link", strings.Join(parts, "; "), nil)
+}
+
 func validateOneLink(link Link, opts ValidateOptions, now time.Time,
 	seenIDs map[string]struct{}, seenPrimary map[string]string,
 	primaryKey func(LinkScope) string,
@@ -136,7 +203,14 @@ func validateOneLink(link Link, opts ValidateOptions, now time.Time,
 		addErr("scope.path", "must not contain ..")
 	} else if opts.CampaignRoot != "" && !opts.AllowMissing {
 		if err := quest.ValidateLinkPath(opts.CampaignRoot, link.Scope.Path); err != nil {
-			addErr("scope.path", err.Error())
+			// "the target must exist" is not an invariant for a machine-local
+			// scope: a worktree living on the user's other machine is absent
+			// here and correct there. Escaping the campaign root still is one,
+			// so only the existence half is relaxed.
+			outOfBounds := errors.Is(err, camperrors.ErrInvalidInput)
+			if outOfBounds || !MachineLocal(opts.CampaignRoot, link.Scope) {
+				addErr("scope.path", err.Error())
+			}
 		}
 	}
 	if msg, ok := checkKindPathPrefix(link.Scope); !ok {

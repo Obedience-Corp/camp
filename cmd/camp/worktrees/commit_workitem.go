@@ -9,28 +9,28 @@ import (
 	"github.com/Obedience-Corp/camp/pkg/commitkit"
 )
 
-func resolveWorktreeCommitContext(ctx context.Context, campaignRoot, cwd, explicit string) (questID, workitemRef string) {
+func resolveWorktreeCommitContext(ctx context.Context, campaignRoot, cwd, explicit string) (questID, festivalRef, workitemRef string) {
 	res, err := resolver.Resolve(ctx, campaignRoot, resolver.Options{
-		Explicit: explicit,
-		Cwd:      cwd,
+		Explicit:       explicit,
+		Cwd:            cwd,
+		DisableCurrent: true,
 	})
 	if err != nil || res == nil || res.Workitem == nil {
-		return "", ""
+		return "", "", ""
 	}
+	festivalRef = wkitem.FestivalRef(res.Workitem)
 	ref, ensureErr := wkitem.EnsureRefForCommit(ctx, campaignRoot, res.Workitem, os.Stderr)
-	if ensureErr != nil {
-		return res.QuestID, wkitem.RefOf(res.Workitem)
+	if ensureErr != nil || ref == "" {
+		ref = wkitem.RefOf(res.Workitem)
 	}
-	if ref != "" {
-		return res.QuestID, ref
-	}
-	return res.QuestID, wkitem.RefOf(res.Workitem)
+	return res.QuestID, festivalRef, ref
 }
 
 func workitemEnvForWorktreeCommit(ctx context.Context, campaignRoot, cwd, explicit string) []string {
 	res, err := resolver.Resolve(ctx, campaignRoot, resolver.Options{
-		Explicit: explicit,
-		Cwd:      cwd,
+		Explicit:       explicit,
+		Cwd:            cwd,
+		DisableCurrent: true,
 	})
 	if err != nil || res == nil || res.Workitem == nil {
 		return nil

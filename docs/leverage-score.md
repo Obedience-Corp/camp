@@ -32,6 +32,39 @@ FullLeverage = ─────────────────────�
 Measures estimated person-months delivered per actual person-month. This is the
 primary metric — it accounts for both team size and time elapsed.
 
+### Personal leverage (`--author`)
+
+Personal mode answers “how productive was this author?” and must **not** multi-count
+calendar time across repositories:
+
+```
+personalEstPM    = Σ (projectEstPM × authorLOC_share_in_project)
+personalActualPM = months(union of author's first→last commit across unique git dirs)
+personalLeverage = personalEstPM / personalActualPM
+```
+
+Important details:
+
+- `--author` expands through `.campaign/leverage/authors.json` so all emails in a
+  matched identity group are included (e.g. work + personal addresses).
+- Configured identity matching is **exact** on author ID / email local-part (and
+  word-wise on display name). A filter of `alice` does **not** match `malice`.
+  After a configured match, the raw filter is **not** retained as a git substring.
+- Monorepo subprojects that share a `GitDir` contribute **once** to actual effort.
+- Project table rows may still show per-repo spans; the **campaign footer** uses the
+  union actual above.
+- Standing-tree COCOMO is scaled by **blame ownership**, not by “any commit in repo.”
+- `--author` and `--by-author` are **mutually exclusive** when both are passed on
+  the CLI. A configured `author_email` default is **not** applied when
+  `--by-author` is used, so the breakdown still works in personal-default campaigns.
+- Full display names match exactly (e.g. `Alice Smith`); single-token display
+  words also match (`Alice` → `Alice Smith`).
+- Ad-hoc / partial filters (e.g. `alice@co`) use git `--author` substring search
+  and do **not** invent a canonical author ID (avoids false 0.1 PM floors).
+- Operational git failures and cancellation are returned from author presence
+  and date-range queries; only the expected “no commits for this author”
+  outcome is treated as a soft miss.
+
 ### Simple Leverage (headcount-based)
 
 ```

@@ -51,7 +51,7 @@ func TestRunCreate_WritesRefAndOmitsQuestWhenNoneActive(t *testing.T) {
 	cmd.SetOut(os.Stdout)
 	cmd.SetErr(os.Stderr)
 
-	if err := runCreate(context.Background(), cmd, "alpha", "design", "Alpha", "", "", "", false); err != nil {
+	if err := runCreate(context.Background(), cmd, "alpha", "design", "Alpha", "", "", "", nil, nil, false); err != nil {
 		t.Fatalf("runCreate: %v", err)
 	}
 	meta := loadMarker(t, filepath.Join(root, "workflow", "design", "alpha", ".workitem"))
@@ -86,7 +86,7 @@ func TestRunCreate_RefsAreUniqueAcrossWorkitems(t *testing.T) {
 	cmd.SetErr(os.Stderr)
 
 	for _, slug := range []string{"alpha", "beta", "gamma"} {
-		if err := runCreate(context.Background(), cmd, slug, "design", slug, "", "", "", false); err != nil {
+		if err := runCreate(context.Background(), cmd, slug, "design", slug, "", "", "", nil, nil, false); err != nil {
 			t.Fatalf("runCreate %s: %v", slug, err)
 		}
 	}
@@ -114,7 +114,7 @@ func TestRunAdopt_WritesRef(t *testing.T) {
 	cmd := &cobra.Command{}
 	cmd.SetOut(os.Stdout)
 	cmd.SetErr(os.Stderr)
-	if err := runAdopt(context.Background(), cmd, "workflow/design/legacy", "design", "Legacy", "", ""); err != nil {
+	if err := runAdopt(context.Background(), cmd, "workflow/design/legacy", "design", "Legacy", "", "", nil, nil); err != nil {
 		t.Fatalf("runAdopt: %v", err)
 	}
 	meta := loadMarker(t, filepath.Join(adoptDir, ".workitem"))

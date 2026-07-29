@@ -51,16 +51,13 @@ func (m IntentViewerModel) View() string {
 
 	var b strings.Builder
 
-	// Header
-	b.WriteString(m.renderHeader())
+	// Brand chrome
+	b.WriteString(Header("view", string(m.intent.Status), m.width-2))
 	b.WriteString("\n")
 
-	// Separator
-	separator := lipgloss.NewStyle().
-		Foreground(pal.Border).
-		Render(strings.Repeat("─", m.width-2))
-	b.WriteString(separator)
-	b.WriteString("\n")
+	// Intent title + meta
+	b.WriteString(m.renderHeader())
+	b.WriteString("\n\n")
 
 	// Content viewport
 	b.WriteString(m.viewport.View())
@@ -71,9 +68,7 @@ func (m IntentViewerModel) View() string {
 		b.WriteString(m.renderSearchBar())
 		b.WriteString("\n")
 	} else {
-		b.WriteString(separator)
-		b.WriteString("\n")
-		b.WriteString(m.renderFooter())
+		b.WriteString(Footer(m.renderFooterHints(), m.width-2))
 	}
 
 	return viewerBoxStyle.
@@ -132,6 +127,32 @@ func renderStatusBadge(s intent.Status) string {
 		color = pal.TextMuted
 	}
 	return lipgloss.NewStyle().Foreground(color).Render(s.String())
+}
+
+// renderFooterHints returns unstyled footer text for chrome.Footer.
+// Preserves the same actions and search feedback as renderFooter (including
+// [O] reveal and match counts) in the compact plain-hints format.
+func (m IntentViewerModel) renderFooterHints() string {
+	actions := "e edit · m move · p promote · a archive · d delete · o open · O reveal · / search · q back"
+	if m.gatherSvc != nil {
+		actions = "e edit · ^g gather · m move · p promote · a archive · d delete · o open · O reveal · / search · q back"
+	}
+
+	// Search match info when a query is active but the user is not typing.
+	var searchInfo string
+	if m.searchQuery != "" && !m.searchMode {
+		if len(m.searchMatches) > 0 {
+			searchInfo = fmt.Sprintf(" · %d/%d matches", m.searchMatchIdx+1, len(m.searchMatches))
+		} else {
+			searchInfo = " · no matches"
+		}
+	}
+
+	scrollPct := int(m.viewport.ScrollPercent() * 100)
+	if len(m.siblings) > 1 {
+		return fmt.Sprintf("%s%s  ·  %d/%d  ·  %d%%", actions, searchInfo, m.currentIndex+1, len(m.siblings), scrollPct)
+	}
+	return fmt.Sprintf("%s%s  ·  %d%%", actions, searchInfo, scrollPct)
 }
 
 // renderFooter renders the footer with actions and scroll position.

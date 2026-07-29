@@ -322,6 +322,88 @@ func TestQuestCreateModel_ResultIsNilWhenCancelled(t *testing.T) {
 	}
 }
 
+// advanceToTagsEnter walks name -> purpose -> description(skip) -> tags and
+// presses Enter at the tags step.
+func advanceToTagsEnter(m QuestCreateModel) QuestCreateModel {
+	m = typeText(m, "bound-quest")
+	m = sendKey(m, tea.KeyMsg{Type: tea.KeyEnter})
+	m = sendKey(m, tea.KeyMsg{Type: tea.KeyEnter})     // purpose (empty)
+	m = sendKey(m, tea.KeyMsg{Type: tea.KeyCtrlS})     // skip description
+	m = sendKey(m, tea.KeyMsg{Type: tea.KeyEnter})     // tags Enter
+	return m
+}
+
+func TestQuestCreateModel_NoChoices_TagsEnterFinishesFast(t *testing.T) {
+	m := NewQuestCreateModel(context.Background(), CreateOptions{})
+	m = advanceToTagsEnter(m)
+
+	if m.step != createStepDone {
+		t.Fatalf("with no choices, tags Enter must finish; step = %v", m.step)
+	}
+	if r := m.Result(); r == nil || r.WorkitemPath != "" {
+		t.Fatalf("fast path must produce a result with no binding, got %+v", r)
+	}
+}
+
+func TestQuestCreateModel_WithChoices_TagsEnterOpensPicker(t *testing.T) {
+	m := NewQuestCreateModel(context.Background(), CreateOptions{Choices: sampleChoices()})
+	m = advanceToTagsEnter(m)
+
+	if m.step != createStepWorkitem {
+		t.Fatalf("with choices, tags Enter must open the picker; step = %v", m.step)
+	}
+	if m.Done() {
+		t.Fatal("model must not be done while the picker is open")
+	}
+}
+
+func TestQuestCreateModel_Picker_EscSkipsBinding(t *testing.T) {
+	m := NewQuestCreateModel(context.Background(), CreateOptions{Choices: sampleChoices()})
+	m = advanceToTagsEnter(m)
+	m = sendKey(m, tea.KeyMsg{Type: tea.KeyEsc})
+
+	if !m.Done() || m.Cancelled() {
+		t.Fatalf("Esc at picker must finish without cancel (done=%v cancelled=%v)", m.Done(), m.Cancelled())
+	}
+	r := m.Result()
+	if r == nil || r.WorkitemPath != "" {
+		t.Fatalf("Esc at picker must skip binding, got %+v", r)
+	}
+	if r.Name != "bound-quest" {
+		t.Fatalf("captured quest data must survive the skip, name = %q", r.Name)
+	}
+}
+
+func TestQuestCreateModel_Picker_CtrlCCancels(t *testing.T) {
+	m := NewQuestCreateModel(context.Background(), CreateOptions{Choices: sampleChoices()})
+	m = advanceToTagsEnter(m)
+	m = sendKey(m, tea.KeyMsg{Type: tea.KeyCtrlC})
+
+	if !m.Cancelled() {
+		t.Fatal("Ctrl+C at picker must cancel")
+	}
+	if m.Result() != nil {
+		t.Fatal("cancel must clear the result")
+	}
+}
+
+func TestQuestCreateModel_Picker_SelectBindsWorkitem(t *testing.T) {
+	m := NewQuestCreateModel(context.Background(), CreateOptions{Choices: sampleChoices()})
+	m = advanceToTagsEnter(m)
+
+	// Filter to a single match, then Enter selects it.
+	m = typeText(m, "billing")
+	m = sendKey(m, tea.KeyMsg{Type: tea.KeyEnter})
+
+	if !m.Done() {
+		t.Fatal("selecting a workitem must finish the flow")
+	}
+	r := m.Result()
+	if r == nil || r.WorkitemPath != "workflow/design/billing-revamp" {
+		t.Fatalf("expected billing binding, got %+v", r)
+	}
+}
+
 func TestQuestCreateModel_FullFlow(t *testing.T) {
 	m := NewQuestCreateModel(context.Background(), CreateOptions{})
 

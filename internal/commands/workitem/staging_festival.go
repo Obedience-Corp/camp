@@ -6,6 +6,8 @@ import (
 	"strings"
 
 	"gopkg.in/yaml.v3"
+
+	wkitem "github.com/Obedience-Corp/camp/internal/workitem"
 )
 
 func inferFestivalIDFromCwd(campaignRoot, cwd string) string {
@@ -80,40 +82,7 @@ func festivalMetadataID(campaignRoot, rel string) string {
 }
 
 func festivalRefFromString(value string) string {
-	value = strings.TrimSpace(value)
-	if value == "" {
-		return ""
-	}
-	value = filepath.Base(filepath.ToSlash(value))
-	if isFestivalRef(value) {
-		return value
-	}
-	if idx := strings.LastIndex(value, "-"); idx >= 0 {
-		tail := value[idx+1:]
-		if isFestivalRef(tail) {
-			return tail
-		}
-	}
-	return ""
-}
-
-func isFestivalRef(value string) bool {
-	if value == "" || len(value) > 32 {
-		return false
-	}
-	for _, r := range value {
-		if r >= '0' && r <= '9' {
-			continue
-		}
-		if r >= 'A' && r <= 'Z' {
-			continue
-		}
-		if r >= 'a' && r <= 'z' {
-			continue
-		}
-		return false
-	}
-	return true
+	return wkitem.FestivalRefFromID(value)
 }
 
 func relOutsideCampaignRoot(rel string) bool {

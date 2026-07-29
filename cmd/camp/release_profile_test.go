@@ -12,7 +12,7 @@ import (
 
 // devOnlyCommands is the single source of truth for commands gated behind
 // //go:build dev. Update this list when promoting a command to stable.
-var devOnlyCommands = []string{"flow", "quest"}
+var devOnlyCommands = []string{"flow", "quest", "audit", "event"}
 
 func assertDevCommandsRegistered(t *testing.T) {
 	t.Helper()

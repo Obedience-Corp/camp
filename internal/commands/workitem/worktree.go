@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"io"
 	"path"
 	"path/filepath"
 	"strings"
@@ -102,6 +103,9 @@ func runWorktree(cmd *cobra.Command, opts worktreeOptions) error {
 	if err != nil {
 		return camperrors.Wrap(err, "resolve workitem "+opts.Selector)
 	}
+	if wkitem.NeedsAdoption(wi) {
+		return wkitem.NotAdoptedError(wi.RelativePath)
+	}
 
 	registry, err := links.Load(ctx, root)
 	if err != nil {
@@ -142,7 +146,7 @@ func runWorktree(cmd *cobra.Command, opts worktreeOptions) error {
 		return err
 	}
 
-	link, err := attachWorktreeLink(ctx, root, wi, filepath.ToSlash(result.RelativePath))
+	link, err := attachWorktreeLink(ctx, root, wi, filepath.ToSlash(result.RelativePath), cmd.ErrOrStderr())
 	if err != nil {
 		return camperrors.Wrap(err, "worktree created but workitem link failed")
 	}
@@ -185,6 +189,12 @@ func createWorktree(
 			return nil, camperrors.Wrap(err,
 				fmt.Sprintf("link it with 'camp workitem link %s --worktree %s/%s' or choose another --name",
 					name, resolved.Name, name))
+		}
+		if errors.Is(err, intworktree.ErrBranchExists) {
+			return nil, camperrors.Wrap(err,
+				fmt.Sprintf("branch %q already exists (a previous worktree may have been removed "+
+					"without deleting its branch); pass --name to pick a different name, or delete "+
+					"it with 'git branch -D %s'", name, name))
 		}
 		return nil, err
 	}
@@ -252,14 +262,11 @@ func linkMatchesWorkitem(link links.Link, wi *wkitem.WorkItem) bool {
 
 // attachWorktreeLink primary-links the worktree so the resolver (and therefore
 // camp p commit) picks up the workitem ref inside that tree.
-func attachWorktreeLink(ctx context.Context, root string, wi *wkitem.WorkItem, relativeWorktreePath string) (links.Link, error) {
+func attachWorktreeLink(ctx context.Context, root string, wi *wkitem.WorkItem, relativeWorktreePath string, report io.Writer) (links.Link, error) {
 	if relativeWorktreePath == "" {
 		return links.Link{}, camperrors.NewValidation("worktree", "missing worktree relative path", nil)
 	}
-	workitemID := wi.StableID
-	if workitemID == "" {
-		workitemID = wi.Key
-	}
+	workitemID := wkitem.LinkWorkitemID(wi)
 	return links.AttachPrimary(ctx, root, links.AttachOptions{
 		WorkitemID:  workitemID,
 		WorkitemKey: wi.Key,
@@ -269,6 +276,7 @@ func attachWorktreeLink(ctx context.Context, root string, wi *wkitem.WorkItem, r
 		},
 		CreatedBy: "camp_workitem_worktree",
 		Replace:   true,
+		Report:    report,
 	})
 }
 

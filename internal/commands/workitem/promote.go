@@ -4,11 +4,13 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"io"
 	"os"
 	"path/filepath"
 	"strings"
 
 	"github.com/spf13/cobra"
+	"gopkg.in/yaml.v3"
 
 	dungeoncmd "github.com/Obedience-Corp/camp/cmd/camp/dungeon"
 	"github.com/Obedience-Corp/camp/internal/config"
@@ -50,6 +52,18 @@ type workitemPromoteResult struct {
 	Committed     bool     `json:"committed"`
 	CommitMessage string   `json:"commit_message,omitempty"`
 	Warnings      []string `json:"warnings,omitempty"`
+	// ReleasedLinks are the links dropped because the workitem is no longer
+	// active. Reported so an automatic removal is never silent.
+	ReleasedLinks []releasedLink `json:"released_links,omitempty"`
+}
+
+// releasedLink records a link that promote removed, in enough detail to put it
+// back by hand.
+type releasedLink struct {
+	ID        string `json:"id"`
+	ScopeKind string `json:"scope_kind"`
+	ScopePath string `json:"scope_path"`
+	Role      string `json:"role"`
 }
 
 type commitInputs struct {
@@ -231,8 +245,29 @@ func runWorkitemPromote(cmd *cobra.Command, opts runWorkitemPromoteOptions) erro
 	if opts.JSON {
 		return emitPromoteJSON(cmd, result)
 	}
-	_, err = fmt.Fprintf(cmd.OutOrStdout(), "%s Promoted workitem %s to %s\n", ui.SuccessIcon(), result.ID, result.To)
-	return err
+	if _, err = fmt.Fprintf(cmd.OutOrStdout(), "%s Promoted workitem %s to %s\n",
+		ui.SuccessIcon(), result.ID, result.To); err != nil {
+		return err
+	}
+	return printReleasedLinks(cmd.OutOrStdout(), result)
+}
+
+// printReleasedLinks names every link promote dropped and how to restore it.
+// Removing a row the user did not ask about is only acceptable because it is
+// reported at the moment it happens.
+func printReleasedLinks(w io.Writer, result workitemPromoteResult) error {
+	for _, l := range result.ReleasedLinks {
+		if _, err := fmt.Fprintf(w, "  released link %s (%s:%s); %s is no longer active\n",
+			l.ID, l.ScopeKind, l.ScopePath, result.ID); err != nil {
+			return err
+		}
+	}
+	if len(result.ReleasedLinks) > 0 {
+		if _, err := fmt.Fprintf(w, "  undo: git checkout -- .campaign/workitems/links.yaml\n"); err != nil {
+			return err
+		}
+	}
+	return nil
 }
 
 func emitPromoteJSON(cmd *cobra.Command, result workitemPromoteResult) error {
@@ -245,6 +280,10 @@ func emitPromoteJSON(cmd *cobra.Command, result workitemPromoteResult) error {
 }
 
 func doDungeonPromote(ctx context.Context, campaignRoot string, loc *locate.Location, status string, result *workitemPromoteResult) (*commitInputs, error) {
+	// Capture identity before the move: workitem_key encodes the source path,
+	// which is about to change.
+	oldID, oldKey := promotedWorkitemIdentity(ctx, campaignRoot, loc, result)
+
 	moveRes, err := MoveToDungeon(ctx, campaignRoot, loc, status)
 	if err != nil {
 		return nil, err
@@ -252,12 +291,59 @@ func doDungeonPromote(ctx context.Context, campaignRoot string, loc *locate.Loca
 	result.To = moveRes.ToRel
 
 	dest := append([]string{moveRes.TargetPath}, moveRes.CreatedFiles...)
-	return &commitInputs{
+	ci := &commitInputs{
 		description: fmt.Sprintf("Promote workitem %s to %s", loc.Slug, status),
 		sourcePaths: []string{loc.SourcePath},
 		destPaths:   dest,
 		rewritten:   moveRes.Svc.RewrittenLinkFiles(),
-	}, nil
+	}
+
+	// A link attaches an active workitem to a working location -- usually a
+	// worktree, which is temporary by construction. Shelving the workitem ends
+	// that: nothing should still be checked out "for" completed work, and a
+	// link left behind only resolves to a workitem the selector cannot see
+	// (`camp p commit` silently stops stamping the ref). So the links go with
+	// the workitem, reported rather than dropped quietly.
+	if err := releaseLinksForShelvedSource(ctx, campaignRoot, oldID, oldKey, ci, result); err != nil {
+		return nil, err
+	}
+	return ci, nil
+}
+
+// unlinkShelvedWorkitem removes every link pointing at a workitem that just
+// moved into a dungeon and returns them so the caller can report what went.
+func unlinkShelvedWorkitem(ctx context.Context, campaignRoot, oldID, oldKey string) ([]releasedLink, error) {
+	if oldID == "" && oldKey == "" {
+		return nil, nil
+	}
+
+	var dropped []releasedLink
+	err := links.WithLock(ctx, campaignRoot, func(reg *links.Links) error {
+		kept := reg.Links[:0]
+		for _, l := range reg.Links {
+			matches := (oldID != "" && l.WorkitemID == oldID) ||
+				(oldKey != "" && l.WorkitemKey == oldKey)
+			if matches {
+				dropped = append(dropped, releasedLink{
+					ID:        l.ID,
+					ScopeKind: string(l.Scope.Kind),
+					ScopePath: l.Scope.Path,
+					Role:      string(l.Role),
+				})
+				continue
+			}
+			kept = append(kept, l)
+		}
+		if len(dropped) == 0 {
+			return links.ErrSkipSave
+		}
+		reg.Links = kept
+		return nil
+	})
+	if err != nil {
+		return nil, err
+	}
+	return dropped, nil
 }
 
 func doFestivalPromote(ctx context.Context, cmd *cobra.Command, opts runWorkitemPromoteOptions, campaignRoot string, loc *locate.Location, result *workitemPromoteResult) (*commitInputs, error) {
@@ -271,6 +357,11 @@ func doFestivalPromote(ctx context.Context, cmd *cobra.Command, opts runWorkitem
 	if opts.Dest != "" {
 		return nil, camperrors.New("--dest is only valid for --target doc; fest chooses the festival directory")
 	}
+
+	// Capture the source workitem identity before the festival is created and
+	// the source is shelved, so links pointing at it can be migrated onto the
+	// festival afterward.
+	oldID, oldKey := promotedWorkitemIdentity(ctx, campaignRoot, loc, result)
 
 	name := intent.SlugFromTitle(titleFromDoc(docContent, loc.Slug))
 	goal := opts.Goal
@@ -292,8 +383,13 @@ func doFestivalPromote(ctx context.Context, cmd *cobra.Command, opts runWorkitem
 		return nil, camperrors.New("festival creation failed: " + fr.CLIError)
 	}
 
-	ingestDir := filepath.Join(campaignRoot, "festivals", fr.Dest, fr.Dir, "001_INGEST", "input_specs", loc.Slug)
-	if err := promotepkg.CopyTree(loc.SourcePath, ingestDir); err != nil {
+	isFile, slug := promoteSourceShape(loc)
+	ingestDir := filepath.Join(campaignRoot, "festivals", fr.Dest, fr.Dir, "001_INGEST", "input_specs", slug)
+	copyDest := ingestDir
+	if isFile {
+		copyDest = filepath.Join(ingestDir, filepath.Base(loc.SourcePath))
+	}
+	if err := promotepkg.CopyTree(loc.SourcePath, copyDest); err != nil {
 		return nil, camperrors.Wrap(err, "copying workitem into festival ingest")
 	}
 	promotedTo := filepath.ToSlash(filepath.Join("festivals", fr.Dest, fr.Dir))
@@ -312,7 +408,23 @@ func doFestivalPromote(ctx context.Context, cmd *cobra.Command, opts runWorkitem
 			filepath.Join(campaignRoot, "festivals", ".festival", ".state"),
 		},
 	}
-	return appendShelve(ctx, opts, campaignRoot, loc, ci, result)
+	ci, err = appendShelve(ctx, opts, campaignRoot, loc, ci, result)
+	if err != nil {
+		return nil, err
+	}
+
+	// Only a shelved source orphans its links; --keep leaves the source in
+	// place and resolvable, so there is nothing to migrate.
+	if !opts.Keep {
+		migrated, mErr := migratePromotedLinks(ctx, campaignRoot, oldID, oldKey, promotedTo)
+		if mErr != nil {
+			return nil, camperrors.Wrap(mErr, "migrate workitem links to festival")
+		}
+		if migrated {
+			ci.destPaths = append(ci.destPaths, links.LinksPath(campaignRoot))
+		}
+	}
+	return ci, nil
 }
 
 func doDocPromote(ctx context.Context, opts runWorkitemPromoteOptions, campaignRoot string, loc *locate.Location, result *workitemPromoteResult) (*commitInputs, error) {
@@ -324,9 +436,14 @@ func doDocPromote(ctx context.Context, opts runWorkitemPromoteOptions, campaignR
 		return nil, camperrors.New("workitem doc is empty; use --force to promote anyway")
 	}
 
+	// Capture identity before the source is shelved: the marker is read from
+	// loc.SourcePath, which appendShelve moves.
+	oldID, oldKey := promotedWorkitemIdentity(ctx, campaignRoot, loc, result)
+
+	isFile, cleanSlug := promoteSourceShape(loc)
 	relDest := opts.Dest
 	if relDest == "" {
-		relDest = loc.Slug
+		relDest = cleanSlug
 	}
 	docsRoot := filepath.Join(campaignRoot, "docs")
 	if err := os.MkdirAll(docsRoot, 0o755); err != nil {
@@ -342,7 +459,11 @@ func doDocPromote(ctx context.Context, opts runWorkitemPromoteOptions, campaignR
 			return nil, camperrors.New("docs/" + relDest + " already exists and is not empty; use --force to overwrite")
 		}
 	}
-	if err := promotepkg.CopyTree(loc.SourcePath, destDir); err != nil {
+	copyDest := destDir
+	if isFile {
+		copyDest = filepath.Join(destDir, filepath.Base(loc.SourcePath))
+	}
+	if err := promotepkg.CopyTree(loc.SourcePath, copyDest); err != nil {
 		return nil, camperrors.Wrap(err, "copying workitem into docs")
 	}
 	promotedTo := filepath.ToSlash(filepath.Join("docs", relDest))
@@ -358,12 +479,155 @@ func doDocPromote(ctx context.Context, opts runWorkitemPromoteOptions, campaignR
 		description: fmt.Sprintf("Promote workitem %s to %s", loc.Slug, promotedTo),
 		destPaths:   []string{destDir},
 	}
-	return appendShelve(ctx, opts, campaignRoot, loc, ci, result)
+	ci, err = appendShelve(ctx, opts, campaignRoot, loc, ci, result)
+	if err != nil {
+		return nil, err
+	}
+
+	// Shelving the source ends the workitem's active life exactly as a dungeon
+	// target does, so its links go the same way. --keep leaves the source in
+	// place and resolvable, so there is nothing to release.
+	//
+	// This cannot live inside appendShelve: the festival path shelves too, but
+	// its rows have somewhere to go and migratePromotedLinks re-points them
+	// afterward. A doc has no workitem identity to carry them.
+	if !opts.Keep {
+		if err := releaseLinksForShelvedSource(ctx, campaignRoot, oldID, oldKey, ci, result); err != nil {
+			return nil, err
+		}
+	}
+	return ci, nil
+}
+
+// releaseLinksForShelvedSource drops the links a workitem held once its source
+// has been shelved, recording them on result and adding links.yaml to the
+// commit when anything changed.
+func releaseLinksForShelvedSource(ctx context.Context, campaignRoot, oldID, oldKey string,
+	ci *commitInputs, result *workitemPromoteResult,
+) error {
+	dropped, err := unlinkShelvedWorkitem(ctx, campaignRoot, oldID, oldKey)
+	if err != nil {
+		return camperrors.Wrap(err, "release workitem links on shelve")
+	}
+	if len(dropped) > 0 {
+		ci.destPaths = append(ci.destPaths, links.LinksPath(campaignRoot))
+		result.ReleasedLinks = append(result.ReleasedLinks, dropped...)
+	}
+	return nil
+}
+
+// promotedWorkitemIdentity returns the stable id and key that links may
+// reference for the workitem being promoted, read from its .workitem marker
+// before it is shelved. Returns ("", key) for an unadopted directory (no
+// marker), which has no stable-id links to migrate.
+func promotedWorkitemIdentity(ctx context.Context, campaignRoot string, loc *locate.Location, result *workitemPromoteResult) (id, key string) {
+	key = loc.Type + ":" + result.From
+	// A file source has no .workitem sibling; its identity is in its own
+	// frontmatter, so load it there (mirrors gather's ItemKind branch). Without
+	// this a file source yields an empty id and link migration can only match by
+	// key, never by stable ID.
+	if isFile, _ := promoteSourceShape(loc); isFile {
+		if meta, err := wkitem.LoadFrontmatterMetadata(loc.SourcePath); err == nil && meta != nil {
+			id = meta.ID
+		}
+		return id, key
+	}
+	if meta, err := wkitem.LoadMetadata(ctx, loc.SourcePath); err == nil && meta != nil {
+		id = meta.ID
+	}
+	return id, key
+}
+
+// migratePromotedLinks re-points every link that referenced the promoted
+// workitem (by its old stable id or key) onto the created festival, addressed
+// by the festival's single-segment fest.yaml id. Returns whether the registry
+// changed. Best-effort: if the festival has no readable id there is no valid
+// single-segment link target, so the links are left untouched.
+func migratePromotedLinks(ctx context.Context, campaignRoot, oldID, oldKey, promotedTo string) (bool, error) {
+	newID := readFestivalID(campaignRoot, promotedTo)
+	if newID == "" || (oldID == "" && oldKey == "") {
+		return false, nil
+	}
+	newKey := "festival:" + promotedTo
+
+	changed := false
+	err := links.WithLock(ctx, campaignRoot, func(reg *links.Links) error {
+		if !rehomePromotedLinks(reg, oldID, oldKey, newID, newKey) {
+			return links.ErrSkipSave
+		}
+		changed = true
+		return nil
+	})
+	if err != nil {
+		return false, err
+	}
+	return changed, nil
+}
+
+// rehomePromotedLinks re-points links matching the promoted workitem onto the
+// festival (updating both workitem_id and workitem_key), then drops links that
+// became exact duplicates. Mirrors rehomeGatherLinks, extended to carry the key
+// because a festival's id and key differ from the source workitem's.
+func rehomePromotedLinks(reg *links.Links, oldID, oldKey, newID, newKey string) bool {
+	changed := false
+	for i := range reg.Links {
+		l := &reg.Links[i]
+		matches := (oldID != "" && l.WorkitemID == oldID) || (oldKey != "" && l.WorkitemKey == oldKey)
+		if matches && (l.WorkitemID != newID || l.WorkitemKey != newKey) {
+			l.WorkitemID = newID
+			l.WorkitemKey = newKey
+			changed = true
+		}
+	}
+	if !changed {
+		return false
+	}
+	seen := make(map[string]bool, len(reg.Links))
+	deduped := make([]links.Link, 0, len(reg.Links))
+	for _, link := range reg.Links {
+		key := link.WorkitemID + "|" + string(link.Scope.Kind) + "|" + link.Scope.Path + "|" + string(link.Role)
+		if seen[key] {
+			continue
+		}
+		seen[key] = true
+		deduped = append(deduped, link)
+	}
+	reg.Links = deduped
+	return true
+}
+
+// readFestivalID returns the fest.yaml metadata id (e.g. SC0001) for the
+// festival at promotedTo (a campaign-relative festivals/... path), or "" when
+// it cannot be read. This is the same id discovery exposes as the festival
+// workitem's SourceID, which the selector resolves and links address.
+func readFestivalID(campaignRoot, promotedTo string) string {
+	data, err := os.ReadFile(filepath.Join(campaignRoot, filepath.FromSlash(promotedTo), "fest.yaml"))
+	if err != nil {
+		return ""
+	}
+	var doc struct {
+		Metadata struct {
+			ID string `yaml:"id"`
+		} `yaml:"metadata"`
+	}
+	if err := yaml.Unmarshal(data, &doc); err != nil {
+		return ""
+	}
+	return strings.TrimSpace(doc.Metadata.ID)
 }
 
 func recordPromotedTo(ctx context.Context, campaignRoot string, loc *locate.Location, promotedTo string) error {
-	if _, err := os.Stat(filepath.Join(loc.SourcePath, wkitem.MetadataFilename)); os.IsNotExist(err) {
+	info, statErr := os.Stat(loc.SourcePath)
+	if statErr != nil {
 		return nil
+	}
+	// A directory source needs a .workitem marker to stamp; a file source is
+	// itself the frontmatter target, so it always proceeds. wkitem.RecordPromotion
+	// picks the right surface by shape.
+	if info.IsDir() {
+		if _, err := os.Stat(filepath.Join(loc.SourcePath, wkitem.MetadataFilename)); os.IsNotExist(err) {
+			return nil
+		}
 	}
 	relPath := filepath.ToSlash(dungeoncmd.RelFromRoot(campaignRoot, loc.SourcePath))
 	if err := promotepkg.RecordPromotion(promotedTo, func(rec promotepkg.PromotionRecord) error {
@@ -406,12 +670,10 @@ type DungeonMove struct {
 // the shared dungeon plumbing. It is the single implementation behind both
 // camp workitem promote and the deprecated camp shelve alias.
 func MoveToDungeon(ctx context.Context, campaignRoot string, loc *locate.Location, status string) (DungeonMove, error) {
-	info, err := os.Stat(loc.SourcePath)
-	if err != nil {
+	// Directory and file workitems both move via the generic dungeon plumbing
+	// (statusmove + link rewriting); the shape does not matter here.
+	if _, err := os.Stat(loc.SourcePath); err != nil {
 		return DungeonMove{}, camperrors.Wrapf(err, "stat workitem %s", loc.SourcePath)
-	}
-	if !info.IsDir() {
-		return DungeonMove{}, camperrors.New(fmt.Sprintf("workitem %s is not a directory; only directory-style workitems can be moved to the dungeon", dungeoncmd.RelFromRoot(campaignRoot, loc.SourcePath)))
 	}
 
 	if loc.InDungeon && loc.Status == status {
@@ -438,7 +700,29 @@ func MoveToDungeon(ctx context.Context, campaignRoot string, loc *locate.Locatio
 	}, nil
 }
 
+// promoteSourceShape reports whether loc's source is a single file and returns a
+// container slug for it: the extension-stripped slug for a file (so a file lands
+// under <dest>/<slug>/<file>.md rather than <dest>/<file>.md/), or loc.Slug for a
+// directory.
+func promoteSourceShape(loc *locate.Location) (isFile bool, slug string) {
+	if info, err := os.Stat(loc.SourcePath); err == nil && !info.IsDir() {
+		return true, strings.TrimSuffix(loc.Slug, filepath.Ext(loc.Slug))
+	}
+	return false, loc.Slug
+}
+
+// primaryDocContent returns the promotable markdown for a source path. For a
+// file workitem the source is itself the doc; for a directory it is README.md or
+// the first top-level .md.
 func primaryDocContent(srcDir string) (string, error) {
+	if info, err := os.Stat(srcDir); err == nil && !info.IsDir() {
+		data, rerr := os.ReadFile(srcDir)
+		if rerr != nil {
+			return "", camperrors.Wrap(rerr, "reading workitem file")
+		}
+		return string(data), nil
+	}
+
 	if data, err := os.ReadFile(filepath.Join(srcDir, "README.md")); err == nil {
 		return string(data), nil
 	} else if !os.IsNotExist(err) {

@@ -75,6 +75,62 @@ func assertShellWrapperTransparency(t *testing.T, section string, expect shellWr
 	}
 }
 
+// workitemArmExpectations describes the per-shell tokens that prove the
+// workitem wrapper arm passes subcommands through verbatim while still
+// intercepting the interactive dashboard.
+type workitemArmExpectations struct {
+	subcommandGuard string // construct that passes a bare-word subcommand through
+	passthroughCall string // the verbatim passthrough invocation
+	listPassthrough string // --list joined the dashboard output-mode flags
+	pathOutput      string // the dashboard --path-output interception, still present
+}
+
+func assertWorkitemArmPassesSubcommands(t *testing.T, section string, e workitemArmExpectations) {
+	t.Helper()
+
+	for _, required := range []string{e.subcommandGuard, e.passthroughCall, e.listPassthrough, e.pathOutput} {
+		if !strings.Contains(section, required) {
+			t.Fatalf("workitem arm missing %q in:\n%s", required, section)
+		}
+	}
+	// The subcommand guard must run BEFORE the --path-output interception; if it
+	// did not, a subcommand invocation (camp workitem resolve/id/stage/...) would
+	// still get --path-output appended and die with exit 2.
+	if strings.Index(section, e.subcommandGuard) >= strings.Index(section, e.pathOutput) {
+		t.Fatalf("workitem arm applies --path-output before guarding subcommands:\n%s", section)
+	}
+}
+
+func TestGenerateZsh_WorkitemArmPassesSubcommands(t *testing.T) {
+	section := shellWrapperSection(t, generateZsh(), "    workitem|wi|workitems)", "    list|ls)")
+	assertWorkitemArmPassesSubcommands(t, section, workitemArmExpectations{
+		subcommandGuard: `case "${1:-}" in`,
+		passthroughCall: `command camp workitem "$@"`,
+		listPassthrough: `--print|--print=*|--list)`,
+		pathOutput:      `--path-output "$tmp"`,
+	})
+}
+
+func TestGenerateBash_WorkitemArmPassesSubcommands(t *testing.T) {
+	section := shellWrapperSection(t, generateBash(), "    workitem|wi|workitems)", "    list|ls)")
+	assertWorkitemArmPassesSubcommands(t, section, workitemArmExpectations{
+		subcommandGuard: `case "${1:-}" in`,
+		passthroughCall: `command camp workitem "$@"`,
+		listPassthrough: `--print|--print=*|--list)`,
+		pathOutput:      `--path-output "$tmp"`,
+	})
+}
+
+func TestGenerateFish_WorkitemArmPassesSubcommands(t *testing.T) {
+	section := shellWrapperSection(t, generateFish(), "        case workitem wi workitems", "        case list ls")
+	assertWorkitemArmPassesSubcommands(t, section, workitemArmExpectations{
+		subcommandGuard: `not string match -qr -- '^-' $rest[1]`,
+		passthroughCall: `command camp workitem $rest`,
+		listPassthrough: `--print '--print=*' --list`,
+		pathOutput:      `--path-output "$tmp"`,
+	})
+}
+
 func shellWrapperSection(t *testing.T, output, startMarker, endMarker string) string {
 	t.Helper()
 

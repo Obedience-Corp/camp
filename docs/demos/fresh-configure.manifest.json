@@ -1,0 +1,115 @@
+{
+  "artifacts": {
+    "optimization_note": null,
+    "optimized": {
+      "byte_size": 358940,
+      "duration_ms": 39450.0,
+      "format": "gif",
+      "fps": 20.0,
+      "frame_count": 789,
+      "height": 565,
+      "path": "private-evidence/fresh-configure/optimized.gif",
+      "sha256": "6e66dbccb5fa9c680a981372f8e1e24b2cc8df840c87f64ecc5412d7d74844ee",
+      "width": 960
+    },
+    "raw": {
+      "byte_size": 572797,
+      "duration_ms": 39440.0,
+      "format": "gif",
+      "fps": 25.0,
+      "frame_count": 986,
+      "height": 800,
+      "path": "private-evidence/fresh-configure/raw.gif",
+      "sha256": "a94cae695d8d719888bcc1d4251e8ddc4c6dc91d27aa4d2caed29be79098f1b8",
+      "width": 1360
+    }
+  },
+  "fixture": {
+    "disposable": true,
+    "fake_home": true,
+    "id": "camp-fresh-configure-v1-1d5415b8"
+  },
+  "gist": {
+    "markdown": "![Camp fresh configure TUI using the shared Obedience Corp fire palette](https://gist.githubusercontent.com/lancekrogers/5bfc1b414abcefaf45513bbd5b188dfa/raw/camp-fresh-configure-brand.gif)",
+    "page_url": "https://gist.github.com/lancekrogers/5bfc1b414abcefaf45513bbd5b188dfa",
+    "raw_url": "https://gist.githubusercontent.com/lancekrogers/5bfc1b414abcefaf45513bbd5b188dfa/raw/camp-fresh-configure-brand.gif",
+    "visibility": "secret"
+  },
+  "journey": "fresh-configure",
+  "privacy": {
+    "result": "passed",
+    "scan_path": "private-evidence/fresh-configure/privacy-scan.txt",
+    "scan_sha256": "8ce13857824d3be9967aff1ca8dcf18dab381a02b23d2fa82f84dfb5f6308666"
+  },
+  "pty": {
+    "fake_home": true,
+    "fixture_id": "camp-fresh-configure-v1-1d5415b8",
+    "pyte_version": "installed",
+    "renderer": "pyte",
+    "snapshots_path": "private-evidence/fresh-configure/screen-snapshots.json",
+    "snapshots_sha256": "e419932a02545a7646473ca481f8b96c567d0582fd172df5cffe2864bf8145d2",
+    "states": [
+      "initial",
+      "form",
+      "name",
+      "command-focus",
+      "command",
+      "directory-focus",
+      "failure-focus",
+      "save",
+      "final"
+    ],
+    "terminal": {
+      "columns": 136,
+      "mode": "dark/adaptive truecolor",
+      "pixel_height": 800,
+      "pixel_width": 1360,
+      "rows": 50
+    },
+    "transcript_path": "private-evidence/fresh-configure/pty-transcript.txt",
+    "transcript_sha256": "5d7063cc75f69cd3a52ce2ed7d01aac2e81698b8db6bfe8e0e42baf2eb7b96b3",
+    "transport": "pty"
+  },
+  "repository": "camp",
+  "review": {
+    "recorded_at": "2026-07-19T09:42:03Z",
+    "reviewed_at": null,
+    "reviewer": "lancekrogers"
+  },
+  "schema_version": 1,
+  "source": {
+    "binary": {
+      "executable": true,
+      "path": "bin/camp",
+      "sha256": "a838b80bf65c2ab2093aa5a3931704707e27aeb6c45dc4ca7690a0597341c09e"
+    },
+    "dependencies": {
+      "path": "private-evidence/fresh-configure/dependencies.txt",
+      "sha256": "3fef93f962194c3aadfedfd099dfd2b109c28120c1118803741d5482d479e053",
+      "versions": [
+        "build_command=just build default-build",
+        "source_revision=50dfb0250624d2a4d48ce4bb5108e6811c18f5a4",
+        "vhs version 0.11.0",
+        "ffmpeg version 8.1.2",
+        "ffprobe version 8.1.2",
+        "pyte_version=installed",
+        "github.com/Obedience-Corp/obey-shared v0.4.5",
+        "journey=fresh-configure"
+      ]
+    },
+    "revision": "50dfb0250624d2a4d48ce4bb5108e6811c18f5a4",
+    "tape": {
+      "path": "docs/demos/fresh-configure.tape",
+      "sha256": "6c4d7c7fb17d3757ac2223efc5dbb5116199f9405bb76a27463b4b85f8a840d7"
+    }
+  },
+  "validation": {
+    "command": "vhs 0.11.0 recording plus independent PTY/pyte matrix validation",
+    "expected_states": [
+      "initial",
+      "save",
+      "final"
+    ],
+    "result": "passed"
+  }
+}

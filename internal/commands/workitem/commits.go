@@ -38,7 +38,7 @@ var commitsPerRepoTimeout = 30 * time.Second
 
 // CommitRecord is the per-row payload emitted by `camp workitem commits`.
 // Repo is the campaign-relative path of the git repo the commit was found
-// in (".") for the campaign root.
+// in, or "campaign-root" for the campaign root itself.
 type CommitRecord struct {
 	SHA      string                  `json:"sha"`
 	Author   string                  `json:"author"`
@@ -177,7 +177,7 @@ func runCommitsQuery(ctx context.Context, cmd *cobra.Command, flags commitsFlags
 	// git-log fan-out across every linked repo. In auto, an empty or unreadable
 	// ledger falls back to the cross-repo tag scan; --source scan forces the scan
 	// (the exhaustive git --all view) and --source ledger forces the ledger.
-	aliases := workitemAliases(ref, wi)
+	aliases := WorkitemAliases(ref, wi)
 	var records []CommitRecord
 	var queryErrs []commitsQueryError
 	answered := commitsSourceScan
@@ -223,10 +223,10 @@ func runCommitsQuery(ctx context.Context, cmd *cobra.Command, flags commitsFlags
 	return emitCommitsQueryWarnings(cmd.ErrOrStderr(), queryErrs)
 }
 
-// workitemAliases returns the identifier forms a ledger event's scope.workitem
+// WorkitemAliases returns the identifier forms a ledger event's scope.workitem
 // might carry for this workitem (D007 workitem-id normalization): the ref, the
 // stable id, the workitem key, and the on-disk directory slug all name it.
-func workitemAliases(ref string, wi *wkitem.WorkItem) map[string]bool {
+func WorkitemAliases(ref string, wi *wkitem.WorkItem) map[string]bool {
 	aliases := map[string]bool{}
 	if ref != "" {
 		aliases[ref] = true
@@ -487,12 +487,16 @@ func queryRepo(ctx context.Context, campaignRoot, repo, ref string) ([]CommitRec
 	return records, nil
 }
 
+// repoDisplayPath must label the campaign root the same way the ledger scan
+// path does (ledger.RepoLabel: "campaign-root") so records read the same
+// shape regardless of which path (ledger fast-path vs. this git-log scan)
+// answered the query.
 func repoDisplayPath(campaignRoot, repo string) string {
 	rel, err := filepath.Rel(campaignRoot, repo)
 	if err == nil {
 		slashRel := filepath.ToSlash(rel)
 		if slashRel == "." {
-			return "."
+			return "campaign-root"
 		}
 		if slashRel != ".." && !strings.HasPrefix(slashRel, "../") && !filepath.IsAbs(rel) {
 			return slashRel

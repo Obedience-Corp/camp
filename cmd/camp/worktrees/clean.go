@@ -32,9 +32,17 @@ var worktreesCleanCmd = &cobra.Command{
 	Short: "Remove stale worktrees",
 	Long: `Remove stale or orphaned worktrees.
 
-Stale worktrees are those where the git worktree reference is broken or
-the directory no longer exists. This command cleans up both the filesystem
-and git's internal worktree tracking.
+Enumeration uses git worktree list as the source of truth (same as
+camp worktrees list), then scans the preferred projects/worktrees/<project>/
+layout for orphan directories not registered with git.
+
+Auto-removal is conservative. Only worktrees whose .git file points at a
+gitdir that no longer exists are removed from disk without further flags.
+Full clones (.git is a directory) are listed and skipped for manual review.
+
+Git-listed entries whose checkout directory (or .git file) is already gone
+are not auto-pruned here; use git worktree prune in the project repo for
+admin-only leftovers after the directory has vanished.
 
 Examples:
   # Preview what would be cleaned
@@ -98,8 +106,9 @@ func runWorktreesClean(cmd *cobra.Command, args []string) error {
 	resolver := paths.NewResolver(campRoot, cfg.Paths())
 	pathManager := worktree.NewPathManager(resolver)
 
-	// Find stale worktrees
-	stale, err := findStaleWorktrees(ctx, pathManager, cfg, cleanProject)
+	// Find stale worktrees (git worktree list is the primary source of truth,
+	// same as camp worktrees list; preferred-dir scan catches orphans only).
+	stale, err := findStaleWorktrees(ctx, campRoot, pathManager, cleanProject)
 	if err != nil {
 		return err
 	}
@@ -202,46 +211,76 @@ func runWorktreesClean(cmd *cobra.Command, args []string) error {
 	return nil
 }
 
-func findStaleWorktrees(ctx context.Context, pm *worktree.PathManager, cfg *config.CampaignConfig, filterProject string) ([]cleanResult, error) {
+func findStaleWorktrees(ctx context.Context, campRoot string, pm *worktree.PathManager, filterProject string) ([]cleanResult, error) {
 	var stale []cleanResult
+	seen := make(map[string]struct{})
 
-	// Get projects to scan
-	var projectNames []string
-	if filterProject != "" {
-		projectNames = []string{filterProject}
-	} else {
-		projects, err := pm.ListAllProjects()
-		if err != nil {
-			return nil, err
-		}
-		projectNames = projects
+	// Project targets: shared with list so both commands scan the same set.
+	targets, err := worktreeProjectTargets(ctx, campRoot, filterProject)
+	if err != nil {
+		return nil, err
 	}
 
-	// Check each project's worktrees
-	for _, projectName := range projectNames {
-		fsWorktrees, err := pm.ListProjectWorktrees(projectName)
-		if err != nil {
-			continue
+	for _, target := range targets {
+		// Primary: every linked worktree git knows about, wherever it lives.
+		gitEntries, listErr := worktree.NewGitWorktree(target.path).List(ctx)
+		if listErr != nil {
+			if filterProject != "" {
+				return nil, camperrors.Wrapf(listErr, "failed to list git worktrees for project %q", target.name)
+			}
+			// Best-effort when cleaning --all: skip projects that fail list.
+		} else {
+			for _, entry := range gitEntries {
+				if !worktree.IsLinkedWorktree(target.path, entry) {
+					continue
+				}
+				cleanPath := filepath.Clean(entry.Path)
+				if _, ok := seen[cleanPath]; ok {
+					continue
+				}
+				seen[cleanPath] = struct{}{}
+				if cr, ok := staleIfRemovable(target.name, filepath.Base(cleanPath), cleanPath); ok {
+					stale = append(stale, cr)
+				}
+			}
 		}
 
-		for _, name := range fsWorktrees {
-			wtPath := pm.WorktreePath(projectName, name)
-			reason := checkWorktreeStale(wtPath)
-			if reason != "" {
-				if reason == "gitdir target does not exist" || stalenessIsGitDir(reason) {
-					stale = append(stale, cleanResult{
-						project:     projectName,
-						worktree:    name,
-						path:        wtPath,
-						reason:      reason,
-						gitDirEntry: stalenessIsGitDir(reason),
-					})
-				}
+		// Secondary: preferred-location directories that may be orphaned (not in
+		// git worktree list) but still leave broken worktree dirs on disk.
+		fsNames, fsErr := pm.ListProjectWorktrees(target.name)
+		if fsErr != nil {
+			continue
+		}
+		for _, name := range fsNames {
+			wtPath := filepath.Clean(pm.WorktreePath(target.name, name))
+			if _, ok := seen[wtPath]; ok {
+				continue
+			}
+			seen[wtPath] = struct{}{}
+			if cr, ok := staleIfRemovable(target.name, name, wtPath); ok {
+				stale = append(stale, cr)
 			}
 		}
 	}
 
 	return stale, nil
+}
+
+func staleIfRemovable(projectName, worktreeName, path string) (cleanResult, bool) {
+	reason := checkWorktreeStale(path)
+	if reason == "" {
+		return cleanResult{}, false
+	}
+	if reason != "gitdir target does not exist" && !stalenessIsGitDir(reason) {
+		return cleanResult{}, false
+	}
+	return cleanResult{
+		project:     projectName,
+		worktree:    worktreeName,
+		path:        path,
+		reason:      reason,
+		gitDirEntry: stalenessIsGitDir(reason),
+	}, true
 }
 
 func checkWorktreeStale(path string) string {

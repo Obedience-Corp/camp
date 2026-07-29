@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
 	"sort"
 	"strings"
 	"testing"
@@ -573,5 +574,29 @@ func TestCompleteSwitchTabs(t *testing.T) {
 				}
 			}
 		})
+	}
+}
+
+func TestWithRemoteSuggestions(t *testing.T) {
+	t.Setenv("XDG_CONFIG_HOME", t.TempDir())
+	writeMachineCacheCampaigns("archdtop", []string{"lance-arch", "media-server"})
+	base := errors.New(`campaign "lance" not found`)
+
+	err := withRemoteSuggestions(base, cmdutil.ParsedMachineSelector{Machine: "archdtop", Remainder: "lance"})
+	if !strings.Contains(err.Error(), "archdtop:lance-arch") {
+		t.Errorf("suggestion missing from error: %v", err)
+	}
+	if !strings.Contains(err.Error(), "not found") {
+		t.Errorf("original error dropped: %v", err)
+	}
+
+	if err := withRemoteSuggestions(base, cmdutil.ParsedMachineSelector{Machine: "coldcache", Remainder: "lance"}); err != base {
+		t.Errorf("cold cache should return the error unchanged, got: %v", err)
+	}
+	if err := withRemoteSuggestions(base, cmdutil.ParsedMachineSelector{Machine: "archdtop", Remainder: "zzzz"}); err != base {
+		t.Errorf("no fuzzy match should return the error unchanged, got: %v", err)
+	}
+	if err := withRemoteSuggestions(base, cmdutil.ParsedMachineSelector{Machine: "archdtop", Remainder: "@tab-only"}); err != base {
+		t.Errorf("empty campaign query should return the error unchanged, got: %v", err)
 	}
 }

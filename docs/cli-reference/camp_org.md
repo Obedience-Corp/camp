@@ -59,7 +59,9 @@ camp org [flags]
 * [camp org create](camp_org_create.md)	 - Create an org (optionally empty) and join campaigns
 * [camp org delete](camp_org_delete.md)	 - Delete an org (empty only unless --force)
 * [camp org list](camp_org_list.md)	 - List orgs with member and active counts
+* [camp org next](camp_org_next.md)	 - Switch to the next campaign in the current campaign's org
 * [camp org remove](camp_org_remove.md)	 - Return campaigns to the default org
 * [camp org rename](camp_org_rename.md)	 - Rename an org, reassigning all members atomically
 * [camp org show](camp_org_show.md)	 - Show an org's member campaigns
+* [camp org toggle](camp_org_toggle.md)	 - Toggle back to the last-visited campaign in the current org
 * [camp org which](camp_org_which.md)	 - Print the current campaign's org

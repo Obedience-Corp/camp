@@ -16,6 +16,64 @@ import (
 	wkitem "github.com/Obedience-Corp/camp/internal/workitem"
 )
 
+func TestRecommendsWorkflowScaffold(t *testing.T) {
+	cases := []struct {
+		typeFlag string
+		want     bool
+	}{
+		{"explore", true},
+		{"design", true},
+		{"Design", true},
+		{"EXPLORE", true},
+		{"feature", false},
+		{"bug", false},
+		{"chore", false},
+		{"incident", false},
+		{"", false},
+	}
+	for _, c := range cases {
+		if got := recommendsWorkflowScaffold(c.typeFlag); got != c.want {
+			t.Errorf("recommendsWorkflowScaffold(%q) = %v, want %v", c.typeFlag, got, c.want)
+		}
+	}
+}
+
+func TestCreateNextGuidance(t *testing.T) {
+	t.Run("explore recommends fest scaffold", func(t *testing.T) {
+		cmd, hint, human := createNextGuidance("explore", "topic", "workflow/explore/topic")
+		if cmd != "fest create workflow topic" {
+			t.Fatalf("command = %q", cmd)
+		}
+		if !strings.Contains(hint, "tracking only") {
+			t.Fatalf("hint missing tracking only: %q", hint)
+		}
+		if !strings.Contains(hint, "recommended next") {
+			t.Fatalf("hint missing recommended next: %q", hint)
+		}
+		if !strings.Contains(human, "recommended next:") {
+			t.Fatalf("human next line = %q", human)
+		}
+		if strings.Contains(human, "optional next:") {
+			t.Fatalf("human must not say optional for explore: %q", human)
+		}
+	})
+	t.Run("feature omits agent command", func(t *testing.T) {
+		cmd, hint, human := createNextGuidance("feature", "demo", "workflow/feature/demo")
+		if cmd != "" {
+			t.Fatalf("command = %q, want empty", cmd)
+		}
+		if human != "" {
+			t.Fatalf("human next line = %q, want empty", human)
+		}
+		if !strings.Contains(hint, "tracking only") {
+			t.Fatalf("hint missing tracking only: %q", hint)
+		}
+		if strings.Contains(hint, "fest create workflow") {
+			t.Fatalf("feature hint must not recommend fest scaffold: %q", hint)
+		}
+	})
+}
+
 func TestValidateSlug(t *testing.T) {
 	cases := []struct {
 		slug string
@@ -122,7 +180,7 @@ func TestRunCreateWritesWorkitemMarker(t *testing.T) {
 	cmd.SetOut(os.Stdout)
 	cmd.SetErr(os.Stderr)
 
-	if err := runCreate(context.Background(), cmd, "atomic-marker", "design", "Atomic Marker", "", "", "", false); err != nil {
+	if err := runCreate(context.Background(), cmd, "atomic-marker", "design", "Atomic Marker", "", "", "", nil, nil, false); err != nil {
 		t.Fatalf("runCreate() error = %v", err)
 	}
 
@@ -151,7 +209,7 @@ func TestRunCreate_DeriveFailureLeavesNoTargetAndRetrySucceeds(t *testing.T) {
 	cmd := &cobra.Command{}
 	cmd.SetOut(io.Discard)
 	cmd.SetErr(io.Discard)
-	err := runCreate(ctx, cmd, "retryable", "design", "Retryable", "design-retryable-id", "", "", false)
+	err := runCreate(ctx, cmd, "retryable", "design", "Retryable", "design-retryable-id", "", "", nil, nil, false)
 	if !errors.Is(err, context.Canceled) {
 		t.Fatalf("runCreate canceled error = %v, want context.Canceled", err)
 	}
@@ -162,14 +220,14 @@ func TestRunCreate_DeriveFailureLeavesNoTargetAndRetrySucceeds(t *testing.T) {
 	cmd = &cobra.Command{}
 	cmd.SetOut(io.Discard)
 	cmd.SetErr(io.Discard)
-	if err := runCreate(context.Background(), cmd, "retryable", "design", "Retryable", "design-retryable-id", "", "", false); err != nil {
+	if err := runCreate(context.Background(), cmd, "retryable", "design", "Retryable", "design-retryable-id", "", "", nil, nil, false); err != nil {
 		t.Fatalf("immediate retry runCreate() error = %v", err)
 	}
 	if _, err := os.Stat(filepath.Join(target, ".workitem")); err != nil {
 		t.Fatalf("retry did not create marker: %v", err)
 	}
 
-	err = runCreate(context.Background(), cmd, "retryable", "design", "Retryable", "", "", "", false)
+	err = runCreate(context.Background(), cmd, "retryable", "design", "Retryable", "", "", "", nil, nil, false)
 	if err == nil || !strings.Contains(err.Error(), "use `camp workitem adopt`") {
 		t.Fatalf("second create error = %v, want adopt guidance", err)
 	}
@@ -193,7 +251,7 @@ func TestRunCreate_PreExistingNonEmptyDirRequiresAdopt(t *testing.T) {
 	cmd := &cobra.Command{}
 	cmd.SetOut(io.Discard)
 	cmd.SetErr(io.Discard)
-	err := runCreate(context.Background(), cmd, "legacy", "design", "Legacy", "", "", "", false)
+	err := runCreate(context.Background(), cmd, "legacy", "design", "Legacy", "", "", "", nil, nil, false)
 	if err == nil || !strings.Contains(err.Error(), "use `camp workitem adopt`") {
 		t.Fatalf("runCreate existing dir error = %v, want adopt guidance", err)
 	}

@@ -32,6 +32,10 @@ var worktreesCommitCmd = &cobra.Command{
 
 Auto-detects the worktree from your current directory.
 
+Commit tags use explicit --workitem or context from the current path. They do
+not inherit the per-machine current workitem selection, which can be stale;
+use 'camp workitem commit' when you want current.yaml scoping.
+
 Examples:
   # From within a worktree
   cd projects/worktrees/my-api/feature-auth
@@ -137,6 +141,7 @@ func runWorktreesCommit(cmd *cobra.Command, args []string) error {
 	if wtCommitAutoWrite {
 		fmt.Println(ui.Info("Writing commit message..."))
 		extraEnv := workitemEnvForWorktreeCommit(ctx, campRoot, wtCtx.WorktreePath, wtCommitWorkitem)
+		extraEnv = commitkit.WithCommitAmendEnv(extraEnv, wtCommitAmend)
 		message, err = commitkit.AutoWriteCommitMessageWithEnv(ctx, campRoot, wtCtx.WorktreePath, extraEnv)
 		if err != nil {
 			return err
@@ -151,8 +156,8 @@ func runWorktreesCommit(cmd *cobra.Command, args []string) error {
 		return err
 	}
 	if prefs.TagCommits() {
-		questID, workitemRef := resolveWorktreeCommitContext(ctx, campRoot, wtCtx.WorktreePath, wtCommitWorkitem)
-		message = commitkit.PrependContextTagsFullNamed(cfg.Name, cfg.ID, questID, "", workitemRef, message)
+		questID, festivalRef, workitemRef := resolveWorktreeCommitContext(ctx, campRoot, wtCtx.WorktreePath, wtCommitWorkitem)
+		message = commitkit.PrependContextTagsFullNamed(cfg.Name, cfg.ID, questID, festivalRef, workitemRef, message)
 	}
 
 	// Commit

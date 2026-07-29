@@ -21,9 +21,20 @@ This command creates one symlink per skill bundle. It does not replace entire
 provider skills directories, so existing user skills remain intact.
 
 With neither --tool nor --path, skills are projected into every registered tool.
+Pass --worktrees with no --tool/--path to also project into every
+projects/worktrees/<project>/<name> git checkout (so Grok/Claude sessions
+opened inside a worktree still see campaign skills). Use --worktrees-only to
+project into worktrees without touching campaign-root tool directories.
+
+Worktree discovery only includes directories with a .git file/dir. The normal
+layout is projects/worktrees/<project>/<name>/. A loose git root at
+projects/worktrees/<name>/ is also accepted; nested dirs under that root are
+not scanned as separate worktrees.
 
 Examples:
   camp skills link                     Project skills into all registered tools
+  camp skills link --worktrees         Project into tools and every project worktree
+  camp skills link --worktrees-only    Project into every project worktree only
   camp skills link --tool claude       Project skills into .claude/skills/
   camp skills link --tool agents       Project skills into .agents/skills/
   camp skills link --path custom/dir   Project skills into custom/dir
@@ -45,6 +56,8 @@ func init() {
 	flags.StringP("path", "p", "", "Custom destination directory")
 	flags.BoolP("force", "f", false, "Replace conflicting symlink entries (never files/directories)")
 	flags.BoolP("dry-run", "n", false, "Show what would happen without making changes")
+	flags.Bool("worktrees", false, "Also project into every projects/worktrees/*/* worktree")
+	flags.Bool("worktrees-only", false, "Project only into project worktrees (skip campaign tool dirs)")
 }
 
 func runSkillsLink(cmd *cobra.Command, _ []string) error {
@@ -56,9 +69,20 @@ func runSkillsLink(cmd *cobra.Command, _ []string) error {
 	destPath, _ := cmd.Flags().GetString("path")
 	force, _ := cmd.Flags().GetBool("force")
 	dryRun, _ := cmd.Flags().GetBool("dry-run")
+	withWorktrees, _ := cmd.Flags().GetBool("worktrees")
+	worktreesOnly, _ := cmd.Flags().GetBool("worktrees-only")
 
 	if tool != "" && destPath != "" {
 		return camperrors.Newf("--tool and --path are mutually exclusive; use one or the other")
+	}
+	if worktreesOnly && (tool != "" || destPath != "") {
+		return camperrors.Newf("--worktrees-only cannot be combined with --tool or --path")
+	}
+	if worktreesOnly && withWorktrees {
+		return camperrors.Newf("--worktrees and --worktrees-only are mutually exclusive; use one")
+	}
+	if withWorktrees && (tool != "" || destPath != "") {
+		return camperrors.Newf("--worktrees cannot be combined with --tool or --path; use --worktrees-only for worktrees alone, or omit --tool/--path")
 	}
 
 	skillsDir, err := intskills.FindSkillsDir(ctx)
@@ -71,9 +95,20 @@ func runSkillsLink(cmd *cobra.Command, _ []string) error {
 		return err
 	}
 
+	// Worktrees-only: skip campaign tool directories.
+	if worktreesOnly {
+		return linkAllWorktrees(ctx, out, errOut, root, skillsDir, force, dryRun)
+	}
+
 	// With neither --tool nor --path, project into every registered tool.
 	if tool == "" && destPath == "" {
-		return linkAllTools(out, errOut, root, skillsDir, force, dryRun)
+		if err := linkAllTools(out, errOut, root, skillsDir, force, dryRun); err != nil {
+			return err
+		}
+		if withWorktrees {
+			return linkAllWorktrees(ctx, out, errOut, root, skillsDir, force, dryRun)
+		}
+		return nil
 	}
 
 	dest, err := resolveSkillsDestination(root, tool, destPath)

@@ -199,10 +199,14 @@ func resolveAndPopulateProjects(ctx context.Context, root string, cfg *intlevera
 
 	var authorExcluded int
 	if authorFilter != "" {
+		match := intleverage.ExpandAuthorFilter(resolver, authorFilter)
 		var filtered []intleverage.ResolvedProject
 		for _, proj := range resolved {
-			hasCommits, gitErr := intleverage.AuthorHasCommits(ctx, proj.GitDir, authorFilter)
-			if gitErr == nil && hasCommits {
+			hasCommits, gitErr := intleverage.AuthorHasCommitsMatch(ctx, proj.GitDir, match)
+			if gitErr != nil {
+				return nil, 0, camperrors.Wrapf(gitErr, "checking author commits in %s", proj.Name)
+			}
+			if hasCommits {
 				filtered = append(filtered, proj)
 			} else {
 				authorExcluded++

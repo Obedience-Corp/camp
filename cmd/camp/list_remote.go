@@ -5,9 +5,11 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"strings"
 	"sync"
 	"text/tabwriter"
 
+	"github.com/Obedience-Corp/camp/cmd/camp/cmdutil"
 	camperrors "github.com/Obedience-Corp/camp/internal/errors"
 	"github.com/Obedience-Corp/camp/internal/machines"
 	"github.com/Obedience-Corp/camp/internal/remote"
@@ -78,6 +80,14 @@ func remoteListArgs(f listFilter) string {
 // the far machine).
 func enumerateRemoteFor(f listFilter) enumerateFunc {
 	args := remoteListArgs(f)
+	// selfSnapshot detects the tailnet name and loads the whole registry, and
+	// returns the same answer for every machine. Computing it inside the
+	// per-machine closure paid that cost N times over a concurrent fan-out;
+	// sync.Once shares one result across the goroutines.
+	var snapshotOnce sync.Once
+	var selfID string
+	var selfNames []string
+
 	return func(ctx context.Context, m *machines.Machine) ([]campaignEntry, error) {
 		out, err := remote.RunCampCommand(ctx, m, args)
 		if err != nil {
@@ -100,7 +110,46 @@ func enumerateRemoteFor(f listFilter) enumerateFunc {
 		// Warm the completion cache so `csw <id>:<tab>` has campaigns without the
 		// keystroke path ever doing a live ssh.
 		writeMachineCacheCampaigns(m.ID, names)
+		// A successful enumerate proves this machine can reach m, so it is also
+		// the moment to tell m about us. Silent on every failure.
+		snapshotOnce.Do(func() { selfID, selfNames = selfSnapshot(ctx) })
+		if selfID != "" {
+			pushSelfSnapshot(ctx, m, selfID, selfNames)
+		}
 		return rows, nil
+	}
+}
+
+// loadRemoteCampaigns is the shared live fan-out used by list --remote, the list
+// TUI remote toggle, and the switch picker. It loads machines.yaml, enumerates
+// every machine, and returns successful rows plus the full result set (including
+// per-machine errors). A missing/empty fleet returns empty slices, not an error.
+// Callers re-filter as needed; this does not re-apply the local filter backstop.
+func loadRemoteCampaigns(ctx context.Context, filter listFilter) ([]campaignEntry, []remoteResult, error) {
+	mf, err := machines.Load()
+	if err != nil {
+		return nil, nil, err
+	}
+	if len(mf.Machines) == 0 {
+		return nil, nil, nil
+	}
+	results := fanOutRemote(ctx, mf.Machines, enumerateRemoteFor(filter))
+	var rows []campaignEntry
+	for _, r := range results {
+		if r.err == nil {
+			rows = append(rows, r.rows...)
+		}
+	}
+	return rows, results, nil
+}
+
+// listFilterFromScope maps a switch CampaignScope onto the list filter used for
+// remote enumerate (active-only by default; --all / --status / --org forwarded).
+func listFilterFromScope(scope cmdutil.CampaignScope) listFilter {
+	return listFilter{
+		org:    scope.Org,
+		status: scope.Status,
+		all:    scope.All,
 	}
 }
 
@@ -151,9 +200,25 @@ func outputRemoteList(stdout, stderr io.Writer, campaigns []campaignEntry, resul
 func warnUnreachable(stderr io.Writer, results []remoteResult) {
 	for _, r := range results {
 		if r.err != nil {
-			_, _ = fmt.Fprintln(stderr, ui.Warning(fmt.Sprintf("machine %s unreachable: %v", r.machineID, r.err)))
+			_, _ = fmt.Fprintln(stderr, ui.Warning(fmt.Sprintf("machine %s unreachable: %s", r.machineID, formatUnreachableErr(r.err))))
 		}
 	}
+}
+
+// formatUnreachableErr prefers classified hop failures (check-mode, host-key,
+// publickey) over multi-line wrapped ssh noise so list --remote stays readable.
+func formatUnreachableErr(err error) string {
+	if err == nil {
+		return ""
+	}
+	if detail := remote.HopFailureDetail(err); detail != "" {
+		return detail
+	}
+	msg := strings.TrimSpace(err.Error())
+	if line, _, ok := strings.Cut(msg, "\n"); ok {
+		msg = strings.TrimSpace(line)
+	}
+	return msg
 }
 
 func renderRemoteTable(stdout io.Writer, campaigns []campaignEntry, results []remoteResult) error {
@@ -176,7 +241,7 @@ func renderRemoteTable(stdout io.Writer, campaigns []campaignEntry, results []re
 	}
 	for _, r := range results {
 		if r.err != nil {
-			p("%s\t%s\t\t\t\t\n", ui.Dim(r.machineID), ui.Dim(fmt.Sprintf("(unreachable: %v)", r.err)))
+			p("%s\t%s\t\t\t\t\n", ui.Dim(r.machineID), ui.Dim(fmt.Sprintf("(unreachable: %s)", formatUnreachableErr(r.err))))
 		}
 	}
 	if werr != nil {
