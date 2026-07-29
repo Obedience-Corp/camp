@@ -382,7 +382,13 @@ func newHopBackCmd() (*cobra.Command, *bytes.Buffer, *bytes.Buffer) {
 	return cmd, &out, &errb
 }
 
-const testOriginPayload = "v1;host=mac-studio.tail37114b.ts.net;user=lancerogers;campaign=obey-campaign;id=mac-studio"
+// testOriginPayload names a host that is deliberately NOT this machine.
+//
+// It used to carry the author's own tailnet name, which meant every hop-back
+// test silently exercised the self-origin path on that one machine and the
+// intended remote path everywhere else. A fixture for "somewhere else" has to
+// be somewhere else.
+const testOriginPayload = "v1;host=devbox.example.ts.net;user=alex;campaign=obey-campaign;id=devbox"
 
 func TestRunHopBackDecisionTable(t *testing.T) {
 	tests := []struct {
@@ -456,7 +462,7 @@ func TestRunHopBackDecisionTable(t *testing.T) {
 			payload:    testOriginPayload,
 			setPayload: true,
 			resolveErr: errors.New("connection refused"),
-			wantErr:    "the origin is not registered here, probe it with: ssh -o BatchMode=yes lancerogers@mac-studio.tail37114b.ts.net true",
+			wantErr:    "the origin is not registered here, probe it with: ssh -o BatchMode=yes alex@devbox.example.ts.net true",
 		},
 	}
 
@@ -576,7 +582,7 @@ func TestOriginTargetPrefersRegisteredEntry(t *testing.T) {
 	if err := os.WriteFile(path, []byte(`version: 1
 machines:
     - id: studio
-      host: MAC-STUDIO.tail37114b.ts.net.
+      host: DEVBOX.example.ts.net.
       auth_method: tailscale-ssh
       ssh_user: someoneelse
       identity_file: /keys/id_ed25519
@@ -617,7 +623,7 @@ func TestOriginTargetTransientLeavesAuthMethodEmpty(t *testing.T) {
 	if m.AuthMethod != "" {
 		t.Errorf("AuthMethod = %q, want empty", m.AuthMethod)
 	}
-	if m.Host != "mac-studio.tail37114b.ts.net" || m.SSHUser != "lancerogers" {
+	if m.Host != "devbox.example.ts.net" || m.SSHUser != "alex" {
 		t.Errorf("transient machine = %+v", m)
 	}
 }
@@ -655,10 +661,9 @@ func TestIsSelfMachine(t *testing.T) {
 		}
 	})
 
-	t.Run("a registered entry wins over self detection", func(t *testing.T) {
-		// A machines.yaml row pointing at this machine is a misconfiguration
-		// adopt refuses to create; honoring the operator's explicit file beats
-		// second-guessing it on every hop.
+	t.Run("a registered entry pointing elsewhere wins over self detection", func(t *testing.T) {
+		// Honoring the operator's explicit file beats second-guessing it, so a
+		// row that maps this id to another host still hops.
 		dir := t.TempDir()
 		path := filepath.Join(dir, "machines.yaml")
 		if err := os.WriteFile(path, []byte("version: 1\nmachines:\n    - id: "+self+
@@ -670,6 +675,49 @@ func TestIsSelfMachine(t *testing.T) {
 			t.Error("a registered entry must take precedence over self detection")
 		}
 	})
+
+	t.Run("a registered entry pointing at this machine still resolves locally", func(t *testing.T) {
+		// The case a shared fleet file produces: the same machines.yaml on every
+		// node, listing this one under its real id. Treating that as "registered,
+		// therefore remote" sends the hop to ourselves, which is the self-ssh
+		// this whole check exists to prevent.
+		host, err := detectReachableName(context.Background(), runTailscaleStatusForSelf)
+		if err != nil || host == "" {
+			t.Skip("no reachable name for this machine")
+		}
+		path := filepath.Join(t.TempDir(), "machines.yaml")
+		if err := os.WriteFile(path, []byte("version: 1\nmachines:\n    - id: "+self+
+			"\n      host: "+host+"\n      auth_method: ssh-agent\n"), 0o600); err != nil {
+			t.Fatal(err)
+		}
+		t.Setenv("CAMP_MACHINES_PATH", path)
+		if !isSelfMachine(context.Background(), self) {
+			t.Error("a registered row whose host is this machine must resolve locally, not ssh to self")
+		}
+	})
+}
+
+// A payload naming this machine must not emit an ssh to ourselves.
+func TestRunSwitchHopBackRefusesASelfOrigin(t *testing.T) {
+	t.Setenv("CAMP_MACHINES_PATH", filepath.Join(t.TempDir(), "machines.yaml"))
+	host, err := detectReachableName(context.Background(), runTailscaleStatusForSelf)
+	if err != nil || host == "" {
+		t.Skip("no reachable name for this machine")
+	}
+	t.Setenv(HopOriginEnvVar, "v1;host="+host+";user=someone;campaign=demo;id=whatever")
+
+	cmd := &cobra.Command{}
+	cmd.SetContext(context.Background())
+	cmd.SetOut(&bytes.Buffer{})
+	cmd.SetErr(&bytes.Buffer{})
+
+	err = runHopBack(context.Background(), cmd, false, true, false)
+	if err == nil {
+		t.Fatal("a self origin must not produce a hop")
+	}
+	if !strings.Contains(err.Error(), "already here") {
+		t.Errorf("error should say the user is already here, got: %v", err)
+	}
 }
 
 func TestRunSwitchHopBackWorksWithNoLocalRegistry(t *testing.T) {
