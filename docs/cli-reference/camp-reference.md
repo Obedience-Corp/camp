@@ -1299,8 +1299,9 @@ Post-merge branch cycling: sync to default branch and optionally create a new wo
 
 Reset one or more projects to a fresh state after merging a PR.
 
-Performs the post-merge cycle: checkout default branch, pull latest,
-prune merged branches, and optionally create a new working branch.
+Performs the post-merge cycle: checkout the default branch, fetch origin,
+sync to the remote default while preserving local-only commits, prune merged
+branches, and optionally create a new working branch.
 
 Auto-detects the current project from your working directory, or accepts a
 single project name. Use --list to cycle a specific set of projects in one
@@ -1313,7 +1314,7 @@ cycle succeeds. Manage those with 'camp fresh configure'. Inspect the resolved
 sequence with 'camp fresh show-workflow [project-name]'.
 
 Examples:
-  camp fresh                            # Sync current project (checkout default, pull, prune)
+  camp fresh                            # Sync current project (checkout default, fetch, prune)
   camp fresh --branch develop           # Sync and create develop branch
   camp fresh camp -b feat/new-thing     # Sync camp project, create feature branch
   camp fresh --list camp,fest,festival  # Sync a specific set of projects
@@ -1353,7 +1354,7 @@ Run fresh across all project submodules
 
 ### Synopsis
 
-Run the fresh cycle (checkout default, pull, prune, optional branch)
+Run the fresh cycle (fetch and safely sync default, prune, optional branch)
 across every project submodule in the campaign.
 
 Examples:
@@ -1369,7 +1370,8 @@ camp fresh all [flags]
 ### Options
 
 ```
-  -h, --help   help for all
+  -h, --help       help for all
+      --no-drain   Do not wait for camp's queued commits first
 ```
 
 ### Options inherited from parent commands
@@ -1398,7 +1400,7 @@ per-project overrides.
 Run without a subcommand to open the interactive setup for humans, which
 groups the fresh sequence by what you can change about each step:
 
-  Sync        checkout, pull, and safety checks; always runs
+  Sync        checkout, fetch, and safe default-branch realignment; always runs
   Settings    branch, push_upstream, prune, and prune_remote
   Follow-ups  your own commands, run after a successful cycle
 
@@ -3552,6 +3554,21 @@ hops always use BatchMode (agents never hang on password prompts).
 'camp machine diagnose' reports auth mode, a copy-paste ssh probe, and
 ControlMaster socket state (and can clear a stale socket with --reset).
 
+The mesh model, in one paragraph: hopping exports CAMP_HOP_ORIGIN into the
+remote login shell, a single v1 line naming where the shell came from, which is
+what lets 'camp switch -' return without either machine storing state about the
+other. A payload does not register anything: if the origin is unknown here,
+camp names 'camp machine adopt', which previews and asks, requires a TTY, and
+remembers a decline. Reachability need not be symmetric -- a machine you cannot
+dial still appears in completion, because visibility travels as a snapshot
+pushed during a successful enumerate rather than as a live query. Camp will
+never install a key, register a machine unattended, or claim a host is reachable
+on the strength of tailnet membership alone.
+
+See docs/machine-mesh.md for the reachability matrix (notably: the Tailscale SSH
+server does not run in sandboxed macOS GUI builds, so a mac accepts OpenSSH keys
+instead) and docs/transfer.md for the machine-first transfer grammar.
+
 Run without a subcommand in a terminal to manage the fleet interactively: add,
 discover, edit, and remove machines, and see each one's socket state. The
 subcommands stay the interface for scripts and agents, and remain what a
@@ -3631,6 +3648,45 @@ camp machine add [id] [flags]
       --label string      Human-readable label
       --user string       SSH user
       --yes               With --discover, take the first discovered device non-interactively
+```
+
+### Options inherited from parent commands
+
+```
+      --no-color   disable colored output
+```
+---
+
+## camp machine adopt
+
+Register the machine this session was hopped from
+
+### Synopsis
+
+Register the machine this session was hopped from, after showing you exactly
+what will be written.
+
+A hop carries its origin in CAMP_HOP_ORIGIN. This reads that value and offers to
+add the origin to your machines file so hops and completion work in the other
+direction too. The hop itself never registers anything: adopting is an explicit,
+interactive act, and there is no flag that skips the confirmation.
+
+Adopting records how to REACH a machine. It does not make that machine reachable:
+that depends on its own sshd or tailnet policy. Verify with 'camp machine diagnose'.
+
+Answering No is remembered, so hints stay quiet until you ask again. Esc/cancel
+aborts without writing decline memory. Re-running this command always works;
+--force only skips the reminder that you declined before.
+
+```
+camp machine adopt [flags]
+```
+
+### Options
+
+```
+      --force   Skip the reminder that you declined this origin before (never skips the confirmation)
+  -h, --help    help for adopt
 ```
 
 ### Options inherited from parent commands
@@ -6542,6 +6598,7 @@ camp stage [flags]
 ```
   -h, --help             help for stage
       --include-refs     Include submodule ref changes when staging at campaign root
+      --no-drain         Do not wait for camp's queued commits first
   -p, --project string   Operate on a specific project/submodule path
       --sub              Operate on the submodule detected from current directory
 ```
@@ -6655,6 +6712,13 @@ Use with the shell-init wrappers for instant navigation (recommended):
   csw a1b2                       # Switch by ID prefix
   csw obey/platform              # Switch by org-scoped selector
   csw archdtop:lance-arch        # Hop to a remote campaign over ssh
+  csw -                          # Hop back to the machine/campaign this session came from
+
+'camp switch -' (csw -) is the hop-back gesture: it returns to the origin
+encoded in CAMP_HOP_ORIGIN by the outbound hop. It is registration-independent
+— the origin need not be in this machine's machines.yaml. Like other remote
+targets it refuses --print/--json. '-' is reserved and is no longer a fuzzy
+campaign query.
 
 The --print flag outputs just the path for shell integration (local only):
   cd "$(camp switch --print)"
@@ -6685,6 +6749,7 @@ camp switch [campaign] [flags]
   csw                                # Interactive picker (local + remotes)
   csw obey-campaign                  # Switch by name
   csw archdtop:lance-arch            # Hop to remote campaign
+  csw -                              # Hop back via CAMP_HOP_ORIGIN
   camp switch --org obey platform    # Switch by name within an org
   camp switch obey/platform          # Switch by scoped selector
   camp switch a1b2                   # Switch by ID prefix
@@ -6947,19 +7012,30 @@ camp tag rm <campaign> <tag>... [flags]
 
 ## camp transfer
 
-Copy files between campaigns
+Copy files between campaigns (and machines)
 
 ### Synopsis
 
-Copy files between different campaigns using campaign:path syntax.
+Copy files between campaigns, and between this machine and a registered
+fleet machine.
 
 Transfer always copies — it never moves or deletes the source.
-Either the source or destination (or both) can use "campaign:path"
-notation to reference a different registered campaign. Paths without
-a campaign prefix resolve relative to the current campaign root.
 
-At least one side must reference a different campaign. For copies
-within the same campaign, use 'camp copy' instead.
+Local forms:
+  campaign:path     another registered campaign on this machine
+  path              relative to the current campaign root
+  local:campaign:path
+                    force the campaign reading when campaign name collides
+                    with a registered machine id
+
+Machine forms (one side only; both-remote is refused):
+  machine:campaign:path
+                    file on a machine registered in ~/.obey/machines.yaml
+
+See docs/transfer.md for the full grammar, transport, and skew guidance.
+
+At least one side must reference a different campaign or machine. For copies
+within the same campaign on this machine, use 'camp copy' instead.
 
 ```
 camp transfer <src> <dest> [flags]
@@ -6968,9 +7044,12 @@ camp transfer <src> <dest> [flags]
 ### Examples
 
 ```
-  camp transfer docs/my-doc.md other-campaign:docs/my-doc.md     # push
-  camp transfer other-campaign:docs/my-doc.md docs/              # pull
+  camp transfer docs/my-doc.md other-campaign:docs/my-doc.md     # local push
+  camp transfer other-campaign:docs/my-doc.md docs/              # local pull
   camp transfer other:festivals/plan.md festivals/planned/       # pull into dir
+  camp transfer docs/x.md archdtop:obey-campaign:docs/x.md       # push to machine
+  camp transfer archdtop:obey-campaign:docs/x.md docs/x.md       # pull from machine
+  camp transfer local:other:docs/x.md archdtop:camp:docs/x.md    # local: escape hatch
 ```
 
 ### Options

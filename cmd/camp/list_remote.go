@@ -80,6 +80,14 @@ func remoteListArgs(f listFilter) string {
 // the far machine).
 func enumerateRemoteFor(f listFilter) enumerateFunc {
 	args := remoteListArgs(f)
+	// selfSnapshot detects the tailnet name and loads the whole registry, and
+	// returns the same answer for every machine. Computing it inside the
+	// per-machine closure paid that cost N times over a concurrent fan-out;
+	// sync.Once shares one result across the goroutines.
+	var snapshotOnce sync.Once
+	var selfID string
+	var selfNames []string
+
 	return func(ctx context.Context, m *machines.Machine) ([]campaignEntry, error) {
 		out, err := remote.RunCampCommand(ctx, m, args)
 		if err != nil {
@@ -102,6 +110,12 @@ func enumerateRemoteFor(f listFilter) enumerateFunc {
 		// Warm the completion cache so `csw <id>:<tab>` has campaigns without the
 		// keystroke path ever doing a live ssh.
 		writeMachineCacheCampaigns(m.ID, names)
+		// A successful enumerate proves this machine can reach m, so it is also
+		// the moment to tell m about us. Silent on every failure.
+		snapshotOnce.Do(func() { selfID, selfNames = selfSnapshot(ctx) })
+		if selfID != "" {
+			pushSelfSnapshot(ctx, m, selfID, selfNames)
+		}
 		return rows, nil
 	}
 }

@@ -72,6 +72,21 @@ hops always use BatchMode (agents never hang on password prompts).
 'camp machine diagnose' reports auth mode, a copy-paste ssh probe, and
 ControlMaster socket state (and can clear a stale socket with --reset).
 
+The mesh model, in one paragraph: hopping exports CAMP_HOP_ORIGIN into the
+remote login shell, a single v1 line naming where the shell came from, which is
+what lets 'camp switch -' return without either machine storing state about the
+other. A payload does not register anything: if the origin is unknown here,
+camp names 'camp machine adopt', which previews and asks, requires a TTY, and
+remembers a decline. Reachability need not be symmetric -- a machine you cannot
+dial still appears in completion, because visibility travels as a snapshot
+pushed during a successful enumerate rather than as a live query. Camp will
+never install a key, register a machine unattended, or claim a host is reachable
+on the strength of tailnet membership alone.
+
+See docs/machine-mesh.md for the reachability matrix (notably: the Tailscale SSH
+server does not run in sandboxed macOS GUI builds, so a mac accepts OpenSSH keys
+instead) and docs/transfer.md for the machine-first transfer grammar.
+
 Run without a subcommand in a terminal to manage the fleet interactively: add,
 discover, edit, and remove machines, and see each one's socket state. The
 subcommands stay the interface for scripts and agents, and remain what a
@@ -176,6 +191,14 @@ func init() {
 	machineCmd.AddCommand(machineAddCmd)
 	machineCmd.AddCommand(machineRemoveCmd)
 	machineCmd.AddCommand(machineDiagnoseCmd)
+	machineCmd.AddCommand(machineAdoptCmd)
+	machineCmd.AddCommand(machineCachePutCmd)
+	// StringArray (not StringSlice): each --campaigns is one name intact, so
+	// names may contain commas. The push path emits repeated flags to match.
+	machineCachePutCmd.Flags().StringArrayVar(&cachePutCampaigns, "campaigns", nil,
+		"Campaign name on the calling machine (repeatable; names may contain commas)")
+	machineAdoptCmd.Flags().BoolVar(&machineAdoptForce, "force", false,
+		"Skip the reminder that you declined this origin before (never skips the confirmation)")
 
 	machineListCmd.Flags().BoolVar(&machineListJSON, "json", false, "Output as JSON")
 
@@ -198,9 +221,24 @@ func runMachineList(cmd *cobra.Command, _ []string) error {
 		return err
 	}
 	if machineListJSON {
+		// JSON consumers get data, never advice: the hint is suppressed here
+		// rather than inside OriginHint, because whether advice belongs in the
+		// output is the caller's decision.
 		return writeMachineListJSON(cmd.OutOrStdout(), mf)
 	}
-	return renderMachineListTable(cmd.OutOrStdout(), mf.Machines)
+	if err := renderMachineListTable(cmd.OutOrStdout(), mf.Machines); err != nil {
+		return err
+	}
+	// OriginHint's contract is non-TTY silence: piped/redirected list stays pure
+	// data, and the once-per-process token is not burned on non-interactive paths.
+	// --json already returns above; this covers bare table output without a TTY.
+	if ui.IsTerminal() {
+		if hint := OriginHint(); hint != "" {
+			_, err := fmt.Fprintln(cmd.OutOrStdout(), ui.Dim(hint))
+			return err
+		}
+	}
+	return nil
 }
 
 func writeMachineListJSON(w io.Writer, mf *machines.File) error {
@@ -325,6 +363,12 @@ type machineDiagnoseRow struct {
 	CampVersion  string `json:"camp_version,omitempty"`
 	CampCommit   string `json:"camp_commit,omitempty"`
 	VersionSkew  bool   `json:"version_skew"`
+	// ReverseCapable reports whether THIS machine accepts inbound ssh, which is
+	// the only half of reverse reachability camp can observe without executing
+	// on the far side. Additive with omitempty on the hint so existing --json
+	// consumers are unaffected.
+	ReverseCapable bool   `json:"reverse_capable"`
+	ReverseHint    string `json:"reverse_hint,omitempty"`
 }
 
 // probeRemoteCampVersion asks the machine's own camp for its version. It is
@@ -387,11 +431,18 @@ func runMachineDiagnose(cmd *cobra.Command, args []string) error {
 	}
 
 	localInfo := version.Get()
+	// Reverse reachability is a fact about this machine, identical for every
+	// row. Probing it inside the loop cost N loopback dials and N tailscale
+	// probes against a 2s budget each to learn the same answer.
+	reverse := checkReverseReachability(ctx, defaultReverseProbes())
 	rows := make([]machineDiagnoseRow, 0, len(targets))
 	for i := range targets {
 		m := &targets[i]
 		d := remote.CheckControlMaster(ctx, m)
 		remoteVersion, remoteCommit := probeRemoteCampVersion(ctx, m)
+		// Diagnose is the only surface that pays for a live probe, so it is the
+		// only one that can warm the cache the hop path reads.
+		writeMachineVersionCache(m.ID, remoteVersion, remoteCommit)
 		row := machineDiagnoseRow{
 			ID:           m.ID,
 			Host:         m.Host,
@@ -406,6 +457,12 @@ func runMachineDiagnose(cmd *cobra.Command, args []string) error {
 			CampVersion:  remoteVersion,
 			CampCommit:   remoteCommit,
 			VersionSkew:  campVersionSkew(localInfo, remoteVersion, remoteCommit),
+			// What this machine can honestly say about being reachable FROM
+			// that one. Identical for every row (it is a fact about here, not
+			// about them), and reported per row because that is where an
+			// operator is already looking when a hop-back fails.
+			ReverseCapable: reverse.Capable,
+			ReverseHint:    reverse.Hint,
 		}
 		if machineDiagnoseReset && d.State == remote.ControlStale {
 			if err := remote.ResetControlMaster(ctx, m); err != nil {
@@ -470,6 +527,13 @@ func renderMachineDiagnoseTable(w io.Writer, rows []machineDiagnoseRow) error {
 				campVersionDisplay(r)+"  ⚠ differs from this machine ("+campLocalVersionDisplay()+"); remote errors may not match current behavior"))
 		default:
 			lines = append(lines, fmt.Sprintf("%s  %s", ui.Label("CAMP"), campVersionDisplay(r)))
+		}
+		if r.ReverseHint != "" {
+			mark := "✗"
+			if r.ReverseCapable {
+				mark = "✓"
+			}
+			lines = append(lines, fmt.Sprintf("%s  %s %s", ui.Label("REVERSE"), mark, r.ReverseHint))
 		}
 		if r.Hint != "" {
 			lines = append(lines, fmt.Sprintf("%s  %s", ui.Label("HINT"), r.Hint))

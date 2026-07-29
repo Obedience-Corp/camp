@@ -122,7 +122,7 @@ func editRegistryEntry(ctx context.Context, c config.RegisteredCampaign, uuid st
 		fmt.Println(ui.Warning("Path does not exist or is not a directory; leaving the registry path unchanged."))
 		path = c.Path
 	case pathNeedsConfirm:
-		ok, err := confirmForm(ctx, fmt.Sprintf("Repoint %q to %s?", c.Name, path))
+		ok, _, err := confirmForm(ctx, fmt.Sprintf("Repoint %q to %s?", c.Name, path))
 		if err != nil {
 			return err
 		}
@@ -188,20 +188,22 @@ func isExistingDir(path string) bool {
 	return err == nil && fi.IsDir()
 }
 
-// confirmForm asks a yes/no question, defaulting to No. A cancelled prompt is
-// treated as No so the caller does not apply the guarded change.
-func confirmForm(ctx context.Context, prompt string) (bool, error) {
-	var ok bool
+// confirmForm asks a yes/no question, defaulting to No. canceled is true when
+// the operator dismissed the prompt (Esc / user abort) without answering;
+// callers that persist a deliberate "No" must not treat cancel the same way.
+// Callers that only guard a mutation can treat !ok (including cancel) as refuse.
+func confirmForm(ctx context.Context, prompt string) (ok, canceled bool, err error) {
+	var value bool
 	form := huh.NewForm(huh.NewGroup(
-		huh.NewConfirm().Title(prompt).Value(&ok),
+		huh.NewConfirm().Title(prompt).Value(&value),
 	))
 	if err := theme.RunForm(ctx, form); err != nil {
 		if theme.IsCancelled(err) {
-			return false, nil
+			return false, true, nil
 		}
-		return false, err
+		return false, false, err
 	}
-	return ok, nil
+	return value, false, nil
 }
 
 // saveRegistryEntry persists a single entry through UpdateRegistry, which holds

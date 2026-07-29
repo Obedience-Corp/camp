@@ -10,7 +10,7 @@ import (
 
 func TestEmitShellConnectLocal(t *testing.T) {
 	var buf bytes.Buffer
-	if err := emitShellConnect(&buf, false, "/home/lance/campaigns/obey", nil); err != nil {
+	if err := emitShellConnect(&buf, false, "/home/lance/campaigns/obey", nil, ""); err != nil {
 		t.Fatal(err)
 	}
 	if got, want := buf.String(), "cd -- '/home/lance/campaigns/obey'\n"; got != want {
@@ -21,7 +21,7 @@ func TestEmitShellConnectLocal(t *testing.T) {
 func TestEmitShellConnectRemoteWithUser(t *testing.T) {
 	var buf bytes.Buffer
 	m := &machines.Machine{ID: "devbox", Host: "devbox.ts.net", SSHUser: "lance", AuthMethod: machines.AuthSSHAgent}
-	if err := emitShellConnect(&buf, true, "/srv/campaigns/obey", m); err != nil {
+	if err := emitShellConnect(&buf, true, "/srv/campaigns/obey", m, ""); err != nil {
 		t.Fatal(err)
 	}
 	out := buf.String()
@@ -42,7 +42,7 @@ func TestEmitShellConnectRemoteWithUser(t *testing.T) {
 func TestEmitShellConnectRemoteNoUser(t *testing.T) {
 	var buf bytes.Buffer
 	m := &machines.Machine{ID: "box", Host: "box.local", AuthMethod: machines.AuthSSHAgent}
-	if err := emitShellConnect(&buf, true, "/x", m); err != nil {
+	if err := emitShellConnect(&buf, true, "/x", m, ""); err != nil {
 		t.Fatal(err)
 	}
 	if !strings.Contains(buf.String(), " 'box.local' ") {
@@ -61,7 +61,7 @@ func TestEmitShellConnectRemoteQuotesOptsWithSpaces(t *testing.T) {
 		AuthMethod:   machines.AuthSSHAgent,
 		IdentityFile: "/tmp/my key",
 	}
-	if err := emitShellConnect(&buf, true, "/x", m); err != nil {
+	if err := emitShellConnect(&buf, true, "/x", m, ""); err != nil {
 		t.Fatal(err)
 	}
 	out := buf.String()
@@ -79,7 +79,7 @@ func TestEmitShellConnectRemoteInjectionSafe(t *testing.T) {
 	m := &machines.Machine{ID: "box", Host: "box.local", AuthMethod: machines.AuthSSHAgent}
 	// A remote root containing shell metacharacters must be single-quoted so it
 	// cannot break out of the command.
-	if err := emitShellConnect(&buf, true, "/x; rm -rf $HOME", m); err != nil {
+	if err := emitShellConnect(&buf, true, "/x; rm -rf $HOME", m, ""); err != nil {
 		t.Fatal(err)
 	}
 	out := buf.String()

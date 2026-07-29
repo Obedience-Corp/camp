@@ -144,7 +144,7 @@ type machineTUIModel struct {
 	spin spinner.Model
 
 	status    string
-	statusErr bool
+	statusKind statusKind
 	width     int
 	height    int
 	quitting  bool
@@ -203,6 +203,14 @@ func newMachineTUIModel(ctx context.Context, mf *machines.File) *machineTUIModel
 		spin:           newMachineSpinner(),
 	}
 	m.rebuildRows("")
+	// The fleet screen is where an operator looks at machines, so it is where
+	// an unregistered origin is worth mentioning. It names the command rather
+	// than offering a key: the adopt confirmation is a huh form that takes over
+	// the terminal, and this model already owns it. One preview, one consent
+	// surface, nothing to keep in sync.
+	if hint := OriginHint(); hint != "" {
+		m.setAdvice(hint)
+	}
 	return m
 }
 
@@ -295,12 +303,30 @@ func clampIndex(i, n int) int {
 	return i
 }
 
+// A status line has three meanings, not two. Reporting an advisory through the
+// success path put a check mark next to "this origin is not in your fleet",
+// which reads as something that worked on the first screen an operator sees
+// after a hop.
+type statusKind int
+
+const (
+	statusOK statusKind = iota
+	statusAdvice
+	statusError
+)
+
 func (m *machineTUIModel) setStatus(message string) {
-	m.status, m.statusErr = message, false
+	m.status, m.statusKind = message, statusOK
+}
+
+// setAdvice reports something worth knowing that is neither success nor
+// failure: nothing was done, and nothing went wrong.
+func (m *machineTUIModel) setAdvice(message string) {
+	m.status, m.statusKind = message, statusAdvice
 }
 
 func (m *machineTUIModel) setError(err error) {
-	m.status, m.statusErr = err.Error(), true
+	m.status, m.statusKind = err.Error(), statusError
 }
 
 // configuredHosts indexes the fleet by host so a tailnet device already in the

@@ -67,10 +67,10 @@ func TestLocalRowRefusesEditRemoveAndSocketReset(t *testing.T) {
 		{"reset socket", func() { m.resetSelectedSocket() }, "no ControlMaster socket"},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
-			m.status, m.statusErr, m.overlay = "", false, machineNoOverlay
+			m.status, m.statusKind, m.overlay = "", statusOK, machineNoOverlay
 			tc.run()
-			if !m.statusErr || !strings.Contains(m.status, tc.want) {
-				t.Errorf("status = %q (err=%v), want an error containing %q", m.status, m.statusErr, tc.want)
+			if m.statusKind != statusError || !strings.Contains(m.status, tc.want) {
+				t.Errorf("status = %q (kind=%v), want an error containing %q", m.status, m.statusKind, tc.want)
 			}
 			if m.overlay != machineNoOverlay {
 				t.Error("a refused action must not open an overlay")
@@ -436,7 +436,7 @@ func TestTestSelectedRefusesLocal(t *testing.T) {
 	if cmd := m.testSelected(); cmd != nil {
 		t.Fatal("testing local should not run a command")
 	}
-	if !m.statusErr || !strings.Contains(m.status, "nothing to connect to") {
+	if m.statusKind != statusError || !strings.Contains(m.status, "nothing to connect to") {
 		t.Errorf("status = %q, want a refusal naming local", m.status)
 	}
 }

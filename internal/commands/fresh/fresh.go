@@ -47,8 +47,9 @@ func NewFreshCommand() *cobra.Command {
 		Short: "Post-merge branch cycling: sync to default branch and optionally create a new working branch",
 		Long: `Reset one or more projects to a fresh state after merging a PR.
 
-Performs the post-merge cycle: checkout default branch, pull latest,
-prune merged branches, and optionally create a new working branch.
+Performs the post-merge cycle: checkout the default branch, fetch origin,
+sync to the remote default while preserving local-only commits, prune merged
+branches, and optionally create a new working branch.
 
 Auto-detects the current project from your working directory, or accepts a
 single project name. Use --list to cycle a specific set of projects in one
@@ -61,7 +62,7 @@ cycle succeeds. Manage those with 'camp fresh configure'. Inspect the resolved
 sequence with 'camp fresh show-workflow [project-name]'.
 
 Examples:
-  camp fresh                            # Sync current project (checkout default, pull, prune)
+  camp fresh                            # Sync current project (checkout default, fetch, prune)
   camp fresh --branch develop           # Sync and create develop branch
   camp fresh camp -b feat/new-thing     # Sync camp project, create feature branch
   camp fresh --list camp,fest,festival  # Sync a specific set of projects
@@ -244,31 +245,12 @@ func executeFresh(ctx context.Context, name, path string, opts freshOptions) err
 		return err
 	}
 
-	if syncState.detached {
-		note := freshSyncWorktreeNote(syncState)
-		if opts.dryRun {
-			fmt.Printf("%s── Would fetch %-22s %s\n", prefix, "origin",
-				freshStepDim.Render(fmt.Sprintf("(for %s)", syncState.baseRef)))
-			fmt.Printf("%s── Would use %-24s %s\n", prefix, syncState.displayRef,
-				freshStepDim.Render(note))
-		} else {
-			if err := git.FetchRemote(ctx, path, "origin"); err != nil {
-				return camperrors.Wrap(err, "fetch origin")
-			}
-			fmt.Printf("%s── Fetch %-28s %s\n", prefix, "origin", freshStepGreen.Render("done"))
-
-			if err := git.CheckoutDetached(ctx, path, syncState.baseRef); err != nil {
-				return camperrors.Wrapf(err, "checkout detached %s", syncState.baseRef)
-			}
-			fmt.Printf("%s── Checkout %-25s %s\n", prefix, syncState.displayRef,
-				freshStepGreen.Render("done")+" "+freshStepDim.Render(note))
-		}
-	} else if currentBranch == defaultBranch && !syncState.reclaimed {
+	if !syncState.detached && currentBranch == defaultBranch && !syncState.reclaimed {
 		fmt.Printf("%s── Checkout %-24s %s\n", prefix, defaultBranch, freshStepDim.Render("already on it"))
-	} else if opts.dryRun {
+	} else if !syncState.detached && opts.dryRun {
 		fmt.Printf("%s── Would checkout %-19s %s\n", prefix, defaultBranch,
 			freshStepDim.Render(fmt.Sprintf("(currently on %s)", emptyBranchLabel(currentBranch))))
-	} else {
+	} else if !syncState.detached {
 		if err := git.Checkout(ctx, path, defaultBranch); err != nil {
 			// Surface a clearer message than git's raw "already used by worktree".
 			if isBranchInUseByWorktree(err) {
@@ -282,10 +264,10 @@ func executeFresh(ctx context.Context, name, path string, opts freshOptions) err
 		fmt.Printf("%s── Checkout %-24s %s\n", prefix, defaultBranch, freshStepGreen.Render("done"))
 	}
 
-	// Capture the default branch SHA before the pull so the tier-2 backstop can
+	// Capture the sync base SHA before fetching so the tier-2 backstop can
 	// scan commits newly reachable from the default branch after prune (the
 	// pruned branch refs themselves are gone by the time prune returns).
-	beforeSHAOut, beforeSHAErr := git.Output(ctx, path, "rev-parse", "HEAD")
+	beforeSHAOut, beforeSHAErr := git.Output(ctx, path, "rev-parse", syncState.baseRef)
 	beforeSHA := strings.TrimSpace(beforeSHAOut)
 	if beforeSHAErr != nil || beforeSHA == "" {
 		// Best-effort: without a pre-pull HEAD the tier-2 commit-tag scan is
@@ -295,39 +277,47 @@ func executeFresh(ctx context.Context, name, path string, opts freshOptions) err
 			"  merged-branch backstop: could not capture pre-pull HEAD for %s; commit-tag scan skipped (%v)", name, beforeSHAErr)))
 	}
 
-	// Step 2: Pull (ff-only)
-	if !syncState.detached {
+	// Step 2: Fetch once, then either sync detached at origin/<default> or
+	// reconcile the checked-out local default branch. When local commits exist,
+	// reconciliation first creates a recovery branch and only then resets.
+	if err := fetchFreshRemote(ctx, path, opts.prune); err != nil {
+		return camperrors.Wrap(err, "fetch origin")
+	}
+	fetchDetail := freshStepGreen.Render("done")
+	if opts.dryRun {
+		fetchDetail += " " + freshStepDim.Render("(remote refs only)")
+	}
+	fmt.Printf("%s── Fetch %-28s %s\n", prefix, "origin", fetchDetail)
+
+	if syncState.detached {
+		note := freshSyncWorktreeNote(syncState)
 		if opts.dryRun {
-			fmt.Printf("%s── Would pull (ff-only)\n", prefix)
+			fmt.Printf("%s── Would use %-24s %s\n", prefix, syncState.displayRef,
+				freshStepDim.Render(note))
 		} else {
-			output, err := git.PullFFOnly(ctx, path)
-			if err != nil {
-				return camperrors.Wrapf(err, "pull failed — resolve manually")
+			if err := git.CheckoutDetached(ctx, path, syncState.baseRef); err != nil {
+				return camperrors.Wrapf(err, "checkout detached %s", syncState.baseRef)
 			}
-			detail := "up-to-date"
-			if !strings.Contains(output, "Already up to date") {
-				detail = "updated"
-			}
-			fmt.Printf("%s── Pull (ff-only)                  %s\n", prefix, freshStepGreen.Render(detail))
+			fmt.Printf("%s── Checkout %-25s %s\n", prefix, syncState.displayRef,
+				freshStepGreen.Render("done")+" "+freshStepDim.Render(note))
+		}
+	} else {
+		if err := reconcileFreshDefault(ctx, path, defaultBranch, opts.dryRun, prefix); err != nil {
+			return err
 		}
 	}
 
 	// Step 3: Prune merged and gone-upstream branches.
-	// Prune flow itself refreshes remote tracking (RefreshRemote below),
-	// so squash-merged PRs show up here without requiring the user to run
-	// 'git fetch --prune' first.
+	// Step 2 already refreshed and pruned remote tracking refs, so prune does
+	// not perform a second network fetch.
 	if opts.prune {
 		pruneOpts := prune.Options{
-			DryRun:       opts.dryRun,
-			Force:        true,  // Skip confirmation — fresh is deliberate
-			DiscardDirty: false, // preserve dirty worktrees (new guard); fresh should not destroy uncommitted work
-			Remote:       opts.pruneRemote,
-			// Refresh even on dry-run: 'git fetch --prune' only updates
-			// remote-tracking refs, not the worktree, so the dry-run
-			// preview must include it or squash-merged branches stay
-			// invisible until the user fetches manually.
+			DryRun:        opts.dryRun,
+			Force:         true,  // Skip confirmation — fresh is deliberate
+			DiscardDirty:  false, // preserve dirty worktrees (new guard); fresh should not destroy uncommitted work
+			Remote:        opts.pruneRemote,
 			BaseRef:       syncState.baseRef,
-			RefreshRemote: true,
+			RefreshRemote: false,
 		}
 		// Reclaiming the default branch detaches its former worktree. Preserve
 		// that exact worktree during this prune pass: fresh created the detached
@@ -430,7 +420,7 @@ func executeFresh(ctx context.Context, name, path string, opts freshOptions) err
 	// Summary
 	fmt.Println()
 	if opts.dryRun {
-		fmt.Println(freshStepDim.Render("  (dry-run — no changes made)"))
+		fmt.Println(freshStepDim.Render("  (dry-run — remote refs refreshed; no local branches or files changed)"))
 	} else if branchCreated {
 		fmt.Printf("  %s Ready to work on %s.\n", freshStepGreen.Render("Fresh!"), ui.Value(opts.branch))
 	} else if syncState.detached {

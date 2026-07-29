@@ -417,10 +417,14 @@ func (m *machineTUIModel) statusLine() string {
 	// reads as a message that continues, which it does: the pane beside the
 	// list shows the same reason with room to breathe.
 	message := ui.Truncate(m.status, max(m.layout().width-4, 20))
-	if m.statusErr {
+	switch m.statusKind {
+	case statusError:
 		return machineErrorStyle.Render("✗ " + message)
+	case statusAdvice:
+		return machineMuted.Render("· " + message)
+	default:
+		return machineOKStyle.Render("✓ " + message)
 	}
-	return machineOKStyle.Render("✓ " + message)
 }
 
 // footer groups keys by what they are for rather than listing eight of them at

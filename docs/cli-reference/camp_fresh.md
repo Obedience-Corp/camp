@@ -6,8 +6,9 @@ Post-merge branch cycling: sync to default branch and optionally create a new wo
 
 Reset one or more projects to a fresh state after merging a PR.
 
-Performs the post-merge cycle: checkout default branch, pull latest,
-prune merged branches, and optionally create a new working branch.
+Performs the post-merge cycle: checkout the default branch, fetch origin,
+sync to the remote default while preserving local-only commits, prune merged
+branches, and optionally create a new working branch.
 
 Auto-detects the current project from your working directory, or accepts a
 single project name. Use --list to cycle a specific set of projects in one
@@ -20,7 +21,7 @@ cycle succeeds. Manage those with 'camp fresh configure'. Inspect the resolved
 sequence with 'camp fresh show-workflow [project-name]'.
 
 Examples:
-  camp fresh                            # Sync current project (checkout default, pull, prune)
+  camp fresh                            # Sync current project (checkout default, fetch, prune)
   camp fresh --branch develop           # Sync and create develop branch
   camp fresh camp -b feat/new-thing     # Sync camp project, create feature branch
   camp fresh --list camp,fest,festival  # Sync a specific set of projects
