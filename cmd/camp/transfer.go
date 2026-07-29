@@ -37,6 +37,8 @@ Machine forms (one side only; both-remote is refused):
   machine:campaign:path
                     file on a machine registered in ~/.obey/machines.yaml
 
+See docs/transfer.md for the full grammar, transport, and skew guidance.
+
 At least one side must reference a different campaign or machine. For copies
 within the same campaign on this machine, use 'camp copy' instead.`,
 	Example: `  camp transfer docs/my-doc.md other-campaign:docs/my-doc.md     # local push

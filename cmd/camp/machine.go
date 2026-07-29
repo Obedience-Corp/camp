@@ -72,6 +72,21 @@ hops always use BatchMode (agents never hang on password prompts).
 'camp machine diagnose' reports auth mode, a copy-paste ssh probe, and
 ControlMaster socket state (and can clear a stale socket with --reset).
 
+The mesh model, in one paragraph: hopping exports CAMP_HOP_ORIGIN into the
+remote login shell, a single v1 line naming where the shell came from, which is
+what lets 'camp switch -' return without either machine storing state about the
+other. A payload does not register anything: if the origin is unknown here,
+camp names 'camp machine adopt', which previews and asks, requires a TTY, and
+remembers a decline. Reachability need not be symmetric -- a machine you cannot
+dial still appears in completion, because visibility travels as a snapshot
+pushed during a successful enumerate rather than as a live query. Camp will
+never install a key, register a machine unattended, or claim a host is reachable
+on the strength of tailnet membership alone.
+
+See docs/machine-mesh.md for the reachability matrix (notably: the Tailscale SSH
+server does not run in sandboxed macOS GUI builds, so a mac accepts OpenSSH keys
+instead) and docs/transfer.md for the machine-first transfer grammar.
+
 Run without a subcommand in a terminal to manage the fleet interactively: add,
 discover, edit, and remove machines, and see each one's socket state. The
 subcommands stay the interface for scripts and agents, and remain what a
