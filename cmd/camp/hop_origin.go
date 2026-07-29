@@ -22,6 +22,21 @@ import (
 // the far machine can name where the session came from without any reverse
 // connection or sshd configuration. Mirrors the CAMP_QUEST pattern
 // (internal/quest/shellenv.go) with more fields.
+//
+// Trust model, because this value steers an ssh: it is session-local state, not
+// an authenticated claim. Anything that can set the environment of a camp
+// process can choose where `camp switch -` dials, and hops use
+// StrictHostKeyChecking=accept-new, so a first connection to a host named by a
+// forged payload accepts its key. Encoding bounds what a payload can SAY -- the
+// unreserved set keeps ';' and '=' out of values, parse rejects C0 controls and
+// re-applies the field caps, and remote.ShellQuote keeps the emitted line from
+// breaking out of its quoting -- but none of that binds the payload to a
+// cryptographic identity.
+//
+// What limits the blast radius is that the same trust already exists: a process
+// that can set this variable can equally invoke ssh directly. The value ranks
+// below the operator's own fleet file, which is why originTarget prefers a
+// registered row whose host matches, and hop-back never writes anything.
 const HopOriginEnvVar = "CAMP_HOP_ORIGIN"
 
 // hopOriginVersion prefixes every payload. A consumer that does not recognize
@@ -380,6 +395,14 @@ func runHopBack(ctx context.Context, cmd *cobra.Command, printOnly, shellConnect
 			"inside a campaign); hop back with 'camp switch <machine>:<campaign>'")
 	}
 
+	// A payload naming this machine is stale or forged; either way the hop it
+	// would emit is an ssh to ourselves, which yields a nested session rather
+	// than a switch. Say where the user already is instead.
+	if isSelfHost(ctx, origin.Host) {
+		return camperrors.New("camp switch -: the origin is this machine; " +
+			"you are already here — use 'camp switch " + origin.Campaign + "' to switch locally")
+	}
+
 	m, registered := originTarget(origin)
 	if err := guardRemoteOutputFlags(m.ID, printOnly, jsonOut); err != nil {
 		return err
@@ -452,16 +475,17 @@ func hopBackFailure(err error, m *machines.Machine, registered bool) error {
 // switch. A registered id wins over self-detection: Lookup(id) only — any
 // machines.yaml row whose id equals the selector suppresses local resolve,
 // regardless of that row's host. That honors the operator's explicit id
-// mapping; adopt refuses to create a true self-row, but a shared fleet file
-// that lists every node under its real id (including this one) will hop via
-// ssh rather than short-circuit locally.
+// mapping — except when that entry points back at this machine, which is the
+// one case where honoring it means sshing to ourselves. A fleet file shared
+// verbatim across every node lists this one under its real id, and that is an
+// ordinary way to run a mesh rather than a misconfiguration.
 func isSelfMachine(ctx context.Context, id string) bool {
 	if id == "" {
 		return false
 	}
 	if mf, err := machines.Load(); err == nil {
-		if _, _, found := mf.Lookup(id); found {
-			return false
+		if m, _, found := mf.Lookup(id); found {
+			return m != nil && isSelfHost(ctx, m.Host)
 		}
 	}
 	host, err := detectReachableName(ctx, runTailscaleStatusForSelf)
@@ -469,4 +493,44 @@ func isSelfMachine(ctx context.Context, id string) bool {
 		return false
 	}
 	return suggestedMachineID(host) == id
+}
+
+// selfHostNames returns the names this machine answers to: the tailnet name
+// when tailscale is up, and the bare hostname always.
+//
+// Both, because they disagree often enough to matter and a guard that knows
+// only one lets the mismatch through. A payload built while tailscale was down
+// carries the bare name; detection with tailscale up returns the tailnet one.
+func selfHostNames(ctx context.Context) []string {
+	var names []string
+	add := func(run reachableNameFunc) {
+		n, err := detectReachableName(ctx, run)
+		if err != nil || n == "" {
+			return
+		}
+		n = strings.ToLower(normalizeDNSName(n))
+		for _, have := range names {
+			if have == n {
+				return
+			}
+		}
+		names = append(names, n)
+	}
+	add(runTailscaleStatusForSelf)
+	add(nil)
+	return names
+}
+
+// isSelfHost reports whether host names this machine.
+func isSelfHost(ctx context.Context, host string) bool {
+	want := strings.ToLower(normalizeDNSName(host))
+	if want == "" {
+		return false
+	}
+	for _, n := range selfHostNames(ctx) {
+		if n == want {
+			return true
+		}
+	}
+	return false
 }
