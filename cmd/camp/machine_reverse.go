@@ -97,12 +97,34 @@ func remoteLoginState(ctx context.Context, p reverseProbes) (on, knowable bool) 
 	return p.RemoteLoginOn(ctx)
 }
 
-// sshdListening dials the loopback ssh port. Deliberately non-privileged and
-// deliberately not a process scan: what matters is whether something is
-// accepting connections, which is the question a peer's ssh client asks.
+// sshdListening reports whether something is accepting ssh here. Deliberately
+// non-privileged and deliberately not a process scan.
+//
+// It dials this machine's own reachable name first, because that is the address
+// a peer's ssh client actually uses. Loopback alone answers a different question
+// and gets both directions wrong: an sshd (or Tailscale SSH) bound only to the
+// tailnet address reads as "not listening", and a sshd_config with
+// ListenAddress 127.0.0.1 reads as "listening" when no peer can reach it.
+//
+// Loopback remains the fallback for when no reachable name can be determined,
+// which is a weaker observation than the caller would like but still better
+// than reporting nothing.
 func sshdListening(ctx context.Context) bool {
+	if host, err := detectReachableName(ctx, runTailscaleStatusForSelf); err == nil && host != "" {
+		if dialSSH(ctx, net.JoinHostPort(host, "22")) {
+			return true
+		}
+		// A reachable name that refuses the connection is the answer: a peer
+		// dialing the same address would be refused too. Do not fall back to
+		// loopback and turn that into a yes.
+		return false
+	}
+	return dialSSH(ctx, "127.0.0.1:22")
+}
+
+func dialSSH(ctx context.Context, addr string) bool {
 	d := net.Dialer{Timeout: time.Second}
-	conn, err := d.DialContext(ctx, "tcp", "127.0.0.1:22")
+	conn, err := d.DialContext(ctx, "tcp", addr)
 	if err != nil {
 		return false
 	}
