@@ -9,6 +9,7 @@ import (
 	"github.com/Obedience-Corp/camp/internal/config"
 	"github.com/Obedience-Corp/camp/internal/defercommit"
 	"github.com/Obedience-Corp/camp/internal/git"
+	"github.com/Obedience-Corp/camp/internal/jobs"
 )
 
 // Result contains the outcome of a commit attempt.
@@ -170,7 +171,11 @@ func stageAndCommit(ctx context.Context, opts Options, message string) error {
 		if opts.SelectiveOnly {
 			return git.ErrNoChanges
 		}
-		return git.CommitAll(ctx, opts.CampaignRoot, message)
+		if err := git.CommitAll(ctx, opts.CampaignRoot, message); err != nil {
+			return err
+		}
+		enqueueManifestRecords(ctx, opts.CampaignRoot)
+		return nil
 	}
 
 	tmpPath, realIndex, err := git.BuildTempIndexPath(opts.CampaignRoot)
@@ -207,5 +212,18 @@ func stageAndCommit(ctx context.Context, opts Options, message string) error {
 	}); err != nil {
 		return err
 	}
+	enqueueManifestRecords(ctx, opts.CampaignRoot)
 	return git.ResetIndexToHead(ctx, opts.CampaignRoot, expandedScope)
+}
+
+// enqueueManifestRecords re-queues each declared root's committed manifest so
+// it describes the bookkeeping commit that just landed on the synchronous
+// path. The deferred path needs no twin: the worker re-queues after every
+// campaign-root job it completes. Failure is deliberately swallowed; the
+// record is eventually consistent and a bookkeeping commit must not fail
+// because the queue directory could not be written.
+func enqueueManifestRecords(ctx context.Context, campaignRoot string) {
+	if n, err := jobs.EnqueueManifestsForRoots(ctx, campaignRoot); err == nil && n > 0 {
+		defercommit.SpawnWorker(ctx, campaignRoot, campaignRoot)
+	}
 }

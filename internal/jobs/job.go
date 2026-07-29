@@ -41,11 +41,17 @@ const (
 	// Running a plain `git commit` later would sweep in anything staged in the
 	// meantime by another terminal.
 	KindCommitTree Kind = "commit-tree"
+	// KindManifest is a committed artifact manifest: the worker hashes the
+	// declared root incrementally, writes the machine's committed record, and
+	// commits it. There is no snapshot to capture at enqueue; the record
+	// describes DescribesCommit whenever it lands, which is why manifest jobs
+	// are the one class exempt from drains.
+	KindManifest Kind = "manifest"
 )
 
 // Valid reports whether k is a kind this package executes.
 func (k Kind) Valid() bool {
-	return k == KindCommitPaths || k == KindCommitTree
+	return k == KindCommitPaths || k == KindCommitTree || k == KindManifest
 }
 
 // Class says whether a drain waits for a job.
@@ -164,6 +170,13 @@ type Job struct {
 	// the commit the parent made. Narrow on purpose, and enforced at execution
 	// rather than by convention.
 	FollowUp bool `json:"follow_up,omitempty"`
+	// ManifestRoot is the declared artifact root a KindManifest job records,
+	// campaign-relative and normalized.
+	ManifestRoot string `json:"manifest_root,omitempty"`
+	// DescribesCommit is the campaign-root SHA whose artifact state a
+	// KindManifest job captures. The carrier commit is usually later; this
+	// field is what keeps the record unambiguous.
+	DescribesCommit string `json:"describes_commit,omitempty"`
 	// CreatedAt is the enqueuing process's clock, RFC3339 with millis.
 	CreatedAt string `json:"created_at"`
 	// Attempts counts how many times this job has been claimed.
@@ -259,6 +272,27 @@ func (j *Job) Validate() error {
 		if strings.TrimSpace(j.Message) == "" && !j.AutoWrite {
 			return camperrors.NewValidation("message",
 				"commit-tree requires a message or auto_write", nil)
+		}
+	case KindManifest:
+		if strings.TrimSpace(j.ManifestRoot) == "" {
+			return camperrors.NewValidation("manifest_root",
+				"a manifest job requires the declared root it records", nil)
+		}
+		if strings.TrimSpace(j.DescribesCommit) == "" {
+			return camperrors.NewValidation("describes_commit",
+				"a manifest job requires the commit it describes; without it the record is ambiguous", nil)
+		}
+		if j.Class != ClassManifest {
+			return camperrors.NewValidation("class",
+				"a manifest job must carry class manifest; anything else would let it block drains", nil)
+		}
+		if normalizeRepo(j.Repo) != "." {
+			return camperrors.NewValidation("repo",
+				"manifest records are campaign-root files; the job's lane is \".\"", nil)
+		}
+		if j.Then != nil || j.FollowUp || len(j.Paths) != 0 {
+			return camperrors.NewValidation("manifest",
+				"a manifest job carries no paths, follow-up, or chain", nil)
 		}
 	}
 	return nil

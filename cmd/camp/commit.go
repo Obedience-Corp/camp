@@ -8,6 +8,7 @@ import (
 
 	"github.com/Obedience-Corp/camp/internal/defercommit"
 	camperrors "github.com/Obedience-Corp/camp/internal/errors"
+	"github.com/Obedience-Corp/camp/internal/jobs"
 
 	"github.com/Obedience-Corp/camp/cmd/camp/cmdutil"
 	"github.com/Obedience-Corp/camp/internal/campaign"
@@ -363,6 +364,20 @@ func runCommit(cmd *cobra.Command, args []string) error {
 		_, festivalRef, workitemRef := resolveCommitContext(ctx, campRoot, commitWorkitem)
 		ledger.NewFromRoot(ctx, campRoot, ledger.WarnTo(cmd.ErrOrStderr())).
 			CommitEvidence(ctx, ledgerkit.Scope{Workitem: workitemRef, Festival: festivalRef}, campRoot, target.Path, sha, message)
+	}
+
+	// Committed artifact manifests: re-queue each declared root's record so
+	// it describes the commit that just landed. Enqueue writes queue files
+	// only; all hashing happens in the worker, so the command returns before
+	// any of it begins. A failure to queue warns rather than failing a commit
+	// that already succeeded: the record is eventually consistent, and the
+	// next commit re-queues it.
+	if !target.IsSubmodule {
+		if n, mErr := jobs.EnqueueManifestsForRoots(ctx, campRoot); mErr != nil {
+			_, _ = fmt.Fprintln(cmd.ErrOrStderr(), ui.Warning("artifact manifest not queued: "+mErr.Error()))
+		} else if n > 0 {
+			defercommit.SpawnWorker(ctx, campRoot, campRoot)
+		}
 	}
 
 	_, _ = fmt.Fprintln(humanOut, ui.Success("Changes committed successfully"))

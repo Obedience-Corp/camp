@@ -113,11 +113,11 @@ func TestCommittedJSONIsByteIdenticalWhenNothingChanged(t *testing.T) {
 	first := buildHashedManifest(t, root, "media", nil)
 	second := buildHashedManifest(t, root, "media", first)
 
-	a, err := first.CommittedJSON()
+	a, err := first.CommittedJSON("abc123")
 	if err != nil {
 		t.Fatal(err)
 	}
-	b, err := second.CommittedJSON()
+	b, err := second.CommittedJSON("abc123")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -126,6 +126,12 @@ func TestCommittedJSONIsByteIdenticalWhenNothingChanged(t *testing.T) {
 	}
 	if bytes.Contains(a, []byte("generated_at")) {
 		t.Error("committed form must not carry generated_at; it would churn every commit")
+	}
+	if !bytes.Contains(a, []byte(`"describes_commit": "abc123"`)) {
+		t.Error("committed form must record the commit it describes")
+	}
+	if !SameFiles(first.Files, second.Files) {
+		t.Error("unchanged root must compare as same files; this is the skip-commit decision")
 	}
 }
 

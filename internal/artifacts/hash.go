@@ -104,21 +104,34 @@ func hashFile(ctx context.Context, path string, done *int64, progress func(int64
 	return hex.EncodeToString(h.Sum(nil)), nil
 }
 
-// CommittedJSON is the manifest's committed serialization: deterministic
-// bytes that are identical whenever the contents are identical, so an
-// unchanged root produces no diff commit after commit.
+// committedManifest is the committed serialization shape. GeneratedAt is
+// deliberately absent: it stamps every build, which is right for
+// machine-local derived state and wrong for a committed record, where it
+// would churn the file on every commit with nothing changed.
 //
-// GeneratedAt is deliberately absent. It stamps every build, which is right
-// for machine-local derived state and wrong for a committed record: it would
-// churn the file on every commit with nothing changed. The committed record's
-// time anchor is the commit that carries it.
-func (m *Manifest) CommittedJSON() ([]byte, error) {
-	committed := struct {
-		Version int         `json:"version"`
-		Root    string      `json:"root"`
-		Files   []FileEntry `json:"files"`
-	}{m.Version, m.Root, m.Files}
+// DescribesCommit is the SHA whose artifact state the manifest captures. The
+// carrier commit is usually later, because the manifest is written by a
+// deferred job; recording the described commit explicitly keeps the record
+// correct no matter when it lands. When contents have not changed the file is
+// not rewritten at all, so the field keeps naming the commit that last
+// changed the root, and an unchanged root stays byte-identical.
+type committedManifest struct {
+	Version         int         `json:"version"`
+	Root            string      `json:"root"`
+	DescribesCommit string      `json:"describes_commit"`
+	Files           []FileEntry `json:"files"`
+}
 
+// CommittedJSON is the manifest's committed serialization: deterministic
+// bytes that are identical whenever the contents and described commit are
+// identical.
+func (m *Manifest) CommittedJSON(describesCommit string) ([]byte, error) {
+	committed := committedManifest{
+		Version:         m.Version,
+		Root:            m.Root,
+		DescribesCommit: describesCommit,
+		Files:           m.Files,
+	}
 	data, err := json.MarshalIndent(committed, "", "  ")
 	if err != nil {
 		return nil, camperrors.Wrapf(err, "encode committed manifest for %s", m.Root)
