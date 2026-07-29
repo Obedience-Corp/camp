@@ -107,6 +107,19 @@ func StagedFileCount(ctx context.Context, repoPath string) (int, error) {
 	return n, nil
 }
 
+// IsGitlink reports whether a path is recorded as a submodule pointer.
+//
+// Mode 160000 is git's gitlink. Read from HEAD rather than the index because
+// the index is the user's and a background process must not depend on its
+// state; a path that is a submodule in HEAD is a submodule.
+func IsGitlink(ctx context.Context, repoPath, path string) bool {
+	out, err := Output(ctx, repoPath, "ls-tree", "HEAD", "--", path)
+	if err != nil {
+		return false
+	}
+	return strings.HasPrefix(strings.TrimSpace(out), "160000 ")
+}
+
 // commitHookNames are the hooks that run during an ordinary `git commit`.
 //
 // Only these three. A repository with a `pre-push` hook can still defer

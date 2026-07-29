@@ -178,10 +178,11 @@ var executeJob = execute
 // level down.
 func enqueueFollowUp(ctx context.Context, campaignRoot string, job *Job) {
 	follow := Job{
-		Kind:  job.Then.Kind,
-		Class: job.Class,
-		Repo:  job.Then.Repo,
-		Paths: job.Then.Paths,
+		Kind:     job.Then.Kind,
+		Class:    job.Class,
+		Repo:     job.Then.Repo,
+		Paths:    job.Then.Paths,
+		FollowUp: true,
 		Message: fmt.Sprintf("[camp] record %s after %s",
 			job.Then.Paths[0], job.ID),
 	}

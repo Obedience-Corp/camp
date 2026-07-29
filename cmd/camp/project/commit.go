@@ -7,7 +7,9 @@ import (
 	"os"
 	"path/filepath"
 
+	"github.com/Obedience-Corp/camp/internal/defercommit"
 	camperrors "github.com/Obedience-Corp/camp/internal/errors"
+	"github.com/Obedience-Corp/camp/internal/jobs"
 
 	"github.com/Obedience-Corp/camp/cmd/camp/cmdutil"
 	"github.com/Obedience-Corp/camp/internal/campaign"
@@ -205,9 +207,9 @@ func runProjectCommit(cmd *cobra.Command, args []string) error {
 	// Deferral point, same as camp commit: staging and the guard already ran
 	// in the foreground; only the writer and the commit object move.
 	if projectCommitAutoWrite {
-		writerEnv := workitemEnvForProjectCommit(ctx, campRoot, resolvedPath, projectCommitWorkitem)
 		deferred, deferErr := cmdutil.TryDeferAutoWrite(
-			ctx, os.Stdout, campRoot, resolvedPath, false, projectCommitAmend, writerEnv)
+			ctx, os.Stdout, campRoot, resolvedPath, false, projectCommitAmend,
+			projectDeferOptions(ctx, campRoot, resolvedPath, relPath, cfg))
 		if deferErr != nil {
 			return deferErr
 		}
@@ -318,4 +320,44 @@ func syncParentRef(ctx context.Context, campRoot, relPath string, cfg *config.Ca
 
 	fmt.Println(ui.Success("✓ Campaign root synced (" + relPath + ")"))
 	return nil
+}
+
+// projectDeferOptions builds what a deferred project commit must carry.
+//
+// The campaign tag and the writer's environment both come from the user's
+// working directory, and the follow-up encodes the sync decision their flags
+// and settings made. A detached worker can re-derive none of the three.
+//
+// The follow-up is how commit.sync_project_refs survives deferral: the worker
+// enqueues it only after the project commit lands, so the gitlink it records is
+// the commit that just happened. There is deliberately no synchronous fallback
+// when sync is enabled; delegated work does not come back to the terminal.
+func projectDeferOptions(
+	ctx context.Context,
+	campRoot, resolvedPath, relPath string,
+	cfg *config.CampaignConfig,
+) defercommit.EnqueueOptions {
+	opts := defercommit.EnqueueOptions{
+		WriterEnv: workitemEnvForProjectCommit(ctx, campRoot, resolvedPath, projectCommitWorkitem),
+	}
+
+	prefs, err := config.EffectiveCommitPrefs(ctx, campRoot)
+	if err != nil {
+		return opts
+	}
+	if cfg != nil && prefs.TagCommits() {
+		questID, festivalRef, workitemRef := resolveProjectCommitContext(
+			ctx, campRoot, resolvedPath, projectCommitWorkitem)
+		opts.MessagePrefix = commitkit.FormatContextTagsFullNamed(
+			cfg.Name, cfg.ID, questID, festivalRef, workitemRef)
+	}
+
+	if (prefs.SyncProjectRefs || projectCommitSync) && !projectCommitNoSync && relPath != "" {
+		opts.Then = &jobs.Follow{
+			Kind:  jobs.KindCommitPaths,
+			Repo:  ".",
+			Paths: []string{filepath.ToSlash(relPath)},
+		}
+	}
+	return opts
 }

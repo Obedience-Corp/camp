@@ -25,16 +25,16 @@ import (
 // reasons are all cases where synchronous is the correct behavior, not
 // failures, so nothing is reported when it declines.
 //
-// writerEnv is what the message writer would have received in the foreground.
-// It is passed here rather than resolved inside because it depends on the
-// caller's own workitem resolution, and a deferred commit that dropped it would
-// silently lose the tag its synchronous twin would have carried.
+// opts carries what the worker cannot re-derive: the writer's environment, the
+// campaign tag, and any follow-up. All three depend on where the user ran the
+// command, and a deferred commit that dropped one would silently differ from
+// the commit its synchronous twin makes.
 //
 // Staging has already happened in the foreground when this runs. That ordering
 // matters: the guard, the artifact-root declaration, and the user's own
 // decisions all still happen while they are watching. Only the message writing
 // and the commit object move to the background.
-func TryDeferAutoWrite(ctx context.Context, w io.Writer, campaignRoot, repoPath string, jsonOut, amend bool, writerEnv []string) (bool, error) {
+func TryDeferAutoWrite(ctx context.Context, w io.Writer, campaignRoot, repoPath string, jsonOut, amend bool, opts defercommit.EnqueueOptions) (bool, error) {
 	allowed, _ := defercommit.Allowed(ctx, defercommit.Request{
 		CampaignRoot: campaignRoot,
 		RepoPath:     repoPath,
@@ -45,7 +45,7 @@ func TryDeferAutoWrite(ctx context.Context, w io.Writer, campaignRoot, repoPath 
 		return false, nil
 	}
 
-	if _, err := defercommit.Enqueue(ctx, campaignRoot, repoPath, writerEnv); err != nil {
+	if _, err := defercommit.Enqueue(ctx, campaignRoot, repoPath, opts); err != nil {
 		// Deferring is an optimization over a path that still works. A queue
 		// that cannot be written should not cost the user their commit, so
 		// this degrades to the synchronous path and says why.

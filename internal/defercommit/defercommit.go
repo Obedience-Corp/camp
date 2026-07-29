@@ -169,6 +169,21 @@ func SpawnWorker(ctx context.Context, campaignRoot, repoPath string) {
 	jobs.SpawnIfNeeded(ctx, campaignRoot, jobs.RepoForPath(campaignRoot, repoPath))
 }
 
+// EnqueueOptions carries what the worker cannot re-derive.
+//
+// Every field here exists because the enqueuing process knows something a
+// detached worker does not: the writer's environment and the campaign tag both
+// come from the user's working directory, and the follow-up encodes a decision
+// the user's flags made.
+type EnqueueOptions struct {
+	// WriterEnv is the CAMP_* environment the message writer would have had.
+	WriterEnv []string
+	// MessagePrefix is the campaign tag to put on the subject line.
+	MessagePrefix string
+	// Then is a follow-up to enqueue once this commit lands.
+	Then *jobs.Follow
+}
+
 // Enqueued is what a deferred commit produced.
 type Enqueued struct {
 	// Job is the queued job, with its allocated identity.
@@ -194,7 +209,7 @@ type Enqueued struct {
 // The parent is recorded for the same reason the tree is. At execution time the
 // worker moves HEAD only if it still points at this commit, so a queued commit
 // can never silently discard work someone else committed in the gap.
-func Enqueue(ctx context.Context, campaignRoot, repoPath string, writerEnv []string) (*Enqueued, error) {
+func Enqueue(ctx context.Context, campaignRoot, repoPath string, opts EnqueueOptions) (*Enqueued, error) {
 	if ctx.Err() != nil {
 		return nil, ctx.Err()
 	}
@@ -210,13 +225,15 @@ func Enqueue(ctx context.Context, campaignRoot, repoPath string, writerEnv []str
 
 	repo := jobs.RepoForPath(campaignRoot, repoPath)
 	job, err := jobs.Enqueue(ctx, campaignRoot, jobs.Job{
-		Kind:      jobs.KindCommitTree,
-		Class:     jobs.ClassCommit,
-		Repo:      repo,
-		Tree:      tree,
-		Parent:    parent,
-		AutoWrite: true,
-		Env:       writerEnv,
+		Kind:          jobs.KindCommitTree,
+		Class:         jobs.ClassCommit,
+		Repo:          repo,
+		Tree:          tree,
+		Parent:        parent,
+		AutoWrite:     true,
+		Env:           opts.WriterEnv,
+		MessagePrefix: opts.MessagePrefix,
+		Then:          opts.Then,
 	})
 	if err != nil {
 		return nil, err

@@ -26,6 +26,15 @@ func execute(ctx context.Context, campaignRoot string, job *Job) error {
 		return ctx.Err()
 	}
 
+	// Belt and braces against a hand-edited queue file. Enqueue validation
+	// already rejects a follow-up carrying its own; this refuses to run one
+	// that reached disk anyway, whichever kind it is. Chaining is bounded at
+	// one level because each link runs against a repository further from the
+	// state its author saw.
+	if job.FollowUp && job.Then != nil {
+		return camperrors.Newf("job %s is a follow-up carrying its own follow-up", job.ID)
+	}
+
 	repoPath, err := resolveRepoPath(campaignRoot, job.Repo)
 	if err != nil {
 		return err
@@ -52,6 +61,9 @@ func executeCommitPaths(ctx context.Context, repoPath string, job *Job) error {
 	if len(job.Paths) == 0 {
 		return camperrors.Newf("job %s has no paths", job.ID)
 	}
+	if err := checkGitlinkCarveOut(ctx, repoPath, job); err != nil {
+		return err
+	}
 
 	err := git.CommitScoped(ctx, repoPath, job.Paths, &git.CommitOptions{
 		Message: job.Message,
@@ -66,6 +78,31 @@ func executeCommitPaths(ctx context.Context, repoPath string, job *Job) error {
 	default:
 		return err
 	}
+}
+
+// checkGitlinkCarveOut enforces criterion 37l: only a worker-created follow-up
+// may commit a submodule pointer.
+//
+// A gitlink records whatever the submodule's HEAD is at execution time, not a
+// snapshot the enqueuer chose, so an ordinary deferred job committing one would
+// publish a pointer to work nobody decided to publish. The follow-up is the one
+// case where that is correct, because it exists only because its parent just
+// moved that HEAD.
+//
+// Checked here rather than at enqueue because it needs the repository: whether
+// a path is a gitlink is a fact about HEAD, not about the path's spelling.
+func checkGitlinkCarveOut(ctx context.Context, repoPath string, job *Job) error {
+	if job.FollowUp {
+		return nil
+	}
+	for _, path := range job.Paths {
+		if git.IsGitlink(ctx, repoPath, path) {
+			return camperrors.Newf(
+				"job %s would commit the submodule pointer %s; only a worker-created "+
+					"follow-up may record a gitlink", job.ID, path)
+		}
+	}
+	return nil
 }
 
 // isMissingPathspec reports whether a git failure is only "those paths are not
@@ -141,6 +178,13 @@ func messageForTree(ctx context.Context, campaignRoot, repoPath string, job *Job
 	}
 	if strings.TrimSpace(message) == "" {
 		return "", camperrors.Newf("the commit message writer produced no message for job %s", job.ID)
+	}
+	// The tag goes on the subject line, which is why it is prepended here
+	// rather than composed into the writer's prompt: the writer owns the
+	// message, camp owns the tag, and a deferred commit has to end up with the
+	// same subject a synchronous one would.
+	if job.MessagePrefix != "" {
+		return job.MessagePrefix + " " + message, nil
 	}
 	return message, nil
 }

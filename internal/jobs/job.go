@@ -124,6 +124,15 @@ type Job struct {
 	// AutoWrite makes the worker run the configured message writer against the
 	// captured tree rather than the live worktree.
 	AutoWrite bool `json:"auto_write,omitempty"`
+	// MessagePrefix is prepended to whatever the writer produces.
+	//
+	// The campaign tag is resolved at enqueue and carried here because it
+	// depends on the enqueuing process's working directory: the campaign, the
+	// quest, the festival, and the workitem all come from where the user ran
+	// the command. A detached worker has none of that, so a deferred commit
+	// that resolved its own tag would silently produce an untagged commit
+	// where the synchronous one is tagged.
+	MessagePrefix string `json:"message_prefix,omitempty"`
 	// Env carries CAMP_* variables the message writer needs, as "KEY=VALUE".
 	//
 	// It has to be recorded rather than re-derived. The workitem context comes
@@ -135,6 +144,16 @@ type Job struct {
 	// Then is an optional follow-up the worker enqueues after this job lands.
 	// One level only; a follow-up may not carry its own.
 	Then *Follow `json:"then,omitempty"`
+	// FollowUp marks a job the worker created from another job's Then.
+	//
+	// It exists for one carve-out. Deferred jobs may not commit submodule
+	// pointers, because a gitlink records whatever the submodule's HEAD
+	// happens to be at execution time, which is not a snapshot the enqueuer
+	// chose. The single exception is this follow-up: it runs precisely because
+	// its parent just moved that submodule's HEAD, so the pointer it records is
+	// the commit the parent made. Narrow on purpose, and enforced at execution
+	// rather than by convention.
+	FollowUp bool `json:"follow_up,omitempty"`
 	// CreatedAt is the enqueuing process's clock, RFC3339 with millis.
 	CreatedAt string `json:"created_at"`
 	// Attempts counts how many times this job has been claimed.
@@ -179,6 +198,18 @@ func (j *Job) Validate() error {
 		if err := j.Then.validate(); err != nil {
 			return err
 		}
+		// Criterion 37m: chaining is bounded at one level. A follow-up that
+		// carried its own would let a queue file describe an unbounded chain,
+		// and each link runs against a repository further from the state its
+		// author saw.
+		if j.FollowUp {
+			return camperrors.NewValidation("then",
+				"a follow-up may not carry its own follow-up", nil)
+		}
+	}
+	if j.FollowUp && len(j.Paths) != 1 {
+		return camperrors.NewValidation("paths",
+			"a follow-up records exactly one path", nil)
 	}
 
 	switch j.Kind {

@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"strings"
 
+	"github.com/Obedience-Corp/camp/internal/defercommit"
 	camperrors "github.com/Obedience-Corp/camp/internal/errors"
 
 	"github.com/Obedience-Corp/camp/cmd/camp/cmdutil"
@@ -83,6 +84,25 @@ func init() {
 
 	// Register completion for --project flag
 	commitCmd.RegisterFlagCompletionFunc("project", completeProjectFlag)
+}
+
+// commitTagPrefix resolves the campaign tag this commit would carry.
+//
+// A deferred commit must end up with the same subject line its synchronous
+// twin would have, and the tag depends on the campaign, quest, festival, and
+// workitem resolved from the user's working directory. The worker has none of
+// that, so the prefix is computed here and recorded on the job.
+func commitTagPrefix(ctx context.Context, campRoot string) string {
+	cfg, err := config.LoadCampaignConfig(ctx, campRoot)
+	if err != nil || cfg == nil {
+		return ""
+	}
+	prefs, err := config.EffectiveCommitPrefs(ctx, campRoot)
+	if err != nil || !prefs.TagCommits() {
+		return ""
+	}
+	questID, festivalRef, workitemRef := resolveCommitContext(ctx, campRoot, commitWorkitem)
+	return commitkit.FormatContextTagsFullNamed(cfg.Name, cfg.ID, questID, festivalRef, workitemRef)
 }
 
 // completeProjectFlag provides tab completion for the --project flag.
@@ -262,9 +282,12 @@ func runCommit(cmd *cobra.Command, args []string) error {
 	// writer and the commit object move to the background, which is the part
 	// that can take an LLM call.
 	if commitAutoWrite {
-		writerEnv := workitemEnvForCommit(ctx, campRoot, commitWorkitem)
 		deferred, deferErr := cmdutil.TryDeferAutoWrite(
-			ctx, humanOut, campRoot, target.Path, commitJSONOut, commitAmend, writerEnv)
+			ctx, humanOut, campRoot, target.Path, commitJSONOut, commitAmend,
+			defercommit.EnqueueOptions{
+				WriterEnv:     workitemEnvForCommit(ctx, campRoot, commitWorkitem),
+				MessagePrefix: commitTagPrefix(ctx, campRoot),
+			})
 		if deferErr != nil {
 			return deferErr
 		}

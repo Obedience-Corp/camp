@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"os"
 
+	"github.com/Obedience-Corp/camp/internal/defercommit"
 	camperrors "github.com/Obedience-Corp/camp/internal/errors"
 
 	"github.com/Obedience-Corp/camp/cmd/camp/cmdutil"
@@ -146,9 +147,13 @@ func runWorktreesCommit(cmd *cobra.Command, args []string) error {
 	// Deferral point. A worktree is its own lane, so a queued commit here
 	// cannot serialize against the project it belongs to.
 	if wtCommitAutoWrite {
-		writerEnv := workitemEnvForWorktreeCommit(ctx, campRoot, wtCtx.WorktreePath, wtCommitWorkitem)
 		deferred, deferErr := cmdutil.TryDeferAutoWrite(
-			ctx, os.Stdout, campRoot, wtCtx.WorktreePath, false, wtCommitAmend, writerEnv)
+			ctx, os.Stdout, campRoot, wtCtx.WorktreePath, false, wtCommitAmend,
+			defercommit.EnqueueOptions{
+				WriterEnv: workitemEnvForWorktreeCommit(
+					ctx, campRoot, wtCtx.WorktreePath, wtCommitWorkitem),
+				MessagePrefix: worktreeCommitTagPrefix(ctx, campRoot, wtCtx.WorktreePath),
+			})
 		if deferErr != nil {
 			return deferErr
 		}
@@ -213,4 +218,20 @@ func stageWorktreeWithGuard(ctx context.Context, cmd *cobra.Command, campRoot, w
 	}
 	_, err = cmdutil.HandleStageOutcome(ctx, cmd.OutOrStdout(), campRoot, worktreePath, outcome)
 	return err
+}
+
+// worktreeCommitTagPrefix resolves the campaign tag a worktree commit carries,
+// so a deferred one ends up with the same subject as its synchronous twin.
+func worktreeCommitTagPrefix(ctx context.Context, campRoot, worktreePath string) string {
+	cfg, err := config.LoadCampaignConfig(ctx, campRoot)
+	if err != nil || cfg == nil {
+		return ""
+	}
+	prefs, err := config.EffectiveCommitPrefs(ctx, campRoot)
+	if err != nil || !prefs.TagCommits() {
+		return ""
+	}
+	questID, festivalRef, workitemRef := resolveWorktreeCommitContext(
+		ctx, campRoot, worktreePath, wtCommitWorkitem)
+	return commitkit.FormatContextTagsFullNamed(cfg.Name, cfg.ID, questID, festivalRef, workitemRef)
 }
