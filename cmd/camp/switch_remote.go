@@ -14,6 +14,7 @@ import (
 	"github.com/Obedience-Corp/camp/internal/machines"
 	navfuzzy "github.com/Obedience-Corp/camp/internal/nav/fuzzy"
 	"github.com/Obedience-Corp/camp/internal/remote"
+	"github.com/Obedience-Corp/camp/internal/ui"
 )
 
 // resolveRemoteRoot is the seam every remote switch resolves through, hop-back
@@ -67,6 +68,11 @@ func guardRemoteOutputFlags(target string, printOnly, jsonOut bool) error {
 // safety contract — a bare `camp switch machine:...` must never hop, so it
 // reports what it resolved and names the wrapper instead.
 func emitHopOrRefuse(ctx context.Context, cmd *cobra.Command, m *machines.Machine, remainder, root string, shellConnect bool) error {
+	// Skew is reported on stderr, never stdout: stdout is eval'd by the shell
+	// wrapper and must stay exactly one line.
+	if warning := hopSkewWarning(m.ID); warning != "" {
+		_, _ = fmt.Fprintln(cmd.ErrOrStderr(), ui.Dim("camp: "+warning))
+	}
 	if shellConnect {
 		return emitShellConnect(cmd.OutOrStdout(), true, root, m, hopOriginForEmit(ctx, cmd))
 	}
