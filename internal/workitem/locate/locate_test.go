@@ -195,6 +195,55 @@ func TestDetectFromCwd(t *testing.T) {
 			cwd:     "/campaign/workflow/design/dungeon/completed/2026-05-22",
 			wantErr: "without a slug",
 		},
+		{
+			name:     "dungeon dated layout 2026-07-24 regression",
+			cwd:      "/campaign/workflow/design/dungeon/completed/2026-07-24/oldslug",
+			wantType: "design",
+			wantSlug: "oldslug",
+			wantSrc:  "/campaign/workflow/design/dungeon/completed/2026-07-24/oldslug",
+			wantPar:  "/campaign/workflow/design/dungeon/completed/2026-07-24",
+			wantDun:  "/campaign/workflow/design/dungeon",
+			wantIn:   true,
+			wantStat: "completed",
+		},
+		// Festival rail error paths. These need no fixture on disk: a missing
+		// .workitem reads the same as an unstamped directory, which is exactly
+		// the rejection being asserted.
+		{
+			name:    "festivals root",
+			cwd:     "/campaign/festivals",
+			wantErr: "at the festivals root",
+		},
+		{
+			name:    "festivals non-rail stage",
+			cwd:     "/campaign/festivals/planning/some-festival",
+			wantErr: "not a rail stage",
+		},
+		{
+			name:    "festivals stage without slug",
+			cwd:     "/campaign/festivals/ready",
+			wantErr: "without a slug",
+		},
+		{
+			name:    "festivals resident without marker",
+			cwd:     "/campaign/festivals/ready/unstamped",
+			wantErr: "no .workitem marker",
+		},
+		{
+			name:    "festivals dungeon root",
+			cwd:     "/campaign/festivals/.dungeon/completed",
+			wantErr: "at the festivals dungeon root",
+		},
+		{
+			name:    "festivals dungeon date dir no slug",
+			cwd:     "/campaign/festivals/.dungeon/completed/2026-07-24",
+			wantErr: "without a slug",
+		},
+		{
+			name:    "festivals dungeon resident without marker",
+			cwd:     "/campaign/festivals/.dungeon/completed/2026-07-24/unstamped",
+			wantErr: "no .workitem marker",
+		},
 	}
 
 	for _, tc := range tests {
@@ -234,5 +283,183 @@ func TestDetectFromCwd(t *testing.T) {
 				t.Errorf("Status=%q want %q", got.Status, tc.wantStat)
 			}
 		})
+	}
+}
+
+// stampResident creates dir under root and writes a valid .workitem marker with
+// the given workflow type, mirroring what a workitem carries once it has been
+// promoted onto the festival rail.
+func stampResident(t *testing.T, root, relDir, typeName string) string {
+	t.Helper()
+	dir := filepath.Join(root, filepath.FromSlash(relDir))
+	if err := os.MkdirAll(dir, 0o755); err != nil {
+		t.Fatalf("MkdirAll %s: %v", relDir, err)
+	}
+	marker := "version: v1alpha8\nkind: workitem\nid: " + typeName + "-resident-2026-07-24\ntype: " + typeName + "\ntitle: Resident\n"
+	if err := os.WriteFile(filepath.Join(dir, ".workitem"), []byte(marker), 0o644); err != nil {
+		t.Fatalf("write .workitem in %s: %v", relDir, err)
+	}
+	return dir
+}
+
+// TestDetectFromCwd_FestivalResident covers the rail layouts, which unlike the
+// workflow layouts cannot be resolved from the path alone: the parent segment is
+// a lifecycle stage, so Type has to come off the .workitem marker. Every case
+// must report DungeonPath = festivals/.dungeon so the shared move plumbing keeps
+// a resident inside the festival tree instead of returning it to its workflow
+// type's dungeon.
+func TestDetectFromCwd_FestivalResident(t *testing.T) {
+	tests := []struct {
+		name     string
+		relDir   string
+		cwdRel   string
+		typeName string
+		wantSlug string
+		wantSrc  string
+		wantPar  string
+		wantIn   bool
+		wantStat string
+	}{
+		{
+			name:     "ready stage",
+			relDir:   "festivals/ready/my-item",
+			typeName: "design",
+			wantSlug: "my-item",
+			wantSrc:  "festivals/ready/my-item",
+			wantPar:  "festivals/ready",
+		},
+		{
+			name:     "active stage",
+			relDir:   "festivals/active/my-item",
+			typeName: "design",
+			wantSlug: "my-item",
+			wantSrc:  "festivals/active/my-item",
+			wantPar:  "festivals/active",
+		},
+		{
+			name:     "active stage from a subdir",
+			relDir:   "festivals/active/my-item",
+			cwdRel:   "festivals/active/my-item/notes",
+			typeName: "explore",
+			wantSlug: "my-item",
+			wantSrc:  "festivals/active/my-item",
+			wantPar:  "festivals/active",
+		},
+		{
+			name:     "festival-local dungeon dated layout",
+			relDir:   "festivals/.dungeon/completed/2026-07-24/my-item",
+			typeName: "design",
+			wantSlug: "my-item",
+			wantSrc:  "festivals/.dungeon/completed/2026-07-24/my-item",
+			wantPar:  "festivals/.dungeon/completed/2026-07-24",
+			wantIn:   true,
+			wantStat: "completed",
+		},
+		{
+			name:     "festival-local dungeon flat layout",
+			relDir:   "festivals/.dungeon/archived/my-item",
+			typeName: "design",
+			wantSlug: "my-item",
+			wantSrc:  "festivals/.dungeon/archived/my-item",
+			wantPar:  "festivals/.dungeon/archived",
+			wantIn:   true,
+			wantStat: "archived",
+		},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			root := t.TempDir()
+			if resolved, err := filepath.EvalSymlinks(root); err == nil {
+				root = resolved
+			}
+			stampResident(t, root, tc.relDir, tc.typeName)
+
+			cwd := filepath.Join(root, filepath.FromSlash(tc.relDir))
+			if tc.cwdRel != "" {
+				cwd = filepath.Join(root, filepath.FromSlash(tc.cwdRel))
+				if err := os.MkdirAll(cwd, 0o755); err != nil {
+					t.Fatalf("MkdirAll %s: %v", tc.cwdRel, err)
+				}
+			}
+
+			got, err := DetectFromCwd(root, cwd)
+			if err != nil {
+				t.Fatalf("DetectFromCwd(%s): %v", tc.relDir, err)
+			}
+			if got.Type != tc.typeName {
+				t.Errorf("Type=%q want %q (must come from the .workitem marker)", got.Type, tc.typeName)
+			}
+			if got.Slug != tc.wantSlug {
+				t.Errorf("Slug=%q want %q", got.Slug, tc.wantSlug)
+			}
+			if want := filepath.Join(root, filepath.FromSlash(tc.wantSrc)); got.SourcePath != want {
+				t.Errorf("SourcePath=%q want %q", got.SourcePath, want)
+			}
+			if want := filepath.Join(root, filepath.FromSlash(tc.wantPar)); got.ParentPath != want {
+				t.Errorf("ParentPath=%q want %q", got.ParentPath, want)
+			}
+			if want := filepath.Join(root, "festivals", ".dungeon"); got.DungeonPath != want {
+				t.Errorf("DungeonPath=%q want %q", got.DungeonPath, want)
+			}
+			if got.InDungeon != tc.wantIn {
+				t.Errorf("InDungeon=%v want %v", got.InDungeon, tc.wantIn)
+			}
+			if got.Status != tc.wantStat {
+				t.Errorf("Status=%q want %q", got.Status, tc.wantStat)
+			}
+		})
+	}
+}
+
+// TestDetectFromCwd_FestivalResidentTypeIsNotThePath guards the divergence from
+// the workflow branch: two residents sitting side by side in the same stage
+// folder resolve to different types, which is only possible by reading markers.
+func TestDetectFromCwd_FestivalResidentTypeIsNotThePath(t *testing.T) {
+	root := t.TempDir()
+	if resolved, err := filepath.EvalSymlinks(root); err == nil {
+		root = resolved
+	}
+	designDir := stampResident(t, root, "festivals/active/a-design", "design")
+	exploreDir := stampResident(t, root, "festivals/active/an-explore", "explore")
+
+	design, err := DetectFromCwd(root, designDir)
+	if err != nil {
+		t.Fatalf("DetectFromCwd(design resident): %v", err)
+	}
+	explore, err := DetectFromCwd(root, exploreDir)
+	if err != nil {
+		t.Fatalf("DetectFromCwd(explore resident): %v", err)
+	}
+	if design.Type != "design" || explore.Type != "explore" {
+		t.Fatalf("types = %q/%q, want design/explore", design.Type, explore.Type)
+	}
+	if design.ParentPath != explore.ParentPath {
+		t.Errorf("residents in one stage disagree on ParentPath: %q vs %q", design.ParentPath, explore.ParentPath)
+	}
+}
+
+// TestDetectFromCwd_WorkflowUnaffectedByMarker is the regression for requirement
+// 3: a workflow item's Type comes from its path, so a marker that disagrees is
+// ignored and resolution is byte-identical to before the rail existed.
+func TestDetectFromCwd_WorkflowUnaffectedByMarker(t *testing.T) {
+	root := t.TempDir()
+	if resolved, err := filepath.EvalSymlinks(root); err == nil {
+		root = resolved
+	}
+	itemDir := stampResident(t, root, "workflow/design/myslug", "explore")
+
+	loc, err := DetectFromCwd(root, itemDir)
+	if err != nil {
+		t.Fatalf("DetectFromCwd: %v", err)
+	}
+	if loc.Type != "design" {
+		t.Errorf("Type=%q want design (path wins for workflow items, not the marker)", loc.Type)
+	}
+	if want := filepath.Join(root, "workflow", "design", "dungeon"); loc.DungeonPath != want {
+		t.Errorf("DungeonPath=%q want %q", loc.DungeonPath, want)
+	}
+	if loc.InDungeon {
+		t.Error("InDungeon = true, want false")
 	}
 }
