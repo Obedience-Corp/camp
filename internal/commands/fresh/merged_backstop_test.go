@@ -107,6 +107,68 @@ func TestMatchWorktreeLinkBranch(t *testing.T) {
 	}
 }
 
+// TestCollectWorktreeLinkMatches_DedupesSameWorkitem is the regression for the
+// camp fresh multi-promote bug: one design workitem with four stacked worktree
+// links (p0..p3) used to produce four promote attempts — first succeeds, the
+// rest fail with "stat workitem ... no such file" because the source was already
+// moved. Mapping must collapse to one match per workitem key.
+func TestCollectWorktreeLinkMatches_DedupesSameWorkitem(t *testing.T) {
+	active := []wkitem.WorkItem{
+		{
+			Key:          "design:workflow/design/samantha-provider-harness-sessions",
+			StableID:     "design-samantha-provider-harness-sessions-2026-07-26",
+			Title:        "Samantha provider split",
+			RelativePath: "workflow/design/samantha-provider-harness-sessions",
+		},
+		{
+			Key:          "design:workflow/design/other",
+			StableID:     "design-other-01",
+			Title:        "Other design",
+			RelativePath: "workflow/design/other",
+		},
+	}
+	linkList := []links.Link{
+		{WorkitemID: "design-samantha-provider-harness-sessions-2026-07-26", Scope: links.LinkScope{Kind: links.ScopeWorktree, Path: "projects/worktrees/samantha/p0-session-warn-default"}},
+		{WorkitemID: "design-samantha-provider-harness-sessions-2026-07-26", Scope: links.LinkScope{Kind: links.ScopeWorktree, Path: "projects/worktrees/samantha/p1-slash-clear"}},
+		{WorkitemID: "design-samantha-provider-harness-sessions-2026-07-26", Scope: links.LinkScope{Kind: links.ScopeWorktree, Path: "projects/worktrees/samantha/p2-unified-compact"}},
+		{WorkitemID: "design-samantha-provider-harness-sessions-2026-07-26", Scope: links.LinkScope{Kind: links.ScopeWorktree, Path: "projects/worktrees/samantha/p3-grok-resume"}},
+		{WorkitemID: "design-other-01", Scope: links.LinkScope{Kind: links.ScopeWorktree, Path: "projects/worktrees/samantha/other-feature"}},
+	}
+	pruned := []string{
+		"p0-session-warn-default",
+		"p1-slash-clear",
+		"p2-unified-compact",
+		"p3-grok-resume",
+		"other-feature",
+		"unrelated-merged-branch",
+	}
+
+	matches, unmatched, matchedKeys := collectWorktreeLinkMatches(linkList, active, pruned)
+
+	if len(matches) != 2 {
+		t.Fatalf("expected 2 unique workitem matches, got %d: %+v", len(matches), matches)
+	}
+	if matches[0].Workitem.Key != active[0].Key {
+		t.Errorf("first match key = %q, want samantha provider workitem", matches[0].Workitem.Key)
+	}
+	if matches[0].Branch != "p0-session-warn-default" {
+		t.Errorf("first match should keep the first pruned branch, got %q", matches[0].Branch)
+	}
+	if matches[0].Signal != SignalWorktreeLink {
+		t.Errorf("signal = %q, want %q", matches[0].Signal, SignalWorktreeLink)
+	}
+	if matches[1].Workitem.Key != active[1].Key {
+		t.Errorf("second match key = %q, want other design", matches[1].Workitem.Key)
+	}
+	if !matchedKeys[active[0].Key] || !matchedKeys[active[1].Key] {
+		t.Errorf("matchedKeys incomplete: %v", matchedKeys)
+	}
+	// Duplicate worktree hits must not spill into the commit-tag unmatched set.
+	if len(unmatched) != 1 || unmatched[0] != "unrelated-merged-branch" {
+		t.Errorf("unmatched = %v, want only unrelated-merged-branch", unmatched)
+	}
+}
+
 func TestRefMatchesActiveItem(t *testing.T) {
 	item := wkitem.WorkItem{
 		Key:            "design:workflow/design/foo",
