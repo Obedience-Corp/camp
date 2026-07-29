@@ -320,3 +320,26 @@ func TestSelfSnapshotNamesOnlyInvariant(t *testing.T) {
 		}
 	}
 }
+
+// Snapshot names are replayed as shell completion candidates and interpolated
+// into error strings, so a peer that can reach cache-put must not be able to
+// park an escape sequence in a cache with a 24h TTL.
+func TestInvalidSnapshotNameRejectsTerminalControlBytes(t *testing.T) {
+	for _, name := range []string{
+		"ok\x1b[31mred", // ESC
+		"ok\x07bell",    // BEL
+		"ok\ttab",       // TAB
+		"ok\x7fdel",     // DEL
+		"ok\x00nul",     // NUL
+		"ok\nnewline",
+	} {
+		if !invalidSnapshotName(name) {
+			t.Errorf("invalidSnapshotName(%q) = false; control bytes must be rejected", name)
+		}
+	}
+	// Commas are legal in campaign names and the wire format no longer splits
+	// on them, so they must survive.
+	if invalidSnapshotName("foo,bar") {
+		t.Error("a comma is a legal campaign-name character and must not be rejected")
+	}
+}
