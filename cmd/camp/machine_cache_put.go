@@ -66,7 +66,13 @@ func runMachineCachePut(cmd *cobra.Command, args []string) error {
 // completion cache wire format. Rejected characters would either escape path
 // boundaries if ever mis-resolved, or break shell/argv framing.
 func invalidSnapshotName(name string) bool {
-	return name == "" || len(name) > 255 || strings.ContainsAny(name, "/:\x00\n\r")
+	// Path separators keep a name from being resolved as a path, and every C0
+	// control (plus DEL) is rejected because these names are emitted as shell
+	// completion candidates and interpolated into error strings. A peer that can
+	// reach cache-put would otherwise park an ANSI escape in a cache with a 24h
+	// TTL and have it replayed into the operator's terminal on every TAB.
+	return name == "" || len(name) > 255 ||
+		strings.ContainsAny(name, "/:\x7f") || hopOriginHasC0(name)
 }
 
 // sanitizeSnapshotNames validates and bounds names on the RECEIVE path.

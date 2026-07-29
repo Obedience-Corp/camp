@@ -13,8 +13,13 @@ import (
 // versionCacheTTL bounds how long a probed remote version is trusted for the
 // hop-time warning. Skew changes on install cadence, not on the second, so an
 // hours-scale bound is right: short enough that an upgrade stops the warning the
-// same day, long enough that the warning survives between diagnose runs. A stale
-// entry is simply ignored, so the failure mode is silence, never a wrong claim.
+// same day, long enough that the warning survives between diagnose runs.
+//
+// A TTL-expired, absent, or corrupt entry is ignored, so those failure modes are
+// silence rather than a wrong claim. Within the window the claim can still go
+// stale the other way: upgrade the remote to match and the warning persists
+// until the next diagnose or expiry. That is the accepted cost of never probing
+// on the hop path, and the message points at diagnose for exactly this reason.
 const versionCacheTTL = 12 * time.Hour
 
 // versionCacheEntry is the on-disk per-machine version probe result. Derived,
