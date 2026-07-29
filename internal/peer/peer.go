@@ -178,3 +178,14 @@ func (s *Source) Fetch(ctx context.Context, dir, relPath string) error {
 	}
 	return nil
 }
+
+// SSHCommandFor builds the `-e` value for a copy to m: the ssh binary plus the
+// same quoted option set a hop uses. Exposed so transfer rides one ssh option
+// construction rather than a second one that has to be kept in sync, which is
+// what makes "no new auth surface" structural rather than a promise.
+func SSHCommandFor(m *machines.Machine) string {
+	if m == nil {
+		return ""
+	}
+	return (&Source{target: remote.Target(m), sshOpts: remote.Opts(m)}).SSHCommand()
+}
