@@ -40,6 +40,12 @@ type FileEntry struct {
 	// followed) so a local symlink participates in conflict protection instead
 	// of being invisible to it.
 	Symlink bool `json:"symlink,omitempty"`
+	// HashSHA256 is the hex content hash of a regular file. The key is
+	// versioned the way mtime_unix_nano is: a manifest written before hashing
+	// existed unmarshals with this empty, which reads as "unknown, re-hash",
+	// never as a wrong hash. Symlinks carry no hash; their recorded identity
+	// is kind plus path, and their content lives at the target.
+	HashSHA256 string `json:"hash_sha256,omitempty"`
 }
 
 // BuildManifest walks the artifact root and records every regular file and
