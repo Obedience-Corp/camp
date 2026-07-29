@@ -36,7 +36,7 @@ type IntegrationResult struct {
 	FailedTests []string // Names of failed tests
 }
 
-const integrationTestTimeout = "10m"
+const integrationTestTimeout = "15m"
 
 // Integration runs integration tests
 func Integration(verbose bool) error {

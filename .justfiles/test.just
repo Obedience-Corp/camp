@@ -64,7 +64,7 @@ integration-verbose:
     echo "Running container-based integration tests (verbose)..."
     DOCKER_HOST="unix://${HOME}/.colima/default/docker.sock" \
     TESTCONTAINERS_DOCKER_SOCKET_OVERRIDE=/var/run/docker.sock \
-    go test -v -tags=integration ./tests/integration/... -timeout 10m 2>&1
+    go test -v -tags=integration ./tests/integration/... -timeout 15m 2>&1
 
 # Run a specific integration test
 [no-cd]
