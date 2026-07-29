@@ -203,13 +203,9 @@ func sweepOne(ctx context.Context, cmd *cobra.Command, cfg *config.CampaignConfi
 	entry.From = filepath.ToSlash(dungeoncmd.RelFromRoot(root, loc.SourcePath))
 
 	// Read the marker before the move: MoveToDungeon relocates loc.SourcePath,
-	// so the id/ref/title used for ledger correlation must be captured now. A
-	// missing marker falls back to the slug, matching runWorkitemPromote.
-	ledgerID, ledgerRef, ledgerTitle := loc.Slug, "", ""
-	if meta, metaErr := wkitem.LoadMetadata(ctx, loc.SourcePath); metaErr == nil && meta != nil {
-		ledgerID, ledgerRef, ledgerTitle = meta.ID, meta.Ref, meta.Title
-	}
-	entry.ID, entry.Ref = ledgerID, ledgerRef
+	// so every identity below must be captured now.
+	ident := sweptWorkitemIdentity(ctx, loc, cand.Item)
+	entry.ID, entry.Ref = ident.LedgerID, ident.LedgerRef
 
 	// Capture link identity before the move: workitem_key encodes the source
 	// path, which is about to change (same reason doDungeonPromote captures it).
@@ -228,7 +224,7 @@ func sweepOne(ctx context.Context, cmd *cobra.Command, cfg *config.CampaignConfi
 	// Shelving ends the workitem's active life: drop its links so a multi-
 	// worktree design does not leave stale rows that only resolve to a dungeon
 	// path the selector cannot see. Matches doDungeonPromote.
-	dropped, unlinkErr := unlinkShelvedWorkitem(ctx, root, ledgerID, oldKey)
+	dropped, unlinkErr := unlinkShelvedWorkitem(ctx, root, ident.LinkID, oldKey)
 	if unlinkErr != nil {
 		entry.Error = unlinkErr.Error()
 		return entry
@@ -236,9 +232,9 @@ func sweepOne(ctx context.Context, cmd *cobra.Command, cfg *config.CampaignConfi
 
 	appendWorkitemAuditEvent(ctx, cmd, root, wkaudit.Event{
 		Event:    wkaudit.EventPromote,
-		ID:       ledgerID,
-		Ref:      ledgerRef,
-		Title:    ledgerTitle,
+		ID:       ident.LedgerID,
+		Ref:      ident.LedgerRef,
+		Title:    ident.LedgerTitle,
 		Type:     entry.Type,
 		From:     entry.From,
 		To:       entry.To,
@@ -247,7 +243,7 @@ func sweepOne(ctx context.Context, cmd *cobra.Command, cfg *config.CampaignConfi
 	})
 
 	ledger.NewFromRoot(ctx, root, ledger.WarnTo(cmd.ErrOrStderr())).
-		Emit(ctx, ledgerkit.KindTransitioned, ledgerkit.Scope{Workitem: ledgerID},
+		Emit(ctx, ledgerkit.KindTransitioned, ledgerkit.Scope{Workitem: ident.LedgerID},
 			ledger.WithWhy("sweep promote to completed"),
 			ledger.WithPayload(map[string]any{
 				"target": "completed", "from": entry.From, "to": entry.To,
@@ -260,7 +256,7 @@ func sweepOne(ctx context.Context, cmd *cobra.Command, cfg *config.CampaignConfi
 		destPaths = append(destPaths, links.LinksPath(root))
 		for _, l := range dropped {
 			_, _ = fmt.Fprintf(cmd.OutOrStdout(), "  released link %s (%s:%s); %s is no longer active\n",
-				l.ID, l.ScopeKind, l.ScopePath, ledgerID)
+				l.ID, l.ScopeKind, l.ScopePath, ident.LedgerID)
 		}
 	}
 	outcome := dungeoncmd.StageAndCommitDungeonMove(ctx, &dungeoncmd.DungeonMoveCommit{
@@ -278,9 +274,51 @@ func sweepOne(ctx context.Context, cmd *cobra.Command, cfg *config.CampaignConfi
 	}
 
 	if navErr := navindex.Delete(root); navErr != nil {
-		result.Warnings = append(result.Warnings, fmt.Sprintf("failed to invalidate navigation cache after %s: %v", ledgerID, navErr))
+		result.Warnings = append(result.Warnings, fmt.Sprintf("failed to invalidate navigation cache after %s: %v", ident.LedgerID, navErr))
 	}
 	return entry
+}
+
+// sweptIdentity carries the identities sweepOne captures from one pre-move
+// marker read. LedgerID/Ref/Title are a display identity for the audit trail,
+// the ledger, and the result envelope. LinkID is the stable workitem_id the link
+// registry keys on. They are deliberately separate: see sweptWorkitemIdentity.
+type sweptIdentity struct {
+	LinkID      string
+	LedgerID    string
+	LedgerRef   string
+	LedgerTitle string
+}
+
+// sweptWorkitemIdentity reads the .workitem marker at loc.SourcePath before the
+// move and splits what it finds into a display identity and a link identity.
+//
+// LedgerID falls back to the slug when no marker resolves, so a directory that
+// was never adopted still sweeps instead of failing the command (matching
+// runWorkitemPromote's ledger capture).
+//
+// LinkID must never carry that fallback. unlinkShelvedWorkitem matches on
+// workitem_id OR workitem_key, so a slug in the ID position would drop the links
+// of any unrelated workitem whose real workitem_id happened to equal this slug,
+// and link deletion is the destructive half of a sweep. An unmarked source
+// therefore gets an empty LinkID and is matched by key alone -- the same
+// separation doDungeonPromote gets from promotedWorkitemIdentity, which returns
+// an empty id for an unmarked directory.
+//
+// item.StableID is the fallback because it is the marker id resolved at
+// discovery (empty when unmarked, never a slug), which covers a file-shaped
+// source whose identity lives in its own frontmatter rather than in a .workitem
+// sibling LoadMetadata can read.
+func sweptWorkitemIdentity(ctx context.Context, loc *locate.Location, item wkitem.WorkItem) sweptIdentity {
+	ident := sweptIdentity{LedgerID: loc.Slug}
+	if meta, err := wkitem.LoadMetadata(ctx, loc.SourcePath); err == nil && meta != nil {
+		ident.LinkID = meta.ID
+		ident.LedgerID, ident.LedgerRef, ident.LedgerTitle = meta.ID, meta.Ref, meta.Title
+	}
+	if ident.LinkID == "" {
+		ident.LinkID = item.StableID
+	}
+	return ident
 }
 
 // fillSweepPlan populates result.Items with the dry-run plan: what each
