@@ -10,12 +10,12 @@ import (
 
 func TestRegisterWithOrg_Table(t *testing.T) {
 	cases := []struct {
-		name     string
-		org      string
-		preSeed  []string
-		wantOrg  string // in-memory after register ("" means fallback not stored)
+		name       string
+		org        string
+		preSeed    []string
+		wantOrg    string // in-memory after register ("" means fallback not stored)
 		wantInOrgs string
-		wantErr  string
+		wantErr    string
 	}{
 		{name: "new org", org: "obey", wantOrg: "obey", wantInOrgs: "obey"},
 		{name: "existing org", org: "obey", preSeed: []string{"obey"}, wantOrg: "obey", wantInOrgs: "obey"},

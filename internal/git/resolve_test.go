@@ -123,6 +123,7 @@ func TestExtractSubFlags(t *testing.T) {
 		wantRemaining []string
 		wantSub       bool
 		wantProject   string
+		wantNoDrain   bool
 	}{
 		{
 			name:          "no camp flags",
@@ -164,6 +165,17 @@ func TestExtractSubFlags(t *testing.T) {
 			wantProject: "projects/camp",
 		},
 		{
+			name:          "no-drain extracted so git never sees a camp flag",
+			args:          []string{"--no-drain", "--force"},
+			wantRemaining: []string{"--force"},
+			wantNoDrain:   true,
+		},
+		{
+			name:          "no-drain after the terminator is a pathspec, not a camp flag",
+			args:          []string{"--", "--no-drain"},
+			wantRemaining: []string{"--", "--no-drain"},
+		},
+		{
 			name:          "terminator stops camp flag extraction",
 			args:          []string{"--", "-p", "origin"},
 			wantRemaining: []string{"--", "-p", "origin"},
@@ -178,7 +190,7 @@ func TestExtractSubFlags(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			remaining, sub, project := ExtractSubFlags(tt.args)
+			remaining, sub, project, noDrain := ExtractSubFlags(tt.args)
 
 			if !slices.Equal(remaining, tt.wantRemaining) {
 				t.Errorf("remaining = %v, want %v", remaining, tt.wantRemaining)
@@ -188,6 +200,9 @@ func TestExtractSubFlags(t *testing.T) {
 			}
 			if project != tt.wantProject {
 				t.Errorf("project = %q, want %q", project, tt.wantProject)
+			}
+			if noDrain != tt.wantNoDrain {
+				t.Errorf("noDrain = %v, want %v", noDrain, tt.wantNoDrain)
 			}
 		})
 	}

@@ -8,7 +8,6 @@ import (
 	"context"
 	"encoding/binary"
 	"fmt"
-	"io"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -55,6 +54,38 @@ type TestContainer struct {
 	container testcontainers.Container
 	ctx       context.Context
 	t         *testing.T
+	// deferral opts this container's camp invocations into the deferred-commit
+	// queue. Off by default; see campEnvPrefix.
+	deferral bool
+}
+
+// campEnvPrefix is the environment every camp invocation in this suite gets.
+//
+// CAMP_NO_DEFER=1 by default, because most of these tests are about *what*
+// camp commits, not *when*. Deferral moves the commit into a detached worker
+// that runs after the command returns, which makes every "run the command,
+// then assert the commit exists" test a race it usually loses. Thirteen of
+// them broke the moment bookkeeping deferral landed, all with the same shape.
+//
+// This is what CAMP_NO_DEFER exists for: a harness that needs determinism sets
+// it and gets exactly the behavior camp had before deferral. Tests that are
+// about deferral call EnableDeferral to opt back in, so the ones exercising the
+// queue say so out loud rather than the rest silently depending on timing.
+func (tc *TestContainer) campEnvPrefix() string {
+	if tc.deferral {
+		return "CAMP_NO_DEFER=0 "
+	}
+	// The container's own environment already carries CAMP_NO_DEFER=1, so this
+	// is belt and braces for the helper paths; the container-level default is
+	// what covers direct /camp invocations in tc.Shell.
+	return "CAMP_NO_DEFER=1 "
+}
+
+// EnableDeferral turns the deferred-commit queue on for this container, for
+// tests whose subject is the queue itself. Reset clears it, so the opt-in
+// cannot leak into the next test that checks out this container.
+func (tc *TestContainer) EnableDeferral() {
+	tc.deferral = true
 }
 
 // sharedBinaries holds host paths to the test binaries built once in TestMain
@@ -201,8 +232,13 @@ func newPooledContainer(ctx context.Context, bins sharedBinaries) (*TestContaine
 	const alpineImage = "alpine:3.21@sha256:f27cad9117495d32d067133afff942cb2dc745dfe9163e949f6bfe8a6a245339"
 
 	req := testcontainers.ContainerRequest{
-		Image:      alpineImage,
-		Cmd:        []string{"sleep", "3600"}, // Keep container running
+		Image: alpineImage,
+		Cmd:   []string{"sleep", "3600"}, // Keep container running
+		// Deferral off for every process in the container, not just the ones
+		// that go through a helper. Six tests invoke /camp directly through
+		// tc.Shell, and a default that only covered the helpers would leave
+		// them silently on the deferred path.
+		Env:        map[string]string{"CAMP_NO_DEFER": "1"},
 		WaitingFor: wait.ForExec([]string{"true"}).WithStartupTimeout(30 * time.Second),
 		AutoRemove: true,
 	}
@@ -243,16 +279,19 @@ func newPooledContainer(ctx context.Context, bins sharedBinaries) (*TestContaine
 		}
 	}
 
-	// Install git (required for project operations)
-	exitCode, output, err := container.Exec(ctx, []string{"apk", "add", "--no-cache", "git"})
+	// Install git (required for project operations) and jq (so --json output
+	// is validated by a real JSON consumer rather than only by our own
+	// unmarshaler, which would accept shapes a caller's parser rejects).
+	// One apk invocation: each one is a container round trip per pool member.
+	exitCode, output, err := container.Exec(ctx, []string{"apk", "add", "--no-cache", "git", "jq"})
 	if err != nil {
 		container.Terminate(ctx)
-		return nil, fmt.Errorf("failed to install git: %w", err)
+		return nil, fmt.Errorf("failed to install container packages: %w", err)
 	}
 	if exitCode != 0 {
-		outputBytes, _ := io.ReadAll(output)
+		outputBytes, _ := readExecOutput(output)
 		container.Terminate(ctx)
-		return nil, fmt.Errorf("apk add git failed with exit code %d: %s", exitCode, string(outputBytes))
+		return nil, fmt.Errorf("apk add git jq failed with exit code %d: %s", exitCode, string(outputBytes))
 	}
 
 	// Configure git (required for submodule operations)
@@ -274,7 +313,7 @@ func newPooledContainer(ctx context.Context, bins sharedBinaries) (*TestContaine
 		return nil, fmt.Errorf("failed to check camp binary: %w", err)
 	}
 	if exitCode != 0 {
-		outputBytes, _ := io.ReadAll(output)
+		outputBytes, _ := readExecOutput(output)
 		container.Terminate(ctx)
 		return nil, fmt.Errorf("camp binary not found, ls output: %s", string(outputBytes))
 	}

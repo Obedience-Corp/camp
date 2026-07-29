@@ -83,11 +83,11 @@ func TestOrgShow_EmptyAndAbsent(t *testing.T) {
 
 func TestOrgRename_EmptySourceAndTargetBlock(t *testing.T) {
 	cases := []struct {
-		name      string
-		setup     func(t *testing.T)
-		from, to  string
-		wantErr   string
-		check     func(t *testing.T)
+		name     string
+		setup    func(t *testing.T)
+		from, to string
+		wantErr  string
+		check    func(t *testing.T)
 	}{
 		{
 			name: "empty source renames",

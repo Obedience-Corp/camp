@@ -9,6 +9,7 @@ import (
 
 	"github.com/Obedience-Corp/camp/internal/campaign"
 	"github.com/Obedience-Corp/camp/internal/config"
+	"github.com/Obedience-Corp/camp/internal/drain"
 	camperrors "github.com/Obedience-Corp/camp/internal/errors"
 	"github.com/Obedience-Corp/camp/internal/git"
 	"github.com/Obedience-Corp/camp/internal/ui"
@@ -45,6 +46,13 @@ func runRefsSync(cmd *cobra.Command, args []string) error {
 	campRoot, err := campaign.DetectCached(ctx)
 	if err != nil {
 		return camperrors.Wrap(err, "not in a campaign")
+	}
+
+	// This command commits gitlinks, which is exactly what the queue's own
+	// follow-up jobs do. Running both against the same paths at once is how
+	// two processes end up writing the root's index for the same submodule.
+	if _, err := drain.AllLanes(ctx, campRoot, drain.Write); err != nil {
+		return err
 	}
 
 	paths, err := git.ListSubmodulePaths(ctx, campRoot)

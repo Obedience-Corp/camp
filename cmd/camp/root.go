@@ -18,6 +18,7 @@ import (
 	lifecyclepkg "github.com/Obedience-Corp/camp/cmd/camp/lifecycle"
 	navigationpkg "github.com/Obedience-Corp/camp/cmd/camp/navigation"
 	orgpkg "github.com/Obedience-Corp/camp/cmd/camp/org"
+	packpkg "github.com/Obedience-Corp/camp/cmd/camp/pack"
 	projectpkg "github.com/Obedience-Corp/camp/cmd/camp/project"
 	promotepkg "github.com/Obedience-Corp/camp/cmd/camp/promote"
 	refspkg "github.com/Obedience-Corp/camp/cmd/camp/refs"
@@ -55,6 +56,7 @@ var rootCmd = &cobra.Command{
 			return
 		}
 		ui.SetNoColor(noColor)
+		maybeWarnFailedJobs(cmd)
 	},
 	RunE: func(cmd *cobra.Command, args []string) error {
 		// When invoked without subcommand, show help
@@ -85,8 +87,25 @@ func Execute(ctx context.Context) error {
 		return err
 	}
 
-	return rootCmd.ExecuteContext(ctx)
+	// ExecuteContextC rather than ExecuteContext: it returns the command that
+	// actually ran, which is how a guard refusal can name the invocation the
+	// user typed instead of always saying "camp commit". Telling someone who
+	// ran `camp p commit` to rerun `camp commit --commit-large` sends them to
+	// a different repository.
+	executed, err := rootCmd.ExecuteContextC(ctx)
+	if executed != nil {
+		executedCommandPath = executed.CommandPath()
+	}
+	return err
 }
+
+// executedCommandPath is the command cobra dispatched to, for error rendering
+// after Execute returns. Set once per process; main is the only reader.
+var executedCommandPath = "camp commit"
+
+// ExecutedCommandPath returns the invocation that ran, defaulting to the
+// commit path when cobra never dispatched (a parse failure before dispatch).
+func ExecutedCommandPath() string { return executedCommandPath }
 
 // expandShortcuts expands shortcut aliases in os.Args before cobra parses them.
 // For example, "camp p list" becomes "camp project list" if "p" maps to "project".
@@ -243,6 +262,8 @@ func init() {
 	workflowCmd := workflowcmd.NewWorkflowCommand()
 	workflowCmd.GroupID = "planning"
 	rootCmd.AddCommand(workflowCmd)
+	rootCmd.AddCommand(packpkg.Cmd)
+	rootCmd.AddCommand(packpkg.UnbundleCmd)
 
 	attachResolverFactory := func(stderr io.Writer, usageLine string) attachpkg.CampaignResolver {
 		return attachpkg.NewResolver(stderr, usageLine)

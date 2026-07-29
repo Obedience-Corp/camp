@@ -28,4 +28,3 @@ func TestEffectiveCommitAll_AmendHonorsExplicitAll(t *testing.T) {
 		t.Fatal("amend with explicit --all should auto-stage")
 	}
 }
-

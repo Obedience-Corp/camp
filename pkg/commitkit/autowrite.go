@@ -1,68 +1,39 @@
 package commitkit
 
 import (
-	"bytes"
 	"context"
-	"errors"
-	"io"
-	"os"
-	"os/exec"
-	"runtime"
-	"strings"
 
-	"github.com/Obedience-Corp/camp/internal/config"
-	camperrors "github.com/Obedience-Corp/camp/internal/errors"
+	"github.com/Obedience-Corp/camp/internal/autowrite"
 )
+
+// The commit message writer's public surface, re-exported for consumers
+// outside this module.
+//
+// The implementation moved to internal/autowrite so the deferred-commit worker
+// can call it too: internal/jobs generates a message for a queued
+// --auto-write commit, and this package already imports internal/jobs for
+// DrainJobs, so a direct dependency would be a cycle. Nothing about the API
+// changed; every name below means exactly what it did before.
 
 // ErrCommitMessageHookNotConfigured is returned when --auto-write is requested
 // but .campaign/campaign.yaml does not configure hooks.commit_message.command.
-var ErrCommitMessageHookNotConfigured = errors.New(`auto-write commit message command is not configured
-
-Configure a command in .campaign/campaign.yaml. It is run from the target
-repository's working tree and its stdout is used verbatim as the commit
-message, so any tool that emits a message on stdout works.
-
-hooks:
-  commit_message:
-    command: <your-commit-message-tool>
-
-Example (using the obey CLI):
-
-hooks:
-  commit_message:
-    command: ob commit --print-session-id`)
+var ErrCommitMessageHookNotConfigured = autowrite.ErrCommitMessageHookNotConfigured
 
 // ErrCommitMessageHookEmptyOutput is returned when the hook succeeds but writes
 // no commit message to stdout.
-var ErrCommitMessageHookEmptyOutput = errors.New("auto-write commit message command produced no message")
+var ErrCommitMessageHookEmptyOutput = autowrite.ErrCommitMessageHookEmptyOutput
 
 // CommitMessageHook is the configured commit message writer command.
-type CommitMessageHook struct {
-	Command string
-}
+type CommitMessageHook = autowrite.CommitMessageHook
 
 // LoadCommitMessageHook loads hooks.commit_message.command from campaign config.
 func LoadCommitMessageHook(ctx context.Context, campaignRoot string) (*CommitMessageHook, error) {
-	if err := ctx.Err(); err != nil {
-		return nil, err
-	}
-
-	cfg, err := config.LoadCampaignConfig(ctx, campaignRoot)
-	if err != nil {
-		return nil, camperrors.Wrapf(err, "commitkit: load campaign config at %s", campaignRoot)
-	}
-
-	command := strings.TrimSpace(cfg.Hooks.CommitMessage.Command)
-	if command == "" {
-		return nil, ErrCommitMessageHookNotConfigured
-	}
-
-	return &CommitMessageHook{Command: command}, nil
+	return autowrite.LoadCommitMessageHook(ctx, campaignRoot)
 }
 
 // AutoWriteCommitMessage runs the configured commit message hook from repoPath.
 func AutoWriteCommitMessage(ctx context.Context, campaignRoot, repoPath string) (string, error) {
-	return AutoWriteCommitMessageWithEnv(ctx, campaignRoot, repoPath, nil)
+	return autowrite.AutoWriteCommitMessage(ctx, campaignRoot, repoPath)
 }
 
 // AutoWriteCommitMessageWithEnv is AutoWriteCommitMessage with extra
@@ -72,98 +43,17 @@ func AutoWriteCommitMessage(ctx context.Context, campaignRoot, repoPath string) 
 // Use commitkit.WorkitemEnv (and any future *Env helpers) to build the
 // extraEnv slice so the variable contract stays in one place.
 func AutoWriteCommitMessageWithEnv(ctx context.Context, campaignRoot, repoPath string, extraEnv []string) (string, error) {
-	if err := ctx.Err(); err != nil {
-		return "", err
-	}
-
-	hook, err := LoadCommitMessageHook(ctx, campaignRoot)
-	if err != nil {
-		return "", err
-	}
-
-	return RunCommitMessageCommandWithEnv(ctx, repoPath, hook.Command, extraEnv)
+	return autowrite.AutoWriteCommitMessageWithEnv(ctx, campaignRoot, repoPath, extraEnv)
 }
 
 // RunCommitMessageCommand executes command exactly as configured from repoPath
 // and returns trimmed stdout as the raw commit message.
 func RunCommitMessageCommand(ctx context.Context, repoPath, command string) (string, error) {
-	return RunCommitMessageCommandWithEnv(ctx, repoPath, command, nil)
+	return autowrite.RunCommitMessageCommand(ctx, repoPath, command)
 }
 
 // RunCommitMessageCommandWithEnv is RunCommitMessageCommand with extra
 // environment variables passed to the subprocess (appended to os.Environ()).
 func RunCommitMessageCommandWithEnv(ctx context.Context, repoPath, command string, extraEnv []string) (string, error) {
-	return runCommitMessageCommandWithEnv(ctx, repoPath, command, extraEnv, os.Stderr)
-}
-
-func runCommitMessageCommandWithEnv(
-	ctx context.Context,
-	repoPath string,
-	command string,
-	extraEnv []string,
-	diagnosticOut io.Writer,
-) (string, error) {
-	if err := ctx.Err(); err != nil {
-		return "", err
-	}
-
-	command = strings.TrimSpace(command)
-	if command == "" {
-		return "", ErrCommitMessageHookNotConfigured
-	}
-
-	name, args := shellCommand(command)
-	cmd := exec.CommandContext(ctx, name, args...)
-	cmd.Dir = repoPath
-	if len(extraEnv) > 0 {
-		cmd.Env = append(os.Environ(), extraEnv...)
-	}
-
-	var stdout bytes.Buffer
-	var stderr bytes.Buffer
-	cmd.Stdout = &stdout
-	// Tee stderr: keep a copy for error wrapping and forward live diagnostics
-	// (progress like "ob: connecting..." / "ob: generating...") to the operator
-	// while the hook runs. Tools such as `ob commit --print-session-id` may also
-	// emit session_id= on stderr when the hook finishes; that is post-completion
-	// diagnostics, not a mid-run recovery handle (a hung generation never
-	// finalizes, so no session_id appears). Operators may see stderr twice on
-	// failure (live stream + wrapped error); that is intentional for now.
-	if diagnosticOut == nil {
-		cmd.Stderr = &stderr
-	} else {
-		cmd.Stderr = io.MultiWriter(&stderr, diagnosticOut)
-	}
-
-	if err := cmd.Run(); err != nil {
-		if ctx.Err() != nil {
-			return "", ctx.Err()
-		}
-		msg := strings.TrimSpace(stderr.String())
-		if msg != "" {
-			return "", camperrors.Wrapf(err, "auto-write commit message command failed: %s", msg)
-		}
-		return "", camperrors.Wrap(err, "auto-write commit message command failed")
-	}
-
-	message := strings.TrimSpace(stdout.String())
-	if message == "" {
-		return "", ErrCommitMessageHookEmptyOutput
-	}
-
-	return message, nil
-}
-
-func shellCommand(command string) (string, []string) {
-	if runtime.GOOS == "windows" {
-		if comspec := os.Getenv("ComSpec"); comspec != "" {
-			return comspec, []string{"/C", command}
-		}
-		return "cmd", []string{"/C", command}
-	}
-
-	if shell := os.Getenv("SHELL"); shell != "" {
-		return shell, []string{"-lc", command}
-	}
-	return "/bin/sh", []string{"-lc", command}
+	return autowrite.RunCommitMessageCommandWithEnv(ctx, repoPath, command, extraEnv)
 }

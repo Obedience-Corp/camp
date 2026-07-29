@@ -3,12 +3,16 @@ package main
 import (
 	"encoding/json"
 	"fmt"
-	camperrors "github.com/Obedience-Corp/camp/internal/errors"
 	"os"
+	"strings"
+	"time"
+
+	camperrors "github.com/Obedience-Corp/camp/internal/errors"
 
 	"github.com/Obedience-Corp/camp/internal/campaign"
 	"github.com/Obedience-Corp/camp/internal/doctor"
 	"github.com/Obedience-Corp/camp/internal/doctor/checks"
+	"github.com/Obedience-Corp/camp/internal/drain"
 	"github.com/Obedience-Corp/camp/internal/jsoncontract"
 	"github.com/Obedience-Corp/camp/internal/ui"
 	"github.com/spf13/cobra"
@@ -27,6 +31,7 @@ CHECKS PERFORMED:
   working     Working directory cleanliness
   commits     Parent-submodule commit alignment
   lock        Stale git index.lock files
+  jobs        Failed, stuck, or lost deferred commits
 
 EXIT CODES:
   0  All checks passed (no warnings or errors)
@@ -58,13 +63,19 @@ EXAMPLES:
 
 const DoctorJSONVersion = "doctor/v1alpha1"
 
-var doctorOpts struct {
+// doctorOptions is named rather than anonymous so tests that save and restore
+// doctorOpts name the type instead of restating every field, which made adding
+// one a compile error in three unrelated test files.
+type doctorOptions struct {
 	fix            bool
 	verbose        bool
 	jsonOutput     bool
 	submodulesOnly bool
 	checks         []string
+	noDrain        bool
 }
+
+var doctorOpts doctorOptions
 
 func init() {
 	doctorCmd.Flags().BoolVarP(&doctorOpts.fix, "fix", "f", false,
@@ -76,7 +87,9 @@ func init() {
 	doctorCmd.Flags().BoolVar(&doctorOpts.submodulesOnly, "submodules-only", false,
 		"Only check submodule health")
 	doctorCmd.Flags().StringSliceVarP(&doctorOpts.checks, "check", "c", nil,
-		"Run specific check(s) only (orphan, url, integrity, head, working, commits, lock)")
+		"Run specific check(s) only (orphan, url, integrity, head, working, commits, lock, artifacts, jobs, bigfiles)")
+	doctorCmd.Flags().BoolVar(&doctorOpts.noDrain, "no-drain", false,
+		"Do not wait for camp's queued commits first")
 
 	rootCmd.AddCommand(doctorCmd)
 	doctorCmd.GroupID = "campaign"
@@ -92,6 +105,18 @@ func runDoctor(cmd *cobra.Command, args []string) error {
 		return camperrors.Wrap(err, "not in a campaign")
 	}
 
+	// Doctor inspects working-tree and commit alignment, so a queued commit
+	// makes it report a discrepancy camp is already fixing. Read-only, so a
+	// slow queue warns and the checks still run.
+	var doctorDrainWaited time.Duration
+	if !doctorOpts.noDrain {
+		waited, err := drain.AllLanes(ctx, campRoot, drain.Read)
+		if err != nil {
+			return err
+		}
+		doctorDrainWaited = waited
+	}
+
 	// Build doctor with options
 	d := doctor.NewDoctor(campRoot,
 		doctor.WithFix(doctorOpts.fix),
@@ -102,7 +127,7 @@ func runDoctor(cmd *cobra.Command, args []string) error {
 	)
 
 	// Register all checks
-	registerChecks(d)
+	registerChecks(d, doctorOpts.checks...)
 
 	// Run doctor
 	result, err := d.Run(ctx)
@@ -112,7 +137,7 @@ func runDoctor(cmd *cobra.Command, args []string) error {
 
 	// Output results
 	if doctorOpts.jsonOutput {
-		if err := outputDoctorJSON(result); err != nil {
+		if err := outputDoctorJSON(result, doctorDrainWaited); err != nil {
 			return err
 		}
 		return exitDoctorWithCode(result)
@@ -124,9 +149,41 @@ func runDoctor(cmd *cobra.Command, args []string) error {
 	return exitDoctorWithCode(result)
 }
 
+// issueIcon matches the icon to the severity.
+//
+// Previously anything that was not an error drew the warning icon, so an
+// informational row looked like a problem. A check that reports "here is
+// something you may want to know" must not read as "something is wrong", or
+// users learn to ignore the warning icon everywhere else too.
+func issueIcon(severity doctor.Severity) string {
+	switch severity {
+	case doctor.SeverityError:
+		return ui.ErrorIcon()
+	case doctor.SeverityWarning:
+		return ui.WarningIcon()
+	default:
+		return ui.InfoIcon()
+	}
+}
+
+// issueLine renders an issue's location and description.
+//
+// Submodule is empty for root-level issues, and an unconditional "%s: %s"
+// printed those as ": description" with a stray leading colon. Every check that
+// reports on the campaign itself rather than a submodule hit it.
+func issueLine(issue doctor.Issue) string {
+	if issue.Submodule == "" {
+		return issue.Description
+	}
+	return issue.Submodule + ": " + issue.Description
+}
+
 // registerChecks registers all health checks with the doctor.
 // OrphanCheck runs first because orphaned gitlinks can break other checks.
-func registerChecks(d *doctor.Doctor) {
+//
+// requested names the checks the user asked for with -c, so opt-in checks can
+// stay out of the default run.
+func registerChecks(d *doctor.Doctor, requested ...string) {
 	d.RegisterCheck(checks.NewOrphanCheck())
 	d.RegisterCheck(checks.NewURLCheck())
 	d.RegisterCheck(checks.NewIntegrityCheck())
@@ -135,15 +192,40 @@ func registerChecks(d *doctor.Doctor) {
 	d.RegisterCheck(checks.NewCommitsCheck())
 	d.RegisterCheck(checks.NewLockCheck())
 	d.RegisterCheck(checks.NewLedgerCheck())
+	d.RegisterCheck(checks.NewArtifactsCheck())
+	d.RegisterCheck(checks.NewJobsCheck())
+
+	// bigfiles is opt-in. Every other check here is a git invocation costing
+	// milliseconds; this one walks the whole campaign, measured at 17.9s over
+	// 843,522 files on a real campaign. Putting that in the default run would
+	// make `camp doctor` something users stop running, which costs more than
+	// the check finds.
+	if requestedCheck(requested, checks.NewBigFilesCheck().ID()) {
+		d.RegisterCheck(checks.NewBigFilesCheck())
+	}
+}
+
+// requestedCheck reports whether the user named a check with -c.
+func requestedCheck(requested []string, id string) bool {
+	for _, r := range requested {
+		if strings.EqualFold(strings.TrimSpace(r), id) {
+			return true
+		}
+	}
+	return false
 }
 
 type doctorJSONPayload struct {
 	SchemaVersion string `json:"schema_version"`
+	// DrainWaitedMs is how long doctor waited on the deferred queue before
+	// inspecting anything, so an agent can tell a slow queue from a stuck one
+	// without timing the process itself.
+	DrainWaitedMs int64 `json:"drain_waited_ms"`
 	*doctor.DoctorResult
 }
 
 // outputDoctorJSON outputs results as JSON.
-func outputDoctorJSON(result *doctor.DoctorResult) error {
+func outputDoctorJSON(result *doctor.DoctorResult, drainWaited time.Duration) error {
 	payloadResult := *result
 	if payloadResult.Issues == nil {
 		payloadResult.Issues = []doctor.Issue{}
@@ -155,12 +237,13 @@ func outputDoctorJSON(result *doctor.DoctorResult) error {
 	encoder.SetIndent("", "  ")
 	return encoder.Encode(doctorJSONPayload{
 		SchemaVersion: DoctorJSONVersion,
+		DrainWaitedMs: drainWaited.Milliseconds(),
 		DoctorResult:  &payloadResult,
 	})
 }
 
 // outputDoctorText outputs results in human-readable format.
-func outputDoctorText(result *doctor.DoctorResult, verbose, fixAttempted bool) {
+func outputDoctorText(result *doctor.DoctorResult, _ bool, fixAttempted bool) {
 	// Header
 	fmt.Println()
 	fmt.Println(ui.Header("Campaign Health Report"))
@@ -179,12 +262,13 @@ func outputDoctorText(result *doctor.DoctorResult, verbose, fixAttempted bool) {
 		fmt.Println()
 		fmt.Println(ui.Category("Issues Found:"))
 		for i, issue := range result.Issues {
-			icon := ui.WarningIcon()
-			if issue.Severity == doctor.SeverityError {
-				icon = ui.ErrorIcon()
-			}
-			fmt.Printf("  %d. %s %s: %s\n", i+1, icon, issue.Submodule, issue.Description)
-			if verbose && issue.FixCommand != "" {
+			icon := issueIcon(issue.Severity)
+			fmt.Printf("  %d. %s %s\n", i+1, icon, issueLine(issue))
+			// Shown without --verbose. A health report whose actionable half
+			// is behind a flag tells the user something is wrong and then
+			// makes them go find out what to do about it, which is most of
+			// the reason people stop running doctor.
+			if issue.FixCommand != "" {
 				fmt.Printf("     %s %s\n", ui.Dim("Fix:"), ui.Dim(issue.FixCommand))
 			}
 		}
@@ -195,7 +279,7 @@ func outputDoctorText(result *doctor.DoctorResult, verbose, fixAttempted bool) {
 		fmt.Println()
 		fmt.Println(ui.Category("Fixed Issues:"))
 		for i, issue := range result.Fixed {
-			fmt.Printf("  %d. %s %s: %s\n", i+1, ui.SuccessIcon(), issue.Submodule, issue.Description)
+			fmt.Printf("  %d. %s %s\n", i+1, ui.SuccessIcon(), issueLine(issue))
 		}
 	}
 

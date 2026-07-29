@@ -1,0 +1,436 @@
+package jobs
+
+import (
+	"context"
+	"errors"
+	"os"
+	"os/exec"
+	"path/filepath"
+	"strings"
+
+	"github.com/Obedience-Corp/camp/internal/autowrite"
+	camperrors "github.com/Obedience-Corp/camp/internal/errors"
+	"github.com/Obedience-Corp/camp/internal/git"
+)
+
+// execute runs one job against its repository.
+//
+// Every path here commits through camp's temp-index machinery, never the real
+// index. That is the property that makes deferral safe at all: the user's
+// index belongs to the user, and a background process that staged into it
+// would sweep whatever they happened to be working on into camp's bookkeeping
+// commit.
+func execute(ctx context.Context, campaignRoot string, job *Job) error {
+	if ctx.Err() != nil {
+		return ctx.Err()
+	}
+
+	// Belt and braces against a hand-edited queue file. Enqueue validation
+	// already rejects a follow-up carrying its own; this refuses to run one
+	// that reached disk anyway, whichever kind it is. Chaining is bounded at
+	// one level because each link runs against a repository further from the
+	// state its author saw.
+	if job.FollowUp && job.Then != nil {
+		return camperrors.Newf("job %s is a follow-up carrying its own follow-up", job.ID)
+	}
+
+	repoPath, err := resolveRepoPath(campaignRoot, job.Repo)
+	if err != nil {
+		return err
+	}
+
+	switch job.Kind {
+	case KindCommitPaths:
+		return executeCommitPaths(ctx, repoPath, job)
+	case KindCommitTree:
+		return executeCommitTree(ctx, campaignRoot, repoPath, job)
+	default:
+		return camperrors.Newf("unknown job kind %q in job %s", job.Kind, job.ID)
+	}
+}
+
+// executeCommitPaths commits the job's named paths through the temp index.
+//
+// A job whose paths resolve to nothing is a success, not a failure. Between the
+// enqueue and the run, the content may have been committed by a drain, swept up
+// by an ordinary `camp commit`, or deleted by the user who changed their mind.
+// None of those is camp failing to keep a promise, and parking the job would
+// leave the failed-commit notice nagging about work nobody wants done.
+func executeCommitPaths(ctx context.Context, repoPath string, job *Job) error {
+	if len(job.Paths) == 0 {
+		return camperrors.Newf("job %s has no paths", job.ID)
+	}
+	if err := checkGitlinkCarveOut(ctx, repoPath, job); err != nil {
+		return err
+	}
+
+	// Captured content when the enqueuer recorded it, the live working tree
+	// otherwise. The captured form is what makes the commit mean its message:
+	// without it the job defers the read as well as the write, so an edit made
+	// in the gap lands under the earlier operation's description.
+	//
+	// The fallback exists for hand-written queue files and for jobs enqueued
+	// by an older camp, which have paths and no blobs.
+	var err error
+	if len(job.Blobs) > 0 {
+		err = git.CommitBlobs(ctx, repoPath, toGitBlobs(job.Blobs), &git.CommitOptions{
+			Message: job.Message,
+		})
+	} else {
+		err = git.CommitScoped(ctx, repoPath, job.Paths, &git.CommitOptions{
+			Message: job.Message,
+		})
+	}
+	switch {
+	case err == nil:
+		return nil
+	case errors.Is(err, git.ErrNoChanges):
+		return nil // already committed, or nothing to say
+	case isMissingPathspec(err):
+		return nil // the paths are gone; there is nothing left to commit
+	default:
+		return err
+	}
+}
+
+// checkGitlinkCarveOut enforces criterion 37l: only a worker-created follow-up
+// may commit a submodule pointer.
+//
+// A gitlink records whatever the submodule's HEAD is at execution time, not a
+// snapshot the enqueuer chose, so an ordinary deferred job committing one would
+// publish a pointer to work nobody decided to publish. The follow-up is the one
+// case where that is correct, because it exists only because its parent just
+// moved that HEAD.
+//
+// Checked here rather than at enqueue because it needs the repository: whether
+// a path is a gitlink is a fact about HEAD, not about the path's spelling.
+func checkGitlinkCarveOut(ctx context.Context, repoPath string, job *Job) error {
+	if job.FollowUp {
+		return nil
+	}
+	for _, path := range job.Paths {
+		if git.IsGitlink(ctx, repoPath, path) {
+			return camperrors.Newf(
+				"job %s would commit the submodule pointer %s; only a worker-created "+
+					"follow-up may record a gitlink", job.ID, path)
+		}
+	}
+	return nil
+}
+
+// toGitBlobs converts the job document's captured content into the git
+// package's form.
+func toGitBlobs(refs []BlobRef) []git.BlobRef {
+	out := make([]git.BlobRef, 0, len(refs))
+	for _, r := range refs {
+		out = append(out, git.BlobRef{Path: r.Path, Mode: r.Mode, SHA: r.SHA})
+	}
+	return out
+}
+
+// isMissingPathspec reports whether a git failure is only "those paths are not
+// here any more".
+//
+// Matched on message text because git offers no distinct exit code for it: `git
+// add` exits 128 for a missing pathspec and for a corrupt repository alike, so
+// keying on the code would swallow real failures. Narrow on purpose; anything
+// else still fails the job and stays visible in failed/.
+func isMissingPathspec(err error) bool {
+	return err != nil && strings.Contains(err.Error(), "did not match any files")
+}
+
+// executeCommitTree builds a commit from the job's captured tree and moves HEAD
+// to it.
+//
+// Nothing here touches the real index or the working tree. The tree was
+// captured at enqueue and is immutable, so this produces exactly the commit the
+// user staged however long ago, regardless of what they have done since.
+func executeCommitTree(ctx context.Context, campaignRoot, repoPath string, job *Job) error {
+	if strings.TrimSpace(job.Tree) == "" || strings.TrimSpace(job.Parent) == "" {
+		return camperrors.Newf("job %s has no captured tree or parent", job.ID)
+	}
+
+	// A reclaimed job may have died after its commit landed. Recognize that
+	// before generating the message, not after: the writer is an external
+	// process a retry should not pay for again, and a writer failing on the
+	// retry must not fail a job whose commit is sitting in the log. Attempts
+	// is only ever incremented by reclaim, so a first run never pays for this
+	// check.
+	if job.Attempts > 0 && alreadyApplied(ctx, repoPath, job) {
+		return nil
+	}
+
+	message, err := messageForTree(ctx, campaignRoot, repoPath, job)
+	if err != nil {
+		return err
+	}
+
+	newSHA, err := git.CommitTree(ctx, repoPath, job.Tree, job.Parent, message)
+	if err != nil {
+		return err
+	}
+
+	if err := git.UpdateHeadFrom(ctx, repoPath, newSHA, job.Parent,
+		"camp: deferred commit "+job.ID); err != nil {
+		// The ref move can fail two ways and they need opposite handling.
+		//
+		// If HEAD is already this job's commit, a previous attempt succeeded
+		// and died before the queue file was unlinked. Treating that as a
+		// failure would park a job whose work is done, and the user would be
+		// told a commit failed while looking at it in their log.
+		//
+		// Recognized by content, not by hash. `git commit-tree` puts the
+		// committer timestamp in the object, so a retry over identical inputs
+		// produces a different SHA every time and could never match what the
+		// first attempt wrote. A commit whose tree and parent are this job's
+		// tree and parent is this job's commit, whenever it was made.
+		if alreadyApplied(ctx, repoPath, job) {
+			return nil
+		}
+		// Otherwise HEAD genuinely moved. Fail, and never rebase: the queued
+		// commit was built against a tree the user staged, and replaying it
+		// onto someone else's commit would produce a result nobody chose.
+		return camperrors.Wrapf(err,
+			"HEAD moved since this commit was queued; %s was not applied (expected parent %s)",
+			shortSHA(newSHA), shortSHA(job.Parent))
+	}
+	return nil
+}
+
+// alreadyApplied reports whether a commit this job set out to make has landed.
+//
+// It walks HEAD's first-parent chain rather than checking HEAD alone: the user
+// may have kept committing between the crash and the retry, and a landed
+// commit buried under their new work is still landed. A variable so tests can
+// exercise the retry ordering without a repository behind the job.
+var alreadyApplied = func(ctx context.Context, repoPath string, job *Job) bool {
+	return git.FirstParentChainContains(ctx, repoPath, job.Tree, job.Parent)
+}
+
+// messageForTree returns the commit message for a commit-tree job, running the
+// configured writer when the job asked for one.
+//
+// The writer runs against a temporary index materializing the captured tree, so
+// what it sees is the snapshot being committed rather than whatever the working
+// tree looks like now. That is the difference between a deferred message that
+// describes the commit and one that describes an unrelated later state.
+func messageForTree(ctx context.Context, campaignRoot, repoPath string, job *Job) (string, error) {
+	if !job.AutoWrite {
+		if strings.TrimSpace(job.Message) == "" {
+			return "", camperrors.Newf("job %s has no message", job.ID)
+		}
+		return job.Message, nil
+	}
+	message, err := writeMessage(ctx, campaignRoot, repoPath, job)
+	if err != nil {
+		return "", err
+	}
+	if strings.TrimSpace(message) == "" {
+		return "", camperrors.Newf("the commit message writer produced no message for job %s", job.ID)
+	}
+	// The tag goes on the subject line, which is why it is prepended here
+	// rather than composed into the writer's prompt: the writer owns the
+	// message, camp owns the tag, and a deferred commit has to end up with the
+	// same subject a synchronous one would.
+	if job.MessagePrefix != "" {
+		return job.MessagePrefix + " " + message, nil
+	}
+	return message, nil
+}
+
+// writeMessage runs the configured writer against the job's captured tree.
+//
+// The temp index is the point. The writer's job is to describe *this* commit,
+// and by the time it runs the working tree and the real index may both have
+// moved on. Materializing the captured tree into a scratch index and pointing
+// GIT_INDEX_FILE at it means `git diff --cached` inside the writer shows the
+// snapshot being committed rather than whatever the user is doing now.
+//
+// A variable so tests can drive the worker's lifecycle without a configured
+// writer; runWriter is always what runs in production.
+var writeMessage = runWriter
+
+func runWriter(ctx context.Context, campaignRoot, repoPath string, job *Job) (string, error) {
+	tmp, err := os.CreateTemp("", "camp-job-index-*")
+	if err != nil {
+		return "", camperrors.Wrap(err, "create a scratch index for the message writer")
+	}
+	indexPath := tmp.Name()
+	_ = tmp.Close()
+	// git refuses to read-tree into a file it did not create, so the empty
+	// placeholder goes away before git is asked to write there.
+	_ = os.Remove(indexPath)
+	defer func() { _ = os.Remove(indexPath) }()
+
+	env := append(os.Environ(), "GIT_INDEX_FILE="+indexPath)
+	if err := git.RunWithEnv(ctx, repoPath, env, "read-tree", job.Tree); err != nil {
+		return "", camperrors.Wrapf(err, "materialize tree %s for the message writer", shortSHA(job.Tree))
+	}
+
+	// The job's own variables first, GIT_INDEX_FILE last so a malformed job
+	// cannot point the writer at a different index than the one just built.
+	writerEnv := append(append([]string(nil), job.Env...), "GIT_INDEX_FILE="+indexPath)
+	return autowrite.AutoWriteCommitMessageWithEnv(ctx, campaignRoot, repoPath, writerEnv)
+}
+
+// shortSHA abbreviates a hash for a message a human reads.
+func shortSHA(sha string) string {
+	if len(sha) > 8 {
+		return sha[:8]
+	}
+	return sha
+}
+
+// resolveRepoPath turns a campaign-relative repo into an absolute path,
+// refusing anything that escapes the campaign.
+//
+// Validation already rejects escaping repos at enqueue. This is the second
+// check, at the moment of use, because the job file is on disk and editable
+// between those two moments.
+func resolveRepoPath(campaignRoot, repo string) (string, error) {
+	normalized := normalizeRepo(repo)
+	if normalized == "." {
+		return campaignRoot, nil
+	}
+	if !filepath.IsLocal(filepath.FromSlash(normalized)) {
+		return "", camperrors.Newf("repo %q escapes the campaign", repo)
+	}
+	path := filepath.Join(campaignRoot, filepath.FromSlash(normalized))
+	if _, err := os.Stat(path); err != nil {
+		return "", camperrors.Wrapf(err, "repo %s is not present", repo)
+	}
+	return path, nil
+}
+
+// forbiddenGitArgs are staging and history operations a deferred job may never
+// perform.
+//
+// A worker runs after the user's terminal has returned, against a working tree
+// they are still using. Anything that stages by wildcard would capture whatever
+// they happen to have edited since; anything that moves history would rewrite
+// commits they may already have built on. The queue's contract is that a job's
+// effect is fixed at enqueue time, and these are precisely the operations that
+// would break it.
+var forbiddenGitArgs = [][]string{
+	{"add", "-A"},
+	{"add", "--all"},
+	{"add", "."},
+	{"commit", "-a"},
+	{"commit", "--all"},
+	{"commit", "--amend"},
+	{"reset", "--hard"},
+	{"rebase"},
+	{"push"},
+	{"checkout"},
+}
+
+// GitArgsForJob returns the git argument list a job would run.
+//
+// It exists so the forbidden-operation rule is testable as data rather than by
+// inspection: the test asserts over this function's output for every job
+// shape, which is a claim about what the worker can do rather than about what
+// it currently happens to do.
+func GitArgsForJob(job *Job) []string {
+	switch job.Kind {
+	case KindCommitPaths:
+		// CommitScoped's shape: build a temp index from HEAD, add exactly
+		// these paths, commit with GIT_INDEX_FILE pointed at it.
+		args := []string{"add", "--"}
+		args = append(args, job.Paths...)
+		return args
+	case KindCommitTree:
+		return []string{"commit-tree", job.Tree}
+	default:
+		return nil
+	}
+}
+
+// ViolatesForbiddenGit reports whether an argument list contains a forbidden
+// operation, and which one.
+func ViolatesForbiddenGit(args []string) (string, bool) {
+	for _, forbidden := range forbiddenGitArgs {
+		if containsSequence(args, forbidden) {
+			return strings.Join(forbidden, " "), true
+		}
+	}
+	return "", false
+}
+
+// containsSequence reports whether args contains the given consecutive tokens.
+func containsSequence(args, seq []string) bool {
+	if len(seq) == 0 || len(args) < len(seq) {
+		return false
+	}
+	for i := 0; i+len(seq) <= len(args); i++ {
+		match := true
+		for j := range seq {
+			if args[i+j] != seq[j] {
+				match = false
+				break
+			}
+		}
+		if match {
+			return true
+		}
+	}
+	return false
+}
+
+// SpawnIfNeeded starts a detached worker when a lane has work and no live
+// worker.
+//
+// Called by every enqueuer. Losing a spawn race is harmless: the loser's
+// acquireLane returns !ok and the process exits, which is why the check here
+// can be cheap and approximate rather than synchronized. The expensive
+// mistake would be the other direction, so when in doubt this spawns.
+func SpawnIfNeeded(ctx context.Context, campaignRoot, repo string) {
+	if ctx.Err() != nil {
+		return
+	}
+	if empty, err := laneEmpty(campaignRoot, repo); err != nil || empty {
+		return
+	}
+
+	queueDir := QueueDir(campaignRoot)
+	slug := LaneSlug(repo)
+	if laneLockFresh(queueDir, slug) {
+		return // a live worker already has this lane
+	}
+	if countFreshLaneLocks(queueDir) >= laneCap {
+		// At the cap. The running workers rediscover lanes when they finish,
+		// so this lane is served without another process.
+		return
+	}
+
+	exe, err := os.Executable()
+	if err != nil {
+		return // degrade quietly: the next command's spawn check retries
+	}
+
+	logPath := WorkerLogPath(campaignRoot)
+	if err := os.MkdirAll(filepath.Dir(logPath), 0o755); err != nil {
+		return
+	}
+	logFile, err := os.OpenFile(logPath, os.O_CREATE|os.O_APPEND|os.O_WRONLY, 0o644)
+	if err != nil {
+		return
+	}
+	defer func() { _ = logFile.Close() }()
+
+	// Deliberately not exec.CommandContext: the child must outlive this
+	// process, which is the entire point of deferring. Setsid detaches it from
+	// the terminal so closing the shell does not take the worker with it.
+	cmd := exec.Command(exe, "jobs", "run", "--campaign", campaignRoot)
+	detachProcess(cmd)
+	cmd.Stdin = nil
+	cmd.Stdout = logFile
+	cmd.Stderr = logFile
+	if err := cmd.Start(); err != nil {
+		logWorker(campaignRoot, "spawn-error lane=%s err=%v", repo, err)
+		return
+	}
+	// Never Wait: the child is detached on purpose. Releasing the process
+	// handle leaves it to init rather than making this process linger.
+	_ = cmd.Process.Release()
+	logWorker(campaignRoot, "spawned lane=%s pid=%d", repo, cmd.Process.Pid)
+}

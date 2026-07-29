@@ -20,7 +20,8 @@ camp fresh all [flags]
 ### Options
 
 ```
-  -h, --help   help for all
+  -h, --help       help for all
+      --no-drain   Do not wait for camp's queued commits first
 ```
 
 ### Options inherited from parent commands
