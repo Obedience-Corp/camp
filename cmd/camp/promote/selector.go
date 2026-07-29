@@ -151,7 +151,9 @@ func targetsForKind(kind promoteKind) []string {
 	case kindIntent:
 		return []string{"ready", "festival", "design"}
 	case kindWorkitem:
-		return []string{"festival", "doc", "completed", "archived", "someday"}
+		// Rail stages lead: they are the forward moves, and a workitem reaches
+		// them far more often than it reaches a festival or the dungeon.
+		return []string{"ready", "active", "festival", "doc", "completed", "archived", "someday"}
 	case kindFestival:
 		return []string{"next", "completed", "archived", "someday"}
 	}

@@ -24,12 +24,14 @@ import (
 const festivalsDir = "festivals"
 
 // Rail stages. "root" is a workitem still living under workflow/<type>/; ready
-// and active are the physical festival stages; dungeon covers any shelved
-// source, which the rail never accepts as an origin.
+// and active are the physical festival stages and take their names from the
+// lifecycle vocabulary so the promote target, the stage folder, and
+// StagesByType cannot drift apart; dungeon covers any shelved source, which the
+// rail never accepts as an origin.
 const (
 	railStageRoot    = "root"
-	railStageReady   = "ready"
-	railStageActive  = "active"
+	railStageReady   = string(wkitem.LifecycleStageReady)
+	railStageActive  = string(wkitem.LifecycleStageActive)
 	railStageDungeon = "dungeon"
 )
 

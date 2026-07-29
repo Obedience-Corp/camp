@@ -27,10 +27,15 @@ const festivalsRoot = "festivals"
 // workflow type it came from.
 const festivalDungeonName = ".dungeon"
 
-// festivalStages are the rail stages a resident workitem can occupy. Promotion
-// onto the rail targets ready and active only; festivals/ also holds folders
-// that are not rail stages (planning, chains, ritual), and those do not resolve.
-var festivalStages = map[string]bool{"ready": true, "active": true}
+// festivalStages are the rail stages a resident workitem can occupy, named from
+// the lifecycle vocabulary so the folder this resolver accepts cannot drift from
+// the stage a workitem can be promoted to. Promotion onto the rail targets ready
+// and active only; festivals/ also holds folders that are not rail stages
+// (planning, chains, ritual), and those do not resolve.
+var festivalStages = map[string]bool{
+	string(wkitem.LifecycleStageReady):  true,
+	string(wkitem.LifecycleStageActive): true,
+}
 
 type Location struct {
 	Type        string
