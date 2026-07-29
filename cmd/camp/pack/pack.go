@@ -9,6 +9,7 @@ import (
 	"path/filepath"
 	"strings"
 
+	"github.com/Obedience-Corp/camp/internal/campaign"
 	"github.com/Obedience-Corp/camp/internal/config"
 	camperrors "github.com/Obedience-Corp/camp/internal/errors"
 	"github.com/Obedience-Corp/obey-shared/festivalbundle"
@@ -16,7 +17,7 @@ import (
 	"gopkg.in/yaml.v3"
 )
 
-// Cmd is the pack command family root (also usable as pack directly via PackCmd).
+// Cmd packs a directory into a .festival archive.
 var Cmd = &cobra.Command{
 	Use:     "pack",
 	Short:   "Pack a directory into a portable .festival bundle",
@@ -77,17 +78,9 @@ func runPack(cmd *cobra.Command, args []string) error {
 		WriteSentRecord: !packNoSent,
 	}
 
-	// Campaign metadata when available
-	if cfg, root, err := config.LoadCampaignConfigFromCwd(ctx); err == nil && cfg != nil {
-		rel := ""
-		if r, err := filepath.Rel(root, source); err == nil && !strings.HasPrefix(r, "..") {
-			rel = filepath.ToSlash(r)
-		}
-		opts.From = &festivalbundle.FromMeta{
-			CampaignID:   cfg.ID,
-			CampaignName: cfg.Name,
-			RelativePath: rel,
-		}
+	// Provenance from the *source* tree's campaign, not process cwd.
+	if from := fromMetaForSource(ctx, source); from != nil {
+		opts.From = from
 	}
 
 	if sub := loadWorkitemSubject(source); sub != nil {
@@ -109,8 +102,50 @@ func runPack(cmd *cobra.Command, args []string) error {
 	return nil
 }
 
+// fromMetaForSource returns campaign provenance only when source lives inside a
+// detected campaign root. Detection walks from the source directory (not cwd).
+func fromMetaForSource(ctx context.Context, source string) *festivalbundle.FromMeta {
+	source = filepath.Clean(source)
+	root, err := campaign.Detect(ctx, source)
+	if err != nil {
+		return nil
+	}
+	// Normalize both sides (macOS /var vs /private/var) before membership check.
+	root, source = normalizePair(root, source)
+	rel, err := filepath.Rel(root, source)
+	if err != nil || rel == ".." || strings.HasPrefix(rel, ".."+string(filepath.Separator)) {
+		return nil
+	}
+	cfg, err := config.LoadCampaignConfig(ctx, root)
+	if err != nil || cfg == nil {
+		return nil
+	}
+	return &festivalbundle.FromMeta{
+		CampaignID:   cfg.ID,
+		CampaignName: cfg.Name,
+		RelativePath: filepath.ToSlash(rel),
+	}
+}
+
+func normalizePair(root, source string) (string, string) {
+	if r, err := filepath.EvalSymlinks(root); err == nil {
+		root = r
+	}
+	if s, err := filepath.EvalSymlinks(source); err == nil {
+		source = s
+	} else if d, err := filepath.EvalSymlinks(filepath.Dir(source)); err == nil {
+		source = filepath.Join(d, filepath.Base(source))
+	}
+	if a, err := filepath.Abs(root); err == nil {
+		root = a
+	}
+	if a, err := filepath.Abs(source); err == nil {
+		source = a
+	}
+	return root, source
+}
+
 func inferKind(source string) string {
-	// Walk path parts for known workflow segments
 	parts := strings.Split(filepath.ToSlash(source), "/")
 	for i, p := range parts {
 		switch p {
