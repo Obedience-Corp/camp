@@ -61,7 +61,7 @@ func TestIntegration_GuardAutoDeclaresMixedRoot(t *testing.T) {
 		"one file takes the singular verb")
 	assert.Contains(t, output, "notes.md")
 
-	committed := tc.GitOutput(t, campPath, "show", "--name-only", "--format=", "HEAD")
+	committed := tc.GitOutput(t, campPath, "show", "--name-only", "--format=", latestUserCommit(t, tc, campPath))
 
 	// Criterion 2, the data-loss regression. A new small file inside a mixed
 	// root must become git's, not silently reclassified as artifact content.
@@ -104,7 +104,7 @@ func TestIntegration_GuardRefusesCampaignRootFilePerFile(t *testing.T) {
 	assert.Contains(t, output, "sits at the campaign root; camp will not make the campaign an artifact root")
 	assert.Contains(t, output, "camp artifacts add")
 
-	committed := tc.GitOutput(t, campPath, "show", "--name-only", "--format=", "HEAD")
+	committed := tc.GitOutput(t, campPath, "show", "--name-only", "--format=", latestUserCommit(t, tc, campPath))
 	assert.Contains(t, committed, "ordinary.md", "everything else must still commit")
 	assert.NotContains(t, committed, "render.mov")
 
@@ -141,7 +141,7 @@ func TestIntegration_GuardRefusesCampaignStateTree(t *testing.T) {
 			"camp's own state tree must never become a user artifact root")
 	}
 
-	committed := tc.GitOutput(t, campPath, "show", "--name-only", "--format=", "HEAD")
+	committed := tc.GitOutput(t, campPath, "show", "--name-only", "--format=", latestUserCommit(t, tc, campPath))
 	assert.Contains(t, committed, "ordinary.md")
 }
 
@@ -266,7 +266,7 @@ func TestIntegration_GuardReportsTrackedGrowthButCommitsIt(t *testing.T) {
 	assert.Contains(t, output, "git rm --cached graphs/graph.png")
 	assert.Contains(t, output, "commit.guards.allow")
 
-	committed := tc.GitOutput(t, campPath, "show", "--name-only", "--format=", "HEAD")
+	committed := tc.GitOutput(t, campPath, "show", "--name-only", "--format=", latestUserCommit(t, tc, campPath))
 	assert.Contains(t, committed, "graphs/graph.png",
 		"tracked growth is reported, never excluded")
 }

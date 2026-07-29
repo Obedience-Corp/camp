@@ -220,3 +220,19 @@ func TestIntegration_DrainNeverWaitsOnAManifestHash(t *testing.T) {
 	assert.Contains(t, subjects, "manifest: media at "+described[:8],
 		"the manifest still lands after the drain, naming the right commit")
 }
+
+// latestUserCommit returns the newest commit that is not a manifest carrier.
+// Committed manifests land asynchronously, so "the commit this test just
+// made" and HEAD can differ by the time the test reads it.
+func latestUserCommit(t *testing.T, tc *TestContainer, repoPath string) string {
+	t.Helper()
+	out := tc.GitOutput(t, repoPath, "log", "--format=%H %s", "-8")
+	for _, line := range strings.Split(strings.TrimSpace(out), "\n") {
+		sha, subject, ok := strings.Cut(line, " ")
+		if ok && !strings.HasPrefix(subject, "manifest: ") {
+			return sha
+		}
+	}
+	t.Fatal("no non-manifest commit in recent history")
+	return ""
+}
