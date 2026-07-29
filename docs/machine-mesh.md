@@ -196,11 +196,15 @@ hangs:
   This is common on a fresh fleet member: a stock `go install` puts camp in `~/go/bin`,
   which a non-interactive login shell does not have on its PATH.
 - **Version skew.** If a previous `camp machine diagnose` observed a different camp version
-  on the target, hops warn once, without paying for a probe:
+  on the target, every hop warns, reading that cached result rather than paying for a
+  probe:
   ```
-  camp: camp on devbox is v0.9.1, this machine is v0.10.0; features may not match
-  (run 'camp machine diagnose devbox' to re-check)
+  camp: camp on devbox is v0.9.1, this machine is v0.10.0; features may not match (run 'camp machine diagnose devbox' to re-check)
   ```
+  It repeats on each hop by design — the condition is still true, and a warning that
+  appeared once would be missed by whoever hits the mismatch later. It stops when the
+  cache entry expires (12h) or a fresh `camp machine diagnose` finds the versions agree.
+
   The warning says only that the versions *differ*. Camp does not order them, because the
   remote is as likely to be ahead as behind.
 - **Stale visibility.** A pushed snapshot past its TTL is dropped rather than shown, so
