@@ -103,6 +103,55 @@ func TestIntegration_BookkeepingJobLeavesTheUsersIndexAlone(t *testing.T) {
 		"camp's commit swept in the user's staged work; it contained:\n%s", committed)
 }
 
+// A job's effect is a function of enqueue time, not execution time.
+//
+// Recording paths alone defers the read as well as the write: an edit made
+// between the two lands under the earlier operation's message. A user who
+// captures an intent and then rewrites it would find the rewrite committed as
+// the capture, with the capture's content never recorded at all.
+func TestIntegration_BookkeepingCommitsWhatWasThereWhenItWasQueued(t *testing.T) {
+	tc := GetSharedContainer(t)
+	tc.EnableDeferral()
+	campPath, _ := setupDrainCampaign(t, tc, "bk-defer-capture")
+
+	// Hold the lane before enqueuing so no worker can serve it. Without this
+	// the worker usually commits before the edit below, and the test passes
+	// whether or not content was captured, which is how it first passed with
+	// capture removed.
+	tc.Shell(t, fmt.Sprintf(`
+		mkdir -p %s/.campaign/cache/jobs
+		printf '99999\n' > %s/.campaign/cache/jobs/worker-%s.lock
+	`, campPath, campPath, rootLane))
+
+	stdout, stderr, exitCode, err := tc.RunCampSplitInDir(campPath, "intent", "add", "as captured")
+	require.NoError(t, err)
+	require.Equal(t, 0, exitCode, "stdout:\n%s\nstderr:\n%s", stdout, stderr)
+
+	// The user edits the file in the gap, before the worker runs.
+	file := tc.Shell(t, fmt.Sprintf(
+		"ls %s/.campaign/intents/inbox/*as-captured*", campPath))
+	file = strings.TrimSpace(file)
+	require.NotEmpty(t, file, "the intent file must exist on disk immediately")
+	require.NoError(t, tc.WriteFile(file, "REWRITTEN AFTER QUEUEING\n"))
+
+	// Release the lane and let the worker run.
+	tc.Shell(t, fmt.Sprintf("rm -f %s/.campaign/cache/jobs/worker-%s.lock", campPath, rootLane))
+	drainJobs(t, tc, campPath)
+
+	committed := tc.GitOutput(t, campPath, "show", "HEAD:"+strings.TrimPrefix(file, campPath+"/"))
+	assert.NotContains(t, committed, "REWRITTEN AFTER QUEUEING",
+		"the commit carried an edit made after it was queued, under the capture's message")
+
+	// The user's edit is untouched and still uncommitted, for their next commit.
+	onDisk, err := tc.ReadFile(file)
+	require.NoError(t, err)
+	assert.Contains(t, onDisk, "REWRITTEN AFTER QUEUEING",
+		"the user's edit must survive")
+	status := tc.GitOutput(t, campPath, "status", "--porcelain", "--", strings.TrimPrefix(file, campPath+"/"))
+	assert.NotEmpty(t, strings.TrimSpace(status),
+		"the later edit must be left uncommitted rather than absorbed")
+}
+
 // Deferred criterion 7: paths deleted since the enqueue are a success without a
 // commit, not a failure.
 //

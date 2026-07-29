@@ -151,13 +151,38 @@ func EnqueuePaths(ctx context.Context, campaignRoot, repoPath, message string, p
 	if ctx.Err() != nil {
 		return nil, ctx.Err()
 	}
+	// Content is captured here, not read at execution. A job that only
+	// recorded paths would defer the read as well as the write, so an edit made
+	// between the enqueue and the run would land under this message.
+	//
+	// A capture failure degrades to a path-only job rather than costing the
+	// user their commit: the coalescing risk is real but smaller than not
+	// committing at all, and the failure is a repository camp could not read.
+	blobs, err := git.CaptureBlobs(ctx, repoPath, paths)
+	if err != nil {
+		blobs = nil
+	}
+
 	return jobs.Enqueue(ctx, campaignRoot, jobs.Job{
 		Kind:    jobs.KindCommitPaths,
 		Class:   jobs.ClassCommit,
 		Repo:    jobs.RepoForPath(campaignRoot, repoPath),
 		Paths:   paths,
+		Blobs:   toJobBlobs(blobs),
 		Message: message,
 	})
+}
+
+// toJobBlobs converts captured content into the job document's form.
+func toJobBlobs(refs []git.BlobRef) []jobs.BlobRef {
+	if len(refs) == 0 {
+		return nil
+	}
+	out := make([]jobs.BlobRef, 0, len(refs))
+	for _, r := range refs {
+		out = append(out, jobs.BlobRef{Path: r.Path, Mode: r.Mode, SHA: r.SHA})
+	}
+	return out
 }
 
 // SpawnWorker starts a worker for a repository's lane if one is needed.

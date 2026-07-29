@@ -187,3 +187,153 @@ func HasCommitHooks(ctx context.Context, repoPath string) bool {
 	}
 	return false
 }
+
+// BlobRef is one path's content, captured as a git object.
+//
+// Capturing content at enqueue is what makes a deferred bookkeeping commit mean
+// what its message says. Recording paths alone defers the read as well as the
+// write, so an edit made between the two lands under the earlier operation's
+// message: the user renames a workitem, edits it, and the rename commit
+// contains the edit.
+type BlobRef struct {
+	// Path is repo-relative.
+	Path string
+	// Mode is the git file mode ("100644", "100755", "120000").
+	Mode string
+	// SHA is the blob object. Empty means the path was already gone at
+	// capture time and should be removed from the tree.
+	SHA string
+}
+
+// CaptureBlobs writes each path's current content into the object store and
+// returns references to it.
+//
+// A path that does not exist is captured as a deletion rather than an error,
+// because camp's bookkeeping legitimately removes files (a dungeon move, a
+// promoted intent) and the commit has to record that.
+func CaptureBlobs(ctx context.Context, repoPath string, paths []string) ([]BlobRef, error) {
+	refs := make([]BlobRef, 0, len(paths))
+	for _, p := range paths {
+		abs := filepath.Join(repoPath, filepath.FromSlash(p))
+		info, err := os.Lstat(abs)
+		if err != nil {
+			if os.IsNotExist(err) {
+				refs = append(refs, BlobRef{Path: p})
+				continue
+			}
+			return nil, camperrors.Wrapf(err, "capture %s", p)
+		}
+		if info.IsDir() {
+			// A directory expands to its files. Capturing it as one object is
+			// not possible, and a deferred job naming a directory means the
+			// files under it at the moment the user acted.
+			nested, err := captureDir(ctx, repoPath, p)
+			if err != nil {
+				return nil, err
+			}
+			refs = append(refs, nested...)
+			continue
+		}
+		sha, err := Output(ctx, repoPath, "hash-object", "-w", "--", p)
+		if err != nil {
+			return nil, camperrors.Wrapf(err, "capture %s", p)
+		}
+		refs = append(refs, BlobRef{
+			Path: p,
+			Mode: blobMode(info),
+			SHA:  strings.TrimSpace(sha),
+		})
+	}
+	return refs, nil
+}
+
+// captureDir captures every file under a directory.
+func captureDir(ctx context.Context, repoPath, dir string) ([]BlobRef, error) {
+	var paths []string
+	root := filepath.Join(repoPath, filepath.FromSlash(dir))
+	err := filepath.WalkDir(root, func(p string, d os.DirEntry, err error) error {
+		if err != nil || d.IsDir() {
+			return err
+		}
+		rel, relErr := filepath.Rel(repoPath, p)
+		if relErr != nil {
+			return relErr
+		}
+		paths = append(paths, filepath.ToSlash(rel))
+		return nil
+	})
+	if err != nil {
+		return nil, camperrors.Wrapf(err, "capture directory %s", dir)
+	}
+	return CaptureBlobs(ctx, repoPath, paths)
+}
+
+// blobMode returns the git mode for a file.
+func blobMode(info os.FileInfo) string {
+	switch {
+	case info.Mode()&os.ModeSymlink != 0:
+		return "120000"
+	case info.Mode().Perm()&0o111 != 0:
+		return "100755"
+	default:
+		return "100644"
+	}
+}
+
+// CommitBlobs commits captured content as a scoped commit, without reading the
+// working tree.
+//
+// The temp index starts from HEAD and receives exactly the captured objects, so
+// the resulting commit is a function of what was on disk when the job was
+// enqueued. Nothing here consults the real index or the current file contents.
+func CommitBlobs(ctx context.Context, repoPath string, refs []BlobRef, opts *CommitOptions) error {
+	if opts == nil {
+		return ErrCommitOptionsRequired
+	}
+	if len(refs) == 0 {
+		return ErrNoChanges
+	}
+
+	tmpPath, _, err := BuildTempIndexPath(repoPath)
+	if err != nil {
+		return err
+	}
+	defer RemoveTempIndex(tmpPath)
+
+	if err := ReadTreeIntoTempIndex(ctx, repoPath, tmpPath); err != nil {
+		return err
+	}
+
+	env := append(os.Environ(), "GIT_INDEX_FILE="+tmpPath)
+	for _, ref := range refs {
+		var args []string
+		if ref.SHA == "" {
+			args = []string{"update-index", "--force-remove", "--", ref.Path}
+		} else {
+			args = []string{"update-index", "--add", "--cacheinfo",
+				ref.Mode + "," + ref.SHA + "," + ref.Path}
+		}
+		if err := RunWithEnv(ctx, repoPath, env, args...); err != nil {
+			return camperrors.Wrapf(err, "stage captured %s", ref.Path)
+		}
+	}
+
+	paths := make([]string, 0, len(refs))
+	for _, ref := range refs {
+		paths = append(paths, ref.Path)
+	}
+	changed, err := ExpandTrackedPathsFromTempIndex(ctx, repoPath, tmpPath, paths)
+	if err != nil {
+		return err
+	}
+	if len(changed) == 0 {
+		return ErrNoChanges
+	}
+
+	scoped := *opts
+	scoped.TempIndexPath = tmpPath
+	if err := Commit(ctx, repoPath, &scoped); err != nil {
+		return err
+	}
+	return ResetIndexToHead(ctx, repoPath, changed)
+}

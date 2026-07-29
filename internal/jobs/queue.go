@@ -179,11 +179,25 @@ func Claim(ctx context.Context, campaignRoot, repo string) (*Job, func(error) er
 		}
 
 		job, err := readJob(dst)
+		if err == nil {
+			// Re-validated at the moment of use, not only at enqueue. A queue
+			// file is plain JSON on disk and nothing stops it being edited, so
+			// the invariants are only real if they are checked again here. The
+			// one that matters most is the explicit-paths rule: an edited
+			// `paths: ["."]` would make the worker stage everything present
+			// when it runs, which is exactly the sweep the rule prevents.
+			//
+			// Checked here rather than in readJob because List uses that, and
+			// a job that fails validation must still appear in `camp jobs` and
+			// still hold a drain. Hiding it from the listing would leave it
+			// sitting in pending forever with nothing able to report it.
+			err = job.Validate()
+		}
 		if err != nil {
-			// The file is unreadable, so it can never execute. Move it to
+			// Unreadable or invalid, so it can never execute. Move it to
 			// failed rather than leaving it claimed forever, and say so.
 			_ = failJobFile(campaignRoot, repo, dst, name)
-			return nil, nil, err
+			return nil, nil, camperrors.Wrapf(err, "job %s cannot run", name)
 		}
 		return job, completionFor(campaignRoot, repo, dst, name), nil
 	}
@@ -353,15 +367,6 @@ func readJob(path string) (*Job, error) {
 	var job Job
 	if err := json.Unmarshal(data, &job); err != nil {
 		return nil, camperrors.Wrapf(err, "parse job %s", path)
-	}
-	// Re-validated on read, not only on write. A queue file is plain JSON on
-	// disk and nothing stops it being edited, so the invariants enforced at
-	// enqueue are only real if they are checked again at the moment of use.
-	// The one that matters most is the explicit-paths rule: an edited
-	// `paths: ["."]` would make the worker stage everything present when it
-	// runs, which is precisely the sweep the rule exists to prevent.
-	if err := job.Validate(); err != nil {
-		return nil, camperrors.Wrapf(err, "job %s is not valid", path)
 	}
 	return &job, nil
 }

@@ -64,9 +64,23 @@ func executeCommitPaths(ctx context.Context, repoPath string, job *Job) error {
 		return err
 	}
 
-	err := git.CommitScoped(ctx, repoPath, job.Paths, &git.CommitOptions{
-		Message: job.Message,
-	})
+	// Captured content when the enqueuer recorded it, the live working tree
+	// otherwise. The captured form is what makes the commit mean its message:
+	// without it the job defers the read as well as the write, so an edit made
+	// in the gap lands under the earlier operation's description.
+	//
+	// The fallback exists for hand-written queue files and for jobs enqueued
+	// by an older camp, which have paths and no blobs.
+	var err error
+	if len(job.Blobs) > 0 {
+		err = git.CommitBlobs(ctx, repoPath, toGitBlobs(job.Blobs), &git.CommitOptions{
+			Message: job.Message,
+		})
+	} else {
+		err = git.CommitScoped(ctx, repoPath, job.Paths, &git.CommitOptions{
+			Message: job.Message,
+		})
+	}
 	switch {
 	case err == nil:
 		return nil
@@ -102,6 +116,16 @@ func checkGitlinkCarveOut(ctx context.Context, repoPath string, job *Job) error 
 		}
 	}
 	return nil
+}
+
+// toGitBlobs converts the job document's captured content into the git
+// package's form.
+func toGitBlobs(refs []BlobRef) []git.BlobRef {
+	out := make([]git.BlobRef, 0, len(refs))
+	for _, r := range refs {
+		out = append(out, git.BlobRef{Path: r.Path, Mode: r.Mode, SHA: r.SHA})
+	}
+	return out
 }
 
 // isMissingPathspec reports whether a git failure is only "those paths are not

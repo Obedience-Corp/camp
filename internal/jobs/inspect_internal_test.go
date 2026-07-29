@@ -265,7 +265,7 @@ func TestEntryAge(t *testing.T) {
 // the file is read. The one that matters most is the explicit-paths rule: an
 // edited `paths: ["."]` would make the worker stage everything present when it
 // runs, which is exactly the sweep the rule exists to prevent.
-func TestReadJobRejectsAnEditedFileThatDefeatsTheNoWildcardRule(t *testing.T) {
+func TestClaimRejectsAnEditedFileThatDefeatsTheNoWildcardRule(t *testing.T) {
 	root := testCampaign(t)
 	job := enqueueForTest(t, root, Job{
 		Kind: KindCommitPaths, Repo: ".", Paths: []string{".campaign/intents/a.md"},
@@ -286,7 +286,13 @@ func TestReadJobRejectsAnEditedFileThatDefeatsTheNoWildcardRule(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	if _, err := readJob(path); err == nil {
-		t.Fatal("readJob accepted a hand-edited job whose paths would stage everything")
+	// Claim, not readJob: validation lives at the execution boundary so an
+	// invalid job still appears in `camp jobs` and still holds a drain instead
+	// of being skipped by List and sitting in pending forever.
+	if _, _, err := Claim(context.Background(), root, "."); err == nil {
+		t.Fatal("Claim accepted a hand-edited job whose paths would stage everything")
+	}
+	if failed, _ := List(root, stateFailed, "."); len(failed) != 1 {
+		t.Errorf("failed lane holds %d jobs; the refused job must be visible there", len(failed))
 	}
 }

@@ -113,6 +113,16 @@ type Job struct {
 	// whatever it finds later would commit work the user never associated with
 	// it.
 	Paths []string `json:"paths,omitempty"`
+	// Blobs is the captured content of Paths, for KindCommitPaths.
+	//
+	// Recorded at enqueue so the job's effect is a function of enqueue time
+	// only. Paths alone defer the read as well as the write: an edit made
+	// between the two lands under the earlier operation's message, so renaming
+	// a workitem and then editing it puts the edit in the rename's commit.
+	//
+	// Empty is tolerated for hand-written and older jobs, which fall back to
+	// reading the paths at execution.
+	Blobs []BlobRef `json:"blobs,omitempty"`
 	// Tree is the captured tree SHA, for KindCommitTree.
 	Tree string `json:"tree,omitempty"`
 	// Parent is the HEAD the tree was captured against. A mismatch at
@@ -158,6 +168,17 @@ type Job struct {
 	CreatedAt string `json:"created_at"`
 	// Attempts counts how many times this job has been claimed.
 	Attempts int `json:"attempts"`
+}
+
+// BlobRef is one captured path and its content object. It mirrors
+// git.BlobRef, which the queue cannot embed directly without making the job
+// document depend on that package's field tags.
+type BlobRef struct {
+	Path string `json:"path"`
+	Mode string `json:"mode,omitempty"`
+	// SHA is empty when the path was already gone at capture time, which
+	// records a deletion.
+	SHA string `json:"sha,omitempty"`
 }
 
 // Follow is a job the worker enqueues once its parent job lands. The shape is
