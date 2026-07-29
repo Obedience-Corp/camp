@@ -8,7 +8,6 @@ import (
 	"context"
 	"encoding/binary"
 	"fmt"
-	"io"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -290,7 +289,7 @@ func newPooledContainer(ctx context.Context, bins sharedBinaries) (*TestContaine
 		return nil, fmt.Errorf("failed to install container packages: %w", err)
 	}
 	if exitCode != 0 {
-		outputBytes, _ := io.ReadAll(output)
+		outputBytes, _ := readExecOutput(output)
 		container.Terminate(ctx)
 		return nil, fmt.Errorf("apk add git jq failed with exit code %d: %s", exitCode, string(outputBytes))
 	}
@@ -314,7 +313,7 @@ func newPooledContainer(ctx context.Context, bins sharedBinaries) (*TestContaine
 		return nil, fmt.Errorf("failed to check camp binary: %w", err)
 	}
 	if exitCode != 0 {
-		outputBytes, _ := io.ReadAll(output)
+		outputBytes, _ := readExecOutput(output)
 		container.Terminate(ctx)
 		return nil, fmt.Errorf("camp binary not found, ls output: %s", string(outputBytes))
 	}

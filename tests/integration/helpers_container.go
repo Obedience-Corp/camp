@@ -4,6 +4,7 @@
 package integration
 
 import (
+	"context"
 	"fmt"
 	"io"
 	"path/filepath"
@@ -12,6 +13,79 @@ import (
 
 	"github.com/stretchr/testify/require"
 )
+
+// exec runs a command in the container, classifying transport faults.
+//
+// Every container command in this file goes through here rather than calling
+// container.Exec directly, so a Docker transport failure is labelled once,
+// where it happens.
+//
+// The failure it exists for looks like this:
+//
+//	--- FAIL: TestFresh_ListRejectsPositionalArg
+//	    failed to init git repo: container exec attach: unexpected EOF
+//
+// That names a test about positional arguments, so the reader goes and studies
+// argument handling. Nothing is wrong with the code under test: the Docker
+// daemon dropped the exec stream, usually because several suites are running
+// at once. A harness that reports its own infrastructure as a failure of
+// whatever test happened to be running costs more time than the flake does.
+//
+// This is the same distinction the pool's Reset latch already draws
+// (failInfrastructure in main_test.go); that one is scoped to pool checkout,
+// and every other exec in the suite could still produce the misleading form.
+func (tc *TestContainer) exec(ctx context.Context, cmd []string) (int, io.Reader, error) {
+	exitCode, reader, err := tc.container.Exec(ctx, cmd)
+	if err != nil {
+		return exitCode, reader, classifyExecError(err)
+	}
+	return exitCode, reader, nil
+}
+
+// execTransportSignatures are the Docker-side failures that mean the daemon or
+// the exec stream died, rather than the command reporting something.
+var execTransportSignatures = []string{
+	"exec attach",
+	"unexpected EOF",
+	"connection reset by peer",
+	"broken pipe",
+	"is not running",
+	"No such container",
+	"Cannot connect to the Docker daemon",
+}
+
+// classifyExecError labels a transport fault so it cannot be read as a test
+// failure. Anything else is returned unchanged.
+func classifyExecError(err error) error {
+	if err == nil {
+		return nil
+	}
+	msg := err.Error()
+	for _, sig := range execTransportSignatures {
+		if strings.Contains(msg, sig) {
+			return fmt.Errorf(
+				"INFRASTRUCTURE FAILURE (not a test failure): container exec did not complete: %w"+
+					"\n\nThe Docker daemon dropped the exec stream. Common cause: several "+
+					"suites or gates running at once. Re-run on an idle machine, or lower "+
+					"CAMP_TEST_POOL_SIZE", err)
+		}
+	}
+	return err
+}
+
+// readExecOutput consumes an exec stream, classifying transport loss that
+// surfaces mid-read. Exec hands back a live hijacked connection, so the daemon
+// dropping it after Exec returned nil reports here, from the read, as an
+// ordinary "unexpected EOF". Without classification on this second channel the
+// consumers wrap it as "failed to read output" and recreate exactly the
+// misleading test failure this file exists to remove.
+func readExecOutput(reader io.Reader) ([]byte, error) {
+	data, err := io.ReadAll(reader)
+	if err != nil {
+		return data, classifyExecError(err)
+	}
+	return data, nil
+}
 
 // Reset clears container state between tests.
 // This removes all test artifacts while keeping the container and binary intact.
@@ -32,7 +106,7 @@ func (tc *TestContainer) Reset() error {
 	// Remove all test artifacts and recreate clean directories. Include both
 	// current and legacy config homes so registry/global settings never leak
 	// between tests that share a pooled container.
-	exitCode, _, err := tc.container.Exec(tc.ctx, []string{
+	exitCode, _, err := tc.exec(tc.ctx, []string{
 		"sh", "-c",
 		// Kill detached deferred-commit workers first. Camp spawns them with
 		// setsid so they outlive the command that started them, which is the
@@ -68,12 +142,12 @@ func (tc *TestContainer) Cleanup() {
 func (tc *TestContainer) RunCamp(args ...string) (string, error) {
 	cmd := append([]string{"/camp"}, args...)
 
-	exitCode, reader, err := tc.container.Exec(tc.ctx, cmd)
+	exitCode, reader, err := tc.exec(tc.ctx, cmd)
 	if err != nil {
 		return "", fmt.Errorf("failed to execute camp: %w", err)
 	}
 
-	rawOutput, err := io.ReadAll(reader)
+	rawOutput, err := readExecOutput(reader)
 	if err != nil {
 		return "", fmt.Errorf("failed to read output: %w", err)
 	}
@@ -102,12 +176,12 @@ func (tc *TestContainer) RunCampInDir(dir string, args ...string) (string, error
 		dir, tc.campEnvPrefix(), strings.Join(quotedArgs, " "))
 	cmd := []string{"sh", "-c", cmdStr}
 
-	exitCode, reader, err := tc.container.Exec(tc.ctx, cmd)
+	exitCode, reader, err := tc.exec(tc.ctx, cmd)
 	if err != nil {
 		return "", fmt.Errorf("failed to execute camp: %w", err)
 	}
 
-	rawOutput, err := io.ReadAll(reader)
+	rawOutput, err := readExecOutput(reader)
 	if err != nil {
 		return "", fmt.Errorf("failed to read output: %w", err)
 	}
@@ -132,11 +206,11 @@ func (tc *TestContainer) RunLegacyCampInDir(dir string, args ...string) (string,
 		quotedArgs[i] = "'" + escaped + "'"
 	}
 	cmdStr := fmt.Sprintf("cd %s && /camp-legacy %s 2>&1", dir, strings.Join(quotedArgs, " "))
-	exitCode, reader, err := tc.container.Exec(tc.ctx, []string{"sh", "-c", cmdStr})
+	exitCode, reader, err := tc.exec(tc.ctx, []string{"sh", "-c", cmdStr})
 	if err != nil {
 		return "", fmt.Errorf("failed to execute legacy camp: %w", err)
 	}
-	rawOutput, err := io.ReadAll(reader)
+	rawOutput, err := readExecOutput(reader)
 	if err != nil {
 		return "", fmt.Errorf("failed to read output: %w", err)
 	}
@@ -160,12 +234,12 @@ func (tc *TestContainer) InitCampaign(path, name, campType string) (string, erro
 
 	// Initialize campaign as git repo (required for submodule operations)
 	cmdStr := fmt.Sprintf("cd %s && git init && git add . && git commit -m 'Initial campaign setup'", path)
-	exitCode, reader, gitErr := tc.container.Exec(tc.ctx, []string{"sh", "-c", cmdStr})
+	exitCode, reader, gitErr := tc.exec(tc.ctx, []string{"sh", "-c", cmdStr})
 	if gitErr != nil {
 		return output, fmt.Errorf("failed to init git repo: %w", gitErr)
 	}
 	if exitCode != 0 {
-		rawOutput, _ := io.ReadAll(reader)
+		rawOutput, _ := readExecOutput(reader)
 		return output, fmt.Errorf("git init failed: %s", string(demuxDockerOutput(rawOutput)))
 	}
 
@@ -174,12 +248,12 @@ func (tc *TestContainer) InitCampaign(path, name, campType string) (string, erro
 
 // ReadFile reads a file from the container
 func (tc *TestContainer) ReadFile(path string) (string, error) {
-	exitCode, reader, err := tc.container.Exec(tc.ctx, []string{"cat", path})
+	exitCode, reader, err := tc.exec(tc.ctx, []string{"cat", path})
 	if err != nil {
 		return "", fmt.Errorf("failed to read file: %w", err)
 	}
 
-	rawOutput, err := io.ReadAll(reader)
+	rawOutput, err := readExecOutput(reader)
 	if err != nil {
 		return "", fmt.Errorf("failed to read output: %w", err)
 	}
@@ -197,13 +271,13 @@ func (tc *TestContainer) ReadFile(path string) (string, error) {
 func (tc *TestContainer) WriteFile(path, content string) error {
 	// Ensure parent directory exists
 	dir := filepath.Dir(path)
-	exitCode, _, err := tc.container.Exec(tc.ctx, []string{"mkdir", "-p", dir})
+	exitCode, _, err := tc.exec(tc.ctx, []string{"mkdir", "-p", dir})
 	if err != nil || exitCode != 0 {
 		return fmt.Errorf("failed to create parent directory: %w", err)
 	}
 
 	// Write content using printf to handle special characters
-	exitCode, _, err = tc.container.Exec(tc.ctx, []string{
+	exitCode, _, err = tc.exec(tc.ctx, []string{
 		"sh", "-c",
 		fmt.Sprintf("printf '%%s' '%s' > %s", strings.ReplaceAll(content, "'", "'\\''"), path),
 	})
@@ -216,7 +290,7 @@ func (tc *TestContainer) WriteFile(path, content string) error {
 
 // CheckFileExists checks if a file exists in the container
 func (tc *TestContainer) CheckFileExists(path string) (bool, error) {
-	exitCode, _, err := tc.container.Exec(tc.ctx, []string{"test", "-f", path})
+	exitCode, _, err := tc.exec(tc.ctx, []string{"test", "-f", path})
 	if err != nil {
 		return false, fmt.Errorf("failed to check file: %w", err)
 	}
@@ -225,7 +299,7 @@ func (tc *TestContainer) CheckFileExists(path string) (bool, error) {
 
 // CheckDirExists checks if a directory exists in the container
 func (tc *TestContainer) CheckDirExists(path string) (bool, error) {
-	exitCode, _, err := tc.container.Exec(tc.ctx, []string{"test", "-d", path})
+	exitCode, _, err := tc.exec(tc.ctx, []string{"test", "-d", path})
 	if err != nil {
 		return false, fmt.Errorf("failed to check directory: %w", err)
 	}
@@ -234,7 +308,7 @@ func (tc *TestContainer) CheckDirExists(path string) (bool, error) {
 
 // ListDirectory lists files in a container directory
 func (tc *TestContainer) ListDirectory(path string) ([]string, error) {
-	exitCode, reader, err := tc.container.Exec(tc.ctx, []string{"find", path, "-type", "f"})
+	exitCode, reader, err := tc.exec(tc.ctx, []string{"find", path, "-type", "f"})
 	if err != nil {
 		return nil, fmt.Errorf("failed to list directory: %w", err)
 	}
@@ -243,7 +317,7 @@ func (tc *TestContainer) ListDirectory(path string) ([]string, error) {
 		return nil, fmt.Errorf("find command failed with exit code %d", exitCode)
 	}
 
-	rawOutput, err := io.ReadAll(reader)
+	rawOutput, err := readExecOutput(reader)
 	if err != nil {
 		return nil, fmt.Errorf("failed to read output: %w", err)
 	}
@@ -264,29 +338,29 @@ func (tc *TestContainer) ListDirectory(path string) ([]string, error) {
 // CreateGitRepo initializes a git repository at the given path
 func (tc *TestContainer) CreateGitRepo(path string) error {
 	// Create directory
-	exitCode, _, err := tc.container.Exec(tc.ctx, []string{"mkdir", "-p", path})
+	exitCode, _, err := tc.exec(tc.ctx, []string{"mkdir", "-p", path})
 	if err != nil || exitCode != 0 {
 		return fmt.Errorf("failed to create directory: %w", err)
 	}
 
 	// Initialize git repo
-	exitCode, output, err := tc.container.Exec(tc.ctx, []string{"git", "init", path})
+	exitCode, output, err := tc.exec(tc.ctx, []string{"git", "init", path})
 	if err != nil {
 		return fmt.Errorf("failed to init git repo: %w", err)
 	}
 	if exitCode != 0 {
-		outputBytes, _ := io.ReadAll(output)
+		outputBytes, _ := readExecOutput(output)
 		return fmt.Errorf("git init failed: %s", string(outputBytes))
 	}
 
 	// Create an initial commit so the repo is valid
 	cmdStr := fmt.Sprintf("cd %s && touch .gitkeep && git add . && git commit -m 'Initial commit'", path)
-	exitCode, output, err = tc.container.Exec(tc.ctx, []string{"sh", "-c", cmdStr})
+	exitCode, output, err = tc.exec(tc.ctx, []string{"sh", "-c", cmdStr})
 	if err != nil {
 		return fmt.Errorf("failed to create initial commit: %w", err)
 	}
 	if exitCode != 0 {
-		outputBytes, _ := io.ReadAll(output)
+		outputBytes, _ := readExecOutput(output)
 		return fmt.Errorf("initial commit failed: %s", string(outputBytes))
 	}
 
@@ -295,12 +369,12 @@ func (tc *TestContainer) CreateGitRepo(path string) error {
 
 // ExecCommand executes an arbitrary command in the container
 func (tc *TestContainer) ExecCommand(args ...string) (string, int, error) {
-	exitCode, reader, err := tc.container.Exec(tc.ctx, args)
+	exitCode, reader, err := tc.exec(tc.ctx, args)
 	if err != nil {
 		return "", -1, fmt.Errorf("failed to execute command: %w", err)
 	}
 
-	rawOutput, err := io.ReadAll(reader)
+	rawOutput, err := readExecOutput(reader)
 	if err != nil {
 		return "", exitCode, fmt.Errorf("failed to read output: %w", err)
 	}
