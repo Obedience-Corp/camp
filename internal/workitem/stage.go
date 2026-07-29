@@ -28,6 +28,7 @@ var StagesByType = map[WorkflowType][]LifecycleStage{
 	WorkflowTypeExplore: {
 		LifecycleStageNone,
 		LifecycleStageActive,
+		LifecycleStageReady,
 	},
 	WorkflowTypeFestival: {
 		LifecycleStageNone,

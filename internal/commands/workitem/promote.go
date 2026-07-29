@@ -87,15 +87,21 @@ func newPromoteCommand() *cobra.Command {
 
 	cmd := &cobra.Command{
 		Use:   "promote [id] --target <target>",
-		Short: "Promote a workitem to a festival, doc, or dungeon",
+		Short: "Promote a workitem: festival, doc, rail, dungeon",
 		Long: `Promote the workitem identified by [id], by cwd, or by the current pointer.
 
 TARGETS:
   festival    Create a festival from the workitem and shelve the source
   doc         Copy the workitem doc into docs/ and shelve the source
+  ready       Move the workitem onto the festival rail at festivals/ready
+  active      Move the workitem onto the festival rail at festivals/active
   completed   Move the workitem to its local dungeon/completed
   archived    Move the workitem to its local dungeon/archived
-  someday     Move the workitem to its local dungeon/someday`,
+  someday     Move the workitem to its local dungeon/someday
+
+The rail is forward-only: root -> ready -> active. A workitem already on a
+stage cannot move backward, and moving one out of a dungeon is a restore
+rather than a promote.`,
 		Args: cobra.RangeArgs(0, 1),
 		Annotations: map[string]string{
 			"agent_allowed": "true",
@@ -114,7 +120,7 @@ TARGETS:
 	}
 
 	f := cmd.Flags()
-	f.StringVar(&target, "target", "", "Promotion target: festival, doc, completed, archived, someday")
+	f.StringVar(&target, "target", "", "Promotion target: festival, doc, ready, active, completed, archived, someday")
 	f.StringVar(&dest, "dest", "", "Destination path under docs/ for the doc target (must stay within docs/)")
 	f.StringVar(&goal, "goal", "", "Festival goal override (default: first paragraph of the workitem doc)")
 	f.BoolVar(&keep, "keep", false, "On festival/doc, do not move the source workitem to the dungeon")
@@ -130,12 +136,13 @@ func runWorkitemPromote(cmd *cobra.Command, opts runWorkitemPromoteOptions) erro
 
 	switch opts.Target {
 	case "festival", "doc", "completed", "archived", "someday":
-	case "active":
-		return camperrors.New("cannot promote to active: a workitem outside the dungeon is already active; restoring workitems out of the dungeon is not a promote")
+	case railStageReady, railStageActive:
+		// Conditionally valid: the rail is forward-only, so these are checked
+		// against the resolved source location below, once loc is known.
 	case "":
 		return camperrors.New("required flag --target not set")
 	default:
-		return camperrors.New("invalid target: " + opts.Target + " (use festival, doc, completed, archived, someday)")
+		return camperrors.New("invalid target: " + opts.Target + " (use festival, doc, ready, active, completed, archived, someday)")
 	}
 
 	cfg, root, err := config.LoadCampaignConfigFromCwd(ctx)
@@ -146,6 +153,12 @@ func runWorkitemPromote(cmd *cobra.Command, opts runWorkitemPromoteOptions) erro
 	loc, err := resolveWorkitem(ctx, root, opts.ID)
 	if err != nil {
 		return err
+	}
+
+	if opts.Target == railStageReady || opts.Target == railStageActive {
+		if err := checkRailTransition(railStageOf(loc, root), opts.Target); err != nil {
+			return err
+		}
 	}
 
 	// Read .workitem metadata now, before any promote branch runs: festival
@@ -182,6 +195,8 @@ func runWorkitemPromote(cmd *cobra.Command, opts runWorkitemPromoteOptions) erro
 		ci, err = doFestivalPromote(ctx, cmd, opts, root, loc, &result)
 	case "doc":
 		ci, err = doDocPromote(ctx, opts, root, loc, &result)
+	case railStageReady, railStageActive:
+		ci, err = doRailPromote(ctx, cfg, root, loc, opts.Target, &result)
 	case "completed", "archived", "someday":
 		ci, err = doDungeonPromote(ctx, root, loc, opts.Target, &result)
 	default:

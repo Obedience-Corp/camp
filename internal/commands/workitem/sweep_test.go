@@ -65,12 +65,12 @@ func TestResolveSweepLocation_WorkflowHome(t *testing.T) {
 	}
 }
 
-// TestResolveSweepLocation_FestivalsHomeNotYetSupported locks the current
-// error for a festivals/ path. No sweep candidate has such a RelativePath
-// before phase 3 (PlanSweep excludes festivals), so this asserts the baseline
-// that phase 3 must deliberately change when it teaches DetectFromCwd about
-// festivals/ homes. Asserting the exact message catches a silent behavior drift.
-func TestResolveSweepLocation_FestivalsHomeNotYetSupported(t *testing.T) {
+// TestResolveSweepLocation_FestivalsHomeRejectsUnstamped is the phase 3 half of
+// what used to be TestResolveSweepLocation_FestivalsHomeNotYetSupported. A
+// festivals/ path is now a resolvable home, but only when the directory carries
+// a .workitem marker: a bare directory sitting in a lifecycle folder is not a
+// resident camp can move, and must say so rather than resolve to a guess.
+func TestResolveSweepLocation_FestivalsHomeRejectsUnstamped(t *testing.T) {
 	root := t.TempDir()
 	itemRel := filepath.Join("festivals", "ready", "foo-item")
 	if err := os.MkdirAll(filepath.Join(root, itemRel), 0o755); err != nil {
@@ -79,11 +79,47 @@ func TestResolveSweepLocation_FestivalsHomeNotYetSupported(t *testing.T) {
 
 	_, err := resolveSweepLocation(root, wkitem.WorkItem{RelativePath: itemRel})
 	if err == nil {
-		t.Fatal("expected error for festivals/ home, got nil")
+		t.Fatal("expected error for unstamped festivals/ home, got nil")
 	}
-	const want = "not inside a workitem; cwd must be under workflow/<type>/<slug>/"
+	const want = "not a lifecycle resident; festivals/ready/foo-item has no .workitem marker (run camp workitem doctor)"
 	if err.Error() != want {
 		t.Errorf("error = %q, want %q", err.Error(), want)
+	}
+}
+
+// TestResolveSweepLocation_FestivalsResidentHome locks the destination rule that
+// sequence 04 depends on: a stamped resident sweeps into the festival-local
+// dungeon, not back into the dungeon of the workflow type it came from.
+func TestResolveSweepLocation_FestivalsResidentHome(t *testing.T) {
+	root := t.TempDir()
+	if resolved, err := filepath.EvalSymlinks(root); err == nil {
+		root = resolved
+	}
+	itemRel := filepath.Join("festivals", "active", "foo-item")
+	dir := filepath.Join(root, itemRel)
+	if err := os.MkdirAll(dir, 0o755); err != nil {
+		t.Fatalf("mkdir fixture: %v", err)
+	}
+	marker := "version: v1alpha8\nkind: workitem\nid: design-foo-item-2026-07-24\ntype: design\ntitle: Foo\n"
+	if err := os.WriteFile(filepath.Join(dir, ".workitem"), []byte(marker), 0o644); err != nil {
+		t.Fatalf("write .workitem: %v", err)
+	}
+
+	loc, err := resolveSweepLocation(root, wkitem.WorkItem{RelativePath: itemRel})
+	if err != nil {
+		t.Fatalf("resolveSweepLocation: %v", err)
+	}
+	if loc.Type != "design" {
+		t.Errorf("Type = %q, want design (from the marker, not the path)", loc.Type)
+	}
+	if want := filepath.Join(root, "festivals", "active"); loc.ParentPath != want {
+		t.Errorf("ParentPath = %q, want %q", loc.ParentPath, want)
+	}
+	if want := filepath.Join(root, "festivals", ".dungeon"); loc.DungeonPath != want {
+		t.Errorf("DungeonPath = %q, want %q (residents complete into the festival-local dungeon)", loc.DungeonPath, want)
+	}
+	if loc.InDungeon {
+		t.Error("InDungeon = true, want false for a working-stage resident")
 	}
 }
 
