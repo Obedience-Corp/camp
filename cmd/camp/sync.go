@@ -105,12 +105,6 @@ type syncFlags struct {
 
 var syncOpts syncFlags
 
-// syncDrainWaited is how long the last sync spent waiting on the queue,
-// reported by --json. It lives here rather than threading through the
-// formatter's options struct because the formatter is shared with the
-// human path, which shows the wait as it happens instead.
-var syncDrainWaited time.Duration
-
 func init() {
 	syncCmd.Flags().BoolVarP(&syncOpts.dryRun, "dry-run", "n", false,
 		"Show what would happen without making changes")
@@ -166,12 +160,13 @@ func runSync(cmd *cobra.Command, args []string) error {
 	// Every lane: sync's preflight reads each submodule's working tree and
 	// unpushed state, so a queued commit that has not landed reads as
 	// uncommitted changes and aborts the sync for a reason the user cannot see.
+	var drainWaited time.Duration
 	if !syncOpts.noDrain {
 		waited, err := drain.AllLanes(ctx, campRoot, drain.Write)
 		if err != nil {
 			return err
 		}
-		syncDrainWaited = waited
+		drainWaited = waited
 	}
 	if syncOpts.verifyArtifacts {
 		// Verify is purely local (tree vs recorded snapshots): --from only
@@ -229,6 +224,7 @@ func runSync(cmd *cobra.Command, args []string) error {
 		json:            syncOpts.json,
 		verifyArtifacts: syncOpts.verifyArtifacts,
 		artifactsOnly:   syncOpts.artifactsOnly,
+		drainWaited:     drainWaited,
 	}
 
 	// Format and display output

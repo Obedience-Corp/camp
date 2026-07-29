@@ -388,4 +388,3 @@ func TestSettingsSubcommandsRegistered(t *testing.T) {
 		}
 	}
 }
-

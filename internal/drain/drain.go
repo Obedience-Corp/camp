@@ -31,7 +31,7 @@ import (
 // and any refusal carries its own way out. A user who is told "waiting..." with
 // no subject and no escape learns to distrust the tool that made them wait.
 
-// DrainMode selects how a command reacts to a drain that times out.
+// Mode selects how a command reacts to a drain that times out.
 type Mode int
 
 const (
@@ -44,9 +44,15 @@ const (
 	// commit is slow is worse than showing status with a caveat.
 	Read
 	// Commit is for camp commit and camp p commit. It refuses like
-	// DrainWrite but waits job-aware first, so a deferred --auto-write message
+	// Write but waits job-aware first, so a deferred --auto-write message
 	// writer running long does not refuse the user's next commit.
 	Commit
+	// Wait is for `camp jobs drain`, whose only purpose is the wait. It
+	// refuses like Write but must not offer --no-drain: that flag exists so a
+	// command can skip a wait it did not ask for, and this command is the
+	// wait. Telling the user to rerun with a flag the command does not define
+	// sends them into a usage error.
+	Wait
 )
 
 // Repo waits for repoPath's deferred commits before a command that
@@ -120,7 +126,7 @@ func report(w io.Writer, mode Mode, result jobs.DrainResult, err error) (time.Du
 			_, _ = fmt.Fprintln(w, ui.Warning(timeoutWarning(timeout)))
 			return result.Waited, nil
 		}
-		return result.Waited, camperrors.New(refusal(timeout, verbFor(mode)))
+		return result.Waited, camperrors.New(refusal(timeout, mode))
 	}
 	return result.Waited, err
 }
@@ -128,10 +134,14 @@ func report(w io.Writer, mode Mode, result jobs.DrainResult, err error) (time.Du
 // verbFor names the operation in a refusal, so the message says what will not
 // happen rather than that something went wrong.
 func verbFor(mode Mode) string {
-	if mode == Commit {
+	switch mode {
+	case Commit:
 		return "Committing"
+	case Wait:
+		return "The queue did not finish"
+	default:
+		return "Continuing"
 	}
-	return "Continuing"
 }
 
 // waitingLine is the line shown once a drain has been waiting long enough to be
@@ -152,7 +162,7 @@ func timeoutWarning(e *jobs.DrainTimeoutError) string {
 // It names the blocking jobs and offers three ways out, because a refusal whose
 // only option is "wait" is a wedge. Every option is a command the user can run
 // as printed.
-func refusal(e *jobs.DrainTimeoutError, verb string) string {
+func refusal(e *jobs.DrainTimeoutError, mode Mode) string {
 	var b strings.Builder
 	fmt.Fprintf(&b, "%s not completed after %s\n\n",
 		countPhrase(len(e.Blocking)), e.Waited.Round(time.Second))
@@ -165,9 +175,18 @@ func refusal(e *jobs.DrainTimeoutError, verb string) string {
 		}
 		b.WriteString("\n")
 	}
-	fmt.Fprintf(&b, "\n%s now would leave them behind. Options:\n\n", verb)
+	if mode == Wait {
+		fmt.Fprintf(&b, "\n%s. Options:\n\n", verbFor(mode))
+	} else {
+		fmt.Fprintf(&b, "\n%s now would leave them behind. Options:\n\n", verbFor(mode))
+	}
 	b.WriteString("  see what is stuck   camp jobs\n")
-	b.WriteString("  continue anyway     rerun with --no-drain\n")
+	// Only offered where it exists. `camp jobs drain` is the wait, so there is
+	// nothing for it to skip.
+	if mode != Wait {
+		b.WriteString("  continue anyway     rerun with --no-drain\n")
+	}
+	b.WriteString("  run it here         camp jobs run\n")
 	b.WriteString("  give up on them     camp jobs drop <id>")
 	return b.String()
 }

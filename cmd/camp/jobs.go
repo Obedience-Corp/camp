@@ -354,7 +354,7 @@ func runJobsDrain(cmd *cobra.Command, _ []string) error {
 		return camperrors.Wrap(err, "not in a campaign")
 	}
 
-	waited, err := drain.AllLanes(ctx, campRoot, drain.Write)
+	waited, err := drain.AllLanes(ctx, campRoot, drain.Wait)
 	if err != nil {
 		return err
 	}

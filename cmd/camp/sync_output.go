@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"os"
+	"time"
 
 	"github.com/Obedience-Corp/camp/internal/sync"
 	"github.com/Obedience-Corp/camp/internal/ui"
@@ -12,7 +13,7 @@ import (
 // formatSyncResult formats and displays the sync result.
 func formatSyncResult(result *sync.SyncResult, opts syncOptions, preflight *sync.PreflightResult) {
 	if opts.json {
-		formatSyncJSON(result, preflight)
+		formatSyncJSON(result, preflight, opts.drainWaited)
 		return
 	}
 	formatSyncHuman(result, opts, preflight)
@@ -282,7 +283,7 @@ func formatArtifactsSection(result *sync.SyncResult, verbose bool) {
 }
 
 // formatSyncJSON outputs sync results as JSON.
-func formatSyncJSON(result *sync.SyncResult, preflight *sync.PreflightResult) {
+func formatSyncJSON(result *sync.SyncResult, preflight *sync.PreflightResult, drainWaited time.Duration) {
 	// Build preflight submodules info
 	var preflightSubmodules []map[string]interface{}
 	if preflight != nil {
@@ -361,7 +362,7 @@ func formatSyncJSON(result *sync.SyncResult, preflight *sync.PreflightResult) {
 		// Camel-cased to match this document's existing keys rather than the
 		// snake_case camp uses in newer schemas. An agent parsing sync output
 		// already reads camelCase here; one odd key would be the surprise.
-		"drainWaitedMs": syncDrainWaited.Milliseconds(),
+		"drainWaitedMs": drainWaited.Milliseconds(),
 	}
 
 	// Peer-transport keys appear only when the feature ran, keeping default
@@ -430,4 +431,9 @@ type syncOptions struct {
 	json            bool
 	verifyArtifacts bool
 	artifactsOnly   bool
+	// drainWaited is how long this run waited on the deferred queue. It rides
+	// here rather than in a package variable so a second run in the same
+	// process cannot report the first run's wait, which is exactly what
+	// happens under --no-drain after an ordinary sync.
+	drainWaited time.Duration
 }

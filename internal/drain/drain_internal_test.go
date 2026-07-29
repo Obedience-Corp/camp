@@ -48,7 +48,7 @@ func TestReadModeWarnsAndProceeds(t *testing.T) {
 // A write command refuses. Proceeding would leave the queued commit behind in
 // a way the user cannot see.
 func TestWriteAndCommitModesRefuse(t *testing.T) {
-	for _, mode := range []Mode{Write, Commit} {
+	for _, mode := range []Mode{Write, Commit, Wait} {
 		var out bytes.Buffer
 		_, err := report(&out, mode, jobs.DrainResult{},
 			timeoutErr(jobs.Job{Kind: jobs.KindCommitPaths, Repo: ".", Message: "capture intent: blocking"}))
@@ -67,7 +67,7 @@ func TestRefusalOffersAWayOut(t *testing.T) {
 	text := refusal(timeoutErr(
 		jobs.Job{Kind: jobs.KindCommitPaths, Repo: ".", Message: "capture intent: one"},
 		jobs.Job{Kind: jobs.KindCommitPaths, Repo: ".", Message: "capture intent: two"},
-	), "Pushing")
+	), Write)
 
 	for _, want := range []string{
 		"capture intent: one",
@@ -75,8 +75,29 @@ func TestRefusalOffersAWayOut(t *testing.T) {
 		"camp jobs",
 		"--no-drain",
 		"camp jobs drop",
-		"Pushing now would leave them behind",
+		"Continuing now would leave them behind",
 	} {
+		if !strings.Contains(text, want) {
+			t.Errorf("refusal missing %q:\n%s", want, text)
+		}
+	}
+}
+
+// `camp jobs drain` must not be told to rerun with --no-drain: the flag exists
+// so a command can skip a wait it did not ask for, and this command is the
+// wait. It has no such flag, so the advice sends the user into a usage error.
+func TestWaitModeDoesNotOfferAFlagItDoesNotHave(t *testing.T) {
+	text := refusal(timeoutErr(
+		jobs.Job{Kind: jobs.KindCommitPaths, Repo: ".", Message: "capture intent: wedged"},
+	), Wait)
+
+	if strings.Contains(text, "--no-drain") {
+		t.Errorf("the drain command offered a flag it does not define:\n%s", text)
+	}
+	if !strings.Contains(text, "The queue did not finish") {
+		t.Errorf("refusal should say the wait did not finish, not that continuing loses work:\n%s", text)
+	}
+	for _, want := range []string{"camp jobs", "camp jobs run", "camp jobs drop"} {
 		if !strings.Contains(text, want) {
 			t.Errorf("refusal missing %q:\n%s", want, text)
 		}
@@ -138,6 +159,7 @@ func TestOnlyCommitModeIsJobAware(t *testing.T) {
 	}{
 		{Write, false},
 		{Read, false},
+		{Wait, false},
 		{Commit, true},
 	}
 	for _, tt := range tests {
@@ -156,6 +178,9 @@ func TestVerbNamesTheOperation(t *testing.T) {
 	if got := verbFor(Write); got != "Continuing" {
 		t.Errorf("verbFor(Write) = %q", got)
 	}
+	if got := verbFor(Wait); got == "Continuing" {
+		t.Error("the drain command needs its own verb; it is the wait, not something the wait blocks")
+	}
 }
 
 // A non-timeout error passes through untouched. Turning a real failure into a
@@ -163,7 +188,7 @@ func TestVerbNamesTheOperation(t *testing.T) {
 func TestNonTimeoutErrorsAreNotSwallowed(t *testing.T) {
 	var out bytes.Buffer
 	boom := errBoom{}
-	for _, mode := range []Mode{Read, Write, Commit} {
+	for _, mode := range []Mode{Read, Write, Commit, Wait} {
 		_, err := report(&out, mode, jobs.DrainResult{}, boom)
 		if err != boom {
 			t.Errorf("mode %v turned a real error into %v", mode, err)
