@@ -8,13 +8,19 @@ import (
 
 	"github.com/Obedience-Corp/camp/internal/campaign"
 	"github.com/Obedience-Corp/camp/internal/config"
+	"github.com/Obedience-Corp/camp/internal/drain"
 	camperrors "github.com/Obedience-Corp/camp/internal/errors"
 	"github.com/Obedience-Corp/camp/internal/git"
 	"github.com/Obedience-Corp/camp/internal/ui"
 )
 
+// allNoDrain is `camp fresh all --no-drain`. Declared here rather than reused
+// from the parent because a non-persistent parent flag is not visible on a
+// subcommand, so the parent's flag could not be passed at all.
+var allNoDrain bool
+
 func newAllCommand(freshCmd *cobra.Command) *cobra.Command {
-	return &cobra.Command{
+	cmd := &cobra.Command{
 		Use:   "all",
 		Short: "Run fresh across all project submodules",
 		Long: `Run the fresh cycle (checkout default, pull, prune, optional branch)
@@ -31,6 +37,16 @@ Examples:
 			campRoot, err := campaign.DetectCached(ctx)
 			if err != nil {
 				return camperrors.Wrap(err, "not in a campaign")
+			}
+
+			// This subcommand does not inherit the parent's drain: cobra runs
+			// the subcommand's own RunE, and the parent's --no-drain is not a
+			// persistent flag, so `camp fresh all --no-drain` did not even
+			// parse. Every repository it is about to move gets waited on.
+			if !allNoDrain {
+				if _, err := drain.AllLanes(ctx, campRoot, drain.Write); err != nil {
+					return err
+				}
 			}
 
 			paths, err := git.ListSubmodulePathsRecursive(ctx, campRoot, "projects/")
@@ -63,4 +79,7 @@ Examples:
 			return runFreshBatch(ctx, cfg, targets, flags, "Running fresh across all projects...")
 		},
 	}
+	cmd.Flags().BoolVar(&allNoDrain, "no-drain", false,
+		"Do not wait for camp's queued commits first")
+	return cmd
 }

@@ -1,6 +1,7 @@
 package jobs
 
 import (
+	"cmp"
 	"context"
 	"fmt"
 	"os"
@@ -123,11 +124,32 @@ func runLane(ctx context.Context, campaignRoot, repo string) (served bool) {
 			} else {
 				logWorker(campaignRoot, "done lane=%s seq=%d id=%s", repo, job.Seq, job.ID)
 			}
-			if err := complete(execErr); err != nil {
+			// The follow-up is made durable before the parent is completed.
+			//
+			// Completing unlinks the parent's queue file. Enqueuing after that
+			// leaves a window where a crash loses the follow-up permanently:
+			// the parent is gone so nothing retries it, and the follow-up was
+			// never written, so a drain observes neither and reports an empty
+			// queue. Camp would have committed the project and silently never
+			// recorded the pointer.
+			//
+			// Reversed, a crash in the same window leaves the parent in
+			// running/ to be reclaimed and re-run, which enqueues the follow-up
+			// a second time. Both re-runs are no-ops (the commit already
+			// landed, the pointer is already current), so a duplicate costs a
+			// wasted job and silent loss costs a commit that never happens.
+			followErr := error(nil)
+			if execErr == nil && job.Then != nil {
+				followErr = enqueueFollowUp(ctx, campaignRoot, job)
+			}
+			// A follow-up that could not be written fails the parent even
+			// though its commit succeeded, so the job is retried rather than
+			// quietly half-done. Camp promised a commit and a pointer update.
+			if err := complete(cmp.Or(execErr, followErr)); err != nil {
 				logWorker(campaignRoot, "complete-error lane=%s id=%s err=%v", repo, job.ID, err)
 			}
-			if execErr == nil && job.Then != nil {
-				enqueueFollowUp(ctx, campaignRoot, job)
+			if hookAfterFollowUp != nil {
+				hookAfterFollowUp(job)
 			}
 		}
 
@@ -154,6 +176,10 @@ func runLane(ctx context.Context, campaignRoot, repo string) (served bool) {
 	}
 }
 
+// hookAfterFollowUp lets tests observe the moment a follow-up has been written
+// and the parent completed, which is otherwise unobservable from outside.
+var hookAfterFollowUp func(job *Job)
+
 // hookInReleaseWindow lets tests act inside the window between a lane's lock
 // being released and the re-scan that follows it. That window is otherwise
 // unobservable from outside the process, and it is precisely where the strand
@@ -176,7 +202,7 @@ var executeJob = execute
 // giving it an independent class would let a manifest's gitlink follow-up block
 // the drains the manifest itself is exempt from, defeating the exemption one
 // level down.
-func enqueueFollowUp(ctx context.Context, campaignRoot string, job *Job) {
+func enqueueFollowUp(ctx context.Context, campaignRoot string, job *Job) error {
 	follow := Job{
 		Kind:     job.Then.Kind,
 		Class:    job.Class,
@@ -187,9 +213,10 @@ func enqueueFollowUp(ctx context.Context, campaignRoot string, job *Job) {
 	}
 	if _, err := Enqueue(ctx, campaignRoot, follow); err != nil {
 		logWorker(campaignRoot, "follow-up-error parent=%s err=%v", job.ID, err)
-		return
+		return err
 	}
 	logWorker(campaignRoot, "follow-up lane=%s parent=%s", job.Then.Repo, job.ID)
+	return nil
 }
 
 // reclaimLane returns abandoned jobs to pending and parks the exhausted ones.

@@ -247,6 +247,11 @@ func CommitAll(ctx context.Context, repoPath, message string) error {
 	if ctx.Err() != nil {
 		return ctx.Err()
 	}
+	// Drains like the other history-moving entrypoints. Missing it here made
+	// the guarantee depend on which function a consumer happened to call,
+	// which is exactly what wiring the drain into all of them was meant to
+	// stop.
+	drainQuietly(ctx, repoPath)
 	return git.CommitAll(ctx, repoPath, message)
 }
 

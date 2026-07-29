@@ -227,6 +227,14 @@ func (j *Job) Validate() error {
 		if strings.TrimSpace(j.Tree) == "" {
 			return camperrors.NewValidation("tree", "commit-tree requires a captured tree", nil)
 		}
+		// Execution refuses a job with no parent, so accepting one here would
+		// let a malformed job become a promise camp cannot keep: it would sit
+		// in the queue, fail, and be retried to exhaustion for a reason the
+		// enqueuer could have been told immediately.
+		if strings.TrimSpace(j.Parent) == "" {
+			return camperrors.NewValidation("parent",
+				"commit-tree requires the HEAD its tree was captured against", nil)
+		}
 		if strings.TrimSpace(j.Message) == "" && !j.AutoWrite {
 			return camperrors.NewValidation("message",
 				"commit-tree requires a message or auto_write", nil)

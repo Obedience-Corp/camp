@@ -49,15 +49,21 @@ func DrainJobs(ctx context.Context, repoPath string) error {
 	return err
 }
 
-// drainQuietly runs DrainJobs and discards a timeout.
+// drainQuietly runs DrainJobs and discards whatever it returns.
 //
 // The staging and commit entrypoints call this rather than DrainJobs directly.
 // A drain that times out means camp's own queue is slow, which is worth
 // reporting where a user can act on it (camp's commands do) but is not grounds
 // for failing a consumer's commit: fest's commit is not the thing that went
 // wrong, and turning camp's queue latency into fest's error would make a camp
-// problem look like a fest bug. A consumer that wants the timeout calls
-// DrainJobs itself.
+// problem look like a fest bug.
+//
+// It discards every error, not only the timeout. That is deliberate but worth
+// stating plainly: an unreadable queue directory is also swallowed here. The
+// reasoning is the same either way, since a consumer's commit is not the right
+// place to surface a fault in camp's own cache, and `camp doctor -c jobs`
+// reports it where it can be acted on. A consumer that wants any of it calls
+// DrainJobs directly.
 func drainQuietly(ctx context.Context, repoPath string) {
 	_ = DrainJobs(ctx, repoPath)
 }

@@ -2,8 +2,10 @@ package jobs
 
 import (
 	"context"
+	"encoding/json"
 	"os"
 	"path/filepath"
+	"strconv"
 	"testing"
 	"time"
 )
@@ -255,5 +257,36 @@ func TestEntryAge(t *testing.T) {
 	bad := Entry{Job: Job{CreatedAt: "not a timestamp"}}
 	if got := bad.Age(now); got != 0 {
 		t.Errorf("Age on an unreadable timestamp = %v, want 0", got)
+	}
+}
+
+// A queue file is plain JSON on disk and nothing stops it being edited, so the
+// invariants enforced at enqueue are only real if they are checked again when
+// the file is read. The one that matters most is the explicit-paths rule: an
+// edited `paths: ["."]` would make the worker stage everything present when it
+// runs, which is exactly the sweep the rule exists to prevent.
+func TestReadJobRejectsAnEditedFileThatDefeatsTheNoWildcardRule(t *testing.T) {
+	root := testCampaign(t)
+	job := enqueueForTest(t, root, Job{
+		Kind: KindCommitPaths, Repo: ".", Paths: []string{".campaign/intents/a.md"},
+	})
+
+	path := filepath.Join(laneDir(root, statePending, "."), jobFilename(job.Seq))
+	// strconv, not padSeq: a zero-padded sequence is not valid JSON, and an
+	// earlier version of this test passed because readJob failed to parse it
+	// rather than because it rejected the paths.
+	edited := `{"id":"` + job.ID + `","seq":` + strconv.Itoa(job.Seq) + `,"kind":"commit-paths",` +
+		`"repo":".","paths":["."],"created_at":"2026-07-29T00:00:00.000Z"}`
+	// Sanity: the fixture must be valid JSON, or this proves nothing.
+	var probe Job
+	if err := json.Unmarshal([]byte(edited), &probe); err != nil {
+		t.Fatalf("the edited fixture is not valid JSON, so the test would pass for the wrong reason: %v", err)
+	}
+	if err := os.WriteFile(path, []byte(edited), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	if _, err := readJob(path); err == nil {
+		t.Fatal("readJob accepted a hand-edited job whose paths would stage everything")
 	}
 }

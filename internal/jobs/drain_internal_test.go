@@ -249,7 +249,9 @@ func TestWorkerWritesFollowUpsWithTheParentsClass(t *testing.T) {
 				Then:  &Follow{Kind: KindCommitPaths, Repo: ".", Paths: []string{"projects/camp"}, Message: "update projects/camp submodule ref"},
 			}
 
-			enqueueFollowUp(context.Background(), root, parent)
+			if err := enqueueFollowUp(context.Background(), root, parent); err != nil {
+				t.Fatalf("enqueue follow-up: %v", err)
+			}
 
 			written, err := List(root, statePending, ".")
 			if err != nil {
@@ -349,7 +351,7 @@ func TestJobAwareDrainWaitsPastTheTimeoutWhileTheLaneHeartbeats(t *testing.T) {
 	root := testCampaign(t)
 
 	enqueueForTest(t, root, Job{
-		Kind: KindCommitTree, Repo: ".", Tree: "deadbeef", AutoWrite: true,
+		Kind: KindCommitTree, Repo: ".", Tree: "deadbeef", Parent: "6000fd8f", AutoWrite: true,
 	})
 	lock, ok, err := acquireLane(QueueDir(root), LaneSlug("."))
 	if err != nil || !ok {

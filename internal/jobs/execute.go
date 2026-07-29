@@ -7,7 +7,6 @@ import (
 	"os/exec"
 	"path/filepath"
 	"strings"
-	"syscall"
 
 	"github.com/Obedience-Corp/camp/internal/autowrite"
 	camperrors "github.com/Obedience-Corp/camp/internal/errors"
@@ -141,11 +140,17 @@ func executeCommitTree(ctx context.Context, campaignRoot, repoPath string, job *
 		"camp: deferred commit "+job.ID); err != nil {
 		// The ref move can fail two ways and they need opposite handling.
 		//
-		// If HEAD is already this commit, a previous attempt succeeded and
-		// died before the queue file was unlinked. Treating that as a failure
-		// would park a job whose work is done, and the user would be told a
-		// commit failed while looking at it in their log.
-		if head, headErr := git.FullHash(ctx, repoPath); headErr == nil && head == newSHA {
+		// If HEAD is already this job's commit, a previous attempt succeeded
+		// and died before the queue file was unlinked. Treating that as a
+		// failure would park a job whose work is done, and the user would be
+		// told a commit failed while looking at it in their log.
+		//
+		// Recognized by content, not by hash. `git commit-tree` puts the
+		// committer timestamp in the object, so a retry over identical inputs
+		// produces a different SHA every time and could never match what the
+		// first attempt wrote. A commit whose tree and parent are this job's
+		// tree and parent is this job's commit, whenever it was made.
+		if alreadyApplied(ctx, repoPath, job) {
 			return nil
 		}
 		// Otherwise HEAD genuinely moved. Fail, and never rebase: the queued
@@ -156,6 +161,15 @@ func executeCommitTree(ctx context.Context, campaignRoot, repoPath string, job *
 			shortSHA(newSHA), shortSHA(job.Parent))
 	}
 	return nil
+}
+
+// alreadyApplied reports whether HEAD is the commit this job set out to make.
+func alreadyApplied(ctx context.Context, repoPath string, job *Job) bool {
+	tree, parent, err := git.HeadTreeAndParent(ctx, repoPath)
+	if err != nil {
+		return false
+	}
+	return tree == job.Tree && parent == job.Parent
 }
 
 // messageForTree returns the commit message for a commit-tree job, running the
@@ -372,7 +386,7 @@ func SpawnIfNeeded(ctx context.Context, campaignRoot, repo string) {
 	// process, which is the entire point of deferring. Setsid detaches it from
 	// the terminal so closing the shell does not take the worker with it.
 	cmd := exec.Command(exe, "jobs", "run", "--campaign", campaignRoot)
-	cmd.SysProcAttr = &syscall.SysProcAttr{Setsid: true}
+	detachProcess(cmd)
 	cmd.Stdin = nil
 	cmd.Stdout = logFile
 	cmd.Stderr = logFile

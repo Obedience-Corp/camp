@@ -91,6 +91,26 @@ func RunWithEnv(ctx context.Context, repoPath string, env []string, args ...stri
 	return nil
 }
 
+// HeadTreeAndParent returns the tree and first parent of HEAD.
+//
+// Used to recognize a commit by what it contains rather than by its hash. Two
+// runs of `git commit-tree` over identical inputs produce different hashes,
+// because the committer timestamp is part of the object, so a retry cannot
+// identify its own earlier work by SHA.
+func HeadTreeAndParent(ctx context.Context, repoPath string) (tree, parent string, err error) {
+	treeOut, err := Output(ctx, repoPath, "rev-parse", "HEAD^{tree}")
+	if err != nil {
+		return "", "", camperrors.Wrap(err, "read HEAD tree")
+	}
+	parentOut, err := Output(ctx, repoPath, "rev-parse", "HEAD^")
+	if err != nil {
+		// A root commit has no parent. That is a legitimate answer, not a
+		// failure: it simply cannot match a job that recorded one.
+		return strings.TrimSpace(treeOut), "", nil
+	}
+	return strings.TrimSpace(treeOut), strings.TrimSpace(parentOut), nil
+}
+
 // StagedFileCount returns how many paths are staged, for the line a deferred
 // commit prints in place of a hash.
 func StagedFileCount(ctx context.Context, repoPath string) (int, error) {

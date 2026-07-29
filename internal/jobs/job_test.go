@@ -76,6 +76,14 @@ func TestJobValidateRejects(t *testing.T) {
 
 		{name: "commit-tree with no tree", job: Job{Kind: KindCommitTree, Repo: ".", Message: "m"}},
 		{
+			// Execution refuses a job with no parent, so accepting one at
+			// enqueue would let a malformed job become a promise camp cannot
+			// keep: queued, failed, retried to exhaustion, for something the
+			// enqueuer could have been told immediately.
+			name: "commit-tree with no parent",
+			job:  Job{Kind: KindCommitTree, Repo: ".", Tree: "9f2a", AutoWrite: true},
+		},
+		{
 			name: "commit-tree with neither message nor auto_write",
 			job:  Job{Kind: KindCommitTree, Repo: ".", Tree: "9f2a"},
 		},
@@ -143,7 +151,7 @@ func TestJobValidateAccepts(t *testing.T) {
 		},
 		{
 			name: "captured tree with auto_write and no message",
-			job:  Job{Kind: KindCommitTree, Repo: ".", Tree: "9f2a", AutoWrite: true},
+			job:  Job{Kind: KindCommitTree, Repo: ".", Tree: "9f2a", Parent: "6000fd8f", AutoWrite: true},
 		},
 		{
 			name: "one level of follow-up",
@@ -171,7 +179,7 @@ func TestJobValidateAccepts(t *testing.T) {
 // restriction protects without breaking the one real use.
 func TestJobValidateAcceptsCampEnv(t *testing.T) {
 	job := Job{
-		Kind: KindCommitTree, Repo: ".", Tree: "deadbeef", AutoWrite: true,
+		Kind: KindCommitTree, Repo: ".", Tree: "deadbeef", Parent: "6000fd8f", AutoWrite: true,
 		Env: []string{
 			"CAMP_WORKITEM_REF=WI-abc123",
 			"CAMP_WORKITEM_PATH=workflow/design/thing",

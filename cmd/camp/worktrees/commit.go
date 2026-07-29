@@ -7,6 +7,7 @@ import (
 	"os"
 
 	"github.com/Obedience-Corp/camp/internal/defercommit"
+	"github.com/Obedience-Corp/camp/internal/drain"
 	camperrors "github.com/Obedience-Corp/camp/internal/errors"
 
 	"github.com/Obedience-Corp/camp/cmd/camp/cmdutil"
@@ -25,6 +26,7 @@ var (
 	wtCommitAll       bool
 	wtCommitAmend     bool
 	wtCommitAutoWrite bool
+	wtCommitNoDrain   bool
 	wtCommitWorkitem  string
 	wtCommitLarge     bool
 )
@@ -62,6 +64,8 @@ func init() {
 		"Stage all changes before committing")
 	worktreesCommitCmd.Flags().BoolVar(&wtCommitAmend, "amend", false,
 		"Amend the previous commit")
+	worktreesCommitCmd.Flags().BoolVar(&wtCommitNoDrain, "no-drain", false,
+		"Do not wait for camp's queued commits first")
 	worktreesCommitCmd.Flags().BoolVar(&wtCommitAutoWrite, "auto-write", false,
 		"Run configured commit message writer")
 	worktreesCommitCmd.Flags().BoolVar(&wtCommitLarge, "commit-large", false,
@@ -100,6 +104,15 @@ func runWorktreesCommit(cmd *cobra.Command, args []string) error {
 	fmt.Printf("Worktree: %s/%s\n", ui.Value(wtCtx.Project), ui.Value(wtCtx.WorktreeName))
 	fmt.Printf("Branch:   %s\n", ui.Value(wtCtx.Branch))
 	fmt.Println()
+
+	// A worktree is its own lane, and this command writes history in it. It
+	// was the one commit surface with no drain, so a queued commit there could
+	// land in the middle of the user's.
+	if !wtCommitNoDrain {
+		if _, err := drain.Repo(ctx, wtCtx.WorktreePath, drain.Commit); err != nil {
+			return err
+		}
+	}
 
 	// Create executor for the worktree
 	executor, err := git.NewExecutor(wtCtx.WorktreePath)

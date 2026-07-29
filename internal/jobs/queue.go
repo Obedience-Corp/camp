@@ -354,6 +354,15 @@ func readJob(path string) (*Job, error) {
 	if err := json.Unmarshal(data, &job); err != nil {
 		return nil, camperrors.Wrapf(err, "parse job %s", path)
 	}
+	// Re-validated on read, not only on write. A queue file is plain JSON on
+	// disk and nothing stops it being edited, so the invariants enforced at
+	// enqueue are only real if they are checked again at the moment of use.
+	// The one that matters most is the explicit-paths rule: an edited
+	// `paths: ["."]` would make the worker stage everything present when it
+	// runs, which is precisely the sweep the rule exists to prevent.
+	if err := job.Validate(); err != nil {
+		return nil, camperrors.Wrapf(err, "job %s is not valid", path)
+	}
 	return &job, nil
 }
 
