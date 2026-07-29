@@ -163,11 +163,13 @@ func TestPromoteResolution(t *testing.T) {
 }
 
 func TestPromoteRejectsBadTargets(t *testing.T) {
+	// "active" is no longer a blanket rejection: it is a rail target, valid from
+	// a workflow root. What stayed rejected (moving out of a dungeon, moving
+	// backward) is covered by TestPromoteRailForwardOnly.
 	cases := []struct {
 		target  string
 		wantErr string
 	}{
-		{"active", "cannot promote to active"},
 		{"bogus", "invalid target"},
 		{"", "required flag --target not set"},
 	}
@@ -441,5 +443,202 @@ func TestPromoteFestivalRejectsDest(t *testing.T) {
 	_, _, err := execPromote(t, src, "--target", "festival", "--dest", "whatever", "--no-commit")
 	if err == nil || !strings.Contains(err.Error(), "--dest is only valid for --target doc") {
 		t.Fatalf("err = %v, want festival --dest rejection", err)
+	}
+}
+
+// addResident places a stamped workitem directly on a rail stage, standing in
+// for one that got there by an earlier promote.
+func addResident(t *testing.T, root, stage, wtype, slug, title string) string {
+	t.Helper()
+	dir := filepath.Join(root, "festivals", stage, slug)
+	meta := "version: v1alpha8\nkind: workitem\nid: " + wtype + "-" + slug + "-fixed\ntype: " + wtype + "\ntitle: " + title + "\nref: WI-bbbbbb\n"
+	writeFile(t, filepath.Join(dir, ".workitem"), meta)
+	writeFile(t, filepath.Join(dir, "README.md"), "# "+title+"\n")
+	return dir
+}
+
+// TestPromoteRailEntry covers the two rail-entry moves and the ready->active
+// advance. The directory itself relocates, so the source must be gone and the
+// marker must travel with it: a resident that lost its marker cannot be
+// resolved again.
+func TestPromoteRailEntry(t *testing.T) {
+	tests := []struct {
+		name    string
+		target  string
+		fromRes string // rail stage of the source, "" means a workflow root
+		wantTo  string
+	}{
+		{name: "root to ready", target: "ready", wantTo: "festivals/ready/feat"},
+		{name: "root to active", target: "active", wantTo: "festivals/active/feat"},
+		{name: "ready to active", target: "active", fromRes: "ready", wantTo: "festivals/active/feat"},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			root := promoteCampaign(t)
+			var src string
+			if tc.fromRes == "" {
+				src = addWorkitem(t, root, "design", "feat", "Feat", "body")
+			} else {
+				src = addResident(t, root, tc.fromRes, "design", "feat", "Feat")
+			}
+
+			if _, _, err := execPromote(t, src, "--target", tc.target, "--no-commit"); err != nil {
+				t.Fatalf("promote to %s: %v", tc.target, err)
+			}
+
+			dest := filepath.Join(root, filepath.FromSlash(tc.wantTo))
+			if _, err := os.Stat(dest); err != nil {
+				t.Fatalf("destination %s not created: %v", tc.wantTo, err)
+			}
+			if _, err := os.Stat(src); !os.IsNotExist(err) {
+				t.Errorf("source %s still exists after a rail move (err=%v)", src, err)
+			}
+			if _, err := os.Stat(filepath.Join(dest, ".workitem")); err != nil {
+				t.Errorf("marker did not travel with the resident: %v", err)
+			}
+			if _, err := os.Stat(filepath.Join(dest, "README.md")); err != nil {
+				t.Errorf("content did not travel with the resident: %v", err)
+			}
+		})
+	}
+}
+
+// TestPromoteRailForwardOnly locks every rejected transition. The rail only ever
+// moves root -> ready -> active; anything else, including any attempt to leave a
+// dungeon, must error rather than silently relocate a workitem.
+func TestPromoteRailForwardOnly(t *testing.T) {
+	tests := []struct {
+		name    string
+		target  string
+		setup   func(t *testing.T, root string) string
+		wantErr string
+	}{
+		{
+			name:   "active to ready is backward",
+			target: "ready",
+			setup: func(t *testing.T, root string) string {
+				return addResident(t, root, "active", "design", "feat", "Feat")
+			},
+			wantErr: "forward-only",
+		},
+		{
+			name:   "ready to ready is already there",
+			target: "ready",
+			setup: func(t *testing.T, root string) string {
+				return addResident(t, root, "ready", "design", "feat", "Feat")
+			},
+			wantErr: "forward-only",
+		},
+		{
+			name:   "active to active is already there",
+			target: "active",
+			setup: func(t *testing.T, root string) string {
+				return addResident(t, root, "active", "design", "feat", "Feat")
+			},
+			wantErr: "already active on the rail",
+		},
+		{
+			name:   "dungeon to ready is a restore",
+			target: "ready",
+			setup: func(t *testing.T, root string) string {
+				dir := filepath.Join(root, "workflow", "design", "dungeon", "completed", "2026-07-24", "feat")
+				writeFile(t, filepath.Join(dir, ".workitem"),
+					"version: v1alpha8\nkind: workitem\nid: design-feat-fixed\ntype: design\ntitle: Feat\nref: WI-cccccc\n")
+				return dir
+			},
+			wantErr: "restoring workitems out of the dungeon is not a promote",
+		},
+		{
+			name:   "dungeon to active is a restore",
+			target: "active",
+			setup: func(t *testing.T, root string) string {
+				dir := filepath.Join(root, "workflow", "design", "dungeon", "archived", "2026-07-24", "feat")
+				writeFile(t, filepath.Join(dir, ".workitem"),
+					"version: v1alpha8\nkind: workitem\nid: design-feat-fixed\ntype: design\ntitle: Feat\nref: WI-cccccc\n")
+				return dir
+			},
+			wantErr: "restoring workitems out of the dungeon is not a promote",
+		},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			root := promoteCampaign(t)
+			src := tc.setup(t, root)
+
+			_, _, err := execPromote(t, src, "--target", tc.target, "--no-commit")
+			if err == nil {
+				t.Fatalf("expected %q, got nil", tc.wantErr)
+			}
+			if !strings.Contains(err.Error(), tc.wantErr) {
+				t.Fatalf("err = %v, want containing %q", err, tc.wantErr)
+			}
+			if _, statErr := os.Stat(src); statErr != nil {
+				t.Errorf("rejected promote must leave the source in place: %v", statErr)
+			}
+		})
+	}
+}
+
+// TestPromoteRailStampsUnmarkedSource is the reason stamping happens at rail
+// entry. Directory workitems are not uniformly marked (promote tolerates an
+// unmarked one), but resident resolution requires a marker, so a workitem that
+// entered the rail unmarked would be unreachable afterward.
+func TestPromoteRailStampsUnmarkedSource(t *testing.T) {
+	root := promoteCampaign(t)
+	src := filepath.Join(root, "workflow", "design", "unmarked")
+	writeFile(t, filepath.Join(src, "README.md"), "# Unmarked\n\nbody\n")
+
+	if _, _, err := execPromote(t, src, "--target", "ready", "--no-commit"); err != nil {
+		t.Fatalf("promote unmarked workitem to ready: %v", err)
+	}
+
+	dest := filepath.Join(root, "festivals", "ready", "unmarked")
+	meta, err := wkitem.LoadMetadata(context.Background(), dest)
+	if err != nil {
+		t.Fatalf("LoadMetadata on the new resident: %v", err)
+	}
+	if meta == nil {
+		t.Fatal("resident has no .workitem marker; it would be unresolvable on the rail")
+	}
+	if meta.Type != "design" {
+		t.Errorf("minted marker type = %q, want design", meta.Type)
+	}
+	if meta.ID == "" {
+		t.Error("minted marker has no id")
+	}
+
+	loc, err := locate.DetectFromCwd(root, dest)
+	if err != nil {
+		t.Fatalf("the whole point: a stamped resident must resolve: %v", err)
+	}
+	// DetectFromCwd resolves symlinks, and on macOS the temp root is under
+	// /var -> /private/var, so compare against the resolved root.
+	resolvedRoot := root
+	if r, rerr := filepath.EvalSymlinks(root); rerr == nil {
+		resolvedRoot = r
+	}
+	if want := filepath.Join(resolvedRoot, "festivals", ".dungeon"); loc.DungeonPath != want {
+		t.Errorf("DungeonPath = %q, want %q", loc.DungeonPath, want)
+	}
+}
+
+// TestPromoteRailRejectsExistingDestination guards against a rail move
+// clobbering a resident that already occupies the slug on that stage.
+func TestPromoteRailRejectsExistingDestination(t *testing.T) {
+	root := promoteCampaign(t)
+	src := addWorkitem(t, root, "design", "feat", "Feat", "body")
+	addResident(t, root, "ready", "design", "feat", "Other Feat")
+
+	_, _, err := execPromote(t, src, "--target", "ready", "--no-commit")
+	if err == nil {
+		t.Fatal("expected an already-exists error, got nil")
+	}
+	if !strings.Contains(err.Error(), "already exists") {
+		t.Fatalf("err = %v, want containing \"already exists\"", err)
+	}
+	if _, statErr := os.Stat(filepath.Join(src, "README.md")); statErr != nil {
+		t.Errorf("source must be untouched after a refused move: %v", statErr)
 	}
 }
