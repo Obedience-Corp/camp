@@ -551,12 +551,23 @@ func applyGuardSizeKey(cfg *config.CampaignConfig, key, value string) (string, e
 }
 
 // applyGuardCountKey validates the bulk trigger count.
+//
+// Zero is rejected rather than accepted. The overlay only applies a configured
+// count when it is greater than zero, so storing 0 left the default 1000 in
+// force while the settings file said 0. A user who set it to turn the guard off
+// would have been told it worked and still been blocked at 1000, which is worse
+// than an error: the setting reads as applied.
 func applyGuardCountKey(cfg *config.CampaignConfig, key, value string) (string, error) {
 	trimmed := strings.TrimSpace(value)
 	n, err := strconv.Atoi(trimmed)
 	if err != nil || n < 0 {
 		return "", camperrors.NewValidation(key,
 			fmt.Sprintf("must be a non-negative whole number, got %q", value), nil)
+	}
+	if n == 0 {
+		return "", camperrors.NewValidation(key,
+			"0 would not disable the bulk guard, it would keep the default; "+
+				"set commit.guards.bulk to off to turn it off", nil)
 	}
 	cfg.Commit.Guards.MaxAddedFiles = n
 	return trimmed, nil

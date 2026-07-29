@@ -126,8 +126,13 @@ func runWorktreesCommit(cmd *cobra.Command, args []string) error {
 	// Stage if requested
 	if wtCommitAll {
 		fmt.Println(ui.Info("Staging changes..."))
-		if err := stageWorktreeWithGuard(ctx, cmd, campRoot, wtCtx.WorktreePath); err != nil {
-			return camperrors.Wrap(err, "failed to stage")
+		empty, stageErr := stageWorktreeWithGuard(ctx, cmd, campRoot, wtCtx.WorktreePath)
+		if stageErr != nil {
+			return camperrors.Wrap(stageErr, "failed to stage")
+		}
+		if empty && !wtCommitAmend {
+			cmdutil.ReportNothingLeftToCommit(cmd.OutOrStdout())
+			return nil
 		}
 	}
 
@@ -210,14 +215,25 @@ func runWorktreesCommit(cmd *cobra.Command, args []string) error {
 // it excludes, says what it left out, and offers the three ways forward. The
 // reporting is shared with `camp commit` and `camp p commit` so the same
 // situation never reads differently depending on which command found it.
-func stageWorktreeWithGuard(ctx context.Context, cmd *cobra.Command, campRoot, worktreePath string) error {
+// It reports whether the guard excluded everything there was to commit, which
+// the caller needs to say "nothing left to commit" rather than falling through
+// to git's generic "nothing to commit". A worktree holding only over-threshold
+// files hits exactly that: the guard excludes them all, the index is empty, and
+// without this the user is told their working tree is clean while looking at
+// files they just created.
+func stageWorktreeWithGuard(
+	ctx context.Context, cmd *cobra.Command, campRoot, worktreePath string,
+) (excludedEverything bool, err error) {
 	outcome, err := git.StageWithGuardOptions(ctx, worktreePath, nil,
 		git.StageOptions{CommitLarge: wtCommitLarge})
 	if err != nil {
-		return err
+		return false, err
 	}
-	_, err = cmdutil.HandleStageOutcome(ctx, cmd.OutOrStdout(), campRoot, worktreePath, outcome)
-	return err
+	handling, err := cmdutil.HandleStageOutcome(ctx, cmd.OutOrStdout(), campRoot, worktreePath, outcome)
+	if err != nil {
+		return false, err
+	}
+	return cmdutil.GuardExcludedEverything(ctx, worktreePath, handling)
 }
 
 // worktreeCommitTagPrefix resolves the campaign tag a worktree commit carries,

@@ -9,11 +9,6 @@ import (
 	camperrors "github.com/Obedience-Corp/camp/internal/errors"
 )
 
-// dominantPrefixShare is the fraction of a batch one directory must hold to be
-// called dominant. A vendor tree concentrates almost everything under one
-// path; work spread evenly across a repo does not, and must not block.
-const dominantPrefixShare = 0.9
-
 // CheckStaging enumerates what a stage-everything operation would add in
 // repoPath and returns the violations found under limits. It is stat-only: no
 // file is opened, read, or hashed.
@@ -101,8 +96,8 @@ func detectBulk(candidates []Candidate, limits GuardLimits) (GuardViolation, boo
 		return GuardViolation{}, false
 	}
 
-	prefix, count, total := dominantPrefix(untracked)
-	if prefix == "" || count < limits.MaxAddedFiles {
+	prefix, count, total := heaviestPrefix(untracked, limits.MaxAddedFiles)
+	if prefix == "" {
 		return GuardViolation{}, false
 	}
 	return GuardViolation{
@@ -116,12 +111,21 @@ func detectBulk(candidates []Candidate, limits GuardLimits) (GuardViolation, boo
 	}, true
 }
 
-// dominantPrefix finds the deepest directory holding at least
-// dominantPrefixShare of the batch, and returns it with its file count and
-// total size. It returns an empty prefix when the batch is spread across
-// directories, which is the ordinary case that must not block.
-func dominantPrefix(candidates []Candidate) (prefix string, count int, total int64) {
-	threshold := int(float64(len(candidates)) * dominantPrefixShare)
+// heaviestPrefix finds the deepest directory holding at least minCount of the
+// candidates, and returns it with its file count and total size. It returns an
+// empty prefix when no single directory holds that many, which is the ordinary
+// scattered batch that must not block.
+//
+// The test is an absolute count, not a share of the batch. A share can be
+// diluted: 1000 files under vendor/ plus 120 unrelated stragglers is 89% of the
+// batch, so a 90% rule cancels a vendor dump that is exactly what the bulk
+// guard exists to catch. Whether a directory is being dumped into git does not
+// depend on what else the user happened to leave lying around.
+//
+// The descent is kept because it names the reported path: reporting "vendor"
+// when the files are all under "vendor/github.com/pkg" tells the user less
+// about what they are looking at.
+func heaviestPrefix(candidates []Candidate, minCount int) (prefix string, count int, total int64) {
 	current := ""
 
 	for depth := 1; ; depth++ {
@@ -141,7 +145,7 @@ func dominantPrefix(candidates []Candidate) (prefix string, count int, total int
 				best, bestCount = dir, n
 			}
 		}
-		if bestCount < threshold || best == "" {
+		if bestCount < minCount || best == "" {
 			break
 		}
 		current = best

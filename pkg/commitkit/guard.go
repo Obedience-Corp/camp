@@ -3,6 +3,7 @@ package commitkit
 import (
 	"context"
 
+	"github.com/Obedience-Corp/camp/internal/git"
 	"github.com/Obedience-Corp/camp/internal/stageguard"
 )
 
@@ -60,6 +61,24 @@ const (
 	// one file's history between git and an artifact root is never correct.
 	TrackedGrowth = stageguard.TrackedGrowth
 )
+
+// StageOutcome is what the guard did during a staging operation: which files it
+// kept out of the index, which it staged but flagged, and whether it was able to
+// run at all.
+//
+// A consumer that stages through StageAll or StageFiles gets the protection but
+// not this, which is the silent half: camp excludes a file, the commit succeeds,
+// and nothing in the consumer's output says a file the user expected is not in
+// it. Use StageAllWithOutcome or StageFilesWithOutcome to see it, and render it
+// however suits the consumer.
+type StageOutcome = git.StageOutcome
+
+// GuardBlockedError reports that the guard refused a staging operation.
+//
+// Exported so a consumer can distinguish a refusal from an ordinary git failure
+// with errors.As rather than by matching message text. It carries the
+// violations as typed data for the same reason.
+type GuardBlockedError = git.GuardBlockedError
 
 // Mode is a guard's configured behavior.
 type Mode = stageguard.Mode

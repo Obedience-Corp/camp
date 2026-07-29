@@ -202,13 +202,18 @@ func runCommit(cmd *cobra.Command, args []string) error {
 	// Stage if requested
 	if stageAll {
 		_, _ = fmt.Fprintln(humanOut, ui.Info("Staging changes..."))
-		var guardOutcome *git.StageOutcome
+		// The guard error is routed through the JSON reporter for both
+		// branches, hoisted below. A submodule commit that returned it raw
+		// emitted no document under --json, so a machine caller saw a bare
+		// non-zero exit where the campaign-root branch gave it a refusal it
+		// could act on.
+		var (
+			guardOutcome *git.StageOutcome
+			stageErr     error
+		)
 		if target.IsSubmodule || commitIncludeRefs {
-			outcome, err := git.StageWithGuardOptions(ctx, target.Path, nil, git.StageOptions{CommitLarge: commitLarge})
-			if err != nil {
-				return err
-			}
-			guardOutcome = outcome
+			guardOutcome, stageErr = git.StageWithGuardOptions(
+				ctx, target.Path, nil, git.StageOptions{CommitLarge: commitLarge})
 		} else {
 			// Campaign root: exclude submodule refs to prevent accidental
 			// ref changes from polluting content commits.
@@ -216,19 +221,21 @@ func runCommit(cmd *cobra.Command, args []string) error {
 			if pathErr != nil {
 				return pathErr
 			}
-			outcome, err := git.StageAllExcludingWithGuardOptions(ctx, target.Path, paths, git.StageOptions{CommitLarge: commitLarge})
-			if err != nil {
-				return reportGuardRefusalJSON(cmd, jsonResult, err)
-			}
-			guardOutcome = outcome
-			// git add rejects exclude pathspecs whose target contains
-			// gitignored entries, so worktrees are unstaged after staging
-			// instead of excluded up front.
-			if wt := worktreesRelPath(ctx, campRoot); wt != "" {
-				if err := git.UnstagePath(ctx, target.Path, wt); err != nil {
-					return err
+			guardOutcome, stageErr = git.StageAllExcludingWithGuardOptions(
+				ctx, target.Path, paths, git.StageOptions{CommitLarge: commitLarge})
+			if stageErr == nil {
+				// git add rejects exclude pathspecs whose target contains
+				// gitignored entries, so worktrees are unstaged after staging
+				// instead of excluded up front.
+				if wt := worktreesRelPath(ctx, campRoot); wt != "" {
+					if err := git.UnstagePath(ctx, target.Path, wt); err != nil {
+						return err
+					}
 				}
 			}
+		}
+		if stageErr != nil {
+			return reportGuardRefusalJSON(cmd, jsonResult, stageErr)
 		}
 
 		// Act on what the guard decided and tell the user. Runs after staging

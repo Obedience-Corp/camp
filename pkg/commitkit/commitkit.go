@@ -166,22 +166,53 @@ func LoadCampaignName(ctx context.Context, campaignRoot string) (string, error) 
 // chokepoint and resolves its own thresholds from repoPath, so a caller
 // inherits large-file and bulk protection here without passing anything and
 // without a code change. Use CheckStaging only to preflight.
+//
+// It discards what the guard did. When the guard excludes an over-threshold
+// file the stage still succeeds, so a consumer using this form commits without
+// the file and has nothing to tell the user about it. Use StageAllWithOutcome
+// when the consumer renders its own output; a refusal still surfaces here as a
+// *GuardBlockedError.
 func StageAll(ctx context.Context, repoPath string) error {
+	_, err := StageAllWithOutcome(ctx, repoPath)
+	return err
+}
+
+// StageAllWithOutcome is StageAll, returning what the guard decided.
+//
+// The outcome is nil when the guard found nothing worth reporting, which is the
+// ordinary case. A non-nil outcome means the consumer has something to say:
+// files excluded, tracked files flagged, or the guard unable to run at all.
+func StageAllWithOutcome(ctx context.Context, repoPath string) (*StageOutcome, error) {
 	if ctx.Err() != nil {
-		return ctx.Err()
+		return nil, ctx.Err()
 	}
 	drainQuietly(ctx, repoPath)
-	return git.StageAll(ctx, repoPath)
+	return git.StageWithGuard(ctx, repoPath, nil)
 }
 
 // StageFiles stages specific files in the repository at repoPath.
 // Uses automatic lock retry with stale lock cleanup.
+//
+// Like StageAll, this discards the guard's outcome; use StageFilesWithOutcome
+// when the consumer renders its own output.
 func StageFiles(ctx context.Context, repoPath string, files ...string) error {
+	_, err := StageFilesWithOutcome(ctx, repoPath, files...)
+	return err
+}
+
+// StageFilesWithOutcome is StageFiles, returning what the guard decided.
+func StageFilesWithOutcome(ctx context.Context, repoPath string, files ...string) (*StageOutcome, error) {
 	if ctx.Err() != nil {
-		return ctx.Err()
+		return nil, ctx.Err()
+	}
+	// An empty list stays an error rather than becoming stage-everything. The
+	// guard path treats no files as "stage the whole tree", which is the
+	// opposite of what a caller passing an empty slice meant.
+	if len(files) == 0 {
+		return nil, git.ErrNoFilesSpecified
 	}
 	drainQuietly(ctx, repoPath)
-	return git.StageFiles(ctx, repoPath, files...)
+	return git.StageWithGuard(ctx, repoPath, files)
 }
 
 // HasStagedChanges reports whether there are staged changes ready to commit
