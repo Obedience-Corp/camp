@@ -303,7 +303,8 @@ func TestIntegration_JobsEnqueueIsDurableAndComplete(t *testing.T) {
 	want := jobs.Job{
 		Kind: jobs.KindCommitTree, Repo: "projects/camp",
 		Tree: "9f2a1b", Parent: "6000fd8f", AutoWrite: true,
-		Then: &jobs.Follow{Kind: jobs.KindCommitPaths, Repo: ".", Paths: []string{"projects/camp"}},
+		Then: &jobs.Follow{Kind: jobs.KindCommitPaths, Repo: ".", Paths: []string{"projects/camp"},
+			Message: "update camp submodule ref"},
 	}
 	got, err := jobs.Enqueue(ctx, root, want)
 	require.NoError(t, err)

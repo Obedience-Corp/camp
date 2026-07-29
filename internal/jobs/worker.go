@@ -183,8 +183,7 @@ func enqueueFollowUp(ctx context.Context, campaignRoot string, job *Job) {
 		Repo:     job.Then.Repo,
 		Paths:    job.Then.Paths,
 		FollowUp: true,
-		Message: fmt.Sprintf("[camp] record %s after %s",
-			job.Then.Paths[0], job.ID),
+		Message:  job.Then.Message,
 	}
 	if _, err := Enqueue(ctx, campaignRoot, follow); err != nil {
 		logWorker(campaignRoot, "follow-up-error parent=%s err=%v", job.ID, err)

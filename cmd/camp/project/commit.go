@@ -298,11 +298,7 @@ func syncParentRef(ctx context.Context, campRoot, relPath string, cfg *config.Ca
 		return nil
 	}
 
-	projName := filepath.Base(relPath)
-	msg := fmt.Sprintf("update %s submodule ref", projName)
-	if cfg != nil && prefs.TagCommits() {
-		msg = git.PrependContextTagsFull(cfg.Name, cfg.ID, "", "", "", msg)
-	}
+	msg := submoduleRefMessage(relPath, cfg, prefs)
 
 	opts := &git.CommitOptions{Message: msg}
 	if err := git.CommitScoped(ctx, campRoot, []string{relPath}, opts); err != nil {
@@ -357,7 +353,28 @@ func projectDeferOptions(
 			Kind:  jobs.KindCommitPaths,
 			Repo:  ".",
 			Paths: []string{filepath.ToSlash(relPath)},
+			// Composed here, by the same function the synchronous path uses,
+			// so the two cannot drift. The worker records what it is given.
+			Message: submoduleRefMessage(relPath, cfg, prefs),
 		}
 	}
 	return opts
+}
+
+// submoduleRefMessage is the commit message a submodule pointer update carries.
+//
+// One function, because the synchronous sync and the deferred follow-up must
+// produce the same commit. A deferred pointer commit worded differently would
+// let anyone read which code path ran off git history, which is an
+// implementation detail that has no business being permanent.
+//
+// The tag carries no quest, festival, or workitem on purpose: a pointer update
+// is bookkeeping about a commit that already carries that context, not work in
+// its own right.
+func submoduleRefMessage(relPath string, cfg *config.CampaignConfig, prefs config.CommitPrefs) string {
+	msg := fmt.Sprintf("update %s submodule ref", filepath.Base(relPath))
+	if cfg != nil && prefs.TagCommits() {
+		msg = git.PrependContextTagsFull(cfg.Name, cfg.ID, "", "", "", msg)
+	}
+	return msg
 }

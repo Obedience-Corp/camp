@@ -171,6 +171,14 @@ type Follow struct {
 	Repo string `json:"repo"`
 	// Paths is the gitlink path to record.
 	Paths []string `json:"paths"`
+	// Message is the commit message the follow-up will carry.
+	//
+	// Composed by the enqueuer rather than the worker so a deferred follow-up
+	// produces the same commit its synchronous twin would. The worker has the
+	// campaign root but not the settings context the message depends on, and a
+	// message invented here would put the queue's own vocabulary into
+	// permanent git history.
+	Message string `json:"message,omitempty"`
 }
 
 // Validate rejects jobs the worker could not execute correctly.
@@ -236,6 +244,13 @@ func (f *Follow) validate() error {
 	}
 	if err := validateRepoField("then.repo", f.Repo); err != nil {
 		return err
+	}
+	if strings.TrimSpace(f.Message) == "" {
+		// The worker records what it is given and composes nothing. A
+		// follow-up with no message would reach git with an empty subject,
+		// which git either rejects or, worse, accepts.
+		return camperrors.NewValidation("then.message",
+			"a follow-up must carry the message its synchronous twin would use", nil)
 	}
 	return validatePathsField("then.paths", f.Paths)
 }

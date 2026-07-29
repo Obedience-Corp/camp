@@ -197,7 +197,7 @@ func TestRootDrainWaitsOnAnotherLanesRootTargetedFollowUp(t *testing.T) {
 	root := testCampaign(t)
 	enqueueForTest(t, root, Job{
 		Kind: KindCommitPaths, Repo: "projects/camp", Paths: []string{"README.md"},
-		Then: &Follow{Kind: KindCommitPaths, Repo: ".", Paths: []string{"projects/camp"}},
+		Then: &Follow{Kind: KindCommitPaths, Repo: ".", Paths: []string{"projects/camp"}, Message: "update projects/camp submodule ref"},
 	})
 
 	if blocking, err := Outstanding(root, "."); err != nil || len(blocking) != 1 {
@@ -224,7 +224,7 @@ func TestManifestFollowUpInheritsTheExemption(t *testing.T) {
 	enqueueForTest(t, root, Job{
 		Kind: KindCommitPaths, Class: ClassManifest, Repo: "projects/camp",
 		Paths: []string{".campaign/manifests/videos.json"},
-		Then:  &Follow{Kind: KindCommitPaths, Repo: ".", Paths: []string{"projects/camp"}},
+		Then:  &Follow{Kind: KindCommitPaths, Repo: ".", Paths: []string{"projects/camp"}, Message: "update projects/camp submodule ref"},
 	})
 
 	blocking, err := Outstanding(root, ".")
@@ -246,7 +246,7 @@ func TestWorkerWritesFollowUpsWithTheParentsClass(t *testing.T) {
 			parent := &Job{
 				ID: "job-parent", Kind: KindCommitPaths, Class: class, Repo: "projects/camp",
 				Paths: []string{"a.md"},
-				Then:  &Follow{Kind: KindCommitPaths, Repo: ".", Paths: []string{"projects/camp"}},
+				Then:  &Follow{Kind: KindCommitPaths, Repo: ".", Paths: []string{"projects/camp"}, Message: "update projects/camp submodule ref"},
 			}
 
 			enqueueFollowUp(context.Background(), root, parent)

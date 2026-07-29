@@ -106,9 +106,17 @@ func TestIntegration_FollowUpSyncRecordsTheProjectsNewHead(t *testing.T) {
 	assert.Equal(t, projectHead, pointerAfter,
 		"the root must record the project's new HEAD; the follow-up did not run or recorded the wrong commit")
 
+	// The deferred pointer commit must be indistinguishable from the one the
+	// synchronous path makes: same wording, same campaign tag. A different
+	// message means git history records which code path ran, which is an
+	// implementation detail nobody should be able to read off a commit.
 	rootSubject := strings.TrimSpace(tc.GitOutput(t, campPath, "log", "-1", "--format=%s"))
-	assert.Contains(t, rootSubject, projectRel,
-		"the pointer commit must name what it updated; got %q", rootSubject)
+	assert.Contains(t, rootSubject, "submodule ref",
+		"the pointer commit must use the established wording; got %q", rootSubject)
+	assert.True(t, strings.HasPrefix(rootSubject, "[followup-sync:"),
+		"the pointer commit must carry the campaign tag; got %q", rootSubject)
+	assert.NotContains(t, rootSubject, "job-",
+		"a queue job id must never reach permanent git history; got %q", rootSubject)
 }
 
 // Ordering is inherent rather than enforced: the follow-up does not exist until

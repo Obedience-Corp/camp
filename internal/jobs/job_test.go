@@ -86,21 +86,30 @@ func TestJobValidateRejects(t *testing.T) {
 			name: "then of then",
 			job: Job{
 				Kind: KindCommitPaths, Repo: ".", Paths: []string{"a"},
-				Then: &Follow{Kind: KindCommitTree, Repo: ".", Paths: []string{"b"}},
+				Then: &Follow{Kind: KindCommitTree, Repo: ".", Paths: []string{"b"}, Message: "m"},
 			},
 		},
 		{
 			name: "then with no paths",
 			job: Job{
 				Kind: KindCommitPaths, Repo: ".", Paths: []string{"a"},
-				Then: &Follow{Kind: KindCommitPaths, Repo: "."},
+				Then: &Follow{Kind: KindCommitPaths, Repo: ".", Message: "m"},
+			},
+		},
+		{
+			// The worker records what it is given and composes nothing, so a
+			// follow-up with no message would reach git with an empty subject.
+			name: "then with no message",
+			job: Job{
+				Kind: KindCommitPaths, Repo: ".", Paths: []string{"a"},
+				Then: &Follow{Kind: KindCommitPaths, Repo: ".", Paths: []string{"b"}},
 			},
 		},
 		{
 			name: "then with an escaping repo",
 			job: Job{
 				Kind: KindCommitPaths, Repo: ".", Paths: []string{"a"},
-				Then: &Follow{Kind: KindCommitPaths, Repo: "../x", Paths: []string{"b"}},
+				Then: &Follow{Kind: KindCommitPaths, Repo: "../x", Paths: []string{"b"}, Message: "m"},
 			},
 		},
 	}
@@ -139,7 +148,7 @@ func TestJobValidateAccepts(t *testing.T) {
 		{
 			name: "one level of follow-up",
 			job: Job{Kind: KindCommitPaths, Repo: "projects/camp", Paths: []string{"a.md"},
-				Then: &Follow{Kind: KindCommitPaths, Repo: ".", Paths: []string{"projects/camp"}}},
+				Then: &Follow{Kind: KindCommitPaths, Repo: ".", Paths: []string{"projects/camp"}, Message: "update projects/camp submodule ref"}},
 		},
 		{
 			// A path containing a hyphen or dot is ordinary, not a glob.
