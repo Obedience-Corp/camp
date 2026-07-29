@@ -39,7 +39,7 @@ var machineAdoptCmd = &cobra.Command{
 what will be written.
 
 A hop carries its origin in CAMP_HOP_ORIGIN. This reads that value and offers to
-add the origin to ~/.obey/machines.yaml so hops and completion work in the other
+add the origin to your machines file so hops and completion work in the other
 direction too. The hop itself never registers anything: adopting is an explicit,
 interactive act, and there is no flag that skips the confirmation.
 
@@ -91,6 +91,15 @@ func runMachineAdopt(cmd *cobra.Command, _ []string) error {
 		return err
 	}
 
+	// The TTY refusal comes before any human-oriented output. A non-interactive
+	// run that has already printed a decline reminder and then errors leaves
+	// half a consent surface on stdout, which is exactly what the rest of this
+	// command avoids.
+	if !adoptIsTerminal() {
+		return camperrors.New("camp machine adopt requires an interactive terminal: registering a " +
+			"machine is an explicit consent step and cannot be automated")
+	}
+
 	declined, declineErr := machines.LoadDeclined()
 	if declineErr != nil {
 		_, _ = fmt.Fprintf(cmd.ErrOrStderr(), "camp: warning: %v (treating as no declines)\n", declineErr)
@@ -98,11 +107,6 @@ func runMachineAdopt(cmd *cobra.Command, _ []string) error {
 	if d, was := declined.IsDeclined(origin.Host); was && !machineAdoptForce {
 		_, _ = fmt.Fprintf(cmd.OutOrStdout(), "You declined this origin on %s; adopting now will register it.\n\n",
 			d.DeclinedAt.Format("2006-01-02"))
-	}
-
-	if !adoptIsTerminal() {
-		return camperrors.New("camp machine adopt requires an interactive terminal: registering a " +
-			"machine is an explicit consent step and cannot be automated")
 	}
 
 	if _, err := fmt.Fprint(cmd.OutOrStdout(), adoptPreview(origin, entry)); err != nil {
@@ -200,7 +204,7 @@ func adoptPreview(origin HopOrigin, entry machines.Machine) string {
 	if origin.Campaign != "" {
 		fmt.Fprintf(&b, "  campaign  %s\n", origin.Campaign)
 	}
-	b.WriteString("\nThis entry will be appended to ~/.obey/machines.yaml:\n\n")
+	b.WriteString("\nThis entry will be appended to " + machines.MachinesPath() + ":\n\n")
 	// Marshal the row the same way Save does so quoting/escaping match disk.
 	yml, err := yaml.Marshal([]machines.Machine{entry})
 	if err != nil {
