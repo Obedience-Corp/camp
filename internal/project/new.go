@@ -8,6 +8,7 @@ import (
 	"path/filepath"
 
 	camperrors "github.com/Obedience-Corp/camp/internal/errors"
+	"github.com/Obedience-Corp/camp/internal/git"
 )
 
 // NewOptions configures new project creation.
@@ -94,10 +95,13 @@ func initProjectRepo(ctx context.Context, path, name string) error {
 		return camperrors.Wrap(err, "failed to write README")
 	}
 
-	// git add + commit
-	cmd = exec.CommandContext(ctx, "git", "-C", path, "add", ".")
-	if output, err := cmd.CombinedOutput(); err != nil {
-		return camperrors.Newf("git add failed: %w (output: %s)", err, string(output))
+	// Stage through camp's staging chokepoint rather than a raw `git add .`,
+	// so a new project inherits the staging guard like every other camp
+	// staging path. Today this only stages the README written just above, so
+	// no guard can trip; the point is that a future change to what this
+	// scaffolds cannot become a silently unguarded sweep.
+	if err := git.Stage(ctx, path, nil); err != nil {
+		return camperrors.Wrap(err, "failed to stage initial project files")
 	}
 
 	cmd = exec.CommandContext(ctx, "git", "-C", path, "commit", "-m", "Initial commit")

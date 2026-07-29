@@ -419,13 +419,46 @@ func CommitAll(ctx context.Context, repoPath, message string) error {
 
 // Stage adds files to the git index (staging area) with automatic lock handling.
 // If files is empty, stages all changes (git add .).
+//
+// Stage-everything forms run the staging guard first; see StageWithGuard. This
+// signature is kept so existing callers compile unchanged, and it discards the
+// guard's outcome. Callers that render what the guard did use StageWithGuard.
 func Stage(ctx context.Context, repoPath string, files []string) error {
+	_, err := StageWithGuard(ctx, repoPath, files)
+	return err
+}
+
+// StageWithGuard stages like Stage and returns what the staging guard decided.
+//
+// The guard runs before anything is staged, so a refusal leaves the index
+// exactly as it was. Over-threshold untracked files are folded into the
+// pathspec as exclusions rather than staged and removed, which keeps staging a
+// single git invocation and composes with exclusions the caller already built.
+//
+// A nil outcome means the guard had nothing to say: the call named explicit
+// paths, the guard is off, or nothing crossed a limit.
+func StageWithGuard(ctx context.Context, repoPath string, files []string) (*StageOutcome, error) {
+	return StageWithGuardOptions(ctx, repoPath, files, StageOptions{})
+}
+
+// StageWithGuardOptions stages like StageWithGuard under explicit guard
+// overrides, such as --commit-large.
+func StageWithGuardOptions(ctx context.Context, repoPath string, files []string, opts StageOptions) (*StageOutcome, error) {
+	outcome, excluded, err := runStageGuard(ctx, repoPath, files, opts)
+	if err != nil {
+		return nil, err
+	}
+	staged := applyGuardExclusions(files, excluded)
+
 	cfg := DefaultRetryConfig()
 	cfg.OperationName = "stage"
 
-	return WithLockRetry(ctx, repoPath, cfg, func() error {
-		return executeStage(ctx, repoPath, files)
-	})
+	if err := WithLockRetry(ctx, repoPath, cfg, func() error {
+		return executeStage(ctx, repoPath, staged)
+	}); err != nil {
+		return nil, err
+	}
+	return outcome, nil
 }
 
 // executeStage runs the actual git add command.
@@ -638,19 +671,38 @@ func StageFiles(ctx context.Context, repoPath string, files ...string) error {
 // StageAllExcluding stages all changes except paths matching the given exclusions.
 // Uses git literal pathspec exclusions for atomic single-operation staging.
 func StageAllExcluding(ctx context.Context, repoPath string, excludePaths []string) error {
+	_, err := StageAllExcludingWithGuard(ctx, repoPath, excludePaths)
+	return err
+}
+
+// StageAllExcludingWithGuard stages like StageAllExcluding and returns what the
+// staging guard decided.
+//
+// The caller's exclusions and the guard's are applied in one git invocation:
+// the campaign root always excludes submodule refs, and staging twice would
+// leave a window where the index holds bytes the guard has already ruled out.
+func StageAllExcludingWithGuard(ctx context.Context, repoPath string, excludePaths []string) (*StageOutcome, error) {
+	return StageAllExcludingWithGuardOptions(ctx, repoPath, excludePaths, StageOptions{})
+}
+
+// StageAllExcludingWithGuardOptions stages all changes except excludePaths,
+// under explicit guard overrides.
+func StageAllExcludingWithGuardOptions(
+	ctx context.Context, repoPath string, excludePaths []string, opts StageOptions,
+) (*StageOutcome, error) {
 	if ctx.Err() != nil {
-		return ctx.Err()
+		return nil, ctx.Err()
 	}
 
 	if len(excludePaths) == 0 {
-		return StageAll(ctx, repoPath)
+		return StageWithGuardOptions(ctx, repoPath, nil, opts)
 	}
 
 	files := []string{"--", "."}
 	for _, p := range excludePaths {
 		files = append(files, ":(exclude,literal)"+p)
 	}
-	return Stage(ctx, repoPath, files)
+	return StageWithGuardOptions(ctx, repoPath, files, opts)
 }
 
 // HasStagedChanges checks if there are any staged changes ready to commit.

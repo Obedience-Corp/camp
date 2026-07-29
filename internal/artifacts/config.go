@@ -113,14 +113,25 @@ func (f *File) Add(root Root) error {
 		return err
 	}
 	root.Path = NormalizeRootPath(root.Path)
-	if !knownPolicy(root.Policy) {
-		return camperrors.Newf("unknown policy %q (want %s or %s)", root.Policy, PolicyAlways, PolicyOnDemand)
+	if err := ValidatePolicy(root.Policy); err != nil {
+		return err
 	}
 	if _, exists := f.Find(root.Path); exists {
 		return camperrors.Newf("artifact root %q is already declared", root.Path)
 	}
 	f.Roots = append(f.Roots, root)
 	return nil
+}
+
+// ValidatePolicy rejects an unknown sync policy. Exported so callers can
+// reject bad input before doing any work, rather than only discovering it
+// inside Add: a preview path that never reaches Add would otherwise report on
+// a declaration that could never succeed.
+func ValidatePolicy(p string) error {
+	if knownPolicy(p) {
+		return nil
+	}
+	return camperrors.Newf("unknown policy %q (want %s or %s)", p, PolicyAlways, PolicyOnDemand)
 }
 
 // knownPolicy reports whether p is a recognized root policy (empty means the

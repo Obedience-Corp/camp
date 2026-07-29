@@ -55,7 +55,13 @@ func runStatus(cmd *cobra.Command, args []string) error {
 		return camperrors.Wrap(err, "not in a campaign")
 	}
 
-	notice.Render(os.Stderr, notice.Detect(ctx, campRoot, notice.DungeonLegacy, notice.StaleLinks))
+	notice.Render(os.Stderr, notice.FilterDismissed(campRoot, notice.Detect(ctx, campRoot,
+		notice.DungeonLegacy,
+		notice.StaleLinks,
+		notice.ArtifactRootNeverSynced,
+		notice.ArtifactRootsMissingLocally,
+		notice.ArtifactRootDrift,
+	)))
 
 	gitArgs, showRefsArg := extractShowRefs(args)
 	showRefs := statusShowRefs || showRefsArg

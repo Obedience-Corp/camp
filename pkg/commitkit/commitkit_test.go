@@ -795,3 +795,27 @@ func TestErrNoChanges(t *testing.T) {
 		assert.True(t, errors.Is(commitkit.ErrNoChanges, commitkit.ErrNoChanges))
 	})
 }
+
+// A consumer that wants to report what the guard did must be able to see it.
+//
+// StageAll and StageFiles deliberately discard the outcome for callers that
+// only want the protection, which means an excluded file is invisible to them:
+// the stage succeeds, the commit happens, and nothing says a file the user
+// expected is missing from it. The *WithOutcome forms are how a consumer that
+// renders its own output gets the facts.
+func TestStageWithOutcomeIsAvailableToConsumers(t *testing.T) {
+	t.Parallel()
+
+	// Compile-time contract: the types a consumer needs are reachable from
+	// this package without importing camp's internals.
+	var (
+		_ *commitkit.StageOutcome
+		_ *commitkit.GuardBlockedError
+	)
+
+	// An empty file list stays an error rather than silently becoming
+	// stage-everything, which is the opposite of what the caller meant.
+	if _, err := commitkit.StageFilesWithOutcome(context.Background(), t.TempDir()); err == nil {
+		t.Error("StageFilesWithOutcome with no files returned nil; an empty list must not mean stage everything")
+	}
+}

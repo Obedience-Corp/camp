@@ -5,6 +5,7 @@ import (
 	"fmt"
 	camperrors "github.com/Obedience-Corp/camp/internal/errors"
 	"os"
+	"strings"
 
 	"github.com/Obedience-Corp/camp/internal/campaign"
 	"github.com/Obedience-Corp/camp/internal/doctor"
@@ -102,7 +103,7 @@ func runDoctor(cmd *cobra.Command, args []string) error {
 	)
 
 	// Register all checks
-	registerChecks(d)
+	registerChecks(d, doctorOpts.checks...)
 
 	// Run doctor
 	result, err := d.Run(ctx)
@@ -126,7 +127,10 @@ func runDoctor(cmd *cobra.Command, args []string) error {
 
 // registerChecks registers all health checks with the doctor.
 // OrphanCheck runs first because orphaned gitlinks can break other checks.
-func registerChecks(d *doctor.Doctor) {
+//
+// requested names the checks the user asked for with -c, so opt-in checks can
+// stay out of the default run.
+func registerChecks(d *doctor.Doctor, requested ...string) {
 	d.RegisterCheck(checks.NewOrphanCheck())
 	d.RegisterCheck(checks.NewURLCheck())
 	d.RegisterCheck(checks.NewIntegrityCheck())
@@ -135,6 +139,26 @@ func registerChecks(d *doctor.Doctor) {
 	d.RegisterCheck(checks.NewCommitsCheck())
 	d.RegisterCheck(checks.NewLockCheck())
 	d.RegisterCheck(checks.NewLedgerCheck())
+	d.RegisterCheck(checks.NewArtifactsCheck())
+
+	// bigfiles is opt-in. Every other check here is a git invocation costing
+	// milliseconds; this one walks the whole campaign, measured at 17.9s over
+	// 843,522 files on a real campaign. Putting that in the default run would
+	// make `camp doctor` something users stop running, which costs more than
+	// the check finds.
+	if requestedCheck(requested, checks.NewBigFilesCheck().ID()) {
+		d.RegisterCheck(checks.NewBigFilesCheck())
+	}
+}
+
+// requestedCheck reports whether the user named a check with -c.
+func requestedCheck(requested []string, id string) bool {
+	for _, r := range requested {
+		if strings.EqualFold(strings.TrimSpace(r), id) {
+			return true
+		}
+	}
+	return false
 }
 
 type doctorJSONPayload struct {

@@ -53,6 +53,7 @@ var (
 	projectCommitNoSync    bool
 	projectCommitAutoWrite bool
 	projectCommitWorkitem  string
+	projectCommitLarge     bool
 )
 
 func init() {
@@ -64,6 +65,7 @@ func init() {
 	projectCommitCmd.Flags().BoolVar(&projectCommitNoSync, "no-sync", false, "Do not sync submodule ref even if settings enable it")
 	projectCommitCmd.Flags().BoolVar(&projectCommitAutoWrite, "auto-write", false, "Run configured commit message writer")
 	projectCommitCmd.Flags().StringVar(&projectCommitWorkitem, "workitem", "", "explicit workitem selector for the commit tag (overrides cwd-based resolution)")
+	projectCommitCmd.Flags().BoolVar(&projectCommitLarge, "commit-large", false, "Commit over-threshold files instead of keeping them out of git")
 
 	if err := projectCommitCmd.RegisterFlagCompletionFunc("project", cmdutil.CompleteProjectName); err != nil {
 		panic(err)
@@ -152,8 +154,24 @@ func runProjectCommit(cmd *cobra.Command, args []string) error {
 	// Stage if requested
 	if projectCommitAll {
 		fmt.Println(ui.Info("Staging changes..."))
-		if err := executor.StageAll(ctx); err != nil {
-			return camperrors.Wrap(err, "failed to stage")
+		guardOutcome, stageErr := git.StageWithGuardOptions(ctx, resolvedPath, nil, git.StageOptions{CommitLarge: projectCommitLarge})
+		if stageErr != nil {
+			return camperrors.Wrap(stageErr, "failed to stage")
+		}
+		// A project exclusion is never silent: camp cannot fix a large file
+		// here (an artifact root would keep it off the project's remote), so
+		// the least it owes the user is saying what it left out and why.
+		handling, hErr := cmdutil.HandleStageOutcome(ctx, cmd.OutOrStdout(), campRoot, resolvedPath, guardOutcome)
+		if hErr != nil {
+			return hErr
+		}
+		empty, eErr := cmdutil.GuardExcludedEverything(ctx, resolvedPath, handling)
+		if eErr != nil {
+			return eErr
+		}
+		if empty && !projectCommitAmend {
+			cmdutil.ReportNothingLeftToCommit(cmd.OutOrStdout())
+			return nil
 		}
 	}
 
