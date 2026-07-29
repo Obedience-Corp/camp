@@ -5,6 +5,7 @@ package integration
 
 import (
 	"errors"
+	"io"
 	"strings"
 	"testing"
 )
@@ -48,5 +49,38 @@ func TestClassifyExecError(t *testing.T) {
 
 	if classifyExecError(nil) != nil {
 		t.Error("classifyExecError(nil) must stay nil")
+	}
+}
+
+// failingReader stands in for the hijacked exec stream dying mid-read: Exec
+// itself returned nil, and the transport fault surfaces from ReadAll.
+type failingReader struct{ err error }
+
+func (r failingReader) Read([]byte) (int, error) { return 0, r.err }
+
+// Transport loss on the second error channel, the read of the live stream,
+// must be labelled exactly as loss reported by Exec itself is.
+func TestReadExecOutputClassifiesMidReadTransportLoss(t *testing.T) {
+	t.Parallel()
+
+	_, err := readExecOutput(failingReader{err: io.ErrUnexpectedEOF})
+	if err == nil || !strings.Contains(err.Error(), "INFRASTRUCTURE FAILURE (not a test failure)") {
+		t.Errorf("mid-read transport loss was not labelled as infrastructure:\n%v", err)
+	}
+	if !errors.Is(err, io.ErrUnexpectedEOF) {
+		t.Error("the label must wrap the original so the cause survives")
+	}
+
+	// An ordinary read error is not infrastructure and must pass through
+	// unchanged, or real corruption would hide behind a re-run suggestion.
+	plain := errors.New("short buffer")
+	if _, err := readExecOutput(failingReader{err: plain}); err != plain {
+		t.Errorf("a non-transport read error was relabelled: %v", err)
+	}
+
+	// The success path returns the bytes untouched.
+	data, err := readExecOutput(strings.NewReader("output"))
+	if err != nil || string(data) != "output" {
+		t.Errorf("clean read altered: data=%q err=%v", data, err)
 	}
 }

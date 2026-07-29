@@ -73,6 +73,20 @@ func classifyExecError(err error) error {
 	return err
 }
 
+// readExecOutput consumes an exec stream, classifying transport loss that
+// surfaces mid-read. Exec hands back a live hijacked connection, so the daemon
+// dropping it after Exec returned nil reports here, from the read, as an
+// ordinary "unexpected EOF". Without classification on this second channel the
+// consumers wrap it as "failed to read output" and recreate exactly the
+// misleading test failure this file exists to remove.
+func readExecOutput(reader io.Reader) ([]byte, error) {
+	data, err := io.ReadAll(reader)
+	if err != nil {
+		return data, classifyExecError(err)
+	}
+	return data, nil
+}
+
 // Reset clears container state between tests.
 // This removes all test artifacts while keeping the container and binary intact.
 // The trailing `sync` ensures filesystem buffers are flushed before the next test
@@ -120,7 +134,7 @@ func (tc *TestContainer) RunCamp(args ...string) (string, error) {
 		return "", fmt.Errorf("failed to execute camp: %w", err)
 	}
 
-	rawOutput, err := io.ReadAll(reader)
+	rawOutput, err := readExecOutput(reader)
 	if err != nil {
 		return "", fmt.Errorf("failed to read output: %w", err)
 	}
@@ -153,7 +167,7 @@ func (tc *TestContainer) RunCampInDir(dir string, args ...string) (string, error
 		return "", fmt.Errorf("failed to execute camp: %w", err)
 	}
 
-	rawOutput, err := io.ReadAll(reader)
+	rawOutput, err := readExecOutput(reader)
 	if err != nil {
 		return "", fmt.Errorf("failed to read output: %w", err)
 	}
@@ -182,7 +196,7 @@ func (tc *TestContainer) RunLegacyCampInDir(dir string, args ...string) (string,
 	if err != nil {
 		return "", fmt.Errorf("failed to execute legacy camp: %w", err)
 	}
-	rawOutput, err := io.ReadAll(reader)
+	rawOutput, err := readExecOutput(reader)
 	if err != nil {
 		return "", fmt.Errorf("failed to read output: %w", err)
 	}
@@ -211,7 +225,7 @@ func (tc *TestContainer) InitCampaign(path, name, campType string) (string, erro
 		return output, fmt.Errorf("failed to init git repo: %w", gitErr)
 	}
 	if exitCode != 0 {
-		rawOutput, _ := io.ReadAll(reader)
+		rawOutput, _ := readExecOutput(reader)
 		return output, fmt.Errorf("git init failed: %s", string(demuxDockerOutput(rawOutput)))
 	}
 
@@ -225,7 +239,7 @@ func (tc *TestContainer) ReadFile(path string) (string, error) {
 		return "", fmt.Errorf("failed to read file: %w", err)
 	}
 
-	rawOutput, err := io.ReadAll(reader)
+	rawOutput, err := readExecOutput(reader)
 	if err != nil {
 		return "", fmt.Errorf("failed to read output: %w", err)
 	}
@@ -289,7 +303,7 @@ func (tc *TestContainer) ListDirectory(path string) ([]string, error) {
 		return nil, fmt.Errorf("find command failed with exit code %d", exitCode)
 	}
 
-	rawOutput, err := io.ReadAll(reader)
+	rawOutput, err := readExecOutput(reader)
 	if err != nil {
 		return nil, fmt.Errorf("failed to read output: %w", err)
 	}
@@ -321,7 +335,7 @@ func (tc *TestContainer) CreateGitRepo(path string) error {
 		return fmt.Errorf("failed to init git repo: %w", err)
 	}
 	if exitCode != 0 {
-		outputBytes, _ := io.ReadAll(output)
+		outputBytes, _ := readExecOutput(output)
 		return fmt.Errorf("git init failed: %s", string(outputBytes))
 	}
 
@@ -332,7 +346,7 @@ func (tc *TestContainer) CreateGitRepo(path string) error {
 		return fmt.Errorf("failed to create initial commit: %w", err)
 	}
 	if exitCode != 0 {
-		outputBytes, _ := io.ReadAll(output)
+		outputBytes, _ := readExecOutput(output)
 		return fmt.Errorf("initial commit failed: %s", string(outputBytes))
 	}
 
@@ -346,7 +360,7 @@ func (tc *TestContainer) ExecCommand(args ...string) (string, int, error) {
 		return "", -1, fmt.Errorf("failed to execute command: %w", err)
 	}
 
-	rawOutput, err := io.ReadAll(reader)
+	rawOutput, err := readExecOutput(reader)
 	if err != nil {
 		return "", exitCode, fmt.Errorf("failed to read output: %w", err)
 	}
