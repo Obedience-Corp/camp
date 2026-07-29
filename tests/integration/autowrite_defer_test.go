@@ -72,6 +72,7 @@ func headSubject(t *testing.T, tc *TestContainer, campPath string) string {
 // class of surprise deferral must not introduce.
 func TestIntegration_DeferredCommitIgnoresLaterStaging(t *testing.T) {
 	tc := GetSharedContainer(t)
+	tc.EnableDeferral()
 	campPath, _ := setupDrainCampaign(t, tc, "aw-defer-2b")
 	configureWriter(t, tc, campPath, "plain")
 
@@ -105,6 +106,7 @@ func TestIntegration_DeferredCommitIgnoresLaterStaging(t *testing.T) {
 // commit nor the user's edit.
 func TestIntegration_DeferredCommitIgnoresLaterEdits(t *testing.T) {
 	tc := GetSharedContainer(t)
+	tc.EnableDeferral()
 	campPath, _ := setupDrainCampaign(t, tc, "aw-defer-2c")
 	configureWriter(t, tc, campPath, "plain")
 
@@ -146,6 +148,7 @@ func TestIntegration_DeferredCommitIgnoresLaterEdits(t *testing.T) {
 // visible rather than silent.
 func TestIntegration_DeferredCommitFailsWhenHeadMoved(t *testing.T) {
 	tc := GetSharedContainer(t)
+	tc.EnableDeferral()
 	campPath, _ := setupDrainCampaign(t, tc, "aw-defer-2d")
 	configureWriter(t, tc, campPath, "slow")
 
@@ -197,6 +200,7 @@ func TestIntegration_DeferredCommitFailsWhenHeadMoved(t *testing.T) {
 // hash. Only --auto-write and camp's own bookkeeping defer.
 func TestIntegration_MessageCommitStaysSynchronous(t *testing.T) {
 	tc := GetSharedContainer(t)
+	tc.EnableDeferral()
 	campPath, _ := setupDrainCampaign(t, tc, "aw-defer-37c2")
 	configureWriter(t, tc, campPath, "plain")
 
@@ -226,6 +230,7 @@ func TestIntegration_MessageCommitStaysSynchronous(t *testing.T) {
 // measurably longer than the command.
 func TestIntegration_AutoWriteReturnsBeforeTheWriterFinishes(t *testing.T) {
 	tc := GetSharedContainer(t)
+	tc.EnableDeferral()
 	campPath, _ := setupDrainCampaign(t, tc, "aw-defer-37c3")
 	configureWriter(t, tc, campPath, "slow")
 
@@ -256,6 +261,7 @@ func TestIntegration_AutoWriteReturnsBeforeTheWriterFinishes(t *testing.T) {
 // against a different working tree, and both are worse than not deferring.
 func TestIntegration_HookRepoCommitsInTheForeground(t *testing.T) {
 	tc := GetSharedContainer(t)
+	tc.EnableDeferral()
 	campPath, _ := setupDrainCampaign(t, tc, "aw-defer-hooks")
 	configureWriter(t, tc, campPath, "plain")
 
@@ -293,6 +299,7 @@ HOOK
 // synchronous commits: git itself would not run it either.
 func TestIntegration_NonExecutableHookDoesNotBlockDeferral(t *testing.T) {
 	tc := GetSharedContainer(t)
+	tc.EnableDeferral()
 	campPath, _ := setupDrainCampaign(t, tc, "aw-defer-hooks-inert")
 	configureWriter(t, tc, campPath, "plain")
 
@@ -314,6 +321,7 @@ func TestIntegration_NonExecutableHookDoesNotBlockDeferral(t *testing.T) {
 // determinism. It must give exactly the pre-deferral behavior.
 func TestIntegration_CampNoDeferForcesInlineCommits(t *testing.T) {
 	tc := GetSharedContainer(t)
+	tc.EnableDeferral()
 	campPath, _ := setupDrainCampaign(t, tc, "aw-defer-nodefer")
 	configureWriter(t, tc, campPath, "plain")
 
@@ -337,6 +345,7 @@ func TestIntegration_CampNoDeferForcesInlineCommits(t *testing.T) {
 // commit would silently drop the WI- tag the foreground one carries.
 func TestIntegration_DeferredCommitCarriesWorkitemEnv(t *testing.T) {
 	tc := GetSharedContainer(t)
+	tc.EnableDeferral()
 	dir := "/test/autowrite-defer-env"
 	initCommitTagsCampaign(t, tc, dir)
 	ref := seedDesignWorkitemWithRef(t, tc, dir, "envcarry")
@@ -372,6 +381,7 @@ func TestIntegration_DeferredCommitCarriesWorkitemEnv(t *testing.T) {
 // message. The queue keeps the failure as evidence.
 func TestIntegration_EmptyWriterOutputFailsTheJob(t *testing.T) {
 	tc := GetSharedContainer(t)
+	tc.EnableDeferral()
 	campPath, _ := setupDrainCampaign(t, tc, "aw-defer-empty")
 	configureWriter(t, tc, campPath, "empty")
 

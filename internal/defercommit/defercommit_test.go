@@ -71,6 +71,65 @@ func TestAllowedRefusals(t *testing.T) {
 	}
 }
 
+// Camp's own bookkeeping defers under narrower rules than an --auto-write
+// commit: it needs no writer, but it needs explicit paths and must never
+// depend on the user's index.
+func TestAllowedForPaths(t *testing.T) {
+	const campaignRoot = "/campaigns/demo"
+	const repoPath = "/campaigns/demo/projects/camp"
+	paths := []string{".campaign/intents/inbox/idea.md"}
+
+	tests := []struct {
+		name      string
+		env       string
+		paths     []string
+		preStaged []string
+		root      string
+		want      Refusal
+	}{
+		{
+			name: "CAMP_NO_DEFER turns it off here too",
+			env:  "1", paths: paths, root: campaignRoot,
+			want: RefusedDisabled,
+		},
+		{
+			// A deferred job runs at an unknown later moment. Without explicit
+			// paths the synchronous path would stage everything present then,
+			// which is work the user never associated with this commit.
+			name:  "no explicit paths",
+			paths: nil, root: campaignRoot,
+			want: RefusedNoPaths,
+		},
+		{
+			// Pre-staged content is read out of the user's real index, now. A
+			// job running later would commit the worktree instead, which is a
+			// different commit than the one asked for.
+			name:  "the commit depends on already-staged content",
+			paths: paths, preStaged: []string{"other.md"}, root: campaignRoot,
+			want: RefusedPreStaged,
+		},
+		{
+			name:  "outside a campaign there is no queue",
+			paths: paths, root: "",
+			want: RefusedNoCampaign,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Setenv(EnvNoDefer, tt.env)
+			allowed, why := AllowedForPaths(
+				context.Background(), tt.root, repoPath, tt.paths, tt.preStaged)
+			if allowed {
+				t.Fatalf("deferral was allowed; want refusal %q", tt.want)
+			}
+			if why != tt.want {
+				t.Errorf("refusal = %q, want %q", why, tt.want)
+			}
+		})
+	}
+}
+
 // "0" and empty are the only values that leave deferral on. Someone exporting
 // CAMP_NO_DEFER=false is asking for it off, and guessing the other way would
 // defer for a user who explicitly said not to.

@@ -381,6 +381,10 @@ func runAutoWriteCommit(t *testing.T, tc *TestContainer, campaignDir, workDir st
 
 func TestIntegration_AutoWriteEnv(t *testing.T) {
 	tc := GetSharedContainer(t)
+	// The writer's environment contract must hold on the deferred path too,
+	// which is the one where it is easy to lose: the worker has no working
+	// directory to re-derive the workitem from.
+	tc.EnableDeferral()
 	dir := "/test/commit-tags-autowrite"
 	initCommitTagsCampaign(t, tc, dir)
 	_ = seedDesignWorkitemWithRef(t, tc, dir, "envtest")
@@ -422,6 +426,7 @@ func TestIntegration_AutoWriteEnv(t *testing.T) {
 
 func TestIntegration_AutoWriteEnv_IgnoresCurrentSelection(t *testing.T) {
 	tc := GetSharedContainer(t)
+	tc.EnableDeferral()
 	dir := "/test/commit-tags-current-autowrite"
 	initCommitTagsCampaign(t, tc, dir)
 	ref := seedDesignWorkitemWithRef(t, tc, dir, "stale-autowrite")

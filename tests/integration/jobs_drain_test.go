@@ -109,6 +109,7 @@ func remoteHasPath(t *testing.T, tc *TestContainer, campPath, remotePath, path s
 // forever, with nothing in any output saying so.
 func TestIntegration_DrainPutsAQueuedCommitInThePush(t *testing.T) {
 	tc := GetSharedContainer(t)
+	tc.EnableDeferral()
 	campPath, remotePath := setupDrainCampaign(t, tc, "drain-push")
 
 	tc.Shell(t, fmt.Sprintf(`
@@ -141,6 +142,7 @@ func TestIntegration_DrainPutsAQueuedCommitInThePush(t *testing.T) {
 // process that died before spawning, into a wedged terminal.
 func TestIntegration_DrainSpawnsAWorkerForAnUnservedLane(t *testing.T) {
 	tc := GetSharedContainer(t)
+	tc.EnableDeferral()
 	campPath, _ := setupDrainCampaign(t, tc, "drain-spawn")
 
 	tc.Shell(t, fmt.Sprintf(`
@@ -178,6 +180,7 @@ func TestIntegration_DrainSpawnsAWorkerForAnUnservedLane(t *testing.T) {
 // for it the command would sit until its timeout instead of returning.
 func TestIntegration_ManifestJobNeverBlocksAPush(t *testing.T) {
 	tc := GetSharedContainer(t)
+	tc.EnableDeferral()
 	campPath, _ := setupDrainCampaign(t, tc, "drain-manifest")
 
 	writeJob(t, tc, campPath, rootLane, 1, map[string]any{
@@ -204,6 +207,7 @@ func TestIntegration_ManifestJobNeverBlocksAPush(t *testing.T) {
 // job names a path that does not exist so nothing can ever complete it.
 func TestIntegration_StatusWarnsAndProceedsOnAWedgedLane(t *testing.T) {
 	tc := GetSharedContainer(t)
+	tc.EnableDeferral()
 	campPath, _ := setupDrainCampaign(t, tc, "drain-status-wedged")
 
 	writeJob(t, tc, campPath, rootLane, 1, map[string]any{
@@ -235,6 +239,7 @@ func TestIntegration_StatusWarnsAndProceedsOnAWedgedLane(t *testing.T) {
 // and every option in the refusal is a command the user can run as printed.
 func TestIntegration_PushRefusesOnAWedgedLaneAndOffersAWayOut(t *testing.T) {
 	tc := GetSharedContainer(t)
+	tc.EnableDeferral()
 	campPath, _ := setupDrainCampaign(t, tc, "drain-push-wedged")
 
 	writeJob(t, tc, campPath, rootLane, 1, map[string]any{
@@ -267,6 +272,7 @@ func TestIntegration_PushRefusesOnAWedgedLaneAndOffersAWayOut(t *testing.T) {
 // with a flag has to get past the wedge, not the same refusal again.
 func TestIntegration_PushNoDrainSkipsTheWait(t *testing.T) {
 	tc := GetSharedContainer(t)
+	tc.EnableDeferral()
 	campPath, _ := setupDrainCampaign(t, tc, "drain-push-nodrain")
 
 	writeJob(t, tc, campPath, rootLane, 1, map[string]any{
@@ -295,6 +301,7 @@ func TestIntegration_PushNoDrainSkipsTheWait(t *testing.T) {
 // stuck one, and total runtime cannot say which.
 func TestIntegration_CommitJSONCarriesDrainWaitedMs(t *testing.T) {
 	tc := GetSharedContainer(t)
+	tc.EnableDeferral()
 	campPath, _ := setupDrainCampaign(t, tc, "drain-json-field")
 
 	tc.Shell(t, fmt.Sprintf(`
@@ -327,6 +334,7 @@ func TestIntegration_CommitJSONCarriesDrainWaitedMs(t *testing.T) {
 // here, and jq reads a file rather than a pipe.
 func TestIntegration_DoctorJSONCarriesDrainWaitedMs(t *testing.T) {
 	tc := GetSharedContainer(t)
+	tc.EnableDeferral()
 	campPath, _ := setupDrainCampaign(t, tc, "drain-doctor-json")
 
 	stdout, stderr, exitCode, err := tc.RunCampSplitInDir(campPath, "doctor", "--json")
@@ -344,6 +352,7 @@ func TestIntegration_DoctorJSONCarriesDrainWaitedMs(t *testing.T) {
 // before the user's commit is behind it in history, never interleaved with it.
 func TestIntegration_CommitDrainsBeforeStaging(t *testing.T) {
 	tc := GetSharedContainer(t)
+	tc.EnableDeferral()
 	campPath, _ := setupDrainCampaign(t, tc, "drain-commit-order")
 
 	tc.Shell(t, fmt.Sprintf(`

@@ -26,6 +26,9 @@ import (
 // or the dual-spelling resolution override this fixture explicitly via
 // WriteGlobalConfig.
 func (tc *TestContainer) Reset() error {
+	// A deferral opt-in belongs to one test only.
+	tc.deferral = false
+
 	// Remove all test artifacts and recreate clean directories. Include both
 	// current and legacy config homes so registry/global settings never leak
 	// between tests that share a pooled container.
@@ -95,7 +98,8 @@ func (tc *TestContainer) RunCampInDir(dir string, args ...string) (string, error
 		quotedArgs[i] = "'" + escaped + "'"
 	}
 	// Use sh -c to change directory first, redirect stderr to stdout for error capture
-	cmdStr := fmt.Sprintf("cd %s && /camp %s 2>&1", dir, strings.Join(quotedArgs, " "))
+	cmdStr := fmt.Sprintf("cd %s && %s/camp %s 2>&1",
+		dir, tc.campEnvPrefix(), strings.Join(quotedArgs, " "))
 	cmd := []string{"sh", "-c", cmdStr}
 
 	exitCode, reader, err := tc.container.Exec(tc.ctx, cmd)
@@ -316,8 +320,8 @@ func (tc *TestContainer) RunCampSplit(args ...string) (stdout, stderr string, ex
 		quotedArgs[i] = "'" + escaped + "'"
 	}
 	cmdStr := fmt.Sprintf(
-		"/camp %s >/tmp/_camp_stdout 2>/tmp/_camp_stderr; echo $? >/tmp/_camp_exitcode",
-		strings.Join(quotedArgs, " "),
+		"%s/camp %s >/tmp/_camp_stdout 2>/tmp/_camp_stderr; echo $? >/tmp/_camp_exitcode",
+		tc.campEnvPrefix(), strings.Join(quotedArgs, " "),
 	)
 	if _, _, err = tc.ExecCommand("sh", "-c", cmdStr); err != nil {
 		return "", "", -1, fmt.Errorf("RunCampSplit exec failed: %w", err)
@@ -344,8 +348,8 @@ func (tc *TestContainer) RunCampSplitInDir(dir string, args ...string) (stdout, 
 		quotedArgs[i] = "'" + escaped + "'"
 	}
 	cmdStr := fmt.Sprintf(
-		"cd %s && /camp %s >/tmp/_camp_stdout 2>/tmp/_camp_stderr; echo $? >/tmp/_camp_exitcode",
-		dir, strings.Join(quotedArgs, " "),
+		"cd %s && %s/camp %s >/tmp/_camp_stdout 2>/tmp/_camp_stderr; echo $? >/tmp/_camp_exitcode",
+		dir, tc.campEnvPrefix(), strings.Join(quotedArgs, " "),
 	)
 	if _, _, err = tc.ExecCommand("sh", "-c", cmdStr); err != nil {
 		return "", "", -1, fmt.Errorf("RunCampSplitInDir exec failed: %w", err)

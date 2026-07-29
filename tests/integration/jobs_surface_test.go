@@ -43,6 +43,7 @@ func writeFailedJob(t *testing.T, tc *TestContainer, campPath, laneSlug string, 
 // to do and did not.
 func TestIntegration_FailedJobNoticeRepeatsUntilResolved(t *testing.T) {
 	tc := GetSharedContainer(t)
+	tc.EnableDeferral()
 	campPath, _ := setupDrainCampaign(t, tc, "jobs-notice")
 
 	writeFailedJob(t, tc, campPath, rootLane, 1, map[string]any{
@@ -78,6 +79,7 @@ func TestIntegration_FailedJobNoticeRepeatsUntilResolved(t *testing.T) {
 // a broken parse rather than a warning.
 func TestIntegration_FailedJobNoticeStaysOutOfJobsAndJSON(t *testing.T) {
 	tc := GetSharedContainer(t)
+	tc.EnableDeferral()
 	campPath, _ := setupDrainCampaign(t, tc, "jobs-notice-suppressed")
 
 	writeFailedJob(t, tc, campPath, rootLane, 1, map[string]any{
@@ -104,6 +106,7 @@ func TestIntegration_FailedJobNoticeStaysOutOfJobsAndJSON(t *testing.T) {
 // commit picks it up.
 func TestIntegration_JobsDropKeepsContentForTheNextCommit(t *testing.T) {
 	tc := GetSharedContainer(t)
+	tc.EnableDeferral()
 	campPath, _ := setupDrainCampaign(t, tc, "jobs-drop-keeps")
 
 	tc.Shell(t, fmt.Sprintf(`
@@ -141,6 +144,7 @@ func TestIntegration_JobsDropKeepsContentForTheNextCommit(t *testing.T) {
 // Retry re-runs a failed job to success once its cause is gone.
 func TestIntegration_JobsRetryRunsTheJobToSuccess(t *testing.T) {
 	tc := GetSharedContainer(t)
+	tc.EnableDeferral()
 	campPath, _ := setupDrainCampaign(t, tc, "jobs-retry")
 
 	// The job failed because its path did not exist. Creating it is the user
@@ -177,6 +181,7 @@ func TestIntegration_JobsRetryRunsTheJobToSuccess(t *testing.T) {
 // shows names the command that resolves it.
 func TestIntegration_JobsListingIsActionable(t *testing.T) {
 	tc := GetSharedContainer(t)
+	tc.EnableDeferral()
 	campPath, _ := setupDrainCampaign(t, tc, "jobs-listing")
 
 	writeFailedJob(t, tc, campPath, rootLane, 1, map[string]any{
@@ -203,6 +208,7 @@ func TestIntegration_JobsListingIsActionable(t *testing.T) {
 // this class of bug reaches consumers.
 func TestIntegration_JobsJSONShape(t *testing.T) {
 	tc := GetSharedContainer(t)
+	tc.EnableDeferral()
 	campPath, _ := setupDrainCampaign(t, tc, "jobs-json")
 
 	stdout, _, exitCode, err := tc.RunCampSplitInDir(campPath, "jobs", "--json")
@@ -240,6 +246,7 @@ func TestIntegration_JobsJSONShape(t *testing.T) {
 // the user knowing the queue exists.
 func TestIntegration_DoctorFlagsFailedAndStuckJobs(t *testing.T) {
 	tc := GetSharedContainer(t)
+	tc.EnableDeferral()
 	campPath, _ := setupDrainCampaign(t, tc, "jobs-doctor")
 
 	writeFailedJob(t, tc, campPath, rootLane, 1, map[string]any{
@@ -279,6 +286,7 @@ func TestIntegration_DoctorFlagsFailedAndStuckJobs(t *testing.T) {
 // commit.
 func TestIntegration_DoctorReportsBookkeepingLostWithTheCache(t *testing.T) {
 	tc := GetSharedContainer(t)
+	tc.EnableDeferral()
 	campPath, _ := setupDrainCampaign(t, tc, "jobs-doctor-lost")
 
 	// A campaign with history, then an intent queued, then the cache deleted.
@@ -321,6 +329,7 @@ func TestIntegration_DoctorReportsBookkeepingLostWithTheCache(t *testing.T) {
 // reports camp's own scaffolding as lost queue content.
 func TestIntegration_DoctorDoesNotFlagAFreshCampaignsScaffolding(t *testing.T) {
 	tc := GetSharedContainer(t)
+	tc.EnableDeferral()
 	campPath := "/campaigns/jobs-doctor-fresh"
 	_, err := tc.InitCampaign(campPath, "jobs-doctor-fresh", "product")
 	require.NoError(t, err)

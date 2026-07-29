@@ -65,7 +65,13 @@ func (tc *TestContainer) runCampInteractive(dir string, env map[string]string, t
 		quotedArgs[i] = shellQuote(arg)
 	}
 
-	envPrefix := ""
+	// The suite-wide deferral default applies here too. This is a camp exec
+	// path like any other, and missing it left the interactive tests waiting
+	// for "Committed changes to git" while camp said "queued".
+	//
+	// Before the caller's env, so a test that wants deferral can still set
+	// CAMP_NO_DEFER=0 explicitly and have it win.
+	envPrefix := tc.campEnvPrefix()
 	for k, v := range env {
 		envPrefix += fmt.Sprintf("%s=%s ", k, shellQuote(v))
 	}

@@ -43,9 +43,11 @@ func execute(ctx context.Context, campaignRoot string, job *Job) error {
 
 // executeCommitPaths commits the job's named paths through the temp index.
 //
-// A job whose paths resolve to nothing is a success, not a failure: the
-// content it was written for may already have been committed by a drain, and
-// failing here would park a job that has nothing left to do.
+// A job whose paths resolve to nothing is a success, not a failure. Between the
+// enqueue and the run, the content may have been committed by a drain, swept up
+// by an ordinary `camp commit`, or deleted by the user who changed their mind.
+// None of those is camp failing to keep a promise, and parking the job would
+// leave the failed-commit notice nagging about work nobody wants done.
 func executeCommitPaths(ctx context.Context, repoPath string, job *Job) error {
 	if len(job.Paths) == 0 {
 		return camperrors.Newf("job %s has no paths", job.ID)
@@ -59,9 +61,22 @@ func executeCommitPaths(ctx context.Context, repoPath string, job *Job) error {
 		return nil
 	case errors.Is(err, git.ErrNoChanges):
 		return nil // already committed, or nothing to say
+	case isMissingPathspec(err):
+		return nil // the paths are gone; there is nothing left to commit
 	default:
 		return err
 	}
+}
+
+// isMissingPathspec reports whether a git failure is only "those paths are not
+// here any more".
+//
+// Matched on message text because git offers no distinct exit code for it: `git
+// add` exits 128 for a missing pathspec and for a corrupt repository alike, so
+// keying on the code would swallow real failures. Narrow on purpose; anything
+// else still fails the job and stays visible in failed/.
+func isMissingPathspec(err error) bool {
+	return err != nil && strings.Contains(err.Error(), "did not match any files")
 }
 
 // executeCommitTree builds a commit from the job's captured tree and moves HEAD

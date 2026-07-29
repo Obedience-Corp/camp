@@ -14,6 +14,7 @@ import (
 	"os"
 	"strings"
 
+	"github.com/Obedience-Corp/camp/internal/autowrite"
 	"github.com/Obedience-Corp/camp/internal/git"
 	"github.com/Obedience-Corp/camp/internal/jobs"
 )
@@ -47,6 +48,19 @@ const (
 	// RefusedNoCampaign is a repository outside any campaign, where there is no
 	// queue to enqueue into.
 	RefusedNoCampaign Refusal = "not in a campaign"
+	// RefusedNoPaths is a bookkeeping commit with no explicit path list.
+	RefusedNoPaths Refusal = "no explicit paths to commit"
+	// RefusedPreStaged is a bookkeeping commit that depends on content already
+	// in the user's index.
+	RefusedPreStaged Refusal = "the commit reads already-staged content"
+	// RefusedNoWriter is --auto-write with no writer configured.
+	//
+	// Deferring would turn a configuration mistake into a failed job the user
+	// discovers later, in place of the immediate error that tells them exactly
+	// what to put in campaign.yaml. Refusing here lets the synchronous path
+	// raise that error unchanged: a config error belongs to the command, not
+	// to the queue.
+	RefusedNoWriter Refusal = "no commit message writer is configured"
 )
 
 // Request is everything the decision needs.
@@ -79,6 +93,9 @@ func Allowed(ctx context.Context, req Request) (bool, Refusal) {
 	if req.CampaignRoot == "" || jobs.RepoForPath(req.CampaignRoot, req.RepoPath) == "" {
 		return false, RefusedNoCampaign
 	}
+	if _, err := autowrite.LoadCommitMessageHook(ctx, req.CampaignRoot); err != nil {
+		return false, RefusedNoWriter
+	}
 	// Last because it is the only one that shells out to git.
 	if git.HasCommitHooks(ctx, req.RepoPath) {
 		return false, RefusedHooks
@@ -94,6 +111,62 @@ func Allowed(ctx context.Context, req Request) (bool, Refusal) {
 func Disabled() bool {
 	v := strings.TrimSpace(os.Getenv(EnvNoDefer))
 	return v != "" && v != "0"
+}
+
+// AllowedForPaths reports whether camp's own bookkeeping commit may defer.
+//
+// Narrower than Allowed: a bookkeeping job commits a fixed list of paths
+// through a temp index, so it needs neither a writer nor the user's index. What
+// it does need is paths, and it must not touch the real one.
+func AllowedForPaths(ctx context.Context, campaignRoot, repoPath string, paths, preStaged []string) (bool, Refusal) {
+	if Disabled() {
+		return false, RefusedDisabled
+	}
+	if len(paths) == 0 {
+		// No explicit paths means the synchronous path would stage everything,
+		// and a deferred job may never do that: it runs at an unknown later
+		// moment and would sweep in whatever is present then.
+		return false, RefusedNoPaths
+	}
+	if len(preStaged) > 0 {
+		// Pre-staged paths are read out of the user's real index, right now.
+		// A job running later would commit the worktree content instead, which
+		// is a different commit than the one the user asked for.
+		return false, RefusedPreStaged
+	}
+	if campaignRoot == "" || jobs.RepoForPath(campaignRoot, repoPath) == "" {
+		return false, RefusedNoCampaign
+	}
+	if git.HasCommitHooks(ctx, repoPath) {
+		return false, RefusedHooks
+	}
+	return true, ""
+}
+
+// EnqueuePaths queues a bookkeeping commit of explicit paths.
+//
+// The message is composed by the caller and recorded on the job, because
+// bookkeeping messages are deterministic. Nothing here consults a writer.
+func EnqueuePaths(ctx context.Context, campaignRoot, repoPath, message string, paths []string) (*jobs.Job, error) {
+	if ctx.Err() != nil {
+		return nil, ctx.Err()
+	}
+	return jobs.Enqueue(ctx, campaignRoot, jobs.Job{
+		Kind:    jobs.KindCommitPaths,
+		Class:   jobs.ClassCommit,
+		Repo:    jobs.RepoForPath(campaignRoot, repoPath),
+		Paths:   paths,
+		Message: message,
+	})
+}
+
+// SpawnWorker starts a worker for a repository's lane if one is needed.
+//
+// Separate from EnqueuePaths so the job is durable before anything is spawned:
+// a worker that started first could find the lane empty, exit, and leave the
+// job for whatever command comes next.
+func SpawnWorker(ctx context.Context, campaignRoot, repoPath string) {
+	jobs.SpawnIfNeeded(ctx, campaignRoot, jobs.RepoForPath(campaignRoot, repoPath))
 }
 
 // Enqueued is what a deferred commit produced.
