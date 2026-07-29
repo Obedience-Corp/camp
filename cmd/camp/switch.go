@@ -37,6 +37,13 @@ Use with the shell-init wrappers for instant navigation (recommended):
   csw a1b2                       # Switch by ID prefix
   csw obey/platform              # Switch by org-scoped selector
   csw archdtop:lance-arch        # Hop to a remote campaign over ssh
+  csw -                          # Hop back to the machine/campaign this session came from
+
+'camp switch -' (csw -) is the hop-back gesture: it returns to the origin
+encoded in CAMP_HOP_ORIGIN by the outbound hop. It is registration-independent
+— the origin need not be in this machine's machines.yaml. Like other remote
+targets it refuses --print/--json. '-' is reserved and is no longer a fuzzy
+campaign query.
 
 The --print flag outputs just the path for shell integration (local only):
   cd "$(camp switch --print)"
@@ -59,6 +66,7 @@ its exact path on that machine.`,
   csw                                # Interactive picker (local + remotes)
   csw obey-campaign                  # Switch by name
   csw archdtop:lance-arch            # Hop to remote campaign
+  csw -                              # Hop back via CAMP_HOP_ORIGIN
   camp switch --org obey platform    # Switch by name within an org
   camp switch obey/platform          # Switch by scoped selector
   camp switch a1b2                   # Switch by ID prefix
@@ -289,6 +297,17 @@ func runSwitch(cmd *cobra.Command, args []string) error {
 		return err
 	}
 
+	// The hop-back gesture is handled before the registry is even loaded, for
+	// two reasons. It is checked before selector parsing because "-" is
+	// otherwise a legal campaign query that reaches the fuzzy tier and matches
+	// an arbitrary hyphenated campaign, differently on every invocation. And it
+	// is checked before the "no campaigns registered" guard because hop-back
+	// resolves against the ORIGIN machine's registry, so a local registry is not
+	// a precondition and pointing the operator at `camp init` would be wrong.
+	if len(args) == 1 && args[0] == hopBackSelector {
+		return runHopBack(ctx, cmd, printOnly, shellConnect, jsonOut)
+	}
+
 	reg, err := config.LoadRegistry(ctx)
 	if err != nil {
 		return camperrors.Wrap(err, "load registry")
@@ -310,7 +329,11 @@ func runSwitch(cmd *cobra.Command, args []string) error {
 		if err != nil {
 			return err
 		}
-		if msel.Machine != "" && msel.Machine != machines.LocalMachineID {
+		// A selector naming THIS machine resolves locally. Without this, the
+		// same string that works on the host ("archdtop:notes" typed on the
+		// mac) would try to ssh archdtop to itself once you are on it, which is
+		// the shape agents and humans both produce after a hop.
+		if msel.Machine != "" && msel.Machine != machines.LocalMachineID && !isSelfMachine(ctx, msel.Machine) {
 			return runRemoteSwitch(ctx, cmd, msel, printOnly, shellConnect, jsonOut)
 		}
 		if reg.Len() == 0 {
@@ -365,23 +388,34 @@ func runSwitch(cmd *cobra.Command, args []string) error {
 	}
 
 	if shellConnect {
-		return emitShellConnect(cmd.OutOrStdout(), false, targetPath, nil)
+		return emitShellConnect(cmd.OutOrStdout(), false, targetPath, nil, "")
 	}
 	return emitSwitchSelection(cmd, selected, targetPath, targetTab, printOnly, jsonOut)
 }
 
 // emitShellConnect prints exactly one shell line for the camp() wrapper to eval.
 // Local: `cd -- '<abs-path>'` (identical effect to today's --print + wrapper cd).
-// Remote: `exec ssh -t <opts> '<target>' '<cd root && exec $SHELL -l>'`, where exec
-// replaces the shell (so quitting the remote shell returns the user locally), -t
-// forces a PTY, and $SHELL expands on the REMOTE side because the whole remote
-// command is single-quoted here so the local shell never touches the '$'.
-func emitShellConnect(w io.Writer, isRemote bool, path string, m *machines.Machine) error {
+// Remote: `exec ssh -t <opts> '<target>' '<export origin && cd root && exec $SHELL -l>'`,
+// where exec replaces the shell (so quitting the remote shell returns the user
+// locally), -t forces a PTY, and $SHELL expands on the REMOTE side because the
+// whole remote command is single-quoted here so the local shell never touches
+// the '$'.
+//
+// origin is a complete CAMP_HOP_ORIGIN payload or "". It is exported before the
+// cd so it survives into the login shell that replaces this process image: an
+// exported variable is part of the new image's envp, and login rc files may
+// extend the environment but do not reset an unrelated inherited variable.
+// Assembly and validation happen before the call, so this function's only job
+// stays rendering one line.
+func emitShellConnect(w io.Writer, isRemote bool, path string, m *machines.Machine, origin string) error {
 	if !isRemote {
 		_, err := fmt.Fprintf(w, "cd -- %s\n", remote.ShellQuote(path))
 		return err
 	}
 	inner := "cd " + remote.ShellQuote(path) + " && exec $SHELL -l"
+	if origin != "" {
+		inner = "export " + HopOriginEnvVar + "=" + remote.ShellQuote(origin) + " && " + inner
+	}
 	// Quote every opt token, not just target/inner: ControlPath (under $HOME) and
 	// an -i identity file may hold spaces/metacharacters, which would otherwise
 	// split the eval'd line into the wrong argv before ssh ever runs.
@@ -393,102 +427,6 @@ func emitShellConnect(w io.Writer, isRemote bool, path string, m *machines.Machi
 	_, err := fmt.Fprintf(w, "exec ssh -t %s %s %s\n",
 		strings.Join(quoted, " "), remote.ShellQuote(remote.Target(m)), remote.ShellQuote(inner))
 	return err
-}
-
-func switchScopeFromFlags(cmd *cobra.Command) (cmdutil.CampaignScope, error) {
-	org, _ := cmd.Flags().GetString("org")
-	status, _ := cmd.Flags().GetString("status")
-	all, _ := cmd.Flags().GetBool("all")
-	if org != "" {
-		if err := config.ValidateName("org", org); err != nil {
-			return cmdutil.CampaignScope{}, err
-		}
-	}
-	if status != "" {
-		if err := config.ValidateStatus(status); err != nil {
-			return cmdutil.CampaignScope{}, err
-		}
-	}
-	if status != "" && all {
-		return cmdutil.CampaignScope{}, camperrors.New("cannot use --status with --all")
-	}
-	return cmdutil.CampaignScope{Org: org, Status: status, All: all}, nil
-}
-
-func parseSwitchArg(raw string, scope cmdutil.CampaignScope) (cmdutil.ParsedSwitchSelector, error) {
-	parsed := cmdutil.ParseSwitchSelector(raw)
-	if parsed.Org != "" {
-		if err := config.ValidateName("org", parsed.Org); err != nil {
-			return parsed, err
-		}
-		if strings.Contains(parsed.Campaign, "/") {
-			return parsed, camperrors.New("switch selector may contain at most one org separator")
-		}
-		if parsed.Campaign == "" {
-			return parsed, camperrors.New("campaign name required after org selector")
-		}
-		if scope.Org != "" && scope.Org != parsed.Org {
-			return parsed, camperrors.New(fmt.Sprintf("selector org %q conflicts with --org %q", parsed.Org, scope.Org))
-		}
-	}
-	return parsed, nil
-}
-
-// runRemoteSwitch resolves a machine:campaign selector by asking the remote
-// machine's own `camp switch --print` for the absolute campaign root over ssh (so
-// the remote registry decides the path), then emits the interactive ssh hop line
-// under --shell-connect. --print is local-only: it MUST print nothing for a remote
-// target so `cd "$(camp switch x --print)"` fails loudly instead of cd-ing wrong.
-func runRemoteSwitch(ctx context.Context, cmd *cobra.Command, msel cmdutil.ParsedMachineSelector, printOnly, shellConnect, jsonOut bool) error {
-	if printOnly {
-		return camperrors.New("remote target " + msel.Machine +
-			": --print is local-only; use the csw shell wrapper to hop there")
-	}
-	if jsonOut {
-		return camperrors.New("--json is not supported for a remote (machine:) switch; use the csw shell wrapper")
-	}
-	mf, err := machines.Load()
-	if err != nil {
-		return err
-	}
-	m, _, found := mf.Lookup(msel.Machine)
-	if !found {
-		return camperrors.New("unknown machine \"" + msel.Machine + "\"; add it to ~/.obey/machines.yaml")
-	}
-	root, err := remote.ResolveRoot(ctx, m, msel.Remainder)
-	if err != nil {
-		return withRemoteSuggestions(err, msel)
-	}
-	if shellConnect {
-		return emitShellConnect(cmd.OutOrStdout(), true, root, m)
-	}
-	return camperrors.New("resolved " + msel.Machine + ":" + msel.Remainder + " -> " + root +
-		"; run via the csw shell wrapper to hop there")
-}
-
-// withRemoteSuggestions augments a remote resolve failure with near matches
-// from the per-machine completion cache. Cache-only on purpose: the failed
-// resolve already paid one SSH round-trip, and suggestions must not add
-// another. A cold cache simply yields no suggestions.
-func withRemoteSuggestions(err error, msel cmdutil.ParsedMachineSelector) error {
-	names, ok := readMachineCacheCampaigns(msel.Machine)
-	if !ok || len(names) == 0 {
-		return err
-	}
-	query := cmdutil.ParseSwitchSelector(msel.Remainder).Campaign
-	if query == "" {
-		return err
-	}
-	matches := navfuzzy.Filter(names, query)
-	if len(matches) == 0 {
-		return err
-	}
-	limit := min(len(matches), 3)
-	suggestions := make([]string, 0, limit)
-	for _, match := range matches[:limit] {
-		suggestions = append(suggestions, msel.Machine+":"+match.Target)
-	}
-	return camperrors.Wrapf(err, "did you mean %s?", strings.Join(suggestions, ", "))
 }
 
 type switchOutput struct {
