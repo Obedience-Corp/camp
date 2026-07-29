@@ -20,6 +20,7 @@ import (
 	"github.com/Obedience-Corp/camp/internal/ui"
 	wkitem "github.com/Obedience-Corp/camp/internal/workitem"
 	wkaudit "github.com/Obedience-Corp/camp/internal/workitem/audit"
+	"github.com/Obedience-Corp/camp/internal/workitem/links"
 	"github.com/Obedience-Corp/camp/internal/workitem/locate"
 	"github.com/Obedience-Corp/camp/pkg/ledgerkit"
 )
@@ -182,11 +183,11 @@ func runWorkitemSweep(cmd *cobra.Command, opts sweepOptions) error {
 }
 
 // sweepOne executes a single candidate's promotion with the same move, audit,
-// ledger, commit, and nav-invalidation sequence runWorkitemPromote uses for one
-// item, isolated so a failure returns a populated result entry instead of
-// aborting the batch. The move either fully applies (move + audit + ledger +
-// commit) or the entry carries an error; nothing is reported swept without the
-// move landing.
+// ledger, link-release, commit, and nav-invalidation sequence doDungeonPromote
+// uses for one item, isolated so a failure returns a populated result entry
+// instead of aborting the batch. The move either fully applies (move + audit +
+// ledger + link release + commit) or the entry carries an error; nothing is
+// reported swept without the move landing.
 func sweepOne(ctx context.Context, cmd *cobra.Command, cfg *config.CampaignConfig, root string, cand wkitem.SweepCandidate, result *workitemSweepResult) workitemSweepResultItem {
 	entry := workitemSweepResultItem{
 		Type:     string(cand.Item.WorkflowType),
@@ -210,12 +211,28 @@ func sweepOne(ctx context.Context, cmd *cobra.Command, cfg *config.CampaignConfi
 	}
 	entry.ID, entry.Ref = ledgerID, ledgerRef
 
+	// Capture link identity before the move: workitem_key encodes the source
+	// path, which is about to change (same reason doDungeonPromote captures it).
+	oldKey := cand.Item.Key
+	if oldKey == "" {
+		oldKey = entry.Type + ":" + entry.From
+	}
+
 	moveRes, err := MoveToDungeon(ctx, root, loc, "completed")
 	if err != nil {
 		entry.Error = err.Error()
 		return entry
 	}
 	entry.To = moveRes.ToRel
+
+	// Shelving ends the workitem's active life: drop its links so a multi-
+	// worktree design does not leave stale rows that only resolve to a dungeon
+	// path the selector cannot see. Matches doDungeonPromote.
+	dropped, unlinkErr := unlinkShelvedWorkitem(ctx, root, ledgerID, oldKey)
+	if unlinkErr != nil {
+		entry.Error = unlinkErr.Error()
+		return entry
+	}
 
 	appendWorkitemAuditEvent(ctx, cmd, root, wkaudit.Event{
 		Event:    wkaudit.EventPromote,
@@ -239,6 +256,13 @@ func sweepOne(ctx context.Context, cmd *cobra.Command, cfg *config.CampaignConfi
 
 	destPaths := append([]string{moveRes.TargetPath}, moveRes.CreatedFiles...)
 	destPaths = append(destPaths, filepath.Join(root, ".campaign", "workitems", wkaudit.AuditFile))
+	if len(dropped) > 0 {
+		destPaths = append(destPaths, links.LinksPath(root))
+		for _, l := range dropped {
+			_, _ = fmt.Fprintf(cmd.OutOrStdout(), "  released link %s (%s:%s); %s is no longer active\n",
+				l.ID, l.ScopeKind, l.ScopePath, ledgerID)
+		}
+	}
 	outcome := dungeoncmd.StageAndCommitDungeonMove(ctx, &dungeoncmd.DungeonMoveCommit{
 		Config:           cfg,
 		CampaignRoot:     root,

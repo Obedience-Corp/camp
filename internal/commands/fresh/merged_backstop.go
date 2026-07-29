@@ -110,11 +110,20 @@ func handleMergedBackstop(ctx context.Context, out io.Writer, root, projectPath 
 // declined item offers a "skip all remaining" shortcut. A cancelled prompt
 // (Ctrl+C) is treated as skip. Every accept goes through the shared promote path
 // with EvidenceMergedBranch; nothing is promoted without an explicit accept.
+// Matches are also de-duplicated by workitem key so a multi-worktree item that
+// somehow still appears more than once is only prompted/promoted once.
 func promoteMergedMatches(ctx context.Context, out io.Writer, cfg *config.CampaignConfig, root string, matches []MergedBackstopMatch) {
 	skipAll := false
+	seen := map[string]bool{}
 	for i, m := range matches {
 		if skipAll {
 			break
+		}
+		if key := m.Workitem.Key; key != "" {
+			if seen[key] {
+				continue
+			}
+			seen[key] = true
 		}
 		promote, err := confirmMergedPromote(ctx, backstopPromptTitle(m))
 		if err != nil {
@@ -246,22 +255,13 @@ func MapMergedBranchesToWorkitems(ctx context.Context, cfg *config.CampaignConfi
 	}
 	active := activeBackstopItems(items)
 
-	var matches []MergedBackstopMatch
-	matchedKeys := map[string]bool{}
-	var unmatchedBranches []string
-
 	projectScope := projectRelPath(root, projectPath)
 
-	// Signal 1: worktree-scope links, per pruned branch.
-	for _, branch := range prunedBranches {
-		wi, scopePath, ok := matchWorktreeLinkBranch(registry.Links, active, branch)
-		if !ok {
-			unmatchedBranches = append(unmatchedBranches, branch)
-			continue
-		}
-		matches = append(matches, MergedBackstopMatch{Workitem: wi, Branch: branch, Signal: SignalWorktreeLink, ScopePath: scopePath})
-		matchedKeys[wi.Key] = true
-	}
+	// Signal 1: worktree-scope links, per pruned branch. One workitem often has
+	// several worktree links (stacked PRs / multi-branch designs); once any of
+	// those branches map to it, further branches for the same key are ignored
+	// so promote only runs once.
+	matches, unmatchedBranches, matchedKeys := collectWorktreeLinkMatches(registry.Links, active, prunedBranches)
 
 	// Signal 2: WI- commit tags on commits newly reachable from the default
 	// branch, only when some pruned branch had no worktree link. beforeSHA is
@@ -283,6 +283,36 @@ func MapMergedBranchesToWorkitems(ctx context.Context, cfg *config.CampaignConfi
 	}
 
 	return matches, nil
+}
+
+// collectWorktreeLinkMatches maps pruned branch names to still-active workitems
+// via worktree-scope link basenames. Each workitem key appears at most once in
+// the returned matches (first pruned branch that hits it wins). Branches with
+// no worktree-link match are returned as unmatched for the commit-tag signal.
+// Pure: no I/O.
+func collectWorktreeLinkMatches(all []links.Link, active []wkitem.WorkItem, prunedBranches []string) (matches []MergedBackstopMatch, unmatched []string, matchedKeys map[string]bool) {
+	matchedKeys = map[string]bool{}
+	for _, branch := range prunedBranches {
+		wi, scopePath, ok := matchWorktreeLinkBranch(all, active, branch)
+		if !ok {
+			unmatched = append(unmatched, branch)
+			continue
+		}
+		if matchedKeys[wi.Key] {
+			// Same workitem, another of its worktrees just merged. One promote
+			// covers the item; do not re-queue it and do not treat the branch as
+			// unmatched (that would incorrectly open the commit-tag path).
+			continue
+		}
+		matches = append(matches, MergedBackstopMatch{
+			Workitem:  wi,
+			Branch:    branch,
+			Signal:    SignalWorktreeLink,
+			ScopePath: scopePath,
+		})
+		matchedKeys[wi.Key] = true
+	}
+	return matches, unmatched, matchedKeys
 }
 
 // activeBackstopItems returns the discovered items eligible for tier-2 matching:
