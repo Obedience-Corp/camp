@@ -150,6 +150,16 @@ func executeCommitTree(ctx context.Context, campaignRoot, repoPath string, job *
 		return camperrors.Newf("job %s has no captured tree or parent", job.ID)
 	}
 
+	// A reclaimed job may have died after its commit landed. Recognize that
+	// before generating the message, not after: the writer is an external
+	// process a retry should not pay for again, and a writer failing on the
+	// retry must not fail a job whose commit is sitting in the log. Attempts
+	// is only ever incremented by reclaim, so a first run never pays for this
+	// check.
+	if job.Attempts > 0 && alreadyApplied(ctx, repoPath, job) {
+		return nil
+	}
+
 	message, err := messageForTree(ctx, campaignRoot, repoPath, job)
 	if err != nil {
 		return err
@@ -187,13 +197,14 @@ func executeCommitTree(ctx context.Context, campaignRoot, repoPath string, job *
 	return nil
 }
 
-// alreadyApplied reports whether HEAD is the commit this job set out to make.
-func alreadyApplied(ctx context.Context, repoPath string, job *Job) bool {
-	tree, parent, err := git.HeadTreeAndParent(ctx, repoPath)
-	if err != nil {
-		return false
-	}
-	return tree == job.Tree && parent == job.Parent
+// alreadyApplied reports whether a commit this job set out to make has landed.
+//
+// It walks HEAD's first-parent chain rather than checking HEAD alone: the user
+// may have kept committing between the crash and the retry, and a landed
+// commit buried under their new work is still landed. A variable so tests can
+// exercise the retry ordering without a repository behind the job.
+var alreadyApplied = func(ctx context.Context, repoPath string, job *Job) bool {
+	return git.FirstParentChainContains(ctx, repoPath, job.Tree, job.Parent)
 }
 
 // messageForTree returns the commit message for a commit-tree job, running the

@@ -141,15 +141,15 @@ func runLane(ctx context.Context, campaignRoot, repo string) (served bool) {
 			followErr := error(nil)
 			if execErr == nil && job.Then != nil {
 				followErr = enqueueFollowUp(ctx, campaignRoot, job)
+				if hookInFollowUpWindow != nil {
+					hookInFollowUpWindow(job)
+				}
 			}
 			// A follow-up that could not be written fails the parent even
 			// though its commit succeeded, so the job is retried rather than
 			// quietly half-done. Camp promised a commit and a pointer update.
 			if err := complete(cmp.Or(execErr, followErr)); err != nil {
 				logWorker(campaignRoot, "complete-error lane=%s id=%s err=%v", repo, job.ID, err)
-			}
-			if hookAfterFollowUp != nil {
-				hookAfterFollowUp(job)
 			}
 		}
 
@@ -176,9 +176,11 @@ func runLane(ctx context.Context, campaignRoot, repo string) (served bool) {
 	}
 }
 
-// hookAfterFollowUp lets tests observe the moment a follow-up has been written
-// and the parent completed, which is otherwise unobservable from outside.
-var hookAfterFollowUp func(job *Job)
+// hookInFollowUpWindow lets tests act inside the window where a follow-up has
+// been made durable but its parent has not yet been completed. That instant is
+// the durability claim itself: a crash there must leave both files on disk, so
+// nothing is lost however the worker dies.
+var hookInFollowUpWindow func(job *Job)
 
 // hookInReleaseWindow lets tests act inside the window between a lane's lock
 // being released and the re-scan that follows it. That window is otherwise
@@ -299,6 +301,15 @@ func laneEmpty(campaignRoot, repo string) (bool, error) {
 // WorkerLogPath is the shared worker log for a campaign.
 func WorkerLogPath(campaignRoot string) string {
 	return filepath.Join(QueueDir(campaignRoot), "worker.log")
+}
+
+// LogEvent records a queue-adjacent event from outside the worker.
+//
+// It exists for enqueuers that degrade a guarantee rather than fail: the
+// degradation has to be recorded somewhere the user can find it, and the
+// worker log is where everything else about a job's history already lives.
+func LogEvent(campaignRoot, format string, args ...any) {
+	logWorker(campaignRoot, format, args...)
 }
 
 // logWorker appends one greppable line per state transition.

@@ -91,24 +91,46 @@ func RunWithEnv(ctx context.Context, repoPath string, env []string, args ...stri
 	return nil
 }
 
-// HeadTreeAndParent returns the tree and first parent of HEAD.
+// FirstParentChainContains reports whether HEAD's first-parent chain holds a
+// commit whose tree is tree and whose first parent is parent.
 //
 // Used to recognize a commit by what it contains rather than by its hash. Two
 // runs of `git commit-tree` over identical inputs produce different hashes,
 // because the committer timestamp is part of the object, so a retry cannot
-// identify its own earlier work by SHA.
-func HeadTreeAndParent(ctx context.Context, repoPath string) (tree, parent string, err error) {
-	treeOut, err := Output(ctx, repoPath, "rev-parse", "HEAD^{tree}")
+// identify its own earlier work by SHA. Checking HEAD alone is not enough
+// either: the user may have committed on top between the crash and the retry,
+// and a landed commit one step down is still landed.
+//
+// The walk is bounded rather than running to the root. If the sought commit is
+// not within the bound, the caller treats the work as not applied and fails
+// visibly, which is the recoverable direction: a false "not applied" parks a
+// job the user can inspect, while an unbounded walk on a rewritten branch
+// could scan the whole history to conclude the same thing.
+func FirstParentChainContains(ctx context.Context, repoPath, tree, parent string) bool {
+	out, err := Output(ctx, repoPath, "log", "--first-parent", "--max-count=100",
+		"--format=%T %P", "HEAD")
 	if err != nil {
-		return "", "", camperrors.Wrap(err, "read HEAD tree")
+		return false
 	}
-	parentOut, err := Output(ctx, repoPath, "rev-parse", "HEAD^")
-	if err != nil {
-		// A root commit has no parent. That is a legitimate answer, not a
-		// failure: it simply cannot match a job that recorded one.
-		return strings.TrimSpace(treeOut), "", nil
+	for _, line := range strings.Split(strings.TrimSpace(out), "\n") {
+		fields := strings.Fields(line)
+		if len(fields) == 0 {
+			continue
+		}
+		lineTree := fields[0]
+		firstParent := ""
+		if len(fields) > 1 {
+			firstParent = fields[1]
+		}
+		if lineTree == tree && firstParent == parent {
+			return true
+		}
+		// Past the recorded parent, nothing older can be this job's commit.
+		if firstParent == parent {
+			return false
+		}
 	}
-	return strings.TrimSpace(treeOut), strings.TrimSpace(parentOut), nil
+	return false
 }
 
 // StagedFileCount returns how many paths are staged, for the line a deferred

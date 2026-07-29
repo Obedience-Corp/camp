@@ -158,8 +158,13 @@ func EnqueuePaths(ctx context.Context, campaignRoot, repoPath, message string, p
 	// A capture failure degrades to a path-only job rather than costing the
 	// user their commit: the coalescing risk is real but smaller than not
 	// committing at all, and the failure is a repository camp could not read.
+	// Degrading silently is not an option, so the worker log records it; the
+	// job itself also shows it, since a captured job carries blobs.
 	blobs, err := git.CaptureBlobs(ctx, repoPath, paths)
 	if err != nil {
+		jobs.LogEvent(campaignRoot,
+			"capture-degraded repo=%s paths=%d err=%v; the job will commit execution-time content",
+			jobs.RepoForPath(campaignRoot, repoPath), len(paths), err)
 		blobs = nil
 	}
 
