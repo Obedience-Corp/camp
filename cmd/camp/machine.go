@@ -176,6 +176,9 @@ func init() {
 	machineCmd.AddCommand(machineAddCmd)
 	machineCmd.AddCommand(machineRemoveCmd)
 	machineCmd.AddCommand(machineDiagnoseCmd)
+	machineCmd.AddCommand(machineAdoptCmd)
+	machineAdoptCmd.Flags().BoolVar(&machineAdoptForce, "force", false,
+		"Skip the reminder that you declined this origin before (never skips the confirmation)")
 
 	machineListCmd.Flags().BoolVar(&machineListJSON, "json", false, "Output as JSON")
 
@@ -198,9 +201,24 @@ func runMachineList(cmd *cobra.Command, _ []string) error {
 		return err
 	}
 	if machineListJSON {
+		// JSON consumers get data, never advice: the hint is suppressed here
+		// rather than inside OriginHint, because whether advice belongs in the
+		// output is the caller's decision.
 		return writeMachineListJSON(cmd.OutOrStdout(), mf)
 	}
-	return renderMachineListTable(cmd.OutOrStdout(), mf.Machines)
+	if err := renderMachineListTable(cmd.OutOrStdout(), mf.Machines); err != nil {
+		return err
+	}
+	// OriginHint's contract is non-TTY silence: piped/redirected list stays pure
+	// data, and the once-per-process token is not burned on non-interactive paths.
+	// --json already returns above; this covers bare table output without a TTY.
+	if ui.IsTerminal() {
+		if hint := OriginHint(); hint != "" {
+			_, err := fmt.Fprintln(cmd.OutOrStdout(), ui.Dim(hint))
+			return err
+		}
+	}
+	return nil
 }
 
 func writeMachineListJSON(w io.Writer, mf *machines.File) error {

@@ -74,6 +74,17 @@ func emitHopOrRefuse(ctx context.Context, cmd *cobra.Command, m *machines.Machin
 		"; run via the csw shell wrapper to hop there")
 }
 
+// hopBackHintSuffix appends the adopt suggestion to a hop-back failure when the
+// origin is unregistered here. Registering is exactly what would have made the
+// failure diagnosable with `camp machine diagnose`, so the suggestion is on
+// topic rather than generic advice bolted onto an error.
+func hopBackHintSuffix() string {
+	if hint := OriginHint(); hint != "" {
+		return "; 'camp machine adopt' registers it so future hops know the way back"
+	}
+	return ""
+}
+
 // hopOriginForEmit builds the CAMP_HOP_ORIGIN payload describing THIS machine,
 // for the session on the far side. Every failure yields "" (no export), never
 // an error: the operator asked to hop, not to advertise an origin, so a machine

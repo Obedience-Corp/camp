@@ -33,7 +33,10 @@ func (m *machineTUIModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case healthMsg:
 		m.health[msg.id] = msg.health
 		m.setStatus(healthStatusLine(msg.id, msg.health))
-		m.statusErr = msg.health.State != healthReachable
+		m.statusKind = statusOK
+		if msg.health.State != healthReachable {
+			m.statusKind = statusError
+		}
 		return m, nil
 	case tea.KeyMsg:
 		if m.overlay != machineNoOverlay {
