@@ -19,6 +19,9 @@ import (
 // resolveRemoteRoot is the seam every remote switch resolves through, hop-back
 // and machine:campaign alike, so both can be tested without a live ssh.
 // Production is remote.ResolveRoot; tests substitute a stub.
+//
+// Not parallel-safe: tests swap this package-level var, so a test that does so
+// must not call t.Parallel().
 var resolveRemoteRoot = remote.ResolveRoot
 
 // runRemoteSwitch resolves a machine:campaign selector by asking the remote
