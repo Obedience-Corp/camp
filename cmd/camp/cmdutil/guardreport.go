@@ -24,6 +24,18 @@ import (
 // new behavior carries its own undo or off switch, so a user who disagrees
 // with camp is one command from reversing it rather than searching docs.
 
+// GuardUnavailableLine says the staging guard did not run.
+//
+// It names the cause rather than saying "guard unavailable", because the two
+// realistic causes need different responses from the user: a repository camp
+// cannot read yet is nothing to act on, while git being broken is.
+func GuardUnavailableLine(cause error) string {
+	return fmt.Sprintf(
+		"Staged without the size and bulk guard: %v\n"+
+			"  Large files were not checked. Run 'camp doctor -c bigfiles' if you want to look.",
+		cause)
+}
+
 // GitignoreRuleComment explains, in the file itself, why an artifact root's
 // ignore rule is there.
 const GitignoreRuleComment = "# Camp artifact root (synced with 'camp sync', not git)"
@@ -93,6 +105,13 @@ func HandleStageOutcome(
 ) (*GuardHandling, error) {
 	if outcome.Empty() {
 		return nil, nil
+	}
+
+	// The guard could not evaluate this repository and staging went ahead
+	// without it. Said out loud, because the dangerous version of degrading is
+	// the quiet one: a user who is not told assumes the protection ran.
+	if outcome.Unavailable != nil {
+		_, _ = fmt.Fprintln(out, ui.Warning(GuardUnavailableLine(outcome.Unavailable)))
 	}
 
 	handling := &GuardHandling{TrackedGrowth: outcome.Reported}

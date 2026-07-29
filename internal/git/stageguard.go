@@ -45,11 +45,24 @@ type StageOutcome struct {
 	// Limits is the policy that produced this outcome, so callers can render
 	// the threshold they were measured against without resolving it again.
 	Limits stageguard.GuardLimits
+	// Unavailable is set when the guard could not evaluate this repository and
+	// staging proceeded without it.
+	//
+	// Degrading is deliberate: the guard is a safety net, not a precondition
+	// for camp working. A repository it cannot read (mid-scaffold, git
+	// unavailable, a transient failure) must still be stageable, or an
+	// unrelated fault takes the user's ability to commit away entirely.
+	//
+	// It is recorded rather than swallowed because degrading silently is the
+	// version of this that is actually dangerous: the user would believe they
+	// were protected. The caller reports it.
+	Unavailable error
 }
 
 // Empty reports whether the guard found nothing worth telling the user about.
 func (o *StageOutcome) Empty() bool {
-	return o == nil || (len(o.Excluded) == 0 && len(o.Reported) == 0)
+	return o == nil ||
+		(len(o.Excluded) == 0 && len(o.Reported) == 0 && o.Unavailable == nil)
 }
 
 // ExcludedPaths returns the repo-relative paths kept out of the index.
@@ -137,10 +150,15 @@ func isStageEverything(files []string) bool {
 // runStageGuard evaluates the guard for a staging operation and returns both
 // the outcome and the pathspec exclusions to apply.
 //
-// It is deliberately fail-closed on refusals and fail-open on its own errors:
-// a repository the guard cannot read (not a repo yet, git unavailable) must
-// still be stageable, because the guard is a safety net rather than a
-// precondition for camp working at all.
+// It is fail-closed on refusals and fail-open on its own errors: a repository
+// the guard cannot read (not a repo yet, git unavailable) must still be
+// stageable, because the guard is a safety net rather than a precondition for
+// camp working at all.
+//
+// Fail-open here means "stage, and say the guard did not run", never "stage
+// quietly". The outcome carries Unavailable so the caller can report it; a
+// silent degradation would leave the user believing they were protected, which
+// is worse than either refusing or reporting.
 func runStageGuard(ctx context.Context, repoPath string, files []string, opts StageOptions) (*StageOutcome, []string, error) {
 	if !isStageEverything(files) {
 		return nil, nil, nil
@@ -155,7 +173,8 @@ func runStageGuard(ctx context.Context, repoPath string, files []string, opts St
 
 	limits, err := stageguard.ResolveLimits(ctx, repoPath)
 	if err != nil {
-		return nil, nil, camperrors.Wrapf(err, "resolve staging guard limits for %s", repoPath)
+		return &StageOutcome{Unavailable: camperrors.Wrapf(
+			err, "resolve staging guard limits for %s", repoPath)}, nil, nil
 	}
 	if limits.LargeFiles == stageguard.ModeOff && limits.Bulk == stageguard.ModeOff {
 		return nil, nil, nil
@@ -163,7 +182,8 @@ func runStageGuard(ctx context.Context, repoPath string, files []string, opts St
 
 	violations, err := stageguard.CheckStaging(ctx, repoPath, limits)
 	if err != nil {
-		return nil, nil, camperrors.Wrapf(err, "evaluate staging guard for %s", repoPath)
+		return &StageOutcome{Limits: limits, Unavailable: camperrors.Wrapf(
+			err, "evaluate staging guard for %s", repoPath)}, nil, nil
 	}
 	if len(violations) == 0 {
 		return nil, nil, nil

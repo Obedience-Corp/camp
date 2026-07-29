@@ -25,7 +25,7 @@ func main() {
 		// user's attention, so it prints the full report (what was found,
 		// that nothing was staged, and the ways forward) in place of the
 		// one-line error, rather than in addition to it.
-		if cmdutil.RenderGuardRefusal(os.Stderr, err, "camp commit") {
+		if cmdutil.RenderGuardRefusal(os.Stderr, err, ExecutedCommandPath()) {
 			os.Exit(1)
 		}
 		fmt.Fprintf(os.Stderr, "Error: %v\n", err)

@@ -238,6 +238,57 @@ func TestDetectBulkFindsDeepestDominantPrefix(t *testing.T) {
 	}
 }
 
+// A vendor dump must block even when unrelated untracked files are sitting
+// alongside it.
+//
+// The share-of-batch rule this replaced could be diluted out of existence:
+// 1000 files under one prefix plus ~120 stragglers is 89% of the batch, so a
+// 90% threshold cancelled exactly the case the bulk guard exists for. Whether a
+// directory is being dumped into git does not depend on what else the user
+// happened to leave lying around.
+func TestDetectBulkIsNotDilutedByUnrelatedFiles(t *testing.T) {
+	candidates := bulkCandidates("vendor", 1000, 1<<10)
+	for i := range 120 {
+		candidates = append(candidates, Candidate{
+			Path: fmt.Sprintf("notes/scratch-%d.md", i),
+			Size: 1 << 8,
+			// Untracked, or detectBulk filters them out before the share is
+			// computed and the dilution this test exists for never happens.
+			Untracked: true,
+		})
+	}
+
+	violation, found := detectBulk(candidates, testLimits())
+	if !found {
+		t.Fatalf("detectBulk() found = false; a 1000-file vendor dump must block "+
+			"even with %d unrelated files alongside it", 120)
+	}
+	if violation.CommonPrefix != "vendor" {
+		t.Errorf("CommonPrefix = %q, want the directory actually being dumped", violation.CommonPrefix)
+	}
+}
+
+// The scattered batch is the ordinary case and must still pass. Making the
+// trigger absolute must not turn "a lot of files" into "blocked" when no single
+// directory is responsible.
+func TestDetectBulkIgnoresAScatteredBatch(t *testing.T) {
+	var candidates []Candidate
+	for dir := range 40 {
+		for f := range 30 {
+			candidates = append(candidates, Candidate{
+				Path:      fmt.Sprintf("area-%d/file-%d.md", dir, f),
+				Size:      1 << 8,
+				Untracked: true,
+			})
+		}
+	}
+
+	if _, found := detectBulk(candidates, testLimits()); found {
+		t.Errorf("detectBulk() blocked %d files spread across 40 directories; "+
+			"no single directory holds enough to be a dump", len(candidates))
+	}
+}
+
 func TestMatchesAllow(t *testing.T) {
 	allow := []string{
 		"docs/handbook.pdf",
