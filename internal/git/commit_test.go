@@ -442,6 +442,113 @@ func TestCommit_NoChanges(t *testing.T) {
 	// Note: ErrNoChanges is returned
 }
 
+func TestCommit_NoChanges_UntrackedOnly(t *testing.T) {
+	tmpDir := initTestRepo(t)
+
+	// Create initial commit so we have a HEAD.
+	if err := os.WriteFile(filepath.Join(tmpDir, "init.txt"), []byte("init"), 0644); err != nil {
+		t.Fatal(err)
+	}
+	runGit(t, tmpDir, nil, "add", ".")
+	runGit(t, tmpDir, nil, "commit", "-m", "init")
+
+	// Only an untracked file exists; nothing is staged.
+	if err := os.WriteFile(filepath.Join(tmpDir, "untracked.txt"), []byte("content"), 0644); err != nil {
+		t.Fatal(err)
+	}
+
+	ctx := context.Background()
+	err := Commit(ctx, tmpDir, &CommitOptions{Message: "should not commit"})
+
+	if !errors.Is(err, ErrNoChanges) {
+		t.Fatalf("Commit() error = %v, want ErrNoChanges", err)
+	}
+}
+
+func TestCommit_NoChanges_TrackedModifiedButUnstaged(t *testing.T) {
+	tmpDir := initTestRepo(t)
+
+	// Create and commit a tracked file.
+	trackedPath := filepath.Join(tmpDir, "tracked.txt")
+	if err := os.WriteFile(trackedPath, []byte("original"), 0644); err != nil {
+		t.Fatal(err)
+	}
+	runGit(t, tmpDir, nil, "add", ".")
+	runGit(t, tmpDir, nil, "commit", "-m", "init")
+
+	// Modify the tracked file without staging the change.
+	if err := os.WriteFile(trackedPath, []byte("modified"), 0644); err != nil {
+		t.Fatal(err)
+	}
+
+	ctx := context.Background()
+	err := Commit(ctx, tmpDir, &CommitOptions{Message: "should not commit"})
+
+	if !errors.Is(err, ErrNoChanges) {
+		t.Fatalf("Commit() error = %v, want ErrNoChanges", err)
+	}
+}
+
+func TestCommit_StagedChangeCommitsFine(t *testing.T) {
+	tmpDir := initTestRepo(t)
+
+	// Create initial commit so we have a HEAD.
+	if err := os.WriteFile(filepath.Join(tmpDir, "init.txt"), []byte("init"), 0644); err != nil {
+		t.Fatal(err)
+	}
+	runGit(t, tmpDir, nil, "add", ".")
+	runGit(t, tmpDir, nil, "commit", "-m", "init")
+
+	// Stage a genuine change alongside an untracked file, mirroring the
+	// mixed working tree where the untracked-only matcher must not
+	// misfire on a repo that also has real staged content.
+	if err := os.WriteFile(filepath.Join(tmpDir, "staged.txt"), []byte("content"), 0644); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(tmpDir, "untracked.txt"), []byte("other"), 0644); err != nil {
+		t.Fatal(err)
+	}
+	runGit(t, tmpDir, nil, "add", "staged.txt")
+
+	ctx := context.Background()
+	err := Commit(ctx, tmpDir, &CommitOptions{Message: "staged commit"})
+	if err != nil {
+		t.Fatalf("Commit() error = %v, want success", err)
+	}
+
+	cmd := exec.Command("git", "-C", tmpDir, "log", "--oneline", "-1")
+	output, _ := cmd.Output()
+	if !strings.Contains(string(output), "staged commit") {
+		t.Error("Commit message not found in git log")
+	}
+}
+
+func TestCommit_DifferentGitFailureNotMappedToNoChanges(t *testing.T) {
+	tmpDir := initTestRepo(t)
+
+	// Stage a change so the no-changes paths are not what triggers the
+	// failure; force a distinct git error (bad author format) instead.
+	if err := os.WriteFile(filepath.Join(tmpDir, "test.txt"), []byte("content"), 0644); err != nil {
+		t.Fatal(err)
+	}
+	if err := StageAll(context.Background(), tmpDir); err != nil {
+		t.Fatal(err)
+	}
+
+	ctx := context.Background()
+	err := Commit(ctx, tmpDir, &CommitOptions{
+		Message: "test",
+		Author:  "not-a-valid-author-string",
+	})
+
+	if err == nil {
+		t.Fatal("Commit() error = nil, want a git failure")
+	}
+	if errors.Is(err, ErrNoChanges) {
+		t.Fatalf("Commit() error = %v, should not be classified as ErrNoChanges", err)
+	}
+}
+
 func TestCommit_WithAmend(t *testing.T) {
 	tmpDir := initTestRepo(t)
 

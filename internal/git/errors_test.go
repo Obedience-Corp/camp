@@ -57,6 +57,12 @@ func TestClassifyGitError(t *testing.T) {
 			want:     GitErrorNoChanges,
 		},
 		{
+			name:     "untracked files only, nothing staged",
+			stderr:   "nothing added to commit but untracked files present (use \"git add\" to track)",
+			exitCode: 1,
+			want:     GitErrorNoChanges,
+		},
+		{
 			name:     "not a git repository",
 			stderr:   "fatal: not a git repository (or any of the parent directories): .git",
 			exitCode: 128,
