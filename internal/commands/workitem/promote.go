@@ -26,6 +26,7 @@ import (
 	wkaudit "github.com/Obedience-Corp/camp/internal/workitem/audit"
 	"github.com/Obedience-Corp/camp/internal/workitem/links"
 	"github.com/Obedience-Corp/camp/internal/workitem/locate"
+	"github.com/Obedience-Corp/camp/internal/workitem/priority"
 	"github.com/Obedience-Corp/camp/pkg/ledgerkit"
 )
 
@@ -55,6 +56,12 @@ type workitemPromoteResult struct {
 	// ReleasedLinks are the links dropped because the workitem is no longer
 	// active. Reported so an automatic removal is never silent.
 	ReleasedLinks []releasedLink `json:"released_links,omitempty"`
+	// ReleasedPriorityKey is the workitem key whose manual priority and
+	// attention entries were dropped on shelve, empty when there were none.
+	ReleasedPriorityKey string `json:"released_priority_key,omitempty"`
+	// ClearedCurrent reports that the current-workitem pointer was cleared
+	// because it referenced the shelved workitem.
+	ClearedCurrent bool `json:"cleared_current,omitempty"`
 }
 
 // releasedLink records a link that promote removed, in enough detail to put it
@@ -282,6 +289,18 @@ func printReleasedLinks(w io.Writer, result workitemPromoteResult) error {
 			return err
 		}
 	}
+	if result.ReleasedPriorityKey != "" {
+		if _, err := fmt.Fprintf(w, "  released priority/attention for %s; %s is no longer active\n",
+			result.ReleasedPriorityKey, result.ID); err != nil {
+			return err
+		}
+	}
+	if result.ClearedCurrent {
+		if _, err := fmt.Fprintf(w, "  cleared the current workitem pointer; %s is no longer active\n",
+			result.ID); err != nil {
+			return err
+		}
+	}
 	return nil
 }
 
@@ -320,6 +339,9 @@ func doDungeonPromote(ctx context.Context, campaignRoot string, loc *locate.Loca
 	// (`camp p commit` silently stops stamping the ref). So the links go with
 	// the workitem, reported rather than dropped quietly.
 	if err := releaseLinksForShelvedSource(ctx, campaignRoot, oldID, oldKey, ci, result); err != nil {
+		return nil, err
+	}
+	if err := releasePathStateForShelvedSource(ctx, campaignRoot, oldID, oldKey, result); err != nil {
 		return nil, err
 	}
 	return ci, nil
@@ -510,6 +532,9 @@ func doDocPromote(ctx context.Context, opts runWorkitemPromoteOptions, campaignR
 		if err := releaseLinksForShelvedSource(ctx, campaignRoot, oldID, oldKey, ci, result); err != nil {
 			return nil, err
 		}
+		if err := releasePathStateForShelvedSource(ctx, campaignRoot, oldID, oldKey, result); err != nil {
+			return nil, err
+		}
 	}
 	return ci, nil
 }
@@ -528,6 +553,56 @@ func releaseLinksForShelvedSource(ctx context.Context, campaignRoot, oldID, oldK
 		ci.destPaths = append(ci.destPaths, links.LinksPath(campaignRoot))
 		result.ReleasedLinks = append(result.ReleasedLinks, dropped...)
 	}
+	return nil
+}
+
+// releasePathStateForShelvedSource drops the per-machine state keyed on the
+// source's pre-move path. Both stores are gitignored, so neither is staged.
+//
+// A manual priority and an attention stage describe how to rank active work. The
+// key encodes the path, so a shelve strands the entry: nothing resolves it, and
+// Prune only reaches it on a later full discovery pass. Dropping it here is the
+// same call the link release makes for the same reason, so the two cannot
+// disagree about whether a shelved workitem is still active.
+func releasePathStateForShelvedSource(ctx context.Context, campaignRoot, oldID, oldKey string,
+	result *workitemPromoteResult,
+) error {
+	if oldKey != "" {
+		storePath := priority.StorePath(campaignRoot)
+		store, err := priority.Load(storePath)
+		if err != nil {
+			return camperrors.Wrap(err, "load priority store on shelve")
+		}
+		_, hasPriority := store.ManualPriorities[oldKey]
+		_, hasAttention := store.Attention[oldKey]
+		if hasPriority || hasAttention {
+			if err := priority.WithLock(ctx, storePath, func(s *priority.Store) error {
+				priority.Clear(s, oldKey)
+				delete(s.Attention, oldKey)
+				return nil
+			}); err != nil {
+				return camperrors.Wrap(err, "release priority entries on shelve")
+			}
+			result.ReleasedPriorityKey = oldKey
+		}
+	}
+
+	cur, err := links.LoadCurrent(ctx, campaignRoot)
+	if err != nil {
+		return camperrors.Wrap(err, "load current workitem on shelve")
+	}
+	if cur == nil {
+		return nil
+	}
+	if cur.WorkitemID != oldID && cur.WorkitemID != oldKey {
+		return nil
+	}
+	// A current pointer at a shelved workitem is worse than none: the selector
+	// cannot see dungeon items, so camp p commit silently stops stamping the ref.
+	if err := links.SaveCurrent(ctx, campaignRoot, nil); err != nil {
+		return camperrors.Wrap(err, "clear current workitem on shelve")
+	}
+	result.ClearedCurrent = true
 	return nil
 }
 
