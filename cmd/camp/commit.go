@@ -257,6 +257,11 @@ func runCommit(cmd *cobra.Command, args []string) error {
 			cmdutil.ReportNothingLeftToCommit(humanOut)
 			return commitJSONNoop(cmd, jsonResult)
 		}
+	} else {
+		// Nothing was staged here, so the guard at the staging chokepoint never
+		// ran: the index is whatever the user built with git add. Report what it
+		// holds, and only report -- the commit below is unchanged.
+		cmdutil.ReportStagedGrowth(ctx, humanOut, target.Path, commitLarge)
 	}
 
 	// Show what will be committed
