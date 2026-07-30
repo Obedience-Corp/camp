@@ -88,9 +88,19 @@ func stagedGrowth(
 // It names the cause for the same reason GuardUnavailableLine does: the
 // realistic causes need different responses from the user, and a bare "check
 // unavailable" gives them nothing to act on.
+//
+// Every clause is in a tense that is true at the moment it prints, and none of
+// them claims a commit. This runs before the commit object is written, and the
+// flow after it can still end in "nothing to commit", a refusal over
+// pre-staged submodule refs, a deferred message writer, or a git failure.
+// GuardUnavailableLine can afford "Staged without..." because staging really
+// has happened by then; the equivalent past tense here would announce an
+// outcome camp does not yet know, which is the same wrong-by-assertion problem
+// the line exists to avoid.
 func StagedCheckUnavailableLine(cause error) string {
 	return fmt.Sprintf(
-		"Committed without the size check: %v\n"+
-			"  Large files were not checked. Run 'camp doctor -c bigfiles' if you want to look.",
+		"Could not run the size check over the staged files: %v\n"+
+			"  Large files were not checked, and camp does not stop for that.\n"+
+			"  Run 'camp doctor -c bigfiles' if you want to look.",
 		cause)
 }

@@ -94,7 +94,7 @@ func TestIntegration_ScopedCommitStaysSilentUnderThreshold(t *testing.T) {
 
 	assert.NotContains(t, output, "is tracked and now",
 		"an under-threshold scoped commit must say nothing about size")
-	assert.NotContains(t, output, "Committed without the size check",
+	assert.NotContains(t, output, "Could not run the size check",
 		"the check must have run rather than degrading")
 
 	committed := tc.GitOutput(t, campPath, "show", "--name-only", "--format=", latestUserCommit(t, tc, campPath))
@@ -196,7 +196,7 @@ func TestIntegration_ScopedCommitSkipsStagedSubmoduleRefs(t *testing.T) {
 
 	assert.Contains(t, output, "media/diagram.png is tracked and now",
 		"a gitlink in the index must not cost the report the files beside it")
-	assert.NotContains(t, output, "Committed without the size check",
+	assert.NotContains(t, output, "Could not run the size check",
 		"an unreachable gitlink object must not fail the check")
 	assert.NotContains(t, output, "vendor/thing is tracked and now",
 		"a gitlink has no blob size to report")
