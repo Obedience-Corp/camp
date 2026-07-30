@@ -272,3 +272,62 @@ func TestIntegration_DroppedBookkeepingJobLeavesTheIntentOnDisk(t *testing.T) {
 	assert.Contains(t, tracked, "survivor.md",
 		"an ordinary commit must pick up what the dropped job would have committed")
 }
+
+// `camp init` creates the .git directory but never commits, so a campaign a
+// user has just created has an unborn HEAD until their first `camp commit`.
+// A deferred bookkeeping job enqueued before that first commit used to die in
+// the worker with "git read-tree: Not a valid object name HEAD" and land in
+// the failed lane silently: `camp jobs drain` still reported success, because
+// draining only waits for a lane to empty, not for its jobs to succeed.
+//
+// This is deliberately NOT setupDrainCampaign: that helper (and InitCampaign
+// underneath it) creates a baseline "Initial campaign setup" commit as a
+// workaround for exactly this bug, so it never exercises an unborn HEAD.
+func TestIntegration_BookkeepingCommitLandsOnUnbornHead(t *testing.T) {
+	tc := GetSharedContainer(t)
+	tc.EnableDeferral()
+
+	campPath := "/campaigns/bk-defer-unborn"
+	_, err := tc.RunCamp("init", campPath, "--name", "bk-defer-unborn",
+		"-d", "Test campaign", "-m", "Test mission", "--type", "product")
+	require.NoError(t, err)
+
+	// Confirm the fixture actually reproduces the precondition: no commit
+	// exists yet. A GitOutput call would fail the test on git's non-zero exit,
+	// so this checks the exit code itself instead.
+	_, exitCode, err := tc.ExecCommand("git", "-C", campPath, "rev-parse", "--verify", "HEAD")
+	require.NoError(t, err)
+	require.NotEqual(t, 0, exitCode, "fixture is not reproducing an unborn HEAD; HEAD already resolves")
+
+	stdout, stderr, exitCode, err := tc.RunCampSplitInDir(campPath, "intent", "add", "captured before first commit")
+	require.NoError(t, err)
+	require.Equal(t, 0, exitCode, "stdout:\n%s\nstderr:\n%s", stdout, stderr)
+	assert.Contains(t, stdout+stderr, "queued",
+		"the command must report a queued commit; output:\n%s", stdout+stderr)
+
+	listing := tc.Shell(t, fmt.Sprintf("ls %s/.campaign/intents/inbox/", campPath))
+	assert.Contains(t, listing, "captured-before-first-commit",
+		"the intent file must be written in the foreground; inbox:\n%s", listing)
+
+	drainJobs(t, tc, campPath)
+
+	// The bug's signature: drain reports success even though the job died, so
+	// the assertion that catches it is the failed lane, not the drain's exit
+	// code.
+	assert.Zero(t, pendingJobCount(t, tc, campPath, "failed", rootLane),
+		"the deferred bookkeeping job must not land in the failed lane on an unborn HEAD")
+
+	head := tc.GitOutput(t, campPath, "rev-parse", "HEAD")
+	assert.NotEmpty(t, head, "the deferred job must create the repository's first commit")
+
+	count := strings.TrimSpace(tc.GitOutput(t, campPath, "rev-list", "--count", "HEAD"))
+	assert.Equal(t, "1", count, "the worker must produce exactly one commit, got %s", count)
+
+	tracked := tc.GitOutput(t, campPath, "ls-tree", "-r", "--name-only", "HEAD")
+	assert.Contains(t, tracked, "captured-before-first-commit",
+		"the first commit must contain the captured intent file; tree:\n%s", tracked)
+
+	subject := headSubject(t, tc, campPath)
+	assert.Contains(t, subject, "captured before first commit",
+		"the deferred commit must carry the bookkeeping message; got %q", subject)
+}
