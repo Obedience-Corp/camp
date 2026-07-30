@@ -70,6 +70,7 @@ camp [flags]
 * [camp move](camp_move.md)	 - Move a file or directory within the campaign
 * [camp notify](camp_notify.md)	 - Manage campaign state notices
 * [camp org](camp_org.md)	 - Group campaigns into orgs
+* [camp pack](camp_pack.md)	 - Pack a directory into a portable .festival bundle
 * [camp pin](camp_pin.md)	 - Pin a directory
 * [camp pins](camp_pins.md)	 - List all pinned directories
 * [camp plugins](camp_plugins.md)	 - List discovered camp plugins on PATH
@@ -92,6 +93,7 @@ camp [flags]
 * [camp sync](camp_sync.md)	 - Safely synchronize submodules
 * [camp tag](camp_tag.md)	 - Label campaigns with tags
 * [camp transfer](camp_transfer.md)	 - Copy files between campaigns (and machines)
+* [camp unbundle](camp_unbundle.md)	 - Unbundle a .festival archive into a directory
 * [camp unpin](camp_unpin.md)	 - Remove a saved pin
 * [camp unregister](camp_unregister.md)	 - Remove campaign from registry
 * [camp version](camp_version.md)	 - Show version information

@@ -4366,6 +4366,38 @@ camp org which [flags]
 ```
 ---
 
+## camp pack
+
+Pack a directory into a portable .festival bundle
+
+### Synopsis
+
+Pack a work-unit directory into a compressed .festival archive using the Festival Bundle format.
+
+```
+camp pack [flags]
+```
+
+### Options
+
+```
+      --creator string   bundle.creator identity (default "camp")
+  -h, --help             help for pack
+      --json             emit info.json as JSON on stdout
+      --kind string      bundle kind (explore, design, intent, note, …); inferred from path when empty
+      --name string      human-readable bundle name (default: directory name)
+      --no-sent-record   do not write .bundles/sent on the source tree
+  -o, --output string    output .festival path (required)
+      --strict           fail if out-of-root linked files are missing
+```
+
+### Options inherited from parent commands
+
+```
+      --no-color   disable colored output
+```
+---
+
 ## camp pin
 
 Pin a directory
@@ -7066,6 +7098,36 @@ camp transfer <src> <dest> [flags]
 ```
 ---
 
+## camp unbundle
+
+Unbundle a .festival archive into a directory
+
+### Synopsis
+
+Extract a Festival Bundle into a live work-unit directory. Does not execute festivals or rituals.
+
+```
+camp unbundle [flags]
+```
+
+### Options
+
+```
+  -d, --dest string          destination directory (required)
+      --force                allow non-empty destination
+  -h, --help                 help for unbundle
+      --json                 emit info.json as JSON on stdout
+      --no-received-record   do not write .bundles/received
+      --no-verify            skip bundle.id content-hash verification
+```
+
+### Options inherited from parent commands
+
+```
+      --no-color   disable colored output
+```
+---
+
 ## camp unpin
 
 Remove a saved pin
@@ -7947,7 +8009,7 @@ camp workitem priority <selector> <high|medium|low|clear> [flags]
 
 ## camp workitem promote
 
-Promote a workitem to a festival, doc, or dungeon
+Promote a workitem: festival, doc, rail, dungeon
 
 ### Synopsis
 
@@ -7956,9 +8018,15 @@ Promote the workitem identified by [id], by cwd, or by the current pointer.
 TARGETS:
   festival    Create a festival from the workitem and shelve the source
   doc         Copy the workitem doc into docs/ and shelve the source
+  ready       Move the workitem onto the festival rail at festivals/ready
+  active      Move the workitem onto the festival rail at festivals/active
   completed   Move the workitem to its local dungeon/completed
   archived    Move the workitem to its local dungeon/archived
   someday     Move the workitem to its local dungeon/someday
+
+The rail is forward-only: root -> ready -> active. A workitem already on a
+stage cannot move backward, and moving one out of a dungeon is a restore
+rather than a promote.
 
 ```
 camp workitem promote [id] --target <target> [flags]
@@ -7975,7 +8043,7 @@ camp workitem promote [id] --target <target> [flags]
       --json            Output result as a single JSON object
       --keep            On festival/doc, do not move the source workitem to the dungeon
       --no-commit       Skip the auto-commit
-      --target string   Promotion target: festival, doc, completed, archived, someday
+      --target string   Promotion target: festival, doc, ready, active, completed, archived, someday
 ```
 
 ### Options inherited from parent commands
