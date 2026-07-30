@@ -18,10 +18,8 @@ import (
 	camperrors "github.com/Obedience-Corp/camp/internal/errors"
 	"github.com/Obedience-Corp/camp/internal/intent"
 	"github.com/Obedience-Corp/camp/internal/ledger"
-	navindex "github.com/Obedience-Corp/camp/internal/nav/index"
 	"github.com/Obedience-Corp/camp/internal/pathutil"
 	promotepkg "github.com/Obedience-Corp/camp/internal/promote"
-	"github.com/Obedience-Corp/camp/internal/ui"
 	wkitem "github.com/Obedience-Corp/camp/internal/workitem"
 	wkaudit "github.com/Obedience-Corp/camp/internal/workitem/audit"
 	"github.com/Obedience-Corp/camp/internal/workitem/links"
@@ -216,62 +214,10 @@ func runWorkitemPromote(cmd *cobra.Command, opts runWorkitemPromoteOptions) erro
 		return nil
 	}
 
-	appendWorkitemAuditEvent(ctx, cmd, root, wkaudit.Event{
-		Event:      wkaudit.EventPromote,
-		ID:         ledgerID,
-		Ref:        ledgerRef,
-		Title:      ledgerTitle,
-		Type:       result.Type,
-		From:       result.From,
-		To:         result.To,
-		Target:     result.Target,
-		PromotedTo: result.PromotedTo,
-	})
-	ci.destPaths = append(ci.destPaths, filepath.Join(root, ".campaign", "workitems", wkaudit.AuditFile))
-
-	ledger.NewFromRoot(ctx, root, ledger.WarnTo(cmd.ErrOrStderr())).
-		Emit(ctx, ledgerkit.KindTransitioned, ledgerkit.Scope{Workitem: result.ID},
-			ledger.WithWhy("promote to "+opts.Target),
-			ledger.WithPayload(map[string]any{
-				"target": result.Target, "from": result.From,
-				"to": result.To, "promoted_to": result.PromotedTo,
-			}))
-
-	if !opts.NoCommit {
-		outcome := dungeoncmd.StageAndCommitDungeonMove(ctx, &dungeoncmd.DungeonMoveCommit{
-			Config:           cfg,
-			CampaignRoot:     root,
-			Description:      ci.description,
-			SourcePaths:      ci.sourcePaths,
-			DestinationPaths: ci.destPaths,
-			RewrittenFiles:   ci.rewritten,
-		})
-		if !opts.JSON {
-			dungeoncmd.PrintDungeonMoveOutcome(cmd.OutOrStdout(), outcome)
-		}
-		result.Committed = outcome.Committed
-		result.CommitMessage = outcome.Message
-		if cerr := outcome.Err(); cerr != nil {
-			return cerr
-		}
-	}
-
-	if navErr := navindex.Delete(root); navErr != nil {
-		msg := fmt.Sprintf("failed to invalidate navigation cache: %v", navErr)
-		result.Warnings = append(result.Warnings, msg)
-		if !opts.JSON {
-			_, _ = fmt.Fprintf(cmd.ErrOrStderr(), "%s %s\n", ui.WarningIcon(), msg)
-		}
-	}
-
-	if opts.JSON {
-		return emitPromoteJSON(cmd, result)
-	}
-	if _, err = fmt.Fprintf(cmd.OutOrStdout(), "%s Promoted workitem %s to %s\n",
-		ui.SuccessIcon(), result.ID, result.To); err != nil {
-		return err
-	}
-	return printReleasedLinks(cmd.OutOrStdout(), result)
+	return finishWorkitemMove(ctx, cmd, cfg, root, ci, &result,
+		ledgerID, ledgerRef, ledgerTitle,
+		"promote to "+opts.Target, "Promoted",
+		moveTailOptions{NoCommit: opts.NoCommit, JSON: opts.JSON})
 }
 
 // printReleasedLinks names every link promote dropped and how to restore it.
@@ -885,4 +831,18 @@ func locateFromCurrent(ctx context.Context, root string) (*locate.Location, erro
 		return nil, camperrors.New("no current workitem set")
 	}
 	return locateByID(ctx, root, cur.WorkitemID)
+}
+
+func auditFilePath(root string) string {
+	return filepath.Join(root, ".campaign", "workitems", wkaudit.AuditFile)
+}
+
+func emitTransitionLedger(ctx context.Context, cmd *cobra.Command, root string, result *workitemPromoteResult, why string) {
+	ledger.NewFromRoot(ctx, root, ledger.WarnTo(cmd.ErrOrStderr())).
+		Emit(ctx, ledgerkit.KindTransitioned, ledgerkit.Scope{Workitem: result.ID},
+			ledger.WithWhy(why),
+			ledger.WithPayload(map[string]any{
+				"target": result.Target, "from": result.From,
+				"to": result.To, "promoted_to": result.PromotedTo,
+			}))
 }
