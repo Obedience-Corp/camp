@@ -190,6 +190,19 @@ func StageAllWithOutcome(ctx context.Context, repoPath string) (*StageOutcome, e
 	return git.StageWithGuard(ctx, repoPath, nil)
 }
 
+// StageAllWithOptions is StageAllWithOutcome with per-invocation overrides of
+// the guard's decision. It exists for the consumer flag that means "commit it
+// anyway": fest's --commit-large forwards here exactly as camp's own
+// --commit-large reaches the guard, so the override behaves identically in
+// both tools.
+func StageAllWithOptions(ctx context.Context, repoPath string, opts StageOptions) (*StageOutcome, error) {
+	if ctx.Err() != nil {
+		return nil, ctx.Err()
+	}
+	drainQuietly(ctx, repoPath)
+	return git.StageWithGuardOptions(ctx, repoPath, nil, opts)
+}
+
 // StageFiles stages specific files in the repository at repoPath.
 // Uses automatic lock retry with stale lock cleanup.
 //

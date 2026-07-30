@@ -80,6 +80,15 @@ type StageOutcome = git.StageOutcome
 // violations as typed data for the same reason.
 type GuardBlockedError = git.GuardBlockedError
 
+// StageOptions carries per-invocation overrides of the guard's decision.
+//
+// CommitLarge is the consumer-facing "no, this file belongs in git": camp's
+// own commit command threads --commit-large through this same override, and a
+// consumer's equivalent flag arrives here via StageAllWithOptions. An alias
+// for the same reason as every type above: the override a consumer builds is
+// the override the guard reads, with no conversion between them.
+type StageOptions = git.StageOptions
+
 // Mode is a guard's configured behavior.
 type Mode = stageguard.Mode
 
