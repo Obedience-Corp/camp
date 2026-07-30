@@ -19,14 +19,10 @@ import (
 	"github.com/Obedience-Corp/camp/internal/workitem/locate"
 )
 
-// festivalsDir is the campaign-relative folder the rail moves workitems into.
 const festivalsDir = "festivals"
 
-// Rail stages. "root" is a workitem still living under workflow/<type>/; ready
-// and active are the physical festival stages and take their names from the
-// lifecycle vocabulary so the promote target, the stage folder, and
-// StagesByType cannot drift apart; dungeon covers any shelved source, which the
-// rail never accepts as an origin.
+// Stage names come from the lifecycle vocabulary so the promote target, the
+// stage folder, and StagesByType cannot drift apart.
 const (
 	railStageRoot    = "root"
 	railStageReady   = string(wkitem.LifecycleStageReady)
@@ -34,7 +30,7 @@ const (
 	railStageDungeon = "dungeon"
 )
 
-// railStageOf reports which rail stage a resolved location currently occupies.
+// railStageOf reports which rail stage a resolved location occupies.
 func railStageOf(loc *locate.Location, root string) string {
 	if loc.InDungeon {
 		return railStageDungeon
@@ -51,9 +47,6 @@ func railStageOf(loc *locate.Location, root string) string {
 }
 
 // checkRailTransition enforces the forward-only rail: root -> ready -> active.
-// The dungeon case preserves the semantics of the old blanket "active" rejection
-// this replaced: moving a workitem back out of a dungeon is a restore, not a
-// promote, and the rail does not become a loophole for it.
 func checkRailTransition(from, target string) error {
 	switch {
 	case from == railStageDungeon:
@@ -69,13 +62,8 @@ func checkRailTransition(from, target string) error {
 }
 
 // doRailPromote moves a directory workitem onto festivals/<stage>/<slug> and
-// repairs every reference to it, returning commitInputs so the shared promote
-// tail supplies the audit event, ledger emit, and auto-commit unchanged.
-//
-// recordPromotedTo is deliberately not called here. promoted_to records where a
-// shelved source was copied to (the festival and doc targets); a rail move
-// relocates the directory itself, so its stage is its location and a
-// promoted_to pointer would only be able to describe where it already is.
+// repairs every reference to it. recordPromotedTo is intentionally not called:
+// a rail move relocates the directory itself, so its stage is its location.
 func doRailPromote(ctx context.Context, cfg *config.CampaignConfig, root string, loc *locate.Location, stage string, result *workitemPromoteResult) (*commitInputs, error) {
 	if isFile, _ := promoteSourceShape(loc); isFile {
 		return nil, camperrors.New(
@@ -91,10 +79,8 @@ func doRailPromote(ctx context.Context, cfg *config.CampaignConfig, root string,
 			"cannot promote to %s: destination %s already exists", stage, newRel)
 	}
 
-	// Stamp before moving, not after. Resident resolution refuses an unstamped
-	// directory in a lifecycle folder, so a marker written after the move would
-	// strand the workitem where nothing can resolve it if that write failed.
-	// Stamping first leaves every failure recoverable at the original location.
+	// Before the move: resident resolution refuses an unstamped directory, so a
+	// failed stamp must leave the workitem where it can still be resolved.
 	if err := ensureResidentMarker(ctx, cfg, root, oldRel, loc.Type); err != nil {
 		return nil, err
 	}
@@ -126,15 +112,10 @@ func doRailPromote(ctx context.Context, cfg *config.CampaignConfig, root string,
 	}, nil
 }
 
-// migrateRailReferences repairs the priority store, link registry, and current
-// pointer for the resident's new path by reusing the rename migrations verbatim.
-// A rail move is a path change that preserves the type prefix of the workitem
-// key (design:workflow/design/x becomes design:festivals/ready/x), which is
-// exactly the shape those helpers already handle.
-//
-// Returns whether links.yaml changed so the caller can stage it. Each store is
-// best-effort: the move has already landed, so a bookkeeping failure is a
-// warning rather than a reason to strand the moved workitem.
+// migrateRailReferences reuses the rename migrations: a rail move preserves the
+// workitem key's type prefix and changes only the path. Returns whether
+// links.yaml changed so the caller can stage it. Best-effort, since the move has
+// already landed.
 func migrateRailReferences(ctx context.Context, root, oldKey, newKey, oldRel, newRel string, result *workitemPromoteResult) bool {
 	warn := func(format string, args ...any) {
 		result.Warnings = append(result.Warnings, fmt.Sprintf(format, args...))
@@ -155,28 +136,17 @@ func migrateRailReferences(ctx context.Context, root, oldKey, newKey, oldRel, ne
 	return linksChanged
 }
 
-// ensureResidentMarker guarantees the workitem carries a canonical .workitem
-// marker before it enters the rail.
+// ensureResidentMarker makes the source's .workitem marker canonical before it
+// enters the rail. Directory workitems are not uniformly stamped, but resident
+// resolution reads the marker for the type, so a missing one strands the item.
 //
-// Directory workitems are not uniformly stamped: promote tolerates an unmarked
-// directory today (recordPromotedTo skips the stamp when the marker is absent,
-// and the ledger falls back to the slug for the same reason). Resident
-// resolution is stricter, because a resident's parent segment is a lifecycle
-// stage rather than a workflow type and so cannot supply the type. Minting the
-// marker at rail entry is what reconciles the two.
+// An existing marker is repaired, not trusted: the path type is authoritative
+// because migrateRailReferences keys the move on loc.Type while resolution after
+// the move reads the marker, so a disagreeing marker would leave priority,
+// links, and current pointing at a key no rail command resolves. An unparseable
+// marker fails the promote before anything moves.
 //
-// An existing marker is repaired, not trusted. The path type is authoritative
-// here: migrateRailReferences keys the moved workitem on loc.Type, while
-// resident resolution after the move reads the marker, so a marker carrying a
-// different type would leave priority, links, and current pointing at a key no
-// rail command resolves. A marker that cannot be parsed fails the promote
-// before anything moves, so the workitem stays where every repair tool can
-// still reach it.
-//
-// It reuses the camp workitem repair planner so a marker minted or repaired
-// here is byte-identical to the one doctor --fix would write, including id
-// generation and unique-ref derivation. Repair is idempotent: an already
-// canonical marker plans no changes and is not rewritten.
+// Repair goes through the doctor --fix planner and is idempotent.
 func ensureResidentMarker(ctx context.Context, cfg *config.CampaignConfig, root, relPath, typeName string) error {
 	plan, err := planRepair(ctx, root, cfg, relPath, typeName)
 	if err != nil {

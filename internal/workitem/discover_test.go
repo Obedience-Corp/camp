@@ -4,6 +4,7 @@ import (
 	"context"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 	"time"
 
@@ -569,4 +570,233 @@ func TestDiscovery_TagsProjectsNonNilAtConstruction(t *testing.T) {
 		requireNonNil(t, "Tags", items[0].Tags)
 		requireNonNil(t, "Projects", items[0].Projects)
 	})
+}
+
+// stampLifecycleDir writes the shape a workitem has once promoted onto a stage.
+func stampLifecycleDir(t *testing.T, root, relDir, wfType, slug string) string {
+	t.Helper()
+	dir := filepath.Join(root, filepath.FromSlash(relDir))
+	if err := os.MkdirAll(dir, 0o755); err != nil {
+		t.Fatalf("MkdirAll %s: %v", relDir, err)
+	}
+	writeFile(t, filepath.Join(dir, ".workitem"),
+		"version: v1alpha8\nkind: workitem\nid: "+wfType+"-"+slug+"-fixed\ntype: "+wfType+
+			"\ntitle: "+slug+"\nref: WI-aaaaaa\n")
+	writeFile(t, filepath.Join(dir, "README.md"), "# "+slug+"\n\nBody.\n")
+	return dir
+}
+
+func writeFestivalDir(t *testing.T, root, relDir, id, name string) {
+	t.Helper()
+	dir := filepath.Join(root, filepath.FromSlash(relDir))
+	if err := os.MkdirAll(dir, 0o755); err != nil {
+		t.Fatalf("MkdirAll %s: %v", relDir, err)
+	}
+	writeFile(t, filepath.Join(dir, "fest.yaml"),
+		"version: \"1.0\"\nmetadata:\n  id: "+id+"\n  name: "+name+"\n  festival_type: implementation\n")
+	writeFile(t, filepath.Join(dir, "FESTIVAL_GOAL.md"), "# Goal\n\nDo the thing.\n")
+}
+
+func byRelPath(items []WorkItem) map[string]WorkItem {
+	m := make(map[string]WorkItem, len(items))
+	for _, it := range items {
+		m[filepath.ToSlash(it.RelativePath)] = it
+	}
+	return m
+}
+
+// A stamped directory on a rail stage is its original type with the folder's
+// stage; festivals are unaffected.
+func TestDiscoverFestivals_SplitsResidentsFromFestivals(t *testing.T) {
+	root, resolver := setupTestCampaign(t)
+
+	stampLifecycleDir(t, root, "festivals/active/resident-design", "design", "resident-design")
+	stampLifecycleDir(t, root, "festivals/ready/resident-explore", "explore", "resident-explore")
+	writeFestivalDir(t, root, "festivals/active/real-fest", "RF0001", "Real Fest")
+
+	items, err := discoverFestivals(context.Background(), root, resolver)
+	if err != nil {
+		t.Fatalf("discoverFestivals: %v", err)
+	}
+	got := byRelPath(items)
+
+	design, ok := got["festivals/active/resident-design"]
+	if !ok {
+		t.Fatal("design resident not discovered")
+	}
+	if design.WorkflowType != WorkflowTypeDesign {
+		t.Errorf("WorkflowType = %q, want design (the marker's type, not festival)", design.WorkflowType)
+	}
+	if design.LifecycleStage != LifecycleStageActive {
+		t.Errorf("LifecycleStage = %q, want active (from the folder)", design.LifecycleStage)
+	}
+	if want := "design:festivals/active/resident-design"; design.Key != want {
+		t.Errorf("Key = %q, want %q", design.Key, want)
+	}
+	if design.StableID != "design-resident-design-fixed" {
+		t.Errorf("StableID = %q, want the marker id", design.StableID)
+	}
+	if design.ItemKind != ItemKindDirectory {
+		t.Errorf("ItemKind = %q, want directory", design.ItemKind)
+	}
+
+	explore, ok := got["festivals/ready/resident-explore"]
+	if !ok {
+		t.Fatal("explore resident not discovered")
+	}
+	if explore.WorkflowType != WorkflowTypeExplore {
+		t.Errorf("WorkflowType = %q, want explore", explore.WorkflowType)
+	}
+	if explore.LifecycleStage != LifecycleStageReady {
+		t.Errorf("LifecycleStage = %q, want ready", explore.LifecycleStage)
+	}
+
+	fest, ok := got["festivals/active/real-fest"]
+	if !ok {
+		t.Fatal("festival not discovered")
+	}
+	if fest.WorkflowType != WorkflowTypeFestival {
+		t.Errorf("festival WorkflowType = %q, want festival", fest.WorkflowType)
+	}
+	if want := "festival:festivals/active/real-fest"; fest.Key != want {
+		t.Errorf("festival Key = %q, want %q", fest.Key, want)
+	}
+	if fest.SourceID != "RF0001" {
+		t.Errorf("festival SourceID = %q, want RF0001", fest.SourceID)
+	}
+}
+
+// An item must not become a different kind of thing by moving onto a stage.
+func TestDiscoverFestivals_ResidentMatchesWorkflowItemShape(t *testing.T) {
+	root, resolver := setupTestCampaign(t)
+	stampLifecycleDir(t, root, "festivals/active/twin", "design", "twin")
+	stampLifecycleDir(t, root, "workflow/design/twin", "design", "twin")
+
+	residents, err := discoverFestivals(context.Background(), root, resolver)
+	if err != nil {
+		t.Fatalf("discoverFestivals: %v", err)
+	}
+	resident := byRelPath(residents)["festivals/active/twin"]
+
+	workflowItems, err := discoverWorkflowDocs(context.Background(), root,
+		filepath.Join(root, "workflow", "design"), WorkflowTypeDesign)
+	if err != nil {
+		t.Fatalf("discoverWorkflowDocs: %v", err)
+	}
+	twin := byRelPath(workflowItems)["workflow/design/twin"]
+	if twin.Key == "" {
+		t.Fatal("workflow twin not discovered; fixture is wrong")
+	}
+
+	if resident.WorkflowType != twin.WorkflowType {
+		t.Errorf("WorkflowType %q != %q", resident.WorkflowType, twin.WorkflowType)
+	}
+	if resident.ItemKind != twin.ItemKind {
+		t.Errorf("ItemKind %q != %q", resident.ItemKind, twin.ItemKind)
+	}
+	if resident.StableID != twin.StableID {
+		t.Errorf("StableID %q != %q", resident.StableID, twin.StableID)
+	}
+	if resident.SourceID != twin.SourceID {
+		t.Errorf("SourceID %q != %q; a resident must not gain a field its workflow twin lacks",
+			resident.SourceID, twin.SourceID)
+	}
+}
+
+// Pins the pre-rail fallback for a bare directory.
+func TestDiscoverFestivals_MarkerlessDirStaysAFestival(t *testing.T) {
+	root, resolver := setupTestCampaign(t)
+	dir := filepath.Join(root, "festivals", "active", "bare-thing")
+	if err := os.MkdirAll(dir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	writeFile(t, filepath.Join(dir, "NOTES.md"), "# notes\n")
+
+	items, err := discoverFestivals(context.Background(), root, resolver)
+	if err != nil {
+		t.Fatalf("discoverFestivals: %v", err)
+	}
+	got, ok := byRelPath(items)["festivals/active/bare-thing"]
+	if !ok {
+		t.Fatal("marker-less directory should still be discovered as a festival")
+	}
+	if got.WorkflowType != WorkflowTypeFestival {
+		t.Errorf("WorkflowType = %q, want festival", got.WorkflowType)
+	}
+	if got.Title != "Bare Thing" {
+		t.Errorf("Title = %q, want the humanized fallback %q", got.Title, "Bare Thing")
+	}
+}
+
+// planning, ritual, and chains are not rail stages, so a stamped directory there
+// is neither a resident nor a festival.
+func TestDiscoverFestivals_MarkedDirOutsideRailStagesIsSkipped(t *testing.T) {
+	for _, stage := range []string{"planning", "ritual", "chains"} {
+		t.Run(stage, func(t *testing.T) {
+			root, resolver := setupTestCampaign(t)
+			rel := "festivals/" + stage + "/stray"
+			stampLifecycleDir(t, root, rel, "design", "stray")
+
+			items, err := discoverFestivals(context.Background(), root, resolver)
+			if err != nil {
+				t.Fatalf("discoverFestivals: %v", err)
+			}
+			if got, ok := byRelPath(items)[rel]; ok {
+				t.Errorf("stamped dir in %s was emitted as %q; want skipped entirely",
+					stage, got.WorkflowType)
+			}
+		})
+	}
+}
+
+// With both markers present, camp's own marker wins.
+func TestDiscoverFestivals_BothMarkersPrefersResident(t *testing.T) {
+	root, resolver := setupTestCampaign(t)
+	stampLifecycleDir(t, root, "festivals/active/conflicted", "design", "conflicted")
+	writeFile(t, filepath.Join(root, "festivals", "active", "conflicted", "fest.yaml"),
+		"version: \"1.0\"\nmetadata:\n  id: CF0001\n  name: Conflicted\n")
+
+	items, err := discoverFestivals(context.Background(), root, resolver)
+	if err != nil {
+		t.Fatalf("discoverFestivals: %v", err)
+	}
+	got, ok := byRelPath(items)["festivals/active/conflicted"]
+	if !ok {
+		t.Fatal("conflicted directory not discovered at all")
+	}
+	if got.WorkflowType != WorkflowTypeDesign {
+		t.Errorf("WorkflowType = %q, want design (the .workitem marker wins)", got.WorkflowType)
+	}
+	if want := "design:festivals/active/conflicted"; got.Key != want {
+		t.Errorf("Key = %q, want %q", got.Key, want)
+	}
+	count := 0
+	for _, it := range items {
+		if filepath.ToSlash(it.RelativePath) == "festivals/active/conflicted" {
+			count++
+		}
+	}
+	if count != 1 {
+		t.Errorf("emitted %d items for one directory, want 1", count)
+	}
+}
+
+// Shelved residents under festivals/.dungeon must never surface.
+func TestDiscoverFestivals_DungeonIsNotScanned(t *testing.T) {
+	root, resolver := setupTestCampaign(t)
+	stampLifecycleDir(t, root, "festivals/.dungeon/completed/2026-07-29/shelved", "design", "shelved")
+	stampLifecycleDir(t, root, "festivals/active/live", "design", "live")
+
+	items, err := discoverFestivals(context.Background(), root, resolver)
+	if err != nil {
+		t.Fatalf("discoverFestivals: %v", err)
+	}
+	for _, it := range items {
+		if strings.Contains(filepath.ToSlash(it.RelativePath), ".dungeon") {
+			t.Errorf("dungeon item leaked into discovery: %s", it.RelativePath)
+		}
+	}
+	if _, ok := byRelPath(items)["festivals/active/live"]; !ok {
+		t.Error("live resident should still be discovered")
+	}
 }

@@ -206,9 +206,7 @@ func TestDetectFromCwd(t *testing.T) {
 			wantIn:   true,
 			wantStat: "completed",
 		},
-		// Festival rail error paths. These need no fixture on disk: a missing
-		// .workitem reads the same as an unstamped directory, which is exactly
-		// the rejection being asserted.
+		// No fixture needed: a missing .workitem reads as unstamped.
 		{
 			name:    "festivals root",
 			cwd:     "/campaign/festivals",
@@ -286,9 +284,7 @@ func TestDetectFromCwd(t *testing.T) {
 	}
 }
 
-// stampResident creates dir under root and writes a valid .workitem marker with
-// the given workflow type, mirroring what a workitem carries once it has been
-// promoted onto the festival rail.
+// stampResident writes a valid .workitem marker with the given workflow type.
 func stampResident(t *testing.T, root, relDir, typeName string) string {
 	t.Helper()
 	dir := filepath.Join(root, filepath.FromSlash(relDir))
@@ -302,12 +298,8 @@ func stampResident(t *testing.T, root, relDir, typeName string) string {
 	return dir
 }
 
-// TestDetectFromCwd_FestivalResident covers the rail layouts, which unlike the
-// workflow layouts cannot be resolved from the path alone: the parent segment is
-// a lifecycle stage, so Type has to come off the .workitem marker. Every case
-// must report DungeonPath = festivals/.dungeon so the shared move plumbing keeps
-// a resident inside the festival tree instead of returning it to its workflow
-// type's dungeon.
+// Rail layouts cannot be resolved from the path alone; Type comes off the
+// marker. Every case must report DungeonPath = festivals/.dungeon.
 func TestDetectFromCwd_FestivalResident(t *testing.T) {
 	tests := []struct {
 		name     string
@@ -412,9 +404,8 @@ func TestDetectFromCwd_FestivalResident(t *testing.T) {
 	}
 }
 
-// TestDetectFromCwd_FestivalResidentTypeIsNotThePath guards the divergence from
-// the workflow branch: two residents sitting side by side in the same stage
-// folder resolve to different types, which is only possible by reading markers.
+// Two residents in one stage folder resolve to different types, which is only
+// possible by reading markers.
 func TestDetectFromCwd_FestivalResidentTypeIsNotThePath(t *testing.T) {
 	root := t.TempDir()
 	if resolved, err := filepath.EvalSymlinks(root); err == nil {
@@ -439,9 +430,7 @@ func TestDetectFromCwd_FestivalResidentTypeIsNotThePath(t *testing.T) {
 	}
 }
 
-// TestDetectFromCwd_WorkflowUnaffectedByMarker is the regression for requirement
-// 3: a workflow item's Type comes from its path, so a marker that disagrees is
-// ignored and resolution is byte-identical to before the rail existed.
+// A workflow item's Type comes from its path, so a disagreeing marker is ignored.
 func TestDetectFromCwd_WorkflowUnaffectedByMarker(t *testing.T) {
 	root := t.TempDir()
 	if resolved, err := filepath.EvalSymlinks(root); err == nil {

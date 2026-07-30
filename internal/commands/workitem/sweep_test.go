@@ -65,11 +65,7 @@ func TestResolveSweepLocation_WorkflowHome(t *testing.T) {
 	}
 }
 
-// TestResolveSweepLocation_FestivalsHomeRejectsUnstamped is the phase 3 half of
-// what used to be TestResolveSweepLocation_FestivalsHomeNotYetSupported. A
-// festivals/ path is now a resolvable home, but only when the directory carries
-// a .workitem marker: a bare directory sitting in a lifecycle folder is not a
-// resident camp can move, and must say so rather than resolve to a guess.
+// A festivals/ path resolves only when the directory carries a marker.
 func TestResolveSweepLocation_FestivalsHomeRejectsUnstamped(t *testing.T) {
 	root := t.TempDir()
 	itemRel := filepath.Join("festivals", "ready", "foo-item")
@@ -87,9 +83,7 @@ func TestResolveSweepLocation_FestivalsHomeRejectsUnstamped(t *testing.T) {
 	}
 }
 
-// TestResolveSweepLocation_FestivalsResidentHome locks the destination rule that
-// sequence 04 depends on: a stamped resident sweeps into the festival-local
-// dungeon, not back into the dungeon of the workflow type it came from.
+// A stamped resident sweeps into the festival-local dungeon, not its type's.
 func TestResolveSweepLocation_FestivalsResidentHome(t *testing.T) {
 	root := t.TempDir()
 	if resolved, err := filepath.EvalSymlinks(root); err == nil {

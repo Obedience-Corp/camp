@@ -33,7 +33,13 @@ import (
 //     reflects whether that project is the workitem-scope primary link in
 //     links.yaml. See internal/workitem/metadata.go for the marker-level
 //     v1alpha8 schema these are sourced from.
-const SchemaVersion = "workitems/v1alpha9"
+//   - v1alpha10: no new fields. Non-festival types can now report
+//     lifecycle_stage ready/active with a relative_path under festivals/, since a
+//     workitem promoted onto the festival rail lives on a stage while keeping its
+//     type. Field names and vocabularies are unchanged; only the observed
+//     combinations widen. explore gains ready in stage_vocabulary. A campaign
+//     with no residents serializes byte-identically except for this constant.
+const SchemaVersion = "workitems/v1alpha10"
 
 // Payload is the top-level JSON output for camp workitem --json.
 type Payload struct {
