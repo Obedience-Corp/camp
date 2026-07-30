@@ -41,30 +41,65 @@ func executeManifest(ctx context.Context, campaignRoot, repoPath string, job *Jo
 		return err
 	}
 
-	// The stat fingerprint captured at enqueue is what ties the observation
-	// to the described commit. If the root moved between the commit and this
-	// run, the pre-edit bytes are gone and no record of them can be made;
-	// the truthful record is the observed state anchored to the newest
-	// commit at observation time, said out loud in the worker log.
-	describes := job.DescribesCommit
-	if job.StateFingerprint != "" && artifacts.FingerprintFiles(m.Files) != job.StateFingerprint {
-		head, headErr := git.FullHash(ctx, repoPath)
-		if headErr != nil {
-			return headErr
-		}
-		logWorker(campaignRoot, "manifest-relabel root=%s described=%s now=%s: the root changed after enqueue; the record reflects the observed state",
-			job.ManifestRoot, shortSHA(job.DescribesCommit), shortSHA(head))
-		describes = head
-	}
-
 	// The heartbeat goroutine on the lane lock keeps the worker alive through
 	// a long first-pass hash; no progress plumbing is needed for liveness.
-	if err := artifacts.HashManifest(ctx, campaignRoot, m, prev, nil); err != nil {
+	outcome, err := artifacts.HashManifest(ctx, campaignRoot, m, prev, nil)
+	if err != nil {
 		return err
 	}
+
 	if prev != nil && artifacts.SameFiles(prev.Files, m.Files) {
+		// HEAD already records this exact artifact state, so there is nothing
+		// new to commit. The working-tree file can still hold a crashed
+		// attempt's write, which HEAD never accepted: status reads that file,
+		// and a later broad commit would sweep it into history as the record.
+		// Put it back before calling the job done.
+		restored, rErr := artifacts.ReconcileCommittedToHead(ctx, campaignRoot, machine, job.ManifestRoot)
+		if rErr != nil {
+			return rErr
+		}
+		if restored {
+			logWorker(campaignRoot, "manifest-restore root=%s: discarded a working-tree record HEAD does not carry",
+				job.ManifestRoot)
+		}
 		return nil
 	}
+
+	// The stat fingerprint captured at enqueue is what ties the observation to
+	// the described commit, and it is compared against a walk taken AFTER the
+	// hash pass. A comparison made before hashing proves nothing about the
+	// record actually written: the hash pass reads every changed byte and can
+	// run for minutes on a first pass, and an entry whose hash was carried
+	// forward from prev is never re-read at all, so only a fresh walk can tell
+	// that its file has since moved. If the root moved, the pre-edit bytes are
+	// gone and no record of them can be made; the truthful record is the
+	// observed state anchored to the newest commit at observation time, said out
+	// loud in the worker log.
+	describes := job.DescribesCommit
+	if job.StateFingerprint != "" {
+		observed, oErr := artifacts.BuildManifest(ctx, campaignRoot, job.ManifestRoot)
+		if oErr != nil {
+			return oErr
+		}
+		if artifacts.FingerprintFiles(observed.Files) != job.StateFingerprint {
+			head, headErr := git.FullHash(ctx, repoPath)
+			if headErr != nil {
+				return headErr
+			}
+			logWorker(campaignRoot, "manifest-relabel root=%s described=%s now=%s: the root changed after enqueue; the record reflects the observed state",
+				job.ManifestRoot, shortSHA(job.DescribesCommit), shortSHA(head))
+			describes = head
+		}
+	}
+
+	// A file being written while it was hashed has no single set of bytes to
+	// record, so its entry carries an unknown hash and the next pass re-reads
+	// it. Silence here would look identical to a complete record.
+	if len(outcome.Unsettled) > 0 {
+		logWorker(campaignRoot, "manifest-unsettled root=%s files=%d first=%s: written while being hashed; recorded with hash unknown",
+			job.ManifestRoot, len(outcome.Unsettled), outcome.Unsettled[0])
+	}
+
 	rel, err := artifacts.WriteCommitted(campaignRoot, machine, m, describes)
 	if err != nil {
 		return err

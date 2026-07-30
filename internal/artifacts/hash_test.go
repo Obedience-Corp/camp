@@ -9,6 +9,7 @@ import (
 	"os"
 	"path/filepath"
 	"testing"
+	"time"
 )
 
 func buildHashedManifest(t *testing.T, campaignRoot, rootRel string, prev *Manifest) *Manifest {
@@ -17,7 +18,7 @@ func buildHashedManifest(t *testing.T, campaignRoot, rootRel string, prev *Manif
 	if err != nil {
 		t.Fatalf("build manifest: %v", err)
 	}
-	if err := HashManifest(context.Background(), campaignRoot, m, prev, nil); err != nil {
+	if _, err := HashManifest(context.Background(), campaignRoot, m, prev, nil); err != nil {
 		t.Fatalf("hash manifest: %v", err)
 	}
 	return m
@@ -60,7 +61,7 @@ func TestHashManifestCarriesForwardWithoutReading(t *testing.T) {
 		{Path: "steady.bin", Size: 9, MTime: 1234},
 	}}
 
-	if err := HashManifest(context.Background(), t.TempDir(), m, prev, nil); err != nil {
+	if _, err := HashManifest(context.Background(), t.TempDir(), m, prev, nil); err != nil {
 		t.Fatalf("hash manifest: %v", err)
 	}
 	if got := m.Files[0].HashSHA256; got != "cafe" {
@@ -152,7 +153,7 @@ func TestHashManifestReportsProgressAndHonorsCancellation(t *testing.T) {
 	}
 	var last int64
 	calls := 0
-	err = HashManifest(context.Background(), root, m, nil, func(done int64) {
+	_, err = HashManifest(context.Background(), root, m, nil, func(done int64) {
 		if done < last {
 			t.Errorf("progress went backwards: %d after %d", done, last)
 		}
@@ -168,7 +169,7 @@ func TestHashManifestReportsProgressAndHonorsCancellation(t *testing.T) {
 
 	ctx, cancel := context.WithCancel(context.Background())
 	cancel()
-	if err := HashManifest(ctx, root, m, nil, nil); err == nil {
+	if _, err := HashManifest(ctx, root, m, nil, nil); err == nil {
 		t.Error("cancelled context must stop the hash pass with an error")
 	}
 }
@@ -190,11 +191,168 @@ func TestHashManifestToleratesAVanishedFile(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	if err := HashManifest(context.Background(), root, m, nil, nil); err != nil {
+	if _, err := HashManifest(context.Background(), root, m, nil, nil); err != nil {
 		t.Fatalf("a vanished file must not fail the manifest: %v", err)
 	}
 	if got := m.Index()["gone.bin"].HashSHA256; got != "" {
 		t.Errorf("vanished file hash = %q, want unknown", got)
+	}
+}
+
+// A manifest entry must never pair a stat from before the read with a hash from
+// after it: that record describes a state that never existed at any single
+// moment, and nothing downstream can tell it apart from a true one. The
+// progress callback fires mid-read, which is the one place a test can reach
+// inside the hash window.
+func TestHashManifestEntryStatDescribesTheBytesItHashed(t *testing.T) {
+	root := t.TempDir()
+	dir := filepath.Join(root, "media")
+	if err := os.MkdirAll(dir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	path := filepath.Join(dir, "growing.bin")
+	original := bytes.Repeat([]byte("a"), 4096)
+	if err := os.WriteFile(path, original, 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	m, err := BuildManifest(context.Background(), root, "media")
+	if err != nil {
+		t.Fatal(err)
+	}
+	walked := m.Index()["growing.bin"]
+
+	// Grow the file once, from inside the first read.
+	grown := append(bytes.Repeat([]byte("a"), 4096), bytes.Repeat([]byte("b"), 4096)...)
+	var mutated bool
+	outcome, err := HashManifest(context.Background(), root, m, nil, func(int64) {
+		if mutated {
+			return
+		}
+		mutated = true
+		if werr := os.WriteFile(path, grown, 0o644); werr != nil {
+			t.Errorf("mutate during hash: %v", werr)
+		}
+	})
+	if err != nil {
+		t.Fatalf("hash manifest: %v", err)
+	}
+	if !mutated {
+		t.Fatal("the progress callback never fired, so the hash window was never exercised")
+	}
+
+	entry := m.Index()["growing.bin"]
+	if entry.Size == walked.Size && entry.MTime == walked.MTime {
+		t.Fatal("entry kept the pre-read stat after the file changed under the reader")
+	}
+
+	// Whatever the entry ended up claiming, its stat and its hash must describe
+	// one observation. An unknown hash is the honest answer for a file that
+	// would not settle; a hash present must be the hash of the bytes the stat
+	// describes.
+	if entry.HashSHA256 == "" {
+		if len(outcome.Unsettled) != 1 || outcome.Unsettled[0] != "growing.bin" {
+			t.Errorf("an unhashed entry must be reported as unsettled, got %v", outcome.Unsettled)
+		}
+		return
+	}
+	onDisk, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := sha256.Sum256(onDisk)
+	if entry.HashSHA256 != hex.EncodeToString(want[:]) {
+		t.Errorf("hash = %q, want the hash of the bytes the entry's stat describes", entry.HashSHA256)
+	}
+	if int64(len(onDisk)) != entry.Size {
+		t.Errorf("entry size = %d, want the size of the hashed bytes %d", entry.Size, len(onDisk))
+	}
+}
+
+// A file under continuous write never settles. The record must then say the
+// hash is unknown rather than pair a stat with a hash it does not belong to,
+// and it must say so out loud instead of looking complete.
+func TestHashManifestReportsAFileItCouldNotPinDown(t *testing.T) {
+	root := t.TempDir()
+	dir := filepath.Join(root, "media")
+	if err := os.MkdirAll(dir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	path := filepath.Join(dir, "streaming.bin")
+	if err := os.WriteFile(path, bytes.Repeat([]byte("a"), 2048), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	m, err := BuildManifest(context.Background(), root, "media")
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	// Rewrite in place on every read, so every settle attempt observes a file
+	// that moved under it. The size stays fixed and the mtime is stamped
+	// explicitly: a growing file would outrun the reader and never reach EOF,
+	// and a same-size rewrite is the harder case anyway (only the mtime betrays
+	// it). One callback fires per read here, the content being far under the
+	// 1MiB chunk.
+	stamp := time.Now()
+	rewrites := 0
+	outcome, err := HashManifest(context.Background(), root, m, nil, func(int64) {
+		rewrites++
+		if werr := os.WriteFile(path, bytes.Repeat([]byte("b"), 2048), 0o644); werr != nil {
+			t.Errorf("mutate during hash: %v", werr)
+			return
+		}
+		stamp = stamp.Add(time.Second)
+		if werr := os.Chtimes(path, stamp, stamp); werr != nil {
+			t.Errorf("stamp mtime during hash: %v", werr)
+		}
+	})
+	if err != nil {
+		t.Fatalf("a file under continuous write must not fail the manifest: %v", err)
+	}
+	if rewrites < settleAttempts {
+		t.Fatalf("only %d read(s) happened; the settle loop was not exhausted", rewrites)
+	}
+	if got := m.Index()["streaming.bin"].HashSHA256; got != "" {
+		t.Errorf("hash = %q, want unknown for a file that never settled", got)
+	}
+	if len(outcome.Unsettled) != 1 || outcome.Unsettled[0] != "streaming.bin" {
+		t.Errorf("Unsettled = %v, want the file that never settled", outcome.Unsettled)
+	}
+}
+
+// The settled path must leave the ordinary contract alone: one read, the walk's
+// stat preserved, and nothing reported.
+func TestHashManifestReportsNothingWhenTheRootIsStill(t *testing.T) {
+	root := t.TempDir()
+	dir := filepath.Join(root, "media")
+	if err := os.MkdirAll(dir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(dir, "still.bin"), []byte("stable bytes"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	m, err := BuildManifest(context.Background(), root, "media")
+	if err != nil {
+		t.Fatal(err)
+	}
+	walked := m.Index()["still.bin"]
+
+	outcome, err := HashManifest(context.Background(), root, m, nil, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(outcome.Unsettled) != 0 {
+		t.Errorf("Unsettled = %v, want nothing for a still root", outcome.Unsettled)
+	}
+	entry := m.Index()["still.bin"]
+	if entry.Size != walked.Size || entry.MTime != walked.MTime {
+		t.Errorf("a still file's stat moved: walked %+v, recorded %+v", walked, entry)
+	}
+	want := sha256.Sum256([]byte("stable bytes"))
+	if entry.HashSHA256 != hex.EncodeToString(want[:]) {
+		t.Errorf("hash = %q, want the file's sha256", entry.HashSHA256)
 	}
 }
 

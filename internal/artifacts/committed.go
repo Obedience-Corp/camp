@@ -1,6 +1,7 @@
 package artifacts
 
 import (
+	"bytes"
 	"context"
 	"crypto/sha256"
 	"encoding/hex"
@@ -75,14 +76,62 @@ func LoadCommitted(campaignRoot, machine, rootRel string) (*Manifest, string, er
 // only baseline a manifest job may trust: it proves the previous record
 // actually landed in history rather than merely reaching the filesystem.
 func LoadCommittedAtHead(ctx context.Context, campaignRoot, machine, rootRel string) (*Manifest, string, error) {
+	out, ok, err := CommittedAtHeadBytes(ctx, campaignRoot, machine, rootRel)
+	if err != nil || !ok {
+		return nil, "", err
+	}
+	return decodeCommitted(out, rootRel)
+}
+
+// CommittedAtHeadBytes returns one machine's committed record for a root
+// exactly as git has it at HEAD, and whether HEAD carries it at all. Raw bytes
+// rather than a decoded manifest because the reconcile path compares and
+// restores the file byte for byte; re-serializing a decoded record could differ
+// from what history holds.
+func CommittedAtHeadBytes(ctx context.Context, campaignRoot, machine, rootRel string) ([]byte, bool, error) {
 	rel := CommittedManifestRelPath(machine, rootRel)
 	show := exec.CommandContext(ctx, "git", "-C", campaignRoot, "show", "HEAD:"+rel)
 	out, err := show.Output()
 	if err != nil {
 		// Not in HEAD: no committed record yet, a first pass.
-		return nil, "", nil
+		return nil, false, nil
 	}
-	return decodeCommitted(out, rootRel)
+	return out, true, nil
+}
+
+// ReconcileCommittedToHead puts the working-tree record back to the bytes HEAD
+// carries, reporting whether it had to change anything.
+//
+// It exists for the skip-commit path. Proving the artifact root matches the
+// record in HEAD does not prove the working-tree file matches HEAD too: a
+// crashed attempt writes its record before its commit, so the file on disk can
+// hold output that history never accepted. Status reads that file through
+// LoadCommitted, and a later broad commit would sweep it into history as though
+// it were the record. Restoring costs one small read and makes the skip
+// truthful.
+//
+// Only the working tree is touched, never the index. The worker stages through
+// camp's temp-index path, so a crashed attempt leaves its write unstaged by
+// construction, and repairing the file is enough to make git see nothing to
+// commit.
+func ReconcileCommittedToHead(ctx context.Context, campaignRoot, machine, rootRel string) (bool, error) {
+	want, ok, err := CommittedAtHeadBytes(ctx, campaignRoot, machine, rootRel)
+	if err != nil || !ok {
+		return false, err
+	}
+	rel := CommittedManifestRelPath(machine, rootRel)
+	abs := filepath.Join(campaignRoot, filepath.FromSlash(rel))
+	got, readErr := os.ReadFile(abs)
+	if readErr == nil && bytes.Equal(got, want) {
+		return false, nil
+	}
+	if readErr != nil && !os.IsNotExist(readErr) {
+		return false, camperrors.Wrapf(readErr, "read committed manifest for %s", rootRel)
+	}
+	if _, err := writeCommittedBytes(campaignRoot, rel, want); err != nil {
+		return false, err
+	}
+	return true, nil
 }
 
 // decodeCommitted parses a committed record, refusing one whose embedded root
@@ -122,32 +171,39 @@ func FingerprintFiles(files []FileEntry) string {
 // and returns its campaign-relative path. Temp file plus rename, the same
 // crash discipline the queue uses.
 func WriteCommitted(campaignRoot, machine string, m *Manifest, describesCommit string) (string, error) {
-	rel := CommittedManifestRelPath(machine, m.Root)
-	abs := filepath.Join(campaignRoot, filepath.FromSlash(rel))
-	if err := os.MkdirAll(filepath.Dir(abs), 0o755); err != nil {
-		return "", camperrors.Wrapf(err, "create committed manifest dir for %s", m.Root)
-	}
 	data, err := m.CommittedJSON(describesCommit)
 	if err != nil {
 		return "", err
 	}
+	return writeCommittedBytes(campaignRoot, CommittedManifestRelPath(machine, m.Root), data)
+}
+
+// writeCommittedBytes durably places exact bytes at a campaign-relative
+// manifest path: temp file plus rename, the same crash discipline the queue
+// uses. Shared by the record writer and the reconcile path so both leave the
+// same guarantee behind.
+func writeCommittedBytes(campaignRoot, rel string, data []byte) (string, error) {
+	abs := filepath.Join(campaignRoot, filepath.FromSlash(rel))
+	if err := os.MkdirAll(filepath.Dir(abs), 0o755); err != nil {
+		return "", camperrors.Wrapf(err, "create committed manifest dir for %s", rel)
+	}
 	tmp, err := os.CreateTemp(filepath.Dir(abs), ".manifest-*")
 	if err != nil {
-		return "", camperrors.Wrapf(err, "stage committed manifest for %s", m.Root)
+		return "", camperrors.Wrapf(err, "stage committed manifest for %s", rel)
 	}
 	tmpName := tmp.Name()
 	if _, err := tmp.Write(data); err != nil {
 		_ = tmp.Close()
 		_ = os.Remove(tmpName)
-		return "", camperrors.Wrapf(err, "write committed manifest for %s", m.Root)
+		return "", camperrors.Wrapf(err, "write committed manifest for %s", rel)
 	}
 	if err := tmp.Close(); err != nil {
 		_ = os.Remove(tmpName)
-		return "", camperrors.Wrapf(err, "close committed manifest for %s", m.Root)
+		return "", camperrors.Wrapf(err, "close committed manifest for %s", rel)
 	}
 	if err := os.Rename(tmpName, abs); err != nil {
 		_ = os.Remove(tmpName)
-		return "", camperrors.Wrapf(err, "place committed manifest for %s", m.Root)
+		return "", camperrors.Wrapf(err, "place committed manifest for %s", rel)
 	}
 	return rel, nil
 }

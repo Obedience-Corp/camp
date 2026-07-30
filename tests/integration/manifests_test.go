@@ -325,3 +325,137 @@ func TestIntegration_ManifestDetectsPostCommitArtifactEdit(t *testing.T) {
 	assert.Contains(t, record, wantHash,
 		"the record must truthfully hash the observed bytes, never claim state it did not see")
 }
+
+// Re-review finding 1: proving the artifact root matches the record in HEAD
+// does not prove the working-tree file matches HEAD too. A crashed attempt
+// writes its record before its commit, so the file on disk can hold output
+// history never accepted. The skip-commit path used to return success on the
+// root comparison alone and leave that file in place, where status reads it and
+// a later broad commit sweeps it into history as though it were the record.
+func TestIntegration_ManifestSkipRestoresAnUncommittedRecord(t *testing.T) {
+	tc := GetSharedContainer(t)
+	campPath := "/campaigns/manifest-stale-record"
+	_, err := tc.InitCampaign(campPath, "manifest-stale-record", "product")
+	require.NoError(t, err)
+	const machine = "machine-a"
+
+	tc.Shell(t, fmt.Sprintf(`cd %s && mkdir -p media && printf 'recorded-bytes' > media/f.bin`, campPath))
+	campAs(t, tc, machine, campPath, "artifacts add media")
+	campAs(t, tc, machine, campPath, `commit -m "declare"`)
+	settleJobs(t, tc, machine, campPath)
+
+	record := fmt.Sprintf(".campaign/artifacts/manifests/%s/media.json", machine)
+	committed := tc.Shell(t, fmt.Sprintf(`cd %s && git show HEAD:%s`, campPath, record))
+	require.Contains(t, committed, "describes_commit", "the baseline record must be in HEAD")
+
+	// The crash state: HEAD holds the real record, the working tree holds an
+	// attempt's output that was never committed. The root is untouched, so the
+	// job takes the skip-commit path.
+	tc.Shell(t, fmt.Sprintf(`cd %s && cat > %s <<'JSON'
+{
+  "version": 1,
+  "root": "media",
+  "describes_commit": "0000000000000000000000000000000000000000",
+  "files": [
+    {
+      "path": "f.bin",
+      "size": 999999,
+      "mtime_unix_nano": 1,
+      "hash_sha256": "deadbeef"
+    }
+  ]
+}
+JSON`, campPath, record))
+
+	tc.Shell(t, fmt.Sprintf(`
+		set -e
+		cd %[1]s
+		LANE=.campaign/cache/jobs/pending/%%2E
+		mkdir -p "$LANE"
+		cat > "$LANE/0000009.json" <<JSON
+{
+  "id": "job-stale-record-retry",
+  "seq": 9,
+  "kind": "manifest",
+  "class": "manifest",
+  "repo": ".",
+  "manifest_root": "media",
+  "describes_commit": "%[2]s",
+  "machine": "%[3]s",
+  "created_at": "2026-07-29T00:00:00.000Z",
+  "attempts": 1
+}
+JSON
+	`, campPath, strings.Repeat("a", 40), machine))
+	settleJobs(t, tc, machine, campPath)
+
+	after := tc.Shell(t, fmt.Sprintf(`cd %s && cat %s`, campPath, record))
+	assert.Equal(t, strings.TrimSpace(committed), strings.TrimSpace(after),
+		"the skip path must restore the working-tree record to the bytes HEAD carries")
+	assert.NotContains(t, after, "deadbeef",
+		"an uncommitted attempt's record must not survive the skip path")
+
+	dirty := strings.TrimSpace(tc.Shell(t, fmt.Sprintf(
+		`cd %s && git status --porcelain -- %s`, campPath, record)))
+	assert.Empty(t, dirty,
+		"after restoring, git must see nothing to commit for the record; otherwise a broad commit sweeps it in")
+
+	logOut := tc.Shell(t, fmt.Sprintf(`grep -c manifest-restore %s/.campaign/cache/jobs/worker.log || true`, campPath))
+	assert.NotEqual(t, "0", strings.TrimSpace(logOut),
+		"discarding a record HEAD does not carry must be said out loud in the worker log")
+}
+
+// Re-review finding 2, at the worker boundary: an artifact edit that lands
+// while the hash pass is reading must still relabel the record. The fingerprint
+// is therefore compared against a stat walk taken after hashing, not before it.
+func TestIntegration_ManifestRelabelsWhenTheRootMovesDuringHashing(t *testing.T) {
+	tc := GetSharedContainer(t)
+	campPath := "/campaigns/manifest-hash-window"
+	_, err := tc.InitCampaign(campPath, "manifest-hash-window", "product")
+	require.NoError(t, err)
+	const machine = "machine-a"
+
+	tc.Shell(t, fmt.Sprintf(`cd %s && mkdir -p media && printf 'original-bytes' > media/f.bin`, campPath))
+	campAs(t, tc, machine, campPath, "artifacts add media")
+	campAs(t, tc, machine, campPath, `commit -m "declare"`)
+	settleJobs(t, tc, machine, campPath)
+
+	// A hand-written job whose fingerprint names a state the root no longer
+	// holds stands in for the enqueue-then-edit window, with the edit landing
+	// where only a post-hash walk can see it.
+	tc.Shell(t, fmt.Sprintf(`cd %s && printf 'edited-after-enqueue' > media/f.bin`, campPath))
+	head := strings.TrimSpace(tc.GitOutput(t, campPath, "rev-parse", "HEAD"))
+	tc.Shell(t, fmt.Sprintf(`
+		set -e
+		cd %[1]s
+		LANE=.campaign/cache/jobs/pending/%%2E
+		mkdir -p "$LANE"
+		cat > "$LANE/0000009.json" <<JSON
+{
+  "id": "job-hash-window",
+  "seq": 9,
+  "kind": "manifest",
+  "class": "manifest",
+  "repo": ".",
+  "manifest_root": "media",
+  "describes_commit": "%[2]s",
+  "machine": "%[3]s",
+  "state_fingerprint": "%[4]s",
+  "created_at": "2026-07-29T00:00:00.000Z",
+  "attempts": 1
+}
+JSON
+	`, campPath, head, machine, strings.Repeat("b", 64)))
+	settleJobs(t, tc, machine, campPath)
+
+	logOut := tc.Shell(t, fmt.Sprintf(`grep -c manifest-relabel %s/.campaign/cache/jobs/worker.log || true`, campPath))
+	assert.NotEqual(t, "0", strings.TrimSpace(logOut),
+		"a root that moved out from under the described commit must be relabelled and logged")
+
+	wantHash := strings.TrimSpace(tc.Shell(t, fmt.Sprintf(
+		`cd %s && sha256sum media/f.bin | cut -d' ' -f1`, campPath)))
+	stored := tc.Shell(t, fmt.Sprintf(
+		`cd %s && git show HEAD:.campaign/artifacts/manifests/%s/media.json`, campPath, machine))
+	assert.Contains(t, stored, wantHash,
+		"the record must hash the bytes it observed")
+}
