@@ -7,6 +7,7 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
+	"github.com/Obedience-Corp/camp/internal/git"
 	"github.com/Obedience-Corp/camp/internal/stageguard"
 	"github.com/Obedience-Corp/camp/pkg/commitkit"
 )
@@ -26,6 +27,13 @@ var (
 	// other through an implicit conversion.
 	_ commitkit.GuardLimits    = stageguard.GuardLimits{}
 	_ commitkit.GuardViolation = stageguard.GuardViolation{}
+)
+
+// StageOptions must alias the internal override type the same way: the
+// CommitLarge a consumer sets is the CommitLarge the guard reads.
+var (
+	_ git.StageOptions       = commitkit.StageOptions{CommitLarge: true}
+	_ commitkit.StageOptions = git.StageOptions{}
 )
 
 func TestGuardConstantsMatchStageguard(t *testing.T) {
@@ -56,6 +64,15 @@ func TestResolveLimitsHonorsCanceledContext(t *testing.T) {
 	cancel()
 
 	_, err := commitkit.ResolveLimits(ctx, nonexistentRepo)
+	require.Error(t, err)
+	assert.ErrorIs(t, err, context.Canceled)
+}
+
+func TestStageAllWithOptionsHonorsCanceledContext(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+
+	_, err := commitkit.StageAllWithOptions(ctx, nonexistentRepo, commitkit.StageOptions{CommitLarge: true})
 	require.Error(t, err)
 	assert.ErrorIs(t, err, context.Canceled)
 }
