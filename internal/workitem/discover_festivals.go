@@ -36,9 +36,10 @@ type lifecycleDirKind int
 const (
 	dirIsFestival lifecycleDirKind = iota
 	dirIsResident
-	// dirIsOutOfStageResident is stamped but not on a rail stage. Emitted as
-	// neither, since calling camp's own directory a festival would be wrong.
-	dirIsOutOfStageResident
+	// dirIsSkipped is camp's directory but not emittable as a resident: not on a
+	// rail stage, or its marker would not load. Emitted as neither, since calling
+	// camp's own directory a festival would be wrong. The slog reason says which.
+	dirIsSkipped
 )
 
 func discoverFestivals(ctx context.Context, campaignRoot string, resolver *paths.Resolver) ([]WorkItem, error) {
@@ -86,7 +87,7 @@ func discoverFestivalStage(ctx context.Context, campaignRoot, festivalsRoot stri
 		case dirIsResident:
 			items = append(items, resident)
 			continue
-		case dirIsOutOfStageResident:
+		case dirIsSkipped:
 			continue
 		}
 
@@ -107,7 +108,7 @@ func residentFromMarker(ctx context.Context, campaignRoot, dirPath string, stage
 		// Unreadable still proves the directory is camp's; do not emit a festival.
 		slog.Default().Debug("workitem discovery skip",
 			"path", dirPath, "reason", "parse-error", "error", err.Error())
-		return WorkItem{}, dirIsOutOfStageResident
+		return WorkItem{}, dirIsSkipped
 	}
 	if meta == nil {
 		return WorkItem{}, dirIsFestival
@@ -116,7 +117,7 @@ func residentFromMarker(ctx context.Context, campaignRoot, dirPath string, stage
 	if stage != LifecycleStageReady && stage != LifecycleStageActive {
 		slog.Default().Debug("workitem discovery skip",
 			"path", dirPath, "reason", "resident-out-of-stage", "stage", string(stage))
-		return WorkItem{}, dirIsOutOfStageResident
+		return WorkItem{}, dirIsSkipped
 	}
 
 	// Resident wins: .workitem records a promote camp performed, while a stale
@@ -128,7 +129,7 @@ func residentFromMarker(ctx context.Context, campaignRoot, dirPath string, stage
 
 	item, ok := buildWorkflowDirItem(ctx, campaignRoot, dirPath, WorkflowType(meta.Type))
 	if !ok {
-		return WorkItem{}, dirIsOutOfStageResident
+		return WorkItem{}, dirIsSkipped
 	}
 	item.LifecycleStage = stage
 	return item, dirIsResident
