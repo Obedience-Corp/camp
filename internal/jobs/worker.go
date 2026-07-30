@@ -151,6 +151,18 @@ func runLane(ctx context.Context, campaignRoot, repo string) (served bool) {
 			if err := complete(cmp.Or(execErr, followErr)); err != nil {
 				logWorker(campaignRoot, "complete-error lane=%s id=%s err=%v", repo, job.ID, err)
 			}
+			// A worker-made commit in the campaign root moves the history the
+			// manifest record ties artifact state to, so it re-queues the
+			// record like a foreground commit would. Manifest jobs themselves
+			// are excluded: an unchanged root skips its commit, so without
+			// the exclusion the one that did commit would re-queue forever.
+			// Enqueue failure is logged, not fatal: the record is eventually
+			// consistent, and the next commit re-queues it.
+			if execErr == nil && followErr == nil && job.Kind != KindManifest && normalizeRepo(job.Repo) == "." {
+				if _, err := EnqueueManifestsForRoots(ctx, campaignRoot); err != nil {
+					logWorker(campaignRoot, "manifest-enqueue-error lane=%s id=%s err=%v", repo, job.ID, err)
+				}
+			}
 		}
 
 		lock.release()

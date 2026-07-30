@@ -44,6 +44,8 @@ func execute(ctx context.Context, campaignRoot string, job *Job) error {
 		return executeCommitPaths(ctx, repoPath, job)
 	case KindCommitTree:
 		return executeCommitTree(ctx, campaignRoot, repoPath, job)
+	case KindManifest:
+		return executeManifest(ctx, campaignRoot, repoPath, job)
 	default:
 		return camperrors.Newf("unknown job kind %q in job %s", job.Kind, job.ID)
 	}

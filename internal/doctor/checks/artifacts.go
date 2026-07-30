@@ -99,11 +99,31 @@ func (c *ArtifactsCheck) Run(ctx context.Context, repoRoot string) (*doctor.Chec
 		result.Issues = append(result.Issues, issues...)
 	}
 
-	// Criterion 27 lives in this check but needs committed manifests, which
-	// phase 002 introduces. Recorded as a skip rather than omitted so the
-	// check's coverage gap is visible rather than silently absent.
-	result.Details["skipped_rows"] = []string{reasonManifestDrift}
-	result.Details["skipped_reason"] = "manifest drift requires committed manifests (phase 002)"
+	// Criterion 27: manifest drift. Stat-level only, deliberately: the row
+	// compares size, nanosecond mtime, and presence against this machine's
+	// committed record. It reports and never resolves; the manifest is a
+	// record of what was, and only a commit updates it.
+	if machine, mErr := artifacts.MachineName(); mErr == nil {
+		for _, root := range cfg.Roots {
+			if ctx.Err() != nil {
+				return nil, ctx.Err()
+			}
+			committed, describes, lErr := artifacts.LoadCommitted(repoRoot, machine, root.Path)
+			if lErr != nil || committed == nil {
+				continue // no committed record yet; nothing to drift from
+			}
+			drifts, dErr := artifacts.DetectDrift(ctx, repoRoot, committed)
+			if dErr != nil || len(drifts) == 0 {
+				continue
+			}
+			result.Issues = append(result.Issues, artifactIssue(
+				c.ID(), root.Path, reasonManifestDrift, doctor.SeverityWarning,
+				fmt.Sprintf("%s has drifted from its committed manifest (%d paths; record describes %s)",
+					root.Path, len(drifts), shortCommit(describes)),
+				"camp commit",
+			))
+		}
+	}
 
 	for _, issue := range result.Issues {
 		if issue.Severity == doctor.SeverityError {
@@ -298,4 +318,12 @@ func dvcGoverned(repoRoot, normalized string) (string, bool) {
 		dir = parent
 	}
 	return "", false
+}
+
+// shortCommit abbreviates a SHA for a doctor row a human reads.
+func shortCommit(sha string) string {
+	if len(sha) > 8 {
+		return sha[:8]
+	}
+	return sha
 }

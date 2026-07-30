@@ -123,15 +123,52 @@ func ArtifactRootsMissingLocally(ctx context.Context, campaignRoot string) (*Not
 // ArtifactRootDrift reports a declared root whose contents no longer match its
 // committed manifest.
 //
-// Registered now and deliberately silent: the comparison needs committed
-// manifests, which phase 002 introduces. Wiring the detector in ahead of its
-// data keeps the notice surface's shape visible and means the later change is
-// one function body rather than another round of plumbing.
+// Stat-level by contract: size, nanosecond mtime, and presence, bounded by the
+// declared-root list, no hashing on the status path. The notice reports and
+// never resolves; the manifest is a record of what was, and the next commit is
+// what updates it.
 func ArtifactRootDrift(ctx context.Context, campaignRoot string) (*Notice, error) {
 	if ctx.Err() != nil {
 		return nil, ctx.Err()
 	}
-	// manifests: phase 002 sequence 04 fills this in.
+	cfg, err := artifacts.Load(campaignRoot)
+	if err != nil || len(cfg.Roots) == 0 {
+		return nil, err
+	}
+	machine, err := artifacts.MachineName()
+	if err != nil {
+		return nil, nil // no identity, no record to compare against
+	}
+	dismissals, err := LoadDismissals(campaignRoot)
+	if err != nil {
+		dismissals = &DismissalFile{}
+	}
+
+	for _, root := range cfg.Roots {
+		rel := artifacts.NormalizeRootPath(root.Path)
+		if rel == "" || !rootExists(campaignRoot, rel) {
+			continue
+		}
+		if dismissals.IsDismissed(manifestDriftIDPrefix + rel) {
+			continue
+		}
+		committed, _, err := artifacts.LoadCommitted(campaignRoot, machine, rel)
+		if err != nil || committed == nil {
+			continue // no committed record yet; never-synced covers the gap
+		}
+		drifts, err := artifacts.DetectDrift(ctx, campaignRoot, committed)
+		if err != nil || len(drifts) == 0 {
+			continue
+		}
+		id := manifestDriftIDPrefix + rel
+		return &Notice{
+			ID: id,
+			Message: fmt.Sprintf(
+				"%s has drifted from its committed manifest (%d paths); the record no longer matches this machine",
+				rel, len(drifts)),
+			Command: "camp commit   (dismiss: camp notify dismiss " + id + ")",
+		}, nil
+	}
 	return nil, nil
 }
 
@@ -151,3 +188,7 @@ func hasAnySnapshot(campaignRoot string, peers []string, rel string) bool {
 	}
 	return false
 }
+
+// manifestDriftIDPrefix keys drift dismissals per root, so silencing one
+// root's drift does not silence the next root that drifts.
+const manifestDriftIDPrefix = "artifact-manifest-drift:"

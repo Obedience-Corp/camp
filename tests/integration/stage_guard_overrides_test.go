@@ -62,7 +62,7 @@ func TestIntegration_GuardPhotoBatchDoesNotBlock(t *testing.T) {
 	output, err := tc.RunCampInDir(campPath, "commit", "-m", "six photos")
 	require.NoError(t, err, "six 9 MB photos must not block; output:\n%s", output)
 
-	committed := tc.GitOutput(t, campPath, "show", "--name-only", "--format=", "HEAD")
+	committed := tc.GitOutput(t, campPath, "show", "--name-only", "--format=", latestUserCommit(t, tc, campPath))
 	assert.Contains(t, committed, "photos/p1.jpg")
 }
 
@@ -83,7 +83,7 @@ func TestIntegration_GuardLargeFileDoesNotTripBulk(t *testing.T) {
 	output, err := tc.RunCampInDir(campPath, "commit", "-m", "one big plus ninety-nine small")
 	require.NoError(t, err, "the big file must be taken by the per-file guard, not counted toward bulk; output:\n%s", output)
 
-	committed := tc.GitOutput(t, campPath, "show", "--name-only", "--format=", "HEAD")
+	committed := tc.GitOutput(t, campPath, "show", "--name-only", "--format=", latestUserCommit(t, tc, campPath))
 	assert.Contains(t, committed, "media/small1.txt")
 	assert.NotContains(t, committed, "media/footage.mov")
 }
@@ -130,7 +130,7 @@ func TestIntegration_GuardCommitLargeForcesInclusion(t *testing.T) {
 	output, err := tc.RunCampInDir(campPath, "commit", "--commit-large", "-m", "keep the binary")
 	require.NoError(t, err, "output:\n%s", output)
 
-	committed := tc.GitOutput(t, campPath, "show", "--name-only", "--format=", "HEAD")
+	committed := tc.GitOutput(t, campPath, "show", "--name-only", "--format=", latestUserCommit(t, tc, campPath))
 	assert.Contains(t, committed, "media/footage.mov",
 		"--commit-large must force the file into the commit")
 
@@ -161,7 +161,7 @@ func TestIntegration_GuardCommitLargeOverridesBulk(t *testing.T) {
 	output, err := tc.RunCampInDir(campPath, "commit", "--commit-large", "-m", "vendor anyway")
 	require.NoError(t, err, "the bulk menu offers --commit-large, so it must work; output:\n%s", output)
 
-	committed := tc.GitOutput(t, campPath, "show", "--name-only", "--format=", "HEAD")
+	committed := tc.GitOutput(t, campPath, "show", "--name-only", "--format=", latestUserCommit(t, tc, campPath))
 	assert.Contains(t, committed, "vendor_tree/f1.js")
 }
 
@@ -184,7 +184,7 @@ func TestIntegration_GuardAllowlistIsSilent(t *testing.T) {
 	assert.NotContains(t, output, "artifact root")
 	assert.NotContains(t, output, "kept out of git")
 
-	committed := tc.GitOutput(t, campPath, "show", "--name-only", "--format=", "HEAD")
+	committed := tc.GitOutput(t, campPath, "show", "--name-only", "--format=", latestUserCommit(t, tc, campPath))
 	assert.Contains(t, committed, "releases/camp-darwin")
 }
 
@@ -215,7 +215,7 @@ YAML
 	output, err := tc.RunCampInDir(projPath, "project", "commit", "-m", "override applies here")
 	require.NoError(t, err, "output:\n%s", output)
 
-	committed := tc.GitOutput(t, projPath, "show", "--name-only", "--format=", "HEAD")
+	committed := tc.GitOutput(t, projPath, "show", "--name-only", "--format=", latestUserCommit(t, tc, projPath))
 	assert.Contains(t, committed, "bigdir/blob.bin",
 		"the project's own 100MiB override must let a 3 MB file through")
 	assert.NotContains(t, output, "was left out of this commit")
@@ -249,7 +249,7 @@ func TestIntegration_GuardSettingsRoundTrip(t *testing.T) {
 	require.NoError(t, err, "output:\n%s", output)
 	assert.NotContains(t, output, "artifact root")
 
-	committed := tc.GitOutput(t, campPath, "show", "--name-only", "--format=", "HEAD")
+	committed := tc.GitOutput(t, campPath, "show", "--name-only", "--format=", latestUserCommit(t, tc, campPath))
 	assert.Contains(t, committed, "media/big.bin")
 }
 

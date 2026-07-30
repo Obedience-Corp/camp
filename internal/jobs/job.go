@@ -21,6 +21,7 @@ import (
 	"path/filepath"
 	"strings"
 
+	"github.com/Obedience-Corp/camp/internal/artifacts"
 	camperrors "github.com/Obedience-Corp/camp/internal/errors"
 )
 
@@ -41,11 +42,17 @@ const (
 	// Running a plain `git commit` later would sweep in anything staged in the
 	// meantime by another terminal.
 	KindCommitTree Kind = "commit-tree"
+	// KindManifest is a committed artifact manifest: the worker hashes the
+	// declared root incrementally, writes the machine's committed record, and
+	// commits it. There is no snapshot to capture at enqueue; the record
+	// describes DescribesCommit whenever it lands, which is why manifest jobs
+	// are the one class exempt from drains.
+	KindManifest Kind = "manifest"
 )
 
 // Valid reports whether k is a kind this package executes.
 func (k Kind) Valid() bool {
-	return k == KindCommitPaths || k == KindCommitTree
+	return k == KindCommitPaths || k == KindCommitTree || k == KindManifest
 }
 
 // Class says whether a drain waits for a job.
@@ -164,6 +171,25 @@ type Job struct {
 	// the commit the parent made. Narrow on purpose, and enforced at execution
 	// rather than by convention.
 	FollowUp bool `json:"follow_up,omitempty"`
+	// ManifestRoot is the declared artifact root a KindManifest job records,
+	// campaign-relative and normalized.
+	ManifestRoot string `json:"manifest_root,omitempty"`
+	// DescribesCommit is the campaign-root SHA whose artifact state a
+	// KindManifest job captures. The carrier commit is usually later; this
+	// field is what keeps the record unambiguous.
+	DescribesCommit string `json:"describes_commit,omitempty"`
+	// Machine is the identity whose committed manifest a KindManifest job
+	// writes. Captured at enqueue rather than read at execution: a worker
+	// serves whatever is in the lane, and one spawned under another
+	// environment must not write this machine's record under its own name.
+	Machine string `json:"machine,omitempty"`
+	// StateFingerprint is the stat-level fingerprint of the root at enqueue
+	// (artifacts.FingerprintFiles). The worker recomputes it before hashing:
+	// a mismatch means the root moved after the described commit, the
+	// pre-edit bytes are unrecoverable, and the record is relabelled to the
+	// commit current at observation rather than silently claiming to
+	// describe state it never saw.
+	StateFingerprint string `json:"state_fingerprint,omitempty"`
 	// CreatedAt is the enqueuing process's clock, RFC3339 with millis.
 	CreatedAt string `json:"created_at"`
 	// Attempts counts how many times this job has been claimed.
@@ -259,6 +285,33 @@ func (j *Job) Validate() error {
 		if strings.TrimSpace(j.Message) == "" && !j.AutoWrite {
 			return camperrors.NewValidation("message",
 				"commit-tree requires a message or auto_write", nil)
+		}
+	case KindManifest:
+		// Queue files are hand-editable, so both path components are
+		// re-validated wherever they are read, not only where camp wrote
+		// them: an edited root or machine must never walk or write outside
+		// the campaign's trees.
+		if err := artifacts.ValidateRootPath(j.ManifestRoot); err != nil {
+			return camperrors.NewValidation("manifest_root", err.Error(), err)
+		}
+		if strings.TrimSpace(j.DescribesCommit) == "" {
+			return camperrors.NewValidation("describes_commit",
+				"a manifest job requires the commit it describes; without it the record is ambiguous", nil)
+		}
+		if err := artifacts.ValidateMachineSegment(j.Machine); err != nil {
+			return camperrors.NewValidation("machine", err.Error(), err)
+		}
+		if j.Class != ClassManifest {
+			return camperrors.NewValidation("class",
+				"a manifest job must carry class manifest; anything else would let it block drains", nil)
+		}
+		if normalizeRepo(j.Repo) != "." {
+			return camperrors.NewValidation("repo",
+				"manifest records are campaign-root files; the job's lane is \".\"", nil)
+		}
+		if j.Then != nil || j.FollowUp || len(j.Paths) != 0 {
+			return camperrors.NewValidation("manifest",
+				"a manifest job carries no paths, follow-up, or chain", nil)
 		}
 	}
 	return nil
