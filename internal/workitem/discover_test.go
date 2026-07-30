@@ -572,8 +572,7 @@ func TestDiscovery_TagsProjectsNonNilAtConstruction(t *testing.T) {
 	})
 }
 
-// stampLifecycleDir writes a directory workitem marker plus a README, the shape a
-// workitem has once it has been promoted onto a rail stage.
+// stampLifecycleDir writes the shape a workitem has once promoted onto a stage.
 func stampLifecycleDir(t *testing.T, root, relDir, wfType, slug string) string {
 	t.Helper()
 	dir := filepath.Join(root, filepath.FromSlash(relDir))
@@ -598,7 +597,6 @@ func writeFestivalDir(t *testing.T, root, relDir, id, name string) {
 	writeFile(t, filepath.Join(dir, "FESTIVAL_GOAL.md"), "# Goal\n\nDo the thing.\n")
 }
 
-// byRelPath indexes discovered items so assertions read by path rather than order.
 func byRelPath(items []WorkItem) map[string]WorkItem {
 	m := make(map[string]WorkItem, len(items))
 	for _, it := range items {
@@ -607,9 +605,8 @@ func byRelPath(items []WorkItem) map[string]WorkItem {
 	return m
 }
 
-// TestDiscoverFestivals_SplitsResidentsFromFestivals is the core of the rail's
-// discovery half: a stamped directory in a rail stage is its ORIGINAL workflow
-// type with the folder's stage, while festivals keep behaving exactly as before.
+// A stamped directory on a rail stage is its original type with the folder's
+// stage; festivals are unaffected.
 func TestDiscoverFestivals_SplitsResidentsFromFestivals(t *testing.T) {
 	root, resolver := setupTestCampaign(t)
 
@@ -669,9 +666,7 @@ func TestDiscoverFestivals_SplitsResidentsFromFestivals(t *testing.T) {
 	}
 }
 
-// TestDiscoverFestivals_ResidentMatchesWorkflowItemShape is the reason the
-// resident is built through buildWorkflowDirItem rather than hand-assembled: an
-// item must not become a different kind of thing by moving onto a stage.
+// An item must not become a different kind of thing by moving onto a stage.
 func TestDiscoverFestivals_ResidentMatchesWorkflowItemShape(t *testing.T) {
 	root, resolver := setupTestCampaign(t)
 	stampLifecycleDir(t, root, "festivals/active/twin", "design", "twin")
@@ -708,9 +703,7 @@ func TestDiscoverFestivals_ResidentMatchesWorkflowItemShape(t *testing.T) {
 	}
 }
 
-// TestDiscoverFestivals_MarkerlessDirStaysAFestival pins the pre-rail fallback:
-// a bare directory with no marker and no fest.yaml is still emitted as a
-// festival with a humanized title.
+// Pins the pre-rail fallback for a bare directory.
 func TestDiscoverFestivals_MarkerlessDirStaysAFestival(t *testing.T) {
 	root, resolver := setupTestCampaign(t)
 	dir := filepath.Join(root, "festivals", "active", "bare-thing")
@@ -735,10 +728,8 @@ func TestDiscoverFestivals_MarkerlessDirStaysAFestival(t *testing.T) {
 	}
 }
 
-// TestDiscoverFestivals_MarkedDirOutsideRailStagesIsSkipped covers the v1 scope
-// boundary. planning, ritual, and chains are not rail stages, so a stamped
-// directory there is neither a resident nor a festival: it is demonstrably
-// camp's directory, and calling it a festival would be a lie.
+// planning, ritual, and chains are not rail stages, so a stamped directory there
+// is neither a resident nor a festival.
 func TestDiscoverFestivals_MarkedDirOutsideRailStagesIsSkipped(t *testing.T) {
 	for _, stage := range []string{"planning", "ritual", "chains"} {
 		t.Run(stage, func(t *testing.T) {
@@ -758,10 +749,7 @@ func TestDiscoverFestivals_MarkedDirOutsideRailStagesIsSkipped(t *testing.T) {
 	}
 }
 
-// TestDiscoverFestivals_BothMarkersPrefersResident locks the anomaly rule: when a
-// directory carries both .workitem and fest.yaml, camp's own marker wins, because
-// it records a promote camp performed while a leftover fest.yaml proves nothing
-// about the current owner.
+// With both markers present, camp's own marker wins.
 func TestDiscoverFestivals_BothMarkersPrefersResident(t *testing.T) {
 	root, resolver := setupTestCampaign(t)
 	stampLifecycleDir(t, root, "festivals/active/conflicted", "design", "conflicted")
@@ -782,7 +770,6 @@ func TestDiscoverFestivals_BothMarkersPrefersResident(t *testing.T) {
 	if want := "design:festivals/active/conflicted"; got.Key != want {
 		t.Errorf("Key = %q, want %q", got.Key, want)
 	}
-	// Exactly one item: it must not be emitted as both a resident and a festival.
 	count := 0
 	for _, it := range items {
 		if filepath.ToSlash(it.RelativePath) == "festivals/active/conflicted" {
@@ -794,8 +781,7 @@ func TestDiscoverFestivals_BothMarkersPrefersResident(t *testing.T) {
 	}
 }
 
-// TestDiscoverFestivals_DungeonIsNotScanned guards the dot-prefix skip: shelved
-// residents under festivals/.dungeon are not active work and must never surface.
+// Shelved residents under festivals/.dungeon must never surface.
 func TestDiscoverFestivals_DungeonIsNotScanned(t *testing.T) {
 	root, resolver := setupTestCampaign(t)
 	stampLifecycleDir(t, root, "festivals/.dungeon/completed/2026-07-29/shelved", "design", "shelved")

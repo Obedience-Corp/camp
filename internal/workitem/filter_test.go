@@ -276,3 +276,78 @@ func TestFilterAdvanced_NoFilterOptionsReturnsAllItems(t *testing.T) {
 		t.Fatalf("early-return guard should return all %d items, got %d", len(items), len(got))
 	}
 }
+
+// Residents carry their original type and the folder's stage, so --type and
+// --stage compose over them with no filter-side change.
+func TestFilter_ComposesOverRailResidents(t *testing.T) {
+	items := []WorkItem{
+		// A workflow/ directory item is active by location, so stage alone does not
+		// separate a root item from a rail-active resident; ready does.
+		{Key: "design:workflow/design/root", WorkflowType: WorkflowTypeDesign,
+			LifecycleStage: LifecycleStageActive, RelativePath: "workflow/design/root", Title: "root-design"},
+		{Key: "design:festivals/active/res-a", WorkflowType: WorkflowTypeDesign,
+			LifecycleStage: LifecycleStageActive, RelativePath: "festivals/active/res-a", Title: "active-resident"},
+		{Key: "design:festivals/ready/res-b", WorkflowType: WorkflowTypeDesign,
+			LifecycleStage: LifecycleStageReady, RelativePath: "festivals/ready/res-b", Title: "ready-resident"},
+		{Key: "explore:festivals/active/res-c", WorkflowType: WorkflowTypeExplore,
+			LifecycleStage: LifecycleStageActive, RelativePath: "festivals/active/res-c", Title: "explore-resident"},
+		{Key: "festival:festivals/active/real", WorkflowType: WorkflowTypeFestival,
+			LifecycleStage: LifecycleStageActive, RelativePath: "festivals/active/real", Title: "real-festival"},
+	}
+
+	tests := []struct {
+		name   string
+		types  []string
+		stages []string
+		want   []string
+	}{
+		{"type design finds the residents", []string{"design"}, nil,
+			[]string{"root-design", "active-resident", "ready-resident"}},
+		{"stage active spans types and homes", nil, []string{"active"},
+			[]string{"root-design", "active-resident", "explore-resident", "real-festival"}},
+		{"type and stage compose", []string{"design"}, []string{"active"},
+			[]string{"root-design", "active-resident"}},
+		{"stage ready", []string{"design"}, []string{"ready"},
+			[]string{"ready-resident"}},
+		{"type explore stage active", []string{"explore"}, []string{"active"},
+			[]string{"explore-resident"}},
+		{"stage ready isolates the ready resident", []string{"design"}, []string{"ready"},
+			[]string{"ready-resident"}},
+		{"festival type excludes residents", []string{"festival"}, nil,
+			[]string{"real-festival"}},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			got := titlesOf(Filter(items, tc.types, tc.stages, ""))
+			if !sameSet(got, tc.want) {
+				t.Errorf("got %v, want %v", got, tc.want)
+			}
+		})
+	}
+}
+
+func titlesOf(items []WorkItem) []string {
+	out := make([]string, 0, len(items))
+	for _, it := range items {
+		out = append(out, it.Title)
+	}
+	return out
+}
+
+func sameSet(got, want []string) bool {
+	if len(got) != len(want) {
+		return false
+	}
+	seen := make(map[string]int, len(got))
+	for _, g := range got {
+		seen[g]++
+	}
+	for _, w := range want {
+		if seen[w] == 0 {
+			return false
+		}
+		seen[w]--
+	}
+	return true
+}

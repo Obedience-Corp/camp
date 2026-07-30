@@ -15,23 +15,14 @@ import (
 	wkitem "github.com/Obedience-Corp/camp/internal/workitem"
 )
 
-// festivalsRoot is the campaign-relative folder holding the festival lifecycle
-// stages. A workitem promoted onto the festival rail physically lives here
-// instead of under workflow/<type>/.
 const festivalsRoot = "festivals"
 
-// festivalDungeonName is the festival-local dungeon. Unlike a workflow type's
-// dungeon, whose on-disk spelling is resolved with spelling.Resolve, this one is
-// the fixed hidden .dungeon, so a resident always completes into
-// festivals/.dungeon/<status>/<date>/<slug> rather than into the dungeon of the
-// workflow type it came from.
+// Fixed, unlike a workflow type's dungeon: no spelling.Resolve, so a resident
+// always completes into festivals/.dungeon rather than its type's dungeon.
 const festivalDungeonName = ".dungeon"
 
-// festivalStages are the rail stages a resident workitem can occupy, named from
-// the lifecycle vocabulary so the folder this resolver accepts cannot drift from
-// the stage a workitem can be promoted to. Promotion onto the rail targets ready
-// and active only; festivals/ also holds folders that are not rail stages
-// (planning, chains, ritual), and those do not resolve.
+// Named from the lifecycle vocabulary so this resolver cannot drift from the
+// stages promote accepts. planning, chains, and ritual are not rail stages.
 var festivalStages = map[string]bool{
 	string(wkitem.LifecycleStageReady):  true,
 	string(wkitem.LifecycleStageActive): true,
@@ -77,9 +68,8 @@ func DetectFromCwd(campaignRoot, cwd string) (*Location, error) {
 	}
 }
 
-// detectWorkflowItem resolves the workflow/<type>/... layouts. The type comes
-// from the path segment, and the dungeon is that type's own dungeon folder in
-// whichever spelling exists on disk.
+// detectWorkflowItem resolves the workflow/<type>/... layouts, taking the type
+// from the path and the dungeon from that type's own folder.
 func detectWorkflowItem(campaignRoot string, parts []string) (*Location, error) {
 	if len(parts) < 3 {
 		return nil, camperrors.New("not inside a workitem; cwd is at workflow root, expected workflow/<type>/<slug>/")
@@ -146,11 +136,9 @@ func workflowDungeon(campaignRoot, typeName string, parts []string) (*Location, 
 	}, nil
 }
 
-// detectFestivalResident resolves a workitem living on the festival rail, either
-// at a working stage (festivals/ready|active/<slug>) or already shelved
-// (festivals/.dungeon/<status>[/<date>]/<slug>). Both shapes report
-// DungeonPath = festivals/.dungeon so the shared move plumbing keeps a resident
-// inside the festival tree instead of sending it back to its workflow type.
+// detectFestivalResident resolves a workitem on the rail, at a working stage or
+// already shelved. Both report DungeonPath = festivals/.dungeon so the shared
+// move plumbing keeps a resident inside the festival tree.
 func detectFestivalResident(campaignRoot string, parts []string) (*Location, error) {
 	if len(parts) < 2 || parts[1] == "" {
 		return nil, camperrors.New("not inside a workitem; cwd is at the festivals root")
@@ -221,11 +209,9 @@ func festivalDungeon(campaignRoot string, parts []string) (*Location, error) {
 	}, nil
 }
 
-// residentType reads a resident's workflow type from its .workitem marker. The
-// path cannot supply it the way workflow/<type>/ does, because a resident's
-// parent segment is a lifecycle stage rather than a type. An unstamped directory
-// in a lifecycle folder is not a resident camp can move, so it is a clear error
-// rather than a guess; camp workitem doctor surfaces these.
+// residentType reads the type from the .workitem marker, since a resident's
+// parent segment is a lifecycle stage rather than a type. Unstamped is an error,
+// not a guess: camp workitem doctor surfaces those.
 func residentType(absDir, relPath string) (string, error) {
 	meta, err := wkitem.LoadMetadata(context.Background(), absDir)
 	if err != nil {

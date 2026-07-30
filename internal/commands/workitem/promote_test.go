@@ -163,9 +163,8 @@ func TestPromoteResolution(t *testing.T) {
 }
 
 func TestPromoteRejectsBadTargets(t *testing.T) {
-	// "active" is no longer a blanket rejection: it is a rail target, valid from
-	// a workflow root. What stayed rejected (moving out of a dungeon, moving
-	// backward) is covered by TestPromoteRailForwardOnly.
+	// "active" is a rail target now; its rejections live in
+	// TestPromoteRailForwardOnly.
 	cases := []struct {
 		target  string
 		wantErr string
@@ -446,8 +445,7 @@ func TestPromoteFestivalRejectsDest(t *testing.T) {
 	}
 }
 
-// addResident places a stamped workitem directly on a rail stage, standing in
-// for one that got there by an earlier promote.
+// addResident places a stamped workitem directly on a rail stage.
 func addResident(t *testing.T, root, stage, wtype, slug, title string) string {
 	t.Helper()
 	dir := filepath.Join(root, "festivals", stage, slug)
@@ -457,10 +455,8 @@ func addResident(t *testing.T, root, stage, wtype, slug, title string) string {
 	return dir
 }
 
-// TestPromoteRailEntry covers the two rail-entry moves and the ready->active
-// advance. The directory itself relocates, so the source must be gone and the
-// marker must travel with it: a resident that lost its marker cannot be
-// resolved again.
+// The directory itself relocates, so the source must be gone and the marker must
+// travel with it: a resident without a marker cannot be resolved.
 func TestPromoteRailEntry(t *testing.T) {
 	tests := []struct {
 		name    string
@@ -504,9 +500,7 @@ func TestPromoteRailEntry(t *testing.T) {
 	}
 }
 
-// TestPromoteRailForwardOnly locks every rejected transition. The rail only ever
-// moves root -> ready -> active; anything else, including any attempt to leave a
-// dungeon, must error rather than silently relocate a workitem.
+// Every rejected transition must error rather than silently relocate a workitem.
 func TestPromoteRailForwardOnly(t *testing.T) {
 	tests := []struct {
 		name    string
@@ -581,10 +575,7 @@ func TestPromoteRailForwardOnly(t *testing.T) {
 	}
 }
 
-// TestPromoteRailStampsUnmarkedSource is the reason stamping happens at rail
-// entry. Directory workitems are not uniformly marked (promote tolerates an
-// unmarked one), but resident resolution requires a marker, so a workitem that
-// entered the rail unmarked would be unreachable afterward.
+// A workitem entering the rail unmarked would be unreachable afterward.
 func TestPromoteRailStampsUnmarkedSource(t *testing.T) {
 	root := promoteCampaign(t)
 	src := filepath.Join(root, "workflow", "design", "unmarked")
@@ -624,8 +615,7 @@ func TestPromoteRailStampsUnmarkedSource(t *testing.T) {
 	}
 }
 
-// TestPromoteRailRejectsExistingDestination guards against a rail move
-// clobbering a resident that already occupies the slug on that stage.
+// A rail move must not clobber a resident already holding that slug.
 func TestPromoteRailRejectsExistingDestination(t *testing.T) {
 	root := promoteCampaign(t)
 	src := addWorkitem(t, root, "design", "feat", "Feat", "body")

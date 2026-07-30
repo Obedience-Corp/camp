@@ -28,21 +28,16 @@ type festMetadata struct {
 	CreatedAt    time.Time `yaml:"created_at"`
 }
 
-// lifecycleDirKind classifies a directory sitting in a festivals/ stage folder.
-// The folders hold festivals and, since the rail exists, workitems promoted onto
-// a stage. The .workitem marker is what tells them apart: camp owns the marker,
+// lifecycleDirKind classifies a directory in a festivals/ stage folder. The
+// .workitem marker tells festivals and residents apart: camp owns the marker,
 // fest owns fest.yaml.
 type lifecycleDirKind int
 
 const (
-	// dirIsFestival: no .workitem marker. Emitted as a festival exactly as
-	// before the rail existed, including the marker-less humanized fallback.
 	dirIsFestival lifecycleDirKind = iota
-	// dirIsResident: a stamped workitem living on a rail stage.
 	dirIsResident
-	// dirIsOutOfStageResident: stamped, but sitting in planning, ritual, or
-	// chains, which the v1 resident model does not cover. Emitted as neither: it
-	// is demonstrably camp's directory, so calling it a festival would be wrong.
+	// dirIsOutOfStageResident is stamped but not on a rail stage. Emitted as
+	// neither, since calling camp's own directory a festival would be wrong.
 	dirIsOutOfStageResident
 )
 
@@ -66,8 +61,7 @@ func discoverFestivals(ctx context.Context, campaignRoot string, resolver *paths
 	return items, nil
 }
 
-// discoverFestivalStage scans one lifecycle folder, splitting what it finds into
-// residents and festivals.
+// discoverFestivalStage splits one lifecycle folder into residents and festivals.
 func discoverFestivalStage(ctx context.Context, campaignRoot, festivalsRoot string, stage LifecycleStage) ([]WorkItem, error) {
 	stageDir := filepath.Join(festivalsRoot, string(stage))
 	entries, err := os.ReadDir(stageDir)
@@ -81,8 +75,7 @@ func discoverFestivalStage(ctx context.Context, campaignRoot, festivalsRoot stri
 	var items []WorkItem
 	for _, entry := range entries {
 		name := entry.Name()
-		// The dot-prefix skip also keeps festivals/.dungeon out of this scan;
-		// shelved residents are not active work.
+		// The dot-prefix skip also keeps festivals/.dungeon out of this scan.
 		if !entry.IsDir() || strings.HasPrefix(name, ".") {
 			continue
 		}
@@ -104,20 +97,14 @@ func discoverFestivalStage(ctx context.Context, campaignRoot, festivalsRoot stri
 	return items, nil
 }
 
-// residentFromMarker classifies a lifecycle directory by its .workitem marker and,
-// for a resident on a rail stage, builds the item to emit.
-//
-// A resident is built through buildWorkflowDirItem using the type recorded in its
-// own marker, so it carries the same marker semantics (stable id, tags, projects)
-// and .workflow/ run progress as the identical directory would under
-// workflow/<type>/. Only the lifecycle stage is overridden, to the folder it
-// physically sits in. That is what makes `camp wi --type design` still find a
-// design item that is resident in festivals/active/, with --stage composing on top.
+// residentFromMarker classifies a lifecycle directory by its .workitem marker.
+// A resident is built through buildWorkflowDirItem with its own marker's type, so
+// it inherits marker and .workflow/ semantics from the workflow path; only the
+// stage is overridden to the folder it sits in.
 func residentFromMarker(ctx context.Context, campaignRoot, dirPath string, stage LifecycleStage) (WorkItem, lifecycleDirKind) {
 	meta, err := LoadMetadata(ctx, dirPath)
 	if err != nil {
-		// An unreadable marker still proves the directory is camp's, so it must
-		// not fall through and be emitted as a festival.
+		// Unreadable still proves the directory is camp's; do not emit a festival.
 		slog.Default().Debug("workitem discovery skip",
 			"path", dirPath, "reason", "parse-error", "error", err.Error())
 		return WorkItem{}, dirIsOutOfStageResident
@@ -132,10 +119,8 @@ func residentFromMarker(ctx context.Context, campaignRoot, dirPath string, stage
 		return WorkItem{}, dirIsOutOfStageResident
 	}
 
-	// A directory carrying both markers is an anomaly worth surfacing rather than
-	// silently resolving. Resident wins because .workitem is camp's own record of
-	// a promote it performed, while a leftover fest.yaml proves nothing about the
-	// current owner.
+	// Resident wins: .workitem records a promote camp performed, while a stale
+	// fest.yaml proves nothing about the current owner.
 	if _, statErr := os.Stat(filepath.Join(dirPath, "fest.yaml")); statErr == nil {
 		slog.Default().Warn("lifecycle directory has both .workitem and fest.yaml; classifying as resident",
 			"path", dirPath, "stage", string(stage), "type", meta.Type)
@@ -149,8 +134,8 @@ func residentFromMarker(ctx context.Context, campaignRoot, dirPath string, stage
 	return item, dirIsResident
 }
 
-// festivalItem builds the festival WorkItem for a lifecycle directory. Unchanged
-// from the pre-rail behavior, including the marker-less humanized fallback.
+// festivalItem builds the festival WorkItem, unchanged from pre-rail behavior
+// including the marker-less humanized fallback.
 func festivalItem(ctx context.Context, campaignRoot, dirPath, name string, stage LifecycleStage) (WorkItem, bool) {
 	relPath, err := filepath.Rel(campaignRoot, dirPath)
 	if err != nil {
