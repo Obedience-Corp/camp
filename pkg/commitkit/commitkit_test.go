@@ -577,6 +577,52 @@ func TestStageFiles(t *testing.T) {
 }
 
 // ---------------------------------------------------------------------------
+// StageFilesWithOptions
+// ---------------------------------------------------------------------------
+
+func TestStageFilesWithOptions(t *testing.T) {
+	t.Run("zero options behaves identically to StageFilesWithOutcome", func(t *testing.T) {
+		dir := t.TempDir()
+		makeGitRepo(t, dir)
+
+		require.NoError(t, os.WriteFile(filepath.Join(dir, "a.txt"), []byte("a\n"), 0644))
+		require.NoError(t, os.WriteFile(filepath.Join(dir, "b.txt"), []byte("b\n"), 0644))
+
+		outcome, err := commitkit.StageFilesWithOptions(context.Background(), dir, commitkit.StageOptions{}, "a.txt")
+		require.NoError(t, err)
+		assert.Nil(t, outcome, "a zero-options file-list stage has nothing for the guard to report")
+
+		out, err := exec.Command("git", "-C", dir, "diff", "--cached", "--name-only").Output()
+		require.NoError(t, err)
+		assert.Contains(t, string(out), "a.txt")
+		assert.NotContains(t, string(out), "b.txt")
+	})
+
+	t.Run("empty file list is an error, not stage-everything", func(t *testing.T) {
+		dir := t.TempDir()
+		makeGitRepo(t, dir)
+
+		// Same reasoning as StageFilesWithOutcome (see
+		// TestStageWithOutcomeIsAvailableToConsumers): an empty list must not
+		// silently become stage-everything.
+		if _, err := commitkit.StageFilesWithOptions(context.Background(), dir, commitkit.StageOptions{}); err == nil {
+			t.Error("StageFilesWithOptions with no files returned nil; an empty list must not mean stage everything")
+		}
+	})
+
+	t.Run("returns error on cancelled context", func(t *testing.T) {
+		dir := t.TempDir()
+		makeGitRepo(t, dir)
+
+		ctx, cancel := context.WithCancel(context.Background())
+		cancel()
+		_, err := commitkit.StageFilesWithOptions(ctx, dir, commitkit.StageOptions{CommitLarge: true}, "file.txt")
+		require.Error(t, err)
+		assert.ErrorIs(t, err, context.Canceled)
+	})
+}
+
+// ---------------------------------------------------------------------------
 // HasStagedChanges
 // ---------------------------------------------------------------------------
 

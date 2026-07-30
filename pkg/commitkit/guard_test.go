@@ -77,6 +77,15 @@ func TestStageAllWithOptionsHonorsCanceledContext(t *testing.T) {
 	assert.ErrorIs(t, err, context.Canceled)
 }
 
+func TestStageFilesWithOptionsHonorsCanceledContext(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+
+	_, err := commitkit.StageFilesWithOptions(ctx, nonexistentRepo, commitkit.StageOptions{CommitLarge: true}, "file.txt")
+	require.Error(t, err)
+	assert.ErrorIs(t, err, context.Canceled)
+}
+
 func TestStageAllHonorsCanceledContext(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	cancel()
