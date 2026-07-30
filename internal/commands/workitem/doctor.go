@@ -43,6 +43,8 @@ const (
 	codeProjectNotFound          = "workitem.project.not-found"
 	codeProjectUnvalidatable     = "workitem.project.unvalidatable"
 	codeDeprecatedRelatedProject = "workitem.link.related-project-deprecated"
+	codeUnstampedResident        = "workitem.resident.unstamped"
+	codeResidentMissingHome      = "workitem.resident.missing-home"
 )
 
 const (
@@ -217,6 +219,7 @@ func renderWorkitemDoctorError(cmd *cobra.Command, jsonOut bool, err error) erro
 
 func collectWorkitemFindings(ctx context.Context, root string, registry *links.Links, knownIDs map[string]struct{}, items []wkitem.WorkItem) []docFinding {
 	var findings []docFinding
+	findings = append(findings, collectResidentFindings(root, items)...)
 
 	// Schema-level validation.
 	for _, v := range links.Validate(ctx, registry, links.ValidateOptions{
@@ -668,4 +671,83 @@ func emitDocJSON(w io.Writer, findings []docFinding) error {
 	enc := json.NewEncoder(w)
 	enc.SetIndent("", "  ")
 	return enc.Encode(out)
+}
+
+// collectResidentFindings reports lifecycle directories camp cannot act on: one
+// that is neither a stamped resident nor a festival, and a resident whose type
+// root is gone so demote has nowhere to land.
+func collectResidentFindings(root string, items []wkitem.WorkItem) []docFinding {
+	findings := unclassifiableLifecycleDirs(root)
+	return append(findings, residentsWithoutHome(root, items)...)
+}
+
+func unclassifiableLifecycleDirs(root string) []docFinding {
+	var findings []docFinding
+	for _, stage := range []string{railStageReady, railStageActive} {
+		stageDir := filepath.Join(root, festivalsDir, stage)
+		entries, err := os.ReadDir(stageDir)
+		if err != nil {
+			continue
+		}
+		for _, e := range entries {
+			if !e.IsDir() || strings.HasPrefix(e.Name(), ".") {
+				continue
+			}
+			dir := filepath.Join(stageDir, e.Name())
+			if fileExists(filepath.Join(dir, wkitem.MetadataFilename)) || isFestivalDir(dir) {
+				continue
+			}
+			rel := festivalsDir + "/" + stage + "/" + e.Name()
+			findings = append(findings, docFinding{
+				Code:     codeUnstampedResident,
+				Severity: docSeverityWarning,
+				Target:   rel,
+				Message:  rel + " is neither a stamped resident nor a valid festival",
+				FixHint:  "stamp it with camp workitem adopt/create, or add festival markers; --fix does not guess",
+			})
+		}
+	}
+	return findings
+}
+
+func residentsWithoutHome(root string, items []wkitem.WorkItem) []docFinding {
+	var findings []docFinding
+	for _, it := range items {
+		if it.WorkflowType == wkitem.WorkflowTypeFestival {
+			continue
+		}
+		rel := filepath.ToSlash(it.RelativePath)
+		if !strings.HasPrefix(rel, festivalsDir+"/") {
+			continue
+		}
+		typeRoot := filepath.Join(root, "workflow", string(it.WorkflowType))
+		if fileExists(typeRoot) {
+			continue
+		}
+		findings = append(findings, docFinding{
+			Code:     codeResidentMissingHome,
+			Severity: docSeverityWarning,
+			Target:   rel,
+			Message: "resident " + rel + " has no home type root workflow/" +
+				string(it.WorkflowType) + "/ to demote into",
+			FixHint: "recreate workflow/" + string(it.WorkflowType) + "/ or demote to an existing type",
+		})
+	}
+	return findings
+}
+
+// isFestivalDir reports a fest-owned directory by its markers. camp does not
+// import fest, so the marker names are duplicated here deliberately.
+func isFestivalDir(dir string) bool {
+	for _, name := range []string{"fest.yaml", "FESTIVAL_GOAL.md", "FESTIVAL_OVERVIEW.md"} {
+		if fileExists(filepath.Join(dir, name)) {
+			return true
+		}
+	}
+	return false
+}
+
+func fileExists(path string) bool {
+	_, err := os.Stat(path)
+	return err == nil
 }
