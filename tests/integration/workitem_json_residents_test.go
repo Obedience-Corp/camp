@@ -128,3 +128,89 @@ func TestWorkitemJSON_FiltersComposeOverResidents(t *testing.T) {
 	_, ok = itemByPath(ready, resident)
 	assert.False(t, ok, "the active resident must not match --stage ready")
 }
+
+// A stage folder holds both kinds at once: residents classify by their marker,
+// while a real festival and a marker-less directory stay festivals.
+func TestWorkitemJSON_MixedStageFolderSplits(t *testing.T) {
+	tc := GetSharedContainer(t)
+	path := setupRailCampaign(t, tc, "wi-json-mixed")
+
+	out, err := tc.RunCampInDir(path, "workitem", "create", "topic",
+		"--type", "explore", "--title", "Topic", "--id", "explore-topic-fixed")
+	require.NoError(t, err, "create explore: %s", out)
+
+	railTo(t, tc, path+"/workflow/design/rail-feature", "active")
+	railTo(t, tc, path+"/workflow/explore/topic", "ready")
+
+	require.NoError(t, tc.WriteFile(path+"/festivals/active/real-fest/fest.yaml",
+		"version: \"1.0\"\nmetadata:\n  id: RF0001\n  name: Real Fest\n  festival_type: implementation\n"))
+	require.NoError(t, tc.WriteFile(path+"/festivals/active/real-fest/FESTIVAL_GOAL.md", "# Goal\n"))
+	require.NoError(t, tc.WriteFile(path+"/festivals/active/bare-dir/NOTES.md", "# notes\n"))
+
+	items := wiList(t, tc, path).Items
+
+	design, ok := itemByPath(items, "festivals/active/rail-feature")
+	require.True(t, ok, "design resident missing: %+v", items)
+	assert.Equal(t, "design", design.WorkflowType)
+	assert.Equal(t, "active", design.LifecycleStage)
+	assert.Equal(t, "design:festivals/active/rail-feature", design.Key)
+	assert.Equal(t, "design-rail-feature-fixed", design.StableID)
+
+	explore, ok := itemByPath(items, "festivals/ready/topic")
+	require.True(t, ok, "explore resident missing: %+v", items)
+	assert.Equal(t, "explore", explore.WorkflowType)
+	assert.Equal(t, "ready", explore.LifecycleStage)
+	assert.Equal(t, "explore:festivals/ready/topic", explore.Key)
+	assert.Equal(t, "explore-topic-fixed", explore.StableID)
+
+	fest, ok := itemByPath(items, "festivals/active/real-fest")
+	require.True(t, ok, "festival missing: %+v", items)
+	assert.Equal(t, "festival", fest.WorkflowType)
+	assert.Equal(t, "festival:festivals/active/real-fest", fest.Key)
+
+	bare, ok := itemByPath(items, "festivals/active/bare-dir")
+	require.True(t, ok, "marker-less dir missing: %+v", items)
+	assert.Equal(t, "festival", bare.WorkflowType, "no marker means it stays a festival")
+}
+
+// A stamped directory in planning is neither a resident nor a festival, so it
+// must not appear at all.
+func TestWorkitemJSON_StampedDirOutsideRailStagesAbsent(t *testing.T) {
+	tc := GetSharedContainer(t)
+	path := setupRailCampaign(t, tc, "wi-json-outofstage")
+
+	require.NoError(t, tc.WriteFile(path+"/festivals/planning/stray/.workitem",
+		"version: v1alpha8\nkind: workitem\nid: design-stray-fixed\ntype: design\ntitle: Stray\n"))
+	require.NoError(t, tc.WriteFile(path+"/festivals/planning/stray/README.md", "# Stray\n"))
+
+	items := wiList(t, tc, path).Items
+	_, ok := itemByPath(items, "festivals/planning/stray")
+	assert.False(t, ok, "stamped dir outside a rail stage must not be emitted: %+v", items)
+}
+
+// A festival-only campaign must produce no resident rows: reclassification only
+// triggers on a marker, so nothing under festivals/ changes type without one.
+func TestWorkitemJSON_FestivalOnlyCampaignHasNoResidents(t *testing.T) {
+	tc := GetSharedContainer(t)
+	path := "/campaigns/wi-json-festonly"
+	_, err := tc.InitCampaign(path, "wi-json-festonly", "product")
+	require.NoError(t, err)
+
+	require.NoError(t, tc.WriteFile(path+"/festivals/active/f-one/fest.yaml",
+		"version: \"1.0\"\nmetadata:\n  id: F1\n  name: F One\n  festival_type: implementation\n"))
+	require.NoError(t, tc.WriteFile(path+"/festivals/active/f-one/FESTIVAL_GOAL.md", "# Goal\n"))
+	require.NoError(t, tc.WriteFile(path+"/festivals/planning/f-two/fest.yaml",
+		"version: \"1.0\"\nmetadata:\n  id: F2\n  name: F Two\n  festival_type: implementation\n"))
+	require.NoError(t, tc.WriteFile(path+"/festivals/planning/f-two/FESTIVAL_GOAL.md", "# Goal\n"))
+
+	payload := wiList(t, tc, path)
+	assert.Equal(t, "workitems/v1alpha10", payload.SchemaVersion)
+	for _, it := range payload.Items {
+		if strings.HasPrefix(it.RelativePath, "festivals/") {
+			assert.Equal(t, "festival", it.WorkflowType,
+				"%s must stay a festival without a marker", it.RelativePath)
+		}
+	}
+	assert.Equal(t, 2, payload.Counts["festival"])
+	assert.Equal(t, 0, payload.Counts["design"])
+}
