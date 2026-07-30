@@ -694,7 +694,7 @@ func unclassifiableLifecycleDirs(root string) []docFinding {
 				continue
 			}
 			dir := filepath.Join(stageDir, e.Name())
-			if fileExists(filepath.Join(dir, wkitem.MetadataFilename)) || isFestivalDir(dir) {
+			if pathExists(filepath.Join(dir, wkitem.MetadataFilename)) || isFestivalDir(dir) {
 				continue
 			}
 			rel := festivalsDir + "/" + stage + "/" + e.Name()
@@ -721,7 +721,7 @@ func residentsWithoutHome(root string, items []wkitem.WorkItem) []docFinding {
 			continue
 		}
 		typeRoot := filepath.Join(root, "workflow", string(it.WorkflowType))
-		if fileExists(typeRoot) {
+		if pathExists(typeRoot) {
 			continue
 		}
 		findings = append(findings, docFinding{
@@ -740,14 +740,14 @@ func residentsWithoutHome(root string, items []wkitem.WorkItem) []docFinding {
 // import fest, so the marker names are duplicated here deliberately.
 func isFestivalDir(dir string) bool {
 	for _, name := range []string{"fest.yaml", "FESTIVAL_GOAL.md", "FESTIVAL_OVERVIEW.md"} {
-		if fileExists(filepath.Join(dir, name)) {
+		if pathExists(filepath.Join(dir, name)) {
 			return true
 		}
 	}
 	return false
 }
 
-func fileExists(path string) bool {
+func pathExists(path string) bool {
 	_, err := os.Stat(path)
 	return err == nil
 }

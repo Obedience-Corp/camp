@@ -127,10 +127,14 @@ func runWorkitemDemote(cmd *cobra.Command, opts runWorkitemDemoteOptions) error 
 		return err
 	}
 
-	return finishWorkitemMove(ctx, cmd, cfg, root, ci, &result,
-		ledgerID, ledgerRef, ledgerTitle,
-		"demote to home", "Demoted",
-		moveTailOptions{NoCommit: opts.NoCommit, JSON: opts.JSON})
+	return finishWorkitemMove(ctx, cmd, cfg, root, ci, &result, moveTail{
+		LedgerID:    ledgerID,
+		LedgerRef:   ledgerRef,
+		LedgerTitle: ledgerTitle,
+		Why:         "demote to home",
+		SuccessVerb: "Demoted",
+		Options:     moveTailOptions{NoCommit: opts.NoCommit, JSON: opts.JSON},
+	})
 }
 
 // checkDemotable allows a demote only from a rail stage. Leaving a dungeon is a

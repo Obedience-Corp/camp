@@ -214,10 +214,14 @@ func runWorkitemPromote(cmd *cobra.Command, opts runWorkitemPromoteOptions) erro
 		return nil
 	}
 
-	return finishWorkitemMove(ctx, cmd, cfg, root, ci, &result,
-		ledgerID, ledgerRef, ledgerTitle,
-		"promote to "+opts.Target, "Promoted",
-		moveTailOptions{NoCommit: opts.NoCommit, JSON: opts.JSON})
+	return finishWorkitemMove(ctx, cmd, cfg, root, ci, &result, moveTail{
+		LedgerID:    ledgerID,
+		LedgerRef:   ledgerRef,
+		LedgerTitle: ledgerTitle,
+		Why:         "promote to " + opts.Target,
+		SuccessVerb: "Promoted",
+		Options:     moveTailOptions{NoCommit: opts.NoCommit, JSON: opts.JSON},
+	})
 }
 
 // printReleasedLinks names every link promote dropped and how to restore it.

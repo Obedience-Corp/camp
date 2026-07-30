@@ -69,20 +69,31 @@ type moveTailOptions struct {
 	JSON     bool
 }
 
+// moveTail describes how one move should be recorded and reported. Grouped into
+// a struct because five consecutive string parameters can be transposed without
+// the compiler noticing.
+type moveTail struct {
+	LedgerID    string
+	LedgerRef   string
+	LedgerTitle string
+	Why         string
+	SuccessVerb string
+	Options     moveTailOptions
+}
+
 // finishWorkitemMove appends the audit event, emits the ledger transition,
 // auto-commits, invalidates the nav cache, and prints the outcome. Shared by
 // promote and demote so their event streams and commit shape stay identical.
 func finishWorkitemMove(
 	ctx context.Context, cmd *cobra.Command, cfg *config.CampaignConfig, root string,
-	ci *commitInputs, result *workitemPromoteResult,
-	ledgerID, ledgerRef, ledgerTitle, why, successVerb string,
-	opts moveTailOptions,
+	ci *commitInputs, result *workitemPromoteResult, tail moveTail,
 ) error {
+	opts := tail.Options
 	appendWorkitemAuditEvent(ctx, cmd, root, wkaudit.Event{
 		Event:      wkaudit.EventPromote,
-		ID:         ledgerID,
-		Ref:        ledgerRef,
-		Title:      ledgerTitle,
+		ID:         tail.LedgerID,
+		Ref:        tail.LedgerRef,
+		Title:      tail.LedgerTitle,
 		Type:       result.Type,
 		From:       result.From,
 		To:         result.To,
@@ -91,7 +102,7 @@ func finishWorkitemMove(
 	})
 	ci.destPaths = append(ci.destPaths, auditFilePath(root))
 
-	emitTransitionLedger(ctx, cmd, root, result, why)
+	emitTransitionLedger(ctx, cmd, root, result, tail.Why)
 
 	if !opts.NoCommit {
 		if err := commitWorkitemMove(ctx, cmd, cfg, root, ci, result, opts.JSON); err != nil {
@@ -111,7 +122,7 @@ func finishWorkitemMove(
 		return emitPromoteJSON(cmd, *result)
 	}
 	if _, err := fmt.Fprintf(cmd.OutOrStdout(), "%s %s workitem %s to %s\n",
-		ui.SuccessIcon(), successVerb, result.ID, result.To); err != nil {
+		ui.SuccessIcon(), tail.SuccessVerb, result.ID, result.To); err != nil {
 		return err
 	}
 	return printReleasedLinks(cmd.OutOrStdout(), *result)
