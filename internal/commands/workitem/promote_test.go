@@ -13,6 +13,7 @@ import (
 	wkitem "github.com/Obedience-Corp/camp/internal/workitem"
 	"github.com/Obedience-Corp/camp/internal/workitem/links"
 	"github.com/Obedience-Corp/camp/internal/workitem/locate"
+	"github.com/Obedience-Corp/camp/internal/workitem/priority"
 )
 
 func promoteCampaign(t *testing.T) string {
@@ -630,5 +631,92 @@ func TestPromoteRailRejectsExistingDestination(t *testing.T) {
 	}
 	if _, statErr := os.Stat(filepath.Join(src, "README.md")); statErr != nil {
 		t.Errorf("source must be untouched after a refused move: %v", statErr)
+	}
+}
+
+// A resident completes into the festival-local dungeon, in a dated bucket, for
+// every shelve status. Driven entirely by loc.DungeonPath.
+func TestPromoteResidentCompletesIntoFestivalDungeon(t *testing.T) {
+	for _, status := range []string{"completed", "archived", "someday"} {
+		t.Run(status, func(t *testing.T) {
+			root := promoteCampaign(t)
+			src := addResident(t, root, "active", "design", "feat", "Feat")
+
+			if _, _, err := execPromote(t, src, "--target", status, "--no-commit"); err != nil {
+				t.Fatalf("promote resident to %s: %v", status, err)
+			}
+
+			matches, _ := filepath.Glob(filepath.Join(root, "festivals", ".dungeon", status, "*", "feat"))
+			if len(matches) != 1 {
+				t.Fatalf("want one dated bucket under festivals/.dungeon/%s, got %v", status, matches)
+			}
+			if _, err := os.Stat(filepath.Join(matches[0], ".workitem")); err != nil {
+				t.Errorf("marker did not travel into the dungeon: %v", err)
+			}
+			if dirExists(src) {
+				t.Errorf("resident should have left %s", src)
+			}
+			// It must not land in the workflow type's dungeon.
+			if strayed, _ := filepath.Glob(filepath.Join(root, "workflow", "design", "dungeon", status, "*", "feat")); len(strayed) > 0 {
+				t.Errorf("resident landed in the workflow dungeon: %v", strayed)
+			}
+		})
+	}
+}
+
+// Shelving strands path-keyed per-machine state, so promote releases it for the
+// same reason it releases links.
+func TestPromoteShelveReleasesPathState(t *testing.T) {
+	root := promoteCampaign(t)
+	src := addResident(t, root, "active", "design", "feat", "Feat")
+	key := "design:festivals/active/feat"
+
+	storePath := priority.StorePath(root)
+	if err := priority.WithLock(context.Background(), storePath, func(s *priority.Store) error {
+		priority.Set(s, key, priority.High)
+		return nil
+	}); err != nil {
+		t.Fatalf("seed priority: %v", err)
+	}
+	setCurrentPtr(t, root, "design-feat-fixed")
+
+	if _, _, err := execPromote(t, src, "--target", "completed", "--no-commit"); err != nil {
+		t.Fatalf("promote: %v", err)
+	}
+
+	store, err := priority.Load(storePath)
+	if err != nil {
+		t.Fatalf("reload priority: %v", err)
+	}
+	if _, ok := store.ManualPriorities[key]; ok {
+		t.Errorf("priority entry for %q survived the shelve; nothing resolves that path now", key)
+	}
+
+	cur, err := links.LoadCurrent(context.Background(), root)
+	if err != nil {
+		t.Fatalf("load current: %v", err)
+	}
+	if cur != nil {
+		t.Errorf("current pointer = %+v, want cleared: the selector cannot see dungeon items", cur)
+	}
+}
+
+// A current pointer at some other workitem must survive.
+func TestPromoteShelveKeepsUnrelatedCurrent(t *testing.T) {
+	root := promoteCampaign(t)
+	src := addWorkitem(t, root, "design", "shelveme", "Shelve Me", "body")
+	addWorkitem(t, root, "design", "other", "Other", "body")
+	setCurrentPtr(t, root, "design-other-fixed")
+
+	if _, _, err := execPromote(t, src, "--target", "completed", "--no-commit"); err != nil {
+		t.Fatalf("promote: %v", err)
+	}
+
+	cur, err := links.LoadCurrent(context.Background(), root)
+	if err != nil {
+		t.Fatalf("load current: %v", err)
+	}
+	if cur == nil || cur.WorkitemID != "design-other-fixed" {
+		t.Errorf("current = %+v, want design-other-fixed untouched", cur)
 	}
 }

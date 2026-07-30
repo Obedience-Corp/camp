@@ -14,10 +14,12 @@ import (
 )
 
 type doctorFinding struct {
-	Code     string `json:"code"`
-	Severity string `json:"severity"`
-	Target   string `json:"target"`
-	Message  string `json:"message"`
+	Code        string `json:"code"`
+	Severity    string `json:"severity"`
+	Target      string `json:"target"`
+	Message     string `json:"message"`
+	FixHint     string `json:"fix_hint"`
+	AutoFixable bool   `json:"auto_fixable"`
 }
 
 type doctorReport struct {

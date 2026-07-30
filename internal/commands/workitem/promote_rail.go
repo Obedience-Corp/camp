@@ -2,7 +2,6 @@ package workitem
 
 import (
 	"context"
-	"errors"
 	"fmt"
 	"os"
 	"path"
@@ -12,10 +11,7 @@ import (
 	dungeoncmd "github.com/Obedience-Corp/camp/cmd/camp/dungeon"
 	"github.com/Obedience-Corp/camp/internal/config"
 	camperrors "github.com/Obedience-Corp/camp/internal/errors"
-	"github.com/Obedience-Corp/camp/internal/mdlinks"
-	"github.com/Obedience-Corp/camp/internal/statusmove"
 	wkitem "github.com/Obedience-Corp/camp/internal/workitem"
-	"github.com/Obedience-Corp/camp/internal/workitem/links"
 	"github.com/Obedience-Corp/camp/internal/workitem/locate"
 )
 
@@ -85,31 +81,15 @@ func doRailPromote(ctx context.Context, cfg *config.CampaignConfig, root string,
 		return nil, err
 	}
 
-	if _, err := statusmove.Move(ctx, loc.SourcePath, destAbs, statusmove.MoveOptions{BoundaryRoot: root}); err != nil {
-		if errors.Is(err, statusmove.ErrAlreadyExists) {
-			return nil, camperrors.Wrapf(camperrors.ErrAlreadyExists,
-				"cannot promote to %s: destination %s already exists", stage, newRel)
-		}
-		return nil, camperrors.Wrapf(err, "moving %s to %s", oldRel, newRel)
-	}
-	rewritten, err := mdlinks.RewriteForMove(ctx, root, loc.SourcePath, destAbs)
-	if err != nil {
-		return nil, camperrors.Wrapf(err,
-			"rewriting markdown links after moving %s (move applied; recover with git status)", oldRel)
-	}
-
-	destPaths := []string{destAbs}
-	if migrateRailReferences(ctx, root, loc.Type+":"+oldRel, loc.Type+":"+newRel, oldRel, newRel, result) {
-		destPaths = append(destPaths, links.LinksPath(root))
-	}
-
-	result.To = newRel
-	return &commitInputs{
-		description: fmt.Sprintf("Promote workitem %s to %s", loc.Slug, newRel),
-		sourcePaths: []string{loc.SourcePath},
-		destPaths:   destPaths,
-		rewritten:   rewritten,
-	}, nil
+	return applyWorkitemMove(ctx, root, workitemMove{
+		SourcePath:  loc.SourcePath,
+		DestPath:    destAbs,
+		OldRel:      oldRel,
+		NewRel:      newRel,
+		OldKey:      loc.Type + ":" + oldRel,
+		NewKey:      loc.Type + ":" + newRel,
+		Description: fmt.Sprintf("Promote workitem %s to %s", loc.Slug, newRel),
+	}, result)
 }
 
 // migrateRailReferences reuses the rename migrations: a rail move preserves the

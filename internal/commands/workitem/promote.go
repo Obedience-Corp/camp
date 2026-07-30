@@ -18,14 +18,13 @@ import (
 	camperrors "github.com/Obedience-Corp/camp/internal/errors"
 	"github.com/Obedience-Corp/camp/internal/intent"
 	"github.com/Obedience-Corp/camp/internal/ledger"
-	navindex "github.com/Obedience-Corp/camp/internal/nav/index"
 	"github.com/Obedience-Corp/camp/internal/pathutil"
 	promotepkg "github.com/Obedience-Corp/camp/internal/promote"
-	"github.com/Obedience-Corp/camp/internal/ui"
 	wkitem "github.com/Obedience-Corp/camp/internal/workitem"
 	wkaudit "github.com/Obedience-Corp/camp/internal/workitem/audit"
 	"github.com/Obedience-Corp/camp/internal/workitem/links"
 	"github.com/Obedience-Corp/camp/internal/workitem/locate"
+	"github.com/Obedience-Corp/camp/internal/workitem/priority"
 	"github.com/Obedience-Corp/camp/pkg/ledgerkit"
 )
 
@@ -55,6 +54,12 @@ type workitemPromoteResult struct {
 	// ReleasedLinks are the links dropped because the workitem is no longer
 	// active. Reported so an automatic removal is never silent.
 	ReleasedLinks []releasedLink `json:"released_links,omitempty"`
+	// ReleasedPriorityKey is the workitem key whose manual priority and
+	// attention entries were dropped on shelve, empty when there were none.
+	ReleasedPriorityKey string `json:"released_priority_key,omitempty"`
+	// ClearedCurrent reports that the current-workitem pointer was cleared
+	// because it referenced the shelved workitem.
+	ClearedCurrent bool `json:"cleared_current,omitempty"`
 }
 
 // releasedLink records a link that promote removed, in enough detail to put it
@@ -209,62 +214,14 @@ func runWorkitemPromote(cmd *cobra.Command, opts runWorkitemPromoteOptions) erro
 		return nil
 	}
 
-	appendWorkitemAuditEvent(ctx, cmd, root, wkaudit.Event{
-		Event:      wkaudit.EventPromote,
-		ID:         ledgerID,
-		Ref:        ledgerRef,
-		Title:      ledgerTitle,
-		Type:       result.Type,
-		From:       result.From,
-		To:         result.To,
-		Target:     result.Target,
-		PromotedTo: result.PromotedTo,
+	return finishWorkitemMove(ctx, cmd, cfg, root, ci, &result, moveTail{
+		LedgerID:    ledgerID,
+		LedgerRef:   ledgerRef,
+		LedgerTitle: ledgerTitle,
+		Why:         "promote to " + opts.Target,
+		SuccessVerb: "Promoted",
+		Options:     moveTailOptions{NoCommit: opts.NoCommit, JSON: opts.JSON},
 	})
-	ci.destPaths = append(ci.destPaths, filepath.Join(root, ".campaign", "workitems", wkaudit.AuditFile))
-
-	ledger.NewFromRoot(ctx, root, ledger.WarnTo(cmd.ErrOrStderr())).
-		Emit(ctx, ledgerkit.KindTransitioned, ledgerkit.Scope{Workitem: result.ID},
-			ledger.WithWhy("promote to "+opts.Target),
-			ledger.WithPayload(map[string]any{
-				"target": result.Target, "from": result.From,
-				"to": result.To, "promoted_to": result.PromotedTo,
-			}))
-
-	if !opts.NoCommit {
-		outcome := dungeoncmd.StageAndCommitDungeonMove(ctx, &dungeoncmd.DungeonMoveCommit{
-			Config:           cfg,
-			CampaignRoot:     root,
-			Description:      ci.description,
-			SourcePaths:      ci.sourcePaths,
-			DestinationPaths: ci.destPaths,
-			RewrittenFiles:   ci.rewritten,
-		})
-		if !opts.JSON {
-			dungeoncmd.PrintDungeonMoveOutcome(cmd.OutOrStdout(), outcome)
-		}
-		result.Committed = outcome.Committed
-		result.CommitMessage = outcome.Message
-		if cerr := outcome.Err(); cerr != nil {
-			return cerr
-		}
-	}
-
-	if navErr := navindex.Delete(root); navErr != nil {
-		msg := fmt.Sprintf("failed to invalidate navigation cache: %v", navErr)
-		result.Warnings = append(result.Warnings, msg)
-		if !opts.JSON {
-			_, _ = fmt.Fprintf(cmd.ErrOrStderr(), "%s %s\n", ui.WarningIcon(), msg)
-		}
-	}
-
-	if opts.JSON {
-		return emitPromoteJSON(cmd, result)
-	}
-	if _, err = fmt.Fprintf(cmd.OutOrStdout(), "%s Promoted workitem %s to %s\n",
-		ui.SuccessIcon(), result.ID, result.To); err != nil {
-		return err
-	}
-	return printReleasedLinks(cmd.OutOrStdout(), result)
 }
 
 // printReleasedLinks names every link promote dropped and how to restore it.
@@ -279,6 +236,18 @@ func printReleasedLinks(w io.Writer, result workitemPromoteResult) error {
 	}
 	if len(result.ReleasedLinks) > 0 {
 		if _, err := fmt.Fprintf(w, "  undo: git checkout -- .campaign/workitems/links.yaml\n"); err != nil {
+			return err
+		}
+	}
+	if result.ReleasedPriorityKey != "" {
+		if _, err := fmt.Fprintf(w, "  released priority/attention for %s; %s is no longer active\n",
+			result.ReleasedPriorityKey, result.ID); err != nil {
+			return err
+		}
+	}
+	if result.ClearedCurrent {
+		if _, err := fmt.Fprintf(w, "  cleared the current workitem pointer; %s is no longer active\n",
+			result.ID); err != nil {
 			return err
 		}
 	}
@@ -320,6 +289,9 @@ func doDungeonPromote(ctx context.Context, campaignRoot string, loc *locate.Loca
 	// (`camp p commit` silently stops stamping the ref). So the links go with
 	// the workitem, reported rather than dropped quietly.
 	if err := releaseLinksForShelvedSource(ctx, campaignRoot, oldID, oldKey, ci, result); err != nil {
+		return nil, err
+	}
+	if err := releasePathStateForShelvedSource(ctx, campaignRoot, oldID, oldKey, result); err != nil {
 		return nil, err
 	}
 	return ci, nil
@@ -510,6 +482,9 @@ func doDocPromote(ctx context.Context, opts runWorkitemPromoteOptions, campaignR
 		if err := releaseLinksForShelvedSource(ctx, campaignRoot, oldID, oldKey, ci, result); err != nil {
 			return nil, err
 		}
+		if err := releasePathStateForShelvedSource(ctx, campaignRoot, oldID, oldKey, result); err != nil {
+			return nil, err
+		}
 	}
 	return ci, nil
 }
@@ -528,6 +503,56 @@ func releaseLinksForShelvedSource(ctx context.Context, campaignRoot, oldID, oldK
 		ci.destPaths = append(ci.destPaths, links.LinksPath(campaignRoot))
 		result.ReleasedLinks = append(result.ReleasedLinks, dropped...)
 	}
+	return nil
+}
+
+// releasePathStateForShelvedSource drops the per-machine state keyed on the
+// source's pre-move path. Both stores are gitignored, so neither is staged.
+//
+// A manual priority and an attention stage describe how to rank active work. The
+// key encodes the path, so a shelve strands the entry: nothing resolves it, and
+// Prune only reaches it on a later full discovery pass. Dropping it here is the
+// same call the link release makes for the same reason, so the two cannot
+// disagree about whether a shelved workitem is still active.
+func releasePathStateForShelvedSource(ctx context.Context, campaignRoot, oldID, oldKey string,
+	result *workitemPromoteResult,
+) error {
+	if oldKey != "" {
+		storePath := priority.StorePath(campaignRoot)
+		store, err := priority.Load(storePath)
+		if err != nil {
+			return camperrors.Wrap(err, "load priority store on shelve")
+		}
+		_, hasPriority := store.ManualPriorities[oldKey]
+		_, hasAttention := store.Attention[oldKey]
+		if hasPriority || hasAttention {
+			if err := priority.WithLock(ctx, storePath, func(s *priority.Store) error {
+				priority.Clear(s, oldKey)
+				delete(s.Attention, oldKey)
+				return nil
+			}); err != nil {
+				return camperrors.Wrap(err, "release priority entries on shelve")
+			}
+			result.ReleasedPriorityKey = oldKey
+		}
+	}
+
+	cur, err := links.LoadCurrent(ctx, campaignRoot)
+	if err != nil {
+		return camperrors.Wrap(err, "load current workitem on shelve")
+	}
+	if cur == nil {
+		return nil
+	}
+	if cur.WorkitemID != oldID && cur.WorkitemID != oldKey {
+		return nil
+	}
+	// A current pointer at a shelved workitem is worse than none: the selector
+	// cannot see dungeon items, so camp p commit silently stops stamping the ref.
+	if err := links.SaveCurrent(ctx, campaignRoot, nil); err != nil {
+		return camperrors.Wrap(err, "clear current workitem on shelve")
+	}
+	result.ClearedCurrent = true
 	return nil
 }
 
@@ -810,4 +835,18 @@ func locateFromCurrent(ctx context.Context, root string) (*locate.Location, erro
 		return nil, camperrors.New("no current workitem set")
 	}
 	return locateByID(ctx, root, cur.WorkitemID)
+}
+
+func auditFilePath(root string) string {
+	return filepath.Join(root, ".campaign", "workitems", wkaudit.AuditFile)
+}
+
+func emitTransitionLedger(ctx context.Context, cmd *cobra.Command, root string, result *workitemPromoteResult, why string) {
+	ledger.NewFromRoot(ctx, root, ledger.WarnTo(cmd.ErrOrStderr())).
+		Emit(ctx, ledgerkit.KindTransitioned, ledgerkit.Scope{Workitem: result.ID},
+			ledger.WithWhy(why),
+			ledger.WithPayload(map[string]any{
+				"target": result.Target, "from": result.From,
+				"to": result.To, "promoted_to": result.PromotedTo,
+			}))
 }
