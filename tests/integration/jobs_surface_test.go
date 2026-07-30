@@ -117,7 +117,7 @@ func TestIntegration_JobsDropKeepsContentForTheNextCommit(t *testing.T) {
 
 	writeFailedJob(t, tc, campPath, rootLane, 1, map[string]any{
 		"kind": "commit-paths", "repo": ".",
-		"paths": []string{".campaign/intents/dropped.md"},
+		"paths":   []string{".campaign/intents/dropped.md"},
 		"message": "capture intent: dropped", "attempts": 3,
 	})
 
@@ -151,7 +151,7 @@ func TestIntegration_JobsRetryRunsTheJobToSuccess(t *testing.T) {
 	// fixing the cause, which is exactly what retry is for.
 	writeFailedJob(t, tc, campPath, rootLane, 1, map[string]any{
 		"kind": "commit-paths", "repo": ".",
-		"paths": []string{".campaign/intents/retried.md"},
+		"paths":   []string{".campaign/intents/retried.md"},
 		"message": "capture intent: retried", "attempts": 3,
 	})
 	tc.Shell(t, fmt.Sprintf(`
@@ -305,7 +305,7 @@ func TestIntegration_DoctorReportsBookkeepingLostWithTheCache(t *testing.T) {
 	`, campPath))
 	writeJob(t, tc, campPath, rootLane, 1, map[string]any{
 		"kind": "commit-paths", "repo": ".",
-		"paths": []string{".campaign/intents/orphaned.md"},
+		"paths":   []string{".campaign/intents/orphaned.md"},
 		"message": "capture intent: orphaned",
 	})
 	tc.Shell(t, fmt.Sprintf("rm -rf %s/.campaign/cache", campPath))

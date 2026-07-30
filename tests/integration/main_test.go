@@ -138,9 +138,9 @@ func poolSize() int {
 // different members fail do we treat the run as infrastructure death. Pool
 // size 1 keeps threshold 1 so a solo container still fails closed.
 var (
-	infraMu             sync.Mutex
-	infraReason         string
-	infraFailedMembers  map[*TestContainer]string // first double-Reset reason per member
+	infraMu            sync.Mutex
+	infraReason        string
+	infraFailedMembers map[*TestContainer]string // first double-Reset reason per member
 )
 
 // infraMemberThreshold is how many distinct pool members must double-fail

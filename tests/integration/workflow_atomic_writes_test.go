@@ -78,4 +78,3 @@ func TestIntegration_WorkflowConfigSaveAtomic_ENOSPC(t *testing.T) {
 	assert.Equal(t, "0", strings.TrimSpace(leftovers),
 		"atomic write must clean up tmp file on rename failure; found leftover tmp files: %s", leftovers)
 }
-

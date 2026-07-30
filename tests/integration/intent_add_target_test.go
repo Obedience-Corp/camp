@@ -54,10 +54,11 @@ func TestIntentAdd_TargetCampaignWritesToSelectedRoot(t *testing.T) {
 // changes optional-value semantics will be caught.
 //
 // Forms covered:
-//   --campaign <name>   long, space-separated  (the original bug)
-//   --campaign=<name>   long, equals-attached
-//   -c <name>           short, space-separated
-//   -c=<name>           short, equals-attached
+//
+//	--campaign <name>   long, space-separated  (the original bug)
+//	--campaign=<name>   long, equals-attached
+//	-c <name>           short, space-separated
+//	-c=<name>           short, equals-attached
 func TestIntentAdd_TargetCampaignFlagForms(t *testing.T) {
 	tc := GetSharedContainer(t)
 
