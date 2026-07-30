@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"log/slog"
 	"os"
 	"path/filepath"
 	"sort"
@@ -12,6 +13,7 @@ import (
 	"github.com/Obedience-Corp/camp/internal/dungeon/statuspath"
 	camperrors "github.com/Obedience-Corp/camp/internal/errors"
 	"github.com/Obedience-Corp/camp/internal/workflow"
+	wkitem "github.com/Obedience-Corp/camp/internal/workitem"
 )
 
 // ListStatusDirs scans the dungeon for all subdirectories, counts items in each
@@ -142,11 +144,13 @@ func (s *Service) ListParentItems(ctx context.Context, parentPath string) ([]Dun
 			itemType = ItemTypeDirectory
 		}
 
+		itemPath := filepath.Join(parentPath, name)
 		items = append(items, DungeonItem{
-			Name:    name,
-			Path:    filepath.Join(parentPath, name),
-			Type:    itemType,
-			ModTime: info.ModTime(),
+			Name:         name,
+			Path:         itemPath,
+			Type:         itemType,
+			ModTime:      info.ModTime(),
+			WorkitemType: workitemTypeOf(ctx, itemPath, entry.IsDir()),
 		})
 	}
 
@@ -242,4 +246,24 @@ func (e parentItemExcluder) excludes(parentPath, name string, isDir bool) bool {
 	}
 
 	return false
+}
+
+// workitemTypeOf reads the workflow type from a directory's .workitem marker.
+// Best-effort: an absent marker is the common case, and an unreadable one leaves
+// the field empty rather than failing the listing, matching how the rest of this
+// package treats markers.
+func workitemTypeOf(ctx context.Context, path string, isDir bool) string {
+	if !isDir {
+		return ""
+	}
+	meta, err := wkitem.LoadMetadata(ctx, path)
+	if err != nil {
+		slog.Default().Warn("unreadable workitem marker during triage",
+			"path", path, "error", err.Error())
+		return ""
+	}
+	if meta == nil {
+		return ""
+	}
+	return meta.Type
 }

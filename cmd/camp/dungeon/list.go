@@ -165,20 +165,24 @@ func outputDungeonSimple(items []intdungeon.DungeonItem) error {
 }
 
 func outputDungeonJSON(items []intdungeon.DungeonItem) error {
+	// This remaps rather than marshalling DungeonItem directly, so a new field on
+	// that struct does not reach --json until it is added here too.
 	type jsonItem struct {
-		Name    string `json:"name"`
-		Path    string `json:"path"`
-		Type    string `json:"type"`
-		ModTime string `json:"mod_time"`
+		Name         string `json:"name"`
+		Path         string `json:"path"`
+		Type         string `json:"type"`
+		ModTime      string `json:"mod_time"`
+		WorkitemType string `json:"workitem_type,omitempty"`
 	}
 
 	output := make([]jsonItem, 0, len(items))
 	for _, item := range items {
 		output = append(output, jsonItem{
-			Name:    item.Name,
-			Path:    item.Path,
-			Type:    string(item.Type),
-			ModTime: item.ModTime.Format(time.RFC3339),
+			Name:         item.Name,
+			Path:         item.Path,
+			Type:         string(item.Type),
+			ModTime:      item.ModTime.Format(time.RFC3339),
+			WorkitemType: item.WorkitemType,
 		})
 	}
 
