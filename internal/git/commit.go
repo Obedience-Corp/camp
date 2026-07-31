@@ -197,14 +197,39 @@ func CopyFile(src, dst string) error {
 }
 
 // ReadTreeIntoTempIndex seeds tmpPath from HEAD.
+//
+// `camp init` creates the .git directory but never commits, so every scoped or
+// blob-captured job enqueued before the user's first commit runs against an
+// unborn branch: HEAD is a ref that does not resolve to any object yet. Seeding
+// from "HEAD" there is not a smaller version of the normal case, it is a
+// different precondition, and `git read-tree HEAD` fails loudly rather than
+// treating the branch as merely empty. Starting from an empty tree instead
+// lets the paths this job stages become the repository's first commit, which
+// is what should happen: the content was captured (or named) when the job was
+// enqueued, and nothing about an unborn branch makes that content less real.
 func ReadTreeIntoTempIndex(ctx context.Context, repoPath, tmpPath string) error {
-	cmd := exec.CommandContext(ctx, "git", "-C", repoPath, "read-tree", "HEAD")
+	args := []string{"-C", repoPath, "read-tree", "HEAD"}
+	if !headResolvable(ctx, repoPath) {
+		args = []string{"-C", repoPath, "read-tree", "--empty"}
+	}
+	cmd := exec.CommandContext(ctx, "git", args...)
 	cmd.Env = append(os.Environ(), "GIT_INDEX_FILE="+tmpPath)
 	out, err := cmd.CombinedOutput()
 	if err != nil {
 		return camperrors.NewGit("read-tree", "", "", strings.TrimSpace(string(out)), err)
 	}
 	return nil
+}
+
+// headResolvable reports whether HEAD points at a real commit.
+//
+// A freshly initialized repository has a HEAD ref but no commit behind it
+// (an unborn branch), and `git read-tree HEAD` treats that as an error rather
+// than an empty tree. This is the one check the temp-index seeding needs to
+// tell the two states apart.
+func headResolvable(ctx context.Context, repoPath string) bool {
+	cmd := exec.CommandContext(ctx, "git", "-C", repoPath, "rev-parse", "--verify", "--quiet", "HEAD")
+	return cmd.Run() == nil
 }
 
 // AddPathsToTempIndex stages paths into the provided temp index.

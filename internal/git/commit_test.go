@@ -1124,3 +1124,146 @@ func TestResetPathspecPayloadLimitReservesFixedArgv(t *testing.T) {
 		t.Fatalf("windows budget = %d, want %d", platformCommandLineBudget(), 16*1024)
 	}
 }
+
+// `camp init` creates the .git directory but never commits, so a job enqueued
+// before the user's first commit runs against an unborn branch: HEAD is a ref
+// that does not resolve to any object. The tests below cover that precondition
+// for every entry point that seeds a temp index from HEAD.
+
+func TestHeadResolvable(t *testing.T) {
+	tmpDir := initTestRepo(t)
+	ctx := context.Background()
+
+	if headResolvable(ctx, tmpDir) {
+		t.Fatal("headResolvable() = true on a freshly initialized repo with no commits")
+	}
+
+	if err := os.WriteFile(filepath.Join(tmpDir, "seed.txt"), []byte("seed"), 0644); err != nil {
+		t.Fatalf("write seed.txt: %v", err)
+	}
+	if err := StageAll(ctx, tmpDir); err != nil {
+		t.Fatalf("StageAll() error = %v", err)
+	}
+	if err := Commit(ctx, tmpDir, &CommitOptions{Message: "seed commit"}); err != nil {
+		t.Fatalf("Commit() error = %v", err)
+	}
+
+	if !headResolvable(ctx, tmpDir) {
+		t.Fatal("headResolvable() = false once a commit exists")
+	}
+}
+
+// The bug this guards: `git read-tree HEAD` fails with "Not a valid object
+// name HEAD" on an unborn branch, which used to fail every deferred
+// bookkeeping job enqueued before the user's first commit.
+func TestReadTreeIntoTempIndex_UnbornHead(t *testing.T) {
+	tmpDir := initTestRepo(t)
+	ctx := context.Background()
+
+	tmpPath, _, err := BuildTempIndexPath(tmpDir)
+	if err != nil {
+		t.Fatalf("BuildTempIndexPath() error = %v", err)
+	}
+	defer RemoveTempIndex(tmpPath)
+
+	if err := ReadTreeIntoTempIndex(ctx, tmpDir, tmpPath); err != nil {
+		t.Fatalf("ReadTreeIntoTempIndex() on an unborn branch error = %v", err)
+	}
+
+	// The seeded index must be usable: staging a path into it and writing a
+	// tree should succeed exactly as it would from a HEAD-seeded index.
+	env := append(os.Environ(), "GIT_INDEX_FILE="+tmpPath)
+	if err := RunWithEnv(ctx, tmpDir, env,
+		"update-index", "--add", "--cacheinfo",
+		"100644,"+emptyBlobSHA(t, tmpDir)+",seeded.txt"); err != nil {
+		t.Fatalf("stage into the empty-seeded temp index: %v", err)
+	}
+	out := runGit(t, "", env, "-C", tmpDir, "ls-files")
+	if !strings.Contains(out, "seeded.txt") {
+		t.Fatalf("temp index seeded from an unborn branch did not accept a staged path; ls-files: %q", out)
+	}
+}
+
+// emptyBlobSHA hashes the empty blob into the object store and returns its
+// SHA, so a test can stage a path without needing real file content on disk.
+func emptyBlobSHA(t *testing.T, repoPath string) string {
+	t.Helper()
+	return runGit(t, "", nil, "-C", repoPath, "hash-object", "-w", "--", os.DevNull)
+}
+
+// CommitScoped is the path a hand-written (path-only, no captured blobs) job
+// takes. It must produce the repository's first commit rather than failing on
+// the temp-index seed.
+func TestCommitScoped_UnbornHead(t *testing.T) {
+	tmpDir := initTestRepo(t)
+	ctx := context.Background()
+
+	if err := os.WriteFile(filepath.Join(tmpDir, "note.md"), []byte("first note\n"), 0644); err != nil {
+		t.Fatalf("write note.md: %v", err)
+	}
+
+	if err := CommitScoped(ctx, tmpDir, []string{"note.md"}, &CommitOptions{
+		Message: "capture: first note",
+	}); err != nil {
+		t.Fatalf("CommitScoped() on an unborn branch error = %v", err)
+	}
+
+	if !headResolvable(ctx, tmpDir) {
+		t.Fatal("CommitScoped() did not create the repository's first commit")
+	}
+	subject := runGit(t, "", nil, "-C", tmpDir, "log", "-1", "--format=%s")
+	if subject != "capture: first note" {
+		t.Fatalf("commit subject = %q, want %q", subject, "capture: first note")
+	}
+	tracked := runGit(t, "", nil, "-C", tmpDir, "ls-tree", "-r", "--name-only", "HEAD")
+	if !strings.Contains(tracked, "note.md") {
+		t.Fatalf("first commit does not contain note.md; tree: %q", tracked)
+	}
+	count := runGit(t, "", nil, "-C", tmpDir, "rev-list", "--count", "HEAD")
+	if count != "1" {
+		t.Fatalf("rev-list --count HEAD = %q, want 1 (exactly one commit)", count)
+	}
+}
+
+// CommitBlobs is the path a bookkeeping job with captured content takes (the
+// worker's real production path for something like `camp intent add`). Content
+// is captured up front and committed without reading the working tree or the
+// real index, so this exercises the exact mechanism the bug report describes.
+func TestCommitBlobs_UnbornHead(t *testing.T) {
+	tmpDir := initTestRepo(t)
+	ctx := context.Background()
+
+	path := filepath.Join(tmpDir, "intents", "idea.md")
+	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+		t.Fatalf("mkdir: %v", err)
+	}
+	if err := os.WriteFile(path, []byte("an idea captured before the first commit\n"), 0644); err != nil {
+		t.Fatalf("write idea.md: %v", err)
+	}
+
+	refs, err := CaptureBlobs(ctx, tmpDir, []string{"intents/idea.md"})
+	if err != nil {
+		t.Fatalf("CaptureBlobs() error = %v", err)
+	}
+
+	if err := CommitBlobs(ctx, tmpDir, refs, &CommitOptions{
+		Message: "capture intent: an idea",
+	}); err != nil {
+		t.Fatalf("CommitBlobs() on an unborn branch error = %v", err)
+	}
+
+	if !headResolvable(ctx, tmpDir) {
+		t.Fatal("CommitBlobs() did not create the repository's first commit")
+	}
+	tracked := runGit(t, "", nil, "-C", tmpDir, "ls-tree", "-r", "--name-only", "HEAD")
+	if !strings.Contains(tracked, "intents/idea.md") {
+		t.Fatalf("first commit does not contain the captured blob; tree: %q", tracked)
+	}
+
+	// The real index must stay untouched: CommitBlobs commits captured content
+	// through a temp index and must never stage the user's working tree.
+	status := runGit(t, "", nil, "-C", tmpDir, "status", "--porcelain")
+	if status != "" {
+		t.Fatalf("CommitBlobs left the real index/working tree dirty: %q", status)
+	}
+}
