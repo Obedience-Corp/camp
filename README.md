@@ -631,4 +631,4 @@ Camp is one half of [Festival](https://github.com/Obedience-Corp/festival), the 
 
 ## License
 
-Functional Source License 1.1 (FSL-1.1-ALv2) - See [LICENSE](LICENSE) for details.
+Apache License 2.0 - See [LICENSE](LICENSE) for details.
