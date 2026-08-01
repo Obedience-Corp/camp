@@ -189,6 +189,10 @@ func runProjectCommit(cmd *cobra.Command, args []string) error {
 			cmdutil.ReportNothingLeftToCommit(cmd.OutOrStdout())
 			return nil
 		}
+	} else {
+		// No staging means the guard never ran. Report what the index already
+		// holds; nothing here changes the commit.
+		cmdutil.ReportStagedGrowth(ctx, cmd.OutOrStdout(), resolvedPath, projectCommitLarge)
 	}
 
 	// Check for changes
