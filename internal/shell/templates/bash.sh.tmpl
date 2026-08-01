@@ -174,6 +174,63 @@ camp() {
         rm -f "$tmp"
       fi
       ;;
+    machine)
+      shift
+      # A machine subcommand (list, add, remove, diagnose, adopt, ...) is always
+      # the first token and is a bare word; the interactive fleet screen takes no
+      # positional argument. Only that screen understands --path-output, so pass
+      # any subcommand invocation through verbatim. This is forward-compatible:
+      # new subcommands need no wrapper regeneration.
+      case "${1:-}" in
+        ""|-*) ;;
+        *)
+          command camp machine "$@"
+          return
+          ;;
+      esac
+      local arg passthrough cmd_status tmp dest line sel
+      passthrough=0
+      for arg in "$@"; do
+        case "$arg" in
+          --help|-h)
+            passthrough=1
+            break
+            ;;
+        esac
+      done
+      if [ "$passthrough" -eq 1 ]; then
+        command camp machine "$@"
+        return
+      fi
+      if ! [ -t 0 ] || ! [ -t 1 ]; then
+        command camp machine "$@"
+        return
+      fi
+
+      tmp=$(mktemp "${TMPDIR:-/tmp}/camp-machine.XXXXXX") || return 1
+      command camp machine "$@" --path-output "$tmp"
+      cmd_status=$?
+      if [ "$cmd_status" -ne 0 ]; then
+        rm -f "$tmp"
+        return "$cmd_status"
+      fi
+
+      if [ -s "$tmp" ]; then
+        dest=$(cat "$tmp")
+        rm -f "$tmp"
+        # The fleet screen only ever writes ssh-hop:<machine>:<campaign>; hop via
+        # switch so the remote registry still resolves the path.
+        case "$dest" in
+          ssh-hop:*)
+            sel="${dest#ssh-hop:}"
+            line=$(command camp switch "$sel" --shell-connect) || return $?
+            eval "$line"
+            ;;
+        esac
+      else
+        rm -f "$tmp"
+      fi
+      ;;
     festivals)
       shift
       local arg passthrough cmd_status tmp

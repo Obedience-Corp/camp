@@ -431,9 +431,9 @@ func (m *machineTUIModel) statusLine() string {
 // equal weight. The action that answers "does this work" comes first, because
 // on a screen full of untested machines it is the one worth pressing.
 func (m *machineTUIModel) footer(width int) string {
-	full := "t test connection  ·  e edit · d remove  ·  a add · s scan tailnet  ·  ? help · q quit"
-	mid := "t test · e edit · d remove · a add · s scan · ? help · q quit"
-	short := "t test · a add · ? help · q quit"
+	full := "enter hop  ·  t test connection  ·  e edit · d remove  ·  a add · s scan tailnet  ·  ? help · q quit"
+	mid := "enter hop · t test · e edit · d remove · a add · s scan · ? help · q quit"
+	short := "enter hop · t test · a add · ? help · q quit"
 	return machineHelpStyle.Render(ui.CollapseHelp(width, full, mid, short, "q: quit"))
 }
 
@@ -450,12 +450,14 @@ func (m *machineTUIModel) overlayView() string {
 			machinePrimary.Render("Once one is listed here you can work on campaigns that"),
 			machinePrimary.Render("live on it, without leaving this terminal:"),
 			"",
-			machineCommand("camp switch devbox:my-campaign", "open one over there"),
+			machineCommand("enter", "pick a campaign and hop there"),
+			machineCommand("camp switch devbox:my-campaign", "the same hop, typed"),
 			machineCommand("camp list --remote", "campaigns everywhere"),
 			"",
 			machineMuted.Render("Nothing runs on a machine until you hop to it."),
 			"",
 			machineTitleStyle.Render("Keys"),
+			machinePrimary.Render("  enter  pick a campaign on the selected machine and hop"),
 			machinePrimary.Render("  t  test whether camp can reach the selected machine"),
 			machinePrimary.Render("  a  add a machine by hand"),
 			machinePrimary.Render("  s  scan your Tailscale network and pick a device"),
@@ -482,6 +484,8 @@ func (m *machineTUIModel) overlayView() string {
 		body = m.discoverBody()
 	case machineFormOverlay:
 		body = m.formBody()
+	case machineHopOverlay:
+		body = m.hopBody()
 	}
 
 	boxWidth := min(max(lay.width-6, 30), 76)
@@ -491,6 +495,64 @@ func (m *machineTUIModel) overlayView() string {
 	canvas := lipgloss.Place(lay.width, lay.height, lipgloss.Center, lipgloss.Center, box,
 		lipgloss.WithWhitespaceBackground(machineTUIPal.BgOverlay))
 	return ui.FitFullscreenView(canvas, lay.height)
+}
+
+// hopBody renders the campaign picker for a hop. It always says where the list
+// came from: a snapshot can be up to 24h old, and an operator who cannot find a
+// campaign they just created needs to know refreshing is the fix rather than
+// concluding the machine is broken.
+func (m *machineTUIModel) hopBody() []string {
+	title := machineTitleStyle.Render("Hop to " + m.hop.machineID)
+
+	if m.hop.loading {
+		return []string{
+			title,
+			"",
+			machineMuted.Render(m.spin.View() + " Asking " + m.hop.machineID + " for its campaigns..."),
+			"",
+			machineHelpStyle.Render("esc cancel"),
+		}
+	}
+
+	body := []string{title}
+	switch {
+	case m.hop.err != "":
+		body = append(body,
+			"",
+			machineErrorStyle.Render("✗ "+m.hop.err),
+			"",
+			machineMuted.Render("'camp machine diagnose "+m.hop.machineID+"' reports auth, probe, and socket state."),
+			"",
+			machineHelpStyle.Render("r retry · esc cancel"),
+		)
+		return body
+	case len(m.hop.campaigns) == 0:
+		body = append(body,
+			"",
+			machineMuted.Render("No campaigns found on "+m.hop.machineID+"."),
+			"",
+			machineHelpStyle.Render("r refresh · esc cancel"),
+		)
+		return body
+	}
+
+	if m.hop.cached {
+		body = append(body, machineMuted.Render("From the last snapshot; press r to ask the machine now."))
+	} else {
+		body = append(body, machineMuted.Render("Live from "+m.hop.machineID+"."))
+	}
+	body = append(body, "")
+
+	for i, name := range m.hop.campaigns {
+		line := "  " + name
+		if i == clampIndex(m.hop.cursor, len(m.hop.campaigns)) {
+			body = append(body, machineSelected.Render("› "+name))
+			continue
+		}
+		body = append(body, machinePrimary.Render(line))
+	}
+
+	return append(body, "", machineHelpStyle.Render("j/k move · enter hop · r refresh · esc cancel"))
 }
 
 func (m *machineTUIModel) discoverBody() []string {
