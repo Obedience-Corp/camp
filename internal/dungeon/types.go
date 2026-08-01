@@ -34,6 +34,10 @@ type DungeonItem struct {
 	Path    string    `json:"path"`
 	Type    ItemType  `json:"type"`
 	ModTime time.Time `json:"mod_time"`
+	// WorkitemType is the workflow type from the directory's .workitem marker,
+	// empty when it carries none. Populated by parent triage so a directory
+	// workitem shows what it is instead of a bare "directory".
+	WorkitemType string `json:"workitem_type,omitempty"`
 }
 
 // ItemStats contains statistics gathered from scc or fest count.

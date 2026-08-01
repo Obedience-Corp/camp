@@ -162,7 +162,13 @@ func runCrawlWithPrompt(ctx context.Context, svc *Service, prompt crawl.Prompt) 
 
 // buildInfoString creates a human-readable info string for display.
 func buildInfoString(item DungeonItem, stats *ItemStats) string {
-	info := fmt.Sprintf("Type: %s | Modified: %s", item.Type, item.ModTime.Format("2006-01-02"))
+	// The workitem type goes in parens beside the generic label rather than
+	// replacing it, so a plain directory's line is unchanged.
+	typeLabel := string(item.Type)
+	if item.WorkitemType != "" {
+		typeLabel = fmt.Sprintf("%s (%s)", item.Type, item.WorkitemType)
+	}
+	info := fmt.Sprintf("Type: %s | Modified: %s", typeLabel, item.ModTime.Format("2006-01-02"))
 
 	if stats != nil {
 		if stats.Files > 0 {
