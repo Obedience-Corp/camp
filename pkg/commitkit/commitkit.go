@@ -228,6 +228,24 @@ func StageFilesWithOutcome(ctx context.Context, repoPath string, files ...string
 	return git.StageWithGuard(ctx, repoPath, files)
 }
 
+// StageFilesWithOptions is StageFilesWithOutcome with per-invocation overrides
+// of the guard's decision. It exists for the consumer flag that means "commit
+// it anyway": fest's --commit-large forwards here exactly as camp's own
+// --commit-large reaches the guard, so the override behaves identically in
+// both tools on the file-list path, not just the stage-all path.
+func StageFilesWithOptions(ctx context.Context, repoPath string, opts StageOptions, files ...string) (*StageOutcome, error) {
+	if ctx.Err() != nil {
+		return nil, ctx.Err()
+	}
+	// Same reasoning as StageFilesWithOutcome: an empty list stays an error
+	// rather than silently becoming stage-everything.
+	if len(files) == 0 {
+		return nil, git.ErrNoFilesSpecified
+	}
+	drainQuietly(ctx, repoPath)
+	return git.StageWithGuardOptions(ctx, repoPath, files, opts)
+}
+
 // HasStagedChanges reports whether there are staged changes ready to commit
 // in the repository at repoPath.
 func HasStagedChanges(ctx context.Context, repoPath string) (bool, error) {
