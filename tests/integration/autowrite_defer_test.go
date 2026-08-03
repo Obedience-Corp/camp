@@ -48,6 +48,14 @@ sleep 3
 echo "deferred: the slow writer finished"`,
 	"empty": `#!/bin/sh
 exit 0`,
+	// Shaped like the real failure that motivated the fallback: a writer whose
+	// backing daemon is down prints its whole usage and exits non-zero, so the
+	// operative line is the last one rather than the first.
+	"broken": `#!/bin/sh
+echo "Usage:" >&2
+echo "  writer [flags]" >&2
+echo "connect to daemon: writer: daemon not running" >&2
+exit 1`,
 }
 
 // drainJobs waits for the queue so an assertion does not race the worker.
@@ -406,4 +414,114 @@ func TestIntegration_EmptyWriterOutputFailsTheJob(t *testing.T) {
 	require.NoError(t, err)
 	assert.Contains(t, stdout, "failed",
 		"the failure must be kept as evidence; camp jobs:\n%s", stdout)
+}
+
+// A writer outage costs the message, never the commit.
+//
+// This is the failure that motivated the fallback. The writer's daemon was
+// down, so the job was parked; by the time anyone looked, HEAD had moved past
+// its parent and the job could no longer be retried at all, leaving work
+// staged and uncommitted with no way back except dropping the job. Every
+// assertion here is a step on that road that must no longer exist.
+func TestIntegration_WriterFailureStillCommits(t *testing.T) {
+	tc := GetSharedContainer(t)
+	tc.EnableDeferral()
+	campPath, _ := setupDrainCampaign(t, tc, "aw-defer-broken")
+	configureWriter(t, tc, campPath, "broken")
+
+	tc.Shell(t, fmt.Sprintf(`
+		cd %s
+		printf 'rescued\n' > rescued.md
+	`, campPath))
+
+	before := strings.TrimSpace(tc.GitOutput(t, campPath, "rev-parse", "HEAD"))
+
+	_, stderr, exitCode, err := tc.RunCampSplitInDir(campPath, "commit", "--auto-write")
+	require.NoError(t, err)
+	require.Equal(t, 0, exitCode, "stderr:\n%s", stderr)
+
+	drainJobs(t, tc, campPath)
+
+	after := strings.TrimSpace(tc.GitOutput(t, campPath, "rev-parse", "HEAD"))
+	assert.NotEqual(t, before, after,
+		"a writer that failed must not cost the user the commit camp already captured")
+
+	committed := tc.GitOutput(t, campPath, "show", "--name-only", "--format=", "HEAD")
+	assert.Contains(t, committed, "rescued.md",
+		"the degraded commit must contain the captured tree; commit contained:\n%s", committed)
+
+	// The subject says the message is camp's, so `git log` shows which commits
+	// are worth rewording once the writer is back.
+	subject := headSubject(t, tc, campPath)
+	assert.Contains(t, subject, "writer unavailable",
+		"a machine-written subject must say so; subject: %q", subject)
+	// It still describes the commit: a named path when there is one, a count
+	// when naming them all would be longer than the line.
+	assert.Regexp(t, `Update (\d+ files?|\S+) \(writer unavailable\)`, subject,
+		"the subject must describe what changed; subject: %q", subject)
+
+	// The campaign tag survives degradation: a deferred commit ends up with
+	// the same subject shape a synchronous one would.
+	assert.Contains(t, subject, "[",
+		"the campaign tag must still be prepended; subject: %q", subject)
+
+	// The body carries the writer's own diagnosis. A detached worker has no
+	// other channel that reliably reaches the user.
+	body := tc.GitOutput(t, campPath, "log", "-1", "--format=%b")
+	assert.Contains(t, body, "daemon not running",
+		"the commit must record why the writer did not run; body:\n%s", body)
+	assert.NotContains(t, body, "Usage:",
+		"only the operative line belongs in git history, not the writer's usage; body:\n%s", body)
+
+	// Nothing is parked, so nothing can rot into an unretryable job.
+	stdout, _, _, err := tc.RunCampSplitInDir(campPath, "jobs")
+	require.NoError(t, err)
+	assert.NotContains(t, stdout, "failed",
+		"a degraded commit must leave an empty queue; camp jobs:\n%s", stdout)
+}
+
+// A failed job that can never be retried must not be advertised as retryable.
+//
+// The queue's advice is the only thing standing between a user and a loop with
+// no exit: retrying a job whose parent moved fails identically every time.
+func TestIntegration_SupersededJobIsNotOfferedForRetry(t *testing.T) {
+	tc := GetSharedContainer(t)
+	tc.EnableDeferral()
+	campPath, _ := setupDrainCampaign(t, tc, "aw-defer-superseded")
+	configureWriter(t, tc, campPath, "slow")
+
+	tc.Shell(t, fmt.Sprintf(`
+		cd %s
+		printf 'queued\n' > queued.md
+	`, campPath))
+
+	_, stderr, exitCode, err := tc.RunCampSplitInDir(campPath, "commit", "--auto-write")
+	require.NoError(t, err)
+	require.Equal(t, 0, exitCode, "stderr:\n%s", stderr)
+
+	// Someone commits directly, moving HEAD past the queued job's parent.
+	tc.Shell(t, fmt.Sprintf(`
+		cd %s
+		printf 'interloper\n' > interloper.md
+		git add interloper.md
+		git commit -q -m "committed directly while the job was queued"
+	`, campPath))
+
+	_, _, _, err = tc.RunCampSplitInDir(campPath, "jobs", "drain")
+	require.NoError(t, err)
+
+	stdout, _, _, err := tc.RunCampSplitInDir(campPath, "jobs")
+	require.NoError(t, err)
+	assert.Contains(t, stdout, "cannot retry",
+		"the row must say the job is beyond retry; camp jobs:\n%s", stdout)
+	assert.NotContains(t, stdout, "camp jobs retry all",
+		"camp must not name a command that cannot work; camp jobs:\n%s", stdout)
+	assert.Contains(t, stdout, "camp jobs drop",
+		"the listing must name the action that does work; camp jobs:\n%s", stdout)
+
+	// Agents read the queue as JSON and need the same fact without parsing prose.
+	jsonOut, _, _, err := tc.RunCampSplitInDir(campPath, "jobs", "--json")
+	require.NoError(t, err)
+	assert.Contains(t, jsonOut, `"superseded": true`,
+		"--json must carry the retryability of a failed job; output:\n%s", jsonOut)
 }

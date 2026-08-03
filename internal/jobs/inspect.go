@@ -5,9 +5,11 @@ import (
 	"os"
 	"path/filepath"
 	"sort"
+	"strings"
 	"time"
 
 	camperrors "github.com/Obedience-Corp/camp/internal/errors"
+	"github.com/Obedience-Corp/camp/internal/git"
 )
 
 // The read side of the queue: what `camp jobs`, the failed-job notice, and the
@@ -99,6 +101,39 @@ func stateRank(state string) int {
 	default:
 		return 2
 	}
+}
+
+// Superseded reports whether a failed job can never succeed on a retry because
+// history moved past the commit it was queued against.
+//
+// executeCommitTree refuses to replay a captured tree onto a parent the user
+// did not choose, so a commit-tree job whose parent is no longer HEAD is not
+// waiting for a better moment: retrying it is guaranteed to fail again, every
+// time, forever. Telling a user to retry that job sends them around a loop
+// with no exit, which is worse than telling them nothing.
+//
+// A job whose commit already landed is deliberately not superseded. Retry is
+// the right action there: it recognizes its own work and clears the queue.
+//
+// Best effort by design. Anything unreadable answers false, because the cost
+// of a wrong "cannot retry" (a user drops recoverable work) is higher than the
+// cost of a wrong "try it" (they retry once and see it fail).
+func Superseded(ctx context.Context, campaignRoot string, e Entry) bool {
+	if e.State != stateFailed || e.Kind != KindCommitTree {
+		return false
+	}
+	if strings.TrimSpace(e.Parent) == "" || strings.TrimSpace(e.Tree) == "" {
+		return false
+	}
+	repoPath, err := resolveRepoPath(campaignRoot, e.Repo)
+	if err != nil {
+		return false
+	}
+	head := git.HeadSHA(ctx, repoPath)
+	if head == "" || head == e.Parent {
+		return false
+	}
+	return !git.FirstParentChainContains(ctx, repoPath, e.Tree, e.Parent)
 }
 
 // FailedCount reports how many jobs are parked in failed/.

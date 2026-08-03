@@ -133,6 +133,41 @@ func FirstParentChainContains(ctx context.Context, repoPath, tree, parent string
 	return false
 }
 
+// TreeChangedPaths lists the paths that differ between two trees.
+//
+// It exists to describe a deferred commit whose message writer was
+// unavailable. The tree pair is the whole description available at that point,
+// and it is the accurate one: it names what the commit contains rather than
+// what the working tree looks like by the time the worker runs.
+func TreeChangedPaths(ctx context.Context, repoPath, from, to string) ([]string, error) {
+	out, err := Output(ctx, repoPath,
+		"diff-tree", "-r", "--name-only", "--no-commit-id", from, to)
+	if err != nil {
+		return nil, camperrors.Wrap(err, "list the paths a deferred commit changes")
+	}
+	var paths []string
+	for line := range strings.SplitSeq(out, "\n") {
+		if p := strings.TrimSpace(line); p != "" {
+			paths = append(paths, p)
+		}
+	}
+	return paths, nil
+}
+
+// HeadSHA returns the commit HEAD points at, or "" when HEAD is unborn or
+// unreadable.
+//
+// Empty rather than an error because both callers treat "cannot tell" and
+// "nothing there" the same way, and neither is exceptional: a campaign's first
+// commit runs against an unborn HEAD by definition.
+func HeadSHA(ctx context.Context, repoPath string) string {
+	out, err := Output(ctx, repoPath, "rev-parse", "HEAD")
+	if err != nil {
+		return ""
+	}
+	return strings.TrimSpace(out)
+}
+
 // StagedFileCount returns how many paths are staged, for the line a deferred
 // commit prints in place of a hash.
 func StagedFileCount(ctx context.Context, repoPath string) (int, error) {

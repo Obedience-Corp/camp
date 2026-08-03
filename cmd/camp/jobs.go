@@ -1,6 +1,7 @@
 package main
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
 	"os"
@@ -142,7 +143,11 @@ type jobJSON struct {
 	AgeMs    int64  `json:"age_ms"`
 	Attempts int    `json:"attempts"`
 	Stuck    bool   `json:"stuck"`
-	Summary  string `json:"summary"`
+	// Superseded marks a failed job that retrying can never fix, because
+	// history moved past the commit it was queued against. An agent reading
+	// this queue needs it to pick 'drop' over 'retry' without first failing.
+	Superseded bool   `json:"superseded"`
+	Summary    string `json:"summary"`
 }
 
 func runJobsList(cmd *cobra.Command, _ []string) error {
@@ -157,14 +162,30 @@ func runJobsList(cmd *cobra.Command, _ []string) error {
 		return err
 	}
 
+	superseded := supersededIDs(ctx, campRoot, entries)
 	if jobsOpts.json {
-		return emitJobsJSON(cmd, campRoot, entries)
+		return emitJobsJSON(cmd, campRoot, entries, superseded)
 	}
-	renderJobsHuman(cmd, entries)
+	renderJobsHuman(cmd, entries, superseded)
 	return nil
 }
 
-func emitJobsJSON(cmd *cobra.Command, campRoot string, entries []jobs.Entry) error {
+// supersededIDs marks the failed jobs a retry can never fix.
+//
+// Computed once for both renderers so the human listing and --json cannot
+// disagree, and only for failed jobs, so a queue that is merely busy pays no
+// git calls at all.
+func supersededIDs(ctx context.Context, campRoot string, entries []jobs.Entry) map[string]bool {
+	marked := map[string]bool{}
+	for _, e := range entries {
+		if jobs.Superseded(ctx, campRoot, e) {
+			marked[e.ID] = true
+		}
+	}
+	return marked
+}
+
+func emitJobsJSON(cmd *cobra.Command, campRoot string, entries []jobs.Entry, superseded map[string]bool) error {
 	now := time.Now()
 	payload := jobsPayload{
 		SchemaVersion: JobsJSONVersion,
@@ -191,10 +212,11 @@ func emitJobsJSON(cmd *cobra.Command, campRoot string, entries []jobs.Entry) err
 			Lane:     e.Lane,
 			Kind:     string(e.Kind),
 			Class:    class,
-			AgeMs:    e.Age(now).Milliseconds(),
-			Attempts: e.Attempts,
-			Stuck:    e.Stuck,
-			Summary:  jobs.Describe(e.Job),
+			AgeMs:      e.Age(now).Milliseconds(),
+			Attempts:   e.Attempts,
+			Stuck:      e.Stuck,
+			Superseded: superseded[e.ID],
+			Summary:    jobs.Describe(e.Job),
 		})
 	}
 
@@ -203,7 +225,7 @@ func emitJobsJSON(cmd *cobra.Command, campRoot string, entries []jobs.Entry) err
 	return enc.Encode(payload)
 }
 
-func renderJobsHuman(cmd *cobra.Command, entries []jobs.Entry) {
+func renderJobsHuman(cmd *cobra.Command, entries []jobs.Entry, superseded map[string]bool) {
 	out := cmd.OutOrStdout()
 	if len(entries) == 0 {
 		_, _ = fmt.Fprintln(out, ui.Dim("No deferred commits queued."))
@@ -223,7 +245,14 @@ func renderJobsHuman(cmd *cobra.Command, entries []jobs.Entry) {
 			state = "stuck"
 		}
 		what := jobs.Describe(e.Job)
-		if note := jobs.AttemptNote(e.Attempts, e.State == "failed"); note != "" {
+		note := jobs.AttemptNote(e.Attempts, e.State == "failed")
+		if superseded[e.ID] {
+			// The row carries it too, not only the footer: with a mix of
+			// retryable and superseded jobs the footer can say how many but
+			// not which, and "which" is what the user has to act on.
+			note = strings.TrimPrefix(note+", cannot retry", ", ")
+		}
+		if note != "" {
 			what = fmt.Sprintf("%s (%s)", what, note)
 		}
 		fmt.Fprintf(&b, "%-9s %-25s %-22s %-14s %6s  %s\n",
@@ -233,11 +262,14 @@ func renderJobsHuman(cmd *cobra.Command, entries []jobs.Entry) {
 
 	// Every state that needs a decision names the command that makes it, so
 	// the listing is actionable rather than merely informative.
-	failed, stuck := 0, 0
+	failed, stuck, stale := 0, 0, 0
 	for _, e := range entries {
 		switch {
 		case e.State == "failed":
 			failed++
+			if superseded[e.ID] {
+				stale++
+			}
 		case e.Stuck:
 			stuck++
 		}
@@ -246,8 +278,27 @@ func renderJobsHuman(cmd *cobra.Command, entries []jobs.Entry) {
 	// which would style the newline and emit a line of trailing spaces.
 	if failed > 0 {
 		_, _ = fmt.Fprintln(out)
-		_, _ = fmt.Fprintln(out, ui.Dim(
-			"Retry them with 'camp jobs retry all', or give up with 'camp jobs drop <id>'."))
+		// Retry is only offered when retrying could actually work. A job
+		// whose parent is no longer HEAD fails identically every time, so
+		// naming the command that does that would send the user around a
+		// loop with no exit.
+		switch stale {
+		case 0:
+			_, _ = fmt.Fprintln(out, ui.Dim(
+				"Retry them with 'camp jobs retry all', or give up with 'camp jobs drop <id>'."))
+		case failed:
+			_, _ = fmt.Fprintln(out, ui.Dim(
+				"Retrying will not help: history moved past the commit these were queued"))
+			_, _ = fmt.Fprintln(out, ui.Dim(
+				"against. Drop them with 'camp jobs drop <id>'."))
+		default:
+			_, _ = fmt.Fprintln(out, ui.Dim(
+				"Retry them with 'camp jobs retry all', or give up with 'camp jobs drop <id>'."))
+			_, _ = fmt.Fprintln(out, ui.Dim(fmt.Sprintf(
+				"The %d marked 'cannot retry' will not come back: history moved past the", stale)))
+			_, _ = fmt.Fprintln(out, ui.Dim(
+				"commit they were queued against. Drop those."))
+		}
 		_, _ = fmt.Fprintln(out, ui.Dim(
 			"Dropping keeps the files on disk; your next commit picks them up."))
 	}

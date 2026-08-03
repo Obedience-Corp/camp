@@ -15,6 +15,7 @@ import (
 	"io"
 	"os"
 	"os/exec"
+	"regexp"
 	"runtime"
 	"strings"
 
@@ -43,6 +44,70 @@ hooks:
 // ErrCommitMessageHookEmptyOutput is returned when the hook succeeds but writes
 // no commit message to stdout.
 var ErrCommitMessageHookEmptyOutput = errors.New("auto-write commit message command produced no message")
+
+// WriterError is a commit message writer that ran and did not produce a
+// message.
+//
+// It exists so callers can act on the writer's own diagnostic without parsing
+// a formatted error string. The deferred-commit worker needs exactly that: it
+// commits anyway when the writer fails and puts the reason in the commit
+// message, and a message built by scraping err.Error() would carry camp's
+// wrapping and the writer's ANSI codes into git history.
+type WriterError struct {
+	// Command is the configured writer, as written in campaign.yaml.
+	Command string
+	// Reason is the writer's own last diagnostic line: sanitized, single
+	// line, bounded. Empty when the writer said nothing.
+	Reason string
+	// Err is the underlying failure.
+	Err error
+}
+
+func (e *WriterError) Error() string {
+	if e.Reason == "" {
+		return "auto-write commit message command failed"
+	}
+	return "auto-write commit message command failed: " + e.Reason
+}
+
+func (e *WriterError) Unwrap() error { return e.Err }
+
+// maxWriterReasonBytes bounds the writer diagnostic camp repeats.
+//
+// A writer that fails by printing its own usage emits a screenful, and every
+// byte of it would otherwise land twice in the worker log and, for a degraded
+// commit, permanently in git history. The operative line is the last one.
+const maxWriterReasonBytes = 300
+
+// ansiEscape matches the CSI sequences a writer emits when it renders help
+// text to a pipe. Broader than a fixed list of color constants on purpose: the
+// point is that nothing an arbitrary user-configured tool prints can reach a
+// commit message as an escape code.
+var ansiEscape = regexp.MustCompile(`\x1b\[[0-9;?]*[ -/]*[@-~]`)
+
+// writerReason reduces a writer's stderr to the one line worth repeating.
+//
+// The last non-empty line, because tools print their diagnosis after their
+// usage, not before it. Sanitized and truncated because this string is
+// embedded in text camp writes on the user's behalf.
+func writerReason(stderr string) string {
+	cleaned := strings.TrimSpace(ansiEscape.ReplaceAllString(stderr, ""))
+	if cleaned == "" {
+		return ""
+	}
+	lines := strings.Split(cleaned, "\n")
+	reason := ""
+	for i := len(lines) - 1; i >= 0; i-- {
+		if trimmed := strings.TrimSpace(lines[i]); trimmed != "" {
+			reason = trimmed
+			break
+		}
+	}
+	if len(reason) > maxWriterReasonBytes {
+		reason = reason[:maxWriterReasonBytes] + "..."
+	}
+	return reason
+}
 
 // commitAmendEnv is the Camp-to-writer amend signal.
 const commitAmendEnv = "CAMP_COMMIT_AMEND=1"
@@ -159,16 +224,24 @@ func runCommitMessageCommandWithEnv(
 		if ctx.Err() != nil {
 			return "", ctx.Err()
 		}
-		msg := strings.TrimSpace(stderr.String())
-		if msg != "" {
-			return "", camperrors.Wrapf(err, "auto-write commit message command failed: %s", msg)
+		// Only the reason reaches the error. The full stderr was already
+		// streamed live to diagnosticOut, so repeating it here would render a
+		// failing writer's help text twice in the same log with nothing to
+		// distinguish the copies.
+		return "", &WriterError{
+			Command: command,
+			Reason:  writerReason(stderr.String()),
+			Err:     err,
 		}
-		return "", camperrors.Wrap(err, "auto-write commit message command failed")
 	}
 
 	message := strings.TrimSpace(stdout.String())
 	if message == "" {
-		return "", ErrCommitMessageHookEmptyOutput
+		return "", &WriterError{
+			Command: command,
+			Reason:  "the writer exited cleanly without printing a message",
+			Err:     ErrCommitMessageHookEmptyOutput,
+		}
 	}
 
 	return message, nil
