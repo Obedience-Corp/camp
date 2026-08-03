@@ -86,6 +86,29 @@ $ camp machine adopt
 devbox.example.ts.net is already in your fleet as "devbox"; nothing to adopt
 ```
 
+## Hopping from the fleet screen
+
+`camp machine` lists the fleet; `enter` on a row picks a campaign on that machine
+and hops there. The campaign list comes from the same snapshot completion reads, so
+the picker opens without dialing; `r` refreshes it live when the snapshot is stale.
+
+The hop itself still goes through `camp switch <id>:<campaign>`. The screen writes
+`ssh-hop:<id>:<campaign>` and the shell wrapper turns that into the hop, which is
+the identical path `camp list`'s picker takes. Nothing about the remote resolution
+is duplicated: the far machine's own registry decides the path, exactly as it does
+for a typed `csw devbox:notes`.
+
+This needs the wrapper. A subprocess cannot replace the shell that launched it, so
+without `eval "$(camp shell-init zsh)"` the key reports what is missing instead of
+silently doing nothing:
+
+```
+hop needs shell integration: run eval "$(camp shell-init <shell>)"
+```
+
+`t` remains the connection test — the two are separate gestures, because "can camp
+reach this?" is a question worth asking about a machine you are not about to enter.
+
 ## The hop-back gesture
 
 `csw -` returns to the origin campaign. There is no history file and no daemon: the

@@ -23,6 +23,8 @@ func (m *machineTUIModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m, nil
 	case devicesMsg:
 		return m.applyDevices(msg)
+	case hopCampaignsMsg:
+		return m.applyHopCampaigns(msg)
 	case spinner.TickMsg:
 		if !m.busy() {
 			return m, nil
@@ -160,7 +162,9 @@ func (m *machineTUIModel) updateBrowse(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			return m, nil
 		}
 		return m, m.beginScan(true)
-	case "t", "enter":
+	case "enter":
+		return m.openHopPicker()
+	case "t":
 		return m, m.testSelected()
 	case "e":
 		return m, m.openEditForm()
@@ -175,6 +179,123 @@ func (m *machineTUIModel) updateBrowse(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		m.overlay = machineHelpOverlay
 	}
 	return m, nil
+}
+
+// openHopPicker turns the highlighted machine into a hop by asking which
+// campaign to land in. It refuses before opening rather than after choosing, so
+// a machine that cannot be hopped to never presents a list that leads nowhere.
+func (m *machineTUIModel) openHopPicker() (tea.Model, tea.Cmd) {
+	row := m.selectedRow()
+	if row.Local {
+		m.setError(camperrors.New("local is this computer; use 'camp list' to open a campaign here"))
+		return m, nil
+	}
+	if !m.hopEnabled {
+		m.setError(camperrors.New("hop needs shell integration: run eval \"$(camp shell-init <shell>)\""))
+		return m, nil
+	}
+	if err := remote.EnsureKeyAuth(row.Machine); err != nil {
+		m.setError(camperrors.New("camp cannot hop to a password-auth machine yet"))
+		return m, nil
+	}
+
+	m.hop.gen++
+	m.hop = machineHopState{machineID: row.Machine.ID, gen: m.hop.gen}
+	m.overlay = machineHopOverlay
+
+	// Cache first: this is the keystroke path, and the snapshot is exactly the
+	// data `csw <id>:<tab>` completes from. A cold cache is the only case that
+	// pays for ssh, and it pays once because the fetch warms the cache too.
+	if names, ok := readMachineCacheCampaigns(row.Machine.ID); ok && len(names) > 0 {
+		m.hop.campaigns = names
+		m.hop.cached = true
+		return m, nil
+	}
+	m.hop.loading = true
+	return m, tea.Batch(m.spin.Tick, m.fetchHopCampaigns(*row.Machine, m.hop.gen))
+}
+
+// updateHop drives the campaign picker. r re-fetches, which is how a stale
+// snapshot gets corrected without leaving the screen.
+func (m *machineTUIModel) updateHop(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
+	switch msg.String() {
+	case "ctrl+c":
+		m.quitting = true
+		return m, tea.Quit
+	case "esc", "q":
+		m.overlay = machineNoOverlay
+		m.hop = machineHopState{gen: m.hop.gen}
+		return m, nil
+	case "up", "k":
+		if n := len(m.hop.campaigns); n > 0 {
+			m.hop.cursor = (m.hop.cursor - 1 + n) % n
+		}
+		return m, nil
+	case "down", "j":
+		if n := len(m.hop.campaigns); n > 0 {
+			m.hop.cursor = (m.hop.cursor + 1) % n
+		}
+		return m, nil
+	case "r":
+		if m.hop.loading {
+			return m, nil
+		}
+		m.hop.gen++
+		m.hop.loading = true
+		m.hop.err = ""
+		target, ok := m.machineByID(m.hop.machineID)
+		if !ok {
+			m.hop.loading = false
+			return m, nil
+		}
+		return m, tea.Batch(m.spin.Tick, m.fetchHopCampaigns(target, m.hop.gen))
+	case "enter":
+		if m.hop.loading || len(m.hop.campaigns) == 0 {
+			return m, nil
+		}
+		name := m.hop.campaigns[clampIndex(m.hop.cursor, len(m.hop.campaigns))]
+		// The wrapper resolves this through `camp switch <id>:<name>`, so the
+		// remote registry still decides the path and this never guesses one.
+		m.hopSelection = machineHopSelection(m.hop.machineID, name)
+		m.quitting = true
+		return m, tea.Quit
+	}
+	return m, nil
+}
+
+// applyHopCampaigns folds a live fetch into the overlay, dropping a result whose
+// generation has been superseded by a close, a re-open, or a newer refresh.
+func (m *machineTUIModel) applyHopCampaigns(msg hopCampaignsMsg) (tea.Model, tea.Cmd) {
+	if msg.gen != m.hop.gen || m.overlay != machineHopOverlay {
+		return m, nil
+	}
+	m.hop.loading = false
+	if msg.err != nil {
+		m.hop.err = connectionFailureDetail(msg.err)
+		// The error screen replaces the list, so the list must actually be gone:
+		// keeping the previous campaigns here would let enter act on entries the
+		// operator can no longer see, hopping from a failure screen.
+		m.hop.campaigns = nil
+		m.hop.cached = false
+		m.hop.cursor = 0
+		return m, nil
+	}
+	m.hop.err = ""
+	m.hop.campaigns = msg.campaigns
+	m.hop.cached = false
+	m.hop.cursor = 0
+	return m, nil
+}
+
+// machineByID finds a configured machine by id, copied so a background fetch
+// never reads the slice the fleet list is rebuilt from.
+func (m *machineTUIModel) machineByID(id string) (machines.Machine, bool) {
+	for i := range m.file.Machines {
+		if m.file.Machines[i].ID == id {
+			return m.file.Machines[i], true
+		}
+	}
+	return machines.Machine{}, false
 }
 
 // testSelected runs a connection test against the highlighted machine.
@@ -269,6 +390,8 @@ func (m *machineTUIModel) updateOverlay(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		return m.updateDiscover(msg)
 	case machineFormOverlay:
 		return m.updateForm(msg)
+	case machineHopOverlay:
+		return m.updateHop(msg)
 	default:
 		return m, nil
 	}

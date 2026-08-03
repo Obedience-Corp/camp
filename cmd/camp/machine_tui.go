@@ -3,6 +3,7 @@ package main
 import (
 	"context"
 	"errors"
+	"os"
 	"os/exec"
 	"sort"
 	"strings"
@@ -26,6 +27,7 @@ const (
 	machineDeleteOverlay
 	machineDiscoverOverlay
 	machineHelpOverlay
+	machineHopOverlay
 )
 
 // machineFormField indexes the fields of the add/edit form in the order they
@@ -137,6 +139,15 @@ type machineTUIModel struct {
 	form      machineForm
 	pendingID string
 
+	// hopEnabled reports whether the shell wrapper is there to complete a hop.
+	// It gates the key rather than the screen: the fleet is still worth managing
+	// without shell integration, only the hop cannot be finished.
+	hopEnabled bool
+	// hopSelection is the ssh-hop payload the wrapper acts on, set exactly once
+	// immediately before the final Quit.
+	hopSelection string
+	hop          machineHopState
+
 	// spin animates while a connection test or tailnet scan is out. An ssh
 	// connect can take the full ConnectTimeout before it fails, and a
 	// tailscale status call can sit still just as long; a screen that does
@@ -148,6 +159,37 @@ type machineTUIModel struct {
 	width     int
 	height    int
 	quitting  bool
+}
+
+// machineHopState backs the campaign picker that turns a machine row into a hop
+// target. A hop is machine:campaign, never a bare machine, so choosing the
+// machine is only half the gesture.
+//
+// Campaigns come from the completion cache first, which is what makes the
+// overlay open instantly: the cache is filled by `camp list --remote` pulls and
+// by snapshots other machines push, so the common case never waits on ssh. A
+// live fetch runs only when the cache is cold or the operator asks for one.
+type machineHopState struct {
+	machineID string
+	campaigns []string
+	cursor    int
+	loading   bool
+	err       string
+	// cached records that the list on screen came from the snapshot rather than
+	// a live answer. Worth saying: a pushed entry can be up to 24h old, so a
+	// campaign created since then will not be in it.
+	cached bool
+	// gen drops a late fetch whose overlay has already been closed or reopened
+	// against a different machine.
+	gen uint64
+}
+
+// hopCampaignsMsg carries a live campaign fetch for one machine.
+type hopCampaignsMsg struct {
+	id        string
+	campaigns []string
+	err       error
+	gen       uint64
 }
 
 // socketsMsg carries the result of probing every machine's ControlMaster
@@ -186,11 +228,37 @@ func runMachineTUI(cmd *cobra.Command, _ []string) error {
 		return err
 	}
 
-	program := tea.NewProgram(newMachineTUIModel(ctx, mf), tea.WithContext(ctx), tea.WithAltScreen())
-	if _, err := program.Run(); err != nil {
+	pathOutput, _ := cmd.Flags().GetString("path-output")
+	model := newMachineTUIModel(ctx, mf)
+	// Hop is offered only when the wrapper is there to complete it. Without a
+	// path-output file the key would appear to work and then do nothing, so the
+	// screen says what is missing instead of pretending.
+	model.hopEnabled = pathOutput != ""
+
+	program := tea.NewProgram(model, tea.WithContext(ctx), tea.WithAltScreen())
+	final, err := program.Run()
+	if err != nil {
 		return camperrors.Wrap(err, "running machine TUI")
 	}
-	return nil
+	return writeMachineHopSelection(final, pathOutput)
+}
+
+// writeMachineHopSelection persists the hop the operator chose, in the same
+// ssh-hop:<machine>:<campaign> form `camp list` already writes, so both TUIs
+// hand the shell wrapper one vocabulary rather than two. No-op unless a
+// path-output file was supplied and a hop was actually chosen.
+func writeMachineHopSelection(final tea.Model, pathOutput string) error {
+	m, ok := final.(*machineTUIModel)
+	if !ok || pathOutput == "" || m.hopSelection == "" {
+		return nil
+	}
+	return os.WriteFile(pathOutput, []byte(m.hopSelection), 0o600)
+}
+
+// machineHopSelection builds the path-output payload for a hop to campaign on
+// machine id.
+func machineHopSelection(id, campaign string) string {
+	return "ssh-hop:" + id + ":" + campaign
 }
 
 func newMachineTUIModel(ctx context.Context, mf *machines.File) *machineTUIModel {
@@ -231,10 +299,38 @@ func (m *machineTUIModel) testing() bool {
 	return false
 }
 
-// busy reports whether the spinner should keep ticking: either a connection
-// test or a tailnet scan is in flight.
+// busy reports whether the spinner should keep ticking: a connection test, a
+// tailnet scan, or a live campaign fetch is in flight.
 func (m *machineTUIModel) busy() bool {
-	return m.testing() || m.scanning
+	return m.testing() || m.scanning || m.hop.loading
+}
+
+// listRemoteCampaignsFor is the seam a live campaign fetch resolves through, so
+// the hop picker can be exercised without a live ssh. Production runs the remote
+// machine's own `camp list --json`, which also warms the completion cache — so
+// paying for one fetch here makes the next open of this overlay instant.
+//
+// Not parallel-safe: tests swap this package-level var.
+var listRemoteCampaignsFor = func(ctx context.Context, m *machines.Machine) ([]string, error) {
+	rows, err := enumerateRemoteFor(listFilter{})(ctx, m)
+	if err != nil {
+		return nil, err
+	}
+	names := make([]string, 0, len(rows))
+	for _, row := range rows {
+		names = append(names, row.Name)
+	}
+	return names, nil
+}
+
+// fetchHopCampaigns asks a machine for its campaigns in the background, stamped
+// with gen so a late finish against a closed or re-pointed overlay is dropped.
+func (m *machineTUIModel) fetchHopCampaigns(target machines.Machine, gen uint64) tea.Cmd {
+	ctx := m.ctx
+	return func() tea.Msg {
+		names, err := listRemoteCampaignsFor(ctx, &target)
+		return hopCampaignsMsg{id: target.ID, campaigns: names, err: err, gen: gen}
+	}
 }
 
 // tailscaleInstalled reports whether the tailscale CLI is on PATH. Discovery
