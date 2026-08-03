@@ -225,7 +225,7 @@ func TestPendingNoticeSaysWhatIsQueuedAndWhereToLook(t *testing.T) {
 	t.Parallel()
 
 	notice := pendingNotice(1)
-	if !strings.Contains(notice, "1 queued commit") {
+	if !strings.Contains(notice, "1 commit") {
 		t.Errorf("notice did not count the work:\n%s", notice)
 	}
 	if !strings.Contains(notice, "still queued") {
@@ -249,13 +249,17 @@ func TestPendingNoticeSaysWhatIsQueuedAndWhereToLook(t *testing.T) {
 func TestPendingNoticeAgreesInNumber(t *testing.T) {
 	t.Parallel()
 
-	if got := pendingNotice(1); !strings.Contains(got, "1 queued commit ") ||
+	if got := pendingNotice(1); !strings.Contains(got, "1 commit still queued") ||
 		!strings.Contains(got, "include it") {
 		t.Errorf("pendingNotice(1) = %q, want singular throughout", got)
 	}
-	if got := pendingNotice(3); !strings.Contains(got, "3 queued commits") ||
+	if got := pendingNotice(3); !strings.Contains(got, "3 commits still queued") ||
 		!strings.Contains(got, "include them") {
 		t.Errorf("pendingNotice(3) = %q, want plural throughout", got)
+	}
+	// The stutter this line used to have, from reusing the refusal's phrasing.
+	if got := pendingNotice(1); strings.Contains(got, "queued commit still queued") {
+		t.Errorf("pendingNotice(1) = %q, want it to read like a sentence", got)
 	}
 }
 

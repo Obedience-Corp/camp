@@ -142,16 +142,17 @@ func noteAllTo(ctx context.Context, w io.Writer, campaignRoot string) (int, erro
 }
 
 // pendingNotice is what a reporting command prints instead of waiting.
+//
+// It does not reuse countPhrase, whose "1 queued commit" reads correctly in a
+// refusal ("1 queued commit not completed after 30s") but stutters here into
+// "1 queued commit still queued". This line prints on ordinary commands rather
+// than only on failures, so it is the one a user sees most and the one least
+// able to afford reading like a template.
 func pendingNotice(n int) string {
-	return fmt.Sprintf("%s still queued; what follows may not include %s (camp jobs)",
-		countPhrase(n), itOrThem(n))
-}
-
-func itOrThem(n int) string {
 	if n == 1 {
-		return "it"
+		return "1 commit still queued; what follows may not include it (camp jobs)"
 	}
-	return "them"
+	return fmt.Sprintf("%d commits still queued; what follows may not include them (camp jobs)", n)
 }
 
 // CampaignRoot waits for the campaign root's lane. Commands that operate

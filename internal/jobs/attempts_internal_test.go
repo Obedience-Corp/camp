@@ -3,6 +3,8 @@ package jobs
 import (
 	"context"
 	"errors"
+	"os"
+	"path/filepath"
 	"testing"
 	"time"
 )
@@ -142,5 +144,77 @@ func TestParkingAnExhaustedJobDoesNotCountAnotherAttempt(t *testing.T) {
 	if failed[0].Attempts != MaxAttempts {
 		t.Errorf("Attempts = %d, want %d: parking is not a run",
 			failed[0].Attempts, MaxAttempts)
+	}
+}
+
+// Parking must always empty running/, even when the job cannot be parsed.
+//
+// Reclaim skips what it cannot read, so anything left behind here sits in
+// running/ with nothing ever coming for it. Recording the attempt is the part
+// that may fail; leaving the lane is not optional.
+func TestParkingAnUnreadableJobStillLeavesRunning(t *testing.T) {
+	root := testCampaign(t)
+
+	runningDir := laneDir(root, stateRunning, ".")
+	if err := os.MkdirAll(runningDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	const name = "0000001.json"
+	path := filepath.Join(runningDir, name)
+	if err := os.WriteFile(path, []byte("{not json"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	if err := parkFailedJob(root, ".", path, name); err != nil {
+		t.Fatalf("parkFailedJob() error = %v; an unparseable job must still be parked", err)
+	}
+
+	if _, err := os.Stat(path); !os.IsNotExist(err) {
+		t.Error("the job is still in running/; nothing will ever pick it up again")
+	}
+	if _, err := os.Stat(filepath.Join(laneDir(root, stateFailed, "."), name)); err != nil {
+		t.Errorf("the job did not reach failed/: %v", err)
+	}
+}
+
+// The incremented job is written to failed/ rather than edited in place, so an
+// interrupted park cannot leave unparseable JSON in running/.
+//
+// Asserted through the file that is left behind: an in-place implementation
+// writes the count to the running path before moving it, and this checks that
+// the running path is never the thing carrying the new count.
+func TestParkingWritesTheCountToItsDestination(t *testing.T) {
+	root := testCampaign(t)
+	ctx := context.Background()
+
+	if _, err := Enqueue(ctx, root, Job{
+		Kind: KindCommitPaths, Repo: ".", Paths: []string{"a.md"},
+	}); err != nil {
+		t.Fatal(err)
+	}
+	if _, _, err := Claim(ctx, root, "."); err != nil {
+		t.Fatal(err)
+	}
+
+	runningDir := laneDir(root, stateRunning, ".")
+	names, err := sortedJobFiles(runningDir)
+	if err != nil || len(names) != 1 {
+		t.Fatalf("setup: want one claimed job in running/, got %v (%v)", names, err)
+	}
+	name := names[0]
+	runningPath := filepath.Join(runningDir, name)
+	if err := parkFailedJob(root, ".", runningPath, name); err != nil {
+		t.Fatalf("parkFailedJob() error = %v", err)
+	}
+
+	if _, err := os.Stat(runningPath); !os.IsNotExist(err) {
+		t.Error("running/ still holds the job after parking")
+	}
+	parked, err := readJob(filepath.Join(laneDir(root, stateFailed, "."), name))
+	if err != nil {
+		t.Fatalf("read the parked job: %v", err)
+	}
+	if parked.Attempts != 1 {
+		t.Errorf("parked Attempts = %d, want 1", parked.Attempts)
 	}
 }
