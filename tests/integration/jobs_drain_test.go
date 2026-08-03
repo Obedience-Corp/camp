@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -198,14 +199,17 @@ func TestIntegration_ManifestJobNeverBlocksAPush(t *testing.T) {
 		"a manifest job must not make a push wait; stderr:\n%s", stderr)
 }
 
-// A read-only command warns and proceeds when the queue outlasts it. Refusing
-// to show status because a commit is slow is worse than showing status with a
-// caveat, and status is the command people run to ask whether something
-// committed.
+// A read-only command reports the queue and returns, without waiting for it.
+//
+// Status is the command people run to ask whether something committed, and
+// often twice in a row. Holding it so its answer can be marginally fresher
+// spends the exact cost deferral exists to remove; the honest answer while the
+// queue is working is the count, given immediately. The user re-runs it.
 //
 // The lane is wedged deliberately: a fresh lock says a worker holds it, and the
-// job names a path that does not exist so nothing can ever complete it.
-func TestIntegration_StatusWarnsAndProceedsOnAWedgedLane(t *testing.T) {
+// job names a path that does not exist so nothing can ever complete it. Before
+// this behavior existed, that setup made status sit for DrainTimeout.
+func TestIntegration_StatusReportsTheQueueWithoutWaiting(t *testing.T) {
 	tc := GetSharedContainer(t)
 	tc.EnableDeferral()
 	campPath, _ := setupDrainCampaign(t, tc, "drain-status-wedged")
@@ -216,23 +220,32 @@ func TestIntegration_StatusWarnsAndProceedsOnAWedgedLane(t *testing.T) {
 		"paths":   []string{"does/not/exist.md"},
 		"message": "capture intent: wedged",
 	})
-	// A fresh lane lock stands in for a live worker, so the drain does not
-	// spawn one and simply waits.
+	// A fresh lane lock stands in for a live worker, so nothing spawns and
+	// nothing completes: any wait here would run to its full timeout.
 	tc.Shell(t, fmt.Sprintf(`
 		cd %s/.campaign/cache/jobs
 		printf '99999\n' > worker-%s.lock
 	`, campPath, rootLane))
 
+	started := time.Now()
 	stdout, stderr, exitCode, err := tc.RunCampSplitInDir(campPath,
 		"status", "--short")
+	elapsed := time.Since(started)
 	require.NoError(t, err)
 
 	assert.Equal(t, 0, exitCode,
-		"status must proceed despite a slow queue; stdout:\n%s\nstderr:\n%s", stdout, stderr)
+		"status must proceed despite a busy queue; stdout:\n%s\nstderr:\n%s", stdout, stderr)
+	// The wedged job can never complete, so anything close to the drain
+	// timeout means status waited on it.
+	assert.Less(t, elapsed, 15*time.Second,
+		"status must not wait for the queue; it took %s against a lane that "+
+			"can never finish", elapsed)
 	assert.Contains(t, stderr, "still queued",
-		"status must say the report may be out of date; stderr:\n%s", stderr)
+		"status must say the report may be incomplete; stderr:\n%s", stderr)
 	assert.Contains(t, stderr, "camp jobs",
-		"the warning must name the command that shows what is stuck; stderr:\n%s", stderr)
+		"the notice must name the command that shows what is stuck; stderr:\n%s", stderr)
+	assert.NotContains(t, stderr, "waiting on",
+		"status must not claim to be waiting when it is not; stderr:\n%s", stderr)
 }
 
 // A write command refuses rather than proceeding into a half-correct state,

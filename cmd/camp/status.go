@@ -48,7 +48,7 @@ func init() {
 	statusCmd.Flags().StringVarP(&statusProject, "project", "p", "", "Status of a specific project path")
 	statusCmd.Flags().BoolVarP(&statusShort, "short", "s", false, "Give output in short format")
 	statusCmd.Flags().BoolVar(&statusShowRefs, "show-refs", false, "Show campaign root submodule ref changes")
-	statusCmd.Flags().BoolVar(&statusNoDrain, "no-drain", false, "Do not wait for camp's queued commits first")
+	statusCmd.Flags().BoolVar(&statusNoDrain, "no-drain", false, "Do not report camp's queued commits first")
 }
 
 func runStatus(cmd *cobra.Command, args []string) error {
@@ -82,11 +82,13 @@ func runStatus(cmd *cobra.Command, args []string) error {
 		fmt.Fprintln(os.Stderr, ui.Info(fmt.Sprintf("Submodule: %s", target.Name)))
 	}
 
-	// Read-only, so a slow queue warns rather than refusing. Status is the
-	// first thing a user runs to ask "did that commit?", so reporting a tree
-	// camp is midway through changing is a correctness bug, not a nicety.
+	// Status reports; it does not wait. It is the first thing a user runs to
+	// ask "did that commit?", and the honest answer to that while the queue is
+	// still working is the count, given now, not the same answer given thirty
+	// seconds later. A tree camp is midway through changing still has to be
+	// declared, which is what the notice does.
 	if !statusNoDrain {
-		if _, err := drain.Repo(ctx, target.Path, drain.Read); err != nil {
+		if _, err := drain.Note(ctx, target.Path); err != nil {
 			return err
 		}
 	}

@@ -21,34 +21,60 @@ import (
 // invariant is noticing at compile-and-test time that a history-moving
 // entrypoint has no drain call in it, and that is a question about the code.
 
-// drainMatrixEntry is one history-moving surface and where its drain lives.
+// queueDuty is what a surface owes the deferred queue.
+type queueDuty int
+
+const (
+	// mustDrain is for commands that change or publish history. They wait,
+	// because a queued commit landing in the middle of what they do, or being
+	// left behind by it, is invisible to the user.
+	mustDrain queueDuty = iota
+	// mustNotice is for commands that only report. They do not wait: holding
+	// a user's terminal to make `camp status` marginally fresher is a bad
+	// trade against telling them what is still queued and letting them re-run.
+	// They still have to say so, or a report silently omits work camp has
+	// already promised, which is the confusion deferral must not create.
+	mustNotice
+)
+
+// drainMatrixEntry is one surface and where its queue handling lives.
 type drainMatrixEntry struct {
 	// name is how a failure names the surface, in user terms.
 	name string
-	// file is the source file that must contain the drain call.
+	// file is the source file that must contain the call.
 	file string
-	// fn is the function the drain must appear inside, so moving the call to
-	// an unrelated helper in the same file does not satisfy the test.
+	// fn is the function the call must appear inside, so moving it to an
+	// unrelated helper in the same file does not satisfy the test.
 	fn string
+	// duty is what this surface owes: a wait, or an acknowledgement.
+	duty queueDuty
 }
 
-// The surfaces. Adding a history-moving command means adding a row here; a row
-// with no drain fails, which is the point.
+// The surfaces. Adding a command that reads or writes git history means adding
+// a row here; a row that does neither of its duties fails, which is the point.
 var drainMatrix = []drainMatrixEntry{
-	{name: "camp commit", file: "commit.go", fn: "runCommit"},
-	{name: "camp stage", file: "stage.go", fn: "runStage"},
-	{name: "camp push", file: "push.go", fn: "runPush"},
-	{name: "camp push all", file: "push_all.go", fn: "runPushAllCmd"},
-	{name: "camp pull", file: "pull.go", fn: "runPull"},
-	{name: "camp pull all", file: "pull_all.go", fn: "runPullAllCmd"},
-	{name: "camp status", file: "status.go", fn: "runStatus"},
-	{name: "camp log", file: "log.go", fn: "runLog"},
-	{name: "camp sync", file: "sync.go", fn: "runSync"},
-	{name: "camp doctor", file: "doctor.go", fn: "runDoctor"},
-	{name: "camp p commit", file: "project/commit.go", fn: "runProjectCommit"},
-	{name: "camp worktrees commit", file: "worktrees/commit.go", fn: "runWorktreesCommit"},
-	{name: "camp refs sync", file: "refs/commands.go", fn: "runRefsSync"},
+	{name: "camp commit", file: "commit.go", fn: "runCommit", duty: mustDrain},
+	{name: "camp stage", file: "stage.go", fn: "runStage", duty: mustDrain},
+	{name: "camp push", file: "push.go", fn: "runPush", duty: mustDrain},
+	{name: "camp push all", file: "push_all.go", fn: "runPushAllCmd", duty: mustDrain},
+	{name: "camp pull", file: "pull.go", fn: "runPull", duty: mustDrain},
+	{name: "camp pull all", file: "pull_all.go", fn: "runPullAllCmd", duty: mustDrain},
+	{name: "camp sync", file: "sync.go", fn: "runSync", duty: mustDrain},
+	// doctor --fix repairs a tree, so it waits; plain doctor reports and does
+	// not. The wait follows what the command does, not which command it is.
+	{name: "camp doctor", file: "doctor.go", fn: "runDoctor", duty: mustDrain},
+	{name: "camp p commit", file: "project/commit.go", fn: "runProjectCommit", duty: mustDrain},
+	{name: "camp worktrees commit", file: "worktrees/commit.go", fn: "runWorktreesCommit", duty: mustDrain},
+	{name: "camp refs sync", file: "refs/commands.go", fn: "runRefsSync", duty: mustDrain},
+	{name: "camp status", file: "status.go", fn: "runStatus", duty: mustNotice},
+	{name: "camp log", file: "log.go", fn: "runLog", duty: mustNotice},
 }
+
+// drainCalls are the entrypoints that wait for the queue.
+var drainCalls = []string{"drain.Repo(", "drain.AllLanes(", "drain.CampaignRoot("}
+
+// noticeCalls are the entrypoints that report the queue without waiting.
+var noticeCalls = []string{"drain.Note(", "drain.NoteAllLanes("}
 
 func TestEveryHistoryMovingCommandDrains(t *testing.T) {
 	t.Parallel()
@@ -66,14 +92,28 @@ func TestEveryHistoryMovingCommandDrains(t *testing.T) {
 				t.Fatalf("%s: function %s not found; the matrix is stale",
 					entry.file, entry.fn)
 			}
-			if !strings.Contains(body, "drain.Repo(") &&
-				!strings.Contains(body, "drain.AllLanes(") &&
-				!strings.Contains(body, "drain.CampaignRoot(") {
-				t.Errorf("%s moves git history but never drains the deferred queue.\n"+
-					"A queued commit can then land in the middle of what it does, or be "+
-					"left behind by it.\nAdd a drain in %s (%s), or remove the row from "+
-					"drainMatrix if this command no longer touches history.",
-					entry.name, entry.fn, entry.file)
+			switch entry.duty {
+			case mustDrain:
+				if !containsAny(body, drainCalls) {
+					t.Errorf("%s moves git history but never drains the deferred queue.\n"+
+						"A queued commit can then land in the middle of what it does, or be "+
+						"left behind by it.\nAdd a drain in %s (%s), or remove the row from "+
+						"drainMatrix if this command no longer touches history.",
+						entry.name, entry.fn, entry.file)
+				}
+			case mustNotice:
+				if !containsAny(body, noticeCalls) {
+					t.Errorf("%s reports git history but never mentions the deferred queue.\n"+
+						"It would then omit a commit camp has already promised, with nothing "+
+						"on screen to explain the gap.\nAdd a drain.Note in %s (%s).",
+						entry.name, entry.fn, entry.file)
+				}
+				if containsAny(body, drainCalls) {
+					t.Errorf("%s only reports, so it must not wait for the queue.\n"+
+						"Holding the terminal to make a report marginally fresher is the "+
+						"cost deferral exists to remove; %s (%s) should call drain.Note.",
+						entry.name, entry.fn, entry.file)
+				}
 			}
 		})
 	}
@@ -179,4 +219,14 @@ func TestDrainMatrixCoversEveryPackageWithADrain(t *testing.T) {
 				"add one so the call cannot be removed unnoticed", path)
 		}
 	}
+}
+
+// containsAny reports whether src holds any of the given call sites.
+func containsAny(src string, calls []string) bool {
+	for _, call := range calls {
+		if strings.Contains(src, call) {
+			return true
+		}
+	}
+	return false
 }

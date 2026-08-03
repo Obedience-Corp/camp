@@ -208,6 +208,9 @@ func Claim(ctx context.Context, campaignRoot, repo string) (*Job, func(error) er
 func completionFor(campaignRoot, repo, runningPath, name string) func(error) error {
 	return func(jobErr error) error {
 		if jobErr != nil {
+			// The run is recorded before the job is parked, so the count
+			// survives into failed/ where a user and an agent both read it.
+			recordAttempt(runningPath)
 			return failJobFile(campaignRoot, repo, runningPath, name)
 		}
 		if err := os.Remove(runningPath); err != nil && !os.IsNotExist(err) {
@@ -215,6 +218,33 @@ func completionFor(campaignRoot, repo, runningPath, name string) func(error) err
 		}
 		return nil
 	}
+}
+
+// recordAttempt increments a job's attempt count in place.
+//
+// An attempt is a job that started and did not finish, and until now only one
+// of the two ways that happens was counted. Reclaim counted the worker that
+// died; a job that ran and returned an error counted nothing, so it was parked
+// still reading Attempts: 0 while the listing beside it said the job had
+// already been tried and given up on. The two disagreed in the same output,
+// and an agent reading --json could not tell a failure that had been retried
+// from one that never was.
+//
+// Best effort: this runs on the way to failed/, and a job that cannot be
+// re-read or rewritten must still be parked. Losing the count costs a wrong
+// number in a listing, while returning early here would strand the job in
+// running/ with no worker coming for it.
+func recordAttempt(path string) {
+	job, err := readJob(path)
+	if err != nil {
+		return
+	}
+	job.Attempts++
+	data, err := json.MarshalIndent(job, "", "  ")
+	if err != nil {
+		return
+	}
+	_ = os.WriteFile(path, data, 0o644)
 }
 
 // failJobFile moves a running job to the failed lane, keeping it for

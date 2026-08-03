@@ -2,6 +2,7 @@ package drain
 
 import (
 	"bytes"
+	"context"
 	"strings"
 	"testing"
 	"time"
@@ -213,5 +214,79 @@ func TestSuccessfulDrainIsSilent(t *testing.T) {
 	}
 	if waited != 0 || out.Len() != 0 {
 		t.Errorf("a drain with nothing to wait for must be silent; got %q", out.String())
+	}
+}
+
+// A reporting command says what is queued and returns. This is the half of the
+// decision that used to be a wait: `camp status` held the terminal for up to
+// DrainTimeout so its answer could be slightly fresher, which is the cost
+// deferral exists to remove. The caveat survives, the wait does not.
+func TestPendingNoticeSaysWhatIsQueuedAndWhereToLook(t *testing.T) {
+	t.Parallel()
+
+	notice := pendingNotice(1)
+	if !strings.Contains(notice, "1 queued commit") {
+		t.Errorf("notice did not count the work:\n%s", notice)
+	}
+	if !strings.Contains(notice, "still queued") {
+		t.Errorf("notice did not say the report may be incomplete:\n%s", notice)
+	}
+	if !strings.Contains(notice, "camp jobs") {
+		t.Errorf("notice did not name where to look:\n%s", notice)
+	}
+	// Nothing about waiting: a user told to wait by a command that did not
+	// wait learns to distrust both statements.
+	for _, forbidden := range []string{"waiting", "after 30s", "timed out"} {
+		if strings.Contains(notice, forbidden) {
+			t.Errorf("notice mentions %q but nothing waited:\n%s", forbidden, notice)
+		}
+	}
+}
+
+// Singular and plural both have to read correctly, because this line is
+// printed constantly and a "1 queued commits" is the kind of wrong that makes
+// a user stop reading camp's output.
+func TestPendingNoticeAgreesInNumber(t *testing.T) {
+	t.Parallel()
+
+	if got := pendingNotice(1); !strings.Contains(got, "1 queued commit ") ||
+		!strings.Contains(got, "include it") {
+		t.Errorf("pendingNotice(1) = %q, want singular throughout", got)
+	}
+	if got := pendingNotice(3); !strings.Contains(got, "3 queued commits") ||
+		!strings.Contains(got, "include them") {
+		t.Errorf("pendingNotice(3) = %q, want plural throughout", got)
+	}
+}
+
+// An empty queue is silent. A notice on every status in a campaign with
+// nothing pending is noise, and noise is how a warning stops being read.
+func TestNoticeIsSilentWithAnEmptyQueue(t *testing.T) {
+	t.Parallel()
+
+	var out bytes.Buffer
+	n, err := noteAllTo(context.Background(), &out, t.TempDir())
+	if err != nil {
+		t.Fatalf("noteAllTo() error = %v", err)
+	}
+	if n != 0 {
+		t.Errorf("counted %d outstanding commits in an empty campaign, want 0", n)
+	}
+	if out.String() != "" {
+		t.Errorf("an empty queue printed %q, want silence", out.String())
+	}
+}
+
+// A cancelled context stops the notice like anything else, rather than doing
+// filesystem work nobody is waiting for.
+func TestNoticeHonorsContextCancellation(t *testing.T) {
+	t.Parallel()
+
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+
+	var out bytes.Buffer
+	if _, err := noteAllTo(ctx, &out, t.TempDir()); err == nil {
+		t.Error("noteAllTo() with a cancelled context returned nil, want the context error")
 	}
 }

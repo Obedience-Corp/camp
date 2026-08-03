@@ -106,15 +106,23 @@ func runDoctor(cmd *cobra.Command, args []string) error {
 	}
 
 	// Doctor inspects working-tree and commit alignment, so a queued commit
-	// makes it report a discrepancy camp is already fixing. Read-only, so a
-	// slow queue warns and the checks still run.
+	// makes it report a discrepancy camp is already fixing.
+	//
+	// The wait follows what doctor is about to do rather than which command it
+	// is. Reporting proceeds on a notice, because a finding the user can
+	// re-check costs less than holding their terminal. --fix writes, and must
+	// not repair a tree against a view of it camp is still changing.
 	var doctorDrainWaited time.Duration
 	if !doctorOpts.noDrain {
-		waited, err := drain.AllLanes(ctx, campRoot, drain.Read)
-		if err != nil {
+		if doctorOpts.fix {
+			waited, err := drain.AllLanes(ctx, campRoot, drain.Read)
+			if err != nil {
+				return err
+			}
+			doctorDrainWaited = waited
+		} else if _, err := drain.NoteAllLanes(ctx, campRoot); err != nil {
 			return err
 		}
-		doctorDrainWaited = waited
 	}
 
 	// Build doctor with options
