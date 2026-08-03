@@ -303,6 +303,35 @@ func TestUnreachableMachineReportsRatherThanShowingAnEmptyList(t *testing.T) {
 	}
 }
 
+// A failed refresh replaces the list with the error screen, so the list must
+// really be gone: enter (and j/k) acting on a stale invisible list would hop
+// from a failure screen to a machine that just proved unreachable.
+func TestFailedRefreshClearsTheListSoEnterCannotHop(t *testing.T) {
+	isolateMachineCache(t)
+	writeMachineCacheCampaigns("buildbox", []string{"notes", "platform"})
+
+	m := hopReadyModel(t)
+	m.openHopPicker()
+	m.updateHop(key("down"))
+	m.updateHop(key("r"))
+	m.applyHopCampaigns(hopCampaignsMsg{
+		id:  "buildbox",
+		err: camperrors.New("ssh: connect to host buildbox port 22: no route to host"),
+		gen: m.hop.gen,
+	})
+
+	if len(m.hop.campaigns) != 0 {
+		t.Fatalf("campaigns = %v, want the stale list cleared alongside the error", m.hop.campaigns)
+	}
+	_, cmd := m.updateHop(key("enter"))
+	if m.hopSelection != "" {
+		t.Fatalf("hopSelection = %q, want no hop from a failure screen", m.hopSelection)
+	}
+	if cmd != nil {
+		t.Fatal("enter on a failure screen must not quit into a hop")
+	}
+}
+
 // t and enter are different gestures now. Regression guard: enter used to test
 // the connection, and rebinding it must not have taken the tester with it.
 func TestTestConnectionStillHasItsOwnKey(t *testing.T) {

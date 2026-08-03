@@ -272,6 +272,12 @@ func (m *machineTUIModel) applyHopCampaigns(msg hopCampaignsMsg) (tea.Model, tea
 	m.hop.loading = false
 	if msg.err != nil {
 		m.hop.err = connectionFailureDetail(msg.err)
+		// The error screen replaces the list, so the list must actually be gone:
+		// keeping the previous campaigns here would let enter act on entries the
+		// operator can no longer see, hopping from a failure screen.
+		m.hop.campaigns = nil
+		m.hop.cached = false
+		m.hop.cursor = 0
 		return m, nil
 	}
 	m.hop.err = ""
