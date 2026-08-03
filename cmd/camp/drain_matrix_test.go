@@ -35,6 +35,13 @@ const (
 	// They still have to say so, or a report silently omits work camp has
 	// already promised, which is the confusion deferral must not create.
 	mustNotice
+	// mustDoBoth is for a command whose duty depends on what it was asked to
+	// do. Only doctor: it reports by default and repairs under --fix, so it
+	// owes a notice on one path and a wait on the other. Requiring only the
+	// wait would let someone make it unconditional again and put a wait back
+	// on every doctor; requiring only the notice would let the repair path
+	// lose its wait. Both strings have to be there.
+	mustDoBoth
 )
 
 // drainMatrixEntry is one surface and where its queue handling lives.
@@ -62,7 +69,7 @@ var drainMatrix = []drainMatrixEntry{
 	{name: "camp sync", file: "sync.go", fn: "runSync", duty: mustDrain},
 	// doctor --fix repairs a tree, so it waits; plain doctor reports and does
 	// not. The wait follows what the command does, not which command it is.
-	{name: "camp doctor", file: "doctor.go", fn: "runDoctor", duty: mustDrain},
+	{name: "camp doctor", file: "doctor.go", fn: "runDoctor", duty: mustDoBoth},
 	{name: "camp p commit", file: "project/commit.go", fn: "runProjectCommit", duty: mustDrain},
 	{name: "camp worktrees commit", file: "worktrees/commit.go", fn: "runWorktreesCommit", duty: mustDrain},
 	{name: "camp refs sync", file: "refs/commands.go", fn: "runRefsSync", duty: mustDrain},
@@ -113,6 +120,20 @@ func TestEveryHistoryMovingCommandDrains(t *testing.T) {
 						"Holding the terminal to make a report marginally fresher is the "+
 						"cost deferral exists to remove; %s (%s) should call drain.Note.",
 						entry.name, entry.fn, entry.file)
+				}
+			case mustDoBoth:
+				if !containsAny(body, drainCalls) {
+					t.Errorf("%s repairs under --fix but never waits for the queue.\n"+
+						"It would repair against a tree camp is still changing.\n"+
+						"Add a blocking drain on the writing path in %s (%s).",
+						entry.name, entry.fn, entry.file)
+				}
+				if !containsAny(body, noticeCalls) {
+					t.Errorf("%s reports by default but never mentions the deferred queue.\n"+
+						"Either the notice was dropped, or the wait became unconditional and "+
+						"every %s now pays for the queue again.\n"+
+						"Both paths must be present in %s (%s).",
+						entry.name, entry.name, entry.fn, entry.file)
 				}
 			}
 		})

@@ -165,12 +165,42 @@ func TestIntegration_DrainSpawnsAWorkerForAnUnservedLane(t *testing.T) {
 	require.NoError(t, err)
 	require.Equal(t, 0, exitCode, "stdout:\n%s\nstderr:\n%s", stdout, stderr)
 
-	assert.Zero(t, pendingJobCount(t, tc, campPath, "pending", rootLane),
-		"a drain must spawn a worker for an unserved lane rather than time out")
+	// Status spawns and returns, so the lane is not expected to be empty the
+	// instant it exits. Asserting that directly would pass or fail on how fast
+	// the container scheduled a detached worker.
+	//
+	// The property is that the lane drains at all. Nothing below runs a camp
+	// command, and no worker existed before status: if status had not spawned
+	// one, nothing in the system would, and this waits out its deadline.
+	require.True(t, laneDrains(t, tc, campPath, rootLane, 30*time.Second),
+		"status must spawn a worker for an unserved lane; the lane never emptied")
 
 	log := tc.GitOutput(t, campPath, "log", "--oneline", "-5")
 	assert.Contains(t, log, "unserved lane",
 		"the spawned worker must have committed the job; git log:\n%s", log)
+}
+
+// laneDrains polls until a lane holds no pending or running jobs.
+//
+// Polled in the test's own goroutine rather than through require.Eventually,
+// because the count is read with a container shell whose helper fails the test
+// on error, and that is not valid from the goroutine Eventually would run it
+// in. It also deliberately runs no camp command: a test proving that some
+// earlier command spawned a worker cannot invoke something that would spawn
+// one itself.
+func laneDrains(t *testing.T, tc *TestContainer, campPath, laneSlug string, within time.Duration) bool {
+	t.Helper()
+	deadline := time.Now().Add(within)
+	for {
+		if pendingJobCount(t, tc, campPath, "pending", laneSlug) == 0 &&
+			pendingJobCount(t, tc, campPath, "running", laneSlug) == 0 {
+			return true
+		}
+		if time.Now().After(deadline) {
+			return false
+		}
+		time.Sleep(250 * time.Millisecond)
+	}
 }
 
 // Manifest jobs are exempt from every drain. Blocking a push on a first-pass
@@ -246,6 +276,60 @@ func TestIntegration_StatusReportsTheQueueWithoutWaiting(t *testing.T) {
 		"the notice must name the command that shows what is stuck; stderr:\n%s", stderr)
 	assert.NotContains(t, stderr, "waiting on",
 		"status must not claim to be waiting when it is not; stderr:\n%s", stderr)
+}
+
+// Doctor's duty follows what it was asked to do, and both halves are real
+// behavior rather than two branches that merely exist.
+//
+// Plain doctor reports, so it takes the notice and returns. --fix repairs, so
+// it waits and refuses when the queue outlasts the wait: a repair computed
+// against a tree camp is midway through changing can undo what camp was about
+// to commit, and that is worse than making the user rerun.
+//
+// One wedged lane serves both: a fresh lock says a worker holds it and the job
+// names a path that does not exist, so nothing can ever complete it.
+func TestIntegration_DoctorWaitsOnlyWhenItRepairs(t *testing.T) {
+	tc := GetSharedContainer(t)
+	tc.EnableDeferral()
+	campPath, _ := setupDrainCampaign(t, tc, "drain-doctor-duty")
+
+	writeJob(t, tc, campPath, rootLane, 1, map[string]any{
+		"kind":    "commit-paths",
+		"repo":    ".",
+		"paths":   []string{"does/not/exist.md"},
+		"message": "capture intent: wedged",
+	})
+	tc.Shell(t, fmt.Sprintf(`
+		cd %s/.campaign/cache/jobs
+		printf '99999\n' > worker-%s.lock
+	`, campPath, rootLane))
+
+	// Reporting: notice, no wait.
+	started := time.Now()
+	stdout, stderr, exitCode, err := tc.RunCampSplitInDir(campPath, "doctor")
+	elapsed := time.Since(started)
+	require.NoError(t, err)
+
+	assert.Less(t, elapsed, 15*time.Second,
+		"plain doctor must not wait for the queue; it took %s against a lane "+
+			"that can never finish", elapsed)
+	assert.Contains(t, stderr, "still queued",
+		"plain doctor must say its findings may be incomplete; stderr:\n%s", stderr)
+	assert.NotContains(t, stdout+stderr, "would leave them behind",
+		"plain doctor reports and must not refuse; stdout:\n%s\nstderr:\n%s", stdout, stderr)
+
+	// Repairing: wait, then refuse rather than fix against a stale tree.
+	stdout, stderr, exitCode, err = tc.RunCampSplitInDir(campPath, "doctor", "--fix")
+	require.NoError(t, err)
+
+	assert.NotEqual(t, 0, exitCode,
+		"doctor --fix must refuse on a wedged queue rather than repair against "+
+			"a stale tree; stdout:\n%s\nstderr:\n%s", stdout, stderr)
+	assert.Contains(t, stdout+stderr, "camp jobs",
+		"the refusal must name where to look; stdout:\n%s\nstderr:\n%s", stdout, stderr)
+	assert.Contains(t, stdout+stderr, "--no-drain",
+		"the refusal must offer the escape the command actually has; stdout:\n%s\nstderr:\n%s",
+		stdout, stderr)
 }
 
 // A write command refuses rather than proceeding into a half-correct state,

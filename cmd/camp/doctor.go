@@ -110,12 +110,18 @@ func runDoctor(cmd *cobra.Command, args []string) error {
 	//
 	// The wait follows what doctor is about to do rather than which command it
 	// is. Reporting proceeds on a notice, because a finding the user can
-	// re-check costs less than holding their terminal. --fix writes, and must
-	// not repair a tree against a view of it camp is still changing.
+	// re-check costs less than holding their terminal.
+	//
+	// --fix writes, so it waits in Write mode and refuses if the queue outlasts
+	// the wait. Read mode would warn and repair anyway, which is the thing this
+	// path must not do: a repair computed against a tree camp is midway through
+	// changing can "fix" what camp was about to commit. A refusal that names
+	// its own way out costs the user a rerun; a wrong repair costs them a
+	// diff they have to understand later.
 	var doctorDrainWaited time.Duration
 	if !doctorOpts.noDrain {
 		if doctorOpts.fix {
-			waited, err := drain.AllLanes(ctx, campRoot, drain.Read)
+			waited, err := drain.AllLanes(ctx, campRoot, drain.Write)
 			if err != nil {
 				return err
 			}
