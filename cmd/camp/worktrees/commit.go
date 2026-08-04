@@ -160,7 +160,7 @@ func runWorktreesCommit(cmd *cobra.Command, args []string) error {
 		return err
 	}
 	if !hasStaged && !wtCommitAmend {
-		fmt.Println(ui.Success("Nothing to commit in worktree"))
+		fmt.Println(ui.Success(cmdutil.NothingStagedLine(ctx, wtCtx.WorktreePath, " in worktree")))
 		return nil
 	}
 

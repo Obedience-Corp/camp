@@ -202,7 +202,7 @@ func runProjectCommit(cmd *cobra.Command, args []string) error {
 		return err
 	}
 	if !hasStaged && !projectCommitAmend {
-		fmt.Println(ui.Success("Nothing to commit in project"))
+		fmt.Println(ui.Success(cmdutil.NothingStagedLine(ctx, resolvedPath, " in project")))
 		return nil
 	}
 
