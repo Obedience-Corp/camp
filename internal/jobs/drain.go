@@ -320,6 +320,19 @@ func OutstandingAll(campaignRoot string) ([]Job, error) {
 // be waiting on two lanes at once (the root's own and a submodule's follow-up
 // parent), and waiting on a lane nobody serves is the failure this exists to
 // prevent.
+// EnsureServed starts a worker for any lane in blocking that has none, without
+// waiting for the work to finish.
+//
+// Exported for the reporting commands, which announce the queue rather than
+// waiting for it. They still owe it a kick: spawning is what makes "a queued
+// job is always eventually served" true, and it is the cheap half of a drain.
+// A user whose worker died and who only ever runs `camp status` would
+// otherwise watch the same jobs sit there forever, being told about them each
+// time and never seeing them move.
+func EnsureServed(ctx context.Context, campaignRoot string, blocking []Job) []string {
+	return spawnForJobs(ctx, campaignRoot, blocking)
+}
+
 func spawnForJobs(ctx context.Context, campaignRoot string, blocking []Job) []string {
 	seen := make(map[string]struct{}, len(blocking))
 	var spawned []string

@@ -208,13 +208,58 @@ func Claim(ctx context.Context, campaignRoot, repo string) (*Job, func(error) er
 func completionFor(campaignRoot, repo, runningPath, name string) func(error) error {
 	return func(jobErr error) error {
 		if jobErr != nil {
-			return failJobFile(campaignRoot, repo, runningPath, name)
+			return parkFailedJob(campaignRoot, repo, runningPath, name)
 		}
 		if err := os.Remove(runningPath); err != nil && !os.IsNotExist(err) {
 			return camperrors.Wrapf(err, "complete job %s", runningPath)
 		}
 		return nil
 	}
+}
+
+// parkFailedJob records the run and moves the job to failed/.
+//
+// An attempt is a job that started and did not finish, and until now only one
+// of the two ways that happens was counted. Reclaim counted the worker that
+// died; a job that ran and returned an error counted nothing, so it was parked
+// still reading Attempts: 0 while the listing beside it said the job had
+// already been tried and given up on. The two disagreed in the same output,
+// and an agent reading --json could not tell a failure that had been retried
+// from one that never was.
+//
+// The incremented copy is written to the destination and the source removed
+// after, never edited in place. Reclaim skips a job it cannot parse, so an
+// interrupted in-place write would leave unreadable JSON in running/ that
+// nothing ever picks up again: the one failure this queue treats as
+// unforgivable. Written this way a crash in the window leaves the job in both
+// lanes instead, and reclaim resolves that by running it again. Duplicating a
+// job is recoverable; stranding one is not.
+//
+// A job that cannot be read or marshalled is still parked, without a count.
+// It has to leave running/ either way, and a wrong number in a listing costs
+// less than a job nobody is coming for.
+func parkFailedJob(campaignRoot, repo, runningPath, name string) error {
+	job, err := readJob(runningPath)
+	if err != nil {
+		return failJobFile(campaignRoot, repo, runningPath, name)
+	}
+	job.Attempts++
+	data, err := json.MarshalIndent(job, "", "  ")
+	if err != nil {
+		return failJobFile(campaignRoot, repo, runningPath, name)
+	}
+
+	failedDir := laneDir(campaignRoot, stateFailed, repo)
+	if err := os.MkdirAll(failedDir, 0o755); err != nil {
+		return camperrors.Wrapf(err, "create failed lane %s", failedDir)
+	}
+	if err := os.WriteFile(filepath.Join(failedDir, name), data, 0o644); err != nil {
+		return camperrors.Wrapf(err, "park job %s", runningPath)
+	}
+	if err := os.Remove(runningPath); err != nil && !os.IsNotExist(err) {
+		return camperrors.Wrapf(err, "park job %s", runningPath)
+	}
+	return nil
 }
 
 // failJobFile moves a running job to the failed lane, keeping it for

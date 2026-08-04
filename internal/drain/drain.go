@@ -69,6 +69,92 @@ func Repo(ctx context.Context, repoPath string, mode Mode) (time.Duration, error
 	return drainRepoTo(ctx, os.Stderr, repoPath, mode)
 }
 
+// Note reports repoPath's outstanding commits without waiting for any of them.
+//
+// For commands that only report. Waiting made those commands pay the queue's
+// full cost to buy a marginally fresher read: `camp status` is the thing a user
+// runs constantly and often twice in a row, and holding it for up to
+// DrainTimeout so its answer can be slightly more current is a bad trade
+// against just saying how many commits are still on their way. The user re-runs
+// it; that is what the command is for.
+//
+// The caveat the wait was protecting is kept, because it was the real point:
+// the user is told the tree is mid-change, so a status that looks stale is
+// explained rather than merely wrong. What changes is that they are told
+// immediately instead of thirty seconds later.
+//
+// Returns the number of outstanding commits. Outside a campaign, or with an
+// empty queue, it is one directory read and returns zero.
+func Note(ctx context.Context, repoPath string) (int, error) {
+	return noteTo(ctx, os.Stderr, repoPath)
+}
+
+func noteTo(ctx context.Context, w io.Writer, repoPath string) (int, error) {
+	if err := ctx.Err(); err != nil {
+		return 0, err
+	}
+	campaignRoot, err := campaign.DetectCached(ctx)
+	if err != nil {
+		// Not in a campaign: no queue, nothing to report. Campaign detection
+		// problems belong to the command's own work, not to this notice.
+		return 0, nil
+	}
+	repo := jobs.RepoForPath(campaignRoot, repoPath)
+	if repo == "" {
+		return 0, nil
+	}
+	outstanding, err := jobs.Outstanding(campaignRoot, repo)
+	if err != nil {
+		// A notice that cannot be computed must not fail the command it was
+		// going to annotate.
+		return 0, nil
+	}
+	if len(outstanding) == 0 {
+		return 0, nil
+	}
+	// Report, but still kick the queue. Spawning is the cheap half of a drain
+	// and the half that makes progress inevitable; waiting is the half that
+	// costs the user their terminal. Taking only the second away would leave a
+	// user whose worker died watching the same jobs sit there every time they
+	// ran status.
+	jobs.EnsureServed(ctx, campaignRoot, outstanding)
+	_, _ = fmt.Fprintln(w, ui.Dim(pendingNotice(len(outstanding))))
+	return len(outstanding), nil
+}
+
+// NoteAllLanes reports every lane's outstanding commits without waiting, for
+// reporting commands that look at the whole campaign.
+func NoteAllLanes(ctx context.Context, campaignRoot string) (int, error) {
+	return noteAllTo(ctx, os.Stderr, campaignRoot)
+}
+
+func noteAllTo(ctx context.Context, w io.Writer, campaignRoot string) (int, error) {
+	if err := ctx.Err(); err != nil {
+		return 0, err
+	}
+	outstanding, err := jobs.OutstandingAll(campaignRoot)
+	if err != nil || len(outstanding) == 0 {
+		return 0, nil
+	}
+	jobs.EnsureServed(ctx, campaignRoot, outstanding)
+	_, _ = fmt.Fprintln(w, ui.Dim(pendingNotice(len(outstanding))))
+	return len(outstanding), nil
+}
+
+// pendingNotice is what a reporting command prints instead of waiting.
+//
+// It does not reuse countPhrase, whose "1 queued commit" reads correctly in a
+// refusal ("1 queued commit not completed after 30s") but stutters here into
+// "1 queued commit still queued". This line prints on ordinary commands rather
+// than only on failures, so it is the one a user sees most and the one least
+// able to afford reading like a template.
+func pendingNotice(n int) string {
+	if n == 1 {
+		return "1 commit still queued; what follows may not include it (camp jobs)"
+	}
+	return fmt.Sprintf("%d commits still queued; what follows may not include them (camp jobs)", n)
+}
+
 // CampaignRoot waits for the campaign root's lane. Commands that operate
 // on the campaign itself rather than a specific repository use it.
 func CampaignRoot(ctx context.Context, campaignRoot string, mode Mode) (time.Duration, error) {

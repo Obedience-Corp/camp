@@ -67,12 +67,13 @@ func runLog(cmd *cobra.Command, args []string) error {
 		fmt.Fprintln(os.Stderr, ui.Info(fmt.Sprintf("Submodule: %s", target.Name)))
 	}
 
-	// Read-only, so a slow queue warns rather than refusing. It still drains:
-	// log is one of the two commands people run to check whether something
-	// committed, and showing a log that is missing a commit camp has already
-	// promised is exactly the confusion deferral must not create.
+	// Log reports; it does not wait. It is one of the two commands people run
+	// to check whether something committed, so a log missing a commit camp has
+	// promised is real confusion, and the notice is what resolves it: the
+	// missing commit is named as still queued rather than silently absent.
+	// Naming it costs a directory read; waiting for it costs the terminal.
 	if !noDrain {
-		if _, err := drain.Repo(ctx, target.Path, drain.Read); err != nil {
+		if _, err := drain.Note(ctx, target.Path); err != nil {
 			return err
 		}
 	}

@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -164,12 +165,42 @@ func TestIntegration_DrainSpawnsAWorkerForAnUnservedLane(t *testing.T) {
 	require.NoError(t, err)
 	require.Equal(t, 0, exitCode, "stdout:\n%s\nstderr:\n%s", stdout, stderr)
 
-	assert.Zero(t, pendingJobCount(t, tc, campPath, "pending", rootLane),
-		"a drain must spawn a worker for an unserved lane rather than time out")
+	// Status spawns and returns, so the lane is not expected to be empty the
+	// instant it exits. Asserting that directly would pass or fail on how fast
+	// the container scheduled a detached worker.
+	//
+	// The property is that the lane drains at all. Nothing below runs a camp
+	// command, and no worker existed before status: if status had not spawned
+	// one, nothing in the system would, and this waits out its deadline.
+	require.True(t, laneDrains(t, tc, campPath, rootLane, 30*time.Second),
+		"status must spawn a worker for an unserved lane; the lane never emptied")
 
 	log := tc.GitOutput(t, campPath, "log", "--oneline", "-5")
 	assert.Contains(t, log, "unserved lane",
 		"the spawned worker must have committed the job; git log:\n%s", log)
+}
+
+// laneDrains polls until a lane holds no pending or running jobs.
+//
+// Polled in the test's own goroutine rather than through require.Eventually,
+// because the count is read with a container shell whose helper fails the test
+// on error, and that is not valid from the goroutine Eventually would run it
+// in. It also deliberately runs no camp command: a test proving that some
+// earlier command spawned a worker cannot invoke something that would spawn
+// one itself.
+func laneDrains(t *testing.T, tc *TestContainer, campPath, laneSlug string, within time.Duration) bool {
+	t.Helper()
+	deadline := time.Now().Add(within)
+	for {
+		if pendingJobCount(t, tc, campPath, "pending", laneSlug) == 0 &&
+			pendingJobCount(t, tc, campPath, "running", laneSlug) == 0 {
+			return true
+		}
+		if time.Now().After(deadline) {
+			return false
+		}
+		time.Sleep(250 * time.Millisecond)
+	}
 }
 
 // Manifest jobs are exempt from every drain. Blocking a push on a first-pass
@@ -198,14 +229,17 @@ func TestIntegration_ManifestJobNeverBlocksAPush(t *testing.T) {
 		"a manifest job must not make a push wait; stderr:\n%s", stderr)
 }
 
-// A read-only command warns and proceeds when the queue outlasts it. Refusing
-// to show status because a commit is slow is worse than showing status with a
-// caveat, and status is the command people run to ask whether something
-// committed.
+// A read-only command reports the queue and returns, without waiting for it.
+//
+// Status is the command people run to ask whether something committed, and
+// often twice in a row. Holding it so its answer can be marginally fresher
+// spends the exact cost deferral exists to remove; the honest answer while the
+// queue is working is the count, given immediately. The user re-runs it.
 //
 // The lane is wedged deliberately: a fresh lock says a worker holds it, and the
-// job names a path that does not exist so nothing can ever complete it.
-func TestIntegration_StatusWarnsAndProceedsOnAWedgedLane(t *testing.T) {
+// job names a path that does not exist so nothing can ever complete it. Before
+// this behavior existed, that setup made status sit for DrainTimeout.
+func TestIntegration_StatusReportsTheQueueWithoutWaiting(t *testing.T) {
 	tc := GetSharedContainer(t)
 	tc.EnableDeferral()
 	campPath, _ := setupDrainCampaign(t, tc, "drain-status-wedged")
@@ -216,23 +250,91 @@ func TestIntegration_StatusWarnsAndProceedsOnAWedgedLane(t *testing.T) {
 		"paths":   []string{"does/not/exist.md"},
 		"message": "capture intent: wedged",
 	})
-	// A fresh lane lock stands in for a live worker, so the drain does not
-	// spawn one and simply waits.
+	// A fresh lane lock stands in for a live worker, so nothing spawns and
+	// nothing completes: any wait here would run to its full timeout.
 	tc.Shell(t, fmt.Sprintf(`
 		cd %s/.campaign/cache/jobs
 		printf '99999\n' > worker-%s.lock
 	`, campPath, rootLane))
 
+	started := time.Now()
 	stdout, stderr, exitCode, err := tc.RunCampSplitInDir(campPath,
 		"status", "--short")
+	elapsed := time.Since(started)
 	require.NoError(t, err)
 
 	assert.Equal(t, 0, exitCode,
-		"status must proceed despite a slow queue; stdout:\n%s\nstderr:\n%s", stdout, stderr)
+		"status must proceed despite a busy queue; stdout:\n%s\nstderr:\n%s", stdout, stderr)
+	// The wedged job can never complete, so anything close to the drain
+	// timeout means status waited on it.
+	assert.Less(t, elapsed, 15*time.Second,
+		"status must not wait for the queue; it took %s against a lane that "+
+			"can never finish", elapsed)
 	assert.Contains(t, stderr, "still queued",
-		"status must say the report may be out of date; stderr:\n%s", stderr)
+		"status must say the report may be incomplete; stderr:\n%s", stderr)
 	assert.Contains(t, stderr, "camp jobs",
-		"the warning must name the command that shows what is stuck; stderr:\n%s", stderr)
+		"the notice must name the command that shows what is stuck; stderr:\n%s", stderr)
+	assert.NotContains(t, stderr, "waiting on",
+		"status must not claim to be waiting when it is not; stderr:\n%s", stderr)
+}
+
+// Doctor's duty follows what it was asked to do, and both halves are real
+// behavior rather than two branches that merely exist.
+//
+// Plain doctor reports, so it takes the notice and returns immediately. --fix
+// repairs, so it still waits for the queue. Source matching can prove both
+// calls exist but not that they sit on the paths they claim to; only the
+// timing separates them, which is what this measures.
+//
+// One wedged lane serves both: a fresh lock says a worker holds it and the job
+// names a path that does not exist, so nothing can ever complete it.
+func TestIntegration_DoctorWaitsOnlyWhenItRepairs(t *testing.T) {
+	tc := GetSharedContainer(t)
+	tc.EnableDeferral()
+	campPath, _ := setupDrainCampaign(t, tc, "drain-doctor-duty")
+
+	writeJob(t, tc, campPath, rootLane, 1, map[string]any{
+		"kind":    "commit-paths",
+		"repo":    ".",
+		"paths":   []string{"does/not/exist.md"},
+		"message": "capture intent: wedged",
+	})
+	tc.Shell(t, fmt.Sprintf(`
+		cd %s/.campaign/cache/jobs
+		printf '99999\n' > worker-%s.lock
+	`, campPath, rootLane))
+
+	// Reporting: notice, no wait.
+	started := time.Now()
+	stdout, stderr, _, err := tc.RunCampSplitInDir(campPath, "doctor")
+	elapsed := time.Since(started)
+	require.NoError(t, err)
+
+	assert.Less(t, elapsed, 15*time.Second,
+		"plain doctor must not wait for the queue; it took %s against a lane "+
+			"that can never finish", elapsed)
+	assert.Contains(t, stderr, "still queued",
+		"plain doctor must say its findings may be incomplete; stderr:\n%s", stderr)
+	assert.NotContains(t, stdout+stderr, "would leave them behind",
+		"plain doctor reports and must not refuse; stdout:\n%s\nstderr:\n%s", stdout, stderr)
+
+	// Repairing: wait. It proceeds afterwards, which is deliberate (a deferred
+	// job commits content captured at enqueue, so a repair made while it is
+	// queued cannot change what it commits), but it does wait first, and that
+	// is what separates this path from the reporting one.
+	started = time.Now()
+	stdout, stderr, _, err = tc.RunCampSplitInDir(campPath, "doctor", "--fix")
+	fixElapsed := time.Since(started)
+	require.NoError(t, err)
+
+	assert.Greater(t, fixElapsed, 20*time.Second,
+		"doctor --fix must wait for the queue; it returned in %s, which means "+
+			"it took the reporting path", fixElapsed)
+	assert.Greater(t, fixElapsed, elapsed,
+		"the repairing path must wait where the reporting path does not; "+
+			"report took %s, repair took %s", elapsed, fixElapsed)
+	assert.Contains(t, stdout+stderr, "camp jobs",
+		"the warning must name where to look; stdout:\n%s\nstderr:\n%s", stdout, stderr)
 }
 
 // A write command refuses rather than proceeding into a half-correct state,
