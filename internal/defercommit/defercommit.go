@@ -252,6 +252,17 @@ func Enqueue(ctx context.Context, campaignRoot, repoPath string, opts EnqueueOpt
 	if err != nil {
 		return nil, err
 	}
+	// Refuse empty snapshots. A deferred commit whose tree equals its parent
+	// would land a no-op commit (and previously a filler message when the
+	// writer correctly reported "no staged changes"). Same sentinel the
+	// synchronous path uses when there is nothing to commit.
+	parentTree, err := git.TreeSHA(ctx, repoPath, parent)
+	if err != nil {
+		return nil, err
+	}
+	if tree == parentTree {
+		return nil, git.ErrNoChanges
+	}
 
 	repo := jobs.RepoForPath(campaignRoot, repoPath)
 	job, err := jobs.Enqueue(ctx, campaignRoot, jobs.Job{
