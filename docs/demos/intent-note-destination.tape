@@ -35,7 +35,7 @@ Type "camp intent note --no-commit" Enter
 Sleep 1200ms
 Type "Reading queue" Enter
 Sleep 900ms
-Type "Add the distributed systems papers." 
+Type "Add the distributed systems papers."
 Sleep 700ms
 Tab
 Sleep 900ms
