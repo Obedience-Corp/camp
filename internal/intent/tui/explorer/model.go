@@ -31,8 +31,10 @@ const (
 	focusAddTUI        // Full add TUI is active
 	focusPromoteTarget // Promote target picker
 	focusDungeonReason // Text input for dungeon move reason
-	focusConvertType   // Type picker for converting a note into an intent
-	focusRename        // Text input for renaming an intent
+	focusConvertType     // Type picker for converting a note into an intent
+	focusRename          // Text input for renaming an intent
+	focusFolderInput     // Text input for create/rename note folder
+	focusNoteFolderMove  // Picker for moving a note between folders
 )
 
 // IntentGroup represents a collapsible group of intents by status.
@@ -188,6 +190,16 @@ type Model struct {
 	renameInput  textinput.Model
 	renameTarget *intent.Intent
 
+	// Note folder create/rename input (F create, R on folder header)
+	folderInput     textinput.Model
+	folderAction    string // "create" or "rename"
+	folderParentRel string // parent rel for create, or from-rel for rename
+
+	// Note folder move picker (m on a note)
+	noteFolderOptions []noteFolderOption
+	noteFolderIdx     int
+	noteToMoveFolder  *intent.Intent
+
 	// pendingReselectID, when set, selects the matching item after the next
 	// list reload (used to keep the renamed intent selected).
 	pendingReselectID string
@@ -321,6 +333,13 @@ func (m Model) view() string {
 	// Show rename input if active
 	if m.focus == focusRename {
 		return m.viewRename()
+	}
+
+	if m.focus == focusFolderInput {
+		return m.viewFolderInput()
+	}
+	if m.focus == focusNoteFolderMove {
+		return m.viewNoteFolderMove()
 	}
 
 	// Show confirmation dialog if active

@@ -103,8 +103,16 @@ func (m Model) updateNormal(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		m.startTagEdit()
 		return m, nil
 	case "R":
-		// Open the rename overlay on the selected intent or note
+		// On a note folder header, rename the folder; on an item, rename title.
+		if m.selectedNoteFolder() != nil {
+			m.startFolderRename()
+			return m, nil
+		}
 		m.startRename()
+		return m, nil
+	case "F":
+		// Create a note folder (under cursor parent when on a notes header).
+		m.startFolderCreate()
 		return m, nil
 	case "C":
 		// Clear concept filter
@@ -132,8 +140,12 @@ func (m Model) updateNormal(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			return m, revealInFileManager(selected.Path)
 		}
 	case "m":
-		// Start move action to change intent status
+		// Notes: move between folders. Lifecycle intents: status picker.
 		if selected := m.SelectedIntent(); selected != nil {
+			if selected.Status.IsNote() {
+				m.startNoteFolderMove(selected)
+				return m, nil
+			}
 			m.focus = focusMove
 			m.intentToMove = selected
 			m.moveStatusIdx = 0
@@ -160,7 +172,11 @@ func (m Model) updateNormal(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		}
 		return m.handleArchiveAction()
 	case "d":
-		// Delete intent (permanently) - requires confirmation
+		// On an empty note folder header, delete the folder. Notes themselves
+		// are not deleted from the explorer yet. Lifecycle intents confirm.
+		if m.selectedNoteFolder() != nil {
+			return m, m.deleteSelectedFolder()
+		}
 		if selected := m.SelectedIntent(); selected != nil && selected.Status.IsNote() {
 			m.statusMessage = "Note deletion is not available in the explorer yet"
 			return m, nil

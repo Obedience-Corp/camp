@@ -57,6 +57,14 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			return m.updateRename(msg)
 		}
 
+		if m.focus == focusFolderInput {
+			return m.updateFolderInput(msg)
+		}
+
+		if m.focus == focusNoteFolderMove {
+			return m.updateNoteFolderMove(msg)
+		}
+
 		if m.focus == focusMove {
 			return m.updateMove(msg)
 		}
@@ -285,6 +293,16 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 		m.statusMessage = "Renamed"
 		m.pendingReselectID = msg.renamedID
+		return m, m.loadIntents()
+
+	case folderFinishedMsg:
+		if msg.err != nil {
+			m.statusMessage = msg.err.Error()
+			return m, nil
+		}
+		if msg.message != "" {
+			m.statusMessage = msg.message
+		}
 		return m, m.loadIntents()
 
 	case addTUIFinishedMsg:

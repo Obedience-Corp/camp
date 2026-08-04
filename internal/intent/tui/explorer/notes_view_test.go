@@ -444,10 +444,23 @@ func TestUpdateNormal_COnSelectedNoteStartsConvert(t *testing.T) {
 	}
 }
 
-func TestUpdateNormal_MOnSelectedNoteStartsMove(t *testing.T) {
+func TestUpdateNormal_MOnSelectedNoteStartsFolderMove(t *testing.T) {
 	ctx := context.Background()
-	note := &intent.Intent{ID: "n", Title: "note", Status: intent.StatusNote}
-	m := NewModel(ctx, nil, nil, "/tmp/intents", "", "", "", nil)
+	tmp := t.TempDir()
+	intentsDir := filepath.Join(tmp, "intents")
+	svc := intent.NewIntentService(tmp, intentsDir)
+	note, err := svc.CreateNote(ctx, intent.CreateOptions{
+		Title:     "movable note",
+		Timestamp: time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC),
+	})
+	if err != nil {
+		t.Fatalf("CreateNote: %v", err)
+	}
+	if _, err := svc.CreateNoteFolder(ctx, "reading"); err != nil {
+		t.Fatalf("CreateNoteFolder: %v", err)
+	}
+
+	m := NewModel(ctx, svc, nil, intentsDir, tmp, "id", "", nil)
 	m.ready = true
 	m.groups = groupExplorerItemsByStatus([]*intent.Intent{note}, false, map[string]bool{"notes": true}, false)
 	if !selectNoteInGroups(&m, note.ID) {
@@ -456,11 +469,38 @@ func TestUpdateNormal_MOnSelectedNoteStartsMove(t *testing.T) {
 
 	updated, _ := m.updateNormal(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'m'}})
 	got := updated.(Model)
-	if got.focus != focusMove {
-		t.Fatalf("focus = %v, want focusMove", got.focus)
+	if got.focus != focusNoteFolderMove {
+		t.Fatalf("focus = %v, want focusNoteFolderMove", got.focus)
 	}
-	if got.intentToMove == nil || got.intentToMove.ID != "n" {
-		t.Fatalf("intentToMove = %+v, want note n", got.intentToMove)
+	if got.noteToMoveFolder == nil || got.noteToMoveFolder.ID != note.ID {
+		t.Fatalf("noteToMoveFolder = %+v, want note", got.noteToMoveFolder)
+	}
+	if len(got.noteFolderOptions) == 0 {
+		t.Fatal("expected folder picker options")
+	}
+}
+
+func TestUpdateNormal_MOnLifecycleIntentStillStatusPicker(t *testing.T) {
+	ctx := context.Background()
+	item := &intent.Intent{ID: "i", Title: "inbox", Status: intent.StatusInbox}
+	m := NewModel(ctx, nil, nil, "/tmp/intents", "", "", "", nil)
+	m.ready = true
+	m.groups = groupExplorerItemsByStatus([]*intent.Intent{item}, false, nil, false)
+	// Select the inbox item.
+	for gi, g := range m.groups {
+		for ii, it := range g.Intents {
+			if it.ID == "i" {
+				m.groups[gi].Expanded = true
+				m.cursorGroup = gi
+				m.cursorItem = ii
+			}
+		}
+	}
+
+	updated, _ := m.updateNormal(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'m'}})
+	got := updated.(Model)
+	if got.focus != focusMove {
+		t.Fatalf("focus = %v, want focusMove for lifecycle intent", got.focus)
 	}
 }
 
