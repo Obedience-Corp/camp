@@ -343,54 +343,37 @@ func (m *Model) buildMainView() string {
 		}
 	}
 
-	const dungeonIndent = "    "
-
 	for gi, group := range m.groups {
+		if !m.isGroupVisible(gi) {
+			continue
+		}
+
 		isGroupSelected := gi == m.cursorGroup && m.cursorItem == -1
 		cursor := tui.EmptyCursor()
 		if isGroupSelected && !m.previewFocused {
 			cursor = tui.FocusCursor()
 		}
 
-		if group.IsDungeonParent {
-			// Dungeon parent: show aggregate count, expand/collapse indicator
-			indicator := "›"
-			if group.Expanded {
-				indicator = "▾"
-			}
-			hdr := fmt.Sprintf("%s %s %s (%d)", cursor, indicator, group.Name, group.DungeonCount)
-			if isGroupSelected && !m.previewFocused {
-				listLines = append(listLines, tui.GroupHeaderSelectedStyle.Render(hdr))
-			} else {
-				listLines = append(listLines, tui.DungeonHeaderStyle.Render(hdr))
-			}
-			continue
-		}
-
 		indicator := "›"
 		if group.Expanded {
 			indicator = "▾"
 		}
+		indent := strings.Repeat("    ", group.Depth)
 
-		if group.IsDungeonChild {
-			// Dungeon children: indent header under the Dungeon parent
-			hdr := fmt.Sprintf(dungeonIndent+"%s %s %s (%d)", cursor, indicator, group.Name, len(group.Intents))
+		// Nest parents render an aggregate DescendantCount and no direct items.
+		if group.IsNestParent() {
+			hdr := fmt.Sprintf("%s%s %s %s (%d)", indent, cursor, indicator, group.Name, group.DescendantCount)
 			if isGroupSelected && !m.previewFocused {
 				listLines = append(listLines, tui.GroupHeaderSelectedStyle.Render(hdr))
+			} else if group.Name == "Dungeon" {
+				listLines = append(listLines, tui.DungeonHeaderStyle.Render(hdr))
 			} else {
 				listLines = append(listLines, tui.GroupHeaderStyle.Render(hdr))
-			}
-
-			if group.Expanded {
-				for ii, i := range group.Intents {
-					isSelected := gi == m.cursorGroup && ii == m.cursorItem && !m.previewFocused
-					listLines = append(listLines, dungeonIndent+m.renderIntentRow(i, isSelected, titleWidth))
-				}
 			}
 			continue
 		}
 
-		hdr := fmt.Sprintf("%s %s %s (%d)", cursor, indicator, group.Name, len(group.Intents))
+		hdr := fmt.Sprintf("%s%s %s %s (%d)", indent, cursor, indicator, group.Name, len(group.Intents))
 		if isGroupSelected && !m.previewFocused {
 			listLines = append(listLines, tui.GroupHeaderSelectedStyle.Render(hdr))
 		} else {
@@ -400,7 +383,7 @@ func (m *Model) buildMainView() string {
 		if group.Expanded {
 			for ii, i := range group.Intents {
 				isSelected := gi == m.cursorGroup && ii == m.cursorItem && !m.previewFocused
-				listLines = append(listLines, m.renderIntentRow(i, isSelected, titleWidth))
+				listLines = append(listLines, indent+m.renderIntentRow(i, isSelected, titleWidth))
 			}
 		}
 	}

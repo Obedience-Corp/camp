@@ -113,8 +113,8 @@ func (m *Model) applyFilters() {
 
 	m.filteredIntents = filtered
 
-	// Rebuild groups from filtered explorer items
-	m.groups = groupExplorerItemsByStatus(m.filteredIntents, m.dungeonExpanded)
+	// Rebuild groups from filtered explorer items, preserving nest expand state.
+	m.groups = groupExplorerItemsByStatus(m.filteredIntents, m.nestExpanded("Dungeon"))
 
 	// Reset cursor position and scroll
 	m.cursorGroup = 0

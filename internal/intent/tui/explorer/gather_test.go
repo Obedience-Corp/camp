@@ -520,8 +520,7 @@ func makeTestModelWithStatuses(counts map[intent.Status]int) Model {
 	}
 	m.intents = intents
 	m.filteredIntents = intents
-	m.dungeonExpanded = true
-	m.groups = groupIntentsByStatus(intents, m.dungeonExpanded)
+	m.groups = groupIntentsByStatus(intents, true)
 	return m
 }
 

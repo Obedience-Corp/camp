@@ -36,14 +36,27 @@ const (
 )
 
 // IntentGroup represents a collapsible group of intents by status.
+// Nesting fields generalize the former Dungeon-only collapse mechanism so
+// Notes folders can share the same parent/child expand behavior later.
 type IntentGroup struct {
-	Name            string
-	Status          intent.Status
-	Intents         []*intent.Intent
-	Expanded        bool
-	IsDungeonParent bool // True for the "Dungeon" meta-group
-	IsDungeonChild  bool // True for Done/Killed/Archived/Someday under dungeon
-	DungeonCount    int  // Total intent count across all dungeon children (parent only)
+	Name     string
+	Status   intent.Status
+	Intents  []*intent.Intent
+	Expanded bool
+
+	// Nesting. Depth 0 is a root group; children carry the parent's Status
+	// in ParentStatus. A group with Children is a parent: it renders an
+	// aggregate DescendantCount when collapsed and its subtree is skipped
+	// by cursor navigation when Expanded is false.
+	Depth           int
+	ParentStatus    intent.Status
+	Children        []int // indices into Model.groups
+	DescendantCount int   // intents across this group and all descendants
+}
+
+// IsNestParent reports whether this group owns nested child groups.
+func (g IntentGroup) IsNestParent() bool {
+	return len(g.Children) > 0
 }
 
 // Model is the main model for the Intent Explorer TUI.
@@ -145,9 +158,6 @@ type Model struct {
 	dungeonReasonFor    intent.Status  // Which dungeon status we're moving to
 	dungeonReasonAction string         // "move" or "archive"
 	dungeonReasonIntent *intent.Intent // Intent being moved to dungeon
-
-	// Dungeon expansion state
-	dungeonExpanded bool
 
 	// Campaign info for git commits
 	campaignRoot string
@@ -350,16 +360,16 @@ func (m Model) SelectedIntent() *intent.Intent {
 
 // groupIntentsByStatus organizes lifecycle intents into groups by status.
 // Groups are ordered: Inbox, Ready, Active, then a collapsible Dungeon parent
-// that contains Done, Killed, Archived, Someday as children.
-// When dungeonExpanded is false, only the Dungeon parent group is shown.
-// When true, the 4 child groups are appended after the parent.
+// whose children (Done, Killed, Archived, Someday) always live in the groups
+// slice at Depth 1. When the parent is collapsed, render and navigation skip
+// those children via nesting fields rather than removing them from the slice.
 func groupIntentsByStatus(intents []*intent.Intent, dungeonExpanded bool) []IntentGroup {
-	// Dungeon child group definitions (indentation applied at render time)
+	// Dungeon child group definitions (Depth 1 under the Dungeon parent).
 	dungeonChildren := []IntentGroup{
-		{Name: "Done", Status: intent.StatusDone, Expanded: false, IsDungeonChild: true},
-		{Name: "Killed", Status: intent.StatusKilled, Expanded: false, IsDungeonChild: true},
-		{Name: "Archived", Status: intent.StatusArchived, Expanded: false, IsDungeonChild: true},
-		{Name: "Someday", Status: intent.StatusSomeday, Expanded: false, IsDungeonChild: true},
+		{Name: "Done", Status: intent.StatusDone, Expanded: false, Depth: 1},
+		{Name: "Killed", Status: intent.StatusKilled, Expanded: false, Depth: 1},
+		{Name: "Archived", Status: intent.StatusArchived, Expanded: false, Depth: 1},
+		{Name: "Someday", Status: intent.StatusSomeday, Expanded: false, Depth: 1},
 	}
 
 	// Create a map for intent distribution
@@ -385,28 +395,34 @@ func groupIntentsByStatus(intents []*intent.Intent, dungeonExpanded bool) []Inte
 		}
 	}
 
-	// Calculate dungeon total count
+	// Calculate dungeon total count across all children
 	dungeonTotal := 0
 	for _, g := range dungeonChildren {
 		dungeonTotal += len(g.Intents)
 	}
 
-	// Build dungeon parent
-	dungeonParent := IntentGroup{
-		Name:            "Dungeon",
-		IsDungeonParent: true,
-		Expanded:        dungeonExpanded,
-		DungeonCount:    dungeonTotal,
-	}
-
-	// Assemble final group list
+	// Assemble final group list: top groups, dungeon parent, then children.
+	// Children always remain in the slice; visibility is controlled by Expanded.
 	groups := make([]IntentGroup, 0, len(topGroups)+1+len(dungeonChildren))
 	groups = append(groups, topGroups...)
-	groups = append(groups, dungeonParent)
 
-	if dungeonExpanded {
-		groups = append(groups, dungeonChildren...)
+	dungeonParentIdx := len(groups)
+	childStart := dungeonParentIdx + 1
+	childIndices := make([]int, len(dungeonChildren))
+	for i := range dungeonChildren {
+		childIndices[i] = childStart + i
+		// Parent has no Status; children use Depth for nesting/indent.
+		dungeonChildren[i].Depth = 1
 	}
+
+	groups = append(groups, IntentGroup{
+		Name:            "Dungeon",
+		Expanded:        dungeonExpanded,
+		Depth:           0,
+		Children:        childIndices,
+		DescendantCount: dungeonTotal,
+	})
+	groups = append(groups, dungeonChildren...)
 
 	return groups
 }
@@ -426,19 +442,41 @@ func groupExplorerItemsByStatus(items []*intent.Intent, dungeonExpanded bool) []
 	}
 
 	groups := groupIntentsByStatus(intents, dungeonExpanded)
-	return append([]IntentGroup{notes}, groups...)
+	// Notes prepended: re-index dungeon Children after the shift.
+	out := append([]IntentGroup{notes}, groups...)
+	for i := range out {
+		if !out[i].IsNestParent() {
+			continue
+		}
+		for j := range out[i].Children {
+			out[i].Children[j]++
+		}
+	}
+	return out
+}
+
+// nestExpanded returns the Expanded flag for a named nest parent, defaulting
+// to false (collapsed) when the parent is not yet present in m.groups.
+func (m *Model) nestExpanded(name string) bool {
+	for _, g := range m.groups {
+		if g.Name == name && g.IsNestParent() {
+			return g.Expanded
+		}
+	}
+	return false
 }
 
 func (m *Model) rebuildStatusGroups() {
+	dungeonExpanded := m.nestExpanded("Dungeon")
 	if m.notesMode {
 		m.groups = groupNotes(m.filteredIntents)
 		return
 	}
 	if m.hasNotesGroup() {
-		m.groups = groupExplorerItemsByStatus(m.filteredIntents, m.dungeonExpanded)
+		m.groups = groupExplorerItemsByStatus(m.filteredIntents, dungeonExpanded)
 		return
 	}
-	m.groups = groupIntentsByStatus(m.filteredIntents, m.dungeonExpanded)
+	m.groups = groupIntentsByStatus(m.filteredIntents, dungeonExpanded)
 }
 
 func (m *Model) hasNotesGroup() bool {
@@ -448,4 +486,24 @@ func (m *Model) hasNotesGroup() bool {
 		}
 	}
 	return false
+}
+
+// isGroupVisible reports whether group gi should be shown and navigable.
+// Nested groups are hidden while any ancestor nest parent is collapsed.
+func (m *Model) isGroupVisible(gi int) bool {
+	if gi < 0 || gi >= len(m.groups) {
+		return false
+	}
+	g := m.groups[gi]
+	if g.Depth == 0 {
+		return true
+	}
+	for pi, p := range m.groups {
+		for _, ci := range p.Children {
+			if ci == gi {
+				return p.Expanded && m.isGroupVisible(pi)
+			}
+		}
+	}
+	return true
 }

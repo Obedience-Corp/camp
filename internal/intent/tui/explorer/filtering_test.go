@@ -49,8 +49,7 @@ func TestApplyFilters_StatusDoneAndKilledUseDungeonStatuses(t *testing.T) {
 		{ID: "killed-1", Title: "Killed", Status: intent.StatusKilled, Type: intent.TypeFeature, CreatedAt: now},
 	}
 	m.filteredIntents = m.intents
-	m.dungeonExpanded = true
-	m.groups = groupIntentsByStatus(m.intents, m.dungeonExpanded)
+	m.groups = groupIntentsByStatus(m.intents, true)
 
 	statusChip := m.filterBar.ChipByLabel("Status")
 	if statusChip == nil {
@@ -82,7 +81,7 @@ func TestApplyFilters_StatusNotes(t *testing.T) {
 		{ID: "inbox-1", Title: "Inbox", Status: intent.StatusInbox, Type: intent.TypeFeature, CreatedAt: now},
 	}
 	m.filteredIntents = m.intents
-	m.groups = groupIntentsByStatus(m.intents, m.dungeonExpanded)
+	m.groups = groupIntentsByStatus(m.intents, false)
 
 	statusChip := m.filterBar.ChipByLabel("Status")
 	if statusChip == nil {
@@ -108,7 +107,7 @@ func TestApplyFilters_UsesCachedSearchCorpus(t *testing.T) {
 	}
 	m.rebuildSearchCorpus()
 	m.filteredIntents = m.intents
-	m.groups = groupIntentsByStatus(m.intents, m.dungeonExpanded)
+	m.groups = groupIntentsByStatus(m.intents, false)
 
 	m.searchInput.SetValue("cached-match")
 	m.applyFilters()
