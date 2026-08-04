@@ -33,7 +33,7 @@ func (s *IntentService) GetNote(ctx context.Context, id string) (*Intent, error)
 		return nil, camperrors.Wrap(err, "context cancelled")
 	}
 
-	path, err := s.resolveNoteByID(id)
+	path, err := s.resolveNoteByID(ctx, id)
 	if err != nil {
 		return nil, err
 	}
@@ -41,28 +41,36 @@ func (s *IntentService) GetNote(ctx context.Context, id string) (*Intent, error)
 }
 
 // resolveNoteByID returns the path of the note whose id: frontmatter equals id.
-// Notes are few and live only under NoteStatuses(), so a filename fast path
-// followed by a small directory scan (covering renamed notes) is enough — no
-// cached index is needed here, unlike the lifecycle id index.
-func (s *IntentService) resolveNoteByID(id string) (string, error) {
+// Notes live under discovered note folders (root, reserved, and user trees), so
+// a filename fast path is tried first, then a small directory scan covering
+// renamed notes — no cached index is needed here, unlike the lifecycle id index.
+func (s *IntentService) resolveNoteByID(ctx context.Context, id string) (string, error) {
+	if err := ctx.Err(); err != nil {
+		return "", camperrors.Wrap(err, "context cancelled")
+	}
+	statuses, err := s.noteFolderStatuses(ctx)
+	if err != nil {
+		return "", err
+	}
+
 	// Fast path: filename == id (an unrenamed note).
-	for _, status := range NoteStatuses() {
-		p, err := s.getIntentPath(status, id)
-		if err != nil {
-			return "", err
+	for _, status := range statuses {
+		p, pathErr := s.getIntentPath(status, id)
+		if pathErr != nil {
+			return "", pathErr
 		}
-		if note, err := s.loadIntent(p); err == nil && note.ID == id {
+		if note, loadErr := s.loadIntent(p); loadErr == nil && note.ID == id {
 			return p, nil
 		}
 	}
 	// Slow path: a renamed note whose filename no longer matches its id.
-	for _, status := range NoteStatuses() {
-		dir, err := s.statusDir(status)
-		if err != nil {
-			return "", err
+	for _, status := range statuses {
+		dir, dirErr := s.statusDir(status)
+		if dirErr != nil {
+			return "", dirErr
 		}
-		files, err := os.ReadDir(dir)
-		if err != nil {
+		files, readErr := os.ReadDir(dir)
+		if readErr != nil {
 			continue
 		}
 		for _, f := range files {
@@ -70,7 +78,7 @@ func (s *IntentService) resolveNoteByID(id string) (string, error) {
 				continue
 			}
 			p := filepath.Join(dir, f.Name())
-			if note, err := s.loadIntent(p); err == nil && note.ID == id {
+			if note, loadErr := s.loadIntent(p); loadErr == nil && note.ID == id {
 				return p, nil
 			}
 		}
@@ -78,39 +86,42 @@ func (s *IntentService) resolveNoteByID(id string) (string, error) {
 	return "", camperrors.Wrap(ErrNotFound, id)
 }
 
-// ListNotes returns notes from the note store, newest first. By default only
-// the active notes/ directory is listed; pass includeArchived to also include
-// notes/archived/.
+// ListNotes returns notes from the note store, newest first. By default every
+// discovered folder except notes/archived/ is listed (root, user folders, and
+// meetings). Pass includeArchived to also include the archived bucket.
 func (s *IntentService) ListNotes(ctx context.Context, includeArchived bool) ([]*Intent, error) {
 	if err := ctx.Err(); err != nil {
 		return nil, camperrors.Wrap(err, "context cancelled")
 	}
 
-	statuses := []Status{StatusNote}
-	if includeArchived {
-		statuses = NoteStatuses()
+	folders, err := s.NoteFolders(ctx)
+	if err != nil {
+		return nil, err
 	}
 
 	var notes []*Intent
-	for _, status := range statuses {
-		dir, err := s.statusDir(status)
-		if err != nil {
-			return nil, err
+	for _, folder := range folders {
+		if !includeArchived && isArchivedNoteStatus(folder.Status) {
+			continue
 		}
-		files, err := os.ReadDir(dir)
-		if err != nil {
-			if os.IsNotExist(err) {
+		dir, dirErr := s.statusDir(folder.Status)
+		if dirErr != nil {
+			return nil, dirErr
+		}
+		files, readErr := os.ReadDir(dir)
+		if readErr != nil {
+			if os.IsNotExist(readErr) {
 				continue
 			}
-			return nil, camperrors.Wrapf(err, "reading directory %s", dir)
+			return nil, camperrors.Wrapf(readErr, "reading directory %s", dir)
 		}
 
 		for _, file := range files {
 			if file.IsDir() || !strings.HasSuffix(file.Name(), ".md") {
 				continue
 			}
-			note, err := s.loadIntent(filepath.Join(dir, file.Name()))
-			if err != nil {
+			note, loadErr := s.loadIntent(filepath.Join(dir, file.Name()))
+			if loadErr != nil {
 				continue
 			}
 			notes = append(notes, note)

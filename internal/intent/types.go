@@ -50,12 +50,16 @@ const (
 
 	// Note statuses (under notes/ directory)
 
-	// StatusNote is the flat note store. Notes are a separate category that sits
-	// outside the inbox/ready/active intent lifecycle.
+	// StatusNote is the notes store root. Notes are a separate category that sits
+	// outside the inbox/ready/active intent lifecycle. User folders nest under
+	// this root as additional Status values (e.g. "notes/reading/papers").
 	StatusNote Status = "notes"
 
 	// StatusNoteArchived is the archived-note bucket: notes kept but hidden.
 	StatusNoteArchived Status = "notes/archived"
+
+	// StatusNoteMeetings is the reserved meetings node under the notes store.
+	StatusNoteMeetings Status = "notes/meetings"
 )
 
 // Category distinguishes the two kinds of captured item: action-oriented
@@ -106,11 +110,13 @@ func DungeonStatuses() []Status {
 	return []Status{StatusDone, StatusKilled, StatusArchived, StatusSomeday}
 }
 
-// NoteStatuses returns the note-category directories (flat active + archived).
-// These are intentionally excluded from AllStatuses so intent queries never
-// scan notes.
+// NoteStatuses returns the note-category directories that are structurally
+// guaranteed to exist: the notes root, archived, and meetings. Callers that
+// need the real on-disk set (including user folders) must call
+// IntentService.NoteFolders. These statuses are intentionally excluded from
+// AllStatuses so intent queries never scan notes.
 func NoteStatuses() []Status {
-	return []Status{StatusNote, StatusNoteArchived}
+	return []Status{StatusNote, StatusNoteArchived, StatusNoteMeetings}
 }
 
 // IsNote returns true if the status belongs to the note category.
