@@ -90,7 +90,7 @@ func (m *Model) applyFilters() {
 			statusFiltered := make([]*intent.Intent, 0)
 			if targetStatus, ok := statusSelectionToStatus(statusSelection); ok {
 				for _, i := range filtered {
-					if i.Status == targetStatus {
+					if i.Status == targetStatus || (targetStatus == intent.StatusNote && i.Status.IsNote()) {
 						statusFiltered = append(statusFiltered, i)
 					}
 				}
@@ -113,8 +113,10 @@ func (m *Model) applyFilters() {
 
 	m.filteredIntents = filtered
 
-	// Rebuild groups from filtered explorer items
-	m.groups = groupExplorerItemsByStatus(m.filteredIntents, m.dungeonExpanded)
+	// Rebuild groups from filtered explorer items, preserving nest expand state.
+	// While filters are active, omit empty note folder shells and auto-expand
+	// ancestors of matches so nested hits are reachable.
+	m.rebuildStatusGroups()
 
 	// Reset cursor position and scroll
 	m.cursorGroup = 0

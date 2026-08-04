@@ -61,21 +61,27 @@ type CreateOptions struct {
 	Body      string    // Description/body content for the intent
 	Tags      []string  // Optional frontmatter tags
 	Timestamp time.Time // Optional; defaults to time.Now()
+	// Folder is a note-only relative path under notes/ (e.g. "reading/papers").
+	// Empty means the notes root. Ignored for non-note creates.
+	Folder string
 }
 
 // createStatus returns the directory a freshly created item lands in for the
-// given category: notes route to notes/, intents to inbox/.
-func createStatus(category Category) Status {
-	if category == CategoryNote {
-		return StatusNote
+// given category: notes route to notes/ (or notes/<folder>), intents to inbox/.
+func createStatus(category Category, folder string) (Status, error) {
+	if category != CategoryNote {
+		return StatusInbox, nil
 	}
-	return StatusInbox
+	if strings.TrimSpace(folder) == "" {
+		return StatusNote, nil
+	}
+	return noteStatusForFolder(folder)
 }
 
 // renderForCreate renders the right template for the category and stamps the
 // frontmatter status to match the storage root.
-func renderForCreate(data TemplateData, category Category, tags []string) (string, error) {
-	data.Status = string(createStatus(category))
+func renderForCreate(data TemplateData, category Category, tags []string, status Status) (string, error) {
+	data.Status = string(status)
 	data.Tags = tags
 	if category == CategoryNote {
 		return RenderNote(data)
@@ -104,8 +110,18 @@ func (s *IntentService) CreateDirect(ctx context.Context, opts CreateOptions) (*
 	// Generate ID and template data
 	data := NewTemplateDataFromInput(opts.Title, string(opts.Type), opts.Concept, opts.Author, opts.Body, ts)
 
+	status, err := createStatus(opts.Category, opts.Folder)
+	if err != nil {
+		return nil, err
+	}
+	if opts.Category == CategoryNote && status != StatusNote {
+		if err := s.requireNoteFolderExists(status); err != nil {
+			return nil, err
+		}
+	}
+
 	// Render template (note vs intent) and stamp the matching status
-	content, err := renderForCreate(data, opts.Category, opts.Tags)
+	content, err := renderForCreate(data, opts.Category, opts.Tags, status)
 	if err != nil {
 		return nil, camperrors.Wrap(err, "rendering template")
 	}
@@ -116,8 +132,8 @@ func (s *IntentService) CreateDirect(ctx context.Context, opts CreateOptions) (*
 		return nil, camperrors.Wrap(err, "parsing rendered template")
 	}
 
-	// Determine final path: notes route to notes/, intents to inbox/
-	finalPath, err := s.getIntentPath(createStatus(opts.Category), data.ID)
+	// Determine final path: notes route to notes[/folder]/, intents to inbox/
+	finalPath, err := s.getIntentPath(status, data.ID)
 	if err != nil {
 		return nil, err
 	}
@@ -160,8 +176,18 @@ func (s *IntentService) CreateWithEditor(ctx context.Context, opts CreateOptions
 	// Generate template data
 	data := NewTemplateDataFromInput(opts.Title, string(opts.Type), opts.Concept, opts.Author, opts.Body, ts)
 
+	status, err := createStatus(opts.Category, opts.Folder)
+	if err != nil {
+		return nil, err
+	}
+	if opts.Category == CategoryNote && status != StatusNote {
+		if err := s.requireNoteFolderExists(status); err != nil {
+			return nil, err
+		}
+	}
+
 	// Render template (note vs intent) and stamp the matching status
-	content, err := renderForCreate(data, opts.Category, opts.Tags)
+	content, err := renderForCreate(data, opts.Category, opts.Tags, status)
 	if err != nil {
 		return nil, camperrors.Wrap(err, "rendering template")
 	}

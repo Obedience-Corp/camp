@@ -16,17 +16,27 @@ type addTUIFinishedMsg struct{}
 // notes group/view it launches note capture (title/body/tags, no type/concept).
 func (m *Model) startAddTUI() {
 	noteMode := m.shouldCreateNoteFromCurrentPosition()
-	addModel := tui.NewIntentAddModel(m.ctx, m.conceptSvc, tui.AddOptions{
+	opts := tui.AddOptions{
 		FullMode:      !noteMode,
 		NoteMode:      noteMode,
 		Author:        m.author,
 		CampaignRoot:  m.campaignRoot,
 		Shortcuts:     m.shortcuts,
 		AvailableTags: m.availableTags,
-	})
+	}
+	if noteMode && m.service != nil {
+		opts.NoteFolders = m.userNoteFolderChoices()
+	}
+	addModel := tui.NewIntentAddModel(m.ctx, m.conceptSvc, opts)
 	m.addModel = &addModel
 	m.addNoteMode = noteMode
 	m.focus = focusAddTUI
+}
+
+// userNoteFolderChoices returns non-reserved user folders for the destination
+// picker. Empty means the add model hides the destination row entirely.
+func (m *Model) userNoteFolderChoices() []tui.NoteFolderChoice {
+	return tui.NoteFolderChoices(m.noteFolders)
 }
 
 func (m *Model) shouldCreateNoteFromCurrentPosition() bool {
@@ -92,6 +102,7 @@ func (m *Model) createIntentFromAddResult(result *tui.AddResult) {
 		Body:    result.Body,
 		Author:  result.Author,
 		Tags:    result.Tags,
+		Folder:  result.NoteFolder,
 	}
 
 	noun := "Intent"

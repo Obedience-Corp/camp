@@ -3,6 +3,7 @@ package explorer
 import (
 	"fmt"
 	"os"
+	"strings"
 
 	"github.com/Obedience-Corp/camp/internal/intent"
 	"github.com/Obedience-Corp/camp/internal/intent/tui"
@@ -57,6 +58,14 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			return m.updateRename(msg)
 		}
 
+		if m.focus == focusFolderInput {
+			return m.updateFolderInput(msg)
+		}
+
+		if m.focus == focusNoteFolderMove {
+			return m.updateNoteFolderMove(msg)
+		}
+
 		if m.focus == focusMove {
 			return m.updateMove(msg)
 		}
@@ -108,12 +117,9 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 		m.intents = msg.intents
 		m.filteredIntents = msg.intents
+		m.noteFolders = msg.noteFolders
 		m.rebuildSearchCorpus()
-		if m.notesMode {
-			m.groups = groupNotes(msg.intents)
-		} else {
-			m.groups = groupExplorerItemsByStatus(msg.intents, m.dungeonExpanded)
-		}
+		m.rebuildStatusGroups()
 		if m.pendingReselectID != "" {
 			m.reselectByID(m.pendingReselectID)
 			m.pendingReselectID = ""
@@ -291,6 +297,16 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.pendingReselectID = msg.renamedID
 		return m, m.loadIntents()
 
+	case folderFinishedMsg:
+		if msg.err != nil {
+			m.statusMessage = msg.err.Error()
+			return m, nil
+		}
+		if msg.message != "" {
+			m.statusMessage = msg.message
+		}
+		return m, m.loadIntents()
+
 	case addTUIFinishedMsg:
 		return m.finishAddTUI()
 
@@ -327,6 +343,10 @@ func (m Model) handleActionMenuSelection(msg tui.ActionMenuSelectedMsg) (tea.Mod
 			m.startConvert()
 		}
 	case "move":
+		if selected.Status.IsNote() {
+			m.startNoteFolderMove(selected)
+			return m, nil
+		}
 		m.focus = focusMove
 		m.intentToMove = selected
 		m.moveStatusIdx = 0
@@ -338,7 +358,8 @@ func (m Model) handleActionMenuSelection(msg tui.ActionMenuSelectedMsg) (tea.Mod
 		return m.handlePromoteAction()
 	case "archive":
 		if selected.Status.IsNote() {
-			if selected.Status != intent.StatusNote {
+			if selected.Status == intent.StatusNoteArchived ||
+				strings.HasPrefix(string(selected.Status), string(intent.StatusNoteArchived)+"/") {
 				m.statusMessage = "Note is already archived"
 				return m, nil
 			}

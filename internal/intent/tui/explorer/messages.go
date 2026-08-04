@@ -5,8 +5,9 @@ import "github.com/Obedience-Corp/camp/internal/intent"
 
 // intentsLoadedMsg is sent when intents are loaded from the service.
 type intentsLoadedMsg struct {
-	intents []*intent.Intent
-	err     error
+	intents     []*intent.Intent
+	noteFolders []intent.NoteFolder
+	err         error
 }
 
 // editorFinishedMsg is sent when an external editor closes.

@@ -55,3 +55,16 @@ func TestNewActionMenu_ArchivedNoteOffersRestoreNotArchive(t *testing.T) {
 		t.Error("archived note menu should not enable Convert")
 	}
 }
+
+func TestNewActionMenu_UserFolderNoteIsActive(t *testing.T) {
+	m := NewActionMenu(&intent.Intent{ID: "c", Status: intent.Status("notes/reading")})
+
+	for _, action := range []string{"move", "convert", "archive"} {
+		if !itemEnabled(m, action) {
+			t.Errorf("user-folder note menu should enable %s", action)
+		}
+	}
+	if itemEnabled(m, "restore") {
+		t.Error("user-folder note menu should not enable restore")
+	}
+}

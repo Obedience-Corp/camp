@@ -133,6 +133,132 @@ func TestIntentAddModel_NoteModeCollectsBody(t *testing.T) {
 	}
 }
 
+func TestIntentAddModel_NoteDestinationHiddenWithoutUserFolders(t *testing.T) {
+	m := NewIntentAddModel(context.Background(), mockConceptService{}, AddOptions{NoteMode: true})
+	m.titleInput.SetValue("quiet capture")
+	model, _ := m.finishNoteTitleStep()
+	m = model.(IntentAddModel)
+
+	if containsText(m.View(), "Destination") {
+		t.Fatal("zero-folder note capture should not render a destination row")
+	}
+
+	model, _ = m.Update(tea.KeyMsg{Type: tea.KeyTab})
+	m = model.(IntentAddModel)
+	if m.destinationFocus || m.pickingFolder {
+		t.Fatal("tab should remain in the body when there are no user folders")
+	}
+}
+
+func TestIntentAddModel_NoteDestinationPickerSelectsFolder(t *testing.T) {
+	m := NewIntentAddModel(context.Background(), mockConceptService{}, AddOptions{
+		NoteMode: true,
+		NoteFolders: []NoteFolderChoice{
+			{Label: "Notes"},
+			{Rel: "reading", Label: "reading"},
+		},
+	})
+	m.titleInput.SetValue("book list")
+	model, _ := m.finishNoteTitleStep()
+	m = model.(IntentAddModel)
+	m.vimEditor.SetContent("Keep the typed body")
+
+	if !containsText(m.View(), "Destination") || !containsText(m.View(), "Notes") {
+		t.Fatal("user folders should add a pre-answered destination row")
+	}
+
+	for _, msg := range []tea.KeyMsg{
+		{Type: tea.KeyTab},
+		{Type: tea.KeyEnter},
+		{Type: tea.KeyDown},
+		{Type: tea.KeyEnter},
+		{Type: tea.KeyCtrlS},
+	} {
+		model, _ = m.Update(msg)
+		m = model.(IntentAddModel)
+	}
+
+	result := m.Result()
+	if result == nil {
+		t.Fatal("saving from the destination row produced no result")
+	}
+	if result.NoteFolder != "reading" {
+		t.Errorf("NoteFolder = %q, want reading", result.NoteFolder)
+	}
+	if result.Body != "Keep the typed body" {
+		t.Errorf("Body = %q, typed content was not preserved", result.Body)
+	}
+}
+
+func TestIntentAddModel_NoteDestinationFilterPinsRootAndEscapePreservesChoice(t *testing.T) {
+	m := NewIntentAddModel(context.Background(), mockConceptService{}, AddOptions{
+		NoteMode: true,
+		NoteFolders: []NoteFolderChoice{
+			{Label: "Notes"},
+			{Rel: "reading", Label: "reading"},
+			{Rel: "work", Label: "work"},
+		},
+	})
+	m.titleInput.SetValue("keep me")
+	model, _ := m.finishNoteTitleStep()
+	m = model.(IntentAddModel)
+	m.vimEditor.SetContent("unchanged")
+
+	for _, msg := range []tea.KeyMsg{
+		{Type: tea.KeyTab},
+		{Type: tea.KeyEnter},
+		{Type: tea.KeyRunes, Runes: []rune("read")},
+	} {
+		model, _ = m.Update(msg)
+		m = model.(IntentAddModel)
+	}
+
+	filtered := m.filteredNoteFolderIndices()
+	if len(filtered) != 2 || filtered[0] != 0 || filtered[1] != 1 {
+		t.Fatalf("filtered indices = %v, want root pinned before reading", filtered)
+	}
+	model, _ = m.Update(tea.KeyMsg{Type: tea.KeyDown})
+	m = model.(IntentAddModel)
+	model, _ = m.Update(tea.KeyMsg{Type: tea.KeyEsc})
+	m = model.(IntentAddModel)
+
+	if m.selectedNoteFolderRel() != "" {
+		t.Errorf("escape changed destination to %q, want notes root", m.selectedNoteFolderRel())
+	}
+	if m.titleInput.Value() != "keep me" || m.vimEditor.Content() != "unchanged" {
+		t.Fatal("escape from destination picker changed typed content")
+	}
+}
+
+func TestIntentAddModel_NoteDestinationFilterAcceptsJKRunes(t *testing.T) {
+	m := NewIntentAddModel(context.Background(), mockConceptService{}, AddOptions{
+		NoteMode: true,
+		NoteFolders: []NoteFolderChoice{
+			{Label: "Notes"},
+			{Rel: "junk-journal", Label: "junk-journal"},
+		},
+	})
+	m.openNoteFolderPicker("")
+	for _, r := range "junk" {
+		model, _ := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{r}})
+		m = model.(IntentAddModel)
+	}
+	if m.folderQuery != "junk" {
+		t.Fatalf("folder query = %q, want junk", m.folderQuery)
+	}
+}
+
+func TestIntentAddModel_DefaultNoteFolderNotInChoicesIsPreserved(t *testing.T) {
+	m := NewIntentAddModel(context.Background(), mockConceptService{}, AddOptions{
+		NoteMode:          true,
+		NoteFolders:       []NoteFolderChoice{{Label: "Notes"}},
+		DefaultNoteFolder: "reading",
+	})
+	if got := m.selectedNoteFolderRel(); got != "reading" {
+		t.Errorf("selected folder = %q, want explicit default reading", got)
+	}
+}
+
 func TestIntentAddModel_TitleStepDoesNotOpenTags(t *testing.T) {
 	ctx := context.Background()
 	svc := mockConceptService{}

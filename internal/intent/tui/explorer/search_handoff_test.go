@@ -32,7 +32,7 @@ func TestSearchEnterHandoff_PlacesCursorOnFirstFilteredItem(t *testing.T) {
 		{ID: "gamma", Title: "Gamma unrelated", Status: intent.StatusInbox, Type: intent.TypeFeature, CreatedAt: now},
 	}
 	m.filteredIntents = m.intents
-	m.groups = groupIntentsByStatus(m.intents, m.dungeonExpanded)
+	m.groups = groupIntentsByStatus(m.intents, false)
 
 	// Simulate the post-live-filter state: user typed "foo", applyFilters
 	// narrowed to two intents, cursor parked at (0, -1) which is the
@@ -40,7 +40,7 @@ func TestSearchEnterHandoff_PlacesCursorOnFirstFilteredItem(t *testing.T) {
 	m.focus = focusSearch
 	m.searchInput.SetValue("foo")
 	m.filteredIntents = []*intent.Intent{m.intents[0], m.intents[1]}
-	m.groups = groupIntentsByStatus(m.filteredIntents, m.dungeonExpanded)
+	m.groups = groupIntentsByStatus(m.filteredIntents, false)
 	m.cursorGroup = 0
 	m.cursorItem = -1
 	m.scrollOffset = 0
@@ -89,7 +89,7 @@ func TestSearchEnterHandoff_NoMatchesSurfacesHint(t *testing.T) {
 		{ID: "alpha", Title: "Alpha", Status: intent.StatusInbox, Type: intent.TypeFeature, CreatedAt: time.Now()},
 	}
 	m.filteredIntents = m.intents
-	m.groups = groupIntentsByStatus(m.intents, m.dungeonExpanded)
+	m.groups = groupIntentsByStatus(m.intents, false)
 
 	// Simulate the empty-result state: user typed a query that filtered
 	// everything out, applyFilters left filteredIntents empty, groups
@@ -97,7 +97,7 @@ func TestSearchEnterHandoff_NoMatchesSurfacesHint(t *testing.T) {
 	m.focus = focusSearch
 	m.searchInput.SetValue("nomatch-zzz")
 	m.filteredIntents = nil
-	m.groups = groupIntentsByStatus(nil, m.dungeonExpanded)
+	m.groups = groupIntentsByStatus(nil, false)
 	m.cursorGroup = 0
 	m.cursorItem = -1
 
@@ -117,10 +117,9 @@ func TestSearchEnterHandoff_NoMatchesSurfacesHint(t *testing.T) {
 // collapsed and the active filter has matches only in dungeon child groups,
 // the cursor placement must still find the matches. Without the auto-expand
 // path the helper iterated m.groups looking for non-empty Intents — but the
-// Dungeon parent has only DungeonCount and an empty Intents slice while
-// collapsed, and the dungeon child groups are absent from m.groups
-// entirely. The user would see "No matches" even though their query hit a
-// Someday item.
+// Dungeon parent has only DescendantCount and an empty Intents slice while
+// collapsed, and its child groups are hidden via isGroupVisible. The user
+// would see "No matches" even though their query hit a Someday item.
 func TestSearchEnterHandoff_DungeonOnlyMatchesAutoExpand(t *testing.T) {
 	ctx := context.Background()
 	m := NewModel(ctx, nil, nil, "/tmp/intents", "/tmp/campaign", "test-id", "", nil)
@@ -138,41 +137,45 @@ func TestSearchEnterHandoff_DungeonOnlyMatchesAutoExpand(t *testing.T) {
 		{ID: "inbox-1", Title: "Inbox unrelated", Status: intent.StatusInbox, Type: intent.TypeFeature, CreatedAt: now},
 		somedayMatch,
 	}
-	// Dungeon starts collapsed (the default the user filed the bug under).
-	m.dungeonExpanded = false
 
 	// Simulate the post-live-filter state: user typed a query that matches
 	// only the Someday item. filteredIntents holds only the dungeon match;
-	// groups was rebuilt with dungeonExpanded=false so the Someday group is
-	// not present in m.groups — only a Dungeon parent with DungeonCount=1.
+	// groups are rebuilt with dungeon collapsed so the Someday child is in
+	// the slice but not visible.
 	m.focus = focusSearch
 	m.searchInput.SetValue("foo")
 	m.filteredIntents = []*intent.Intent{somedayMatch}
-	m.groups = groupIntentsByStatus(m.filteredIntents, m.dungeonExpanded)
+	m.groups = groupIntentsByStatus(m.filteredIntents, false)
 	m.cursorGroup = 0
 	m.cursorItem = -1
 	m.scrollOffset = 0
 
 	// Verify the baseline state matches the bug condition: a Dungeon parent
-	// exists with a non-zero count, but the matching child is not in groups.
+	// exists with a non-zero count, and the matching child is hidden.
 	dungeonParentFound := false
-	someDayChildPresent := false
-	for _, g := range m.groups {
-		if g.IsDungeonParent {
+	var somedayChildIdx = -1
+	for gi, g := range m.groups {
+		if g.IsNestParent() && g.Name == "Dungeon" {
 			dungeonParentFound = true
-			if g.DungeonCount != 1 {
-				t.Fatalf("baseline: dungeon parent should report 1 match, got %d", g.DungeonCount)
+			if g.DescendantCount != 1 {
+				t.Fatalf("baseline: dungeon parent should report 1 match, got %d", g.DescendantCount)
+			}
+			if g.Expanded {
+				t.Fatal("baseline: dungeon parent should be collapsed")
 			}
 		}
-		if g.IsDungeonChild && g.Status == intent.StatusSomeday {
-			someDayChildPresent = true
+		if g.Depth > 0 && g.Status == intent.StatusSomeday {
+			somedayChildIdx = gi
 		}
 	}
 	if !dungeonParentFound {
 		t.Fatal("baseline: dungeon parent should be in m.groups")
 	}
-	if someDayChildPresent {
-		t.Fatal("baseline: someday child should NOT be in m.groups before fix triggers (collapsed parent)")
+	if somedayChildIdx < 0 {
+		t.Fatal("baseline: someday child should remain in m.groups under general nesting")
+	}
+	if m.isGroupVisible(somedayChildIdx) {
+		t.Fatal("baseline: someday child should not be visible while dungeon is collapsed")
 	}
 
 	// Press Enter to commit the filter and hand focus to the list.
@@ -182,13 +185,19 @@ func TestSearchEnterHandoff_DungeonOnlyMatchesAutoExpand(t *testing.T) {
 	if got.focus != focusList {
 		t.Fatalf("focus should be focusList, got %v", got.focus)
 	}
-	if !got.dungeonExpanded {
+	dungeonExpanded := false
+	for _, g := range got.groups {
+		if g.IsNestParent() && g.Name == "Dungeon" {
+			dungeonExpanded = g.Expanded
+		}
+	}
+	if !dungeonExpanded {
 		t.Fatal("dungeon parent should have been auto-expanded to expose the matching child")
 	}
 	if got.cursorItem != 0 {
 		t.Fatalf("cursor should point at the first matching item (cursorItem=0), got %d", got.cursorItem)
 	}
-	if !got.groups[got.cursorGroup].IsDungeonChild {
+	if got.groups[got.cursorGroup].Depth == 0 {
 		t.Fatalf("cursor should land on a dungeon child group, got group %+v", got.groups[got.cursorGroup])
 	}
 	pointedAt := got.groups[got.cursorGroup].Intents[got.cursorItem]
@@ -208,7 +217,7 @@ func TestPlaceCursorAtFirstItem_NoGroupsHasItems(t *testing.T) {
 	m.ready = true
 	m.intents = nil
 	m.filteredIntents = nil
-	m.groups = groupIntentsByStatus(nil, m.dungeonExpanded)
+	m.groups = groupIntentsByStatus(nil, false)
 
 	placed := m.placeCursorAtFirstItem()
 

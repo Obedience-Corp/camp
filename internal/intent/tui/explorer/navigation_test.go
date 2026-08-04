@@ -43,8 +43,8 @@ func makeTestModel(inboxCount, activeCount int) Model {
 
 	m.intents = intents
 	m.filteredIntents = intents
-	m.dungeonExpanded = true // expand for tests to see all groups
-	m.groups = groupIntentsByStatus(intents, m.dungeonExpanded)
+	// Expand dungeon so tests can see all groups (children always present).
+	m.groups = groupIntentsByStatus(intents, true)
 	m.listHeight = 20 // simulate reasonable terminal
 
 	return m
@@ -125,10 +125,11 @@ func TestTotalVisualLines_AllCollapsed(t *testing.T) {
 	for i := range m.groups {
 		m.groups[i].Expanded = false
 	}
-	// 8 group headers only (Inbox, Ready, Active, Dungeon, Done, Killed, Archived, Someday)
+	// Only the four top-level headers are visible; collapsed Dungeon children
+	// must not inflate scroll percentages or gutter sizing.
 	got := m.totalVisualLines()
-	if got != 8 {
-		t.Errorf("totalVisualLines() all collapsed = %d, want 8", got)
+	if got != 4 {
+		t.Errorf("totalVisualLines() all collapsed = %d, want 4", got)
 	}
 }
 
@@ -537,37 +538,51 @@ func TestBuildMainView_NoScrollIndicator_WhenFits(t *testing.T) {
 
 func TestDungeonCollapse_HidesChildren(t *testing.T) {
 	m := makeTestModel(3, 2)
-	// Default test model has dungeonExpanded=true -> 8 groups
+	// Children always live in the groups slice; expanded dungeon is visible.
 	if len(m.groups) != 8 {
-		t.Fatalf("expected 8 groups with dungeon expanded, got %d", len(m.groups))
+		t.Fatalf("expected 8 groups (incl. dungeon children), got %d", len(m.groups))
+	}
+	if !m.groups[3].IsNestParent() {
+		t.Fatal("expected group 3 to be nest parent (Dungeon)")
+	}
+	if !m.groups[3].Expanded {
+		t.Fatal("expected dungeon expanded in makeTestModel")
+	}
+	for _, ci := range m.groups[3].Children {
+		if !m.isGroupVisible(ci) {
+			t.Fatalf("child group %d should be visible when dungeon expanded", ci)
+		}
 	}
 
-	// Collapse dungeon
-	m.dungeonExpanded = false
-	m.groups = groupIntentsByStatus(m.filteredIntents, m.dungeonExpanded)
+	// Collapse dungeon in place — children stay in the slice, become invisible.
+	m.groups[3].Expanded = false
 
-	// Should have 4 groups: Inbox, Ready, Active, Dungeon
-	if len(m.groups) != 4 {
-		t.Fatalf("expected 4 groups with dungeon collapsed, got %d", len(m.groups))
+	if len(m.groups) != 8 {
+		t.Fatalf("collapsed: groups slice should still hold 8 entries, got %d", len(m.groups))
 	}
-
-	// Verify dungeon parent is at index 3
-	if !m.groups[3].IsDungeonParent {
-		t.Error("expected group 3 to be dungeon parent")
+	if m.groups[3].DescendantCount != 0 {
+		t.Errorf("expected 0 dungeon intents, got %d", m.groups[3].DescendantCount)
 	}
-	if m.groups[3].DungeonCount != 0 {
-		t.Errorf("expected 0 dungeon intents, got %d", m.groups[3].DungeonCount)
+	for _, ci := range m.groups[3].Children {
+		if m.isGroupVisible(ci) {
+			t.Fatalf("child group %d should be hidden when dungeon collapsed", ci)
+		}
 	}
 }
 
 func TestDungeonToggle_PreservesGroupCount(t *testing.T) {
 	m := makeTestModel(2, 0)
-	m.dungeonExpanded = false
-	m.groups = groupIntentsByStatus(m.filteredIntents, m.dungeonExpanded)
+	m.groups = groupIntentsByStatus(m.filteredIntents, false)
 
-	// 4 groups collapsed
-	if len(m.groups) != 4 {
-		t.Fatalf("collapsed: expected 4 groups, got %d", len(m.groups))
+	// Children always present; only Expanded toggles visibility.
+	if len(m.groups) != 8 {
+		t.Fatalf("collapsed: expected 8 groups in slice, got %d", len(m.groups))
+	}
+	if m.groups[3].Expanded {
+		t.Fatal("dungeon should start collapsed")
+	}
+	if m.isGroupVisible(m.groups[3].Children[0]) {
+		t.Fatal("dungeon children should be hidden when collapsed")
 	}
 
 	// Put cursor on dungeon parent and select to toggle
@@ -575,7 +590,12 @@ func TestDungeonToggle_PreservesGroupCount(t *testing.T) {
 	m.cursorItem = -1
 	m.handleSelect()
 
-	// Should now have 8 groups
+	if !m.groups[3].Expanded {
+		t.Fatal("dungeon should be expanded after select")
+	}
+	if !m.isGroupVisible(m.groups[3].Children[0]) {
+		t.Fatal("dungeon children should be visible when expanded")
+	}
 	if len(m.groups) != 8 {
 		t.Fatalf("expanded: expected 8 groups, got %d", len(m.groups))
 	}
@@ -585,9 +605,11 @@ func TestDungeonToggle_PreservesGroupCount(t *testing.T) {
 	m.cursorItem = -1
 	m.handleSelect()
 
-	// Back to 4
-	if len(m.groups) != 4 {
-		t.Fatalf("re-collapsed: expected 4 groups, got %d", len(m.groups))
+	if m.groups[3].Expanded {
+		t.Fatal("dungeon should be re-collapsed")
+	}
+	if m.isGroupVisible(m.groups[3].Children[0]) {
+		t.Fatal("dungeon children should be hidden after re-collapse")
 	}
 }
 
@@ -607,17 +629,16 @@ func TestDungeonParent_ShowsAggregateCount(t *testing.T) {
 	}
 	m.intents = intents
 	m.filteredIntents = intents
-	m.dungeonExpanded = false
-	m.groups = groupIntentsByStatus(intents, m.dungeonExpanded)
+	m.groups = groupIntentsByStatus(intents, false)
 	m.listHeight = 20
 
 	// Dungeon parent should show aggregate count of 3 (2 done + 1 killed)
 	dungeonGroup := m.groups[3]
-	if !dungeonGroup.IsDungeonParent {
-		t.Fatal("expected dungeon parent at index 3")
+	if !dungeonGroup.IsNestParent() {
+		t.Fatal("expected dungeon nest parent at index 3")
 	}
-	if dungeonGroup.DungeonCount != 3 {
-		t.Errorf("expected DungeonCount=3, got %d", dungeonGroup.DungeonCount)
+	if dungeonGroup.DescendantCount != 3 {
+		t.Errorf("expected DescendantCount=3, got %d", dungeonGroup.DescendantCount)
 	}
 }
 
@@ -636,5 +657,60 @@ func TestRenderIntentRow_SelectedUsesFocusCursor(t *testing.T) {
 	// Unselected uses EmptyCursor (space), not the fire caret string.
 	if strings.Contains(unselected, tui.FocusCursor()) {
 		t.Fatalf("unselected row unexpectedly contains FocusCursor:\n%s", unselected)
+	}
+}
+
+// TestDungeonNestRenderParity verifies general nesting preserves Dungeon
+// collapse/expand/count rendering: collapsed shows aggregate DescendantCount
+// and hides child headers; expanded shows Done/Killed/etc under the parent.
+func TestDungeonNestRenderParity(t *testing.T) {
+	ctx := context.Background()
+	m := NewModel(ctx, nil, nil, "/tmp/intents", "/tmp/campaign", "test-id", "", nil)
+	m.ready = true
+	m.width = 120
+	m.height = 30
+	m.listHeight = 25
+
+	intents := []*intent.Intent{
+		{ID: "done-0", Title: "Done 0", Status: intent.StatusDone, Type: intent.TypeFeature, CreatedAt: time.Now()},
+		{ID: "killed-0", Title: "Killed 0", Status: intent.StatusKilled, Type: intent.TypeFeature, CreatedAt: time.Now()},
+		{ID: "inbox-0", Title: "Inbox 0", Status: intent.StatusInbox, Type: intent.TypeFeature, CreatedAt: time.Now()},
+	}
+	m.intents = intents
+	m.filteredIntents = intents
+	m.groups = groupIntentsByStatus(intents, false)
+
+	collapsed := m.buildMainView()
+	if !strings.Contains(collapsed, "Dungeon") {
+		t.Fatalf("collapsed view missing Dungeon header:\n%s", collapsed)
+	}
+	if !strings.Contains(collapsed, "Dungeon") || !strings.Contains(collapsed, "(2)") {
+		// Aggregate count across done+killed
+		t.Fatalf("collapsed Dungeon should show aggregate (2):\n%s", collapsed)
+	}
+	if strings.Contains(collapsed, "Done (") || strings.Contains(collapsed, "Killed (") {
+		t.Fatalf("collapsed Dungeon must hide child headers:\n%s", collapsed)
+	}
+
+	// Expand via select on parent
+	m.cursorGroup = 3
+	m.cursorItem = -1
+	m.handleSelect()
+	expanded := m.buildMainView()
+	if !strings.Contains(expanded, "Done") || !strings.Contains(expanded, "Killed") {
+		t.Fatalf("expanded Dungeon should show child headers:\n%s", expanded)
+	}
+
+	// Force-expand path: collapsed parent with only dungeon matches
+	m.groups = groupIntentsByStatus([]*intent.Intent{intents[0]}, false)
+	m.filteredIntents = []*intent.Intent{intents[0]}
+	if !m.placeCursorAtFirstItem() {
+		t.Fatal("placeCursorAtFirstItem should force-expand dungeon and place cursor")
+	}
+	if !m.groups[3].Expanded {
+		t.Fatal("dungeon should be force-expanded when only dungeon matches exist")
+	}
+	if m.cursorItem != 0 {
+		t.Fatalf("cursor should land on first dungeon item, got cursorItem=%d group=%d", m.cursorItem, m.cursorGroup)
 	}
 }

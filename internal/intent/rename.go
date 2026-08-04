@@ -31,7 +31,7 @@ func (s *IntentService) Rename(ctx context.Context, id, newTitle string) (*Inten
 		// Notes live outside the lifecycle status dirs resolveByID scans; fall
 		// back to the note store so renaming a note works too. The rename logic
 		// below is directory-agnostic, so the note stays in notes/.
-		notePath, nerr := s.resolveNoteByID(id)
+		notePath, nerr := s.resolveNoteByID(ctx, id)
 		if nerr != nil {
 			return nil, err
 		}

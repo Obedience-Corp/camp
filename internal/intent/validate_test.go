@@ -321,6 +321,7 @@ func TestIntent_IsValid(t *testing.T) {
 func TestIsValidStatus(t *testing.T) {
 	validStatuses := []Status{
 		StatusInbox, StatusActive, StatusReady, StatusDone, StatusKilled, StatusArchived, StatusSomeday,
+		StatusNote, StatusNoteArchived, StatusNoteMeetings, Status("notes/reading/papers"),
 	}
 
 	for _, s := range validStatuses {
@@ -331,6 +332,7 @@ func TestIsValidStatus(t *testing.T) {
 
 	invalidStatuses := []Status{
 		"", "invalid", "INBOX", "pending", "new",
+		"notes/../outside", "notes/reading/../../outside", "notes/.hidden", "notes/Reading",
 	}
 
 	for _, s := range invalidStatuses {

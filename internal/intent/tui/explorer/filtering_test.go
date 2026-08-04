@@ -49,8 +49,7 @@ func TestApplyFilters_StatusDoneAndKilledUseDungeonStatuses(t *testing.T) {
 		{ID: "killed-1", Title: "Killed", Status: intent.StatusKilled, Type: intent.TypeFeature, CreatedAt: now},
 	}
 	m.filteredIntents = m.intents
-	m.dungeonExpanded = true
-	m.groups = groupIntentsByStatus(m.intents, m.dungeonExpanded)
+	m.groups = groupIntentsByStatus(m.intents, true)
 
 	statusChip := m.filterBar.ChipByLabel("Status")
 	if statusChip == nil {
@@ -79,10 +78,12 @@ func TestApplyFilters_StatusNotes(t *testing.T) {
 	now := time.Now()
 	m.intents = []*intent.Intent{
 		{ID: "note-1", Title: "Note", Status: intent.StatusNote, CreatedAt: now},
+		{ID: "note-2", Title: "Nested", Status: intent.Status("notes/reading"), CreatedAt: now},
+		{ID: "note-3", Title: "Meeting", Status: intent.StatusNoteMeetings, CreatedAt: now},
 		{ID: "inbox-1", Title: "Inbox", Status: intent.StatusInbox, Type: intent.TypeFeature, CreatedAt: now},
 	}
 	m.filteredIntents = m.intents
-	m.groups = groupIntentsByStatus(m.intents, m.dungeonExpanded)
+	m.groups = groupIntentsByStatus(m.intents, false)
 
 	statusChip := m.filterBar.ChipByLabel("Status")
 	if statusChip == nil {
@@ -91,8 +92,13 @@ func TestApplyFilters_StatusNotes(t *testing.T) {
 	statusChip.SetSelected(statusFilterIndex(t, "Notes"))
 	m.applyFilters()
 
-	if len(m.filteredIntents) != 1 || m.filteredIntents[0].Status != intent.StatusNote {
-		t.Fatalf("Notes filter returned %+v, want one note", m.filteredIntents)
+	if len(m.filteredIntents) != 3 {
+		t.Fatalf("Notes filter returned %+v, want root, nested, and meeting notes", m.filteredIntents)
+	}
+	for _, item := range m.filteredIntents {
+		if !item.Status.IsNote() {
+			t.Fatalf("Notes filter included lifecycle status %q", item.Status)
+		}
 	}
 }
 
@@ -108,7 +114,7 @@ func TestApplyFilters_UsesCachedSearchCorpus(t *testing.T) {
 	}
 	m.rebuildSearchCorpus()
 	m.filteredIntents = m.intents
-	m.groups = groupIntentsByStatus(m.intents, m.dungeonExpanded)
+	m.groups = groupIntentsByStatus(m.intents, false)
 
 	m.searchInput.SetValue("cached-match")
 	m.applyFilters()

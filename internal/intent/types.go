@@ -50,12 +50,16 @@ const (
 
 	// Note statuses (under notes/ directory)
 
-	// StatusNote is the flat note store. Notes are a separate category that sits
-	// outside the inbox/ready/active intent lifecycle.
+	// StatusNote is the notes store root. Notes are a separate category that sits
+	// outside the inbox/ready/active intent lifecycle. User folders nest under
+	// this root as additional Status values (e.g. "notes/reading/papers").
 	StatusNote Status = "notes"
 
 	// StatusNoteArchived is the archived-note bucket: notes kept but hidden.
 	StatusNoteArchived Status = "notes/archived"
+
+	// StatusNoteMeetings is the reserved meetings node under the notes store.
+	StatusNoteMeetings Status = "notes/meetings"
 )
 
 // Category distinguishes the two kinds of captured item: action-oriented
@@ -106,11 +110,13 @@ func DungeonStatuses() []Status {
 	return []Status{StatusDone, StatusKilled, StatusArchived, StatusSomeday}
 }
 
-// NoteStatuses returns the note-category directories (flat active + archived).
-// These are intentionally excluded from AllStatuses so intent queries never
-// scan notes.
+// NoteStatuses returns the note-category directories that are structurally
+// guaranteed to exist: the notes root, archived, and meetings. Callers that
+// need the real on-disk set (including user folders) must call
+// IntentService.NoteFolders. These statuses are intentionally excluded from
+// AllStatuses so intent queries never scan notes.
 func NoteStatuses() []Status {
-	return []Status{StatusNote, StatusNoteArchived}
+	return []Status{StatusNote, StatusNoteArchived, StatusNoteMeetings}
 }
 
 // IsNote returns true if the status belongs to the note category.
@@ -204,6 +210,24 @@ type GatheredSource struct {
 	DependsOn []string `yaml:"depends_on,omitempty"`
 }
 
+// MeetingMetadata describes a note imported from a meeting bundle. The nested
+// meeting block is optional for ordinary notes; its presence, together with
+// status notes/meetings, activates meeting-specific behavior.
+type MeetingMetadata struct {
+	StartedAt        time.Time `yaml:"started_at,omitempty"`
+	EndedAt          time.Time `yaml:"ended_at,omitempty"`
+	DurationSeconds  int       `yaml:"duration_seconds"`
+	Utterances       int       `yaml:"utterances"`
+	Speakers         int       `yaml:"speakers"`
+	SpeakerAnalysis  string    `yaml:"speaker_analysis,omitempty"`
+	STT              string    `yaml:"stt,omitempty"`
+	Transcript       string    `yaml:"transcript"`
+	Bundle           string    `yaml:"bundle"`
+	BundleHost       string    `yaml:"bundle_host,omitempty"`
+	Audio            string    `yaml:"audio,omitempty"`
+	ExtractedIntents []string  `yaml:"extracted_intents"`
+}
+
 const (
 	// HorizonNow indicates current focus area.
 	HorizonNow Horizon = "now"
@@ -264,6 +288,9 @@ type Intent struct {
 	AssignedTo string    `yaml:"assigned_to,omitempty"`
 	AssignedAt time.Time `yaml:"assigned_at,omitempty"`
 	WorkRef    []string  `yaml:"work_ref,omitempty"`
+
+	// Meeting is present only for structured notes under notes/meetings.
+	Meeting *MeetingMetadata `yaml:"meeting,omitempty"`
 
 	// Runtime fields (not serialized to YAML)
 	Path              string             `yaml:"-"` // Filesystem path to the intent file

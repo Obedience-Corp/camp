@@ -2,6 +2,7 @@ package intent
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"os"
 
@@ -62,6 +63,8 @@ func init() {
 	flags.String("body-file", "", "Read note body from file (- for stdin, 10 MiB cap)")
 	flags.String("author", "", "Override the default author attribution")
 	flags.StringArrayP("tag", "t", nil, "Add a tag (repeatable)")
+	flags.String("folder", "", "Note folder under notes/ (must exist unless --create-folder)")
+	flags.Bool("create-folder", false, "Create --folder path if missing")
 }
 
 func runIntentNote(cmd *cobra.Command, args []string) error {
@@ -70,6 +73,8 @@ func runIntentNote(cmd *cobra.Command, args []string) error {
 	noCommit, _ := cmd.Flags().GetBool("no-commit")
 	authorFlag, _ := cmd.Flags().GetString("author")
 	tags, _ := cmd.Flags().GetStringArray("tag")
+	folder, _ := cmd.Flags().GetString("folder")
+	createFolder, _ := cmd.Flags().GetBool("create-folder")
 
 	body, _, err := resolveBody(cmd)
 	if err != nil {
@@ -87,13 +92,22 @@ func runIntentNote(cmd *cobra.Command, args []string) error {
 		return camperrors.Wrap(err, "ensuring idea directories")
 	}
 
+	if folder != "" && createFolder {
+		if _, err := svc.CreateNoteFolder(ctx, folder); err != nil {
+			// Ignore already-exists; other errors surface.
+			if !errors.Is(err, intent.ErrNoteFolderExists) {
+				return camperrors.Wrap(err, "creating note folder")
+			}
+		}
+	}
+
 	// Fast path: note text provided as an argument
 	if len(args) > 0 {
 		author := "agent"
 		if cmd.Flags().Changed("author") {
 			author = authorFlag
 		}
-		opts := intent.CreateOptions{Title: args[0], Author: author, Body: body, Tags: tags}
+		opts := intent.CreateOptions{Title: args[0], Author: author, Body: body, Tags: tags, Folder: folder}
 		return runNoteCapture(ctx, svc, resolver.Intents(), cfg, campaignRoot, noCommit, opts)
 	}
 
@@ -108,12 +122,18 @@ func runIntentNote(cmd *cobra.Command, args []string) error {
 	}
 
 	conceptSvc := concept.NewService(campaignRoot, cfg.Concepts())
+	noteFolders, err := svc.NoteFolders(ctx)
+	if err != nil {
+		return camperrors.Wrap(err, "listing note folders")
+	}
 	model, err := runIntentNoteTUI(ctx, conceptSvc, tui.AddOptions{
-		NoteMode:      true,
-		Author:        author,
-		CampaignRoot:  campaignRoot,
-		Shortcuts:     navigationShortcuts(cfg),
-		AvailableTags: cfg.IntentTags(),
+		NoteMode:          true,
+		Author:            author,
+		CampaignRoot:      campaignRoot,
+		Shortcuts:         navigationShortcuts(cfg),
+		AvailableTags:     cfg.IntentTags(),
+		NoteFolders:       tui.NoteFolderChoices(noteFolders),
+		DefaultNoteFolder: folder,
 	})
 	if err != nil {
 		return err
@@ -125,6 +145,7 @@ func runIntentNote(cmd *cobra.Command, args []string) error {
 			Author: saved.Author,
 			Body:   saved.Body,
 			Tags:   mergeTags(tags, saved.Tags),
+			Folder: saved.NoteFolder,
 		}); err != nil {
 			return err
 		}
@@ -143,6 +164,7 @@ func runIntentNote(cmd *cobra.Command, args []string) error {
 		Author: result.Author,
 		Body:   result.Body,
 		Tags:   mergeTags(tags, result.Tags),
+		Folder: result.NoteFolder,
 	})
 }
 

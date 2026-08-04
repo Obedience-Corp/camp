@@ -14,22 +14,19 @@ import (
 // this, j/k looked like a no-op and users could not tell the list was
 // navigable (regression #279).
 //
-// Special case: when the Dungeon parent is collapsed (m.dungeonExpanded ==
-// false), groupIntentsByStatus does not include the dungeon child groups in
-// m.groups — only a single Dungeon parent with DungeonCount and an empty
-// Intents slice. If the active filter has matches only in the dungeon, the
-// naive iteration would conclude "no matches reachable" and surface the
-// recovery hint even though dungeon results exist. Expand the parent and
-// rebuild groups so the children become visible, then place the cursor on
-// the first one.
+// Special case: when a nest parent (e.g. Dungeon) is collapsed, its child
+// groups are still in m.groups but hidden via isGroupVisible. If the active
+// filter has matches only under that parent, auto-expand it so the first
+// matching child becomes reachable.
 func (m *Model) placeCursorAtFirstItem() bool {
 	for gi := range m.groups {
-		// Auto-expand the Dungeon parent if it holds the only matches.
-		if m.groups[gi].IsDungeonParent && m.groups[gi].DungeonCount > 0 && !m.dungeonExpanded {
-			m.dungeonExpanded = true
-			m.rebuildStatusGroups()
-			// Restart with the rebuilt slice — dungeon children are now present.
-			return m.placeCursorAtFirstItem()
+		if !m.isGroupVisible(gi) {
+			continue
+		}
+		// Auto-expand nest parents that hold descendant matches so their
+		// children become visible on subsequent iterations of this loop.
+		if m.groups[gi].IsNestParent() && m.groups[gi].DescendantCount > 0 && !m.groups[gi].Expanded {
+			m.groups[gi].Expanded = true
 		}
 		if len(m.groups[gi].Intents) == 0 {
 			continue
@@ -63,15 +60,19 @@ func (m *Model) moveCursorUp() {
 }
 
 // cursorVisualLine returns the 0-indexed visual line of the current cursor position,
-// accounting for group headers and collapsed groups.
+// accounting for group headers, collapsed groups, and hidden nested subtrees.
 func (m *Model) cursorVisualLine() int {
 	line := 0
 	for gi, group := range m.groups {
+		if !m.isGroupVisible(gi) {
+			continue
+		}
 		if gi == m.cursorGroup && m.cursorItem == -1 {
 			return line
 		}
 		line++ // group header
 
+		// Nest parents may still hold direct Intents (root notes under Notes).
 		if group.Expanded {
 			for ii := range group.Intents {
 				if gi == m.cursorGroup && ii == m.cursorItem {
@@ -125,8 +126,17 @@ func (m *Model) jumpToBottom() {
 	if len(m.groups) == 0 {
 		return
 	}
-	// Find last group, and if expanded, go to its last item
-	m.cursorGroup = len(m.groups) - 1
+	// Find last visible group, and if expanded, go to its last item
+	last := -1
+	for gi := range m.groups {
+		if m.isGroupVisible(gi) {
+			last = gi
+		}
+	}
+	if last < 0 {
+		return
+	}
+	m.cursorGroup = last
 	group := &m.groups[m.cursorGroup]
 	if group.Expanded && len(group.Intents) > 0 {
 		m.cursorItem = len(group.Intents) - 1
@@ -167,6 +177,8 @@ func (m *Model) moveCursorDownOne() {
 	}
 	group := &m.groups[m.cursorGroup]
 	if m.cursorItem == -1 {
+		// Enter direct intents when the group is expanded (including nest parents
+		// that hold root-level notes under Notes).
 		if group.Expanded && len(group.Intents) > 0 {
 			m.cursorItem = 0
 		} else {
@@ -188,14 +200,16 @@ func (m *Model) moveCursorUpOne() {
 	}
 	switch m.cursorItem {
 	case -1:
-		if m.cursorGroup > 0 {
-			m.cursorGroup--
-			prevGroup := &m.groups[m.cursorGroup]
-			if prevGroup.Expanded && len(prevGroup.Intents) > 0 {
-				m.cursorItem = len(prevGroup.Intents) - 1
-			} else {
-				m.cursorItem = -1
-			}
+		prev := m.prevVisibleGroup(m.cursorGroup)
+		if prev < 0 {
+			return
+		}
+		m.cursorGroup = prev
+		prevGroup := &m.groups[m.cursorGroup]
+		if prevGroup.Expanded && len(prevGroup.Intents) > 0 {
+			m.cursorItem = len(prevGroup.Intents) - 1
+		} else {
+			m.cursorItem = -1
 		}
 	case 0:
 		m.cursorItem = -1
@@ -204,12 +218,34 @@ func (m *Model) moveCursorUpOne() {
 	}
 }
 
-// moveToNextGroup moves cursor to the next group header.
+// moveToNextGroup moves cursor to the next visible group header.
 func (m *Model) moveToNextGroup() {
-	if m.cursorGroup < len(m.groups)-1 {
-		m.cursorGroup++
-		m.cursorItem = -1
+	next := m.nextVisibleGroup(m.cursorGroup)
+	if next < 0 {
+		return
 	}
+	m.cursorGroup = next
+	m.cursorItem = -1
+}
+
+// nextVisibleGroup returns the next visible group index after from, or -1.
+func (m *Model) nextVisibleGroup(from int) int {
+	for gi := from + 1; gi < len(m.groups); gi++ {
+		if m.isGroupVisible(gi) {
+			return gi
+		}
+	}
+	return -1
+}
+
+// prevVisibleGroup returns the previous visible group index before from, or -1.
+func (m *Model) prevVisibleGroup(from int) int {
+	for gi := from - 1; gi >= 0; gi-- {
+		if m.isGroupVisible(gi) {
+			return gi
+		}
+	}
+	return -1
 }
 
 // jumpToVisualLine moves cursor to visual line n (0-indexed).
@@ -217,6 +253,9 @@ func (m *Model) moveToNextGroup() {
 func (m *Model) jumpToVisualLine(targetLine int) {
 	line := 0
 	for gi, group := range m.groups {
+		if !m.isGroupVisible(gi) {
+			continue
+		}
 		if line == targetLine {
 			m.cursorGroup = gi
 			m.cursorItem = -1
@@ -240,6 +279,69 @@ func (m *Model) jumpToVisualLine(targetLine int) {
 	m.jumpToBottom()
 }
 
+// handleNestCollapse implements h/left: collapse the current nest parent, or
+// when on a nested child/item, move the cursor to its parent header and
+// collapse that parent.
+func (m *Model) handleNestCollapse() {
+	if len(m.groups) == 0 {
+		return
+	}
+	g := &m.groups[m.cursorGroup]
+	if m.cursorItem == -1 {
+		if g.IsNestParent() && g.Expanded {
+			g.Expanded = false
+			m.ensureCursorVisible()
+			return
+		}
+		// Already collapsed or leaf header: jump to parent if nested.
+		if g.Depth > 0 {
+			if pi := m.parentGroupIndex(m.cursorGroup); pi >= 0 {
+				m.cursorGroup = pi
+				m.cursorItem = -1
+				m.groups[pi].Expanded = false
+				m.ensureCursorVisible()
+			}
+		}
+		return
+	}
+	// On an item: collapse the containing group if it is a nest parent, else
+	// jump to the group header (standard fold-up).
+	if g.IsNestParent() {
+		g.Expanded = false
+		m.cursorItem = -1
+		m.ensureCursorVisible()
+		return
+	}
+	if g.Depth > 0 {
+		if pi := m.parentGroupIndex(m.cursorGroup); pi >= 0 {
+			m.cursorGroup = pi
+			m.cursorItem = -1
+			m.groups[pi].Expanded = false
+			m.ensureCursorVisible()
+			return
+		}
+	}
+	// Leaf root-level group: collapse its own items.
+	if g.Expanded {
+		g.Expanded = false
+		m.cursorItem = -1
+		m.ensureCursorVisible()
+	}
+}
+
+// parentGroupIndex returns the index of the nest parent that lists gi in
+// Children, or -1 if gi is a root group.
+func (m *Model) parentGroupIndex(gi int) int {
+	for pi, p := range m.groups {
+		for _, ci := range p.Children {
+			if ci == gi {
+				return pi
+			}
+		}
+	}
+	return -1
+}
+
 // handleSelect handles Enter/Space key - toggle group or open viewer on item.
 func (m *Model) handleSelect() {
 	if len(m.groups) == 0 {
@@ -248,14 +350,8 @@ func (m *Model) handleSelect() {
 
 	if m.cursorItem == -1 {
 		group := &m.groups[m.cursorGroup]
-		if group.IsDungeonParent {
-			// Toggle dungeon expansion and rebuild groups
-			m.dungeonExpanded = !m.dungeonExpanded
-			m.rebuildStatusGroups()
-			m.ensureCursorVisible()
-			return
-		}
-		// On normal group header, toggle expansion
+		// Nest parents (Dungeon today; Notes folders later) toggle Expanded
+		// in place — children stay in m.groups and visibility follows Expanded.
 		group.Expanded = !group.Expanded
 		m.ensureCursorVisible()
 	} else {
