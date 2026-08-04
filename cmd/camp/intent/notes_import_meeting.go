@@ -3,13 +3,17 @@ package intent
 import (
 	"encoding/json"
 	"fmt"
+	"os"
 	"time"
 
 	"github.com/spf13/cobra"
 
+	wkcmd "github.com/Obedience-Corp/camp/internal/commands/workitem"
 	"github.com/Obedience-Corp/camp/internal/config"
 	camperrors "github.com/Obedience-Corp/camp/internal/errors"
+	"github.com/Obedience-Corp/camp/internal/git/commit"
 	intentcore "github.com/Obedience-Corp/camp/internal/intent"
+	"github.com/Obedience-Corp/camp/internal/intent/audit"
 	"github.com/Obedience-Corp/camp/internal/jsoncontract"
 	"github.com/Obedience-Corp/camp/internal/paths"
 	"github.com/Obedience-Corp/camp/internal/pathutil"
@@ -66,6 +70,14 @@ func runImportMeeting(cmd *cobra.Command, args []string) error {
 	adopt, _ := cmd.Flags().GetString("adopt-intent")
 	author, _ := cmd.Flags().GetString("author")
 	jsonOut, _ := cmd.Flags().GetBool("json")
+	adoptedPath := ""
+	if adopt != "" {
+		adopted, getErr := svc.Get(ctx, adopt)
+		if getErr != nil {
+			return camperrors.Wrap(getErr, "resolving intent to adopt")
+		}
+		adoptedPath = adopted.Path
+	}
 
 	result, err := svc.ImportMeeting(ctx, intentcore.ImportMeetingOptions{
 		BundlePath:     args[0],
@@ -80,19 +92,54 @@ func runImportMeeting(cmd *cobra.Command, args []string) error {
 		return err
 	}
 
+	eventType := audit.EventCreate
+	commitAction := commit.IntentCreate
+	if result.UpdatedExisting {
+		eventType = audit.EventEdit
+		commitAction = commit.IntentEdit
+	}
+	if err := appendIntentAuditEvent(ctx, resolver.Intents(), audit.Event{
+		Type:   eventType,
+		ID:     result.Note.ID,
+		Title:  result.Note.Title,
+		To:     string(result.Note.Status),
+		Reason: "imported meeting bundle",
+	}); err != nil {
+		return err
+	}
+
+	commitOpts := wkcmd.AmbientCommitOptions(ctx, campaignRoot, cfg.ID, os.Stderr)
+	commitOpts.NoteRef = noteRef(result.Note.ID)
+	commitOpts.Files = commit.NormalizeFiles(campaignRoot,
+		result.Note.Path, result.TranscriptPath, adoptedPath, audit.FilePath(resolver.Intents()))
+	commitOpts.SelectiveOnly = true
+	commitResult := commit.Intent(ctx, commit.IntentOptions{
+		Options:     commitOpts,
+		Action:      commitAction,
+		IntentTitle: result.Note.Title,
+		Description: "Imported meeting bundle into notes/meetings",
+	})
+	commit.WarnIfSkipped(os.Stderr, commitResult)
+
 	if intentJSONRequested(cmd, &jsonOut) {
 		relNote, _ := pathutil.RelativeToRoot(campaignRoot, result.Note.Path)
 		relTx, _ := pathutil.RelativeToRoot(campaignRoot, result.TranscriptPath)
+		notePayload := map[string]any{
+			"id":               result.Note.ID,
+			"path":             relNote,
+			"transcript":       relTx,
+			"updated_existing": result.UpdatedExisting,
+		}
+		if result.Note.Meeting != nil {
+			notePayload["duration_seconds"] = result.Note.Meeting.DurationSeconds
+			notePayload["utterances"] = result.Note.Meeting.Utterances
+			notePayload["speakers"] = result.Note.Meeting.Speakers
+		}
 		payload := map[string]any{
 			"schema_version": MeetingImportJSONVersion,
 			"generated_at":   time.Now().UTC(),
 			"campaign_root":  campaignRoot,
-			"note": map[string]any{
-				"id":               result.Note.ID,
-				"path":             relNote,
-				"transcript":       relTx,
-				"updated_existing": result.UpdatedExisting,
-			},
+			"note":           notePayload,
 		}
 		enc := json.NewEncoder(cmd.OutOrStdout())
 		enc.SetIndent("", "  ")
@@ -103,7 +150,9 @@ func runImportMeeting(cmd *cobra.Command, args []string) error {
 	if result.UpdatedExisting {
 		action = "updated"
 	}
-	fmt.Fprintf(cmd.OutOrStdout(), "✓ Meeting note %s: %s\n", action, result.Note.Path)
-	fmt.Fprintf(cmd.OutOrStdout(), "  transcript: %s\n", result.TranscriptPath)
-	return nil
+	if _, err := fmt.Fprintf(cmd.OutOrStdout(), "✓ Meeting note %s: %s\n", action, result.Note.Path); err != nil {
+		return camperrors.Wrap(err, "writing meeting import result")
+	}
+	_, err = fmt.Fprintf(cmd.OutOrStdout(), "  transcript: %s\n", result.TranscriptPath)
+	return camperrors.Wrap(err, "writing meeting import result")
 }

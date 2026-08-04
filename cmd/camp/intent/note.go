@@ -122,12 +122,18 @@ func runIntentNote(cmd *cobra.Command, args []string) error {
 	}
 
 	conceptSvc := concept.NewService(campaignRoot, cfg.Concepts())
+	noteFolders, err := svc.NoteFolders(ctx)
+	if err != nil {
+		return camperrors.Wrap(err, "listing note folders")
+	}
 	model, err := runIntentNoteTUI(ctx, conceptSvc, tui.AddOptions{
-		NoteMode:      true,
-		Author:        author,
-		CampaignRoot:  campaignRoot,
-		Shortcuts:     navigationShortcuts(cfg),
-		AvailableTags: cfg.IntentTags(),
+		NoteMode:          true,
+		Author:            author,
+		CampaignRoot:      campaignRoot,
+		Shortcuts:         navigationShortcuts(cfg),
+		AvailableTags:     cfg.IntentTags(),
+		NoteFolders:       tui.NoteFolderChoices(noteFolders),
+		DefaultNoteFolder: folder,
 	})
 	if err != nil {
 		return err
@@ -139,6 +145,7 @@ func runIntentNote(cmd *cobra.Command, args []string) error {
 			Author: saved.Author,
 			Body:   saved.Body,
 			Tags:   mergeTags(tags, saved.Tags),
+			Folder: saved.NoteFolder,
 		}); err != nil {
 			return err
 		}
@@ -157,6 +164,7 @@ func runIntentNote(cmd *cobra.Command, args []string) error {
 		Author: result.Author,
 		Body:   result.Body,
 		Tags:   mergeTags(tags, result.Tags),
+		Folder: result.NoteFolder,
 	})
 }
 

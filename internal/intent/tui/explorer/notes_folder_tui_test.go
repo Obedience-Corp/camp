@@ -20,7 +20,7 @@ func TestFolderCreateRenameDelete_OnDisk(t *testing.T) {
 
 	m := NewModel(ctx, svc, nil, intentsDir, tmp, "id", "", nil)
 	m.ready = true
-	m.groups = groupExplorerItemsByStatus(nil, false, nil, false)
+	m.groups = groupExplorerItemsByStatus(nil, nil, false, nil, false)
 	// Cursor on Notes header
 	for i, g := range m.groups {
 		if g.Status == intent.StatusNote {
@@ -62,7 +62,7 @@ func TestFolderCreateRenameDelete_OnDisk(t *testing.T) {
 	}
 	m2.service = svc
 	// Point at the papers folder after rebuild-like grouping
-	m2.groups = groupExplorerItemsByStatus(nil, false, map[string]bool{"notes": true, "notes/reading": true}, false)
+	m2.groups = groupExplorerItemsByStatus(nil, nil, false, map[string]bool{"notes": true, "notes/reading": true}, false)
 	// Create folder again not needed - exists on disk; synthesize from service folders by placing a note
 	// Force cursor onto notes/reading/papers by building with fold and empty notes still shows folders from synthesize
 	// synthesize only adds folders present in notes; so create a hand-placed empty status by calling startFolderRename after setting group manually
@@ -126,6 +126,11 @@ func TestMoveNoteToFolder_FromPicker(t *testing.T) {
 	m.startNoteFolderMove(note)
 	if m.focus != focusNoteFolderMove {
 		t.Fatalf("focus = %v", m.focus)
+	}
+	for _, opt := range m.noteFolderOptions {
+		if opt.status == intent.StatusNoteMeetings || opt.status == intent.StatusNoteArchived {
+			t.Fatalf("reserved destination offered by move picker: %+v", opt)
+		}
 	}
 	// Find reading option
 	idx := -1

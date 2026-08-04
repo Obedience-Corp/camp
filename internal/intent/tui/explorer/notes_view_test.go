@@ -13,7 +13,6 @@ import (
 	"github.com/Obedience-Corp/camp/internal/intent/tui"
 )
 
-
 // selectNoteInGroups finds the first group holding noteID and sets the cursor there.
 func selectNoteInGroups(m *Model, noteID string) bool {
 	for gi, g := range m.groups {
@@ -42,7 +41,7 @@ func TestGroupNotes_SplitsActiveAndArchived(t *testing.T) {
 		{ID: "a", Title: "active note", Status: intent.StatusNote},
 		{ID: "b", Title: "archived note", Status: intent.StatusNoteArchived},
 	}
-	groups := groupNotes(notes, nil, false)
+	groups := groupNotes(notes, nil, nil, false)
 	if len(groups) < 2 {
 		t.Fatalf("groupNotes returned %d groups, want at least root+reserved", len(groups))
 	}
@@ -69,7 +68,7 @@ func TestGroupExplorerItemsByStatus_PutsNotesAfterActive(t *testing.T) {
 		{ID: "n", Title: "note", Status: intent.StatusNote},
 	}
 
-	groups := groupExplorerItemsByStatus(items, false, nil, false)
+	groups := groupExplorerItemsByStatus(items, nil, false, nil, false)
 	if len(groups) < 5 {
 		t.Fatalf("groupExplorerItemsByStatus returned %d groups, want at least Inbox/Ready/Active/Notes/Dungeon", len(groups))
 	}
@@ -87,7 +86,7 @@ func TestGroupExplorerItemsByStatus_PutsNotesAfterActive(t *testing.T) {
 	}
 	// Nested note must not be dropped.
 	nested := append(items, &intent.Intent{ID: "nested", Title: "nested", Status: intent.Status("notes/reading/papers")})
-	groups2 := groupExplorerItemsByStatus(nested, false, map[string]bool{
+	groups2 := groupExplorerItemsByStatus(nested, nil, false, map[string]bool{
 		"notes": true, "notes/reading": true, "notes/reading/papers": true,
 	}, false)
 	found := false
@@ -139,7 +138,7 @@ func TestConvert_TUIFlow_NoteBecomesIntent(t *testing.T) {
 
 	m := NewModel(ctx, svc, nil, intentsDir, "", "", "", nil)
 	m.ready = true
-	m.groups = groupExplorerItemsByStatus([]*intent.Intent{note}, false, map[string]bool{"notes": true}, false)
+	m.groups = groupExplorerItemsByStatus([]*intent.Intent{note}, nil, false, map[string]bool{"notes": true}, false)
 	if !selectNoteInGroups(&m, note.ID) {
 		t.Fatal("note not found in groups")
 	}
@@ -304,7 +303,7 @@ func TestArchive_TUIFlow_NoteMovesToArchived(t *testing.T) {
 	m := NewModel(ctx, svc, nil, intentsDir, "", "", "", nil)
 	m.ready = true
 	m.notesMode = true
-	m.groups = groupNotes([]*intent.Intent{note}, nil, false)
+	m.groups = groupNotes([]*intent.Intent{note}, nil, nil, false)
 	m.cursorGroup = 0
 	m.cursorItem = 0
 
@@ -350,7 +349,7 @@ func TestRestore_TUIFlow_ArchivedNoteBecomesActive(t *testing.T) {
 	m := NewModel(ctx, svc, nil, intentsDir, "", "", "", nil)
 	m.ready = true
 	m.notesMode = true
-	m.groups = groupNotes([]*intent.Intent{archived}, map[string]bool{
+	m.groups = groupNotes([]*intent.Intent{archived}, nil, map[string]bool{
 		"notes": true, "notes/archived": true,
 	}, false)
 	if !selectNoteInGroups(&m, archived.ID) {
@@ -398,7 +397,7 @@ func TestRestore_TUIFlow_NonArchivedNoOp(t *testing.T) {
 	m := NewModel(ctx, svc, nil, intentsDir, "", "", "", nil)
 	m.ready = true
 	m.notesMode = true
-	m.groups = groupNotes([]*intent.Intent{note}, map[string]bool{"notes": true}, false)
+	m.groups = groupNotes([]*intent.Intent{note}, nil, map[string]bool{"notes": true}, false)
 	if !selectNoteInGroups(&m, note.ID) {
 		t.Fatal("note not found in groups")
 	}
@@ -429,7 +428,7 @@ func TestUpdateNormal_COnSelectedNoteStartsConvert(t *testing.T) {
 	note := &intent.Intent{ID: "n", Title: "note", Status: intent.StatusNote}
 	m := NewModel(ctx, nil, nil, "/tmp/intents", "", "", "", nil)
 	m.ready = true
-	m.groups = groupExplorerItemsByStatus([]*intent.Intent{note}, false, map[string]bool{"notes": true}, false)
+	m.groups = groupExplorerItemsByStatus([]*intent.Intent{note}, nil, false, map[string]bool{"notes": true}, false)
 	if !selectNoteInGroups(&m, note.ID) {
 		t.Fatal("note not found in groups")
 	}
@@ -462,7 +461,7 @@ func TestUpdateNormal_MOnSelectedNoteStartsFolderMove(t *testing.T) {
 
 	m := NewModel(ctx, svc, nil, intentsDir, tmp, "id", "", nil)
 	m.ready = true
-	m.groups = groupExplorerItemsByStatus([]*intent.Intent{note}, false, map[string]bool{"notes": true}, false)
+	m.groups = groupExplorerItemsByStatus([]*intent.Intent{note}, nil, false, map[string]bool{"notes": true}, false)
 	if !selectNoteInGroups(&m, note.ID) {
 		t.Fatal("note not found in groups")
 	}
@@ -485,7 +484,7 @@ func TestUpdateNormal_MOnLifecycleIntentStillStatusPicker(t *testing.T) {
 	item := &intent.Intent{ID: "i", Title: "inbox", Status: intent.StatusInbox}
 	m := NewModel(ctx, nil, nil, "/tmp/intents", "", "", "", nil)
 	m.ready = true
-	m.groups = groupExplorerItemsByStatus([]*intent.Intent{item}, false, nil, false)
+	m.groups = groupExplorerItemsByStatus([]*intent.Intent{item}, nil, false, nil, false)
 	// Select the inbox item.
 	for gi, g := range m.groups {
 		for ii, it := range g.Intents {
@@ -508,7 +507,7 @@ func TestStartAddTUI_FromNotesGroupUsesNoteMode(t *testing.T) {
 	ctx := context.Background()
 	m := NewModel(ctx, nil, nil, "/tmp/intents", "", "", "", nil)
 	m.ready = true
-	m.groups = groupExplorerItemsByStatus(nil, false, nil, false)
+	m.groups = groupExplorerItemsByStatus(nil, nil, false, nil, false)
 	// Notes sits after Inbox/Ready/Active.
 	notesIdx := -1
 	for i, g := range m.groups {

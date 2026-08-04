@@ -1,8 +1,6 @@
 package explorer
 
 import (
-	"strings"
-
 	"github.com/Obedience-Corp/camp/internal/git/commit"
 	"github.com/Obedience-Corp/camp/internal/intent"
 	"github.com/Obedience-Corp/camp/internal/intent/audit"
@@ -38,32 +36,7 @@ func (m *Model) startAddTUI() {
 // userNoteFolderChoices returns non-reserved user folders for the destination
 // picker. Empty means the add model hides the destination row entirely.
 func (m *Model) userNoteFolderChoices() []tui.NoteFolderChoice {
-	folders, err := m.service.NoteFolders(m.ctx)
-	if err != nil {
-		return nil
-	}
-	out := make([]tui.NoteFolderChoice, 0)
-	// Always pin root first when any user folder exists.
-	hasUser := false
-	for _, f := range folders {
-		if f.Reserved || f.Status == intent.StatusNote {
-			continue
-		}
-		hasUser = true
-		break
-	}
-	if !hasUser {
-		return nil
-	}
-	out = append(out, tui.NoteFolderChoice{Rel: "", Label: "Notes"})
-	for _, f := range folders {
-		if f.Reserved || f.Status == intent.StatusNote {
-			continue
-		}
-		rel := strings.TrimPrefix(string(f.Status), "notes/")
-		out = append(out, tui.NoteFolderChoice{Rel: rel, Label: f.Name})
-	}
-	return out
+	return tui.NoteFolderChoices(m.noteFolders)
 }
 
 func (m *Model) shouldCreateNoteFromCurrentPosition() bool {

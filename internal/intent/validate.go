@@ -4,6 +4,7 @@ import (
 	"errors"
 	"regexp"
 	"slices"
+	"strings"
 
 	camperrors "github.com/Obedience-Corp/camp/internal/errors"
 )
@@ -80,7 +81,15 @@ func (i *Intent) Validate() []error {
 // Note statuses are valid too: any path under notes/ (including user folders)
 // is a note-category status, managed by the same tooling outside the lifecycle.
 func isValidStatus(s Status) bool {
-	return slices.Contains(AllStatuses(), s) || s.IsNote()
+	if slices.Contains(AllStatuses(), s) || slices.Contains(NoteStatuses(), s) {
+		return true
+	}
+	if !s.IsNote() {
+		return false
+	}
+	rel := strings.TrimPrefix(string(s), string(StatusNote)+"/")
+	normalized, err := normalizeNoteFolderRel(rel)
+	return err == nil && normalized == rel
 }
 
 // isValidType returns true if the type is a known valid value.

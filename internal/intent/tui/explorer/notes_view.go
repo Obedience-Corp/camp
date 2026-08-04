@@ -26,13 +26,13 @@ var convertTypeOptions = []struct {
 // groupNotes organizes notes into a nestable folder tree for the notes view.
 // Defaults expand the root so notes-mode shows the tree immediately; foldState
 // overrides when present.
-func groupNotes(notes []*intent.Intent, foldState map[string]bool, omitEmpty bool) []IntentGroup {
+func groupNotes(notes []*intent.Intent, folders []intent.NoteFolder, foldState map[string]bool, omitEmpty bool) []IntentGroup {
 	// Notes mode: expand root by default unless foldState says otherwise.
 	state := map[string]bool{string(intent.StatusNote): true}
 	for k, v := range foldState {
 		state[k] = v
 	}
-	return buildNotesTreeGroups(notes, nil, state, omitEmpty)
+	return buildNotesTreeGroups(notes, folders, state, omitEmpty)
 }
 
 // toggleNotesMode switches between the intent triage view and the notes view,
@@ -111,7 +111,7 @@ func (m *Model) convertNote(note *intent.Intent, newType intent.Type, targetStat
 				Type:   audit.EventMove,
 				ID:     note.ID,
 				Title:  note.Title,
-				From:   string(intent.StatusNote),
+				From:   string(note.Status),
 				To:     string(targetStatus),
 				Reason: "converted note to " + string(newType),
 			})
@@ -139,7 +139,7 @@ func (m *Model) archiveNote(note *intent.Intent) tea.Cmd {
 				Type:  audit.EventArchive,
 				ID:    note.ID,
 				Title: note.Title,
-				From:  string(intent.StatusNote),
+				From:  string(note.Status),
 				To:    string(intent.StatusNoteArchived),
 			})
 		}

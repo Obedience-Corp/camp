@@ -21,20 +21,20 @@ type focusMode int
 const (
 	focusList focusMode = iota
 	focusSearch
-	focusFilterBar     // Filter bar has focus (Tab navigation between chips)
-	focusConceptFilter // Filtering by concept (concept picker modal)
-	focusMove          // Moving intent to different status
-	focusConfirm       // Confirmation dialog
-	focusActionMenu    // Action menu on intent
-	focusViewer        // Full-screen intent viewer
-	focusGatherDialog  // Gather dialog for combining intents
-	focusAddTUI        // Full add TUI is active
-	focusPromoteTarget // Promote target picker
-	focusDungeonReason // Text input for dungeon move reason
-	focusConvertType     // Type picker for converting a note into an intent
-	focusRename          // Text input for renaming an intent
-	focusFolderInput     // Text input for create/rename note folder
-	focusNoteFolderMove  // Picker for moving a note between folders
+	focusFilterBar      // Filter bar has focus (Tab navigation between chips)
+	focusConceptFilter  // Filtering by concept (concept picker modal)
+	focusMove           // Moving intent to different status
+	focusConfirm        // Confirmation dialog
+	focusActionMenu     // Action menu on intent
+	focusViewer         // Full-screen intent viewer
+	focusGatherDialog   // Gather dialog for combining intents
+	focusAddTUI         // Full add TUI is active
+	focusPromoteTarget  // Promote target picker
+	focusDungeonReason  // Text input for dungeon move reason
+	focusConvertType    // Type picker for converting a note into an intent
+	focusRename         // Text input for renaming an intent
+	focusFolderInput    // Text input for create/rename note folder
+	focusNoteFolderMove // Picker for moving a note between folders
 )
 
 // IntentGroup represents a collapsible group of intents by status.
@@ -46,12 +46,10 @@ type IntentGroup struct {
 	Intents  []*intent.Intent
 	Expanded bool
 
-	// Nesting. Depth 0 is a root group; children carry the parent's Status
-	// in ParentStatus. A group with Children is a parent: it renders an
-	// aggregate DescendantCount when collapsed and its subtree is skipped
-	// by cursor navigation when Expanded is false.
+	// Nesting. Depth 0 is a root group. A group with Children is a parent: it
+	// renders an aggregate DescendantCount when collapsed and its subtree is
+	// skipped by cursor navigation when Expanded is false.
 	Depth           int
-	ParentStatus    intent.Status
 	Children        []int // indices into Model.groups
 	DescendantCount int   // intents across this group and all descendants
 }
@@ -67,6 +65,7 @@ type Model struct {
 	// Data
 	intents         []*intent.Intent
 	filteredIntents []*intent.Intent
+	noteFolders     []intent.NoteFolder
 	searchCorpus    []string
 	groups          []IntentGroup
 	service         *intent.IntentService
@@ -258,9 +257,13 @@ func (m Model) Init() tea.Cmd {
 func (m Model) loadIntents() tea.Cmd {
 	notesMode := m.notesMode
 	return func() tea.Msg {
+		folders, err := m.service.NoteFolders(m.ctx)
+		if err != nil {
+			return intentsLoadedMsg{err: err}
+		}
 		if notesMode {
-			notes, err := m.service.ListNotes(m.ctx, true)
-			return intentsLoadedMsg{intents: notes, err: err}
+			notes, listErr := m.service.ListNotes(m.ctx, true)
+			return intentsLoadedMsg{intents: notes, noteFolders: folders, err: listErr}
 		}
 		intents, err := m.service.List(m.ctx, nil)
 		if err != nil {
@@ -273,7 +276,7 @@ func (m Model) loadIntents() tea.Cmd {
 		items := make([]*intent.Intent, 0, len(notes)+len(intents))
 		items = append(items, notes...)
 		items = append(items, intents...)
-		return intentsLoadedMsg{intents: items}
+		return intentsLoadedMsg{intents: items, noteFolders: folders}
 	}
 }
 
@@ -452,7 +455,7 @@ func groupIntentsByStatus(intents []*intent.Intent, dungeonExpanded bool) []Inte
 //
 // foldState maps note-folder status → Expanded. omitEmpty drops empty note
 // folders (used while a filter is active).
-func groupExplorerItemsByStatus(items []*intent.Intent, dungeonExpanded bool, foldState map[string]bool, omitEmpty bool) []IntentGroup {
+func groupExplorerItemsByStatus(items []*intent.Intent, folders []intent.NoteFolder, dungeonExpanded bool, foldState map[string]bool, omitEmpty bool) []IntentGroup {
 	notes := make([]*intent.Intent, 0)
 	intents := make([]*intent.Intent, 0, len(items))
 	for _, item := range items {
@@ -467,7 +470,7 @@ func groupExplorerItemsByStatus(items []*intent.Intent, dungeonExpanded bool, fo
 	// lifecycle: [Inbox, Ready, Active, Dungeon, Done, Killed, Archived, Someday]
 	top := lifecycle[:3]
 	dungeonPart := lifecycle[3:]
-	notesTree := buildNotesTreeGroups(notes, nil, foldState, omitEmpty)
+	notesTree := buildNotesTreeGroups(notes, folders, foldState, omitEmpty)
 
 	out := make([]IntentGroup, 0, len(top)+len(notesTree)+len(dungeonPart))
 	out = append(out, top...)
@@ -525,13 +528,13 @@ func (m *Model) rebuildStatusGroups() {
 	fold := m.noteFoldState()
 	omitEmpty := m.hasActiveFilters()
 	if m.notesMode {
-		m.groups = groupNotes(m.filteredIntents, fold, omitEmpty)
+		m.groups = groupNotes(m.filteredIntents, m.noteFolders, fold, omitEmpty)
 		if omitEmpty {
 			expandNoteAncestorsForMatches(m.groups)
 		}
 		return
 	}
-	m.groups = groupExplorerItemsByStatus(m.filteredIntents, dungeonExpanded, fold, omitEmpty)
+	m.groups = groupExplorerItemsByStatus(m.filteredIntents, m.noteFolders, dungeonExpanded, fold, omitEmpty)
 	if omitEmpty {
 		expandNoteAncestorsForMatches(m.groups)
 	}

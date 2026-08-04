@@ -131,7 +131,10 @@ func (m *Model) renderStatusBarHints() string {
 // totalVisualLines returns the total number of visual lines in the list.
 func (m *Model) totalVisualLines() int {
 	lines := 0
-	for _, group := range m.groups {
+	for gi, group := range m.groups {
+		if !m.isGroupVisible(gi) {
+			continue
+		}
 		lines++ // group header
 		if group.Expanded {
 			lines += len(group.Intents)

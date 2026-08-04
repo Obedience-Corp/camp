@@ -21,10 +21,10 @@ const NoteFoldersJSONVersion = "intent-note-folders/v1alpha1"
 
 // NoteFoldersPayload is the --json contract for folder listing.
 type NoteFoldersPayload struct {
-	SchemaVersion string            `json:"schema_version"`
-	GeneratedAt   time.Time         `json:"generated_at"`
-	CampaignRoot  string            `json:"campaign_root"`
-	Folders       []NoteFolderItem  `json:"folders"`
+	SchemaVersion string           `json:"schema_version"`
+	GeneratedAt   time.Time        `json:"generated_at"`
+	CampaignRoot  string           `json:"campaign_root"`
+	Folders       []NoteFolderItem `json:"folders"`
 }
 
 // NoteFolderItem is one folder row in the JSON contract.
@@ -165,8 +165,8 @@ func runNotesFoldersList(cmd *cobra.Command, args []string) error {
 	}
 
 	if len(folders) == 0 {
-		fmt.Fprintln(cmd.OutOrStdout(), "No note folders.")
-		return nil
+		_, err := fmt.Fprintln(cmd.OutOrStdout(), "No note folders.")
+		return camperrors.Wrap(err, "writing note folders")
 	}
 	for _, f := range folders {
 		indent := strings.Repeat("  ", f.Depth)
@@ -174,7 +174,9 @@ func runNotesFoldersList(cmd *cobra.Command, args []string) error {
 		if f.Reserved {
 			reserved = " [reserved]"
 		}
-		fmt.Fprintf(cmd.OutOrStdout(), "%s%s (%d)%s\n", indent, f.Name, f.Count, reserved)
+		if _, err := fmt.Fprintf(cmd.OutOrStdout(), "%s%s (%d)%s\n", indent, f.Name, f.Count, reserved); err != nil {
+			return camperrors.Wrap(err, "writing note folders")
+		}
 	}
 	return nil
 }
@@ -189,8 +191,8 @@ func runNotesFoldersAdd(cmd *cobra.Command, args []string) error {
 	if err != nil {
 		return err
 	}
-	fmt.Fprintf(cmd.OutOrStdout(), "✓ Note folder created: %s\n", folder.Status)
-	return nil
+	_, err = fmt.Fprintf(cmd.OutOrStdout(), "✓ Note folder created: %s\n", folder.Status)
+	return camperrors.Wrap(err, "writing note folder result")
 }
 
 func runNotesFoldersRm(cmd *cobra.Command, args []string) error {
@@ -199,11 +201,15 @@ func runNotesFoldersRm(cmd *cobra.Command, args []string) error {
 	if err != nil {
 		return err
 	}
-	if err := svc.DeleteNoteFolder(ctx, args[0]); err != nil {
+	canonical, err := intentcore.NormalizeNoteFolderRel(args[0])
+	if err != nil {
 		return err
 	}
-	fmt.Fprintf(cmd.OutOrStdout(), "✓ Note folder removed: %s\n", args[0])
-	return nil
+	if err := svc.DeleteNoteFolder(ctx, canonical); err != nil {
+		return err
+	}
+	_, err = fmt.Fprintf(cmd.OutOrStdout(), "✓ Note folder removed: %s\n", canonical)
+	return camperrors.Wrap(err, "writing note folder result")
 }
 
 func runNotesFoldersMv(cmd *cobra.Command, args []string) error {
@@ -212,11 +218,19 @@ func runNotesFoldersMv(cmd *cobra.Command, args []string) error {
 	if err != nil {
 		return err
 	}
-	if err := svc.RenameNoteFolder(ctx, args[0], args[1]); err != nil {
+	from, err := intentcore.NormalizeNoteFolderRel(args[0])
+	if err != nil {
 		return err
 	}
-	fmt.Fprintf(cmd.OutOrStdout(), "✓ Note folder renamed: %s → %s\n", args[0], args[1])
-	return nil
+	to, err := intentcore.NormalizeNoteFolderRel(args[1])
+	if err != nil {
+		return err
+	}
+	if err := svc.RenameNoteFolder(ctx, from, to); err != nil {
+		return err
+	}
+	_, err = fmt.Fprintf(cmd.OutOrStdout(), "✓ Note folder renamed: %s → %s\n", from, to)
+	return camperrors.Wrap(err, "writing note folder result")
 }
 
 func runNotesMv(cmd *cobra.Command, args []string) error {
@@ -233,8 +247,8 @@ func runNotesMv(cmd *cobra.Command, args []string) error {
 	if err != nil {
 		return err
 	}
-	fmt.Fprintf(cmd.OutOrStdout(), "✓ Note moved: %s → %s\n", note.ID, note.Status)
-	return nil
+	_, err = fmt.Fprintf(cmd.OutOrStdout(), "✓ Note moved: %s → %s\n", note.ID, note.Status)
+	return camperrors.Wrap(err, "writing note move result")
 }
 
 func outputNoteFoldersPayload(w io.Writer, campaignRoot string, folders []intentcore.NoteFolder) error {

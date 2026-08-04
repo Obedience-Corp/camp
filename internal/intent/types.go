@@ -210,6 +210,24 @@ type GatheredSource struct {
 	DependsOn []string `yaml:"depends_on,omitempty"`
 }
 
+// MeetingMetadata describes a note imported from a meeting bundle. The nested
+// meeting block is optional for ordinary notes; its presence, together with
+// status notes/meetings, activates meeting-specific behavior.
+type MeetingMetadata struct {
+	StartedAt        time.Time `yaml:"started_at,omitempty"`
+	EndedAt          time.Time `yaml:"ended_at,omitempty"`
+	DurationSeconds  int       `yaml:"duration_seconds"`
+	Utterances       int       `yaml:"utterances"`
+	Speakers         int       `yaml:"speakers"`
+	SpeakerAnalysis  string    `yaml:"speaker_analysis,omitempty"`
+	STT              string    `yaml:"stt,omitempty"`
+	Transcript       string    `yaml:"transcript"`
+	Bundle           string    `yaml:"bundle"`
+	BundleHost       string    `yaml:"bundle_host,omitempty"`
+	Audio            string    `yaml:"audio,omitempty"`
+	ExtractedIntents []string  `yaml:"extracted_intents"`
+}
+
 const (
 	// HorizonNow indicates current focus area.
 	HorizonNow Horizon = "now"
@@ -270,6 +288,9 @@ type Intent struct {
 	AssignedTo string    `yaml:"assigned_to,omitempty"`
 	AssignedAt time.Time `yaml:"assigned_at,omitempty"`
 	WorkRef    []string  `yaml:"work_ref,omitempty"`
+
+	// Meeting is present only for structured notes under notes/meetings.
+	Meeting *MeetingMetadata `yaml:"meeting,omitempty"`
 
 	// Runtime fields (not serialized to YAML)
 	Path              string             `yaml:"-"` // Filesystem path to the intent file

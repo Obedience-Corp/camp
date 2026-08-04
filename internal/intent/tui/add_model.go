@@ -102,7 +102,10 @@ type IntentAddModel struct {
 	noteFolders       []NoteFolderChoice
 	noteFolderIdx     int
 	defaultNoteFolder string
+	destinationFocus  bool
 	pickingFolder     bool // true when the destination picker overlay is open
+	folderPickerIdx   int
+	folderQuery       string
 
 	// Completion state
 	completion completionState
@@ -155,7 +158,7 @@ func NewIntentAddModel(ctx context.Context, conceptSvc concept.Service, opts Add
 		}
 	}
 
-	folderIdx := 0
+	folderIdx := -1
 	for i, f := range opts.NoteFolders {
 		if f.Rel == opts.DefaultNoteFolder {
 			folderIdx = i
@@ -232,6 +235,12 @@ func (m IntentAddModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		// Tag overlay (ctrl+t) is modal once opened from the body editor.
 		if m.tagging {
 			return m.updateTagOverlay(msg)
+		}
+		if m.pickingFolder {
+			return m.updateNoteFolderPicker(msg)
+		}
+		if m.destinationFocus {
+			return m.updateNoteDestination(msg)
 		}
 		switch m.step {
 		case addStepTitle:
@@ -490,8 +499,9 @@ func (m IntentAddModel) calculateBodySize() (width, height int) {
 	// - Progress summary: 3 lines (title, type, concept) + 2 blank lines = 5 lines max
 	// - "Description (optional):" label: 1 line
 	// - Vim command line: 2 lines (line + preceding newline, visible when active)
+	// - Optional note destination row: 2 lines
 	// - Help text: 2 lines (line + preceding newline)
-	const reservedLines = 1 + 1 + 5 + 1 + 2 + 2 // = 12 lines
+	const reservedLines = 1 + 1 + 5 + 1 + 2 + 2 + 2 // = 14 lines
 
 	// Calculate dynamic height (minimum 6 lines, use available space)
 	height = max(m.height-reservedLines, 6)
@@ -556,6 +566,16 @@ func (m IntentAddModel) updateBody(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		}
 	}
 
+	// User note folders add an optional trailing destination row. Keep the
+	// body as the default save target and require no extra key when there are
+	// no user folders.
+	if m.noteMode && len(m.noteFolders) > 0 && msg.String() == "tab" {
+		m.destinationFocus = true
+		m.folderPickerIdx = m.noteFolderIdx
+		m.folderQuery = ""
+		return m, nil
+	}
+
 	// Pass to vim editor
 	cmd, _ := m.vimEditor.Update(msg)
 
@@ -578,6 +598,128 @@ func (m IntentAddModel) updateBody(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	m.updateCompletion()
 
 	return m, nil
+}
+
+// updateNoteDestination handles the pre-answered trailing destination row.
+// Enter opens the picker; tab or escape returns to the body without changing
+// the current choice.
+func (m IntentAddModel) updateNoteDestination(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
+	switch msg.String() {
+	case "ctrl+c":
+		m.cancelled = true
+		m.step = addStepDone
+		return m, tea.Quit
+	case "ctrl+s":
+		return m.finishBodyStep()
+	case "tab", "shift+tab", "esc":
+		m.destinationFocus = false
+		return m, nil
+	case "enter":
+		m.openNoteFolderPicker("")
+		return m, nil
+	}
+
+	if msg.Type == tea.KeyRunes && len(msg.Runes) > 0 {
+		m.openNoteFolderPicker(string(msg.Runes))
+	}
+	return m, nil
+}
+
+func (m *IntentAddModel) openNoteFolderPicker(query string) {
+	m.pickingFolder = true
+	m.folderQuery = query
+	m.folderPickerIdx = m.noteFolderIdx
+	filtered := m.filteredNoteFolderIndices()
+	if !containsIndex(filtered, m.folderPickerIdx) && len(filtered) > 0 {
+		m.folderPickerIdx = filtered[0]
+	}
+}
+
+// updateNoteFolderPicker filters and selects note destinations. Escape closes
+// the picker without committing the highlighted choice.
+func (m IntentAddModel) updateNoteFolderPicker(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
+	filtered := m.filteredNoteFolderIndices()
+	switch msg.String() {
+	case "ctrl+c":
+		m.cancelled = true
+		m.step = addStepDone
+		return m, tea.Quit
+	case "esc":
+		m.pickingFolder = false
+		m.folderQuery = ""
+		m.folderPickerIdx = m.noteFolderIdx
+		return m, nil
+	case "enter":
+		if containsIndex(filtered, m.folderPickerIdx) {
+			m.noteFolderIdx = m.folderPickerIdx
+		}
+		m.pickingFolder = false
+		m.folderQuery = ""
+		return m, nil
+	case "down", "tab":
+		m.folderPickerIdx = adjacentFilteredIndex(filtered, m.folderPickerIdx, 1)
+		return m, nil
+	case "up", "shift+tab":
+		m.folderPickerIdx = adjacentFilteredIndex(filtered, m.folderPickerIdx, -1)
+		return m, nil
+	case "backspace":
+		if m.folderQuery != "" {
+			runes := []rune(m.folderQuery)
+			m.folderQuery = string(runes[:len(runes)-1])
+			m.selectFirstFilteredFolder()
+		}
+		return m, nil
+	}
+
+	if msg.Type == tea.KeyRunes && len(msg.Runes) > 0 {
+		m.folderQuery += string(msg.Runes)
+		m.selectFirstFilteredFolder()
+	}
+	return m, nil
+}
+
+func (m *IntentAddModel) selectFirstFilteredFolder() {
+	filtered := m.filteredNoteFolderIndices()
+	if len(filtered) > 0 {
+		m.folderPickerIdx = filtered[0]
+	}
+}
+
+func (m IntentAddModel) filteredNoteFolderIndices() []int {
+	query := strings.ToLower(strings.TrimSpace(m.folderQuery))
+	indices := make([]int, 0, len(m.noteFolders))
+	for i, folder := range m.noteFolders {
+		// The notes root stays pinned and selectable while filtering.
+		if i == 0 || query == "" || strings.Contains(strings.ToLower(folder.Label), query) ||
+			strings.Contains(strings.ToLower(folder.Rel), query) {
+			indices = append(indices, i)
+		}
+	}
+	return indices
+}
+
+func containsIndex(indices []int, target int) bool {
+	for _, idx := range indices {
+		if idx == target {
+			return true
+		}
+	}
+	return false
+}
+
+func adjacentFilteredIndex(indices []int, current, delta int) int {
+	if len(indices) == 0 {
+		return current
+	}
+	position := 0
+	for i, idx := range indices {
+		if idx == current {
+			position = i
+			break
+		}
+	}
+	position = (position + delta + len(indices)) % len(indices)
+	return indices[position]
 }
 
 // updateCompletion checks whether the cursor is in an @ word and updates candidates.
@@ -874,6 +1016,19 @@ func (m IntentAddModel) saveAndReset() (tea.Model, tea.Cmd) {
 	// Reset tags for the next item
 	m.tags = nil
 
+	// Reset the optional note destination row to its configured answer.
+	m.destinationFocus = false
+	m.pickingFolder = false
+	m.folderQuery = ""
+	m.noteFolderIdx = -1
+	for i, folder := range m.noteFolders {
+		if folder.Rel == m.defaultNoteFolder {
+			m.noteFolderIdx = i
+			break
+		}
+	}
+	m.folderPickerIdx = m.noteFolderIdx
+
 	return m, textinput.Blink
 }
 
@@ -890,6 +1045,9 @@ func (m IntentAddModel) View() string {
 
 	if m.tagging {
 		return m.tagOverlay.View()
+	}
+	if m.pickingFolder {
+		return m.viewNoteFolderPicker()
 	}
 
 	width := m.width
@@ -1088,6 +1246,11 @@ func (m IntentAddModel) viewBodyStep() string {
 		b.WriteString(HelpStyle.Render("Tags: ") + IntentTypeStyle.Render(strings.Join(m.tags, ", ")) + "\n")
 	}
 
+	if m.noteMode && len(m.noteFolders) > 0 {
+		b.WriteString(m.viewNoteDestinationRow())
+		b.WriteString("\n")
+	}
+
 	// Show vim command buffer if in command mode
 	if m.vimEditor.IsCommandMode() {
 		b.WriteString(":" + m.vimEditor.CommandBuffer())
@@ -1096,9 +1259,17 @@ func (m IntentAddModel) viewBodyStep() string {
 	b.WriteString("\n")
 
 	// Context-sensitive help
+	if m.destinationFocus {
+		b.WriteString(HelpStyle.Render("Enter: choose destination • Tab/Esc: body • Ctrl+S: save"))
+		return b.String()
+	}
 	switch m.vimEditor.Mode() {
 	case vim.ModeInsert:
-		b.WriteString(HelpStyle.Render("Esc: normal mode • Ctrl+S: save • Ctrl+N: save & new • Ctrl+T: tags • Ctrl+E: editor"))
+		help := "Esc: normal mode • Ctrl+S: save • Ctrl+N: save & new • Ctrl+T: tags • Ctrl+E: editor"
+		if m.noteMode && len(m.noteFolders) > 0 {
+			help += " • Tab: destination"
+		}
+		b.WriteString(HelpStyle.Render(help))
 	case vim.ModeVisual, vim.ModeVisualLine:
 		b.WriteString(HelpStyle.Render("d: delete • y: yank • c: change • Esc: normal"))
 	case vim.ModeCommand:
@@ -1107,6 +1278,52 @@ func (m IntentAddModel) viewBodyStep() string {
 		b.WriteString(HelpStyle.Render("i: insert • v: visual • Enter/:wq: save • Ctrl+N: new • Ctrl+T: tags • Ctrl+E: editor"))
 	}
 
+	return b.String()
+}
+
+func (m IntentAddModel) viewNoteDestinationRow() string {
+	label := m.defaultNoteFolder
+	if label == "" {
+		label = "Notes"
+	}
+	if m.noteFolderIdx >= 0 && m.noteFolderIdx < len(m.noteFolders) {
+		label = m.noteFolders[m.noteFolderIdx].Label
+	}
+	line := "  Destination  " + label
+	if m.destinationFocus {
+		line = CursorIndicator + " Destination  " + label
+		return lipgloss.NewStyle().Foreground(pal.Accent).Bold(true).Render(line)
+	}
+	return HelpStyle.Render(line)
+}
+
+func (m IntentAddModel) viewNoteFolderPicker() string {
+	width := m.width
+	if width < 40 {
+		width = 72
+	}
+
+	var b strings.Builder
+	b.WriteString(Header("note destination", "", width))
+	b.WriteString("\n\n")
+	b.WriteString(HelpStyle.Render("Choose where to save ") + IntentTitleStyle.Render(m.titleInput.Value()))
+	b.WriteString("\n")
+	filter := m.folderQuery
+	if filter == "" {
+		filter = "type to filter"
+	}
+	b.WriteString(HelpStyle.Render("Filter: ") + filter + "\n\n")
+
+	selectedStyle := lipgloss.NewStyle().Foreground(pal.Accent).Background(pal.BgSelected).Bold(true)
+	for _, idx := range m.filteredNoteFolderIndices() {
+		line := "  " + m.noteFolders[idx].Label
+		if idx == m.folderPickerIdx {
+			line = selectedStyle.Render(CursorIndicator + " " + m.noteFolders[idx].Label)
+		}
+		b.WriteString(line + "\n")
+	}
+	b.WriteString("\n")
+	b.WriteString(HelpStyle.Render("↑/↓ navigate • enter choose • esc keep current"))
 	return b.String()
 }
 

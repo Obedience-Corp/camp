@@ -2,8 +2,13 @@ package intent
 
 import (
 	"context"
+	"crypto/sha256"
+	"encoding/binary"
+	"encoding/json"
 	"os"
 	"path/filepath"
+	"regexp"
+	"strconv"
 	"strings"
 	"time"
 
@@ -30,7 +35,7 @@ type ImportMeetingOptions struct {
 	AdoptIntentID string
 	// Author attribution for the note.
 	Author string
-	// Timestamp for id generation when creating a new note.
+	// Timestamp sets CreatedAt when creating a new note.
 	Timestamp time.Time
 }
 
@@ -42,8 +47,9 @@ type ImportMeetingResult struct {
 }
 
 // ImportMeeting creates or updates a note under notes/meetings/ with a
-// transcript sidecar in notes/meetings/.transcripts/. Re-import of the same
-// bundle id updates in place rather than duplicating.
+// transcript sidecar in notes/meetings/.transcripts/. The normalized bundle
+// basename deterministically identifies the note, so re-import updates in
+// place even when the basename is not already a valid intent ID.
 func (s *IntentService) ImportMeeting(ctx context.Context, opts ImportMeetingOptions) (*ImportMeetingResult, error) {
 	if err := ctx.Err(); err != nil {
 		return nil, camperrors.Wrap(err, "context cancelled")
@@ -59,6 +65,10 @@ func (s *IntentService) ImportMeeting(ctx context.Context, opts ImportMeetingOpt
 	}
 	if !info.IsDir() {
 		return nil, camperrors.Wrapf(camperrors.ErrInvalidInput, "bundle path must be a directory: %s", bundle)
+	}
+	meetingPath := filepath.Join(bundle, "meeting.md")
+	if _, err := os.Stat(meetingPath); err != nil {
+		return nil, camperrors.Wrapf(camperrors.ErrInvalidInput, "meeting bundle is missing meeting.md: %s", meetingPath)
 	}
 
 	base := strings.TrimSuffix(filepath.Base(bundle), ".meeting")
@@ -80,18 +90,8 @@ func (s *IntentService) ImportMeeting(ctx context.Context, opts ImportMeetingOpt
 		title = "Meeting: " + strings.ReplaceAll(base, "-", " ")
 	}
 
-	// Ensure meetings folder exists.
-	if _, err := s.CreateNoteFolder(ctx, "meetings"); err != nil && !isNoteFolderExists(err) {
-		// CreateNoteFolder rejects reserved names — meetings is reserved.
-		// Create the directory directly.
-		meetingsDir, dirErr := s.statusDir(StatusNoteMeetings)
-		if dirErr != nil {
-			return nil, dirErr
-		}
-		if mkErr := os.MkdirAll(meetingsDir, 0o755); mkErr != nil {
-			return nil, camperrors.Wrap(mkErr, "creating notes/meetings")
-		}
-	}
+	// meetings is reserved, so create its backing directory directly instead
+	// of routing through the user-folder API that intentionally rejects it.
 	meetingsDir, err := s.statusDir(StatusNoteMeetings)
 	if err != nil {
 		return nil, err
@@ -104,17 +104,14 @@ func (s *IntentService) ImportMeeting(ctx context.Context, opts ImportMeetingOpt
 		return nil, camperrors.Wrap(err, "creating .transcripts")
 	}
 
-	// Stable id from bundle basename when it already looks like an intent id;
-	// otherwise generate via CreateNote then rewrite.
-	id := base
-	if !intentIDPattern.MatchString(id) {
-		// slug-YYYYMMDD-HHMMSS if possible; else generate.
-		ts := opts.Timestamp
-		if ts.IsZero() {
-			ts = time.Now()
+	id := stableMeetingID(base)
+	var adopted *Intent
+	if opts.AdoptIntentID != "" {
+		adopted, err = s.Get(ctx, opts.AdoptIntentID)
+		if err != nil {
+			return nil, camperrors.Wrap(err, "resolving intent to adopt")
 		}
-		data := NewTemplateDataFromInput(title, "", "", opts.Author, summary, ts)
-		id = data.ID
+		id = adopted.ID
 	}
 
 	// Re-import: if a note with this id already exists under meetings, update it.
@@ -135,19 +132,13 @@ func (s *IntentService) ImportMeeting(ctx context.Context, opts ImportMeetingOpt
 			note.Author = opts.Author
 		}
 	} else {
-		// Create via template then place in meetings.
 		ts := opts.Timestamp
+		if adopted != nil && !adopted.CreatedAt.IsZero() {
+			ts = adopted.CreatedAt
+		}
 		if ts.IsZero() {
 			ts = time.Now()
 		}
-		// Force id by writing file directly with desired id.
-		data := NewTemplateDataFromInput(title, "", "", opts.Author, summary, ts)
-		// Override generated id when base is a valid id.
-		if intentIDPattern.MatchString(base) {
-			// Reconstruct template with fixed id — use CreateNote into meetings
-			// via manual write.
-		}
-		_ = data
 		note = &Intent{
 			ID:        id,
 			Title:     title,
@@ -163,6 +154,12 @@ func (s *IntentService) ImportMeeting(ctx context.Context, opts ImportMeetingOpt
 
 	// Body: summary with transcript pointer.
 	transcriptRel := ".transcripts/" + id + ".md"
+	meeting := buildMeetingMetadata(bundle, transcript, opts.Timestamp)
+	meeting.Transcript = transcriptRel
+	if note.Meeting != nil && len(note.Meeting.ExtractedIntents) > 0 {
+		meeting.ExtractedIntents = append([]string(nil), note.Meeting.ExtractedIntents...)
+	}
+	note.Meeting = meeting
 	body := strings.TrimSpace(summary)
 	if body == "" {
 		body = "# " + title + "\n\n## Summary\n\n_(no summary provided)_\n"
@@ -216,10 +213,32 @@ func (s *IntentService) ImportMeeting(ctx context.Context, opts ImportMeetingOpt
 	}, nil
 }
 
+// stableMeetingID preserves already-valid bundle IDs and otherwise derives a
+// deterministic valid ID from the normalized basename. The hash selects a
+// synthetic timestamp solely to satisfy the repository-wide ID format; the
+// note's CreatedAt remains the actual import timestamp.
+func stableMeetingID(base string) string {
+	if intentIDPattern.MatchString(base) {
+		return base
+	}
+	slug := SlugFromTitle(base)
+	if slug == "" {
+		slug = "meeting"
+	}
+	normalizedBase := strings.ToLower(strings.TrimSpace(base))
+	sum := sha256.Sum256([]byte(normalizedBase))
+	const stableTimestampSpanSeconds = uint64(100 * 365 * 24 * 60 * 60)
+	seconds := binary.BigEndian.Uint64(sum[:8]) % stableTimestampSpanSeconds
+	timestamp := time.Date(2000, time.January, 1, 0, 0, 0, 0, time.UTC).
+		Add(time.Duration(seconds) * time.Second)
+	return GenerateID(slug, timestamp)
+}
+
 // ExtractItem is one action-item/intent extracted from a meeting note.
 type ExtractItem struct {
 	Title string
 	Body  string
+	Type  Type
 }
 
 // ExtractMeetingIntents creates inbox intents from extract items and records
@@ -238,10 +257,15 @@ func (s *IntentService) ExtractMeetingIntents(ctx context.Context, id string, it
 		return nil, camperrors.Wrapf(camperrors.ErrInvalidInput, "note %s is not a meeting (status %s)", id, note.Status)
 	}
 
-	// Collect already-linked ids from tags or content marker lines.
-	// Minimal contract: store extracted ids in tags as "from-meeting:<id>" on intents
-	// and list them in the meeting body under a machine-readable section.
-	existing := parseExtractedIntentIDs(note.Content)
+	// Prefer the structured meeting metadata, while retaining the old body marker
+	// as a one-way migration path for notes written by the initial prototype.
+	existing := make([]string, 0)
+	if note.Meeting != nil {
+		existing = append(existing, note.Meeting.ExtractedIntents...)
+	}
+	if len(existing) == 0 {
+		existing = parseExtractedIntentIDs(note.Content)
+	}
 	existingSet := make(map[string]bool, len(existing))
 	for _, e := range existing {
 		existingSet[e] = true
@@ -269,9 +293,13 @@ func (s *IntentService) ExtractMeetingIntents(ctx context.Context, id string, it
 			body = "Extracted from meeting " + id
 		}
 		body = body + "\n\nmeeting_ref: " + id + "\n"
+		typ := item.Type
+		if typ == "" {
+			typ = TypeChore
+		}
 		it, cerr := s.CreateDirect(ctx, CreateOptions{
 			Title: title,
-			Type:  TypeIdea,
+			Type:  typ,
 			Body:  body,
 			Tags:  []string{"from-meeting"},
 		})
@@ -281,10 +309,22 @@ func (s *IntentService) ExtractMeetingIntents(ctx context.Context, id string, it
 		created = append(created, it)
 		existing = append(existing, it.ID)
 		existingTitles[strings.ToLower(title)] = true
+		if note.Meeting == nil {
+			note.Meeting = &MeetingMetadata{}
+		}
+		note.Meeting.ExtractedIntents = append([]string(nil), existing...)
+		note.UpdatedAt = time.Now()
+		// Persist each backlink before creating the next intent. If a later
+		// create fails, retrying extraction will not duplicate earlier work.
+		if err := s.Save(ctx, note); err != nil {
+			return created, err
+		}
 	}
 
-	// Rewrite meeting body extracted section.
-	note.Content = upsertExtractedSection(note.Content, existing)
+	if note.Meeting == nil {
+		note.Meeting = &MeetingMetadata{}
+	}
+	note.Meeting.ExtractedIntents = existing
 	note.UpdatedAt = time.Now()
 	if err := s.Save(ctx, note); err != nil {
 		return created, err
@@ -318,29 +358,9 @@ func parseExtractedIntentIDs(content string) []string {
 	return nil
 }
 
-func upsertExtractedSection(content string, ids []string) string {
-	line := "extracted_intents: [" + strings.Join(ids, ", ") + "]"
-	lines := strings.Split(content, "\n")
-	found := false
-	for i, l := range lines {
-		if strings.HasPrefix(strings.TrimSpace(l), "extracted_intents:") {
-			lines[i] = line
-			found = true
-			break
-		}
-	}
-	if !found {
-		if !strings.HasSuffix(content, "\n") && content != "" {
-			content += "\n"
-		}
-		return content + "\n" + line + "\n"
-	}
-	return strings.Join(lines, "\n")
-}
-
 // MeetingTranscriptPath returns the sidecar path for a meeting note when present.
 func (s *IntentService) MeetingTranscriptPath(note *Intent) (string, bool) {
-	if note == nil || !strings.HasPrefix(string(note.Status), string(StatusNoteMeetings)) {
+	if note == nil || note.Status != StatusNoteMeetings {
 		return "", false
 	}
 	dir, err := s.statusDir(StatusNoteMeetings)
@@ -383,7 +403,7 @@ func resolveMeetingTranscript(opts ImportMeetingOptions, bundle string) (content
 		}
 		return string(raw), opts.TranscriptFile, nil
 	}
-	for _, name := range []string{"transcript.md", "transcript.txt", "full_transcript.md"} {
+	for _, name := range []string{"meeting.md", "transcript.md", "transcript.txt", "full_transcript.md"} {
 		p := filepath.Join(bundle, name)
 		if raw, readErr := os.ReadFile(p); readErr == nil {
 			return string(raw), p, nil
@@ -392,6 +412,144 @@ func resolveMeetingTranscript(opts ImportMeetingOptions, bundle string) (content
 	return "", "", nil
 }
 
-func isNoteFolderExists(err error) bool {
-	return err != nil && (err == ErrNoteFolderExists || strings.Contains(err.Error(), "already exists"))
+var (
+	meetingTimestampLine = regexp.MustCompile(`^\[(\d{2}):(\d{2}):(\d{2})\](?:\s*([^:]+):)?`)
+	meetingSpeakerLine   = regexp.MustCompile(`^\s*([^:]{1,80}):\s+`)
+)
+
+func buildMeetingMetadata(bundle, transcript string, fallbackStart time.Time) *MeetingMetadata {
+	absBundle, err := filepath.Abs(bundle)
+	if err != nil {
+		absBundle = bundle
+	}
+	host, _ := os.Hostname()
+	metadata := &MeetingMetadata{
+		StartedAt:        fallbackStart,
+		Bundle:           absBundle,
+		BundleHost:       host,
+		ExtractedIntents: make([]string, 0),
+	}
+	if _, err := os.Stat(filepath.Join(bundle, "audio.wav")); err == nil {
+		metadata.Audio = "audio.wav"
+	}
+	eventSpeakers, speakerAnalysis := readMeetingEventMetadata(filepath.Join(bundle, ".samantha", "events.jsonl"))
+	metadata.SpeakerAnalysis = speakerAnalysis
+	if metadata.SpeakerAnalysis == "" && len(eventSpeakers) > 0 {
+		metadata.SpeakerAnalysis = "complete"
+	}
+
+	speakers := eventSpeakers
+	lastOffset := 0
+	for _, line := range strings.Split(transcript, "\n") {
+		trimmed := strings.TrimSpace(line)
+		header := strings.TrimSpace(strings.TrimPrefix(trimmed, "#"))
+		lower := strings.ToLower(header)
+		switch {
+		case strings.HasPrefix(lower, "started:"):
+			if started, ok := parseMeetingTime(strings.TrimSpace(header[len("started:"):])); ok {
+				metadata.StartedAt = started
+			}
+			continue
+		case strings.HasPrefix(lower, "ended:"):
+			if ended, ok := parseMeetingTime(strings.TrimSpace(header[len("ended:"):])); ok {
+				metadata.EndedAt = ended
+			}
+			continue
+		case strings.HasPrefix(lower, "stt:"):
+			metadata.STT = strings.TrimSpace(header[len("stt:"):])
+			continue
+		}
+		if matches := meetingTimestampLine.FindStringSubmatch(trimmed); len(matches) == 5 {
+			hours, _ := strconv.Atoi(matches[1])
+			minutes, _ := strconv.Atoi(matches[2])
+			seconds, _ := strconv.Atoi(matches[3])
+			lastOffset = hours*3600 + minutes*60 + seconds
+			metadata.Utterances++
+			if speaker := strings.TrimSpace(matches[4]); speaker != "" {
+				speakers[speaker] = struct{}{}
+			}
+			continue
+		}
+		if matches := meetingSpeakerLine.FindStringSubmatch(trimmed); len(matches) == 2 && isSpeakerLabel(matches[1]) {
+			metadata.Utterances++
+			speakers[strings.TrimSpace(matches[1])] = struct{}{}
+		}
+	}
+	metadata.Speakers = len(speakers)
+	if !metadata.StartedAt.IsZero() && !metadata.EndedAt.IsZero() && metadata.EndedAt.After(metadata.StartedAt) {
+		metadata.DurationSeconds = int(metadata.EndedAt.Sub(metadata.StartedAt).Seconds())
+	} else {
+		metadata.DurationSeconds = lastOffset
+		if !metadata.StartedAt.IsZero() && lastOffset > 0 {
+			metadata.EndedAt = metadata.StartedAt.Add(time.Duration(lastOffset) * time.Second)
+		}
+	}
+	return metadata
+}
+
+func readMeetingEventMetadata(path string) (map[string]struct{}, string) {
+	speakers := make(map[string]struct{})
+	raw, err := os.ReadFile(path)
+	if err != nil {
+		return speakers, ""
+	}
+	analysis := ""
+	for _, line := range strings.Split(string(raw), "\n") {
+		if strings.TrimSpace(line) == "" {
+			continue
+		}
+		var event map[string]any
+		if json.Unmarshal([]byte(line), &event) != nil {
+			continue
+		}
+		collectMeetingEventMetadata(event, speakers, &analysis)
+	}
+	return speakers, analysis
+}
+
+func collectMeetingEventMetadata(value any, speakers map[string]struct{}, analysis *string) {
+	switch typed := value.(type) {
+	case map[string]any:
+		for key, child := range typed {
+			lowerKey := strings.ToLower(key)
+			if text, ok := child.(string); ok {
+				switch lowerKey {
+				case "speaker", "speaker_id", "speaker_label":
+					if strings.TrimSpace(text) != "" {
+						speakers[strings.TrimSpace(text)] = struct{}{}
+					}
+				case "speaker_analysis":
+					*analysis = strings.TrimSpace(text)
+				case "status":
+					if strings.Contains(strings.ToLower(stringValue(typed["type"])), "speaker") {
+						*analysis = strings.TrimSpace(text)
+					}
+				}
+			}
+			collectMeetingEventMetadata(child, speakers, analysis)
+		}
+	case []any:
+		for _, child := range typed {
+			collectMeetingEventMetadata(child, speakers, analysis)
+		}
+	}
+}
+
+func stringValue(value any) string {
+	text, _ := value.(string)
+	return text
+}
+
+func isSpeakerLabel(value string) bool {
+	label := strings.ToLower(strings.TrimSpace(value))
+	return strings.HasPrefix(label, "spk") || strings.HasPrefix(label, "speaker")
+}
+
+func parseMeetingTime(value string) (time.Time, bool) {
+	for _, layout := range []string{time.RFC3339, time.RFC3339Nano} {
+		if parsed, err := time.Parse(layout, value); err == nil {
+			return parsed, true
+		}
+	}
+	return time.Time{}, false
 }

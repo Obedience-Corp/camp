@@ -125,10 +125,11 @@ func TestTotalVisualLines_AllCollapsed(t *testing.T) {
 	for i := range m.groups {
 		m.groups[i].Expanded = false
 	}
-	// 8 group headers only (Inbox, Ready, Active, Dungeon, Done, Killed, Archived, Someday)
+	// Only the four top-level headers are visible; collapsed Dungeon children
+	// must not inflate scroll percentages or gutter sizing.
 	got := m.totalVisualLines()
-	if got != 8 {
-		t.Errorf("totalVisualLines() all collapsed = %d, want 8", got)
+	if got != 4 {
+		t.Errorf("totalVisualLines() all collapsed = %d, want 4", got)
 	}
 }
 

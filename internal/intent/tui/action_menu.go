@@ -35,7 +35,8 @@ type ActionMenuCancelledMsg struct{}
 // NewActionMenu creates a new action menu for the given intent.
 func NewActionMenu(i *intent.Intent) ActionMenu {
 	if i.Status.IsNote() {
-		active := i.Status == intent.StatusNote
+		active := i.Status != intent.StatusNoteArchived &&
+			!strings.HasPrefix(string(i.Status), string(intent.StatusNoteArchived)+"/")
 		return newActionMenu([]ActionMenuItem{
 			{Label: "View full screen", Action: "view", Enabled: true},
 			{Label: "Edit in editor", Action: "edit", Enabled: true},

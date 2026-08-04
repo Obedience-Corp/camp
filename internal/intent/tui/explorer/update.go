@@ -3,6 +3,7 @@ package explorer
 import (
 	"fmt"
 	"os"
+	"strings"
 
 	"github.com/Obedience-Corp/camp/internal/intent"
 	"github.com/Obedience-Corp/camp/internal/intent/tui"
@@ -116,6 +117,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 		m.intents = msg.intents
 		m.filteredIntents = msg.intents
+		m.noteFolders = msg.noteFolders
 		m.rebuildSearchCorpus()
 		m.rebuildStatusGroups()
 		if m.pendingReselectID != "" {
@@ -341,6 +343,10 @@ func (m Model) handleActionMenuSelection(msg tui.ActionMenuSelectedMsg) (tea.Mod
 			m.startConvert()
 		}
 	case "move":
+		if selected.Status.IsNote() {
+			m.startNoteFolderMove(selected)
+			return m, nil
+		}
 		m.focus = focusMove
 		m.intentToMove = selected
 		m.moveStatusIdx = 0
@@ -352,7 +358,8 @@ func (m Model) handleActionMenuSelection(msg tui.ActionMenuSelectedMsg) (tea.Mod
 		return m.handlePromoteAction()
 	case "archive":
 		if selected.Status.IsNote() {
-			if selected.Status != intent.StatusNote {
+			if selected.Status == intent.StatusNoteArchived ||
+				strings.HasPrefix(string(selected.Status), string(intent.StatusNoteArchived)+"/") {
 				m.statusMessage = "Note is already archived"
 				return m, nil
 			}

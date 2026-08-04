@@ -317,6 +317,13 @@ func normalizeNoteFolderRel(folder string) (string, error) {
 	return strings.Join(parts, "/"), nil
 }
 
+// NormalizeNoteFolderRel returns the canonical user-folder path relative to
+// notes/. Command and TUI layers use it when they need to report or stage the
+// same normalized path the service will mutate.
+func NormalizeNoteFolderRel(folder string) (string, error) {
+	return normalizeNoteFolderRel(folder)
+}
+
 // CreateNoteFolder creates a note folder (and parents) under notes/, writing a
 // .gitkeep so empty folders survive git. Rel is relative to notes/ (e.g.
 // "reading/papers"). Reserved names, traversal, and collisions are rejected.
@@ -387,6 +394,10 @@ func (s *IntentService) RenameNoteFolder(ctx context.Context, from, to string) e
 	}
 	if fromStatus == toStatus {
 		return nil
+	}
+	if strings.HasPrefix(string(toStatus), string(fromStatus)+"/") {
+		return camperrors.Wrapf(camperrors.ErrInvalidInput,
+			"cannot rename note folder %s into its own descendant %s", fromStatus, toStatus)
 	}
 
 	fromDir, err := s.statusDir(fromStatus)

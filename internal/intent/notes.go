@@ -222,8 +222,9 @@ func (s *IntentService) ArchiveNote(ctx context.Context, id string) (*Intent, er
 	return note, nil
 }
 
-// RestoreNote moves a note back from notes/archived/ into the active notes/
-// store, reversing ArchiveNote so an archived note is never a dead end.
+// RestoreNote moves a note back from notes/archived/ into the active notes
+// root. The original folder is not retained by ArchiveNote, so restore cannot
+// place the note back into its prior user folder.
 func (s *IntentService) RestoreNote(ctx context.Context, id string) (*Intent, error) {
 	if err := ctx.Err(); err != nil {
 		return nil, camperrors.Wrap(err, "context cancelled")
@@ -236,6 +237,10 @@ func (s *IntentService) RestoreNote(ctx context.Context, id string) (*Intent, er
 
 	if note.Status == StatusNote {
 		return note, nil
+	}
+	if !isArchivedNoteStatus(note.Status) {
+		return nil, camperrors.Wrapf(camperrors.ErrInvalidInput,
+			"note %s is not archived (status %s)", id, note.Status)
 	}
 
 	oldPath := note.Path

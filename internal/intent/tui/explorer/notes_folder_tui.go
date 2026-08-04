@@ -124,11 +124,11 @@ func (m *Model) startNoteFolderMove(note *intent.Intent) {
 		m.statusMessage = "Failed to list note folders: " + err.Error()
 		return
 	}
-	// Picker options: root first, then non-archived folders.
+	// Picker options: root first, then user folders. Reserved destinations are
+	// managed by dedicated flows and must not accept ordinary notes.
 	opts := make([]noteFolderOption, 0, len(folders))
 	for _, f := range folders {
-		if f.Status == intent.StatusNoteArchived ||
-			strings.HasPrefix(string(f.Status), string(intent.StatusNoteArchived)+"/") {
+		if f.Reserved {
 			continue
 		}
 		rel := ""
@@ -235,50 +235,72 @@ func (m *Model) runCreateFolder(rel string) tea.Cmd {
 		if err != nil {
 			return folderFinishedMsg{err: err}
 		}
-		_ = m.appendAuditEvent(audit.Event{
+		if err := m.appendAuditEvent(audit.Event{
 			Type:   audit.EventCreate,
 			ID:     string(folder.Status),
 			Title:  folder.Name,
 			To:     string(folder.Status),
 			Reason: "created note folder",
-		})
-		m.autoCommitIntent(commit.IntentCreate, folder.Name, "Created note folder "+string(folder.Status))
+		}); err != nil {
+			return folderFinishedMsg{err: err}
+		}
+		folderPath := filepath.Join(m.intentsDir, filepath.FromSlash(string(folder.Status)))
+		m.autoCommitIntent(commit.IntentCreate, folder.Name, "Created note folder "+string(folder.Status), folderPath)
 		return folderFinishedMsg{message: "Created folder " + string(folder.Status)}
 	}
 }
 
 func (m *Model) runRenameFolder(from, to string) tea.Cmd {
 	return func() tea.Msg {
-		if err := m.service.RenameNoteFolder(m.ctx, from, to); err != nil {
+		canonicalFrom, err := intent.NormalizeNoteFolderRel(from)
+		if err != nil {
 			return folderFinishedMsg{err: err}
 		}
-		_ = m.appendAuditEvent(audit.Event{
+		canonicalTo, err := intent.NormalizeNoteFolderRel(to)
+		if err != nil {
+			return folderFinishedMsg{err: err}
+		}
+		if err := m.service.RenameNoteFolder(m.ctx, canonicalFrom, canonicalTo); err != nil {
+			return folderFinishedMsg{err: err}
+		}
+		if err := m.appendAuditEvent(audit.Event{
 			Type:   audit.EventRename,
-			ID:     "notes/" + from,
-			Title:  filepath.Base(to),
-			From:   "notes/" + from,
-			To:     "notes/" + to,
+			ID:     "notes/" + canonicalFrom,
+			Title:  filepath.Base(canonicalTo),
+			From:   "notes/" + canonicalFrom,
+			To:     "notes/" + canonicalTo,
 			Reason: "renamed note folder",
-		})
-		m.autoCommitIntent(commit.IntentMove, filepath.Base(to), "Renamed note folder "+from+" → "+to)
-		return folderFinishedMsg{message: "Renamed folder " + from + " → " + to}
+		}); err != nil {
+			return folderFinishedMsg{err: err}
+		}
+		fromPath := filepath.Join(m.intentsDir, "notes", filepath.FromSlash(canonicalFrom))
+		toPath := filepath.Join(m.intentsDir, "notes", filepath.FromSlash(canonicalTo))
+		m.autoCommitIntent(commit.IntentMove, filepath.Base(canonicalTo), "Renamed note folder "+canonicalFrom+" → "+canonicalTo, fromPath, toPath)
+		return folderFinishedMsg{message: "Renamed folder " + canonicalFrom + " → " + canonicalTo}
 	}
 }
 
 func (m *Model) runDeleteFolder(rel string) tea.Cmd {
 	return func() tea.Msg {
-		if err := m.service.DeleteNoteFolder(m.ctx, rel); err != nil {
+		canonical, err := intent.NormalizeNoteFolderRel(rel)
+		if err != nil {
 			return folderFinishedMsg{err: err}
 		}
-		_ = m.appendAuditEvent(audit.Event{
+		folderPath := filepath.Join(m.intentsDir, "notes", filepath.FromSlash(canonical))
+		if err := m.service.DeleteNoteFolder(m.ctx, canonical); err != nil {
+			return folderFinishedMsg{err: err}
+		}
+		if err := m.appendAuditEvent(audit.Event{
 			Type:   audit.EventDelete,
-			ID:     "notes/" + rel,
-			Title:  filepath.Base(rel),
-			From:   "notes/" + rel,
+			ID:     "notes/" + canonical,
+			Title:  filepath.Base(canonical),
+			From:   "notes/" + canonical,
 			Reason: "deleted empty note folder",
-		})
-		m.autoCommitIntent(commit.IntentMove, filepath.Base(rel), "Deleted note folder "+rel)
-		return folderFinishedMsg{message: "Deleted folder " + rel}
+		}); err != nil {
+			return folderFinishedMsg{err: err}
+		}
+		m.autoCommitIntent(commit.IntentDelete, filepath.Base(canonical), "Deleted note folder "+canonical, folderPath)
+		return folderFinishedMsg{message: "Deleted folder " + canonical}
 	}
 }
 

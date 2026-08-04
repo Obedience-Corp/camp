@@ -14,7 +14,7 @@ func TestBuildNotesTree_CollapsedDefaultAndNestedReachable(t *testing.T) {
 		{ID: "inbox", Title: "inbox item", Status: intent.StatusInbox},
 	}
 
-	groups := groupExplorerItemsByStatus(items, false, nil, false)
+	groups := groupExplorerItemsByStatus(items, nil, false, nil, false)
 
 	// Inbox, Ready, Active, then Notes...
 	if groups[0].Name != "Inbox" || groups[2].Name != "Active" {
@@ -32,7 +32,7 @@ func TestBuildNotesTree_CollapsedDefaultAndNestedReachable(t *testing.T) {
 	fold := map[string]bool{
 		"notes": true, "notes/reading": true, "notes/reading/papers": true,
 	}
-	expanded := groupExplorerItemsByStatus(items, false, fold, false)
+	expanded := groupExplorerItemsByStatus(items, nil, false, fold, false)
 	var foundNested bool
 	for _, g := range expanded {
 		for _, it := range g.Intents {
@@ -69,7 +69,7 @@ func TestFilterOmitsEmptyNoteFoldersAndExpandsMatches(t *testing.T) {
 	}
 	// Filtered to only the nested note.
 	filtered := []*intent.Intent{items[0]}
-	groups := groupExplorerItemsByStatus(filtered, false, nil, true)
+	groups := groupExplorerItemsByStatus(filtered, nil, false, nil, true)
 	expandNoteAncestorsForMatches(groups)
 
 	// Empty meetings/archived shells should be gone.
@@ -83,12 +83,40 @@ func TestFilterOmitsEmptyNoteFoldersAndExpandsMatches(t *testing.T) {
 	// Path to match expanded.
 	for _, g := range groups {
 		if g.Status == intent.StatusNote || g.Status == intent.Status("notes/reading") || g.Status == intent.Status("notes/reading/papers") {
-			if !g.Expanded && g.Status != intent.Status("notes/reading/papers") {
-				// leaf may stay collapsed if it has the intent as direct child and we expand it for placement
-			}
 			if (g.Status == intent.StatusNote || g.Status == intent.Status("notes/reading")) && !g.Expanded {
 				t.Fatalf("ancestor %s should be expanded for filter match", g.Status)
 			}
+		}
+	}
+}
+
+func TestDiscoveredEmptyNoteFoldersAppearOutsideFilters(t *testing.T) {
+	folders := []intent.NoteFolder{
+		{Status: intent.StatusNote, Name: "Notes", Depth: 0},
+		{Status: intent.StatusNoteMeetings, Name: "Meetings", Depth: 1, Reserved: true},
+		{Status: intent.StatusNoteArchived, Name: "Archived", Depth: 1, Reserved: true},
+		{Status: intent.Status("notes/reading"), Name: "Reading", Depth: 1},
+	}
+
+	combined := groupExplorerItemsByStatus(nil, folders, false, map[string]bool{"notes": true}, false)
+	notesOnly := groupNotes(nil, folders, map[string]bool{"notes": true}, false)
+	for name, groups := range map[string][]IntentGroup{"combined": combined, "notes": notesOnly} {
+		found := false
+		for _, group := range groups {
+			if group.Status == intent.Status("notes/reading") {
+				found = true
+				break
+			}
+		}
+		if !found {
+			t.Fatalf("%s view omitted discovered empty folder notes/reading", name)
+		}
+	}
+
+	filtered := groupExplorerItemsByStatus(nil, folders, false, map[string]bool{"notes": true}, true)
+	for _, group := range filtered {
+		if group.Status == intent.Status("notes/reading") {
+			t.Fatal("filtered view should omit empty folder notes/reading")
 		}
 	}
 }

@@ -240,6 +240,13 @@ func TestCreateRenameDeleteNoteFolder(t *testing.T) {
 		t.Fatal("CreateNoteFolder should reject traversal")
 	}
 
+	if err := svc.RenameNoteFolder(ctx, "reading", "reading/papers/nested"); err == nil || !strings.Contains(err.Error(), "own descendant") {
+		t.Fatalf("RenameNoteFolder into descendant error = %v, want own-descendant rejection", err)
+	}
+	if _, err := os.Stat(filepath.Join(svc.intentsDir, "notes", "reading", "papers", "nested")); !os.IsNotExist(err) {
+		t.Fatalf("descendant destination was created before rename rejection: %v", err)
+	}
+
 	if err := svc.RenameNoteFolder(ctx, "reading/papers", "reading/books"); err != nil {
 		t.Fatalf("RenameNoteFolder: %v", err)
 	}

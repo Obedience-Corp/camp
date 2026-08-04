@@ -180,6 +180,11 @@ func (s *IntentService) CreateWithEditor(ctx context.Context, opts CreateOptions
 	if err != nil {
 		return nil, err
 	}
+	if opts.Category == CategoryNote && status != StatusNote {
+		if err := s.requireNoteFolderExists(status); err != nil {
+			return nil, err
+		}
+	}
 
 	// Render template (note vs intent) and stamp the matching status
 	content, err := renderForCreate(data, opts.Category, opts.Tags, status)

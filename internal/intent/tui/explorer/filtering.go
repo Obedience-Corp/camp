@@ -90,7 +90,7 @@ func (m *Model) applyFilters() {
 			statusFiltered := make([]*intent.Intent, 0)
 			if targetStatus, ok := statusSelectionToStatus(statusSelection); ok {
 				for _, i := range filtered {
-					if i.Status == targetStatus {
+					if i.Status == targetStatus || (targetStatus == intent.StatusNote && i.Status.IsNote()) {
 						statusFiltered = append(statusFiltered, i)
 					}
 				}
