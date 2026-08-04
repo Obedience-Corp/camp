@@ -1,6 +1,8 @@
 package explorer
 
 import (
+	"fmt"
+	"os"
 	"path/filepath"
 	"regexp"
 	"strings"
@@ -43,7 +45,27 @@ func (m *Model) handleMeetingAudio(selected *intent.Intent) (tea.Model, tea.Cmd)
 		m.statusMessage = "No audio path on this meeting"
 		return m, nil
 	}
+	if selected.Meeting.BundleHost != "" {
+		host, err := os.Hostname()
+		if err != nil {
+			m.statusMessage = "Cannot determine whether meeting audio is local"
+			return m, nil
+		}
+		if host != selected.Meeting.BundleHost {
+			m.statusMessage = "Meeting audio is available on " + selected.Meeting.BundleHost
+			return m, nil
+		}
+	}
 	audioPath := filepath.Join(selected.Meeting.Bundle, selected.Meeting.Audio)
+	info, err := os.Stat(audioPath)
+	if err != nil {
+		m.statusMessage = "Meeting audio is unavailable: " + filepath.Base(audioPath)
+		return m, nil
+	}
+	if info.IsDir() {
+		m.statusMessage = "Meeting audio path is not a file: " + filepath.Base(audioPath)
+		return m, nil
+	}
 	return m, openWithSystem(audioPath)
 }
 
@@ -79,7 +101,7 @@ func (m *Model) runMeetingExtract(selected *intent.Intent, items []intent.Extrac
 		}
 		msg := "Extracted 0 new intents (already present or empty)"
 		if n := len(created); n > 0 {
-			msg = "Extracted " + itoa(n) + " intent(s) from meeting"
+			msg = fmt.Sprintf("Extracted %d intent(s) from meeting", n)
 		}
 		return folderFinishedMsg{message: msg}
 	}
@@ -104,18 +126,4 @@ func extractItemsFromMeetingBody(body string) []intent.ExtractItem {
 		items = append(items, intent.ExtractItem{Title: title})
 	}
 	return items
-}
-
-func itoa(n int) string {
-	if n == 0 {
-		return "0"
-	}
-	var b [12]byte
-	i := len(b)
-	for n > 0 {
-		i--
-		b[i] = byte('0' + n%10)
-		n /= 10
-	}
-	return string(b[i:])
 }

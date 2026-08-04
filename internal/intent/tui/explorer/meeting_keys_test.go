@@ -4,6 +4,7 @@ import (
 	"context"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 	"time"
 
@@ -127,10 +128,72 @@ func TestMeetingKeys_XExtractsActionItems(t *testing.T) {
 	if !ok || fin.err != nil {
 		t.Fatalf("extract result = %#v", msg)
 	}
+	if fin.message != "Extracted 1 intent(s) from meeting" {
+		t.Fatalf("extract message = %q", fin.message)
+	}
+
+	reloaded, err := svc.GetNote(ctx, imported.Note.ID)
+	if err != nil {
+		t.Fatalf("GetNote after extract: %v", err)
+	}
+	if reloaded.Meeting == nil || len(reloaded.Meeting.ExtractedIntents) != 1 {
+		t.Fatalf("extracted intent ids = %#v, want one", reloaded.Meeting)
+	}
+	extracted, err := svc.Get(ctx, reloaded.Meeting.ExtractedIntents[0])
+	if err != nil {
+		t.Fatalf("Get extracted intent: %v", err)
+	}
+	if extracted.Title != "Do the thing" || extracted.Status != intent.StatusInbox {
+		t.Fatalf("extracted intent = %#v", extracted)
+	}
+
 	// Idempotent second run
 	msg2 := m.runMeetingExtract(note, extractItemsFromMeetingBody(note.Content))()
 	fin2, ok := msg2.(folderFinishedMsg)
 	if !ok || fin2.err != nil {
 		t.Fatalf("second extract = %#v", msg2)
+	}
+	if !strings.HasPrefix(fin2.message, "Extracted 0 new intents") {
+		t.Fatalf("second extract message = %q", fin2.message)
+	}
+	reloadedAgain, err := svc.GetNote(ctx, imported.Note.ID)
+	if err != nil {
+		t.Fatalf("GetNote after second extract: %v", err)
+	}
+	if got := len(reloadedAgain.Meeting.ExtractedIntents); got != 1 {
+		t.Fatalf("extracted intent ids after retry = %d, want 1", got)
+	}
+}
+
+func TestMeetingKeys_AMissingAudioFailsClosed(t *testing.T) {
+	m := Model{}
+	selected := &intent.Intent{Meeting: &intent.MeetingMetadata{
+		Bundle: "/path/that/does/not/exist",
+		Audio:  "audio.wav",
+	}}
+
+	_, cmd := m.handleMeetingAudio(selected)
+	if cmd != nil {
+		t.Fatal("missing audio returned an open command")
+	}
+	if m.statusMessage != "Meeting audio is unavailable: audio.wav" {
+		t.Fatalf("status message = %q", m.statusMessage)
+	}
+}
+
+func TestMeetingKeys_ARejectsAudioFromAnotherHost(t *testing.T) {
+	m := Model{}
+	selected := &intent.Intent{Meeting: &intent.MeetingMetadata{
+		Bundle:     "/tmp/meeting-bundle",
+		BundleHost: "definitely-not-this-host.invalid",
+		Audio:      "audio.wav",
+	}}
+
+	_, cmd := m.handleMeetingAudio(selected)
+	if cmd != nil {
+		t.Fatal("remote-host audio returned an open command")
+	}
+	if m.statusMessage != "Meeting audio is available on definitely-not-this-host.invalid" {
+		t.Fatalf("status message = %q", m.statusMessage)
 	}
 }

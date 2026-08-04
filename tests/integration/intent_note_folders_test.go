@@ -12,10 +12,10 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-// TestIntentNoteFolders_CRUDAndJSON exercises note folder create/list/move/rm
-// and import-meeting through the real camp binary inside the container harness
-// (not host TempDir unit tests).
-func TestIntentNoteFolders_CRUDAndJSON(t *testing.T) {
+// TestIntentNoteFolders_CRUDAndImportMeetingJSON exercises note folder
+// create/list/move/rm and import-meeting through the real camp binary inside
+// the container harness (not the explorer key handlers).
+func TestIntentNoteFolders_CRUDAndImportMeetingJSON(t *testing.T) {
 	tc := GetSharedContainer(t)
 
 	const campPath = "/campaigns/note-folders-ci0009"
@@ -51,17 +51,14 @@ func TestIntentNoteFolders_CRUDAndJSON(t *testing.T) {
 	require.NoError(t, err, "note --folder: %s", out)
 	assert.Contains(t, out, "notes/reading/books/")
 
-	// Extract note id from path in output.
-	// "✓ Note created: .../id.md"
-	id := ""
-	for _, line := range strings.Split(out, "\n") {
-		if strings.Contains(line, "Note created:") {
-			base := line[strings.LastIndex(line, "/")+1:]
-			id = strings.TrimSuffix(base, ".md")
-			break
-		}
-	}
-	require.NotEmpty(t, id, "could not parse note id from: %s", out)
+	// The note-create command has no JSON mode and lifecycle list/find omit
+	// notes. Resolve the ID from the exact folder contract rather than parsing
+	// human success text.
+	id := strings.TrimSpace(tc.Shell(t, fmt.Sprintf(
+		"basename \"$(find %s/.campaign/intents/notes/reading/books -maxdepth 1 -type f -name '*.md' | head -n 1)\" .md",
+		campPath,
+	)))
+	require.NotEmpty(t, id)
 
 	out, err = tc.RunCampInDir(campPath, "idea", "notes", "mv", id, ".")
 	require.NoError(t, err, "notes mv: %s", out)
