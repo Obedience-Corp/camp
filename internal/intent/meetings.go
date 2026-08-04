@@ -216,6 +216,128 @@ func (s *IntentService) ImportMeeting(ctx context.Context, opts ImportMeetingOpt
 	}, nil
 }
 
+// ExtractItem is one action-item/intent extracted from a meeting note.
+type ExtractItem struct {
+	Title string
+	Body  string
+}
+
+// ExtractMeetingIntents creates inbox intents from extract items and records
+// their ids on the meeting note. Re-running with the same titles is idempotent:
+// existing extracted ids whose titles still match are kept; duplicates are not
+// recreated.
+func (s *IntentService) ExtractMeetingIntents(ctx context.Context, id string, items []ExtractItem) ([]*Intent, error) {
+	if err := ctx.Err(); err != nil {
+		return nil, camperrors.Wrap(err, "context cancelled")
+	}
+	note, err := s.GetNote(ctx, id)
+	if err != nil {
+		return nil, err
+	}
+	if note.Status != StatusNoteMeetings {
+		return nil, camperrors.Wrapf(camperrors.ErrInvalidInput, "note %s is not a meeting (status %s)", id, note.Status)
+	}
+
+	// Collect already-linked ids from tags or content marker lines.
+	// Minimal contract: store extracted ids in tags as "from-meeting:<id>" on intents
+	// and list them in the meeting body under a machine-readable section.
+	existing := parseExtractedIntentIDs(note.Content)
+	existingSet := make(map[string]bool, len(existing))
+	for _, e := range existing {
+		existingSet[e] = true
+	}
+
+	// Title set of already-created extracts for idempotency.
+	existingTitles := make(map[string]bool)
+	for eid := range existingSet {
+		if it, gerr := s.Get(ctx, eid); gerr == nil {
+			existingTitles[strings.ToLower(it.Title)] = true
+		}
+	}
+
+	var created []*Intent
+	for _, item := range items {
+		title := strings.TrimSpace(item.Title)
+		if title == "" {
+			continue
+		}
+		if existingTitles[strings.ToLower(title)] {
+			continue
+		}
+		body := strings.TrimSpace(item.Body)
+		if body == "" {
+			body = "Extracted from meeting " + id
+		}
+		body = body + "\n\nmeeting_ref: " + id + "\n"
+		it, cerr := s.CreateDirect(ctx, CreateOptions{
+			Title: title,
+			Type:  TypeIdea,
+			Body:  body,
+			Tags:  []string{"from-meeting"},
+		})
+		if cerr != nil {
+			return created, cerr
+		}
+		created = append(created, it)
+		existing = append(existing, it.ID)
+		existingTitles[strings.ToLower(title)] = true
+	}
+
+	// Rewrite meeting body extracted section.
+	note.Content = upsertExtractedSection(note.Content, existing)
+	note.UpdatedAt = time.Now()
+	if err := s.Save(ctx, note); err != nil {
+		return created, err
+	}
+	return created, nil
+}
+
+func parseExtractedIntentIDs(content string) []string {
+	const marker = "extracted_intents:"
+	for _, line := range strings.Split(content, "\n") {
+		trim := strings.TrimSpace(line)
+		if !strings.HasPrefix(trim, marker) {
+			continue
+		}
+		rest := strings.TrimSpace(strings.TrimPrefix(trim, marker))
+		rest = strings.Trim(rest, "[]")
+		if rest == "" {
+			return nil
+		}
+		parts := strings.Split(rest, ",")
+		out := make([]string, 0, len(parts))
+		for _, p := range parts {
+			p = strings.TrimSpace(p)
+			p = strings.Trim(p, `"'`)
+			if p != "" {
+				out = append(out, p)
+			}
+		}
+		return out
+	}
+	return nil
+}
+
+func upsertExtractedSection(content string, ids []string) string {
+	line := "extracted_intents: [" + strings.Join(ids, ", ") + "]"
+	lines := strings.Split(content, "\n")
+	found := false
+	for i, l := range lines {
+		if strings.HasPrefix(strings.TrimSpace(l), "extracted_intents:") {
+			lines[i] = line
+			found = true
+			break
+		}
+	}
+	if !found {
+		if !strings.HasSuffix(content, "\n") && content != "" {
+			content += "\n"
+		}
+		return content + "\n" + line + "\n"
+	}
+	return strings.Join(lines, "\n")
+}
+
 // MeetingTranscriptPath returns the sidecar path for a meeting note when present.
 func (s *IntentService) MeetingTranscriptPath(note *Intent) (string, bool) {
 	if note == nil || !strings.HasPrefix(string(note.Status), string(StatusNoteMeetings)) {
