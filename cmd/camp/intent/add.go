@@ -249,7 +249,7 @@ func runIntentAdd(cmd *cobra.Command, args []string) error {
 			Tags:    mergeTags(tagsFlag, saved.Tags),
 		}
 		if createNote {
-			created, err := createNoteWithoutCommit(ctx, svc, intentsDir, savedOpts)
+			created, err := createNoteWithoutCommit(ctx, svc, intentsDir, campaignRoot, savedOpts)
 			if err != nil {
 				return err
 			}
@@ -284,7 +284,7 @@ func runIntentAdd(cmd *cobra.Command, args []string) error {
 	}
 
 	if createNote {
-		created, err := createNoteWithoutCommit(ctx, svc, intentsDir, opts)
+		created, err := createNoteWithoutCommit(ctx, svc, intentsDir, campaignRoot, opts)
 		if err != nil {
 			return err
 		}
@@ -572,7 +572,7 @@ func createIntentWithoutCommit(ctx context.Context, svc *intent.IntentService, i
 	return result, nil
 }
 
-func createNoteWithoutCommit(ctx context.Context, svc *intent.IntentService, intentsDir string, opts intent.CreateOptions) (*intent.Intent, error) {
+func createNoteWithoutCommit(ctx context.Context, svc *intent.IntentService, intentsDir, campaignRoot string, opts intent.CreateOptions) (*intent.Intent, error) {
 	result, err := svc.CreateNote(ctx, opts)
 	if err != nil {
 		return nil, camperrors.Wrap(err, "failed to create note")
@@ -585,7 +585,7 @@ func createNoteWithoutCommit(ctx context.Context, svc *intent.IntentService, int
 	}); err != nil {
 		return nil, err
 	}
-	fmt.Printf("✓ Note created: %s\n", result.Path)
+	fmt.Printf("✓ Note created: %s\n", displayPath(campaignRoot, result.Path))
 	return result, nil
 }
 

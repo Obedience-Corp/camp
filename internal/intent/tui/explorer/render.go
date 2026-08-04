@@ -111,17 +111,30 @@ func (m *Model) renderStatusBarHints() string {
 		}
 	}
 
+	// On a group header (cursorItem == -1), prefer expand/collapse hints so
+	// Space multi-select on items is not confused with fold (V1 / CI0009 polish).
+	onGroupHeader := m.cursorItem < 0
+
 	switch m.layoutMode {
 	case layoutNarrow:
+		if onGroupHeader {
+			return scrollIndicator + "enter/l expand · j/k · / · ? · q"
+		}
 		return scrollIndicator + "j/k · v · / · tab filter · n new · ? · q"
 	case layoutNormal:
 		if m.shouldShowPreview() {
 			return scrollIndicator + "j/k nav · v hide preview · tab focus · / search · n new · q quit"
 		}
+		if onGroupHeader {
+			return scrollIndicator + "enter/l expand · j/k nav · / search · space select items · q quit"
+		}
 		return scrollIndicator + "j/k nav · v preview · / search · tab filter · n new · space gather · q quit"
 	case layoutWide:
 		if m.shouldShowPreview() {
 			return scrollIndicator + "j/k navigate · v hide preview · tab focus · / search · f full · n new · ? help · q quit"
+		}
+		if onGroupHeader {
+			return scrollIndicator + "enter/l expand · j/k navigate · / search · space select items · f full · ? help · q quit"
 		}
 		return scrollIndicator + "j/k navigate · v preview · / search · tab filter · n new · space gather · f full · ? help · q quit"
 	}
