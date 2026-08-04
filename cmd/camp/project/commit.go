@@ -195,12 +195,13 @@ func runProjectCommit(cmd *cobra.Command, args []string) error {
 		cmdutil.ReportStagedGrowth(ctx, cmd.OutOrStdout(), resolvedPath, projectCommitLarge)
 	}
 
-	// Check for changes
-	hasChanges, err := executor.HasChanges(ctx)
+	// Staged only: unstaged/untracked dirt must not open an empty deferred
+	// commit (see camp commit for the same gate).
+	hasStaged, err := git.HasStagedChanges(ctx, resolvedPath)
 	if err != nil {
 		return err
 	}
-	if !hasChanges && !projectCommitAmend {
+	if !hasStaged && !projectCommitAmend {
 		fmt.Println(ui.Success("Nothing to commit in project"))
 		return nil
 	}
@@ -214,6 +215,10 @@ func runProjectCommit(cmd *cobra.Command, args []string) error {
 		deferred, deferErr := cmdutil.TryDeferAutoWrite(
 			ctx, os.Stdout, campRoot, resolvedPath, false, projectCommitAmend,
 			projectDeferOptions(ctx, campRoot, resolvedPath, relPath, cfg))
+		if errors.Is(deferErr, git.ErrNoChanges) {
+			fmt.Println(ui.Success("Nothing to commit in project"))
+			return nil
+		}
 		if deferErr != nil {
 			return deferErr
 		}

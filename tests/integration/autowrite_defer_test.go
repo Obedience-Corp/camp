@@ -48,9 +48,8 @@ sleep 3
 echo "deferred: the slow writer finished"`,
 	"empty": `#!/bin/sh
 exit 0`,
-	// Shaped like the real failure that motivated the fallback: a writer whose
-	// backing daemon is down prints its whole usage and exits non-zero, so the
-	// operative line is the last one rather than the first.
+	// A writer whose backing daemon is down prints usage and exits non-zero.
+	// The job must fail with that evidence; camp must not invent a subject.
 	"broken": `#!/bin/sh
 echo "Usage:" >&2
 echo "  writer [flags]" >&2
@@ -416,14 +415,10 @@ func TestIntegration_EmptyWriterOutputFailsTheJob(t *testing.T) {
 		"the failure must be kept as evidence; camp jobs:\n%s", stdout)
 }
 
-// A writer outage costs the message, never the commit.
-//
-// This is the failure that motivated the fallback. The writer's daemon was
-// down, so the job was parked; by the time anyone looked, HEAD had moved past
-// its parent and the job could no longer be retried at all, leaving work
-// staged and uncommitted with no way back except dropping the job. Every
-// assertion here is a step on that road that must no longer exist.
-func TestIntegration_WriterFailureStillCommits(t *testing.T) {
+// A writer outage fails the job. Camp does not invent a commit message: a
+// filler subject in history is worse than a parked job the user can retry or
+// drop once the writer is healthy.
+func TestIntegration_WriterFailureFailsTheJob(t *testing.T) {
 	tc := GetSharedContainer(t)
 	tc.EnableDeferral()
 	campPath, _ := setupDrainCampaign(t, tc, "aw-defer-broken")
@@ -440,44 +435,57 @@ func TestIntegration_WriterFailureStillCommits(t *testing.T) {
 	require.NoError(t, err)
 	require.Equal(t, 0, exitCode, "stderr:\n%s", stderr)
 
-	drainJobs(t, tc, campPath)
+	_, _, _, err = tc.RunCampSplitInDir(campPath, "jobs", "drain")
+	require.NoError(t, err)
 
 	after := strings.TrimSpace(tc.GitOutput(t, campPath, "rev-parse", "HEAD"))
-	assert.NotEqual(t, before, after,
-		"a writer that failed must not cost the user the commit camp already captured")
+	assert.Equal(t, before, after,
+		"a writer failure must not land a filler commit; HEAD moved")
 
-	committed := tc.GitOutput(t, campPath, "show", "--name-only", "--format=", "HEAD")
-	assert.Contains(t, committed, "rescued.md",
-		"the degraded commit must contain the captured tree; commit contained:\n%s", committed)
-
-	// The subject says the message is camp's, so `git log` shows which commits
-	// are worth rewording once the writer is back.
-	subject := headSubject(t, tc, campPath)
-	assert.Contains(t, subject, "writer unavailable",
-		"a machine-written subject must say so; subject: %q", subject)
-	// It still describes the commit: a named path when there is one, a count
-	// when naming them all would be longer than the line.
-	assert.Regexp(t, `Update (\d+ files?|\S+) \(writer unavailable\)`, subject,
-		"the subject must describe what changed; subject: %q", subject)
-
-	// The campaign tag survives degradation: a deferred commit ends up with
-	// the same subject shape a synchronous one would.
-	assert.Contains(t, subject, "[",
-		"the campaign tag must still be prepended; subject: %q", subject)
-
-	// The body carries the writer's own diagnosis. A detached worker has no
-	// other channel that reliably reaches the user.
-	body := tc.GitOutput(t, campPath, "log", "-1", "--format=%b")
-	assert.Contains(t, body, "daemon not running",
-		"the commit must record why the writer did not run; body:\n%s", body)
-	assert.NotContains(t, body, "Usage:",
-		"only the operative line belongs in git history, not the writer's usage; body:\n%s", body)
-
-	// Nothing is parked, so nothing can rot into an unretryable job.
 	stdout, _, _, err := tc.RunCampSplitInDir(campPath, "jobs")
 	require.NoError(t, err)
-	assert.NotContains(t, stdout, "failed",
-		"a degraded commit must leave an empty queue; camp jobs:\n%s", stdout)
+	assert.Contains(t, stdout, "failed",
+		"the failure must be kept as evidence; camp jobs:\n%s", stdout)
+	assert.NotContains(t, stdout, "writer unavailable",
+		"camp must not mint a filler subject; camp jobs:\n%s", stdout)
+}
+
+// An empty staged tree must not enqueue a deferred commit. Campaign-root
+// commits exclude submodule refs, so only-submodule dirt used to pass
+// HasChanges, write-tree equal to HEAD, then land a no-op with a filler
+// message after the writer correctly reported "no staged changes".
+func TestIntegration_EmptyStagedTreeDoesNotDefer(t *testing.T) {
+	tc := GetSharedContainer(t)
+	tc.EnableDeferral()
+	campPath, _ := setupDrainCampaign(t, tc, "aw-defer-empty-tree")
+	configureWriter(t, tc, campPath, "plain")
+	// Commit the writer config itself so the second --auto-write sees a clean
+	// index (tree == HEAD), which is the empty-snapshot case under test.
+	tc.Shell(t, fmt.Sprintf(`
+		cd %s
+		git add .campaign/campaign.yaml
+		git commit -q -m "configure the message writer"
+	`, campPath))
+
+	before := strings.TrimSpace(tc.GitOutput(t, campPath, "rev-parse", "HEAD"))
+
+	stdout, stderr, exitCode, err := tc.RunCampSplitInDir(campPath, "commit", "--auto-write")
+	require.NoError(t, err)
+	require.Equal(t, 0, exitCode, "stdout:\n%s\nstderr:\n%s", stdout, stderr)
+	assert.NotContains(t, stdout, "queued",
+		"empty snapshot must not be deferred; output:\n%s", stdout)
+	assert.Contains(t, stdout, "Nothing to commit",
+		"empty snapshot must report a no-op; output:\n%s", stdout)
+
+	after := strings.TrimSpace(tc.GitOutput(t, campPath, "rev-parse", "HEAD"))
+	assert.Equal(t, before, after, "no commit may land from an empty tree")
+
+	jobsOut, _, _, err := tc.RunCampSplitInDir(campPath, "jobs")
+	require.NoError(t, err)
+	assert.NotContains(t, jobsOut, "pending",
+		"empty snapshot must not enqueue; camp jobs:\n%s", jobsOut)
+	assert.NotContains(t, jobsOut, "failed",
+		"empty snapshot must not leave a failed job; camp jobs:\n%s", jobsOut)
 }
 
 // A failed job that can never be retried must not be advertised as retryable.

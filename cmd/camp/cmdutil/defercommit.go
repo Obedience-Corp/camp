@@ -2,6 +2,7 @@ package cmdutil
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"io"
 
@@ -46,6 +47,12 @@ func TryDeferAutoWrite(ctx context.Context, w io.Writer, campaignRoot, repoPath 
 	}
 
 	if _, err := defercommit.Enqueue(ctx, campaignRoot, repoPath, opts); err != nil {
+		// Empty snapshot: the staged tree equals HEAD. Surface that as
+		// "nothing to commit" rather than degrading to a synchronous writer
+		// that would also see an empty index and fail more cryptically.
+		if errors.Is(err, git.ErrNoChanges) {
+			return false, err
+		}
 		// Deferring is an optimization over a path that still works. A queue
 		// that cannot be written should not cost the user their commit, so
 		// this degrades to the synchronous path and says why.
