@@ -302,7 +302,9 @@ func runCommit(cmd *cobra.Command, args []string) error {
 				return commitJSONNoop(cmd, jsonResult)
 			}
 		}
-		_, _ = fmt.Fprintln(humanOut, ui.Success("Nothing to commit, working tree clean"))
+		// Staged-only gate: do not claim the worktree is clean when unstaged
+		// or untracked dirt remains (e.g. excluded submodule pointers).
+		_, _ = fmt.Fprintln(humanOut, ui.Success(cmdutil.NothingStagedLine(ctx, target.Path, "")))
 		return commitJSONNoop(cmd, jsonResult)
 	}
 
