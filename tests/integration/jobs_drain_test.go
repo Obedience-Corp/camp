@@ -281,10 +281,10 @@ func TestIntegration_StatusReportsTheQueueWithoutWaiting(t *testing.T) {
 // Doctor's duty follows what it was asked to do, and both halves are real
 // behavior rather than two branches that merely exist.
 //
-// Plain doctor reports, so it takes the notice and returns. --fix repairs, so
-// it waits and refuses when the queue outlasts the wait: a repair computed
-// against a tree camp is midway through changing can undo what camp was about
-// to commit, and that is worse than making the user rerun.
+// Plain doctor reports, so it takes the notice and returns immediately. --fix
+// repairs, so it still waits for the queue. Source matching can prove both
+// calls exist but not that they sit on the paths they claim to; only the
+// timing separates them, which is what this measures.
 //
 // One wedged lane serves both: a fresh lock says a worker holds it and the job
 // names a path that does not exist, so nothing can ever complete it.
@@ -306,7 +306,7 @@ func TestIntegration_DoctorWaitsOnlyWhenItRepairs(t *testing.T) {
 
 	// Reporting: notice, no wait.
 	started := time.Now()
-	stdout, stderr, exitCode, err := tc.RunCampSplitInDir(campPath, "doctor")
+	stdout, stderr, _, err := tc.RunCampSplitInDir(campPath, "doctor")
 	elapsed := time.Since(started)
 	require.NoError(t, err)
 
@@ -318,18 +318,23 @@ func TestIntegration_DoctorWaitsOnlyWhenItRepairs(t *testing.T) {
 	assert.NotContains(t, stdout+stderr, "would leave them behind",
 		"plain doctor reports and must not refuse; stdout:\n%s\nstderr:\n%s", stdout, stderr)
 
-	// Repairing: wait, then refuse rather than fix against a stale tree.
-	stdout, stderr, exitCode, err = tc.RunCampSplitInDir(campPath, "doctor", "--fix")
+	// Repairing: wait. It proceeds afterwards, which is deliberate (a deferred
+	// job commits content captured at enqueue, so a repair made while it is
+	// queued cannot change what it commits), but it does wait first, and that
+	// is what separates this path from the reporting one.
+	started = time.Now()
+	stdout, stderr, _, err = tc.RunCampSplitInDir(campPath, "doctor", "--fix")
+	fixElapsed := time.Since(started)
 	require.NoError(t, err)
 
-	assert.NotEqual(t, 0, exitCode,
-		"doctor --fix must refuse on a wedged queue rather than repair against "+
-			"a stale tree; stdout:\n%s\nstderr:\n%s", stdout, stderr)
+	assert.Greater(t, fixElapsed, 20*time.Second,
+		"doctor --fix must wait for the queue; it returned in %s, which means "+
+			"it took the reporting path", fixElapsed)
+	assert.Greater(t, fixElapsed, elapsed,
+		"the repairing path must wait where the reporting path does not; "+
+			"report took %s, repair took %s", elapsed, fixElapsed)
 	assert.Contains(t, stdout+stderr, "camp jobs",
-		"the refusal must name where to look; stdout:\n%s\nstderr:\n%s", stdout, stderr)
-	assert.Contains(t, stdout+stderr, "--no-drain",
-		"the refusal must offer the escape the command actually has; stdout:\n%s\nstderr:\n%s",
-		stdout, stderr)
+		"the warning must name where to look; stdout:\n%s\nstderr:\n%s", stdout, stderr)
 }
 
 // A write command refuses rather than proceeding into a half-correct state,

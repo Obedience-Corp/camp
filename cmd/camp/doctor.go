@@ -112,16 +112,20 @@ func runDoctor(cmd *cobra.Command, args []string) error {
 	// is. Reporting proceeds on a notice, because a finding the user can
 	// re-check costs less than holding their terminal.
 	//
-	// --fix writes, so it waits in Write mode and refuses if the queue outlasts
-	// the wait. Read mode would warn and repair anyway, which is the thing this
-	// path must not do: a repair computed against a tree camp is midway through
-	// changing can "fix" what camp was about to commit. A refusal that names
-	// its own way out costs the user a rerun; a wrong repair costs them a
-	// diff they have to understand later.
+	// --fix writes, so it waits, and on timeout it warns and repairs anyway.
+	//
+	// That last part is deliberate rather than an oversight. Refusing would
+	// buy almost nothing: a deferred job commits content captured at enqueue
+	// (an immutable tree, or blobs), so it never reads the working tree when
+	// it runs, and a repair made while it is queued cannot change what it
+	// commits. Only a job carrying paths and no blobs falls back to the live
+	// tree, which means one written by an older camp or by hand. Refusing
+	// every --fix on a busy queue to cover that would cost more than it saves,
+	// including a --json consumer that would get no report at all.
 	var doctorDrainWaited time.Duration
 	if !doctorOpts.noDrain {
 		if doctorOpts.fix {
-			waited, err := drain.AllLanes(ctx, campRoot, drain.Write)
+			waited, err := drain.AllLanes(ctx, campRoot, drain.Read)
 			if err != nil {
 				return err
 			}
