@@ -11,6 +11,10 @@ import (
 	"strconv"
 	"sync"
 	"testing"
+	"time"
+
+	"github.com/moby/moby/client"
+	"github.com/testcontainers/testcontainers-go"
 )
 
 // containerPool holds the reusable containers. Tests check one out (blocking
@@ -41,13 +45,24 @@ var legacyCampSkip string
 // pool (rather than a single container) lets tests run concurrently via
 // t.Parallel(), since each test gets exclusive use of one isolated container.
 func TestMain(m *testing.M) {
-	size := poolSize()
-
 	cleanupTransport, err := startDedicatedColimaDockerTransport()
 	if err != nil {
 		os.Stderr.WriteString("Failed to create isolated Docker transport: " + err.Error() + "\n")
 		os.Exit(1)
 	}
+
+	// Sized after the transport exists, so the daemon it asks about is the one
+	// the containers will actually run on. Asking first worked by luck here
+	// (both spellings reach the same daemon) but would answer for the wrong
+	// machine, or not at all, against a remote or rerouted one.
+	//
+	// Announced because the failure this guards against is silent: an
+	// oversubscribed pool looks like flaky tests, and the number that caused
+	// it was never on screen.
+	daemonCPUs := dockerCPUs()
+	size := poolSizeFor(daemonCPUs)
+	fmt.Fprintf(os.Stderr, "container pool: %d (docker daemon reports %d CPUs, host has %d)\n",
+		size, daemonCPUs, runtime.NumCPU())
 
 	bins, cleanupBins, err := buildSharedBinaries()
 	if err != nil {
@@ -103,13 +118,36 @@ func TestMain(m *testing.M) {
 // poolSize returns how many containers to run concurrently. Override with
 // CAMP_TEST_POOL_SIZE; otherwise scale to the host but stay conservative, since
 // each member is a full container running real git operations.
-func poolSize() int {
+// poolSizeFor turns the Docker daemon's CPU count into a pool size. A
+// non-positive count means it could not be determined.
+//
+// Sized against the machine that runs the containers, not the one
+// orchestrating them.
+//
+// On a Linux host those are the same machine and nothing changes. Under
+// Colima, Docker Desktop, or a remote daemon they are not, and the host is
+// always the larger of the two: a 16-CPU laptop driving a 4-CPU VM sized this
+// pool to six containers, half again what the VM could actually run. The
+// oversubscription did not fail loudly. It showed up as tests that pass alone
+// and fail in the full suite, differently each run, which reads like flaky
+// tests rather than a saturated machine.
+//
+// The halving and the bounds are unchanged. Only the number they are applied
+// to was wrong.
+func poolSizeFor(daemonCPUs int) int {
 	if v := os.Getenv("CAMP_TEST_POOL_SIZE"); v != "" {
 		if n, err := strconv.Atoi(v); err == nil && n > 0 {
 			return n
 		}
 	}
-	n := runtime.NumCPU() / 2
+
+	cpus := daemonCPUs
+	if cpus <= 0 {
+		// Cannot tell. Fall back to the host, which is what this did
+		// unconditionally before: no worse than the old behavior.
+		cpus = runtime.NumCPU()
+	}
+	n := cpus / 2
 	if n < 2 {
 		n = 2
 	}
@@ -117,6 +155,29 @@ func poolSize() int {
 		n = 6
 	}
 	return n
+}
+
+// dockerCPUs reports the Docker daemon's CPU count, or 0 when it cannot be
+// determined.
+//
+// Zero rather than an error: failing to size a pool optimally is not worth
+// failing a test run over, and the caller falls back to the host count, which
+// is what this code did unconditionally before.
+func dockerCPUs() int {
+	provider, err := testcontainers.NewDockerProvider()
+	if err != nil {
+		return 0
+	}
+	defer func() { _ = provider.Close() }()
+
+	ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
+	defer cancel()
+
+	result, err := provider.Client().Info(ctx, client.InfoOptions{})
+	if err != nil {
+		return 0
+	}
+	return result.Info.NCPU
 }
 
 // Infrastructure failure is tracked separately from test failure.

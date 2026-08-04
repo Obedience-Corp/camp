@@ -34,6 +34,11 @@ type IntegrationResult struct {
 	TestsPassed int
 	TestsFailed int
 	FailedTests []string // Names of failed tests
+	// SuiteError is a failure of the run itself rather than of any test: a
+	// build error, a panic that took the process down, a timeout. Kept apart
+	// from FailedTests because it is not a test and must not be counted as
+	// one.
+	SuiteError string
 }
 
 const integrationTestTimeout = "15m"
@@ -109,6 +114,8 @@ func Integration(verbose bool) error {
 		var pass bool
 		var testsPassed, testsFailed int
 		var failedTests []string
+		var suiteError string
+		var packageFailed bool
 
 		dockerEnv := append(os.Environ(),
 			"TESTCONTAINERS_DOCKER_SOCKET_OVERRIDE=/var/run/docker.sock",
@@ -230,6 +237,17 @@ func Integration(verbose bool) error {
 							testsFailed++
 						}
 					}
+				} else if event.Action == "fail" {
+					// A fail with no test name is the package failing as a
+					// whole: a panic outside a test, a TestMain that exited
+					// non-zero, output arriving after a test finished.
+					//
+					// Dropping these is why a run could report every test
+					// passing and still exit non-zero, leaving the only
+					// evidence as "go test exited: exit status 1" with nothing
+					// to attribute it to. The package is not a test, so it is
+					// recorded as a run-level failure.
+					packageFailed = true
 				}
 				mu.Unlock()
 			}
@@ -237,15 +255,9 @@ func Integration(verbose bool) error {
 			close(done)
 			scanErr := scanner.Err()
 			waitErr := cmd.Wait()
-			if scanErr != nil {
-				testsFailed++
-				failedTests = append(failedTests, fmt.Sprintf("%s scanner error: %v", name, scanErr))
-			}
-			if waitErr != nil {
-				testsFailed++
-				failedTests = append(failedTests, fmt.Sprintf("%s go test exited: %v", name, waitErr))
-			}
-			pass = testsFailed == 0
+
+			suiteError = classifyRunFailure(scanErr, waitErr, testsFailed, packageFailed)
+			pass = testsFailed == 0 && suiteError == ""
 			ui.ClearProgressWithOutput()
 		}
 
@@ -258,6 +270,7 @@ func Integration(verbose bool) error {
 			TestsPassed: testsPassed,
 			TestsFailed: testsFailed,
 			FailedTests: failedTests,
+			SuiteError:  suiteError,
 		})
 
 		if !pass {
@@ -283,19 +296,33 @@ func Integration(verbose bool) error {
 	hasFailures := failures > 0
 
 	for _, r := range results {
-		if !r.Pass && len(r.FailedTests) > 0 {
-			// Show each failed test as a row
-			for _, testName := range r.FailedTests {
-				status := "✗ FAILED"
-				if ui.ColourEnabled() {
-					status = ui.Red + status + ui.Reset
-				}
-				rows = append(rows, []string{
-					testName,
-					status,
-					"",
-				})
+		if r.Pass {
+			continue
+		}
+		// Show each failed test as a row
+		for _, testName := range r.FailedTests {
+			status := "✗ FAILED"
+			if ui.ColourEnabled() {
+				status = ui.Red + status + ui.Reset
 			}
+			rows = append(rows, []string{
+				testName,
+				status,
+				"",
+			})
+		}
+		// A run-level failure gets its own row, labelled so it cannot be
+		// mistaken for a test someone could go and rerun.
+		if r.SuiteError != "" {
+			status := "✗ SUITE"
+			if ui.ColourEnabled() {
+				status = ui.Red + status + ui.Reset
+			}
+			rows = append(rows, []string{
+				fmt.Sprintf("%s: %s", r.Suite, r.SuiteError),
+				status,
+				"",
+			})
 		}
 	}
 
@@ -333,6 +360,35 @@ func Integration(verbose bool) error {
 	}
 
 	return nil
+}
+
+// classifyRunFailure decides whether a `go test` process failure is news, and
+// returns the line describing it, or "" when it is not.
+//
+// A non-zero exit is how `go test` reports that a test failed, so recording it
+// as a failure of its own double-counts every real one: a single broken test
+// was summarized as "2/734 tests failed", and the extra row read "go test
+// exited: exit status 1", which is not a test, cannot be looked up, and cannot
+// be rerun. Anyone reading that goes looking for a second broken test that
+// does not exist.
+//
+// The exit only carries information when no test claimed the failure. That is
+// a build error, a panic that took the process down, or a timeout, and then it
+// is the only evidence there is, so it has to be surfaced. Still not as a test.
+func classifyRunFailure(scanErr, waitErr error, testsFailed int, packageFailed bool) string {
+	switch {
+	case scanErr != nil:
+		return fmt.Sprintf("could not read test output: %v", scanErr)
+	case packageFailed && testsFailed == 0:
+		return "the test package failed with no failing test: a panic outside " +
+			"a test, a TestMain that exited non-zero, or output after a test " +
+			"finished. Rerun with 'just test integration-verbose' to see it."
+	case waitErr != nil && testsFailed == 0:
+		return fmt.Sprintf("go test exited without reporting a failing test "+
+			"(build error, panic, or timeout): %v", waitErr)
+	default:
+		return ""
+	}
 }
 
 // discoverIntegrationSuites finds all integration test directories
