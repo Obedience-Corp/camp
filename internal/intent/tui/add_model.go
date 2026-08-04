@@ -25,6 +25,13 @@ const (
 	addStepDone
 )
 
+// NoteFolderChoice is a selectable destination under notes/ for note capture.
+// Rel is relative to notes/ (empty = root).
+type NoteFolderChoice struct {
+	Rel   string
+	Label string
+}
+
 // AddOptions configures the IntentAddModel behavior.
 type AddOptions struct {
 	DefaultType   string            // Default intent type (e.g., "idea")
@@ -34,6 +41,13 @@ type AddOptions struct {
 	CampaignRoot  string            // Campaign root for @ completion
 	Shortcuts     map[string]string // Navigation shortcuts (key → campaign-relative path, e.g., "de" → "workflow/design/")
 	AvailableTags []string          // Configured tags offered by the tag overlay (ctrl+t)
+
+	// NoteFolders are selectable destinations under notes/. Empty means the
+	// destination row is not rendered (today's capture flow unchanged).
+	NoteFolders []NoteFolderChoice
+
+	// DefaultNoteFolder is the preselected destination rel (empty = notes root).
+	DefaultNoteFolder string
 }
 
 // AddResult contains the collected intent data.
@@ -44,6 +58,10 @@ type AddResult struct {
 	Body    string
 	Author  string
 	Tags    []string
+
+	// NoteFolder is the chosen destination relative to notes/. Empty means the
+	// notes root. Only meaningful when NoteMode is set.
+	NoteFolder string
 }
 
 // IntentAddModel is a BubbleTea model for creating new intents.
@@ -79,6 +97,12 @@ type IntentAddModel struct {
 	tags          []string
 	tagOverlay    TagOverlay
 	tagging       bool
+
+	// Note destination (only when noteMode and NoteFolders is non-empty)
+	noteFolders       []NoteFolderChoice
+	noteFolderIdx     int
+	defaultNoteFolder string
+	pickingFolder     bool // true when the destination picker overlay is open
 
 	// Completion state
 	completion completionState
@@ -131,21 +155,43 @@ func NewIntentAddModel(ctx context.Context, conceptSvc concept.Service, opts Add
 		}
 	}
 
-	return IntentAddModel{
-		ctx:           ctx,
-		conceptSvc:    conceptSvc,
-		step:          addStepTitle,
-		titleInput:    ti,
-		typeIdx:       typeIdx,
-		vimEditor:     vimEd,
-		fullMode:      opts.FullMode,
-		noteMode:      opts.NoteMode,
-		defaultType:   opts.DefaultType,
-		author:        opts.Author,
-		campaignRoot:  opts.CampaignRoot,
-		shortcuts:     opts.Shortcuts,
-		availableTags: opts.AvailableTags,
+	folderIdx := 0
+	for i, f := range opts.NoteFolders {
+		if f.Rel == opts.DefaultNoteFolder {
+			folderIdx = i
+			break
+		}
 	}
+
+	return IntentAddModel{
+		ctx:               ctx,
+		conceptSvc:        conceptSvc,
+		step:              addStepTitle,
+		titleInput:        ti,
+		typeIdx:           typeIdx,
+		vimEditor:         vimEd,
+		fullMode:          opts.FullMode,
+		noteMode:          opts.NoteMode,
+		defaultType:       opts.DefaultType,
+		author:            opts.Author,
+		campaignRoot:      opts.CampaignRoot,
+		shortcuts:         opts.Shortcuts,
+		availableTags:     opts.AvailableTags,
+		noteFolders:       opts.NoteFolders,
+		noteFolderIdx:     folderIdx,
+		defaultNoteFolder: opts.DefaultNoteFolder,
+	}
+}
+
+// selectedNoteFolderRel returns the chosen note folder rel, or empty for root.
+func (m IntentAddModel) selectedNoteFolderRel() string {
+	if len(m.noteFolders) == 0 {
+		return m.defaultNoteFolder
+	}
+	if m.noteFolderIdx < 0 || m.noteFolderIdx >= len(m.noteFolders) {
+		return m.defaultNoteFolder
+	}
+	return m.noteFolders[m.noteFolderIdx].Rel
 }
 
 // Init implements tea.Model.
@@ -691,10 +737,11 @@ func (m IntentAddModel) openExternalEditor() tea.Cmd {
 func (m IntentAddModel) finishBodyStep() (tea.Model, tea.Cmd) {
 	if m.noteMode {
 		m.result = &AddResult{
-			Title:  strings.TrimSpace(m.titleInput.Value()),
-			Body:   strings.TrimSpace(m.vimEditor.Content()),
-			Author: m.author,
-			Tags:   m.tags,
+			Title:      strings.TrimSpace(m.titleInput.Value()),
+			Body:       strings.TrimSpace(m.vimEditor.Content()),
+			Author:     m.author,
+			Tags:       m.tags,
+			NoteFolder: m.selectedNoteFolderRel(),
 		}
 		m.step = addStepDone
 		return m, tea.Quit
@@ -763,7 +810,13 @@ func (m IntentAddModel) collectCurrentResult() *AddResult {
 		if m.step >= addStepBody {
 			body = strings.TrimSpace(m.vimEditor.Content())
 		}
-		return &AddResult{Title: title, Body: body, Author: m.author, Tags: m.tags}
+		return &AddResult{
+			Title:      title,
+			Body:       body,
+			Author:     m.author,
+			Tags:       m.tags,
+			NoteFolder: m.selectedNoteFolderRel(),
+		}
 	}
 
 	conceptPath := ""

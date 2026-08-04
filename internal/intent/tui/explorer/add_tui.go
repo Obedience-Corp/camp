@@ -1,6 +1,8 @@
 package explorer
 
 import (
+	"strings"
+
 	"github.com/Obedience-Corp/camp/internal/git/commit"
 	"github.com/Obedience-Corp/camp/internal/intent"
 	"github.com/Obedience-Corp/camp/internal/intent/audit"
@@ -16,17 +18,52 @@ type addTUIFinishedMsg struct{}
 // notes group/view it launches note capture (title/body/tags, no type/concept).
 func (m *Model) startAddTUI() {
 	noteMode := m.shouldCreateNoteFromCurrentPosition()
-	addModel := tui.NewIntentAddModel(m.ctx, m.conceptSvc, tui.AddOptions{
+	opts := tui.AddOptions{
 		FullMode:      !noteMode,
 		NoteMode:      noteMode,
 		Author:        m.author,
 		CampaignRoot:  m.campaignRoot,
 		Shortcuts:     m.shortcuts,
 		AvailableTags: m.availableTags,
-	})
+	}
+	if noteMode && m.service != nil {
+		opts.NoteFolders = m.userNoteFolderChoices()
+	}
+	addModel := tui.NewIntentAddModel(m.ctx, m.conceptSvc, opts)
 	m.addModel = &addModel
 	m.addNoteMode = noteMode
 	m.focus = focusAddTUI
+}
+
+// userNoteFolderChoices returns non-reserved user folders for the destination
+// picker. Empty means the add model hides the destination row entirely.
+func (m *Model) userNoteFolderChoices() []tui.NoteFolderChoice {
+	folders, err := m.service.NoteFolders(m.ctx)
+	if err != nil {
+		return nil
+	}
+	out := make([]tui.NoteFolderChoice, 0)
+	// Always pin root first when any user folder exists.
+	hasUser := false
+	for _, f := range folders {
+		if f.Reserved || f.Status == intent.StatusNote {
+			continue
+		}
+		hasUser = true
+		break
+	}
+	if !hasUser {
+		return nil
+	}
+	out = append(out, tui.NoteFolderChoice{Rel: "", Label: "Notes"})
+	for _, f := range folders {
+		if f.Reserved || f.Status == intent.StatusNote {
+			continue
+		}
+		rel := strings.TrimPrefix(string(f.Status), "notes/")
+		out = append(out, tui.NoteFolderChoice{Rel: rel, Label: f.Name})
+	}
+	return out
 }
 
 func (m *Model) shouldCreateNoteFromCurrentPosition() bool {
@@ -92,6 +129,7 @@ func (m *Model) createIntentFromAddResult(result *tui.AddResult) {
 		Body:    result.Body,
 		Author:  result.Author,
 		Tags:    result.Tags,
+		Folder:  result.NoteFolder,
 	}
 
 	noun := "Intent"
