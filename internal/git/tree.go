@@ -3,6 +3,7 @@ package git
 import (
 	"bytes"
 	"context"
+	"errors"
 	"os"
 	"path/filepath"
 	"strings"
@@ -306,24 +307,52 @@ func CaptureBlobs(ctx context.Context, repoPath string, paths []string) ([]BlobR
 }
 
 // captureDir captures every file under a directory.
+//
+// The walk stops at a nested repository rather than descending into it. Git
+// records such a directory as a gitlink, so its files are not part of this
+// repository's tree at all, and capturing them would both commit another
+// project's checkout inline and produce a `<dir>/.git` entry that git rejects
+// on every attempt, leaving a job that can never drain.
 func captureDir(ctx context.Context, repoPath, dir string) ([]BlobRef, error) {
 	var paths []string
 	root := filepath.Join(repoPath, filepath.FromSlash(dir))
 	err := filepath.WalkDir(root, func(p string, d os.DirEntry, err error) error {
-		if err != nil || d.IsDir() {
+		if err != nil {
 			return err
 		}
 		rel, relErr := filepath.Rel(repoPath, p)
 		if relErr != nil {
 			return relErr
 		}
+		if d.IsDir() {
+			if isRepoBoundary(p) {
+				return camperrors.Wrapf(ErrNestedRepo, "%s", filepath.ToSlash(rel))
+			}
+			return nil
+		}
 		paths = append(paths, filepath.ToSlash(rel))
 		return nil
 	})
 	if err != nil {
+		// The boundary error already names the repository it found, which is
+		// not always the directory the walk started from.
+		if errors.Is(err, ErrNestedRepo) {
+			return nil, err
+		}
 		return nil, camperrors.Wrapf(err, "capture directory %s", dir)
 	}
 	return CaptureBlobs(ctx, repoPath, paths)
+}
+
+// isRepoBoundary reports whether an absolute path is its own git repository.
+//
+// A submodule's `.git` is a file holding a gitdir pointer and an embedded
+// clone's is a directory, so presence is the test and its kind is not. The
+// walk root is included deliberately: `camp project add` captures the
+// submodule directory itself, which is the case this exists for.
+func isRepoBoundary(abs string) bool {
+	_, err := os.Lstat(filepath.Join(abs, ".git"))
+	return err == nil
 }
 
 // blobMode returns the git mode for a file.

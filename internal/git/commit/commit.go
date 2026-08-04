@@ -162,8 +162,9 @@ func stageAndCommit(ctx context.Context, opts Options, message string) error {
 			defercommit.SpawnWorker(ctx, opts.CampaignRoot, opts.CampaignRoot)
 			return errDeferred
 		}
-		// A queue that cannot be written must not cost the user their commit.
-		// Fall through to the synchronous path exactly as before.
+		// A queue that cannot be written, or a set of paths that must not be
+		// deferred at all, must not cost the user their commit. Fall through
+		// to the synchronous path exactly as before.
 	}
 
 	commitScope := append(append([]string{}, opts.Files...), opts.PreStaged...)
