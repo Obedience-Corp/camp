@@ -109,11 +109,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.intents = msg.intents
 		m.filteredIntents = msg.intents
 		m.rebuildSearchCorpus()
-		if m.notesMode {
-			m.groups = groupNotes(msg.intents)
-		} else {
-			m.groups = groupExplorerItemsByStatus(msg.intents, m.nestExpanded("Dungeon"))
-		}
+		m.rebuildStatusGroups()
 		if m.pendingReselectID != "" {
 			m.reselectByID(m.pendingReselectID)
 			m.pendingReselectID = ""

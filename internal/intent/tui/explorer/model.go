@@ -427,30 +427,53 @@ func groupIntentsByStatus(intents []*intent.Intent, dungeonExpanded bool) []Inte
 	return groups
 }
 
-func groupExplorerItemsByStatus(items []*intent.Intent, dungeonExpanded bool) []IntentGroup {
-	notes := IntentGroup{Name: "Notes", Status: intent.StatusNote, Expanded: true}
+// groupExplorerItemsByStatus builds the default explorer list: Inbox/Ready/Active,
+// then the Notes tree (collapsed by default), then Dungeon. Nested notes under
+// notes/<folder>/ are included — they must never be dropped.
+//
+// foldState maps note-folder status → Expanded. omitEmpty drops empty note
+// folders (used while a filter is active).
+func groupExplorerItemsByStatus(items []*intent.Intent, dungeonExpanded bool, foldState map[string]bool, omitEmpty bool) []IntentGroup {
+	notes := make([]*intent.Intent, 0)
 	intents := make([]*intent.Intent, 0, len(items))
 	for _, item := range items {
-		if item.Status == intent.StatusNote {
-			notes.Intents = append(notes.Intents, item)
-			continue
-		}
 		if item.Status.IsNote() {
+			notes = append(notes, item)
 			continue
 		}
 		intents = append(intents, item)
 	}
 
-	groups := groupIntentsByStatus(intents, dungeonExpanded)
-	// Notes prepended: re-index dungeon Children after the shift.
-	out := append([]IntentGroup{notes}, groups...)
-	for i := range out {
-		if !out[i].IsNestParent() {
-			continue
-		}
+	lifecycle := groupIntentsByStatus(intents, dungeonExpanded)
+	// lifecycle: [Inbox, Ready, Active, Dungeon, Done, Killed, Archived, Someday]
+	top := lifecycle[:3]
+	dungeonPart := lifecycle[3:]
+	notesTree := buildNotesTreeGroups(notes, nil, foldState, omitEmpty)
+
+	out := make([]IntentGroup, 0, len(top)+len(notesTree)+len(dungeonPart))
+	out = append(out, top...)
+
+	notesStart := len(out)
+	out = append(out, notesTree...)
+	for i := notesStart; i < notesStart+len(notesTree); i++ {
 		for j := range out[i].Children {
-			out[i].Children[j]++
+			out[i].Children[j] += notesStart
 		}
+	}
+
+	// Re-append dungeon with Children rewired to absolute indices in out.
+	if len(dungeonPart) == 0 {
+		return out
+	}
+	dungeonStart := len(out)
+	parent := dungeonPart[0]
+	parent.Children = make([]int, 0, len(dungeonPart)-1)
+	out = append(out, parent)
+	for i := 1; i < len(dungeonPart); i++ {
+		out[dungeonStart].Children = append(out[dungeonStart].Children, dungeonStart+i)
+		child := dungeonPart[i]
+		child.Children = nil
+		out = append(out, child)
 	}
 	return out
 }
@@ -466,26 +489,33 @@ func (m *Model) nestExpanded(name string) bool {
 	return false
 }
 
-func (m *Model) rebuildStatusGroups() {
-	dungeonExpanded := m.nestExpanded("Dungeon")
-	if m.notesMode {
-		m.groups = groupNotes(m.filteredIntents)
-		return
-	}
-	if m.hasNotesGroup() {
-		m.groups = groupExplorerItemsByStatus(m.filteredIntents, dungeonExpanded)
-		return
-	}
-	m.groups = groupIntentsByStatus(m.filteredIntents, dungeonExpanded)
-}
-
-func (m *Model) hasNotesGroup() bool {
-	for _, group := range m.groups {
-		if group.Status.IsNote() {
-			return true
+// noteFoldState captures Expanded flags for all note-status groups so rebuilds
+// (filter apply/clear, reload) can restore the user's fold choices.
+func (m *Model) noteFoldState() map[string]bool {
+	out := make(map[string]bool)
+	for _, g := range m.groups {
+		if g.Status.IsNote() || g.Status == intent.StatusNote {
+			out[string(g.Status)] = g.Expanded
 		}
 	}
-	return false
+	return out
+}
+
+func (m *Model) rebuildStatusGroups() {
+	dungeonExpanded := m.nestExpanded("Dungeon")
+	fold := m.noteFoldState()
+	omitEmpty := m.hasActiveFilters()
+	if m.notesMode {
+		m.groups = groupNotes(m.filteredIntents, fold, omitEmpty)
+		if omitEmpty {
+			expandNoteAncestorsForMatches(m.groups)
+		}
+		return
+	}
+	m.groups = groupExplorerItemsByStatus(m.filteredIntents, dungeonExpanded, fold, omitEmpty)
+	if omitEmpty {
+		expandNoteAncestorsForMatches(m.groups)
+	}
 }
 
 // isGroupVisible reports whether group gi should be shown and navigable.

@@ -1,6 +1,8 @@
 package explorer
 
 import (
+	"strings"
+
 	"github.com/Obedience-Corp/camp/internal/intent"
 	"github.com/Obedience-Corp/camp/internal/intent/tui"
 	"github.com/charmbracelet/bubbles/textinput"
@@ -148,7 +150,8 @@ func (m Model) updateNormal(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		// Archive (move to dungeon/archived). Notes archive into notes/archived/
 		// reason-free; lifecycle intents require a dungeon reason.
 		if selected := m.SelectedIntent(); selected != nil && selected.Status.IsNote() {
-			if selected.Status != intent.StatusNote {
+			if selected.Status == intent.StatusNoteArchived ||
+				strings.HasPrefix(string(selected.Status), string(intent.StatusNoteArchived)+"/") {
 				m.statusMessage = "Note is already archived"
 				return m, nil
 			}
@@ -208,6 +211,22 @@ func (m Model) updateNormal(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			return m, cmd
 		}
 		m.moveCursorUpN(count)
+		m.updatePreviewForSelection()
+	case "l", "right":
+		// Expand nest parent under the cursor (Notes folders / Dungeon).
+		if m.cursorItem == -1 && len(m.groups) > 0 {
+			g := &m.groups[m.cursorGroup]
+			if g.IsNestParent() && !g.Expanded {
+				g.Expanded = true
+				m.ensureCursorVisible()
+			}
+		}
+		m.updatePreviewForSelection()
+	case "h", "left":
+		// Collapse nest parent under the cursor, or jump to parent header.
+		if len(m.groups) > 0 {
+			m.handleNestCollapse()
+		}
 		m.updatePreviewForSelection()
 	case "ctrl+d":
 		if m.previewFocused && m.showPreview {

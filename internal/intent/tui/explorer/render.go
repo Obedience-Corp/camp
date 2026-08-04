@@ -358,9 +358,15 @@ func (m *Model) buildMainView() string {
 		if group.Expanded {
 			indicator = "▾"
 		}
-		indent := strings.Repeat("    ", group.Depth)
+		depth := group.Depth
+		if depth > maxNoteTreeDepth {
+			depth = maxNoteTreeDepth
+		}
+		indent := strings.Repeat("    ", depth)
 
-		// Nest parents render an aggregate DescendantCount and no direct items.
+		// Nest parents render DescendantCount. When expanded they also show
+		// direct Intents (e.g. root notes under Notes); child folders render
+		// as their own subsequent group rows.
 		if group.IsNestParent() {
 			hdr := fmt.Sprintf("%s%s %s %s (%d)", indent, cursor, indicator, group.Name, group.DescendantCount)
 			if isGroupSelected && !m.previewFocused {
@@ -370,10 +376,20 @@ func (m *Model) buildMainView() string {
 			} else {
 				listLines = append(listLines, tui.GroupHeaderStyle.Render(hdr))
 			}
+			if group.Expanded {
+				for ii, i := range group.Intents {
+					isSelected := gi == m.cursorGroup && ii == m.cursorItem && !m.previewFocused
+					listLines = append(listLines, indent+m.renderIntentRow(i, isSelected, titleWidth))
+				}
+			}
 			continue
 		}
 
-		hdr := fmt.Sprintf("%s%s %s %s (%d)", indent, cursor, indicator, group.Name, len(group.Intents))
+		count := len(group.Intents)
+		if group.DescendantCount > count {
+			count = group.DescendantCount
+		}
+		hdr := fmt.Sprintf("%s%s %s %s (%d)", indent, cursor, indicator, group.Name, count)
 		if isGroupSelected && !m.previewFocused {
 			listLines = append(listLines, tui.GroupHeaderSelectedStyle.Render(hdr))
 		} else {

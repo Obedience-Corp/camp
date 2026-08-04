@@ -114,7 +114,9 @@ func (m *Model) applyFilters() {
 	m.filteredIntents = filtered
 
 	// Rebuild groups from filtered explorer items, preserving nest expand state.
-	m.groups = groupExplorerItemsByStatus(m.filteredIntents, m.nestExpanded("Dungeon"))
+	// While filters are active, omit empty note folder shells and auto-expand
+	// ancestors of matches so nested hits are reachable.
+	m.rebuildStatusGroups()
 
 	// Reset cursor position and scroll
 	m.cursorGroup = 0
