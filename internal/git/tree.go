@@ -37,6 +37,28 @@ func WriteTree(ctx context.Context, repoPath string) (string, error) {
 	return tree, nil
 }
 
+// TreeSHA returns the tree object for commitish (a commit SHA, ref, or
+// commit^{tree} form). Used to refuse empty deferred commits: when the staged
+// tree equals the parent commit's tree there is nothing to land.
+func TreeSHA(ctx context.Context, repoPath, commitish string) (string, error) {
+	out, err := Output(ctx, repoPath, "rev-parse", commitish+"^{tree}")
+	if err != nil {
+		return "", camperrors.Wrapf(err, "resolve tree for %s", shortForMessage(commitish))
+	}
+	tree := strings.TrimSpace(out)
+	if tree == "" {
+		return "", camperrors.Newf("git rev-parse produced no tree for %s", shortForMessage(commitish))
+	}
+	return tree, nil
+}
+
+func shortForMessage(sha string) string {
+	if len(sha) > 8 {
+		return sha[:8]
+	}
+	return sha
+}
+
 // CommitTree creates a commit object for a tree without touching the index,
 // the working tree, or any ref.
 //
@@ -131,27 +153,6 @@ func FirstParentChainContains(ctx context.Context, repoPath, tree, parent string
 		}
 	}
 	return false
-}
-
-// TreeChangedPaths lists the paths that differ between two trees.
-//
-// It exists to describe a deferred commit whose message writer was
-// unavailable. The tree pair is the whole description available at that point,
-// and it is the accurate one: it names what the commit contains rather than
-// what the working tree looks like by the time the worker runs.
-func TreeChangedPaths(ctx context.Context, repoPath, from, to string) ([]string, error) {
-	out, err := Output(ctx, repoPath,
-		"diff-tree", "-r", "--name-only", "--no-commit-id", from, to)
-	if err != nil {
-		return nil, camperrors.Wrap(err, "list the paths a deferred commit changes")
-	}
-	var paths []string
-	for line := range strings.SplitSeq(out, "\n") {
-		if p := strings.TrimSpace(line); p != "" {
-			paths = append(paths, p)
-		}
-	}
-	return paths, nil
 }
 
 // HeadSHA returns the commit HEAD points at, or "" when HEAD is unborn or

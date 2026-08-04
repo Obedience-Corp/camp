@@ -280,12 +280,28 @@ func runCommit(cmd *cobra.Command, args []string) error {
 		}
 	}
 
-	// Check for changes
-	hasChanges, err := executor.HasChanges(ctx)
+	// Commit only what is staged. HasChanges also counts unstaged and
+	// untracked dirt (e.g. excluded submodule pointers at campaign root), which
+	// would let a deferred --auto-write enqueue an empty tree and land a no-op
+	// commit. Staged is the only signal that matches what write-tree / commit
+	// will actually record.
+	hasStaged, err := git.HasStagedChanges(ctx, target.Path)
 	if err != nil {
 		return err
 	}
-	if !hasChanges && !commitAmend {
+	if !hasStaged && !commitAmend {
+		if !target.IsSubmodule && !commitIncludeRefs {
+			driftRefs, driftErr := listUnstagedProjectRefs(ctx, target.Path)
+			if driftErr != nil {
+				return camperrors.Wrap(driftErr, "check unstaged submodule refs")
+			}
+			if len(driftRefs) > 0 {
+				_, _ = fmt.Fprintln(humanOut, ui.Warning("Nothing to commit (submodule ref changes are excluded by default)"))
+				_, _ = fmt.Fprintln(humanOut, ui.Dim("  Use 'camp refs-sync' to commit only the submodule pointers."))
+				_, _ = fmt.Fprintln(humanOut, ui.Dim("  Use 'camp commit --include-refs -m \"...\"' to include them in this commit."))
+				return commitJSONNoop(cmd, jsonResult)
+			}
+		}
 		_, _ = fmt.Fprintln(humanOut, ui.Success("Nothing to commit, working tree clean"))
 		return commitJSONNoop(cmd, jsonResult)
 	}
@@ -301,6 +317,10 @@ func runCommit(cmd *cobra.Command, args []string) error {
 				WriterEnv:     workitemEnvForCommit(ctx, campRoot, commitWorkitem),
 				MessagePrefix: commitTagPrefix(ctx, campRoot),
 			})
+		if errors.Is(deferErr, git.ErrNoChanges) {
+			_, _ = fmt.Fprintln(humanOut, ui.Success("Nothing to commit"))
+			return commitJSONNoop(cmd, jsonResult)
+		}
 		if deferErr != nil {
 			return deferErr
 		}

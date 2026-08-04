@@ -153,12 +153,13 @@ func runWorktreesCommit(cmd *cobra.Command, args []string) error {
 		cmdutil.ReportStagedGrowth(ctx, cmd.OutOrStdout(), wtCtx.WorktreePath, wtCommitLarge)
 	}
 
-	// Check for changes
-	hasChanges, err := executor.HasChanges(ctx)
+	// Staged only: unstaged/untracked dirt must not open an empty deferred
+	// commit (see camp commit for the same gate).
+	hasStaged, err := git.HasStagedChanges(ctx, wtCtx.WorktreePath)
 	if err != nil {
 		return err
 	}
-	if !hasChanges && !wtCommitAmend {
+	if !hasStaged && !wtCommitAmend {
 		fmt.Println(ui.Success("Nothing to commit in worktree"))
 		return nil
 	}
@@ -176,6 +177,10 @@ func runWorktreesCommit(cmd *cobra.Command, args []string) error {
 					ctx, campRoot, wtCtx.WorktreePath, wtCommitWorkitem),
 				MessagePrefix: worktreeCommitTagPrefix(ctx, campRoot, wtCtx.WorktreePath),
 			})
+		if errors.Is(deferErr, git.ErrNoChanges) {
+			fmt.Println(ui.Success("Nothing to commit in worktree"))
+			return nil
+		}
 		if deferErr != nil {
 			return deferErr
 		}

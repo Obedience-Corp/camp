@@ -37,6 +37,15 @@ func TestCommitTreeRetryShortCircuitsBeforeTheWriter(t *testing.T) {
 			}
 			t.Cleanup(func() { alreadyApplied = oldApplied })
 
+			// No real repository behind these jobs: the empty-tree gate would
+			// fail resolving parent^{tree}. This test is about retry order, so
+			// the empty check is forced off.
+			oldEmpty := isEmptyCommitTree
+			isEmptyCommitTree = func(context.Context, string, *Job) (bool, error) {
+				return false, nil
+			}
+			t.Cleanup(func() { isEmptyCommitTree = oldEmpty })
+
 			// The writer errors so the proceed cases stop before reaching
 			// git: what is under test is the gating order, not the commit.
 			oldWrite := writeMessage
