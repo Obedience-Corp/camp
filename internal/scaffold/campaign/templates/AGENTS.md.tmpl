@@ -48,9 +48,55 @@ This is the AI agent instruction file for the {{ .vars.campaign_name }} campaign
 
 ## AI Instructions
 
-<!-- Add specific instructions for AI agents -->
+These defaults apply until this campaign overrides them. Add your own below.
 
-Planning-layer rule of thumb: use `camp intent` for fast capture and small actionable work, `workflow/design/` for architecture or exploratory thinking, and festivals for structured multi-step execution. Intent state is stored under `.campaign/intents/`. Canonical guide: https://fest.build/guides/intent-design-festival/
+### Sizing work
+
+Say which gear you are in before creating anything:
+
+- One file, one session, reversible: answer in chat, create nothing.
+- Linear, a handful of steps: `fest create workflow <name>`.
+- Multi-phase, multi-repo, or outlives a session: `fest create festival`.
+
+Most requests are the first row. Reaching for a festival on small work is a
+failure mode, not thoroughness.
+
+### Planning a festival
+
+Create it, then drive `fest next` and answer what it asks. Do not scaffold every
+phase and sequence up front and fill the `[REPLACE]` markers afterward: it drops
+`fest validate` to 0 and produces plausible filler instead of a plan. The loop is
+the planning process.
+
+Plan the full scope. Scaling down is the user's call, made against a complete
+plan.
+
+### Task documents
+
+`fest validate` scores structure, not substance, so a festival of one-line tasks
+still validates at 100. Write each task for an agent with none of this
+conversation's context: name the files it touches, state error paths as well as
+the happy path, and cite `file:line` anchors you have actually opened.
+
+### Committing
+
+Never run raw `git commit` in a campaign.
+
+- Executing a festival: `fest commit -m "..."`
+- Inside `projects/*` or a worktree: `camp p commit -m "..."`
+- Campaign root files: `camp commit -m "..."`
+
+### Capturing work
+
+Use `camp intent` for fast capture and small actionable work, `workflow/design/`
+for architecture or exploratory thinking, and festivals for structured
+multi-step execution. Intent state lives under `.campaign/intents/`.
+Canonical guide: https://fest.build/guides/intent-design-festival/
+
+### Learning the methodology
+
+`fest understand` covers it in full. Read topics when you need them rather than
+all at once. Start with `fest understand planning` and `fest understand loop`.
 
 ---
 

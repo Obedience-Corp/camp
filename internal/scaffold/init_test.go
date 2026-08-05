@@ -169,12 +169,43 @@ func TestInit(t *testing.T) {
 		".campaign/skills/campaign-commit/SKILL.md",
 		".campaign/skills/camp-projects/SKILL.md",
 		".campaign/skills/fest-execution/SKILL.md",
+		".campaign/skills/festival-intake/SKILL.md",
 	}
 	for _, relPath := range expectedSkillFiles {
 		path := filepath.Join(campaignDir, relPath)
 		if _, err := os.Stat(path); os.IsNotExist(err) {
 			t.Errorf("skill file %s was not created", relPath)
 		}
+	}
+
+	// festival-intake is the front door: its description must trigger on plain
+	// outcome language, because a new user has no festival vocabulary yet.
+	intakePath := filepath.Join(campaignDir, ".campaign", "skills", "festival-intake", "SKILL.md")
+	intakeSkill, err := os.ReadFile(intakePath)
+	if err != nil {
+		t.Fatalf("failed to read festival-intake skill: %v", err)
+	}
+	for _, phrase := range []string{"migration", "rewrite", "audit", "plan this", "where do I start"} {
+		if !strings.Contains(string(intakeSkill), phrase) {
+			t.Errorf("festival-intake description should trigger on %q", phrase)
+		}
+	}
+
+	// The planning skill must lead with the fest next loop. Teaching
+	// scaffold-first is what produces hundreds of unfilled [REPLACE] markers
+	// and a validate score of 0.
+	planningPath := filepath.Join(campaignDir, ".campaign", "skills", "fest-planning", "SKILL.md")
+	planningSkill, err := os.ReadFile(planningPath)
+	if err != nil {
+		t.Fatalf("failed to read fest-planning skill: %v", err)
+	}
+	if !strings.Contains(string(planningSkill), "The Loop Is The Planning Process") {
+		t.Error("fest-planning should lead with the fest next loop, not scaffolding")
+	}
+	loopIdx := strings.Index(string(planningSkill), "fest next")
+	createPhaseIdx := strings.Index(string(planningSkill), "fest create phase")
+	if loopIdx < 0 || createPhaseIdx < 0 || loopIdx > createPhaseIdx {
+		t.Error("fest-planning should introduce the fest next loop before fest create phase")
 	}
 	workflowSkillPath := filepath.Join(campaignDir, ".campaign", "skills", "campaign-workflows", "SKILL.md")
 	workflowSkill, err := os.ReadFile(workflowSkillPath)

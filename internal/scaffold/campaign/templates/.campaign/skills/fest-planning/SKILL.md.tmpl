@@ -5,9 +5,32 @@ description: Plan and scaffold festivals. Use when creating festival/phase/seque
 
 # Festival Planning
 
+## The Loop Is The Planning Process
+
+Create the festival, then drive `fest next`. It asks for one planning decision
+at a time and writes the structure as you answer.
+
+```bash
+fest create festival --type standard --name <name>
+fest next                     # answer what it asks
+# ...repeat until the plan is complete...
+fest validate
+```
+
+Do **not** scaffold every phase and sequence first and fill the `[REPLACE]`
+markers afterward. Scaffolding a large phase in one step writes hundreds of
+unfilled markers, drops `fest validate` from 100 to 0 with no partial-credit
+state, and creates pressure to fill them with plausible filler just to restore
+the score. The result is a green festival full of worthless tasks.
+
+The `fest create phase` / `fest create sequence` / `fest create task` commands
+below are for targeted additions to a plan that already exists, not for building
+one from scratch.
+
 ## Start Here
 
 ```bash
+fest understand planning
 fest understand methodology
 fest understand structure
 fest understand tasks
@@ -68,6 +91,8 @@ fest create phase --name "002_RESEARCH" --type research
 
 ```bash
 fest create festival
+
+# Targeted additions to an existing plan, not a way to build one
 fest create phase
 fest create sequence
 fest create task
@@ -75,6 +100,24 @@ fest create task
 fest promote
 fest validate
 ```
+
+## Task Quality (Not Checked By validate)
+
+`fest validate` scores structure, not substance. A festival of one-line tasks
+validates at 100. Task quality is on you.
+
+A task document is written for an agent that has none of the planning
+conversation's context. Tutorial-grade means:
+
+- It names the files it touches.
+- It states expected behavior, including error paths, not just the happy path.
+- It cites real `file:line` anchors you have actually opened. Never write an
+  anchor because it sounds plausible; open the file and verify it.
+- It says how to tell the task is done, in terms someone else could check.
+
+Plan the full scope. Do not trim work out of a plan to make it look achievable,
+and do not defer the hard parts to an invented later phase. Scaling down is the
+user's call, made against a complete plan.
 
 ## Link + FGO Navigation (Required for Project-Context Execution)
 
@@ -108,6 +151,9 @@ fest scaffold from-plan --plan STRUCTURE.md --name my-festival
 
 ## Common Mistakes
 
+- Scaffolding a whole phase of sequences up front, then filling `[REPLACE]`
+  markers. Drive `fest next` instead.
+- Writing thin task documents because `fest validate` still scores 100.
 - Using `fest link --project ...` (invalid).
 - Assuming an old link still works after changing project directory location.
 - Picking `implementation` type when requirements are still unclear (should be `standard` or `research` first).
