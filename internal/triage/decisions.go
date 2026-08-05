@@ -211,12 +211,60 @@ func (v RowVerdict) Applicable() bool {
 }
 
 // FoldDecisions reduces a decision stream to the current verdict of every row
-// it mentions, keyed by stable id. Events must be in append order; the last
-// event for a row wins, with stale and superseded retiring the verdict they
-// follow rather than replacing it with one of their own.
+// it mentions, keyed by stable id. Events must be in append order.
 //
-// Implemented with the run store in task 02 of this sequence.
+// Last event wins, with one refinement: stale and superseded retire a verdict
+// rather than expressing a new one, so they change the row's state and its
+// provenance while leaving the disposition they invalidated visible. That is
+// what lets `status` say which verdict went stale instead of only that one
+// did, and it is why the stream is folded rather than overwritten in place.
 func FoldDecisions(events []DecisionEvent) map[string]RowVerdict {
-	_ = events
-	return nil
+	verdicts := make(map[string]RowVerdict, len(events))
+	for _, event := range events {
+		if event.StableID == "" {
+			continue
+		}
+		verdict := verdicts[event.StableID]
+		verdict.StableID = event.StableID
+		verdict.Events++
+		verdict.State = verdictStateFor(event.Event)
+		verdict.Actor = event.Actor
+		verdict.At = event.At
+
+		// Retiring events carry no verdict of their own; anything they do
+		// supply still wins, so a refresh may annotate what it invalidated.
+		if event.Disposition != "" {
+			verdict.Disposition = event.Disposition
+		}
+		if event.CanonicalAction != "" {
+			verdict.CanonicalAction = event.CanonicalAction
+		}
+		if event.RationaleRef != "" {
+			verdict.RationaleRef = event.RationaleRef
+		}
+		if event.Note != "" {
+			verdict.Note = event.Note
+		}
+		verdicts[event.StableID] = verdict
+	}
+	return verdicts
+}
+
+// verdictStateFor maps an event kind to the state it leaves the row in. An
+// amendment is an approval of a different disposition, so it lands approved.
+func verdictStateFor(kind DecisionEventKind) VerdictState {
+	switch kind {
+	case DecisionProposed:
+		return VerdictProposed
+	case DecisionApproved, DecisionAmended:
+		return VerdictApproved
+	case DecisionRejected:
+		return VerdictRejected
+	case DecisionSuperseded:
+		return VerdictSuperseded
+	case DecisionStale:
+		return VerdictStale
+	default:
+		return VerdictNone
+	}
 }
