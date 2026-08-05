@@ -169,6 +169,10 @@ type Cloner struct {
 	syncer   *sync.Syncer     // Optional syncer for post-clone URL synchronization
 	progress ProgressReporter // Progress reporter for output
 	peer     *peer.Source     // Optional peer to seed git objects from
+	// peerUnavailable records that --from named a machine camp could not
+	// reach. The clone proceeds from origin, and this is what lets the seed
+	// summary say so.
+	peerUnavailable string
 	// peerQuiescence caches the peer's verdicts from the root-clone step so
 	// submodule seeding reads the same report rather than paying for a second
 	// round-trip and risking a different answer mid-clone.
@@ -279,6 +283,20 @@ func WithNoRegister(noRegister bool) ClonerOption {
 func WithPeer(p *peer.Source) ClonerOption {
 	return func(c *Cloner) {
 		c.peer = p
+	}
+}
+
+// WithPeerUnavailable records that a peer was requested but could not be
+// reached, so the clone fell back to origin before a Cloner was even built.
+//
+// Without it, `--from <unreachable> --json` is byte-identical to a plain clone:
+// the human warning is suppressed in JSON mode and no peer was configured, so
+// nothing reports the degradation. A scripted caller could not tell "seeded
+// from the peer" from "peer was down, used origin", which is exactly the silent
+// fallback camp is not supposed to have.
+func WithPeerUnavailable(reason string) ClonerOption {
+	return func(c *Cloner) {
+		c.peerUnavailable = reason
 	}
 }
 

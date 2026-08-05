@@ -137,11 +137,17 @@ machines:
 
 	localRoot := "/campaigns/" + name
 	out, err := tc.RunCampInDir("/campaigns", "clone", rootOrigin, localRoot,
-		"--from", loopbackMachineID, "--no-submodules", "--no-validate")
+		"--from", loopbackMachineID, "--no-submodules", "--no-validate", "--json")
 	require.NoError(t, err, "an unreachable peer must degrade to origin, not fail: %s", out)
 
 	requireFileContent(t, tc, localRoot+"/marker.txt", "root-marker\n")
 	require.Equal(t, rootOrigin, tc.GitOutput(t, localRoot, "remote", "get-url", "origin"))
+
+	// The degradation must be visible to a scripted caller. In JSON mode the
+	// human warning is suppressed, so without the seed entry this output would
+	// be indistinguishable from a clone that never asked for a peer.
+	require.Equal(t, "origin", seedMethodFor(t, out, "."),
+		"an unreachable peer must be reported, not silently swallowed: %s", out)
 }
 
 // seedMethodFor reads the transport a clone reported for one repository from

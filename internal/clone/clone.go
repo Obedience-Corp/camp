@@ -35,6 +35,15 @@ func (c *Cloner) Clone(ctx context.Context) (*CloneResult, error) {
 
 	result := &CloneResult{Success: true}
 
+	// A peer that could not be reached is still worth reporting: every repo
+	// came from origin, and the summary should say why rather than look like
+	// no peer was asked for.
+	if c.peerUnavailable != "" {
+		result.Seed = append(result.Seed, SeedRepoResult{
+			Repo: quiescenceRootRepo, Method: SeedMethodOrigin, Reason: c.peerUnavailable,
+		})
+	}
+
 	// Phase 1: Clone repository (without --recurse-submodules to avoid all-or-nothing failure)
 	c.progress.StartPhase("Cloning campaign repository")
 	var targetDir string

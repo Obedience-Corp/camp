@@ -87,3 +87,36 @@ func TestCloneJSONReportsSeedPerRepo(t *testing.T) {
 		t.Errorf("bundle entry should explain the fallback, got %q", decoded.Seed.Repos[1].Reason)
 	}
 }
+
+// TestCloneJSONReportsAnUnreachablePeer covers the case that otherwise
+// disappears: --from named a machine camp could not reach, the human warning is
+// suppressed in JSON mode, and no peer was configured — so without an explicit
+// record the output is indistinguishable from a plain clone.
+func TestCloneJSONReportsAnUnreachablePeer(t *testing.T) {
+	c := NewCloner(WithPeerUnavailable(`peer "studio" unreachable: dial timeout`))
+	if c.peerUnavailable == "" {
+		t.Fatal("WithPeerUnavailable did not record the reason")
+	}
+
+	result := &CloneResult{
+		Success: true, Directory: "/campaigns/demo",
+		Seed: []SeedRepoResult{{
+			Repo: ".", Method: SeedMethodOrigin, Reason: c.peerUnavailable,
+		}},
+	}
+	raw, err := result.JSON()
+	if err != nil {
+		t.Fatalf("JSON() error = %v", err)
+	}
+	var decoded JSONOutput
+	if err := json.Unmarshal(raw, &decoded); err != nil {
+		t.Fatalf("unmarshal: %v", err)
+	}
+	if decoded.Seed == nil || len(decoded.Seed.Repos) != 1 {
+		t.Fatalf("expected one seed entry reporting the fallback, got %s", raw)
+	}
+	if got := decoded.Seed.Repos[0]; got.Method != SeedMethodOrigin ||
+		!strings.Contains(got.Reason, "unreachable") {
+		t.Errorf("seed entry = %+v, want origin with an unreachable reason", got)
+	}
+}

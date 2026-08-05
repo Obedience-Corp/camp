@@ -180,6 +180,11 @@ func runClone(cmd *cobra.Command, args []string) error {
 				fmt.Fprintf(os.Stderr, "%s peer %q unreachable (%v); cloning from origin\n",
 					ui.WarningIcon(), cloneOpts.from, err)
 			}
+			// The warning above is suppressed in JSON mode, so carry the
+			// degradation into the machine-readable output instead of letting
+			// it vanish.
+			clonerOpts = append(clonerOpts, clone.WithPeerUnavailable(
+				fmt.Sprintf("peer %q unreachable: %v", cloneOpts.from, err)))
 		default:
 			clonerOpts = append(clonerOpts, clone.WithPeer(src))
 		}
