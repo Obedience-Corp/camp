@@ -274,3 +274,61 @@ func insertNodeAfter(doc *yaml.Node, after, key string, value *yaml.Node) error 
 	root.Content = updated
 	return nil
 }
+
+// removeKeys deletes the named keys from a mapping document, reporting whether
+// anything changed. Absent keys are skipped rather than treated as errors.
+func removeKeys(doc *yaml.Node, keys []string) bool {
+	root := mappingRoot(doc)
+	if root == nil {
+		return false
+	}
+	drop := make(map[string]bool, len(keys))
+	for _, key := range keys {
+		drop[key] = true
+	}
+
+	kept := make([]*yaml.Node, 0, len(root.Content))
+	changed := false
+	for i := 0; i+1 < len(root.Content); i += 2 {
+		if drop[root.Content[i].Value] {
+			changed = true
+			continue
+		}
+		kept = append(kept, root.Content[i], root.Content[i+1])
+	}
+	if changed {
+		root.Content = kept
+	}
+	return changed
+}
+
+// RemoveFrontmatterFields deletes camp-owned keys from a markdown file's
+// frontmatter block, holding the per-file lock and writing atomically.
+func RemoveFrontmatterFields(ctx context.Context, path string, keys []string) error {
+	release, err := fsutil.AcquireFileLock(ctx, path+".lock")
+	if err != nil {
+		return err
+	}
+	defer release()
+
+	content, err := os.ReadFile(path)
+	if err != nil {
+		return camperrors.Wrapf(err, "read %s", path)
+	}
+	block, body, ok := SplitFrontmatter(content)
+	if !ok {
+		return nil
+	}
+	var doc yaml.Node
+	if err := yaml.Unmarshal(block, &doc); err != nil {
+		return camperrors.Wrapf(err, "parse frontmatter %s", path)
+	}
+	if !removeKeys(&doc, keys) {
+		return nil
+	}
+	encoded, err := encodeFrontmatterNode(&doc)
+	if err != nil {
+		return err
+	}
+	return fsutil.WriteFileAtomically(path, assembleFrontmatter(encoded, body), 0o644)
+}

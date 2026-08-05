@@ -19,6 +19,51 @@ func RecordPromotion(ctx context.Context, root, relPath, promotedTo string, at t
 	})
 }
 
+// RemoveLifecycleFields deletes camp-owned keys from a workitem's marker or
+// frontmatter, leaving everything else untouched.
+//
+// The inverse of recordLifecycleFields, and needed because `split --undo` has
+// to leave a marker that reads as though the split never happened. Removing a
+// key that is not there is not an error: undo runs over successors that may
+// have been unstamped already.
+func RemoveLifecycleFields(ctx context.Context, root, relPath string, keys []string) error {
+	if err := ctx.Err(); err != nil {
+		return err
+	}
+	target := filepath.Join(root, filepath.FromSlash(relPath))
+	info, err := os.Stat(target)
+	if err != nil {
+		return camperrors.Wrapf(err, "stat %s", relPath)
+	}
+	if !info.IsDir() {
+		return RemoveFrontmatterFields(ctx, target, keys)
+	}
+
+	abs := filepath.Join(target, MetadataFilename)
+	release, err := fsutil.AcquireFileLock(ctx, abs+".lock")
+	if err != nil {
+		return err
+	}
+	defer release()
+
+	raw, err := os.ReadFile(abs)
+	if err != nil {
+		return camperrors.Wrapf(err, "read %s", abs)
+	}
+	var doc yaml.Node
+	if err := yaml.Unmarshal(raw, &doc); err != nil {
+		return camperrors.Wrapf(err, "parse %s", abs)
+	}
+	if !removeKeys(&doc, keys) {
+		return nil
+	}
+	out, err := yaml.Marshal(&doc)
+	if err != nil {
+		return camperrors.Wrapf(err, "encode %s", abs)
+	}
+	return fsutil.WriteFileAtomically(abs, out, 0o644)
+}
+
 // recordLifecycleFields stamps scalar lifecycle keys onto a workitem, choosing
 // the right surface by shape: a directory workitem's .workitem marker, or a file
 // workitem's own frontmatter. Existing keys are updated in place so the

@@ -371,3 +371,140 @@ func atoiTrim(t *testing.T, s string) int {
 	}
 	return n
 }
+
+// undoOutcomes runs `split --undo` and returns the per-successor dispositions.
+func undoOutcomes(t *testing.T, tc *TestContainer, path, parent string) map[string]string {
+	t.Helper()
+	output, err := tc.RunCampInDir(path, "workitem", "split", parent, "--undo", "--json")
+	require.NoError(t, err, output)
+
+	var result struct {
+		Successors []struct {
+			StableID    string `json:"stable_id"`
+			Disposition string `json:"disposition"`
+			Reason      string `json:"reason"`
+		} `json:"successors"`
+	}
+	require.NoError(t, json.Unmarshal([]byte(extractJSON(t, output)), &result))
+
+	out := map[string]string{}
+	for _, successor := range result.Successors {
+		out[successor.StableID] = successor.Disposition
+	}
+	return out
+}
+
+// TestWorkitemSplitUndo_Matrix is the undo matrix doc 06 names: pristine
+// deleted, edited kept, adopted kept, and the parent unstamped either way.
+func TestWorkitemSplitUndo_Matrix(t *testing.T) {
+	tc := GetSharedContainer(t)
+	path := setupTriageCampaign(t, tc, "wi-split-undo", 3, 0)
+
+	output, err := tc.RunCampInDir(path, "workitem", "split", "design-item-1",
+		"--into", "pristine-one", "--into", "edited-one",
+		"--adopt", "workflow/design/design-item-2", "--json")
+	require.NoError(t, err, output)
+
+	var split struct {
+		Successors []struct {
+			Name         string `json:"name"`
+			StableID     string `json:"stable_id"`
+			RelativePath string `json:"relative_path"`
+			Created      bool   `json:"created"`
+		} `json:"successors"`
+	}
+	require.NoError(t, json.Unmarshal([]byte(extractJSON(t, output)), &split))
+	require.Len(t, split.Successors, 3)
+
+	byName := map[string]string{}
+	pathByName := map[string]string{}
+	for _, successor := range split.Successors {
+		byName[successor.Name] = successor.StableID
+		pathByName[successor.Name] = successor.RelativePath
+	}
+
+	// A created successor records the seed digest, which is what makes the
+	// pristine check a comparison rather than a guess.
+	assert.Contains(t, markerOf(t, tc, path, pathByName["pristine-one"]), "split_seed_hash:")
+	assert.NotContains(t, markerOf(t, tc, path, "workflow/design/design-item-2"), "split_seed_hash:",
+		"an adopted successor had no seeded README, so it carries no seed hash")
+
+	// Someone writes in one of them.
+	tc.Shell(t, "cd "+path+" && printf 'real content\\n' >> "+pathByName["edited-one"]+"/README.md")
+	commitAll(t, tc, path, "write in a successor")
+
+	outcomes := undoOutcomes(t, tc, path, "design-item-1")
+	assert.Equal(t, "deleted", outcomes[byName["pristine-one"]],
+		"an untouched successor is removed")
+	assert.Equal(t, "kept", outcomes[byName["edited-one"]],
+		"an edited successor is never deleted")
+	assert.Equal(t, "kept", outcomes["design-item-2"],
+		"an adopted successor pre-existed the split and is only unstamped")
+
+	// The pristine one is gone; the others survive, unstamped.
+	_, err = tc.ReadFile(path + "/" + pathByName["pristine-one"] + "/.workitem")
+	require.Error(t, err, "the pristine successor was deleted")
+
+	for _, rel := range []string{pathByName["edited-one"], "workflow/design/design-item-2"} {
+		marker := markerOf(t, tc, path, rel)
+		assert.NotContains(t, marker, "split_from", "%s must be unstamped", rel)
+		assert.NotContains(t, marker, "split_seed_hash", "%s must be unstamped", rel)
+	}
+
+	// The parent no longer declares anything, so its retirement is ungated.
+	parentMarker := markerOf(t, tc, path, "workflow/design/design-item-1")
+	assert.NotContains(t, parentMarker, "split_into")
+	assert.NotContains(t, parentMarker, "split_at")
+
+	output, err = tc.RunCampInDir(path, "workitem", "promote", "design-item-1",
+		"--target", "completed", "--dry-run")
+	require.NoError(t, err, output)
+}
+
+// TestWorkitemSplitUndo_PartialAfterManualDeletion: a successor someone
+// already removed by hand must not stop the undo from cleaning the parent.
+func TestWorkitemSplitUndo_PartialAfterManualDeletion(t *testing.T) {
+	tc := GetSharedContainer(t)
+	path := setupTriageCampaign(t, tc, "wi-split-undo-partial", 2, 0)
+
+	output, err := tc.RunCampInDir(path, "workitem", "split", "design-item-1",
+		"--into", "gone-one", "--into", "still-here", "--json")
+	require.NoError(t, err, output)
+
+	var split struct {
+		Successors []struct {
+			Name         string `json:"name"`
+			StableID     string `json:"stable_id"`
+			RelativePath string `json:"relative_path"`
+		} `json:"successors"`
+	}
+	require.NoError(t, json.Unmarshal([]byte(extractJSON(t, output)), &split))
+
+	var goneID, gonePath string
+	for _, successor := range split.Successors {
+		if successor.Name == "gone-one" {
+			goneID, gonePath = successor.StableID, successor.RelativePath
+		}
+	}
+	require.NotEmpty(t, goneID)
+
+	tc.Shell(t, "cd "+path+" && rm -rf "+gonePath)
+	commitAll(t, tc, path, "remove a successor by hand")
+
+	outcomes := undoOutcomes(t, tc, path, "design-item-1")
+	assert.Equal(t, "missing", outcomes[goneID],
+		"an already-deleted successor is reported, not an error")
+
+	assert.NotContains(t, markerOf(t, tc, path, "workflow/design/design-item-1"), "split_into",
+		"the parent is still cleaned")
+}
+
+// TestWorkitemSplitUndo_RefusesWithoutASplit keeps the error path honest.
+func TestWorkitemSplitUndo_RefusesWithoutASplit(t *testing.T) {
+	tc := GetSharedContainer(t)
+	path := setupTriageCampaign(t, tc, "wi-split-undo-none", 2, 0)
+
+	output, err := tc.RunCampInDir(path, "workitem", "split", "design-item-1", "--undo")
+	require.Error(t, err, output)
+	assert.Contains(t, output, "no split to undo")
+}

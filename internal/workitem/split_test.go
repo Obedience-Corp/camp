@@ -107,11 +107,20 @@ func TestSplitLineageFields(t *testing.T) {
 	assert.Equal(t, SplitAtKey, parent[1].Key)
 	assert.Equal(t, "2026-08-05T12:00:00Z", parent[1].Value)
 
-	successor := lineage.SuccessorFields()
-	require.Len(t, successor, 1)
-	assert.Equal(t, SplitFromKey, successor[0].Key)
-	assert.Equal(t, "design-parent", successor[0].Value,
+	// A created successor carries the seed digest too, which is what lets
+	// undo prove it is untouched.
+	created := lineage.SuccessorFields("sha256:abc")
+	require.Len(t, created, 2)
+	assert.Equal(t, SplitFromKey, created[0].Key)
+	assert.Equal(t, "design-parent", created[0].Value,
 		"the back-link makes the lineage readable from either end")
+	assert.Equal(t, SplitSeedHashKey, created[1].Key)
+
+	// An adopted successor had no seeded README, so it gets no seed hash —
+	// and undo therefore never deletes it.
+	adopted := lineage.SuccessorFields("")
+	require.Len(t, adopted, 1)
+	assert.Equal(t, SplitFromKey, adopted[0].Key)
 }
 
 // TestSplitLineageFieldsProduceTheRightNodeShape guards the extension made to
@@ -124,7 +133,7 @@ func TestSplitLineageFieldsProduceTheRightNodeShape(t *testing.T) {
 	require.Len(t, into.Content, 1)
 	assert.Equal(t, "design-a", into.Content[0].Value)
 
-	from := lineage.SuccessorFields()[0].node()
+	from := lineage.SuccessorFields("")[0].node()
 	assert.Equal(t, "!!str", from.Tag)
 }
 
@@ -227,7 +236,7 @@ func TestSplitMarkerFieldsAreOmitEmpty(t *testing.T) {
 	encoded, err := marshalMetadataForTest(meta)
 	require.NoError(t, err)
 
-	for _, key := range []string{SplitIntoKey, SplitAtKey, SplitFromKey} {
+	for _, key := range []string{SplitIntoKey, SplitAtKey, SplitFromKey, SplitSeedHashKey} {
 		assert.NotContains(t, encoded, key,
 			"an unsplit workitem's marker must not gain %q", key)
 	}
@@ -238,4 +247,82 @@ func TestSplitMarkerFieldsAreOmitEmpty(t *testing.T) {
 func marshalMetadataForTest(meta Metadata) (string, error) {
 	buf, err := yaml.Marshal(&meta)
 	return string(buf), err
+}
+
+// TestPristineCheck is undo's destructive-half predicate: deletion is allowed
+// only on proof, and everything else is kept with a reason.
+func TestPristineCheck(t *testing.T) {
+	tests := []struct {
+		name       string
+		check      PristineCheck
+		want       bool
+		wantReason string
+	}{
+		{
+			name:  "created, unedited, nothing added",
+			check: PristineCheck{SeedHash: "sha256:a", ReadmeHash: "sha256:a"},
+			want:  true,
+		},
+		{
+			name:       "adopted successors are never deleted",
+			check:      PristineCheck{ReadmeHash: "sha256:a"},
+			wantReason: "existed before the split",
+		},
+		{
+			name:       "an edited README keeps it",
+			check:      PristineCheck{SeedHash: "sha256:a", ReadmeHash: "sha256:b"},
+			wantReason: "README has been edited",
+		},
+		{
+			name:       "a deleted README keeps it",
+			check:      PristineCheck{SeedHash: "sha256:a"},
+			wantReason: "README has been edited",
+		},
+		{
+			name:       "content added beside the seed keeps it",
+			check:      PristineCheck{SeedHash: "sha256:a", ReadmeHash: "sha256:a", ExtraEntries: 1},
+			wantReason: "content beyond the seed",
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got, reason := tt.check.Pristine()
+			assert.Equal(t, tt.want, got)
+			if tt.wantReason == "" {
+				assert.Empty(t, reason)
+				return
+			}
+			assert.Contains(t, reason, tt.wantReason)
+		})
+	}
+}
+
+// TestSeedHashIsStable pins the digest undo compares against.
+func TestSeedHashIsStable(t *testing.T) {
+	body := SplitReadme("a", "parent", "WI-1", splitAt)
+	assert.Equal(t, SeedHash(body), SeedHash(body))
+	assert.NotEqual(t, SeedHash(body), SeedHash(append(body, 'x')))
+	assert.True(t, strings.HasPrefix(SeedHash(body), "sha256:"))
+}
+
+// TestSplitLineageKeysCoverEveryStamp: undo removes exactly what split writes,
+// so a new stamp cannot be left behind by the inverse.
+func TestSplitLineageKeysCoverEveryStamp(t *testing.T) {
+	lineage := SplitLineage{ParentStableID: "p", SuccessorIDs: []string{"a"}, At: splitAt}
+
+	written := map[string]bool{}
+	for _, f := range lineage.ParentFields() {
+		written[f.Key] = true
+	}
+	for _, f := range lineage.SuccessorFields("sha256:a") {
+		written[f.Key] = true
+	}
+
+	removed := map[string]bool{}
+	for _, key := range SplitLineageKeys() {
+		removed[key] = true
+	}
+	for key := range written {
+		assert.True(t, removed[key], "undo must remove %q, which split writes", key)
+	}
 }

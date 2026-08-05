@@ -92,6 +92,11 @@ type Metadata struct {
 	// Lineage lives here rather than in links.yaml because that registry
 	// attaches workitems to scopes (projects, worktrees), not to each other.
 	SplitFrom string `yaml:"split_from,omitempty"`
+	// SplitSeedHash is the sha256 of the README this split seeded, recorded
+	// so `split --undo` can tell a pristine successor from one someone has
+	// already written in. A comparison, not a guess: undo deletes only what
+	// it can prove nobody touched. Added in v1alpha8.
+	SplitSeedHash string `yaml:"split_seed_hash,omitempty"`
 }
 
 // LoadMetadata reads .workitem from dir on the host filesystem.

@@ -2,6 +2,8 @@ package workitem
 
 import (
 	"context"
+	"crypto/sha256"
+	"encoding/hex"
 	"sort"
 	"strings"
 	"time"
@@ -20,6 +22,9 @@ const (
 	SplitAtKey = "split_at"
 	// SplitFromKey names the parent, on each successor.
 	SplitFromKey = "split_from"
+	// SplitSeedHashKey records the digest of the README a split seeded, so
+	// undo can prove a successor is untouched rather than guess.
+	SplitSeedHashKey = "split_seed_hash"
 )
 
 // SplitSuccessor is one declared successor of a split.
@@ -36,6 +41,9 @@ type SplitSuccessor struct {
 	Created bool
 	// Adopted reports that a non-workitem directory was adopted to become one.
 	Adopted bool
+	// SeedHash is the digest of the README this split seeded, empty for a
+	// successor that already existed.
+	SeedHash string
 }
 
 // SplitLineage is the stamp a split writes, in both directions.
@@ -57,11 +65,33 @@ func (l SplitLineage) ParentFields() []FrontmatterField {
 	}
 }
 
-// SuccessorFields returns the lineage field stamped onto one successor.
-func (l SplitLineage) SuccessorFields() []FrontmatterField {
-	return []FrontmatterField{
+// SuccessorFields returns the lineage fields stamped onto one successor.
+//
+// seedHash is empty for an adopted successor, which had no seeded README and
+// must never be deleted by undo: it pre-existed the split.
+func (l SplitLineage) SuccessorFields(seedHash string) []FrontmatterField {
+	fields := []FrontmatterField{
 		{After: "type", Key: SplitFromKey, Value: l.ParentStableID},
 	}
+	if seedHash != "" {
+		fields = append(fields, FrontmatterField{
+			After: SplitFromKey, Key: SplitSeedHashKey, Value: seedHash,
+		})
+	}
+	return fields
+}
+
+// SeedHash is the digest recorded for a seeded README, and the same function
+// undo re-computes to decide whether a successor is still pristine.
+func SeedHash(body []byte) string {
+	sum := sha256.Sum256(body)
+	return "sha256:" + hex.EncodeToString(sum[:])
+}
+
+// SplitLineageKeys are every key a split writes, which is exactly the set undo
+// removes.
+func SplitLineageKeys() []string {
+	return []string{SplitIntoKey, SplitAtKey, SplitFromKey, SplitSeedHashKey}
 }
 
 // RecordSplitLineage stamps the parent and every successor.
@@ -78,7 +108,7 @@ func RecordSplitLineage(ctx context.Context, root string, lineage SplitLineage, 
 		return err
 	}
 	for _, successor := range successors {
-		if err := recordLifecycleFields(ctx, root, successor.RelativePath, lineage.SuccessorFields()); err != nil {
+		if err := recordLifecycleFields(ctx, root, successor.RelativePath, lineage.SuccessorFields(successor.SeedHash)); err != nil {
 			return camperrors.Wrapf(err, "stamping split_from on %s", successor.RelativePath)
 		}
 	}
@@ -288,4 +318,57 @@ func stableIDOfItem(item WorkItem) string {
 	default:
 		return item.Key
 	}
+}
+
+// UndoDisposition is what an undo did with one successor.
+type UndoDisposition string
+
+const (
+	// UndoDeleted means the successor was pristine and was removed.
+	UndoDeleted UndoDisposition = "deleted"
+	// UndoKept means the successor was touched or pre-existing, so undo
+	// removed its lineage stamp and left the directory alone.
+	UndoKept UndoDisposition = "kept"
+	// UndoMissing means the successor was already gone.
+	UndoMissing UndoDisposition = "missing"
+)
+
+// UndoOutcome is one successor's result.
+type UndoOutcome struct {
+	StableID     string          `json:"stable_id"`
+	RelativePath string          `json:"relative_path"`
+	Disposition  UndoDisposition `json:"disposition"`
+	// Reason explains a kept successor, so "kept" is never just a verdict.
+	Reason string `json:"reason,omitempty"`
+}
+
+// PristineCheck is what undo needs to decide whether a successor is untouched.
+type PristineCheck struct {
+	// SeedHash is the digest recorded at split time, empty for an adopted
+	// successor.
+	SeedHash string
+	// ReadmeHash is the digest of the README as it stands now.
+	ReadmeHash string
+	// ExtraEntries counts directory entries beyond the marker and README.
+	ExtraEntries int
+}
+
+// Pristine reports whether a successor may be deleted by undo, and why not.
+//
+// Deletion is the destructive half of the inverse, so it is allowed only on
+// proof: this successor was created by the split, its README still hashes to
+// what the split seeded, and nobody has added anything beside it. Anything
+// else is kept and unstamped, because undoing a mistake must not become a
+// second, larger mistake.
+func (c PristineCheck) Pristine() (bool, string) {
+	if c.SeedHash == "" {
+		return false, "it existed before the split, so undo only unstamps it"
+	}
+	if c.ReadmeHash != c.SeedHash {
+		return false, "its README has been edited; dungeon it normally if unwanted"
+	}
+	if c.ExtraEntries > 0 {
+		return false, "it has content beyond the seed; dungeon it normally if unwanted"
+	}
+	return true, ""
 }

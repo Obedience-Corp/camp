@@ -65,6 +65,7 @@ func newSplitCommand() *cobra.Command {
 		dryRun   bool
 		jsonOut  bool
 		noCommit bool
+		undo     bool
 	)
 
 	cmd := &cobra.Command{
@@ -99,10 +100,14 @@ rule made mechanical rather than remembered.`,
 			"agent_reason":  "Creates workitems and arms a retirement gate; splits require recorded human approval (D5)",
 		},
 		RunE: func(cmd *cobra.Command, args []string) error {
-			return runSplit(cmd, splitOptions{
+			opts := splitOptions{
 				selectorArg: args[0], into: into, adopt: adopt,
 				dryRun: dryRun, jsonOut: jsonOut, noCommit: noCommit,
-			})
+			}
+			if undo {
+				return runSplitUndo(cmd, opts)
+			}
+			return runSplit(cmd, opts)
 		},
 	}
 
@@ -112,6 +117,7 @@ rule made mechanical rather than remembered.`,
 	f.BoolVar(&dryRun, "dry-run", false, "Print what the split would do, change nothing")
 	f.BoolVar(&jsonOut, "json", false, "Output result as a single JSON object")
 	f.BoolVar(&noCommit, "no-commit", false, "Skip the auto-commit")
+	f.BoolVar(&undo, "undo", false, "Reverse a split: unstamp lineage, delete only untouched successors")
 	return cmd
 }
 
@@ -254,6 +260,7 @@ func performSplit(
 		successors = append(successors, wkitem.SplitSuccessor{
 			StableID: created.ID, Ref: created.Ref, Type: created.Type,
 			RelativePath: created.RelativePath, Created: true,
+			SeedHash: wkitem.SeedHash(readme),
 		})
 	}
 
@@ -470,4 +477,194 @@ func discoveredIDs(ctx context.Context, campaignRoot string, cfg *config.Campaig
 		out[wkitem.StableIDOf(item)] = true
 	}
 	return out, nil
+}
+
+type undoResult struct {
+	SchemaVersion string `json:"schema_version"`
+	Parent        struct {
+		StableID     string `json:"stable_id"`
+		RelativePath string `json:"relative_path"`
+	} `json:"parent"`
+	Successors []wkitem.UndoOutcome `json:"successors"`
+	Committed  bool                 `json:"committed"`
+}
+
+// runSplitUndo removes a split's lineage and deletes only what it can prove
+// nobody touched.
+func runSplitUndo(cmd *cobra.Command, opts splitOptions) error {
+	ctx := cmd.Context()
+
+	cfg, campaignRoot, err := config.LoadCampaignConfigFromCwd(ctx)
+	if err != nil {
+		return camperrors.Wrap(err, "not in a campaign directory")
+	}
+	parent, err := selector.Resolve(ctx, campaignRoot, opts.selectorArg, selector.ResolveOptions{})
+	if err != nil {
+		return err
+	}
+	parentAbs := filepath.Join(campaignRoot, filepath.FromSlash(parent.RelativePath))
+	meta, err := wkitem.LoadMetadata(ctx, parentAbs)
+	if err != nil {
+		return err
+	}
+	declared := wkitem.SplitIntoOf(meta)
+	if len(declared) == 0 {
+		return camperrors.NewValidation("selector",
+			wkitem.StableIDOf(parent)+" has no split to undo", camperrors.ErrInvalidInput)
+	}
+
+	result := undoResult{SchemaVersion: WorkitemSplitJSONVersion}
+	result.Parent.StableID = wkitem.StableIDOf(parent)
+	result.Parent.RelativePath = parent.RelativePath
+
+	byID, err := successorPathsByID(ctx, campaignRoot, cfg)
+	if err != nil {
+		return err
+	}
+
+	var touched []string
+	for _, id := range declared {
+		outcome, err := undoOneSuccessor(ctx, campaignRoot, id, byID[id])
+		if err != nil {
+			return err
+		}
+		result.Successors = append(result.Successors, outcome)
+		if outcome.Disposition != wkitem.UndoMissing {
+			touched = append(touched, outcome.RelativePath)
+		}
+	}
+
+	if err := wkitem.RemoveLifecycleFields(ctx, campaignRoot, parent.RelativePath,
+		wkitem.SplitLineageKeys()); err != nil {
+		return err
+	}
+
+	if !opts.noCommit {
+		if err := commitUndo(ctx, cmd, cfg, campaignRoot, parent, touched); err != nil {
+			return err
+		}
+		result.Committed = true
+	}
+
+	if opts.jsonOut {
+		if result.Successors == nil {
+			result.Successors = []wkitem.UndoOutcome{}
+		}
+		enc := json.NewEncoder(cmd.OutOrStdout())
+		enc.SetIndent("", "  ")
+		return enc.Encode(result)
+	}
+	return printUndoResult(cmd, result)
+}
+
+// undoOneSuccessor unstamps a successor and deletes it when pristine.
+func undoOneSuccessor(ctx context.Context, campaignRoot, id, relPath string) (wkitem.UndoOutcome, error) {
+	outcome := wkitem.UndoOutcome{StableID: id, RelativePath: relPath}
+	if relPath == "" {
+		// Already gone. A partial undo after a manual deletion still has to
+		// clean the parent, so this is reported rather than refused.
+		outcome.Disposition = wkitem.UndoMissing
+		outcome.Reason = "already gone"
+		return outcome, nil
+	}
+
+	abs := filepath.Join(campaignRoot, filepath.FromSlash(relPath))
+	meta, err := wkitem.LoadMetadata(ctx, abs)
+	if err != nil {
+		return outcome, err
+	}
+
+	check := wkitem.PristineCheck{}
+	if meta != nil {
+		check.SeedHash = meta.SplitSeedHash
+	}
+	check.ReadmeHash, check.ExtraEntries, err = inspectSuccessorDir(abs)
+	if err != nil {
+		return outcome, err
+	}
+
+	if pristine, reason := check.Pristine(); !pristine {
+		if err := wkitem.RemoveLifecycleFields(ctx, campaignRoot, relPath,
+			wkitem.SplitLineageKeys()); err != nil {
+			return outcome, err
+		}
+		outcome.Disposition = wkitem.UndoKept
+		outcome.Reason = reason
+		return outcome, nil
+	}
+
+	if err := os.RemoveAll(abs); err != nil {
+		return outcome, camperrors.Wrapf(err, "removing %s", relPath)
+	}
+	outcome.Disposition = wkitem.UndoDeleted
+	return outcome, nil
+}
+
+// inspectSuccessorDir hashes the README and counts anything beyond the seed.
+func inspectSuccessorDir(abs string) (readmeHash string, extra int, err error) {
+	entries, err := os.ReadDir(abs)
+	if err != nil {
+		return "", 0, camperrors.Wrapf(err, "reading %s", abs)
+	}
+	for _, entry := range entries {
+		switch entry.Name() {
+		case wkitem.MetadataFilename:
+		case "README.md":
+			body, readErr := os.ReadFile(filepath.Join(abs, entry.Name()))
+			if readErr != nil {
+				return "", 0, camperrors.Wrapf(readErr, "reading %s", entry.Name())
+			}
+			readmeHash = wkitem.SeedHash(body)
+		default:
+			extra++
+		}
+	}
+	return readmeHash, extra, nil
+}
+
+// successorPathsByID indexes discovery so undo can find each declared
+// successor wherever it now lives.
+func successorPathsByID(ctx context.Context, campaignRoot string, cfg *config.CampaignConfig) (map[string]string, error) {
+	resolver := paths.NewResolverFromConfig(campaignRoot, cfg)
+	items, err := wkitem.Discover(ctx, campaignRoot, resolver)
+	if err != nil {
+		return nil, camperrors.Wrap(err, "discovering work items")
+	}
+	out := make(map[string]string, len(items))
+	for _, item := range items {
+		out[wkitem.StableIDOf(item)] = item.RelativePath
+	}
+	return out, nil
+}
+
+// commitUndo records the whole inverse in one commit.
+func commitUndo(
+	ctx context.Context, cmd *cobra.Command, cfg *config.CampaignConfig,
+	campaignRoot string, parent *wkitem.WorkItem, successorPaths []string,
+) error {
+	result := &workitemPromoteResult{}
+	return commitWorkitemMove(ctx, cmd, cfg, campaignRoot, &commitInputs{
+		description: "undo split of " + wkitem.StableIDOf(parent),
+		destPaths:   append([]string{parent.RelativePath}, successorPaths...),
+	}, result, false)
+}
+
+func printUndoResult(cmd *cobra.Command, result undoResult) error {
+	out := cmd.OutOrStdout()
+	if _, err := fmt.Fprintf(out, "undid the split of %s\n", result.Parent.StableID); err != nil {
+		return err
+	}
+	for _, successor := range result.Successors {
+		line := fmt.Sprintf("  %-8s %s", successor.Disposition, successor.StableID)
+		if successor.Reason != "" {
+			line += "\n    " + successor.Reason
+		}
+		if _, err := fmt.Fprintln(out, line); err != nil {
+			return err
+		}
+	}
+	_, err := fmt.Fprint(out,
+		"\nThe parent's lineage stamps are gone, so its terminal promotion is no\n"+
+			"longer gated.\n")
+	return err
 }
