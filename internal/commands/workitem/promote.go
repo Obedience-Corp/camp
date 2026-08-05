@@ -263,8 +263,18 @@ func PromoteWorkitem(ctx context.Context, out io.Writer, stableID, target string
 	if result == nil {
 		return nil, camperrors.New("promote reported no result for " + stableID)
 	}
+	// PromotedTo is set by the festival and doc paths; the dungeon and rail
+	// paths record their destination in To. Preferring one and falling back
+	// to the other keeps the caller from having to know which promote it
+	// asked for -- and getting this wrong silently cost the receipts their
+	// undo command, which is the one thing an undo cannot be reconstructed
+	// from later.
+	destination := result.PromotedTo
+	if destination == "" {
+		destination = result.To
+	}
 	return &PromoteOutcome{
-		PromotedTo: result.PromotedTo,
+		PromotedTo: destination,
 		From:       result.From,
 		Committed:  result.Committed,
 	}, nil

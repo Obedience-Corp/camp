@@ -16,6 +16,7 @@ import (
 	"github.com/Obedience-Corp/camp/internal/paths"
 	"github.com/Obedience-Corp/camp/internal/triage"
 	"github.com/Obedience-Corp/camp/internal/workitem"
+	"github.com/Obedience-Corp/camp/internal/workitem/priority"
 )
 
 // StartJSONVersion is the schema version of `camp triage start --json`.
@@ -238,7 +239,17 @@ func discoverAll(ctx context.Context, root string, cfg *config.CampaignConfig) (
 	if err != nil {
 		return nil, camperrors.Wrap(err, "discovering work items")
 	}
-	return items, nil
+
+	// Attention stages live in the priority store, not on disk, so a raw
+	// Discover walk reports every item as having none. Without this overlay a
+	// manifest freezes empty attention stages, which silently defeats the
+	// profile's evidence-depth-by-stage policy and stage-based grouping, and
+	// makes verify compare a recorded stage against nothing.
+	store, err := priority.Load(priority.StorePath(root))
+	if err != nil {
+		return nil, camperrors.Wrap(err, "loading the priority store")
+	}
+	return priority.Apply(store, items), nil
 }
 
 // preconditionError marks a refusal that is a precondition failure rather than

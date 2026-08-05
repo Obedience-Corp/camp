@@ -85,6 +85,7 @@ var manifestAgentAllowedReasons = map[string]string{
 	"triage queue":               "Read-only work dispatch with --json output; calls no models",
 	"triage refresh":             "Read-mostly re-check; writes only run bookkeeping and never moves a workitem",
 	"triage review":              "Deterministic render from recorded run data; writes only inside the run",
+	"triage verify":              "Read-only proof pass; writes only the run's own report",
 	"triage start":               "Deterministic snapshot with --json output; calls no models",
 	"triage status":              "Read-only session status with --json output",
 	"version":                    "Read-only version output",
