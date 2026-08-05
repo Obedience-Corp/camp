@@ -40,7 +40,7 @@ matrix:
 | Context label | When it applies | Default staged paths |
 |---|---|---|
 | `workitem directory` | cwd is inside `workflow/<type>/<slug>/` (ancestor match) | Changed files under `<workitem-dir>/` plus `.campaign/workitems/links.yaml` when dirty |
-| `campaign root` | cwd at campaign root; workitem resolved via `current.yaml` or explicit `--workitem` | Same as above — never `git add .` |
+| `campaign root` | cwd at campaign root with explicit `--workitem` | Same as above — never `git add .` |
 | `linked project` | cwd is inside a sub-git-repo under the campaign tree (cwd-first detection), or resolver source is `SourceLink` | All changed files in that project's git repo |
 | `festival` | resolver source is `SourceFestival` via `--festival` or cwd under a festival directory | Changed files under the festival scope path plus `.campaign/workitems/links.yaml` when dirty |
 | `staged-only` | `--staged` flag is set | Whatever is already in the git index of the campaign root, or the containing sub-git-repo when cwd is inside one |
@@ -82,7 +82,7 @@ The workitem to scope can be specified as:
 
 Both the positional `[selector]` and `--workitem <selector>` accept these
 forms. When both are present, `--workitem` wins. When neither is provided,
-the resolver falls back to cwd and `current.yaml`.
+the resolver falls back to cwd and primary links.
 
 ### Flags
 
@@ -136,7 +136,7 @@ no workitem context resolved from cwd
 Try one of:
   --workitem <selector>            explicit workitem to scope this commit
   cd workflow/<type>/<slug> && ...  run from inside a workitem directory
-  camp workitem current <selector>  set a session-wide default
+  camp workitem link <id> <scope>  primary-link a project/festival for cwd resolution
 ```
 
 The command never falls back to staging the whole repo. For directory-backed
@@ -317,7 +317,7 @@ Each `CommitRecord`:
 | Error | Meaning | Recovery |
 |---|---|---|
 | `commit message required` | `-m` was not passed and `--dry-run` is not set | Add `-m "message"` |
-| `no workitem context resolved from cwd` (exit 2) | Resolver found no workitem; no `--workitem` given | Use `--workitem <selector>`, navigate into the workitem directory, or set `camp workitem current` |
+| `no workitem context resolved from cwd` (exit 2) | Resolver found no workitem; no `--workitem` given | Use `--workitem <selector>`, navigate into the workitem directory, or primary-link a project/festival |
 | `empty staging plan` | The plan has no files to commit | Check that the workitem directory has uncommitted changes, or pass `--include <path>` |
 | `no workitem context resolved; pass <selector> or --ref WI-...` | `commits` command received no selector and no workitem is resolved | Pass a selector or `--ref WI-<hex>` directly |
 | `workitem has no ref; run camp workitem doctor --fix` | The resolved workitem pre-dates v1alpha6 and has no `ref` field | Run `camp workitem doctor --fix` to backfill |

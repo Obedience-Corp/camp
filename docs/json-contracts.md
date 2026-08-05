@@ -21,7 +21,6 @@ Schema versions in this release:
 | `camp workitem link --json` | `workitem-links/v1alpha1` | Emits one `link`. |
 | `camp workitem unlink --json` | `workitem-links/v1alpha1` | Emits `removed`. |
 | `camp workitem links --json` | `workitem-links/v1alpha1` | Emits `links`. |
-| `camp workitem current --json` | `workitem-current/v1alpha1` | Emits local current selection. |
 | `camp workitem resolve --json` | `workitem-resolve/v1alpha1` | Emits resolver result and trace. |
 | `camp workitem doctor --json` | `workitem-doctor/v1alpha1` | Emits findings; exits 2 when error findings exist. |
 | `camp workitem validate --json` | `workitem-validate/v1alpha1` | Emits structural findings for workflow work item directories with stable finding codes and a `repair_command` per finding; exits 2 when error findings exist. Codes are documented in `docs/workitem-validate-reference.md`. |
@@ -106,7 +105,7 @@ domain result, it writes an error envelope to stderr and exits non-zero:
   "error": {
     "code": "validation_error",
     "message": "no workitem context resolved from cwd",
-    "hint": "camp workitem current <selector>",
+    "hint": "camp workitem link <id> <scope>",
     "exit_code": 2
   }
 }

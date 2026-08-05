@@ -151,19 +151,6 @@ func executeGather(ctx context.Context, cmd *cobra.Command, cfg *config.Campaign
 		}); err != nil {
 			execution.Warnings = append(execution.Warnings, fmt.Sprintf("re-home workitem links: %v", err))
 		}
-
-		cur, curErr := links.LoadCurrent(ctx, root)
-		switch {
-		case curErr != nil:
-			execution.Warnings = append(execution.Warnings, fmt.Sprintf("read current workitem selection: %v", curErr))
-		case cur != nil:
-			if _, ok := idMap[cur.WorkitemID]; ok {
-				cur.WorkitemID = id
-				if err := links.SaveCurrent(ctx, root, cur); err != nil {
-					execution.Warnings = append(execution.Warnings, fmt.Sprintf("update current workitem selection: %v", err))
-				}
-			}
-		}
 	}
 
 	for _, move := range execution.Moves {
@@ -196,9 +183,9 @@ func executeGather(ctx context.Context, cmd *cobra.Command, cfg *config.Campaign
 	}
 
 	if !opts.NoCommit {
-		// The priority store and current.yaml are gitignored per-machine
-		// state, so only the gathered package, audit log, and (when changed)
-		// the shared links registry are staged.
+		// The priority store is gitignored per-machine state, so only the
+		// gathered package, audit log, and (when changed) the shared links
+		// registry are staged.
 		dest := []string{
 			plan.TargetAbs,
 			filepath.Join(root, ".campaign", "workitems", wkaudit.AuditFile),

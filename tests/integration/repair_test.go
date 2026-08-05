@@ -238,20 +238,3 @@ func TestIntegration_InitRepair_AppendsCurrentYamlWhenCommentedOut(t *testing.T)
 		after, checkOut)
 }
 
-func TestIntegration_WorkitemCurrent_ProducesIgnoredFile(t *testing.T) {
-	tc := GetSharedContainer(t)
-	path := setupRepairCampaign(t, tc, "current-ignored")
-	require.NoError(t, tc.CreateGitRepo(path))
-
-	out, err := tc.RunCampInDir(path, "workitem", "create", "ignored-test", "--type", "design", "--title", "x")
-	require.NoError(t, err, "create: %s", out)
-
-	_, err = tc.RunCampInDir(path, "workitem", "current", "ignored-test")
-	require.NoError(t, err)
-
-	checkOut, _, err := tc.ExecCommand("git", "-C", path, "check-ignore", "-v",
-		".campaign/workitems/current.yaml")
-	require.NoError(t, err)
-	assert.Contains(t, checkOut, "workitems/current.yaml",
-		"current.yaml must match a .gitignore rule, got:\n%s", checkOut)
-}

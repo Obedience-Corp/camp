@@ -459,9 +459,8 @@ machines. Use --include-refs to stage them explicitly.
 Use --sub to commit in the submodule detected from your current directory.
 Use -p/--project to commit in a specific project (e.g., -p projects/camp).
 
-Commit tags use explicit --workitem or context from the current path. They do
-not inherit the per-machine current workitem selection, which can be stale;
-use 'camp workitem commit' when you want current.yaml scoping.
+Commit tags use explicit --workitem or context from the current path
+(workitem directory, primary project/festival link).
 
 Examples:
   camp commit -m "Add new feature"
@@ -2632,9 +2631,241 @@ camp idea note [text] [flags]
       --author string      Override the default author attribution
       --body string        Set note body as a literal string
       --body-file string   Read note body from file (- for stdin, 10 MiB cap)
+      --create-folder      Create --folder path if missing
+      --folder string      Note folder under notes/ (must exist unless --create-folder)
   -h, --help               help for note
       --no-commit          Don't create a git commit
   -t, --tag stringArray    Add a tag (repeatable)
+```
+
+### Options inherited from parent commands
+
+```
+      --no-color   disable colored output
+```
+---
+
+## camp idea notes
+
+Manage the note store (folders, moves, meetings)
+
+### Synopsis
+
+Manage the campaign note store under .campaign/intents/notes/.
+
+Use "camp idea note" to capture a note. This command group manages folders
+and placement of notes already in the store.
+
+Examples:
+  camp idea notes folders                 List note folders
+  camp idea notes folders --json          Machine-readable folder list
+  camp idea notes folders add reading     Create notes/reading/
+  camp idea notes folders rm reading      Remove empty folder
+  camp idea notes folders mv a b          Rename folder a → b
+  camp idea notes mv <note-id> reading    Move a note into a folder
+
+```
+camp idea notes [flags]
+```
+
+### Options
+
+```
+  -h, --help   help for notes
+```
+
+### Options inherited from parent commands
+
+```
+      --no-color   disable colored output
+```
+---
+
+## camp idea notes folders
+
+List note folders
+
+### Synopsis
+
+List every note folder under .campaign/intents/notes/.
+
+Order: notes root, reserved folders (meetings, archived), then user folders
+alphabetically depth-first.
+
+Examples:
+  camp idea notes folders
+  camp idea notes folders --json
+
+```
+camp idea notes folders [flags]
+```
+
+### Options
+
+```
+  -h, --help   help for folders
+      --json   emit a structured JSON result
+```
+
+### Options inherited from parent commands
+
+```
+      --no-color   disable colored output
+```
+---
+
+## camp idea notes folders add
+
+Create a note folder
+
+### Synopsis
+
+Create a note folder under notes/ (parents created as needed).
+
+Folder names must be lowercase kebab-case. Reserved names (archived, meetings)
+are rejected at the notes root. A .gitkeep is written so empty folders survive git.
+
+Examples:
+  camp idea notes folders add reading
+  camp idea notes folders add reading/papers
+
+```
+camp idea notes folders add <folder> [flags]
+```
+
+### Options
+
+```
+  -h, --help   help for add
+```
+
+### Options inherited from parent commands
+
+```
+      --no-color   disable colored output
+```
+---
+
+## camp idea notes folders mv
+
+Rename a note folder
+
+### Synopsis
+
+Rename a note folder via directory move. Contained notes keep their
+files; status is derived from location so frontmatter is not rewritten.
+
+Examples:
+  camp idea notes folders mv reading readings
+
+```
+camp idea notes folders mv <from> <to> [flags]
+```
+
+### Options
+
+```
+  -h, --help   help for mv
+```
+
+### Options inherited from parent commands
+
+```
+      --no-color   disable colored output
+```
+---
+
+## camp idea notes folders rm
+
+Remove an empty note folder
+
+### Synopsis
+
+Remove a note folder. Refuses when the folder still contains notes or
+child directories. Reserved folders cannot be removed.
+
+Examples:
+  camp idea notes folders rm reading/papers
+
+```
+camp idea notes folders rm <folder> [flags]
+```
+
+### Options
+
+```
+  -h, --help   help for rm
+```
+
+### Options inherited from parent commands
+
+```
+      --no-color   disable colored output
+```
+---
+
+## camp idea notes import-meeting
+
+Import a meeting bundle into notes/meetings/
+
+### Synopsis
+
+Import a festival-voice (or compatible) meeting bundle as a note under
+notes/meetings/ with a transcript sidecar in .transcripts/.
+
+Re-importing the same bundle updates the existing note in place.
+
+Examples:
+  camp idea notes import-meeting ~/.obey/agents/voice/.../foo.meeting
+  camp idea notes import-meeting ./bundle --summary-file summary.md --json
+  camp idea notes import-meeting ./bundle --adopt-intent misfiled-id
+
+```
+camp idea notes import-meeting <bundle-path> [flags]
+```
+
+### Options
+
+```
+      --adopt-intent string      Delete this lifecycle intent after successful import
+      --author string            Author attribution
+  -h, --help                     help for import-meeting
+      --json                     emit a structured JSON result
+      --summary string           Literal summary body
+      --summary-file string      Path to summary markdown (overrides bundle summary.md)
+      --title string             Override note title
+      --transcript-file string   Path to transcript file
+```
+
+### Options inherited from parent commands
+
+```
+      --no-color   disable colored output
+```
+---
+
+## camp idea notes mv
+
+Move a note into a folder
+
+### Synopsis
+
+Move a note into a folder under notes/. Use "" or "." for the notes root.
+
+The destination folder must already exist (create it with folders add first).
+
+Examples:
+  camp idea notes mv nested-paper-20260101-000001 reading/papers
+  camp idea notes mv nested-paper-20260101-000001 .
+
+```
+camp idea notes mv <note-id> <folder> [flags]
+```
+
+### Options
+
+```
+  -h, --help   help for mv
 ```
 
 ### Options inherited from parent commands
@@ -4603,7 +4834,7 @@ or use --project to specify a project by name.
 
 Commit tags use explicit --workitem or context from the current path. They do
 not inherit the per-machine current workitem selection, which can be stale;
-use 'camp workitem commit' when you want current.yaml scoping.
+use --workitem or a primary workitem link for WI- tag scoping.
 
 Examples:
   # From within a project directory
@@ -6692,7 +6923,7 @@ camp status [flags] [-- <git-flags>]
 
 ```
   -h, --help             help for status
-      --no-drain         Do not wait for camp's queued commits first
+      --no-drain         Do not report camp's queued commits first
   -p, --project string   Status of a specific project path
   -s, --short            Give output in short format
       --show-refs        Show campaign root submodule ref changes
@@ -7719,38 +7950,6 @@ camp workitem create <slug> [flags]
 ```
 ---
 
-## camp workitem current
-
-Get, set, or clear the current workitem
-
-### Synopsis
-
-Get, set, or clear the campaign-local current workitem pointer.
-
-The selection is stored in .campaign/workitems/current.yaml and is used by
-commands that need a default workitem when cwd alone is ambiguous. Pass a
-selector to set the current workitem, omit it to read the selection, or use
---clear to remove it. Use --json for machine-readable current selection output.
-
-```
-camp workitem current [selector] [flags]
-```
-
-### Options
-
-```
-      --clear   remove the local current.yaml selection
-  -h, --help    help for current
-      --json    emit a structured JSON result
-```
-
-### Options inherited from parent commands
-
-```
-      --no-color   disable colored output
-```
----
-
 ## camp workitem demote
 
 Move a rail resident back to its type root
@@ -8033,9 +8232,8 @@ Set or clear the manual priority
 
 Set or clear the manual priority of a workitem.
 
-The selector accepts the same forms as 'camp workitem current': a stable
-.workitem id, the workitem key (<type>:<path>), a relative path, or a directory
-slug. Priority is one of high, medium, low, or clear (clear removes any manual
+The selector accepts a stable .workitem id, the workitem key (<type>:<path>),
+a relative path, or a directory slug. Priority is one of high, medium, low, or clear (clear removes any manual
 priority). Assignments persist in .campaign/settings/workitems.json, the same
 store the interactive dashboard writes.
 

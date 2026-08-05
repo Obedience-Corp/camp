@@ -63,17 +63,6 @@ func TestLoad_MissingFileReturnsEmpty(t *testing.T) {
 	}
 }
 
-func TestLoadCurrent_MissingFileReturnsNil(t *testing.T) {
-	root := t.TempDir()
-	got, err := LoadCurrent(context.Background(), root)
-	if err != nil {
-		t.Fatalf("LoadCurrent missing: %v", err)
-	}
-	if got != nil {
-		t.Fatalf("missing current.yaml should return nil, got %#v", got)
-	}
-}
-
 func TestLoad_RejectsUnknownVersion(t *testing.T) {
 	root := t.TempDir()
 	if err := os.MkdirAll(filepath.Join(root, ".campaign", "workitems"), 0o755); err != nil {
@@ -169,36 +158,6 @@ func TestSave_ByteStableTwiceInARow(t *testing.T) {
 
 	if !bytes.Equal(first, second) {
 		t.Fatalf("save→load→save not byte-stable.\nfirst:\n%s\nsecond:\n%s", first, second)
-	}
-}
-
-func TestSaveLoadCurrent_RoundTrip(t *testing.T) {
-	root := t.TempDir()
-	cur := &Current{
-		Version:    CurrentSchemaVersion,
-		WorkitemID: "design-camp-timeline-2026-05-19",
-		SelectedAt: time.Now().UTC().Truncate(time.Second),
-	}
-	if err := SaveCurrent(context.Background(), root, cur); err != nil {
-		t.Fatalf("SaveCurrent: %v", err)
-	}
-	got, err := LoadCurrent(context.Background(), root)
-	if err != nil {
-		t.Fatalf("LoadCurrent: %v", err)
-	}
-	if got.WorkitemID != cur.WorkitemID {
-		t.Fatalf("workitem_id mismatch: %q vs %q", got.WorkitemID, cur.WorkitemID)
-	}
-	if !got.SelectedAt.Equal(cur.SelectedAt) {
-		t.Fatalf("selected_at mismatch")
-	}
-
-	// SaveCurrent(nil) clears the file.
-	if err := SaveCurrent(context.Background(), root, nil); err != nil {
-		t.Fatalf("SaveCurrent nil: %v", err)
-	}
-	if got, err := LoadCurrent(context.Background(), root); err != nil || got != nil {
-		t.Fatalf("after clear, LoadCurrent = %v, %v; want nil, nil", got, err)
 	}
 }
 

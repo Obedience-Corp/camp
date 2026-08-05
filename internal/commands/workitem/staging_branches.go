@@ -192,8 +192,6 @@ func workitemDirNote(wi *wkitem.WorkItem, src resolver.Source) string {
 		return wi.RelativePath
 	case resolver.SourceExplicit:
 		return "explicit --workitem"
-	case resolver.SourceCurrent:
-		return "via current.yaml"
 	default:
 		return string(src)
 	}

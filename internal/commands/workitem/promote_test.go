@@ -11,7 +11,6 @@ import (
 
 	"github.com/Obedience-Corp/camp/internal/fest"
 	wkitem "github.com/Obedience-Corp/camp/internal/workitem"
-	"github.com/Obedience-Corp/camp/internal/workitem/links"
 	"github.com/Obedience-Corp/camp/internal/workitem/locate"
 	"github.com/Obedience-Corp/camp/internal/workitem/priority"
 )
@@ -81,16 +80,6 @@ func execPromote(t *testing.T, cwd string, args ...string) (string, string, erro
 	return out.String(), errOut.String(), err
 }
 
-func setCurrentPtr(t *testing.T, root, id string) {
-	t.Helper()
-	if err := links.SaveCurrent(context.Background(), root, &links.Current{
-		Version:    links.CurrentSchemaVersion,
-		WorkitemID: id,
-	}); err != nil {
-		t.Fatalf("SaveCurrent: %v", err)
-	}
-}
-
 func stubFest(t *testing.T) string {
 	t.Helper()
 	bin := t.TempDir()
@@ -127,14 +116,10 @@ func TestPromoteResolution(t *testing.T) {
 		id      string
 		wantErr string
 	}{
-		{"no id no cwd no current", func(t *testing.T, root string) string { return root }, "", "no workitem in context"},
+		{"no id no cwd", func(t *testing.T, root string) string { return root }, "", "no workitem in context"},
 		{"id given", func(t *testing.T, root string) string { return root }, "design-sample-feature-fixed", ""},
 		{"cwd inside workitem", func(t *testing.T, root string) string {
 			return filepath.Join(root, "workflow", "design", "sample-feature")
-		}, "", ""},
-		{"current pointer set", func(t *testing.T, root string) string {
-			setCurrentPtr(t, root, "design-sample-feature-fixed")
-			return root
 		}, "", ""},
 	}
 
@@ -678,7 +663,6 @@ func TestPromoteShelveReleasesPathState(t *testing.T) {
 	}); err != nil {
 		t.Fatalf("seed priority: %v", err)
 	}
-	setCurrentPtr(t, root, "design-feat-fixed")
 
 	if _, _, err := execPromote(t, src, "--target", "completed", "--no-commit"); err != nil {
 		t.Fatalf("promote: %v", err)
@@ -690,33 +674,5 @@ func TestPromoteShelveReleasesPathState(t *testing.T) {
 	}
 	if _, ok := store.ManualPriorities[key]; ok {
 		t.Errorf("priority entry for %q survived the shelve; nothing resolves that path now", key)
-	}
-
-	cur, err := links.LoadCurrent(context.Background(), root)
-	if err != nil {
-		t.Fatalf("load current: %v", err)
-	}
-	if cur != nil {
-		t.Errorf("current pointer = %+v, want cleared: the selector cannot see dungeon items", cur)
-	}
-}
-
-// A current pointer at some other workitem must survive.
-func TestPromoteShelveKeepsUnrelatedCurrent(t *testing.T) {
-	root := promoteCampaign(t)
-	src := addWorkitem(t, root, "design", "shelveme", "Shelve Me", "body")
-	addWorkitem(t, root, "design", "other", "Other", "body")
-	setCurrentPtr(t, root, "design-other-fixed")
-
-	if _, _, err := execPromote(t, src, "--target", "completed", "--no-commit"); err != nil {
-		t.Fatalf("promote: %v", err)
-	}
-
-	cur, err := links.LoadCurrent(context.Background(), root)
-	if err != nil {
-		t.Fatalf("load current: %v", err)
-	}
-	if cur == nil || cur.WorkitemID != "design-other-fixed" {
-		t.Errorf("current = %+v, want design-other-fixed untouched", cur)
 	}
 }

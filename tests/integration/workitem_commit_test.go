@@ -561,6 +561,6 @@ func TestIntegration_WorkitemCommit_FailureModes(t *testing.T) {
 	assert.Equal(t, "workitem-commit/v1alpha1", envelope.SchemaVersion)
 	assert.Equal(t, "validation_error", envelope.Error.Code)
 	assert.Equal(t, "no workitem context resolved from cwd", envelope.Error.Message)
-	assert.Contains(t, envelope.Error.Hint, "camp workitem current <selector>")
+	assert.Contains(t, envelope.Error.Hint, "camp workitem link")
 	assert.Equal(t, 2, envelope.Error.ExitCode)
 }

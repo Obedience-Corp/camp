@@ -38,7 +38,6 @@ type workitemRenameResult struct {
 	CommitMessage  string   `json:"commit_message,omitempty"`
 	LinksUpdated   bool     `json:"links_updated"`
 	PriorityMoved  bool     `json:"priority_migrated"`
-	CurrentUpdated bool     `json:"current_updated"`
 	RewrittenFiles []string `json:"rewritten_files,omitempty"`
 	Warnings       []string `json:"warnings,omitempty"`
 }

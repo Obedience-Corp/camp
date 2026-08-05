@@ -117,16 +117,6 @@ func TestIntegration_LinkJSONContracts(t *testing.T) {
 	assert.Equal(t, "project", linksPayload.Links[0].Scope.Kind)
 	assert.NotContains(t, out, "WorkitemID")
 
-	out, err = tc.RunCampInDir(dir, "workitem", "current", "timeline", "--json")
-	require.NoError(t, err, "workitem current --json: %s", out)
-	var currentPayload struct {
-		Current struct {
-			WorkitemID string `json:"workitem_id"`
-		} `json:"current"`
-	}
-	require.NoError(t, json.Unmarshal([]byte(out), &currentPayload), "raw=%s", out)
-	assert.Equal(t, linkPayload.Link.WorkitemID, currentPayload.Current.WorkitemID)
-	assert.NotContains(t, out, "WorkitemID")
 }
 
 func TestIntegration_LinkJSONErrorEnvelope(t *testing.T) {

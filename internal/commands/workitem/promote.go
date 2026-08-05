@@ -57,9 +57,6 @@ type workitemPromoteResult struct {
 	// ReleasedPriorityKey is the workitem key whose manual priority and
 	// attention entries were dropped on shelve, empty when there were none.
 	ReleasedPriorityKey string `json:"released_priority_key,omitempty"`
-	// ClearedCurrent reports that the current-workitem pointer was cleared
-	// because it referenced the shelved workitem.
-	ClearedCurrent bool `json:"cleared_current,omitempty"`
 }
 
 // releasedLink records a link that promote removed, in enough detail to put it
@@ -247,12 +244,6 @@ func printReleasedLinks(w io.Writer, result workitemPromoteResult) error {
 	if result.ReleasedPriorityKey != "" {
 		if _, err := fmt.Fprintf(w, "  released priority/attention for %s; %s is no longer active\n",
 			result.ReleasedPriorityKey, result.ID); err != nil {
-			return err
-		}
-	}
-	if result.ClearedCurrent {
-		if _, err := fmt.Fprintf(w, "  cleared the current workitem pointer; %s is no longer active\n",
-			result.ID); err != nil {
 			return err
 		}
 	}
@@ -519,7 +510,7 @@ func releaseLinksForShelvedSource(ctx context.Context, campaignRoot, oldID, oldK
 // Prune only reaches it on a later full discovery pass. Dropping it here is the
 // same call the link release makes for the same reason, so the two cannot
 // disagree about whether a shelved workitem is still active.
-func releasePathStateForShelvedSource(ctx context.Context, campaignRoot, oldID, oldKey string,
+func releasePathStateForShelvedSource(ctx context.Context, campaignRoot, _, oldKey string,
 	result *workitemPromoteResult,
 ) error {
 	if oldKey != "" {
@@ -542,22 +533,6 @@ func releasePathStateForShelvedSource(ctx context.Context, campaignRoot, oldID, 
 		}
 	}
 
-	cur, err := links.LoadCurrent(ctx, campaignRoot)
-	if err != nil {
-		return camperrors.Wrap(err, "load current workitem on shelve")
-	}
-	if cur == nil {
-		return nil
-	}
-	if cur.WorkitemID != oldID && cur.WorkitemID != oldKey {
-		return nil
-	}
-	// A current pointer at a shelved workitem is worse than none: the selector
-	// cannot see dungeon items, so camp p commit silently stops stamping the ref.
-	if err := links.SaveCurrent(ctx, campaignRoot, nil); err != nil {
-		return camperrors.Wrap(err, "clear current workitem on shelve")
-	}
-	result.ClearedCurrent = true
 	return nil
 }
 
@@ -813,11 +788,7 @@ func resolveWorkitem(ctx context.Context, campaignRoot, id string) (*locate.Loca
 		return loc, nil
 	}
 
-	if loc, err := locateFromCurrent(ctx, campaignRoot); err == nil && loc != nil {
-		return loc, nil
-	}
-
-	return nil, camperrors.New("no workitem in context (pass an id, cd into a workitem, or set current)")
+	return nil, camperrors.New("no workitem in context (pass an id or cd into a workitem directory)")
 }
 
 func locateByID(ctx context.Context, root, id string) (*locate.Location, error) {
@@ -829,17 +800,6 @@ func locateByID(ctx context.Context, root, id string) (*locate.Location, error) 
 		return nil, camperrors.New("resolved workitem has no path on disk")
 	}
 	return locate.DetectFromCwd(root, filepath.Join(root, wi.RelativePath))
-}
-
-func locateFromCurrent(ctx context.Context, root string) (*locate.Location, error) {
-	cur, err := links.LoadCurrent(ctx, root)
-	if err != nil {
-		return nil, err
-	}
-	if cur == nil || cur.WorkitemID == "" {
-		return nil, camperrors.New("no current workitem set")
-	}
-	return locateByID(ctx, root, cur.WorkitemID)
 }
 
 func auditFilePath(root string) string {

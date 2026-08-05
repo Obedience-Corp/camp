@@ -185,7 +185,6 @@ func TestManifestCommand_AllRestrictedCommandsPresent(t *testing.T) {
 		expectedCommands["workitem"] = false
 		expectedCommands["workitem adopt"] = false
 		expectedCommands["workitem create"] = false
-		expectedCommands["workitem current"] = false
 		expectedCommands["workitem link"] = false
 		expectedCommands["workitem links"] = false
 		expectedCommands["workitem priority"] = false
@@ -305,7 +304,6 @@ func TestManifestCommand_InteractiveFlags(t *testing.T) {
 	if workitemCommandRegistered() {
 		nonInteractiveCommands["workitem"] = true
 		nonInteractiveCommands["workitem create"] = true
-		nonInteractiveCommands["workitem current"] = true
 		nonInteractiveCommands["workitem link"] = true
 		nonInteractiveCommands["workitem links"] = true
 		nonInteractiveCommands["workitem priority"] = true

@@ -54,22 +54,6 @@ Writes are atomic (write-temp-plus-rename). Mutating commands hold
 `camp workitem link` and `camp workitem unlink` invocations do not silently
 overwrite each other's registry updates.
 
-### `current.yaml`
-
-The locally selected active workitem lives at:
-
-```
-<campaign-root>/.campaign/workitems/current.yaml
-```
-
-This file is per-machine state. It should not be committed to git. `camp init`
-and `camp init --repair` keep the campaign `.gitignore` configured with:
-
-```
-workitems/current.yaml
-```
-
-`current.yaml` contains a single workitem selection. Setting a new current overwrites the file atomically. `--clear` removes the file.
 
 ---
 
@@ -110,24 +94,16 @@ When a commit wrapper or `camp workitem resolve` needs to determine the active w
 2. Nearest ancestor directory containing a `.workitem` marker file.
 3. Primary link in `links.yaml` whose `scope.path` is the longest prefix of the current working directory (campaign-relative).
 4. Primary link whose `scope.kind` is `festival` and whose path matches the supplied festival ID.
-5. `current.yaml` workitem selection.
-6. No workitem context. Commit wrappers proceed without a `WI-` tag.
+5. No workitem context. Commit wrappers proceed without a `WI-` tag.
 
 Tier 3 uses longest-prefix matching: a link on `projects/myrepo/internal/api` wins over one on `projects/myrepo` when both exist and `cwd` is under the deeper path.
 
-Resolution is read-only. It never mutates `current.yaml`.
+Resolution is read-only. It never mutates the link registry.
 
-The generic commit wrappers (`camp commit`, `camp project commit`, and
-`camp worktrees commit`) and intent/note auto-commits intentionally stop before
-the `current.yaml` tier. This prevents a stale per-machine selection from
-adding an unrelated `WI-` tag. Use `camp workitem commit` when you want the
-explicit current-workitem fallback.
-
-If a primary path link, festival link, or `current.yaml` selection points to a
-workitem that no longer exists, the resolver records that tier as an error in
-the trace and continues to the next tier where one exists. Operational errors
-that prevent resolution for reasons other than a missing workitem still fail
-the command.
+If a primary path link or festival link points to a workitem that no longer
+exists, the resolver records that tier as an error in the trace and continues
+to the next tier where one exists. Operational errors that prevent resolution
+for reasons other than a missing workitem still fail the command.
 
 ---
 
@@ -201,27 +177,6 @@ Output is sorted by `(scope.kind, scope.path, created_at, id)`. An empty registr
 
 See [cli-reference/camp\_workitem\_links.md](cli-reference/camp_workitem_links.md).
 
-### `camp workitem current`
-
-Get, set, or clear the local current workitem.
-
-```
-camp workitem current [selector] [flags]
-```
-
-With no arguments, prints the currently selected workitem (or "none" if `current.yaml` is absent).
-
-With a selector, writes the resolved workitem to `current.yaml`:
-
-```
-camp workitem current my-workitem-id
-```
-
-`--clear` removes `current.yaml` entirely.
-
-`current.yaml` is per-machine. See the gitignore note under [Persistence](#persistence).
-
-See [cli-reference/camp\_workitem\_current.md](cli-reference/camp_workitem_current.md).
 
 ### `camp workitem resolve`
 
@@ -252,10 +207,9 @@ Doctor checks for:
 - Links whose `workitem_id` no longer resolves on disk (orphaned workitem).
 - Links whose `scope.path` no longer exists on disk (orphaned scope).
 - Duplicate primary links for the same scope.
-- `current.yaml` pointing to a workitem that no longer exists.
-- Schema violations in `links.yaml` or `current.yaml`.
+- Schema violations in `links.yaml`.
 
-`--fix` auto-removes findings tagged `auto_fixable`. This includes broken links and a stale `current.yaml`. The fix is applied in one pass before re-checking.
+`--fix` auto-removes findings tagged `auto_fixable`. This includes broken links. The fix is applied in one pass before re-checking.
 
 `--json` emits structured finding output.
 
@@ -279,14 +233,11 @@ camp workitem link api-refactor-2026-05-20 --project myrepo
 # 3. Confirm the link.
 camp workitem links api-refactor-2026-05-20
 
-# 4. Optionally set it as current for other contexts.
-camp workitem current api-refactor-2026-05-20
-
-# 5. Check what the resolver sees from inside the project.
+# 4. Check what the resolver sees from inside the project.
 cd projects/myrepo
 camp workitem resolve --explain
 
-# 6. Commits from within projects/myrepo now carry WI-<ref> automatically.
+# 5. Commits from within projects/myrepo now carry WI-<ref> automatically.
 camp workitem commit -m "refactor connection pool"
 
 # 7. When the work is done, remove the link.
@@ -311,22 +262,10 @@ Recovery options:
 - If the file is in git: `git restore .campaign/workitems/links.yaml`
 - If not in git or the committed version is also bad: `rm .campaign/workitems/links.yaml`. The registry returns to zero state (no links). Re-create links manually.
 
-### Stale `current.yaml`
-
-If `current.yaml` is corrupt, `camp workitem current` and the resolver will fail at tier 5. Remove the file:
-
-```
-rm .campaign/workitems/current.yaml
-```
-
-This returns tier 5 to "skip" state. No links are affected.
-
----
 
 ## Operational Notes
 
 - Link IDs are retried up to 32 times on collision before the command fails.
-- `current.yaml` is local machine state and is ignored by `camp init` and
   `camp init --repair` scaffolds.
 - The canonical example registry fixture validates against the same link
   schema used by the loader and doctor checks.

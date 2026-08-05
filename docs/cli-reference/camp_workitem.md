@@ -51,7 +51,6 @@ camp workitem [flags]
 * [camp workitem commit](camp_workitem_commit.md)	 - Commit changes scoped to a workitem
 * [camp workitem commits](camp_workitem_commits.md)	 - List commits referencing a workitem
 * [camp workitem create](camp_workitem_create.md)	 - Create workitem tracking metadata
-* [camp workitem current](camp_workitem_current.md)	 - Get, set, or clear the current workitem
 * [camp workitem demote](camp_workitem_demote.md)	 - Move a rail resident back to its type root
 * [camp workitem doctor](camp_workitem_doctor.md)	 - Report link-registry health issues
 * [camp workitem group](camp_workitem_group.md)	 - Set or clear the group

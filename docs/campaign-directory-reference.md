@@ -33,9 +33,8 @@ After `camp init`, the directory usually looks like this:
 │   ├── allowlist.json
 │   ├── fresh.yaml
 │   └── jumps.yaml
-├── workitems/              # link registry + current selection
-│   ├── links.yaml
-│   └── current.yaml
+├── workitems/              # link registry
+│   └── links.yaml
 ├── skills/
 │   ├── camp-navigation/
 │   ├── camp-projects/
@@ -123,18 +122,17 @@ Important:
 
 ### `.campaign/workitems/`
 
-Workitem link registry and per-machine current selection, written by
-`camp workitem link`, `camp workitem unlink`, and `camp workitem current`.
+Workitem link registry, written by `camp workitem link` and
+`camp workitem unlink`.
 
 Files:
 
 - `links.yaml` is the shared link registry. It stores `lnk_*` entries that
   bind a workitem to its targets (festival, project, custom workflow item).
   This file is intended to be committed.
-- `current.yaml` is the per-machine record of the currently selected
-  workitem. It is intended to be machine-local state. `camp init` and
-  `camp init --repair` keep `workitems/current.yaml` in
-  `.campaign/.gitignore` so this file is not shared accidentally.
+- `current.yaml` is no longer used. Older campaigns may still have a leftover
+  local file; `camp init` / `camp init --repair` keep `workitems/current.yaml`
+  gitignored so it is not shared accidentally.
 
 See [workitem-link-reference.md](workitem-link-reference.md) for the
 registry concept, resolver tiers, and recovery paths.
