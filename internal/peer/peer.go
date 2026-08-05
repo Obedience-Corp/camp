@@ -13,6 +13,7 @@ import (
 	"bytes"
 	"context"
 	"errors"
+	"io"
 	"os"
 	"os/exec"
 	"path"
@@ -161,6 +162,44 @@ func (s *Source) RsyncSpec(relPath string) string {
 		return p + "/"
 	}
 	return s.target + ":" + p + "/"
+}
+
+// StreamShell runs a POSIX shell script on the machine hosting this source and
+// streams its stdout into w.
+//
+// It exists alongside RunShell because bulk transfer and probing want opposite
+// bounds. RunShell caps at remote.DefaultTimeout, which is right for a question
+// that should answer in milliseconds and wrong for streaming a repository's
+// history; and it buffers the answer in memory, which is right for a few lines
+// of verdicts and wrong for a multi-gigabyte bundle. Here ctx is the only
+// bound, and bytes go straight to w.
+func (s *Source) StreamShell(ctx context.Context, script string, w io.Writer) error {
+	if ctx.Err() != nil {
+		return ctx.Err()
+	}
+	var cmd *exec.Cmd
+	if s.target != "" {
+		args := append(append([]string{}, s.sshOpts...), s.target, remote.LoginShellCommand(script))
+		cmd = exec.CommandContext(ctx, "ssh", args...)
+	} else {
+		cmd = exec.CommandContext(ctx, "sh", "-c", script)
+	}
+	var stderr bytes.Buffer
+	cmd.Stdout = w
+	cmd.Stderr = &stderr
+	if err := cmd.Run(); err != nil {
+		trimmed := strings.TrimSpace(stderr.String())
+		if ctx.Err() != nil {
+			return camperrors.Wrapf(ctx.Err(), "stream from peer %s timed out: %s", s.id, trimmed)
+		}
+		exitCode := 0
+		var exitErr *exec.ExitError
+		if errors.As(err, &exitErr) {
+			exitCode = exitErr.ExitCode()
+		}
+		return camperrors.NewCommand("stream (peer "+s.id+")", exitCode, trimmed, err)
+	}
+	return nil
 }
 
 // RsyncSpecAbs returns the rsync source spec for an already-absolute path on

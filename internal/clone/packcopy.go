@@ -287,17 +287,7 @@ func (c *Cloner) packSeedRoot(ctx context.Context, v RepoVerdict) (string, error
 	if err := c.verifyHeadUnmoved(ctx, v.Repo, v.HeadSHA); err != nil {
 		return "", err
 	}
-	if err := verifyCopiedConnectivity(ctx, targetDir); err != nil {
-		return "", err
-	}
-
-	// Completion is git's from here: give the copy a real origin, fetch the
-	// delta the peer did not have, and check out normally.
-	addRemote := exec.CommandContext(ctx, "git", "-C", targetDir, "remote", "add", "origin", c.options.URL)
-	if out, err := addRemote.CombinedOutput(); err != nil {
-		return "", camperrors.Wrapf(err, "add origin: %s", lastLine(string(out)))
-	}
-	if err := c.repointOrigin(ctx, targetDir); err != nil {
+	if err := c.completeSeededRoot(ctx, targetDir); err != nil {
 		return "", err
 	}
 
@@ -333,20 +323,30 @@ func (c *Cloner) cloneRootFromPeer(ctx context.Context, result *CloneResult) (st
 			fmt.Sprintf("peer %s reported no verdict for the campaign root; cloning from peer", c.peer.ID()))
 		return c.gitCloneFromPeer(ctx)
 	}
-	if ok, reason := packCopyEligible(v, report.Root); !ok {
+	if ok, reason := packCopyEligible(v, report.Root); ok {
+		c.progress.Message(fmt.Sprintf("Cold-seeding campaign root from %s", c.peer.ID()))
+		dir, err := c.packSeedRoot(ctx, v)
+		if err == nil {
+			return dir, nil
+		}
 		result.Warnings = append(result.Warnings,
-			fmt.Sprintf("cold-seed copy skipped for the campaign root (%s); cloning from peer", reason))
-		return c.gitCloneFromPeer(ctx)
+			fmt.Sprintf("cold-seed copy of the campaign root failed (%v); bundling from peer instead", err))
+	} else {
+		result.Warnings = append(result.Warnings,
+			fmt.Sprintf("cold-seed copy skipped for the campaign root (%s); bundling from peer instead", reason))
 	}
 
-	c.progress.Message(fmt.Sprintf("Cold-seeding campaign root from %s", c.peer.ID()))
-	dir, err := c.packSeedRoot(ctx, v)
-	if err != nil {
-		result.Warnings = append(result.Warnings,
-			fmt.Sprintf("cold-seed copy of the campaign root failed (%v); cloning from peer", err))
-		return c.gitCloneFromPeer(ctx)
+	// The peer is being written to, or the copy did not hold up. A bundle is
+	// written in one pass and verified before it is read, so it is correct
+	// regardless of what the peer is doing.
+	c.progress.Message(fmt.Sprintf("Bundling campaign root from %s", c.peer.ID()))
+	dir, err := c.bundleSeedRoot(ctx, report.Root)
+	if err == nil {
+		return dir, nil
 	}
-	return dir, nil
+	result.Warnings = append(result.Warnings,
+		fmt.Sprintf("bundle seed of the campaign root failed (%v); cloning from peer", err))
+	return c.gitCloneFromPeer(ctx)
 }
 
 // errColdSeedSkipped marks a submodule the cold-seed copy declined to handle —
@@ -367,10 +367,14 @@ func (c *Cloner) coldSeedSubmodule(ctx context.Context, repoDir string, sub Subm
 	if !found {
 		return errColdSeedSkipped
 	}
-	if ok, _ := packCopyEligible(v, c.peerQuiescence.Root); !ok {
-		return errColdSeedSkipped
+	if ok, _ := packCopyEligible(v, c.peerQuiescence.Root); ok {
+		if err := c.packSeedSubmodule(ctx, repoDir, sub, v); err == nil {
+			return nil
+		}
+		// Fall through: a copy that failed is exactly the case the bundle
+		// exists for, and it costs one more attempt before the network.
 	}
-	return c.packSeedSubmodule(ctx, repoDir, sub, v)
+	return c.bundleSeedSubmodule(ctx, repoDir, sub, c.peerQuiescence.Root)
 }
 
 // packSeedSubmodule seeds one submodule's object store from the peer's bytes
@@ -408,20 +412,45 @@ func (c *Cloner) packSeedSubmodule(ctx context.Context, repoDir string, sub Subm
 	if err := c.copyPackBytes(ctx, v.GitDir, moduleDir); err != nil {
 		return err
 	}
-	// A module directory is a git dir with a working tree attached, not a bare
-	// repo. `git init --bare` is only used to lay down the layout without
-	// creating a stray worktree; clearing core.bare is what lets git connect
-	// the checkout when it adopts this directory.
-	if out, err := exec.CommandContext(ctx, "git", "-C", moduleDir,
-		"config", "core.bare", "false").CombinedOutput(); err != nil {
-		return camperrors.Wrapf(err, "clear core.bare for %s: %s", sub.Path, lastLine(string(out)))
-	}
 	if err := c.verifyHeadUnmoved(ctx, v.Repo, v.HeadSHA); err != nil {
 		return err
 	}
-	if err := verifyCopiedConnectivity(ctx, moduleDir); err != nil {
+	if err := completeSeededModule(ctx, moduleDir); err != nil {
 		return err
 	}
 	success = true
+	return nil
+}
+
+// completeSeededRoot finishes a seeded campaign root, whichever transport
+// delivered the objects. Connectivity is checked first, on the delivered bytes
+// alone, so an incomplete delivery is attributed to the transport rather than
+// repaired invisibly by the origin fetch that follows.
+func (c *Cloner) completeSeededRoot(ctx context.Context, targetDir string) error {
+	if err := verifyCopiedConnectivity(ctx, targetDir); err != nil {
+		return err
+	}
+	// A seeded root either has no origin yet (init) or has the transport's
+	// own URL (clone from a bundle); add-then-set-url covers both without
+	// caring which happened.
+	addRemote := exec.CommandContext(ctx, "git", "-C", targetDir, "remote", "add", "origin", c.options.URL)
+	if out, err := addRemote.CombinedOutput(); err != nil && !strings.Contains(string(out), "already exists") {
+		return camperrors.Wrapf(err, "add origin: %s", lastLine(string(out)))
+	}
+	return c.repointOrigin(ctx, targetDir)
+}
+
+// completeSeededModule finishes a seeded submodule git directory so
+// `git submodule update --init` adopts it instead of cloning: connectivity
+// verified, and core.bare cleared so git can attach a working tree.
+func completeSeededModule(ctx context.Context, moduleDir string) error {
+	if err := verifyCopiedConnectivity(ctx, moduleDir); err != nil {
+		return err
+	}
+	out, err := exec.CommandContext(ctx, "git", "-C", moduleDir,
+		"config", "core.bare", "false").CombinedOutput()
+	if err != nil {
+		return camperrors.Wrapf(err, "clear core.bare: %s", lastLine(string(out)))
+	}
 	return nil
 }
