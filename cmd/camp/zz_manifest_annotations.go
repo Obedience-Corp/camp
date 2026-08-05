@@ -82,6 +82,7 @@ var manifestAgentAllowedReasons = map[string]string{
 	"triage evidence template":   "Read-only record scaffold built from data camp already holds",
 	"triage init":                "Writes only the scaffold, never overwrites, calls no models",
 	"triage priorities":          "Read-only brief rendered from recorded run data",
+	"triage profile":             "Read-only resolved configuration; writes nothing",
 	"triage propose":             "Records an advisory proposal; terminal actions still require human approval",
 	"triage queue":               "Read-only work dispatch with --json output; calls no models",
 	"triage refresh":             "Read-mostly re-check; writes only run bookkeeping and never moves a workitem",

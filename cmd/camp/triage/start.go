@@ -52,6 +52,7 @@ type startOptions struct {
 	jsonOut  bool
 	noWorkfl bool
 	identity string
+	profile  string
 }
 
 func newStartCommand() *cobra.Command {
@@ -96,6 +97,8 @@ camp triage abandon first.`,
 	f.BoolVar(&opts.noWorkfl, "no-workflow-doc", false, "Skip the companion WORKFLOW.md scaffold")
 	f.StringVar(&opts.identity, "identity", "",
 		"Override the profile's identity policy: repair (adopt and report) or strict (refuse and list)")
+	cmd.Flags().StringVar(&opts.profile, "profile", "",
+		"Use a named built-in profile instead of the campaign's: default, sweep, or deep")
 	return cmd
 }
 
@@ -107,10 +110,11 @@ func runStart(cmd *cobra.Command, opts *startOptions) error {
 		return camperrors.Wrap(err, "not in a campaign directory")
 	}
 
-	profile, err := triage.ResolveProfile(ctx, root)
+	resolution, err := triage.ResolveProfileNamed(ctx, root, opts.profile)
 	if err != nil {
 		return err
 	}
+	profile := resolution.Profile
 	// Apply the override onto the profile before anything reads it, so the
 	// profile embedded in the manifest is the policy the run actually used
 	// rather than the one the file happened to say.
@@ -160,7 +164,7 @@ func runStart(cmd *cobra.Command, opts *startOptions) error {
 
 	store := triage.NewStore(root, nil)
 	manifest, err := triage.BuildManifest(triage.SnapshotInput{
-		ProfileName: triage.ResolvedProfileName(),
+		ProfileName: resolution.Name,
 		Profile:     profile,
 		Mode:        startMode(opts.full),
 		Items:       items,

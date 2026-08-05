@@ -15,11 +15,11 @@ const TypePolicySchemaVersion = "triage-type/v1alpha1"
 // campaign can rename "completed" to "concluded" without triage learning a new
 // mutation, because the label is only ever a key into this map.
 type TypePolicy struct {
-	SchemaVersion string `json:"schema_version"`
+	SchemaVersion string `json:"schema_version" yaml:"schema_version"`
 	// Dispositions maps an offered label to the action it performs.
-	Dispositions map[string]CanonicalAction `json:"dispositions"`
-	Evidence     EvidenceDepth              `json:"evidence"`
-	RoutingTier  RoutingTier                `json:"routing_tier"`
+	Dispositions map[string]CanonicalAction `json:"dispositions" yaml:"dispositions"`
+	Evidence     EvidenceDepth              `json:"evidence" yaml:"evidence"`
+	RoutingTier  RoutingTier                `json:"routing_tier" yaml:"routing_tier"`
 }
 
 // Labels returns the dispositions this policy offers, in stable order.

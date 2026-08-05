@@ -25,22 +25,22 @@ const ProfileNameDefault = "default"
 // This phase ships the built-in default only; the file layer, per-type
 // policies, and named profiles land with the profile sequence.
 type ResolvedProfile struct {
-	SchemaVersion string           `json:"schema_version"`
-	Scope         ProfileScope     `json:"scope"`
-	Runs          ProfileRuns      `json:"runs"`
-	Preflight     ProfilePreflight `json:"preflight"`
-	Review        ProfileReview    `json:"review"`
-	Evidence      ProfileEvidence  `json:"evidence"`
-	Routing       ProfileRouting   `json:"routing"`
-	Anchors       ProfileAnchors   `json:"anchors"`
-	Apply         ProfileApply     `json:"apply"`
-	Outputs       ProfileOutputs   `json:"outputs"`
+	SchemaVersion string           `json:"schema_version" yaml:"schema_version"`
+	Scope         ProfileScope     `json:"scope" yaml:"scope"`
+	Runs          ProfileRuns      `json:"runs" yaml:"runs"`
+	Preflight     ProfilePreflight `json:"preflight" yaml:"preflight"`
+	Review        ProfileReview    `json:"review" yaml:"review"`
+	Evidence      ProfileEvidence  `json:"evidence" yaml:"evidence"`
+	Routing       ProfileRouting   `json:"routing" yaml:"routing"`
+	Anchors       ProfileAnchors   `json:"anchors" yaml:"anchors"`
+	Apply         ProfileApply     `json:"apply" yaml:"apply"`
+	Outputs       ProfileOutputs   `json:"outputs" yaml:"outputs"`
 }
 
 // ProfilePreflight controls what start does about rows whose identity is not
 // durable yet (FT-008).
 type ProfilePreflight struct {
-	Identity IdentityPolicy `json:"identity"`
+	Identity IdentityPolicy `json:"identity" yaml:"identity"`
 }
 
 // IdentityPolicy is how the preflight treats a workitem directory that should
@@ -67,27 +67,27 @@ func IdentityPolicies() []string {
 type ProfileScope struct {
 	// IncludeParked keeps parked items visible. Parked is a decision to
 	// revisit, not a decision to forget, so the default reviews them.
-	IncludeParked bool     `json:"include_parked"`
-	ExcludeTypes  []string `json:"exclude_types"`
+	IncludeParked bool     `json:"include_parked" yaml:"include_parked"`
+	ExcludeTypes  []string `json:"exclude_types" yaml:"exclude_types"`
 	// ExcludePaths are campaign-relative glob patterns.
-	ExcludePaths []string `json:"exclude_paths"`
+	ExcludePaths []string `json:"exclude_paths" yaml:"exclude_paths"`
 }
 
 // ProfileRuns controls run mode and the staleness notice.
 type ProfileRuns struct {
-	Mode RunMode `json:"mode"`
+	Mode RunMode `json:"mode" yaml:"mode"`
 	// StaleAfterDays is how old the last run may be before high-traffic
 	// commands suggest running triage again.
-	StaleAfterDays int `json:"stale_after_days"`
+	StaleAfterDays int `json:"stale_after_days" yaml:"stale_after_days"`
 }
 
 // ProfileReview controls how rows are grouped and approved.
 type ProfileReview struct {
-	GroupBy   ReviewGroupBy   `json:"group_by"`
-	BatchSize int             `json:"batch_size"`
-	Approval  ApprovalGranule `json:"approval"`
+	GroupBy   ReviewGroupBy   `json:"group_by" yaml:"group_by"`
+	BatchSize int             `json:"batch_size" yaml:"batch_size"`
+	Approval  ApprovalGranule `json:"approval" yaml:"approval"`
 	// RequireRationale rejects a proposal that carries no rationale.
-	RequireRationale bool `json:"require_rationale"`
+	RequireRationale bool `json:"require_rationale" yaml:"require_rationale"`
 }
 
 // ReviewGroupBy is how rows are batched for review.
@@ -133,7 +133,7 @@ func ApprovalGranules() []string {
 type ProfileEvidence struct {
 	// DepthByStage is keyed by attention stage plus "none" for items with no
 	// stage set.
-	DepthByStage map[string]EvidenceDepth `json:"depth_by_stage"`
+	DepthByStage map[string]EvidenceDepth `json:"depth_by_stage" yaml:"depth_by_stage"`
 }
 
 // EvidenceStageNone is the DepthByStage key for items with no attention stage.
@@ -142,10 +142,10 @@ const EvidenceStageNone = "none"
 // ProfileRouting is advisory instruction for whatever drives the evidence
 // phase. Camp passes it through verbatim and never acts on it.
 type ProfileRouting struct {
-	EvidenceTier   RoutingTier `json:"evidence_tier"`
-	EscalationTier RoutingTier `json:"escalation_tier"`
-	SynthesisTier  RoutingTier `json:"synthesis_tier"`
-	MaxConcurrent  int         `json:"max_concurrent"`
+	EvidenceTier   RoutingTier `json:"evidence_tier" yaml:"evidence_tier"`
+	EscalationTier RoutingTier `json:"escalation_tier" yaml:"escalation_tier"`
+	SynthesisTier  RoutingTier `json:"synthesis_tier" yaml:"synthesis_tier"`
+	MaxConcurrent  int         `json:"max_concurrent" yaml:"max_concurrent"`
 }
 
 // ProfileAnchors controls how refresh re-checks anchors that need the network.
@@ -158,7 +158,7 @@ type ProfileAnchors struct {
 	// would cache away the exact failure this phase exists to catch. Local
 	// anchors ignore this entirely; hashing a file is cheaper than deciding
 	// whether to.
-	RecheckMinutes int `json:"recheck_minutes"`
+	RecheckMinutes int `json:"recheck_minutes" yaml:"recheck_minutes"`
 }
 
 // AnchorRecheckInterval is the throttle window as a duration.
@@ -173,7 +173,7 @@ func (p ProfileAnchors) AnchorRecheckInterval() time.Duration {
 // splits, and festival promotions always require recorded human approval;
 // that is product behavior and has no profile key.
 type ProfileApply struct {
-	AttentionChanges AttentionChangePolicy `json:"attention_changes"`
+	AttentionChanges AttentionChangePolicy `json:"attention_changes" yaml:"attention_changes"`
 }
 
 // AttentionChangePolicy is when approved attention-stage changes execute.
@@ -198,9 +198,9 @@ func AttentionChangePolicies() []string {
 type ProfileOutputs struct {
 	// PrioritiesExport is a campaign-relative path for a rendered copy of
 	// PRIORITIES.md. Empty means no export; the run's own copy always exists.
-	PrioritiesExport string `json:"priorities_export"`
+	PrioritiesExport string `json:"priorities_export" yaml:"priorities_export"`
 	// ScaffoldWorkflowDoc generates the companion WORKFLOW.md in the run.
-	ScaffoldWorkflowDoc bool `json:"scaffold_workflow_doc"`
+	ScaffoldWorkflowDoc bool `json:"scaffold_workflow_doc" yaml:"scaffold_workflow_doc"`
 }
 
 // DefaultProfile returns the built-in `default` profile: the values a campaign
