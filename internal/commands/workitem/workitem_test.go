@@ -493,16 +493,27 @@ func TestWorkitemRootRejectsPositionalArgs(t *testing.T) {
 	if err == nil {
 		t.Fatal("expected failure for removed/unknown positional current")
 	}
-	// A JSON error envelope may use the parent schema version; a list payload
-	// would include "items" without an "error" object.
-	if strings.Contains(stdout.String(), `"items"`) && !strings.Contains(stdout.String(), `"error"`) {
-		t.Fatalf("must not emit a list payload on stdout: %q", stdout.String())
+	if stdout.Len() != 0 {
+		t.Fatalf("stdout = %q, want empty", stdout.String())
 	}
-	if strings.Contains(stderr.String(), `"items"`) && !strings.Contains(stderr.String(), `"error"`) {
-		t.Fatalf("must not emit a list payload on stderr: %q", stderr.String())
+
+	var envelope struct {
+		SchemaVersion string `json:"schema_version"`
+		Error         struct {
+			Message  string `json:"message"`
+			ExitCode int    `json:"exit_code"`
+		} `json:"error"`
 	}
-	combined := stdout.String() + stderr.String()
-	if !strings.Contains(combined, "unknown command") && !strings.Contains(combined, "accepts no args") {
-		t.Fatalf("expected unknown-command or no-args failure, got: %s", combined)
+	if unmarshalErr := json.Unmarshal(stderr.Bytes(), &envelope); unmarshalErr != nil {
+		t.Fatalf("stderr is not a JSON error envelope: %v\n%s", unmarshalErr, stderr.String())
+	}
+	if envelope.SchemaVersion != wkitem.SchemaVersion {
+		t.Fatalf("schema_version = %q, want %q", envelope.SchemaVersion, wkitem.SchemaVersion)
+	}
+	if !strings.Contains(envelope.Error.Message, `unknown command "current"`) {
+		t.Fatalf("error.message = %q, want removed command called out", envelope.Error.Message)
+	}
+	if envelope.Error.ExitCode == 0 {
+		t.Fatal("error.exit_code must be non-zero")
 	}
 }

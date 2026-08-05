@@ -227,21 +227,21 @@ func TestIntegration_CurrentRemovedLegacyArgv(t *testing.T) {
 
 	stdout, err := tc.ReadFile(stdoutPath)
 	require.NoError(t, err)
+	assert.Empty(t, stdout, "removed command must not emit a list payload")
 	stderr, err := tc.ReadFile(stderrPath)
 	require.NoError(t, err)
-	// Error envelopes may reuse the parent schema version; a successful list
-	// payload has items and no error object.
-	assert.False(t, strings.Contains(stdout, `"items"`) && !strings.Contains(stdout, `"error"`),
-		"must not emit a list payload on stdout: %s", stdout)
-	assert.False(t, strings.Contains(stderr, `"items"`) && !strings.Contains(stderr, `"error"`),
-		"must not emit a list payload on stderr: %s", stderr)
-	combined := stdout + stderr
-	assert.True(t,
-		strings.Contains(combined, "unknown command") ||
-			strings.Contains(combined, "accepts no args") ||
-			strings.Contains(combined, "unknown flag") ||
-			strings.Contains(combined, `"error"`),
-		"expected a hard failure message, got: %s", combined)
+
+	var envelope struct {
+		SchemaVersion string `json:"schema_version"`
+		Error         struct {
+			Message  string `json:"message"`
+			ExitCode int    `json:"exit_code"`
+		} `json:"error"`
+	}
+	require.NoError(t, json.Unmarshal([]byte(stderr), &envelope), "stderr=%s", stderr)
+	assert.Equal(t, "workitems/v1alpha10", envelope.SchemaVersion)
+	assert.Contains(t, envelope.Error.Message, `unknown command "current"`)
+	assert.Equal(t, code, envelope.Error.ExitCode)
 }
 
 func TestIntegration_ResolverQuestID(t *testing.T) {
