@@ -91,3 +91,32 @@ func TestIntegration_NothingStagedMessageInProject(t *testing.T) {
 	assert.NotContains(t, out, "Nothing to commit in project",
 		"a dirty project must not report a clean tree; output:\n%s", out)
 }
+
+// The third caller. camp worktrees commit passes " in worktree", and a worktree
+// is the scope most likely to be confused with the project it belongs to, so
+// the qualifier is doing the most work here of the three.
+func TestIntegration_NothingStagedMessageInWorktree(t *testing.T) {
+	tc := GetSharedContainer(t)
+	campPath, _ := setupDrainCampaign(t, tc, "nothing-staged-worktree")
+
+	_, stderr, exitCode, err := tc.RunCampSplitInDir(campPath, "project", "new", "demo-app")
+	require.NoError(t, err)
+	require.Equal(t, 0, exitCode, "stderr:\n%s", stderr)
+	projectPath := campPath + "/projects/demo-app"
+
+	_, stderr, exitCode, err = tc.RunCampSplitInDir(projectPath, "p", "worktree", "add", "wt-scope")
+	require.NoError(t, err)
+	require.Equal(t, 0, exitCode, "worktree add must succeed; stderr:\n%s", stderr)
+	worktreePath := campPath + "/projects/worktrees/demo-app/wt-scope"
+
+	out := checkNoOpLine(t, tc, worktreePath, "worktrees", "commit", "--all=false", "-m", "no-op")
+	assert.Contains(t, out, "Nothing to commit in worktree",
+		"a clean worktree must name its scope; output:\n%s", out)
+
+	tc.Shell(t, fmt.Sprintf("printf 'scratch\\n' > %s/untracked.md", worktreePath))
+	out = checkNoOpLine(t, tc, worktreePath, "worktrees", "commit", "--all=false", "-m", "no-op")
+	assert.Contains(t, out, "Nothing staged to commit in worktree",
+		"a dirty worktree must name its scope and not claim clean; output:\n%s", out)
+	assert.NotContains(t, out, "Nothing to commit in worktree",
+		"a dirty worktree must not report a clean tree; output:\n%s", out)
+}
