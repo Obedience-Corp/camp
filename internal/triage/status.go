@@ -2,8 +2,10 @@ package triage
 
 import (
 	"context"
+	"os"
 	"path/filepath"
 	"sort"
+	"strconv"
 	"time"
 
 	"github.com/Obedience-Corp/camp/internal/config"
@@ -414,4 +416,102 @@ func (s *Store) SuccessorsByRow(ctx context.Context, runID string, verdicts map[
 		}
 	}
 	return out, nil
+}
+
+// TriageBannerText returns the one-line notice high-traffic commands print
+// when a campaign's last triage has gone stale, or "" when it has not.
+//
+// Shared wording, on the SweepBannerText pattern, so `camp status` and the
+// workitem banner cannot drift into saying it two different ways.
+//
+// It takes counts rather than doing any discovery of its own. The notice sits
+// in the path of commands people run constantly, and a banner that cost a
+// filesystem walk would be a tax on every one of them.
+func TriageBannerText(daysSince, staleAfterDays, changedRows int) string {
+	switch {
+	case changedRows > 0:
+		noun := "workitems"
+		verb := "have"
+		if changedRows == 1 {
+			noun, verb = "workitem", "has"
+		}
+		return strconv.Itoa(changedRows) + " " + noun + " " + verb +
+			" changed since the last triage — run: camp triage start"
+	case staleAfterDays > 0 && daysSince > staleAfterDays:
+		return "last triage was " + strconv.Itoa(daysSince) +
+			" days ago — run: camp triage start"
+	default:
+		return ""
+	}
+}
+
+// NoticeFileName caches what the last refresh saw, so the banner can be
+// answered without a discovery walk.
+const NoticeFileName = "notice.json"
+
+// Notice is the cached verdict the banner reads.
+type Notice struct {
+	SchemaVersion string    `json:"schema_version"`
+	RunID         string    `json:"run_id"`
+	CheckedAt     time.Time `json:"checked_at"`
+	// ChangedRows is how many rows the last refresh found moved, gone, or new.
+	ChangedRows int `json:"changed_rows"`
+}
+
+// Normalize implements Document.
+func (n *Notice) Normalize() {
+	n.SchemaVersion = SchemaVersion
+	normalizeTime(&n.CheckedAt)
+}
+
+func (n *Notice) kind() string    { return "triage notice" }
+func (n *Notice) version() string { return n.SchemaVersion }
+
+// Validate implements Document.
+func (n *Notice) Validate() []Violation {
+	out := checkRequired("run_id", n.RunID)
+	return append(out, checkTimeSet("checked_at", n.CheckedAt)...)
+}
+
+// NoticePath is where the cached verdict lives.
+func (s *Store) NoticePath() string { return filepath.Join(s.root, NoticeFileName) }
+
+// WriteNotice caches what a refresh saw.
+func (s *Store) WriteNotice(ctx context.Context, notice *Notice) error {
+	notice.Normalize()
+	body, err := MarshalDocument(notice)
+	if err != nil {
+		return err
+	}
+	return s.writeLocked(ctx, s.NoticePath(), body)
+}
+
+// ReadNotice returns the cached verdict, or nil when there is none.
+//
+// A missing or unreadable notice is not an error: the banner is an
+// optimization on top of a working campaign, and failing `camp status`
+// because a cache file was malformed would be a poor trade.
+func (s *Store) ReadNotice() *Notice {
+	body, err := os.ReadFile(s.NoticePath())
+	if err != nil {
+		return nil
+	}
+	var notice Notice
+	if err := ParseDocument(body, &notice, Lenient); err != nil {
+		return nil
+	}
+	return &notice
+}
+
+// BannerFor returns the notice line for a campaign, reading only the cached
+// verdict and the run's timestamp — never the filesystem at large.
+func BannerFor(campaignRoot string, staleAfterDays int, now time.Time) string {
+	store := NewStore(campaignRoot, nil)
+
+	notice := store.ReadNotice()
+	if notice == nil {
+		return ""
+	}
+	days := int(now.Sub(notice.CheckedAt).Hours() / 24)
+	return TriageBannerText(days, staleAfterDays, notice.ChangedRows)
 }

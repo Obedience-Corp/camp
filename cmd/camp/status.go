@@ -4,8 +4,10 @@ import (
 	"fmt"
 	"os"
 	"os/exec"
+	"time"
 
 	camperrors "github.com/Obedience-Corp/camp/internal/errors"
+	"github.com/Obedience-Corp/camp/internal/triage"
 
 	"github.com/Obedience-Corp/camp/internal/campaign"
 	"github.com/Obedience-Corp/camp/internal/drain"
@@ -106,6 +108,19 @@ func runStatus(cmd *cobra.Command, args []string) error {
 
 	if err := gitCmd.Run(); err != nil {
 		return camperrors.Wrapf(err, "git status failed for %s", target.Path)
+	}
+
+	// One line when the campaign's last triage has gone stale. It reads only
+	// the verdict a refresh already cached — never the filesystem at large —
+	// because this is the command people run constantly and a banner that
+	// cost a discovery walk would be a tax on every invocation.
+	if !target.IsSubmodule {
+		if line := triage.BannerFor(target.Path,
+			triage.DefaultProfile().Runs.StaleAfterDays, time.Now()); line != "" {
+			if _, err := fmt.Fprintln(os.Stdout, line); err != nil {
+				return err
+			}
+		}
 	}
 	return nil
 }

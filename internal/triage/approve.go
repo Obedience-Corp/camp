@@ -94,7 +94,7 @@ func (s *Store) Approve(ctx context.Context, in ApproveInput) (*ApproveResult, e
 	// happened" for the whole class of failure a caller can actually cause.
 	if in.Amend != "" {
 		for _, row := range selection.Matched {
-			if _, err := ResolveDisposition(TypePolicyFor(row.Type), in.Amend); err != nil {
+			if _, err := ResolveDisposition(run.Manifest.PolicyFor(row.Type), in.Amend); err != nil {
 				return nil, camperrors.Wrapf(err, "amend %s", row.StableID)
 			}
 		}
@@ -111,7 +111,7 @@ func (s *Store) Approve(ctx context.Context, in ApproveInput) (*ApproveResult, e
 		if err := ctx.Err(); err != nil {
 			return nil, err
 		}
-		recorded, err := s.recordOne(ctx, in, row, verdicts[row.StableID])
+		recorded, err := s.recordOne(ctx, in, run.Manifest, row, verdicts[row.StableID])
 		if err != nil {
 			return nil, err
 		}
@@ -121,7 +121,7 @@ func (s *Store) Approve(ctx context.Context, in ApproveInput) (*ApproveResult, e
 }
 
 // recordOne writes the verdict for a single row.
-func (s *Store) recordOne(ctx context.Context, in ApproveInput, row ManifestRow, current RowVerdict) (*RecordedVerdict, error) {
+func (s *Store) recordOne(ctx context.Context, in ApproveInput, manifest *Manifest, row ManifestRow, current RowVerdict) (*RecordedVerdict, error) {
 	disposition := current.Disposition
 	action := current.CanonicalAction
 	event := DecisionApproved
@@ -132,7 +132,7 @@ func (s *Store) recordOne(ctx context.Context, in ApproveInput, row ManifestRow,
 	case in.Amend != "":
 		// An amendment is a different disposition, so it is revalidated
 		// against the row's own vocabulary rather than assumed compatible.
-		resolved, err := ResolveDisposition(TypePolicyFor(row.Type), in.Amend)
+		resolved, err := ResolveDisposition(manifest.PolicyFor(row.Type), in.Amend)
 		if err != nil {
 			return nil, camperrors.Wrapf(err, "amend %s", row.StableID)
 		}

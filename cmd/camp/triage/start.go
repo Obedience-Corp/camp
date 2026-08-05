@@ -35,9 +35,13 @@ type startResult struct {
 	// Queued and Carried always sum to Rows. Carried is 0 until carry-forward
 	// lands; the field exists now so consumers do not have to change shape
 	// when it starts moving.
-	Queued             int `json:"queued"`
-	Carried            int `json:"carried"`
-	IdentityExceptions int `json:"identity_exceptions"`
+	Queued  int `json:"queued"`
+	Carried int `json:"carried"`
+	// CarryLosses names every row that could have carried and did not, with
+	// the reason. A row silently dropping back into review is what makes an
+	// incremental run feel arbitrary.
+	CarryLosses        []triage.CarryLoss `json:"carry_losses"`
+	IdentityExceptions int                `json:"identity_exceptions"`
 	// Repaired lists identities the preflight created. Always present so a
 	// consumer never has to distinguish absent from empty.
 	Repaired            []triage.Repair `json:"repaired"`
@@ -110,6 +114,14 @@ func runStart(cmd *cobra.Command, opts *startOptions) error {
 		return camperrors.Wrap(err, "not in a campaign directory")
 	}
 
+	// Scaffold BEFORE resolving. A first run must resolve against the files it
+	// is about to leave behind, or it freezes an empty set of type policies
+	// and every verdict it records carries no vocabulary — which then reads,
+	// on the next run, as though the campaign deleted six dispositions.
+	if _, err := scaffold.Ensure(ctx, root); err != nil {
+		return err
+	}
+
 	resolution, err := triage.ResolveProfileNamed(ctx, root, opts.profile)
 	if err != nil {
 		return err
@@ -121,13 +133,6 @@ func runStart(cmd *cobra.Command, opts *startOptions) error {
 	if opts.identity != "" {
 		profile.Preflight.Identity = triage.IdentityPolicy(opts.identity)
 	}
-	// Scaffold before anything reads the profile: a first run should leave the
-	// campaign with a readable, commented profile explaining what just
-	// happened, not an invisible default nobody can inspect.
-	if _, err := scaffold.Ensure(ctx, root); err != nil {
-		return err
-	}
-
 	scope := triage.NewScope(profile)
 	if err := scope.ApplyExpressions(opts.scope); err != nil {
 		return err
@@ -171,8 +176,16 @@ func runStart(cmd *cobra.Command, opts *startOptions) error {
 		// Frozen so refresh can reproduce this run's selection instead of
 		// treating every out-of-scope item as a new discovery.
 		ScopeExpressions: opts.scope,
+		TypePolicies:     resolution.TypePolicies,
 		Now:              now,
 	})
+	if err != nil {
+		return err
+	}
+
+	// D4: carry the verdicts of the last closed run for every row nothing
+	// touched, so the second triage of a campaign is small. --full skips it.
+	carry, err := carryFromLastRun(ctx, store, root, cfg, manifest, resolution, opts.full)
 	if err != nil {
 		return err
 	}
@@ -198,8 +211,9 @@ func runStart(cmd *cobra.Command, opts *startOptions) error {
 		Profile:             manifest.Profile.Name,
 		Rows:                len(manifest.Rows),
 		Batches:             triage.BatchCount(manifest),
-		Queued:              len(manifest.Rows),
-		Carried:             0,
+		Queued:              len(manifest.Rows) - carriedCount(carry),
+		Carried:             carriedCount(carry),
+		CarryLosses:         carryLossesOf(carry),
 		IdentityExceptions:  triage.IdentityExceptionCount(manifest),
 		Repaired:            preflight.Repaired,
 		RunDir:              relativeRunDir(root, run.Dir),
@@ -340,4 +354,98 @@ func writeStartText(w io.Writer, result startResult) error {
 
 func init() {
 	Cmd.AddCommand(newStartCommand())
+}
+
+// carryFromLastRun folds the previous run's verdicts into a new manifest.
+//
+// Returns a nil result when there is nothing to carry from — a first-ever
+// triage, or --full. Carrying is an optimization on top of a correct run, so
+// anything that goes wrong reading the base run degrades to "carry nothing"
+// rather than failing the start: the operator gets a full review, which is
+// slower but never wrong.
+func carryFromLastRun(
+	ctx context.Context, store *triage.Store, root string, cfg *config.CampaignConfig,
+	manifest *triage.Manifest, resolution *triage.ProfileResolution, full bool,
+) (*triage.CarryForwardResult, error) {
+	if full {
+		return nil, nil
+	}
+
+	baseID, err := store.LatestRunID(ctx)
+	if err != nil || baseID == "" {
+		return nil, nil //nolint:nilerr // no base run is the first-triage case
+	}
+	base, err := store.OpenRun(ctx, baseID)
+	if err != nil || base.Manifest == nil {
+		return nil, nil //nolint:nilerr // an unreadable base carries nothing
+	}
+	baseVerdicts, err := store.Verdicts(ctx, baseID)
+	if err != nil {
+		return nil, nil //nolint:nilerr
+	}
+
+	// Classify the new rows against the base run's snapshot, reusing the
+	// refresh machinery rather than inventing a second notion of "unchanged".
+	items, err := discoverAll(ctx, root, cfg)
+	if err != nil {
+		return nil, err
+	}
+	index := triage.IndexDiscovery(items)
+	anchors, err := store.AnchorsByRow(ctx, baseID, rowIDsOf(base.Manifest.Rows))
+	if err != nil {
+		return nil, nil //nolint:nilerr
+	}
+	checks, err := triage.CheckLocalAnchors(ctx, root, anchors, index)
+	if err != nil {
+		return nil, nil //nolint:nilerr
+	}
+	diff := triage.ClassifyRows(triage.DiffInput{
+		Rows: base.Manifest.Rows, Discovered: index.ByStableID, Anchors: checks,
+	})
+
+	classes := make(map[string]triage.RowClass, len(diff.Rows))
+	for _, row := range diff.Rows {
+		classes[row.StableID] = row.Class
+	}
+
+	result := triage.CarryForward(triage.CarryForwardInput{
+		BaseRunID:    baseID,
+		Rows:         manifest.Rows,
+		BaseRows:     base.Manifest.Rows,
+		BaseVerdicts: baseVerdicts,
+		Classes:      classes,
+		BaseProfile:  base.Manifest.Profile.Resolved,
+		NextProfile:  resolution.Profile,
+		BasePolicies: base.Manifest.Profile.TypePolicies,
+		NextPolicies: resolution.TypePolicies,
+	})
+	manifest.BaseRunID = &baseID
+	return &result, nil
+}
+
+// rowIDsOf lists manifest rows by stable id.
+func rowIDsOf(rows []triage.ManifestRow) []string {
+	out := make([]string, 0, len(rows))
+	for _, row := range rows {
+		out = append(out, row.StableID)
+	}
+	return out
+}
+
+// carriedCount is how many verdicts survived into this run.
+func carriedCount(carry *triage.CarryForwardResult) int {
+	if carry == nil {
+		return 0
+	}
+	return len(carry.Carried)
+}
+
+// carryLossesOf names every row that could have carried and did not, with the
+// reason. A row silently dropping back into review is the thing that makes an
+// incremental run feel arbitrary.
+func carryLossesOf(carry *triage.CarryForwardResult) []triage.CarryLoss {
+	if carry == nil {
+		return []triage.CarryLoss{}
+	}
+	return carry.Losses
 }

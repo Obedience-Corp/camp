@@ -114,7 +114,7 @@ func (s *Store) Propose(ctx context.Context, in ProposeInput) (*ProposeResult, e
 		return nil, err
 	}
 
-	action, err := ResolveDisposition(TypePolicyFor(row.Type), in.Disposition)
+	action, err := ResolveDisposition(run.Manifest.PolicyFor(row.Type), in.Disposition)
 	if err != nil {
 		return nil, err
 	}

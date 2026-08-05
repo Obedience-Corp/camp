@@ -160,6 +160,16 @@ func (s *Store) Refresh(ctx context.Context, in RefreshInput) (*RefreshResult, e
 	if err != nil {
 		return nil, err
 	}
+
+	// Cache what this pass saw so the banner can answer without a discovery
+	// walk. A failure here costs the notice, not the refresh.
+	counts := result.Diff.CountByClass()
+	_ = s.WriteNotice(ctx, &Notice{
+		RunID:     in.RunID,
+		CheckedAt: in.Now,
+		ChangedRows: counts[ClassMoved] + counts[ClassChanged] +
+			counts[ClassGone] + counts[ClassNew],
+	})
 	return result, nil
 }
 

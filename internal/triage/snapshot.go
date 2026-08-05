@@ -20,6 +20,8 @@ type SnapshotInput struct {
 	// ScopeExpressions are the `--scope` expressions that produced Items,
 	// frozen into the manifest so refresh can reproduce the same selection.
 	ScopeExpressions []string
+	// TypePolicies are the resolved per-type vocabularies to freeze.
+	TypePolicies map[string]TypePolicy
 	// Now is the snapshot time, injected so a manifest is reproducible.
 	Now time.Time
 }
@@ -44,8 +46,9 @@ func BuildManifest(in SnapshotInput) (*Manifest, error) {
 		RunID: "", // assigned by the store from its clock
 		Mode:  in.Mode,
 		Profile: ManifestProfile{
-			Name:     in.ProfileName,
-			Resolved: profile,
+			Name:         in.ProfileName,
+			Resolved:     profile,
+			TypePolicies: in.TypePolicies,
 		},
 		BaseRunID:        in.BaseRunID,
 		ScopeExpressions: in.ScopeExpressions,

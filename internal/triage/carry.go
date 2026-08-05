@@ -28,6 +28,11 @@ type CarryInput struct {
 	Base ResolvedProfile
 	// Next is the resolved profile in force now.
 	Next ResolvedProfile
+	// BasePolicy is the type policy the carried verdict was formed under, and
+	// NextPolicy the one in force now. Zero values fall back to the built-in,
+	// which is what a run that predates frozen policies has.
+	BasePolicy TypePolicy
+	NextPolicy TypePolicy
 }
 
 // DecideCarry applies spec doc 04's carry-forward invalidation rules.
@@ -52,7 +57,12 @@ func DecideCarry(in CarryInput) CarryDecision {
 			"; a carried verdict does not survive its own evidence"}
 	}
 
-	if deltas := ProfileDeltaTouching(in.Row, in.Base, in.Next); len(deltas) > 0 {
+	deltas := ProfileDeltaTouching(in.Row, in.Base, in.Next)
+	// The vocabularies the two runs actually froze, which is the comparison
+	// that matters once type policies come off disk rather than a builtin.
+	deltas = append(deltas, TypePolicyDelta(
+		in.policyOrBuiltin(in.BasePolicy), in.policyOrBuiltin(in.NextPolicy))...)
+	if len(deltas) > 0 {
 		return CarryDecision{Reason: "the resolved profile changed in a key that touches this row: " +
 			strings.Join(deltas, ", ")}
 	}
@@ -61,7 +71,7 @@ func DecideCarry(in CarryInput) CarryDecision {
 	// the label the verdict was expressed in leaves a verdict camp cannot
 	// execute, which is a lost carry rather than an error.
 	if in.Verdict.Disposition != "" {
-		policy := TypePolicyFor(in.Row.Type)
+		policy := in.policyOrBuiltin(in.NextPolicy)
 		if _, err := ResolveDisposition(policy, in.Verdict.Disposition); err != nil {
 			return CarryDecision{Reason: "disposition " + quote(in.Verdict.Disposition) +
 				" no longer maps to an action for type " + quote(in.Row.Type)}
@@ -69,6 +79,14 @@ func DecideCarry(in CarryInput) CarryDecision {
 	}
 
 	return CarryDecision{Carried: true}
+}
+
+// policyOrBuiltin falls back to the built-in for a run that froze no policies.
+func (in CarryInput) policyOrBuiltin(policy TypePolicy) TypePolicy {
+	if len(policy.Dispositions) == 0 {
+		return TypePolicyFor(in.Row.Type)
+	}
+	return policy
 }
 
 // ProfileDeltaTouching reports the profile changes that invalidate one row's
@@ -175,4 +193,93 @@ func unionOfLabels(base, next TypePolicy) []string {
 type CarryLoss struct {
 	StableID string `json:"stable_id"`
 	Reason   string `json:"reason"`
+}
+
+// CarryForward decides which of a base run's verdicts survive into a new one.
+//
+// This is D4: the second triage of a campaign should be small, because most of
+// it has not changed. A row carries when its identity resolves unchanged, its
+// evidence anchors still observe what they observed, and the policy that
+// produced its verdict still means the same thing.
+//
+// Pure: the caller supplies the base run's rows and verdicts, the new
+// manifest's rows, and the classification the refresh machinery produced.
+func CarryForward(in CarryForwardInput) CarryForwardResult {
+	baseRows := indexRowsByID(in.BaseRows)
+	classes := in.Classes
+
+	result := CarryForwardResult{Losses: []CarryLoss{}}
+	for i := range in.Rows {
+		row := &in.Rows[i]
+		verdict, judged := in.BaseVerdicts[row.StableID]
+		if !judged {
+			continue
+		}
+
+		class, classified := classes[row.StableID]
+		if !classified {
+			// A row the diff never classified is new to this run.
+			class = ClassNew
+		}
+
+		decision := DecideCarry(CarryInput{
+			Row:        baseRowOr(baseRows, row.StableID, *row),
+			Verdict:    verdict,
+			Class:      class,
+			Base:       in.BaseProfile,
+			Next:       in.NextProfile,
+			BasePolicy: in.BasePolicies[row.Type],
+			NextPolicy: in.NextPolicies[row.Type],
+		})
+		if !decision.Carried {
+			result.Losses = append(result.Losses, CarryLoss{
+				StableID: row.StableID, Reason: decision.Reason,
+			})
+			continue
+		}
+
+		base := in.BaseRunID
+		row.CarriedFrom = &base
+		result.Carried = append(result.Carried, row.StableID)
+	}
+	return result
+}
+
+// CarryForwardInput is everything the carry decision reads.
+type CarryForwardInput struct {
+	BaseRunID string
+	// Rows is the new manifest's rows, mutated in place to record a carry.
+	Rows         []ManifestRow
+	BaseRows     []ManifestRow
+	BaseVerdicts map[string]RowVerdict
+	// Classes is each row's staleness classification against the base run.
+	Classes      map[string]RowClass
+	BaseProfile  ResolvedProfile
+	NextProfile  ResolvedProfile
+	BasePolicies map[string]TypePolicy
+	NextPolicies map[string]TypePolicy
+}
+
+// CarryForwardResult is what carried and what did not, with reasons.
+type CarryForwardResult struct {
+	Carried []string
+	Losses  []CarryLoss
+}
+
+// indexRowsByID keys rows by stable id.
+func indexRowsByID(rows []ManifestRow) map[string]ManifestRow {
+	out := make(map[string]ManifestRow, len(rows))
+	for _, row := range rows {
+		out[row.StableID] = row
+	}
+	return out
+}
+
+// baseRowOr prefers the base run's frozen row, since that is what the verdict
+// was formed against.
+func baseRowOr(base map[string]ManifestRow, id string, fallback ManifestRow) ManifestRow {
+	if row, ok := base[id]; ok {
+		return row
+	}
+	return fallback
 }

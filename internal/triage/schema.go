@@ -126,7 +126,34 @@ type Manifest struct {
 type ManifestProfile struct {
 	Name     string          `json:"name"`
 	Resolved ResolvedProfile `json:"resolved"`
+	// TypePolicies are the per-type vocabularies the run resolved, frozen
+	// alongside the profile for the same reason: a verdict has to stay
+	// explainable after the campaign's types/*.yaml move on. Without this the
+	// profile was frozen but the vocabulary that produced the disposition was
+	// re-read live, so a renamed label could make an old verdict unreadable.
+	TypePolicies map[string]TypePolicy `json:"type_policies,omitempty"`
 }
+
+// PolicyFor returns the type policy this run judged a type under, falling back
+// to the shipped `_default` and then to camp's built-in.
+//
+// Every consumer of a row's vocabulary goes through here so approve, carry,
+// and the plan compiler all read the policy the run actually used rather than
+// whatever the campaign's files say today.
+func (m *Manifest) PolicyFor(wfType string) TypePolicy {
+	if m != nil {
+		if policy, ok := m.Profile.TypePolicies[wfType]; ok {
+			return policy
+		}
+		if policy, ok := m.Profile.TypePolicies[DefaultTypePolicyName]; ok {
+			return policy
+		}
+	}
+	return TypePolicyFor(wfType)
+}
+
+// DefaultTypePolicyName is the shipped fallback policy's file name.
+const DefaultTypePolicyName = "_default"
 
 // ManifestRow is one workitem frozen into a run's snapshot.
 type ManifestRow struct {
