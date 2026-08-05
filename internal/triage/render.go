@@ -84,6 +84,11 @@ func writeDecisionRequested(b *strings.Builder, lanes []Lane) {
 			" no proposal yet.** They are listed at the end and are not covered by\n")
 		b.WriteString("any approval below.\n\n")
 	}
+	if unknown := laneByKey(lanes, laneUnrecognized); unknown != nil {
+		b.WriteString("**" + plural(len(unknown.Rows), "row holds", "rows hold") +
+			" an action this camp cannot perform.** Nothing will be applied for\n")
+		b.WriteString("them; see the Unrecognized action section.\n\n")
+	}
 }
 
 // writePriorityOrder presents the lanes in the order they should be read.
@@ -95,7 +100,10 @@ func writePriorityOrder(b *strings.Builder, lanes []Lane) {
 	}
 	position := 0
 	for _, lane := range lanes {
-		if lane.Key == laneUndecided {
+		// The priority order answers "what should I work on", so lanes that
+		// are problems rather than work stay out of the numbering. Their
+		// tables below still show them.
+		if lane.Key == laneUndecided || lane.Key == laneUnrecognized {
 			continue
 		}
 		position++

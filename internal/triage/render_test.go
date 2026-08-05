@@ -363,3 +363,68 @@ func TestSingularPhrasingReadsCorrectly(t *testing.T) {
 	assert.Contains(t, priorities, "1 row in this run has no proposal yet")
 	assert.NotContains(t, priorities, "rows in this run has")
 }
+
+// TestUnrecognizedActionIsNotCalledUndecided is the finding this test exists
+// for. A row holding a proposal camp cannot interpret used to render as
+// "no live proposal", which is false about a row someone decided — and it
+// would let an operator approve everything else believing the run complete.
+func TestUnrecognizedActionIsNotCalledUndecided(t *testing.T) {
+	in := renderFixture()
+	in.Verdicts["shared-template-sync"] = RowVerdict{
+		State:           VerdictProposed,
+		Disposition:     "teleport",
+		CanonicalAction: "teleport/mars",
+		Actor:           "future-camp",
+		At:              testAt,
+	}
+
+	lanes := BuildLanes(in.Run, in.Verdicts, in.Rationales)
+	review := string(RenderReview(in))
+
+	unknown := laneByKey(lanes, laneUnrecognized)
+	require.NotNil(t, unknown, "an uninterpretable action gets its own lane")
+	require.Len(t, unknown.Rows, 1)
+	assert.Equal(t, "shared-template-sync", unknown.Rows[0].Row.StableID)
+
+	if undecided := laneByKey(lanes, laneUndecided); undecided != nil {
+		for _, row := range undecided.Rows {
+			assert.NotEqual(t, "shared-template-sync", row.Row.StableID,
+				"a decided row is never reported as undecided")
+		}
+	}
+
+	assert.Contains(t, review, "Unrecognized action")
+	assert.Contains(t, review, "teleport/mars", "the action camp could not read is named")
+	assert.Contains(t, review, "cannot perform")
+}
+
+// TestUnknownDungeonTargetDoesNotRenderAsSomeday: a future dungeon status must
+// not be silently filed under the wrong heading.
+func TestUnknownDungeonTargetDoesNotRenderAsSomeday(t *testing.T) {
+	spec := laneSpecFor(RowVerdict{
+		State:           VerdictApproved,
+		CanonicalAction: "dungeon/incinerated",
+	})
+
+	assert.Equal(t, laneUnrecognized, spec.key)
+	assert.NotEqual(t, "Someday", spec.title)
+}
+
+// TestUnrecognizedRowsStayOutOfThePriorityOrder: the numbered list answers
+// "what should I work on", and an unreadable action is a problem, not work.
+func TestUnrecognizedRowsStayOutOfThePriorityOrder(t *testing.T) {
+	in := renderFixture()
+	in.Verdicts["shared-template-sync"] = RowVerdict{
+		State:           VerdictProposed,
+		Disposition:     "teleport",
+		CanonicalAction: "teleport/mars",
+		Actor:           "future-camp",
+		At:              testAt,
+	}
+
+	review := string(RenderReview(in))
+	order := review[strings.Index(review, "## Recommended priority order"):strings.Index(review, "## Proposed portfolio decisions")]
+
+	assert.NotContains(t, order, "Unrecognized action")
+	assert.Contains(t, review, "Unrecognized action", "it still appears in the tables")
+}

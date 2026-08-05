@@ -41,7 +41,28 @@ const (
 	laneSomeday
 	laneConsolidate
 	laneUndecided
+	laneUnrecognized
 )
+
+// undecidedSpec is the lane for rows nobody has proposed anything for.
+func undecidedSpec() laneSpec {
+	return laneSpec{laneUndecided, "Awaiting judgment",
+		"No live proposal. These rows are in the run but nothing has been decided for them."}
+}
+
+// unrecognizedSpec is the lane for a row that does hold a proposal camp cannot
+// interpret — a hand-edited stream, or one written by a newer camp.
+//
+// It is deliberately not the undecided lane. Saying "nothing has been decided"
+// about a row someone decided would be false, and it would let the operator
+// approve everything else believing the run was complete. Naming the action
+// instead tells them exactly what camp could not read.
+func unrecognizedSpec() laneSpec {
+	return laneSpec{laneUnrecognized, "Unrecognized action",
+		"These rows hold a proposal whose action this camp does not know how to " +
+			"perform. Nothing will be applied for them. Check the disposition, or " +
+			"upgrade camp if the run was written by a newer version."}
+}
 
 // laneSpec describes one lane's presentation.
 type laneSpec struct {
@@ -54,8 +75,7 @@ type laneSpec struct {
 // falls to the undecided lane regardless of what it once held.
 func laneSpecFor(verdict RowVerdict) laneSpec {
 	if !HasLiveProposal(verdict) {
-		return laneSpec{laneUndecided, "Awaiting judgment",
-			"No live proposal. These rows are in the run but nothing has been decided for them."}
+		return undecidedSpec()
 	}
 	switch verdict.CanonicalAction {
 	case "attention/current":
@@ -82,33 +102,29 @@ func laneSpecFor(verdict RowVerdict) laneSpec {
 		return laneSpec{laneRail, "Promote onto the festival rail",
 			"Promoted along the workitem rail. Forward-only; approval is required."}
 	case ActionFamilyDungeon:
-		return laneSpec{dungeonLaneKey(verdict.CanonicalAction.Target()),
-			dungeonLaneTitle(verdict.CanonicalAction.Target()),
+		key, title, known := dungeonLane(verdict.CanonicalAction.Target())
+		if !known {
+			return unrecognizedSpec()
+		}
+		return laneSpec{key, title,
 			"Terminal. Nothing is deleted: the workitem moves to the dungeon and stays readable."}
 	}
-	return laneSpec{laneUndecided, "Awaiting judgment",
-		"No live proposal. These rows are in the run but nothing has been decided for them."}
+	return unrecognizedSpec()
 }
 
-func dungeonLaneKey(target string) int {
+// dungeonLane maps a dungeon target to its lane, reporting whether the target
+// is one this camp knows. An unknown target must not silently render under the
+// wrong heading, so the caller routes it to the unrecognized lane instead.
+func dungeonLane(target string) (int, string, bool) {
 	switch target {
 	case "completed":
-		return laneCompleted
+		return laneCompleted, "Close as delivered", true
 	case "archived":
-		return laneArchived
+		return laneArchived, "Archive", true
+	case "someday":
+		return laneSomeday, "Someday", true
 	default:
-		return laneSomeday
-	}
-}
-
-func dungeonLaneTitle(target string) string {
-	switch target {
-	case "completed":
-		return "Close as delivered"
-	case "archived":
-		return "Archive"
-	default:
-		return "Someday"
+		return 0, "", false
 	}
 }
 

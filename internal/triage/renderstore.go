@@ -77,11 +77,8 @@ type RenderResult struct {
 	RunID          string `json:"run_id"`
 	ReviewPath     string `json:"review_path"`
 	PrioritiesPath string `json:"priorities_path"`
-	// ExportPath is where the priorities copy was written, empty when the
-	// profile asks for no export.
-	ExportPath string `json:"export_path,omitempty"`
-	Rows       int    `json:"rows"`
-	Lanes      int    `json:"lanes"`
+	Rows           int    `json:"rows"`
+	Lanes          int    `json:"lanes"`
 }
 
 // RenderDocuments renders both documents into the run directory.
