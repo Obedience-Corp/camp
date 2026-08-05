@@ -1,6 +1,7 @@
 package triage
 
 import (
+	"context"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
@@ -156,6 +157,52 @@ func TestStatusReportsAbandonment(t *testing.T) {
 	assert.Equal(t, "scope was wrong", status.AbandonReason)
 	assert.Equal(t, len(run.Manifest.Rows), status.Rows,
 		"an abandoned run keeps its snapshot")
+}
+
+// TestBuildStatusReadsThroughTheStore joins the store to the fold, which is
+// the path the command actually takes.
+func TestBuildStatusReadsThroughTheStore(t *testing.T) {
+	ctx := context.Background()
+	store, _ := newTestStore(t)
+	run, err := store.CreateRun(ctx, newManifestForStore())
+	require.NoError(t, err)
+
+	target := run.Manifest.Rows[0].StableID
+	approve := event(DecisionApproved, "completed", "dungeon/completed")
+	approve.StableID = target
+	require.NoError(t, store.AppendDecision(ctx, run.ID, approve))
+
+	status, err := BuildStatus(ctx, store, run.ID)
+
+	require.NoError(t, err)
+	assert.Equal(t, run.ID, status.RunID)
+	assert.Equal(t, PhaseCreated, status.Phase)
+	assert.Equal(t, len(run.Manifest.Rows), status.Rows)
+	assert.Equal(t, 1, status.Counts[string(RowApproved)])
+	// The fixture's second row carries a verdict from a base run, so it
+	// reports as carried rather than pending.
+	assert.Equal(t, 1, status.Counts[string(RowCarried)])
+	assert.Equal(t, 0, status.Counts[string(RowPendingEvidence)])
+}
+
+// TestBuildStatusOnMissingRun reports not-found rather than an empty status.
+func TestBuildStatusOnMissingRun(t *testing.T) {
+	store, _ := newTestStore(t)
+
+	_, err := BuildStatus(context.Background(), store, "run-19700101T000000Z")
+
+	assert.Error(t, err)
+}
+
+// TestBuildStatusRespectsCancellation stops before reading.
+func TestBuildStatusRespectsCancellation(t *testing.T) {
+	store, _ := newTestStore(t)
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+
+	_, err := BuildStatus(ctx, store, "run-1")
+
+	assert.ErrorIs(t, err, context.Canceled)
 }
 
 // TestStatusReportsIdentityExceptions surfaces rows that triage by path only.

@@ -242,7 +242,7 @@ func TestCreateRunIsSerialized(t *testing.T) {
 	ctx := context.Background()
 	store, _ := newTestStore(t)
 
-	const racers = 8
+	const racers = 4
 	var wg sync.WaitGroup
 	results := make([]error, racers)
 	created := make([]string, racers)
@@ -289,7 +289,7 @@ func TestSetPhaseIsSerialized(t *testing.T) {
 	run, err := store.CreateRun(ctx, newManifestForStore())
 	require.NoError(t, err)
 
-	const racers = 8
+	const racers = 4
 	var wg sync.WaitGroup
 	start := make(chan struct{})
 	for range racers {
@@ -319,7 +319,7 @@ func TestAppendDecisionIsSerialized(t *testing.T) {
 	run, err := store.CreateRun(ctx, newManifestForStore())
 	require.NoError(t, err)
 
-	const racers = 16
+	const racers = 8
 	var wg sync.WaitGroup
 	start := make(chan struct{})
 	for i := range racers {

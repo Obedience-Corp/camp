@@ -276,6 +276,77 @@ func TestGroupByAttentionStagePartitionsByLane(t *testing.T) {
 	assert.NotEqual(t, byKey["design:a"], byKey["design:b"], "different lane, different batch")
 }
 
+// TestGroupByMultiValuedDimensions: a row lands in exactly one batch, so for
+// tag and project the lane is the first value in sorted order. The alternative
+// — a row appearing in several batches — would mean approving it more than
+// once.
+func TestGroupByMultiValuedDimensions(t *testing.T) {
+	tests := []struct {
+		name     string
+		groupBy  ReviewGroupBy
+		mutate   func(*workitem.WorkItem)
+		wantSame bool
+	}{
+		{
+			name:     "tags share a lane by their first sorted tag",
+			groupBy:  GroupByTag,
+			mutate:   func(w *workitem.WorkItem) { w.Tags = []string{"zeta", "alpha"} },
+			wantSame: true,
+		},
+		{
+			name:     "projects share a lane by their first sorted project",
+			groupBy:  GroupByProject,
+			mutate:   func(w *workitem.WorkItem) { w.Projects = []string{"projects/zeta", "projects/alpha"} },
+			wantSame: true,
+		},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			first := item("design-a", "design", "design:a", "active", "active")
+			second := item("design-b", "design", "design:b", "active", "active")
+			tc.mutate(&first)
+			// The second item shares only the first sorted value.
+			switch tc.groupBy {
+			case GroupByTag:
+				second.Tags = []string{"alpha"}
+			case GroupByProject:
+				second.Projects = []string{"projects/alpha"}
+			}
+
+			profile := DefaultProfile()
+			profile.Review.GroupBy = tc.groupBy
+			profile.Review.BatchSize = 10
+			in := snapshotInput([]workitem.WorkItem{first, second})
+			in.Profile = profile
+
+			manifest, err := BuildManifest(in)
+
+			require.NoError(t, err)
+			require.Len(t, manifest.Rows, 2)
+			assert.Equal(t, manifest.Rows[0].Batch, manifest.Rows[1].Batch,
+				"both rows resolve to the same lane")
+		})
+	}
+}
+
+// TestGroupByFallsBackWhenTheDimensionIsEmpty: an item with no tags still has
+// to land in some lane.
+func TestGroupByFallsBackWhenTheDimensionIsEmpty(t *testing.T) {
+	profile := DefaultProfile()
+	profile.Review.GroupBy = GroupByTag
+
+	in := snapshotInput([]workitem.WorkItem{
+		item("design-a", "design", "design:a", "active", "active"),
+	})
+	in.Profile = profile
+
+	manifest, err := BuildManifest(in)
+
+	require.NoError(t, err)
+	assert.Equal(t, 1, manifest.Rows[0].Batch)
+}
+
 // TestEveryRowIsBatched: an unbatched row is invalid, so this also guards the
 // grouping from silently dropping a row.
 func TestEveryRowIsBatched(t *testing.T) {
