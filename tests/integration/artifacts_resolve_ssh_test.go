@@ -186,3 +186,112 @@ func TestArtifactsResolveOverSSH_UnknownPathErrorsPrecisely(t *testing.T) {
 	require.Error(t, err, "contradictory flags must fail")
 	require.Contains(t, out, "mutually exclusive")
 }
+
+// TestArtifactsResolveOverSSH_FullConflictLifecycle walks the whole story in
+// one run: two files conflict, the sync reports and skips both, each is
+// resolved a different way, and the next sync is clean with nothing
+// re-reported. Both directions in one lifecycle is the case that would catch
+// them interfering with each other.
+func TestArtifactsResolveOverSSH_FullConflictLifecycle(t *testing.T) {
+	tc := GetSharedContainer(t)
+	ensurePeerAccount(t, tc)
+	registerLoopbackMachine(t, tc)
+
+	const name = "resolveflow"
+	peerRoot := peerCampaignsDir + "/" + name
+	localRoot := "/campaigns/" + name
+	artifactRoot := localRoot + "/media"
+	peerArtifact := shQuote(peerRoot + "/media")
+
+	peerSSH(t, tc, fmt.Sprintf(`
+set -e
+rm -rf %[2]s/%[1]s
+camp create %[1]s -d 'flow source' -m 'hold media' --no-git --path %[2]s >/dev/null
+mkdir -p %[3]s
+printf 'ALPHA-v1' > %[3]s/alpha.bin
+printf 'BETA-v1'  > %[3]s/beta.bin
+`, name, peerCampaignsDir, peerArtifact))
+
+	out, err := tc.RunCamp("create", name, "-d", "flow dest", "-m", "pull", "--path", "/campaigns")
+	require.NoError(t, err, "local create failed: %s", out)
+	out, err = tc.RunCampInDir(localRoot, "artifacts", "add", "media")
+	require.NoError(t, err, "artifacts add failed: %s", out)
+
+	// Baseline agreed on both files.
+	out, err = tc.RunCampInDir(localRoot, "sync", "--artifacts-only", "--from", loopbackMachineID)
+	require.NoError(t, err, "baseline sync failed: %s", out)
+	require.Empty(t, resolveList(t, tc, localRoot), "a fresh baseline has no conflicts")
+
+	// Both files now diverge on both sides: two genuine conflicts.
+	peerSSH(t, tc, fmt.Sprintf(`
+set -e
+printf 'ALPHA-PEER-v2' > %[1]s/alpha.bin
+printf 'BETA-PEER-v2'  > %[1]s/beta.bin
+`, peerArtifact))
+	tc.Shell(t, fmt.Sprintf(`
+set -e
+printf 'ALPHA-LOCAL-EDIT' > %[1]s/alpha.bin
+printf 'BETA-LOCAL-EDIT'  > %[1]s/beta.bin
+`, shQuote(artifactRoot)))
+
+	// The sync reports both and skips both: nothing is clobbered.
+	out, err = tc.RunCampInDir(localRoot, "sync", "--artifacts-only", "--from", loopbackMachineID)
+	require.NoError(t, err, "conflicting sync failed: %s", out)
+	require.ElementsMatch(t, []string{"alpha.bin", "beta.bin"}, resolveList(t, tc, localRoot),
+		"both conflicts must be reported")
+	requireFileContent(t, tc, artifactRoot+"/alpha.bin", "ALPHA-LOCAL-EDIT")
+	requireFileContent(t, tc, artifactRoot+"/beta.bin", "BETA-LOCAL-EDIT")
+
+	// Resolve one each way.
+	out, err = tc.RunCampInDir(localRoot, "artifacts", "resolve", "alpha.bin",
+		"--from", loopbackMachineID, "--take-local")
+	require.NoError(t, err, "take-local failed: %s", out)
+	out, err = tc.RunCampInDir(localRoot, "artifacts", "resolve", "beta.bin",
+		"--from", loopbackMachineID, "--take-peer")
+	require.NoError(t, err, "take-peer failed: %s", out)
+
+	require.Empty(t, resolveList(t, tc, localRoot), "both conflicts must be cleared")
+
+	// The next sync is clean and honours both decisions.
+	out, err = tc.RunCampInDir(localRoot, "sync", "--artifacts-only", "--from", loopbackMachineID)
+	require.NoError(t, err, "post-resolve sync failed: %s", out)
+
+	requireFileContent(t, tc, artifactRoot+"/alpha.bin", "ALPHA-LOCAL-EDIT")
+	requireFileContent(t, tc, artifactRoot+"/beta.bin", "BETA-PEER-v2")
+	require.Empty(t, resolveList(t, tc, localRoot), "nothing may be re-reported after resolution")
+}
+
+// TestArtifactsResolveOverSSH_EmptyListSucceeds pins the scripting contract:
+// "no conflicts" is a normal answer with exit 0 and an empty array, not an
+// error a caller has to special-case.
+func TestArtifactsResolveOverSSH_EmptyListSucceeds(t *testing.T) {
+	tc := GetSharedContainer(t)
+	ensurePeerAccount(t, tc)
+	registerLoopbackMachine(t, tc)
+
+	const name = "resolveempty"
+	localRoot := "/campaigns/" + name
+	out, err := tc.RunCamp("create", name, "-d", "empty", "-m", "none", "--path", "/campaigns")
+	require.NoError(t, err, "create failed: %s", out)
+	out, err = tc.RunCampInDir(localRoot, "artifacts", "add", "media")
+	require.NoError(t, err, "artifacts add failed: %s", out)
+
+	out, err = tc.RunCampInDir(localRoot, "artifacts", "resolve",
+		"--list", "--from", loopbackMachineID, "--json")
+	require.NoError(t, err, "empty --list must exit 0: %s", out)
+
+	var decoded struct {
+		Peer      string `json:"peer"`
+		Conflicts []struct {
+			Path string `json:"path"`
+		} `json:"conflicts"`
+	}
+	require.NoError(t, json.Unmarshal([]byte(jsonPayload(t, out)), &decoded))
+	require.Equal(t, loopbackMachineID, decoded.Peer)
+	require.Empty(t, decoded.Conflicts)
+
+	// Human form is also a success, not a warning.
+	out, err = tc.RunCampInDir(localRoot, "artifacts", "resolve", "--list", "--from", loopbackMachineID)
+	require.NoError(t, err, "empty --list (human) must exit 0: %s", out)
+	require.Contains(t, out, "No open conflicts")
+}
