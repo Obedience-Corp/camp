@@ -1,0 +1,590 @@
+//go:build container_fs
+
+// Filesystem-mutating tests for this package.
+//
+// These build only under the container_fs tag and are executed inside the
+// integration harness's pooled container (see tests/integration/containerfs_test.go),
+// never on the host. The tag is the enforcement seam: `just test` on a
+// developer machine does not compile this file, so nothing here can create a
+// repo in someone's home directory.
+//
+// They are the original suites verbatim rather than CLI rewrites. Most assert
+// on unexported package internals, which a test in package integration could
+// not reach; running them where the filesystem is disposable keeps both the
+// isolation and the assertions (decision D007).
+
+package clone
+
+import (
+	"context"
+	"os"
+	"os/exec"
+	"path/filepath"
+	"strings"
+	"testing"
+
+	"github.com/Obedience-Corp/camp/internal/peer"
+)
+
+func TestGitCloneFromPeer_SeedsAndRepointsOrigin(t *testing.T) {
+	ctx := context.Background()
+	origin := setupTestRepo(t)
+	setupSubmodule(t, origin, "projects/sub")
+
+	// Peer copy of the campaign: a clone of origin with the submodule
+	// initialized, standing in for the same campaign on another machine.
+	peerRoot := filepath.Join(t.TempDir(), "peer-campaign")
+	runGit(t, t.TempDir(), "clone", origin, peerRoot)
+	runGit(t, peerRoot, "-c", "protocol.file.allow=always", "submodule", "update", "--init")
+
+	target := filepath.Join(t.TempDir(), "cloned")
+	cloner := NewCloner(
+		WithURL(origin),
+		WithDirectory(target),
+		WithNoRegister(true),
+		WithPeer(peer.FromPath("peerbox", peerRoot)),
+	)
+	result, err := cloner.Clone(ctx)
+	if err != nil {
+		t.Fatalf("Clone() error = %v (warnings: %v)", err, result.Warnings)
+	}
+	if !result.Success {
+		t.Fatalf("Clone().Success = false: errors=%v warnings=%v", result.Errors, result.Warnings)
+	}
+
+	// The root repo's origin must be the real origin URL, not the peer.
+	out, err := exec.Command("git", "-C", target, "remote", "get-url", "origin").Output()
+	if err != nil {
+		t.Fatalf("reading root origin url: %v", err)
+	}
+	if got := strings.TrimSpace(string(out)); got != origin {
+		t.Errorf("root origin url = %q, want %q", got, origin)
+	}
+
+	// The submodule must be seeded from the peer and re-pointed at its
+	// declared URL.
+	declaredOut, err := exec.Command("git", "-C", origin,
+		"config", "-f", ".gitmodules", "submodule.projects/sub.url").Output()
+	if err != nil {
+		t.Fatalf("reading declared submodule url: %v", err)
+	}
+	declared := strings.TrimSpace(string(declaredOut))
+
+	subOut, err := exec.Command("git", "-C", filepath.Join(target, "projects/sub"),
+		"remote", "get-url", "origin").Output()
+	if err != nil {
+		t.Fatalf("reading submodule origin url: %v", err)
+	}
+	if got := strings.TrimSpace(string(subOut)); got != declared {
+		t.Errorf("submodule origin url = %q, want declared %q", got, declared)
+	}
+
+	foundSub := false
+	for _, s := range result.Submodules {
+		if s.Path != "projects/sub" {
+			continue
+		}
+		foundSub = true
+		if !s.Success {
+			t.Errorf("submodule Success = false: %v", s.Error)
+		}
+		if !s.PeerSeeded {
+			t.Errorf("submodule PeerSeeded = false, want true (warnings: %v)", result.Warnings)
+		}
+	}
+	if !foundSub {
+		t.Errorf("projects/sub missing from results: %+v", result.Submodules)
+	}
+}
+
+func TestGitCloneFromPeer_FallsBackToOrigin(t *testing.T) {
+	ctx := context.Background()
+	origin := setupTestRepo(t)
+
+	target := filepath.Join(t.TempDir(), "cloned")
+	cloner := NewCloner(
+		WithURL(origin),
+		WithDirectory(target),
+		WithNoRegister(true),
+		WithNoSubmodules(true),
+		WithPeer(peer.FromPath("ghost", filepath.Join(t.TempDir(), "missing"))),
+	)
+	result, err := cloner.Clone(ctx)
+	if err != nil {
+		t.Fatalf("Clone() error = %v", err)
+	}
+	if !result.Success {
+		t.Fatalf("Clone().Success = false: errors=%v", result.Errors)
+	}
+
+	hasFallbackWarning := false
+	for _, w := range result.Warnings {
+		if strings.Contains(w, "peer clone") {
+			hasFallbackWarning = true
+		}
+	}
+	if !hasFallbackWarning {
+		t.Errorf("expected peer fallback warning, got %v", result.Warnings)
+	}
+
+	out, err := exec.Command("git", "-C", target, "remote", "get-url", "origin").Output()
+	if err != nil {
+		t.Fatalf("reading root origin url: %v", err)
+	}
+	if got := strings.TrimSpace(string(out)); got != origin {
+		t.Errorf("root origin url = %q, want %q", got, origin)
+	}
+}
+
+// Peer clone succeeds but re-point to origin fails: the partial destination
+// must be removed so a subsequent origin clone is not blocked by "already exists".
+func TestGitCloneFromPeer_CleansPartialOnRepointFailure(t *testing.T) {
+	ctx := context.Background()
+	peerRoot := setupTestRepo(t)
+
+	target := filepath.Join(t.TempDir(), "cloned")
+	cloner := NewCloner(
+		WithURL("file:///nonexistent/origin-does-not-exist.git"),
+		WithDirectory(target),
+		WithNoRegister(true),
+		WithNoSubmodules(true),
+		WithPeer(peer.FromPath("peerbox", peerRoot)),
+	)
+	_, err := cloner.gitCloneFromPeer(ctx)
+	if err == nil {
+		t.Fatal("gitCloneFromPeer() error = nil, want re-point failure")
+	}
+	if _, statErr := os.Stat(target); !os.IsNotExist(statErr) {
+		t.Errorf("partial peer clone left at %s after failure; want removed for origin fallback", target)
+	}
+}
+
+// A peer-seeded clone must be a true origin replica: the peer's private
+// branches (as origin/*) and tags that the real origin lacks are pruned by
+// repointOrigin, not carried into the clone.
+func TestGitCloneFromPeer_PrunesPeerOnlyRefs(t *testing.T) {
+	ctx := context.Background()
+	origin := setupTestRepo(t)
+
+	peerRoot := filepath.Join(t.TempDir(), "peer-campaign")
+	runGit(t, t.TempDir(), "clone", origin, peerRoot)
+	// Private refs that exist only on the peer, not on origin.
+	runGit(t, peerRoot, "branch", "peer-wip")
+	runGit(t, peerRoot, "tag", "peer-only-tag")
+
+	target := filepath.Join(t.TempDir(), "cloned")
+	cloner := NewCloner(
+		WithURL(origin),
+		WithDirectory(target),
+		WithNoRegister(true),
+		WithNoSubmodules(true),
+		WithPeer(peer.FromPath("peerbox", peerRoot)),
+	)
+	result, err := cloner.Clone(ctx)
+	if err != nil || !result.Success {
+		t.Fatalf("Clone() err=%v success=%v warnings=%v", err, result.Success, result.Warnings)
+	}
+
+	remotes, err := exec.Command("git", "-C", target, "branch", "-r").Output()
+	if err != nil {
+		t.Fatalf("listing remote branches: %v", err)
+	}
+	if strings.Contains(string(remotes), "peer-wip") {
+		t.Errorf("origin/peer-wip survived; peer-only branch not pruned:\n%s", remotes)
+	}
+
+	tags, err := exec.Command("git", "-C", target, "tag").Output()
+	if err != nil {
+		t.Fatalf("listing tags: %v", err)
+	}
+	if strings.Contains(string(tags), "peer-only-tag") {
+		t.Errorf("peer-only-tag survived; peer-only tag not pruned:\n%s", tags)
+	}
+}
+
+// --branch must be forwarded into the peer clone and honored by the final
+// checkout, so camp clone --from <peer> --branch X lands on X.
+func TestGitCloneFromPeer_ForwardsBranch(t *testing.T) {
+	ctx := context.Background()
+	origin := setupTestRepo(t)
+
+	defOut, err := exec.Command("git", "-C", origin, "rev-parse", "--abbrev-ref", "HEAD").Output()
+	if err != nil {
+		t.Fatalf("reading default branch: %v", err)
+	}
+	def := strings.TrimSpace(string(defOut))
+
+	// A non-default branch with distinct content on origin.
+	runGit(t, origin, "checkout", "-b", "release")
+	createFile(t, filepath.Join(origin, "release.txt"), "release content")
+	runGit(t, origin, "add", ".")
+	runGit(t, origin, "commit", "-m", "release work")
+	runGit(t, origin, "checkout", def)
+
+	// Peer needs release as a LOCAL branch for --branch to seed from it.
+	peerRoot := filepath.Join(t.TempDir(), "peer-campaign")
+	runGit(t, t.TempDir(), "clone", origin, peerRoot)
+	runGit(t, peerRoot, "branch", "release", "origin/release")
+
+	target := filepath.Join(t.TempDir(), "cloned")
+	cloner := NewCloner(
+		WithURL(origin),
+		WithDirectory(target),
+		WithBranch("release"),
+		WithNoRegister(true),
+		WithNoSubmodules(true),
+		WithPeer(peer.FromPath("peerbox", peerRoot)),
+	)
+	result, err := cloner.Clone(ctx)
+	if err != nil || !result.Success {
+		t.Fatalf("Clone() err=%v success=%v warnings=%v", err, result.Success, result.Warnings)
+	}
+
+	headOut, err := exec.Command("git", "-C", target, "rev-parse", "--abbrev-ref", "HEAD").Output()
+	if err != nil {
+		t.Fatalf("reading cloned HEAD: %v", err)
+	}
+	if got := strings.TrimSpace(string(headOut)); got != "release" {
+		t.Errorf("cloned checkout on %q, want release", got)
+	}
+	if _, statErr := os.Stat(filepath.Join(target, "release.txt")); statErr != nil {
+		t.Errorf("release.txt missing; clone did not land on the release branch content")
+	}
+}
+
+// A peer-seeded submodule must land on ORIGIN's branch tip, not the peer's.
+// If the peer's submodule has commits ahead of origin, re-pointing origin
+// without refreshing refs would make the branch checkout DWIM off the peer's
+// stale origin/<branch> and silently import the peer's un-pushed commits.
+func TestGitCloneFromPeer_SubmoduleLandsOnOriginNotPeerTip(t *testing.T) {
+	ctx := context.Background()
+	origin := setupTestRepo(t)
+	subWork := setupSubmodule(t, origin, "projects/sub") // origin records this submodule commit
+
+	// Peer copy: clone the campaign and advance ITS submodule ahead of origin
+	// with a commit origin does not have.
+	peerRoot := filepath.Join(t.TempDir(), "peer-campaign")
+	runGit(t, t.TempDir(), "clone", origin, peerRoot)
+	runGit(t, peerRoot, "-c", "protocol.file.allow=always", "submodule", "update", "--init")
+	peerSub := filepath.Join(peerRoot, "projects/sub")
+	createFile(t, filepath.Join(peerSub, "peer-only.txt"), "un-pushed peer work")
+	runGit(t, peerSub, "add", ".")
+	runGit(t, peerSub, "commit", "-m", "peer-only commit ahead of origin")
+
+	// Sanity: the peer-only file must not exist in origin's submodule.
+	if _, err := os.Stat(filepath.Join(subWork, "peer-only.txt")); !os.IsNotExist(err) {
+		t.Fatalf("test setup: peer-only.txt leaked into origin submodule")
+	}
+
+	target := filepath.Join(t.TempDir(), "cloned")
+	cloner := NewCloner(
+		WithURL(origin),
+		WithDirectory(target),
+		WithNoRegister(true),
+		WithPeer(peer.FromPath("peerbox", peerRoot)),
+	)
+	result, err := cloner.Clone(ctx)
+	if err != nil || !result.Success {
+		t.Fatalf("Clone() err=%v success=%v warnings=%v", err, result.Success, result.Warnings)
+	}
+
+	// The cloned submodule must be at origin's state: the peer's un-pushed
+	// commit must NOT have been imported.
+	targetSub := filepath.Join(target, "projects/sub")
+	if _, err := os.Stat(filepath.Join(targetSub, "peer-only.txt")); !os.IsNotExist(err) {
+		t.Error("cloned submodule imported the peer's un-pushed commit (peer-only.txt present); want origin's state")
+	}
+
+	// And origin/<branch> in the submodule must reflect the real origin, not
+	// the peer (the peer-only commit must be unreachable from any origin ref).
+	remotes, err := exec.Command("git", "-C", targetSub, "for-each-ref", "--format=%(refname)", "refs/remotes/origin").Output()
+	if err != nil {
+		t.Fatalf("listing submodule origin refs: %v", err)
+	}
+	for _, ref := range strings.Fields(string(remotes)) {
+		logOut, _ := exec.Command("git", "-C", targetSub, "log", "--oneline", ref).Output()
+		if strings.Contains(string(logOut), "peer-only commit") {
+			t.Errorf("submodule %s still reachable to peer-only commit; origin refs not refreshed", ref)
+		}
+	}
+}
+
+func TestGitClone_Integration(t *testing.T) {
+	if testing.Short() {
+		t.Skip("skipping integration test in short mode")
+	}
+
+	ctx := context.Background()
+
+	// Create a source repo to clone from
+	sourceDir := setupTestRepo(t)
+
+	// Create cloner targeting a temp directory
+	targetDir := t.TempDir()
+	targetPath := filepath.Join(targetDir, "cloned")
+
+	c := NewCloner(
+		WithURL(sourceDir),
+		WithDirectory(targetPath),
+		WithNoSubmodules(true), // No submodules in test repo
+	)
+
+	// Perform the clone
+	dir, err := c.gitClone(ctx)
+	if err != nil {
+		t.Fatalf("gitClone() error = %v", err)
+	}
+
+	// Verify the clone exists
+	if _, err := os.Stat(dir); os.IsNotExist(err) {
+		t.Errorf("cloned directory does not exist: %s", dir)
+	}
+
+	// Verify it's a git repo
+	gitDir := filepath.Join(dir, ".git")
+	if _, err := os.Stat(gitDir); os.IsNotExist(err) {
+		t.Errorf("cloned directory is not a git repo (no .git): %s", dir)
+	}
+}
+
+func TestGitClone_WithBranch(t *testing.T) {
+	if testing.Short() {
+		t.Skip("skipping integration test in short mode")
+	}
+
+	ctx := context.Background()
+
+	// Create a source repo with a specific branch
+	sourceDir := setupTestRepo(t)
+	runGit(t, sourceDir, "checkout", "-b", "test-branch")
+	createFile(t, filepath.Join(sourceDir, "branch-file.txt"), "branch content")
+	runGit(t, sourceDir, "add", ".")
+	runGit(t, sourceDir, "commit", "-m", "Branch commit")
+
+	// Create cloner targeting the specific branch
+	targetDir := t.TempDir()
+	targetPath := filepath.Join(targetDir, "cloned")
+
+	c := NewCloner(
+		WithURL(sourceDir),
+		WithDirectory(targetPath),
+		WithBranch("test-branch"),
+		WithNoSubmodules(true),
+	)
+
+	dir, err := c.gitClone(ctx)
+	if err != nil {
+		t.Fatalf("gitClone() error = %v", err)
+	}
+
+	// Verify the branch
+	branch, err := c.gitGetBranch(ctx, dir)
+	if err != nil {
+		t.Fatalf("gitGetBranch() error = %v", err)
+	}
+	if branch != "test-branch" {
+		t.Errorf("branch = %q, want %q", branch, "test-branch")
+	}
+}
+
+func TestGitGetBranch(t *testing.T) {
+	if testing.Short() {
+		t.Skip("skipping integration test in short mode")
+	}
+
+	ctx := context.Background()
+	repoDir := setupTestRepo(t)
+
+	c := NewCloner()
+	branch, err := c.gitGetBranch(ctx, repoDir)
+	if err != nil {
+		t.Fatalf("gitGetBranch() error = %v", err)
+	}
+
+	// Default branch could be "master" or "main" depending on git config
+	if branch != "master" && branch != "main" {
+		t.Errorf("gitGetBranch() = %q, want 'master' or 'main'", branch)
+	}
+}
+
+func TestGitSubmoduleStatus(t *testing.T) {
+	if testing.Short() {
+		t.Skip("skipping integration test in short mode")
+	}
+
+	ctx := context.Background()
+	repoDir := setupTestRepo(t)
+	setupSubmodule(t, repoDir, "projects/sub1")
+	setupSubmodule(t, repoDir, "projects/sub2")
+
+	c := NewCloner()
+	results, err := c.gitSubmoduleStatus(ctx, repoDir)
+	if err != nil {
+		t.Fatalf("gitSubmoduleStatus() error = %v", err)
+	}
+
+	if len(results) != 2 {
+		t.Errorf("gitSubmoduleStatus() returned %d results, want 2", len(results))
+	}
+
+	// Verify submodule paths
+	paths := make(map[string]bool)
+	for _, r := range results {
+		paths[r.Path] = true
+	}
+
+	if !paths["projects/sub1"] {
+		t.Error("expected projects/sub1 in results")
+	}
+	if !paths["projects/sub2"] {
+		t.Error("expected projects/sub2 in results")
+	}
+}
+
+func TestGitSubmoduleURL(t *testing.T) {
+	if testing.Short() {
+		t.Skip("skipping integration test in short mode")
+	}
+
+	ctx := context.Background()
+	repoDir := setupTestRepo(t)
+	setupSubmodule(t, repoDir, "projects/sub")
+
+	c := NewCloner()
+	url, err := c.gitSubmoduleURL(ctx, repoDir, "projects/sub")
+	if err != nil {
+		t.Fatalf("gitSubmoduleURL() error = %v", err)
+	}
+
+	// URL should be non-empty (it's a local path in tests)
+	if url == "" {
+		t.Error("gitSubmoduleURL() returned empty URL")
+	}
+}
+
+func TestGitSubmoduleSync_Success(t *testing.T) {
+	if testing.Short() {
+		t.Skip("skipping integration test in short mode")
+	}
+
+	ctx := context.Background()
+	repoDir := setupTestRepo(t)
+	setupSubmodule(t, repoDir, "projects/sub")
+
+	c := NewCloner()
+	err := c.gitSubmoduleSync(ctx, repoDir)
+	if err != nil {
+		t.Fatalf("gitSubmoduleSync() error = %v", err)
+	}
+}
+
+func TestGitSubmoduleUpdate_Success(t *testing.T) {
+	if testing.Short() {
+		t.Skip("skipping integration test in short mode")
+	}
+
+	ctx := context.Background()
+	repoDir := setupTestRepo(t)
+	setupSubmodule(t, repoDir, "projects/sub")
+
+	c := NewCloner()
+	err := c.gitSubmoduleUpdate(ctx, repoDir)
+	if err != nil {
+		t.Fatalf("gitSubmoduleUpdate() error = %v", err)
+	}
+}
+
+func TestGitSubmoduleURL_Fallback(t *testing.T) {
+	if testing.Short() {
+		t.Skip("skipping integration test in short mode")
+	}
+
+	ctx := context.Background()
+	repoDir := setupTestRepo(t)
+	setupSubmodule(t, repoDir, "projects/sub")
+
+	// Remove the URL from .gitmodules to test fallback to .git/config
+	runGit(t, repoDir, "config", "-f", ".gitmodules", "--remove-section", "submodule.projects/sub")
+
+	c := NewCloner()
+	url, err := c.gitSubmoduleURL(ctx, repoDir, "projects/sub")
+	if err != nil {
+		t.Fatalf("gitSubmoduleURL() error = %v", err)
+	}
+
+	// URL should still be retrievable from .git/config
+	if url == "" {
+		t.Error("gitSubmoduleURL() returned empty URL")
+	}
+}
+
+func TestGitSubmoduleURL_NotFound(t *testing.T) {
+	if testing.Short() {
+		t.Skip("skipping integration test in short mode")
+	}
+
+	ctx := context.Background()
+	repoDir := setupTestRepo(t)
+
+	c := NewCloner()
+	_, err := c.gitSubmoduleURL(ctx, repoDir, "nonexistent/submodule")
+	if err == nil {
+		t.Error("gitSubmoduleURL() error = nil, want error for nonexistent submodule")
+	}
+}
+
+func setupTestRepo(t *testing.T) string {
+	t.Helper()
+	tmpDir := t.TempDir()
+
+	runGit(t, tmpDir, "init")
+	runGit(t, tmpDir, "config", "user.email", "test@test.com")
+	runGit(t, tmpDir, "config", "user.name", "Test")
+
+	createFile(t, filepath.Join(tmpDir, "README.md"), "# Test")
+	runGit(t, tmpDir, "add", ".")
+	runGit(t, tmpDir, "commit", "-m", "Initial commit")
+
+	return tmpDir
+}
+
+func setupSubmodule(t *testing.T, parentRepo, subPath string) string {
+	t.Helper()
+
+	// Create the submodule repo
+	subRepoDir := t.TempDir()
+	runGit(t, subRepoDir, "init")
+	runGit(t, subRepoDir, "config", "user.email", "test@test.com")
+	runGit(t, subRepoDir, "config", "user.name", "Test")
+	createFile(t, filepath.Join(subRepoDir, "sub.txt"), "submodule content")
+	runGit(t, subRepoDir, "add", ".")
+	runGit(t, subRepoDir, "commit", "-m", "Initial submodule commit")
+
+	// Add as submodule to parent
+	runGit(t, parentRepo, "submodule", "add", subRepoDir, subPath)
+	runGit(t, parentRepo, "commit", "-m", "Add submodule")
+
+	return filepath.Join(parentRepo, subPath)
+}
+
+func runGit(t *testing.T, dir string, args ...string) {
+	t.Helper()
+	cmd := exec.Command("git", args...)
+	cmd.Dir = dir
+	cmd.Env = append(os.Environ(), "GIT_ALLOW_PROTOCOL=file")
+	output, err := cmd.CombinedOutput()
+	if err != nil {
+		t.Fatalf("git %v failed: %v\n%s", args, err, output)
+	}
+}
+
+func createFile(t *testing.T, path, content string) {
+	t.Helper()
+	dir := filepath.Dir(path)
+	if err := os.MkdirAll(dir, 0755); err != nil {
+		t.Fatalf("mkdir failed: %v", err)
+	}
+	if err := os.WriteFile(path, []byte(content), 0644); err != nil {
+		t.Fatalf("write file failed: %v", err)
+	}
+}

@@ -1,3 +1,18 @@
+//go:build container_fs
+
+// Filesystem-mutating tests for this package.
+//
+// These build only under the container_fs tag and are executed inside the
+// integration harness's pooled container (see tests/integration/containerfs_test.go),
+// never on the host. The tag is the enforcement seam: `just test` on a
+// developer machine does not compile this file, so nothing here can create a
+// repo in someone's home directory.
+//
+// They are the original suites verbatim rather than CLI rewrites. Most assert
+// on unexported package internals, which a test in package integration could
+// not reach; running them where the filesystem is disposable keeps both the
+// isolation and the assertions (decision D007).
+
 package sync
 
 import (
@@ -11,6 +26,7 @@ import (
 )
 
 // setupTestRepo creates a git repo with optional submodules for testing.
+
 func setupTestRepo(t *testing.T) string {
 	t.Helper()
 	tmpDir := t.TempDir()
