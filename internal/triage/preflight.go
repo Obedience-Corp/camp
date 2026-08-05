@@ -61,6 +61,12 @@ func Preflight(ctx context.Context, in PreflightInput) (*PreflightResult, error)
 	if err := ctx.Err(); err != nil {
 		return nil, err
 	}
+	// An unrecognized policy must be refused, not guessed at. Falling through
+	// to the default would silently adopt directories under a policy name the
+	// operator may have chosen precisely to prevent that.
+	if violations := checkEnum("preflight.identity", string(in.Policy), IdentityPolicies()); len(violations) > 0 {
+		return nil, newValidationError("identity policy", violations)
+	}
 
 	needing := make([]int, 0)
 	for i := range in.Items {

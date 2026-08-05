@@ -211,6 +211,14 @@ func groupKeyFor(item workitem.WorkItem, row ManifestRow, groupBy ReviewGroupBy)
 	}
 }
 
+// sortedCopy returns values sorted, leaving the input untouched. Used where a
+// row must pick one value out of an unordered set deterministically.
+func sortedCopy(values []string) []string {
+	out := append([]string(nil), values...)
+	sort.Strings(out)
+	return out
+}
+
 // firstOr returns the first value, or fallback when there is none.
 func firstOr(values []string, fallback string) string {
 	if len(values) == 0 {

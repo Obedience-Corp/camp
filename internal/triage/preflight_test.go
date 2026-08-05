@@ -76,6 +76,44 @@ func TestPreflightStrictWritesNothing(t *testing.T) {
 	assert.Empty(t, items[0].StableID, "the item is untouched")
 }
 
+// TestPreflightRejectsAnUnknownPolicy: an unrecognized policy must be refused
+// rather than guessed at. Falling through to the default silently adopted
+// directories under a policy name the operator may have chosen precisely to
+// prevent that — which is what this did before the review caught it.
+func TestPreflightRejectsAnUnknownPolicy(t *testing.T) {
+	items := []workitem.WorkItem{unadopted("alpha")}
+
+	_, err := Preflight(context.Background(), PreflightInput{
+		CampaignRoot: "/nonexistent-campaign-root",
+		Items:        items,
+		AllItems:     items,
+		Policy:       IdentityPolicy("bogus"),
+		Now:          testAt,
+	})
+
+	require.Error(t, err)
+	require.ErrorIs(t, err, camperrors.ErrInvalidInput)
+	assert.Contains(t, violatedFields(err), "preflight.identity")
+	assert.Contains(t, err.Error(), "repair")
+	assert.Contains(t, err.Error(), "strict")
+	assert.Empty(t, items[0].StableID, "nothing was adopted")
+}
+
+// TestPreflightRejectsAnEmptyPolicy: the zero value is not a policy either.
+func TestPreflightRejectsAnEmptyPolicy(t *testing.T) {
+	items := []workitem.WorkItem{unadopted("alpha")}
+
+	_, err := Preflight(context.Background(), PreflightInput{
+		CampaignRoot: "/nonexistent-campaign-root",
+		Items:        items,
+		AllItems:     items,
+		Now:          testAt,
+	})
+
+	require.Error(t, err)
+	assert.Contains(t, violatedFields(err), "preflight.identity")
+}
+
 // TestPreflightRespectsCancellation stops before touching anything.
 func TestPreflightRespectsCancellation(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())

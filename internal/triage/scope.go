@@ -2,7 +2,6 @@ package triage
 
 import (
 	"path"
-	"sort"
 	"strings"
 
 	"github.com/Obedience-Corp/camp/internal/workitem"
@@ -155,12 +154,4 @@ func matchesAnyGlob(relPath string, patterns []string) bool {
 		}
 	}
 	return false
-}
-
-// sortedCopy returns values sorted, leaving the input untouched. Used where a
-// row must pick one value out of an unordered set deterministically.
-func sortedCopy(values []string) []string {
-	out := append([]string(nil), values...)
-	sort.Strings(out)
-	return out
 }

@@ -125,6 +125,58 @@ func TestTriagePreflight_StrictRefusesAndListsPaths(t *testing.T) {
 	assert.False(t, exists, "strict refusal adopts nothing")
 }
 
+// TestTriagePreflight_RejectsAnUnknownIdentityPolicy: before the review caught
+// it, an unrecognized --identity value fell through to repair and adopted
+// directories under a policy name the operator may have chosen to prevent
+// exactly that.
+func TestTriagePreflight_RejectsAnUnknownIdentityPolicy(t *testing.T) {
+	tc := GetSharedContainer(t)
+	path := setupTriageCampaign(t, tc, "triage-identity-bogus", 1, 0)
+	seedUnadoptedDesigns(t, tc, path, "legacy-unknown-policy")
+
+	output, _, err := tc.ExecCommand("sh", "-c",
+		"cd "+path+" && /camp triage start --identity bogus 2>&1; echo EXIT:$?")
+	require.NoError(t, err)
+
+	assert.NotContains(t, output, "EXIT:0", "an unknown policy must fail: %s", output)
+	assert.Contains(t, output, "repair")
+	assert.Contains(t, output, "strict")
+
+	exists, err := tc.CheckFileExists(path + "/workflow/design/legacy-unknown-policy/.workitem")
+	require.NoError(t, err)
+	assert.False(t, exists, "an unknown policy must adopt nothing")
+	exists, err = tc.CheckFileExists(path + "/.campaign/triage/latest")
+	require.NoError(t, err)
+	assert.False(t, exists, "and create no run")
+}
+
+// TestTriagePreflight_IdentityOverrideIsRecordedInTheRun: the embedded profile
+// must be the policy the run actually used, not what the profile file said,
+// or the run stops explaining itself.
+func TestTriagePreflight_IdentityOverrideIsRecordedInTheRun(t *testing.T) {
+	tc := GetSharedContainer(t)
+	path := setupTriageCampaign(t, tc, "triage-identity-recorded", 2, 0)
+
+	start, err := tc.RunCampInDir(path, "triage", "start", "--identity", "strict", "--json")
+	require.NoError(t, err, "strict succeeds when nothing needs adopting: %s", start)
+	runID := decodeTriageJSON(t, start)["run_id"].(string)
+
+	raw, err := tc.ReadFile(path + "/.campaign/triage/runs/" + runID + "/manifest.json")
+	require.NoError(t, err)
+
+	var manifest struct {
+		Profile struct {
+			Resolved struct {
+				Preflight struct {
+					Identity string `json:"identity"`
+				} `json:"preflight"`
+			} `json:"resolved"`
+		} `json:"profile"`
+	}
+	require.NoError(t, json.Unmarshal([]byte(raw), &manifest))
+	assert.Equal(t, "strict", manifest.Profile.Resolved.Preflight.Identity)
+}
+
 // TestTriagePreflight_AdoptedItemMatchesCampWorkitemAdopt proves the two
 // routes produce the same thing: triage must not invent a second kind of
 // adopted workitem.

@@ -109,6 +109,12 @@ func runStart(cmd *cobra.Command, opts *startOptions) error {
 	if err != nil {
 		return err
 	}
+	// Apply the override onto the profile before anything reads it, so the
+	// profile embedded in the manifest is the policy the run actually used
+	// rather than the one the file happened to say.
+	if opts.identity != "" {
+		profile.Preflight.Identity = triage.IdentityPolicy(opts.identity)
+	}
 	scope := triage.NewScope(profile)
 	if err := scope.ApplyExpressions(opts.scope); err != nil {
 		return err
@@ -131,15 +137,11 @@ func runStart(cmd *cobra.Command, opts *startOptions) error {
 	// cannot be moved safely later, because the path is the thing a verdict
 	// changes.
 	now := triage.SystemClock()
-	identity := profile.Preflight.Identity
-	if opts.identity != "" {
-		identity = triage.IdentityPolicy(opts.identity)
-	}
 	preflight, err := triage.Preflight(ctx, triage.PreflightInput{
 		CampaignRoot: root,
 		Items:        items,
 		AllItems:     allItems,
-		Policy:       identity,
+		Policy:       profile.Preflight.Identity,
 		Now:          now,
 	})
 	if err != nil {

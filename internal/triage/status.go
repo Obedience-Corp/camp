@@ -3,6 +3,7 @@ package triage
 import (
 	"context"
 	"sort"
+	"time"
 )
 
 // RowState is where one row stands in the run, derived from its manifest entry
@@ -115,7 +116,7 @@ func StatusFrom(run *Run, verdicts map[string]RowVerdict) *Status {
 		Counts:         emptyCounts(),
 		Batches:        []BatchProgress{},
 		Consolidations: []Consolidation{},
-		CreatedAt:      run.Manifest.CreatedAt.Format("2006-01-02T15:04:05Z"),
+		CreatedAt:      run.Manifest.CreatedAt.Format(time.RFC3339),
 	}
 	if run.State.AbandonReason != nil {
 		status.AbandonReason = *run.State.AbandonReason
