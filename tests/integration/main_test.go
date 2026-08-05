@@ -132,8 +132,15 @@ func TestMain(m *testing.M) {
 // and fail in the full suite, differently each run, which reads like flaky
 // tests rather than a saturated machine.
 //
-// The halving and the bounds are unchanged. Only the number they are applied
-// to was wrong.
+// The daemon's own count is used as-is, one container per CPU. The halving
+// this function used to apply was calibrated for the host count, where it
+// approximated a VM the host was fronting; applied to the daemon's own number
+// it discounts capacity twice. On the machine above that double discount took
+// the pool from six to two — a 3x wall-clock regression on a suite whose
+// containers spend their time in short git execs, not sustained CPU — while
+// the flakiness the sizing fix cured needed only the drop from six to four.
+// The halving survives solely in the host fallback, where the count is still
+// a proxy for a machine that may be smaller.
 func poolSizeFor(daemonCPUs int) int {
 	if v := os.Getenv("CAMP_TEST_POOL_SIZE"); v != "" {
 		if n, err := strconv.Atoi(v); err == nil && n > 0 {
@@ -141,13 +148,12 @@ func poolSizeFor(daemonCPUs int) int {
 		}
 	}
 
-	cpus := daemonCPUs
-	if cpus <= 0 {
-		// Cannot tell. Fall back to the host, which is what this did
-		// unconditionally before: no worse than the old behavior.
-		cpus = runtime.NumCPU()
+	n := daemonCPUs
+	if n <= 0 {
+		// Cannot tell. Fall back to the halved host count, which is what this
+		// did unconditionally before: no worse than the old behavior.
+		n = runtime.NumCPU() / 2
 	}
-	n := cpus / 2
 	if n < 2 {
 		n = 2
 	}
