@@ -13,6 +13,7 @@ import (
 	"github.com/Obedience-Corp/camp/internal/config"
 	camperrors "github.com/Obedience-Corp/camp/internal/errors"
 	"github.com/Obedience-Corp/camp/internal/jsoncontract"
+	wkitem "github.com/Obedience-Corp/camp/internal/workitem"
 	"github.com/Obedience-Corp/camp/internal/workitem/links"
 )
 
@@ -65,7 +66,7 @@ func runLinks(ctx context.Context, cmd *cobra.Command, selectorArg string, jsonO
 		}
 		var matched []links.Link
 		for _, link := range registry.Links {
-			if link.WorkitemID == wi.StableID {
+			if wkitem.LinkMatchesWorkitem(wi, link.WorkitemID, link.WorkitemKey) {
 				matched = append(matched, link)
 			}
 		}

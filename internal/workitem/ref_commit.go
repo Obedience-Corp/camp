@@ -21,17 +21,37 @@ func RefOf(wi *WorkItem) string {
 	return ""
 }
 
+// CarriesCommitRef reports whether wi can carry a WI- ref in a campaign commit
+// tag. A ref is stored in a directory's .workitem marker, so only a
+// directory-kind item with a stable id has somewhere to keep one; intents and
+// festivals identify themselves from their own source document and have no
+// marker to write to. Callers use this to avoid promising a WI- segment that
+// EnsureRefForCommit will not produce.
+func CarriesCommitRef(wi *WorkItem) bool {
+	return wi != nil && wi.ItemKind == ItemKindDirectory && wi.StableID != ""
+}
+
+// WorktreeLinkCommitNote is the one-line note printed after a worktree is
+// primary-linked to wi, describing what a commit from inside it will actually
+// carry. Only a ref-carrying workitem gets a WI- segment; for the rest the link
+// still supplies workitem context, and saying so beats promising a tag that
+// never appears.
+func WorktreeLinkCommitNote(wi *WorkItem) string {
+	if CarriesCommitRef(wi) {
+		return "camp p commit in this worktree will include WI-* in the campaign tag"
+	}
+	return "camp p commit in this worktree will resolve to this workitem " +
+		"(no WI-* segment: only adopted workitems carry a ref)"
+}
+
 // EnsureRefForCommit returns the workitem's ref, auto-backfilling the
-// .workitem marker on disk if the field is empty and the workitem is a
-// directory-kind item with a stable id. Intents/festivals and unresolved
+// .workitem marker on disk if the field is empty and the workitem can carry a
+// ref at all (see CarriesCommitRef). Intents/festivals and unresolved
 // workitems return "" with no side effect. Failures during backfill fall
 // back to "" with a louder stderr warning so the commit can still proceed
 // without a WI- segment.
 func EnsureRefForCommit(ctx context.Context, root string, wi *WorkItem, errw io.Writer) (string, error) {
-	if wi == nil {
-		return "", nil
-	}
-	if wi.ItemKind != ItemKindDirectory || wi.StableID == "" {
+	if !CarriesCommitRef(wi) {
 		return "", nil
 	}
 	if v := RefOf(wi); v != "" {

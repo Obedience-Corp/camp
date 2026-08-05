@@ -211,7 +211,7 @@ func pickPrimaryProjectScopePath(ctx context.Context, root string, wi *wkitem.Wo
 		if link.Role != links.RolePrimary {
 			continue
 		}
-		if link.WorkitemID != wi.StableID && link.WorkitemID != wi.Key {
+		if !wkitem.LinkMatchesWorkitem(wi, link.WorkitemID, link.WorkitemKey) {
 			continue
 		}
 		switch link.Scope.Kind {
@@ -244,7 +244,7 @@ func selectPrimaryFestivalScope(registry *links.Links, wi *wkitem.WorkItem, fest
 		if link.Role != links.RolePrimary || link.Scope.Kind != links.ScopeFestival {
 			continue
 		}
-		if link.WorkitemID != wi.StableID && link.WorkitemID != wi.Key {
+		if !wkitem.LinkMatchesWorkitem(wi, link.WorkitemID, link.WorkitemKey) {
 			continue
 		}
 		if festivalID != "" {

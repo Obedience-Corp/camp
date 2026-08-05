@@ -14,6 +14,7 @@ import (
 	camperrors "github.com/Obedience-Corp/camp/internal/errors"
 	"github.com/Obedience-Corp/camp/internal/jsoncontract"
 	"github.com/Obedience-Corp/camp/internal/ledger"
+	wkitem "github.com/Obedience-Corp/camp/internal/workitem"
 	"github.com/Obedience-Corp/camp/internal/workitem/links"
 	"github.com/Obedience-Corp/camp/pkg/ledgerkit"
 )
@@ -100,7 +101,7 @@ func runUnlink(ctx context.Context, cmd *cobra.Command, opts unlinkOptions) erro
 			if err != nil {
 				return err
 			}
-			matches := matchUnlinkCandidates(registry, wi.StableID, opts)
+			matches := matchUnlinkCandidates(registry, wi, opts)
 			if len(matches) == 0 {
 				return camperrors.NewValidation("selector",
 					"no links matched selector "+opts.Selector, nil)
@@ -136,11 +137,11 @@ func runUnlink(ctx context.Context, cmd *cobra.Command, opts unlinkOptions) erro
 	return emitUnlinkHuman(cmd.OutOrStdout(), removed)
 }
 
-func matchUnlinkCandidates(registry *links.Links, workitemID string, opts unlinkOptions) []links.Link {
+func matchUnlinkCandidates(registry *links.Links, wi *wkitem.WorkItem, opts unlinkOptions) []links.Link {
 	scopeFilter, useScope := unlinkScopeFilter(opts)
 	var out []links.Link
 	for _, link := range registry.Links {
-		if link.WorkitemID != workitemID {
+		if !wkitem.LinkMatchesWorkitem(wi, link.WorkitemID, link.WorkitemKey) {
 			continue
 		}
 		if useScope {

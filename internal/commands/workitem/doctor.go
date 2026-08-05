@@ -512,11 +512,12 @@ func workitemIDsOnDisk(ctx context.Context, root string) (map[string]struct{}, [
 		if item.Key != "" {
 			set[item.Key] = struct{}{}
 		}
-		// Festivals are first-class link targets addressed by their fest.yaml
-		// id (e.g. SC0001); keep that id "present on disk" so a link migrated
-		// onto a festival by promote is not reported as broken.
-		if item.WorkflowType == wkitem.WorkflowTypeFestival && item.SourceID != "" {
-			set[item.SourceID] = struct{}{}
+		// Festivals and intents are first-class link targets addressed by the id
+		// declared in their own source document (a fest.yaml id such as SC0001,
+		// an intent's frontmatter id); keep those ids "present on disk" so a
+		// link written against one is not reported as broken.
+		if id := wkitem.SourceDeclaredID(&item); id != "" {
+			set[id] = struct{}{}
 		}
 	}
 	return set, items, nil

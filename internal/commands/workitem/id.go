@@ -110,24 +110,34 @@ type idKind string
 const (
 	idKindStable   idKind = "stable"
 	idKindFestival idKind = "festival"
+	idKindIntent   idKind = "intent"
 	idKindKey      idKind = "key"
 )
 
 // durableID returns the single-segment identifier the selector can resolve back
 // to wi, plus which form it is. The value is delegated to LinkWorkitemID so the
 // id printed here and the id stored on a link cannot drift; the kind is derived
-// from the same precedence (stable .workitem id, then a festival's fest.yaml id,
-// then the path-derived key fallback).
+// from the same precedence (stable .workitem id, then the id the source document
+// declares, then the path-derived key fallback).
 func durableID(wi *wkitem.WorkItem) (string, idKind) {
 	id := wkitem.LinkWorkitemID(wi)
 	switch {
 	case wi.StableID != "" && id == wi.StableID:
 		return id, idKindStable
-	case wi.WorkflowType == wkitem.WorkflowTypeFestival && wi.SourceID != "" && id == wi.SourceID:
-		return id, idKindFestival
+	case id != "" && id == wkitem.SourceDeclaredID(wi):
+		return id, sourceIDKind(wi.WorkflowType)
 	default:
 		return id, idKindKey
 	}
+}
+
+// sourceIDKind names which source document declared the id, so --json consumers
+// can tell a festival's fest.yaml id from an intent's frontmatter id.
+func sourceIDKind(t wkitem.WorkflowType) idKind {
+	if t == wkitem.WorkflowTypeIntent {
+		return idKindIntent
+	}
+	return idKindFestival
 }
 
 // selectorFromArg translates a positional argument into a selector string. An

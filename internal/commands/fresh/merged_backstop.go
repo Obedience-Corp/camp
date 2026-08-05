@@ -186,10 +186,7 @@ func backstopPromoteCommand(wi wkitem.WorkItem) string {
 }
 
 func backstopWorkitemID(wi wkitem.WorkItem) string {
-	if wi.StableID != "" {
-		return wi.StableID
-	}
-	return wi.Key
+	return wkitem.LinkWorkitemID(&wi)
 }
 
 func backstopWorkitemLabel(wi wkitem.WorkItem) string {
@@ -352,12 +349,9 @@ func projectRelPath(root, projectPath string) string {
 // resolveLinkedActiveItem resolves a link to a still-active workitem by stable
 // id or key, matching worktree.go's linkMatchesWorkitem.
 func resolveLinkedActiveItem(link links.Link, active []wkitem.WorkItem) (wkitem.WorkItem, bool) {
-	for _, wi := range active {
-		if wi.StableID != "" && link.WorkitemID == wi.StableID {
-			return wi, true
-		}
-		if wi.Key != "" && link.WorkitemKey == wi.Key {
-			return wi, true
+	for i := range active {
+		if wkitem.LinkMatchesWorkitem(&active[i], link.WorkitemID, link.WorkitemKey) {
+			return active[i], true
 		}
 	}
 	return wkitem.WorkItem{}, false
@@ -452,10 +446,7 @@ func HasOpenWork(root string, registry *links.Links, wi wkitem.WorkItem, mergedS
 }
 
 func linkMatchesBackstopItem(link links.Link, wi wkitem.WorkItem) bool {
-	if wi.StableID != "" && link.WorkitemID == wi.StableID {
-		return true
-	}
-	return wi.Key != "" && link.WorkitemKey == wi.Key
+	return wkitem.LinkMatchesWorkitem(&wi, link.WorkitemID, link.WorkitemKey)
 }
 
 func worktreeDirExists(root, scopePath string) bool {

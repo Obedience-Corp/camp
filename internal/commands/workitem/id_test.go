@@ -204,6 +204,63 @@ func TestID_FestivalDurableIDIsFestivalMetadataID(t *testing.T) {
 	}
 }
 
+// TestID_IntentDurableIDIsFrontmatterID pins the stdout contract that makes an
+// intent linkable: `camp workitem id <intent>` must print the bare frontmatter
+// id, since that is what workitem_id stores and the links validator accepts.
+func TestID_IntentDurableIDIsFrontmatterID(t *testing.T) {
+	root, relPath := intentTestCampaign(t)
+	restore := chdir(t, root)
+	defer restore()
+
+	for _, selectorArg := range []string{intentTestID, relPath, "intent:" + relPath} {
+		out, err := runIDCmd(t, context.Background(), []string{selectorArg}, idOptions{})
+		if err != nil {
+			t.Fatalf("runID intent %q: %v", selectorArg, err)
+		}
+		if strings.TrimSpace(out) != intentTestID {
+			t.Fatalf("id for %q = %q, want %q", selectorArg, strings.TrimSpace(out), intentTestID)
+		}
+	}
+
+	out, err := runIDCmd(t, context.Background(), []string{intentTestID}, idOptions{Key: true})
+	if err != nil {
+		t.Fatalf("runID intent --key: %v", err)
+	}
+	if want := "intent:" + relPath; strings.TrimSpace(out) != want {
+		t.Fatalf("key = %q, want %q", strings.TrimSpace(out), want)
+	}
+}
+
+func TestID_IntentJSONReportsIntentIDKind(t *testing.T) {
+	root, relPath := intentTestCampaign(t)
+	restore := chdir(t, root)
+	defer restore()
+
+	out, err := runIDCmd(t, context.Background(), []string{intentTestID}, idOptions{JSON: true})
+	if err != nil {
+		t.Fatalf("runID intent --json: %v", err)
+	}
+	var payload struct {
+		ID           string `json:"id"`
+		IDKind       string `json:"id_kind"`
+		Key          string `json:"key"`
+		StableID     string `json:"stable_id"`
+		RelativePath string `json:"relative_path"`
+	}
+	if err := json.Unmarshal([]byte(out), &payload); err != nil {
+		t.Fatalf("unmarshal: %v\nraw=%s", err, out)
+	}
+	if payload.ID != intentTestID || payload.IDKind != string(idKindIntent) {
+		t.Fatalf("id/id_kind = %q/%q, want %q/intent", payload.ID, payload.IDKind, intentTestID)
+	}
+	if payload.Key != "intent:"+relPath || payload.RelativePath != relPath {
+		t.Fatalf("key/relative_path = %q/%q", payload.Key, payload.RelativePath)
+	}
+	if payload.StableID != "" {
+		t.Fatalf("stable_id = %q, want empty for an unadopted intent", payload.StableID)
+	}
+}
+
 func TestID_JSONShape(t *testing.T) {
 	root := linkTestCampaign(t)
 	restore := chdir(t, root)
@@ -283,6 +340,8 @@ func TestDurableID_MatchesLinkTarget(t *testing.T) {
 	}{
 		{"stable", wkitem.WorkItem{StableID: "design-x-2026-05-24", Key: "design:workflow/design/x"}, idKindStable},
 		{"festival", wkitem.WorkItem{WorkflowType: wkitem.WorkflowTypeFestival, SourceID: "SC0001", Key: "festival:festivals/active/x"}, idKindFestival},
+		{"intent", wkitem.WorkItem{WorkflowType: wkitem.WorkflowTypeIntent, SourceID: "idea-20260101-000000", Key: "intent:.campaign/intents/inbox/idea-20260101-000000.md"}, idKindIntent},
+		{"intent_without_frontmatter_id", wkitem.WorkItem{WorkflowType: wkitem.WorkflowTypeIntent, Key: "intent:.campaign/intents/inbox/x.md"}, idKindKey},
 		{"key_only", wkitem.WorkItem{Key: "design:workflow/design/plain"}, idKindKey},
 	}
 	for _, tc := range cases {

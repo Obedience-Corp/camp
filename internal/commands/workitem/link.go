@@ -143,6 +143,14 @@ func runLink(ctx context.Context, cmd *cobra.Command, opts linkOptions) error {
 	}
 
 	if !opts.AllowMissing {
+		// An unadopted design/explore directory has no single-segment id of its
+		// own, so the row would fail the workitem_id validator on a key the user
+		// never typed. `camp project worktree add` already refuses these up
+		// front; say the same thing here instead of leaking the path-segment
+		// complaint.
+		if wkitem.NeedsAdoption(wi) {
+			return wkitem.NotAdoptedError(wi.RelativePath)
+		}
 		if err := quest.ValidateLinkPath(root, scope.Path); err != nil {
 			return camperrors.Wrap(err, "scope path")
 		}
@@ -307,12 +315,14 @@ func inferScopeKind(rel string) links.ScopeKind {
 	}
 }
 
+// workitemIDForLink is LinkWorkitemID plus the one case it cannot answer.
+// LinkWorkitemID falls back to the slash-bearing key when a workitem declares no
+// single-segment id of its own; under --allow-missing that workitem may have
+// been synthesized from the raw selector, and the selector the user typed is a
+// better identity than a key camp invented for it.
 func workitemIDForLink(wi *wkitem.WorkItem, opts linkOptions) string {
-	if wi.StableID != "" {
-		return wi.StableID
-	}
-	if wi.WorkflowType == wkitem.WorkflowTypeFestival && wi.SourceID != "" {
-		return wi.SourceID
+	if id := wkitem.LinkWorkitemID(wi); id != wi.Key {
+		return id
 	}
 	if opts.AllowMissing {
 		return opts.Selector

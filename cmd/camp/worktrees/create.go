@@ -176,7 +176,7 @@ func runWorktreesCreate(cmd *cobra.Command, args []string) error {
 			return camperrors.Wrap(lerr, "worktree created but workitem link failed")
 		}
 		fmt.Printf("  Workitem: %s (%s)\n", ui.Value(link.WorkitemID), ui.Dim(link.WorkitemKey))
-		fmt.Println(ui.Dim("  camp p commit in this worktree will include WI-* in the campaign tag"))
+		fmt.Println(ui.Dim("  " + wkitem.WorktreeLinkCommitNote(linkTarget)))
 	}
 
 	projected, err := intskills.ProjectIntoWorktreeBestEffort(ctx, campRoot, result.Path)
