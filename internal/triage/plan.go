@@ -1,6 +1,9 @@
 package triage
 
-import "time"
+import (
+	"strings"
+	"time"
+)
 
 // CommandKind classifies one planned command by the canonical action family
 // it carries out. Apply orders by kind: splits first, then parent moves, then
@@ -65,6 +68,20 @@ type ApplyPlanEntry struct {
 	// Undo is the command list that reverses this entry, recorded before it
 	// runs so a receipt can carry it even when apply fails midway.
 	Undo []string `json:"undo"`
+	// Blocked is why this entry cannot execute, and empty when it can.
+	//
+	// A blocked entry still compiles and still prints in a dry-run. The
+	// operator is deciding about a portfolio, and an entry that silently
+	// vanished because camp cannot run it yet would make the plan look
+	// smaller than the decision actually is. Consolidation rows are blocked
+	// until phase 004 ships `camp workitem split`, which is what lets these
+	// phases land in order.
+	Blocked string `json:"blocked,omitempty"`
+}
+
+// Executable reports whether apply may run this entry.
+func (e ApplyPlanEntry) Executable() bool {
+	return e.Blocked == "" && len(e.Commands) > 0
 }
 
 // PlanCommand is one argv with the action family it belongs to.
@@ -72,6 +89,11 @@ type PlanCommand struct {
 	Argv []string    `json:"argv"`
 	Kind CommandKind `json:"kind"`
 }
+
+// String renders the argv as a copy-pasteable command line. The dry-run
+// printer and the receipt both go through this, so what a human reads is
+// always a rendering of what actually ran.
+func (c PlanCommand) String() string { return strings.Join(c.Argv, " ") }
 
 // Precondition is a check apply evaluates before an entry runs.
 type Precondition struct {
@@ -123,7 +145,10 @@ func (e *ApplyPlanEntry) validate(path string) []Violation {
 	var out []Violation
 	out = append(out, checkRequired(joinPath(path, "stable_id"), e.StableID)...)
 	out = append(out, checkTimeSet(joinPath(path, "verdict_at"), e.VerdictAt)...)
-	if len(e.Commands) == 0 {
+	// A blocked entry is allowed to carry no commands: there is nothing to
+	// run yet, and the reason is the content. Anything else with no commands
+	// is a compiler bug rather than a legitimate plan.
+	if len(e.Commands) == 0 && e.Blocked == "" {
 		out = append(out, Violation{
 			Field:   joinPath(path, "commands"),
 			Message: "is required: an entry with nothing to run does not belong in a plan",

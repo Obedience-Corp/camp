@@ -129,7 +129,10 @@ func validPlan() *ApplyPlan {
 					{Kind: PreconditionSuccessorsExist, IDs: []string{"part-a"}},
 					{Kind: PreconditionRowFresh},
 				},
-				Undo: []string{"camp flow move design-umbrella workflow/design"},
+				// A real restore. `camp flow move` does not exist; modelling
+				// it here is what let the same mistake sit unnoticed in the
+				// production mapping.
+				Undo: []string{"camp move workflow/design/.dungeon/completed/2026-08-10/design-umbrella workflow/design/design-umbrella"},
 			},
 		},
 	}
@@ -144,7 +147,7 @@ func validReceipt() *Receipt {
 		StartedAt:     testAt,
 		FinishedAt:    testAt.Add(2 * time.Second),
 		Result:        ReceiptApplied,
-		Undo:          "camp flow move design-umbrella workflow/design",
+		Undo:          "camp move workflow/design/.dungeon/completed/2026-08-10/design-umbrella workflow/design/design-umbrella",
 		Commit:        "0123456789abcdef",
 	}
 }

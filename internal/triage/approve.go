@@ -176,23 +176,6 @@ func (s *Store) recordOne(ctx context.Context, in ApproveInput, row ManifestRow,
 // It is echoed back when a terminal verdict is recorded so the operator sees
 // the actual mutation, not just a disposition label. The plan compiler in a
 // later phase is the authority on what runs; this is the same mapping rendered
-// for a human, and a test holds the two to the same vocabulary.
-func ApplyCommandFor(row ManifestRow, action CanonicalAction) string {
-	target := action.Target()
-	switch action.Family() {
-	case ActionFamilyAttention:
-		return "camp workitem attention " + row.StableID + " --set " + target
-	case ActionFamilyRail, ActionFamilyDungeon:
-		return "camp workitem promote " + row.StableID + " --target " + target
-	}
-	switch action {
-	case ActionSplit:
-		return "camp workitem split " + row.StableID + " --into <successors>"
-	case ActionNone:
-		return ""
-	}
-	return ""
-}
 
 // idsOf lists rows by stable id.
 func idsOf(rows []ManifestRow) []string {
