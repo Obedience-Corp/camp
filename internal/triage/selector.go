@@ -68,6 +68,13 @@ func LaneNames(run *Run, verdicts map[string]RowVerdict) []string {
 
 // laneSelectorName turns a lane heading into the token a user types.
 func laneSelectorName(title string) string {
+	return LaneSelectorName(title)
+}
+
+// LaneSelectorName is the selector token for a lane heading. Exported because
+// the review flow labels its lane list with the same tokens the CLI accepts,
+// so what a user reads on screen is what they can type.
+func LaneSelectorName(title string) string {
 	return strings.ReplaceAll(strings.ToLower(title), " ", "-")
 }
 

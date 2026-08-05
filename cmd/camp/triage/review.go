@@ -6,9 +6,12 @@ import (
 	"github.com/spf13/cobra"
 
 	"github.com/Obedience-Corp/camp/internal/config"
+	"github.com/Obedience-Corp/camp/internal/crawl"
 	camperrors "github.com/Obedience-Corp/camp/internal/errors"
 	"github.com/Obedience-Corp/camp/internal/jsoncontract"
 	"github.com/Obedience-Corp/camp/internal/triage"
+	"github.com/Obedience-Corp/camp/internal/triage/tui"
+	"github.com/Obedience-Corp/camp/internal/ui"
 )
 
 // ReviewJSONVersion is the schema version of `camp triage review --json`.
@@ -43,7 +46,12 @@ rows nobody has proposed anything for — a document that quietly omitted them
 could be approved without the operator ever seeing what it left out.
 
 Rendering is pure: the same run data always produces the same bytes, so
-re-rendering an unchanged run is a no-op diff.`,
+re-rendering an unchanged run is a no-op diff.
+
+On a terminal this opens the lane-first review flow after rendering: lanes
+first, then rows, with terminal actions confirming individually. Use
+--render-only to render without opening it. Off a terminal the flow never
+opens, so scripts and CI get the documents and nothing that waits for input.`,
 		Args: jsoncontract.Args(ReviewJSONVersion, func() bool { return jsonOut }, cobra.NoArgs),
 		Annotations: map[string]string{
 			"agent_allowed": "true",
@@ -96,16 +104,40 @@ func runReview(cmd *cobra.Command, jsonOut, renderOnly bool, runID string) error
 		result.Rows, result.Lanes, result.ReviewPath, result.PrioritiesPath); err != nil {
 		return err
 	}
-	// The interactive flow lands in a later sequence. Saying so is better than
-	// silently doing something other than what the flag implies.
-	if !renderOnly {
-		if _, err := fmt.Fprintf(out,
-			"\nThe interactive review flow is not built yet; this rendered the documents.\n"+
-				"Record verdicts with: camp triage approve\n"); err != nil {
+
+	// On a terminal, rendering is the preamble to the review itself. Off one —
+	// a script, a pipe, CI — the documents are the whole answer, and opening a
+	// prompt nobody can answer would hang the caller.
+	if renderOnly || !ui.IsTerminal() {
+		if !renderOnly {
+			if _, err := fmt.Fprintf(out,
+				"\nNot a terminal, so the review flow did not open.\n"+
+					"Record verdicts with: camp triage approve\n"); err != nil {
+				return err
+			}
+		}
+		return nil
+	}
+
+	flow := &tui.Flow{
+		Store:  store,
+		RunID:  runID,
+		Prompt: crawl.NewDefaultPrompt(),
+		Out:    out,
+		Actor:  triage.ResolveActor(ctx),
+		Now:    triage.SystemClock,
+	}
+	session, err := flow.Run(ctx)
+	if err != nil {
+		if crawl.IsAborted(err) {
+			_, err = fmt.Fprintf(out, "\nStopped. %d verdict(s) recorded and saved.\n", 0)
 			return err
 		}
+		return err
 	}
-	return nil
+	_, err = fmt.Fprintf(out, "\n%d verdict(s) recorded, %d skipped. Progress is saved.\n",
+		session.Recorded, session.Skipped)
+	return err
 }
 
 type prioritiesResult struct {
