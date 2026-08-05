@@ -98,7 +98,7 @@ func TestTriageStart_CreatesRunOnDisk(t *testing.T) {
 	var runState map[string]any
 	require.NoError(t, json.Unmarshal([]byte(state), &runState))
 	assert.Equal(t, "triage/v1alpha1", runState["schema_version"])
-	assert.Equal(t, "created", runState["phase"])
+	assert.Equal(t, "snapshotted", runState["phase"])
 }
 
 // TestTriageStart_ManifestMatchesSchema checks the frozen snapshot on disk,

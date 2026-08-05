@@ -450,6 +450,20 @@ func (s *Store) AdvancePhase(ctx context.Context, runID string, target Phase, no
 	if run.State.Phase == target || !CanTransition(run.State.Phase, target) {
 		return nil
 	}
-	_, err = s.SetPhase(ctx, runID, target, note)
-	return err
+	if _, err := s.SetPhase(ctx, runID, target, note); err != nil {
+		// A phase gate refusing is "not yet", not a failure of the work that
+		// triggered it. Approving one row is valid whether or not the rest of
+		// the run has been judged — partial approval is normal, which is why
+		// the machine has an applying -> reviewing edge at all. Failing the
+		// approval because the phase could not advance would make a legal act
+		// depend on unrelated rows.
+		//
+		// Real I/O failures still propagate; only the gate's refusal is
+		// absorbed.
+		if camperrors.Is(err, camperrors.ErrInvalidInput) {
+			return nil
+		}
+		return err
+	}
+	return nil
 }
