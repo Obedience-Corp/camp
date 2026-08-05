@@ -158,9 +158,14 @@ func hashFile(ctx context.Context, path string, done *int64, progress func(int64
 		n, readErr := f.Read(buf)
 		if n > 0 {
 			_, _ = h.Write(buf[:n])
-			*done += int64(n)
-			if progress != nil {
-				progress(*done)
+			// done is optional like progress beside it. Guarding only one of
+			// the two made a nil counter a panic rather than a no-op, which is
+			// a trap for any caller that just wants the hash.
+			if done != nil {
+				*done += int64(n)
+				if progress != nil {
+					progress(*done)
+				}
 			}
 		}
 		if readErr == io.EOF {
