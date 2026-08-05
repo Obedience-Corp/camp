@@ -36,6 +36,14 @@ func (m *fakeMover) Stage(_ context.Context, stableID, stage string) (MoveOutcom
 	}, nil
 }
 
+func (m *fakeMover) MoveIdea(_ context.Context, stableID, status, _ string) (MoveOutcome, error) {
+	m.calls = append(m.calls, moverCall{verb: "idea", stableID: stableID, arg: status})
+	if m.failOn[stableID] {
+		return MoveOutcome{}, camperrors.New("idea move refused")
+	}
+	return MoveOutcome{Undo: "camp idea move " + stableID + " inbox"}, nil
+}
+
 func (m *fakeMover) Promote(_ context.Context, stableID, target string) (MoveOutcome, error) {
 	m.calls = append(m.calls, moverCall{verb: "promote", stableID: stableID, arg: target})
 	if m.failOn[stableID] {

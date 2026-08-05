@@ -197,6 +197,19 @@ func runApply(cmd *cobra.Command, opts applyOptions) error {
 				camperrors.Wrap(camperrors.ErrNotFound, "no rows were applied"),
 				"re-judge the rows the refresh staled, then camp triage approve"))
 	}
+
+	// A halt is a failure, and has to exit like one. Exiting 0 made a stopped
+	// apply indistinguishable from a finished one to anything reading the
+	// status code — a script, a CI step, or the operator's own `&&` — while
+	// the run went on to verify clean and report itself verified.
+	if result.Halted {
+		return preconditionErrorFor(cmd, ApplyJSONVersion, opts.jsonOut,
+			jsoncontract.WithHint(
+				camperrors.Wrapf(camperrors.ErrConflict,
+					"apply stopped at %s with %d row(s) applied", result.Failed, len(result.Applied)),
+				"the receipt for "+result.Failed+" records the cause; fix it and re-run "+
+					"`camp triage apply`, which continues from where it stopped"))
+	}
 	return nil
 }
 

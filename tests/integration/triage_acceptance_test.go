@@ -107,6 +107,7 @@ type verificationReport struct {
 		Checked    int `json:"checked"`
 		Matched    int `json:"matched"`
 		Mismatched int `json:"mismatched"`
+		Unapplied  int `json:"unapplied"`
 	} `json:"totals"`
 }
 
@@ -129,7 +130,7 @@ func readVerification(t *testing.T, tc *TestContainer, runDir string) verificati
 // changed rather than the renderer wandered.
 func TestAcceptance_RenderedDocumentsAreByteReproducible(t *testing.T) {
 	tc := GetSharedContainer(t)
-	path := setupTriageCampaign(t, tc, "triage-acceptance-bytes", 3, 1)
+	path := setupTriageCampaign(t, tc, "triage-acceptance-bytes", 3, 0)
 
 	_, runDir := startTriageRun(t, tc, path)
 	ids := manifestRowIDs(t, tc, runDir)
@@ -318,120 +319,131 @@ func TestAcceptance_UnconfiguredCampaignWithASmallBacklog(t *testing.T) {
 	assert.True(t, exists, "and the guide acceptance 11 says a first triage is steered by")
 }
 
-// --- Known blockers, pinned -------------------------------------------
-//
-// These two assert behaviour that is wrong. They exist so the defects cannot
-// be lost between this acceptance phase and whoever fixes them: the day the
-// behaviour changes, these fail and point at the fix. Each names what the
-// correct behaviour would be.
+// --- Blocker 1 still open; blocker 2's reporting half fixed -----------
 
-// TestAcceptance_KnownBlocker_IntentRowsCannotBeApplied pins the release
-// blocker this phase found: `camp triage` cannot apply any verdict to an
-// intent workitem.
+// TestAcceptance_MixedRunAppliesIntentsAndDesigns is blocker 1 fixed: a run
+// holding both workitem kinds applies every approved verdict.
 //
-// The plan compiler emits the row's stable id as the selector
-// (`camp workitem stage intent-item-1 parked`). That resolves for a
-// directory-backed workitem, whose id is its directory name, and fails for a
-// file-backed one — camp answers "no workitem matched selector intent-item-1;
-// did you mean: intent:.campaign/intents/inbox/intent-item-1.md". It shipped
-// because every plan it was checked against held design rows, where the id and
-// the selector coincide.
+// Camp's lifecycle verbs split along the directory/file line. `camp workitem
+// stage` refuses a file-backed item outright and `camp workitem promote`
+// cannot resolve one by id, so every verdict on an intent used to fail at
+// apply time — all four labels its policy offered, on the largest class in a
+// real campaign.
 //
-// All four labels the shipped intent policy offers fail this way. Intents are
-// the idea inbox, which is the largest class in a real campaign and the thing
-// the field trial that produced this design was triaging.
-//
-// Correct behaviour: an approved verdict on an intent applies, or triage
-// refuses to offer a disposition it cannot execute. Either way `apply` must
-// not report success having applied nothing.
-func TestAcceptance_KnownBlocker_IntentRowsCannotBeApplied(t *testing.T) {
+// The manifest now records `item_kind`, the compiler emits a distinct command
+// kind for file-backed rows, and the executor routes that kind to camp's idea
+// service. The argv and the executor agree, which they would not have if only
+// the rendered command had changed.
+func TestAcceptance_MixedRunAppliesIntentsAndDesigns(t *testing.T) {
 	tc := GetSharedContainer(t)
-	path := setupTriageCampaign(t, tc, "triage-blocker-intent-apply", 0, 1)
+	path := setupTriageCampaign(t, tc, "triage-acceptance-mixed", 2, 2)
 
 	_, runDir := startTriageRun(t, tc, path)
 	ids := manifestRowIDs(t, tc, runDir)
-	require.Len(t, ids, 1)
+	require.Len(t, ids, 4)
 
-	judgeRow(t, tc, path, ids[0], "ready")
-	out, err := tc.RunCampInDir(path, "triage", "approve", ids[0], "--json")
-	require.NoError(t, err, out)
-
-	applyOut, err := tc.RunCampInDir(path, "triage", "apply")
-	require.NoError(t, err, applyOut,
-		"apply exits 0 even when it applied nothing — part of what hides this")
-	t.Logf("\n===== BLOCKER: apply on an intent row =====\n%s", applyOut)
-
-	assert.Contains(t, applyOut, "Applied 0 row(s)",
-		"BLOCKER: no intent verdict can be applied")
-	assert.Contains(t, applyOut, "Stopped at "+ids[0])
-
-	receipts, err := tc.ReadFile(runDir + "/receipts.jsonl")
+	manifest, err := tc.ReadFile(runDir + "/manifest.json")
 	require.NoError(t, err)
-	assert.Contains(t, receipts, "no workitem matched selector "+ids[0],
-		"the cause is the selector, recorded on the receipt")
-	assert.Contains(t, receipts, `"result":"failed"`)
+	assert.Contains(t, manifest, `"item_kind": "directory"`)
+	assert.Contains(t, manifest, `"item_kind": "file"`,
+		"the compiler is pure over the snapshot, so the snapshot carries the backing kind")
+
+	for _, id := range ids {
+		// Each type's own vocabulary: a design parks, an idea defers.
+		disposition := "parked"
+		if strings.HasPrefix(id, "intent-") {
+			disposition = "someday"
+		}
+		judgeRow(t, tc, path, id, disposition)
+		out, approveErr := tc.RunCampInDir(path, "triage", "approve", id, "--json")
+		require.NoError(t, approveErr, out)
+	}
+
+	applyOut, applyErr := tc.RunCampInDir(path, "triage", "apply")
+	t.Logf("\n===== MIXED APPLY =====\n%s", applyOut)
+	require.NoError(t, applyErr, applyOut)
+	assert.Contains(t, applyOut, "Applied 4 row(s)")
+	assert.NotContains(t, applyOut, "Stopped at")
+	assert.Contains(t, applyOut, "camp idea move",
+		"a file-backed row compiles to the idea lifecycle verb")
+	assert.Contains(t, applyOut, "camp workitem stage",
+		"and a directory-backed row still compiles to the workitem verb")
+
+	// The ideas actually moved on disk, which is the claim that matters.
+	moved := tc.Shell(t, "cd "+path+" && find .campaign/intents -name 'intent-item-*.md' | sort")
+	t.Logf("intents now at:\n%s", moved)
+	assert.Contains(t, moved, "someday")
+
+	verifyOut, verifyErr := tc.RunCampInDir(path, "triage", "verify")
+	t.Logf("\n===== MIXED VERIFY =====\n%s", verifyOut)
+	require.NoError(t, verifyErr, verifyOut)
+	assert.Contains(t, verifyOut, "0 mismatched")
+
+	report := readVerification(t, tc, runDir)
+	assert.Equal(t, 4, report.Totals.Checked, "every approved row is accounted for")
+	assert.Equal(t, 0, report.Totals.Unapplied)
+
+	status, err := tc.RunCampInDir(path, "triage", "status")
+	require.NoError(t, err, status)
+	assert.Contains(t, status, "verified")
 }
 
-// TestAcceptance_KnownBlocker_PartialApplyStillVerifiesClean pins the defect
-// that conceals the one above: a run whose apply halted partway still reaches
-// `verified` with zero mismatches.
+// TestAcceptance_StaleRowIsSkippedAndReported covers the other half of the
+// mixed-fixture story: a workitem that disappears under an approved verdict.
 //
-// `Verify` iterates the rows that produced an apply receipt with result
-// `applied`. A row whose apply failed produced no such receipt, so it is never
-// checked, and the report is clean by omission. `status` then reports
-// `verified`, the terminal success state, while an approved decision sits
-// unexecuted.
+// Camp catches it as a staleness precondition before the mover runs, skips the
+// row, and stales its verdict — so the decision is withdrawn rather than
+// silently executed against something that moved. The run may then verify,
+// because a staled verdict is no longer a decision camp owes.
 //
-// Camp is honest about the *empty* case — an apply that moved nothing at all
-// verifies with "Nothing has been applied yet, so there is nothing to prove."
-// It is the partial case that misreports, and the partial case is the one a
-// real campaign hits, because a campaign holds both designs and intents.
-//
-// The review criterion this phase is measured against reads "verify reports
-// zero unexplained mismatches after each apply". A row that was approved and
-// never applied is the definition of unexplained, and it is counted as neither.
-//
-// Correct behaviour: a run with an approved verdict that did not apply is not
-// verified, and verify says which rows and why.
-func TestAcceptance_KnownBlocker_PartialApplyStillVerifiesClean(t *testing.T) {
+// The case where an approved verdict stays live and does not execute — the
+// phase 006 blocker — is `TestVerifyCountsAnApprovedRowThatNeverApplied` in
+// internal/triage, where the failure can be constructed exactly rather than
+// provoked through the filesystem.
+func TestAcceptance_StaleRowIsSkippedAndReported(t *testing.T) {
 	tc := GetSharedContainer(t)
-	// Two designs and one intent: apply moves the designs and halts on the
-	// intent, which is exactly the shape of a real campaign's run.
-	path := setupTriageCampaign(t, tc, "triage-blocker-partial-verify", 2, 1)
+	path := setupTriageCampaign(t, tc, "triage-acceptance-partial", 2, 1)
 
 	_, runDir := startTriageRun(t, tc, path)
 	ids := manifestRowIDs(t, tc, runDir)
 	require.Len(t, ids, 3)
 	for _, id := range ids {
-		judgeRow(t, tc, path, id, "parked")
+		disposition := "parked"
+		if strings.HasPrefix(id, "intent-") {
+			disposition = "someday"
+		}
+		judgeRow(t, tc, path, id, disposition)
 		out, err := tc.RunCampInDir(path, "triage", "approve", id, "--json")
 		require.NoError(t, err, out)
 	}
 
-	applyOut, err := tc.RunCampInDir(path, "triage", "apply")
-	require.NoError(t, err, applyOut,
-		"apply exits 0 despite halting — part of what hides this")
-	t.Logf("\n===== BLOCKER: partial apply =====\n%s", applyOut)
-	require.Contains(t, applyOut, "Applied 2 row(s)")
-	require.Contains(t, applyOut, "Stopped at ")
+	// Delete the intent out from under its approved verdict.
+	tc.Shell(t, "cd "+path+" && rm -f .campaign/intents/inbox/intent-item-1.md")
 
-	verifyOut, err := tc.RunCampInDir(path, "triage", "verify")
-	require.NoError(t, err, verifyOut)
-	t.Logf("\n===== BLOCKER: verify after a partial apply =====\n%s", verifyOut)
-
-	assert.Contains(t, verifyOut, "2 checked, 2 matched, 0 mismatched",
-		"BLOCKER: only the rows that applied are checked; the failed one is not counted")
-	assert.Contains(t, verifyOut, "Every applied row is where its approved verdict said it would be",
-		"BLOCKER: a clean bill of health that is true only of the subset that applied")
-
-	report := readVerification(t, tc, runDir)
-	assert.Equal(t, 2, report.Totals.Checked,
-		"BLOCKER: 3 rows were approved, 2 are checked, and nothing reports the third")
-	assert.Equal(t, 0, report.Totals.Mismatched)
+	applyOut, _ := tc.RunCampInDir(path, "triage", "apply")
+	t.Logf("\n===== APPLY WITH A VANISHED ROW =====\n%s", applyOut)
+	assert.Contains(t, applyOut, "Applied 2 row(s)")
+	assert.Contains(t, applyOut, "skipped intent-item-1",
+		"the row is named, not quietly dropped")
 
 	status, err := tc.RunCampInDir(path, "triage", "status")
 	require.NoError(t, err, status)
-	t.Logf("\n===== BLOCKER: status after a partial apply =====\n%s", status)
-	assert.Contains(t, status, "verified",
-		"BLOCKER: the run reaches its terminal success state with a decision unexecuted")
+	t.Logf("\n===== STATUS =====\n%s", status)
+	assert.Contains(t, status, "stale",
+		"the verdict is withdrawn rather than left looking live")
+}
+
+// TestAcceptance_NothingApprovedStillVerifiesHonestly keeps the empty case
+// exactly as it was: a run that approved nothing has nothing to prove, and
+// says so rather than being dragged into the unapplied accounting above.
+func TestAcceptance_NothingApprovedStillVerifiesHonestly(t *testing.T) {
+	tc := GetSharedContainer(t)
+	path := setupTriageCampaign(t, tc, "triage-acceptance-nothing", 2, 0)
+	startTriageRun(t, tc, path)
+
+	verifyOut, err := tc.RunCampInDir(path, "triage", "verify")
+	require.NoError(t, err, verifyOut)
+	t.Logf("\n===== VERIFY WITH NOTHING APPROVED =====\n%s", verifyOut)
+	assert.Contains(t, verifyOut, "0 checked, 0 matched, 0 mismatched")
+	assert.Contains(t, verifyOut, "Nothing has been applied yet, so there is nothing to prove.")
 }

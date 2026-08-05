@@ -35,6 +35,11 @@ type Mover interface {
 	Stage(ctx context.Context, stableID, stage string) (MoveOutcome, error)
 	Promote(ctx context.Context, stableID, target string) (MoveOutcome, error)
 	Split(ctx context.Context, stableID string, successors []string) (MoveOutcome, error)
+	// MoveIdea moves a file-backed workitem through the idea lifecycle.
+	// Separate from Promote because camp's services are separate: a directory
+	// workitem is promoted, an idea is moved, and neither accepts the other's
+	// items.
+	MoveIdea(ctx context.Context, stableID, status, reason string) (MoveOutcome, error)
 }
 
 // ApplyInput is one apply pass.
@@ -206,6 +211,9 @@ func (s *Store) runCommand(
 		return mover.Promote(ctx, entry.StableID, argAfterFlag(command.Argv, "--target"))
 	case CommandKindSplit:
 		return mover.Split(ctx, entry.StableID, argsAfterFlags(command.Argv, "--into"))
+	case CommandKindIdea:
+		return mover.MoveIdea(ctx, entry.StableID,
+			argAfterStage(command.Argv), argAfterFlag(command.Argv, "--reason"))
 	}
 	return MoveOutcome{}, camperrors.NewValidation("kind",
 		"unknown command kind "+quote(string(command.Kind)), camperrors.ErrInvalidInput)

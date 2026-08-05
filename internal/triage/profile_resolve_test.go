@@ -217,7 +217,9 @@ func TestTypePolicyDispositionsReplaceRatherThanMerge(t *testing.T) {
 	assert.Equal(t, EvidenceDepthDeep, design.Evidence)
 
 	intent := resolution.TypePolicies["intent"]
-	assert.Equal(t, []string{"active", "parked", "ready", "someday"}, intent.Labels())
+	// No `parked`: camp refuses an attention stage on a file-backed workitem,
+	// so the shipped policy no longer offers a label it could never execute.
+	assert.Equal(t, []string{"active", "ready", "someday"}, intent.Labels())
 	assert.Equal(t, EvidenceDepthMetadata, intent.Evidence,
 		"an inbox decision is seconds, not a code trace")
 }

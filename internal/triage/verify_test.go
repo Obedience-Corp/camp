@@ -351,3 +351,65 @@ func TestRenderVerificationIsByteStable(t *testing.T) {
 	assert.NotContains(t, body, time.Now().Format("15:04:05"),
 		"the renderer must read no clock of its own")
 }
+
+// TestVerifyCountsAnApprovedRowThatNeverApplied is the phase 006 acceptance
+// blocker, at the level where it can be constructed exactly.
+//
+// Verification used to iterate only the rows that produced an applied receipt.
+// A row whose apply failed produced none, so it was checked by nothing and the
+// report came back clean by omission — "N checked, N matched, 0 mismatched" on
+// a run that had not executed one of its approved decisions, which then closed
+// as `verified`.
+//
+// The row is now counted as `unapplied`, named, and treated as unexplained, so
+// the run stays out of `verified` until the decision actually runs.
+func TestVerifyCountsAnApprovedRowThatNeverApplied(t *testing.T) {
+	ctx := context.Background()
+	store, run := applyStore(t)
+
+	// Two rows approved; only one applies. The other's verdict stays live, so
+	// it is a decision camp still owes.
+	plan := planFor(t, run, map[string]CanonicalAction{
+		hubID: CanonicalAction("attention/parked"),
+	})
+	applyWith(t, store, run, plan, &fakeMover{}, allReady(plan))
+
+	parked := []workitem.WorkItem{{
+		StableID: hubID, WorkflowType: "design",
+		Key:            "design:workflow/design/festival-hub-control-plane",
+		RelativePath:   "workflow/design/festival-hub-control-plane",
+		LifecycleStage: "active", AttentionStage: "parked",
+	}}
+
+	// A second approved verdict that apply never reached.
+	other := run.Manifest.Rows[1].StableID
+	require.NotEqual(t, hubID, other)
+	require.NoError(t, store.AppendDecision(ctx, run.ID, DecisionEvent{
+		Event: DecisionApproved, StableID: other,
+		Disposition: "parked", CanonicalAction: CanonicalAction("attention/parked"),
+		Actor: "tester", At: testAt,
+	}))
+
+	report, err := store.Verify(ctx, VerifyInput{RunID: run.ID, Items: parked, Now: testAt})
+	require.NoError(t, err)
+
+	assert.Equal(t, 1, report.Totals.Unapplied,
+		"the approved row that never ran is counted, not skipped")
+	assert.False(t, report.Clean(),
+		"a run owing an unexecuted decision is not clean")
+
+	var named bool
+	for _, row := range report.Rows {
+		if row.StableID == other && row.Result == VerificationUnapplied {
+			named = true
+		}
+	}
+	assert.True(t, named, "and is named, so an operator knows which decision did not happen")
+
+	_, _, err = store.WriteVerification(ctx, report)
+	require.NoError(t, err)
+	reopened, err := store.OpenRun(ctx, run.ID)
+	require.NoError(t, err)
+	assert.NotEqual(t, PhaseVerified, reopened.State.Phase,
+		"and the run does not reach verified while it owes one")
+}

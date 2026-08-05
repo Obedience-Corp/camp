@@ -4,6 +4,8 @@ import (
 	"sort"
 	"strings"
 	"time"
+
+	"github.com/Obedience-Corp/camp/internal/workitem"
 )
 
 // CompileInput is everything the plan compiler reads. All of it is snapshot
@@ -66,7 +68,7 @@ func compileEntry(row ManifestRow, verdict RowVerdict, in CompileInput) ApplyPla
 
 	entry.Commands = []PlanCommand{{
 		Argv: ApplyArgvFor(row, verdict.CanonicalAction),
-		Kind: commandKindFor(verdict.CanonicalAction),
+		Kind: commandKindFor(row, verdict.CanonicalAction),
 	}}
 	entry.Undo = undoArgvFor(row, verdict.CanonicalAction)
 	return entry
@@ -119,6 +121,14 @@ const consolidatedParentStatus = "completed"
 // `camp workitem attention`, and it takes the stage positionally rather than
 // as `--set`. Spec doc 04's `camp flow move` does not exist at all.
 func ApplyArgvFor(row ManifestRow, action CanonicalAction) []string {
+	// File-backed workitems move through the idea lifecycle. `camp workitem
+	// stage` refuses them outright and `camp workitem promote` cannot resolve
+	// them by id, so a plan built from the directory-backed verbs is a plan
+	// camp refuses row by row — which is exactly what shipped.
+	if isFileBacked(row) {
+		return ideaArgvFor(row, action)
+	}
+
 	switch action.Family() {
 	case ActionFamilyAttention:
 		return stageArgv(row.StableID, action.Target())
@@ -130,6 +140,65 @@ func ApplyArgvFor(row ManifestRow, action CanonicalAction) []string {
 	}
 	return nil
 }
+
+// isFileBacked reports whether a row is stored as a single file rather than a
+// directory. The snapshot records it because the compiler does no I/O and so
+// cannot ask the filesystem.
+func isFileBacked(row ManifestRow) bool {
+	return row.ItemKind == string(workitem.ItemKindFile)
+}
+
+// ideaStatusFor maps a canonical action onto `camp idea move`'s vocabulary, or
+// "" when the idea lifecycle has no equivalent.
+//
+// The two vocabularies are close but not identical: a dungeon *completed* is an
+// idea that is *done*. Attention stages have no equivalent at all — an idea is
+// somewhere in inbox -> ready -> active -> dungeon, and "which lane is it in"
+// is not a question its lifecycle answers.
+func ideaStatusFor(action CanonicalAction) string {
+	switch action {
+	case "rail/ready":
+		return "ready"
+	case "rail/active":
+		return "active"
+	case "dungeon/completed":
+		return "dungeon/done"
+	case "dungeon/archived":
+		return "dungeon/archived"
+	case "dungeon/someday":
+		return "dungeon/someday"
+	}
+	return ""
+}
+
+// ideaArgvFor renders the command that moves a file-backed workitem.
+//
+// Nil for an action the idea lifecycle cannot express, which is how the
+// compiler reports "camp has no command for this" rather than emitting one
+// that would be refused at apply time.
+func ideaArgvFor(row ManifestRow, action CanonicalAction) []string {
+	status := ideaStatusFor(action)
+	if status == "" {
+		return nil
+	}
+	argv := []string{"camp", "idea", "move", row.StableID, shortIdeaStatus(status)}
+	if action.Family() == ActionFamilyDungeon {
+		argv = append(argv, "--reason", ideaDungeonReason)
+	}
+	return argv
+}
+
+// shortIdeaStatus renders the CLI's short form of a dungeon status, which is
+// what `camp idea move` accepts and prints.
+func shortIdeaStatus(status string) string {
+	return strings.TrimPrefix(status, "dungeon/")
+}
+
+// ideaDungeonReason is what camp records on an idea a triage run retired. Camp
+// requires a reason for any dungeon move and appends it to the idea as a
+// decision record, so it names the process that decided rather than restating
+// the disposition the record already carries.
+const ideaDungeonReason = "retired by an approved camp triage verdict"
 
 // ApplyCommandFor renders the command that performs one canonical action.
 //
@@ -196,7 +265,10 @@ func undoArgvFor(row ManifestRow, action CanonicalAction) []string {
 }
 
 // commandKindFor tags an action's command with the family it belongs to.
-func commandKindFor(action CanonicalAction) CommandKind {
+func commandKindFor(row ManifestRow, action CanonicalAction) CommandKind {
+	if isFileBacked(row) && ideaStatusFor(action) != "" {
+		return CommandKindIdea
+	}
 	switch action.Family() {
 	case ActionFamilyAttention:
 		return CommandKindAttention
@@ -219,6 +291,7 @@ var planOrder = map[CommandKind]int{
 	CommandKindSplit:     0,
 	CommandKindDungeon:   1,
 	CommandKindRail:      1,
+	CommandKindIdea:      1,
 	CommandKindAttention: 2,
 }
 

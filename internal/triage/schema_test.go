@@ -261,7 +261,7 @@ func TestManifestFieldNamesMatchSpec(t *testing.T) {
 	var rows []map[string]json.RawMessage
 	require.NoError(t, json.Unmarshal(doc["rows"], &rows))
 	assert.ElementsMatch(t, []string{
-		"stable_id", "ref", "key", "type", "title", "relative_path",
+		"stable_id", "ref", "key", "item_kind", "type", "title", "relative_path",
 		"lifecycle_stage", "attention_stage", "batch", "policy",
 		"carried_from", "identity_exception",
 	}, keysOf(rows[0]))

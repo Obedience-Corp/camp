@@ -7,6 +7,7 @@ import (
 
 	wicommands "github.com/Obedience-Corp/camp/internal/commands/workitem"
 	"github.com/Obedience-Corp/camp/internal/config"
+	"github.com/Obedience-Corp/camp/internal/intent"
 	camperrors "github.com/Obedience-Corp/camp/internal/errors"
 	"github.com/Obedience-Corp/camp/internal/git"
 	"github.com/Obedience-Corp/camp/internal/paths"
@@ -129,4 +130,71 @@ func (m *serviceMover) Split(ctx context.Context, stableID string, successors []
 	return triage.MoveOutcome{
 		Undo: "camp workitem split " + stableID + " --undo",
 	}, nil
+}
+
+// MoveIdea moves a file-backed workitem through the idea lifecycle.
+//
+// The same no-new-movers rule the rest of this file follows: this is the
+// service `camp idea move` runs, called directly, so the destination and the
+// error come back rather than being parsed out of a subprocess's output.
+//
+// Directory-backed workitems are promoted and file-backed ones are moved, and
+// neither service accepts the other's items — `camp workitem stage` refuses an
+// idea outright. Routing on the row's recorded item kind is what makes an
+// approved verdict on an intent executable at all.
+func (m *serviceMover) MoveIdea(ctx context.Context, stableID, status, reason string) (triage.MoveOutcome, error) {
+	resolver := paths.NewResolverFromConfig(m.campaignRoot, m.cfg)
+	svc := intent.NewIntentService(m.campaignRoot, resolver.Intents())
+
+	target := intent.Status(status)
+	if !target.InDungeon() {
+		// `camp idea move` accepts short dungeon names; the service wants the
+		// canonical path form, so anything not already canonical is resolved
+		// against the vocabulary rather than string-built.
+		if canonical, ok := canonicalIdeaStatus(status); ok {
+			target = canonical
+		}
+	}
+
+	before, err := svc.Find(ctx, stableID)
+	if err != nil {
+		return triage.MoveOutcome{}, camperrors.Wrapf(err, "finding idea %s", stableID)
+	}
+	previous := before.Status
+
+	// The decision record is appended before the move, the way `camp idea
+	// move` does it, so a retired idea carries why in its own body rather than
+	// only in the run's receipts.
+	if target.InDungeon() && reason != "" {
+		intent.AppendDecisionRecord(before, target, reason)
+		if err := svc.Save(ctx, before); err != nil {
+			return triage.MoveOutcome{}, camperrors.Wrap(err, "recording the decision on the idea")
+		}
+	}
+
+	if _, err := svc.Move(ctx, stableID, target); err != nil {
+		return triage.MoveOutcome{}, camperrors.Wrapf(err, "moving idea %s to %s", stableID, target)
+	}
+
+	return triage.MoveOutcome{
+		Undo: "camp idea move " + stableID + " " + shortStatus(previous),
+	}, nil
+}
+
+// canonicalIdeaStatus resolves a short status name to camp's canonical form.
+func canonicalIdeaStatus(status string) (intent.Status, bool) {
+	for _, candidate := range []intent.Status{
+		intent.StatusInbox, intent.StatusReady, intent.StatusActive,
+		intent.StatusDone, intent.StatusKilled, intent.StatusArchived, intent.StatusSomeday,
+	} {
+		if string(candidate) == status || shortStatus(candidate) == status {
+			return candidate, true
+		}
+	}
+	return "", false
+}
+
+// shortStatus renders a status the way the CLI accepts it.
+func shortStatus(status intent.Status) string {
+	return path.Base(string(status))
 }

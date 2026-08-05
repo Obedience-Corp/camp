@@ -75,6 +75,7 @@ func rowFor(item workitem.WorkItem, profile ResolvedProfile, now time.Time) Mani
 		StableID:       StableIDFor(item),
 		Ref:            ref,
 		Key:            item.Key,
+		ItemKind:       string(item.ItemKind),
 		Type:           string(item.WorkflowType),
 		Title:          item.Title,
 		RelativePath:   item.RelativePath,

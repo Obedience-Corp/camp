@@ -62,8 +62,31 @@ func ExpectationFor(receipt Receipt, row ManifestRow) Expectation {
 		}
 	case CommandKindSplit:
 		expectation.Successors = argsAfterFlags(receipt.Argv, "--into")
+	case CommandKindIdea:
+		// A retired idea leaves the discoverable set, exactly as a dungeoned
+		// directory workitem does, so absence is the proof.
+		//
+		// A promoted one (ready, active) stays discoverable at a new path
+		// under `.campaign/intents/<status>/`, and that path is not knowable
+		// from the receipt: the service preserves a possibly-renamed basename,
+		// so rebuilding it here would be a guess that looks authoritative.
+		// Discoverability is what is checked instead, and the run's own
+		// decision record carries the status.
+		if ideaStatusIsDungeon(argAfterStage(receipt.Argv)) {
+			expectation.Gone = true
+		}
 	}
 	return expectation
+}
+
+// ideaStatusIsDungeon reports whether an idea status retires the idea out of
+// the discoverable set.
+func ideaStatusIsDungeon(status string) bool {
+	switch status {
+	case "done", "killed", "archived", "someday":
+		return true
+	}
+	return false
 }
 
 // undoSourcePath reads the destination out of a `camp move <landed> <original>`
@@ -113,12 +136,33 @@ func (s *Store) Verify(ctx context.Context, in VerifyInput) (*VerificationReport
 	index := IndexDiscovery(in.Items)
 	rows := indexManifestRows(run.Manifest.Rows)
 
+	applied := map[string]bool{}
 	report := &VerificationReport{RunID: in.RunID, CheckedAt: in.Now}
 	for _, receipt := range latestAppliedPerRow(receipts) {
 		row := rows[receipt.StableID]
 		expectation := ExpectationFor(receipt, row)
+		applied[receipt.StableID] = true
 		report.Rows = append(report.Rows,
 			verifyOne(expectation, index, in.Explanations[receipt.StableID]))
+	}
+
+	// Every approved verdict that produced no successful receipt. Verifying
+	// only the rows that applied made the report clean by omission: a halted
+	// apply left its unexecuted decisions out of the tally entirely, and the
+	// run went on to close as verified.
+	verdicts, err := s.Verdicts(ctx, in.RunID)
+	if err != nil {
+		return nil, err
+	}
+	for _, row := range run.Manifest.Rows {
+		if applied[row.StableID] || !verdicts[row.StableID].Applicable() {
+			continue
+		}
+		report.Rows = append(report.Rows, VerificationRow{
+			StableID:     row.StableID,
+			ExpectedPath: row.RelativePath,
+			Result:       VerificationUnapplied,
+		})
 	}
 	sort.Slice(report.Rows, func(a, b int) bool {
 		return report.Rows[a].StableID < report.Rows[b].StableID
@@ -225,6 +269,13 @@ func indexManifestRows(rows []ManifestRow) map[string]ManifestRow {
 func (v *VerificationReport) Unexplained() []VerificationRow {
 	var out []VerificationRow
 	for _, row := range v.Rows {
+		// An unapplied row is unexplained by construction: the decision did
+		// not happen, and no explanation of the campaign's state can account
+		// for that. It keeps the run out of `verified`, which is the point.
+		if row.Result == VerificationUnapplied {
+			out = append(out, row)
+			continue
+		}
 		if row.Result == VerificationMismatch && row.Explanation == "" {
 			out = append(out, row)
 		}

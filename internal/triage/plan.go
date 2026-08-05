@@ -15,6 +15,13 @@ const (
 	CommandKindDungeon   CommandKind = "dungeon"
 	CommandKindRail      CommandKind = "rail"
 	CommandKindAttention CommandKind = "attention"
+	// CommandKindIdea moves a file-backed workitem through the idea
+	// lifecycle. It is its own kind because camp's lifecycle verbs split along
+	// the directory/file line: `camp workitem stage` and `camp workitem
+	// promote` refuse a file-backed item, and `camp idea move` is what acts on
+	// one. The executor routes on kind, so a row that needs the idea service
+	// has to say so here rather than hope the argv is re-parsed.
+	CommandKindIdea CommandKind = "idea"
 )
 
 // CommandKinds returns the command kind vocabulary in apply order.
@@ -24,6 +31,7 @@ func CommandKinds() []string {
 		string(CommandKindDungeon),
 		string(CommandKindRail),
 		string(CommandKindAttention),
+		string(CommandKindIdea),
 	}
 }
 
@@ -259,11 +267,24 @@ type VerificationResult string
 const (
 	VerificationMatch    VerificationResult = "match"
 	VerificationMismatch VerificationResult = "mismatch"
+	// VerificationUnapplied is a row whose verdict was approved and never
+	// executed: apply stopped before it, or failed on it.
+	//
+	// It is its own result rather than a mismatch because nothing about the
+	// campaign is wrong — the decision simply has not happened yet — and it is
+	// counted rather than skipped because a row that verification never looked
+	// at is exactly the row an operator needs told about. Skipping them let a
+	// halted apply report a clean verification and close the run as verified.
+	VerificationUnapplied VerificationResult = "unapplied"
 )
 
 // VerificationResults returns the verification result vocabulary.
 func VerificationResults() []string {
-	return []string{string(VerificationMatch), string(VerificationMismatch)}
+	return []string{
+		string(VerificationMatch),
+		string(VerificationMismatch),
+		string(VerificationUnapplied),
+	}
 }
 
 // VerificationReport is `verification.json`: post-apply proof, produced by
@@ -295,6 +316,9 @@ type VerificationTotals struct {
 	Checked    int `json:"checked"`
 	Matched    int `json:"matched"`
 	Mismatched int `json:"mismatched"`
+	// Unapplied counts approved verdicts that never ran. Always present so a
+	// consumer reading the tally cannot miss them by not knowing to look.
+	Unapplied int `json:"unapplied"`
 }
 
 // Normalize implements Document. It recomputes the totals from the rows so the
@@ -312,6 +336,8 @@ func (v *VerificationReport) Normalize() {
 			totals.Matched++
 		case VerificationMismatch:
 			totals.Mismatched++
+		case VerificationUnapplied:
+			totals.Unapplied++
 		}
 	}
 	v.Totals = totals
@@ -339,6 +365,8 @@ func (v *VerificationReport) Validate() []Violation {
 			counted.Matched++
 		case VerificationMismatch:
 			counted.Mismatched++
+		case VerificationUnapplied:
+			counted.Unapplied++
 		}
 	}
 	if v.Totals != counted {

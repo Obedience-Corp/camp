@@ -176,7 +176,24 @@ type ManifestRow struct {
 	// have no marker yet; those carry an IdentityException instead.
 	Ref string `json:"ref"`
 	// Key is the discovery key, "<type>:<campaign-relative path>".
-	Key            string `json:"key"`
+	Key string `json:"key"`
+	// ItemKind is how the workitem is stored: a directory under
+	// `workflow/<type>/<slug>/`, or a single markdown file such as an intent
+	// under `.campaign/intents/`.
+	//
+	// Frozen because the plan compiler needs it and cannot derive it. Camp's
+	// lifecycle verbs are split along this line — `camp workitem stage` and
+	// `camp workitem promote` act on directory-backed items, `camp idea move`
+	// on file-backed ones — and a compiler that is pure over the snapshot
+	// cannot stat the filesystem to tell which it is holding. It is camp's own
+	// `ItemKind`, recorded rather than re-derived, so the two cannot drift.
+	//
+	// Added 2026-08-05, blessed under Lance's in-session delegation, after the
+	// phase 006 acceptance run found that no verdict on an intent could be
+	// applied at all: every command the compiler emitted named a verb that
+	// refuses file-backed workitems, and it shipped because every plan it had
+	// been checked against held directory-backed rows.
+	ItemKind       string `json:"item_kind"`
 	Type           string `json:"type"`
 	Title          string `json:"title"`
 	RelativePath   string `json:"relative_path"`
