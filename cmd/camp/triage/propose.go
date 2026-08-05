@@ -4,8 +4,6 @@ import (
 	"fmt"
 	"io"
 	"os"
-	"os/exec"
-	"strings"
 
 	"github.com/spf13/cobra"
 
@@ -127,7 +125,7 @@ func runPropose(cmd *cobra.Command, stableID string, opts proposeOptions) error 
 		StableID:    stableID,
 		Disposition: opts.disposition,
 		Rationale:   rationale,
-		Actor:       gitIdentity(cmd, root),
+		Actor:       triage.ResolveActor(ctx),
 		Now:         triage.SystemClock(),
 	})
 	if err != nil {
@@ -172,20 +170,6 @@ func readRationale(cmd *cobra.Command, opts proposeOptions) (*triage.Rationale, 
 		return nil, err
 	}
 	return &rationale, nil
-}
-
-// gitIdentity resolves who is recording the verdict.
-//
-// Verdicts are attributed because the whole model is recorded judgment: a
-// decision nobody is named on cannot be questioned later. An unconfigured git
-// falls back to a placeholder rather than blocking the proposal, since losing
-// the attribution is better than losing the judgment.
-func gitIdentity(cmd *cobra.Command, root string) string {
-	out, err := exec.CommandContext(cmd.Context(), "git", "-C", root, "config", "user.name").Output()
-	if name := strings.TrimSpace(string(out)); err == nil && name != "" {
-		return name
-	}
-	return "unknown"
 }
 
 func writeProposeText(w io.Writer, result *triage.ProposeResult) error {

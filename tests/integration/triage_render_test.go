@@ -98,8 +98,11 @@ func TestTriageReview_EveryRowAppearsExactlyOnce(t *testing.T) {
 	review, err := tc.ReadFile(runDir + "/TRIAGE_REVIEW.md")
 	require.NoError(t, err)
 
+	// Scoped to the lane tables: the approval record section lists approved
+	// rows again by design, so a whole-document count would conflate them.
+	decisions := sectionOf(review, "## Proposed portfolio decisions", "## Resulting portfolio shape")
 	for _, id := range ids {
-		assert.Equal(t, 1, strings.Count(review, "| `"+id+"` |"),
+		assert.Equal(t, 1, strings.Count(decisions, "| `"+id+"` |"),
 			"row %s must appear exactly once across the lane tables", id)
 	}
 	assert.Contains(t, review, "| **Total** | **7** |")
