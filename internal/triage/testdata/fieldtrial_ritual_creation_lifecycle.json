@@ -1,0 +1,51 @@
+{
+  "schema_version": "triage/v1alpha1",
+  "stable_id": "fest-ritual-creation-lifecycle",
+  "original_goal": "Make ritual authoring a guided planning lifecycle: create under planning/, scaffold 000_CREATE_RITUAL, guide authoring with fest next, then promote directly to ritual/ while consuming the creation workflow.",
+  "delivered": [
+    "Ritual IDs and configuration, template guards, fest ritual run, independent run copies, and generalized workflow machinery are the working baseline.",
+    "Workflow presence is already detected by the routing layer."
+  ],
+  "missing": [
+    "The proposed lifecycle is not implemented: CLI and TUI creation still force ritual types directly to ritual/.",
+    "No creation workflow exists, and fest next deliberately rejects a ritual template.",
+    "Promotion remains the flat planning -> ready -> active -> completed map."
+  ],
+  "stale_assumptions": [
+    "The design assumes seven rituals; there are eight.",
+    "The research template now carries 372 replacement markers.",
+    "The routing symptom is current, but the design's stated cause is incomplete: default position: after, phase-local selection, and current directory cause the planning/research collision."
+  ],
+  "related": [
+    "fest-ritual-skill",
+    "shared-template-sync",
+    "ritual-destination-check"
+  ],
+  "open_decisions": [
+    "Skill versus lifecycle ownership.",
+    "Workflow removal versus archival.",
+    "Readiness rules and force behavior.",
+    "Existing-ritual migration.",
+    "Routing semantics and direct-destination compatibility.",
+    "Template ownership and the end-to-end fixture."
+  ],
+  "confidence": "high",
+  "confidence_notes": "high for implementation state; medium-high for the refined routing diagnosis, because no mutating runtime scenario was run",
+  "anchors": [
+    {
+      "kind": "path",
+      "path": "workflow/design/fest-ritual-creation-lifecycle",
+      "hash": "sha256:1f0d0a5f6c4b3e2d1c0b9a8f7e6d5c4b3a29181706f5e4d3c2b1a09f8e7d6c5b"
+    },
+    {
+      "kind": "workitem",
+      "stable_id": "fest-ritual-creation-lifecycle",
+      "observed_stage": "active"
+    }
+  ],
+  "produced_by": {
+    "role": "evidence",
+    "runtime": "field trial 2026-08-03, review batch 02",
+    "at": "2026-08-03T18:00:00Z"
+  }
+}

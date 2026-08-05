@@ -1,0 +1,50 @@
+{
+  "schema_version": "triage/v1alpha1",
+  "stable_id": "festival-lifecycle-workitem-integration",
+  "original_goal": "Gather five related but distinct designs: generic artifact lineage, workitem scheduling, attention lanes, festival-resident workitem lifecycle, and festival project binding with worktree and stack automation.",
+  "delivered": [
+    "The festival-lifecycle slice shipped through WF0001: sweep, rail residency, promotion, demotion, doctor checks, Fest navigation, and app cards.",
+    "Attention stages and filters shipped."
+  ],
+  "missing": [
+    "Board and lane TUI behavior, WIP nudges, and app support did not ship.",
+    "Generic artifact edges remain absent.",
+    "Camp-owned scheduling is absent and conflicts with the newer Fest/Obey direction.",
+    "Project binding and stacks remain a research skeleton: one project path and manual foundations exist, but not plural projects, automatic worktrees and links, cleanup, or stacks."
+  ],
+  "stale_assumptions": [
+    "The design predates the Fest/Obey split of scheduling ownership, so its camp-owned scheduling premise no longer holds."
+  ],
+  "related": [
+    "festival:WF0001",
+    "shared-template-sync"
+  ],
+  "open_decisions": [
+    "Whether the unshipped slices stay one umbrella workitem or split by owner.",
+    "Where scheduling belongs now that camp is not the owner."
+  ],
+  "confidence": "high",
+  "confidence_notes": "high for delivered and current behavior; medium for the unshipped project-binding scope, which was read from the research skeleton rather than from code",
+  "anchors": [
+    {
+      "kind": "path",
+      "path": "workflow/design/festival-lifecycle-workitem-integration",
+      "hash": "sha256:2e1b9c8d7a6f5e4d3c2b1a0918273645546372819a0b1c2d3e4f5a6b7c8d9e0f"
+    },
+    {
+      "kind": "festival",
+      "id": "WF0001",
+      "observed": "completed"
+    },
+    {
+      "kind": "workitem",
+      "stable_id": "festival-lifecycle-workitem-integration",
+      "observed_stage": "active"
+    }
+  ],
+  "produced_by": {
+    "role": "evidence",
+    "runtime": "field trial 2026-08-03, review batch 02",
+    "at": "2026-08-03T18:00:00Z"
+  }
+}

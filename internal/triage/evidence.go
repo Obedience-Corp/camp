@@ -68,6 +68,24 @@ type EvidenceRecord struct {
 	Related       []string   `json:"related"`
 	OpenDecisions []string   `json:"open_decisions"`
 	Confidence    Confidence `json:"confidence"`
+
+	// ConfidenceNotes qualifies what the confidence applies to.
+	//
+	// The field trial's records did not report one confidence per row; 12 of
+	// 20 scoped it ("high for implementation state; medium-high for the
+	// routing diagnosis"). A single enum cannot hold that, and dropping the
+	// qualification loses the part a reviewer actually acts on. The enum stays
+	// as spec doc 04 defines it so it remains sortable and filterable; this
+	// carries what it is about.
+	ConfidenceNotes string `json:"confidence_notes,omitempty"`
+
+	// Signals are deterministic facts camp itself resolved — age, stage,
+	// latest run status — as opposed to anything a reader judged. They are
+	// what `evidence template` pre-fills so the zero-judgment path (doc 08,
+	// driver 2) has something to propose from. Kept separate from the
+	// judgment fields on purpose: mixing a fact camp measured into
+	// `delivered` would make the record claim someone concluded it.
+	Signals map[string]string `json:"signals,omitempty"`
 	// Anchors are the re-checkable facts this record rests on. A record with
 	// no anchors can still be valid, but nothing about it can go stale, so
 	// the verdict it supports carries no expiry.
@@ -114,6 +132,7 @@ func (r *EvidenceRecord) Validate() []Violation {
 		const because = "on a no_evidence record"
 		out = append(out, checkEmptyString("original_goal", r.OriginalGoal, because)...)
 		out = append(out, checkEmptyString("confidence", string(r.Confidence), because)...)
+		out = append(out, checkEmptyString("confidence_notes", r.ConfidenceNotes, because)...)
 		out = append(out, checkEmptySlice("delivered", r.Delivered, because)...)
 		out = append(out, checkEmptySlice("missing", r.Missing, because)...)
 		out = append(out, checkEmptySlice("stale_assumptions", r.StaleAssumptions, because)...)

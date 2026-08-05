@@ -69,6 +69,27 @@ func MarshalDocument(doc Document) ([]byte, error) {
 	return buf.Bytes(), nil
 }
 
+// MarshalTemplate encodes a document for a human or an agent to finish, in the
+// same canonical form as MarshalDocument but without validating it.
+//
+// This is the one encoder that skips validation, and the exception is the
+// point: a template is deliberately incomplete. It has no original_goal and no
+// confidence precisely because those are the judgment the reader has to
+// supply. Validating here would make it impossible to hand someone the form
+// they are supposed to fill in. Everything that reaches disk still goes
+// through MarshalDocument.
+func MarshalTemplate(doc Document) ([]byte, error) {
+	doc.Normalize()
+	var buf bytes.Buffer
+	enc := json.NewEncoder(&buf)
+	enc.SetEscapeHTML(false)
+	enc.SetIndent("", "  ")
+	if err := enc.Encode(doc); err != nil {
+		return nil, camperrors.Wrap(err, "encode "+doc.kind()+" template")
+	}
+	return buf.Bytes(), nil
+}
+
 // MarshalLine encodes doc as one JSONL record: compact, HTML escaping off,
 // exactly one trailing newline. Used for the append-only streams
 // (decisions.jsonl, receipts.jsonl).
