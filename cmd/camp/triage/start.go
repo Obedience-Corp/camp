@@ -48,6 +48,8 @@ type startResult struct {
 	RunDir              string          `json:"run_dir"`
 	WorkflowDoc         string          `json:"workflow_doc,omitempty"`
 	ScaffoldWorkflowDoc bool            `json:"scaffold_workflow_doc"`
+	// DriverDoc is the generated agent brief for this run.
+	DriverDoc string `json:"driver_doc"`
 }
 
 type startOptions struct {
@@ -226,6 +228,14 @@ func runStart(cmd *cobra.Command, opts *startOptions) error {
 		}
 		result.WorkflowDoc = relativeRunDir(root, written)
 	}
+
+	// The agent brief: a self-contained document any agentic CLI can execute
+	// against this run, naming this run's id in every command.
+	driver, err := triage.WriteDriver(ctx, run, profile)
+	if err != nil {
+		return err
+	}
+	result.DriverDoc = relativeRunDir(root, driver)
 
 	if opts.jsonOut {
 		return writeJSON(cmd.OutOrStdout(), result)
