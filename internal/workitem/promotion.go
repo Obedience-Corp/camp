@@ -52,7 +52,12 @@ func recordLifecycleFields(ctx context.Context, root, relPath string, fields []F
 		return camperrors.Wrapf(err, "parse %s", abs)
 	}
 	for _, f := range fields {
-		if err := insertScalarAfter(&doc, f.After, f.Key, f.Value); err != nil {
+		// Node-shaped rather than scalar-only: split stamps a list
+		// (split_into) onto the parent's marker, and a parallel writer for
+		// that one key would mean two pieces of code deciding how camp's
+		// frontmatter is edited. FrontmatterField.node() already picks the
+		// right shape, which is what the file-backed path has always used.
+		if err := insertNodeAfter(&doc, f.After, f.Key, f.node()); err != nil {
 			return err
 		}
 	}

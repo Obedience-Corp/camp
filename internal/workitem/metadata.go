@@ -77,6 +77,21 @@ type Metadata struct {
 	// separate operational link registry (primary/worktree/blocked_by/supersedes).
 	// See workflow/design/workitem-schema-tags-and-projects/04-projects-and-links.md.
 	Projects []string `yaml:"projects,omitempty"`
+	// SplitInto lists the stable ids of the successors this workitem was
+	// split into by `camp workitem split`. Its presence arms the retirement
+	// gate: the parent refuses terminal promotion until every id here is
+	// discoverable. Added in v1alpha8; omitempty, so a workitem that was
+	// never split serializes exactly as before.
+	SplitInto []string `yaml:"split_into,omitempty"`
+	// SplitAt is the RFC3339 UTC timestamp of the split. Added in v1alpha8.
+	SplitAt string `yaml:"split_at,omitempty"`
+	// SplitFrom names the parent this workitem was split out of, the
+	// back-link that makes the lineage readable from either end. Added in
+	// v1alpha8.
+	//
+	// Lineage lives here rather than in links.yaml because that registry
+	// attaches workitems to scopes (projects, worktrees), not to each other.
+	SplitFrom string `yaml:"split_from,omitempty"`
 }
 
 // LoadMetadata reads .workitem from dir on the host filesystem.

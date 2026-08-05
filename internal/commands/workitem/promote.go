@@ -191,6 +191,21 @@ func runWorkitemPromote(cmd *cobra.Command, opts runWorkitemPromoteOptions) (*wo
 		From:   filepath.ToSlash(dungeoncmd.RelFromRoot(root, loc.SourcePath)),
 	}
 
+	// The retirement gate. A parent that declared successors does not retire
+	// until they exist — the successors-before-archive invariant the field
+	// trial enforced as prose, made mechanical. It lives here, in the promote
+	// path, beside the other readiness checks, because that is the one place
+	// every terminal promotion passes through regardless of who called it.
+	//
+	// Checked BEFORE the dry-run branch: a dry-run that reports "would
+	// promote" while the real command would refuse is worse than no dry-run,
+	// because it is the output an operator trusts to avoid surprises.
+	if isTerminalTarget(opts.Target) && !opts.Force {
+		if err := checkSplitGate(ctx, cfg, root, loc); err != nil {
+			return nil, err
+		}
+	}
+
 	if opts.DryRun {
 		if opts.JSON {
 			return &result, emitPromoteJSON(cmd, result)
@@ -278,6 +293,43 @@ func PromoteWorkitem(ctx context.Context, out io.Writer, stableID, target string
 		From:       result.From,
 		Committed:  result.Committed,
 	}, nil
+}
+
+// isTerminalTarget reports whether a promote target retires a workitem.
+func isTerminalTarget(target string) bool {
+	switch target {
+	case "completed", "archived", "someday":
+		return true
+	}
+	return false
+}
+
+// checkSplitGate refuses a terminal promotion whose declared successors are
+// not all discoverable.
+//
+// Existence, not content: whether a successor adequately captures the parent's
+// scope is the split author's judgment, reviewed like any other work. Camp
+// verifies the trail, not the prose.
+func checkSplitGate(ctx context.Context, cfg *config.CampaignConfig, root string, loc *locate.Location) error {
+	meta, err := wkitem.LoadMetadata(ctx, loc.SourcePath)
+	if err != nil || meta == nil {
+		// A workitem with no readable marker never declared successors, so
+		// there is no gate to enforce. Promote's own checks own that case.
+		return nil
+	}
+	declared := wkitem.SplitIntoOf(meta)
+	if len(declared) == 0 {
+		return nil
+	}
+
+	discovered, err := discoveredIDs(ctx, root, cfg)
+	if err != nil {
+		return err
+	}
+	if missing := wkitem.MissingSuccessors(declared, discovered); len(missing) > 0 {
+		return wkitem.SplitGateError(meta.ID, missing)
+	}
+	return nil
 }
 
 // printReleasedLinks names every link promote dropped and how to restore it.

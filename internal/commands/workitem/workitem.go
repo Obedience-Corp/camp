@@ -157,6 +157,7 @@ Examples:
 	cmd.AddCommand(newDoctorCommand())
 	cmd.AddCommand(newValidateCommand())
 	cmd.AddCommand(newRepairCommand())
+	cmd.AddCommand(newSplitCommand())
 	cmd.AddCommand(newCommitCommand())
 	cmd.AddCommand(newCommitsCommand())
 	cmd.AddCommand(newListCommand())
