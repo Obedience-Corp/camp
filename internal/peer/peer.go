@@ -10,7 +10,9 @@
 package peer
 
 import (
+	"bytes"
 	"context"
+	"errors"
 	"os"
 	"os/exec"
 	"path"
@@ -177,6 +179,46 @@ func (s *Source) Fetch(ctx context.Context, dir, relPath string) error {
 		return camperrors.Wrapf(err, "peer fetch %q from %s: %s", relPath, s.id, strings.TrimSpace(string(output)))
 	}
 	return nil
+}
+
+// RunShell executes a POSIX shell script on the machine hosting this source and
+// returns its stdout. ssh sources ride the machine's existing ControlMaster
+// options, so a probe costs one multiplexed round-trip and no extra auth, and
+// remote.Run's bound means an unreachable peer surfaces as a typed error rather
+// than a hang. Filesystem sources run the same script locally through /bin/sh,
+// so both source kinds answer the same questions the same way and callers do
+// not branch on source kind.
+//
+// stdout is returned verbatim: a login shell may print a banner before the
+// script runs, so callers must frame their own output rather than assume the
+// first byte is theirs.
+func (s *Source) RunShell(ctx context.Context, script string) ([]byte, error) {
+	if ctx.Err() != nil {
+		return nil, ctx.Err()
+	}
+	if s.target != "" {
+		return remote.Run(ctx, s.target, s.sshOpts, remote.LoginShellCommand(script))
+	}
+
+	ctx, cancel := context.WithTimeout(ctx, remote.DefaultTimeout)
+	defer cancel()
+	cmd := exec.CommandContext(ctx, "sh", "-c", script)
+	var stdout, stderr bytes.Buffer
+	cmd.Stdout = &stdout
+	cmd.Stderr = &stderr
+	if err := cmd.Run(); err != nil {
+		trimmed := strings.TrimSpace(stderr.String())
+		if ctx.Err() != nil {
+			return nil, camperrors.Wrapf(ctx.Err(), "shell on peer %s timed out", s.id)
+		}
+		exitCode := 0
+		var exitErr *exec.ExitError
+		if errors.As(err, &exitErr) {
+			exitCode = exitErr.ExitCode()
+		}
+		return nil, camperrors.NewCommand("sh -c (peer "+s.id+")", exitCode, trimmed, err)
+	}
+	return stdout.Bytes(), nil
 }
 
 // SSHCommandFor builds the `-e` value for a copy to m: the ssh binary plus the
