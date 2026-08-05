@@ -12,8 +12,9 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-// seedIntent captures an intent through the real CLI and returns the bare
-// frontmatter id `camp workitem id` reports for it.
+// seedIntent captures an intent through the real CLI and returns its bare
+// frontmatter id, read back from `camp workitem --json` rather than parsed out
+// of the create output.
 func seedIntent(t *testing.T, tc *TestContainer, dir, title string) string {
 	t.Helper()
 	out, err := tc.RunCampInDir(dir, "intent", "add", title, "--no-commit")
