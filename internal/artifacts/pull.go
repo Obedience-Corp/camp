@@ -16,6 +16,7 @@ import (
 	camperrors "github.com/Obedience-Corp/camp/internal/errors"
 	"github.com/Obedience-Corp/camp/internal/fsutil"
 	"github.com/Obedience-Corp/camp/internal/peer"
+	"github.com/Obedience-Corp/camp/internal/rsyncprobe"
 )
 
 // PullResult is the outcome of pulling one artifact root from a peer. JSON
@@ -46,6 +47,13 @@ type PullResult struct {
 	SkippedConflicts []string `json:"skippedConflicts,omitempty"`
 	// Warning carries a non-fatal transfer problem; the sync itself proceeds.
 	Warning string `json:"warning,omitempty"`
+	// Engine names the transfer engine that ran: "rsync-delta" or
+	// "whole-file". Reported because the two differ only in speed, so without
+	// it a slow sync is indistinguishable from a slow network.
+	Engine string `json:"engine,omitempty"`
+	// EngineReason explains a whole-file choice (which end, and why). Empty
+	// when the delta engine ran.
+	EngineReason string `json:"engineReason,omitempty"`
 }
 
 // excludeFromThreshold is where the exclude list moves from argv to a file:
@@ -63,14 +71,26 @@ const excludeFromThreshold = 20
 // untouched and reported, never clobbered. On success, the agreed state is
 // snapshotted as the new baseline.
 func Pull(ctx context.Context, campaignRoot string, src *peer.Source, root Root) *PullResult {
+	return PullWithProber(ctx, campaignRoot, src, root, rsyncprobe.NewProber(false))
+}
+
+// PullWithProber is Pull with an explicit prober, so callers can honour
+// --no-probe-cache and tests can pin an engine without installing binaries.
+func PullWithProber(ctx context.Context, campaignRoot string, src *peer.Source, root Root, prober Prober) *PullResult {
 	result := &PullResult{Root: NormalizeRootPath(root.Path), Policy: root.EffectivePolicy()}
-	if err := pull(ctx, campaignRoot, src, result); err != nil {
+	if err := pull(ctx, campaignRoot, src, result, prober); err != nil {
 		result.Warning = err.Error()
 	}
 	return result
 }
 
-func pull(ctx context.Context, campaignRoot string, src *peer.Source, result *PullResult) error {
+// Prober answers which rsync runs on each end. Narrow interface so artifacts
+// depends on the question, not on the caching machinery behind it.
+type Prober interface {
+	Both(ctx context.Context, machineID string, src rsyncprobe.ShellRunner) (rsyncprobe.Pair, error)
+}
+
+func pull(ctx context.Context, campaignRoot string, src *peer.Source, result *PullResult, prober Prober) error {
 	if ctx.Err() != nil {
 		return ctx.Err()
 	}
@@ -147,9 +167,27 @@ func pull(ctx context.Context, campaignRoot string, src *peer.Source, result *Pu
 	}
 	defer func() { _ = os.RemoveAll(stagingDir) }()
 
+	// Which engine can be trusted is a property of the binaries on both ends,
+	// so it is probed rather than assumed. A probe failure is not fatal: it
+	// selects the honest slower path.
+	pair, probeErr := prober.Both(ctx, src.ID(), src)
+	engine := engineFor(pair, probeErr)
+	result.Engine = engine.name
+	result.EngineReason = engine.reason
+
+	// The partial directory lives beside the staging tree, never inside it:
+	// the merge step treats every regular file under staging as a complete
+	// artifact.
+	partialDir := stagingDir + "-partial"
+	if err := os.RemoveAll(partialDir); err != nil {
+		return camperrors.Wrap(err, "clear rsync partial dir")
+	}
+	defer func() { _ = os.RemoveAll(partialDir) }()
+
 	// Send paths through rsync's protocol so spaces and shell metacharacters do
 	// not depend on remote-shell parsing.
 	args := []string{"-a", "-s", "--no-links", "--compare-dest=" + destAbs}
+	args = append(args, engine.stagingArgs(partialDir)...)
 	if sshCmd := src.SSHCommand(); sshCmd != "" {
 		args = append(args, "-e", sshCmd)
 	}

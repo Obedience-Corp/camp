@@ -92,12 +92,12 @@ func (p *Prober) Local(ctx context.Context) (Engine, error) {
 }
 
 // Peer returns machineID's engine, cached. src is only consulted on a miss.
-func (p *Prober) Peer(ctx context.Context, machineID string, src shellRunner) (Engine, error) {
+func (p *Prober) Peer(ctx context.Context, machineID string, src ShellRunner) (Engine, error) {
 	return p.cached(ctx, machineID, func() (Engine, error) { return ProbePeer(ctx, src) })
 }
 
 // Both returns the pair a transfer needs to decide delta versus whole-file.
-func (p *Prober) Both(ctx context.Context, machineID string, src shellRunner) (Pair, error) {
+func (p *Prober) Both(ctx context.Context, machineID string, src ShellRunner) (Pair, error) {
 	local, err := p.Local(ctx)
 	if err != nil {
 		return Pair{}, err

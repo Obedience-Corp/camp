@@ -13,6 +13,7 @@ import (
 	"github.com/Obedience-Corp/camp/internal/artifacts"
 	camperrors "github.com/Obedience-Corp/camp/internal/errors"
 	"github.com/Obedience-Corp/camp/internal/git"
+	"github.com/Obedience-Corp/camp/internal/rsyncprobe"
 )
 
 // Sync performs safe submodule synchronization.
@@ -148,6 +149,7 @@ func (s *Syncer) pullArtifacts(ctx context.Context, result *SyncResult) {
 			Cause: camperrors.New("artifact sync needs a peer (--from <machine>)")})
 		return
 	}
+	prober := rsyncprobe.NewProber(s.options.NoProbeCache)
 	cfg, err := artifacts.Load(s.repoRoot)
 	if err != nil {
 		// A default `--from` sync degrades artifact failures to warnings (the
@@ -182,7 +184,7 @@ func (s *Syncer) pullArtifacts(ctx context.Context, result *SyncResult) {
 		if !s.options.ArtifactsOnly && root.EffectivePolicy() != artifacts.PolicyAlways {
 			continue
 		}
-		pr := artifacts.Pull(ctx, s.repoRoot, s.peer, root)
+		pr := artifacts.PullWithProber(ctx, s.repoRoot, s.peer, root, prober)
 		result.Artifacts = append(result.Artifacts, pr)
 		// The top-of-loop guard cannot catch a cancellation that lands during
 		// this root's transfer (the last root has no next iteration), so

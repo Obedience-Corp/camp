@@ -221,16 +221,16 @@ func ProbeLocal(ctx context.Context) (Engine, error) {
 	return ParseVersion(binary, string(out)), nil
 }
 
-// shellRunner runs a shell script somewhere and returns its stdout. Injected so
+// ShellRunner runs a shell script somewhere and returns its stdout. Injected so
 // the peer probe is exercised without ssh; *peer.Source satisfies it.
-type shellRunner interface {
+type ShellRunner interface {
 	RunShell(ctx context.Context, script string) ([]byte, error)
 }
 
 // ProbePeer interrogates the rsync a peer would execute, in one round-trip over
 // the connection camp already holds open. An unreachable peer is an error; a
 // peer with no rsync is an absent engine.
-func ProbePeer(ctx context.Context, src shellRunner) (Engine, error) {
+func ProbePeer(ctx context.Context, src ShellRunner) (Engine, error) {
 	if ctx.Err() != nil {
 		return Engine{}, ctx.Err()
 	}
