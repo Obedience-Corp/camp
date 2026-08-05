@@ -24,9 +24,8 @@ import (
 // short-circuits cwd-based resolution.
 func resolveProjectCommitContext(ctx context.Context, campaignRoot, cwd, explicit string) (questID, festivalRef, workitemRef string) {
 	res, err := resolver.Resolve(ctx, campaignRoot, resolver.Options{
-		Explicit:       explicit,
-		Cwd:            cwd,
-		DisableCurrent: true,
+		Explicit: explicit,
+		Cwd:      cwd,
 	})
 	if err != nil || res == nil || res.Workitem == nil {
 		return "", "", ""
@@ -44,9 +43,8 @@ func resolveProjectCommitContext(ctx context.Context, campaignRoot, cwd, explici
 // workitem context resolves.
 func workitemEnvForProjectCommit(ctx context.Context, campaignRoot, cwd, explicit string) []string {
 	res, err := resolver.Resolve(ctx, campaignRoot, resolver.Options{
-		Explicit:       explicit,
-		Cwd:            cwd,
-		DisableCurrent: true,
+		Explicit: explicit,
+		Cwd:      cwd,
 	})
 	if err != nil || res == nil || res.Workitem == nil {
 		return nil

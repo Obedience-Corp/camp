@@ -21,7 +21,6 @@ type promoteJSON struct {
 	To                  string `json:"to"`
 	Committed           bool   `json:"committed"`
 	ReleasedPriorityKey string `json:"released_priority_key"`
-	ClearedCurrent      bool   `json:"cleared_current"`
 	ReleasedLinks       []struct {
 		ID        string `json:"id"`
 		ScopePath string `json:"scope_path"`
@@ -93,8 +92,6 @@ func TestRailExit_CompletionReleasesPathState(t *testing.T) {
 	require.NoError(t, err, "link: %s", out)
 	out, err = tc.RunCampInDir(path, "workitem", "priority", "design-rail-feature-fixed", "high")
 	require.NoError(t, err, "priority: %s", out)
-	out, err = tc.RunCampInDir(path, "workitem", "current", "design-rail-feature-fixed")
-	require.NoError(t, err, "current: %s", out)
 
 	before, err := tc.ReadFile(path + "/.campaign/settings/workitems.json")
 	require.NoError(t, err)
@@ -104,7 +101,6 @@ func TestRailExit_CompletionReleasesPathState(t *testing.T) {
 
 	assert.Equal(t, "design:festivals/active/rail-feature", res.ReleasedPriorityKey,
 		"the stranded priority key should be reported, not silently dropped")
-	assert.True(t, res.ClearedCurrent, "a current pointer at a shelved item must be cleared")
 	assert.NotEmpty(t, res.ReleasedLinks, "links should be released on shelve")
 
 	links, err := tc.ReadFile(path + "/.campaign/workitems/links.yaml")

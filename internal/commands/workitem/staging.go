@@ -188,8 +188,8 @@ func ComputePlan(ctx context.Context, campaignRoot string, opts PlanOptions) (*S
 	case resolver.SourceFestival:
 		return computeFestivalPlan(ctx, campaignRoot, opts, plan, festivalID)
 	default:
-		// SourceExplicit, SourceAncestor, SourceCurrent — all stage from the
-		// campaign root scoped to the workitem directory.
+		// SourceExplicit and SourceAncestor stage from the campaign root
+		// scoped to the workitem directory.
 		return computeWorkitemDirPlan(ctx, campaignRoot, opts, plan, res.Source)
 	}
 }

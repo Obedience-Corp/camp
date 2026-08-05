@@ -109,10 +109,6 @@ func migrateRailReferences(ctx context.Context, root, oldKey, newKey, oldRel, ne
 	if err != nil {
 		warn("re-home workitem links: %v", err)
 	}
-
-	if _, err := migrateRenameCurrent(ctx, root, oldKey, newKey); err != nil {
-		warn("update current workitem selection: %v", err)
-	}
 	return linksChanged
 }
 
@@ -122,8 +118,8 @@ func migrateRailReferences(ctx context.Context, root, oldKey, newKey, oldRel, ne
 //
 // An existing marker is repaired, not trusted: the path type is authoritative
 // because migrateRailReferences keys the move on loc.Type while resolution after
-// the move reads the marker, so a disagreeing marker would leave priority,
-// links, and current pointing at a key no rail command resolves. An unparseable
+// the move reads the marker, so a disagreeing marker would leave priority
+// and links pointing at a key no rail command resolves. An unparseable
 // marker fails the promote before anything moves.
 //
 // Repair goes through the doctor --fix planner and is idempotent.

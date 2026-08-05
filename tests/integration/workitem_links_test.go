@@ -117,16 +117,6 @@ func TestIntegration_LinkJSONContracts(t *testing.T) {
 	assert.Equal(t, "project", linksPayload.Links[0].Scope.Kind)
 	assert.NotContains(t, out, "WorkitemID")
 
-	out, err = tc.RunCampInDir(dir, "workitem", "current", "timeline", "--json")
-	require.NoError(t, err, "workitem current --json: %s", out)
-	var currentPayload struct {
-		Current struct {
-			WorkitemID string `json:"workitem_id"`
-		} `json:"current"`
-	}
-	require.NoError(t, json.Unmarshal([]byte(out), &currentPayload), "raw=%s", out)
-	assert.Equal(t, linkPayload.Link.WorkitemID, currentPayload.Current.WorkitemID)
-	assert.NotContains(t, out, "WorkitemID")
 }
 
 func TestIntegration_LinkJSONErrorEnvelope(t *testing.T) {
@@ -208,25 +198,50 @@ func TestIntegration_ResolverTiers(t *testing.T) {
 	src, _ = extractResolveSource(t, out)
 	assert.Equal(t, "festival", src, "festival tier should win when explicit/ancestor/link miss")
 
-	// Tier 5 (current): clear other links, set current, resolve from docs/.
+	// Tier 5 (none): no explicit/ancestor/link/festival context remains.
+	// The former current.yaml tier was removed; resolve from an unlinked path.
 	_, err = tc.RunCampInDir(dir, "workitem", "unlink", "timeline", "--all")
-	require.NoError(t, err)
-	_, err = tc.RunCampInDir(dir, "workitem", "current", "timeline")
 	require.NoError(t, err)
 	_, _, err = tc.ExecCommand("mkdir", "-p", dir+"/docs")
 	require.NoError(t, err)
 	out, err = tc.RunCampInDir(dir+"/docs", "workitem", "resolve", "--json")
 	require.NoError(t, err)
 	src, _ = extractResolveSource(t, out)
-	assert.Equal(t, "current", src)
-
-	// Tier 6 (none): clear current.
-	_, err = tc.RunCampInDir(dir, "workitem", "current", "--clear")
-	require.NoError(t, err)
-	out, err = tc.RunCampInDir(dir+"/docs", "workitem", "resolve", "--json")
-	require.NoError(t, err)
-	src, _ = extractResolveSource(t, out)
 	assert.Equal(t, "none", src)
+}
+
+// Legacy `camp workitem current --json` must not fall through to the parent
+// list command (which would exit 0 with a workitems/v1alpha10 payload).
+// The subcommand is gone; the parent rejects positionals, so this fails.
+func TestIntegration_CurrentRemovedLegacyArgv(t *testing.T) {
+	tc := GetSharedContainer(t)
+	dir := "/test/workitem-current-removed"
+	initLinksCampaign(t, tc, dir)
+
+	stdoutPath := "/tmp/workitem-current-removed-stdout"
+	stderrPath := "/tmp/workitem-current-removed-stderr"
+	_, code, err := tc.ExecCommand("sh", "-c",
+		"cd "+dir+" && /camp --no-color workitem current --json >"+stdoutPath+" 2>"+stderrPath)
+	require.NoError(t, err)
+	require.NotEqual(t, 0, code, "legacy current argv must not succeed")
+
+	stdout, err := tc.ReadFile(stdoutPath)
+	require.NoError(t, err)
+	assert.Empty(t, stdout, "removed command must not emit a list payload")
+	stderr, err := tc.ReadFile(stderrPath)
+	require.NoError(t, err)
+
+	var envelope struct {
+		SchemaVersion string `json:"schema_version"`
+		Error         struct {
+			Message  string `json:"message"`
+			ExitCode int    `json:"exit_code"`
+		} `json:"error"`
+	}
+	require.NoError(t, json.Unmarshal([]byte(stderr), &envelope), "stderr=%s", stderr)
+	assert.Equal(t, "workitems/v1alpha10", envelope.SchemaVersion)
+	assert.Contains(t, envelope.Error.Message, `unknown command "current"`)
+	assert.Equal(t, code, envelope.Error.ExitCode)
 }
 
 func TestIntegration_ResolverQuestID(t *testing.T) {

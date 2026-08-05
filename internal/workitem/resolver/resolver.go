@@ -25,7 +25,6 @@ const (
 	SourceAncestor Source = "ancestor"
 	SourceLink     Source = "link"
 	SourceFestival Source = "festival"
-	SourceCurrent  Source = "current"
 	SourceNone     Source = "none"
 )
 
@@ -35,10 +34,6 @@ type Options struct {
 	Cwd        string
 	FestivalID string
 	AllowFuzzy bool
-	// DisableCurrent prevents the per-machine current.yaml fallback. Generic
-	// commit wrappers use this to avoid silently attributing unrelated changes
-	// to a stale session-wide workitem selection.
-	DisableCurrent bool
 }
 
 // TraceStep records what one tier of the resolver did. Surfaced via --json
@@ -58,7 +53,7 @@ type Resolution struct {
 	Trace    []TraceStep        `json:"trace"`
 }
 
-// Resolve runs the six-tier pipeline and returns the first match (or a
+// Resolve runs the five-tier pipeline and returns the first match (or a
 // Resolution with Source=none when no tier matches).
 func Resolve(ctx context.Context, root string, opts Options) (*Resolution, error) {
 	if err := ctx.Err(); err != nil {
@@ -85,12 +80,6 @@ func Resolve(ctx context.Context, root string, opts Options) (*Resolution, error
 	}
 
 	result := &Resolution{Source: SourceNone, Reason: "no tier matched"}
-	currentTier := func() (*workitem.WorkItem, TraceStep, error) {
-		if opts.DisableCurrent {
-			return nil, TraceStep{Tier: SourceCurrent, Result: "skip", Detail: "current.yaml disabled by caller"}, nil
-		}
-		return resolveCurrent(ctx, root)
-	}
 	tiers := []resolveTier{
 		{SourceExplicit, func() (*workitem.WorkItem, TraceStep, error) {
 			return resolveExplicit(ctx, root, opts)
@@ -104,7 +93,6 @@ func Resolve(ctx context.Context, root string, opts Options) (*Resolution, error
 		{SourceFestival, func() (*workitem.WorkItem, TraceStep, error) {
 			return resolveFestival(ctx, root, opts.FestivalID)
 		}, ""},
-		{SourceCurrent, currentTier, ""},
 	}
 	for _, tier := range tiers {
 		wi, step, err := tier.fn()
@@ -304,36 +292,6 @@ func resolveFestival(ctx context.Context, root, festivalID string) (*workitem.Wo
 		}
 	}
 	return nil, TraceStep{Tier: SourceFestival, Result: "miss", Detail: "no festival link matches " + festivalID}, nil
-}
-
-func resolveCurrent(ctx context.Context, root string) (*workitem.WorkItem, TraceStep, error) {
-	cur, err := links.LoadCurrent(ctx, root)
-	if err != nil {
-		return nil, TraceStep{Tier: SourceCurrent, Result: "error", Detail: err.Error()},
-			camperrors.Wrap(err, "load current.yaml")
-	}
-	if cur == nil {
-		return nil, TraceStep{Tier: SourceCurrent, Result: "skip", Detail: "no current.yaml"}, nil
-	}
-	wi, err := selector.Resolve(ctx, root, cur.WorkitemID, selector.ResolveOptions{})
-	if err != nil {
-		// Stale current selection: file points to a workitem that no
-		// longer exists. Record the diagnostic and let the orchestrator
-		// fall through; current is the lowest-priority tier so any
-		// match below it (none in practice today) would be acceptable.
-		// Any other failure is operational.
-		if errors.Is(err, selector.ErrSelectorNotFound) {
-			return nil, TraceStep{
-				Tier:   SourceCurrent,
-				Result: "error",
-				Detail: "current.yaml points to missing workitem " + cur.WorkitemID,
-			}, nil
-		}
-		detail := "current.yaml could not resolve workitem " + cur.WorkitemID + ": " + err.Error()
-		return nil, TraceStep{Tier: SourceCurrent, Result: "error", Detail: detail},
-			camperrors.NewValidation("current_workitem", detail, err)
-	}
-	return wi, TraceStep{Tier: SourceCurrent, Result: "match", Detail: "via current.yaml"}, nil
 }
 
 func pathMatchesPrefix(cwdRel, scopePath string) bool {

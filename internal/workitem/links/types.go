@@ -1,9 +1,9 @@
 // Package links implements the workitem link registry at
-// `.campaign/workitems/links.yaml` plus the local `current.yaml` selection.
+// `.campaign/workitems/links.yaml`.
 //
-// The types in this package mirror the persisted links.yaml and current.yaml
-// schema. Validation rules live in validate.go. Persistence (with file locking
-// and atomic rename) lives in load.go / save.go. The package reuses
+// The types in this package mirror the persisted links.yaml schema. Validation
+// rules live in validate.go. Persistence (with file locking and atomic rename)
+// lives in load.go / save.go. The package reuses
 // `internal/quest/link.go::ValidateLinkPath` for campaign-root containment.
 package links
 
@@ -14,8 +14,7 @@ import (
 
 // Schema versions are immutable strings persisted in YAML.
 const (
-	LinksSchemaVersion   = "workitem-links/v1alpha1"
-	CurrentSchemaVersion = "workitem-current/v1alpha1"
+	LinksSchemaVersion = "workitem-links/v1alpha1"
 )
 
 // LinkIDPattern is the regex form of a link ID: `lnk_<yyyymmdd>_<6 hex>`.
@@ -72,13 +71,6 @@ type Link struct {
 type Links struct {
 	Version string `yaml:"version" json:"version"`
 	Links   []Link `yaml:"links" json:"links"`
-}
-
-// Current is the top-level shape persisted to `current.yaml`.
-type Current struct {
-	Version    string    `yaml:"version" json:"version"`
-	WorkitemID string    `yaml:"workitem_id" json:"workitem_id"`
-	SelectedAt time.Time `yaml:"selected_at" json:"selected_at"`
 }
 
 // FindByID returns the link with the matching id and true; otherwise nil, false.

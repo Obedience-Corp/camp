@@ -110,12 +110,6 @@ func TestResolve_BrokenPrimaryLinkFallsThroughToLowerTier(t *testing.T) {
 	}); err != nil {
 		t.Fatalf("seed link: %v", err)
 	}
-	if err := links.SaveCurrent(context.Background(), root, &links.Current{
-		Version:    links.CurrentSchemaVersion,
-		WorkitemID: "design-example-2026-05-24",
-	}); err != nil {
-		t.Fatal(err)
-	}
 	if err := os.RemoveAll(filepath.Join(root, "workflow", "design", "example")); err != nil {
 		t.Fatal(err)
 	}
@@ -159,33 +153,6 @@ func TestResolve_AncestorBeatsLink(t *testing.T) {
 	}
 	if res.Source != resolver.SourceAncestor {
 		t.Fatalf("ancestor must beat link; got source=%s trace=%v", res.Source, res.Trace)
-	}
-}
-
-func TestResolve_CurrentTierFallback(t *testing.T) {
-	root := linkTestCampaign(t)
-	restore := chdir(t, root)
-	defer restore()
-
-	cur := &links.Current{
-		Version:    links.CurrentSchemaVersion,
-		WorkitemID: "design-example-2026-05-24",
-	}
-	if err := links.SaveCurrent(context.Background(), root, cur); err != nil {
-		t.Fatal(err)
-	}
-	// cd to a path with no .workitem ancestor and no link match.
-	otherDir := filepath.Join(root, "docs")
-	if err := os.MkdirAll(otherDir, 0o755); err != nil {
-		t.Fatal(err)
-	}
-
-	res, err := resolver.Resolve(context.Background(), root, resolver.Options{Cwd: otherDir})
-	if err != nil {
-		t.Fatalf("Resolve: %v", err)
-	}
-	if res.Source != resolver.SourceCurrent {
-		t.Fatalf("source = %s, want current; trace=%v", res.Source, res.Trace)
 	}
 }
 
@@ -354,97 +321,6 @@ func TestDoctorFixPrunesOrphanPriority(t *testing.T) {
 	}
 	if _, ok := store.ManualPriorities[testWorkitemKey]; !ok {
 		t.Fatalf("expected valid priority entry %s to remain", testWorkitemKey)
-	}
-}
-
-func TestDoctor_CurrentMissingIsWarning(t *testing.T) {
-	root := linkTestCampaign(t)
-	restore := chdir(t, root)
-	defer restore()
-
-	cur := &links.Current{
-		Version:    links.CurrentSchemaVersion,
-		WorkitemID: "design-gone-2026-05-24",
-	}
-	if err := links.SaveCurrent(context.Background(), root, cur); err != nil {
-		t.Fatal(err)
-	}
-
-	cmd := &cobra.Command{}
-	var stdout bytes.Buffer
-	cmd.SetOut(&stdout)
-	cmd.SetErr(&bytes.Buffer{})
-	if err := runDoctor(context.Background(), cmd, false, false); err != nil {
-		t.Fatalf("warning-only should exit 0: %v", err)
-	}
-	if !strings.Contains(stdout.String(), codeCurrentMissing) {
-		t.Fatalf("expected %s finding, got %q", codeCurrentMissing, stdout.String())
-	}
-}
-
-func TestDoctor_CurrentKeySelectionIsValid(t *testing.T) {
-	root := linkTestCampaign(t)
-	restore := chdir(t, root)
-	defer restore()
-
-	legacyDir := filepath.Join(root, "workflow", "design", "legacy")
-	if err := os.MkdirAll(legacyDir, 0o755); err != nil {
-		t.Fatal(err)
-	}
-	if err := os.WriteFile(filepath.Join(legacyDir, "README.md"), []byte("# Legacy\n"), 0o644); err != nil {
-		t.Fatal(err)
-	}
-	if err := links.SaveCurrent(context.Background(), root, &links.Current{
-		Version:    links.CurrentSchemaVersion,
-		WorkitemID: "design:workflow/design/legacy",
-	}); err != nil {
-		t.Fatal(err)
-	}
-
-	cmd := &cobra.Command{}
-	var stdout bytes.Buffer
-	cmd.SetOut(&stdout)
-	cmd.SetErr(&bytes.Buffer{})
-	if err := runDoctor(context.Background(), cmd, false, false); err != nil {
-		t.Fatalf("key-based current selection should be valid: %v\n%s", err, stdout.String())
-	}
-	if strings.Contains(stdout.String(), codeCurrentMissing) {
-		t.Fatalf("did not expect %s finding, got %q", codeCurrentMissing, stdout.String())
-	}
-}
-
-func TestDoctor_MalformedCurrentIsFixableSchemaFinding(t *testing.T) {
-	root := linkTestCampaign(t)
-	restore := chdir(t, root)
-	defer restore()
-
-	currentDir := filepath.Join(root, ".campaign", "workitems")
-	if err := os.MkdirAll(currentDir, 0o755); err != nil {
-		t.Fatal(err)
-	}
-	currentPath := filepath.Join(currentDir, "current.yaml")
-	if err := os.WriteFile(currentPath, []byte("version: not-supported\nworkitem_id: x\n"), 0o644); err != nil {
-		t.Fatal(err)
-	}
-
-	cmd := &cobra.Command{}
-	var stdout bytes.Buffer
-	cmd.SetOut(&stdout)
-	cmd.SetErr(&bytes.Buffer{})
-	err := runDoctor(context.Background(), cmd, false, false)
-	if err == nil {
-		t.Fatal("expected malformed current.yaml to produce error finding")
-	}
-	if !strings.Contains(stdout.String(), codeSchemaViolation) ||
-		!strings.Contains(stdout.String(), "current.yaml") {
-		t.Fatalf("expected current.yaml schema finding, got %q", stdout.String())
-	}
-
-	if err := runDoctor(context.Background(), newCmd(), false, true); err != nil {
-		t.Fatalf("doctor --fix should clear malformed current.yaml: %v", err)
-	}
-	if _, err := os.Stat(currentPath); !os.IsNotExist(err) {
-		t.Fatalf("current.yaml should be removed by --fix, stat err=%v", err)
 	}
 }
 

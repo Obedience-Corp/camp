@@ -28,9 +28,8 @@ func newPriorityCommand() *cobra.Command {
 		Short: "Set or clear the manual priority",
 		Long: `Set or clear the manual priority of a workitem.
 
-The selector accepts the same forms as 'camp workitem current': a stable
-.workitem id, the workitem key (<type>:<path>), a relative path, or a directory
-slug. Priority is one of high, medium, low, or clear (clear removes any manual
+The selector accepts a stable .workitem id, the workitem key (<type>:<path>),
+a relative path, or a directory slug. Priority is one of high, medium, low, or clear (clear removes any manual
 priority). Assignments persist in .campaign/settings/workitems.json, the same
 store the interactive dashboard writes.
 

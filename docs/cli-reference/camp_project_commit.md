@@ -11,7 +11,7 @@ or use --project to specify a project by name.
 
 Commit tags use explicit --workitem or context from the current path. They do
 not inherit the per-machine current workitem selection, which can be stale;
-use 'camp workitem commit' when you want current.yaml scoping.
+use --workitem or a primary workitem link for WI- tag scoping.
 
 Examples:
   # From within a project directory

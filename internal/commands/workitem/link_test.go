@@ -442,56 +442,6 @@ links:
 	}
 }
 
-func TestCurrent_SetGetClear(t *testing.T) {
-	root := linkTestCampaign(t)
-	restore := chdir(t, root)
-	defer restore()
-
-	cmd := newCmd()
-	var stdout bytes.Buffer
-	cmd.SetOut(&stdout)
-	cmd.SetErr(&bytes.Buffer{})
-
-	if err := runCurrent(context.Background(), cmd, "", false, false); err != nil {
-		t.Fatalf("runCurrent empty get: %v", err)
-	}
-	if !strings.Contains(stdout.String(), "no current workitem") {
-		t.Fatalf("empty get output = %q", stdout.String())
-	}
-
-	stdout.Reset()
-	cmd.SetOut(&stdout)
-	if err := runCurrent(context.Background(), cmd, "design-example-2026-05-24", false, false); err != nil {
-		t.Fatalf("runCurrent set: %v", err)
-	}
-	if !strings.Contains(stdout.String(), "set current workitem") {
-		t.Fatalf("set output = %q", stdout.String())
-	}
-
-	stdout.Reset()
-	cmd.SetOut(&stdout)
-	if err := runCurrent(context.Background(), cmd, "", false, false); err != nil {
-		t.Fatalf("runCurrent get: %v", err)
-	}
-	if !strings.Contains(stdout.String(), "design-example-2026-05-24") {
-		t.Fatalf("get output = %q", stdout.String())
-	}
-
-	stdout.Reset()
-	cmd.SetOut(&stdout)
-	if err := runCurrent(context.Background(), cmd, "", true, false); err != nil {
-		t.Fatalf("runCurrent clear: %v", err)
-	}
-	if !strings.Contains(stdout.String(), "cleared") {
-		t.Fatalf("clear output = %q", stdout.String())
-	}
-
-	// Verify file is gone.
-	if _, err := os.Stat(filepath.Join(root, ".campaign", "workitems", "current.yaml")); !os.IsNotExist(err) {
-		t.Fatalf("current.yaml should not exist after --clear: err=%v", err)
-	}
-}
-
 func TestLink_CwdInfersScope(t *testing.T) {
 	root := linkTestCampaign(t)
 	// Run from inside projects/demo so --cwd picks it up as scope.

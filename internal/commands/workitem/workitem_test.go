@@ -460,7 +460,7 @@ func TestWorkitemSubcommandsStayRegisteredAndVisible(t *testing.T) {
 	cmd := NewWorkitemCommand()
 
 	want := []string{
-		"adopt", "commit", "commits", "create", "current", "demote", "doctor",
+		"adopt", "commit", "commits", "create", "demote", "doctor",
 		"group", "id", "link", "links", "list", "priority", "promote", "rename",
 		"repair", "resolve", "stage", "sweep", "unlink", "validate", "worktree",
 	}
@@ -479,5 +479,41 @@ func TestWorkitemSubcommandsStayRegisteredAndVisible(t *testing.T) {
 
 	if got := len(cmd.Commands()); got != len(want) {
 		t.Fatalf("registered subcommand count = %d, want %d", got, len(want))
+	}
+}
+
+func TestWorkitemRootRejectsPositionalArgs(t *testing.T) {
+	// Legacy `workitem current --json` must not succeed as a list query.
+	cmd := NewWorkitemCommand()
+	cmd.SetArgs([]string{"current", "--json"})
+	var stdout, stderr bytes.Buffer
+	cmd.SetOut(&stdout)
+	cmd.SetErr(&stderr)
+	err := cmd.Execute()
+	if err == nil {
+		t.Fatal("expected failure for removed/unknown positional current")
+	}
+	if stdout.Len() != 0 {
+		t.Fatalf("stdout = %q, want empty", stdout.String())
+	}
+
+	var envelope struct {
+		SchemaVersion string `json:"schema_version"`
+		Error         struct {
+			Message  string `json:"message"`
+			ExitCode int    `json:"exit_code"`
+		} `json:"error"`
+	}
+	if unmarshalErr := json.Unmarshal(stderr.Bytes(), &envelope); unmarshalErr != nil {
+		t.Fatalf("stderr is not a JSON error envelope: %v\n%s", unmarshalErr, stderr.String())
+	}
+	if envelope.SchemaVersion != wkitem.SchemaVersion {
+		t.Fatalf("schema_version = %q, want %q", envelope.SchemaVersion, wkitem.SchemaVersion)
+	}
+	if !strings.Contains(envelope.Error.Message, `unknown command "current"`) {
+		t.Fatalf("error.message = %q, want removed command called out", envelope.Error.Message)
+	}
+	if envelope.Error.ExitCode == 0 {
+		t.Fatal("error.exit_code must be non-zero")
 	}
 }

@@ -36,7 +36,6 @@ const (
 	codeWorkitemShelved          = "workitem.link.shelved"
 	codeDuplicatePrimary         = "workitem.link.duplicate-primary"
 	codeSchemaViolation          = "workitem.schema.violation"
-	codeCurrentMissing           = "workitem.current.missing"
 	codeMissingRefField          = "workitem.ref.missing"
 	codeWorkitemScanFailed       = "workitem.scan.failed"
 	codeRegistryParseError       = "workitem.registry.parse-error"
@@ -408,29 +407,6 @@ func collectWorkitemFindings(ctx context.Context, root string, registry *links.L
 		}
 	}
 
-	cur, err := links.LoadCurrent(ctx, root)
-	if err != nil {
-		findings = append(findings, docFinding{
-			Code:        codeSchemaViolation,
-			Severity:    docSeverityError,
-			Target:      "current:current.yaml",
-			Message:     "current.yaml cannot be loaded: " + err.Error(),
-			FixHint:     "auto-fix removes current.yaml",
-			AutoFixable: true,
-		})
-	} else if cur != nil {
-		if _, known := knownIDs[cur.WorkitemID]; !known {
-			findings = append(findings, docFinding{
-				Code:        codeCurrentMissing,
-				Severity:    docSeverityWarning,
-				Target:      "current:" + cur.WorkitemID,
-				Message:     "current.yaml points at workitem " + cur.WorkitemID + " which is not present on disk",
-				FixHint:     "auto-fix removes current.yaml",
-				AutoFixable: true,
-			})
-		}
-	}
-
 	sort.SliceStable(findings, func(i, j int) bool {
 		if findings[i].Code != findings[j].Code {
 			return findings[i].Code < findings[j].Code
@@ -461,16 +437,6 @@ func autoFixWorkitemFindings(ctx context.Context, root string, registry *links.L
 			id := strings.TrimPrefix(f.Target, "link:")
 			if registry.RemoveLinkByID(id) {
 				applied++
-			}
-		case codeCurrentMissing:
-			if err := links.SaveCurrent(ctx, root, nil); err == nil {
-				applied++
-			}
-		case codeSchemaViolation:
-			if f.Target == "current:current.yaml" {
-				if err := links.SaveCurrent(ctx, root, nil); err == nil {
-					applied++
-				}
 			}
 		case codeMissingRefField:
 			needsRefBackfill = true

@@ -96,12 +96,6 @@ func migrateRenameReferences(ctx context.Context, root string, plan *renamePlan,
 		warn("re-home workitem links: %v", err)
 	}
 	result.LinksUpdated = linksChanged
-
-	if updated, err := migrateRenameCurrent(ctx, root, plan.oldKey, plan.newKey); err != nil {
-		warn("update current workitem selection: %v", err)
-	} else {
-		result.CurrentUpdated = updated
-	}
 	return linksChanged
 }
 
@@ -144,24 +138,6 @@ func migrateRenameLinks(ctx context.Context, root, oldKey, newKey, oldRel, newRe
 		return false, err
 	}
 	return changed, nil
-}
-
-// migrateRenameCurrent updates current.yaml only when it referenced the old
-// path key. A pointer stored as a stable id needs no change because the rename
-// preserves the id; current.yaml is gitignored and is not staged.
-func migrateRenameCurrent(ctx context.Context, root, oldKey, newKey string) (bool, error) {
-	cur, err := links.LoadCurrent(ctx, root)
-	if err != nil {
-		return false, err
-	}
-	if cur == nil || cur.WorkitemID != oldKey {
-		return false, nil
-	}
-	cur.WorkitemID = newKey
-	if err := links.SaveCurrent(ctx, root, cur); err != nil {
-		return false, err
-	}
-	return true, nil
 }
 
 // stageAuditEvent appends the workitem-level move event and returns the ledger

@@ -4,7 +4,6 @@ import (
 	"bytes"
 	"context"
 	"errors"
-	"io/fs"
 	"os"
 	"strconv"
 	"time"
@@ -135,46 +134,6 @@ func QuarantineBroken(ctx context.Context, root string) (string, error) {
 		return quarantined, camperrors.Wrap(err, "write empty registry")
 	}
 	return quarantined, nil
-}
-
-// SaveCurrent writes `current.yaml` under a file lock. Passing nil clears
-// the file (removes it from disk); the directory is left in place.
-func SaveCurrent(ctx context.Context, root string, c *Current) error {
-	if err := ctx.Err(); err != nil {
-		return err
-	}
-	path := CurrentPath(root)
-
-	if c == nil {
-		if err := os.Remove(path); err != nil && !errors.Is(err, fs.ErrNotExist) {
-			return camperrors.Wrap(err, "remove current.yaml")
-		}
-		return nil
-	}
-
-	if c.Version == "" {
-		c.Version = CurrentSchemaVersion
-	}
-
-	data, err := marshalYAML(c)
-	if err != nil {
-		return camperrors.Wrap(err, "marshal current.yaml")
-	}
-
-	if err := os.MkdirAll(linksDir(root), 0o755); err != nil {
-		return camperrors.Wrap(err, "create links dir")
-	}
-
-	release, err := fsutil.AcquireFileLock(ctx, path+".lock")
-	if err != nil {
-		return err
-	}
-	defer release()
-
-	if err := fsutil.WriteFileAtomically(path, data, 0o644); err != nil {
-		return camperrors.Wrap(err, "write current.yaml")
-	}
-	return nil
 }
 
 // marshalYAML encodes value as YAML with 2-space indent and a trailing
