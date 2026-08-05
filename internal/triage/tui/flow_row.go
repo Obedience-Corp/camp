@@ -9,7 +9,7 @@ import (
 )
 
 // rowStep renders screen 3 and records the verdict its keystroke chose.
-func (f *Flow) rowStep(ctx context.Context, lane triage.Lane, row triage.LaneRow, result *Result) (bool, error) {
+func (f *Flow) rowStep(ctx context.Context, lane triage.Lane, row triage.LaneRow, result *Result, skipped map[string]bool) (bool, error) {
 	run, _, _, err := f.load(ctx)
 	if err != nil {
 		return false, err
@@ -73,7 +73,10 @@ func (f *Flow) rowStep(ctx context.Context, lane triage.Lane, row triage.LaneRow
 		f.writeEvidence(evidence)
 		return false, nil
 	case actionSkip:
+		// Deferring, not deciding: nothing is recorded, and the lane stops
+		// offering this row for the rest of the visit.
 		result.Skipped++
+		skipped[row.Row.StableID] = true
 		return false, nil
 	case actionBack:
 		// esc records nothing, by contract.

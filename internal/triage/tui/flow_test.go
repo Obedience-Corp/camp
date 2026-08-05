@@ -376,3 +376,73 @@ func TestOrderPutsTerminalLanesLast(t *testing.T) {
 	assert.Contains(t, offeredLabels(prompt.SeenActions[0]), "Review next lane - Park for later",
 		"the non-terminal lane is offered first")
 }
+
+// TestSkipAdvancesToTheNextRow is the bug a pty run surfaced: skipping records
+// nothing by design, so without remembering the skip the lane kept offering
+// the same row as "next" and [s] was an infinite loop rather than
+// "decide later".
+func TestSkipAdvancesToTheNextRow(t *testing.T) {
+	ctx := context.Background()
+	store, run := flowFixture(t)
+
+	prompt := &scriptedPrompt{actions: []crawl.Action{
+		actionNextLane, // summary -> parked lane
+		actionNextLane, // open the first row
+		actionSkip,     // defer it
+		actionNextLane, // open the next row
+		actionApprove,  // decide that one
+		actionBack, actionQuit,
+	}}
+	result, err := newFlow(store, run, prompt, &bytes.Buffer{}).Run(ctx)
+
+	require.NoError(t, err)
+	assert.Equal(t, 1, result.Skipped)
+	assert.Equal(t, 1, result.Recorded)
+
+	// The approved row must be the second one, which is only reachable if the
+	// skip advanced past the first.
+	verdicts, err := store.Verdicts(ctx, run.ID)
+	require.NoError(t, err)
+	assert.Equal(t, triage.VerdictApproved, verdicts["design-park-b"].State,
+		"the skip advanced to the next row")
+	assert.Equal(t, triage.VerdictProposed, verdicts["design-park-a"].State,
+		"the skipped row is untouched, not decided")
+}
+
+// TestSkipRecordsNothing: deferring is not a verdict.
+func TestSkipRecordsNothing(t *testing.T) {
+	ctx := context.Background()
+	store, run := flowFixture(t)
+	before, err := store.Decisions(ctx, run.ID)
+	require.NoError(t, err)
+
+	prompt := &scriptedPrompt{actions: []crawl.Action{
+		actionNextLane, actionNextLane, actionSkip, actionBack, actionQuit,
+	}}
+	_, err = newFlow(store, run, prompt, &bytes.Buffer{}).Run(ctx)
+	require.NoError(t, err)
+
+	after, err := store.Decisions(ctx, run.ID)
+	require.NoError(t, err)
+	assert.Len(t, after, len(before), "a skip appends no event")
+}
+
+// TestLeavingTheLaneClearsSkips so "decide later" is actually reachable later.
+func TestLeavingTheLaneClearsSkips(t *testing.T) {
+	ctx := context.Background()
+	store, run := flowFixture(t)
+
+	prompt := &scriptedPrompt{actions: []crawl.Action{
+		actionNextLane, actionNextLane, actionSkip, // skip the first row
+		actionBack,     // back to summary, ending the lane visit
+		actionNextLane, // re-enter the lane
+		actionQuit,
+	}}
+	_, err := newFlow(store, run, prompt, &bytes.Buffer{}).Run(ctx)
+	require.NoError(t, err)
+
+	// The final lane prompt should offer the skipped row again.
+	last := prompt.SeenActions[len(prompt.SeenActions)-1]
+	assert.Contains(t, offeredLabels(last), "design-park-a",
+		"re-entering the lane offers the deferred row again")
+}

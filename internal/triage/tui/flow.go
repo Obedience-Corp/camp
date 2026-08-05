@@ -164,7 +164,14 @@ func (f *Flow) pickLane(ctx context.Context, lanes []triage.Lane) (*triage.Lane,
 }
 
 // laneStep renders screen 2 and walks its rows.
+//
+// Skips are remembered for the length of this lane visit. Skipping records
+// nothing by design, so without that memory the lane would keep offering the
+// same row as "next" and [s] would be an infinite loop rather than "decide
+// later". Leaving and re-entering the lane clears it, which is what makes
+// "later" reachable.
 func (f *Flow) laneStep(ctx context.Context, lane triage.Lane, result *Result) (bool, error) {
+	skipped := map[string]bool{}
 	for {
 		if err := ctx.Err(); err != nil {
 			return false, err
@@ -179,7 +186,7 @@ func (f *Flow) laneStep(ctx context.Context, lane triage.Lane, result *Result) (
 		}
 		f.write(Screen2(*current, 0))
 
-		pending := pendingRows(*current)
+		pending := unskipped(pendingRows(*current), skipped)
 		options := []crawl.Option{}
 		if len(pending) > 0 {
 			options = append(options, crawl.Option{
@@ -217,7 +224,8 @@ func (f *Flow) laneStep(ctx context.Context, lane triage.Lane, result *Result) (
 			if len(pending) == 0 {
 				return false, nil
 			}
-			quit, err := f.rowStep(ctx, *current, pending[0], result)
+			target := pending[0]
+			quit, err := f.rowStep(ctx, *current, target, result, skipped)
 			if err != nil || quit {
 				return quit, err
 			}
@@ -294,6 +302,17 @@ func reviewableLanes(lanes []triage.Lane) []triage.Lane {
 		normal = append(normal, lane)
 	}
 	return append(normal, terminal...)
+}
+
+// unskipped drops the rows this lane visit has already been asked to defer.
+func unskipped(rows []triage.LaneRow, skipped map[string]bool) []triage.LaneRow {
+	out := make([]triage.LaneRow, 0, len(rows))
+	for _, row := range rows {
+		if !skipped[row.Row.StableID] {
+			out = append(out, row)
+		}
+	}
+	return out
 }
 
 // pendingRows are the rows in a lane that still need a human verdict.
