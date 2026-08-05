@@ -220,7 +220,7 @@ func pickPrimaryProjectScopePath(ctx context.Context, root string, wi *wkitem.Wo
 		}
 	}
 	return "", camperrors.NewValidation("link",
-		"no primary project link points at workitem "+wi.StableID, nil)
+		"no primary project link points at workitem "+wkitem.LinkWorkitemID(wi), nil)
 }
 
 func primaryFestivalScopePath(ctx context.Context, root string, wi *wkitem.WorkItem, festivalID string) string {
