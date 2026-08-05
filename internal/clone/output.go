@@ -125,6 +125,13 @@ func (r *CloneResult) JSON() ([]byte, error) {
 	if len(r.Seed) > 0 {
 		seed := &SeedOutput{Repos: make([]SeedRepoOutput, 0, len(r.Seed))}
 		for _, s := range r.Seed {
+			// Mapped field by field rather than converted, even though the two
+			// types are currently convertible. SeedRepoOutput is a published
+			// wire contract and SeedRepoResult is internal state; a conversion
+			// would silently publish any field later added to the internal
+			// type. Same reason URLChange -> URLChangeOutput is spelled out
+			// just above.
+			//nolint:staticcheck // S1016: deliberate decoupling, see above.
 			seed.Repos = append(seed.Repos, SeedRepoOutput{
 				Repo: s.Repo, Method: s.Method, Reason: s.Reason,
 			})

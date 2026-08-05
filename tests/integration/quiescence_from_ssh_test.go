@@ -168,6 +168,35 @@ gitdir=$(git -C %s/projects/sub rev-parse --absolute-git-dir)
 	require.NotContains(t, strings.Join(sub.Reasons, "; "), "uncommitted changes")
 }
 
+// D006: a concurrent fetch holds a lock under refs/ while writing new objects
+// into the pack directory a cold seed copies, and the git dir's own *.lock glob
+// does not see it. The lock is created directly here because racing a real
+// fetch is not deterministic, and it is the lock's presence the contract acts on.
+func TestQuiescenceOverSSH_RefLockFailsThatRepo(t *testing.T) {
+	tc := GetSharedContainer(t)
+	ensurePeerAccount(t, tc)
+	registerLoopbackMachine(t, tc)
+
+	peerRoot := seedQuiescenceCampaign(t, tc, "quiescereflock")
+	peerSSH(t, tc, fmt.Sprintf(`
+set -e
+gitdir=$(git -C %s/projects/sub rev-parse --absolute-git-dir)
+mkdir -p "$gitdir/refs/heads"
+: > "$gitdir/refs/heads/main.lock"
+`, peerRoot))
+
+	report := collectQuiescence(t, tc, peerRoot)
+
+	require.False(t, report.Quiescent(), "a ref lock must block the byte copy (D006)")
+	requireVerdict(t, report, ".", true)
+	sub := requireVerdict(t, report, "projects/sub", false)
+	require.Contains(t, strings.Join(sub.Reasons, "; "), "main.lock",
+		"the verdict must name the ref lock so a stale lock is distinguishable from a live fetch: %v", sub.Reasons)
+
+	// The working tree is clean, so the ref lock alone disqualified it.
+	require.NotContains(t, strings.Join(sub.Reasons, "; "), "uncommitted changes")
+}
+
 func TestQuiescenceOverSSH_MidOperationRepoFails(t *testing.T) {
 	tc := GetSharedContainer(t)
 	ensurePeerAccount(t, tc)
