@@ -240,7 +240,7 @@ camp workitem resolve --explain
 # 5. Commits from within projects/myrepo now carry WI-<ref> automatically.
 camp workitem commit -m "refactor connection pool"
 
-# 7. When the work is done, remove the link.
+# 6. When the work is done, remove the link.
 camp workitem unlink --id lnk_20260524_ab12cd
 ```
 
@@ -266,6 +266,7 @@ Recovery options:
 ## Operational Notes
 
 - Link IDs are retried up to 32 times on collision before the command fails.
-  `camp init --repair` scaffolds.
+- `camp init --repair` keeps the workitems directory and gitignore rules
+  (including a legacy `workitems/current.yaml` ignore entry) in place.
 - The canonical example registry fixture validates against the same link
   schema used by the loader and doctor checks.

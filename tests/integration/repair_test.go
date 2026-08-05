@@ -237,4 +237,3 @@ func TestIntegration_InitRepair_AppendsCurrentYamlWhenCommentedOut(t *testing.T)
 		"after repair, git must actually ignore current.yaml; .gitignore is:\n%s\ncheck-ignore: %s",
 		after, checkOut)
 }
-

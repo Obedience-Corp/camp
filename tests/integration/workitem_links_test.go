@@ -198,25 +198,55 @@ func TestIntegration_ResolverTiers(t *testing.T) {
 	src, _ = extractResolveSource(t, out)
 	assert.Equal(t, "festival", src, "festival tier should win when explicit/ancestor/link miss")
 
-	// Tier 5 (current): clear other links, set current, resolve from docs/.
+	// Tier 5 (none): no explicit/ancestor/link/festival context remains.
+	// The former current.yaml tier was removed; resolve from an unlinked path.
 	_, err = tc.RunCampInDir(dir, "workitem", "unlink", "timeline", "--all")
-	require.NoError(t, err)
-	_, err = tc.RunCampInDir(dir, "workitem", "current", "timeline")
 	require.NoError(t, err)
 	_, _, err = tc.ExecCommand("mkdir", "-p", dir+"/docs")
 	require.NoError(t, err)
 	out, err = tc.RunCampInDir(dir+"/docs", "workitem", "resolve", "--json")
 	require.NoError(t, err)
 	src, _ = extractResolveSource(t, out)
-	assert.Equal(t, "current", src)
-
-	// Tier 6 (none): clear current.
-	_, err = tc.RunCampInDir(dir, "workitem", "current", "--clear")
-	require.NoError(t, err)
-	out, err = tc.RunCampInDir(dir+"/docs", "workitem", "resolve", "--json")
-	require.NoError(t, err)
-	src, _ = extractResolveSource(t, out)
 	assert.Equal(t, "none", src)
+}
+
+// Legacy `camp workitem current --json` must not fall through to the parent
+// list command (which would exit 0 with a workitems/v1alpha10 payload).
+func TestIntegration_CurrentRemovedLegacyArgv(t *testing.T) {
+	tc := GetSharedContainer(t)
+	dir := "/test/workitem-current-removed"
+	initLinksCampaign(t, tc, dir)
+
+	stdoutPath := "/tmp/workitem-current-removed-stdout"
+	stderrPath := "/tmp/workitem-current-removed-stderr"
+	_, code, err := tc.ExecCommand("sh", "-c",
+		"cd "+dir+" && /camp --no-color workitem current --json >"+stdoutPath+" 2>"+stderrPath)
+	require.NoError(t, err)
+	require.Equal(t, 2, code, "tombstone must exit 2, not 0")
+
+	stdout, err := tc.ReadFile(stdoutPath)
+	require.NoError(t, err)
+	assert.Empty(t, stdout, "error envelope belongs on stderr, not list payload: %s", stdout)
+	stderr, err := tc.ReadFile(stderrPath)
+	require.NoError(t, err)
+	assert.NotContains(t, stderr, `"schema_version": "workitems/v1alpha10"`,
+		"must not emit the parent list schema: %s", stderr)
+
+	var envelope struct {
+		SchemaVersion string `json:"schema_version"`
+		Error         struct {
+			Code     string `json:"code"`
+			Message  string `json:"message"`
+			Hint     string `json:"hint"`
+			ExitCode int    `json:"exit_code"`
+		} `json:"error"`
+	}
+	require.NoError(t, json.Unmarshal([]byte(stderr), &envelope), "stderr=%s", stderr)
+	assert.Equal(t, "workitem-current/v1alpha1", envelope.SchemaVersion)
+	assert.Equal(t, "validation_error", envelope.Error.Code)
+	assert.Equal(t, "camp workitem current was removed", envelope.Error.Message)
+	assert.Contains(t, envelope.Error.Hint, "camp workitem link")
+	assert.Equal(t, 2, envelope.Error.ExitCode)
 }
 
 func TestIntegration_ResolverQuestID(t *testing.T) {

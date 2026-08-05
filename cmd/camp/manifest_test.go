@@ -192,6 +192,7 @@ func TestManifestCommand_AllRestrictedCommandsPresent(t *testing.T) {
 		expectedCommands["workitem unlink"] = false
 		expectedCommands["workitem commit"] = false
 		expectedCommands["workitem commits"] = false
+		expectedCommands["workitem current"] = false
 		expectedCommands["workitem priority"] = false
 	}
 
@@ -311,6 +312,7 @@ func TestManifestCommand_InteractiveFlags(t *testing.T) {
 		nonInteractiveCommands["workitem unlink"] = true
 		nonInteractiveCommands["workitem commit"] = true
 		nonInteractiveCommands["workitem commits"] = true
+		nonInteractiveCommands["workitem current"] = true
 	}
 
 	cmdMap := make(map[string]CommandEntry)

@@ -144,6 +144,9 @@ Examples:
 	cmd.AddCommand(newUnlinkCommand())
 	cmd.AddCommand(newLinksCommand())
 	cmd.AddCommand(newWorktreeCommand())
+	// Tombstone: must stay registered so legacy `workitem current --json`
+	// cannot fall through to the parent list command.
+	cmd.AddCommand(newCurrentCommand())
 	cmd.AddCommand(newResolveCommand())
 	cmd.AddCommand(newIDCommand())
 	cmd.AddCommand(newPriorityCommand())

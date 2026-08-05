@@ -86,6 +86,7 @@ var manifestAgentAllowedReasons = map[string]string{
 	"workitem commit":            "Non-interactive commit planning and execution with explicit selector",
 	"workitem commits":           "Read-only commit history lookup",
 	"workitem create":            "Non-interactive workitem creation with explicit slug",
+	"workitem current":           "Tombstone: rejects legacy current selection with structured --json migration error",
 	"workitem doctor":            "Read path (--json) is safe; never pass --fix from an agent",
 	"workitem id":                "Read-only identifier lookup with a bare-id stdout contract and --json for automation",
 	"workitem link":              "Non-interactive workitem link operation",
