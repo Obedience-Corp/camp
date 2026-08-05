@@ -155,7 +155,10 @@ func runStart(cmd *cobra.Command, opts *startOptions) error {
 		Profile:     profile,
 		Mode:        startMode(opts.full),
 		Items:       items,
-		Now:         now,
+		// Frozen so refresh can reproduce this run's selection instead of
+		// treating every out-of-scope item as a new discovery.
+		ScopeExpressions: opts.scope,
+		Now:              now,
 	})
 	if err != nil {
 		return err

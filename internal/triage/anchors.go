@@ -1,6 +1,9 @@
 package triage
 
-import "strings"
+import (
+	"strconv"
+	"strings"
+)
 
 // AnchorKind tags which fact an anchor records.
 type AnchorKind string
@@ -70,6 +73,47 @@ type Anchor struct {
 // Validate returns every rule this anchor violates.
 func (a Anchor) Validate() []Violation {
 	return a.validate("anchor")
+}
+
+// RecordedValue returns the observed value this anchor froze, whichever field
+// its kind keeps it in.
+//
+// One accessor keeps the union's per-kind field choice in this file. Refresh
+// compares a fresh observation against this for every kind alike, so a new
+// anchor kind becomes re-checkable by adding a case here rather than by
+// teaching the diff another field name.
+func (a Anchor) RecordedValue() string {
+	switch a.Kind {
+	case AnchorKindPath:
+		return a.Hash
+	case AnchorKindWorkitem:
+		return a.ObservedStage
+	default:
+		return a.Observed
+	}
+}
+
+// Target names what the anchor points at, for diagnostics and for grouping
+// checks by subject. Empty for an unknown kind, which validation rejects.
+func (a Anchor) Target() string {
+	switch a.Kind {
+	case AnchorKindPR:
+		return a.Repo + "#" + strconv.Itoa(a.Number)
+	case AnchorKindPath:
+		return a.Path
+	case AnchorKindFestival:
+		return a.ID
+	case AnchorKindWorkitem:
+		return a.StableID
+	default:
+		return ""
+	}
+}
+
+// String identifies the anchor as "kind:target", the form the diff's reason
+// strings and the refresh output use.
+func (a Anchor) String() string {
+	return string(a.Kind) + ":" + a.Target()
 }
 
 // validate reports violations prefixed with the anchor's path in its parent

@@ -149,7 +149,7 @@ func stalenessLine(run *triage.Run) string {
 		return ""
 	}
 	return "  anchors: " + AnchorUnchecked +
-		" (run `camp triage refresh` once it lands to re-check them)\n"
+		" (run `camp triage refresh` to re-check them)\n"
 }
 
 // Screen2 renders a lane view: one line per row.

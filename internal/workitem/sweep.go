@@ -61,7 +61,7 @@ func PlanSweep(items []WorkItem) []SweepCandidate {
 		if wf.LatestRunStatus != runStatusCompleted || wf.LatestRunID == "" {
 			continue
 		}
-		if inDungeonPath(item.RelativePath) {
+		if InDungeonPath(item.RelativePath) {
 			continue
 		}
 		out = append(out, SweepCandidate{
@@ -96,11 +96,15 @@ func sweepEligibleType(wt WorkflowType) bool {
 	return wt != WorkflowTypeFestival && wt != WorkflowTypeIntent
 }
 
-// inDungeonPath reports whether relPath contains a dungeon path segment.
+// InDungeonPath reports whether relPath contains a dungeon path segment.
 // Discover() structurally cannot produce such an item, so this is a defensive
 // guard for differently-sourced callers; it compares whole segments so a
 // workitem literally named "my-dungeon-notes" is not falsely excluded.
-func inDungeonPath(relPath string) bool {
+//
+// Exported because triage's staleness diff asks the same question when it
+// decides a row is gone, and "outside dungeons" has to mean the same thing in
+// both places or a row could be swept here and reported gone there.
+func InDungeonPath(relPath string) bool {
 	for _, seg := range strings.Split(filepath.ToSlash(relPath), "/") {
 		if seg == "dungeon" {
 			return true

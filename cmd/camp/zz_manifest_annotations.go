@@ -83,6 +83,7 @@ var manifestAgentAllowedReasons = map[string]string{
 	"triage priorities":          "Read-only brief rendered from recorded run data",
 	"triage propose":             "Records an advisory proposal; terminal actions still require human approval",
 	"triage queue":               "Read-only work dispatch with --json output; calls no models",
+	"triage refresh":             "Read-mostly re-check; writes only run bookkeeping and never moves a workitem",
 	"triage review":              "Deterministic render from recorded run data; writes only inside the run",
 	"triage start":               "Deterministic snapshot with --json output; calls no models",
 	"triage status":              "Read-only session status with --json output",

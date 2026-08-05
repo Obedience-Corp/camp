@@ -247,6 +247,10 @@ func TestManifestFieldNamesMatchSpec(t *testing.T) {
 	require.NoError(t, json.Unmarshal(raw, &doc))
 	assert.ElementsMatch(t, []string{
 		"schema_version", "run_id", "mode", "profile", "base_run_id",
+		// scope_expressions is an additive v1alpha1 field recorded in spec
+		// doc 04: refresh needs the run's own scope to tell a genuinely new
+		// discovery from an item the run never covered.
+		"scope_expressions",
 		"created_at", "rows",
 	}, keysOf(doc))
 

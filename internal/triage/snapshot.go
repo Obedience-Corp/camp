@@ -17,6 +17,9 @@ type SnapshotInput struct {
 	BaseRunID *string
 	// Items are the in-scope workitems, as discovery returned them.
 	Items []workitem.WorkItem
+	// ScopeExpressions are the `--scope` expressions that produced Items,
+	// frozen into the manifest so refresh can reproduce the same selection.
+	ScopeExpressions []string
 	// Now is the snapshot time, injected so a manifest is reproducible.
 	Now time.Time
 }
@@ -44,9 +47,10 @@ func BuildManifest(in SnapshotInput) (*Manifest, error) {
 			Name:     in.ProfileName,
 			Resolved: profile,
 		},
-		BaseRunID: in.BaseRunID,
-		CreatedAt: in.Now,
-		Rows:      rows,
+		BaseRunID:        in.BaseRunID,
+		ScopeExpressions: in.ScopeExpressions,
+		CreatedAt:        in.Now,
+		Rows:             rows,
 	}
 	manifest.Normalize()
 
@@ -65,7 +69,7 @@ func rowFor(item workitem.WorkItem, profile ResolvedProfile, now time.Time) Mani
 	ref, _ := item.SourceMetadata["ref"].(string)
 
 	row := ManifestRow{
-		StableID:       item.StableID,
+		StableID:       StableIDFor(item),
 		Ref:            ref,
 		Key:            item.Key,
 		Type:           string(item.WorkflowType),
@@ -79,24 +83,6 @@ func rowFor(item workitem.WorkItem, profile ResolvedProfile, now time.Time) Mani
 		row.LifecycleStage = string(workitem.LifecycleStageNone)
 	}
 
-	// Identity, in descending order of durability.
-	//
-	// Only builtin doc types (design, explore) are supposed to carry a
-	// .workitem marker, so only those can be missing one. Intents and
-	// festivals never have a marker and are not defective for it: their
-	// identity is the source id discovery already resolved, and flagging them
-	// would put an exception on most of a real campaign and make the field
-	// mean nothing. workitem.NeedsAdoption is camp's own predicate for the
-	// FT-008 population, so triage and `camp workitem adopt` agree on who
-	// needs repair.
-	switch {
-	case row.StableID != "":
-	case item.SourceID != "":
-		row.StableID = item.SourceID
-	default:
-		row.StableID = item.Key
-	}
-
 	if workitem.NeedsAdoption(&item) {
 		row.IdentityException = &IdentityException{
 			Reason:    "no .workitem marker: identity is bound to the path until adopted",
@@ -106,6 +92,31 @@ func rowFor(item workitem.WorkItem, profile ResolvedProfile, now time.Time) Mani
 		}
 	}
 	return row
+}
+
+// StableIDFor resolves a discovered item's triage identity, in descending
+// order of durability: the marker's stable id, else the source id discovery
+// resolved, else the discovery key.
+//
+// Only builtin doc types (design, explore) are supposed to carry a .workitem
+// marker, so only those can be missing one. Intents and festivals never have a
+// marker and are not defective for it: their identity is the source id, and
+// flagging them would put an exception on most of a real campaign and make the
+// field mean nothing.
+//
+// Every place that keys a run by identity must call this. The snapshot writes
+// manifest rows with it and refresh indexes its discovery walk with it; if the
+// two disagreed by even one fallback step, refresh would report a legacy row
+// gone on a campaign where nothing had moved.
+func StableIDFor(item workitem.WorkItem) string {
+	switch {
+	case item.StableID != "":
+		return item.StableID
+	case item.SourceID != "":
+		return item.SourceID
+	default:
+		return item.Key
+	}
 }
 
 // identityExceptionGrantor names camp itself as the grantor for exceptions the

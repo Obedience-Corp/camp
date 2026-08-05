@@ -61,8 +61,12 @@ func SystemClock() time.Time { return time.Now() }
 // discipline as internal/workitem/promotion.go: a concurrent camp invocation
 // either sees the previous content or the new content, never a partial file.
 type Store struct {
-	root  string
-	clock Clock
+	// campaignRoot is the campaign itself. Kept alongside root because the
+	// two are not interchangeable: run files live under root, while a path
+	// anchor is campaign-relative by definition and resolves against this.
+	campaignRoot string
+	root         string
+	clock        Clock
 }
 
 // NewStore returns a Store rooted at campaignRoot. A nil clock means the
@@ -72,13 +76,17 @@ func NewStore(campaignRoot string, clock Clock) *Store {
 		clock = SystemClock
 	}
 	return &Store{
-		root:  filepath.Join(campaignRoot, filepath.FromSlash(DirName)),
-		clock: clock,
+		campaignRoot: campaignRoot,
+		root:         filepath.Join(campaignRoot, filepath.FromSlash(DirName)),
+		clock:        clock,
 	}
 }
 
 // Root is the absolute path of the triage tree.
 func (s *Store) Root() string { return s.root }
+
+// CampaignRoot is the absolute path of the campaign the store belongs to.
+func (s *Store) CampaignRoot() string { return s.campaignRoot }
 
 // RunDir is the absolute path of one run's directory.
 func (s *Store) RunDir(runID string) string {

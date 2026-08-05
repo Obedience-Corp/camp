@@ -106,9 +106,20 @@ type Manifest struct {
 	// BaseRunID names the run an incremental run diffed against. Nil on a
 	// bootstrap or full run — the field is always present so a reader never
 	// has to guess whether an older writer simply omitted it.
-	BaseRunID *string       `json:"base_run_id"`
-	CreatedAt time.Time     `json:"created_at"`
-	Rows      []ManifestRow `json:"rows"`
+	BaseRunID *string `json:"base_run_id"`
+	// ScopeExpressions are the `--scope key:value` expressions the run was
+	// started with, frozen for the same reason the resolved profile is: a run
+	// has to stay reproducible.
+	//
+	// Refresh is what makes this load-bearing rather than decorative. It
+	// re-walks the campaign and asks which discoveries the snapshot does not
+	// carry; without the run's own scope it would answer "all of them" on any
+	// run narrowed by --scope and append the whole campaign to the manifest.
+	// The profile's own scope keys survive inside Profile.Resolved; these are
+	// the per-invocation expressions layered on top.
+	ScopeExpressions []string      `json:"scope_expressions"`
+	CreatedAt        time.Time     `json:"created_at"`
+	Rows             []ManifestRow `json:"rows"`
 }
 
 // ManifestProfile is the profile a run resolved, by name and by value.
@@ -173,6 +184,9 @@ func (m *Manifest) Normalize() {
 	normalizeTime(&m.CreatedAt)
 	if m.Rows == nil {
 		m.Rows = []ManifestRow{}
+	}
+	if m.ScopeExpressions == nil {
+		m.ScopeExpressions = []string{}
 	}
 	m.Profile.Resolved.Normalize()
 	for i := range m.Rows {
