@@ -4,6 +4,8 @@ import (
 	"context"
 	"crypto/sha256"
 	"encoding/hex"
+	"io/fs"
+	"path/filepath"
 	"sort"
 	"strings"
 	"time"
@@ -264,14 +266,21 @@ var ErrSplitGate = camperrors.New("parent has unfinished successors")
 // prose, made mechanical. It names the missing successors, because "blocked"
 // without the list makes the operator go looking for what camp already knows.
 func SplitGateError(parentStableID string, missing []string) error {
+	var fixes strings.Builder
+	for _, id := range missing {
+		fixes.WriteString("\n  camp workitem split " + parentStableID + " --into " + id)
+	}
 	return camperrors.WrapJoinf(ErrSplitGate, camperrors.ErrInvalidInput,
 		"%s declared %s that %s not exist yet: %s\n"+
-			"Create %s, or re-run with --force to retire the parent anyway",
+			"Create %s:%s\n"+
+			"or adopt an existing home with --adopt <path>, "+
+			"or re-run promote with --force to retire the parent anyway",
 		parentStableID,
 		pluralSplit(len(missing), "a successor", "successors"),
 		pluralVerb(len(missing)),
 		strings.Join(missing, ", "),
-		pluralSplit(len(missing), "it", "them"))
+		pluralSplit(len(missing), "it", "them"),
+		fixes.String())
 }
 
 // pluralSplit picks a noun phrase for a count.
@@ -371,4 +380,73 @@ func (c PristineCheck) Pristine() (bool, string) {
 		return false, "it has content beyond the seed; dungeon it normally if unwanted"
 	}
 	return true, ""
+}
+
+// FindDungeonedIDs reports which of the wanted stable ids exist inside a
+// dungeon, by walking only dungeon subtrees.
+//
+// A retired successor still counts as existing for the retirement gate: it
+// lived, it was worked, and it was closed. Refusing to retire a parent because
+// its successor was itself completed would invert the rule — the gate exists
+// to stop scope disappearing, not to stop it finishing.
+//
+// Discover() deliberately skips dungeons, so this is a separate targeted walk.
+// The caller runs it only when the normal discovery pass came up short, which
+// keeps the common case at one walk.
+func FindDungeonedIDs(ctx context.Context, campaignRoot string, wanted map[string]bool) (map[string]bool, error) {
+	paths, err := FindDungeonedPaths(ctx, campaignRoot, wanted)
+	if err != nil {
+		return nil, err
+	}
+	found := make(map[string]bool, len(paths))
+	for id := range paths {
+		found[id] = true
+	}
+	return found, nil
+}
+
+// FindDungeonedPaths is FindDungeonedIDs with the directory each id was found
+// in, for callers that need to read the retired workitem's marker.
+func FindDungeonedPaths(ctx context.Context, campaignRoot string, wanted map[string]bool) (map[string]string, error) {
+	found := make(map[string]string, len(wanted))
+	if len(wanted) == 0 {
+		return found, nil
+	}
+
+	err := filepath.WalkDir(campaignRoot, func(path string, d fs.DirEntry, err error) error {
+		if err != nil {
+			// An unreadable subtree is not a reason to fail a promote; the
+			// worst case is the gate reports a successor missing that is
+			// merely unreadable, which is the safe direction.
+			return nil //nolint:nilerr // best-effort scan
+		}
+		if ctxErr := ctx.Err(); ctxErr != nil {
+			return ctxErr
+		}
+		if d.IsDir() {
+			if d.Name() == ".git" {
+				return fs.SkipDir
+			}
+			return nil
+		}
+		if d.Name() != MetadataFilename {
+			return nil
+		}
+		rel, relErr := filepath.Rel(campaignRoot, path)
+		if relErr != nil || !InDungeonPath(rel) {
+			return nil
+		}
+		meta, loadErr := LoadMetadata(ctx, filepath.Dir(path))
+		if loadErr != nil || meta == nil {
+			return nil
+		}
+		if wanted[meta.ID] {
+			found[meta.ID] = filepath.Dir(path)
+		}
+		return nil
+	})
+	if err != nil {
+		return nil, camperrors.Wrap(err, "scanning dungeons for successors")
+	}
+	return found, nil
 }

@@ -106,7 +106,11 @@ func sweepEligibleType(wt WorkflowType) bool {
 // both places or a row could be swept here and reported gone there.
 func InDungeonPath(relPath string) bool {
 	for _, seg := range strings.Split(filepath.ToSlash(relPath), "/") {
-		if seg == "dungeon" {
+		// Both spellings, because both exist in the wild: campaigns created
+		// before `camp dungeon migrate` use "dungeon", and migrated ones use
+		// the hidden ".dungeon". Matching only one made this silently answer
+		// "not dungeoned" for half of all campaigns.
+		if seg == "dungeon" || seg == ".dungeon" {
 			return true
 		}
 	}

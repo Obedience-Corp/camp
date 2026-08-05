@@ -26,6 +26,17 @@ type Rationale struct {
 	// invalidates this proposal or merely touched something incidental.
 	AnchorsUsed []string   `json:"anchors_used"`
 	Confidence  Confidence `json:"confidence"`
+	// Successors names the workitems a `consolidate` verdict proposes to
+	// split the row into. It is the successor list the apply plan compiles
+	// into `camp workitem split --into/--adopt`, and the list the retirement
+	// gate then holds the parent against.
+	//
+	// It lives on the rationale rather than the decision event because it is
+	// part of the argument for the verdict, not a second verdict: "retire
+	// this once these exist" is one claim. Empty for every other
+	// disposition; omitempty, so a non-consolidate rationale serializes
+	// exactly as before.
+	Successors []string `json:"successors,omitempty"`
 }
 
 // Normalize implements Document.

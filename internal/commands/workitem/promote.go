@@ -326,7 +326,23 @@ func checkSplitGate(ctx context.Context, cfg *config.CampaignConfig, root string
 	if err != nil {
 		return err
 	}
-	if missing := wkitem.MissingSuccessors(declared, discovered); len(missing) > 0 {
+	missing := wkitem.MissingSuccessors(declared, discovered)
+	if len(missing) == 0 {
+		return nil
+	}
+
+	// Discover() skips dungeons, so anything still "missing" might simply
+	// have been completed. A retired successor counts as existing: the gate
+	// exists to stop scope disappearing, not to stop it finishing.
+	wanted := make(map[string]bool, len(missing))
+	for _, id := range missing {
+		wanted[id] = true
+	}
+	dungeoned, err := wkitem.FindDungeonedIDs(ctx, root, wanted)
+	if err != nil {
+		return err
+	}
+	if missing = wkitem.MissingSuccessors(missing, dungeoned); len(missing) > 0 {
 		return wkitem.SplitGateError(meta.ID, missing)
 	}
 	return nil

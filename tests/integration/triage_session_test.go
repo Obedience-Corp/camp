@@ -249,7 +249,10 @@ func TestTriageStatus_ReportsTheActiveRun(t *testing.T) {
 
 	run := payload["run"].(map[string]any)
 	assert.Equal(t, runID, run["run_id"])
-	assert.Equal(t, "created", run["phase"])
+	// snapshotted, not created: `start` advances the phase once the snapshot
+	// is written. Before that fix the machine never left `created` and apply
+	// was unreachable, so this assertion was pinning a bug.
+	assert.Equal(t, "snapshotted", run["phase"])
 	assert.Equal(t, true, run["active"])
 	assert.Equal(t, float64(8), run["rows"])
 

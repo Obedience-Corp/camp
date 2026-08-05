@@ -181,12 +181,12 @@ func TestSplitGateErrorNamesTheMissing(t *testing.T) {
 	assert.Contains(t, one.Error(), "design-parent")
 	assert.Contains(t, one.Error(), "design-a")
 	assert.Contains(t, one.Error(), "a successor that does not exist")
-	assert.Contains(t, one.Error(), "Create it,")
+	assert.Contains(t, one.Error(), "Create it:")
 	assert.Contains(t, one.Error(), "--force")
 
 	many := SplitGateError("design-parent", []string{"design-a", "design-b"})
 	assert.Contains(t, many.Error(), "successors that do not exist")
-	assert.Contains(t, many.Error(), "Create them,")
+	assert.Contains(t, many.Error(), "Create them:")
 }
 
 // TestSplitReadmeSeedsTheTrail covers the back-link header.
@@ -325,4 +325,42 @@ func TestSplitLineageKeysCoverEveryStamp(t *testing.T) {
 	for key := range written {
 		assert.True(t, removed[key], "undo must remove %q, which split writes", key)
 	}
+}
+
+// TestInDungeonPathMatchesBothSpellings is a regression guard. Campaigns
+// created before `camp dungeon migrate` use "dungeon"; migrated ones use the
+// hidden ".dungeon". Matching only one made this answer "not dungeoned" for
+// half of all campaigns, which silently defeated the retirement gate's
+// dungeoned-successor rule.
+func TestInDungeonPathMatchesBothSpellings(t *testing.T) {
+	tests := []struct {
+		path string
+		want bool
+	}{
+		{path: "workflow/design/.dungeon/completed/2026-08-05/x", want: true},
+		{path: "workflow/design/dungeon/completed/2026-08-05/x", want: true},
+		{path: ".dungeon/archived/x", want: true},
+		{path: "dungeon/archived/x", want: true},
+		{path: "workflow/design/x", want: false},
+		// Whole segments only: a workitem named for the concept is not in one.
+		{path: "workflow/design/my-dungeon-notes", want: false},
+		{path: "workflow/design/dungeoneering", want: false},
+	}
+	for _, tt := range tests {
+		t.Run(tt.path, func(t *testing.T) {
+			assert.Equal(t, tt.want, InDungeonPath(tt.path))
+		})
+	}
+}
+
+// TestSplitGateErrorNamesTheFixCommands: a refusal that does not say how to
+// fix it makes the operator go looking for what camp already knows.
+func TestSplitGateErrorNamesTheFixCommands(t *testing.T) {
+	err := SplitGateError("design-parent", []string{"design-a", "design-b"})
+	message := err.Error()
+
+	assert.Contains(t, message, "camp workitem split design-parent --into design-a")
+	assert.Contains(t, message, "camp workitem split design-parent --into design-b")
+	assert.Contains(t, message, "--adopt <path>", "adopting an existing home is the other fix")
+	assert.Contains(t, message, "--force")
 }

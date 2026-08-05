@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"io"
 	"os"
 	"path/filepath"
 	"time"
@@ -667,4 +668,60 @@ func printUndoResult(cmd *cobra.Command, result undoResult) error {
 		"\nThe parent's lineage stamps are gone, so its terminal promotion is no\n"+
 			"longer gated.\n")
 	return err
+}
+
+// existingSuccessorPath resolves a successor that already exists, by stable id
+// or by campaign-relative path, and reports its path.
+func existingSuccessorPath(ctx context.Context, campaignRoot, successor string) (string, bool) {
+	abs := filepath.Join(campaignRoot, filepath.FromSlash(successor))
+	if info, err := os.Stat(abs); err == nil && info.IsDir() {
+		return filepath.ToSlash(filepath.Clean(successor)), true
+	}
+	item, err := selector.Resolve(ctx, campaignRoot, successor, selector.ResolveOptions{})
+	if err != nil || item == nil {
+		return "", false
+	}
+	// Exact match only. selector.Resolve is deliberately forgiving so a human
+	// can type a partial name, but here a near-miss is the difference between
+	// creating the successor a verdict asked for and silently adopting some
+	// other workitem that merely looked similar.
+	if wkitem.StableIDOf(item) != successor &&
+		filepath.ToSlash(item.RelativePath) != filepath.ToSlash(filepath.Clean(successor)) {
+		return "", false
+	}
+	return item.RelativePath, true
+}
+
+// SplitWorkitem runs a split through the same path `camp workitem split` runs,
+// so `camp triage apply` executes an approved consolidate verdict without
+// re-entering camp as a subprocess.
+//
+// Successors are created by name. An entry that names an existing campaign
+// path is adopted instead, which is how a verdict declares that delivered
+// scope already has a canonical home.
+func SplitWorkitem(ctx context.Context, out io.Writer, parent string, successors []string) error {
+	cfg, campaignRoot, err := config.LoadCampaignConfigFromCwd(ctx)
+	if err != nil {
+		return camperrors.Wrap(err, "not in a campaign directory")
+	}
+	_ = cfg
+
+	// A verdict names successors as stable ids or paths, and either may
+	// already exist. Resolving each through the standard selector machinery
+	// is what tells create from adopt: naming an existing workitem must adopt
+	// it, not try to create a second one at the same path and collide.
+	var into, adopt []string
+	for _, successor := range successors {
+		if rel, ok := existingSuccessorPath(ctx, campaignRoot, successor); ok {
+			adopt = append(adopt, rel)
+			continue
+		}
+		into = append(into, successor)
+	}
+
+	cmd := &cobra.Command{}
+	cmd.SetContext(ctx)
+	cmd.SetOut(out)
+	cmd.SetErr(out)
+	return runSplit(cmd, splitOptions{selectorArg: parent, into: into, adopt: adopt})
 }

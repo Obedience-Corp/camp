@@ -219,3 +219,102 @@ func TestStatusReportsIdentityExceptions(t *testing.T) {
 
 	assert.Equal(t, 1, status.IdentityIssues)
 }
+
+// TestConsolidationQueue is the one derivation status, the review card, and
+// verify all read. A second implementation of "which successors are missing"
+// would eventually disagree, and the disagreement would surface as a parent
+// status calls ready and the gate refuses to retire.
+func TestConsolidationQueue(t *testing.T) {
+	rows := []ManifestRow{
+		{StableID: "design-umbrella", Type: "design"},
+		{StableID: "design-parked", Type: "design"},
+	}
+
+	tests := []struct {
+		name        string
+		verdicts    map[string]RowVerdict
+		successors  map[string][]string
+		discovered  map[string]bool
+		wantLen     int
+		wantMissing []string
+		wantBlocked bool
+	}{
+		{
+			name: "a consolidation with every successor present is unblocked",
+			verdicts: map[string]RowVerdict{
+				"design-umbrella": {CanonicalAction: ActionSplit},
+			},
+			successors:  map[string][]string{"design-umbrella": {"part-b", "part-a"}},
+			discovered:  map[string]bool{"part-a": true, "part-b": true},
+			wantLen:     1,
+			wantMissing: []string{},
+		},
+		{
+			name: "a missing successor blocks the parent",
+			verdicts: map[string]RowVerdict{
+				"design-umbrella": {CanonicalAction: ActionSplit},
+			},
+			successors:  map[string][]string{"design-umbrella": {"part-a", "part-b"}},
+			discovered:  map[string]bool{"part-a": true},
+			wantLen:     1,
+			wantMissing: []string{"part-b"},
+			wantBlocked: true,
+		},
+		{
+			name: "non-consolidate verdicts are not in the queue",
+			verdicts: map[string]RowVerdict{
+				"design-parked": {CanonicalAction: CanonicalAction("attention/parked")},
+			},
+		},
+		{
+			name: "an undecided row is not in the queue",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got := ConsolidationQueue(ConsolidationInput{
+				Rows: rows, Verdicts: tt.verdicts,
+				Successors: tt.successors, Discovered: tt.discovered,
+			})
+			require.Len(t, got, tt.wantLen)
+			if tt.wantLen == 0 {
+				return
+			}
+			assert.Equal(t, "design-umbrella", got[0].StableID)
+			assert.Equal(t, tt.wantMissing, got[0].Missing)
+			assert.Equal(t, tt.wantBlocked, got[0].Blocked())
+			assert.Equal(t, []string{"part-a", "part-b"}, got[0].Successors,
+				"successors are sorted so the queue reads the same every time")
+		})
+	}
+}
+
+// TestConsolidationQueueIsPure guards the reuse rule.
+func TestConsolidationQueueIsPure(t *testing.T) {
+	successors := map[string][]string{"design-umbrella": {"part-b", "part-a"}}
+	ConsolidationQueue(ConsolidationInput{
+		Rows:       []ManifestRow{{StableID: "design-umbrella"}},
+		Verdicts:   map[string]RowVerdict{"design-umbrella": {CanonicalAction: ActionSplit}},
+		Successors: successors,
+		Discovered: map[string]bool{},
+	})
+	assert.Equal(t, []string{"part-b", "part-a"}, successors["design-umbrella"],
+		"the caller's successor list must not be sorted in place")
+}
+
+// TestConsolidationQueueNeverReturnsNilSlices keeps the JSON contract free of
+// nulls, which break naive consumers.
+func TestConsolidationQueueNeverReturnsNilSlices(t *testing.T) {
+	got := ConsolidationQueue(ConsolidationInput{})
+	assert.NotNil(t, got)
+	assert.Empty(t, got)
+
+	withRow := ConsolidationQueue(ConsolidationInput{
+		Rows:     []ManifestRow{{StableID: "x"}},
+		Verdicts: map[string]RowVerdict{"x": {CanonicalAction: ActionSplit}},
+	})
+	require.Len(t, withRow, 1)
+	assert.NotNil(t, withRow[0].Successors)
+	assert.NotNil(t, withRow[0].Missing)
+}

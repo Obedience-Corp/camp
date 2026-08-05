@@ -2,8 +2,14 @@ package triage
 
 import (
 	"context"
+	"path/filepath"
 	"sort"
 	"time"
+
+	"github.com/Obedience-Corp/camp/internal/config"
+	camperrors "github.com/Obedience-Corp/camp/internal/errors"
+	"github.com/Obedience-Corp/camp/internal/paths"
+	"github.com/Obedience-Corp/camp/internal/workitem"
 )
 
 // RowState is where one row stands in the run, derived from its manifest entry
@@ -104,7 +110,68 @@ func BuildStatus(ctx context.Context, store *Store, runID string) (*Status, erro
 	if err != nil {
 		return nil, err
 	}
-	return StatusFrom(run, verdicts), nil
+	status := StatusFrom(run, verdicts)
+
+	// The consolidation queue needs the world, which is why it is filled here
+	// rather than in StatusFrom: FT-014 asked for the unfinished splits as a
+	// work queue, and "unfinished" is a question about what exists now.
+	successors, err := store.SuccessorsByRow(ctx, runID, verdicts)
+	if err != nil {
+		return nil, err
+	}
+	if len(successors) > 0 {
+		wanted := map[string]bool{}
+		for _, ids := range successors {
+			for _, id := range ids {
+				wanted[id] = true
+			}
+		}
+		discovered, err := store.discoveredIDsForStatus(ctx, wanted)
+		if err != nil {
+			return nil, err
+		}
+		status.Consolidations = ConsolidationQueue(ConsolidationInput{
+			Rows: run.Manifest.Rows, Verdicts: verdicts,
+			Successors: successors, Discovered: discovered,
+		})
+	}
+	return status, nil
+}
+
+// discoveredIDsForStatus indexes what currently exists, including dungeoned
+// items: a successor that was itself completed still counts as existing, the
+// same rule the retirement gate applies.
+func (s *Store) discoveredIDsForStatus(ctx context.Context, wanted map[string]bool) (map[string]bool, error) {
+	cfg, err := config.LoadCampaignConfig(ctx, s.campaignRoot)
+	if err != nil {
+		return nil, camperrors.Wrap(err, "loading the campaign config")
+	}
+	items, err := workitem.Discover(ctx, s.campaignRoot, paths.NewResolverFromConfig(s.campaignRoot, cfg))
+	if err != nil {
+		return nil, camperrors.Wrap(err, "discovering work items")
+	}
+	out := make(map[string]bool, len(items))
+	for _, item := range items {
+		out[StableIDFor(item)] = true
+	}
+
+	// A successor that was itself completed still counts as existing — the
+	// same rule the retirement gate applies, so status and the gate cannot
+	// disagree about whether a parent is ready to retire.
+	stillMissing := map[string]bool{}
+	for id := range wanted {
+		if !out[id] {
+			stillMissing[id] = true
+		}
+	}
+	dungeoned, err := workitem.FindDungeonedIDs(ctx, s.campaignRoot, stillMissing)
+	if err != nil {
+		return out, nil //nolint:nilerr // a dungeon scan failure must not fail status
+	}
+	for id := range dungeoned {
+		out[id] = true
+	}
+	return out, nil
 }
 
 // StatusFrom folds a run and its verdicts into a status. Pure, so the shape
@@ -215,4 +282,136 @@ func sortedBatches(byBatch map[int]*BatchProgress) []*BatchProgress {
 	}
 	sort.Slice(out, func(a, b int) bool { return out[a].Batch < out[b].Batch })
 	return out
+}
+
+// recordedSuccessors reads the successors a parent's marker declares, or nil
+// when it has none yet.
+func (s *Store) recordedSuccessors(ctx context.Context, stableID string) []string {
+	cfg, err := config.LoadCampaignConfig(ctx, s.campaignRoot)
+	if err != nil {
+		return nil
+	}
+	items, err := workitem.Discover(ctx, s.campaignRoot, paths.NewResolverFromConfig(s.campaignRoot, cfg))
+	if err != nil {
+		return nil
+	}
+	for _, item := range items {
+		if StableIDFor(item) != stableID {
+			continue
+		}
+		return splitIntoAt(ctx, filepath.Join(s.campaignRoot, item.RelativePath))
+	}
+
+	// The parent may have retired already — a consolidation ends with the
+	// parent in the dungeon, and Discover skips dungeons. Its marker is still
+	// the record of what it split into, so the queue keeps reporting the real
+	// successors after the split rather than falling back to declared names
+	// and disagreeing with the gate.
+	if dir := findDungeonedDir(ctx, s.campaignRoot, stableID); dir != "" {
+		return splitIntoAt(ctx, dir)
+	}
+	return nil
+}
+
+// splitIntoAt reads a marker's declared successors.
+func splitIntoAt(ctx context.Context, dir string) []string {
+	meta, err := workitem.LoadMetadata(ctx, dir)
+	if err != nil || meta == nil {
+		return nil
+	}
+	return workitem.SplitIntoOf(meta)
+}
+
+// findDungeonedDir locates a retired workitem's directory by stable id.
+func findDungeonedDir(ctx context.Context, campaignRoot, stableID string) string {
+	found, err := workitem.FindDungeonedPaths(ctx, campaignRoot, map[string]bool{stableID: true})
+	if err != nil {
+		return ""
+	}
+	return found[stableID]
+}
+
+// ConsolidationInput is what the consolidation queue reads. All snapshots.
+type ConsolidationInput struct {
+	Rows     []ManifestRow
+	Verdicts map[string]RowVerdict
+	// Successors names each row's declared successors, from its rationale.
+	Successors map[string][]string
+	// Discovered is the set of stable ids that currently exist.
+	Discovered map[string]bool
+}
+
+// ConsolidationQueue derives the unfinished consolidations: every row whose
+// verdict is a split, with its declared successors and which of them are
+// missing.
+//
+// One derivation, three consumers — `camp triage status`, the review TUI's
+// consolidate card, and verify's lineage check. A second implementation of
+// "which successors are missing" would eventually disagree with this one, and
+// the disagreement would show up as a parent that status says is ready and the
+// gate refuses to retire.
+//
+// Pure: no I/O, no clock. The caller supplies the discovery set.
+func ConsolidationQueue(in ConsolidationInput) []Consolidation {
+	out := []Consolidation{}
+	for _, row := range in.Rows {
+		verdict := in.Verdicts[row.StableID]
+		if verdict.CanonicalAction != ActionSplit {
+			continue
+		}
+		// Explicitly non-nil: a nil slice marshals to null and breaks naive
+		// consumers of the status contract.
+		successors := []string{}
+		successors = append(successors, in.Successors[row.StableID]...)
+		sort.Strings(successors)
+
+		missing := []string{}
+		for _, successor := range successors {
+			if !in.Discovered[successor] {
+				missing = append(missing, successor)
+			}
+		}
+		out = append(out, Consolidation{
+			StableID:   row.StableID,
+			Successors: successors,
+			Missing:    missing,
+		})
+	}
+	return out
+}
+
+// Blocked reports whether this consolidation's parent is still held by the
+// retirement gate.
+func (c Consolidation) Blocked() bool { return len(c.Missing) > 0 }
+
+// SuccessorsByRow reads each row's declared successors from its rationale.
+//
+// The rationale is the argument for the verdict, so the successor list lives
+// with it: "retire this once these exist" is one claim, not two.
+func (s *Store) SuccessorsByRow(ctx context.Context, runID string, verdicts map[string]RowVerdict) (map[string][]string, error) {
+	out := make(map[string][]string, len(verdicts))
+	for _, id := range sortedKeys(verdicts) {
+		verdict := verdicts[id]
+		if verdict.CanonicalAction != ActionSplit || verdict.RationaleRef == "" {
+			continue
+		}
+		rationale, err := s.Rationale(ctx, runID, id)
+		if err != nil || rationale == nil {
+			continue
+		}
+		if len(rationale.Successors) > 0 {
+			out[id] = rationale.Successors
+		}
+
+		// Once the split has run, the parent's marker records the ids that
+		// were actually created, which are generated and so never equal the
+		// names the rationale declared. Preferring the marker is what keeps
+		// this queue agreeing with the retirement gate, which reads exactly
+		// that field. Before the split there is no marker to read and the
+		// declared names are the best answer available.
+		if actual := s.recordedSuccessors(ctx, id); len(actual) > 0 {
+			out[id] = actual
+		}
+	}
+	return out, nil
 }

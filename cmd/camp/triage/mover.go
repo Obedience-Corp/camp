@@ -112,11 +112,21 @@ func (m *serviceMover) Promote(ctx context.Context, stableID, target string) (tr
 	return result, nil
 }
 
-// Split is phase 004's verb. Until it lands the compiler marks consolidation
-// entries blocked, so the executor never reaches this; returning an error
-// rather than a silent no-op keeps a wiring mistake loud.
-func (m *serviceMover) Split(_ context.Context, stableID string, _ []string) (triage.MoveOutcome, error) {
-	return triage.MoveOutcome{}, camperrors.NewValidation("split",
-		"camp workitem split has not landed yet; "+stableID+" should have compiled as blocked",
-		camperrors.ErrInvalidInput)
+// Split runs the same verb `camp workitem split` runs, through its own
+// service seam rather than by re-entering camp.
+//
+// The undo is the split's own inverse. It is recorded on the receipt like any
+// other action, and it is safe by construction: --undo deletes only successors
+// it can prove nobody touched.
+func (m *serviceMover) Split(ctx context.Context, stableID string, successors []string) (triage.MoveOutcome, error) {
+	if len(successors) == 0 {
+		return triage.MoveOutcome{}, camperrors.NewValidation("successors",
+			"a consolidate verdict must declare successors in its rationale", camperrors.ErrInvalidInput)
+	}
+	if err := wicommands.SplitWorkitem(ctx, m.out, stableID, successors); err != nil {
+		return triage.MoveOutcome{}, err
+	}
+	return triage.MoveOutcome{
+		Undo: "camp workitem split " + stableID + " --undo",
+	}, nil
 }

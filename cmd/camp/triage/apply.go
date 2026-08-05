@@ -114,12 +114,20 @@ func runApply(cmd *cobra.Command, opts applyOptions) error {
 		return err
 	}
 
+	// Successors come from each consolidate verdict's rationale, which is
+	// where the argument for retiring the parent lives.
+	successors, err := store.SuccessorsByRow(ctx, runID, verdicts)
+	if err != nil {
+		return err
+	}
 	plan, err := triage.CompilePlan(triage.CompileInput{
-		RunID:    runID,
-		Rows:     run.Manifest.Rows,
-		Verdicts: verdicts,
-		// Phase 004 flips this when `camp workitem split` lands.
-		SplitAvailable: false,
+		RunID:      runID,
+		Rows:       run.Manifest.Rows,
+		Verdicts:   verdicts,
+		Successors: successors,
+		// `camp workitem split` landed in phase 004, so consolidate verdicts
+		// now compile to real commands rather than a blocked entry.
+		SplitAvailable: true,
 		Now:            triage.SystemClock(),
 	})
 	if err != nil {
