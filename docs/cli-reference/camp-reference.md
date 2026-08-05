@@ -2632,9 +2632,241 @@ camp idea note [text] [flags]
       --author string      Override the default author attribution
       --body string        Set note body as a literal string
       --body-file string   Read note body from file (- for stdin, 10 MiB cap)
+      --create-folder      Create --folder path if missing
+      --folder string      Note folder under notes/ (must exist unless --create-folder)
   -h, --help               help for note
       --no-commit          Don't create a git commit
   -t, --tag stringArray    Add a tag (repeatable)
+```
+
+### Options inherited from parent commands
+
+```
+      --no-color   disable colored output
+```
+---
+
+## camp idea notes
+
+Manage the note store (folders, moves, meetings)
+
+### Synopsis
+
+Manage the campaign note store under .campaign/intents/notes/.
+
+Use "camp idea note" to capture a note. This command group manages folders
+and placement of notes already in the store.
+
+Examples:
+  camp idea notes folders                 List note folders
+  camp idea notes folders --json          Machine-readable folder list
+  camp idea notes folders add reading     Create notes/reading/
+  camp idea notes folders rm reading      Remove empty folder
+  camp idea notes folders mv a b          Rename folder a → b
+  camp idea notes mv <note-id> reading    Move a note into a folder
+
+```
+camp idea notes [flags]
+```
+
+### Options
+
+```
+  -h, --help   help for notes
+```
+
+### Options inherited from parent commands
+
+```
+      --no-color   disable colored output
+```
+---
+
+## camp idea notes folders
+
+List note folders
+
+### Synopsis
+
+List every note folder under .campaign/intents/notes/.
+
+Order: notes root, reserved folders (meetings, archived), then user folders
+alphabetically depth-first.
+
+Examples:
+  camp idea notes folders
+  camp idea notes folders --json
+
+```
+camp idea notes folders [flags]
+```
+
+### Options
+
+```
+  -h, --help   help for folders
+      --json   emit a structured JSON result
+```
+
+### Options inherited from parent commands
+
+```
+      --no-color   disable colored output
+```
+---
+
+## camp idea notes folders add
+
+Create a note folder
+
+### Synopsis
+
+Create a note folder under notes/ (parents created as needed).
+
+Folder names must be lowercase kebab-case. Reserved names (archived, meetings)
+are rejected at the notes root. A .gitkeep is written so empty folders survive git.
+
+Examples:
+  camp idea notes folders add reading
+  camp idea notes folders add reading/papers
+
+```
+camp idea notes folders add <folder> [flags]
+```
+
+### Options
+
+```
+  -h, --help   help for add
+```
+
+### Options inherited from parent commands
+
+```
+      --no-color   disable colored output
+```
+---
+
+## camp idea notes folders mv
+
+Rename a note folder
+
+### Synopsis
+
+Rename a note folder via directory move. Contained notes keep their
+files; status is derived from location so frontmatter is not rewritten.
+
+Examples:
+  camp idea notes folders mv reading readings
+
+```
+camp idea notes folders mv <from> <to> [flags]
+```
+
+### Options
+
+```
+  -h, --help   help for mv
+```
+
+### Options inherited from parent commands
+
+```
+      --no-color   disable colored output
+```
+---
+
+## camp idea notes folders rm
+
+Remove an empty note folder
+
+### Synopsis
+
+Remove a note folder. Refuses when the folder still contains notes or
+child directories. Reserved folders cannot be removed.
+
+Examples:
+  camp idea notes folders rm reading/papers
+
+```
+camp idea notes folders rm <folder> [flags]
+```
+
+### Options
+
+```
+  -h, --help   help for rm
+```
+
+### Options inherited from parent commands
+
+```
+      --no-color   disable colored output
+```
+---
+
+## camp idea notes import-meeting
+
+Import a meeting bundle into notes/meetings/
+
+### Synopsis
+
+Import a festival-voice (or compatible) meeting bundle as a note under
+notes/meetings/ with a transcript sidecar in .transcripts/.
+
+Re-importing the same bundle updates the existing note in place.
+
+Examples:
+  camp idea notes import-meeting ~/.obey/agents/voice/.../foo.meeting
+  camp idea notes import-meeting ./bundle --summary-file summary.md --json
+  camp idea notes import-meeting ./bundle --adopt-intent misfiled-id
+
+```
+camp idea notes import-meeting <bundle-path> [flags]
+```
+
+### Options
+
+```
+      --adopt-intent string      Delete this lifecycle intent after successful import
+      --author string            Author attribution
+  -h, --help                     help for import-meeting
+      --json                     emit a structured JSON result
+      --summary string           Literal summary body
+      --summary-file string      Path to summary markdown (overrides bundle summary.md)
+      --title string             Override note title
+      --transcript-file string   Path to transcript file
+```
+
+### Options inherited from parent commands
+
+```
+      --no-color   disable colored output
+```
+---
+
+## camp idea notes mv
+
+Move a note into a folder
+
+### Synopsis
+
+Move a note into a folder under notes/. Use "" or "." for the notes root.
+
+The destination folder must already exist (create it with folders add first).
+
+Examples:
+  camp idea notes mv nested-paper-20260101-000001 reading/papers
+  camp idea notes mv nested-paper-20260101-000001 .
+
+```
+camp idea notes mv <note-id> <folder> [flags]
+```
+
+### Options
+
+```
+  -h, --help   help for mv
 ```
 
 ### Options inherited from parent commands
@@ -6692,7 +6924,7 @@ camp status [flags] [-- <git-flags>]
 
 ```
   -h, --help             help for status
-      --no-drain         Do not wait for camp's queued commits first
+      --no-drain         Do not report camp's queued commits first
   -p, --project string   Status of a specific project path
   -s, --short            Give output in short format
       --show-refs        Show campaign root submodule ref changes
@@ -7107,6 +7339,745 @@ camp transfer <src> <dest> [flags]
 ```
   -f, --force   Overwrite destination without prompting
   -h, --help    help for transfer
+```
+
+### Options inherited from parent commands
+
+```
+      --no-color   disable colored output
+```
+---
+
+## camp triage
+
+Review the campaign's workitems in a recorded session
+
+### Synopsis
+
+Review the campaign's workitems in a recorded, resumable session.
+
+A triage run freezes what the campaign contains, collects evidence about each
+item, records your verdicts, and applies them through camp's normal workitem
+machinery. Every step is written to .campaign/triage/runs/<run-id>/, so a run
+survives being interrupted and the decisions stay auditable afterwards.
+
+Camp never calls a model. Agents read the queue and submit evidence and
+proposals; you approve them; camp applies what you approved.
+
+Session:
+  start     Snapshot the campaign and open a run
+  status    Show where the active run stands
+  abandon   Close the active run without applying it
+
+Judgment:
+  queue     List rows awaiting evidence or a proposal
+  evidence  Submit a record, or print one with the known facts filled in
+  propose   Propose a disposition for a row
+
+The judgment commands are the driver seam: camp says what needs judging and
+under what policy, anything you like does the judging, and camp validates what
+comes back. A run leaves the judging phase only once every row holds evidence
+and a proposal, or is explicitly marked judged without a record.
+
+Examples:
+  camp triage start                        Start a run over everything in scope
+  camp triage start --scope type:design    Limit the run to design workitems
+  camp triage status --json                Inspect the active run
+
+  camp triage queue --json                 What still needs judging
+  camp triage evidence template <id>       A record with camp's facts filled in
+  camp triage evidence set <id> --file r.json
+  camp triage propose <id> --disposition completed --summary "shipped in #239"
+
+  camp triage abandon --reason "wrong scope"
+
+```
+camp triage [flags]
+```
+
+### Options
+
+```
+  -h, --help   help for triage
+```
+
+### Options inherited from parent commands
+
+```
+      --no-color   disable colored output
+```
+---
+
+## camp triage abandon
+
+Close the active triage run without applying it
+
+### Synopsis
+
+Close the active triage run without applying it.
+
+Nothing is deleted. The run keeps its snapshot, its evidence, and every verdict
+recorded so far; only its phase changes, which frees the active slot so a new
+run can start. An abandoned run is still readable, and still the record of what
+was decided before it was set aside.
+
+A reason is optional but worth giving: it is what explains the abandonment to
+whoever reads the run later.
+
+```
+camp triage abandon [flags]
+```
+
+### Options
+
+```
+  -h, --help            help for abandon
+      --json            Output result as a single JSON object
+      --reason string   Why the run is being abandoned
+      --run string      Abandon a specific run id instead of the latest
+```
+
+### Options inherited from parent commands
+
+```
+      --no-color   disable colored output
+```
+---
+
+## camp triage apply
+
+Execute the approved verdicts of the active run
+
+### Synopsis
+
+Execute approved verdicts through camp's own workitem commands.
+
+Apply refreshes first, every time. A verdict rests on facts that may have moved
+since it was recorded, and applying over a stale one is the failure this whole
+command exists to prevent. Rows the refresh did not return fresh or moved are
+refused and listed; re-judge them and approve again.
+
+Nothing here moves a directory itself. Attention changes go through the same
+priority store camp workitem stage writes, and promotions run the same function
+camp workitem promote runs, so a triage apply and a hand-typed command cannot
+diverge.
+
+Every action appends a receipt: what ran, how long it took, what it produced,
+the commit it made, and the command that reverses it. The undo is derived from
+where the workitem actually landed, not from where the plan expected it to.
+
+A failure stops the pass. Rows after it stay pending rather than being applied
+against a campaign that is no longer in the state the plan was compiled for.
+Re-running continues from the first row without an applied receipt, so an
+interrupted apply is resumed rather than restarted.
+
+--dry-run prints the whole plan, including rows that are blocked, and changes
+nothing. It does not require freshness, so it is safe to read at any time.
+
+```
+camp triage apply [flags]
+```
+
+### Options
+
+```
+      --dry-run      Print the plan and change nothing
+      --force        Apply terminal actions whose anchors could not be re-checked
+  -h, --help         help for apply
+      --json         Output result as a single JSON object
+      --run string   Use a specific run id instead of the latest
+```
+
+### Options inherited from parent commands
+
+```
+      --no-color   disable colored output
+```
+---
+
+## camp triage approve
+
+Record verdicts on proposed dispositions
+
+### Synopsis
+
+Record your verdict on the proposals in the active run.
+
+This is how a decision enters. The rendered documents are output, so editing
+them records nothing; approval happens here and re-rendering reflects it.
+
+Selectors:
+  camp triage approve <id> [<id>...]     name rows explicitly
+  camp triage approve --lane parked      every row in a lane
+  camp triage approve --batch 2          every row in a review batch
+
+Bulk selectors deliberately do not cover terminal rows — anything that retires
+a workitem into the dungeon or splits it. Approving a batch is not meaningful
+consent to each irreversible action inside it, so those rows are listed and
+skipped, and approving one means naming it. When you do, the confirmation
+echoes the exact command apply will run.
+
+  --amend <disposition>   approve a different disposition than proposed,
+                          revalidated against the row's own vocabulary
+  --reject                record a refusal; the row returns to needing a
+                          proposal
+  --note <text>           attach a note to the verdicts
+
+Re-approving a verdict that already stands is reported as unchanged rather
+than written twice: the stream is an argument, not a log of keystrokes.
+
+```
+camp triage approve [stable-id...] [flags]
+```
+
+### Options
+
+```
+      --amend string   Approve a different disposition than the one proposed
+      --batch int      Approve every non-terminal row in a review batch
+  -h, --help           help for approve
+      --json           Output result as a single JSON object
+      --lane string    Approve every non-terminal row in a lane
+      --note string    Note recorded with the verdicts
+      --reject         Record a refusal instead of an approval
+      --run string     Use a specific run id instead of the latest
+```
+
+### Options inherited from parent commands
+
+```
+      --no-color   disable colored output
+```
+---
+
+## camp triage evidence
+
+Submit or draft evidence for a row
+
+### Synopsis
+
+Submit or draft the evidence record for one row of the active run.
+
+Evidence is advisory data, never authority. Camp validates the record against
+the triage/v1alpha1 schema and stores it; what it means for the row is decided
+by a proposal and then by a human approving one.
+
+Commands:
+  set        Store a record from a file, or mark a row decided without one
+  template   Print a record with the facts camp already knows filled in
+
+```
+camp triage evidence [flags]
+```
+
+### Options
+
+```
+  -h, --help   help for evidence
+```
+
+### Options inherited from parent commands
+
+```
+      --no-color   disable colored output
+```
+---
+
+## camp triage evidence set
+
+Store an evidence record for a row
+
+### Synopsis
+
+Store the evidence record for one row.
+
+The record is validated against the triage/v1alpha1 schema before anything is
+written. A rejection lists every violated field with its allowed values, so one
+submission produces one complete list of what to fix rather than a sequence of
+one-at-a-time failures.
+
+Storing is idempotent by content: resubmitting an identical record changes
+nothing, so a driver that retries a batch does not churn the run.
+
+--no-evidence records that the row was judged without a gathered record. That
+is a real answer, not a missing one: it satisfies the same requirement a full
+record does, while stating honestly that no reading was done.
+
+```
+camp triage evidence set <stable-id> [flags]
+```
+
+### Options
+
+```
+      --file string   Path to the evidence record JSON ('-' for stdin)
+  -h, --help          help for set
+      --json          Output result as a single JSON object
+      --no-evidence   Record that the row was judged without a gathered record
+      --run string    Use a specific run id instead of the latest
+```
+
+### Options inherited from parent commands
+
+```
+      --no-color   disable colored output
+```
+---
+
+## camp triage evidence template
+
+Print an evidence record with the known facts filled in
+
+### Synopsis
+
+Print an evidence record for one row with everything camp can establish
+already filled in, and the judgment fields left empty.
+
+The split is deliberate. Anchors and signals are facts camp measured - the
+row's stage, its age, its content hash, its workflow status. The empty fields
+are what a person or an agent has to decide. Nothing here guesses at what was
+delivered; a template that did would produce a record asserting a conclusion
+nobody reached.
+
+No pull-request anchor is ever pre-filled: camp cannot observe a PR without
+asking a remote, and an anchor claiming a state nobody checked would make a
+verdict look verified when it is not.
+
+Fill it in and submit it:
+  camp triage evidence template <id> > /tmp/record.json
+  camp triage evidence set <id> --file /tmp/record.json
+
+```
+camp triage evidence template <stable-id> [flags]
+```
+
+### Options
+
+```
+  -h, --help         help for template
+      --run string   Use a specific run id instead of the latest
+```
+
+### Options inherited from parent commands
+
+```
+      --no-color   disable colored output
+```
+---
+
+## camp triage init
+
+Scaffold .campaign/triage with the profile and guide
+
+### Synopsis
+
+Write .campaign/triage/ if it is not there yet.
+
+The profile ships with every key written out and commented, not as an empty
+file inheriting invisible defaults — you should be able to read what triage
+will do before you run it, and change it by deleting a line.
+
+Nothing is ever overwritten. A file you have edited is reported as diverged
+and left exactly as you wrote it: the profile is meant to be edited, so
+divergence is information rather than a problem.
+
+camp triage start does this for you on first use, so this command is only
+needed when you want the files before starting a run.
+
+```
+camp triage init [flags]
+```
+
+### Options
+
+```
+  -h, --help   help for init
+      --json   Output result as a single JSON object
+```
+
+### Options inherited from parent commands
+
+```
+      --no-color   disable colored output
+```
+---
+
+## camp triage priorities
+
+Print the priorities brief for the active run
+
+### Synopsis
+
+Print the priorities brief: what to work on, derived from the run's verdicts.
+
+This is the artifact that keeps working after the session ends. The run holds
+the source of truth; --export writes a rendered copy to the path the profile's
+outputs.priorities_export names, so the brief lives where you already look.
+
+The export overwrites rather than versioning. Versioned copies would recreate
+the stale-priorities-document problem triage exists to end; history is git's
+job. When the profile leaves the export path empty, --export reports that it
+did nothing rather than failing.
+
+```
+camp triage priorities [flags]
+```
+
+### Options
+
+```
+      --export       Also write a copy to the profile's outputs.priorities_export path
+  -h, --help         help for priorities
+      --json         Output result as a single JSON object
+      --run string   Use a specific run id instead of the latest
+```
+
+### Options inherited from parent commands
+
+```
+      --no-color   disable colored output
+```
+---
+
+## camp triage profile
+
+Show the resolved triage profile
+
+### Synopsis
+
+Print the profile a run would use, fully merged.
+
+Resolution is: the campaign's .campaign/triage/profile.yaml when it exists,
+otherwise the named built-in. Keys the file omits inherit the built-in default.
+A type's policy is types/<type>.yaml, else types/_default.yaml, else camp's
+built-in — and a type policy that declares dispositions replaces the inherited
+vocabulary rather than adding to it, so a type can genuinely restrict what it
+may be decided into.
+
+This is the same object embedded in every run manifest, which is what keeps a
+verdict explainable after the profile moves on.
+
+```
+camp triage profile [flags]
+```
+
+### Options
+
+```
+  -h, --help             help for profile
+      --json             Output result as a single JSON object
+      --profile string   Resolve a named built-in instead of the campaign's: default, sweep, or deep
+      --resolved         Print the fully merged profile (the default and only mode today)
+```
+
+### Options inherited from parent commands
+
+```
+      --no-color   disable colored output
+```
+---
+
+## camp triage propose
+
+Propose a disposition for a row
+
+### Synopsis
+
+Propose what should happen to one row.
+
+The disposition is a label from the row's type vocabulary; camp resolves it to
+the action it will actually perform and records both. That indirection is what
+lets a campaign rename its labels without triage learning a new mutation.
+
+A proposal is not a decision. Terminal actions - dungeon moves and splits -
+always require a human to approve them, and the result says so.
+
+One proposal is live per row, but nothing is overwritten: proposing again
+retires the previous one with a superseded event and records the new one, so
+the stream keeps the whole argument rather than only where it landed.
+
+The rationale can come from a file or from --summary for a one-liner:
+  camp triage propose <id> --disposition completed --summary "shipped in #239"
+  camp triage propose <id> --disposition consolidate --file rationale.json
+
+```
+camp triage propose <stable-id> [flags]
+```
+
+### Options
+
+```
+      --confidence string    Confidence in the proposal when using --summary: high, medium, or low (default "medium")
+      --disposition string   Disposition label from the row's type vocabulary
+      --file string          Path to the rationale JSON ('-' for stdin)
+  -h, --help                 help for propose
+      --json                 Output result as a single JSON object
+      --run string           Use a specific run id instead of the latest
+      --summary string       One-line rationale, instead of --file
+```
+
+### Options inherited from parent commands
+
+```
+      --no-color   disable colored output
+```
+---
+
+## camp triage queue
+
+List rows awaiting judgment
+
+### Synopsis
+
+List the rows of the active run that are still awaiting judgment.
+
+This is the dispatch surface for whatever drives the evidence phase. Each row
+carries its batch, its type policy (how much evidence to gather, which model
+class to read it with), and the schema version of the record to produce. An
+orchestrating agent reads the queue, fans out however it likes, and submits
+results with camp triage evidence set and camp triage propose.
+
+Camp never calls a model. The routing block is advisory: camp passes it
+through verbatim and does not enforce it.
+
+Roles:
+  evidence     the row has no evidence record yet
+  synthesis    evidence exists, but no proposal does
+
+Rows that already hold a proposal are not queued: what they need next is a
+human approving them, not more judgment. Carried rows are not queued either -
+their verdicts came forward precisely so nobody re-reads them.
+
+```
+camp triage queue [flags]
+```
+
+### Options
+
+```
+  -h, --help          help for queue
+      --json          Output result as a single JSON object
+      --role string   Only rows awaiting this role: evidence or synthesis
+      --run string    Use a specific run id instead of the latest
+```
+
+### Options inherited from parent commands
+
+```
+      --no-color   disable colored output
+```
+---
+
+## camp triage refresh
+
+Re-check the active run against the world
+
+### Synopsis
+
+Re-check every row against a fresh discovery pass and its evidence anchors.
+
+Verdicts expire. A row judged an hour ago rested on facts — a file's contents, a
+workitem's stage, a festival's status — and refresh is what notices when one of
+them moved. Each row comes back in one of five classes:
+
+  fresh    identity resolves and every anchor still matches; the verdict stands
+  moved    the item is at a new path or stage; the row is re-keyed and the
+           verdict stands, because identity survives moves
+  changed  an anchor observes a different value; the verdict goes stale and the
+           row returns to the judgment queue
+  gone     the item is no longer discoverable outside dungeons; the verdict goes
+           stale and the row is flagged — someone likely finished it elsewhere
+  new      discovered but absent from the snapshot; appended and queued
+
+Every row prints the reason for its class, naming the anchor or the location
+that decided it.
+
+Anchors that need the network are recorded unchecked rather than assumed
+current, and the summary counts them separately: not knowing is reported as not
+knowing.
+
+Refresh only records. It retires verdicts, re-keys rows, and appends new ones —
+it never moves a workitem. That is camp triage apply, which refuses any row this
+command did not return fresh or moved.
+
+```
+camp triage refresh [flags]
+```
+
+### Options
+
+```
+  -h, --help         help for refresh
+      --json         Output result as a single JSON object
+      --run string   Use a specific run id instead of the latest
+```
+
+### Options inherited from parent commands
+
+```
+      --no-color   disable colored output
+```
+---
+
+## camp triage review
+
+Render the review documents for the active run
+
+### Synopsis
+
+Render TRIAGE_REVIEW.md and PRIORITIES.md for the active run.
+
+Both documents are output, not input. Verdicts are recorded with
+camp triage approve; re-rendering replaces the files, so an edit made in them
+is lost rather than honored. Each carries that statement at the top.
+
+Every row in the run appears exactly once across the review's lanes, including
+rows nobody has proposed anything for — a document that quietly omitted them
+could be approved without the operator ever seeing what it left out.
+
+Rendering is pure: the same run data always produces the same bytes, so
+re-rendering an unchanged run is a no-op diff.
+
+On a terminal this opens the lane-first review flow after rendering: lanes
+first, then rows, with terminal actions confirming individually. Use
+--render-only to render without opening it. Off a terminal the flow never
+opens, so scripts and CI get the documents and nothing that waits for input.
+
+```
+camp triage review [flags]
+```
+
+### Options
+
+```
+  -h, --help          help for review
+      --json          Output result as a single JSON object
+      --render-only   Render the documents without opening the interactive review flow
+      --run string    Use a specific run id instead of the latest
+```
+
+### Options inherited from parent commands
+
+```
+      --no-color   disable colored output
+```
+---
+
+## camp triage start
+
+Snapshot the campaign and open a triage run
+
+### Synopsis
+
+Snapshot the campaign's workitems and open a triage run.
+
+The snapshot is frozen: the run records what the campaign contained when it
+started, along with the resolved profile it will be judged under, so a verdict
+stays explainable even after the campaign and the profile move on.
+
+Scope expressions use the same filters as camp workitem, one per --scope flag:
+
+  --scope type:design            only design workitems
+  --scope tag:launch             only items tagged launch
+  --scope path:workflow/design   only items under a path (glob)
+
+Available keys: type, category, status, stage, attention-stage, group, tag,
+project, query, path.
+
+Refuses (exit 2) when a run is already in progress; close it with
+camp triage abandon first.
+
+```
+camp triage start [flags]
+```
+
+### Options
+
+```
+      --full                Re-review every row instead of carrying unchanged verdicts forward
+  -h, --help                help for start
+      --identity string     Override the profile's identity policy: repair (adopt and report) or strict (refuse and list)
+      --json                Output result as a single JSON object
+      --no-workflow-doc     Skip the companion WORKFLOW.md scaffold
+      --profile string      Use a named built-in profile instead of the campaign's: default, sweep, or deep
+      --scope stringArray   Limit the run with a key:value filter (repeat for more)
+```
+
+### Options inherited from parent commands
+
+```
+      --no-color   disable colored output
+```
+---
+
+## camp triage status
+
+Show where the active triage run stands
+
+### Synopsis
+
+Show where the active triage run stands.
+
+Status reports the session, not the campaign. It reads the run's own recorded
+data and never walks the filesystem, so it is instant and keeps meaning even
+after the campaign moves underneath the run. Comparing a run against the
+current state of the campaign is what camp triage refresh does.
+
+Exits 0 when there is no run: a campaign that has not triaged yet is a state,
+not an error.
+
+```
+camp triage status [flags]
+```
+
+### Options
+
+```
+  -h, --help         help for status
+      --json         Output result as a single JSON object
+      --run string   Inspect a specific run id instead of the latest
+```
+
+### Options inherited from parent commands
+
+```
+      --no-color   disable colored output
+```
+---
+
+## camp triage verify
+
+Prove the campaign matches the approved decisions
+
+### Synopsis
+
+Check every applied row against a fresh discovery pass.
+
+Apply without proof is just hope. Verify re-walks the campaign and compares
+what it finds against what each receipt says happened: a parked workitem should
+carry that stage, a retired one should no longer be discoverable outside the
+dungeon, a split's successors should all exist.
+
+It reads receipts, not the plan. The plan is what was intended; the receipts
+are what actually ran, and only the second one can be checked against reality.
+
+An unexplained mismatch exits 1. That is the whole signal: the campaign is not
+in the state the approved decisions said it would be. A mismatch someone has
+already accounted for carries an explanation and does not fail the run.
+
+A clean verification moves the run to verified and writes verification.json
+with a rendered VERIFICATION.md beside it.
+
+```
+camp triage verify [flags]
+```
+
+### Options
+
+```
+  -h, --help         help for verify
+      --json         Output result as a single JSON object
+      --run string   Use a specific run id instead of the latest
 ```
 
 ### Options inherited from parent commands
@@ -8216,6 +9187,59 @@ camp workitem resolve [flags]
   -h, --help              help for resolve
       --json              emit a structured JSON result
       --workitem string   explicit workitem selector (overrides cwd-based detection)
+```
+
+### Options inherited from parent commands
+
+```
+      --no-color   disable colored output
+```
+---
+
+## camp workitem split
+
+Split a workitem into successors with lineage
+
+### Synopsis
+
+Split an umbrella workitem into the focused successors that replace it.
+
+A workitem that accumulated three years of scope is not one decision, and
+retiring it whole loses the parts still live. Split names the successors,
+creates or adopts them, and records the lineage in both directions so the trail
+is readable from either end.
+
+  --into <name>[:<type>]    create a successor under the type root
+  --adopt <path>[:<type>]   declare an existing workitem or directory as one
+
+Type defaults to the parent's. At least one successor is required.
+
+No content is moved. Deciding which part of a parent's scope belongs in which
+successor is judgment, and a tool that guessed would produce successors nobody
+trusts. Each created successor gets a README seeded with the back-link and an
+empty scope section for the author to fill.
+
+Lineage is stamped into the markers, not links.yaml: that registry attaches
+workitems to scopes, not to each other.
+
+Splitting arms the retirement gate. The parent then refuses terminal promotion
+until every declared successor exists, which is the successors-before-archive
+rule made mechanical rather than remembered.
+
+```
+camp workitem split <selector> [flags]
+```
+
+### Options
+
+```
+      --adopt stringArray   Declare an existing workitem or directory as a successor: <path>[:<type>] (repeatable)
+      --dry-run             Print what the split would do, change nothing
+  -h, --help                help for split
+      --into stringArray    Create a successor: <name>[:<type>] (repeatable)
+      --json                Output result as a single JSON object
+      --no-commit           Skip the auto-commit
+      --undo                Reverse a split: unstamp lineage, delete only untouched successors
 ```
 
 ### Options inherited from parent commands

@@ -93,6 +93,7 @@ camp [flags]
 * [camp sync](camp_sync.md)	 - Safely synchronize submodules
 * [camp tag](camp_tag.md)	 - Label campaigns with tags
 * [camp transfer](camp_transfer.md)	 - Copy files between campaigns (and machines)
+* [camp triage](camp_triage.md)	 - Review the campaign's workitems in a recorded session
 * [camp unbundle](camp_unbundle.md)	 - Unbundle a .festival archive into a directory
 * [camp unpin](camp_unpin.md)	 - Remove a saved pin
 * [camp unregister](camp_unregister.md)	 - Remove campaign from registry

@@ -66,6 +66,7 @@ camp idea [flags]
 * [camp idea list](camp_idea_list.md)	 - List ideas in the campaign
 * [camp idea move](camp_idea_move.md)	 - Move idea to a different status
 * [camp idea note](camp_idea_note.md)	 - Capture a quick note
+* [camp idea notes](camp_idea_notes.md)	 - Manage the note store (folders, moves, meetings)
 * [camp idea promote](camp_idea_promote.md)	 - Promote an idea through the pipeline
 * [camp idea release](camp_idea_release.md)	 - Release an intent's assignment
 * [camp idea rename](camp_idea_rename.md)	 - Rename an idea
