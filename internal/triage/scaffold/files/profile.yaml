@@ -1,0 +1,66 @@
+# Triage profile — how `camp triage` behaves in this campaign.
+# Delete any key to fall back to the built-in default (shown here).
+# The full guide is in OBEY.md next to this file.
+schema_version: triage-profile/v1alpha1
+
+scope:
+  # Which workitems a run considers. Types not listed in `types:` below
+  # still triage using types/_default.yaml.
+  include_parked: true          # parked items are reviewed, not invisible
+  exclude_types: []             # e.g. [festival] to leave festivals to fest
+  exclude_paths: []             # glob patterns, campaign-relative
+
+runs:
+  mode: incremental             # incremental | full — incremental carries
+                                # verdicts for rows whose evidence anchors
+                                # are unchanged since the base run
+  stale_after_days: 14          # `camp status` notice threshold: how old the
+                                # last run may be before "run camp triage"
+
+review:
+  group_by: type                # type | project | tag | attention_stage —
+                                # how rows are batched for review
+  batch_size: 5                 # rows per review batch (TTY flow + agents)
+  approval: lane                # row | lane | batch — what one approval
+                                # covers by default in the review flow;
+                                # terminal rows always confirm individually
+  require_rationale: true       # a proposal without rationale is rejected
+
+evidence:
+  # Depth per attention lane; per-type overrides live in types/*.yaml.
+  depth_by_stage:
+    current: deep               # deep | metadata | none
+    next: deep
+    active: deep
+    parked: metadata
+    none: metadata              # items with no attention stage set
+
+anchors:
+  # How long a re-checked remote anchor (a PR state) answers from cache
+  # before refresh calls out again. 0 means never cache.
+  recheck_minutes: 5            # evidence goes stale in minutes, not days
+
+routing:
+  # Advisory only: camp never calls models. These values are read by the
+  # orchestrating agent from `camp triage queue --json` and are its
+  # instructions, enforced by convention not by camp.
+  evidence_tier: cheap          # cheap | default | strong — model class for
+                                # per-item evidence reading
+  escalation_tier: strong       # class for contradictions and code traces
+  synthesis_tier: strong        # class for the batch synthesis pass
+  max_concurrent: 4             # worker fan-out ceiling
+
+apply:
+  attention_changes: on-apply   # on-apply | manual — non-terminal stage
+                                # changes apply with the batch, or are left
+                                # as printed commands
+  # Terminal moves, splits, and festival promotions ALWAYS require
+  # recorded human approval. That is product behavior, not profile.
+
+outputs:
+  priorities_export: ""         # campaign-relative path to keep a rendered
+                                # copy of PRIORITIES.md, e.g.
+                                # "current_priorities/PRIORITIES.md".
+                                # Empty = no export; run copy always exists.
+  scaffold_workflow_doc: true   # also generate a companion WORKFLOW.md so
+                                # fest-style step guidance works in the run

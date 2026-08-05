@@ -1,0 +1,15 @@
+# Type policy: anything without its own file.
+# This is what a type you invent triages under, with zero configuration.
+schema_version: triage-type/v1alpha1
+evidence: metadata              # read the marker, not the codebase
+dispositions:                   # the full default vocabulary
+  completed: dungeon/completed
+  archived: dungeon/archived
+  someday: dungeon/someday
+  consolidate: split
+  ready: rail/ready
+  active: rail/active
+  current: attention/current
+  next: attention/next
+  parked: attention/parked
+routing_tier: cheap

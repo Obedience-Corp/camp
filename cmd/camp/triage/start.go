@@ -15,6 +15,7 @@ import (
 	"github.com/Obedience-Corp/camp/internal/jsoncontract"
 	"github.com/Obedience-Corp/camp/internal/paths"
 	"github.com/Obedience-Corp/camp/internal/triage"
+	"github.com/Obedience-Corp/camp/internal/triage/scaffold"
 	"github.com/Obedience-Corp/camp/internal/workitem"
 	"github.com/Obedience-Corp/camp/internal/workitem/priority"
 )
@@ -116,6 +117,13 @@ func runStart(cmd *cobra.Command, opts *startOptions) error {
 	if opts.identity != "" {
 		profile.Preflight.Identity = triage.IdentityPolicy(opts.identity)
 	}
+	// Scaffold before anything reads the profile: a first run should leave the
+	// campaign with a readable, commented profile explaining what just
+	// happened, not an invisible default nobody can inspect.
+	if _, err := scaffold.Ensure(ctx, root); err != nil {
+		return err
+	}
+
 	scope := triage.NewScope(profile)
 	if err := scope.ApplyExpressions(opts.scope); err != nil {
 		return err

@@ -1,0 +1,11 @@
+# Type policy: design workitems.
+# Missing keys inherit the profile, then types/_default.yaml.
+schema_version: triage-type/v1alpha1
+evidence: deep                  # designs are checked against code/PRs
+dispositions:                   # labels offered for this type; each maps to
+                                # a canonical action camp owns
+  completed: dungeon/completed  # design delivered — close it
+  consolidate: split            # umbrella — split then retire parent
+  parked: attention/parked
+  next: attention/next
+routing_tier: default           # deep reads justify a stronger reader
