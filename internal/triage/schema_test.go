@@ -251,6 +251,10 @@ func TestManifestFieldNamesMatchSpec(t *testing.T) {
 		// doc 04: refresh needs the run's own scope to tell a genuinely new
 		// discovery from an item the run never covered.
 		"scope_expressions",
+		// carry_losses is likewise additive: spec doc 04 requires status be
+		// able to say why a row was re-queued rather than carried, and a
+		// start-time refusal leaves no other trace on the run.
+		"carry_losses",
 		"created_at", "rows",
 	}, keysOf(doc))
 

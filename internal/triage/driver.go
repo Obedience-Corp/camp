@@ -34,7 +34,7 @@ func RenderDriver(runID string, profile ResolvedProfile, batches int) []byte {
 	writeDriverLoop(&b, runID)
 	writeDriverSchema(&b)
 	writeDriverRouting(&b, profile, batches)
-	writeDriverRules(&b)
+	writeDriverRules(&b, profile)
 	writeDriverCompletion(&b, runID)
 
 	return []byte(b.String())
@@ -131,7 +131,12 @@ func writeDriverRouting(b *strings.Builder, profile ResolvedProfile, batches int
 }
 
 // writeDriverRules states the advisory boundary verbatim.
-func writeDriverRules(b *strings.Builder) {
+//
+// The rationale rule is rendered from the profile rather than asserted,
+// because the brief is the thing an agent obeys: telling it a proposal without
+// reasoning is refused, in a campaign where it is not, teaches the agent that
+// the brief is approximately true.
+func writeDriverRules(b *strings.Builder, profile ResolvedProfile) {
 	b.WriteString("## Rules\n\n")
 	b.WriteString("- **Read-only.** You do not move, rename, promote, or retire anything.\n")
 	b.WriteString("- **No lifecycle mutations.** Not `camp workitem promote`, not " +
@@ -142,8 +147,13 @@ func writeDriverRules(b *strings.Builder) {
 	b.WriteString("- **A proposal is advisory.** Terminal dispositions — retiring or " +
 		"splitting a workitem — always require a human's recorded approval, and " +
 		"nothing you submit bypasses that.\n")
-	b.WriteString("- **Rationale is required.** A proposal without reasoning is " +
-		"refused, because a verdict nobody can audit is worse than no verdict.\n\n")
+	if profile.Review.RequireRationale {
+		b.WriteString("- **Rationale is required.** A proposal without reasoning is " +
+			"refused, because a verdict nobody can audit is worse than no verdict.\n\n")
+		return
+	}
+	b.WriteString("- **Rationale is optional in this campaign**, and still worth " +
+		"writing: a verdict nobody can audit is worse than no verdict.\n\n")
 }
 
 // writeDriverCompletion states how to know the job is done.

@@ -318,3 +318,40 @@ func TestConsolidationQueueNeverReturnsNilSlices(t *testing.T) {
 	assert.NotNil(t, withRow[0].Successors)
 	assert.NotNil(t, withRow[0].Missing)
 }
+
+// TestStatusReportsCarryLossesFrozenAtStart is spec doc 04's requirement that
+// status answer why a row is being judged again.
+//
+// A row re-queued when the run was built holds no verdict and is not marked
+// carried, so nothing about the row itself records the reason. Without the
+// manifest's own list, the only place that reason ever existed was the start
+// command's output, and an operator asking "why am I looking at this again"
+// is by definition asking after that output is gone.
+func TestStatusReportsCarryLossesFrozenAtStart(t *testing.T) {
+	run := statusRun(t)
+	run.Manifest.CarryLosses = []CarryLoss{
+		{StableID: "design-observation-boundary", Reason: "the base run's proposal was never approved"},
+	}
+
+	status := StatusFrom(run, nil)
+
+	require.Len(t, status.CarryLosses, 1)
+	assert.Equal(t, "design-observation-boundary", status.CarryLosses[0].StableID)
+	assert.Contains(t, status.CarryLosses[0].Reason, "never approved")
+}
+
+// TestStatusCarryLossesAreSorted keeps two reads of an unchanged run in
+// agreement, so a diff of two payloads shows only what moved.
+func TestStatusCarryLossesAreSorted(t *testing.T) {
+	run := statusRun(t)
+	run.Manifest.CarryLosses = []CarryLoss{
+		{StableID: "zzz-last", Reason: "classified changed"},
+		{StableID: "aaa-first", Reason: "classified gone"},
+	}
+
+	status := StatusFrom(run, nil)
+
+	require.Len(t, status.CarryLosses, 2)
+	assert.Equal(t, "aaa-first", status.CarryLosses[0].StableID)
+	assert.Equal(t, "zzz-last", status.CarryLosses[1].StableID)
+}

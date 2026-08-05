@@ -191,6 +191,28 @@ func TestTriageReview_OverwritesAnEditedDocument(t *testing.T) {
 func TestTriagePriorities_PrintsTheBrief(t *testing.T) {
 	tc := GetSharedContainer(t)
 	path := setupTriageCampaign(t, tc, "triage-priorities-print", 3, 0)
+
+	// The primary-execution-thread lane needs a row set to `current`, and the
+	// shipped design policy deliberately offers a shorter vocabulary than
+	// that. Scaffolding first and adding the label is what a campaign wanting
+	// that lane actually does — and it proves the run's vocabulary comes from
+	// the campaign's own file rather than a built-in camp carries.
+	out, err := tc.RunCampInDir(path, "triage", "init")
+	require.NoError(t, err, out)
+	tc.Shell(t, `set -e
+cd `+path+`
+cat > .campaign/triage/types/design.yaml <<'YAML'
+schema_version: triage-type/v1alpha1
+evidence: deep
+dispositions:
+  completed: dungeon/completed
+  consolidate: split
+  parked: attention/parked
+  next: attention/next
+  current: attention/current
+routing_tier: default
+YAML`)
+
 	_, runDir := startTriageRun(t, tc, path)
 	ids := manifestRowIDs(t, tc, runDir)
 	judgeRow(t, tc, path, ids[0], "current")
@@ -199,7 +221,8 @@ func TestTriagePriorities_PrintsTheBrief(t *testing.T) {
 	require.NoError(t, err, output)
 
 	assert.Contains(t, output, "# Portfolio priorities")
-	assert.Contains(t, output, "Primary execution thread")
+	assert.Contains(t, output, "Primary execution thread",
+		"the campaign added `current` to its design policy, so the lane exists")
 	assert.Contains(t, output, ids[0])
 	assert.Contains(t, output, "Not yet decided", "unjudged rows are named, not hidden")
 }
@@ -247,14 +270,14 @@ func TestTriagePriorities_ExportWritesAndOverwrites(t *testing.T) {
 
 	// Re-exporting after a new verdict overwrites in place rather than
 	// versioning: a second file would recreate the stale-brief problem.
-	judgeRow(t, tc, path, ids[0], "current")
+	judgeRow(t, tc, path, ids[0], "next")
 	output, err = tc.RunCampInDir(path, "triage", "priorities", "--export", "--json")
 	require.NoError(t, err, output)
 
 	updated, err := tc.ReadFile(path + "/current_priorities/PRIORITIES.md")
 	require.NoError(t, err)
 	assert.NotEqual(t, exported, updated)
-	assert.Contains(t, updated, "Primary execution thread")
+	assert.Contains(t, updated, "Next up")
 
 	listing := tc.Shell(t, "ls "+path+"/current_priorities | wc -l")
 	assert.Equal(t, "1", strings.TrimSpace(listing), "the export overwrites, never versions")

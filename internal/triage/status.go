@@ -196,6 +196,11 @@ func StatusFrom(run *Run, verdicts map[string]RowVerdict) *Status {
 		status.AbandonReason = *run.State.AbandonReason
 	}
 
+	// Losses frozen at start — rows that held a verdict in the base run and
+	// did not carry it — plus the ones a refresh produced later. Both are the
+	// same question to an operator: why is this row in front of me again.
+	status.CarryLosses = append(status.CarryLosses, run.Manifest.CarryLosses...)
+
 	byBatch := map[int]*BatchProgress{}
 	for _, row := range run.Manifest.Rows {
 		state := rowStateFor(row, verdicts[row.StableID])
@@ -225,6 +230,11 @@ func StatusFrom(run *Run, verdicts map[string]RowVerdict) *Status {
 	for _, batch := range sortedBatches(byBatch) {
 		status.Batches = append(status.Batches, *batch)
 	}
+	// Stable order, so two reads of an unchanged run agree and a diff of two
+	// status payloads shows only what actually moved.
+	sort.Slice(status.CarryLosses, func(a, b int) bool {
+		return status.CarryLosses[a].StableID < status.CarryLosses[b].StableID
+	})
 	return status
 }
 
@@ -503,15 +513,32 @@ func (s *Store) ReadNotice() *Notice {
 	return &notice
 }
 
-// BannerFor returns the notice line for a campaign, reading only the cached
-// verdict and the run's timestamp — never the filesystem at large.
-func BannerFor(campaignRoot string, staleAfterDays int, now time.Time) string {
+// BannerFor returns the notice line for a campaign, or "" when there is
+// nothing to say.
+//
+// The cached verdict is read first, so a campaign that has never triaged —
+// which is most of them — answers with one failed stat and no further work.
+// Only a campaign that has something to be stale about pays for the threshold.
+//
+// The threshold is the campaign's own. It is resolved here rather than passed
+// in because the caller has no way to know it, and a caller that guessed would
+// make `runs.stale_after_days` a key the operator can set and camp ignores.
+// That costs one small config read, not the discovery walk the hot path rules
+// out. A profile camp cannot read costs the notice its accuracy, never the
+// command: the built-in threshold stands in.
+func BannerFor(ctx context.Context, campaignRoot string, now time.Time) string {
 	store := NewStore(campaignRoot, nil)
 
 	notice := store.ReadNotice()
 	if notice == nil {
 		return ""
 	}
+
+	staleAfterDays := DefaultProfile().Runs.StaleAfterDays
+	if profile, err := ResolveProfile(ctx, campaignRoot); err == nil {
+		staleAfterDays = profile.Runs.StaleAfterDays
+	}
+
 	days := int(now.Sub(notice.CheckedAt).Hours() / 24)
 	return TriageBannerText(days, staleAfterDays, notice.ChangedRows)
 }

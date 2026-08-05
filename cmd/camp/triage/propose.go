@@ -143,7 +143,14 @@ func runPropose(cmd *cobra.Command, stableID string, opts proposeOptions) error 
 }
 
 // readRationale builds the rationale from a file or from --summary.
+//
+// Neither flag yields no rationale rather than an error: whether a proposal
+// may go unjustified is the run profile's `review.require_rationale` to
+// decide, and the store refuses there with the run's own frozen answer.
 func readRationale(cmd *cobra.Command, opts proposeOptions) (*triage.Rationale, error) {
+	if opts.file == "" && opts.summary == "" {
+		return nil, nil
+	}
 	if opts.summary != "" {
 		return &triage.Rationale{
 			SchemaVersion: triage.SchemaVersion,
@@ -187,6 +194,11 @@ func writeProposeText(w io.Writer, result *triage.ProposeResult) error {
 			"  this is a terminal action and will not run until you approve it\n"); err != nil {
 			return err
 		}
+	}
+	// Silent rather than "rationale: " with nothing after it, for the campaign
+	// whose profile does not require one.
+	if result.RationaleRef == "" {
+		return nil
 	}
 	_, err := fmt.Fprintf(w, "  rationale: %s\n", result.RationaleRef)
 	return err

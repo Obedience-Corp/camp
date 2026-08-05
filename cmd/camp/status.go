@@ -110,15 +110,15 @@ func runStatus(cmd *cobra.Command, args []string) error {
 		return camperrors.Wrapf(err, "git status failed for %s", target.Path)
 	}
 
-	// One line when the campaign's last triage has gone stale. It reads only
-	// the verdict a refresh already cached — never the filesystem at large —
-	// because this is the command people run constantly and a banner that
-	// cost a discovery walk would be a tax on every invocation.
+	// One line when the campaign's last triage has gone stale. It reads the
+	// verdict a refresh already cached and the campaign's own threshold —
+	// never the filesystem at large — because this is the command people run
+	// constantly and a banner that cost a discovery walk would be a tax on
+	// every invocation.
 	if !target.IsSubmodule {
-		if line := triage.BannerFor(target.Path,
-			triage.DefaultProfile().Runs.StaleAfterDays, time.Now()); line != "" {
+		if line := triage.BannerFor(ctx, target.Path, time.Now()); line != "" {
 			if _, err := fmt.Fprintln(os.Stdout, line); err != nil {
-				return err
+				return camperrors.Wrap(err, "write triage notice")
 			}
 		}
 	}

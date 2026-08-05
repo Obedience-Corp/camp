@@ -117,9 +117,21 @@ type Manifest struct {
 	// run narrowed by --scope and append the whole campaign to the manifest.
 	// The profile's own scope keys survive inside Profile.Resolved; these are
 	// the per-invocation expressions layered on top.
-	ScopeExpressions []string      `json:"scope_expressions"`
-	CreatedAt        time.Time     `json:"created_at"`
-	Rows             []ManifestRow `json:"rows"`
+	ScopeExpressions []string  `json:"scope_expressions"`
+	CreatedAt        time.Time `json:"created_at"`
+	// CarryLosses names every row that held a verdict in the base run and did
+	// not carry it into this one, with the reason.
+	//
+	// Frozen here because the reason is snapshot data — a fact about how this
+	// run was built — and because spec doc 04 requires `camp triage status`
+	// answer why a row was re-queued. A loss recorded only in the start
+	// command's output stops being answerable the moment that output scrolls
+	// away, which is the case where an operator most wants to ask.
+	//
+	// Always present, `[]` on a run that lost nothing, so a reader never has to
+	// tell absent from empty.
+	CarryLosses []CarryLoss   `json:"carry_losses"`
+	Rows        []ManifestRow `json:"rows"`
 }
 
 // ManifestProfile is the profile a run resolved, by name and by value.
@@ -214,6 +226,9 @@ func (m *Manifest) Normalize() {
 	}
 	if m.ScopeExpressions == nil {
 		m.ScopeExpressions = []string{}
+	}
+	if m.CarryLosses == nil {
+		m.CarryLosses = []CarryLoss{}
 	}
 	m.Profile.Resolved.Normalize()
 	for i := range m.Rows {

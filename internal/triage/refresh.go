@@ -162,14 +162,17 @@ func (s *Store) Refresh(ctx context.Context, in RefreshInput) (*RefreshResult, e
 	}
 
 	// Cache what this pass saw so the banner can answer without a discovery
-	// walk. A failure here costs the notice, not the refresh.
+	// walk. A failure here costs the notice, not the refresh — except a
+	// cancelled context, which the caller asked for and gets.
 	counts := result.Diff.CountByClass()
-	_ = s.WriteNotice(ctx, &Notice{
+	if err := s.WriteNotice(ctx, &Notice{
 		RunID:     in.RunID,
 		CheckedAt: in.Now,
 		ChangedRows: counts[ClassMoved] + counts[ClassChanged] +
 			counts[ClassGone] + counts[ClassNew],
-	})
+	}); err != nil && ctx.Err() != nil {
+		return nil, ctx.Err()
+	}
 	return result, nil
 }
 
@@ -191,6 +194,7 @@ func (s *Store) applyDiffEffects(
 ) (bool, error) {
 	rowAt := indexRows(manifest.Rows)
 	changed := false
+	standing := newStandingVerdicts(s)
 
 	// Captured before the loop: appending a row raises the manifest's batch
 	// count, so recomputing this per append would advance the batch once per
@@ -203,7 +207,7 @@ func (s *Store) applyDiffEffects(
 		// moving — are exactly what a refresh is looking at.
 		if i, ok := rowAt[diff.StableID]; ok && manifest.Rows[i].CarriedFrom != nil {
 			loss, recorded, err := s.reviewCarry(ctx, in, manifest,
-				manifest.Rows[i], diff, verdicts[diff.StableID])
+				manifest.Rows[i], diff, verdicts[diff.StableID], standing)
 			if err != nil {
 				return false, err
 			}
@@ -264,10 +268,16 @@ func (s *Store) reviewCarry(
 	row ManifestRow,
 	diff RowDiff,
 	verdict RowVerdict,
+	standing *standingVerdicts,
 ) (*CarryLoss, bool, error) {
+	held, err := standing.verdictFor(ctx, row, verdict)
+	if err != nil {
+		return nil, false, err
+	}
+
 	decision := DecideCarry(CarryInput{
 		Row:     row,
-		Verdict: verdict,
+		Verdict: held,
 		Class:   diff.Class,
 		Base:    manifest.Profile.Resolved,
 		Next:    currentProfile(in, manifest),
@@ -277,7 +287,7 @@ func (s *Store) reviewCarry(
 	}
 
 	loss := &CarryLoss{StableID: row.StableID, Reason: decision.Reason}
-	if !diff.Class.Applicable() || !HasLiveProposal(verdict) {
+	if !diff.Class.Applicable() || !HasLiveProposal(held) {
 		return loss, false, nil
 	}
 
@@ -292,6 +302,45 @@ func (s *Store) reviewCarry(
 		return nil, false, err
 	}
 	return loss, true, nil
+}
+
+// standingVerdicts answers which verdict a row is actually standing on,
+// reading base runs lazily and at most once each.
+//
+// A carried row's verdict lives in the run that produced it: carrying records
+// that a decision still holds, not a second copy of it. Re-deciding such a row
+// against the current run's decisions would find nothing there and report
+// every carried row as a lost carry on the first refresh, with a reason — "no
+// live verdict to carry" — that describes the lookup rather than the row.
+type standingVerdicts struct {
+	store *Store
+	byRun map[string]map[string]RowVerdict
+}
+
+func newStandingVerdicts(store *Store) *standingVerdicts {
+	return &standingVerdicts{store: store, byRun: map[string]map[string]RowVerdict{}}
+}
+
+// verdictFor returns the verdict governing a row: this run's once it has said
+// anything about the row, otherwise the base run's for a carried row.
+//
+// This run wins when it has spoken because a refresh that already retired a
+// carry has to keep meaning that, rather than reading the base run again and
+// resurrecting the verdict it just invalidated.
+func (v *standingVerdicts) verdictFor(ctx context.Context, row ManifestRow, current RowVerdict) (RowVerdict, error) {
+	if row.CarriedFrom == nil || current.State != VerdictNone {
+		return current, nil
+	}
+	verdicts, ok := v.byRun[*row.CarriedFrom]
+	if !ok {
+		loaded, err := v.store.Verdicts(ctx, *row.CarriedFrom)
+		if err != nil {
+			return RowVerdict{}, err
+		}
+		v.byRun[*row.CarriedFrom] = loaded
+		verdicts = loaded
+	}
+	return verdicts[row.StableID], nil
 }
 
 // currentProfile is the profile to compare the run's embedded one against.

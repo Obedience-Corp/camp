@@ -207,19 +207,19 @@ func TestTriagePropose_IntentVocabularyDiffersFromDesign(t *testing.T) {
 	recordEvidenceFor(t, tc, path, intentID)
 	recordEvidenceFor(t, tc, path, designID)
 
-	// "promote" is an intent label and not a design one.
+	// "ready" is an intent label and not a design one.
 	out, err := tc.RunCampInDir(path, "triage", "propose", intentID,
-		"--disposition", "promote", "--summary", "worth doing", "--json")
+		"--disposition", "ready", "--summary", "worth doing", "--json")
 	require.NoError(t, err, out)
 	assert.Equal(t, "rail/ready",
 		decodeTriageJSON(t, out)["proposal"].(map[string]any)["canonical_action"])
 
 	refused, _, err := tc.ExecCommand("sh", "-c",
 		"cd "+path+" && /camp triage propose "+designID+
-			" --disposition promote --summary x 2>&1; echo EXIT:$?")
+			" --disposition ready --summary x 2>&1; echo EXIT:$?")
 	require.NoError(t, err)
 	assert.NotContains(t, refused, "EXIT:0",
-		"a design has no promote label: %s", refused)
+		"a design has no ready label: %s", refused)
 }
 
 // --- the judging -> reviewing gate --------------------------------------
@@ -290,11 +290,11 @@ func TestTriageJudgment_FullDriverLoop(t *testing.T) {
 	for _, item := range items {
 		id := item["stable_id"].(string)
 		// The label has to come from the row's own type vocabulary: an intent
-		// parks with "park", a design with "parked". That difference is the
-		// per-type policy doing its job.
+		// can be promoted with "ready", a design cannot. That difference is
+		// the per-type policy doing its job.
 		disposition := "parked"
 		if item["type"].(string) == "intent" {
-			disposition = "park"
+			disposition = "ready"
 		}
 
 		// Template out, fill in, submit back.

@@ -32,11 +32,12 @@ type startResult struct {
 	Profile       string `json:"profile"`
 	Rows          int    `json:"rows"`
 	Batches       int    `json:"batches"`
-	// Queued and Carried always sum to Rows. Carried is 0 until carry-forward
-	// lands; the field exists now so consumers do not have to change shape
-	// when it starts moving.
+	// Queued and Carried always sum to Rows.
 	Queued  int `json:"queued"`
 	Carried int `json:"carried"`
+	// BaseRunID names the run this one carried from, empty on a bootstrap or
+	// `--full` run.
+	BaseRunID string `json:"base_run_id,omitempty"`
 	// CarryLosses names every row that could have carried and did not, with
 	// the reason. A row silently dropping back into review is what makes an
 	// incremental run feel arbitrary.
@@ -173,7 +174,7 @@ func runStart(cmd *cobra.Command, opts *startOptions) error {
 	manifest, err := triage.BuildManifest(triage.SnapshotInput{
 		ProfileName: resolution.Name,
 		Profile:     profile,
-		Mode:        startMode(opts.full),
+		Mode:        startMode(),
 		Items:       items,
 		// Frozen so refresh can reproduce this run's selection instead of
 		// treating every out-of-scope item as a new discovery.
@@ -215,6 +216,7 @@ func runStart(cmd *cobra.Command, opts *startOptions) error {
 		Batches:             triage.BatchCount(manifest),
 		Queued:              len(manifest.Rows) - carriedCount(carry),
 		Carried:             carriedCount(carry),
+		BaseRunID:           baseRunIDOf(manifest),
 		CarryLosses:         carryLossesOf(carry),
 		IdentityExceptions:  triage.IdentityExceptionCount(manifest),
 		Repaired:            preflight.Repaired,
@@ -243,15 +245,13 @@ func runStart(cmd *cobra.Command, opts *startOptions) error {
 	return writeStartText(cmd.OutOrStdout(), result)
 }
 
-// startMode reports the run mode.
+// startMode is the mode a run begins in.
 //
-// Every run is full today. Incremental means "carry verdicts forward from a
-// base run", and carry-forward lands in a later sequence, so claiming
-// incremental would put a mode in the manifest that nothing honors — and the
-// schema rejects an incremental run with no base run precisely to stop that.
-// --full is accepted now so the flag surface is stable; it becomes meaningful
-// when there is something to carry.
-func startMode(_ bool) triage.RunMode {
+// Full until carry-forward finds a base run to diff against, which is what
+// upgrades it to incremental. The bootstrap case stays full because spec doc
+// 02's D4 says so — no prior run is simply a full run — and the schema rejects
+// an incremental run with no base run precisely to keep the two in step.
+func startMode() triage.RunMode {
 	return triage.RunModeFull
 }
 
@@ -328,6 +328,9 @@ func writeStartText(w io.Writer, result startResult) error {
 	if _, err := fmt.Fprintf(w, "  %d rows in %d batches\n", result.Rows, result.Batches); err != nil {
 		return err
 	}
+	if err := writeCarryCounts(w, result); err != nil {
+		return err
+	}
 	// Every repair is named. Camp adopted these directories without being
 	// asked, so silence would leave the operator with markers they did not
 	// write and no record of where they came from.
@@ -358,8 +361,62 @@ func writeStartText(w io.Writer, result startResult) error {
 			return err
 		}
 	}
+	if result.DriverDoc != "" {
+		if _, err := fmt.Fprintf(w, "  brief: %s\n", result.DriverDoc); err != nil {
+			return err
+		}
+	}
+	// After the run's own lines, not between them: the losses are an indented
+	// list of their own, and printing them mid-block made the `run:` and
+	// `brief:` lines read as further entries in it.
+	if err := writeCarryLosses(w, result); err != nil {
+		return err
+	}
 	_, err := fmt.Fprintf(w, "\nNext: camp triage status\n")
 	return err
+}
+
+// writeCarryCounts reports what an incremental run reused.
+//
+// Silent on a bootstrap or `--full` run, where there is nothing to say. On an
+// incremental one it always speaks, because reusing an old verdict is camp
+// deciding on the operator's behalf that a row does not need looking at.
+func writeCarryCounts(w io.Writer, result startResult) error {
+	if result.BaseRunID == "" {
+		return nil
+	}
+	_, err := fmt.Fprintf(w, "  %d carried forward from %s, %d queued for judgment\n",
+		result.Carried, result.BaseRunID, result.Queued)
+	return err
+}
+
+// writeCarryLosses names every row that held a verdict and did not carry it.
+//
+// A row dropping back into review without an explanation is what makes an
+// incremental run feel arbitrary, so each one is named with its reason rather
+// than folded into the queued count.
+func writeCarryLosses(w io.Writer, result startResult) error {
+	if len(result.CarryLosses) == 0 {
+		return nil
+	}
+	if _, err := fmt.Fprintf(w, "\n%d row(s) held a verdict that did not carry:\n",
+		len(result.CarryLosses)); err != nil {
+		return err
+	}
+	for _, loss := range result.CarryLosses {
+		if _, err := fmt.Fprintf(w, "  %s  %s\n", loss.StableID, loss.Reason); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+// baseRunIDOf names the run an incremental snapshot diffed against.
+func baseRunIDOf(manifest *triage.Manifest) string {
+	if manifest.BaseRunID == nil {
+		return ""
+	}
+	return *manifest.BaseRunID
 }
 
 func init() {
@@ -430,6 +487,15 @@ func carryFromLastRun(
 		NextPolicies: resolution.TypePolicies,
 	})
 	manifest.BaseRunID = &baseID
+	// The run is incremental because it has something to diff against, not
+	// because a flag said so. Leaving every run recorded as `full` would make
+	// the manifest misreport its own history and would strand the schema rule
+	// that an incremental run must name a base run.
+	manifest.Mode = triage.RunModeIncremental
+	// Frozen into the snapshot, not just reported: `camp triage status` has to
+	// be able to answer why a row is being judged again long after this
+	// command's output is gone.
+	manifest.CarryLosses = result.Losses
 	return &result, nil
 }
 

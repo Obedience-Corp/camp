@@ -198,9 +198,10 @@ type CarryLoss struct {
 // CarryForward decides which of a base run's verdicts survive into a new one.
 //
 // This is D4: the second triage of a campaign should be small, because most of
-// it has not changed. A row carries when its identity resolves unchanged, its
-// evidence anchors still observe what they observed, and the policy that
-// produced its verdict still means the same thing.
+// it has not changed. A row carries when the base run actually approved a
+// verdict for it, its identity resolves unchanged, its evidence anchors still
+// observe what they observed, and the policy that produced the verdict still
+// means the same thing.
 //
 // Pure: the caller supplies the base run's rows and verdicts, the new
 // manifest's rows, and the classification the refresh machinery produced.
@@ -212,7 +213,25 @@ func CarryForward(in CarryForwardInput) CarryForwardResult {
 	for i := range in.Rows {
 		row := &in.Rows[i]
 		verdict, judged := in.BaseVerdicts[row.StableID]
-		if !judged {
+		if !judged || verdict.State == VerdictNone {
+			continue
+		}
+
+		// A proposal is not a decision, and this is the only place that
+		// distinction can be enforced: a carried row leaves the queue and the
+		// review gate, and the new run holds no verdict for it, so carrying
+		// something nobody approved would retire the human's pending approval
+		// without anyone deciding to. Re-queuing costs one re-judgment; the
+		// other way loses the decision and says nothing.
+		//
+		// The refresh path re-decides carried rows too, but asks a different
+		// question — does a verdict that already carried still stand — so the
+		// rule lives here rather than in DecideCarry.
+		if verdict.State != VerdictApproved {
+			result.Losses = append(result.Losses, CarryLoss{
+				StableID: row.StableID,
+				Reason:   carryRefusalFor(verdict),
+			})
 			continue
 		}
 
@@ -243,6 +262,18 @@ func CarryForward(in CarryForwardInput) CarryForwardResult {
 		result.Carried = append(result.Carried, row.StableID)
 	}
 	return result
+}
+
+// carryRefusalFor names why a base-run verdict was not a decision to carry.
+//
+// A proposal and a refusal are different stories to an operator: one is work
+// still owed a human, the other is a row that was looked at and turned down.
+// Reporting both as "nothing to carry" would hide the first inside the second.
+func carryRefusalFor(verdict RowVerdict) string {
+	if verdict.State == VerdictProposed {
+		return "the base run's proposal was never approved"
+	}
+	return "the base run's verdict was " + string(verdict.State) + ", not approved"
 }
 
 // CarryForwardInput is everything the carry decision reads.

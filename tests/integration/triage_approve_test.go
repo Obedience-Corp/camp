@@ -169,12 +169,16 @@ func TestTriageApprove_AmendRevalidatesTheDisposition(t *testing.T) {
 	ids := manifestRowIDs(t, tc, runDir)
 	proposeRow(t, tc, path, ids[0], "parked")
 
-	output, err := tc.RunCampInDir(path, "triage", "approve", ids[0], "--amend", "archived", "--json")
+	// `completed` rather than `archived`: the campaign's own design policy is
+	// what a run freezes, and the shipped one offers a deliberately short
+	// vocabulary that `archived` is not in. Amending to a label the row's
+	// policy does not carry is the refusal case below, not this one.
+	output, err := tc.RunCampInDir(path, "triage", "approve", ids[0], "--amend", "completed", "--json")
 	require.NoError(t, err, output)
 	recorded := approvalOf(t, output)["recorded"].([]any)[0].(map[string]any)
 	assert.Equal(t, "amended", recorded["event"])
-	assert.Equal(t, "archived", recorded["disposition"])
-	assert.Equal(t, "dungeon/archived", recorded["canonical_action"])
+	assert.Equal(t, "completed", recorded["disposition"])
+	assert.Equal(t, "dungeon/completed", recorded["canonical_action"])
 
 	// An amendment outside the row's vocabulary is refused.
 	proposeRow(t, tc, path, ids[1], "parked")

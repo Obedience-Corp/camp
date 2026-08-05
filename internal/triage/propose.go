@@ -93,9 +93,6 @@ func (s *Store) Propose(ctx context.Context, in ProposeInput) (*ProposeResult, e
 	if err := ctx.Err(); err != nil {
 		return nil, err
 	}
-	if in.Rationale == nil {
-		return nil, camperrors.NewValidation("rationale", "is required", camperrors.ErrInvalidInput)
-	}
 	if strings.TrimSpace(in.Actor) == "" {
 		return nil, camperrors.NewValidation("actor", "is required", camperrors.ErrInvalidInput)
 	}
@@ -103,6 +100,14 @@ func (s *Store) Propose(ctx context.Context, in ProposeInput) (*ProposeResult, e
 	run, err := s.OpenRun(ctx, in.RunID)
 	if err != nil {
 		return nil, err
+	}
+	// The run's own frozen profile decides, not the campaign's file today:
+	// whether a verdict had to be justified is a fact about how it was
+	// recorded. `review.require_rationale` is a documented key, so it has to
+	// be read somewhere — a config the operator can set and camp ignores is
+	// the failure the strict profile decoder exists to prevent.
+	if in.Rationale == nil && run.Manifest.Profile.Resolved.Review.RequireRationale {
+		return nil, camperrors.NewValidation("rationale", "is required", camperrors.ErrInvalidInput)
 	}
 	// Recording judgment is what puts a run in the judging phase. The machine
 	// is driven by the work, not by an operator naming phases.
@@ -185,6 +190,12 @@ func (s *Store) proposeLockPath(runID, stableID string) string {
 
 // writeRationale stores the rationale and returns its run-relative path.
 func (s *Store) writeRationale(ctx context.Context, in ProposeInput) (string, error) {
+	// A profile that does not require one gets no file and no reference,
+	// rather than an empty document that would read as a rationale nobody
+	// wrote.
+	if in.Rationale == nil {
+		return "", nil
+	}
 	body, err := MarshalDocument(in.Rationale)
 	if err != nil {
 		return "", err
