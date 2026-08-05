@@ -251,7 +251,10 @@ func printRefresh(w io.Writer, result refreshResult) error {
 			return err
 		}
 	}
-	if s.Changed+s.Gone > 0 {
+	// Gated on what was actually retired, not on how many rows changed. A
+	// changed row nobody had judged retires nothing, and "0 verdict(s) went
+	// stale" is a line that makes a reader doubt the rest of the output.
+	if s.StaleRecorded > 0 {
 		if _, err := fmt.Fprintf(w,
 			"\n%d verdict(s) went stale. Re-judge them, then approve again:\n"+
 				"  camp triage queue\n", s.StaleRecorded); err != nil {

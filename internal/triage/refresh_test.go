@@ -455,3 +455,50 @@ func rowByID(t *testing.T, manifest *Manifest, stableID string) ManifestRow {
 	t.Fatalf("no row %q in the manifest", stableID)
 	return ManifestRow{}
 }
+
+// TestRefreshFillsBatchesWhenAppendingSeveralRows is a regression guard found
+// in review: nextBatchFor read the manifest's batch count, which the append
+// loop had already raised, so every new row claimed a batch of its own and
+// the run's batch size was ignored.
+func TestRefreshFillsBatchesWhenAppendingSeveralRows(t *testing.T) {
+	ctx := context.Background()
+	root := t.TempDir()
+	store := NewStore(root, func() time.Time { return testAt })
+
+	manifest := newManifestForStore()
+	manifest.Rows[1].CarriedFrom = nil
+	run, err := store.CreateRun(ctx, manifest)
+	require.NoError(t, err)
+
+	size := run.Manifest.Profile.Resolved.Review.BatchSize
+	require.Equal(t, 5, size, "the fixture's batch size is what makes this meaningful")
+	base := BatchCount(run.Manifest)
+
+	items := refreshItems()
+	for _, suffix := range []string{"a", "b", "c", "d", "e", "f"} {
+		items = append(items, workitem.WorkItem{
+			StableID: "design-new-" + suffix, WorkflowType: "design",
+			Key:          "design:workflow/design/new-" + suffix,
+			RelativePath: "workflow/design/new-" + suffix,
+		})
+	}
+
+	result := refresh(t, store, run.ID, items)
+	require.Len(t, result.Appended, 6)
+
+	reopened, err := store.OpenRun(ctx, run.ID)
+	require.NoError(t, err)
+
+	// Six rows at a batch size of five: five in the first new batch, one in
+	// the next. Not six batches.
+	byBatch := map[int]int{}
+	for _, suffix := range []string{"a", "b", "c", "d", "e", "f"} {
+		byBatch[rowByID(t, reopened.Manifest, "design-new-"+suffix).Batch]++
+	}
+	assert.Equal(t, map[int]int{base + 1: 5, base + 2: 1}, byBatch)
+
+	// And the pre-existing rows keep the batch numbers a reviewer may already
+	// be working through.
+	assert.Equal(t, 2, rowByID(t, reopened.Manifest, hubID).Batch)
+	assert.Equal(t, 1, rowByID(t, reopened.Manifest, legacyID).Batch)
+}

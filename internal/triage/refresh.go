@@ -182,6 +182,11 @@ func (s *Store) applyDiffEffects(
 	rowAt := indexRows(manifest.Rows)
 	changed := false
 
+	// Captured before the loop: appending a row raises the manifest's batch
+	// count, so recomputing this per append would advance the batch once per
+	// row and ignore the batch size entirely.
+	baseBatch := BatchCount(manifest)
+
 	for _, diff := range result.Diff.Rows {
 		// A carried verdict is re-decided every refresh, because the two
 		// things that can invalidate one — the world moving and the policy
@@ -225,7 +230,7 @@ func (s *Store) applyDiffEffects(
 				continue
 			}
 			row := rowFor(item, manifest.Profile.Resolved, in.Now)
-			row.Batch = nextBatchFor(manifest, len(result.Appended))
+			row.Batch = nextBatchFor(manifest.Profile.Resolved, baseBatch, len(result.Appended))
 			manifest.Rows = append(manifest.Rows, row)
 			result.Appended = append(result.Appended, diff.StableID)
 			changed = true
@@ -330,16 +335,21 @@ func rekeyRow(row *ManifestRow, move Relocation) {
 // nextBatchFor numbers appended rows into batches after the manifest's last
 // one, chunked by the run's frozen batch size.
 //
+// baseBatch is the manifest's highest batch BEFORE this refresh appended
+// anything; it is a parameter rather than something recomputed here precisely
+// so that N appended rows fill batches of batchSize instead of each claiming
+// one of their own.
+//
 // New rows are appended rather than merged into the existing (type, key)
 // order on purpose: re-sorting would renumber batches under a reviewer who is
 // part-way through the run. Determinism survives because the appended set is
 // itself emitted in sorted order.
-func nextBatchFor(manifest *Manifest, appendedSoFar int) int {
-	size := manifest.Profile.Resolved.Review.BatchSize
+func nextBatchFor(profile ResolvedProfile, baseBatch, appendedSoFar int) int {
+	size := profile.Review.BatchSize
 	if size < 1 {
 		size = 1
 	}
-	return BatchCount(manifest) + 1 + appendedSoFar/size
+	return baseBatch + 1 + appendedSoFar/size
 }
 
 // indexRows maps stable id to position in the manifest.

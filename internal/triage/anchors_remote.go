@@ -186,12 +186,11 @@ func ResolveRemoteAnchors(ctx context.Context, checks map[string][]AnchorCheck, 
 	}
 
 	if cacheChanged && in.CampaignRoot != "" {
-		if err := SaveAnchorCache(in.CampaignRoot, in.Cache); err != nil {
-			// A cache that will not persist costs the next run some API
-			// calls. It does not make this refresh's answers wrong, so it
-			// must not fail the refresh.
-			return resolved, nil
-		}
+		// A cache that will not persist costs the next run some API calls. It
+		// does not make this refresh's answers wrong, so it must not fail the
+		// refresh. Discarded explicitly rather than returned and ignored, so
+		// the choice reads as deliberate.
+		_ = SaveAnchorCache(in.CampaignRoot, in.Cache)
 	}
 	return resolved, nil
 }
