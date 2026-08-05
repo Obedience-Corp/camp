@@ -280,6 +280,21 @@ func (s *Store) LatestRunID(ctx context.Context) (string, error) {
 // through a phase re-opens at the phase whose work may be incomplete and
 // redoes it, rather than at the previous phase, which would skip it.
 func (s *Store) SetPhase(ctx context.Context, runID string, phase Phase, note string) (*Run, error) {
+	// The judging -> reviewing gate lives here rather than in a command, so no
+	// surface added later can move a run into review with rows nobody looked
+	// at. Those rows would reach a reviewer as blanks and be approved by
+	// omission, which is the one failure the recorded-judgment model cannot
+	// detect after the fact.
+	if phase == PhaseReviewing {
+		gaps, err := s.ReadyForReview(ctx, runID)
+		if err != nil {
+			return nil, err
+		}
+		if len(gaps) > 0 {
+			return nil, reviewGapError(gaps)
+		}
+	}
+
 	run, err := s.mutateState(ctx, runID, func(run *Run) (bool, error) {
 		if run.State.Phase == phase {
 			return false, nil

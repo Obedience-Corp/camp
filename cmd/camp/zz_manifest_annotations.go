@@ -80,6 +80,7 @@ var manifestAgentAllowedReasons = map[string]string{
 	"switch":                     "Non-interactive with explicit campaign argument",
 	"triage evidence set":        "Validated evidence submission from an explicit file; camp is the only writer",
 	"triage evidence template":   "Read-only record scaffold built from data camp already holds",
+	"triage propose":             "Records an advisory proposal; terminal actions still require human approval",
 	"triage queue":               "Read-only work dispatch with --json output; calls no models",
 	"triage start":               "Deterministic snapshot with --json output; calls no models",
 	"triage status":              "Read-only session status with --json output",
