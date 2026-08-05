@@ -3,6 +3,7 @@ package triage
 import (
 	"fmt"
 	"io"
+	"strings"
 
 	"github.com/spf13/cobra"
 
@@ -278,16 +279,7 @@ func approveHintFor(approval *triage.ApproveResult) string {
 }
 
 // joinIDs renders ids for a copy-pasteable command.
-func joinIDs(ids []string) string {
-	out := ""
-	for i, id := range ids {
-		if i > 0 {
-			out += " "
-		}
-		out += id
-	}
-	return out
-}
+func joinIDs(ids []string) string { return strings.Join(ids, " ") }
 
 func init() {
 	Cmd.AddCommand(newApproveCommand())

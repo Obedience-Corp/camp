@@ -410,3 +410,59 @@ func TestResolveActorFallsBackRatherThanBlocking(t *testing.T) {
 
 	assert.NotEmpty(t, actor, "an actor is always resolved")
 }
+
+// TestBulkAmendValidatesEverythingBeforeRecordingAnything: a bulk amend that
+// failed partway would leave earlier rows written while still returning an
+// error, so the operator could not tell from the failure whether anything
+// landed. Pre-flighting makes "it errored" mean "nothing happened".
+func TestBulkAmendValidatesEverythingBeforeRecordingAnything(t *testing.T) {
+	ctx := context.Background()
+	store, _ := newTestStore(t)
+
+	// Two rows of different types sharing a lane, so one amend label can be
+	// valid for the first and invalid for the second.
+	manifest := newManifestForStore()
+	manifest.Rows[1].CarriedFrom = nil
+	manifest.Rows[1].Type = "intent"
+	manifest.Rows[1].LifecycleStage = "inbox"
+	run, err := store.CreateRun(ctx, manifest)
+	require.NoError(t, err)
+
+	for i, row := range run.Manifest.Rows {
+		record := validEvidence()
+		record.StableID = row.StableID
+		_, err := store.WriteEvidence(ctx, run.ID, record)
+		require.NoError(t, err)
+
+		disposition := "parked"
+		if i == 1 {
+			disposition = "park" // the intent vocabulary's label
+		}
+		_, err = store.Propose(ctx, ProposeInput{
+			RunID: run.ID, StableID: row.StableID, Disposition: disposition,
+			Rationale: rationale("later"), Actor: "tester", Now: testAt,
+		})
+		require.NoError(t, err)
+	}
+
+	before, err := store.Decisions(ctx, run.ID)
+	require.NoError(t, err)
+
+	// "archived" is a design label; the intent row has "drop" instead, so the
+	// amend is valid for one row and invalid for the other.
+	_, err = store.Approve(ctx, ApproveInput{
+		RunID: run.ID,
+		Selector: Selector{StableIDs: []string{
+			run.Manifest.Rows[0].StableID, run.Manifest.Rows[1].StableID,
+		}},
+		Amend: "archived", Actor: "tester", Now: testAt,
+	})
+
+	require.Error(t, err)
+	assert.ErrorIs(t, err, camperrors.ErrInvalidInput)
+
+	after, err := store.Decisions(ctx, run.ID)
+	require.NoError(t, err)
+	assert.Len(t, after, len(before),
+		"a refused bulk amend records nothing at all, not a partial prefix")
+}

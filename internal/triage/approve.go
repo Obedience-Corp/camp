@@ -82,6 +82,19 @@ func (s *Store) Approve(ctx context.Context, in ApproveInput) (*ApproveResult, e
 			"no rows matched "+in.Selector.Describe())
 	}
 
+	// Validate every amendment before recording any of them. A bulk amend that
+	// failed on the third row would otherwise leave the first two written and
+	// still return an error, so the operator could not tell from the failure
+	// whether anything landed. Pre-flighting makes "it errored" mean "nothing
+	// happened" for the whole class of failure a caller can actually cause.
+	if in.Amend != "" {
+		for _, row := range selection.Matched {
+			if _, err := ResolveDisposition(TypePolicyFor(row.Type), in.Amend); err != nil {
+				return nil, camperrors.Wrapf(err, "amend %s", row.StableID)
+			}
+		}
+	}
+
 	result := &ApproveResult{
 		RunID:             in.RunID,
 		Recorded:          []RecordedVerdict{},
