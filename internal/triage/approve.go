@@ -67,6 +67,11 @@ func (s *Store) Approve(ctx context.Context, in ApproveInput) (*ApproveResult, e
 	if err != nil {
 		return nil, err
 	}
+	// Approving is the review, so it is what moves the run into reviewing —
+	// the phase apply is reachable from.
+	if err := s.AdvancePhase(ctx, in.RunID, PhaseReviewing, "verdict approved"); err != nil {
+		return nil, err
+	}
 	verdicts, err := s.Verdicts(ctx, in.RunID)
 	if err != nil {
 		return nil, err

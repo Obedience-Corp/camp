@@ -93,6 +93,11 @@ func (s *Store) Propose(ctx context.Context, in ProposeInput) (*ProposeResult, e
 	if err != nil {
 		return nil, err
 	}
+	// Recording judgment is what puts a run in the judging phase. The machine
+	// is driven by the work, not by an operator naming phases.
+	if err := s.AdvancePhase(ctx, in.RunID, PhaseJudging, "first proposal recorded"); err != nil {
+		return nil, err
+	}
 	row, err := run.Row(in.StableID)
 	if err != nil {
 		return nil, err

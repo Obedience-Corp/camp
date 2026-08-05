@@ -182,3 +182,13 @@ func phaseNames(phases []Phase) []string {
 	}
 	return out
 }
+
+// CanTransition reports whether a run may move from one phase to another.
+func CanTransition(from, to Phase) bool {
+	for _, next := range phaseTransitions[from] {
+		if next == to {
+			return true
+		}
+	}
+	return false
+}

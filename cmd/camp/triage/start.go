@@ -165,6 +165,11 @@ func runStart(cmd *cobra.Command, opts *startOptions) error {
 	}
 
 	run, err := store.CreateRun(ctx, manifest)
+	if err == nil {
+		// The snapshot is written, so the run is snapshotted. Without this the
+		// machine never leaves `created` and apply is unreachable.
+		err = store.AdvancePhase(ctx, run.ID, triage.PhaseSnapshotted, "snapshot written")
+	}
 	if err != nil {
 		if camperrors.Is(err, camperrors.ErrConflict) {
 			return preconditionError(cmd, opts.jsonOut, jsoncontract.WithHint(err,

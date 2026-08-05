@@ -431,3 +431,25 @@ func (s *Store) setLatest(ctx context.Context, runID string) error {
 	}
 	return s.writeLocked(ctx, filepath.Join(s.root, LatestFileName), []byte(runID+"\n"))
 }
+
+// AdvancePhase moves a run forward to target when that is a legal next step,
+// and does nothing when it is not.
+//
+// The phase machine is driven by the commands that perform the work rather
+// than by an operator naming phases, so each command advances the run as a
+// side effect of succeeding. This is tolerant on purpose: `propose` should
+// move a snapshotted run to judging, but calling it again on a run already in
+// reviewing must not fail, and re-running a command must never be an error
+// just because the run moved on. A caller that needs the transition to happen
+// uses SetPhase, which refuses an illegal move.
+func (s *Store) AdvancePhase(ctx context.Context, runID string, target Phase, note string) error {
+	run, err := s.OpenRun(ctx, runID)
+	if err != nil {
+		return err
+	}
+	if run.State.Phase == target || !CanTransition(run.State.Phase, target) {
+		return nil
+	}
+	_, err = s.SetPhase(ctx, runID, target, note)
+	return err
+}

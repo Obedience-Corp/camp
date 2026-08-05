@@ -122,10 +122,11 @@ active is still a design item, now living at festivals/active/<slug>, and
 			if len(args) == 1 {
 				id = args[0]
 			}
-			return runWorkitemPromote(cmd, runWorkitemPromoteOptions{
+			_, err := runWorkitemPromote(cmd, runWorkitemPromoteOptions{
 				ID: id, Target: target, Dest: dest, Goal: goal,
 				Keep: keep, Force: force, DryRun: dryRun, NoCommit: noCommit, JSON: jsonOut,
 			})
+			return err
 		},
 	}
 
@@ -141,7 +142,7 @@ active is still a design item, now living at festivals/active/<slug>, and
 	return cmd
 }
 
-func runWorkitemPromote(cmd *cobra.Command, opts runWorkitemPromoteOptions) error {
+func runWorkitemPromote(cmd *cobra.Command, opts runWorkitemPromoteOptions) (*workitemPromoteResult, error) {
 	ctx := cmd.Context()
 
 	switch opts.Target {
@@ -150,24 +151,24 @@ func runWorkitemPromote(cmd *cobra.Command, opts runWorkitemPromoteOptions) erro
 		// Conditionally valid: the rail is forward-only, so these are checked
 		// against the resolved source location below, once loc is known.
 	case "":
-		return camperrors.New("required flag --target not set")
+		return nil, camperrors.New("required flag --target not set")
 	default:
-		return camperrors.New("invalid target: " + opts.Target + " (use festival, doc, ready, active, completed, archived, someday)")
+		return nil, camperrors.New("invalid target: " + opts.Target + " (use festival, doc, ready, active, completed, archived, someday)")
 	}
 
 	cfg, root, err := config.LoadCampaignConfigFromCwd(ctx)
 	if err != nil {
-		return camperrors.Wrap(err, "not in a campaign directory")
+		return nil, camperrors.Wrap(err, "not in a campaign directory")
 	}
 
 	loc, err := resolveWorkitem(ctx, root, opts.ID)
 	if err != nil {
-		return err
+		return nil, err
 	}
 
 	if opts.Target == railStageReady || opts.Target == railStageActive {
 		if err := checkRailTransition(railStageOf(loc, root), opts.Target); err != nil {
-			return err
+			return nil, err
 		}
 	}
 
@@ -192,11 +193,11 @@ func runWorkitemPromote(cmd *cobra.Command, opts runWorkitemPromoteOptions) erro
 
 	if opts.DryRun {
 		if opts.JSON {
-			return emitPromoteJSON(cmd, result)
+			return &result, emitPromoteJSON(cmd, result)
 		}
 		_, err := fmt.Fprintf(cmd.OutOrStdout(),
 			"dry-run: would promote workitem %s (%s) to %s\n", loc.Slug, loc.Type, opts.Target)
-		return err
+		return nil, err
 	}
 
 	var ci *commitInputs
@@ -210,16 +211,16 @@ func runWorkitemPromote(cmd *cobra.Command, opts runWorkitemPromoteOptions) erro
 	case "completed", "archived", "someday":
 		ci, err = doDungeonPromote(ctx, root, loc, opts.Target, &result)
 	default:
-		return camperrors.New("unhandled target: " + opts.Target)
+		return nil, camperrors.New("unhandled target: " + opts.Target)
 	}
 	if err != nil {
-		return err
+		return nil, err
 	}
 	if ci == nil {
-		return nil
+		return &result, nil
 	}
 
-	return finishWorkitemMove(ctx, cmd, cfg, root, ci, &result, moveTail{
+	return &result, finishWorkitemMove(ctx, cmd, cfg, root, ci, &result, moveTail{
 		LedgerID:    ledgerID,
 		LedgerRef:   ledgerRef,
 		LedgerTitle: ledgerTitle,
@@ -227,6 +228,46 @@ func runWorkitemPromote(cmd *cobra.Command, opts runWorkitemPromoteOptions) erro
 		SuccessVerb: "Promoted",
 		Options:     moveTailOptions{NoCommit: opts.NoCommit, JSON: opts.JSON},
 	})
+}
+
+// PromoteOutcome is where a promotion put a workitem and whether it committed.
+// Exported so `camp triage apply` can execute a promotion through this exact
+// path instead of re-implementing one or re-entering camp as a subprocess.
+type PromoteOutcome struct {
+	// PromotedTo is the campaign-relative destination the workitem landed at.
+	PromotedTo string
+	// From is where it started, which is what an undo has to restore it to.
+	From string
+	// Committed reports whether the auto-commit ran.
+	Committed bool
+}
+
+// PromoteWorkitem promotes a workitem to a rail or dungeon target through the
+// same code path `camp workitem promote` runs, and reports where it landed.
+//
+// The output the command would print is discarded: a caller executing a plan
+// renders its own receipts, and interleaving the promote command's chatter
+// would make the apply transcript unreadable.
+func PromoteWorkitem(ctx context.Context, out io.Writer, stableID, target string) (*PromoteOutcome, error) {
+	cmd := &cobra.Command{}
+	cmd.SetContext(ctx)
+	cmd.SetOut(out)
+	cmd.SetErr(out)
+
+	result, err := runWorkitemPromote(cmd, runWorkitemPromoteOptions{
+		ID: stableID, Target: target,
+	})
+	if err != nil {
+		return nil, err
+	}
+	if result == nil {
+		return nil, camperrors.New("promote reported no result for " + stableID)
+	}
+	return &PromoteOutcome{
+		PromotedTo: result.PromotedTo,
+		From:       result.From,
+		Committed:  result.Committed,
+	}, nil
 }
 
 // printReleasedLinks names every link promote dropped and how to restore it.
