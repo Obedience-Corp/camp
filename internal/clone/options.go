@@ -142,6 +142,10 @@ type Cloner struct {
 	syncer   *sync.Syncer     // Optional syncer for post-clone URL synchronization
 	progress ProgressReporter // Progress reporter for output
 	peer     *peer.Source     // Optional peer to seed git objects from
+	// peerQuiescence caches the peer's verdicts from the root-clone step so
+	// submodule seeding reads the same report rather than paying for a second
+	// round-trip and risking a different answer mid-clone.
+	peerQuiescence *QuiescenceReport
 }
 
 // NewCloner creates a new Cloner with the given options.

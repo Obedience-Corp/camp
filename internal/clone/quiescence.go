@@ -35,8 +35,8 @@ const (
 	// was cut short, which is the case that must never read as quiescent.
 	quiescenceEndMarker = "CAMP-QUIESCENCE-END"
 	// quiescenceFields is the exact field count of a repo line:
-	// repo, status, busy, head.
-	quiescenceFields = 4
+	// repo, status, busy, head, gitdir.
+	quiescenceFields = 5
 	// quiescenceEmpty is the placeholder the script emits for an absent value,
 	// so no field is ever empty and a short line is unambiguously truncation.
 	quiescenceEmpty = "-"
@@ -75,6 +75,12 @@ type RepoVerdict struct {
 	// after the copy that the peer did not move underneath it. Empty when HEAD
 	// was unreadable, which is itself disqualifying.
 	HeadSHA string `json:"head_sha,omitempty"`
+	// GitDir is the absolute git directory on the peer, which is where the
+	// pack and ref bytes are read from. It is reported rather than derived
+	// because a submodule's git directory is .git/modules/<name>, not
+	// <path>/.git, and the peer's own git already resolved it during the
+	// check. Empty when the repo reported missing.
+	GitDir string `json:"git_dir,omitempty"`
 }
 
 // QuiescenceReport is a peer's verdicts for a whole campaign.
@@ -197,18 +203,23 @@ func ParseQuiescenceReport(machineID, root string, out []byte) (*QuiescenceRepor
 //     root's clean status and HEAD under the submodule's name. That is the
 //     precise shape of a false quiescent verdict, so the guard is load-bearing,
 //     not a tidiness check.
+//   - locks under refs/ count as busy too (D006). A concurrent fetch holds
+//     refs/heads/<name>.lock while writing new objects into the very pack
+//     directory a cold seed copies, and the git dir's own *.lock glob does not
+//     see it. Capped at five so a pathological repo cannot produce an
+//     unbounded line; the verdict is non-quiescent either way.
 //   - every field falls back to "-" so a repo line always has four fields and a
 //     short line can only mean a truncated stream.
 const quiescenceScriptBody = `camp_report_repo() {
 	repo=$1
 	dir=$2
 	if [ ! -e "$dir/.git" ]; then
-		printf '%s\tmissing\t-\t-\n' "$repo"
+		printf '%s\tmissing\t-\t-\t-\n' "$repo"
 		return
 	fi
 	gitdir=$(git -C "$dir" rev-parse --absolute-git-dir 2>/dev/null) || gitdir=
 	if [ -z "$gitdir" ]; then
-		printf '%s\tmissing\t-\t-\n' "$repo"
+		printf '%s\tmissing\t-\t-\t-\n' "$repo"
 		return
 	fi
 	busy=
@@ -220,6 +231,12 @@ const quiescenceScriptBody = `camp_report_repo() {
 		[ -e "$gitdir/$marker" ] || continue
 		busy=${busy:+$busy,}$marker
 	done
+	if [ -d "$gitdir/refs" ]; then
+		reflocks=$(find "$gitdir/refs" -name '*.lock' 2>/dev/null | head -n 5)
+		for entry in $reflocks; do
+			busy=${busy:+$busy,}refs/${entry##*/}
+		done
+	fi
 	[ -n "$busy" ] || busy=-
 	if porcelain=$(git --no-optional-locks -C "$dir" status --porcelain --ignore-submodules=dirty 2>/dev/null); then
 		if [ -n "$porcelain" ]; then
@@ -232,7 +249,7 @@ const quiescenceScriptBody = `camp_report_repo() {
 	fi
 	head=$(git -C "$dir" rev-parse HEAD 2>/dev/null) || head=
 	[ -n "$head" ] || head=-
-	printf '%s\t%s\t%s\t%s\n' "$repo" "$status" "$busy" "$head"
+	printf '%s\t%s\t%s\t%s\t%s\n' "$repo" "$status" "$busy" "$head" "$gitdir"
 }
 printf '%s\n' 'CAMP-QUIESCENCE-BEGIN'
 camp_report_repo . "$root"
@@ -320,6 +337,10 @@ func verdictFromFields(fields []string) RepoVerdict {
 		v.Reasons = append(v.Reasons, "HEAD unreadable")
 	} else {
 		v.HeadSHA = head
+	}
+
+	if gitDir := fields[4]; gitDir != quiescenceEmpty {
+		v.GitDir = gitDir
 	}
 
 	v.Quiescent = len(v.Reasons) == 0

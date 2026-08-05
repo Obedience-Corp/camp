@@ -3,6 +3,7 @@ package clone
 import (
 	"context"
 	"errors"
+	"path"
 	"strings"
 	"testing"
 
@@ -23,9 +24,28 @@ func report(lines ...string) string {
 	return b.String()
 }
 
-// line builds one tab-separated repo line.
+// gitDirFor mirrors where git actually puts a repo's git directory: the root
+// repo owns <root>/.git, a submodule lives under .git/modules/<name>.
+func gitDirFor(repo string) string {
+	if repo == quiescenceRootRepo {
+		return testPeerRoot + "/.git"
+	}
+	return testPeerRoot + "/.git/modules/" + path.Base(repo)
+}
+
+// line builds one tab-separated repo line with a realistic git dir.
 func line(repo, status, busy, head string) string {
-	return strings.Join([]string{repo, status, busy, head}, "\t")
+	return lineWithGitDir(repo, status, busy, head, gitDirFor(repo))
+}
+
+// lineWithGitDir builds a repo line with an explicit git dir field.
+func lineWithGitDir(repo, status, busy, head, gitDir string) string {
+	return strings.Join([]string{repo, status, busy, head, gitDir}, "\t")
+}
+
+// missingLine is what the script emits for a repo it could not resolve.
+func missingLine(repo string) string {
+	return lineWithGitDir(repo, "missing", "-", "-", "-")
 }
 
 const (
@@ -64,28 +84,28 @@ func TestParseQuiescenceRejectsUntrustworthyOutput(t *testing.T) {
 		{
 			name:         "first repo line truncated mid-line",
 			out:          quiescenceBeginMarker + "\nprojects/camp\tclean\n",
-			wantMentions: []string{"projects/camp", "carried 2 fields, want 4"},
+			wantMentions: []string{"projects/camp", "carried 2 fields, want 5"},
 		},
 		{
 			name: "later repo line truncated mid-line",
 			out: quiescenceBeginMarker + "\n" + line(".", "clean", "-", shaRoot) +
 				"\nprojects/camp\tclean\t-\n",
-			wantMentions: []string{"projects/camp", "carried 3 fields, want 4"},
+			wantMentions: []string{"projects/camp", "carried 3 fields, want 5"},
 		},
 		{
 			name:         "truncated line with no repo name names the previous repo",
 			out:          quiescenceBeginMarker + "\n" + line(".", "clean", "-", shaRoot) + "\n\tclean\n",
-			wantMentions: []string{`after repo "."`, "carried 2 fields, want 4"},
+			wantMentions: []string{`after repo "."`, "carried 2 fields, want 5"},
 		},
 		{
 			name:         "line carrying extra fields",
 			out:          report(line(".", "clean", "-", shaRoot) + "\textra"),
-			wantMentions: []string{"carried 5 fields, want 4"},
+			wantMentions: []string{"carried 6 fields, want 5"},
 		},
 		{
 			name:         "very first repo line has no repo name to blame",
 			out:          quiescenceBeginMarker + "\n\tclean\n",
-			wantMentions: []string{"first report line carried 2 fields, want 4"},
+			wantMentions: []string{"first report line carried 2 fields, want 5"},
 		},
 		{
 			name:         "repo path escaping the campaign root",
@@ -129,7 +149,7 @@ func TestParseQuiescenceVerdicts(t *testing.T) {
 		{
 			name: "quiescent campaign root only",
 			out:  report(line(".", "clean", "-", shaRoot)),
-			want: []RepoVerdict{{Repo: ".", Quiescent: true, HeadSHA: shaRoot}},
+			want: []RepoVerdict{{Repo: ".", Quiescent: true, HeadSHA: shaRoot, GitDir: gitDirFor(".")}},
 		},
 		{
 			name: "quiescent root and submodule",
@@ -138,8 +158,8 @@ func TestParseQuiescenceVerdicts(t *testing.T) {
 				line("projects/camp", "clean", "-", shaSub),
 			),
 			want: []RepoVerdict{
-				{Repo: ".", Quiescent: true, HeadSHA: shaRoot},
-				{Repo: "projects/camp", Quiescent: true, HeadSHA: shaSub},
+				{Repo: ".", Quiescent: true, HeadSHA: shaRoot, GitDir: gitDirFor(".")},
+				{Repo: "projects/camp", Quiescent: true, HeadSHA: shaSub, GitDir: gitDirFor("projects/camp")},
 			},
 		},
 		{
@@ -149,11 +169,12 @@ func TestParseQuiescenceVerdicts(t *testing.T) {
 				line("projects/camp", "dirty", "-", shaSub),
 			),
 			want: []RepoVerdict{
-				{Repo: ".", Quiescent: true, HeadSHA: shaRoot},
+				{Repo: ".", Quiescent: true, HeadSHA: shaRoot, GitDir: gitDirFor(".")},
 				{
 					Repo:    "projects/camp",
 					Reasons: []string{"uncommitted changes in the working tree"},
 					HeadSHA: shaSub,
+					GitDir:  gitDirFor("projects/camp"),
 				},
 			},
 		},
@@ -164,6 +185,7 @@ func TestParseQuiescenceVerdicts(t *testing.T) {
 				Repo:    ".",
 				Reasons: []string{"git operation in progress: index.lock"},
 				HeadSHA: shaRoot,
+				GitDir:  gitDirFor("."),
 			}},
 		},
 		{
@@ -176,16 +198,17 @@ func TestParseQuiescenceVerdicts(t *testing.T) {
 					"git operation in progress: rebase-merge,MERGE_HEAD",
 				},
 				HeadSHA: shaSub,
+				GitDir:  gitDirFor("projects/camp"),
 			}},
 		},
 		{
 			name: "unreadable HEAD is disqualifying and carries no sha",
 			out:  report(line(".", "clean", "-", "-")),
-			want: []RepoVerdict{{Repo: ".", Reasons: []string{"HEAD unreadable"}}},
+			want: []RepoVerdict{{Repo: ".", Reasons: []string{"HEAD unreadable"}, GitDir: gitDirFor(".")}},
 		},
 		{
 			name: "uninitialized submodule reports as missing",
-			out:  report(line("projects/fest", "missing", "-", "-")),
+			out:  report(missingLine("projects/fest")),
 			want: []RepoVerdict{{
 				Repo:    "projects/fest",
 				Reasons: []string{"not a git repository on the peer", "HEAD unreadable"},
@@ -198,6 +221,7 @@ func TestParseQuiescenceVerdicts(t *testing.T) {
 				Repo:    "projects/fest",
 				Reasons: []string{"peer could not report working-tree status"},
 				HeadSHA: shaSub,
+				GitDir:  gitDirFor("projects/fest"),
 			}},
 		},
 		{
@@ -207,25 +231,26 @@ func TestParseQuiescenceVerdicts(t *testing.T) {
 				Repo:    ".",
 				Reasons: []string{"unrecognized working-tree status somethingnew"},
 				HeadSHA: shaRoot,
+				GitDir:  gitDirFor("."),
 			}},
 		},
 		{
 			name: "login banner before the marker is discarded",
 			out:  "MOTD: peerbox\n" + report(line(".", "clean", "-", shaRoot)),
-			want: []RepoVerdict{{Repo: ".", Quiescent: true, HeadSHA: shaRoot}},
+			want: []RepoVerdict{{Repo: ".", Quiescent: true, HeadSHA: shaRoot, GitDir: gitDirFor(".")}},
 		},
 		{
 			name: "crlf line endings parse",
 			out: strings.ReplaceAll(
 				report(line(".", "clean", "-", shaRoot)), "\n", "\r\n"),
-			want: []RepoVerdict{{Repo: ".", Quiescent: true, HeadSHA: shaRoot}},
+			want: []RepoVerdict{{Repo: ".", Quiescent: true, HeadSHA: shaRoot, GitDir: gitDirFor(".")}},
 		},
 		{
 			name: "blank lines inside the report are ignored",
 			out:  report(line(".", "clean", "-", shaRoot), "", line("projects/camp", "clean", "-", shaSub)),
 			want: []RepoVerdict{
-				{Repo: ".", Quiescent: true, HeadSHA: shaRoot},
-				{Repo: "projects/camp", Quiescent: true, HeadSHA: shaSub},
+				{Repo: ".", Quiescent: true, HeadSHA: shaRoot, GitDir: gitDirFor(".")},
+				{Repo: "projects/camp", Quiescent: true, HeadSHA: shaSub, GitDir: gitDirFor("projects/camp")},
 			},
 		},
 	}
@@ -257,6 +282,9 @@ func assertVerdicts(t *testing.T, got, want []RepoVerdict) {
 		}
 		if g.HeadSHA != w.HeadSHA {
 			t.Errorf("verdict[%d] (%s).HeadSHA = %q, want %q", i, g.Repo, g.HeadSHA, w.HeadSHA)
+		}
+		if g.GitDir != w.GitDir {
+			t.Errorf("verdict[%d] (%s).GitDir = %q, want %q", i, g.Repo, g.GitDir, w.GitDir)
 		}
 		if strings.Join(g.Reasons, "|") != strings.Join(w.Reasons, "|") {
 			t.Errorf("verdict[%d] (%s).Reasons = %v, want %v", i, g.Repo, g.Reasons, w.Reasons)
@@ -395,6 +423,12 @@ func TestQuiescenceScriptShape(t *testing.T) {
 		{name: "refuses to resolve a git dir an uninitialized submodule does not own", want: `[ ! -e "$dir/.git" ]`},
 		{name: "reports the campaign root repository", want: `camp_report_repo . "$root"`},
 		{name: "enumerates submodules from the peer .gitmodules", want: `--get-regexp '^submodule\..*\.path$'`},
+		// D006: a concurrent fetch holds a lock under refs/ while writing new
+		// objects into the pack directory a cold seed copies.
+		{name: "treats ref locks as busy (D006)", want: `find "$gitdir/refs" -name '*.lock'`},
+		// The copy source: reported, not derived, because a submodule's git dir
+		// is .git/modules/<name> rather than <path>/.git.
+		{name: "reports the resolved git dir as the copy source", want: `"$head" "$gitdir"`},
 	}
 
 	for _, tt := range tests {

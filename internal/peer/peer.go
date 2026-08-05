@@ -163,6 +163,22 @@ func (s *Source) RsyncSpec(relPath string) string {
 	return s.target + ":" + p + "/"
 }
 
+// RsyncSpecAbs returns the rsync source spec for an already-absolute path on
+// the machine hosting this source. RsyncSpec resolves a path relative to the
+// campaign root; this is for values the peer itself reported as absolute, such
+// as a repository's git directory, which callers must not re-derive.
+//
+// Callers are responsible for confirming the path is one they should be
+// reading — this only addresses it, it does not vouch for it. The path is left
+// unquoted for the same reason as RsyncSpec: transfers pass -s so the path
+// travels through the rsync protocol rather than a remote shell.
+func (s *Source) RsyncSpecAbs(absPath string) string {
+	if s.target == "" {
+		return absPath
+	}
+	return s.target + ":" + absPath
+}
+
 // Fetch fetches heads and HEAD from the peer copy of the repository at
 // relPath into the local repository at dir, under the Refspecs namespace.
 // It moves objects only: refs outside refs/peer/<id>/* and the working tree

@@ -40,7 +40,7 @@ func (c *Cloner) Clone(ctx context.Context) (*CloneResult, error) {
 	var targetDir string
 	var err error
 	if c.peer != nil {
-		targetDir, err = c.gitCloneFromPeer(ctx)
+		targetDir, err = c.cloneRootFromPeer(ctx, result)
 		if err != nil {
 			result.Warnings = append(result.Warnings,
 				fmt.Sprintf("peer clone from %s failed, falling back to origin: %v", c.peer.ID(), err))
@@ -165,15 +165,26 @@ func (c *Cloner) Clone(ctx context.Context) (*CloneResult, error) {
 				r := subInitResult{index: idx}
 				c.progress.Verbose(fmt.Sprintf("Initializing submodule: %s", sub.Path))
 
-				// Step 0: Seed objects from the peer when one is configured;
-				// failure degrades to the normal origin path below.
+				// Step 0: Seed objects from the peer when one is configured.
+				// Cold-seed copy first when the peer declared this repo
+				// quiescent, then the git-clone-from-peer path, then origin —
+				// each step degrades to the next with a warning rather than
+				// failing the submodule.
 				peerSeeded := false
 				if c.peer != nil {
-					if seedErr := c.seedSubmoduleFromPeer(ctx, targetDir, sub); seedErr != nil {
-						r.warnings = append(r.warnings,
-							fmt.Sprintf("peer seed %s: %v (initializing from origin)", sub.Path, seedErr))
-					} else {
+					if coldErr := c.coldSeedSubmodule(ctx, targetDir, sub); coldErr == nil {
 						peerSeeded = true
+					} else {
+						if !errors.Is(coldErr, errColdSeedSkipped) {
+							r.warnings = append(r.warnings,
+								fmt.Sprintf("cold-seed copy %s: %v (cloning from peer)", sub.Path, coldErr))
+						}
+						if seedErr := c.seedSubmoduleFromPeer(ctx, targetDir, sub); seedErr != nil {
+							r.warnings = append(r.warnings,
+								fmt.Sprintf("peer seed %s: %v (initializing from origin)", sub.Path, seedErr))
+						} else {
+							peerSeeded = true
+						}
 					}
 				}
 
