@@ -77,8 +77,12 @@ type Status struct {
 	Counts         map[string]int  `json:"counts"`
 	Batches        []BatchProgress `json:"batches"`
 	Consolidations []Consolidation `json:"consolidations"`
-	IdentityIssues int             `json:"identity_exceptions"`
-	CreatedAt      string          `json:"created_at"`
+	// CarryLosses names every row that lost a carried verdict, with the
+	// reason refresh recorded. Spec doc 04 requires status be able to answer
+	// why a row was re-queued rather than carried.
+	CarryLosses    []CarryLoss `json:"carry_losses"`
+	IdentityIssues int         `json:"identity_exceptions"`
+	CreatedAt      string      `json:"created_at"`
 }
 
 // BuildStatus derives a run's status from run data alone.
@@ -116,6 +120,7 @@ func StatusFrom(run *Run, verdicts map[string]RowVerdict) *Status {
 		Counts:         emptyCounts(),
 		Batches:        []BatchProgress{},
 		Consolidations: []Consolidation{},
+		CarryLosses:    []CarryLoss{},
 		CreatedAt:      run.Manifest.CreatedAt.Format(time.RFC3339),
 	}
 	if run.State.AbandonReason != nil {
@@ -128,6 +133,9 @@ func StatusFrom(run *Run, verdicts map[string]RowVerdict) *Status {
 		status.Counts[string(state)]++
 		if row.IdentityException != nil {
 			status.IdentityIssues++
+		}
+		if loss, ok := carryLossFor(row, verdicts[row.StableID]); ok {
+			status.CarryLosses = append(status.CarryLosses, loss)
 		}
 
 		progress, ok := byBatch[row.Batch]
@@ -149,6 +157,20 @@ func StatusFrom(run *Run, verdicts map[string]RowVerdict) *Status {
 		status.Batches = append(status.Batches, *batch)
 	}
 	return status
+}
+
+// carryLossFor reports why a carried row lost its verdict, reading the reason
+// out of the stale event refresh appended.
+//
+// Nothing extra is stored to answer this: the decision stream already carries
+// the reason as the note on the retiring event, and the fold surfaces it. A
+// separate record of the same fact could disagree with the stream, and the
+// stream is the one that decides what the row's verdict actually is.
+func carryLossFor(row ManifestRow, verdict RowVerdict) (CarryLoss, bool) {
+	if row.CarriedFrom == nil || verdict.State != VerdictStale || verdict.Note == "" {
+		return CarryLoss{}, false
+	}
+	return CarryLoss{StableID: row.StableID, Reason: verdict.Note}, true
 }
 
 // rowStateFor decides a row's state from its manifest entry and verdict.

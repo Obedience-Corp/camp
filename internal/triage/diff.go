@@ -386,3 +386,44 @@ func (d Diff) RowsWithUncheckedAnchors() int {
 	}
 	return n
 }
+
+// ApplyReadiness is whether apply may execute one row, and when not, which
+// kind of refusal it is.
+//
+// This is the typed result spec doc 04's offline rule needs. Apply lands in
+// the next sequence, but the rule belongs with the classification that
+// produces it, so the two cannot drift.
+type ApplyReadiness string
+
+const (
+	// ApplyReady means the row may be executed.
+	ApplyReady ApplyReadiness = "ready"
+	// ApplyBlockedStale means the row is not fresh or moved. Its verdict
+	// rests on something that changed, so it needs re-judging, not a flag.
+	ApplyBlockedStale ApplyReadiness = "blocked-stale"
+	// ApplyBlockedUnchecked means the row carries an anchor refresh could not
+	// verify and the action is terminal. --force overrides this one, because
+	// unlike a stale verdict it reports missing information rather than
+	// contradicted information, and an operator may know what camp could not
+	// observe.
+	ApplyBlockedUnchecked ApplyReadiness = "blocked-unchecked"
+)
+
+// Blocked reports whether the readiness refuses execution.
+func (r ApplyReadiness) Blocked() bool { return r != ApplyReady }
+
+// ApplyReadinessFor decides whether apply may execute a row.
+//
+// An unchecked anchor is fresh for a non-terminal action and blocking for a
+// terminal one. That asymmetry is the whole design: parking a workitem over an
+// unverified PR state is recoverable in one command, while retiring one is the
+// operation that has to be right the first time.
+func ApplyReadinessFor(diff RowDiff, action CanonicalAction, force bool) ApplyReadiness {
+	if !diff.Class.Applicable() {
+		return ApplyBlockedStale
+	}
+	if diff.UncheckedAnchors > 0 && action.Terminal() && !force {
+		return ApplyBlockedUnchecked
+	}
+	return ApplyReady
+}

@@ -20,7 +20,10 @@ type refreshResult struct {
 	SchemaVersion string      `json:"schema_version"`
 	RunID         string      `json:"run_id"`
 	Rows          []refreshed `json:"rows"`
-	Summary       summary     `json:"summary"`
+	// CarryLost names every carried verdict this refresh invalidated, with
+	// the reason. Spec doc 04 requires a lost carry always be explainable.
+	CarryLost []triage.CarryLoss `json:"carry_lost"`
+	Summary   summary            `json:"summary"`
 }
 
 // refreshed is one row's classification, flattened for consumers: a class, the
@@ -53,6 +56,11 @@ type summary struct {
 	// could not be re-checked. Reported separately from the classes because
 	// "nothing changed" and "we could not look" are different claims.
 	RowsWithUncheckedAnchors int `json:"rows_with_unchecked_anchors"`
+	// RemoteAnchorsResolved counts anchors answered by the remote or its
+	// cache rather than left unchecked.
+	RemoteAnchorsResolved int `json:"remote_anchors_resolved"`
+	// CarryLost counts carried verdicts invalidated by this refresh.
+	CarryLost int `json:"carry_lost"`
 }
 
 func newRefreshCommand() *cobra.Command {
@@ -127,11 +135,22 @@ func runRefresh(cmd *cobra.Command, jsonOut bool, runID string) error {
 		return err
 	}
 
+	// A missing gh is the offline case, not a failure: pr anchors record
+	// unchecked-offline and the refresh reports how many rows that left
+	// unverified. Nothing here waits on the network to answer a local question.
+	var remote triage.RemoteChecker
+	if checker, err := triage.NewGHRemoteChecker(); err == nil {
+		remote = checker
+	}
+
+	profile := triage.DefaultProfile()
 	result, err := store.Refresh(ctx, triage.RefreshInput{
-		RunID: runID,
-		Items: items,
-		Actor: triage.ResolveActor(ctx),
-		Now:   triage.SystemClock(),
+		RunID:          runID,
+		Items:          items,
+		Actor:          triage.ResolveActor(ctx),
+		Now:            triage.SystemClock(),
+		Remote:         remote,
+		CurrentProfile: &profile,
 	})
 	if err != nil {
 		return err
@@ -165,10 +184,15 @@ func buildRefreshResult(result *triage.RefreshResult) refreshResult {
 	}
 
 	counts := result.Diff.CountByClass()
+	losses := result.CarryLost
+	if losses == nil {
+		losses = []triage.CarryLoss{}
+	}
 	return refreshResult{
 		SchemaVersion: RefreshJSONVersion,
 		RunID:         result.RunID,
 		Rows:          rows,
+		CarryLost:     losses,
 		Summary: summary{
 			Fresh:                    counts[triage.ClassFresh],
 			Moved:                    counts[triage.ClassMoved],
@@ -177,6 +201,8 @@ func buildRefreshResult(result *triage.RefreshResult) refreshResult {
 			New:                      counts[triage.ClassNew],
 			StaleRecorded:            len(result.StaleRecorded),
 			RowsWithUncheckedAnchors: result.RowsWithUncheckedAnchors(),
+			RemoteAnchorsResolved:    result.RemoteResolved,
+			CarryLost:                len(result.CarryLost),
 		},
 	}
 }
@@ -207,6 +233,13 @@ func printRefresh(w io.Writer, result refreshResult) error {
 				"    verdict retired; the row is back in camp triage queue\n"); err != nil {
 				return err
 			}
+		}
+	}
+
+	for _, loss := range result.CarryLost {
+		if _, err := fmt.Fprintf(w, "\n  carry   %s\n    %s\n",
+			loss.StableID, loss.Reason); err != nil {
+			return err
 		}
 	}
 

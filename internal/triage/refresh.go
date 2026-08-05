@@ -21,6 +21,15 @@ type RefreshInput struct {
 	// Actor records who ran the refresh on any stale event it appends.
 	Actor string
 	Now   time.Time
+	// Remote resolves pr anchors. Nil is the offline case: every pr anchor
+	// records unchecked-offline, which is a supported answer rather than a
+	// degraded one.
+	Remote RemoteChecker
+	// CurrentProfile is the profile in force now, compared against the run's
+	// embedded profile to decide whether carried verdicts still hold. The
+	// zero value means "unchanged", which is the right reading when a caller
+	// has no profile to offer.
+	CurrentProfile *ResolvedProfile
 }
 
 // RefreshResult is what a refresh classified and what it did about it.
@@ -35,6 +44,12 @@ type RefreshResult struct {
 	Rekeyed []string
 	// Appended lists new rows added to the manifest.
 	Appended []string
+	// CarryLost lists carried verdicts this refresh invalidated, each with
+	// the reason, so status can say why a row lost its carry.
+	CarryLost []CarryLoss
+	// RemoteResolved counts anchors answered by the remote or its cache, as
+	// opposed to left unchecked.
+	RemoteResolved int
 }
 
 // RowsWithUncheckedAnchors reports how many rows carry an anchor refresh could
@@ -103,6 +118,21 @@ func (s *Store) Refresh(ctx context.Context, in RefreshInput) (*RefreshResult, e
 			return err
 		}
 
+		// Layered after the local pass, never instead of it: the locals have
+		// already recorded every pr anchor as unchecked-offline, so a missing
+		// gh or a failed call leaves that honest answer standing.
+		resolved, err := ResolveRemoteAnchors(ctx, checks, RemoteInput{
+			CampaignRoot: s.campaignRoot,
+			Checker:      in.Remote,
+			Cache:        LoadAnchorCache(s.campaignRoot),
+			Now:          in.Now,
+			Throttle:     run.Manifest.Profile.Resolved.Anchors.AnchorRecheckInterval(),
+		})
+		if err != nil {
+			return err
+		}
+		result.RemoteResolved = resolved
+
 		result.Diff = ClassifyRows(DiffInput{
 			Rows:       run.Manifest.Rows,
 			Discovered: discovered,
@@ -153,6 +183,23 @@ func (s *Store) applyDiffEffects(
 	changed := false
 
 	for _, diff := range result.Diff.Rows {
+		// A carried verdict is re-decided every refresh, because the two
+		// things that can invalidate one — the world moving and the policy
+		// moving — are exactly what a refresh is looking at.
+		if i, ok := rowAt[diff.StableID]; ok && manifest.Rows[i].CarriedFrom != nil {
+			loss, recorded, err := s.reviewCarry(ctx, in, manifest,
+				manifest.Rows[i], diff, verdicts[diff.StableID])
+			if err != nil {
+				return false, err
+			}
+			if loss != nil {
+				result.CarryLost = append(result.CarryLost, *loss)
+			}
+			if recorded {
+				result.StaleRecorded = append(result.StaleRecorded, diff.StableID)
+			}
+		}
+
 		switch diff.Class {
 		case ClassChanged, ClassGone:
 			recorded, err := s.recordStale(ctx, in, diff, verdicts[diff.StableID])
@@ -185,6 +232,61 @@ func (s *Store) applyDiffEffects(
 		}
 	}
 	return changed, nil
+}
+
+// reviewCarry re-decides one carried verdict, returning the loss to report and
+// whether it appended a stale event of its own.
+//
+// It records only when the class did not already: a changed or gone row gets
+// its stale event from the class effects below, and a second one would put two
+// retirements in the stream for a single invalidation. What this adds is the
+// case the class cannot see — a row where nothing in the world moved, but the
+// policy that produced the verdict did.
+func (s *Store) reviewCarry(
+	ctx context.Context,
+	in RefreshInput,
+	manifest *Manifest,
+	row ManifestRow,
+	diff RowDiff,
+	verdict RowVerdict,
+) (*CarryLoss, bool, error) {
+	decision := DecideCarry(CarryInput{
+		Row:     row,
+		Verdict: verdict,
+		Class:   diff.Class,
+		Base:    manifest.Profile.Resolved,
+		Next:    currentProfile(in, manifest),
+	})
+	if decision.Carried {
+		return nil, false, nil
+	}
+
+	loss := &CarryLoss{StableID: row.StableID, Reason: decision.Reason}
+	if !diff.Class.Applicable() || !HasLiveProposal(verdict) {
+		return loss, false, nil
+	}
+
+	event := DecisionEvent{
+		Event:    DecisionStale,
+		StableID: row.StableID,
+		Actor:    in.Actor,
+		At:       in.Now,
+		Note:     "carry lost: " + decision.Reason,
+	}
+	if err := s.AppendDecision(ctx, in.RunID, event); err != nil {
+		return nil, false, err
+	}
+	return loss, true, nil
+}
+
+// currentProfile is the profile to compare the run's embedded one against.
+// A caller with nothing to offer means "unchanged", so the comparison finds no
+// delta rather than inventing one against a zero value.
+func currentProfile(in RefreshInput, manifest *Manifest) ResolvedProfile {
+	if in.CurrentProfile == nil {
+		return manifest.Profile.Resolved
+	}
+	return *in.CurrentProfile
 }
 
 // recordStale appends a stale event when the row still holds a live verdict,

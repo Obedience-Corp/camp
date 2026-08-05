@@ -1,11 +1,18 @@
 package triage
 
-import "github.com/Obedience-Corp/camp/internal/workitem"
+import (
+	"time"
+
+	"github.com/Obedience-Corp/camp/internal/workitem"
+)
 
 // ProfileSchemaVersion is the format version of a triage profile. It is
 // separate from SchemaVersion because a profile is a user-edited file with its
 // own lifecycle, while run documents are camp-written.
 const ProfileSchemaVersion = "triage-profile/v1alpha1"
+
+// DefaultAnchorRecheckMinutes is the shipped remote-anchor throttle window.
+const DefaultAnchorRecheckMinutes = 5
 
 // ProfileNameDefault is the built-in profile every campaign starts from.
 const ProfileNameDefault = "default"
@@ -25,6 +32,7 @@ type ResolvedProfile struct {
 	Review        ProfileReview    `json:"review"`
 	Evidence      ProfileEvidence  `json:"evidence"`
 	Routing       ProfileRouting   `json:"routing"`
+	Anchors       ProfileAnchors   `json:"anchors"`
 	Apply         ProfileApply     `json:"apply"`
 	Outputs       ProfileOutputs   `json:"outputs"`
 }
@@ -140,6 +148,27 @@ type ProfileRouting struct {
 	MaxConcurrent  int         `json:"max_concurrent"`
 }
 
+// ProfileAnchors controls how refresh re-checks anchors that need the network.
+type ProfileAnchors struct {
+	// RecheckMinutes is how long a cached remote verdict answers before
+	// refresh calls out again. Zero means never cache: every refresh checks.
+	//
+	// The default is deliberately short. FT-013 measured evidence going stale
+	// in minutes — a PR merging shortly after the snapshot — so a long window
+	// would cache away the exact failure this phase exists to catch. Local
+	// anchors ignore this entirely; hashing a file is cheaper than deciding
+	// whether to.
+	RecheckMinutes int `json:"recheck_minutes"`
+}
+
+// AnchorRecheckInterval is the throttle window as a duration.
+func (p ProfileAnchors) AnchorRecheckInterval() time.Duration {
+	if p.RecheckMinutes <= 0 {
+		return 0
+	}
+	return time.Duration(p.RecheckMinutes) * time.Minute
+}
+
 // ProfileApply controls how non-terminal changes reach disk. Terminal moves,
 // splits, and festival promotions always require recorded human approval;
 // that is product behavior and has no profile key.
@@ -206,6 +235,7 @@ func DefaultProfile() ResolvedProfile {
 				EvidenceStageNone: EvidenceDepthMetadata,
 			},
 		},
+		Anchors: ProfileAnchors{RecheckMinutes: DefaultAnchorRecheckMinutes},
 		Routing: ProfileRouting{
 			EvidenceTier:   RoutingTierCheap,
 			EscalationTier: RoutingTierStrong,
