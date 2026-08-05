@@ -6,6 +6,7 @@ import (
 	"io/fs"
 	"os"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"time"
 
@@ -100,6 +101,38 @@ func (s *Store) NewRunID() string {
 	return "run-" + s.clock().UTC().Format("20060102T150405") + "Z"
 }
 
+// maxRunIDAttempts bounds the same-second disambiguation search.
+const maxRunIDAttempts = 1000
+
+// availableRunID returns a run id that is not already taken on disk.
+//
+// Run ids are second-granularity by design: they are meant to be read and
+// typed. That makes a collision reachable in ordinary use — `camp triage
+// abandon && camp triage start` closes one run and opens the next inside the
+// same second — so a collision disambiguates with a suffix instead of failing.
+// Refusing there would be camp reporting the resolution of its own naming
+// scheme as the user's problem.
+//
+// The caller holds the create lock, so the check and the claim cannot race.
+func (s *Store) availableRunID() (string, error) {
+	base := s.NewRunID()
+	for attempt := 1; attempt <= maxRunIDAttempts; attempt++ {
+		candidate := base
+		if attempt > 1 {
+			candidate = base + "-" + strconv.Itoa(attempt)
+		}
+		_, err := os.Stat(s.RunDir(candidate))
+		if errors.Is(err, fs.ErrNotExist) {
+			return candidate, nil
+		}
+		if err != nil {
+			return "", camperrors.Wrapf(err, "stat %s", s.RunDir(candidate))
+		}
+	}
+	return "", camperrors.Wrap(camperrors.ErrAlreadyExists,
+		"triage run ids exhausted for "+base)
+}
+
 // CreateRun writes a new run from manifest and points `latest` at it.
 //
 // It refuses when a run is already in progress: two live runs would each hold
@@ -134,13 +167,11 @@ func (s *Store) CreateRun(ctx context.Context, manifest *Manifest) (*Run, error)
 					"); close it with `camp triage abandon` before starting another")
 		}
 
-		runID := s.NewRunID()
-		dir := s.RunDir(runID)
-		if _, err := os.Stat(dir); err == nil {
-			return camperrors.Wrap(camperrors.ErrAlreadyExists, "triage run "+runID)
-		} else if !errors.Is(err, fs.ErrNotExist) {
-			return camperrors.Wrapf(err, "stat %s", dir)
+		runID, err := s.availableRunID()
+		if err != nil {
+			return err
 		}
+		dir := s.RunDir(runID)
 
 		manifest.RunID = runID
 		if manifest.CreatedAt.IsZero() {

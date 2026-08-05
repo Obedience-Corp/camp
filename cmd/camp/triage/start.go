@@ -33,12 +33,15 @@ type startResult struct {
 	// Queued and Carried always sum to Rows. Carried is 0 until carry-forward
 	// lands; the field exists now so consumers do not have to change shape
 	// when it starts moving.
-	Queued              int    `json:"queued"`
-	Carried             int    `json:"carried"`
-	IdentityExceptions  int    `json:"identity_exceptions"`
-	RunDir              string `json:"run_dir"`
-	WorkflowDoc         string `json:"workflow_doc,omitempty"`
-	ScaffoldWorkflowDoc bool   `json:"scaffold_workflow_doc"`
+	Queued             int `json:"queued"`
+	Carried            int `json:"carried"`
+	IdentityExceptions int `json:"identity_exceptions"`
+	// Repaired lists identities the preflight created. Always present so a
+	// consumer never has to distinguish absent from empty.
+	Repaired            []triage.Repair `json:"repaired"`
+	RunDir              string          `json:"run_dir"`
+	WorkflowDoc         string          `json:"workflow_doc,omitempty"`
+	ScaffoldWorkflowDoc bool            `json:"scaffold_workflow_doc"`
 }
 
 type startOptions struct {
@@ -46,6 +49,7 @@ type startOptions struct {
 	scope    []string
 	jsonOut  bool
 	noWorkfl bool
+	identity string
 }
 
 func newStartCommand() *cobra.Command {
@@ -88,6 +92,8 @@ camp triage abandon first.`,
 	f.StringArrayVar(&opts.scope, "scope", nil, "Limit the run with a key:value filter (repeat for more)")
 	f.BoolVar(&opts.jsonOut, "json", false, "Output result as a single JSON object")
 	f.BoolVar(&opts.noWorkfl, "no-workflow-doc", false, "Skip the companion WORKFLOW.md scaffold")
+	f.StringVar(&opts.identity, "identity", "",
+		"Override the profile's identity policy: repair (adopt and report) or strict (refuse and list)")
 	return cmd
 }
 
@@ -108,10 +114,11 @@ func runStart(cmd *cobra.Command, opts *startOptions) error {
 		return err
 	}
 
-	items, err := discoverInScope(ctx, root, cfg, scope)
+	allItems, err := discoverAll(ctx, root, cfg)
 	if err != nil {
 		return err
 	}
+	items := scope.Apply(allItems)
 	if len(items) == 0 {
 		// Blocking here rather than opening an empty run: an empty run would
 		// occupy the single active slot and have to be abandoned before the
@@ -120,13 +127,33 @@ func runStart(cmd *cobra.Command, opts *startOptions) error {
 			"widen or drop --scope, or check `camp workitem` for what this campaign contains"))
 	}
 
+	// Preflight before the snapshot freezes: a row identified only by its path
+	// cannot be moved safely later, because the path is the thing a verdict
+	// changes.
+	now := triage.SystemClock()
+	identity := profile.Preflight.Identity
+	if opts.identity != "" {
+		identity = triage.IdentityPolicy(opts.identity)
+	}
+	preflight, err := triage.Preflight(ctx, triage.PreflightInput{
+		CampaignRoot: root,
+		Items:        items,
+		AllItems:     allItems,
+		Policy:       identity,
+		Now:          now,
+	})
+	if err != nil {
+		return preconditionError(cmd, opts.jsonOut, jsoncontract.WithHint(err,
+			"run `camp workitem adopt <path>` for each, or use the repair identity policy"))
+	}
+
 	store := triage.NewStore(root, nil)
 	manifest, err := triage.BuildManifest(triage.SnapshotInput{
 		ProfileName: triage.ResolvedProfileName(),
 		Profile:     profile,
 		Mode:        startMode(opts.full),
 		Items:       items,
-		Now:         triage.SystemClock(),
+		Now:         now,
 	})
 	if err != nil {
 		return err
@@ -151,6 +178,7 @@ func runStart(cmd *cobra.Command, opts *startOptions) error {
 		Queued:              len(manifest.Rows),
 		Carried:             0,
 		IdentityExceptions:  triage.IdentityExceptionCount(manifest),
+		Repaired:            preflight.Repaired,
 		RunDir:              relativeRunDir(root, run.Dir),
 		ScaffoldWorkflowDoc: profile.Outputs.ScaffoldWorkflowDoc && !opts.noWorkfl,
 	}
@@ -189,14 +217,18 @@ func relativeRunDir(root, dir string) string {
 	return dir
 }
 
-// discoverInScope runs camp's normal discovery and narrows it to the scope.
-func discoverInScope(ctx context.Context, root string, cfg *config.CampaignConfig, scope triage.Scope) ([]workitem.WorkItem, error) {
+// discoverAll runs camp's normal discovery over the whole campaign.
+//
+// Scope is applied by the caller rather than here: the preflight needs every
+// item to keep generated ids and refs unique campaign-wide, not merely unique
+// among the rows this run happens to look at.
+func discoverAll(ctx context.Context, root string, cfg *config.CampaignConfig) ([]workitem.WorkItem, error) {
 	resolver := paths.NewResolverFromConfig(root, cfg)
 	items, err := workitem.Discover(ctx, root, resolver)
 	if err != nil {
 		return nil, camperrors.Wrap(err, "discovering work items")
 	}
-	return scope.Apply(items), nil
+	return items, nil
 }
 
 // preconditionError marks a refusal that is a precondition failure rather than
@@ -210,6 +242,11 @@ func discoverInScope(ctx context.Context, root string, cfg *config.CampaignConfi
 // envelope carries the same message and hint, and a second copy on stderr
 // would corrupt output that a caller is parsing.
 func preconditionError(cmd *cobra.Command, jsonOut bool, err error) error {
+	return preconditionErrorFor(cmd, cmd.CommandPath(), jsonOut, err)
+}
+
+// preconditionErrorFor is preconditionError with an explicit command label.
+func preconditionErrorFor(cmd *cobra.Command, label string, jsonOut bool, err error) error {
 	if !jsonOut {
 		out := cmd.ErrOrStderr()
 		_, _ = fmt.Fprintf(out, "Error: %v\n", err)
@@ -217,7 +254,7 @@ func preconditionError(cmd *cobra.Command, jsonOut bool, err error) error {
 			_, _ = fmt.Fprintf(out, "Hint: %s\n", hint)
 		}
 	}
-	return camperrors.NewCommand(cmd.CommandPath(), 2, err.Error(), err)
+	return camperrors.NewCommand(label, 2, err.Error(), err)
 }
 
 func writeJSON(w io.Writer, payload any) error {
@@ -233,6 +270,21 @@ func writeStartText(w io.Writer, result startResult) error {
 	}
 	if _, err := fmt.Fprintf(w, "  %d rows in %d batches\n", result.Rows, result.Batches); err != nil {
 		return err
+	}
+	// Every repair is named. Camp adopted these directories without being
+	// asked, so silence would leave the operator with markers they did not
+	// write and no record of where they came from.
+	if len(result.Repaired) > 0 {
+		if _, err := fmt.Fprintf(w, "\nAdopted %d workitem(s) that had no .workitem marker:\n",
+			len(result.Repaired)); err != nil {
+			return err
+		}
+		for _, repair := range result.Repaired {
+			if _, err := fmt.Fprintf(w, "  %s  id: %s  ref: %s\n",
+				repair.RelPath, repair.ID, repair.Ref); err != nil {
+				return err
+			}
+		}
 	}
 	if result.IdentityExceptions > 0 {
 		if _, err := fmt.Fprintf(w,

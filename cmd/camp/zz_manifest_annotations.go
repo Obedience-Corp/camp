@@ -79,6 +79,7 @@ var manifestAgentAllowedReasons = map[string]string{
 	"status all":                 "Read-only multi-repository status",
 	"switch":                     "Non-interactive with explicit campaign argument",
 	"triage start":               "Deterministic snapshot with --json output; calls no models",
+	"triage status":              "Read-only session status with --json output",
 	"version":                    "Read-only version output",
 	"workflow doctor":            "Read-only workflow health report",
 	"workflow list":              "Read-only workflow listing",

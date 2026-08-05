@@ -59,6 +59,32 @@ func TestCreateRunRefusesWhileAnotherIsActive(t *testing.T) {
 	assert.Contains(t, err.Error(), "camp triage abandon")
 }
 
+// TestCreateRunDisambiguatesSameSecondIDs: run ids are second-granularity so
+// they can be read and typed, which makes a collision reachable in ordinary
+// use — `camp triage abandon && camp triage start` opens the next run inside
+// the same second as it closed the last. That must not fail.
+func TestCreateRunDisambiguatesSameSecondIDs(t *testing.T) {
+	ctx := context.Background()
+	root := t.TempDir()
+	frozen := func() time.Time { return testAt } // every call, the same second
+	store := NewStore(root, frozen)
+
+	first, err := store.CreateRun(ctx, newManifestForStore())
+	require.NoError(t, err)
+	_, err = store.Abandon(ctx, first.ID, "")
+	require.NoError(t, err)
+
+	second, err := store.CreateRun(ctx, newManifestForStore())
+
+	require.NoError(t, err, "a same-second start must not collide with the closed run")
+	assert.Equal(t, "run-20260810T140000Z", first.ID)
+	assert.Equal(t, "run-20260810T140000Z-2", second.ID)
+
+	reopened, err := store.OpenRun(ctx, second.ID)
+	require.NoError(t, err)
+	assert.True(t, reopened.Active())
+}
+
 // TestCreateRunAllowsAnotherAfterAbandon is the other half: closing a run
 // explicitly is what unblocks the next one.
 func TestCreateRunAllowsAnotherAfterAbandon(t *testing.T) {

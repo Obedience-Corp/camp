@@ -3,15 +3,12 @@ package workitem
 import (
 	"context"
 	"fmt"
-	"os"
 	"path/filepath"
 
 	"github.com/spf13/cobra"
-	"gopkg.in/yaml.v3"
 
 	"github.com/Obedience-Corp/camp/internal/config"
 	camperrors "github.com/Obedience-Corp/camp/internal/errors"
-	"github.com/Obedience-Corp/camp/internal/fsutil"
 	"github.com/Obedience-Corp/camp/internal/ledger"
 	wkitem "github.com/Obedience-Corp/camp/internal/workitem"
 	wkaudit "github.com/Obedience-Corp/camp/internal/workitem/audit"
@@ -100,21 +97,6 @@ func runAdopt(ctx context.Context, cmd *cobra.Command, dir, typeFlag, title, idO
 		return err
 	}
 
-	target := filepath.Join(campaignRoot, rel)
-	info, err := os.Stat(target)
-	if err != nil {
-		return camperrors.Wrap(err, "stat target dir")
-	}
-	if !info.IsDir() {
-		return camperrors.NewValidation("dir", "target must be a directory: "+target, nil)
-	}
-
-	markerPath := filepath.Join(target, ".workitem")
-	if _, err := os.Stat(markerPath); err == nil {
-		return camperrors.NewValidation("path",
-			".workitem already exists at "+markerPath+" — directory is already adopted", nil)
-	}
-
 	slug := filepath.Base(rel)
 	id, err := generateID(ctx, typeFlag, slug, idOverride, campaignRoot)
 	if err != nil {
@@ -127,22 +109,19 @@ func runAdopt(ctx context.Context, cmd *cobra.Command, dir, typeFlag, title, idO
 	}
 	questID := resolveQuestIDForCreate(ctx, cmd, campaignRoot, questSelector)
 
-	meta := wkitem.Metadata{
-		Version:  wkitem.WorkitemSchemaVersion,
-		Kind:     "workitem",
-		ID:       id,
+	// The marker write lives in internal/workitem so the triage identity
+	// preflight adopts through the same code path; an item adopted either way
+	// must be indistinguishable from the other.
+	if _, err := wkitem.AdoptDirectory(ctx, campaignRoot, wkitem.AdoptRequest{
+		RelPath:  rel,
 		Type:     typeFlag,
 		Title:    title,
+		ID:       id,
 		Ref:      ref,
 		QuestID:  questID,
 		Tags:     normalizedTags,
 		Projects: normalizedProjects,
-	}
-	buf, err := yaml.Marshal(&meta)
-	if err != nil {
-		return camperrors.Wrap(err, "marshal metadata")
-	}
-	if err := fsutil.WriteFileAtomically(markerPath, buf, 0o644); err != nil {
+	}); err != nil {
 		return err
 	}
 	// Adoption writes inside an existing directory, which may not update the

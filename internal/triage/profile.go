@@ -18,14 +18,41 @@ const ProfileNameDefault = "default"
 // This phase ships the built-in default only; the file layer, per-type
 // policies, and named profiles land with the profile sequence.
 type ResolvedProfile struct {
-	SchemaVersion string          `json:"schema_version"`
-	Scope         ProfileScope    `json:"scope"`
-	Runs          ProfileRuns     `json:"runs"`
-	Review        ProfileReview   `json:"review"`
-	Evidence      ProfileEvidence `json:"evidence"`
-	Routing       ProfileRouting  `json:"routing"`
-	Apply         ProfileApply    `json:"apply"`
-	Outputs       ProfileOutputs  `json:"outputs"`
+	SchemaVersion string           `json:"schema_version"`
+	Scope         ProfileScope     `json:"scope"`
+	Runs          ProfileRuns      `json:"runs"`
+	Preflight     ProfilePreflight `json:"preflight"`
+	Review        ProfileReview    `json:"review"`
+	Evidence      ProfileEvidence  `json:"evidence"`
+	Routing       ProfileRouting   `json:"routing"`
+	Apply         ProfileApply     `json:"apply"`
+	Outputs       ProfileOutputs   `json:"outputs"`
+}
+
+// ProfilePreflight controls what start does about rows whose identity is not
+// durable yet (FT-008).
+type ProfilePreflight struct {
+	Identity IdentityPolicy `json:"identity"`
+}
+
+// IdentityPolicy is how the preflight treats a workitem directory that should
+// carry a .workitem marker but does not.
+type IdentityPolicy string
+
+const (
+	// IdentityPolicyRepair adopts the directory and reports what it did. The
+	// default: an unadopted directory is a gap camp can close itself, and
+	// stopping to ask would turn every messy campaign into a chore before
+	// triage could begin.
+	IdentityPolicyRepair IdentityPolicy = "repair"
+	// IdentityPolicyStrict refuses the run and lists every unrepaired row,
+	// for campaigns that want adoption to be a deliberate act.
+	IdentityPolicyStrict IdentityPolicy = "strict"
+)
+
+// IdentityPolicies returns the identity-policy vocabulary.
+func IdentityPolicies() []string {
+	return []string{string(IdentityPolicyRepair), string(IdentityPolicyStrict)}
 }
 
 // ProfileScope selects which workitems a run considers.
@@ -161,6 +188,9 @@ func DefaultProfile() ResolvedProfile {
 			Mode:           RunModeIncremental,
 			StaleAfterDays: 14,
 		},
+		Preflight: ProfilePreflight{
+			Identity: IdentityPolicyRepair,
+		},
 		Review: ProfileReview{
 			GroupBy:          GroupByType,
 			BatchSize:        5,
@@ -225,6 +255,8 @@ func (p *ResolvedProfile) validate(path string) []Violation {
 	}
 	out = append(out, checkEnum(joinPath(path, "runs.mode"), string(p.Runs.Mode), RunModes())...)
 	out = append(out, checkMinInt(joinPath(path, "runs.stale_after_days"), p.Runs.StaleAfterDays, 0)...)
+	out = append(out, checkEnum(
+		joinPath(path, "preflight.identity"), string(p.Preflight.Identity), IdentityPolicies())...)
 	out = append(out, checkEnum(
 		joinPath(path, "review.group_by"), string(p.Review.GroupBy), ReviewGroupBys())...)
 	out = append(out, checkMinInt(joinPath(path, "review.batch_size"), p.Review.BatchSize, 1)...)
