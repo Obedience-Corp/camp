@@ -248,15 +248,20 @@ func formatArtifactsSection(result *sync.SyncResult, verbose bool) {
 			fmt.Printf("  %s %s (first sync; %d pre-existing local files left untouched)\n",
 				ui.SuccessIcon(), a.Root, a.Protected)
 		case len(a.SkippedConflicts) > 0:
-			fmt.Printf("  %s %s (synced; %d conflicts kept local)\n",
-				ui.WarningIcon(), a.Root, len(a.SkippedConflicts))
+			fmt.Printf("  %s %s (synced; %s kept local)\n",
+				ui.WarningIcon(), a.Root, conflictCount(len(a.SkippedConflicts)))
 			for i, p := range a.SkippedConflicts {
 				if !verbose && i == 5 {
 					fmt.Printf("      ... and %d more (use --verbose)\n", len(a.SkippedConflicts)-i)
 					break
 				}
-				fmt.Printf("      %s (local edit preserved; remove the file to take the peer's copy)\n", p)
+				fmt.Printf("      %s (local edit preserved)\n", p)
 			}
+			// Deleting the local file used to be the only way out, so that is
+			// what this hint said. `camp artifacts resolve` exists now, and
+			// telling someone to destroy their data to express a preference is
+			// exactly what it replaced.
+			fmt.Println("      Resolve with: camp artifacts resolve <path> --from <machine> --take-local|--take-peer")
 		default:
 			fmt.Printf("  %s %s (synced)\n", ui.SuccessIcon(), a.Root)
 		}
@@ -436,4 +441,14 @@ type syncOptions struct {
 	// process cannot report the first run's wait, which is exactly what
 	// happens under --no-drain after an ordinary sync.
 	drainWaited time.Duration
+}
+
+// conflictCount renders a conflict tally, singular when there is one. "1
+// conflicts kept local" is the kind of detail that makes output read as
+// machine-generated.
+func conflictCount(n int) string {
+	if n == 1 {
+		return "1 conflict"
+	}
+	return fmt.Sprintf("%d conflicts", n)
 }
