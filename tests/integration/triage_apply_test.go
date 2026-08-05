@@ -112,6 +112,12 @@ func TestTriageApply_MovesRealWorkitemsAndWritesReceipts(t *testing.T) {
 		assert.Contains(t, line, `"argv":["camp","workitem","stage"`)
 		assert.Contains(t, line, `"undo":"camp workitem stage`,
 			"the receipt carries a command that actually reverses this")
+		// The undo restores the stage the row actually had, not `clear`.
+		// Reading the previous stage off the resolved workitem instead of
+		// the priority store recorded `clear` for every row, which would
+		// have un-staged a workitem the undo was meant to restore.
+		assert.Contains(t, line, `active"}`,
+			"the undo names the prior stage, not clear")
 	}
 }
 

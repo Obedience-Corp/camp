@@ -43,17 +43,29 @@ func (m *serviceMover) Stage(ctx context.Context, stableID, stage string) (triag
 			"attention stage is only supported for directory-backed workflow workitems", nil)
 	}
 
-	// The undo is read before the write, because afterwards the previous
-	// stage is gone and the receipt would have nothing true to record.
-	previous := item.AttentionStage
-	if previous == "" {
-		previous = "clear"
-	}
-
 	resolver := paths.NewResolverFromConfig(m.campaignRoot, m.cfg)
 	items, err := wkitem.Discover(ctx, m.campaignRoot, resolver)
 	if err != nil {
 		return triage.MoveOutcome{}, camperrors.Wrap(err, "discovering work items")
+	}
+
+	// The undo is read before the write, because afterwards the previous
+	// stage is gone and the receipt would have nothing true to record.
+	//
+	// It has to come from the priority store, not from the resolved item: a
+	// stage lives in the store, and selector.Resolve returns the on-disk
+	// workitem without that overlay. Reading it off the item recorded an undo
+	// of `clear` for every row, which would restore a parked workitem to no
+	// stage at all rather than to the stage it actually had.
+	previousStore, err := priority.Load(priority.StorePath(m.campaignRoot))
+	if err != nil {
+		return triage.MoveOutcome{}, camperrors.Wrap(err, "loading the priority store")
+	}
+	overlaid := *item
+	priority.ApplyAttentionToItem(previousStore, &overlaid)
+	previous := overlaid.AttentionStage
+	if previous == "" {
+		previous = "clear"
 	}
 
 	clear := stage == "clear" || stage == ""
