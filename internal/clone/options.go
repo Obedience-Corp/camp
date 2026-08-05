@@ -58,6 +58,33 @@ type CloneResult struct {
 	Warnings []string
 	// Registration contains auto-registration results (nil if skipped or not a campaign).
 	Registration *RegistrationResult
+	// Seed records which transport delivered each repository when a peer was
+	// configured. Empty without --from, which is what keeps default output
+	// byte-identical.
+	Seed []SeedRepoResult
+}
+
+// Seed transports, in the order the cold seed prefers them.
+const (
+	// SeedMethodPackCopy is a byte copy of a quiescent peer's object store.
+	SeedMethodPackCopy = "pack-copy"
+	// SeedMethodBundle is a verified git bundle from the peer.
+	SeedMethodBundle = "bundle"
+	// SeedMethodPeerClone is an ordinary git clone from the peer.
+	SeedMethodPeerClone = "peer-clone"
+	// SeedMethodOrigin means no peer transport delivered this repository.
+	SeedMethodOrigin = "origin"
+)
+
+// SeedRepoResult records which transport delivered one repository, and why it
+// was not a faster one. Reported per repo because the choice is made per repo.
+type SeedRepoResult struct {
+	// Repo is the repository path relative to the campaign root ("." = root).
+	Repo string
+	// Method is one of the SeedMethod constants.
+	Method string
+	// Reason explains a fallback; empty when the preferred path was taken.
+	Reason string
 }
 
 // RegistrationResult contains the outcome of auto-registration.

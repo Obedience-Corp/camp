@@ -4,6 +4,7 @@
 package integration
 
 import (
+	"encoding/json"
 	"fmt"
 	"testing"
 
@@ -29,11 +30,14 @@ func TestBundleSeedOverSSH_NonQuiescentRootSeedsViaBundle(t *testing.T) {
 
 	localRoot := "/campaigns/" + name
 	out, err := tc.RunCampInDir("/campaigns", "clone", rootOrigin, localRoot,
-		"--from", loopbackMachineID, "--no-submodules", "--no-validate")
+		"--from", loopbackMachineID, "--no-submodules", "--no-validate", "--json")
 	require.NoError(t, err, "bundle seed failed: %s", out)
 
-	require.Contains(t, out, "Bundling campaign root",
-		"a non-quiescent root must take the bundle path, not the copy path")
+	// Assert the transport actually used, not the progress line: that line is
+	// printed before the bundle runs, so it stays true even if the bundle fails
+	// and the seed silently degrades to a slower path.
+	require.Equal(t, "bundle", seedMethodFor(t, out, "."),
+		"a non-quiescent root must be delivered by the bundle transport")
 
 	requireFileContent(t, tc, localRoot+"/marker.txt", "root-marker\n")
 	require.Equal(t, rootOrigin, tc.GitOutput(t, localRoot, "remote", "get-url", "origin"),
@@ -86,11 +90,13 @@ func TestBundleSeedOverSSH_NonQuiescentSubmoduleStillArrives(t *testing.T) {
 
 	localRoot := "/campaigns/" + name
 	out, err := tc.RunCampInDir("/campaigns", "clone", rootOrigin, localRoot,
-		"--from", loopbackMachineID)
+		"--from", loopbackMachineID, "--json")
 	require.NoError(t, err, "clone with a dirty submodule failed: %s", out)
 
-	require.Contains(t, out, "Cold-seeding campaign root",
+	require.Equal(t, "pack-copy", seedMethodFor(t, out, "."),
 		"the quiescent root should still take the fast copy path")
+	require.Equal(t, "bundle", seedMethodFor(t, out, "projects/sub"),
+		"the dirty submodule must be delivered by the bundle transport")
 
 	requireFileContent(t, tc, localRoot+"/projects/sub/f.txt", "sub-v1\n")
 	require.Equal(t,
@@ -136,4 +142,27 @@ machines:
 
 	requireFileContent(t, tc, localRoot+"/marker.txt", "root-marker\n")
 	require.Equal(t, rootOrigin, tc.GitOutput(t, localRoot, "remote", "get-url", "origin"))
+}
+
+// seedMethodFor reads the transport a clone reported for one repository from
+// its --json seed summary.
+func seedMethodFor(t *testing.T, out, repo string) string {
+	t.Helper()
+	var decoded struct {
+		Seed *struct {
+			Repos []struct {
+				Repo   string `json:"repo"`
+				Method string `json:"method"`
+			} `json:"repos"`
+		} `json:"seed"`
+	}
+	require.NoError(t, json.Unmarshal([]byte(jsonPayload(t, out)), &decoded))
+	require.NotNil(t, decoded.Seed, "clone reported no seed summary: %s", out)
+	for _, r := range decoded.Seed.Repos {
+		if r.Repo == repo {
+			return r.Method
+		}
+	}
+	t.Fatalf("no seed entry for %q in %+v", repo, decoded.Seed.Repos)
+	return ""
 }

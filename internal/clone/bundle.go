@@ -60,14 +60,28 @@ func (c *Cloner) createPeerBundle(ctx context.Context, peerRoot, repo, destFile 
 	if err := f.Close(); err != nil {
 		return camperrors.Wrap(err, "flush bundle file")
 	}
-	return verifyBundle(ctx, destFile)
+	return verifyBundle(ctx, filepath.Dir(destFile), destFile)
 }
 
 // verifyBundle refuses a bundle git cannot vouch for. This is the transaction
 // boundary: a truncated stream fails here, before anything reads objects out
 // of it, so a partial transfer can never be mistaken for a complete seed.
-func verifyBundle(ctx context.Context, file string) error {
-	out, err := exec.CommandContext(ctx, "git", "bundle", "verify", file).CombinedOutput()
+//
+// `git bundle verify` insists on being run from inside a repository — it wants
+// somewhere to resolve prerequisites against — so a scratch repository is
+// created next to the bundle for it. A full `--all` bundle has no
+// prerequisites, so an empty repository is a sufficient and honest place to ask
+// the question. Running it repo-less silently fails with "need a repository to
+// verify a bundle", which reads as a bad bundle and degrades a perfectly good
+// one to a slower transport.
+func verifyBundle(ctx context.Context, scratchDir, file string) error {
+	verifyRepo := filepath.Join(scratchDir, "verify")
+	if out, err := exec.CommandContext(ctx, "git", "init", "-q", verifyRepo).CombinedOutput(); err != nil {
+		return camperrors.Wrapf(err, "create bundle verification repo: %s", lastLine(string(out)))
+	}
+	defer func() { _ = os.RemoveAll(verifyRepo) }()
+
+	out, err := exec.CommandContext(ctx, "git", "-C", verifyRepo, "bundle", "verify", file).CombinedOutput()
 	if err != nil {
 		return camperrors.Wrapf(err, "bundle failed verification: %s", lastLine(string(out)))
 	}

@@ -131,6 +131,10 @@ func (c *Cloner) Clone(ctx context.Context) (*CloneResult, error) {
 			staleRef    bool
 			nestedCount int
 			branchOK    bool
+			// seed records which transport delivered this submodule. Written
+			// per goroutine and aggregated after the wait, like every other
+			// field here, so the parallel loop needs no lock.
+			seed SeedRepoResult
 		}
 
 		results := make([]subInitResult, len(submoduleInfos))
@@ -172,18 +176,23 @@ func (c *Cloner) Clone(ctx context.Context) (*CloneResult, error) {
 				// failing the submodule.
 				peerSeeded := false
 				if c.peer != nil {
-					if coldErr := c.coldSeedSubmodule(ctx, targetDir, sub); coldErr == nil {
+					method, reason, coldErr := c.coldSeedSubmodule(ctx, targetDir, sub)
+					if coldErr == nil {
 						peerSeeded = true
+						r.seed = SeedRepoResult{Repo: sub.Path, Method: method, Reason: reason}
 					} else {
 						if !errors.Is(coldErr, errColdSeedSkipped) {
 							r.warnings = append(r.warnings,
-								fmt.Sprintf("cold-seed copy %s: %v (cloning from peer)", sub.Path, coldErr))
+								fmt.Sprintf("cold-seed %s: %v (cloning from peer)", sub.Path, coldErr))
+							reason = coldErr.Error()
 						}
 						if seedErr := c.seedSubmoduleFromPeer(ctx, targetDir, sub); seedErr != nil {
 							r.warnings = append(r.warnings,
 								fmt.Sprintf("peer seed %s: %v (initializing from origin)", sub.Path, seedErr))
+							r.seed = SeedRepoResult{Repo: sub.Path, Method: SeedMethodOrigin, Reason: seedErr.Error()}
 						} else {
 							peerSeeded = true
+							r.seed = SeedRepoResult{Repo: sub.Path, Method: SeedMethodPeerClone, Reason: reason}
 						}
 					}
 				}
@@ -274,6 +283,9 @@ func (c *Cloner) Clone(ctx context.Context) (*CloneResult, error) {
 			}
 			if r.result.PeerSeeded {
 				peerSeededCount++
+			}
+			if r.seed.Repo != "" {
+				result.Seed = append(result.Seed, r.seed)
 			}
 		}
 

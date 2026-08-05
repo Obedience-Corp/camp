@@ -18,6 +18,27 @@ type JSONOutput struct {
 	Registration *JSONRegistration `json:"registration,omitempty"`
 	Errors       []string          `json:"errors,omitempty"`
 	Warnings     []string          `json:"warnings,omitempty"`
+	// Seed reports which transport delivered each repository. It is a pointer
+	// with omitempty so a clone that used no peer emits no "seed" key at all,
+	// which is what keeps default --json output byte-identical.
+	Seed *SeedOutput `json:"seed,omitempty"`
+}
+
+// SeedOutput summarises peer seeding for a clone.
+type SeedOutput struct {
+	// Repos lists one entry per repository, campaign root first.
+	Repos []SeedRepoOutput `json:"repos"`
+}
+
+// SeedRepoOutput reports one repository's seed transport.
+type SeedRepoOutput struct {
+	// Repo is the path relative to the campaign root ("." = root).
+	Repo string `json:"repo"`
+	// Method is the transport that delivered it: pack-copy, bundle,
+	// peer-clone, or origin.
+	Method string `json:"method"`
+	// Reason explains why a faster path was not used; absent when it was.
+	Reason string `json:"reason,omitempty"`
 }
 
 // ClonePhaseOutput represents the clone phase result.
@@ -97,6 +118,18 @@ func (r *CloneResult) JSON() ([]byte, error) {
 	// Convert errors to strings
 	for _, err := range r.Errors {
 		output.Errors = append(output.Errors, err.Error())
+	}
+
+	// Peer seeding is reported only when a peer was actually used, so a clone
+	// without --from emits exactly the JSON it always has.
+	if len(r.Seed) > 0 {
+		seed := &SeedOutput{Repos: make([]SeedRepoOutput, 0, len(r.Seed))}
+		for _, s := range r.Seed {
+			seed.Repos = append(seed.Repos, SeedRepoOutput{
+				Repo: s.Repo, Method: s.Method, Reason: s.Reason,
+			})
+		}
+		output.Seed = seed
 	}
 
 	// Convert submodule results

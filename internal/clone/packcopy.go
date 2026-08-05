@@ -311,27 +311,34 @@ func (c *Cloner) packSeedRoot(ctx context.Context, v RepoVerdict) (string, error
 func (c *Cloner) cloneRootFromPeer(ctx context.Context, result *CloneResult) (string, error) {
 	report, err := CheckQuiescence(ctx, c.peer)
 	if err != nil {
+		reason := fmt.Sprintf("quiescence check failed: %v", err)
 		result.Warnings = append(result.Warnings,
 			fmt.Sprintf("quiescence check on %s failed, cloning from peer instead of copying: %v", c.peer.ID(), err))
-		return c.gitCloneFromPeer(ctx)
+		dir, cloneErr := c.gitCloneFromPeer(ctx)
+		return c.recordRootSeed(result, SeedMethodPeerClone, reason, dir, cloneErr)
 	}
 	c.peerQuiescence = report
 
 	v, found := report.Verdict(quiescenceRootRepo)
 	if !found {
+		const reason = "peer reported no verdict for the campaign root"
 		result.Warnings = append(result.Warnings,
 			fmt.Sprintf("peer %s reported no verdict for the campaign root; cloning from peer", c.peer.ID()))
-		return c.gitCloneFromPeer(ctx)
+		dir, cloneErr := c.gitCloneFromPeer(ctx)
+		return c.recordRootSeed(result, SeedMethodPeerClone, reason, dir, cloneErr)
 	}
+	fallbackReason := ""
 	if ok, reason := packCopyEligible(v, report.Root); ok {
 		c.progress.Message(fmt.Sprintf("Cold-seeding campaign root from %s", c.peer.ID()))
 		dir, err := c.packSeedRoot(ctx, v)
 		if err == nil {
-			return dir, nil
+			return c.recordRootSeed(result, SeedMethodPackCopy, "", dir, nil)
 		}
+		fallbackReason = fmt.Sprintf("copy failed: %v", err)
 		result.Warnings = append(result.Warnings,
 			fmt.Sprintf("cold-seed copy of the campaign root failed (%v); bundling from peer instead", err))
 	} else {
+		fallbackReason = reason
 		result.Warnings = append(result.Warnings,
 			fmt.Sprintf("cold-seed copy skipped for the campaign root (%s); bundling from peer instead", reason))
 	}
@@ -342,11 +349,23 @@ func (c *Cloner) cloneRootFromPeer(ctx context.Context, result *CloneResult) (st
 	c.progress.Message(fmt.Sprintf("Bundling campaign root from %s", c.peer.ID()))
 	dir, err := c.bundleSeedRoot(ctx, report.Root)
 	if err == nil {
-		return dir, nil
+		return c.recordRootSeed(result, SeedMethodBundle, fallbackReason, dir, nil)
 	}
 	result.Warnings = append(result.Warnings,
 		fmt.Sprintf("bundle seed of the campaign root failed (%v); cloning from peer", err))
-	return c.gitCloneFromPeer(ctx)
+	cloneDir, cloneErr := c.gitCloneFromPeer(ctx)
+	return c.recordRootSeed(result, SeedMethodPeerClone, fmt.Sprintf("bundle failed: %v", err), cloneDir, cloneErr)
+}
+
+// recordRootSeed notes the transport that delivered the campaign root and
+// passes the clone result through, so every return path records exactly once.
+func (c *Cloner) recordRootSeed(result *CloneResult, method, reason string, dir string, err error) (string, error) {
+	if err != nil {
+		// The caller falls back to origin; that outcome is recorded there.
+		return dir, err
+	}
+	result.Seed = append(result.Seed, SeedRepoResult{Repo: quiescenceRootRepo, Method: method, Reason: reason})
+	return dir, nil
 }
 
 // errColdSeedSkipped marks a submodule the cold-seed copy declined to handle —
@@ -359,22 +378,30 @@ var errColdSeedSkipped = errors.New("cold seed not applicable")
 // quiescence report authorises it. The report is the one collected during the
 // root clone, so this costs no extra round-trip and every submodule is judged
 // against the same snapshot of the peer.
-func (c *Cloner) coldSeedSubmodule(ctx context.Context, repoDir string, sub SubmoduleInfo) error {
+func (c *Cloner) coldSeedSubmodule(ctx context.Context, repoDir string, sub SubmoduleInfo) (string, string, error) {
 	if c.peerQuiescence == nil {
-		return errColdSeedSkipped
+		return "", "", errColdSeedSkipped
 	}
 	v, found := c.peerQuiescence.Verdict(sub.Path)
 	if !found {
-		return errColdSeedSkipped
+		return "", "", errColdSeedSkipped
 	}
-	if ok, _ := packCopyEligible(v, c.peerQuiescence.Root); ok {
+	reason := ""
+	if ok, why := packCopyEligible(v, c.peerQuiescence.Root); ok {
 		if err := c.packSeedSubmodule(ctx, repoDir, sub, v); err == nil {
-			return nil
+			return SeedMethodPackCopy, "", nil
+		} else {
+			reason = fmt.Sprintf("copy failed: %v", err)
 		}
 		// Fall through: a copy that failed is exactly the case the bundle
 		// exists for, and it costs one more attempt before the network.
+	} else {
+		reason = why
 	}
-	return c.bundleSeedSubmodule(ctx, repoDir, sub, c.peerQuiescence.Root)
+	if err := c.bundleSeedSubmodule(ctx, repoDir, sub, c.peerQuiescence.Root); err != nil {
+		return "", reason, err
+	}
+	return SeedMethodBundle, reason, nil
 }
 
 // packSeedSubmodule seeds one submodule's object store from the peer's bytes
