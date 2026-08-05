@@ -60,6 +60,9 @@ Examples:
 			"agent_allowed": "true",
 			"agent_reason":  "Supports --json for non-interactive output",
 		},
+		// No positionals: otherwise unknown words (e.g. the removed
+		// `current` subcommand) fall through as args and silently list.
+		Args: jsoncontract.Args(wkitem.SchemaVersion, func() bool { return flagJSON }, cobra.NoArgs),
 		RunE: jsoncontract.RunE(wkitem.SchemaVersion, func() bool { return flagJSON }, func(cmd *cobra.Command, args []string) error {
 			ctx := cmd.Context()
 
@@ -144,9 +147,6 @@ Examples:
 	cmd.AddCommand(newUnlinkCommand())
 	cmd.AddCommand(newLinksCommand())
 	cmd.AddCommand(newWorktreeCommand())
-	// Tombstone: must stay registered so legacy `workitem current --json`
-	// cannot fall through to the parent list command.
-	cmd.AddCommand(newCurrentCommand())
 	cmd.AddCommand(newResolveCommand())
 	cmd.AddCommand(newIDCommand())
 	cmd.AddCommand(newPriorityCommand())

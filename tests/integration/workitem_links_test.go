@@ -212,6 +212,7 @@ func TestIntegration_ResolverTiers(t *testing.T) {
 
 // Legacy `camp workitem current --json` must not fall through to the parent
 // list command (which would exit 0 with a workitems/v1alpha10 payload).
+// The subcommand is gone; the parent rejects positionals, so this fails.
 func TestIntegration_CurrentRemovedLegacyArgv(t *testing.T) {
 	tc := GetSharedContainer(t)
 	dir := "/test/workitem-current-removed"
@@ -222,31 +223,25 @@ func TestIntegration_CurrentRemovedLegacyArgv(t *testing.T) {
 	_, code, err := tc.ExecCommand("sh", "-c",
 		"cd "+dir+" && /camp --no-color workitem current --json >"+stdoutPath+" 2>"+stderrPath)
 	require.NoError(t, err)
-	require.Equal(t, 2, code, "tombstone must exit 2, not 0")
+	require.NotEqual(t, 0, code, "legacy current argv must not succeed")
 
 	stdout, err := tc.ReadFile(stdoutPath)
 	require.NoError(t, err)
-	assert.Empty(t, stdout, "error envelope belongs on stderr, not list payload: %s", stdout)
 	stderr, err := tc.ReadFile(stderrPath)
 	require.NoError(t, err)
-	assert.NotContains(t, stderr, `"schema_version": "workitems/v1alpha10"`,
-		"must not emit the parent list schema: %s", stderr)
-
-	var envelope struct {
-		SchemaVersion string `json:"schema_version"`
-		Error         struct {
-			Code     string `json:"code"`
-			Message  string `json:"message"`
-			Hint     string `json:"hint"`
-			ExitCode int    `json:"exit_code"`
-		} `json:"error"`
-	}
-	require.NoError(t, json.Unmarshal([]byte(stderr), &envelope), "stderr=%s", stderr)
-	assert.Equal(t, "workitem-current/v1alpha1", envelope.SchemaVersion)
-	assert.Equal(t, "validation_error", envelope.Error.Code)
-	assert.Equal(t, "camp workitem current was removed", envelope.Error.Message)
-	assert.Contains(t, envelope.Error.Hint, "camp workitem link")
-	assert.Equal(t, 2, envelope.Error.ExitCode)
+	// Error envelopes may reuse the parent schema version; a successful list
+	// payload has items and no error object.
+	assert.False(t, strings.Contains(stdout, `"items"`) && !strings.Contains(stdout, `"error"`),
+		"must not emit a list payload on stdout: %s", stdout)
+	assert.False(t, strings.Contains(stderr, `"items"`) && !strings.Contains(stderr, `"error"`),
+		"must not emit a list payload on stderr: %s", stderr)
+	combined := stdout + stderr
+	assert.True(t,
+		strings.Contains(combined, "unknown command") ||
+			strings.Contains(combined, "accepts no args") ||
+			strings.Contains(combined, "unknown flag") ||
+			strings.Contains(combined, `"error"`),
+		"expected a hard failure message, got: %s", combined)
 }
 
 func TestIntegration_ResolverQuestID(t *testing.T) {

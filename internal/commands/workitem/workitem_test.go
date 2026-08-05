@@ -460,7 +460,7 @@ func TestWorkitemSubcommandsStayRegisteredAndVisible(t *testing.T) {
 	cmd := NewWorkitemCommand()
 
 	want := []string{
-		"adopt", "commit", "commits", "create", "current", "demote", "doctor",
+		"adopt", "commit", "commits", "create", "demote", "doctor",
 		"group", "id", "link", "links", "list", "priority", "promote", "rename",
 		"repair", "resolve", "stage", "sweep", "unlink", "validate", "worktree",
 	}
@@ -479,5 +479,30 @@ func TestWorkitemSubcommandsStayRegisteredAndVisible(t *testing.T) {
 
 	if got := len(cmd.Commands()); got != len(want) {
 		t.Fatalf("registered subcommand count = %d, want %d", got, len(want))
+	}
+}
+
+func TestWorkitemRootRejectsPositionalArgs(t *testing.T) {
+	// Legacy `workitem current --json` must not succeed as a list query.
+	cmd := NewWorkitemCommand()
+	cmd.SetArgs([]string{"current", "--json"})
+	var stdout, stderr bytes.Buffer
+	cmd.SetOut(&stdout)
+	cmd.SetErr(&stderr)
+	err := cmd.Execute()
+	if err == nil {
+		t.Fatal("expected failure for removed/unknown positional current")
+	}
+	// A JSON error envelope may use the parent schema version; a list payload
+	// would include "items" without an "error" object.
+	if strings.Contains(stdout.String(), `"items"`) && !strings.Contains(stdout.String(), `"error"`) {
+		t.Fatalf("must not emit a list payload on stdout: %q", stdout.String())
+	}
+	if strings.Contains(stderr.String(), `"items"`) && !strings.Contains(stderr.String(), `"error"`) {
+		t.Fatalf("must not emit a list payload on stderr: %q", stderr.String())
+	}
+	combined := stdout.String() + stderr.String()
+	if !strings.Contains(combined, "unknown command") && !strings.Contains(combined, "accepts no args") {
+		t.Fatalf("expected unknown-command or no-args failure, got: %s", combined)
 	}
 }
