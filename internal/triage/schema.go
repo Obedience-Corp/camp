@@ -187,8 +187,16 @@ func (m *Manifest) version() string { return m.SchemaVersion }
 
 // Validate implements Document, reporting every rule the manifest violates.
 func (m *Manifest) Validate() []Violation {
+	out := checkRequired("run_id", m.RunID)
+	return append(out, m.validateContent()...)
+}
+
+// validateContent checks everything a snapshot is responsible for — every rule
+// except the run id, which the store assigns from its clock at creation time.
+// Splitting it this way lets the snapshot reject a bad row where it was built,
+// while the store still validates the complete document before any write.
+func (m *Manifest) validateContent() []Violation {
 	var out []Violation
-	out = append(out, checkRequired("run_id", m.RunID)...)
 	out = append(out, checkEnum("mode", string(m.Mode), RunModes())...)
 	out = append(out, checkTimeSet("created_at", m.CreatedAt)...)
 	out = append(out, checkRequired("profile.name", m.Profile.Name)...)

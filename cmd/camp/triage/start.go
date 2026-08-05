@@ -1,0 +1,258 @@
+package triage
+
+import (
+	"context"
+	"encoding/json"
+	"fmt"
+	"io"
+	"path/filepath"
+	"strings"
+
+	"github.com/spf13/cobra"
+
+	"github.com/Obedience-Corp/camp/internal/config"
+	camperrors "github.com/Obedience-Corp/camp/internal/errors"
+	"github.com/Obedience-Corp/camp/internal/jsoncontract"
+	"github.com/Obedience-Corp/camp/internal/paths"
+	"github.com/Obedience-Corp/camp/internal/triage"
+	"github.com/Obedience-Corp/camp/internal/workitem"
+)
+
+// StartJSONVersion is the schema version of `camp triage start --json`.
+const StartJSONVersion = "triage-start/v1alpha1"
+
+// startResult is the `--json` payload. Snake-case single object, matching the
+// rest of camp's machine-readable surfaces.
+type startResult struct {
+	SchemaVersion string `json:"schema_version"`
+	RunID         string `json:"run_id"`
+	Mode          string `json:"mode"`
+	Profile       string `json:"profile"`
+	Rows          int    `json:"rows"`
+	Batches       int    `json:"batches"`
+	// Queued and Carried always sum to Rows. Carried is 0 until carry-forward
+	// lands; the field exists now so consumers do not have to change shape
+	// when it starts moving.
+	Queued              int    `json:"queued"`
+	Carried             int    `json:"carried"`
+	IdentityExceptions  int    `json:"identity_exceptions"`
+	RunDir              string `json:"run_dir"`
+	WorkflowDoc         string `json:"workflow_doc,omitempty"`
+	ScaffoldWorkflowDoc bool   `json:"scaffold_workflow_doc"`
+}
+
+type startOptions struct {
+	full     bool
+	scope    []string
+	jsonOut  bool
+	noWorkfl bool
+}
+
+func newStartCommand() *cobra.Command {
+	opts := &startOptions{}
+
+	cmd := &cobra.Command{
+		Use:   "start",
+		Short: "Snapshot the campaign and open a triage run",
+		Long: `Snapshot the campaign's workitems and open a triage run.
+
+The snapshot is frozen: the run records what the campaign contained when it
+started, along with the resolved profile it will be judged under, so a verdict
+stays explainable even after the campaign and the profile move on.
+
+Scope expressions use the same filters as camp workitem, one per --scope flag:
+
+  --scope type:design            only design workitems
+  --scope tag:launch             only items tagged launch
+  --scope path:workflow/design   only items under a path (glob)
+
+Available keys: type, category, status, stage, attention-stage, group, tag,
+project, query, path.
+
+Refuses (exit 2) when a run is already in progress; close it with
+camp triage abandon first.`,
+		Args: jsoncontract.Args(StartJSONVersion, func() bool { return opts.jsonOut }, cobra.NoArgs),
+		Annotations: map[string]string{
+			"agent_allowed": "true",
+			"agent_reason":  "Deterministic snapshot with --json output; calls no models",
+		},
+		RunE: jsoncontract.RunE(StartJSONVersion, func() bool { return opts.jsonOut },
+			func(cmd *cobra.Command, _ []string) error {
+				return runStart(cmd, opts)
+			}),
+	}
+	cmd.SetFlagErrorFunc(jsoncontract.FlagErrorFunc(StartJSONVersion, func() bool { return opts.jsonOut }))
+
+	f := cmd.Flags()
+	f.BoolVar(&opts.full, "full", false, "Re-review every row instead of carrying unchanged verdicts forward")
+	f.StringArrayVar(&opts.scope, "scope", nil, "Limit the run with a key:value filter (repeat for more)")
+	f.BoolVar(&opts.jsonOut, "json", false, "Output result as a single JSON object")
+	f.BoolVar(&opts.noWorkfl, "no-workflow-doc", false, "Skip the companion WORKFLOW.md scaffold")
+	return cmd
+}
+
+func runStart(cmd *cobra.Command, opts *startOptions) error {
+	ctx := cmd.Context()
+
+	cfg, root, err := config.LoadCampaignConfigFromCwd(ctx)
+	if err != nil {
+		return camperrors.Wrap(err, "not in a campaign directory")
+	}
+
+	profile, err := triage.ResolveProfile(ctx, root)
+	if err != nil {
+		return err
+	}
+	scope := triage.NewScope(profile)
+	if err := scope.ApplyExpressions(opts.scope); err != nil {
+		return err
+	}
+
+	items, err := discoverInScope(ctx, root, cfg, scope)
+	if err != nil {
+		return err
+	}
+	if len(items) == 0 {
+		// Blocking here rather than opening an empty run: an empty run would
+		// occupy the single active slot and have to be abandoned before the
+		// operator could correct the scope.
+		return preconditionError(cmd, opts.jsonOut, jsoncontract.WithHint(triage.ErrNoRowsInScope,
+			"widen or drop --scope, or check `camp workitem` for what this campaign contains"))
+	}
+
+	store := triage.NewStore(root, nil)
+	manifest, err := triage.BuildManifest(triage.SnapshotInput{
+		ProfileName: triage.ResolvedProfileName(),
+		Profile:     profile,
+		Mode:        startMode(opts.full),
+		Items:       items,
+		Now:         triage.SystemClock(),
+	})
+	if err != nil {
+		return err
+	}
+
+	run, err := store.CreateRun(ctx, manifest)
+	if err != nil {
+		if camperrors.Is(err, camperrors.ErrConflict) {
+			return preconditionError(cmd, opts.jsonOut, jsoncontract.WithHint(err,
+				"run `camp triage abandon` to close the run in progress"))
+		}
+		return err
+	}
+
+	result := startResult{
+		SchemaVersion:       StartJSONVersion,
+		RunID:               run.ID,
+		Mode:                string(manifest.Mode),
+		Profile:             manifest.Profile.Name,
+		Rows:                len(manifest.Rows),
+		Batches:             triage.BatchCount(manifest),
+		Queued:              len(manifest.Rows),
+		Carried:             0,
+		IdentityExceptions:  triage.IdentityExceptionCount(manifest),
+		RunDir:              relativeRunDir(root, run.Dir),
+		ScaffoldWorkflowDoc: profile.Outputs.ScaffoldWorkflowDoc && !opts.noWorkfl,
+	}
+	if result.ScaffoldWorkflowDoc {
+		written, err := triage.ScaffoldWorkflowDoc(ctx, run)
+		if err != nil {
+			return err
+		}
+		result.WorkflowDoc = relativeRunDir(root, written)
+	}
+
+	if opts.jsonOut {
+		return writeJSON(cmd.OutOrStdout(), result)
+	}
+	return writeStartText(cmd.OutOrStdout(), result)
+}
+
+// startMode reports the run mode.
+//
+// Every run is full today. Incremental means "carry verdicts forward from a
+// base run", and carry-forward lands in a later sequence, so claiming
+// incremental would put a mode in the manifest that nothing honors — and the
+// schema rejects an incremental run with no base run precisely to stop that.
+// --full is accepted now so the flag surface is stable; it becomes meaningful
+// when there is something to carry.
+func startMode(_ bool) triage.RunMode {
+	return triage.RunModeFull
+}
+
+// relativeRunDir renders a run path relative to the campaign root, since that
+// is how every other camp surface refers to campaign files.
+func relativeRunDir(root, dir string) string {
+	if rel, err := filepath.Rel(root, dir); err == nil && !strings.HasPrefix(rel, "..") {
+		return filepath.ToSlash(rel)
+	}
+	return dir
+}
+
+// discoverInScope runs camp's normal discovery and narrows it to the scope.
+func discoverInScope(ctx context.Context, root string, cfg *config.CampaignConfig, scope triage.Scope) ([]workitem.WorkItem, error) {
+	resolver := paths.NewResolverFromConfig(root, cfg)
+	items, err := workitem.Discover(ctx, root, resolver)
+	if err != nil {
+		return nil, camperrors.Wrap(err, "discovering work items")
+	}
+	return scope.Apply(items), nil
+}
+
+// preconditionError marks a refusal that is a precondition failure rather than
+// a fault: spec doc 03 gives those exit code 2 so a script can tell "you have
+// to do something first" from "this broke".
+//
+// It prints the reason itself. Returning a CommandError with a non-zero exit
+// code puts main on the silent-exit path — right for a command relaying a
+// child process's failure, wrong here, where the whole value of the refusal is
+// telling the operator what to do next. The JSON path does not print: the
+// envelope carries the same message and hint, and a second copy on stderr
+// would corrupt output that a caller is parsing.
+func preconditionError(cmd *cobra.Command, jsonOut bool, err error) error {
+	if !jsonOut {
+		out := cmd.ErrOrStderr()
+		_, _ = fmt.Fprintf(out, "Error: %v\n", err)
+		if hint := jsoncontract.Hint(err); hint != "" {
+			_, _ = fmt.Fprintf(out, "Hint: %s\n", hint)
+		}
+	}
+	return camperrors.NewCommand(cmd.CommandPath(), 2, err.Error(), err)
+}
+
+func writeJSON(w io.Writer, payload any) error {
+	enc := json.NewEncoder(w)
+	enc.SetIndent("", "  ")
+	return enc.Encode(payload)
+}
+
+func writeStartText(w io.Writer, result startResult) error {
+	if _, err := fmt.Fprintf(w, "Started triage run %s (%s, profile %s)\n",
+		result.RunID, result.Mode, result.Profile); err != nil {
+		return err
+	}
+	if _, err := fmt.Fprintf(w, "  %d rows in %d batches\n", result.Rows, result.Batches); err != nil {
+		return err
+	}
+	if result.IdentityExceptions > 0 {
+		if _, err := fmt.Fprintf(w,
+			"  %d row(s) have no .workitem marker and triage by path only\n",
+			result.IdentityExceptions); err != nil {
+			return err
+		}
+	}
+	if _, err := fmt.Fprintf(w, "  run: %s\n", result.RunDir); err != nil {
+		return err
+	}
+	if result.WorkflowDoc != "" {
+		if _, err := fmt.Fprintf(w, "  steps: %s\n", result.WorkflowDoc); err != nil {
+			return err
+		}
+	}
+	_, err := fmt.Fprintf(w, "\nNext: camp triage status\n")
+	return err
+}
+
+func init() {
+	Cmd.AddCommand(newStartCommand())
+}

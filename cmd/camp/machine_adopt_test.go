@@ -205,9 +205,9 @@ func TestIsSelfOriginDualNameMatrix(t *testing.T) {
 	adoptDetectBare = func(context.Context) (string, error) { return bare, nil }
 
 	tests := []struct {
-		name   string
-		host   string
-		want   bool
+		name    string
+		host    string
+		want    bool
 		wantErr string
 		// override detectors for error rows
 		tailnetErr, bareErr error

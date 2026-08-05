@@ -25,6 +25,7 @@ import (
 	registrypkg "github.com/Obedience-Corp/camp/cmd/camp/registry"
 	skillspkg "github.com/Obedience-Corp/camp/cmd/camp/skills"
 	tagpkg "github.com/Obedience-Corp/camp/cmd/camp/tag"
+	triagepkg "github.com/Obedience-Corp/camp/cmd/camp/triage"
 	worktreespkg "github.com/Obedience-Corp/camp/cmd/camp/worktrees"
 	"github.com/Obedience-Corp/camp/internal/campaign"
 	"github.com/Obedience-Corp/camp/internal/commands/release"
@@ -248,6 +249,7 @@ func init() {
 	rootCmd.AddCommand(festivalspkg.Cmd)
 	rootCmd.AddCommand(projectpkg.Cmd)
 	rootCmd.AddCommand(dungeonpkg.Cmd)
+	rootCmd.AddCommand(triagepkg.Cmd)
 	rootCmd.AddCommand(intentpkg.Cmd)
 	rootCmd.AddCommand(promotepkg.Cmd)
 	rootCmd.AddCommand(promotepkg.RouterCmd)
