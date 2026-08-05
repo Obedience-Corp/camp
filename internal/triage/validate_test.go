@@ -210,6 +210,30 @@ func TestProfileRejects(t *testing.T) {
 	}
 }
 
+// TestProfileNormalizeFillsNilCollections guards the null-vs-[] regression:
+// a profile built field by field must still serialize as camp's JSON
+// convention rather than emitting nulls into every run manifest.
+func TestProfileNormalizeFillsNilCollections(t *testing.T) {
+	profile := ResolvedProfile{}
+
+	profile.Normalize()
+
+	assert.Equal(t, ProfileSchemaVersion, profile.SchemaVersion)
+	assert.NotNil(t, profile.Scope.ExcludeTypes)
+	assert.NotNil(t, profile.Scope.ExcludePaths)
+	assert.NotNil(t, profile.Evidence.DepthByStage)
+}
+
+// TestDefaultDispositionsMatchSpec pins the default label vocabulary from
+// spec doc 04. Type policies may rename these, but a campaign that configures
+// nothing gets exactly this list.
+func TestDefaultDispositionsMatchSpec(t *testing.T) {
+	assert.Equal(t, []string{
+		"current", "next", "active", "parked", "ready", "festival",
+		"completed", "archived", "someday", "consolidate",
+	}, DefaultDispositions())
+}
+
 // TestDefaultProfileIsValid: the built-in every campaign starts from must pass
 // the validation it will be judged by.
 func TestDefaultProfileIsValid(t *testing.T) {
