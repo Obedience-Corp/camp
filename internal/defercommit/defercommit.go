@@ -11,6 +11,7 @@ package defercommit
 
 import (
 	"context"
+	"errors"
 	"os"
 	"strings"
 
@@ -160,8 +161,25 @@ func EnqueuePaths(ctx context.Context, campaignRoot, repoPath, message string, p
 	// committing at all, and the failure is a repository camp could not read.
 	// Degrading silently is not an option, so the worker log records it; the
 	// job itself also shows it, since a captured job carries blobs.
+	//
+	// A nested repository is the exception, because there the degraded job is
+	// wrong rather than merely coarser. See the refusal below.
 	blobs, err := git.CaptureBlobs(ctx, repoPath, paths)
-	if err != nil {
+	switch {
+	case errors.Is(err, git.ErrNestedRepo):
+		// A submodule cannot be deferred at all, so this is the one capture
+		// failure that refuses the job rather than degrading it. Git records
+		// the path as a gitlink pointing at the nested HEAD, which is neither
+		// something the enqueuer can snapshot nor something a job may commit
+		// from an execution-time read: `camp project add` would publish
+		// whatever that submodule's HEAD had become by the time the worker
+		// ran. Returning an error puts the caller back on the synchronous
+		// path, where `git add` records the pointer the user just created.
+		jobs.LogEvent(campaignRoot,
+			"capture-refused repo=%s paths=%d err=%v; committing synchronously instead",
+			jobs.RepoForPath(campaignRoot, repoPath), len(paths), err)
+		return nil, err
+	case err != nil:
 		jobs.LogEvent(campaignRoot,
 			"capture-degraded repo=%s paths=%d err=%v; the job will commit execution-time content",
 			jobs.RepoForPath(campaignRoot, repoPath), len(paths), err)

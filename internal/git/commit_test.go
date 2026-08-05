@@ -1374,3 +1374,65 @@ func TestCommitBlobs_UnbornHead(t *testing.T) {
 		t.Fatalf("CommitBlobs left the real index/working tree dirty: %q", status)
 	}
 }
+
+// CaptureBlobs must refuse a nested repository rather than walk into it.
+//
+// Walking would hash the nested checkout as ordinary blobs, including a
+// projects/<name>/.git path that git rejects on every CommitBlobs attempt, so
+// the job could never drain. A .git file (submodule gitdir pointer) and a
+// .git directory (embedded clone) both count as a boundary.
+func TestCaptureBlobs_NestedRepoBoundary(t *testing.T) {
+	ctx := context.Background()
+	tmpDir := initTestRepo(t)
+
+	// Ordinary nested content without a .git boundary still expands.
+	ordinary := filepath.Join(tmpDir, "notes")
+	if err := os.MkdirAll(filepath.Join(ordinary, "deep"), 0o755); err != nil {
+		t.Fatalf("mkdir ordinary: %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(ordinary, "deep", "idea.md"), []byte("ok\n"), 0o644); err != nil {
+		t.Fatalf("write ordinary: %v", err)
+	}
+	refs, err := CaptureBlobs(ctx, tmpDir, []string{"notes"})
+	if err != nil {
+		t.Fatalf("CaptureBlobs ordinary dir: %v", err)
+	}
+	if len(refs) != 1 || refs[0].Path != "notes/deep/idea.md" {
+		t.Fatalf("ordinary capture = %+v, want notes/deep/idea.md", refs)
+	}
+
+	// Submodule-style: .git is a file, not a directory.
+	subFile := filepath.Join(tmpDir, "projects", "Cap")
+	if err := os.MkdirAll(subFile, 0o755); err != nil {
+		t.Fatalf("mkdir submodule: %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(subFile, ".git"), []byte("gitdir: ../.git/modules/Cap\n"), 0o644); err != nil {
+		t.Fatalf("write .git file: %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(subFile, "README.md"), []byte("nested\n"), 0o644); err != nil {
+		t.Fatalf("write nested file: %v", err)
+	}
+	if !isRepoBoundary(subFile) {
+		t.Fatal("isRepoBoundary must treat a .git file as a boundary")
+	}
+	_, err = CaptureBlobs(ctx, tmpDir, []string{"projects/Cap"})
+	if !errors.Is(err, ErrNestedRepo) {
+		t.Fatalf("submodule-style capture error = %v, want ErrNestedRepo", err)
+	}
+
+	// Embedded-clone style: .git is a directory.
+	subDir := filepath.Join(tmpDir, "projects", "embedded")
+	if err := os.MkdirAll(filepath.Join(subDir, ".git"), 0o755); err != nil {
+		t.Fatalf("mkdir embedded .git: %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(subDir, "main.go"), []byte("package main\n"), 0o644); err != nil {
+		t.Fatalf("write embedded file: %v", err)
+	}
+	if !isRepoBoundary(subDir) {
+		t.Fatal("isRepoBoundary must treat a .git directory as a boundary")
+	}
+	_, err = CaptureBlobs(ctx, tmpDir, []string{"projects/embedded"})
+	if !errors.Is(err, ErrNestedRepo) {
+		t.Fatalf("embedded-clone capture error = %v, want ErrNestedRepo", err)
+	}
+}

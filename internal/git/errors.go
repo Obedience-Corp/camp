@@ -148,6 +148,12 @@ var (
 	// ErrNoFilesSpecified indicates an empty file list was provided for staging.
 	ErrNoFilesSpecified = camperrors.Wrap(camperrors.ErrInvalidInput, "no files specified for staging")
 
+	// ErrNestedRepo indicates a capture reached a repository boundary. The
+	// files below one belong to that repository, and git records the boundary
+	// as a gitlink rather than as the tree beneath it, which is a pointer to
+	// whatever HEAD is at commit time and so cannot be captured in advance.
+	ErrNestedRepo = errors.New("path contains a nested git repository")
+
 	// ErrRemoteNotReachable indicates the remote host could not be contacted.
 	ErrRemoteNotReachable = camperrors.Wrap(camperrors.ErrGitFailed, "remote not reachable")
 
