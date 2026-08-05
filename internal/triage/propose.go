@@ -108,12 +108,6 @@ func (s *Store) Propose(ctx context.Context, in ProposeInput) (*ProposeResult, e
 		return nil, err
 	}
 
-	// Retire the live proposal first, so the stream reads in the order the
-	// thinking happened rather than showing two live proposals at once.
-	verdicts, err := s.Verdicts(ctx, in.RunID)
-	if err != nil {
-		return nil, err
-	}
 	result := &ProposeResult{
 		StableID:         row.StableID,
 		Disposition:      in.Disposition,
@@ -121,33 +115,56 @@ func (s *Store) Propose(ctx context.Context, in ProposeInput) (*ProposeResult, e
 		RationaleRef:     rationaleRef,
 		RequiresApproval: action.Terminal(),
 	}
-	if previous, ok := verdicts[row.StableID]; ok && previous.State == VerdictProposed {
-		if err := s.AppendDecision(ctx, in.RunID, DecisionEvent{
-			Event:           DecisionSuperseded,
+
+	// Reading the live proposal and replacing it are one critical section.
+	// Two drivers proposing on the same row would otherwise each observe the
+	// same proposal and each retire it, leaving two live proposals and one
+	// supersede — a stream that misreports how the row was reasoned about,
+	// which is the only thing it exists to record.
+	err = withLock(ctx, lockPathFor(s.proposeLockPath(in.RunID, row.StableID)), func() error {
+		verdicts, err := s.Verdicts(ctx, in.RunID)
+		if err != nil {
+			return err
+		}
+
+		// Retire the live proposal first, so the stream reads in the order
+		// the thinking happened rather than showing two at once.
+		if previous, ok := verdicts[row.StableID]; ok && HasLiveProposal(previous) {
+			if err := s.AppendDecision(ctx, in.RunID, DecisionEvent{
+				Event:           DecisionSuperseded,
+				StableID:        row.StableID,
+				Disposition:     previous.Disposition,
+				CanonicalAction: previous.CanonicalAction,
+				Actor:           in.Actor,
+				At:              in.Now,
+				Note:            "replaced by a newer proposal",
+			}); err != nil {
+				return err
+			}
+			result.Superseded = previous.Disposition
+		}
+
+		return s.AppendDecision(ctx, in.RunID, DecisionEvent{
+			Event:           DecisionProposed,
 			StableID:        row.StableID,
-			Disposition:     previous.Disposition,
-			CanonicalAction: previous.CanonicalAction,
+			Disposition:     in.Disposition,
+			CanonicalAction: action,
+			RationaleRef:    rationaleRef,
 			Actor:           in.Actor,
 			At:              in.Now,
-			Note:            "replaced by a newer proposal",
-		}); err != nil {
-			return nil, err
-		}
-		result.Superseded = previous.Disposition
-	}
-
-	if err := s.AppendDecision(ctx, in.RunID, DecisionEvent{
-		Event:           DecisionProposed,
-		StableID:        row.StableID,
-		Disposition:     in.Disposition,
-		CanonicalAction: action,
-		RationaleRef:    rationaleRef,
-		Actor:           in.Actor,
-		At:              in.Now,
-	}); err != nil {
+		})
+	})
+	if err != nil {
 		return nil, err
 	}
 	return result, nil
+}
+
+// proposeLockPath is the per-row lock guarding a propose. Per row rather than
+// per run, so the fan-out doc 08 expects (several drivers working different
+// rows at once) does not serialize on a single lock.
+func (s *Store) proposeLockPath(runID, stableID string) string {
+	return filepath.Join(s.RunDir(runID), RationaleDirName, recordFileName(stableID))
 }
 
 // writeRationale stores the rationale and returns its run-relative path.
@@ -156,7 +173,7 @@ func (s *Store) writeRationale(ctx context.Context, in ProposeInput) (string, er
 	if err != nil {
 		return "", err
 	}
-	name := evidenceFileName(in.StableID)
+	name := recordFileName(in.StableID)
 	abs := filepath.Join(s.RunDir(in.RunID), RationaleDirName, name)
 	if err := os.MkdirAll(filepath.Dir(abs), dirMode); err != nil {
 		return "", camperrors.Wrapf(err, "create rationale directory for run %s", in.RunID)
@@ -211,11 +228,10 @@ func (s *Store) ReadyForReview(ctx context.Context, runID string) ([]ReviewGap, 
 		if err != nil {
 			return nil, err
 		}
-		verdict := verdicts[row.StableID]
 		switch {
 		case !hasEvidence:
 			gaps = append(gaps, ReviewGap{StableID: row.StableID, Missing: "evidence"})
-		case verdict.State == VerdictNone || verdict.State == VerdictSuperseded:
+		case !HasLiveProposal(verdicts[row.StableID]):
 			gaps = append(gaps, ReviewGap{StableID: row.StableID, Missing: "proposal"})
 		}
 	}

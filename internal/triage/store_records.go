@@ -137,10 +137,11 @@ func (s *Store) Evidence(ctx context.Context, runID, stableID string) (*Evidence
 
 // EvidencePath is where one row's record lives.
 func (s *Store) EvidencePath(runID, stableID string) string {
-	return filepath.Join(s.RunDir(runID), EvidenceDirName, evidenceFileName(stableID))
+	return filepath.Join(s.RunDir(runID), EvidenceDirName, recordFileName(stableID))
 }
 
-// evidenceFileName maps a stable id to a filename.
+// recordFileName maps a stable id to the filename its per-row records use
+// (evidence and rationales both).
 //
 // Stable ids are slugs, but they arrive from markers camp did not necessarily
 // write, so the mapping is an allowlist rather than a blocklist: everything
@@ -153,7 +154,7 @@ func (s *Store) EvidencePath(runID, stableID string) string {
 // identity system, so any id that had to be rewritten gets a digest of the
 // exact original appended. Ids that need no rewriting — every normal slug —
 // keep their plain readable filename.
-func evidenceFileName(stableID string) string {
+func recordFileName(stableID string) string {
 	safe := strings.Map(func(r rune) rune {
 		switch {
 		case r >= 'a' && r <= 'z', r >= 'A' && r <= 'Z', r >= '0' && r <= '9':

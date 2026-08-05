@@ -143,14 +143,31 @@ func queueRoleFor(row ManifestRow, verdict RowVerdict, hasEvidence bool) (QueueR
 	if row.CarriedFrom != nil && verdict.State == VerdictNone {
 		return "", false
 	}
-	switch verdict.State {
-	case VerdictProposed, VerdictApproved:
+	if HasLiveProposal(verdict) {
 		return "", false
 	}
 	if !hasEvidence {
 		return QueueRoleEvidence, true
 	}
 	return QueueRoleSynthesis, true
+}
+
+// HasLiveProposal reports whether a row currently holds a proposal that still
+// stands.
+//
+// This is the single definition of "judged", used by both the queue and the
+// judging -> reviewing gate. They previously derived it separately and
+// disagreed: the gate treated a staled verdict as satisfied while the queue
+// still listed the row as needing work, so a run that refresh had just
+// invalidated could pass into review. Rejected, superseded, and stale all mean
+// the same thing — the row needs a proposal it does not have.
+func HasLiveProposal(verdict RowVerdict) bool {
+	switch verdict.State {
+	case VerdictProposed, VerdictApproved:
+		return true
+	default:
+		return false
+	}
 }
 
 // HasEvidence reports whether a row holds an evidence record, without paying

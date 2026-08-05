@@ -92,7 +92,7 @@ func TestEvidenceFileNameContainsPathTraversal(t *testing.T) {
 
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
-			name := evidenceFileName(tc.stableID)
+			name := recordFileName(tc.stableID)
 			assert.Equal(t, tc.want, name)
 			assert.Equal(t, name, filepath.Base(name), "must stay a bare filename")
 		})
@@ -107,7 +107,7 @@ func TestEvidenceFileNameIsInjective(t *testing.T) {
 
 	seen := make(map[string]string, len(colliding))
 	for _, id := range colliding {
-		name := evidenceFileName(id)
+		name := recordFileName(id)
 		previous, clash := seen[name]
 		assert.False(t, clash, "%q and %q both map to %s", previous, id, name)
 		seen[name] = id
