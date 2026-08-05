@@ -32,7 +32,16 @@ func (s *Store) Decisions(ctx context.Context, runID string) ([]DecisionEvent, e
 		return nil, err
 	}
 	path := filepath.Join(s.RunDir(runID), DecisionsFileName)
-	raw, err := os.ReadFile(path)
+
+	// Read under the stream's lock. An unlocked read can land between a
+	// concurrent appender's write and its fsync and see a partial final line,
+	// which would surface as a parse error on a file that is actually fine.
+	var raw []byte
+	err := withLock(ctx, lockPathFor(path), func() error {
+		var readErr error
+		raw, readErr = os.ReadFile(path)
+		return readErr
+	})
 	if errors.Is(err, fs.ErrNotExist) {
 		return nil, nil
 	}
@@ -80,21 +89,34 @@ func (s *Store) WriteEvidence(ctx context.Context, runID string, record *Evidenc
 	}
 
 	path := s.EvidencePath(runID, record.StableID)
-	if existing, err := os.ReadFile(path); err == nil {
-		if contentHash(existing) == contentHash(body) {
-			return false, nil
-		}
-	} else if !errors.Is(err, fs.ErrNotExist) {
-		return false, camperrors.Wrapf(err, "read %s", path)
-	}
-
 	if err := os.MkdirAll(filepath.Dir(path), dirMode); err != nil {
 		return false, camperrors.Wrapf(err, "create evidence directory for run %s", runID)
 	}
-	if err := s.writeLocked(ctx, path, body); err != nil {
+
+	// Compare-then-write holds the lock across both halves, so the reported
+	// "did this change anything" answer is the truth about what landed rather
+	// than about what was there a moment earlier.
+	written := false
+	err = withLock(ctx, lockPathFor(path), func() error {
+		existing, readErr := os.ReadFile(path)
+		switch {
+		case readErr == nil:
+			if contentHash(existing) == contentHash(body) {
+				return nil
+			}
+		case !errors.Is(readErr, fs.ErrNotExist):
+			return camperrors.Wrapf(readErr, "read %s", path)
+		}
+		if writeErr := writeAtomic(path, body); writeErr != nil {
+			return writeErr
+		}
+		written = true
+		return nil
+	})
+	if err != nil {
 		return false, err
 	}
-	return true, nil
+	return written, nil
 }
 
 // Evidence loads one row's evidence record. A missing record is not an error:
@@ -125,6 +147,12 @@ func (s *Store) EvidencePath(runID, stableID string) string {
 // outside [A-Za-z0-9_-] becomes a hyphen. Dots are included in that, which
 // removes ".." as a construct entirely instead of relying on it being harmless
 // once the separators are gone.
+//
+// Sanitizing is lossy, so it is not injective: "a/b" and "a-b" would both
+// become "a-b". Two rows sharing an evidence file is silent data loss in an
+// identity system, so any id that had to be rewritten gets a digest of the
+// exact original appended. Ids that need no rewriting — every normal slug —
+// keep their plain readable filename.
 func evidenceFileName(stableID string) string {
 	safe := strings.Map(func(r rune) rune {
 		switch {
@@ -136,24 +164,50 @@ func evidenceFileName(stableID string) string {
 			return '-'
 		}
 	}, stableID)
-	if strings.Trim(safe, "-") == "" {
-		return "unnamed.json"
+
+	if safe == stableID && strings.Trim(safe, "-") != "" {
+		return safe + ".json"
 	}
-	return safe + ".json"
+	suffix := contentHash([]byte(stableID))[:8]
+	if strings.Trim(safe, "-") == "" {
+		return "unnamed-" + suffix + ".json"
+	}
+	return safe + "-" + suffix + ".json"
 }
 
-// writeLocked writes path atomically while holding its lock.
-func (s *Store) writeLocked(ctx context.Context, path string, body []byte) error {
-	release, err := fsutil.AcquireFileLock(ctx, path+".lock")
+// lockPathFor is the lock guarding path. Locks are named by the file they
+// protect so two operations on the same file always contend on the same lock.
+func lockPathFor(path string) string { return path + ".lock" }
+
+// withLock runs fn while holding the lock at lockPath.
+//
+// Read-modify-write sequences must hold the lock across the whole sequence,
+// not just the write: locking only the write would let two invocations both
+// read the same state, both compute an update from it, and lose one.
+func withLock(ctx context.Context, lockPath string, fn func() error) error {
+	release, err := fsutil.AcquireFileLock(ctx, lockPath)
 	if err != nil {
 		return err
 	}
 	defer release()
+	return fn()
+}
 
+// writeAtomic writes path via temp-and-rename. The caller must already hold
+// path's lock.
+func writeAtomic(path string, body []byte) error {
 	if err := fsutil.WriteFileAtomically(path, body, fileMode); err != nil {
 		return camperrors.Wrapf(err, "write %s", path)
 	}
 	return nil
+}
+
+// writeLocked writes path atomically while holding its lock. Use it for
+// blind writes; a read-modify-write needs withLock around the whole sequence.
+func (s *Store) writeLocked(ctx context.Context, path string, body []byte) error {
+	return withLock(ctx, lockPathFor(path), func() error {
+		return writeAtomic(path, body)
+	})
 }
 
 // appendLine appends one line to a JSONL stream under its lock, flushing to
@@ -162,25 +216,21 @@ func (s *Store) appendLine(ctx context.Context, path string, line []byte) error 
 	if err := os.MkdirAll(filepath.Dir(path), dirMode); err != nil {
 		return camperrors.Wrapf(err, "create %s", filepath.Dir(path))
 	}
-	release, err := fsutil.AcquireFileLock(ctx, path+".lock")
-	if err != nil {
-		return err
-	}
-	defer release()
-
-	f, err := os.OpenFile(path, os.O_APPEND|os.O_CREATE|os.O_WRONLY, fileMode)
-	if err != nil {
-		return camperrors.Wrapf(err, "open %s", path)
-	}
-	if _, err := f.Write(line); err != nil {
-		_ = f.Close()
-		return camperrors.Wrapf(err, "append to %s", path)
-	}
-	if err := f.Sync(); err != nil {
-		_ = f.Close()
-		return camperrors.Wrapf(err, "sync %s", path)
-	}
-	return camperrors.Wrapf(f.Close(), "close %s", path)
+	return withLock(ctx, lockPathFor(path), func() error {
+		f, err := os.OpenFile(path, os.O_APPEND|os.O_CREATE|os.O_WRONLY, fileMode)
+		if err != nil {
+			return camperrors.Wrapf(err, "open %s", path)
+		}
+		if _, err := f.Write(line); err != nil {
+			_ = f.Close()
+			return camperrors.Wrapf(err, "append to %s", path)
+		}
+		if err := f.Sync(); err != nil {
+			_ = f.Close()
+			return camperrors.Wrapf(err, "sync %s", path)
+		}
+		return camperrors.Wrapf(f.Close(), "close %s", path)
+	})
 }
 
 // readDocument loads and validates one of the store's own files. Store reads

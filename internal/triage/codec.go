@@ -107,9 +107,16 @@ func ParseDocument(data []byte, doc Document, opts DecodeOptions) error {
 	}
 
 	if v := doc.version(); v != SchemaVersion {
+		// A document with no version at all is a different mistake from one
+		// carrying a version this camp does not know, and the fix differs
+		// too, so the message says which happened.
+		message := "unsupported schema version " + quote(v)
+		if v == "" {
+			message = "is required"
+		}
 		violations = append(violations, Violation{
 			Field:   "schema_version",
-			Message: "unsupported schema version " + quote(v),
+			Message: message,
 			Allowed: []string{SchemaVersion},
 		})
 		// A document from another schema version cannot be judged by this

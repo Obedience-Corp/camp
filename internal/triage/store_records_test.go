@@ -74,26 +74,76 @@ func TestEvidenceMissingIsNotAnError(t *testing.T) {
 
 // TestEvidenceFileNameContainsPathTraversal: stable ids come from markers camp
 // did not necessarily write, so a hostile or malformed id must not escape the
-// evidence directory.
+// evidence directory. Ids that need no rewriting keep a plain readable name;
+// anything sanitized carries a digest of the original.
 func TestEvidenceFileNameContainsPathTraversal(t *testing.T) {
 	tests := []struct {
+		name     string
 		stableID string
 		want     string
 	}{
-		{"design-thing", "design-thing.json"},
-		{"../../etc/passwd", "------etc-passwd.json"},
-		{"a/b", "a-b.json"},
-		{"", "unnamed.json"},
-		{"...", "unnamed.json"},
+		{"clean slug is untouched", "design-thing", "design-thing.json"},
+		{"underscores are allowed", "design_thing_2", "design_thing_2.json"},
+		{"parent traversal", "../../etc/passwd", "------etc-passwd-3754d6cb.json"},
+		{"path separator", "a/b", "a-b-c14cddc0.json"},
+		{"empty id", "", "unnamed-e3b0c442.json"},
+		{"dots only", "...", "unnamed-ab5df625.json"},
 	}
 
 	for _, tc := range tests {
-		t.Run(tc.stableID, func(t *testing.T) {
+		t.Run(tc.name, func(t *testing.T) {
 			name := evidenceFileName(tc.stableID)
 			assert.Equal(t, tc.want, name)
 			assert.Equal(t, name, filepath.Base(name), "must stay a bare filename")
 		})
 	}
+}
+
+// TestEvidenceFileNameIsInjective is the finding this digest exists for:
+// sanitizing is lossy, so without it "a/b" and "a-b" would share one evidence
+// file and one row's findings would silently overwrite another's.
+func TestEvidenceFileNameIsInjective(t *testing.T) {
+	colliding := []string{"a/b", "a-b", "a.b", "a b", "a:b"}
+
+	seen := make(map[string]string, len(colliding))
+	for _, id := range colliding {
+		name := evidenceFileName(id)
+		previous, clash := seen[name]
+		assert.False(t, clash, "%q and %q both map to %s", previous, id, name)
+		seen[name] = id
+	}
+	assert.Len(t, seen, len(colliding))
+}
+
+// TestWriteEvidenceKeepsDistinctRowsApart proves the same thing through the
+// store, not just the naming function.
+func TestWriteEvidenceKeepsDistinctRowsApart(t *testing.T) {
+	ctx := context.Background()
+	store, _ := newTestStore(t)
+	run, err := store.CreateRun(ctx, newManifestForStore())
+	require.NoError(t, err)
+
+	first := validEvidence()
+	first.StableID = "a/b"
+	first.OriginalGoal = "first row"
+	second := validEvidence()
+	second.StableID = "a-b"
+	second.OriginalGoal = "second row"
+
+	_, err = store.WriteEvidence(ctx, run.ID, first)
+	require.NoError(t, err)
+	_, err = store.WriteEvidence(ctx, run.ID, second)
+	require.NoError(t, err)
+
+	storedFirst, err := store.Evidence(ctx, run.ID, "a/b")
+	require.NoError(t, err)
+	require.NotNil(t, storedFirst)
+	storedSecond, err := store.Evidence(ctx, run.ID, "a-b")
+	require.NoError(t, err)
+	require.NotNil(t, storedSecond)
+
+	assert.Equal(t, "first row", storedFirst.OriginalGoal)
+	assert.Equal(t, "second row", storedSecond.OriginalGoal)
 }
 
 // --- decisions and the fold --------------------------------------------

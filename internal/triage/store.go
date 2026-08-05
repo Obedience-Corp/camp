@@ -35,6 +35,10 @@ const (
 const (
 	fileMode = 0o644
 	dirMode  = 0o755
+	// createLockName guards the whole start-a-run sequence. It is its own
+	// lock rather than the `latest` pointer's, because creating a run writes
+	// that pointer and a non-reentrant lock cannot be taken twice.
+	createLockName = "create.lock"
 )
 
 // SiteSetPhaseAfterStateWrite is the failpoint between recording a phase and
@@ -109,62 +113,78 @@ func (s *Store) CreateRun(ctx context.Context, manifest *Manifest) (*Run, error)
 	if manifest == nil {
 		return nil, camperrors.NewValidation("manifest", "is required", nil)
 	}
+	if err := os.MkdirAll(s.root, dirMode); err != nil {
+		return nil, camperrors.Wrapf(err, "create %s", s.root)
+	}
 
-	active, err := s.activeRun(ctx)
+	// The whole create is one critical section. Checking for an active run and
+	// then creating one are a read-modify-write over the same state: without
+	// the lock, two `camp triage start` invocations can both observe no active
+	// run and both create one, which is the exact condition the check exists
+	// to prevent.
+	var run *Run
+	err := withLock(ctx, filepath.Join(s.root, createLockName), func() error {
+		active, err := s.activeRun(ctx)
+		if err != nil {
+			return err
+		}
+		if active != nil {
+			return camperrors.Wrap(camperrors.ErrConflict,
+				"run "+active.ID+" is still in progress (phase "+string(active.State.Phase)+
+					"); close it with `camp triage abandon` before starting another")
+		}
+
+		runID := s.NewRunID()
+		dir := s.RunDir(runID)
+		if _, err := os.Stat(dir); err == nil {
+			return camperrors.Wrap(camperrors.ErrAlreadyExists, "triage run "+runID)
+		} else if !errors.Is(err, fs.ErrNotExist) {
+			return camperrors.Wrapf(err, "stat %s", dir)
+		}
+
+		manifest.RunID = runID
+		if manifest.CreatedAt.IsZero() {
+			manifest.CreatedAt = s.clock()
+		}
+		state := &RunState{
+			RunID: runID,
+			Phase: PhaseCreated,
+			PhaseHistory: []PhaseTransition{
+				{Phase: PhaseCreated, At: s.clock()},
+			},
+		}
+
+		// Encode both documents before creating anything on disk: an invalid
+		// manifest must not leave a half-built run directory behind.
+		manifestBytes, err := MarshalDocument(manifest)
+		if err != nil {
+			return err
+		}
+		stateBytes, err := MarshalDocument(state)
+		if err != nil {
+			return err
+		}
+
+		if err := os.MkdirAll(filepath.Join(dir, EvidenceDirName), dirMode); err != nil {
+			return camperrors.Wrapf(err, "create run directory %s", dir)
+		}
+		if err := s.writeLocked(ctx, filepath.Join(dir, ManifestFileName), manifestBytes); err != nil {
+			return err
+		}
+		if err := s.writeLocked(ctx, filepath.Join(dir, RunStateFileName), stateBytes); err != nil {
+			return err
+		}
+		if err := s.setLatest(ctx, runID); err != nil {
+			return err
+		}
+
+		run = &Run{ID: runID, Dir: dir, Manifest: manifest, State: state}
+		return nil
+	})
 	if err != nil {
 		return nil, err
 	}
-	if active != nil {
-		return nil, camperrors.Wrap(camperrors.ErrConflict,
-			"run "+active.ID+" is still in progress (phase "+string(active.State.Phase)+
-				"); close it with `camp triage abandon` before starting another")
-	}
-
-	runID := s.NewRunID()
-	dir := s.RunDir(runID)
-	if _, err := os.Stat(dir); err == nil {
-		return nil, camperrors.Wrap(camperrors.ErrAlreadyExists, "triage run "+runID)
-	} else if !errors.Is(err, fs.ErrNotExist) {
-		return nil, camperrors.Wrapf(err, "stat %s", dir)
-	}
-
-	manifest.RunID = runID
-	if manifest.CreatedAt.IsZero() {
-		manifest.CreatedAt = s.clock()
-	}
-	state := &RunState{
-		RunID: runID,
-		Phase: PhaseCreated,
-		PhaseHistory: []PhaseTransition{
-			{Phase: PhaseCreated, At: s.clock()},
-		},
-	}
-
-	// Encode both documents before creating anything on disk: an invalid
-	// manifest must not leave a half-built run directory behind.
-	manifestBytes, err := MarshalDocument(manifest)
-	if err != nil {
-		return nil, err
-	}
-	stateBytes, err := MarshalDocument(state)
-	if err != nil {
-		return nil, err
-	}
-
-	if err := os.MkdirAll(filepath.Join(dir, EvidenceDirName), dirMode); err != nil {
-		return nil, camperrors.Wrapf(err, "create run directory %s", dir)
-	}
-	if err := s.writeLocked(ctx, filepath.Join(dir, ManifestFileName), manifestBytes); err != nil {
-		return nil, err
-	}
-	if err := s.writeLocked(ctx, filepath.Join(dir, RunStateFileName), stateBytes); err != nil {
-		return nil, err
-	}
-	if err := s.setLatest(ctx, runID); err != nil {
-		return nil, err
-	}
-
-	return &Run{ID: runID, Dir: dir, Manifest: manifest, State: state}, nil
+	return run, nil
 }
 
 // OpenRun loads the run with the given id.
@@ -229,25 +249,23 @@ func (s *Store) LatestRunID(ctx context.Context) (string, error) {
 // through a phase re-opens at the phase whose work may be incomplete and
 // redoes it, rather than at the previous phase, which would skip it.
 func (s *Store) SetPhase(ctx context.Context, runID string, phase Phase, note string) (*Run, error) {
-	run, err := s.OpenRun(ctx, runID)
-	if err != nil {
-		return nil, err
-	}
-	if run.State.Phase == phase {
-		return run, nil
-	}
-	if !run.State.Phase.CanTransitionTo(phase) {
-		return nil, camperrors.NewValidation("phase",
-			"cannot move from "+string(run.State.Phase)+" to "+string(phase), camperrors.ErrInvalidInput)
-	}
-
-	run.State.Phase = phase
-	run.State.PhaseHistory = append(run.State.PhaseHistory, PhaseTransition{
-		Phase: phase,
-		At:    s.clock(),
-		Note:  note,
+	run, err := s.mutateState(ctx, runID, func(run *Run) (bool, error) {
+		if run.State.Phase == phase {
+			return false, nil
+		}
+		if !run.State.Phase.CanTransitionTo(phase) {
+			return false, camperrors.NewValidation("phase",
+				"cannot move from "+string(run.State.Phase)+" to "+string(phase), camperrors.ErrInvalidInput)
+		}
+		run.State.Phase = phase
+		run.State.PhaseHistory = append(run.State.PhaseHistory, PhaseTransition{
+			Phase: phase,
+			At:    s.clock(),
+			Note:  note,
+		})
+		return true, nil
 	})
-	if err := s.writeState(ctx, run); err != nil {
+	if err != nil {
 		return nil, err
 	}
 
@@ -260,38 +278,81 @@ func (s *Store) SetPhase(ctx context.Context, runID string, phase Phase, note st
 // Abandon closes a run without deleting anything. State is kept: an abandoned
 // run is still the base an incremental run can diff against.
 func (s *Store) Abandon(ctx context.Context, runID, reason string) (*Run, error) {
-	run, err := s.OpenRun(ctx, runID)
-	if err != nil {
-		return nil, err
-	}
-	if run.State.Phase == PhaseAbandoned {
-		return run, nil
-	}
-	if run.State.Phase.Terminal() {
-		return nil, camperrors.NewValidation("phase",
-			"run "+runID+" already closed as "+string(run.State.Phase), camperrors.ErrInvalidInput)
-	}
-
-	run.State.Phase = PhaseAbandoned
-	run.State.PhaseHistory = append(run.State.PhaseHistory, PhaseTransition{
-		Phase: PhaseAbandoned,
-		At:    s.clock(),
-		Note:  reason,
+	run, err := s.mutateState(ctx, runID, func(run *Run) (bool, error) {
+		if run.State.Phase == PhaseAbandoned {
+			return false, nil
+		}
+		if run.State.Phase.Terminal() {
+			return false, camperrors.NewValidation("phase",
+				"run "+runID+" already closed as "+string(run.State.Phase), camperrors.ErrInvalidInput)
+		}
+		run.State.Phase = PhaseAbandoned
+		run.State.PhaseHistory = append(run.State.PhaseHistory, PhaseTransition{
+			Phase: PhaseAbandoned,
+			At:    s.clock(),
+			Note:  reason,
+		})
+		if trimmed := strings.TrimSpace(reason); trimmed != "" {
+			run.State.AbandonReason = &trimmed
+		}
+		return true, nil
 	})
-	if trimmed := strings.TrimSpace(reason); trimmed != "" {
-		run.State.AbandonReason = &trimmed
-	}
-	if err := s.writeState(ctx, run); err != nil {
+	if err != nil {
 		return nil, err
 	}
 
 	// `latest` keeps pointing at the abandoned run: it is still the most
 	// recent one, and the next start reads it to decide what to carry
 	// forward. Only its phase says it is closed.
-	return run, s.setLatest(ctx, runID)
+	if err := s.setLatest(ctx, runID); err != nil {
+		return nil, err
+	}
+	return run, nil
 }
 
 // --- internals ---------------------------------------------------------
+
+// mutateState applies a change to a run's state under the state file's lock,
+// holding it across the read, the change, and the write.
+//
+// The lock has to span all three. Two commands that each opened the run, each
+// appended a phase transition, and each wrote would silently drop one of the
+// two transitions, and the phase history is what makes a killed run
+// resumable. mutate reports whether anything actually changed, so a no-op
+// call does not rewrite the file or record a second identical transition.
+func (s *Store) mutateState(ctx context.Context, runID string, mutate func(*Run) (bool, error)) (*Run, error) {
+	if err := ctx.Err(); err != nil {
+		return nil, err
+	}
+	if runID == "" {
+		return nil, camperrors.NewValidation("run_id", "is required", nil)
+	}
+
+	var run *Run
+	err := withLock(ctx, lockPathFor(filepath.Join(s.RunDir(runID), RunStateFileName)), func() error {
+		opened, err := s.OpenRun(ctx, runID)
+		if err != nil {
+			return err
+		}
+		changed, err := mutate(opened)
+		if err != nil {
+			return err
+		}
+		run = opened
+		if !changed {
+			return nil
+		}
+		body, err := MarshalDocument(opened.State)
+		if err != nil {
+			return err
+		}
+		return writeAtomic(filepath.Join(opened.Dir, RunStateFileName), body)
+	})
+	if err != nil {
+		return nil, err
+	}
+	return run, nil
+}
 
 // activeRun returns the run in progress, or nil when there is none.
 func (s *Store) activeRun(ctx context.Context) (*Run, error) {
@@ -307,15 +368,6 @@ func (s *Store) activeRun(ctx context.Context) (*Run, error) {
 		return nil, nil
 	}
 	return run, nil
-}
-
-// writeState persists a run's state document.
-func (s *Store) writeState(ctx context.Context, run *Run) error {
-	body, err := MarshalDocument(run.State)
-	if err != nil {
-		return err
-	}
-	return s.writeLocked(ctx, filepath.Join(run.Dir, RunStateFileName), body)
 }
 
 // setLatest points the pointer file at runID.
