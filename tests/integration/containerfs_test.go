@@ -4,12 +4,16 @@
 package integration
 
 import (
+	"bufio"
 	"context"
 	"fmt"
+	"io/fs"
 	"os"
 	"os/exec"
+	"path"
 	"path/filepath"
 	"regexp"
+	"sort"
 	"strings"
 	"testing"
 	"time"
@@ -202,6 +206,108 @@ func tailLines(s string, n int) string {
 		return strings.Join(lines, "\n")
 	}
 	return "…\n" + strings.Join(lines[len(lines)-n:], "\n")
+}
+
+// TestContainerFSPackagesAreAllRegistered closes the one hole the tag opens.
+//
+// The tag keeps a file off the host; containerFSPackages is what makes it run
+// somewhere. Tag a file and forget to register its package and those tests run
+// NOWHERE — the host skips them and no lane entry compiles them — while every
+// suite stays green. That is a worse outcome than the host-FS problem the tag
+// was introduced to fix, because it is silent.
+//
+// The per-package minimum count in RunContainerFSSuite cannot catch it: it only
+// checks packages already registered. This walks the tree instead and fails on
+// any tagged file whose package is absent from the list.
+func TestContainerFSPackagesAreAllRegistered(t *testing.T) {
+	root := repoRootForContainerFS()
+
+	registered := make(map[string]bool, len(containerFSPackages))
+	for _, p := range containerFSPackages {
+		registered[path.Clean(strings.TrimPrefix(p.ImportPath, "./"))] = true
+	}
+
+	tagged := map[string][]string{}
+	err := filepath.WalkDir(root, func(p string, d fs.DirEntry, err error) error {
+		if err != nil {
+			return err
+		}
+		if d.IsDir() {
+			switch d.Name() {
+			case ".git", "vendor", "node_modules", "bin":
+				return filepath.SkipDir
+			}
+			return nil
+		}
+		if !strings.HasSuffix(d.Name(), "_test.go") {
+			return nil
+		}
+		if !fileHasContainerFSTag(p) {
+			return nil
+		}
+		rel, relErr := filepath.Rel(root, filepath.Dir(p))
+		if relErr != nil {
+			return relErr
+		}
+		pkg := filepath.ToSlash(rel)
+		tagged[pkg] = append(tagged[pkg], d.Name())
+		return nil
+	})
+	require.NoError(t, err, "walk module root")
+
+	require.NotEmpty(t, tagged,
+		"no %s-tagged files found at all; either the tag was removed or this "+
+			"check is looking in the wrong place", containerFSTag)
+
+	for pkg, files := range tagged {
+		require.Truef(t, registered[pkg],
+			"package %q has %s-tagged test files (%s) but is not in "+
+				"containerFSPackages, so those tests run nowhere: the host skips "+
+				"them and no lane entry compiles them. Add {ImportPath: \"./%s\"} "+
+				"with a MinTests floor.",
+			pkg, containerFSTag, strings.Join(files, ", "), pkg)
+	}
+
+	// The converse: a registered package with no tagged files would run its
+	// pure tests in a container for no reason and mask a lost migration.
+	for pkg := range registered {
+		require.Containsf(t, tagged, pkg,
+			"package %q is registered in containerFSPackages but has no %s-tagged "+
+				"files; either the migration was reverted or the entry is stale",
+			pkg, containerFSTag)
+	}
+
+	t.Logf("%d package(s) carry %s files, all registered: %v",
+		len(tagged), containerFSTag, keysOf(tagged))
+}
+
+// fileHasContainerFSTag reports whether a file declares the container_fs build
+// constraint. Only the leading lines are read, matching the ratchet's own
+// mechanical check so the two cannot disagree about what "tagged" means.
+func fileHasContainerFSTag(p string) bool {
+	f, err := os.Open(p)
+	if err != nil {
+		return false
+	}
+	defer func() { _ = f.Close() }()
+
+	scanner := bufio.NewScanner(f)
+	for i := 0; scanner.Scan() && i < 3; i++ {
+		if strings.HasPrefix(strings.TrimSpace(scanner.Text()), "//go:build "+containerFSTag) {
+			return true
+		}
+	}
+	return false
+}
+
+// keysOf returns a map's keys for a log line.
+func keysOf(m map[string][]string) []string {
+	out := make([]string, 0, len(m))
+	for k := range m {
+		out = append(out, k)
+	}
+	sort.Strings(out)
+	return out
 }
 
 // TestContainerFSSuites runs every migrated package's FS-mutating tests inside
