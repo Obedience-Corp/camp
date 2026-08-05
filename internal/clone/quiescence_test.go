@@ -83,6 +83,11 @@ func TestParseQuiescenceRejectsUntrustworthyOutput(t *testing.T) {
 			wantMentions: []string{"carried 5 fields, want 4"},
 		},
 		{
+			name:         "very first repo line has no repo name to blame",
+			out:          quiescenceBeginMarker + "\n\tclean\n",
+			wantMentions: []string{"first report line carried 2 fields, want 4"},
+		},
+		{
 			name:         "repo path escaping the campaign root",
 			out:          report(line("../../etc", "clean", "-", shaSub)),
 			wantMentions: []string{"unusable repo path", "../../etc"},
@@ -257,6 +262,33 @@ func assertVerdicts(t *testing.T, got, want []RepoVerdict) {
 			t.Errorf("verdict[%d] (%s).Reasons = %v, want %v", i, g.Repo, g.Reasons, w.Reasons)
 		}
 	}
+}
+
+func TestParseQuiescenceReport(t *testing.T) {
+	t.Run("carries the peer identity onto the report", func(t *testing.T) {
+		got, err := ParseQuiescenceReport("peerbox", testPeerRoot,
+			[]byte(report(line(".", "clean", "-", shaRoot))))
+		if err != nil {
+			t.Fatalf("ParseQuiescenceReport() error = %v, want nil", err)
+		}
+		if got.MachineID != "peerbox" || got.Root != testPeerRoot {
+			t.Errorf("ParseQuiescenceReport() = machine %q root %q, want %q / %q",
+				got.MachineID, got.Root, "peerbox", testPeerRoot)
+		}
+		if !got.Quiescent() {
+			t.Errorf("ParseQuiescenceReport() report not quiescent: %+v", got.Repos)
+		}
+	})
+
+	t.Run("returns no report at all when the output is untrustworthy", func(t *testing.T) {
+		got, err := ParseQuiescenceReport("peerbox", testPeerRoot, []byte("garbage\n"))
+		if !errors.Is(err, ErrQuiescenceProtocol) {
+			t.Fatalf("ParseQuiescenceReport() error = %v, want ErrQuiescenceProtocol", err)
+		}
+		if got != nil {
+			t.Errorf("ParseQuiescenceReport() = %+v, want nil report alongside the error", got)
+		}
+	})
 }
 
 func TestQuiescenceReportAggregates(t *testing.T) {

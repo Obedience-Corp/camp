@@ -125,6 +125,19 @@ printf 'uncommitted\n' > %s/projects/sub/f.txt
 	failed := report.NonQuiescent()
 	require.Len(t, failed, 1, "only the dirty submodule should fail: %+v", failed)
 	require.Equal(t, "projects/sub", failed[0].Repo)
+
+	// And the verdicts are actionable: the per-repo pack-copy / bundle split
+	// sequence 02 implements is a direct read of this report, with no second
+	// source of truth. Asserted here rather than in its own case because it
+	// needs exactly this peer state.
+	got := map[string]string{}
+	for _, v := range report.Repos {
+		got[v.Repo] = selectTransfer(v)
+	}
+	require.Equal(t, map[string]string{
+		".":            "pack-copy",
+		"projects/sub": "bundle",
+	}, got, "verdicts must drive a per-repo transfer choice, not an all-or-nothing one")
 }
 
 func TestQuiescenceOverSSH_StaleIndexLockFailsThatRepo(t *testing.T) {
@@ -253,32 +266,6 @@ mkdir -p projects/sub
 		"an absent submodule must report no HEAD, never the campaign root's")
 	require.NotEqual(t, rootVerdict.HeadSHA, sub.HeadSHA)
 	require.Contains(t, strings.Join(sub.Reasons, "; "), "not a git repository")
-}
-
-// TestQuiescenceOverSSH_VerdictsSelectPerRepoTransfer proves the verdicts are
-// actionable: the per-repo pack-copy / bundle-fallback split sequence 02
-// implements is a direct read of the report, with no second source of truth.
-func TestQuiescenceOverSSH_VerdictsSelectPerRepoTransfer(t *testing.T) {
-	tc := GetSharedContainer(t)
-	ensurePeerAccount(t, tc)
-	registerLoopbackMachine(t, tc)
-
-	peerRoot := seedQuiescenceCampaign(t, tc, "quiesceselectproj")
-	peerSSH(t, tc, fmt.Sprintf(`
-set -e
-printf 'uncommitted\n' > %s/projects/sub/f.txt
-`, peerRoot))
-
-	report := collectQuiescence(t, tc, peerRoot)
-
-	got := map[string]string{}
-	for _, v := range report.Repos {
-		got[v.Repo] = selectTransfer(v)
-	}
-	require.Equal(t, map[string]string{
-		".":            "pack-copy",
-		"projects/sub": "bundle",
-	}, got, "verdicts must drive a per-repo transfer choice, not an all-or-nothing one")
 }
 
 // selectTransfer is the stub of the transfer step's decision: quiescent repos
