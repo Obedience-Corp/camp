@@ -79,10 +79,26 @@ func (m Model) updateNormal(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		m.previewFocused = !m.previewFocused
 		return m, nil
 	case "t":
+		// On a meeting note, open the transcript sidecar; otherwise type filter.
+		if selected := m.SelectedIntent(); isMeetingNote(selected) {
+			return m.handleMeetingTranscript(selected)
+		}
 		m.focusFilterChip(0)
 		return m, nil
 	case "s":
 		m.focusFilterChip(1)
+		return m, nil
+	case "A":
+		// Open machine-local meeting audio (capital A; lowercase a stays archive).
+		if selected := m.SelectedIntent(); isMeetingNote(selected) {
+			return m.handleMeetingAudio(selected)
+		}
+		return m, nil
+	case "x":
+		// Extract inbox intents from meeting action items.
+		if selected := m.SelectedIntent(); isMeetingNote(selected) {
+			return m.handleMeetingExtract(selected)
+		}
 		return m, nil
 	case "c":
 		if selected := m.SelectedIntent(); selected != nil && selected.Status.IsNote() {

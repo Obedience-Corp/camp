@@ -43,11 +43,16 @@ GATHER (Multi-Select)
 
 FILTERS
   /           Search intents (fuzzy)
-  t           Filter by type
+  t           Filter by type (non-meeting)
   s           Filter by status
   c           Filter by concept
   C           Clear concept filter
   Escape      Clear filters
+
+MEETING NOTES (selected meeting)
+  t           Open transcript sidecar
+  A           Open meeting audio (machine-local)
+  x           Extract checkbox action items to inbox
 
 VIEW
   v           Toggle preview pane

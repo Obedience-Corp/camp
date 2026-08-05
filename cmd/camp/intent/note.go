@@ -221,7 +221,7 @@ func finalizeCreatedNote(ctx context.Context, result *intent.Intent, intentsDir 
 		return err
 	}
 
-	fmt.Printf("✓ Note created: %s\n", result.Path)
+	fmt.Printf("✓ Note created: %s\n", displayPath(campaignRoot, result.Path))
 
 	if !noCommit {
 		opts := wkcmd.AmbientCommitOptions(ctx, campaignRoot, cfg.ID, os.Stderr)
