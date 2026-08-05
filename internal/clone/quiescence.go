@@ -144,22 +144,36 @@ func CheckQuiescence(ctx context.Context, src *peer.Source) (*QuiescenceReport, 
 	}
 
 	root := src.Root()
-	out, err := src.RunShell(ctx, quiescenceScript(root))
+	out, err := src.RunShell(ctx, QuiescenceScript(root))
 	if err != nil {
 		return nil, camperrors.Wrapf(err, "quiescence check on peer %s", src.ID())
 	}
-	verdicts, err := parseQuiescence(out, root)
+	report, err := ParseQuiescenceReport(src.ID(), root, out)
 	if err != nil {
 		return nil, camperrors.Wrapf(err, "quiescence check on peer %s", src.ID())
 	}
-	return &QuiescenceReport{MachineID: src.ID(), Root: root, Repos: verdicts}, nil
+	return report, nil
 }
 
-// quiescenceScript builds the POSIX shell script run on the peer. It is a pure
-// function of the campaign root so the exact script and its quoting are
-// unit-testable without a peer.
-func quiescenceScript(root string) string {
+// QuiescenceScript builds the POSIX shell script camp runs on a peer. It is a
+// pure function of the campaign root, and together with ParseQuiescenceReport
+// it is the whole contract — transport is the only other moving part. Keeping
+// the two exported separately is what lets the container harness run the real
+// script against real repositories over real ssh and feed the real parser,
+// rather than testing a paraphrase of either.
+func QuiescenceScript(root string) string {
 	return "set -u\nroot=" + remote.ShellQuote(root) + "\n" + quiescenceScriptBody
+}
+
+// ParseQuiescenceReport turns raw output of QuiescenceScript into a report,
+// whatever moved the bytes. root is the campaign root the output describes and
+// is used to confirm reported repo paths stay inside it.
+func ParseQuiescenceReport(machineID, root string, out []byte) (*QuiescenceReport, error) {
+	verdicts, err := parseQuiescence(out, root)
+	if err != nil {
+		return nil, err
+	}
+	return &QuiescenceReport{MachineID: machineID, Root: root, Repos: verdicts}, nil
 }
 
 // quiescenceScriptBody reports the campaign root plus every submodule declared
@@ -169,6 +183,11 @@ func quiescenceScript(root string) string {
 //   - busy is collected before `git status` so the probe cannot flag its own
 //     lock, and status runs with --no-optional-locks so a read-only check never
 //     writes to the peer's index.
+//   - status ignores submodule work-tree dirt (--ignore-submodules=dirty).
+//     Without it a superproject inherits every submodule's dirt and the root
+//     repo can never be quiescent, which is D001's rejected "one dirty repo
+//     poisons the whole seed" reintroduced by accident. A moved gitlink is
+//     still the superproject's own uncommitted change and is still reported.
 //   - the git directory is resolved with rev-parse rather than assumed to be
 //     "$dir/.git": a submodule's .git is a file pointing into
 //     .git/modules/<name>, which is where its index.lock actually lives.
@@ -202,7 +221,7 @@ const quiescenceScriptBody = `camp_report_repo() {
 		busy=${busy:+$busy,}$marker
 	done
 	[ -n "$busy" ] || busy=-
-	if porcelain=$(git --no-optional-locks -C "$dir" status --porcelain 2>/dev/null); then
+	if porcelain=$(git --no-optional-locks -C "$dir" status --porcelain --ignore-submodules=dirty 2>/dev/null); then
 		if [ -n "$porcelain" ]; then
 			status=dirty
 		else

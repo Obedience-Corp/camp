@@ -343,7 +343,7 @@ func TestQuiescenceReportVerdictLookup(t *testing.T) {
 }
 
 func TestQuiescenceScriptShape(t *testing.T) {
-	script := quiescenceScript("/home/peer/it's here")
+	script := QuiescenceScript("/home/peer/it's here")
 
 	tests := []struct {
 		name string
@@ -353,6 +353,9 @@ func TestQuiescenceScriptShape(t *testing.T) {
 		{name: "frames the report so banners can be discarded", want: quiescenceBeginMarker},
 		{name: "terminates the report so truncation is detectable", want: quiescenceEndMarker},
 		{name: "never writes to the peer index", want: "--no-optional-locks"},
+		// Otherwise a superproject inherits every submodule's dirt and can never
+		// be quiescent -- D001's rejected all-or-nothing seed, by accident.
+		{name: "does not let submodule dirt poison the superproject", want: "--ignore-submodules=dirty"},
 		{name: "resolves the real git dir for submodule locks", want: "rev-parse --absolute-git-dir"},
 		// Without this guard, rev-parse inside an uninitialized submodule walks
 		// up and answers for the campaign root, so an absent submodule inherits
@@ -365,7 +368,7 @@ func TestQuiescenceScriptShape(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			if !strings.Contains(script, tt.want) {
-				t.Errorf("quiescenceScript() missing %q\nscript:\n%s", tt.want, script)
+				t.Errorf("QuiescenceScript() missing %q\nscript:\n%s", tt.want, script)
 			}
 		})
 	}
