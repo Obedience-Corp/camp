@@ -29,6 +29,9 @@ mod install '.justfiles/install.just'
 [doc('Record terminal workflows with VHS')]
 mod vhs '.justfiles/vhs.just'
 
+[doc('Verify interactive surfaces in a terminal harness (pty checks + tapes)')]
+mod tui '.justfiles/tui.just'
+
 [private]
 default:
     @echo "camp CLI - Campaign Management Tool"
