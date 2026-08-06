@@ -21,11 +21,14 @@ func TestPoolSizeFor(t *testing.T) {
 		want       int
 	}{
 		{
-			// The case that was broken: a 4-CPU Colima VM behind a 16-CPU
-			// laptop was sized from the laptop and got six containers.
-			name:       "a four cpu daemon gets two",
+			// Both prior sizings were wrong on a 4-CPU Colima VM behind a
+			// 16-CPU laptop: sizing from the laptop gave six containers
+			// (oversubscribed, flaky), halving the daemon's own count gave
+			// two (a 3x wall-clock regression). One per daemon CPU is the
+			// point between them.
+			name:       "a four cpu daemon gets four",
 			daemonCPUs: 4,
-			want:       2,
+			want:       4,
 		},
 		{
 			name:       "a large daemon is still capped",
@@ -38,13 +41,13 @@ func TestPoolSizeFor(t *testing.T) {
 			want:       2,
 		},
 		{
-			name:       "twelve cpus lands inside the range",
+			name:       "twelve cpus lands on the cap",
 			daemonCPUs: 12,
 			want:       6,
 		},
 		{
-			name:       "ten cpus lands inside the range",
-			daemonCPUs: 10,
+			name:       "five cpus lands inside the range",
+			daemonCPUs: 5,
 			want:       5,
 		},
 	}
@@ -90,7 +93,7 @@ func TestPoolSizeForHonorsTheOverride(t *testing.T) {
 	// A meaningless override is ignored rather than obeyed into a zero-sized
 	// pool, which would deadlock every checkout.
 	t.Setenv("CAMP_TEST_POOL_SIZE", "banana")
-	if got := poolSizeFor(4); got != 2 {
-		t.Fatalf("poolSizeFor(4) with a junk override = %d, want the computed 2", got)
+	if got := poolSizeFor(4); got != 4 {
+		t.Fatalf("poolSizeFor(4) with a junk override = %d, want the computed 4", got)
 	}
 }
