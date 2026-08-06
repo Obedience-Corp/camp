@@ -3,7 +3,6 @@ package git
 import (
 	"bytes"
 	"context"
-	"errors"
 	"os"
 	"path/filepath"
 	"strings"
@@ -306,40 +305,52 @@ func CaptureBlobs(ctx context.Context, repoPath string, paths []string) ([]BlobR
 	return refs, nil
 }
 
-// captureDir captures every file under a directory.
+// captureDir captures the files under a directory that git would stage.
 //
-// The walk stops at a nested repository rather than descending into it. Git
+// The list comes from git rather than a filesystem walk, because a deferred
+// capture has to produce the same commit the synchronous path would. A walk
+// sees the disk, and the disk is not the set `git add <dir>` operates on: it
+// includes ignored files, which git would refuse, and it cannot see a tracked
+// file that was deleted, which git would record as a deletion. Asking
+// ls-files for cached plus non-ignored untracked entries is that set exactly,
+// including a file that is ignored but already tracked.
+//
+// It also stops at a nested repository rather than descending into it. Git
 // records such a directory as a gitlink, so its files are not part of this
 // repository's tree at all, and capturing them would both commit another
 // project's checkout inline and produce a `<dir>/.git` entry that git rejects
 // on every attempt, leaving a job that can never drain.
 func captureDir(ctx context.Context, repoPath, dir string) ([]BlobRef, error) {
-	var paths []string
-	root := filepath.Join(repoPath, filepath.FromSlash(dir))
-	err := filepath.WalkDir(root, func(p string, d os.DirEntry, err error) error {
-		if err != nil {
-			return err
-		}
-		rel, relErr := filepath.Rel(repoPath, p)
-		if relErr != nil {
-			return relErr
-		}
-		if d.IsDir() {
-			if isRepoBoundary(p) {
-				return camperrors.Wrapf(ErrNestedRepo, "%s", filepath.ToSlash(rel))
-			}
-			return nil
-		}
-		paths = append(paths, filepath.ToSlash(rel))
-		return nil
-	})
+	if isRepoBoundary(filepath.Join(repoPath, filepath.FromSlash(dir))) {
+		return nil, camperrors.Wrapf(ErrNestedRepo, "%s", dir)
+	}
+
+	out, err := Output(ctx, repoPath,
+		"ls-files", "--cached", "--others", "--exclude-standard", "-z", "--", dir)
 	if err != nil {
-		// The boundary error already names the repository it found, which is
-		// not always the directory the walk started from.
-		if errors.Is(err, ErrNestedRepo) {
-			return nil, err
-		}
 		return nil, camperrors.Wrapf(err, "capture directory %s", dir)
+	}
+
+	var paths []string
+	seen := make(map[string]struct{})
+	for entry := range strings.SplitSeq(strings.TrimRight(out, "\x00"), "\x00") {
+		if entry == "" {
+			continue
+		}
+		// A trailing slash is git declining to look inside: below an
+		// untracked path that means an embedded repository, the same boundary
+		// the check above catches when the capture starts on one.
+		if nested, ok := strings.CutSuffix(entry, "/"); ok {
+			return nil, camperrors.Wrapf(ErrNestedRepo, "%s", nested)
+		}
+		// An unmerged path is listed once per stage. Capturing it three times
+		// would stage the same blob three times rather than fail, so dedupe
+		// instead of rejecting.
+		if _, dup := seen[entry]; dup {
+			continue
+		}
+		seen[entry] = struct{}{}
+		paths = append(paths, entry)
 	}
 	return CaptureBlobs(ctx, repoPath, paths)
 }
