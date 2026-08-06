@@ -211,7 +211,7 @@ func pickPrimaryProjectScopePath(ctx context.Context, root string, wi *wkitem.Wo
 		if link.Role != links.RolePrimary {
 			continue
 		}
-		if link.WorkitemID != wi.StableID && link.WorkitemID != wi.Key {
+		if !wkitem.LinkMatchesWorkitem(wi, link.WorkitemID, link.WorkitemKey) {
 			continue
 		}
 		switch link.Scope.Kind {
@@ -220,7 +220,7 @@ func pickPrimaryProjectScopePath(ctx context.Context, root string, wi *wkitem.Wo
 		}
 	}
 	return "", camperrors.NewValidation("link",
-		"no primary project link points at workitem "+wi.StableID, nil)
+		"no primary project link points at workitem "+wkitem.LinkWorkitemID(wi), nil)
 }
 
 func primaryFestivalScopePath(ctx context.Context, root string, wi *wkitem.WorkItem, festivalID string) string {
@@ -244,7 +244,7 @@ func selectPrimaryFestivalScope(registry *links.Links, wi *wkitem.WorkItem, fest
 		if link.Role != links.RolePrimary || link.Scope.Kind != links.ScopeFestival {
 			continue
 		}
-		if link.WorkitemID != wi.StableID && link.WorkitemID != wi.Key {
+		if !wkitem.LinkMatchesWorkitem(wi, link.WorkitemID, link.WorkitemKey) {
 			continue
 		}
 		if festivalID != "" {

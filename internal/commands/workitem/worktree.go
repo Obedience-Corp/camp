@@ -254,10 +254,7 @@ func existingWorktreeLink(registry *links.Links, wi *wkitem.WorkItem) (string, b
 }
 
 func linkMatchesWorkitem(link links.Link, wi *wkitem.WorkItem) bool {
-	if wi.StableID != "" && link.WorkitemID == wi.StableID {
-		return true
-	}
-	return wi.Key != "" && link.WorkitemKey == wi.Key
+	return wkitem.LinkMatchesWorkitem(wi, link.WorkitemID, link.WorkitemKey)
 }
 
 // attachWorktreeLink primary-links the worktree so the resolver (and therefore
@@ -342,7 +339,7 @@ func emitWorktree(cmd *cobra.Command, printOnly bool, relPath, branch string, wi
 		if branch != "" {
 			lines = append(lines, fmt.Sprintf("  Branch:   %s", ui.Value(branch)))
 		}
-		lines = append(lines, ui.Dim("  camp p commit in this worktree will include WI-* in the campaign tag"))
+		lines = append(lines, ui.Dim("  "+wkitem.WorktreeLinkCommitNote(wi)))
 	}
 	lines = append(lines, ui.Dim(fmt.Sprintf("To navigate: cd %s", relPath)))
 

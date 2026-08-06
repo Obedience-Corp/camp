@@ -40,7 +40,9 @@ var (
 //  3. exact key (`<type>:<path>`)
 //  4. exact RelativePath
 //  5. exact directory-base slug
-//  6. exact festival id (`fest.yaml` metadata id, e.g. SC0001)
+//  6. exact source-declared id (a festival's `fest.yaml` id such as SC0001, or
+//     an intent's frontmatter id): the same id LinkWorkitemID stores, so every
+//     workitem_id a link can hold resolves back here
 //  7. fuzzy substring on key or title (only when opts.AllowFuzzy)
 func Resolve(ctx context.Context, root string, query string, opts ResolveOptions) (*workitem.WorkItem, error) {
 	if err := ctx.Err(); err != nil {
@@ -69,8 +71,9 @@ func Resolve(ctx context.Context, root string, query string, opts ResolveOptions
 		{"key", func(w workitem.WorkItem) bool { return strings.EqualFold(w.Key, query) }},
 		{"path", func(w workitem.WorkItem) bool { return w.RelativePath == strings.TrimRight(query, "/") }},
 		{"slug", func(w workitem.WorkItem) bool { return strings.EqualFold(filepath.Base(w.RelativePath), query) }},
-		{"festival_id", func(w workitem.WorkItem) bool {
-			return w.WorkflowType == workitem.WorkflowTypeFestival && w.SourceID != "" && strings.EqualFold(w.SourceID, query)
+		{"source_id", func(w workitem.WorkItem) bool {
+			id := workitem.SourceDeclaredID(&w)
+			return id != "" && strings.EqualFold(id, query)
 		}},
 	}
 	for _, m := range matchers {

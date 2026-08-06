@@ -34,19 +34,22 @@ func newIDCommand() *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "id [selector-or-path]",
 		Short: "Print the identifier of a workitem",
-		Long: `Print the stable identifier of a workitem.
+		Long: `Print the durable single-segment identifier of a workitem.
 
 With no argument, the workitem is detected from the current context using the
 same tiered resolution as ` + "`camp workitem resolve`" + ` (explicit selector, cwd
 ancestor, linked scope, festival, current-workitem pointer). With an argument,
 the workitem is resolved through the shared selector family: workitem ref,
-stable id, key, campaign-relative path, directory slug, or festival id. A
-filesystem path (absolute or relative to the current directory) is accepted and
-translated to the campaign-relative form the selector expects.
+stable id, key, campaign-relative path, directory slug, festival id, or intent
+frontmatter id. A filesystem path (absolute or relative to the current directory)
+is accepted and translated to the campaign-relative form the selector expects.
 
-The bare stable id is written to stdout for shell scripting; it is the id sibling
-of ` + "`camp workitem --print`" + `, which prints a path. Use --key for the
-path-derived key instead, or --json for a structured object.
+Stdout is the bare durable id for shell scripting — stable .workitem id when
+present, otherwise a source-declared id (festival fest.yaml id or intent
+frontmatter id), otherwise the path-derived key. It is the id sibling of
+` + "`camp workitem --print`" + `, which prints a path. Use --key for the
+path-derived key instead, or --json for a structured object (id_kind is
+stable / festival / intent / key).
 
 Examples:
   camp workitem id                       # id of the workitem for the cwd
@@ -110,23 +113,40 @@ type idKind string
 const (
 	idKindStable   idKind = "stable"
 	idKindFestival idKind = "festival"
+	idKindIntent   idKind = "intent"
 	idKindKey      idKind = "key"
 )
 
 // durableID returns the single-segment identifier the selector can resolve back
 // to wi, plus which form it is. The value is delegated to LinkWorkitemID so the
 // id printed here and the id stored on a link cannot drift; the kind is derived
-// from the same precedence (stable .workitem id, then a festival's fest.yaml id,
-// then the path-derived key fallback).
+// from the same precedence (stable .workitem id, then the id the source document
+// declares, then the path-derived key fallback).
 func durableID(wi *wkitem.WorkItem) (string, idKind) {
 	id := wkitem.LinkWorkitemID(wi)
 	switch {
 	case wi.StableID != "" && id == wi.StableID:
 		return id, idKindStable
-	case wi.WorkflowType == wkitem.WorkflowTypeFestival && wi.SourceID != "" && id == wi.SourceID:
-		return id, idKindFestival
+	case id != "" && id == wkitem.SourceDeclaredID(wi):
+		return id, sourceIDKind(wi.WorkflowType)
 	default:
 		return id, idKindKey
+	}
+}
+
+// sourceIDKind names which source document declared the id, so --json consumers
+// can tell a festival's fest.yaml id from an intent's frontmatter id.
+// Only festival and intent currently declare a single-segment source id
+// (SourceDeclaredID); anything else falls through to idKindKey so a future
+// type cannot silently inherit "festival".
+func sourceIDKind(t wkitem.WorkflowType) idKind {
+	switch t {
+	case wkitem.WorkflowTypeIntent:
+		return idKindIntent
+	case wkitem.WorkflowTypeFestival:
+		return idKindFestival
+	default:
+		return idKindKey
 	}
 }
 
