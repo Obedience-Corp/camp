@@ -326,6 +326,60 @@ func TestCompilePlanConsolidationOnceSplitLands(t *testing.T) {
 		entry.Commands[1].Argv)
 }
 
+// TestCompilePlanBlocksConsolidationWithoutSuccessors pins the review
+// finding: an approved consolidation that declared no successors must compile
+// blocked, never as an executable command carrying the display placeholder
+// that apply would extract as a real successor name.
+func TestCompilePlanBlocksConsolidationWithoutSuccessors(t *testing.T) {
+	row := planRow("design-umbrella", "design", "active")
+	plan, err := CompilePlan(CompileInput{
+		RunID: "run-1", Rows: []ManifestRow{row},
+		Verdicts:       map[string]RowVerdict{"design-umbrella": approvedVerdict("design-umbrella", "consolidated", ActionSplit)},
+		Successors:     map[string][]string{},
+		SplitAvailable: true,
+		Now:            testAt,
+	})
+	require.NoError(t, err, "a blocked row must not fail the whole plan")
+	require.Len(t, plan.Entries, 1)
+
+	entry := plan.Entries[0]
+	assert.False(t, entry.Executable())
+	assert.Contains(t, entry.Blocked, "no successors")
+	assert.Empty(t, entry.Commands, "nothing runnable may carry the placeholder")
+
+	assert.Len(t, plan.BlockedEntries(), 1)
+	assert.Empty(t, plan.ExecutableEntries())
+}
+
+// TestApplyPlanValidateRejectsSuccessorPlaceholder guards the stored-plan
+// path: a stale or hand-edited plan document whose split argv still carries
+// the placeholder must fail validation before apply can run it.
+func TestApplyPlanValidateRejectsSuccessorPlaceholder(t *testing.T) {
+	plan := &ApplyPlan{
+		RunID:     "run-1",
+		CreatedAt: testAt,
+		Entries: []ApplyPlanEntry{{
+			StableID:  "design-umbrella",
+			VerdictAt: testAt,
+			Commands: []PlanCommand{{
+				Argv: []string{"camp", "workitem", "split", "design-umbrella", "--into", splitSuccessorPlaceholder},
+				Kind: CommandKindSplit,
+			}},
+		}},
+	}
+	plan.Normalize()
+
+	violations := plan.Validate()
+	require.NotEmpty(t, violations, "placeholder argv must not validate")
+	found := false
+	for _, v := range violations {
+		if strings.Contains(v.Message, "placeholder") {
+			found = true
+		}
+	}
+	assert.True(t, found, "violation should name the placeholder, got %v", violations)
+}
+
 // TestCompilePlanUndoForAClearedStage covers the row that had no attention
 // stage: its undo has to clear rather than set an empty string.
 func TestCompilePlanUndoForAClearedStage(t *testing.T) {

@@ -80,21 +80,26 @@ func compileSplitEntry(entry ApplyPlanEntry, row ManifestRow, in CompileInput) A
 	successors := append([]string(nil), in.Successors[row.StableID]...)
 	sort.Strings(successors)
 
+	// A consolidation with no declared successors has nothing to split into:
+	// compiling it as executable would put the display placeholder on a real
+	// argv, and apply would extract "<successors>" as a successor name. The
+	// verdict is approved but incomplete, so the entry blocks with the reason
+	// instead of running.
+	if len(successors) == 0 {
+		entry.Blocked = blockedNoSuccessors
+		return entry
+	}
+
 	// D2: the parent is not retired until every successor it declared exists.
 	// The precondition carries the ids so the executor checks the specific
 	// successors this verdict promised, not merely that a split happened.
-	if len(successors) > 0 {
-		entry.Preconditions = append(entry.Preconditions, Precondition{
-			Kind: PreconditionSuccessorsExist,
-			IDs:  successors,
-		})
-	}
+	entry.Preconditions = append(entry.Preconditions, Precondition{
+		Kind: PreconditionSuccessorsExist,
+		IDs:  successors,
+	})
 
 	if !in.SplitAvailable {
-		entry.Blocked = blockedNeedsSplit
-		if len(successors) > 0 {
-			entry.Blocked += " (successors: " + strings.Join(successors, ", ") + ")"
-		}
+		entry.Blocked = blockedNeedsSplit + " (successors: " + strings.Join(successors, ", ") + ")"
 		return entry
 	}
 
@@ -107,6 +112,10 @@ func compileSplitEntry(entry ApplyPlanEntry, row ManifestRow, in CompileInput) A
 
 // blockedNeedsSplit is the reason a consolidation cannot run yet.
 const blockedNeedsSplit = "requires camp workitem split"
+
+// blockedNoSuccessors is the reason an approved consolidation with no
+// declared successors compiles blocked rather than executable.
+const blockedNoSuccessors = "consolidation declares no successors; record the successor workitems on the verdict before apply"
 
 // consolidatedParentStatus is where a consolidated parent goes once its
 // successors exist. Consolidation is a completion, not an abandonment.

@@ -172,6 +172,18 @@ func (e *ApplyPlanEntry) validate(path string) []Violation {
 				Message: "is required",
 			})
 		}
+		// The successor placeholder is display vocabulary, never a runnable
+		// argument. The compiler blocks empty consolidations before emitting
+		// commands; this rule keeps a stale or hand-edited plan document from
+		// smuggling the placeholder past apply as a real successor name.
+		for _, arg := range e.Commands[i].Argv {
+			if arg == splitSuccessorPlaceholder {
+				out = append(out, Violation{
+					Field:   joinPath(cpath, "argv"),
+					Message: "contains the successor placeholder " + quote(splitSuccessorPlaceholder) + "; a consolidation without declared successors must compile blocked",
+				})
+			}
+		}
 	}
 	for i := range e.Preconditions {
 		ppath := indexPath(joinPath(path, "preconditions"), i)
