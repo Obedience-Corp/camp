@@ -33,7 +33,14 @@ type IntegrationResult struct {
 	Duration    time.Duration
 	TestsPassed int
 	TestsFailed int
-	FailedTests []string // Names of failed tests
+	// TestsSkipped is counted because the integration harness turns
+	// infrastructure death into skips: once the container pool cannot be
+	// reset, every later test t.Skips rather than failing. Left uncounted, a
+	// run that collapsed after 44 of 905 tests reported "23/44 tests passed",
+	// which reads as a healthy suite with a few broken tests instead of a run
+	// that never happened.
+	TestsSkipped int
+	FailedTests  []string // Names of failed tests
 	// SuiteError is a failure of the run itself rather than of any test: a
 	// build error, a panic that took the process down, a timeout. Kept apart
 	// from FailedTests because it is not a test and must not be counted as
@@ -112,7 +119,7 @@ func Integration(verbose bool) error {
 		start := time.Now()
 
 		var pass bool
-		var testsPassed, testsFailed int
+		var testsPassed, testsFailed, testsSkipped int
 		var failedTests []string
 		var suiteError string
 		var packageFailed bool
@@ -236,6 +243,10 @@ func Integration(verbose bool) error {
 						if !strings.Contains(event.Test, "/") {
 							testsFailed++
 						}
+					case "skip":
+						if !strings.Contains(event.Test, "/") {
+							testsSkipped++
+						}
 					}
 				} else if event.Action == "fail" {
 					// A fail with no test name is the package failing as a
@@ -264,13 +275,14 @@ func Integration(verbose bool) error {
 		duration := time.Since(start)
 
 		results = append(results, IntegrationResult{
-			Suite:       name,
-			Pass:        pass,
-			Duration:    duration,
-			TestsPassed: testsPassed,
-			TestsFailed: testsFailed,
-			FailedTests: failedTests,
-			SuiteError:  suiteError,
+			Suite:        name,
+			Pass:         pass,
+			Duration:     duration,
+			TestsPassed:  testsPassed,
+			TestsFailed:  testsFailed,
+			TestsSkipped: testsSkipped,
+			FailedTests:  failedTests,
+			SuiteError:   suiteError,
 		})
 
 		if !pass {
@@ -284,12 +296,14 @@ func Integration(verbose bool) error {
 	var totalTime time.Duration
 	totalTestsPassed := 0
 	totalTestsFailed := 0
+	totalTestsSkipped := 0
 	for _, r := range results {
 		totalTime += r.Duration
 		totalTestsPassed += r.TestsPassed
 		totalTestsFailed += r.TestsFailed
+		totalTestsSkipped += r.TestsSkipped
 	}
-	totalTests := totalTestsPassed + totalTestsFailed
+	totalTests := totalTestsPassed + totalTestsFailed + totalTestsSkipped
 
 	// Display summary - show failed tests as individual rows
 	rows := [][]string{}
@@ -332,7 +346,7 @@ func Integration(verbose bool) error {
 	}
 
 	// Add totals row
-	totalStatus := fmt.Sprintf("%d/%d tests passed", totalTestsPassed, totalTests)
+	totalStatus := testTally(totalTestsPassed, totalTests, totalTestsSkipped)
 	if ui.ColourEnabled() {
 		if totalTestsFailed > 0 {
 			totalStatus = ui.Red + totalStatus + ui.Reset
@@ -360,6 +374,24 @@ func Integration(verbose bool) error {
 	}
 
 	return nil
+}
+
+// testTally renders the headline count most people read instead of the run.
+//
+// Skips are in the denominator, and called out when there are any, because
+// this harness expresses infrastructure death as skips: once the container
+// pool stops resetting, every later test t.Skips (see TestMain in
+// tests/integration). Counting only pass and fail made the denominator shrink
+// to whatever ran, so a run that collapsed after 44 of 905 tests reported
+// "23/44 tests passed" beside 21 red rows. That reads as a branch that broke
+// 21 tests. It was a run that never happened, and the 21 all pass on an idle
+// machine.
+func testTally(passed, total, skipped int) string {
+	tally := fmt.Sprintf("%d/%d tests passed", passed, total)
+	if skipped > 0 {
+		tally += fmt.Sprintf(" (%d skipped)", skipped)
+	}
+	return tally
 }
 
 // classifyRunFailure decides whether a `go test` process failure is news, and
