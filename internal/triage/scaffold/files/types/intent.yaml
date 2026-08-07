@@ -1,0 +1,14 @@
+# Type policy: intents (the idea inbox).
+# Missing keys inherit the profile, then types/_default.yaml.
+schema_version: triage-type/v1alpha1
+evidence: metadata              # an inbox decision is seconds, not a code
+                                # trace — read the marker, not the codebase
+dispositions:                   # deliberately short: promote, start, or defer
+  ready: rail/ready             # promote it into the queue
+  active: rail/active           # start it now
+  someday: dungeon/someday      # keep it without working it
+                                # no `parked`: an idea lives in
+                                # inbox -> ready -> active -> dungeon, and camp
+                                # has no attention stage for a file-backed
+                                # workitem to hold. `someday` is the defer.
+routing_tier: cheap

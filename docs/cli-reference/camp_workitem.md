@@ -63,6 +63,7 @@ camp workitem [flags]
 * [camp workitem rename](camp_workitem_rename.md)	 - Rename a workitem and repair references
 * [camp workitem repair](camp_workitem_repair.md)	 - Repair a workflow directory into a workitem
 * [camp workitem resolve](camp_workitem_resolve.md)	 - Print the workitem for the current context
+* [camp workitem split](camp_workitem_split.md)	 - Split a workitem into successors with lineage
 * [camp workitem stage](camp_workitem_stage.md)	 - Set or clear the attention stage
 * [camp workitem sweep](camp_workitem_sweep.md)	 - Promote workitems with completed runs
 * [camp workitem unlink](camp_workitem_unlink.md)	 - Remove workitem links

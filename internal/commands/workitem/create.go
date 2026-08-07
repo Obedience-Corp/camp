@@ -17,7 +17,6 @@ import (
 
 	"github.com/Obedience-Corp/camp/internal/config"
 	camperrors "github.com/Obedience-Corp/camp/internal/errors"
-	"github.com/Obedience-Corp/camp/internal/fsutil"
 	"github.com/Obedience-Corp/camp/internal/jsoncontract"
 	"github.com/Obedience-Corp/camp/internal/ledger"
 	"github.com/Obedience-Corp/camp/internal/pathutil"
@@ -219,85 +218,21 @@ func runCreateFile(ctx context.Context, cmd *cobra.Command, filePath, typeFlag, 
 }
 
 func runCreate(ctx context.Context, cmd *cobra.Command, slug, typeFlag, title, idOverride, dirOverride, questSelector string, tags, projects []string, jsonOut bool) error {
-	if err := validateSlug(slug); err != nil {
-		return err
-	}
-	if err := validateSlug(typeFlag); err != nil {
-		return camperrors.NewValidation("type", "invalid type slug: "+err.Error(), nil)
-	}
-	normalizedTags, err := normalizeTags(tags)
-	if err != nil {
-		return err
-	}
-	normalizedProjects, err := normalizeProjects(projects)
-	if err != nil {
-		return err
-	}
-	if err := wkitem.ValidateProjectPaths(normalizedProjects); err != nil {
-		return err
-	}
-
 	cfg, campaignRoot, err := config.LoadCampaignConfigFromCwd(ctx)
 	if err != nil {
 		return camperrors.Wrap(err, "not in a campaign directory")
 	}
-
-	id, err := generateID(ctx, typeFlag, slug, idOverride, campaignRoot)
-	if err != nil {
-		return err
-	}
-
-	parent := dirOverride
-	if parent == "" {
-		parent = filepath.Join("workflow", typeFlag)
-	}
-	if err := validateParentPath(parent); err != nil {
-		return err
-	}
-
-	ref, err := deriveUniqueRef(ctx, campaignRoot, cfg, id)
-	if err != nil {
-		return err
-	}
 	questID := resolveQuestIDForCreate(ctx, cmd, campaignRoot, questSelector)
 
-	target := filepath.Join(campaignRoot, parent, slug)
-	// Existing directories still require explicit adopt or manual cleanup. This
-	// command only cleans up an empty directory it created in this invocation.
-	if _, err := os.Stat(target); err == nil {
-		return camperrors.NewValidation("path",
-			"target directory already exists: "+target+" — use `camp workitem adopt` to attach metadata to an existing dir", nil)
-	}
-	if err := os.MkdirAll(target, 0o755); err != nil {
-		return camperrors.Wrap(err, "create directory")
-	}
-	markerWritten := false
-	defer func() {
-		if !markerWritten {
-			_ = os.Remove(target)
-		}
-	}()
-
-	meta := wkitem.Metadata{
-		Version:  wkitem.WorkitemSchemaVersion,
-		Kind:     "workitem",
-		ID:       id,
-		Type:     typeFlag,
-		Title:    title,
-		Ref:      ref,
-		QuestID:  questID,
-		Tags:     normalizedTags,
-		Projects: normalizedProjects,
-	}
-	buf, err := yaml.Marshal(&meta)
+	created, err := CreateWorkitemDir(ctx, campaignRoot, cfg, CreateWorkitemRequest{
+		Slug: slug, Type: typeFlag, Title: title, IDOverride: idOverride,
+		DirOverride: dirOverride, QuestID: questID, Tags: tags, Projects: projects,
+	})
 	if err != nil {
-		return camperrors.Wrap(err, "marshal metadata")
-	}
-	if err := fsutil.WriteFileAtomically(filepath.Join(target, ".workitem"), buf, 0o644); err != nil {
 		return err
 	}
-	markerWritten = true
-	rel := filepath.Join(parent, slug)
+	id, ref, rel := created.ID, created.Ref, created.RelativePath
+
 	invalidateNavigationCache(cmd, campaignRoot)
 	appendWorkitemAuditEvent(ctx, cmd, campaignRoot, wkaudit.Event{
 		Event: wkaudit.EventCreate,

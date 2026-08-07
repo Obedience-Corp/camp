@@ -67,6 +67,33 @@ func IsValidStageForTypes(stage LifecycleStage, types []string) bool {
 	return false
 }
 
+// AllLifecycleStages returns every lifecycle stage any workflow type accepts,
+// in declaration order. Use it for diagnostics that must list what a stage
+// field allows; use ValidStagesForType when the type is known.
+func AllLifecycleStages() []string {
+	all := []LifecycleStage{
+		LifecycleStageNone,
+		LifecycleStageInbox,
+		LifecycleStageActive,
+		LifecycleStageReady,
+		LifecycleStagePlanning,
+		LifecycleStageRitual,
+		LifecycleStageChains,
+	}
+	out := make([]string, len(all))
+	for i, stage := range all {
+		out[i] = string(stage)
+	}
+	return out
+}
+
+// AttentionStages returns the attention-stage vocabulary. This is the single
+// source of truth for the values --json publishes and other packages validate
+// against, so the two cannot drift.
+func AttentionStages() []string {
+	return []string{"current", "next", "active", "parked"}
+}
+
 func StageVocabulary() map[string][]string {
 	vocab := make(map[string][]string, len(StagesByType))
 	for wt, stages := range StagesByType {

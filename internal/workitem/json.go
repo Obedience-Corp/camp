@@ -130,7 +130,7 @@ func NewPayloadWithGrouping(campaignRoot string, items []WorkItem, groupBy strin
 		Counts:                   counts,
 		CategoryCounts:           categoryCounts,
 		StageVocabulary:          StageVocabulary(),
-		AttentionStageVocabulary: []string{"current", "next", "active", "parked"},
+		AttentionStageVocabulary: AttentionStages(),
 		GroupVocabulary:          GroupVocabulary(items),
 		CategoryVocabulary:       []CategoryVocabEntry{},
 	}

@@ -119,10 +119,11 @@ active is still a design item, now living at festivals/active/<slug>, and
 			if len(args) == 1 {
 				id = args[0]
 			}
-			return runWorkitemPromote(cmd, runWorkitemPromoteOptions{
+			_, err := runWorkitemPromote(cmd, runWorkitemPromoteOptions{
 				ID: id, Target: target, Dest: dest, Goal: goal,
 				Keep: keep, Force: force, DryRun: dryRun, NoCommit: noCommit, JSON: jsonOut,
 			})
+			return err
 		},
 	}
 
@@ -138,7 +139,7 @@ active is still a design item, now living at festivals/active/<slug>, and
 	return cmd
 }
 
-func runWorkitemPromote(cmd *cobra.Command, opts runWorkitemPromoteOptions) error {
+func runWorkitemPromote(cmd *cobra.Command, opts runWorkitemPromoteOptions) (*workitemPromoteResult, error) {
 	ctx := cmd.Context()
 
 	switch opts.Target {
@@ -147,24 +148,24 @@ func runWorkitemPromote(cmd *cobra.Command, opts runWorkitemPromoteOptions) erro
 		// Conditionally valid: the rail is forward-only, so these are checked
 		// against the resolved source location below, once loc is known.
 	case "":
-		return camperrors.New("required flag --target not set")
+		return nil, camperrors.New("required flag --target not set")
 	default:
-		return camperrors.New("invalid target: " + opts.Target + " (use festival, doc, ready, active, completed, archived, someday)")
+		return nil, camperrors.New("invalid target: " + opts.Target + " (use festival, doc, ready, active, completed, archived, someday)")
 	}
 
 	cfg, root, err := config.LoadCampaignConfigFromCwd(ctx)
 	if err != nil {
-		return camperrors.Wrap(err, "not in a campaign directory")
+		return nil, camperrors.Wrap(err, "not in a campaign directory")
 	}
 
 	loc, err := resolveWorkitem(ctx, root, opts.ID)
 	if err != nil {
-		return err
+		return nil, err
 	}
 
 	if opts.Target == railStageReady || opts.Target == railStageActive {
 		if err := checkRailTransition(railStageOf(loc, root), opts.Target); err != nil {
-			return err
+			return nil, err
 		}
 	}
 
@@ -187,13 +188,28 @@ func runWorkitemPromote(cmd *cobra.Command, opts runWorkitemPromoteOptions) erro
 		From:   filepath.ToSlash(dungeoncmd.RelFromRoot(root, loc.SourcePath)),
 	}
 
+	// The retirement gate. A parent that declared successors does not retire
+	// until they exist — the successors-before-archive invariant the field
+	// trial enforced as prose, made mechanical. It lives here, in the promote
+	// path, beside the other readiness checks, because that is the one place
+	// every terminal promotion passes through regardless of who called it.
+	//
+	// Checked BEFORE the dry-run branch: a dry-run that reports "would
+	// promote" while the real command would refuse is worse than no dry-run,
+	// because it is the output an operator trusts to avoid surprises.
+	if isTerminalTarget(opts.Target) && !opts.Force {
+		if err := checkSplitGate(ctx, cfg, root, loc); err != nil {
+			return nil, err
+		}
+	}
+
 	if opts.DryRun {
 		if opts.JSON {
-			return emitPromoteJSON(cmd, result)
+			return &result, emitPromoteJSON(cmd, result)
 		}
 		_, err := fmt.Fprintf(cmd.OutOrStdout(),
 			"dry-run: would promote workitem %s (%s) to %s\n", loc.Slug, loc.Type, opts.Target)
-		return err
+		return nil, err
 	}
 
 	var ci *commitInputs
@@ -207,16 +223,16 @@ func runWorkitemPromote(cmd *cobra.Command, opts runWorkitemPromoteOptions) erro
 	case "completed", "archived", "someday":
 		ci, err = doDungeonPromote(ctx, root, loc, opts.Target, &result)
 	default:
-		return camperrors.New("unhandled target: " + opts.Target)
+		return nil, camperrors.New("unhandled target: " + opts.Target)
 	}
 	if err != nil {
-		return err
+		return nil, err
 	}
 	if ci == nil {
-		return nil
+		return &result, nil
 	}
 
-	return finishWorkitemMove(ctx, cmd, cfg, root, ci, &result, moveTail{
+	return &result, finishWorkitemMove(ctx, cmd, cfg, root, ci, &result, moveTail{
 		LedgerID:    ledgerID,
 		LedgerRef:   ledgerRef,
 		LedgerTitle: ledgerTitle,
@@ -224,6 +240,109 @@ func runWorkitemPromote(cmd *cobra.Command, opts runWorkitemPromoteOptions) erro
 		SuccessVerb: "Promoted",
 		Options:     moveTailOptions{NoCommit: opts.NoCommit, JSON: opts.JSON},
 	})
+}
+
+// PromoteOutcome is where a promotion put a workitem and whether it committed.
+// Exported so `camp triage apply` can execute a promotion through this exact
+// path instead of re-implementing one or re-entering camp as a subprocess.
+type PromoteOutcome struct {
+	// PromotedTo is the campaign-relative destination the workitem landed at.
+	PromotedTo string
+	// From is where it started, which is what an undo has to restore it to.
+	From string
+	// Committed reports whether the auto-commit ran.
+	Committed bool
+}
+
+// PromoteWorkitem promotes a workitem to a rail or dungeon target through the
+// same code path `camp workitem promote` runs, and reports where it landed.
+//
+// The output the command would print is discarded: a caller executing a plan
+// renders its own receipts, and interleaving the promote command's chatter
+// would make the apply transcript unreadable.
+func PromoteWorkitem(ctx context.Context, out io.Writer, stableID, target string) (*PromoteOutcome, error) {
+	cmd := &cobra.Command{}
+	cmd.SetContext(ctx)
+	cmd.SetOut(out)
+	cmd.SetErr(out)
+
+	result, err := runWorkitemPromote(cmd, runWorkitemPromoteOptions{
+		ID: stableID, Target: target,
+	})
+	if err != nil {
+		return nil, err
+	}
+	if result == nil {
+		return nil, camperrors.New("promote reported no result for " + stableID)
+	}
+	// PromotedTo is set by the festival and doc paths; the dungeon and rail
+	// paths record their destination in To. Preferring one and falling back
+	// to the other keeps the caller from having to know which promote it
+	// asked for -- and getting this wrong silently cost the receipts their
+	// undo command, which is the one thing an undo cannot be reconstructed
+	// from later.
+	destination := result.PromotedTo
+	if destination == "" {
+		destination = result.To
+	}
+	return &PromoteOutcome{
+		PromotedTo: destination,
+		From:       result.From,
+		Committed:  result.Committed,
+	}, nil
+}
+
+// isTerminalTarget reports whether a promote target retires a workitem.
+func isTerminalTarget(target string) bool {
+	switch target {
+	case "completed", "archived", "someday":
+		return true
+	}
+	return false
+}
+
+// checkSplitGate refuses a terminal promotion whose declared successors are
+// not all discoverable.
+//
+// Existence, not content: whether a successor adequately captures the parent's
+// scope is the split author's judgment, reviewed like any other work. Camp
+// verifies the trail, not the prose.
+func checkSplitGate(ctx context.Context, cfg *config.CampaignConfig, root string, loc *locate.Location) error {
+	meta, err := wkitem.LoadMetadata(ctx, loc.SourcePath)
+	if err != nil || meta == nil {
+		// A workitem with no readable marker never declared successors, so
+		// there is no gate to enforce. Promote's own checks own that case.
+		return nil
+	}
+	declared := wkitem.SplitIntoOf(meta)
+	if len(declared) == 0 {
+		return nil
+	}
+
+	discovered, err := discoveredIDs(ctx, root, cfg)
+	if err != nil {
+		return err
+	}
+	missing := wkitem.MissingSuccessors(declared, discovered)
+	if len(missing) == 0 {
+		return nil
+	}
+
+	// Discover() skips dungeons, so anything still "missing" might simply
+	// have been completed. A retired successor counts as existing: the gate
+	// exists to stop scope disappearing, not to stop it finishing.
+	wanted := make(map[string]bool, len(missing))
+	for _, id := range missing {
+		wanted[id] = true
+	}
+	dungeoned, err := wkitem.FindDungeonedIDs(ctx, root, wanted)
+	if err != nil {
+		return err
+	}
+	if missing = wkitem.MissingSuccessors(missing, dungeoned); len(missing) > 0 {
+		return wkitem.SplitGateError(meta.ID, missing)
+	}
+	return nil
 }
 
 // printReleasedLinks names every link promote dropped and how to restore it.

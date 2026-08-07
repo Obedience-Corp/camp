@@ -213,6 +213,11 @@ func messageFor(err error) string {
 	return err.Error()
 }
 
+// Hint returns the recovery hint WithHint attached to err, or "" when there is
+// none. Text output paths use it to print the same guidance the JSON envelope
+// carries, so a refusal reads the same either way.
+func Hint(err error) string { return hintFor(err) }
+
 func hintFor(err error) string {
 	var hinted hintedError
 	if errors.As(err, &hinted) {

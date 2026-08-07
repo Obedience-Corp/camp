@@ -52,6 +52,11 @@ func WrapJoinf(sentinel, cause error, format string, args ...any) error {
 // Is delegates to errors.Is for convenience.
 func Is(err, target error) bool { return errors.Is(err, target) }
 
+// As delegates to errors.As for convenience, so callers that already import
+// this package for wrapping do not also need the stdlib errors package to
+// unwrap a typed error.
+func As(err error, target any) bool { return errors.As(err, target) }
+
 // New delegates to errors.New for convenience.
 func New(text string) error { return errors.New(text) }
 

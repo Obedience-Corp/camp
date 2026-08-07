@@ -54,6 +54,12 @@ integration:
     @{{BUILDTOOL}} integration
 
 # Run integration tests with verbose output (standard go test)
+#
+# The timeout is generous on purpose. A timeout reports as `FAIL <pkg> Ns`
+# with no failing assertion anywhere in the output, which reads exactly like a
+# broken test and costs real time to diagnose. This lane measured 927s
+# (15m26s) on 2026-08-05, so the previous 15m budget had already been overrun
+# by the suite it was meant to run.
 [no-cd]
 integration-verbose:
     #!/usr/bin/env bash
@@ -64,7 +70,7 @@ integration-verbose:
     echo "Running container-based integration tests (verbose)..."
     DOCKER_HOST="unix://${HOME}/.colima/default/docker.sock" \
     TESTCONTAINERS_DOCKER_SOCKET_OVERRIDE=/var/run/docker.sock \
-    go test -v -tags=integration ./tests/integration/... -timeout 15m 2>&1
+    go test -v -tags=integration ./tests/integration/... -timeout 30m 2>&1
 
 # Run a specific integration test
 [no-cd]

@@ -206,12 +206,12 @@ func emitJobsJSON(cmd *cobra.Command, campRoot string, entries []jobs.Entry, sup
 			class = string(jobs.ClassCommit)
 		}
 		payload.Jobs = append(payload.Jobs, jobJSON{
-			ID:       e.ID,
-			Seq:      e.Seq,
-			State:    e.State,
-			Lane:     e.Lane,
-			Kind:     string(e.Kind),
-			Class:    class,
+			ID:         e.ID,
+			Seq:        e.Seq,
+			State:      e.State,
+			Lane:       e.Lane,
+			Kind:       string(e.Kind),
+			Class:      class,
 			AgeMs:      e.Age(now).Milliseconds(),
 			Attempts:   e.Attempts,
 			Stuck:      e.Stuck,

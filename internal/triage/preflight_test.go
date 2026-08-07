@@ -1,0 +1,225 @@
+package triage
+
+import (
+	"context"
+	"testing"
+
+	camperrors "github.com/Obedience-Corp/camp/internal/errors"
+	"github.com/Obedience-Corp/camp/internal/workitem"
+	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
+)
+
+// unadopted builds a design directory with no .workitem marker: the FT-008
+// population the preflight exists for.
+func unadopted(slug string) workitem.WorkItem {
+	w := item(slug, "design", "design:"+slug, "none", "")
+	w.StableID = ""
+	w.SourceID = ""
+	w.SourceMetadata = nil
+	w.RelativePath = "workflow/design/" + slug
+	return w
+}
+
+// The repair path writes .workitem markers, so it is covered in the
+// containerized lane (tests/integration/triage_preflight_test.go). What is
+// exercised here is the logic that reaches no filesystem: the strict refusal,
+// id generation, and the no-op case.
+
+// --- error cases first -------------------------------------------------
+
+// TestPreflightStrictRefusesAndNamesEveryPath: the point of strict is that the
+// operator adopts deliberately, so the refusal has to list everything at once
+// rather than surfacing one path per attempted run.
+func TestPreflightStrictRefusesAndNamesEveryPath(t *testing.T) {
+	items := []workitem.WorkItem{
+		unadopted("zeta"),
+		item("design-ok", "design", "design:ok", "active", "active"),
+		unadopted("alpha"),
+	}
+
+	result, err := Preflight(context.Background(), PreflightInput{
+		CampaignRoot: "/campaign",
+		Items:        items,
+		AllItems:     items,
+		Policy:       IdentityPolicyStrict,
+		Now:          testAt,
+	})
+
+	require.Error(t, err)
+	require.ErrorIs(t, err, camperrors.ErrInvalidInput)
+	assert.Contains(t, err.Error(), "workflow/design/alpha")
+	assert.Contains(t, err.Error(), "workflow/design/zeta")
+	assert.NotContains(t, err.Error(), "design:ok")
+
+	require.NotNil(t, result)
+	assert.Equal(t, []string{"workflow/design/alpha", "workflow/design/zeta"}, result.Unrepaired,
+		"reported in path order, so two runs list them the same way")
+	assert.Empty(t, result.Repaired)
+}
+
+// TestPreflightStrictWritesNothing: a refusal must leave the campaign exactly
+// as it found it. The campaign root here does not exist, so any attempted
+// adoption would error rather than pass silently.
+func TestPreflightStrictWritesNothing(t *testing.T) {
+	items := []workitem.WorkItem{unadopted("alpha")}
+
+	_, err := Preflight(context.Background(), PreflightInput{
+		CampaignRoot: "/nonexistent-campaign-root",
+		Items:        items,
+		AllItems:     items,
+		Policy:       IdentityPolicyStrict,
+		Now:          testAt,
+	})
+
+	require.Error(t, err)
+	assert.Empty(t, items[0].StableID, "the item is untouched")
+}
+
+// TestPreflightRejectsAnUnknownPolicy: an unrecognized policy must be refused
+// rather than guessed at. Falling through to the default silently adopted
+// directories under a policy name the operator may have chosen precisely to
+// prevent that — which is what this did before the review caught it.
+func TestPreflightRejectsAnUnknownPolicy(t *testing.T) {
+	items := []workitem.WorkItem{unadopted("alpha")}
+
+	_, err := Preflight(context.Background(), PreflightInput{
+		CampaignRoot: "/nonexistent-campaign-root",
+		Items:        items,
+		AllItems:     items,
+		Policy:       IdentityPolicy("bogus"),
+		Now:          testAt,
+	})
+
+	require.Error(t, err)
+	require.ErrorIs(t, err, camperrors.ErrInvalidInput)
+	assert.Contains(t, violatedFields(err), "preflight.identity")
+	assert.Contains(t, err.Error(), "repair")
+	assert.Contains(t, err.Error(), "strict")
+	assert.Empty(t, items[0].StableID, "nothing was adopted")
+}
+
+// TestPreflightRejectsAnEmptyPolicy: the zero value is not a policy either.
+func TestPreflightRejectsAnEmptyPolicy(t *testing.T) {
+	items := []workitem.WorkItem{unadopted("alpha")}
+
+	_, err := Preflight(context.Background(), PreflightInput{
+		CampaignRoot: "/nonexistent-campaign-root",
+		Items:        items,
+		AllItems:     items,
+		Now:          testAt,
+	})
+
+	require.Error(t, err)
+	assert.Contains(t, violatedFields(err), "preflight.identity")
+}
+
+// TestPreflightRespectsCancellation stops before touching anything.
+func TestPreflightRespectsCancellation(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+
+	_, err := Preflight(ctx, PreflightInput{
+		CampaignRoot: "/campaign",
+		Items:        []workitem.WorkItem{unadopted("alpha")},
+		Policy:       IdentityPolicyRepair,
+		Now:          testAt,
+	})
+
+	assert.ErrorIs(t, err, context.Canceled)
+}
+
+// --- no-op path --------------------------------------------------------
+
+// TestPreflightIsANoOpWhenEveryRowHasIdentity: the common case must not touch
+// the filesystem at all, which is why this passes a root that does not exist.
+func TestPreflightIsANoOpWhenEveryRowHasIdentity(t *testing.T) {
+	items := []workitem.WorkItem{
+		item("design-a", "design", "design:a", "active", "active"),
+		item("intent-a", "intent", "intent:a", "inbox", "next"),
+	}
+
+	for _, policy := range []IdentityPolicy{IdentityPolicyRepair, IdentityPolicyStrict} {
+		t.Run(string(policy), func(t *testing.T) {
+			result, err := Preflight(context.Background(), PreflightInput{
+				CampaignRoot: "/nonexistent-campaign-root",
+				Items:        items,
+				AllItems:     items,
+				Policy:       policy,
+				Now:          testAt,
+			})
+
+			require.NoError(t, err)
+			assert.Empty(t, result.Repaired)
+			assert.Empty(t, result.Unrepaired)
+			assert.NotNil(t, result.Repaired, "empty, never null, in JSON")
+		})
+	}
+}
+
+// TestPreflightIgnoresMarkerlessTypes: intents and festivals never carry a
+// marker, so the preflight must not try to adopt them.
+func TestPreflightIgnoresMarkerlessTypes(t *testing.T) {
+	intent := item("intent-a", "intent", "intent:a", "inbox", "")
+	intent.StableID = ""
+	festival := item("festival-a", "festival", "festival:a", "active", "")
+	festival.StableID = ""
+	items := []workitem.WorkItem{intent, festival}
+
+	result, err := Preflight(context.Background(), PreflightInput{
+		CampaignRoot: "/nonexistent-campaign-root",
+		Items:        items,
+		AllItems:     items,
+		Policy:       IdentityPolicyStrict,
+		Now:          testAt,
+	})
+
+	require.NoError(t, err, "strict must not refuse over types that never have markers")
+	assert.Empty(t, result.Unrepaired)
+}
+
+// --- id generation -----------------------------------------------------
+
+// TestUniqueAdoptIDMatchesCampShape: an id generated by the preflight must
+// look like one `camp workitem adopt` would generate, or the two routes would
+// produce visibly different workitems.
+func TestUniqueAdoptIDMatchesCampShape(t *testing.T) {
+	id := uniqueAdoptID(unadopted("hub-control-plane"), testAt, map[string]bool{})
+
+	assert.Equal(t, "design-hub-control-plane-2026-08-10", id)
+}
+
+// TestUniqueAdoptIDAvoidsCollisions re-rolls rather than reusing an id that is
+// already taken.
+func TestUniqueAdoptIDAvoidsCollisions(t *testing.T) {
+	taken := map[string]bool{
+		"design-alpha-2026-08-10":   true,
+		"design-alpha-2026-08-10-2": true,
+	}
+
+	id := uniqueAdoptID(unadopted("alpha"), testAt, taken)
+
+	assert.Equal(t, "design-alpha-2026-08-10-3", id)
+}
+
+// TestUniqueAdoptIDIsDeterministic: the same inputs must always produce the
+// same id, so a repair is reproducible from recorded inputs.
+func TestUniqueAdoptIDIsDeterministic(t *testing.T) {
+	first := uniqueAdoptID(unadopted("alpha"), testAt, map[string]bool{})
+	second := uniqueAdoptID(unadopted("alpha"), testAt, map[string]bool{})
+
+	assert.Equal(t, first, second)
+}
+
+// TestIDsFromWorkitemsCollectsStableIDs backs the collision check.
+func TestIDsFromWorkitemsCollectsStableIDs(t *testing.T) {
+	items := []workitem.WorkItem{
+		item("design-a", "design", "design:a", "active", ""),
+		unadopted("legacy"),
+	}
+
+	ids := workitem.IDsFromWorkitems(items)
+
+	assert.True(t, ids["design-a"])
+	assert.Len(t, ids, 1, "an item with no id contributes nothing")
+}

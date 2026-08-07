@@ -154,11 +154,11 @@ type machineTUIModel struct {
 	// not move for eight seconds reads as hung rather than busy.
 	spin spinner.Model
 
-	status    string
+	status     string
 	statusKind statusKind
-	width     int
-	height    int
-	quitting  bool
+	width      int
+	height     int
+	quitting   bool
 }
 
 // machineHopState backs the campaign picker that turns a machine row into a hop

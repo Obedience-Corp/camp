@@ -1,0 +1,11 @@
+# Type policy: festivals.
+# Missing keys inherit the profile, then types/_default.yaml.
+schema_version: triage-type/v1alpha1
+evidence: none                  # festivals are fest's to review deeply; triage
+                                # only records execution state
+dispositions:                   # execution-state only
+  completed: dungeon/completed  # the festival finished
+  archived: dungeon/archived    # shelved, kept readable
+  someday: dungeon/someday      # deprioritized
+  parked: attention/parked
+routing_tier: cheap

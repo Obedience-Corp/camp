@@ -225,7 +225,7 @@ func runPromote(t *testing.T, target string, extra ...string) (string, error) {
 			opts.Keep = true
 		}
 	}
-	err := runWorkitemPromote(cmd, opts)
+	_, err := runWorkitemPromote(cmd, opts)
 	return stdout.String(), err
 }
 

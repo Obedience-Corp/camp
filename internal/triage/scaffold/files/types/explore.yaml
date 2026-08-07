@@ -1,0 +1,11 @@
+# Type policy: explore notes.
+# Missing keys inherit the profile, then types/_default.yaml.
+schema_version: triage-type/v1alpha1
+evidence: metadata              # an explore note is judged on what it became,
+                                # not by re-reading the research
+dispositions:
+  completed: dungeon/completed  # the question was answered
+  archived: dungeon/archived    # answered elsewhere, or no longer asked
+  parked: attention/parked
+  next: attention/next
+routing_tier: cheap
