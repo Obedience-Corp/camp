@@ -580,13 +580,20 @@ func runCampCommand(ctx context.Context, m *machines.Machine, args string, opts 
 	return out, nil
 }
 
+// LoginShellCommand wraps script in a POSIX login shell (`sh -lc '<script>'`)
+// for execution as ssh's remote command. Every remote invocation camp makes
+// goes through this so it sees the same PATH an interactive ssh session would
+// (see RunCampCommand for why the login shell matters), and so there is one
+// place that decides the shell and the quoting rather than one per call site.
+// Pure function of its input: no ssh, no machine lookup, unit-testable.
+func LoginShellCommand(script string) string {
+	return "sh -lc " + ShellQuote(script)
+}
+
 // campRemoteCommandLine builds the single token handed to ssh as the remote
-// command for a camp invocation: binary+args wrapped in a POSIX login shell
-// (`sh -lc '<binary> <args>'`). Kept as a pure function of its inputs (no ssh,
-// no machine lookup) so the exact wrapping and quoting is unit-testable
-// without a live ssh connection.
+// command for a camp invocation: binary+args wrapped in a POSIX login shell.
 func campRemoteCommandLine(binary, args string) string {
-	return "sh -lc " + ShellQuote(binary+" "+args)
+	return LoginShellCommand(binary + " " + args)
 }
 
 // campNotFoundHint appends the login-shell context and the

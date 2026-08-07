@@ -31,6 +31,10 @@ type SyncOptions struct {
 	Submodules []string
 	// GitOnly skips artifact transfer on a peer-assisted sync.
 	GitOnly bool
+	// NoProbeCache forces a fresh rsync engine probe instead of trusting the
+	// cached per-machine verdict. The re-probe is also written back, so the
+	// flag repairs a stale entry rather than merely bypassing it.
+	NoProbeCache bool
 	// ArtifactsOnly skips the git phases and only pulls declared artifact
 	// roots from the peer (all policies, since the ask is explicit).
 	ArtifactsOnly bool
@@ -226,6 +230,13 @@ func WithSubmodules(submodules []string) SyncerOption {
 func WithGitOnly(gitOnly bool) SyncerOption {
 	return func(s *Syncer) {
 		s.options.GitOnly = gitOnly
+	}
+}
+
+// WithNoProbeCache forces a fresh rsync engine probe for this sync.
+func WithNoProbeCache(noProbeCache bool) SyncerOption {
+	return func(s *Syncer) {
+		s.options.NoProbeCache = noProbeCache
 	}
 }
 

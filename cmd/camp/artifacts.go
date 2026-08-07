@@ -1,6 +1,7 @@
 package main
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
 	"os"
@@ -12,6 +13,7 @@ import (
 	"github.com/Obedience-Corp/camp/internal/campaign"
 	camperrors "github.com/Obedience-Corp/camp/internal/errors"
 	"github.com/Obedience-Corp/camp/internal/fsutil"
+	"github.com/Obedience-Corp/camp/internal/peer"
 	"github.com/Obedience-Corp/camp/internal/ui"
 	"github.com/spf13/cobra"
 )
@@ -94,6 +96,17 @@ func init() {
 	artifactsCmd.AddCommand(artifactsAddCmd)
 	artifactsCmd.AddCommand(artifactsRemoveCmd)
 	artifactsCmd.AddCommand(artifactsManifestCmd)
+	artifactsResolveCmd.Flags().BoolVar(&resolveOpts.takeLocal, "take-local", false,
+		"Keep your copy; pins that path local for this peer")
+	artifactsResolveCmd.Flags().BoolVar(&resolveOpts.takePeer, "take-peer", false,
+		"Fetch the peer's copy of that path and record it as agreed")
+	artifactsResolveCmd.Flags().BoolVar(&resolveOpts.list, "list", false,
+		"List open conflicts with the peer and change nothing")
+	artifactsResolveCmd.Flags().StringVar(&resolveOpts.from, "from", "",
+		"Machine id the conflict is with (required; conflicts are per peer)")
+	artifactsResolveCmd.Flags().BoolVar(&resolveOpts.json, "json", false,
+		"Output as JSON")
+	artifactsCmd.AddCommand(artifactsResolveCmd)
 	rootCmd.AddCommand(artifactsCmd)
 	artifactsCmd.GroupID = "campaign"
 }
@@ -346,4 +359,142 @@ func runArtifactsManifest(cmd *cobra.Command, args []string) error {
 	}
 	_, err = cmd.OutOrStdout().Write(data)
 	return err
+}
+
+// printResolveJSON writes v as indented JSON, matching the other artifacts
+// subcommands' output shape.
+func printResolveJSON(cmd *cobra.Command, v any) error {
+	data, err := json.MarshalIndent(v, "", "  ")
+	if err != nil {
+		return camperrors.Wrap(err, "encode resolve json")
+	}
+	_, _ = fmt.Fprintln(cmd.OutOrStdout(), string(data))
+	return nil
+}
+
+// resolveOpts holds the flags for `camp artifacts resolve`.
+var resolveOpts struct {
+	takeLocal bool
+	takePeer  bool
+	list      bool
+	from      string
+	json      bool
+}
+
+var artifactsResolveCmd = &cobra.Command{
+	Use:   "resolve [path]",
+	Short: "Resolve an artifact conflict kept by no-clobber protection",
+	Long: `Resolve one reported artifact conflict.
+
+A sync never overwrites a local file whose bytes differ from the last state
+agreed with a peer, and that protection is sticky: it survives every later
+sync. This is how you clear it deliberately, instead of deleting the local
+file to make the protection go away.
+
+  --list          show the open conflicts with a peer (changes nothing)
+  --take-local    keep your copy; that path is then pinned local for this
+                  peer, so later peer changes to it will not arrive on their
+                  own. Run resolve --take-peer if you want them.
+  --take-peer     fetch the peer's copy of that one path, install it, and
+                  record it as agreed
+
+There is no --all: resolving in bulk is exactly what the sticky conflict
+exists to prevent. Loop the per-path form if you really mean it.`,
+	Args: cobra.MaximumNArgs(1),
+	RunE: runArtifactsResolve,
+}
+
+func runArtifactsResolve(cmd *cobra.Command, args []string) error {
+	ctx := cmd.Context()
+	campRoot, err := campaign.DetectCached(ctx)
+	if err != nil {
+		return camperrors.Wrap(err, "not in a campaign")
+	}
+	if resolveOpts.from == "" {
+		return camperrors.New("--from <machine> is required: conflicts are per peer")
+	}
+	if resolveOpts.list {
+		return runArtifactsResolveList(ctx, cmd, campRoot)
+	}
+
+	action, err := resolveActionFromFlags()
+	if err != nil {
+		return err
+	}
+	if len(args) != 1 {
+		return camperrors.New("resolve needs exactly one <path> (or --list)")
+	}
+
+	// take-local is a local decision and must work with the peer offline;
+	// only take-peer needs to reach it for bytes.
+	var src *peer.Source
+	if action == artifacts.ResolveTakePeer {
+		src, err = peer.FromMachine(ctx, resolveOpts.from, filepath.Base(campRoot))
+		if err != nil {
+			return camperrors.Wrapf(err, "--take-peer needs machine %q", resolveOpts.from)
+		}
+	}
+
+	result, err := artifacts.Resolve(ctx, campRoot, src, resolveOpts.from, args[0], action)
+	if err != nil {
+		return err
+	}
+	if resolveOpts.json {
+		return printResolveJSON(cmd, result)
+	}
+	printResolveResult(cmd, result)
+	return nil
+}
+
+// resolveActionFromFlags turns the mutually exclusive flags into an action.
+func resolveActionFromFlags() (artifacts.ResolveAction, error) {
+	switch {
+	case resolveOpts.takeLocal && resolveOpts.takePeer:
+		return "", camperrors.New("--take-local and --take-peer are mutually exclusive")
+	case resolveOpts.takeLocal:
+		return artifacts.ResolveTakeLocal, nil
+	case resolveOpts.takePeer:
+		return artifacts.ResolveTakePeer, nil
+	default:
+		return "", camperrors.New("choose a side: --take-local or --take-peer (or --list to look first)")
+	}
+}
+
+func runArtifactsResolveList(ctx context.Context, cmd *cobra.Command, campRoot string) error {
+	conflicts, err := artifacts.Conflicts(ctx, campRoot, resolveOpts.from)
+	if err != nil {
+		return err
+	}
+	if resolveOpts.json {
+		return printResolveJSON(cmd, map[string]any{"peer": resolveOpts.from, "conflicts": conflicts})
+	}
+	out := cmd.OutOrStdout()
+	if len(conflicts) == 0 {
+		_, _ = fmt.Fprintf(out, "%s No open conflicts with %s\n", ui.SuccessIcon(), resolveOpts.from)
+		return nil
+	}
+	_, _ = fmt.Fprintf(out, "Open conflicts with %s:\n\n", resolveOpts.from)
+	for _, c := range conflicts {
+		_, _ = fmt.Fprintf(out, "  %s\n", filepath.ToSlash(filepath.Join(c.Root, c.Path)))
+		_, _ = fmt.Fprintf(out, "      yours: %d bytes    last agreed: %d bytes (%s)\n",
+			c.LocalSize, c.AgreedSize, c.AgreedAt.Format("2006-01-02 15:04"))
+	}
+	_, _ = fmt.Fprintf(out, "\nResolve with:\n  camp artifacts resolve <path> --from %s --take-local|--take-peer\n",
+		resolveOpts.from)
+	return nil
+}
+
+func printResolveResult(cmd *cobra.Command, r *artifacts.ResolveResult) {
+	out := cmd.OutOrStdout()
+	full := filepath.ToSlash(filepath.Join(r.Root, r.Path))
+	if r.Action == artifacts.ResolveTakeLocal {
+		_, _ = fmt.Fprintf(out, "%s Kept your copy of %s\n", ui.SuccessIcon(), full)
+		_, _ = fmt.Fprintf(out, "  Pinned local for %s: later changes to it on that machine will not arrive on their own.\n", r.Peer)
+		_, _ = fmt.Fprintf(out, "  Take them later with: camp artifacts resolve %s --from %s --take-peer\n", full, r.Peer)
+		return
+	}
+	_, _ = fmt.Fprintf(out, "%s Took %s's copy of %s\n", ui.SuccessIcon(), r.Peer, full)
+	if r.NewBaseline != nil {
+		_, _ = fmt.Fprintf(out, "  Now agreed at %d bytes; the conflict is cleared.\n", r.NewBaseline.Size)
+	}
 }

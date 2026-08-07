@@ -58,6 +58,33 @@ type CloneResult struct {
 	Warnings []string
 	// Registration contains auto-registration results (nil if skipped or not a campaign).
 	Registration *RegistrationResult
+	// Seed records which transport delivered each repository when a peer was
+	// configured. Empty without --from, which is what keeps default output
+	// byte-identical.
+	Seed []SeedRepoResult
+}
+
+// Seed transports, in the order the cold seed prefers them.
+const (
+	// SeedMethodPackCopy is a byte copy of a quiescent peer's object store.
+	SeedMethodPackCopy = "pack-copy"
+	// SeedMethodBundle is a verified git bundle from the peer.
+	SeedMethodBundle = "bundle"
+	// SeedMethodPeerClone is an ordinary git clone from the peer.
+	SeedMethodPeerClone = "peer-clone"
+	// SeedMethodOrigin means no peer transport delivered this repository.
+	SeedMethodOrigin = "origin"
+)
+
+// SeedRepoResult records which transport delivered one repository, and why it
+// was not a faster one. Reported per repo because the choice is made per repo.
+type SeedRepoResult struct {
+	// Repo is the repository path relative to the campaign root ("." = root).
+	Repo string
+	// Method is one of the SeedMethod constants.
+	Method string
+	// Reason explains a fallback; empty when the preferred path was taken.
+	Reason string
 }
 
 // RegistrationResult contains the outcome of auto-registration.
@@ -142,6 +169,14 @@ type Cloner struct {
 	syncer   *sync.Syncer     // Optional syncer for post-clone URL synchronization
 	progress ProgressReporter // Progress reporter for output
 	peer     *peer.Source     // Optional peer to seed git objects from
+	// peerUnavailable records that --from named a machine camp could not
+	// reach. The clone proceeds from origin, and this is what lets the seed
+	// summary say so.
+	peerUnavailable string
+	// peerQuiescence caches the peer's verdicts from the root-clone step so
+	// submodule seeding reads the same report rather than paying for a second
+	// round-trip and risking a different answer mid-clone.
+	peerQuiescence *QuiescenceReport
 }
 
 // NewCloner creates a new Cloner with the given options.
@@ -248,6 +283,20 @@ func WithNoRegister(noRegister bool) ClonerOption {
 func WithPeer(p *peer.Source) ClonerOption {
 	return func(c *Cloner) {
 		c.peer = p
+	}
+}
+
+// WithPeerUnavailable records that a peer was requested but could not be
+// reached, so the clone fell back to origin before a Cloner was even built.
+//
+// Without it, `--from <unreachable> --json` is byte-identical to a plain clone:
+// the human warning is suppressed in JSON mode and no peer was configured, so
+// nothing reports the degradation. A scripted caller could not tell "seeded
+// from the peer" from "peer was down, used origin", which is exactly the silent
+// fallback camp is not supposed to have.
+func WithPeerUnavailable(reason string) ClonerOption {
+	return func(c *Cloner) {
+		c.peerUnavailable = reason
 	}
 }
 

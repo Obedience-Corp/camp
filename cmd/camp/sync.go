@@ -101,6 +101,7 @@ type syncFlags struct {
 	artifactsOnly   bool
 	verifyArtifacts bool
 	noDrain         bool
+	noProbeCache    bool
 }
 
 var syncOpts syncFlags
@@ -126,6 +127,8 @@ func init() {
 		"With --from: pull declared artifact roots only, skip git phases")
 	syncCmd.Flags().BoolVar(&syncOpts.verifyArtifacts, "verify-artifacts", false,
 		"Check artifact roots against last-transfer snapshots (no transfer)")
+	syncCmd.Flags().BoolVar(&syncOpts.noProbeCache, "no-probe-cache", false,
+		"Re-probe the rsync engine on both machines instead of using the cached 24h verdict")
 	syncCmd.Flags().BoolVar(&syncOpts.noDrain, "no-drain", false,
 		"Do not wait for camp's queued commits first")
 
@@ -151,6 +154,7 @@ func runSync(cmd *cobra.Command, args []string) error {
 		sync.WithParallel(syncOpts.parallel),
 		sync.WithNoFetch(syncOpts.noFetch),
 		sync.WithJSON(syncOpts.json),
+		sync.WithNoProbeCache(syncOpts.noProbeCache),
 		sync.WithSubmodules(args),
 	}
 	if err := validateSyncFlagCombos(); err != nil {

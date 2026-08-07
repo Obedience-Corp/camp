@@ -10,7 +10,10 @@
 package peer
 
 import (
+	"bytes"
 	"context"
+	"errors"
+	"io"
 	"os"
 	"os/exec"
 	"path"
@@ -161,6 +164,60 @@ func (s *Source) RsyncSpec(relPath string) string {
 	return s.target + ":" + p + "/"
 }
 
+// StreamShell runs a POSIX shell script on the machine hosting this source and
+// streams its stdout into w.
+//
+// It exists alongside RunShell because bulk transfer and probing want opposite
+// bounds. RunShell caps at remote.DefaultTimeout, which is right for a question
+// that should answer in milliseconds and wrong for streaming a repository's
+// history; and it buffers the answer in memory, which is right for a few lines
+// of verdicts and wrong for a multi-gigabyte bundle. Here ctx is the only
+// bound, and bytes go straight to w.
+func (s *Source) StreamShell(ctx context.Context, script string, w io.Writer) error {
+	if ctx.Err() != nil {
+		return ctx.Err()
+	}
+	var cmd *exec.Cmd
+	if s.target != "" {
+		args := append(append([]string{}, s.sshOpts...), s.target, remote.LoginShellCommand(script))
+		cmd = exec.CommandContext(ctx, "ssh", args...)
+	} else {
+		cmd = exec.CommandContext(ctx, "sh", "-c", script)
+	}
+	var stderr bytes.Buffer
+	cmd.Stdout = w
+	cmd.Stderr = &stderr
+	if err := cmd.Run(); err != nil {
+		trimmed := strings.TrimSpace(stderr.String())
+		if ctx.Err() != nil {
+			return camperrors.Wrapf(ctx.Err(), "stream from peer %s timed out: %s", s.id, trimmed)
+		}
+		exitCode := 0
+		var exitErr *exec.ExitError
+		if errors.As(err, &exitErr) {
+			exitCode = exitErr.ExitCode()
+		}
+		return camperrors.NewCommand("stream (peer "+s.id+")", exitCode, trimmed, err)
+	}
+	return nil
+}
+
+// RsyncSpecAbs returns the rsync source spec for an already-absolute path on
+// the machine hosting this source. RsyncSpec resolves a path relative to the
+// campaign root; this is for values the peer itself reported as absolute, such
+// as a repository's git directory, which callers must not re-derive.
+//
+// Callers are responsible for confirming the path is one they should be
+// reading — this only addresses it, it does not vouch for it. The path is left
+// unquoted for the same reason as RsyncSpec: transfers pass -s so the path
+// travels through the rsync protocol rather than a remote shell.
+func (s *Source) RsyncSpecAbs(absPath string) string {
+	if s.target == "" {
+		return absPath
+	}
+	return s.target + ":" + absPath
+}
+
 // Fetch fetches heads and HEAD from the peer copy of the repository at
 // relPath into the local repository at dir, under the Refspecs namespace.
 // It moves objects only: refs outside refs/peer/<id>/* and the working tree
@@ -177,6 +234,46 @@ func (s *Source) Fetch(ctx context.Context, dir, relPath string) error {
 		return camperrors.Wrapf(err, "peer fetch %q from %s: %s", relPath, s.id, strings.TrimSpace(string(output)))
 	}
 	return nil
+}
+
+// RunShell executes a POSIX shell script on the machine hosting this source and
+// returns its stdout. ssh sources ride the machine's existing ControlMaster
+// options, so a probe costs one multiplexed round-trip and no extra auth, and
+// remote.Run's bound means an unreachable peer surfaces as a typed error rather
+// than a hang. Filesystem sources run the same script locally through /bin/sh,
+// so both source kinds answer the same questions the same way and callers do
+// not branch on source kind.
+//
+// stdout is returned verbatim: a login shell may print a banner before the
+// script runs, so callers must frame their own output rather than assume the
+// first byte is theirs.
+func (s *Source) RunShell(ctx context.Context, script string) ([]byte, error) {
+	if ctx.Err() != nil {
+		return nil, ctx.Err()
+	}
+	if s.target != "" {
+		return remote.Run(ctx, s.target, s.sshOpts, remote.LoginShellCommand(script))
+	}
+
+	ctx, cancel := context.WithTimeout(ctx, remote.DefaultTimeout)
+	defer cancel()
+	cmd := exec.CommandContext(ctx, "sh", "-c", script)
+	var stdout, stderr bytes.Buffer
+	cmd.Stdout = &stdout
+	cmd.Stderr = &stderr
+	if err := cmd.Run(); err != nil {
+		trimmed := strings.TrimSpace(stderr.String())
+		if ctx.Err() != nil {
+			return nil, camperrors.Wrapf(ctx.Err(), "shell on peer %s timed out", s.id)
+		}
+		exitCode := 0
+		var exitErr *exec.ExitError
+		if errors.As(err, &exitErr) {
+			exitCode = exitErr.ExitCode()
+		}
+		return nil, camperrors.NewCommand("sh -c (peer "+s.id+")", exitCode, trimmed, err)
+	}
+	return stdout.Bytes(), nil
 }
 
 // SSHCommandFor builds the `-e` value for a copy to m: the ssh binary plus the
