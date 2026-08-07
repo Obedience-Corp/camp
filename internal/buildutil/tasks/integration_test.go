@@ -105,6 +105,58 @@ func TestClassifyRunFailure(t *testing.T) {
 	}
 }
 
+// The denominator has to be the suite, not the part of it that ran.
+//
+// The integration harness reports infrastructure death as skips, so a run that
+// dies early leaves hundreds of tests that never executed. Counting only pass
+// and fail shrank the denominator to match, and a collapsed run rendered as
+// "23/44 tests passed" — a healthy-looking suite with a few broken tests,
+// which is the opposite of what happened.
+func TestTestTally(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name    string
+		passed  int
+		total   int
+		skipped int
+		want    string
+	}{
+		{
+			name:   "a clean run says nothing about skips",
+			passed: 905,
+			total:  905,
+			want:   "905/905 tests passed",
+		},
+		{
+			// The run that prompted this: 21 red rows, and every one of them
+			// passes on an idle machine.
+			name:    "a collapsed run cannot hide behind a shrunken denominator",
+			passed:  23,
+			total:   905,
+			skipped: 861,
+			want:    "23/905 tests passed (861 skipped)",
+		},
+		{
+			name:    "an ordinary skip is still reported",
+			passed:  896,
+			total:   905,
+			skipped: 8,
+			want:    "896/905 tests passed (8 skipped)",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+			if got := testTally(tt.passed, tt.total, tt.skipped); got != tt.want {
+				t.Fatalf("testTally(%d, %d, %d) = %q, want %q",
+					tt.passed, tt.total, tt.skipped, got, tt.want)
+			}
+		})
+	}
+}
+
 // Whatever it reports, it is never a test name. The summary lists failed tests
 // by name so they can be rerun; a line that cannot be rerun must not look like
 // one of them.

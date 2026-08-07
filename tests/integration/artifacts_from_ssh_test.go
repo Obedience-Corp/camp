@@ -61,7 +61,7 @@ printf 'BETA-PEER-V2-LONGER' > %[1]s/beta.bin
 
 	out2, err := tc.RunCampInDir(localRoot, "sync", "--artifacts-only", "--from", loopbackMachineID)
 	require.NoError(t, err, "second artifact sync failed: %s", out2)
-	require.Contains(t, out2, "conflicts kept local", "second pull should report the kept conflict: %s", out2)
+	require.Contains(t, out2, "1 conflict kept local", "second pull should report the kept conflict: %s", out2)
 	require.Contains(t, out2, "alpha.bin (local edit preserved", "the conflicting file should be named: %s", out2)
 
 	requireFileContent(t, tc, localArtifactRoot+"/alpha.bin", "ALPHA-LOCAL-EDIT")
