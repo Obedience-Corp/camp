@@ -20,7 +20,7 @@ func CheckStaging(ctx context.Context, repoPath string, limits GuardLimits) ([]G
 		return nil, ctx.Err()
 	}
 
-	candidates, err := Enumerate(ctx, repoPath)
+	candidates, dirs, err := enumerate(ctx, repoPath)
 	if err != nil {
 		return nil, err
 	}
@@ -37,6 +37,18 @@ func CheckStaging(ctx context.Context, repoPath string, limits GuardLimits) ([]G
 	violations, remaining := checkPerFile(candidates, limits)
 	if bulk, found := detectBulk(remaining, limits); found {
 		violations = append(violations, bulk)
+	}
+
+	// Nested repositories are counted separately from both guards above. They
+	// contribute no files to the bulk tally by construction, because git
+	// reported the directory instead of its contents, which is the whole reason
+	// they were invisible here before.
+	if limits.NestedRepos != ModeOff {
+		nested, err := detectNestedRepos(ctx, repoPath, dirs, limits.Allow)
+		if err != nil {
+			return nil, err
+		}
+		violations = append(violations, nested...)
 	}
 	return violations, nil
 }
@@ -262,12 +274,28 @@ func ValidateAllow(allow []string) error {
 }
 
 // SortViolations orders violations for stable reporting: bulk first because it
-// blocks, then per-file findings by descending size, then by path.
+// blocks, then nested repositories, then per-file findings by descending size,
+// then by path.
+//
+// Nested repositories precede the per-file findings rather than sorting among
+// them because they carry no size. Ordering by size would file them below every
+// large file as if they were the least of the report, when they are the finding
+// most likely to break the repository.
 func SortViolations(violations []GuardViolation) {
+	rank := func(k ViolationKind) int {
+		switch k {
+		case Bulk:
+			return 0
+		case NestedRepo:
+			return 1
+		default:
+			return 2
+		}
+	}
 	sort.SliceStable(violations, func(i, j int) bool {
 		a, b := violations[i], violations[j]
-		if (a.Kind == Bulk) != (b.Kind == Bulk) {
-			return a.Kind == Bulk
+		if ra, rb := rank(a.Kind), rank(b.Kind); ra != rb {
+			return ra < rb
 		}
 		if a.Size != b.Size {
 			return a.Size > b.Size

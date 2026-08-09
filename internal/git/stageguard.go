@@ -31,6 +31,15 @@ type StageOptions struct {
 	// naming it --allow-large would read as "skip the safety check", which is
 	// backwards.
 	CommitLarge bool
+	// CommitNested forces undeclared nested repositories into the index for
+	// this invocation, recording them as gitlinks.
+	//
+	// It is separate from CommitLarge rather than folded into it because the
+	// two authorize unrelated things. A user passing --commit-large has decided
+	// a specific big file belongs in git; they have not decided to embed a
+	// foreign repository, and silently granting that would make the size flag
+	// mean more than it says.
+	CommitNested bool
 }
 
 // StageOutcome is what the guard decided about a staging operation, returned
@@ -39,6 +48,11 @@ type StageOptions struct {
 type StageOutcome struct {
 	// Excluded holds over-threshold untracked files kept out of the index.
 	Excluded []stageguard.GuardViolation
+	// NestedRepos holds undeclared nested git repositories kept out of the
+	// index. They are excluded like Excluded is, but carry a different remedy
+	// and never take part in artifact-root declaration, so they are reported
+	// separately rather than merged into it.
+	NestedRepos []stageguard.GuardViolation
 	// Reported holds tracked files whose new content crossed the threshold.
 	// They are always staged; the user is told about them instead.
 	Reported []stageguard.GuardViolation
@@ -62,10 +76,13 @@ type StageOutcome struct {
 // Empty reports whether the guard found nothing worth telling the user about.
 func (o *StageOutcome) Empty() bool {
 	return o == nil ||
-		(len(o.Excluded) == 0 && len(o.Reported) == 0 && o.Unavailable == nil)
+		(len(o.Excluded) == 0 && len(o.NestedRepos) == 0 &&
+			len(o.Reported) == 0 && o.Unavailable == nil)
 }
 
-// ExcludedPaths returns the repo-relative paths kept out of the index.
+// ExcludedPaths returns the repo-relative paths of over-threshold files kept
+// out of the index. Nested repositories are reached through NestedRepos, since
+// callers act on the two differently.
 func (o *StageOutcome) ExcludedPaths() []string {
 	if o == nil {
 		return nil
@@ -75,6 +92,26 @@ func (o *StageOutcome) ExcludedPaths() []string {
 		paths = append(paths, v.Path)
 	}
 	return paths
+}
+
+// NestedRepoPaths returns the repo-relative paths of nested repositories kept
+// out of the index.
+func (o *StageOutcome) NestedRepoPaths() []string {
+	if o == nil {
+		return nil
+	}
+	paths := make([]string, 0, len(o.NestedRepos))
+	for _, v := range o.NestedRepos {
+		paths = append(paths, v.Path)
+	}
+	return paths
+}
+
+// excludedPathspecs is every path the guard keeps out of this staging call,
+// regardless of which guard decided it. One list, so exclusion stays a single
+// git add.
+func (o *StageOutcome) excludedPathspecs() []string {
+	return append(o.ExcludedPaths(), o.NestedRepoPaths()...)
 }
 
 // GuardBlockedError reports that the guard refused a staging operation. It
@@ -100,6 +137,13 @@ func (e *GuardBlockedError) Error() string {
 			}
 		}
 		return "staging refused: bulk directory"
+	case stageguard.NestedRepo:
+		paths := make([]string, 0, len(e.Violations))
+		for _, v := range e.Violations {
+			paths = append(paths, v.Path)
+		}
+		return "staging refused: nested git repositories not declared in .gitmodules: " +
+			strings.Join(paths, ", ")
 	default:
 		paths := make([]string, 0, len(e.Violations))
 		for _, v := range e.Violations {
@@ -163,11 +207,13 @@ func runStageGuard(ctx context.Context, repoPath string, files []string, opts St
 	if !isStageEverything(files) {
 		return nil, nil, nil
 	}
-	// --commit-large is the user overruling camp's decision to exclude, which
-	// is the thing that actually needs an override once handling is automatic.
-	// It suppresses detection entirely rather than excluding-then-restoring,
-	// so the index ends up exactly as an unguarded stage would leave it.
-	if opts.CommitLarge {
+	// The override flags are the user overruling camp's decision to exclude,
+	// which is the thing that actually needs an override once handling is
+	// automatic. Each suppresses its own guard's detection rather than
+	// excluding-then-restoring, so the index ends up exactly as an unguarded
+	// stage would leave it. Only when every guard is overridden is the whole
+	// evaluation skipped.
+	if opts.CommitLarge && opts.CommitNested {
 		return nil, nil, nil
 	}
 
@@ -176,7 +222,16 @@ func runStageGuard(ctx context.Context, repoPath string, files []string, opts St
 		return &StageOutcome{Unavailable: camperrors.Wrapf(
 			err, "resolve staging guard limits for %s", repoPath)}, nil, nil
 	}
-	if limits.LargeFiles == stageguard.ModeOff && limits.Bulk == stageguard.ModeOff {
+	if opts.CommitLarge {
+		limits.LargeFiles = stageguard.ModeOff
+		limits.Bulk = stageguard.ModeOff
+	}
+	if opts.CommitNested {
+		limits.NestedRepos = stageguard.ModeOff
+	}
+	if limits.LargeFiles == stageguard.ModeOff &&
+		limits.Bulk == stageguard.ModeOff &&
+		limits.NestedRepos == stageguard.ModeOff {
 		return nil, nil, nil
 	}
 
@@ -192,6 +247,7 @@ func runStageGuard(ctx context.Context, repoPath string, files []string, opts St
 	outcome := &StageOutcome{Limits: limits}
 	var bulk []stageguard.GuardViolation
 	var overThreshold []stageguard.GuardViolation
+	var nested []stageguard.GuardViolation
 
 	for _, v := range violations {
 		switch v.Kind {
@@ -201,6 +257,8 @@ func runStageGuard(ctx context.Context, repoPath string, files []string, opts St
 			outcome.Reported = append(outcome.Reported, v)
 		case stageguard.OverThreshold:
 			overThreshold = append(overThreshold, v)
+		case stageguard.NestedRepo:
+			nested = append(nested, v)
 		}
 	}
 
@@ -216,9 +274,22 @@ func runStageGuard(ctx context.Context, repoPath string, files []string, opts St
 			Kind: stageguard.OverThreshold, Violations: overThreshold, Limits: limits, RepoPath: repoPath,
 		}
 	}
+	if len(nested) > 0 && limits.NestedRepos == stageguard.ModeBlock {
+		return nil, nil, &GuardBlockedError{
+			Kind: stageguard.NestedRepo, Violations: nested, Limits: limits, RepoPath: repoPath,
+		}
+	}
 
+	// Kept in its own field rather than folded into Excluded: everything in
+	// Excluded is a file the size guard held back, and the campaign-root path
+	// answers it by declaring an artifact root around it. A nested repository
+	// must never reach that code. Declaring an artifact root over a git
+	// repository is precisely the boundary artifacts.ResolveAutoRoot already
+	// refuses, so folding them together would turn a clear finding into a
+	// refusal about the wrong subject.
 	outcome.Excluded = overThreshold
-	return outcome, outcome.ExcludedPaths(), nil
+	outcome.NestedRepos = nested
+	return outcome, outcome.excludedPathspecs(), nil
 }
 
 // applyGuardExclusions folds guard exclusions into the pathspec, composing

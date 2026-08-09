@@ -60,6 +60,11 @@ const (
 	// threshold. It is always reported and never excluded, because splitting
 	// one file's history between git and an artifact root is never correct.
 	TrackedGrowth = stageguard.TrackedGrowth
+	// NestedRepo is an untracked directory that is itself a git repository
+	// and is not declared in .gitmodules. It is excluded: staging it records
+	// a submodule reference with no url, which makes every later `git
+	// submodule` call in the repository and its clones fail.
+	NestedRepo = stageguard.NestedRepo
 )
 
 // StageOutcome is what the guard did during a staging operation: which files it
@@ -94,11 +99,13 @@ type Mode = stageguard.Mode
 
 // The guard modes. ModeAuto applies to the large-file guard only; the bulk
 // guard accepts ModeBlock or ModeOff, since there is no inference camp could
-// make on its behalf.
+// make on its behalf. ModeExclude applies to the nested-repository guard only,
+// where excluding is already the complete remedy and nothing is declared.
 const (
-	ModeAuto  = stageguard.ModeAuto
-	ModeBlock = stageguard.ModeBlock
-	ModeOff   = stageguard.ModeOff
+	ModeAuto    = stageguard.ModeAuto
+	ModeExclude = stageguard.ModeExclude
+	ModeBlock   = stageguard.ModeBlock
+	ModeOff     = stageguard.ModeOff
 )
 
 // CheckStaging reports what a stage-everything operation in repoPath would add

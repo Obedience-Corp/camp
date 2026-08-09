@@ -38,6 +38,7 @@ camp commit [flags]
       --amend                 Amend the previous commit
       --auto-write            Run configured commit message writer
       --commit-large          Commit over-threshold files instead of keeping them out of git
+      --commit-nested         Commit undeclared nested git repositories as gitlinks instead of keeping them out of git
   -h, --help                  help for commit
       --include-refs          Include submodule ref changes when staging at campaign root
       --json                  Emit a JSON result on stdout; human output goes to stderr

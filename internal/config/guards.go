@@ -36,6 +36,11 @@ type GuardsConfig struct {
 	// no "auto" -- camp cannot infer whether a large untracked tree wants
 	// gitignore or an artifact root.
 	Bulk string `yaml:"bulk,omitempty"`
+	// NestedRepos selects the nested-repository guard mode: "exclude" (keep the
+	// nested checkout out of the commit and report), "block" (refuse), or
+	// "off". There is deliberately no "auto": excluding already is the complete
+	// fix, so there would be nothing for an auto mode to additionally do.
+	NestedRepos string `yaml:"nested_repos,omitempty"`
 	// Allow lists globs exempt from every guard, for the legitimate large file
 	// committed once.
 	Allow []string `yaml:"allow,omitempty"`
@@ -58,6 +63,7 @@ type GuardsConfig struct {
 type GuardsProjectConfig struct {
 	LargeFiles    *string `yaml:"large_files,omitempty"`
 	Bulk          *string `yaml:"bulk,omitempty"`
+	NestedRepos   *string `yaml:"nested_repos,omitempty"`
 	MaxFileSize   *string `yaml:"max_file_size,omitempty"`
 	MaxAddedFiles *int    `yaml:"max_added_files,omitempty"`
 	// Allow, when non-nil (including an explicit empty list), entirely replaces
@@ -84,6 +90,15 @@ func (g GuardsConfig) ResolveBulkMode(projectName string) string {
 		return *pc.Bulk
 	}
 	return g.Bulk
+}
+
+// ResolveNestedReposMode returns the nested-repository guard mode for
+// projectName, preferring a project override over the campaign-wide value.
+func (g GuardsConfig) ResolveNestedReposMode(projectName string) string {
+	if pc, ok := g.Projects[projectName]; ok && pc.NestedRepos != nil {
+		return *pc.NestedRepos
+	}
+	return g.NestedRepos
 }
 
 // ResolveMaxFileSize returns the per-file threshold string for projectName.

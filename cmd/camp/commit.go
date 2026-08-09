@@ -61,6 +61,7 @@ var (
 	commitWorkitem    string
 	commitNoEdit      bool
 	commitLarge       bool
+	commitNested      bool
 	commitJSONOut     bool
 	commitNoDrain     bool
 )
@@ -76,6 +77,7 @@ func init() {
 	commitCmd.Flags().BoolVar(&commitAutoWrite, "auto-write", false, "Run configured commit message writer")
 	commitCmd.Flags().StringVar(&commitWorkitem, "workitem", "", "explicit workitem selector for the commit tag (overrides cwd-based resolution)")
 	commitCmd.Flags().BoolVar(&commitLarge, "commit-large", false, "Commit over-threshold files instead of keeping them out of git")
+	commitCmd.Flags().BoolVar(&commitNested, "commit-nested", false, "Commit undeclared nested git repositories as gitlinks instead of keeping them out of git")
 	commitCmd.Flags().BoolVar(&commitJSONOut, "json", false, "Emit a JSON result on stdout; human output goes to stderr")
 	commitCmd.Flags().BoolVar(&commitNoDrain, "no-drain", false, "Do not wait for camp's queued commits first")
 
@@ -213,7 +215,7 @@ func runCommit(cmd *cobra.Command, args []string) error {
 		)
 		if target.IsSubmodule || commitIncludeRefs {
 			guardOutcome, stageErr = git.StageWithGuardOptions(
-				ctx, target.Path, nil, git.StageOptions{CommitLarge: commitLarge})
+				ctx, target.Path, nil, git.StageOptions{CommitLarge: commitLarge, CommitNested: commitNested})
 		} else {
 			// Campaign root: exclude submodule refs to prevent accidental
 			// ref changes from polluting content commits.
@@ -222,7 +224,7 @@ func runCommit(cmd *cobra.Command, args []string) error {
 				return pathErr
 			}
 			guardOutcome, stageErr = git.StageAllExcludingWithGuardOptions(
-				ctx, target.Path, paths, git.StageOptions{CommitLarge: commitLarge})
+				ctx, target.Path, paths, git.StageOptions{CommitLarge: commitLarge, CommitNested: commitNested})
 			if stageErr == nil {
 				// git add rejects exclude pathspecs whose target contains
 				// gitignored entries, so worktrees are unstaged after staging

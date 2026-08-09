@@ -31,8 +31,9 @@ import (
 // cannot read yet is nothing to act on, while git being broken is.
 func GuardUnavailableLine(cause error) string {
 	return fmt.Sprintf(
-		"Staged without the size and bulk guard: %v\n"+
-			"  Large files were not checked. Run 'camp doctor -c bigfiles' if you want to look.",
+		"Staged without the staging guard: %v\n"+
+			"  Large files and nested repositories were not checked.\n"+
+			"  Run 'camp doctor -c bigfiles' and 'camp doctor -c orphan' if you want to look.",
 		cause)
 }
 
@@ -52,6 +53,8 @@ type GuardHandling struct {
 	ProjectExcluded []RefusedFile
 	// TrackedGrowth holds tracked files reported but always committed.
 	TrackedGrowth []stageguard.GuardViolation
+	// NestedRepos holds nested git repositories kept out of the commit.
+	NestedRepos []stageguard.GuardViolation
 }
 
 // DeclaredRoot records one artifact root camp declared, or reused.
@@ -114,7 +117,14 @@ func HandleStageOutcome(
 		_, _ = fmt.Fprintln(out, ui.Warning(GuardUnavailableLine(outcome.Unavailable)))
 	}
 
-	handling := &GuardHandling{TrackedGrowth: outcome.Reported}
+	handling := &GuardHandling{
+		TrackedGrowth: outcome.Reported,
+		// Nested repositories are recorded identically in both scopes. Unlike a
+		// large file, the answer does not depend on whether this is a campaign
+		// or a project: an undeclared gitlink breaks submodule commands the same
+		// way in either, and the remedy is the same url either would need.
+		NestedRepos: outcome.NestedRepos,
+	}
 
 	if outcome.Limits.ScopeProject {
 		for _, v := range outcome.Excluded {
@@ -282,9 +292,34 @@ func renderGuardHandling(
 	for _, p := range handling.ProjectExcluded {
 		renderProjectExclusion(out, p)
 	}
+	for _, n := range handling.NestedRepos {
+		renderNestedRepo(out, n)
+	}
 	for _, t := range handling.TrackedGrowth {
 		renderTrackedGrowth(out, t, limits)
 	}
+}
+
+// renderNestedRepo reports a nested git repository kept out of the commit.
+//
+// The consequence is stated before the remedies because it is not one users
+// can be expected to know: committing the directory looks like it worked, and
+// the damage only surfaces later, in someone else's clone, as a submodule
+// command that will not run. A line that only said "excluded" would read as
+// camp being fussy about a directory the user could see was fine.
+func renderNestedRepo(out io.Writer, v stageguard.GuardViolation) {
+	at := ""
+	if v.Head != "" {
+		at = " at " + v.Head
+	}
+	_, _ = fmt.Fprintf(out, "%s %s is its own git repository%s; it was left out of this commit\n",
+		ui.WarningIcon(), v.Path, at)
+	_, _ = fmt.Fprintf(out, "  Committing it records a submodule reference with no url behind it, which\n")
+	_, _ = fmt.Fprintf(out, "  makes 'git submodule' fail in this repo and every clone of it. Its contents\n")
+	_, _ = fmt.Fprintf(out, "  would not reach the remote either.\n")
+	_, _ = fmt.Fprintf(out, "    if it should be a submodule   git submodule add <url> %s\n", v.Path)
+	_, _ = fmt.Fprintf(out, "    if it does not belong here    echo '%s/' >> .gitignore\n", v.Path)
+	_, _ = fmt.Fprintf(out, "    if you meant it as a gitlink  --commit-nested\n")
 }
 
 // renderDeclaredRoot reports a root camp declared or reused.
@@ -447,7 +482,7 @@ func (h *GuardHandling) ExcludedAnything() bool {
 	if h == nil {
 		return false
 	}
-	if len(h.Refused) > 0 || len(h.ProjectExcluded) > 0 {
+	if len(h.Refused) > 0 || len(h.ProjectExcluded) > 0 || len(h.NestedRepos) > 0 {
 		return true
 	}
 	for _, d := range h.Declared {
@@ -482,10 +517,40 @@ func RenderGuardRefusal(out io.Writer, err error, commandName string) bool {
 	switch blocked.Kind {
 	case stageguard.Bulk:
 		renderBulkRefusal(out, blocked, commandName)
+	case stageguard.NestedRepo:
+		renderNestedRepoRefusal(out, blocked, commandName)
 	default:
 		renderLargeFileRefusal(out, blocked, commandName)
 	}
 	return true
+}
+
+// renderNestedRepoRefusal writes the report for commit.guards.nested_repos set
+// to block, where nothing was staged at all.
+func renderNestedRepoRefusal(out io.Writer, blocked *git.GuardBlockedError, commandName string) {
+	_, _ = fmt.Fprintf(out, "Error: %s not declared in .gitmodules would be committed\n\n",
+		pluralRepos(len(blocked.Violations)))
+	for _, v := range blocked.Violations {
+		head := v.Head
+		if head == "" {
+			head = "no commits"
+		}
+		_, _ = fmt.Fprintf(out, "  %s   %s\n", v.Path, head)
+	}
+	_, _ = fmt.Fprintf(out, "\nNothing was staged. commit.guards.nested_repos is set to block:\n\n")
+	for _, v := range blocked.Violations {
+		_, _ = fmt.Fprintf(out, "  make it a submodule   git submodule add <url> %s\n", v.Path)
+	}
+	_, _ = fmt.Fprintf(out, "  keep it out of git    echo '<path>/' >> .gitignore\n")
+	_, _ = fmt.Fprintf(out, "  commit it anyway      %s --commit-nested -m \"...\"\n", commandName)
+	_, _ = fmt.Fprintf(out, "  exclude and continue  camp settings set local.commit.guards.nested_repos exclude\n")
+}
+
+func pluralRepos(n int) string {
+	if n == 1 {
+		return "1 nested git repository"
+	}
+	return ui.FormatCount(n) + " nested git repositories"
 }
 
 func renderBulkRefusal(out io.Writer, blocked *git.GuardBlockedError, commandName string) {

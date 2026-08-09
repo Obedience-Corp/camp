@@ -29,6 +29,7 @@ var (
 	wtCommitNoDrain   bool
 	wtCommitWorkitem  string
 	wtCommitLarge     bool
+	wtCommitNested    bool
 )
 
 var worktreesCommitCmd = &cobra.Command{
@@ -70,6 +71,8 @@ func init() {
 		"Run configured commit message writer")
 	worktreesCommitCmd.Flags().BoolVar(&wtCommitLarge, "commit-large", false,
 		"Commit over-threshold files instead of keeping them out of git")
+	worktreesCommitCmd.Flags().BoolVar(&wtCommitNested, "commit-nested", false,
+		"Commit undeclared nested git repositories as gitlinks instead of keeping them out of git")
 	worktreesCommitCmd.Flags().StringVar(&wtCommitWorkitem, "workitem", "",
 		"explicit workitem selector for the commit tag (overrides cwd-based resolution)")
 }
@@ -247,7 +250,7 @@ func stageWorktreeWithGuard(
 	ctx context.Context, cmd *cobra.Command, campRoot, worktreePath string,
 ) (excludedEverything bool, err error) {
 	outcome, err := git.StageWithGuardOptions(ctx, worktreePath, nil,
-		git.StageOptions{CommitLarge: wtCommitLarge})
+		git.StageOptions{CommitLarge: wtCommitLarge, CommitNested: wtCommitNested})
 	if err != nil {
 		return false, err
 	}

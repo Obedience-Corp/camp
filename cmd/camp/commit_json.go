@@ -67,6 +67,14 @@ type excludedFileJSON struct {
 	//   size_guard_blocked   over the threshold under large_files: block
 	//   bulk_guard           a bulk directory refused the whole commit; Path
 	//                        is the directory and Size its total
+	//   nested_repo_blocked  a nested repository refused the whole commit
+	//                        under nested_repos: block
+	//
+	// And one that is neither a size finding nor a refusal:
+	//
+	//   nested_repo          an undeclared nested git repository; Path is the
+	//                        directory and Size is 0, since nothing was
+	//                        measured
 	Reason string `json:"reason"`
 	// ArtifactRoot is the root camp declared, set only for size_guard.
 	ArtifactRoot string `json:"artifact_root,omitempty"`
@@ -82,6 +90,12 @@ const (
 	reasonSizeGuardBlocked = "size_guard_blocked"
 	// reasonBulkGuard is a bulk directory that refused the whole commit.
 	reasonBulkGuard = "bulk_guard"
+	// reasonNestedRepo is an undeclared nested git repository excluded from
+	// the commit.
+	reasonNestedRepo = "nested_repo"
+	// reasonNestedRepoBlocked is a nested repository under nested_repos:
+	// block, where camp refused rather than excluding-and-continuing.
+	reasonNestedRepoBlocked = "nested_repo_blocked"
 )
 
 // newCommitJSONResult builds the document with every slice initialized.
@@ -119,6 +133,11 @@ func (r *commitJSONResult) applyGuardHandling(h *cmdutil.GuardHandling) {
 	for _, f := range h.ProjectExcluded {
 		r.Excluded = append(r.Excluded, excludedFileJSON{
 			Path: f.Violation.Path, Size: f.Violation.Size, Reason: f.Reason,
+		})
+	}
+	for _, v := range h.NestedRepos {
+		r.Excluded = append(r.Excluded, excludedFileJSON{
+			Path: v.Path, Size: v.Size, Reason: reasonNestedRepo,
 		})
 	}
 }
@@ -160,8 +179,11 @@ func (r *commitJSONResult) applyGuardRefusal(blocked *git.GuardBlockedError) {
 	r.Repo = blocked.RepoPath
 
 	reason := reasonSizeGuardBlocked
-	if blocked.Kind == stageguard.Bulk {
+	switch blocked.Kind {
+	case stageguard.Bulk:
 		reason = reasonBulkGuard
+	case stageguard.NestedRepo:
+		reason = reasonNestedRepoBlocked
 	}
 	for _, v := range blocked.Violations {
 		path := v.Path

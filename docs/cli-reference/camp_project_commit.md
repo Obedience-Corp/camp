@@ -32,6 +32,7 @@ camp project commit [flags]
       --amend                 Amend the previous commit
       --auto-write            Run configured commit message writer
       --commit-large          Commit over-threshold files instead of keeping them out of git
+      --commit-nested         Commit undeclared nested git repositories as gitlinks instead of keeping them out of git
   -h, --help                  help for commit
   -m, --message stringArray   Commit message (repeatable; multiple -m are joined git-style into subject + body; required unless --auto-write)
       --no-drain              Do not wait for camp's queued commits first
