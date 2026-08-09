@@ -186,23 +186,36 @@ def main():
     # ---- the writes, which no recording can assert ----
     with open(handoff) as fh:
         handed = [line.strip() for line in fh if line.strip()]
+    # Transcript only, never the snapshots array: these lines were read from a
+    # file, and screen-snapshots.json is a record of what pyte rendered. The
+    # assertion below is the real check either way.
     transcript.append("===== handoff.log =====")
     transcript.extend(handed)
-    snapshots.append({
-        "name": "handoff-log",
-        "display": handed,
-        "cursor": {"x": 0, "y": 0},
-    })
 
     if ("open %s" % CHECK_URL) not in handed:
         failures.append("the opener was not handed the exact URL: %r" % handed)
     if ("pbcopy %s" % CHECK_URL) not in handed:
         failures.append("the clipboard was not handed the exact URL: %r" % handed)
 
+    # The shapes here are the evidence-bundle contract, not this script's
+    # preference: validate-evidence.py requires an object with renderer,
+    # terminal, and a named snapshots array whose dimensions match the PTY
+    # metadata. See .campaign/skills/vhs-private-gist/references/evidence-manifest.md.
+    terminal = {
+        "columns": COLS,
+        "rows": ROWS,
+        "pixel_width": 1000,
+        "pixel_height": 640,
+        "mode": "dark/adaptive truecolor",
+    }
     with open(os.path.join(evidence, "pty-transcript.txt"), "w") as fh:
         fh.write("\n".join(transcript) + "\n")
     with open(os.path.join(evidence, "screen-snapshots.json"), "w") as fh:
-        json.dump(snapshots, fh, indent=2)
+        json.dump({
+            "renderer": "pyte",
+            "terminal": terminal,
+            "snapshots": snapshots,
+        }, fh, indent=2)
     with open(os.path.join(evidence, "pty-metadata.json"), "w") as fh:
         json.dump({
             "transport": "pty",
@@ -210,13 +223,7 @@ def main():
             "pyte_version": importlib.metadata.version("pyte"),
             "fake_home": True,
             "fixture_id": "camp-machine-tailscale-check-v1",
-            "terminal": {
-                "columns": COLS,
-                "rows": ROWS,
-                "pixel_width": 1000,
-                "pixel_height": 640,
-                "mode": "dark/adaptive truecolor",
-            },
+            "terminal": terminal,
         }, fh, indent=2)
 
     for failure in failures:
