@@ -130,6 +130,20 @@ def whole_line_with(display, needle):
     return any(needle in line for line in display)
 
 
+def expected_handoff_tools():
+    """The opener and clipboard names camp calls on THIS platform.
+
+    Mirrors ui.browserOpenCommand and ui.WriteClipboard, which both switch on
+    runtime.GOOS: darwin gets open/pbcopy, everything else xdg-open/xclip. The
+    fixture installs all four names, so asserting the pair for the host is an
+    exact check — a camp that called the wrong tool for its platform would
+    still populate the log, and a looser "either name" assertion would pass it.
+    """
+    if sys.platform == "darwin":
+        return "open", "pbcopy"
+    return "xdg-open", "xclip"
+
+
 def main():
     fixture, evidence = sys.argv[1], sys.argv[2]
     os.makedirs(evidence, exist_ok=True)
@@ -192,10 +206,11 @@ def main():
     transcript.append("===== handoff.log =====")
     transcript.extend(handed)
 
-    if ("open %s" % CHECK_URL) not in handed:
-        failures.append("the opener was not handed the exact URL: %r" % handed)
-    if ("pbcopy %s" % CHECK_URL) not in handed:
-        failures.append("the clipboard was not handed the exact URL: %r" % handed)
+    opener, clipboard = expected_handoff_tools()
+    if ("%s %s" % (opener, CHECK_URL)) not in handed:
+        failures.append("%s was not handed the exact URL: %r" % (opener, handed))
+    if ("%s %s" % (clipboard, CHECK_URL)) not in handed:
+        failures.append("%s was not handed the exact URL: %r" % (clipboard, handed))
 
     # The shapes here are the evidence-bundle contract, not this script's
     # preference: validate-evidence.py requires an object with renderer,
