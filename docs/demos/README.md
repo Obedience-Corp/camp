@@ -11,6 +11,7 @@ evidence bundles.
 | Machine/status | [machine-tui.tape](machine-tui.tape) | [machine-tui.gif](machine-tui.gif) | [machine-tui.manifest.json](machine-tui.manifest.json) |
 | Machine dual-auth CLI | [machine-dual-auth.tape](machine-dual-auth.tape) | [machine-dual-auth.gif](machine-dual-auth.gif) | (WI-ca06e1 record-time proof; private gist optional) |
 | Project-aware worktree list | [worktree-list.tape](worktree-list.tape) | [worktree-list.gif](worktree-list.gif) | — |
+| Tailscale SSH approval | [machine-tailscale-check.tape](machine-tailscale-check.tape) | private gist | (PR evidence bundle) |
 
 The private evidence runs are `camp/fresh-configure/1d5415b8` and
 `camp/machine-tui/1d5415b8`. Each manifest records the source revision,
@@ -51,6 +52,22 @@ export CAMP_VHS_ROOT="$FIXTURE"
 
 `machine-dual-auth` proves discover defaults to `ssh-agent` and
 `--auth tailscale-ssh --user` is honored against the fixture tailnet stub.
+
+`machine-tailscale-check` shows the approval link a check-mode machine needs,
+whole and on its own line, in both the detail pane and the hop overlay, and the
+`o`/`c` keys handing it to the platform. Its fixture adds a stub `ssh` that
+answers the way Tailscale SSH does in check mode, plus stub opener/clipboard
+tools that record what they receive, so no live tailnet is contacted and no real
+approval URL is published. Build the fixture and assert the journey with:
+
+```sh
+just tui pty-machine-tailscale-check          # asserts; builds its own fixture
+CAMP_VHS_ROOT=$FIXTURE just vhs record-color docs/demos/machine-tailscale-check.tape
+```
+
+The pty check is the one that can claim the link is on a single line and that
+the exact URL reached the opener and clipboard; the recording is what a reviewer
+looks at.
 
 The tapes set a fake `HOME`, fixture `PATH`, and non-sensitive terminal
 identity. They write raw output under `out/`; keep raw recordings and PTY
