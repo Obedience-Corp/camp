@@ -82,6 +82,11 @@ type machineHealth struct {
 	Version string
 	// Detail is the failure, kept to one line so it renders in the pane.
 	Detail string
+	// CheckURL is the Tailscale approval URL when the hop failed on check mode.
+	// It is kept beside Detail rather than only inside it because it is the one
+	// thing the operator must act on: a screen can give a bare URL its own line
+	// and a key can open it, neither of which is possible with a sentence.
+	CheckURL string
 }
 
 // machineRow is one row of the fleet list. Machine is nil for the synthetic
@@ -175,6 +180,11 @@ type machineHopState struct {
 	cursor    int
 	loading   bool
 	err       string
+	// checkURL is the Tailscale approval URL when the fetch failed on check
+	// mode. The overlay is narrow enough that err alone was truncated before the
+	// URL ever appeared, so the URL is carried separately and rendered on its
+	// own line.
+	checkURL string
 	// cached records that the list on screen came from the snapshot rather than
 	// a live answer. Worth saying: a pushed entry can be up to 24h old, so a
 	// campaign created since then will not be in it.
@@ -508,8 +518,9 @@ func (m *machineTUIModel) testMachine(target machines.Machine) tea.Cmd {
 		out, err := remote.RunCampCommandReuseOnly(ctx, &target, "--version")
 		if err != nil {
 			return healthMsg{id: target.ID, health: machineHealth{
-				State:  healthUnreachable,
-				Detail: connectionFailureDetailFor(err, &target),
+				State:    healthUnreachable,
+				Detail:   connectionFailureDetailFor(err, &target),
+				CheckURL: remote.TailscaleCheckURL(err),
 			}}
 		}
 		return healthMsg{id: target.ID, health: machineHealth{

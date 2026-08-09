@@ -370,7 +370,11 @@ type machineDiagnoseRow struct {
 	Reset        bool   `json:"reset"`
 	CampVersion  string `json:"camp_version,omitempty"`
 	CampCommit   string `json:"camp_commit,omitempty"`
-	VersionSkew  bool   `json:"version_skew"`
+	// CheckURL is the Tailscale approval URL when that is why the probe could
+	// not reach the machine. Additive and omitempty, so existing --json
+	// consumers are unaffected.
+	CheckURL    string `json:"check_url,omitempty"`
+	VersionSkew bool   `json:"version_skew"`
 	// ReverseCapable reports whether THIS machine accepts inbound ssh, which is
 	// the only half of reverse reachability camp can observe without executing
 	// on the far side. Additive with omitempty on the hint so existing --json
@@ -386,16 +390,19 @@ type machineDiagnoseRow struct {
 // The hop is reuse-only: under ControlMaster=auto this probe would unlink a
 // stale socket and open a fresh master, so diagnose would heal the exact stale
 // state it is reporting and the follow-up --reset would find nothing to clear.
-func probeRemoteCampVersion(ctx context.Context, m *machines.Machine) (versionStr, commit string) {
+// The probe also reports a Tailscale approval URL when that is what stopped it.
+// Without this, diagnose printed a hint telling the operator to "look for a
+// login.tailscale.com check URL" while holding the one it had just been handed.
+func probeRemoteCampVersion(ctx context.Context, m *machines.Machine) (versionStr, commit, checkURL string) {
 	out, err := remote.RunCampCommandReuseOnly(ctx, m, "version --json")
 	if err != nil {
-		return "", ""
+		return "", "", remote.TailscaleCheckURL(err)
 	}
 	var info version.Info
 	if err := json.Unmarshal(out, &info); err != nil {
-		return "", ""
+		return "", "", ""
 	}
-	return info.Version, info.Commit
+	return info.Version, info.Commit, ""
 }
 
 // campVersionSkew reports whether a probed remote version differs from this
@@ -447,7 +454,7 @@ func runMachineDiagnose(cmd *cobra.Command, args []string) error {
 	for i := range targets {
 		m := &targets[i]
 		d := remote.CheckControlMaster(ctx, m)
-		remoteVersion, remoteCommit := probeRemoteCampVersion(ctx, m)
+		remoteVersion, remoteCommit, checkURL := probeRemoteCampVersion(ctx, m)
 		// Diagnose is the only surface that pays for a live probe, so it is the
 		// only one that can warm the cache the hop path reads.
 		writeMachineVersionCache(m.ID, remoteVersion, remoteCommit)
@@ -464,6 +471,7 @@ func runMachineDiagnose(cmd *cobra.Command, args []string) error {
 			State:        string(d.State),
 			CampVersion:  remoteVersion,
 			CampCommit:   remoteCommit,
+			CheckURL:     checkURL,
 			VersionSkew:  campVersionSkew(localInfo, remoteVersion, remoteCommit),
 			// What this machine can honestly say about being reachable FROM
 			// that one. Identical for every row (it is a fact about here, not
@@ -527,6 +535,11 @@ func renderMachineDiagnoseTable(w io.Writer, rows []machineDiagnoseRow) error {
 			fmt.Sprintf("%s  %s", ui.Label("PROBE"), r.Probe),
 		)
 		switch {
+		case r.CheckURL != "":
+			// Naming the cause beats the generic "unavailable": nothing is
+			// broken here, the hop is waiting on a browser approval.
+			lines = append(lines, fmt.Sprintf("%s  %s", ui.Label("CAMP"),
+				ui.Dim("blocked on a Tailscale SSH check")))
 		case r.CampVersion == "":
 			lines = append(lines, fmt.Sprintf("%s  %s", ui.Label("CAMP"),
 				ui.Dim("unavailable (unreachable, or camp missing / too old for 'version --json')")))
@@ -543,7 +556,16 @@ func renderMachineDiagnoseTable(w io.Writer, rows []machineDiagnoseRow) error {
 			}
 			lines = append(lines, fmt.Sprintf("%s  %s %s", ui.Label("REVERSE"), mark, r.ReverseHint))
 		}
-		if r.Hint != "" {
+		// Before the generic auth hint: this is the exact link that hint tells
+		// the operator to go looking for, and it expires, so it leads.
+		if r.CheckURL != "" {
+			lines = append(lines,
+				fmt.Sprintf("%s  %s", ui.Label("APPROVE"), r.CheckURL),
+				fmt.Sprintf("%s  %s", ui.Label(""), ui.Dim("open it, approve, then run this again")))
+		}
+		// The Tailscale hint tells the operator to go looking for a check URL.
+		// Once APPROVE has printed one, repeating that is worse than silence.
+		if r.Hint != "" && r.CheckURL == "" {
 			lines = append(lines, fmt.Sprintf("%s  %s", ui.Label("HINT"), r.Hint))
 		}
 		for _, line := range lines {
