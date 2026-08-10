@@ -116,6 +116,34 @@ func TestNestedRepoRespectsAllowGlobs(t *testing.T) {
 	}
 }
 
+// .gitmodules is hand-edited, and git config hands back whatever spelling it
+// finds there, while git status always reports the normalized one. A declared
+// submodule written "./vendor/lib" must still match the "vendor/lib" status
+// reports, or the guard excludes a submodule the user deliberately declared.
+func TestNormalizeDeclaredPathMatchesStatusSpelling(t *testing.T) {
+	tests := []struct {
+		name  string
+		value string
+		want  string
+	}{
+		{"already normalized", "vendor/lib", "vendor/lib"},
+		{"dot-slash prefix", "./vendor/lib", "vendor/lib"},
+		{"trailing slash", "vendor/lib/", "vendor/lib"},
+		{"doubled separator", "vendor//lib", "vendor/lib"},
+		{"surrounding space", "  vendor/lib  ", "vendor/lib"},
+		{"interior dot segment", "vendor/./lib", "vendor/lib"},
+		{"repository root declares nothing", "./", ""},
+		{"empty declares nothing", "", ""},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if got := normalizeDeclaredPath(tt.value); got != tt.want {
+				t.Errorf("normalizeDeclaredPath(%q) = %q, want %q", tt.value, got, tt.want)
+			}
+		})
+	}
+}
+
 // The shipped default is exclude in both scopes. A regression that left this
 // unset would resolve to the zero Mode, which is neither off nor exclude and
 // would silently change what the guard does, so it is pinned here rather than

@@ -133,6 +133,32 @@ EOF
 		"a declared submodule must not trip the nested-repository guard")
 }
 
+// The same declaration written the way a hand edit often spells it. git config
+// returns "./vendor/lib" verbatim while status reports "vendor/lib", so an
+// exact-string comparison would miss the declaration and exclude a real
+// submodule. This is the end-to-end half of
+// TestNormalizeDeclaredPathMatchesStatusSpelling.
+func TestIntegration_DeclaredSubmoduleWithDotSlashIsNotFlagged(t *testing.T) {
+	tc := GetSharedContainer(t)
+	campPath := setupGuardCampaign(t, tc, "guard-nested-declared-dotslash")
+	nestedRepoAt(t, tc, campPath+"/vendor/lib")
+
+	tc.Shell(t, fmt.Sprintf(`
+		cd %s
+		cat > .gitmodules <<'EOF'
+[submodule "vendor/lib"]
+	path = ./vendor/lib
+	url = git@example.com:demo/lib.git
+EOF
+	`, campPath))
+
+	output, err := tc.RunCampInDir(campPath, "commit", "-m", "declared with a ./ prefix")
+	require.NoError(t, err, "output:\n%s", output)
+
+	assert.NotContains(t, output, "is its own git repository",
+		"a declared submodule must not trip the guard because of its spelling")
+}
+
 // --commit-nested is the user overruling the guard for one commit.
 func TestIntegration_CommitNestedForcesTheGitlinkIn(t *testing.T) {
 	tc := GetSharedContainer(t)

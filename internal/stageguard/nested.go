@@ -5,6 +5,7 @@ import (
 	"context"
 	"os"
 	"os/exec"
+	"path"
 	"path/filepath"
 	"strings"
 
@@ -127,9 +128,30 @@ func declaredSubmodulePaths(ctx context.Context, repoPath string) (map[string]bo
 		if !found {
 			continue
 		}
-		if path := strings.TrimSuffix(filepath.ToSlash(strings.TrimSpace(value)), "/"); path != "" {
-			declared[path] = true
+		if declaredPath := normalizeDeclaredPath(value); declaredPath != "" {
+			declared[declaredPath] = true
 		}
 	}
 	return declared, nil
+}
+
+// normalizeDeclaredPath renders a .gitmodules path in the single spelling git
+// status uses: slash-separated, no "./" prefix, no doubled or trailing
+// separators.
+//
+// This is not cosmetic. git config returns the value verbatim, so a hand-edited
+// ".gitmodules" saying "path = ./projects/foo" yields exactly that, while status
+// reports the same submodule as "projects/foo". Comparing the two spellings
+// directly would miss the declaration and make the guard exclude a submodule the
+// user deliberately declared, which is the one case where staging a gitlink is
+// correct. Normalizing here is cheap; a false exclusion is silent and confusing.
+//
+// A value that cleans to "." names the repository root, which is never a
+// submodule, so it declares nothing.
+func normalizeDeclaredPath(value string) string {
+	cleaned := path.Clean(filepath.ToSlash(strings.TrimSpace(value)))
+	if cleaned == "." {
+		return ""
+	}
+	return cleaned
 }
