@@ -568,18 +568,17 @@ func remoteCampBinary() string {
 }
 
 // RunCampCommand execs the remote machine's OWN camp binary over ssh, through
-// a POSIX login shell (`sh -lc`), and returns stdout. args is everything
-// after the binary name, e.g. `switch 'foo' --print` or `list --json`.
+// the account's configured login shell (`$SHELL -lc`), and returns stdout.
+// args is everything after the binary name, e.g. `switch 'foo' --print` or
+// `list --json`.
 //
 // A bare non-interactive `ssh host 'camp ...'` runs under ssh's own
 // non-login shell, which never sources a login profile (~/.profile,
 // ~/.bash_profile, etc.) — so a camp installed via a PATH addition that only
 // a login shell picks up (~/.local/bin, asdf, a shell-managed version
-// manager) was invisible to it. `sh -lc` forces the remote's POSIX shell to
-// run as a login shell first, then execute the command, so it sees the same
-// PATH an interactive ssh session would. sh is used rather than assuming
-// bash/zsh because POSIX guarantees /bin/sh exists; the user's actual login
-// shell is whatever their own account is configured to run.
+// manager) was invisible to it. Re-entering `$SHELL` in login mode sources the
+// profile for the shell the account actually uses instead of incorrectly
+// assuming its PATH is configured for /bin/sh.
 func RunCampCommand(ctx context.Context, m *machines.Machine, args string) ([]byte, error) {
 	return runCampCommand(ctx, m, args, Opts(m))
 }
@@ -604,14 +603,15 @@ func runCampCommand(ctx context.Context, m *machines.Machine, args string, opts 
 	return out, nil
 }
 
-// LoginShellCommand wraps script in a POSIX login shell (`sh -lc '<script>'`)
-// for execution as ssh's remote command. Every remote invocation camp makes
-// goes through this so it sees the same PATH an interactive ssh session would
-// (see RunCampCommand for why the login shell matters), and so there is one
-// place that decides the shell and the quoting rather than one per call site.
-// Pure function of its input: no ssh, no machine lookup, unit-testable.
+// LoginShellCommand wraps script in the remote account's configured login shell
+// (`exec "$SHELL" -lc '<script>'`) for execution as ssh's remote command.
+// OpenSSH sets SHELL from the account record before invoking a remote command,
+// so this selects zsh/bash/fish according to the account rather than according
+// to camp's assumptions. Every remote invocation goes through this function so
+// shell selection and quoting have one owner. Pure function of its input: no
+// ssh, no machine lookup, unit-testable.
 func LoginShellCommand(script string) string {
-	return "sh -lc " + ShellQuote(script)
+	return `exec "$SHELL" -lc ` + ShellQuote(script)
 }
 
 // campRemoteCommandLine builds the single token handed to ssh as the remote
@@ -636,7 +636,7 @@ func campNotFoundHint(err error, m *machines.Machine, binary string) error {
 		return err
 	}
 	return camperrors.Wrapf(err,
-		"remote camp not found on %s (tried %q via sh -lc, i.e. the machine's login-shell PATH); "+
+		"remote camp not found on %s (tried %q via the account's login shell, i.e. its login-shell PATH); "+
 			"if camp lives outside that PATH, set %s to its exact path on that machine",
 		m.ID, binary, RemoteCampPathEnv)
 }
