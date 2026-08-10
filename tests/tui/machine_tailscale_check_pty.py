@@ -4,10 +4,12 @@
 The VHS tape shows a reviewer what the screen looks like. This asserts what a
 recording cannot: that the approval URL is intact on ONE line (a link split
 across a wrap is one nobody can copy), that it survives the hop overlay's own
-clamp, and that o/c hand the exact URL to the platform opener and clipboard.
+clamp, and that o/c hand the exact URL to the platform opener and the local
+terminal clipboard, including when camp is running across SSH.
 
-It drives the same fixture the tape does — stub ssh, stub opener, stub
-clipboard — so nothing real is contacted and no live approval URL is produced.
+It drives the same fixture the tape does — stub ssh and opener, with a fake
+remote-session environment — so nothing real is contacted and no live approval
+URL is produced.
 
 Writes the evidence bundle files validate-evidence.py consumes:
 
@@ -17,6 +19,7 @@ Writes the evidence bundle files validate-evidence.py consumes:
 
 Usage: machine_tailscale_check_pty.py <fixture-dir> <evidence-dir>
 """
+import base64
 import fcntl
 import importlib.metadata
 import json
@@ -53,6 +56,7 @@ class Session:
         self.stream = pyte.ByteStream(self.screen)
         self.snapshots = []
         self.transcript = []
+        self.raw = bytearray()
         self.pid, self.fd = pty.fork()
         if self.pid == 0:
             os.chdir(fixture)
@@ -66,6 +70,11 @@ class Session:
                 "NO_COLOR": "1",
                 "CAMP_MACHINES_PATH": os.path.join(fixture, "machines.yaml"),
                 "CAMP_VHS_HANDOFF_LOG": os.path.join(fixture, "handoff.log"),
+                # Force the production remote-session path. A remote pbcopy or
+                # xclip targets the wrong computer; OSC 52 crosses the PTY to
+                # the operator's terminal instead.
+                "SSH_CONNECTION": "192.0.2.10 50000 192.0.2.20 22",
+                "SSH_TTY": "/dev/pts/camp-fixture",
             })
         # Both the ioctl and LINES/COLUMNS: a small default clips content and
         # sends you chasing a layout bug that does not exist.
@@ -84,6 +93,7 @@ class Session:
                 return
             if not data:
                 return
+            self.raw.extend(data)
             self.stream.feed(data)
 
     def press(self, keys, budget=KEY_BUDGET):
@@ -130,18 +140,33 @@ def whole_line_with(display, needle):
     return any(needle in line for line in display)
 
 
-def expected_handoff_tools():
-    """The opener and clipboard names camp calls on THIS platform.
+def expected_opener():
+    """The opener name camp calls on THIS platform.
 
-    Mirrors ui.browserOpenCommand and ui.WriteClipboard, which both switch on
-    runtime.GOOS: darwin gets open/pbcopy, everything else xdg-open/xclip. The
-    fixture installs all four names, so asserting the pair for the host is an
-    exact check — a camp that called the wrong tool for its platform would
-    still populate the log, and a looser "either name" assertion would pass it.
+    Mirrors ui.browserOpenCommand: darwin gets open, everything else xdg-open.
+    The fixture installs both names, so asserting the host-specific one remains
+    an exact check.
     """
     if sys.platform == "darwin":
-        return "open", "pbcopy"
-    return "xdg-open", "xclip"
+        return "open"
+    return "xdg-open"
+
+
+def osc52_clipboard_values(raw):
+    """Decode plain OSC 52 system-clipboard writes from a PTY byte stream."""
+    marker = b"\x1b]52;c;"
+    values = []
+    start = 0
+    while True:
+        begin = raw.find(marker, start)
+        if begin < 0:
+            return values
+        begin += len(marker)
+        end = raw.find(b"\x07", begin)
+        if end < 0:
+            return values
+        values.append(base64.b64decode(raw[begin:end]).decode("utf-8"))
+        start = end + 1
 
 
 def main():
@@ -175,6 +200,9 @@ def main():
     copied = s.snapshot("link-copied")
     if not whole_line_with(copied, "copied the approval link"):
         failures.append("c did not report copying the link")
+    clipboard_values = osc52_clipboard_values(bytes(s.raw))
+    if clipboard_values != [CHECK_URL]:
+        failures.append("OSC 52 did not copy the exact URL: %r" % clipboard_values)
 
     snapshots.extend(s.snapshots)
     transcript.extend(s.transcript)
@@ -206,11 +234,11 @@ def main():
     transcript.append("===== handoff.log =====")
     transcript.extend(handed)
 
-    opener, clipboard = expected_handoff_tools()
+    opener = expected_opener()
     if ("%s %s" % (opener, CHECK_URL)) not in handed:
         failures.append("%s was not handed the exact URL: %r" % (opener, handed))
-    if ("%s %s" % (clipboard, CHECK_URL)) not in handed:
-        failures.append("%s was not handed the exact URL: %r" % (clipboard, handed))
+    if any(line.startswith(("pbcopy ", "xclip ")) for line in handed):
+        failures.append("remote copy called a host clipboard tool: %r" % handed)
 
     # The shapes here are the evidence-bundle contract, not this script's
     # preference: validate-evidence.py requires an object with renderer,
@@ -245,7 +273,7 @@ def main():
         print("FAIL: %s" % failure, file=sys.stderr)
     if failures:
         return 1
-    print("machine-tailscale-check: %d snapshots, link intact and handed off" % len(snapshots))
+    print("machine-tailscale-check: %d snapshots, link intact and copied over OSC 52" % len(snapshots))
     return 0
 
 
