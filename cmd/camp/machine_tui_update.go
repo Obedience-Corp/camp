@@ -11,6 +11,7 @@ import (
 	camperrors "github.com/Obedience-Corp/camp/internal/errors"
 	"github.com/Obedience-Corp/camp/internal/machines"
 	"github.com/Obedience-Corp/camp/internal/remote"
+	"github.com/Obedience-Corp/camp/internal/ui"
 )
 
 func (m *machineTUIModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
@@ -170,6 +171,10 @@ func (m *machineTUIModel) updateBrowse(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		return m, m.openEditForm()
 	case "d":
 		return m, m.openDeleteConfirm()
+	case "o":
+		return m, m.openCheckURL(m.selectedCheckURL())
+	case "c":
+		return m, m.copyCheckURL(m.selectedCheckURL())
 	case "r":
 		m.setStatus("re-checking connection reuse")
 		return m, m.probeSockets()
@@ -236,6 +241,10 @@ func (m *machineTUIModel) updateHop(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			m.hop.cursor = (m.hop.cursor + 1) % n
 		}
 		return m, nil
+	case "o":
+		return m, m.openCheckURL(m.hop.checkURL)
+	case "c":
+		return m, m.copyCheckURL(m.hop.checkURL)
 	case "r":
 		if m.hop.loading {
 			return m, nil
@@ -243,6 +252,7 @@ func (m *machineTUIModel) updateHop(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		m.hop.gen++
 		m.hop.loading = true
 		m.hop.err = ""
+		m.hop.checkURL = ""
 		target, ok := m.machineByID(m.hop.machineID)
 		if !ok {
 			m.hop.loading = false
@@ -272,6 +282,7 @@ func (m *machineTUIModel) applyHopCampaigns(msg hopCampaignsMsg) (tea.Model, tea
 	m.hop.loading = false
 	if msg.err != nil {
 		m.hop.err = connectionFailureDetail(msg.err)
+		m.hop.checkURL = remote.TailscaleCheckURL(msg.err)
 		// The error screen replaces the list, so the list must actually be gone:
 		// keeping the previous campaigns here would let enter act on entries the
 		// operator can no longer see, hopping from a failure screen.
@@ -281,6 +292,7 @@ func (m *machineTUIModel) applyHopCampaigns(msg hopCampaignsMsg) (tea.Model, tea
 		return m, nil
 	}
 	m.hop.err = ""
+	m.hop.checkURL = ""
 	m.hop.campaigns = msg.campaigns
 	m.hop.cached = false
 	m.hop.cursor = 0
@@ -308,6 +320,49 @@ func (m *machineTUIModel) testSelected() tea.Cmd {
 	m.health[row.Machine.ID] = machineHealth{State: healthTesting}
 	m.setStatus("testing " + row.Machine.ID + "...")
 	return tea.Batch(m.spin.Tick, m.testMachine(*row.Machine))
+}
+
+// selectedCheckURL is the Tailscale approval URL for the highlighted machine,
+// or "" when its last test did not end in check mode.
+func (m *machineTUIModel) selectedCheckURL() string {
+	row := m.selectedRow()
+	if row.Local {
+		return ""
+	}
+	return m.health[row.Machine.ID].CheckURL
+}
+
+// openCheckURL hands the approval URL to the operator's browser. Check mode is
+// the one hop failure camp cannot resolve itself and the operator can, in one
+// click — so the screen that reports it also completes it, rather than printing
+// a URL and leaving them to select it out of a wrapped terminal line.
+func (m *machineTUIModel) openCheckURL(url string) tea.Cmd {
+	if url == "" {
+		m.setAdvice("nothing to open here; o opens a Tailscale approval link when one is waiting")
+		return nil
+	}
+	if err := ui.OpenInBrowser(url); err != nil {
+		m.setError(camperrors.Wrap(err, "could not open your browser; copy the link with c"))
+		return nil
+	}
+	m.setAdvice("opened the approval link; approve it, then press t (or r) to retry")
+	return nil
+}
+
+// copyCheckURL is the fallback for a headless or remote terminal, where there
+// is no browser to open but the operator can still paste the link somewhere
+// that has one.
+func (m *machineTUIModel) copyCheckURL(url string) tea.Cmd {
+	if url == "" {
+		m.setAdvice("nothing to copy here; c copies a Tailscale approval link when one is waiting")
+		return nil
+	}
+	if err := ui.WriteClipboard(url); err != nil {
+		m.setError(camperrors.Wrap(err, "could not copy the link"))
+		return nil
+	}
+	m.setAdvice("copied the approval link to your clipboard")
+	return nil
 }
 
 func (m *machineTUIModel) moveCursor(delta int) {

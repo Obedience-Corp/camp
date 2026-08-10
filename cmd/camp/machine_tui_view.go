@@ -256,26 +256,20 @@ func (m *machineTUIModel) healthSection(id string, width int) []string {
 	case healthTesting:
 		return []string{style.Render(m.spin.View() + " Testing the connection...")}
 	case healthUnreachable:
-		tailscaleCheck := strings.Contains(health.Detail, "login.tailscale.com")
-		headline := "Could not reach it"
-		if tailscaleCheck {
+		detailWidth := max(width-4, 20)
+		if health.CheckURL != "" {
 			// Check-mode is auth policy, not network failure — do not frame it
 			// as unreachable or operators chase connectivity.
-			headline = "Needs Tailscale SSH check"
+			return append([]string{style.Render(glyph + " Needs Tailscale SSH check")},
+				checkURLLines(health.CheckURL, max(width-machinePaneTextInset, 20),
+					"Tailscale wants a one-time browser approval.",
+					"o open it · c copy it · t try again")...)
 		}
-		lines := []string{style.Render(glyph + " " + headline)}
-		// Width-aware detail: wrap long check URLs so the actionable token
-		// stays visible in a narrow pane instead of clipping off-screen.
-		detailWidth := max(width-4, 20)
-		for _, line := range healthDetailLines(health.Detail, detailWidth, tailscaleCheck) {
+		lines := []string{style.Render(glyph + " Could not reach it")}
+		for _, line := range healthDetailLines(health.Detail, detailWidth, false) {
 			lines = append(lines, machineMuted.Render("  "+line))
 		}
-		if tailscaleCheck {
-			lines = append(lines, machineMuted.Render("  Approve in the browser, then press t to try again."))
-		} else {
-			lines = append(lines, machineMuted.Render("  e edits it · t tries again"))
-		}
-		return lines
+		return append(lines, machineMuted.Render("  e edits it · t tries again"))
 	case healthUnsupported:
 		return []string{
 			style.Render(glyph + " Cannot be used yet"),
@@ -288,6 +282,65 @@ func (m *machineTUIModel) healthSection(id string, width int) []string {
 			machineMuted.Render("  t checks whether camp can reach it."),
 		}
 	}
+}
+
+// checkURLLines renders a Tailscale approval prompt: why, the bare URL on a
+// line of its own, and the keys that act on it. lineWidth is the columns a
+// finished line gets before the frame clamps it, indent included.
+//
+// The URL gets its own line because that is the only way it survives. Inline in
+// a sentence it was wrapped mid-token in the detail pane and truncated away
+// entirely in the hop overlay, so the one thing the operator had to act on was
+// the one thing they could not read or copy.
+//
+// It also gives up its indent rather than wrap. Two columns decide whether a
+// check URL fits on one line in an 80-column terminal, and one line is what
+// makes it selectable with a double-click; alignment is worth less than that.
+func checkURLLines(url string, lineWidth int, reason, keys string) []string {
+	textWidth := max(lineWidth-2, 20)
+
+	lines := make([]string, 0, 5)
+	for _, line := range wrapDisplayWidth(reason, textWidth) {
+		lines = append(lines, machineMuted.Render("  "+line))
+	}
+	if lipgloss.Width(url) <= lineWidth {
+		indent := "  "
+		if lipgloss.Width(url) > textWidth {
+			indent = ""
+		}
+		lines = append(lines, machineSelected.Render(indent+url))
+	} else {
+		for _, line := range hardWrapDisplayWidth(url, lineWidth) {
+			lines = append(lines, machineSelected.Render(line))
+		}
+	}
+	return append(lines, machineMuted.Render("  "+keys))
+}
+
+// wrapDisplayWidth breaks text onto lines of at most width columns, at spaces.
+// A word longer than width is left alone rather than split: the callers wrap
+// prose here, and prose has no token worth cutting mid-word.
+func wrapDisplayWidth(text string, width int) []string {
+	if width < 8 {
+		width = 8
+	}
+	var lines []string
+	current := ""
+	for _, word := range strings.Fields(text) {
+		switch {
+		case current == "":
+			current = word
+		case lipgloss.Width(current)+1+lipgloss.Width(word) <= width:
+			current += " " + word
+		default:
+			lines = append(lines, current)
+			current = word
+		}
+	}
+	if current != "" {
+		lines = append(lines, current)
+	}
+	return lines
 }
 
 // healthDetailLines formats a connection-failure detail for the detail pane.
@@ -308,22 +361,38 @@ func healthDetailLines(detail string, maxWidth int, keepFullURL bool) []string {
 	if !keepFullURL {
 		return []string{ui.Truncate(detail, maxWidth)}
 	}
+	return hardWrapDisplayWidth(detail, maxWidth)
+}
+
+// hardWrapDisplayWidth breaks text into lines of at most maxWidth columns,
+// splitting mid-token when it has to. Unlike wrapDisplayWidth it never lets a
+// line overflow, because its job is the case where the token IS the content: a
+// URL too long for the pane must still be readable in full, and an overflowing
+// line is clipped by the frame rather than shown.
+//
+// maxWidth is a terminal-column budget (lipgloss/display width), not raw bytes,
+// so multi-byte runes (e.g. the em dash in Tailscale guidance) are not split
+// into invalid UTF-8.
+func hardWrapDisplayWidth(text string, maxWidth int) []string {
+	if maxWidth < 8 {
+		maxWidth = 8
+	}
 	// Prefer breaking after path separators so "https://…/a/…" remains readable.
 	var lines []string
-	for lipgloss.Width(detail) > maxWidth {
-		cut := cutDisplayWidth(detail, maxWidth)
+	for lipgloss.Width(text) > maxWidth {
+		cut := cutDisplayWidth(text, maxWidth)
 		if cut <= 0 {
-			_, size := utf8.DecodeRuneInString(detail)
+			_, size := utf8.DecodeRuneInString(text)
 			cut = size
-		} else if soft := strings.LastIndexAny(detail[:cut], "/ ?&="); soft > cut/3 {
+		} else if soft := strings.LastIndexAny(text[:cut], "/ ?&="); soft > cut/3 {
 			// soft is a byte index of a break char; advance past it.
 			cut = soft + 1
 		}
-		lines = append(lines, detail[:cut])
-		detail = detail[cut:]
+		lines = append(lines, text[:cut])
+		text = text[cut:]
 	}
-	if detail != "" {
-		lines = append(lines, detail)
+	if text != "" {
+		lines = append(lines, text)
 	}
 	return lines
 }
@@ -431,10 +500,32 @@ func (m *machineTUIModel) statusLine() string {
 // equal weight. The action that answers "does this work" comes first, because
 // on a screen full of untested machines it is the one worth pressing.
 func (m *machineTUIModel) footer(width int) string {
+	// o/c are listed only while an approval link is actually waiting. They act
+	// on the selected machine's last test, so advertising them permanently would
+	// promise something most rows cannot do.
+	if m.selectedCheckURL() != "" {
+		full := "o open the approval link · c copy it  ·  t retry  ·  enter hop · e edit · a add · ? help · q quit"
+		mid := "o open link · c copy · t retry · enter hop · e edit · ? help · q quit"
+		short := "o open link · c copy · t retry · q quit"
+		return machineHelpStyle.Render(ui.CollapseHelp(width, full, mid, short, "o: open link"))
+	}
 	full := "enter hop  ·  t test connection  ·  e edit · d remove  ·  a add · s scan tailnet  ·  ? help · q quit"
 	mid := "enter hop · t test · e edit · d remove · a add · s scan · ? help · q quit"
 	short := "enter hop · t test · a add · ? help · q quit"
 	return machineHelpStyle.Render(ui.CollapseHelp(width, full, mid, short, "q: quit"))
+}
+
+// overlayInnerWidth is the width of the overlay box, and overlayTextWidth the
+// columns a body line actually gets inside it. Bodies that wrap their own text
+// must measure with the same numbers the frame clamps with, or they wrap to a
+// width the frame then truncates again.
+func (m *machineTUIModel) overlayInnerWidth() int {
+	boxWidth := min(max(m.layout().width-6, 30), 76)
+	return max(boxWidth-6, 24)
+}
+
+func (m *machineTUIModel) overlayTextWidth() int {
+	return max(m.overlayInnerWidth()-machineOverlayTextInset, 1)
 }
 
 func (m *machineTUIModel) overlayView() string {
@@ -463,6 +554,7 @@ func (m *machineTUIModel) overlayView() string {
 			machinePrimary.Render("  s  scan your Tailscale network and pick a device"),
 			machinePrimary.Render("  e  edit      d  remove      j/k  move"),
 			machinePrimary.Render("  r  re-check connection reuse    R  clear a stuck one"),
+			machinePrimary.Render("  o  open a waiting Tailscale approval link   c  copy it"),
 			"",
 			machineTitleStyle.Render("Sign-in methods"),
 			machineMuted.Render("  Tailscale SSH   Tailscale handles the keys for you."),
@@ -488,10 +580,9 @@ func (m *machineTUIModel) overlayView() string {
 		body = m.hopBody()
 	}
 
-	boxWidth := min(max(lay.width-6, 30), 76)
-	inner := max(boxWidth-6, 24)
+	inner := m.overlayInnerWidth()
 	box := machineOverlayStyle.Width(inner).
-		Render(strings.Join(ui.ClampLines(body, max(inner-machineOverlayTextInset, 1)), "\n"))
+		Render(strings.Join(ui.ClampLines(body, m.overlayTextWidth()), "\n"))
 	canvas := lipgloss.Place(lay.width, lay.height, lipgloss.Center, lipgloss.Center, box,
 		lipgloss.WithWhitespaceBackground(machineTUIPal.BgOverlay))
 	return ui.FitFullscreenView(canvas, lay.height)
@@ -516,10 +607,23 @@ func (m *machineTUIModel) hopBody() []string {
 
 	body := []string{title}
 	switch {
+	case m.hop.checkURL != "":
+		// Check mode is not a hop failure the operator debugs, it is one they
+		// finish. Lead with the link and the key that opens it; the diagnose
+		// pointer below is for the failures that need investigating, not this one.
+		body = append(body, "", machineErrorStyle.Render("✗ Needs Tailscale SSH check"))
+		body = append(body, checkURLLines(m.hop.checkURL, m.overlayTextWidth(),
+			"Tailscale wants a one-time browser approval before "+m.hop.machineID+" will let camp in.",
+			"o open it · c copy it · r retry · esc cancel")...)
+		return body
 	case m.hop.err != "":
+		// Wrapped, not truncated: the overlay is ~66 columns of text and ssh's
+		// complaint is routinely longer, so a single line ended mid-sentence.
+		body = append(body, "")
+		for _, line := range wrapDisplayWidth("✗ "+m.hop.err, m.overlayTextWidth()) {
+			body = append(body, machineErrorStyle.Render(line))
+		}
 		body = append(body,
-			"",
-			machineErrorStyle.Render("✗ "+m.hop.err),
 			"",
 			machineMuted.Render("'camp machine diagnose "+m.hop.machineID+"' reports auth, probe, and socket state."),
 			"",
