@@ -4,17 +4,29 @@
 package integration
 
 import (
+	"bytes"
 	"context"
+	"errors"
 	"fmt"
 	"io"
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/stretchr/testify/require"
 )
 
-// exec runs a command in the container, classifying transport faults.
+// execTimeout bounds a single container exec. The longest legitimate command
+// in the suite is a `sleep 3` fixture plus ordinary git/camp invocations, so
+// two minutes is >10x margin. Without a bound, an exec against a wedged
+// daemon parks forever: the 2026-08-05 goroutine dump showed execs sleeping
+// 14+ minutes while every other test starved behind them, until go test's own
+// timeout panicked with no failing assertion anywhere in the output.
+const execTimeout = 2 * time.Minute
+
+// exec runs a command in the container, bounded by execTimeout, classifying
+// transport faults and reporting them to the run-level infrastructure latch.
 //
 // Every container command in this file goes through here rather than calling
 // container.Exec directly, so a Docker transport failure is labelled once,
@@ -31,15 +43,68 @@ import (
 // at once. A harness that reports its own infrastructure as a failure of
 // whatever test happened to be running costs more time than the flake does.
 //
-// This is the same distinction the pool's Reset latch already draws
-// (failInfrastructure in main_test.go); that one is scoped to pool checkout,
-// and every other exec in the suite could still produce the misleading form.
+// Labelling alone proved insufficient: the 2026-08-10 collapse rendered six
+// infra-labelled failures as six broken tests because nothing downstream
+// could tell them apart, and the run kept dispatching tests into a dead
+// daemon. Infra faults now also record their pool member in runInfra (the
+// same distinct-member latch Reset checkouts use), so a dying daemon stops
+// the run early with one banner instead of a trickle of plausible failures.
 func (tc *TestContainer) exec(ctx context.Context, cmd []string) (int, io.Reader, error) {
-	exitCode, reader, err := tc.container.Exec(ctx, cmd)
-	if err != nil {
-		return exitCode, reader, classifyExecError(err)
+	return tc.execWith(ctx, cmd, true)
+}
+
+// execUnrecorded is exec without the latch report. Reset uses it: Reset has
+// its own retry-then-record protocol where a single transient fault is
+// absorbed by the retry, and recording that first attempt here would strip
+// the forgiveness the retry exists to provide.
+func (tc *TestContainer) execUnrecorded(ctx context.Context, cmd []string) (int, io.Reader, error) {
+	return tc.execWith(ctx, cmd, false)
+}
+
+func (tc *TestContainer) execWith(ctx context.Context, cmd []string, record bool) (int, io.Reader, error) {
+	execCtx, cancel := context.WithTimeout(ctx, execTimeout)
+	defer cancel()
+
+	start := time.Now()
+	exitCode, reader, err := tc.container.Exec(execCtx, cmd)
+	var buf []byte
+	if err == nil && reader != nil {
+		// Drain inside the deadline. The reader is a live hijacked connection
+		// whose lifetime is bound to execCtx: handing it to the caller after
+		// cancel() would truncate output, and an unread stream from a wedged
+		// daemon would block the caller with no bound at all. Exec has already
+		// waited for the command to exit, so this is a buffered read, not a
+		// wait.
+		buf, err = io.ReadAll(reader)
 	}
-	return exitCode, reader, nil
+	observeExecDuration(time.Since(start))
+
+	if err != nil {
+		err = classifyExecOutcome(err, execCtx.Err() != nil && ctx.Err() == nil)
+		var ie *infraError
+		if record && errors.As(err, &ie) {
+			runInfra.recordMember(tc.container.GetContainerID(), ie.Error())
+		}
+	}
+	return exitCode, bytes.NewReader(buf), err
+}
+
+// infraError marks a fault of the Docker transport rather than of the code
+// under test. It is a type, not a string prefix, so exec can route these into
+// the run-level latch without re-parsing its own messages.
+type infraError struct {
+	msg   string
+	cause error
+}
+
+func (e *infraError) Error() string { return e.msg }
+func (e *infraError) Unwrap() error { return e.cause }
+
+func newInfraError(cause error, format string, args ...any) *infraError {
+	return &infraError{
+		msg:   "INFRASTRUCTURE FAILURE (not a test failure): " + fmt.Sprintf(format, args...),
+		cause: cause,
+	}
 }
 
 // execTransportSignatures are the Docker-side failures that mean the daemon or
@@ -54,6 +119,25 @@ var execTransportSignatures = []string{
 	"Cannot connect to the Docker daemon",
 }
 
+// classifyExecOutcome maps the raw error from a bounded exec to its final
+// form. execTimedOut is true when the per-exec deadline fired while the
+// test's own context was still live — that is the wedged-daemon case, which
+// carries no transport signature of its own.
+func classifyExecOutcome(err error, execTimedOut bool) error {
+	if err == nil {
+		return nil
+	}
+	if execTimedOut {
+		return newInfraError(err,
+			"container exec did not complete within %s: %v"+
+				"\n\nThe Docker daemon stopped servicing this exec (wedged or "+
+				"overloaded). Common cause: several suites or gates running at "+
+				"once. Re-run on an idle machine, or lower CAMP_TEST_POOL_SIZE",
+			execTimeout, err)
+	}
+	return classifyExecError(err)
+}
+
 // classifyExecError labels a transport fault so it cannot be read as a test
 // failure. Anything else is returned unchanged.
 func classifyExecError(err error) error {
@@ -63,8 +147,8 @@ func classifyExecError(err error) error {
 	msg := err.Error()
 	for _, sig := range execTransportSignatures {
 		if strings.Contains(msg, sig) {
-			return fmt.Errorf(
-				"INFRASTRUCTURE FAILURE (not a test failure): container exec did not complete: %w"+
+			return newInfraError(err,
+				"container exec did not complete: %v"+
 					"\n\nThe Docker daemon dropped the exec stream. Common cause: several "+
 					"suites or gates running at once. Re-run on an idle machine, or lower "+
 					"CAMP_TEST_POOL_SIZE", err)
@@ -106,7 +190,11 @@ func (tc *TestContainer) Reset() error {
 	// Remove all test artifacts and recreate clean directories. Include both
 	// current and legacy config homes so registry/global settings never leak
 	// between tests that share a pooled container.
-	exitCode, _, err := tc.exec(tc.ctx, []string{
+	//
+	// execUnrecorded, not exec: GetSharedContainer retries a failed Reset and
+	// records the member itself only on double failure. Letting exec report
+	// the first attempt would arm members for blips the retry absorbs.
+	exitCode, _, err := tc.execUnrecorded(tc.ctx, []string{
 		"sh", "-c",
 		// Kill detached deferred-commit workers first. Camp spawns them with
 		// setsid so they outlive the command that started them, which is the
