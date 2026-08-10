@@ -17,16 +17,23 @@ const (
 	// ModeAuto declares an artifact root, excludes the file, and reports.
 	// Valid for the large-file guard only.
 	ModeAuto Mode = "auto"
+	// ModeExclude keeps the path out of the index and reports, declaring
+	// nothing. Valid for the nested-repository guard only, where there is
+	// nothing to declare: the nested repository already owns its own history.
+	ModeExclude Mode = "exclude"
 	// ModeBlock refuses the operation and stages nothing.
 	ModeBlock Mode = "block"
 	// ModeOff disables detection entirely.
 	ModeOff Mode = "off"
 )
 
-// Valid reports whether m is a mode this package recognizes.
+// Valid reports whether m is a mode this package recognizes. Each guard
+// accepts its own subset and validates that itself, because a mode that is
+// merely spelled correctly but meaningless for a given guard would otherwise
+// resolve to something the user did not ask for.
 func (m Mode) Valid() bool {
 	switch m {
-	case ModeAuto, ModeBlock, ModeOff:
+	case ModeAuto, ModeExclude, ModeBlock, ModeOff:
 		return true
 	}
 	return false
@@ -48,6 +55,12 @@ type GuardLimits struct {
 	LargeFiles Mode
 	// Bulk is the commit.guards.bulk mode: block or off, never auto.
 	Bulk Mode
+	// NestedRepos is the commit.guards.nested_repos mode: exclude, block, or
+	// off. It never blocks by default, because excluding costs the user
+	// nothing: the nested repository keeps its own history and remote either
+	// way, so there is no content to lose and therefore no decision to hand
+	// back.
+	NestedRepos Mode
 	// ScopeProject is true when the repository is a project rather than the
 	// campaign root. It selects which remedy the CLI offers, since camp never
 	// auto-declares an artifact root inside a project.
@@ -71,6 +84,20 @@ const (
 	// It is reported every time and excluded never: splitting one file's
 	// history between git and an artifact root is never correct.
 	TrackedGrowth ViolationKind = "tracked_growth"
+	// NestedRepo is an untracked directory that is itself a git repository and
+	// is not declared in .gitmodules. Staging it records a gitlink (mode
+	// 160000) with no url behind it, which git treats as fatal rather than
+	// skippable: every later `git submodule` call in that repository, and in
+	// every clone of it, exits non-zero. The nested repository's contents do
+	// not reach the remote either, so the commit captures nothing while
+	// breaking the repository for everyone who has it.
+	//
+	// This is the one guard where camp can know the right answer. A large file
+	// poses a question camp cannot settle (do collaborators need the bytes),
+	// but an undeclared gitlink has no legitimate reading: the user either
+	// wanted a submodule, which needs a url, or wanted the directory left
+	// alone.
+	NestedRepo ViolationKind = "nested_repo"
 )
 
 // GuardViolation is one finding. Prefix, Count, and TotalBytes are set for
@@ -88,6 +115,10 @@ type GuardViolation struct {
 	// TotalBytes is the size of a Bulk violation's files. It is reported for
 	// display and is never itself a trigger.
 	TotalBytes int64
+	// Head is the commit a NestedRepo violation's repository points at, short
+	// form, or "" when it has no commits yet. It is reported so the user can
+	// tell which checkout they are looking at without leaving the message.
+	Head string
 }
 
 // ReportOnly reports whether a violation must never cause exclusion. Tracked
@@ -104,6 +135,8 @@ func (v GuardViolation) Blocks(limits GuardLimits) bool {
 		return limits.Bulk == ModeBlock
 	case OverThreshold:
 		return limits.LargeFiles == ModeBlock
+	case NestedRepo:
+		return limits.NestedRepos == ModeBlock
 	default:
 		return false
 	}

@@ -12,8 +12,14 @@ import (
 )
 
 // Candidate is one path a stage-everything operation would touch, with the
-// size lstat reports for it. Directories never appear: -uall expands untracked
-// directories into their individual files.
+// size lstat reports for it. Directories never appear here: -uall expands an
+// untracked directory into its individual files.
+//
+// The exception is the reason the nested-repository guard exists. Git does not
+// expand an untracked directory that is itself a git repository; it reports the
+// directory alone, because staging it would record a gitlink rather than its
+// contents. Those entries are collected separately by enumerate, since they are
+// not files and have no size to measure.
 type Candidate struct {
 	// Path is repo-relative and slash-separated.
 	Path string
@@ -33,28 +39,40 @@ type Candidate struct {
 //
 // Enumeration is stat-only. Nothing is hashed, opened, or read.
 func Enumerate(ctx context.Context, repoPath string) ([]Candidate, error) {
+	candidates, _, err := enumerate(ctx, repoPath)
+	return candidates, err
+}
+
+// enumerate returns the file candidates and, separately, the untracked
+// directories git declined to expand. Both come from one status call: running
+// it twice would double the cost of every guarded stage to learn something the
+// first call already reported.
+func enumerate(ctx context.Context, repoPath string) ([]Candidate, []string, error) {
 	if ctx.Err() != nil {
-		return nil, ctx.Err()
+		return nil, nil, ctx.Err()
 	}
 
 	out, err := statusPorcelain(ctx, repoPath)
 	if err != nil {
-		return nil, err
+		return nil, nil, err
 	}
 
 	entries := parseStatusPorcelainZ(out)
 	candidates := make([]Candidate, 0, len(entries))
+	var dirs []string
 	for _, entry := range entries {
 		if ctx.Err() != nil {
-			return nil, ctx.Err()
+			return nil, nil, ctx.Err()
 		}
-		candidate, ok := classify(repoPath, entry)
-		if !ok {
-			continue
+		candidate, kind := classify(repoPath, entry)
+		switch kind {
+		case entryFile:
+			candidates = append(candidates, candidate)
+		case entryUntrackedDir:
+			dirs = append(dirs, candidate.Path)
 		}
-		candidates = append(candidates, candidate)
 	}
-	return candidates, nil
+	return candidates, dirs, nil
 }
 
 // statusPorcelain runs git status in repoPath. Ignored files are absent by
@@ -117,12 +135,26 @@ func parseStatusPorcelainZ(out []byte) []statusEntry {
 	return entries
 }
 
-// classify turns a status entry into a candidate, or reports that it is not
-// one.
-func classify(repoPath string, entry statusEntry) (Candidate, bool) {
+// entryKind sorts a status entry into what the guard does with it.
+type entryKind int
+
+const (
+	// entryIgnored is a status entry no stage-everything operation would add,
+	// or one that vanished before it could be measured.
+	entryIgnored entryKind = iota
+	// entryFile is an ordinary path with a size the per-file guards measure.
+	entryFile
+	// entryUntrackedDir is an untracked directory git did not expand. Under
+	// -uall that means git treats it as an opaque unit, which in practice means
+	// an embedded repository.
+	entryUntrackedDir
+)
+
+// classify turns a status entry into a candidate and says which kind it is.
+func classify(repoPath string, entry statusEntry) (Candidate, entryKind) {
 	untracked, ok := classifyEntry(entry)
 	if !ok {
-		return Candidate{}, false
+		return Candidate{}, entryIgnored
 	}
 	return statCandidate(repoPath, entry.Path, untracked)
 }
@@ -163,15 +195,33 @@ func classifyEntry(entry statusEntry) (untracked, ok bool) {
 // statCandidate lstats a repo-relative path. A path that vanished between the
 // status call and the stat is dropped rather than erroring: it cannot be
 // staged either, so it is not the guard's problem.
-func statCandidate(repoPath, rel string, untracked bool) (Candidate, bool) {
+//
+// Git reports an unexpanded directory with a trailing slash. It is stripped
+// here so the path matches the spelling every other layer uses: the pathspec
+// that excludes it, the .gitmodules declaration compared against it, and the
+// line the user reads.
+func statCandidate(repoPath, rel string, untracked bool) (Candidate, entryKind) {
+	rel = strings.TrimSuffix(filepath.ToSlash(rel), "/")
+	if rel == "" {
+		return Candidate{}, entryIgnored
+	}
 	abs := filepath.Join(repoPath, filepath.FromSlash(rel))
 	info, err := os.Lstat(abs)
-	if err != nil || info.IsDir() {
-		return Candidate{}, false
+	if err != nil {
+		return Candidate{}, entryIgnored
+	}
+	if info.IsDir() {
+		// Only untracked directories are candidates for the nested-repository
+		// guard. A tracked gitlink is an existing submodule reporting a changed
+		// HEAD, which is ordinary work and never the guard's business.
+		if !untracked {
+			return Candidate{}, entryIgnored
+		}
+		return Candidate{Path: rel, Untracked: true}, entryUntrackedDir
 	}
 	return Candidate{
-		Path:      filepath.ToSlash(rel),
+		Path:      rel,
 		Size:      info.Size(),
 		Untracked: untracked,
-	}, true
+	}, entryFile
 }

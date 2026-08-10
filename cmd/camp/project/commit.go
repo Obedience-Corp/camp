@@ -58,6 +58,7 @@ var (
 	projectCommitAutoWrite bool
 	projectCommitWorkitem  string
 	projectCommitLarge     bool
+	projectCommitNested    bool
 	projectCommitNoDrain   bool
 )
 
@@ -71,6 +72,7 @@ func init() {
 	projectCommitCmd.Flags().BoolVar(&projectCommitAutoWrite, "auto-write", false, "Run configured commit message writer")
 	projectCommitCmd.Flags().StringVar(&projectCommitWorkitem, "workitem", "", "explicit workitem selector for the commit tag (overrides cwd-based resolution)")
 	projectCommitCmd.Flags().BoolVar(&projectCommitLarge, "commit-large", false, "Commit over-threshold files instead of keeping them out of git")
+	projectCommitCmd.Flags().BoolVar(&projectCommitNested, "commit-nested", false, "Commit undeclared nested git repositories as gitlinks instead of keeping them out of git")
 	projectCommitCmd.Flags().BoolVar(&projectCommitNoDrain, "no-drain", false, "Do not wait for camp's queued commits first")
 
 	if err := projectCommitCmd.RegisterFlagCompletionFunc("project", cmdutil.CompleteProjectName); err != nil {
@@ -170,7 +172,7 @@ func runProjectCommit(cmd *cobra.Command, args []string) error {
 	// Stage if requested
 	if projectCommitAll {
 		fmt.Println(ui.Info("Staging changes..."))
-		guardOutcome, stageErr := git.StageWithGuardOptions(ctx, resolvedPath, nil, git.StageOptions{CommitLarge: projectCommitLarge})
+		guardOutcome, stageErr := git.StageWithGuardOptions(ctx, resolvedPath, nil, git.StageOptions{CommitLarge: projectCommitLarge, CommitNested: projectCommitNested})
 		if stageErr != nil {
 			return camperrors.Wrap(stageErr, "failed to stage")
 		}

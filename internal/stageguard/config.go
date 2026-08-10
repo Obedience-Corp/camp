@@ -85,7 +85,12 @@ func defaultLimits(scopeProject bool) GuardLimits {
 		MaxAddedFiles: DefaultMaxAddedFiles,
 		LargeFiles:    ModeAuto,
 		Bulk:          ModeBlock,
-		ScopeProject:  scopeProject,
+		// Exclude rather than block, in both scopes. Excluding a nested
+		// repository takes nothing away: its commits, branches, and remote are
+		// its own and stay reachable exactly as before. Blocking would spend a
+		// stop on a decision the user does not need to make.
+		NestedRepos:  ModeExclude,
+		ScopeProject: scopeProject,
 	}
 }
 
@@ -111,11 +116,24 @@ func applyGuardsConfig(g config.GuardsConfig, scopeProject bool, projectName str
 	}
 	if raw := g.ResolveGuardMode(projectName); raw != "" {
 		mode := Mode(raw)
-		if !mode.Valid() {
+		// Checked against this guard's own subset rather than Mode.Valid(): a
+		// mode another guard accepts is still meaningless here, and letting one
+		// through would resolve to behavior the user never asked for.
+		if mode != ModeAuto && mode != ModeBlock && mode != ModeOff {
 			return GuardLimits{}, camperrors.NewValidation("commit.guards.large_files",
 				"must be auto, block, or off, got "+strconv.Quote(raw), nil)
 		}
 		limits.LargeFiles = mode
+	}
+	if raw := g.ResolveNestedReposMode(projectName); raw != "" {
+		mode := Mode(raw)
+		// No auto: excluding is already the whole remedy, so an auto mode would
+		// name a step that does not exist.
+		if mode != ModeExclude && mode != ModeBlock && mode != ModeOff {
+			return GuardLimits{}, camperrors.NewValidation("commit.guards.nested_repos",
+				"must be exclude, block, or off, got "+strconv.Quote(raw), nil)
+		}
+		limits.NestedRepos = mode
 	}
 	if raw := g.ResolveBulkMode(projectName); raw != "" {
 		mode := Mode(raw)
