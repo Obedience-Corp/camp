@@ -3703,9 +3703,9 @@ Examples:
   camp list --count          Print only the total number of campaigns
   camp list --remote         Also list campaigns on machines in ~/.obey/machines.yaml
 
---remote runs each machine's own 'camp list --json' through a login shell
-(sh -lc) so PATH entries a login profile exports (~/.profile, etc.) are
-picked up. If camp still can't be found on a machine, set
+--remote runs each machine's own 'camp list --json' through that account's
+configured login shell ($SHELL -lc) so its login-profile PATH is picked up. If
+camp still can't be found on a machine, set
 CAMP_REMOTE_CAMP_PATH to its exact path there.
 
 For interactive hop to a remote campaign from the picker, use csw after
@@ -7014,10 +7014,10 @@ machines are configured (locals open instantly; remotes append as they load).
 Bare 'command camp switch machine:…' resolves without hopping — use the csw
 shell wrapper (or --shell-connect under shell-init) to hop.
 
-Remote resolution runs the far machine's own 'camp switch' through a login
-shell (sh -lc) so PATH entries a login profile exports (~/.profile, etc.) are
-picked up. If camp still can't be found there, set CAMP_REMOTE_CAMP_PATH to
-its exact path on that machine.
+Remote resolution runs the far machine's own 'camp switch' through that
+account's configured login shell ($SHELL -lc) so its login-profile PATH is
+picked up. If camp still can't be found there, set CAMP_REMOTE_CAMP_PATH to its
+exact path on that machine.
 
 ```
 camp switch [campaign] [flags]

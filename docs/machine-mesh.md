@@ -212,9 +212,9 @@ hangs:
   far side, and whether *this* machine is accepting connections.
 - **camp missing on the far side.** Named explicitly, with the variable that fixes it:
   ```
-  remote camp not found on devbox (tried "camp" via sh -lc, i.e. the machine's
-  login-shell PATH); if camp lives outside that PATH, set CAMP_REMOTE_CAMP_PATH to its
-  exact path on that machine
+  remote camp not found on devbox (tried "camp" via the account's login shell,
+  i.e. its login-shell PATH); if camp lives outside that PATH, set
+  CAMP_REMOTE_CAMP_PATH to its exact path on that machine
   ```
   This is common on a fresh fleet member: a stock `go install` puts camp in `~/go/bin`,
   which a non-interactive login shell does not have on its PATH.

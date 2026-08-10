@@ -260,19 +260,19 @@ func TestCampRemoteCommandLineWrapsLoginShell(t *testing.T) {
 			name:   "simple switch",
 			binary: "camp",
 			args:   "switch 'my-campaign' --print",
-			want:   `sh -lc 'camp switch '\''my-campaign'\'' --print'`,
+			want:   `exec "$SHELL" -lc 'camp switch '\''my-campaign'\'' --print'`,
 		},
 		{
 			name:   "list json",
 			binary: "camp",
 			args:   "list --json",
-			want:   `sh -lc 'camp list --json'`,
+			want:   `exec "$SHELL" -lc 'camp list --json'`,
 		},
 		{
 			name:   "explicit binary path with a space",
 			binary: `'/opt/my camp/camp'`,
 			args:   "list --json",
-			want:   `sh -lc ''\''/opt/my camp/camp'\'' list --json'`,
+			want:   `exec "$SHELL" -lc ''\''/opt/my camp/camp'\'' list --json'`,
 		},
 	}
 	for _, tc := range cases {
@@ -284,9 +284,21 @@ func TestCampRemoteCommandLineWrapsLoginShell(t *testing.T) {
 	}
 }
 
+func TestLoginShellCommandUsesConfiguredShell(t *testing.T) {
+	cmd := exec.Command("sh", "-c", LoginShellCommand(`printf '%s|%s\n' "$0" "$SHELL"`))
+	cmd.Env = append(os.Environ(), "SHELL=/bin/sh")
+	out, err := cmd.CombinedOutput()
+	if err != nil {
+		t.Fatalf("execute login-shell command: %v\noutput: %s", err, out)
+	}
+	if got, want := string(out), "/bin/sh|/bin/sh\n"; got != want {
+		t.Errorf("login-shell identity = %q, want %q", got, want)
+	}
+}
+
 // TestInnerCommandRoundTripsThroughPosixShell proves the quoting
 // campRemoteCommandLine relies on actually survives being parsed by a real
-// POSIX shell, the way the remote's login shell (`sh -lc '<inner>'`) parses
+// POSIX shell, the way the remote's login shell (`$SHELL -lc '<inner>'`) parses
 // <inner> a second time on the far machine: it hands `binary+" "+args`
 // (the exact string ShellQuote wraps as <inner>) to a plain, non-login
 // `sh -c`, using an absolute-path probe script as the binary so the test

@@ -658,7 +658,7 @@ func TestConnectionFailureDetailSurfacesTailscaleCheck(t *testing.T) {
 func TestConnectionFailureDetailPreservesCampNotFoundHint(t *testing.T) {
 	inner := camperrors.NewCommand("ssh buildbox -- camp --version", 127, "bash: camp: command not found", nil)
 	err := camperrors.Wrapf(inner,
-		"remote camp not found on buildbox (tried %q via sh -lc, i.e. the machine's login-shell PATH); "+
+		"remote camp not found on buildbox (tried %q via the account's login shell, i.e. its login-shell PATH); "+
 			"if camp lives outside that PATH, set %s to its exact path on that machine",
 		"camp", remote.RemoteCampPathEnv)
 
