@@ -361,7 +361,7 @@ func (m *machineTUIModel) copyCheckURL(url string) tea.Cmd {
 		m.setError(camperrors.Wrap(err, "could not copy the link"))
 		return nil
 	}
-	m.setAdvice("copied the approval link to your clipboard")
+	m.setAdvice("copied the approval link; paste it into a browser, approve it, then press t (or r) to retry")
 	return nil
 }
 
