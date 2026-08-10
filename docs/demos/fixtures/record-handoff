@@ -1,0 +1,30 @@
+#!/usr/bin/env bash
+# A stand-in for the platform URL opener (open / xdg-open) and clipboard tool
+# (pbcopy / xclip), used only when recording docs/demos tapes.
+#
+# The point of the o and c keys is that camp hands the approval URL to something
+# outside itself. A recording cannot show a browser window, and launching one
+# mid-tape would put an unrelated application in the frame. This records what it
+# was handed instead, so the tape asserts the handoff and the run can be checked
+# afterwards with:
+#
+#   cat "$CAMP_VHS_ROOT/handoff.log"
+#
+# Install it under every name camp might call (open, xdg-open, pbcopy, xclip)
+# and put that directory first on PATH before running vhs.
+set -euo pipefail
+
+log="${CAMP_VHS_HANDOFF_LOG:-${CAMP_VHS_ROOT:-.}/handoff.log}"
+name="$(basename "$0")"
+
+# Dispatch on the name, not on argv: xclip is invoked as
+# `xclip -selection clipboard` and still reads the URL from stdin, so an
+# "has arguments" test would log the flags and drop the payload.
+case "$name" in
+    pbcopy | xclip)
+        printf '%s %s\n' "$name" "$(cat)" >>"$log"
+        ;;
+    *)
+        printf '%s %s\n' "$name" "$*" >>"$log"
+        ;;
+esac

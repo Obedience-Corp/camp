@@ -6,6 +6,14 @@
 
 set positional-arguments
 
+# Recipes run from the module's directory by default, so every one of them
+# anchors at the repo root first and takes repo-relative paths (the same
+# convention tui.just follows). Without the anchor, `just vhs record
+# docs/demos/x.tape` cannot find its own tape, and passing absolute paths to
+# work around it writes the recorder's home directory into the manifest, which
+# the privacy scan then rejects.
+root := justfile_directory()
+
 [private]
 default:
     @just --list --justfile {{source_file()}}
@@ -24,6 +32,9 @@ doctor:
 
 # Record one VHS tape. The tape owns its output path and setup commands.
 record tape:
+    #!/usr/bin/env bash
+    set -euo pipefail
+    cd "{{root}}"
     vhs "{{tape}}"
 
 # Record with full truecolor — strips NO_COLOR/TERM=dumb from agent shells.
@@ -31,6 +42,7 @@ record tape:
 record-color tape:
     #!/usr/bin/env bash
     set -euo pipefail
+    cd "{{root}}"
     env -u NO_COLOR -u CLICOLOR \
         TERM=xterm-256color \
         COLORTERM=truecolor \
@@ -45,6 +57,7 @@ record-color tape:
 bundle evidence_dir binary tape fixture_id +states:
     #!/usr/bin/env bash
     set -euo pipefail
+    cd "{{root}}"
     if [[ -n "${VHS_PRIVATE_GIST_ROOT:-}" ]]; then
         skill_root="$VHS_PRIVATE_GIST_ROOT"
     else
@@ -128,6 +141,7 @@ bundle evidence_dir binary tape fixture_id +states:
 gist gif *args:
     #!/usr/bin/env bash
     set -euo pipefail
+    cd "{{root}}"
     if [[ -n "${VHS_PRIVATE_GIST_ROOT:-}" ]]; then
         helper="$VHS_PRIVATE_GIST_ROOT/scripts/publish-secret-gist.sh"
     else

@@ -4,6 +4,7 @@ import (
 	"context"
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 	"testing"
 	"unicode/utf8"
@@ -14,6 +15,7 @@ import (
 	camperrors "github.com/Obedience-Corp/camp/internal/errors"
 	"github.com/Obedience-Corp/camp/internal/machines"
 	"github.com/Obedience-Corp/camp/internal/remote"
+	"github.com/Obedience-Corp/camp/internal/ui"
 )
 
 func fleetFile() *machines.File {
@@ -504,10 +506,12 @@ func TestHealthDetailLinesWrapsTailscaleURL(t *testing.T) {
 }
 
 func TestHealthSectionTailscaleCheckHeadline(t *testing.T) {
+	const url = "https://login.tailscale.com/a/l895e2083a01e1"
 	m := newMachineTUIModel(t.Context(), fleetFile())
 	m.health["devbox"] = machineHealth{
-		State:  healthUnreachable,
-		Detail: "Tailscale SSH requires a one-time browser check — open https://login.tailscale.com/a/x, approve, then retry",
+		State:    healthUnreachable,
+		Detail:   "Tailscale SSH requires a one-time browser check — open " + url + ", approve, then retry",
+		CheckURL: url,
 	}
 	// healthSection for unreachable with tailscale detail
 	// Find devbox id index - fleet has devbox first remote; health map is by id
@@ -519,9 +523,108 @@ func TestHealthSectionTailscaleCheckHeadline(t *testing.T) {
 	if strings.Contains(joined, "Could not reach it") {
 		t.Errorf("still uses network-unreachable headline: %q", joined)
 	}
-	if !strings.Contains(joined, "login.tailscale.com") {
-		t.Errorf("URL missing from pane: %q", joined)
+	// A pane this narrow cannot fit the link on one line, but wrapping is not
+	// truncating: every character has to still be there to reassemble.
+	if got := strings.Join(strings.Fields(joined), ""); !strings.Contains(got, url) {
+		t.Errorf("check URL lost characters to the wrap: %q", joined)
 	}
+	if !strings.Contains(joined, "o open it") {
+		t.Errorf("pane does not offer to open the link: %q", joined)
+	}
+}
+
+// At a normal terminal size the link lands on one line, which is what makes it
+// selectable with a double-click. Driven through View so the assertion covers
+// the pane's own clamp, not just the section that composes the lines.
+func TestViewKeepsCheckURLOnOneLine(t *testing.T) {
+	const url = "https://login.tailscale.com/a/l895e2083a01e1"
+	m := newMachineTUIModel(t.Context(), fleetFile())
+	m.width, m.height = 80, 30
+	m.cursor = machineRowIndex(m, "devbox")
+	m.health["devbox"] = machineHealth{State: healthUnreachable, Detail: "x", CheckURL: url}
+
+	lines := strings.Split(m.View(), "\n")
+	if !slices.ContainsFunc(lines, func(l string) bool { return strings.Contains(l, url) }) {
+		t.Errorf("check URL is not intact on any single line at 80 columns:\n%s", m.View())
+	}
+}
+
+// The hop overlay is the surface that "connect" actually goes through, and it
+// is narrow enough that the old single truncated error line cut the URL off
+// after "https://l".
+func TestHopBodySurfacesCheckURL(t *testing.T) {
+	const url = "https://login.tailscale.com/a/l895e2083a01e1"
+	m := newMachineTUIModel(t.Context(), fleetFile())
+	m.width, m.height = 130, 40
+	m.overlay = machineHopOverlay
+	m.hop = machineHopState{
+		machineID: "devbox",
+		err:       "Tailscale SSH requires a one-time browser check — open " + url + ", approve, then retry",
+		checkURL:  url,
+	}
+
+	lines := m.hopBody()
+	joined := strings.Join(lines, "\n")
+	if !slices.ContainsFunc(lines, func(l string) bool { return strings.Contains(l, url) }) {
+		t.Errorf("hop overlay does not show the check URL intact: %q", joined)
+	}
+	if !strings.Contains(joined, "o open it") {
+		t.Errorf("hop overlay does not offer to open the link: %q", joined)
+	}
+}
+
+// The keys have to survive the frame, not just hopBody: the overlay clamps every
+// body line to its own inner width, which is how the URL was lost in the first
+// place.
+func TestOverlayViewKeepsCheckURLWhole(t *testing.T) {
+	const url = "https://login.tailscale.com/a/l895e2083a01e1"
+	m := newMachineTUIModel(t.Context(), fleetFile())
+	m.width, m.height = 130, 40
+	m.overlay = machineHopOverlay
+	m.hop = machineHopState{machineID: "devbox", err: "check", checkURL: url}
+
+	if !strings.Contains(m.overlayView(), url) {
+		t.Errorf("overlay frame truncated the check URL:\n%s", m.overlayView())
+	}
+}
+
+func TestOpenAndCopyCheckURL(t *testing.T) {
+	const url = "https://login.tailscale.com/a/l895e2083a01e1"
+	openedURL, copiedURL := "", ""
+	origOpen, origCopy := ui.OpenInBrowser, ui.WriteClipboard
+	t.Cleanup(func() { ui.OpenInBrowser, ui.WriteClipboard = origOpen, origCopy })
+	ui.OpenInBrowser = func(u string) error { openedURL = u; return nil }
+	ui.WriteClipboard = func(u string) error { copiedURL = u; return nil }
+
+	m := newMachineTUIModel(t.Context(), fleetFile())
+	m.health["devbox"] = machineHealth{State: healthUnreachable, CheckURL: url}
+	m.cursor = machineRowIndex(m, "devbox")
+
+	m.openCheckURL(m.selectedCheckURL())
+	if openedURL != url {
+		t.Errorf("opened %q, want %q", openedURL, url)
+	}
+	m.copyCheckURL(m.selectedCheckURL())
+	if copiedURL != url {
+		t.Errorf("copied %q, want %q", copiedURL, url)
+	}
+
+	// A row with no waiting approval must not launch anything.
+	openedURL = ""
+	m.health["devbox"] = machineHealth{State: healthReachable}
+	m.openCheckURL(m.selectedCheckURL())
+	if openedURL != "" {
+		t.Errorf("opened %q with no check pending", openedURL)
+	}
+}
+
+func machineRowIndex(m *machineTUIModel, id string) int {
+	for i, row := range m.rows {
+		if row.id() == id {
+			return i
+		}
+	}
+	return 0
 }
 
 func TestConnectionFailureDetailSurfacesTailscaleCheck(t *testing.T) {

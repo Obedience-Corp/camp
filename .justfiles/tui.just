@@ -57,8 +57,47 @@ pty-triage-review:
     venv_dir="$(just tui venv)"
     "$venv_dir/bin/python" tests/tui/triage_review_pty.py bin/camp
 
+# Build the disposable fixture the Tailscale-check recording and pty check
+# share: the branch binary, a stub ssh that answers the way Tailscale SSH does
+# in check mode, and stub opener/clipboard tools that record what they are
+# handed. Prints the fixture path. Never touches a live tailnet.
+[private]
+machine-check-fixture:
+    #!/usr/bin/env bash
+    set -euo pipefail
+    cd "{{root}}"
+    fixture="${CAMP_VHS_ROOT:-$(mktemp -d)}"
+    mkdir -p "$fixture/bin" "$fixture/home"
+    cp bin/camp "$fixture/bin/camp"
+    cp docs/demos/fixtures/ssh-tailscale-check "$fixture/bin/ssh"
+    cp docs/demos/fixtures/tailscale "$fixture/bin/tailscale"
+    for name in open xdg-open pbcopy xclip; do
+        cp docs/demos/fixtures/record-handoff "$fixture/bin/$name"
+    done
+    chmod +x "$fixture/bin"/*
+    : > "$fixture/machines.yaml"
+    HOME="$fixture/home" CAMP_MACHINES_PATH="$fixture/machines.yaml" \
+        "$fixture/bin/camp" machine add devbox \
+        --host devbox.example-net.ts.net --auth tailscale-ssh --user builder >/dev/null
+    echo "$fixture"
+
+# Assert what the Tailscale-check recording cannot: the approval URL is intact
+# on ONE line in both the detail pane and the hop overlay (a link split across
+# a wrap is a link nobody can copy), and o/c hand the exact URL to the platform
+# opener and clipboard.
+pty-machine-tailscale-check:
+    #!/usr/bin/env bash
+    set -euo pipefail
+    cd "{{root}}"
+    just build-camp >/dev/null
+    venv_dir="$(just tui venv)"
+    fixture="$(CAMP_VHS_ROOT="${CAMP_VHS_ROOT:-}" just tui machine-check-fixture)"
+    evidence="${CAMP_TUI_EVIDENCE_DIR:-out/evidence/machine-tailscale-check}"
+    CAMP_MACHINES_PATH="$fixture/machines.yaml" \
+        "$venv_dir/bin/python" tests/tui/machine_tailscale_check_pty.py "$fixture" "$evidence"
+
 # Run every pty check.
-pty: pty-triage-review
+pty: pty-triage-review pty-machine-tailscale-check
 
 # Record one tape. The tape owns its output path and its fixture bootstrap.
 tape tape_path:

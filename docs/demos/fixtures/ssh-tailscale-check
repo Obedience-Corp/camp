@@ -1,0 +1,31 @@
+#!/usr/bin/env bash
+# A stand-in for ssh that always answers the way Tailscale SSH answers when the
+# node's ACL requires a browser check. Used only when recording
+# docs/demos/machine-tailscale-check.tape.
+#
+# Recording this against a real tailnet would bake the recorder's own MagicDNS
+# name and a live, single-use approval URL into a GIF. The banner below is
+# verbatim what `tailscale ssh` writes to stderr in check mode, with an invented
+# node id, so the tape exercises camp's real parse/render/keybinding path
+# without publishing anything real.
+#
+# Check mode holds the connection open waiting for the human, which is why camp
+# hits its own 10s deadline rather than a non-zero exit. Sleeping here
+# reproduces that timing; camp's sshTimeoutError is the path that has to keep
+# the URL, and this is what proves it does.
+#
+# Put this directory first on PATH before running vhs.
+set -euo pipefail
+
+cat >&2 <<'BANNER'
+# Tailscale SSH requires an additional check.
+# To authenticate, visit: https://login.tailscale.com/a/f1e2d3c4b5a6
+BANNER
+
+# exec, not a plain call: camp kills this process when its deadline expires,
+# and a `sleep` running as a CHILD of this script would survive that kill still
+# holding the stderr pipe open. Go's cmd.Wait blocks until every writer closes,
+# so the hop would hang for the full sleep instead of ending at camp's 10s
+# bound. Replacing this process with the sleep means the thing camp kills is
+# the thing holding the pipe.
+exec sleep 20

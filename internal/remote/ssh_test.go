@@ -452,6 +452,49 @@ func TestParseTailscaleCheckURL(t *testing.T) {
 	}
 }
 
+// Every display surface re-parses camp's own formatted sentence rather than raw
+// ssh stderr, so parsing has to be idempotent. It was not: the comma after the
+// URL in "open <url>, approve" was captured as part of the URL, and the operator
+// was shown a link that 404s.
+func TestParseTailscaleCheckURLIsIdempotent(t *testing.T) {
+	const want = "https://login.tailscale.com/a/l623187f3a1372"
+	stderr := "# Tailscale SSH requires an additional check.\n# To authenticate, visit: " + want + "\n"
+
+	detail := TailscaleCheckDetail(sshExitError("lance@archdtop.ts.net", 255, stderr, nil))
+	if !strings.Contains(detail, want) {
+		t.Fatalf("first pass lost the URL: %q", detail)
+	}
+
+	url, ok := ParseTailscaleCheckURL(detail)
+	if !ok {
+		t.Fatal("re-parsing camp's own message returned false")
+	}
+	if url != want {
+		t.Errorf("re-parsed url = %q, want %q", url, want)
+	}
+	if second := formatTailscaleCheckDetail(url); second != detail {
+		t.Errorf("formatting is not stable across passes:\n first  %q\n second %q", detail, second)
+	}
+}
+
+func TestTailscaleCheckURL(t *testing.T) {
+	const want = "https://login.tailscale.com/a/l623187f3a1372"
+	stderr := "# Tailscale SSH requires an additional check.\n# To authenticate, visit: " + want + "\n"
+
+	if got := TailscaleCheckURL(sshExitError("lance@archdtop.ts.net", 255, stderr, nil)); got != want {
+		t.Errorf("exit path: got %q, want %q", got, want)
+	}
+	if got := TailscaleCheckURL(sshTimeoutError("lance@archdtop.ts.net", stderr, context.DeadlineExceeded)); got != want {
+		t.Errorf("timeout path: got %q, want %q", got, want)
+	}
+	if got := TailscaleCheckURL(nil); got != "" {
+		t.Errorf("nil error: got %q", got)
+	}
+	if got := TailscaleCheckURL(camperrors.New("ssh: connect to host timed out")); got != "" {
+		t.Errorf("unrelated failure: got %q", got)
+	}
+}
+
 func TestSSHTimeoutErrorPreservesTailscaleCheckURL(t *testing.T) {
 	stderr := "# Tailscale SSH requires an additional check.\n# To authenticate, visit: https://login.tailscale.com/a/abc123\n"
 	err := sshTimeoutError("lance@archdtop.ts.net", stderr, context.DeadlineExceeded)

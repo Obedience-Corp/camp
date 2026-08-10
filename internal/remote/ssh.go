@@ -369,13 +369,23 @@ func ParseTailscaleCheckURL(text string) (string, bool) {
 	rest := text[idx:]
 	end := strings.IndexAny(rest, " \t\r\n\"'")
 	if end < 0 {
-		return rest, true
+		end = len(rest)
 	}
-	if end == 0 {
+	url := strings.TrimRight(rest[:end], urlTrailingPunctuation)
+	if url == "" {
 		return "", false
 	}
-	return rest[:end], true
+	return url, true
 }
+
+// urlTrailingPunctuation is punctuation that can follow a URL in prose but is
+// never part of a Tailscale check URL. Trimming it is what makes this function
+// idempotent, and idempotence is the whole point: camp formats the URL into a
+// sentence ("open <url>, approve, then retry"), and every display surface
+// re-parses that sentence rather than the raw ssh stderr. Without the trim the
+// second pass captured the comma, so the operator was shown — and would copy —
+// a 404.
+const urlTrailingPunctuation = ",.;:!?)]}>"
 
 // TailscaleCheckDetail returns a single-line, actionable explanation when err
 // (or its chain) is a Tailscale SSH check-mode failure. Empty string means the
@@ -388,6 +398,20 @@ func TailscaleCheckDetail(err error) string {
 		return formatTailscaleCheckDetail(url)
 	}
 	return ""
+}
+
+// TailscaleCheckURL returns the login.tailscale.com approval URL carried by err
+// (or anything in its chain), or "" when err is not a check-mode failure.
+//
+// The URL is the only actionable thing about this failure, so callers get it as
+// a value rather than having to find it inside TailscaleCheckDetail's sentence.
+// That is what lets a screen put it on its own line, and lets a key open it.
+func TailscaleCheckURL(err error) string {
+	if err == nil {
+		return ""
+	}
+	url, _ := ParseTailscaleCheckURL(errText(err))
+	return url
 }
 
 // HopFailureDetail returns the best operator-facing classification for a hop

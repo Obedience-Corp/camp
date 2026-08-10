@@ -42,3 +42,7 @@ CLAUDE.md
 .grok/
 dist/
 projects/worktrees/
+
+# Python bytecode from the tests/tui pty harnesses
+__pycache__/
+*.pyc
