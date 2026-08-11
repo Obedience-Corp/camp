@@ -66,6 +66,15 @@ func TestMain(m *testing.M) {
 		os.Exit(1)
 	}
 
+	// Cached after the first run: one image inspect, no build, no network.
+	baseImage, err := ensureBaseImage(context.Background())
+	if err != nil {
+		cleanupBins()
+		cleanupTransport()
+		os.Stderr.WriteString("Failed to prepare base image: " + err.Error() + "\n")
+		os.Exit(1)
+	}
+
 	containerPool = make(chan *TestContainer, size)
 	var (
 		wg       sync.WaitGroup
@@ -74,7 +83,7 @@ func TestMain(m *testing.M) {
 	)
 	for range size {
 		wg.Go(func() {
-			c, err := newPooledContainer(context.Background(), bins)
+			c, err := newPooledContainer(context.Background(), bins, baseImage)
 			mu.Lock()
 			defer mu.Unlock()
 			if err != nil {
@@ -108,9 +117,13 @@ func TestMain(m *testing.M) {
 	// that is the phase whose exec rate and latency predict collapse.
 	reportExecTelemetry(size, time.Since(start), code)
 
+	// Concurrent teardown: sequential Terminate cost 10s per member (~40s per
+	// run) waiting out graceful stops that throwaway containers do not need.
+	var teardown sync.WaitGroup
 	for _, c := range poolMembers {
-		c.Cleanup()
+		teardown.Go(c.Cleanup)
 	}
+	teardown.Wait()
 	cleanupTransport()
 	os.Exit(code)
 }

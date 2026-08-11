@@ -217,22 +217,19 @@ func buildLegacyCampBinaryShared() (path string, skip string) {
 // t.Parallel(), and return them via Reset(); each test therefore has exclusive
 // use of an isolated container filesystem, so the hardcoded /test and /campaigns
 // paths never collide across parallel tests.
-func newPooledContainer(ctx context.Context, bins sharedBinaries) (*TestContainer, error) {
+func newPooledContainer(ctx context.Context, bins sharedBinaries, image string) (*TestContainer, error) {
 	// Start container without bind-mounting the binary. Bind mounts go through
 	// the host's overlayfs (Colima virtualisation layer on macOS) which can
 	// serve stale or corrupted pages after heavy rm -rf / sync cycles, causing
 	// non-deterministic SIGSEGV when the kernel page-faults the binary. Copying
 	// the binary into the container's own writable layer avoids this entirely.
-	// Pin to a specific digest rather than a floating tag. alpine:latest
-	// resolves to a different layer on every cache miss, which means the git
-	// version inside the container can silently change between CI runs. That
-	// matters for worktree and submodule tests where git semantics differ
-	// across minor versions. When bumping, update the digest in one place here
-	// and verify the integration suite still passes.
-	const alpineImage = "alpine:3.21@sha256:f27cad9117495d32d067133afff942cb2dc745dfe9163e949f6bfe8a6a245339"
-
+	//
+	// The image is the prebaked camp-itest-base built by ensureBaseImage:
+	// git, jq, git identity, and the working directories are already in the
+	// layer, so provisioning below is only the binary copies and one sanity
+	// check — no network and no per-member package installs.
 	req := testcontainers.ContainerRequest{
-		Image: alpineImage,
+		Image: image,
 		Cmd:   []string{"sleep", "3600"}, // Keep container running
 		// Deferral off for every process in the container, not just the ones
 		// that go through a helper. Six tests invoke /camp directly through
@@ -279,50 +276,18 @@ func newPooledContainer(ctx context.Context, bins sharedBinaries) (*TestContaine
 		}
 	}
 
-	// Install git (required for project operations) and jq (so --json output
-	// is validated by a real JSON consumer rather than only by our own
-	// unmarshaler, which would accept shapes a caller's parser rejects).
-	// One apk invocation: each one is a container round trip per pool member.
-	exitCode, output, err := container.Exec(ctx, []string{"apk", "add", "--no-cache", "git", "jq"})
+	// One sanity check per member: the camp binary copy landed and the baked
+	// layer has git. Everything else (packages, git identity, working
+	// directories) is baked into the image by ensureBaseImage.
+	exitCode, output, err := container.Exec(ctx, []string{"sh", "-c", "test -x /camp && git --version"})
 	if err != nil {
 		container.Terminate(ctx)
-		return nil, fmt.Errorf("failed to install container packages: %w", err)
+		return nil, fmt.Errorf("failed to verify container provisioning: %w", err)
 	}
 	if exitCode != 0 {
 		outputBytes, _ := readExecOutput(output)
 		container.Terminate(ctx)
-		return nil, fmt.Errorf("apk add git jq failed with exit code %d: %s", exitCode, string(outputBytes))
-	}
-
-	// Configure git (required for submodule operations)
-	exitCode, _, err = container.Exec(ctx, []string{"git", "config", "--global", "user.email", "test@test.com"})
-	if err != nil || exitCode != 0 {
-		container.Terminate(ctx)
-		return nil, fmt.Errorf("failed to configure git email: %w", err)
-	}
-	exitCode, _, err = container.Exec(ctx, []string{"git", "config", "--global", "user.name", "Test User"})
-	if err != nil || exitCode != 0 {
-		container.Terminate(ctx)
-		return nil, fmt.Errorf("failed to configure git name: %w", err)
-	}
-
-	// Verify camp binary was copied correctly
-	exitCode, output, err = container.Exec(ctx, []string{"ls", "-la", "/camp"})
-	if err != nil {
-		container.Terminate(ctx)
-		return nil, fmt.Errorf("failed to check camp binary: %w", err)
-	}
-	if exitCode != 0 {
-		outputBytes, _ := readExecOutput(output)
-		container.Terminate(ctx)
-		return nil, fmt.Errorf("camp binary not found, ls output: %s", string(outputBytes))
-	}
-
-	// Create initial working directories
-	exitCode, _, err = container.Exec(ctx, []string{"mkdir", "-p", "/test", "/campaigns", "/root/.config/camp"})
-	if err != nil || exitCode != 0 {
-		container.Terminate(ctx)
-		return nil, fmt.Errorf("failed to create initial directories: %w", err)
+		return nil, fmt.Errorf("container provisioning check failed with exit code %d: %s", exitCode, string(outputBytes))
 	}
 
 	return &TestContainer{
