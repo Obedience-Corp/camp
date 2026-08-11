@@ -13,6 +13,7 @@ evidence bundles.
 | Project-aware worktree list | [worktree-list.tape](worktree-list.tape) | [worktree-list.gif](worktree-list.gif) | — |
 | Tailscale SSH approval | [machine-tailscale-check.tape](machine-tailscale-check.tape) | private gist | (PR evidence bundle) |
 | Diagnose an unresolvable host | [machine-diagnose-dns.tape](machine-diagnose-dns.tape) | private gist | (PR evidence bundle) |
+| Hop survives a MagicDNS outage | [machine-hop-dns-fallback.tape](machine-hop-dns-fallback.tape) | private gist | (PR evidence bundle) |
 
 The private evidence runs are `camp/fresh-configure/1d5415b8` and
 `camp/machine-tui/1d5415b8`. Each manifest records the source revision,
@@ -90,9 +91,30 @@ chmod +x "$FIXTURE/bin"/*
 CAMP_VHS_ROOT=$FIXTURE just vhs record-color docs/demos/machine-diagnose-dns.tape
 ```
 
+`machine-hop-dns-fallback` shows the same outage with the dial fallback doing
+its job: ssh-by-name fails, but diagnose leads with the peer-table address a
+hop will actually dial, the `--shell-connect` line dials that address with the
+host key pinned to the configured name, and `CAMP_NO_PEER_FALLBACK=1` restores
+the plain failure. Its stub `ssh` (`fixtures/ssh-peer-fallback`) answers ONLY
+at the peer address, so every working camp command in the recording is proof
+the fallback engaged; `fixtures/tailscale-dns-broken-peer` is the DNS-broken
+tailnet whose peer table still holds the machine:
+
+```sh
+FIXTURE=$(mktemp -d)
+mkdir -p "$FIXTURE/bin" "$FIXTURE/home"
+cp bin/camp "$FIXTURE/bin/camp"
+cp docs/demos/fixtures/tailscale-dns-broken-peer "$FIXTURE/bin/tailscale"
+cp docs/demos/fixtures/ssh-peer-fallback "$FIXTURE/bin/ssh"
+chmod +x "$FIXTURE/bin"/*
+: > "$FIXTURE/machines.yaml"
+CAMP_VHS_ROOT=$FIXTURE just vhs record-color docs/demos/machine-hop-dns-fallback.tape
+```
+
 Prefer a short, neutral fixture root: `--json` prints the ControlMaster socket
-path unabbreviated, so a fixture under a long personal path writes that path
-into the recording and the privacy scan rejects it.
+path unabbreviated (and the hop's eval line prints the ControlPath), so a
+fixture under a long personal path writes that path into the recording and the
+privacy scan rejects it.
 
 The tapes set a fake `HOME`, fixture `PATH`, and non-sensitive terminal
 identity. They write raw output under `out/`; keep raw recordings and PTY
