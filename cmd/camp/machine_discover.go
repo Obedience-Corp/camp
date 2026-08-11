@@ -14,6 +14,7 @@ import (
 
 	camperrors "github.com/Obedience-Corp/camp/internal/errors"
 	"github.com/Obedience-Corp/camp/internal/machines"
+	"github.com/Obedience-Corp/camp/internal/tailnet"
 	"github.com/Obedience-Corp/camp/internal/ui"
 )
 
@@ -115,8 +116,10 @@ func backendStateMessage(state string) string {
 
 // normalizeDNSName mirrors the app's normalize_dns_name: trim whitespace and
 // the trailing FQDN dot MagicDNS names carry ("devbox.tailnet.ts.net.").
+// The shared implementation lives in internal/tailnet so the dial-fallback
+// path performs the identical comparison.
 func normalizeDNSName(v string) string {
-	return strings.TrimSuffix(strings.TrimSpace(v), ".")
+	return tailnet.NormalizeDNSName(v)
 }
 
 // toDiscoveredDevice mirrors TailscaleNode::into_discovered_device
