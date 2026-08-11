@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"errors"
 	"net"
 	"strings"
 	"sync"
@@ -9,6 +10,11 @@ import (
 
 	"github.com/Obedience-Corp/camp/internal/tailnet"
 )
+
+// errHostDidNotResolve feeds diagnose's already-computed lookup failure back
+// through remote.ResolveEndpointWith, so the dial decision reuses the check's
+// result instead of paying for a second live lookup.
+var errHostDidNotResolve = errors.New("host did not resolve")
 
 // resolveProbeTimeout bounds the name lookup diagnose runs before it lets ssh
 // try. A resolver that cannot answer inside this budget is itself the finding,

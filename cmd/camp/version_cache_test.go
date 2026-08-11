@@ -13,6 +13,7 @@ import (
 	"github.com/spf13/cobra"
 
 	"github.com/Obedience-Corp/camp/internal/machines"
+	"github.com/Obedience-Corp/camp/internal/remote"
 	"github.com/Obedience-Corp/camp/internal/version"
 )
 
@@ -150,6 +151,9 @@ func TestSkewWarningGoesToStderrAndKeepsStdoutToOneLine(t *testing.T) {
 	// The wrapper evals stdout. A warning that landed there would be eval'd as
 	// a shell command.
 	t.Setenv("XDG_CONFIG_HOME", t.TempDir())
+	// Hop emission resolves a dial endpoint; the escape hatch keeps this test
+	// off the live resolver and the tailscale CLI.
+	t.Setenv(remote.NoPeerFallbackEnv, "1")
 	seedVersionCache(t, "archdtop", "v0.0.1-ancient", "deadbeef", time.Minute)
 
 	var out, errb bytes.Buffer

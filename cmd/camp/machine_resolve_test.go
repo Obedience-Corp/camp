@@ -279,3 +279,42 @@ func TestRenderMachineDiagnoseOmitsResolveWhenUnchecked(t *testing.T) {
 		t.Errorf("unchecked host still rendered a RESOLVE line:\n%s", buf.String())
 	}
 }
+
+// A host that did not resolve but has a peer-table fallback reports the
+// address a hop will actually dial — and probes the remote camp over it
+// instead of declaring the machine unaddressable.
+func TestRenderMachineDiagnoseFallbackDialShowsPeerAddress(t *testing.T) {
+	var buf bytes.Buffer
+	err := renderMachineDiagnoseTable(&buf, []machineDiagnoseRow{{
+		ID:             "mac-studio",
+		Host:           "mac-studio.tailnet.ts.net",
+		AuthMethod:     "tailscale-ssh",
+		AuthLabel:      "Tailscale SSH (identity)",
+		Socket:         "/tmp/mac-studio.sock",
+		State:          "none",
+		ResolveChecked: true,
+		Resolves:       false,
+		ResolveHint:    "MagicDNS is not resolving here; tailscale reports: DNS config unreadable",
+		DialHost:       "100.72.165.77",
+		DialViaPeer:    true,
+		CampVersion:    "v0.2.0",
+	}})
+	if err != nil {
+		t.Fatalf("render: %v", err)
+	}
+	out := buf.String()
+	for _, want := range []string{
+		"RESOLVE",
+		"100.72.165.77 (via tailnet peer table; MagicDNS is not resolving here",
+		"v0.2.0",
+	} {
+		if !strings.Contains(out, want) {
+			t.Errorf("output missing %q:\n%s", want, out)
+		}
+	}
+	for _, reject := range []string{"not probed (the host does not resolve)", "camp missing / too old"} {
+		if strings.Contains(out, reject) {
+			t.Errorf("fallback row still reads as undialable (%q):\n%s", reject, out)
+		}
+	}
+}
