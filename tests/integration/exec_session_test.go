@@ -327,6 +327,24 @@ func TestShellJoin(t *testing.T) {
 	}
 }
 
+func TestSessionKillArgv(t *testing.T) {
+	t.Parallel()
+
+	got := sessionKillArgv(1234)
+	want := []string{"sh", "-c", "pkill -9 -P 1234 2>/dev/null; kill -9 1234 2>/dev/null"}
+	if len(got) != len(want) || got[0] != want[0] || got[1] != want[1] || got[2] != want[2] {
+		t.Fatalf("targeted kill = %q, want %q", got, want)
+	}
+
+	// No PID (handshake never answered): exact-name kill, run without a
+	// shell wrapper so the kill command is not itself an exact-name `sh`.
+	got = sessionKillArgv(0)
+	want = []string{"pkill", "-9", "-x", "sh"}
+	if len(got) != len(want) || got[0] != want[0] || got[3] != want[3] {
+		t.Fatalf("fallback kill = %q, want %q", got, want)
+	}
+}
+
 func TestValidateExecTransport(t *testing.T) {
 	// Not parallel: mutates the process environment.
 	t.Setenv(execTransportEnv, "sessions")

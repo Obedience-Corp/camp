@@ -137,11 +137,12 @@ const sessionDiagCap = 8 << 10
 
 // openExecSession starts the persistent shell in the given container and
 // verifies it end to end with a handshake frame.
-func openExecSession(ctx context.Context, containerID string) (*execSession, error) {
+func openExecSession(ctx context.Context, container testcontainers.Container) (*execSession, error) {
 	cli, err := sessionDockerClient()
 	if err != nil {
 		return nil, err
 	}
+	containerID := container.GetContainerID()
 
 	createCtx, cancel := context.WithTimeout(ctx, 30*time.Second)
 	defer cancel()
@@ -167,15 +168,18 @@ func openExecSession(ctx context.Context, containerID string) (*execSession, err
 
 	// Handshake: prove the shell answers frames and record its PID so poison
 	// can kill a wedged one later. Raw script on purpose — `$$` must reach
-	// the shell unquoted.
+	// the shell unquoted. A failed handshake poisons rather than just
+	// closing: the shell is already running, and if it is wedged enough not
+	// to answer, stdin EOF alone may not end it. No PID is known yet, so
+	// poison falls back to the exact-name kill (see sessionKillArgv).
 	code, out, err := s.runScript("echo $$")
 	if err != nil {
-		s.close()
+		s.poison(container)
 		return nil, fmt.Errorf("session handshake: %w", err)
 	}
 	pid, convErr := strconv.Atoi(strings.TrimSpace(string(out)))
 	if code != 0 || convErr != nil {
-		s.close()
+		s.poison(container)
 		return nil, fmt.Errorf("session handshake returned code=%d out=%q", code, out)
 	}
 	s.shellPID = pid
@@ -311,13 +315,28 @@ func (s *execSession) close() { _ = s.conn.Close() }
 // kill, the daemon is already the fault being reported.
 func (s *execSession) poison(container testcontainers.Container) {
 	s.close()
-	if s.shellPID <= 0 || container == nil {
+	if container == nil {
 		return
 	}
 	killCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
-	_, _, _ = container.Exec(killCtx, []string{"sh", "-c", fmt.Sprintf(
-		"pkill -9 -P %d 2>/dev/null; kill -9 %d 2>/dev/null", s.shellPID, s.shellPID)})
+	_, _, _ = container.Exec(killCtx, sessionKillArgv(s.shellPID))
+}
+
+// sessionKillArgv is poison's kill command. With a known PID it targets that
+// shell and its immediate children. Without one — the handshake died before
+// `echo $$` answered — it kills every exact-name `sh` in the container,
+// which is safe because the only long-lived `sh` processes in a pool member
+// are session shells and their frame subshells: tests run their commands
+// through `sh -c` (whose process name survives as sh only while a frame is
+// in flight, and no frame is in flight while the box mutex is held for the
+// open that just failed).
+func sessionKillArgv(shellPID int) []string {
+	if shellPID > 0 {
+		return []string{"sh", "-c", fmt.Sprintf(
+			"pkill -9 -P %d 2>/dev/null; kill -9 %d 2>/dev/null", shellPID, shellPID)}
+	}
+	return []string{"pkill", "-9", "-x", "sh"}
 }
 
 // execViaSession runs one command through the container's persistent shell,
@@ -329,11 +348,16 @@ func (s *execSession) poison(container testcontainers.Container) {
 // practice.
 func (tc *TestContainer) execViaSession(ctx context.Context, cmd []string) (int, []byte, error) {
 	box := tc.sessions
+	// Held for the whole frame on purpose. A session is one ordered byte
+	// stream: two frames interleaved on it are garbage, not slow. Pool
+	// checkout already gives each test exclusive use of its container, so
+	// this normally never contends; if that invariant ever slips, the cost
+	// here is serialization, never corruption.
 	box.mu.Lock()
 	defer box.mu.Unlock()
 
 	if box.cur == nil {
-		s, err := openExecSession(ctx, tc.container.GetContainerID())
+		s, err := openExecSession(ctx, tc.container)
 		if err != nil {
 			var ie *infraError
 			if !errors.As(err, &ie) {
