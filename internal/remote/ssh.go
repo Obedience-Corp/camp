@@ -1,8 +1,11 @@
 // Package remote holds camp's ssh primitives for reaching campaigns on other
 // machines listed in ~/.obey/machines.yaml. It mirrors the festival app's ssh
-// construction (src-tauri/src/remote/connection.rs) so the terminal and the app
-// reach the same hosts the same way. v1 is agent/key auth only; password-auth
-// machines are rejected here (EnsureKeyAuth) rather than prompted.
+// OPTION construction (src-tauri/src/remote/connection.rs) so the terminal and
+// the app build hops the same way. Address RESOLUTION is deliberately not part
+// of that mirror: camp falls back to the tailnet peer table when a MagicDNS
+// name stops resolving (endpoint.go, design WI-feedca), which the app does not
+// yet do. v1 is agent/key auth only; password-auth machines are rejected here
+// (EnsureKeyAuth) rather than prompted.
 package remote
 
 import (
