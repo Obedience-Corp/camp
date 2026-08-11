@@ -15,6 +15,7 @@ import (
 	"time"
 
 	"github.com/stretchr/testify/require"
+	"github.com/testcontainers/testcontainers-go"
 )
 
 // execTimeout bounds a single container exec. The longest legitimate command
@@ -222,7 +223,9 @@ func (tc *TestContainer) Reset() error {
 // Cleanup terminates the container
 func (tc *TestContainer) Cleanup() {
 	if tc.container != nil {
-		_ = tc.container.Terminate(tc.ctx)
+		// A pooled container holds nothing worth a graceful shutdown; the
+		// default 10s stop grace was pure teardown latency.
+		_ = tc.container.Terminate(tc.ctx, testcontainers.StopTimeout(time.Second))
 	}
 }
 

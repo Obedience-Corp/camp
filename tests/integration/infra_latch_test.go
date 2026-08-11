@@ -103,6 +103,25 @@ func TestClassifyExecOutcomeDeadline(t *testing.T) {
 	}
 }
 
+// The base image is content-addressed: same Dockerfile, same tag (so runs
+// reuse the daemon cache); any edit changes the tag (so stale images can
+// never be picked up). The digest pin is what keeps git semantics identical
+// across runs — worktree and submodule tests care about git minor versions.
+func TestBaseImageTag(t *testing.T) {
+	t.Parallel()
+
+	tag := baseImageTag()
+	if !strings.HasPrefix(tag, "camp-itest-base:") {
+		t.Fatalf("baseImageTag() = %q, want camp-itest-base: prefix", tag)
+	}
+	if tag != baseImageTag() {
+		t.Fatal("baseImageTag() must be deterministic")
+	}
+	if !strings.Contains(baseImageDockerfile, "@sha256:") {
+		t.Fatal("base image must stay pinned to a digest, not a floating tag")
+	}
+}
+
 // The telemetry line is the capacity margin on screen; its shape is pinned so
 // the numbers people grep for keep their names.
 func TestExecTelemetryLine(t *testing.T) {
