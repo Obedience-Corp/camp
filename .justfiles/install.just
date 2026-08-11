@@ -42,7 +42,18 @@ _copy:
     set -euo pipefail
     echo "Installing camp..."
     mkdir -p {{gobin}}
-    cp {{bin_dir}}/{{binary_name}} {{gobin}}/{{binary_name}}
+    # Install via temp file + rename rather than cp'ing onto the destination.
+    # cp opens the destination O_TRUNC on the existing inode; on Linux that is
+    # ETXTBSY ("Text file busy") when the inode is a running executable -- which
+    # it always is here, since `camp fresh` runs this from a running camp.
+    # rename(2) swaps the directory entry instead, leaving the live process on
+    # its old inode. macOS allows the plain cp; this keeps one path for both.
+    tmp="{{gobin}}/.{{binary_name}}.new.$$"
+    trap 'rm -f "$tmp"' EXIT
+    cp {{bin_dir}}/{{binary_name}} "$tmp"
+    chmod 0755 "$tmp"
+    mv -f "$tmp" {{gobin}}/{{binary_name}}
+    trap - EXIT
     if [[ "$(uname)" == "Darwin" ]]; then
         echo "Signing camp binary for macOS..."
         codesign --force --sign - {{gobin}}/{{binary_name}} 2>/dev/null || \
