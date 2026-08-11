@@ -40,6 +40,13 @@ var legacyCampSkip string
 // pool (rather than a single container) lets tests run concurrently via
 // t.Parallel(), since each test gets exclusive use of one isolated container.
 func TestMain(m *testing.M) {
+	// Fail a typo'd transport selection here, before any container exists,
+	// rather than silently running the whole suite on the default.
+	if err := validateExecTransport(); err != nil {
+		os.Stderr.WriteString(err.Error() + "\n")
+		os.Exit(1)
+	}
+
 	cleanupTransport, err := startDedicatedColimaDockerTransport()
 	if err != nil {
 		os.Stderr.WriteString("Failed to create isolated Docker transport: " + err.Error() + "\n")
@@ -56,8 +63,8 @@ func TestMain(m *testing.M) {
 	// it was never on screen.
 	daemonCPUs := dockerCPUs()
 	size := poolSizeFor(daemonCPUs)
-	fmt.Fprintf(os.Stderr, "container pool: %d (docker daemon reports %d CPUs, host has %d)\n",
-		size, daemonCPUs, runtime.NumCPU())
+	fmt.Fprintf(os.Stderr, "container pool: %d (docker daemon reports %d CPUs, host has %d), exec transport: %s\n",
+		size, daemonCPUs, runtime.NumCPU(), execTransportName())
 
 	bins, cleanupBins, err := buildSharedBinaries()
 	if err != nil {
@@ -249,10 +256,13 @@ func GetSharedContainer(t *testing.T) *TestContainer {
 	})
 
 	// Return a wrapper bound to this test's context sharing the checked-out
-	// underlying container.
+	// underlying container. The session box is shared, not copied: the
+	// persistent shell belongs to the container, and a fresh wrapper per test
+	// must not orphan it.
 	return &TestContainer{
 		container: c.container,
 		ctx:       c.ctx,
 		t:         t,
+		sessions:  c.sessions,
 	}
 }
