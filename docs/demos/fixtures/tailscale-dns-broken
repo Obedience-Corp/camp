@@ -1,0 +1,46 @@
+#!/usr/bin/env bash
+# A stand-in for the tailscale CLI whose MagicDNS is down, used only when
+# recording docs/demos/machine-diagnose-dns.tape.
+#
+# This is a separate stub from `tailscale` (the healthy tailnet) rather than a
+# flag on it: the healthy one backs the discovery tapes, and a Health array is
+# exactly the thing those recordings must never grow.
+#
+# The Health text is verbatim what tailscale reports when tailscaled cannot read
+# the host's DNS configuration — on Linux, the usual cause is systemd-resolved
+# being inactive while nsswitch.conf still routes lookups through nss-resolve.
+# That sentence is the whole point of the recording: camp quotes tailscale's own
+# diagnosis instead of paraphrasing it. The tailnet, node, and addresses below
+# are invented, so no real device or tailnet name is published.
+set -euo pipefail
+
+if [ "${1:-}" != "status" ]; then
+    echo "demo tailscale stub: only 'status --json' is implemented" >&2
+    exit 1
+fi
+
+cat <<'JSON'
+{
+  "BackendState": "Running",
+  "Health": [
+    "Tailscale failed to fetch the DNS configuration of your device: exit status 1",
+    "exit status 1"
+  ],
+  "Self": {
+    "HostName": "thinkpad",
+    "DNSName": "thinkpad.example-net.ts.net.",
+    "TailscaleIPs": ["100.64.0.1"],
+    "Online": true,
+    "OS": "linux"
+  },
+  "Peer": {
+    "nodekey:0000000000000000000000000000000000000000000000000000000000000001": {
+      "HostName": "workstation",
+      "DNSName": "workstation.example-net.ts.net.",
+      "TailscaleIPs": ["100.64.0.2"],
+      "Online": true,
+      "OS": "linux"
+    }
+  }
+}
+JSON

@@ -194,6 +194,51 @@ camp artifacts remove <path> [flags]
 ```
 ---
 
+## camp artifacts resolve
+
+Resolve an artifact conflict kept by no-clobber protection
+
+### Synopsis
+
+Resolve one reported artifact conflict.
+
+A sync never overwrites a local file whose bytes differ from the last state
+agreed with a peer, and that protection is sticky: it survives every later
+sync. This is how you clear it deliberately, instead of deleting the local
+file to make the protection go away.
+
+  --list          show the open conflicts with a peer (changes nothing)
+  --take-local    keep your copy; that path is then pinned local for this
+                  peer, so later peer changes to it will not arrive on their
+                  own. Run resolve --take-peer if you want them.
+  --take-peer     fetch the peer's copy of that one path, install it, and
+                  record it as agreed
+
+There is no --all: resolving in bulk is exactly what the sticky conflict
+exists to prevent. Loop the per-path form if you really mean it.
+
+```
+camp artifacts resolve [path] [flags]
+```
+
+### Options
+
+```
+      --from string   Machine id the conflict is with (required; conflicts are per peer)
+  -h, --help          help for resolve
+      --json          Output as JSON
+      --list          List open conflicts with the peer and change nothing
+      --take-local    Keep your copy; pins that path local for this peer
+      --take-peer     Fetch the peer's copy of that path and record it as agreed
+```
+
+### Options inherited from parent commands
+
+```
+      --no-color   disable colored output
+```
+---
+
 ## camp attach
 
 Attach an external directory to a campaign
@@ -481,6 +526,7 @@ camp commit [flags]
       --amend                 Amend the previous commit
       --auto-write            Run configured commit message writer
       --commit-large          Commit over-threshold files instead of keeping them out of git
+      --commit-nested         Commit undeclared nested git repositories as gitlinks instead of keeping them out of git
   -h, --help                  help for commit
       --include-refs          Include submodule ref changes when staging at campaign root
       --json                  Emit a JSON result on stdout; human output goes to stderr
@@ -3956,6 +4002,11 @@ is given):
 
   auth     OpenSSH (keys/agent) or Tailscale SSH (identity)
   probe    copy-paste BatchMode ssh line to test outside camp
+  resolve  whether the host becomes an address at all, checked before any ssh
+           is attempted. A MagicDNS name that will not resolve reports
+           tailscale's own health text as the reason, and the remote camp
+           version probe is skipped instead of blaming a machine that was
+           never addressable
   socket   ControlMaster multiplex state:
              none   no socket — the next hop opens a fresh master
              live   socket present and the master answers 'ssh -O check'
@@ -4855,6 +4906,7 @@ camp project commit [flags]
       --amend                 Amend the previous commit
       --auto-write            Run configured commit message writer
       --commit-large          Commit over-threshold files instead of keeping them out of git
+      --commit-nested         Commit undeclared nested git repositories as gitlinks instead of keeping them out of git
   -h, --help                  help for commit
   -m, --message stringArray   Commit message (repeatable; multiple -m are joined git-style into subject + body; required unless --auto-write)
       --no-drain              Do not wait for camp's queued commits first
@@ -7140,6 +7192,7 @@ camp sync [submodule...] [flags]
       --json               Output results as JSON for scripting
       --no-drain           Do not wait for camp's queued commits first
       --no-fetch           Skip fetching from remote (use local refs only)
+      --no-probe-cache     Re-probe the rsync engine on both machines instead of using the cached 24h verdict
   -p, --parallel int       Number of parallel git operations (git guards superproject ops with repo lockfiles that fail fast on contention; lower this if a slow disk surfaces transient lock errors) (default 4)
   -v, --verbose            Show detailed output for each submodule
       --verify-artifacts   Check artifact roots against last-transfer snapshots (no transfer)
@@ -8786,19 +8839,22 @@ Print the identifier of a workitem
 
 ### Synopsis
 
-Print the stable identifier of a workitem.
+Print the durable single-segment identifier of a workitem.
 
 With no argument, the workitem is detected from the current context using the
 same tiered resolution as `camp workitem resolve` (explicit selector, cwd
 ancestor, linked scope, festival, current-workitem pointer). With an argument,
 the workitem is resolved through the shared selector family: workitem ref,
-stable id, key, campaign-relative path, directory slug, or festival id. A
-filesystem path (absolute or relative to the current directory) is accepted and
-translated to the campaign-relative form the selector expects.
+stable id, key, campaign-relative path, directory slug, festival id, or intent
+frontmatter id. A filesystem path (absolute or relative to the current directory)
+is accepted and translated to the campaign-relative form the selector expects.
 
-The bare stable id is written to stdout for shell scripting; it is the id sibling
-of `camp workitem --print`, which prints a path. Use --key for the
-path-derived key instead, or --json for a structured object.
+Stdout is the bare durable id for shell scripting — stable .workitem id when
+present, otherwise a source-declared id (festival fest.yaml id or intent
+frontmatter id), otherwise the path-derived key. It is the id sibling of
+`camp workitem --print`, which prints a path. Use --key for the
+path-derived key instead, or --json for a structured object (id_kind is
+stable / festival / intent / key).
 
 Examples:
   camp workitem id                       # id of the workitem for the cwd
