@@ -40,7 +40,20 @@ type IntegrationResult struct {
 	// which reads as a healthy suite with a few broken tests instead of a run
 	// that never happened.
 	TestsSkipped int
-	FailedTests  []string // Names of failed tests
+	FailedTests  []string // Names of failed tests (failures of the code under test)
+	// InfraTests names tests that failed while carrying the INFRASTRUCTURE
+	// FAILURE banner: casualties of the Docker daemon, not of the code under
+	// test. Kept apart from FailedTests because the 2026-08-10 collapse
+	// rendered six of these as ✗ FAILED rows and sent the reader debugging
+	// product code that was fine.
+	InfraTests []string
+	// InfraSkipped counts tests skipped by the harness's infrastructure-death
+	// latch: tests that never ran because the run was already dead.
+	InfraSkipped int
+	// Collapsed marks a suite whose numbers are not a verdict: its
+	// infrastructure died partway, so the pass/fail counts describe whatever
+	// happened to run, not the suite.
+	Collapsed bool
 	// SuiteError is a failure of the run itself rather than of any test: a
 	// build error, a panic that took the process down, a timeout. Kept apart
 	// from FailedTests because it is not a test and must not be counted as
@@ -48,10 +61,24 @@ type IntegrationResult struct {
 	SuiteError string
 }
 
-const integrationTestTimeout = "15m"
+// integrationTestTimeout must stay above the healthy full-suite wall time or
+// it becomes a Model-3 lie: it reports "suite failed" for "suite outgrew a
+// constant". The healthy run measured 1176s (~19.6m) at 916 tests on
+// 2026-08-10 while this constant still said 15m — meaning even a perfectly
+// idle daemon could not finish a green run. Keep it aligned with the
+// integration-verbose lane in .justfiles/test.just (30m), and check it
+// against the telemetry line's wall figure when the suite grows.
+const integrationTestTimeout = "30m"
+
+// infraBannerMarker is the label the integration harness stamps on every
+// infrastructure fault (classifyExecOutcome and infraLatch in
+// tests/integration). Matching output on it is what lets this dashboard tell
+// a daemon casualty from a broken test.
+const infraBannerMarker = "INFRASTRUCTURE FAILURE"
 
 // Integration runs integration tests
 func Integration(verbose bool) error {
+	runStart := time.Now()
 	ui.Section("Running Integration Tests")
 
 	// Clean up any orphaned test containers from previous runs
@@ -107,7 +134,6 @@ func Integration(verbose bool) error {
 
 	results := make([]IntegrationResult, 0, len(suites))
 	total := len(suites)
-	failures := 0
 
 	// Run each test suite
 	for i, suite := range suites {
@@ -119,10 +145,8 @@ func Integration(verbose bool) error {
 		start := time.Now()
 
 		var pass bool
-		var testsPassed, testsFailed, testsSkipped int
-		var failedTests []string
 		var suiteError string
-		var packageFailed bool
+		tally := newIntegrationTally()
 
 		dockerEnv := append(os.Environ(),
 			"TESTCONTAINERS_DOCKER_SOCKET_OVERRIDE=/var/run/docker.sock",
@@ -176,8 +200,8 @@ func Integration(verbose bool) error {
 						elapsed := time.Since(start).Seconds()
 						testName := currentTest
 						output := currentOutput
-						passed := testsPassed
-						failed := testsFailed
+						passed := tally.testsPassed
+						failed := tally.testsFailed
 						mu.Unlock()
 
 						// Cycle spinner
@@ -226,40 +250,10 @@ func Integration(verbose bool) error {
 					}
 				}
 
-				// Track all tests (including subtests for failure reporting)
-				if event.Test != "" {
-					switch event.Action {
-					case "run":
-						if !strings.Contains(event.Test, "/") {
-							currentTest = event.Test
-						}
-					case "pass":
-						if !strings.Contains(event.Test, "/") {
-							testsPassed++
-						}
-					case "fail":
-						// Track all failed tests (including subtests)
-						failedTests = append(failedTests, event.Test)
-						if !strings.Contains(event.Test, "/") {
-							testsFailed++
-						}
-					case "skip":
-						if !strings.Contains(event.Test, "/") {
-							testsSkipped++
-						}
-					}
-				} else if event.Action == "fail" {
-					// A fail with no test name is the package failing as a
-					// whole: a panic outside a test, a TestMain that exited
-					// non-zero, output arriving after a test finished.
-					//
-					// Dropping these is why a run could report every test
-					// passing and still exit non-zero, leaving the only
-					// evidence as "go test exited: exit status 1" with nothing
-					// to attribute it to. The package is not a test, so it is
-					// recorded as a run-level failure.
-					packageFailed = true
+				if event.Test != "" && event.Action == "run" && !strings.Contains(event.Test, "/") {
+					currentTest = event.Test
 				}
+				tally.observe(event)
 				mu.Unlock()
 			}
 
@@ -267,8 +261,10 @@ func Integration(verbose bool) error {
 			scanErr := scanner.Err()
 			waitErr := cmd.Wait()
 
-			suiteError = classifyRunFailure(scanErr, waitErr, testsFailed, packageFailed)
-			pass = testsFailed == 0 && suiteError == ""
+			suiteError = classifyRunFailure(scanErr, waitErr, tally.testsFailed, tally.packageFailed)
+			// A collapsed suite is not a pass even when nothing that ran
+			// failed: most of it never ran.
+			pass = tally.testsFailed == 0 && suiteError == "" && !tally.collapsed()
 			ui.ClearProgressWithOutput()
 		}
 
@@ -278,102 +274,244 @@ func Integration(verbose bool) error {
 			Suite:        name,
 			Pass:         pass,
 			Duration:     duration,
-			TestsPassed:  testsPassed,
-			TestsFailed:  testsFailed,
-			TestsSkipped: testsSkipped,
-			FailedTests:  failedTests,
+			TestsPassed:  tally.testsPassed,
+			TestsFailed:  tally.testsFailed,
+			TestsSkipped: tally.testsSkipped,
+			FailedTests:  tally.failedTests,
+			InfraTests:   tally.infraTests,
+			InfraSkipped: tally.infraSkipped,
+			Collapsed:    tally.collapsed(),
 			SuiteError:   suiteError,
 		})
-
-		if !pass {
-			failures++
-		}
 	}
 
 	ui.ClearProgress()
 
-	// Calculate totals
-	var totalTime time.Duration
-	totalTestsPassed := 0
-	totalTestsFailed := 0
-	totalTestsSkipped := 0
-	for _, r := range results {
-		totalTime += r.Duration
-		totalTestsPassed += r.TestsPassed
-		totalTestsFailed += r.TestsFailed
-		totalTestsSkipped += r.TestsSkipped
-	}
-	totalTests := totalTestsPassed + totalTestsFailed + totalTestsSkipped
+	s := summarizeIntegration(results, ui.ColourEnabled())
+	ui.SummaryCardWithStatus("Integration Test Summary", s.rows,
+		fmt.Sprintf("%.2fs", s.totalTime.Seconds()), s.success, s.successMsg, s.failMsg)
+	surfaceTelemetry(runStart)
 
-	// Display summary - show failed tests as individual rows
-	rows := [][]string{}
-	hasFailures := failures > 0
+	if !s.success {
+		if s.collapsed {
+			return camperrors.Newf(
+				"integration run did not happen: infrastructure failure (%d tests never ran)",
+				s.neverRan)
+		}
+		return camperrors.Newf("%d integration test suites failed", s.failedSuites)
+	}
+
+	return nil
+}
+
+// surfaceTelemetry prints the harness's capacity record for this run beneath
+// the summary card. The test binary emits the same numbers on stderr, but in
+// -json mode this runner discards binary stderr, so the JSONL history file
+// (written by reportExecTelemetry in tests/integration) is the channel that
+// survives. Freshness-gated on the file's mtime so a run that died before
+// TestMain's report cannot resurface a stale record as its own.
+func surfaceTelemetry(runStart time.Time) {
+	path := filepath.Join("out", "itest-history.jsonl")
+	info, err := os.Stat(path)
+	if err != nil || info.ModTime().Before(runStart) {
+		return
+	}
+	data, err := os.ReadFile(path)
+	if err != nil {
+		return
+	}
+	if line := latestTelemetryRecord(data); line != "" {
+		fmt.Printf("  telemetry: %s\n", line)
+	}
+}
+
+// latestTelemetryRecord returns the last non-empty line of a JSONL history
+// buffer. Pure so the trailing-newline and empty-file cases stay tested.
+func latestTelemetryRecord(data []byte) string {
+	lines := strings.Split(strings.TrimSpace(string(data)), "\n")
+	if len(lines) == 0 {
+		return ""
+	}
+	return strings.TrimSpace(lines[len(lines)-1])
+}
+
+// integrationTally reduces the go test -json event stream for one suite into
+// the counts and classifications the summary renders. Kept apart from the
+// display loop so its behavior is testable without a terminal or a daemon.
+type integrationTally struct {
+	testsPassed, testsFailed, testsSkipped int
+	failedTests                            []string // failures of the code under test (rerunnable)
+	infraTests                             []string // failures carrying the infrastructure banner
+	infraSkipped                           int
+	packageFailed                          bool
+	sawBanner                              map[string]bool
+}
+
+func newIntegrationTally() *integrationTally {
+	return &integrationTally{sawBanner: make(map[string]bool)}
+}
+
+func (ta *integrationTally) observe(event integrationTestEvent) {
+	if event.Action == "output" && event.Test != "" &&
+		strings.Contains(event.Output, infraBannerMarker) {
+		ta.sawBanner[event.Test] = true
+	}
+
+	if event.Test == "" {
+		// A fail with no test name is the package failing as a whole: a
+		// panic outside a test, a TestMain that exited non-zero, output
+		// arriving after a test finished.
+		//
+		// Dropping these is why a run could report every test passing and
+		// still exit non-zero, leaving the only evidence as "go test exited:
+		// exit status 1" with nothing to attribute it to. The package is not
+		// a test, so it is recorded as a run-level failure.
+		if event.Action == "fail" {
+			ta.packageFailed = true
+		}
+		return
+	}
+
+	topLevel := !strings.Contains(event.Test, "/")
+	switch event.Action {
+	case "pass":
+		if topLevel {
+			ta.testsPassed++
+		}
+	case "fail":
+		// Track all failed tests (including subtests), split by whether the
+		// failure carried the infrastructure banner.
+		if ta.sawBanner[event.Test] {
+			ta.infraTests = append(ta.infraTests, event.Test)
+		} else {
+			ta.failedTests = append(ta.failedTests, event.Test)
+		}
+		if topLevel {
+			ta.testsFailed++
+		}
+	case "skip":
+		if topLevel {
+			ta.testsSkipped++
+			if ta.sawBanner[event.Test] {
+				ta.infraSkipped++
+			}
+		}
+	}
+}
+
+func (ta *integrationTally) total() int {
+	return ta.testsPassed + ta.testsFailed + ta.testsSkipped
+}
+
+// collapsed reports whether this suite's numbers are a verdict or a non-run.
+// Any latch-driven skip means the harness itself declared the run dead. The
+// percentage backstop catches a collapse whose banner never got attributed
+// (e.g. output interleaving): mass skipping is this harness's
+// infrastructure-death signature, while legitimate skips are a handful
+// (currently 8 of ~915). The absolute floor keeps a small suite with a
+// couple of ordinary skips from tripping it.
+func (ta *integrationTally) collapsed() bool {
+	if ta.infraSkipped > 0 {
+		return true
+	}
+	return ta.testsSkipped >= 10 && ta.testsSkipped*5 > ta.total()
+}
+
+// runSummary is the fully-rendered verdict for a set of suite results.
+type runSummary struct {
+	rows         [][]string
+	totalTime    time.Duration
+	success      bool
+	successMsg   string
+	failMsg      string
+	collapsed    bool
+	neverRan     int
+	failedSuites int
+}
+
+// summarizeIntegration reduces per-suite results into the final card. Pure so
+// the property that matters most stays testable: a collapsed run must never
+// render as a table of broken tests. The 2026-08-10 incident rendered six
+// daemon casualties as six ✗ FAILED rows over an 871-test skip, and the
+// reader went debugging product code that was fine.
+func summarizeIntegration(results []IntegrationResult, colour bool) runSummary {
+	var s runSummary
+	totalPassed, totalFailed, totalSkipped := 0, 0, 0
+	for _, r := range results {
+		s.totalTime += r.Duration
+		totalPassed += r.TestsPassed
+		totalFailed += r.TestsFailed
+		totalSkipped += r.TestsSkipped
+		if !r.Pass {
+			s.failedSuites++
+		}
+		if r.Collapsed {
+			s.collapsed = true
+			s.neverRan += r.TestsSkipped
+		}
+	}
+	totalTests := totalPassed + totalFailed + totalSkipped
+
+	paint := func(label, colourCode string) string {
+		if colour {
+			return colourCode + label + ui.Reset
+		}
+		return label
+	}
 
 	for _, r := range results {
 		if r.Pass {
 			continue
 		}
-		// Show each failed test as a row
 		for _, testName := range r.FailedTests {
-			status := "✗ FAILED"
-			if ui.ColourEnabled() {
-				status = ui.Red + status + ui.Reset
-			}
-			rows = append(rows, []string{
-				testName,
-				status,
-				"",
-			})
+			s.rows = append(s.rows, []string{testName, paint("✗ FAILED", ui.Red), ""})
+		}
+		// Daemon casualties are listed for completeness but labelled so
+		// nobody debugs the code they name.
+		for _, testName := range r.InfraTests {
+			s.rows = append(s.rows, []string{testName, paint("✗ INFRA", ui.Yellow), ""})
 		}
 		// A run-level failure gets its own row, labelled so it cannot be
 		// mistaken for a test someone could go and rerun.
 		if r.SuiteError != "" {
-			status := "✗ SUITE"
-			if ui.ColourEnabled() {
-				status = ui.Red + status + ui.Reset
-			}
-			rows = append(rows, []string{
-				fmt.Sprintf("%s: %s", r.Suite, r.SuiteError),
-				status,
-				"",
-			})
+			s.rows = append(s.rows, []string{
+				fmt.Sprintf("%s: %s", r.Suite, r.SuiteError), paint("✗ SUITE", ui.Red), ""})
 		}
 	}
-
-	// Add header only if there are failures to show
-	if hasFailures && len(rows) > 0 {
-		rows = append([][]string{{"Failed Test", "Status", ""}}, rows...)
+	if s.collapsed {
+		s.rows = append(s.rows, []string{
+			"Docker daemon out of headroom - rerun on an idle machine, or lower CAMP_TEST_POOL_SIZE",
+			paint("✗ NON-RUN", ui.Red), ""})
 	}
 
-	// Add totals row
-	totalStatus := testTally(totalTestsPassed, totalTests, totalTestsSkipped)
-	if ui.ColourEnabled() {
-		if totalTestsFailed > 0 {
+	if len(s.rows) > 0 {
+		s.rows = append([][]string{{"Failed Test", "Status", ""}}, s.rows...)
+	}
+
+	totalStatus := testTally(totalPassed, totalTests, totalSkipped)
+	if colour {
+		if totalFailed > 0 || s.collapsed {
 			totalStatus = ui.Red + totalStatus + ui.Reset
 		} else {
 			totalStatus = ui.Green + totalStatus + ui.Reset
 		}
 	}
-
-	rows = append(rows, []string{
+	s.rows = append(s.rows, []string{
 		fmt.Sprintf("%d suites", len(results)),
 		totalStatus,
-		fmt.Sprintf("%.2fs", totalTime.Seconds()),
+		fmt.Sprintf("%.2fs", s.totalTime.Seconds()),
 	})
 
-	success := failures == 0
-
-	// Use custom status messages for integration test results
-	successMsg := fmt.Sprintf("✓ ALL %d TESTS PASSED", totalTestsPassed)
-	failMsg := fmt.Sprintf("✗ %d/%d TESTS FAILED", totalTestsFailed, totalTests)
-
-	ui.SummaryCardWithStatus("Integration Test Summary", rows, fmt.Sprintf("%.2fs", totalTime.Seconds()), success, successMsg, failMsg)
-
-	if failures > 0 {
-		return camperrors.Newf("%d integration test suites failed", failures)
+	s.success = s.failedSuites == 0 && !s.collapsed
+	s.successMsg = fmt.Sprintf("✓ ALL %d TESTS PASSED", totalPassed)
+	if s.collapsed {
+		// The headline of a daemon incident is the incident, never a test
+		// table: these numbers describe a run that did not happen.
+		s.failMsg = fmt.Sprintf("✗ RUN DID NOT HAPPEN - INFRASTRUCTURE FAILURE (%d tests never ran)", s.neverRan)
+	} else {
+		s.failMsg = fmt.Sprintf("✗ %d/%d TESTS FAILED", totalFailed, totalTests)
 	}
-
-	return nil
+	return s
 }
 
 // testTally renders the headline count most people read instead of the run.
