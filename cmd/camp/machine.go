@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"strings"
 	"text/tabwriter"
 
 	"github.com/spf13/cobra"
@@ -156,6 +157,11 @@ is given):
 
   auth     OpenSSH (keys/agent) or Tailscale SSH (identity)
   probe    copy-paste BatchMode ssh line to test outside camp
+  resolve  whether the host becomes an address at all, checked before any ssh
+           is attempted. A MagicDNS name that will not resolve reports
+           tailscale's own health text as the reason, and the remote camp
+           version probe is skipped instead of blaming a machine that was
+           never addressable
   socket   ControlMaster multiplex state:
              none   no socket — the next hop opens a fresh master
              live   socket present and the master answers 'ssh -O check'
@@ -381,6 +387,15 @@ type machineDiagnoseRow struct {
 	// consumers are unaffected.
 	ReverseCapable bool   `json:"reverse_capable"`
 	ReverseHint    string `json:"reverse_hint,omitempty"`
+	// Resolves reports whether Host became an address before any ssh was
+	// attempted; ResolveHint names the cause when it did not. Additive with
+	// omitempty on the detail fields so existing --json consumers are
+	// unaffected. ResolveChecked separates "no host to look up" from "looked,
+	// and it failed", which the bare bool cannot express.
+	ResolveChecked bool     `json:"resolve_checked"`
+	Resolves       bool     `json:"resolves"`
+	ResolveAddrs   []string `json:"resolve_addrs,omitempty"`
+	ResolveHint    string   `json:"resolve_hint,omitempty"`
 }
 
 // probeRemoteCampVersion asks the machine's own camp for its version. It is
@@ -450,11 +465,24 @@ func runMachineDiagnose(cmd *cobra.Command, args []string) error {
 	// row. Probing it inside the loop cost N loopback dials and N tailscale
 	// probes against a 2s budget each to learn the same answer.
 	reverse := checkReverseReachability(ctx, defaultReverseProbes())
+	// Built once, not per row: the probes memoize the tailscale health read, so
+	// a fleet whose MagicDNS is down pays for that answer a single time.
+	resolveProbeSet := defaultResolveProbes()
 	rows := make([]machineDiagnoseRow, 0, len(targets))
 	for i := range targets {
 		m := &targets[i]
 		d := remote.CheckControlMaster(ctx, m)
-		remoteVersion, remoteCommit, checkURL := probeRemoteCampVersion(ctx, m)
+		resolved := checkHostResolves(ctx, m.Host, resolveProbeSet)
+		// A host that does not resolve cannot be dialed, so the version probe
+		// would spend its ssh budget proving what the lookup already showed —
+		// and then report the failure as "camp missing / too old", which is the
+		// wrong diagnosis. Skipping it makes the broken case faster and honest.
+		// An unprobed version is recorded exactly as a failed probe is:
+		// writeMachineVersionCache ignores an empty version either way.
+		var remoteVersion, remoteCommit, checkURL string
+		if !resolved.Checked || resolved.Resolved {
+			remoteVersion, remoteCommit, checkURL = probeRemoteCampVersion(ctx, m)
+		}
 		// Diagnose is the only surface that pays for a live probe, so it is the
 		// only one that can warm the cache the hop path reads.
 		writeMachineVersionCache(m.ID, remoteVersion, remoteCommit)
@@ -479,6 +507,10 @@ func runMachineDiagnose(cmd *cobra.Command, args []string) error {
 			// operator is already looking when a hop-back fails.
 			ReverseCapable: reverse.Capable,
 			ReverseHint:    reverse.Hint,
+			ResolveChecked: resolved.Checked,
+			Resolves:       resolved.Resolved,
+			ResolveAddrs:   resolved.Addrs,
+			ResolveHint:    resolved.Hint,
 		}
 		if machineDiagnoseReset && d.State == remote.ControlStale {
 			if err := remote.ResetControlMaster(ctx, m); err != nil {
@@ -534,7 +566,22 @@ func renderMachineDiagnoseTable(w io.Writer, rows []machineDiagnoseRow) error {
 			fmt.Sprintf("%s  %s", ui.Label("SOCKET"), state+" · "+pathutil.AbbreviateHome(r.Socket)),
 			fmt.Sprintf("%s  %s", ui.Label("PROBE"), r.Probe),
 		)
+		// Directly above CAMP, because when this fails it is the reason CAMP
+		// has nothing to report, and the two read as cause and effect in order.
+		if r.ResolveChecked {
+			mark, detail := "✓", strings.Join(r.ResolveAddrs, ", ")
+			if !r.Resolves {
+				mark, detail = "✗", r.ResolveHint
+			}
+			lines = append(lines, fmt.Sprintf("%s  %s %s", ui.Label("RESOLVE"), mark, detail))
+		}
 		switch {
+		case r.ResolveChecked && !r.Resolves:
+			// Never "camp missing / too old" for a host that was never
+			// addressable: that sends the operator to the far machine to fix
+			// something, when nothing on it is wrong.
+			lines = append(lines, fmt.Sprintf("%s  %s", ui.Label("CAMP"),
+				ui.Dim("not probed (the host does not resolve)")))
 		case r.CheckURL != "":
 			// Naming the cause beats the generic "unavailable": nothing is
 			// broken here, the hop is waiting on a browser approval.

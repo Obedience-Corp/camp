@@ -12,6 +12,7 @@ evidence bundles.
 | Machine dual-auth CLI | [machine-dual-auth.tape](machine-dual-auth.tape) | [machine-dual-auth.gif](machine-dual-auth.gif) | (WI-ca06e1 record-time proof; private gist optional) |
 | Project-aware worktree list | [worktree-list.tape](worktree-list.tape) | [worktree-list.gif](worktree-list.gif) | — |
 | Tailscale SSH approval | [machine-tailscale-check.tape](machine-tailscale-check.tape) | private gist | (PR evidence bundle) |
+| Diagnose an unresolvable host | [machine-diagnose-dns.tape](machine-diagnose-dns.tape) | private gist | (PR evidence bundle) |
 
 The private evidence runs are `camp/fresh-configure/1d5415b8` and
 `camp/machine-tui/1d5415b8`. Each manifest records the source revision,
@@ -68,6 +69,30 @@ CAMP_VHS_ROOT=$FIXTURE just vhs record-color docs/demos/machine-tailscale-check.
 The pty check is the one that can claim the link is on a single line and that
 the exact URL reached the opener and clipboard; the recording is what a reviewer
 looks at.
+
+`machine-diagnose-dns` shows `camp machine diagnose` telling "the name never
+resolved" apart from "the remote camp is missing or too old" — the two failures
+it used to report with the same sentence. It records two machines on purpose:
+one whose host resolves and whose camp is still unreachable (which keeps the
+generic wording, because for that machine it is accurate), and one MagicDNS name
+that does not resolve. The unresolvable name is under an invented tailnet, so
+the lookup fails through camp's real resolver rather than a stub; only
+`tailscale` and `ssh` are fixture stubs:
+
+```sh
+FIXTURE=$(mktemp -d)
+mkdir -p "$FIXTURE/bin" "$FIXTURE/home"
+cp bin/camp "$FIXTURE/bin/camp"
+cp docs/demos/fixtures/tailscale-dns-broken "$FIXTURE/bin/tailscale"
+cp docs/demos/fixtures/ssh-unreachable "$FIXTURE/bin/ssh"
+chmod +x "$FIXTURE/bin"/*
+: > "$FIXTURE/machines.yaml"
+CAMP_VHS_ROOT=$FIXTURE just vhs record-color docs/demos/machine-diagnose-dns.tape
+```
+
+Prefer a short, neutral fixture root: `--json` prints the ControlMaster socket
+path unabbreviated, so a fixture under a long personal path writes that path
+into the recording and the privacy scan rejects it.
 
 The tapes set a fake `HOME`, fixture `PATH`, and non-sensitive terminal
 identity. They write raw output under `out/`; keep raw recordings and PTY
