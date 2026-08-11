@@ -23,13 +23,12 @@ import (
 // the app uses DEFAULT_TIMEOUT (cli/executor) as the reference order of magnitude.
 const DefaultTimeout = 10 * time.Second
 
-// Target returns the ssh destination: user@host when ssh_user is set, else host.
-// Mirrors the app's ssh_target (remote/connection.rs:209-214).
+// Target returns the ssh destination for a direct (non-fallback) dial:
+// user@host when ssh_user is set, else host. Mirrors the app's ssh_target
+// (remote/connection.rs:209-214). Dial paths that should survive a MagicDNS
+// outage go through ResolveEndpoint instead (endpoint.go).
 func Target(m *machines.Machine) string {
-	if m.SSHUser != "" {
-		return m.SSHUser + "@" + m.Host
-	}
-	return m.Host
+	return Direct(m).Target()
 }
 
 // authArgs builds OpenSSH auth-related options for a hop. Per the dual-auth
@@ -76,17 +75,14 @@ func AuthDisplayName(auth string) string {
 
 // ProbeCommand returns a copy-paste BatchMode ssh line the operator can run
 // outside camp to isolate hop failures (D7). It mirrors camp's target and
-// identity options, not the full ControlMaster multiplex path.
+// identity options, not the full ControlMaster multiplex path. This is the
+// direct-dial form; surfaces that resolved a fallback endpoint use
+// Endpoint.ProbeCommand so the pasted line reproduces the real dial.
 func ProbeCommand(m *machines.Machine) string {
 	if m == nil {
 		return ""
 	}
-	parts := []string{"ssh", "-o", "BatchMode=yes"}
-	if m.IdentityFile != "" {
-		parts = append(parts, "-o", "IdentitiesOnly=yes", "-i", expandTilde(m.IdentityFile))
-	}
-	parts = append(parts, Target(m), "true")
-	return strings.Join(parts, " ")
+	return Direct(m).ProbeCommand()
 }
 
 // AuthModeHint returns an optional one-line diagnose note for the machine's
