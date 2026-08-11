@@ -388,7 +388,7 @@ func runSwitch(cmd *cobra.Command, args []string) error {
 	}
 
 	if shellConnect {
-		return emitShellConnect(cmd.OutOrStdout(), false, targetPath, nil, "")
+		return emitShellConnect(cmd.OutOrStdout(), false, targetPath, remote.Endpoint{}, "")
 	}
 	return emitSwitchSelection(cmd, selected, targetPath, targetTab, printOnly, jsonOut)
 }
@@ -407,7 +407,12 @@ func runSwitch(cmd *cobra.Command, args []string) error {
 // extend the environment but do not reset an unrelated inherited variable.
 // Assembly and validation happen before the call, so this function's only job
 // stays rendering one line.
-func emitShellConnect(w io.Writer, isRemote bool, path string, m *machines.Machine, origin string) error {
+//
+// e is the resolved dial endpoint (unused for the local form). Taking the
+// endpoint rather than the machine keeps this a renderer: the caller decided
+// how to dial — including a tailnet peer fallback — and this line reproduces
+// that decision exactly.
+func emitShellConnect(w io.Writer, isRemote bool, path string, e remote.Endpoint, origin string) error {
 	if !isRemote {
 		_, err := fmt.Fprintf(w, "cd -- %s\n", remote.ShellQuote(path))
 		return err
@@ -419,13 +424,13 @@ func emitShellConnect(w io.Writer, isRemote bool, path string, m *machines.Machi
 	// Quote every opt token, not just target/inner: ControlPath (under $HOME) and
 	// an -i identity file may hold spaces/metacharacters, which would otherwise
 	// split the eval'd line into the wrong argv before ssh ever runs.
-	opts := remote.Opts(m)
+	opts := e.Opts()
 	quoted := make([]string, len(opts))
 	for i, o := range opts {
 		quoted[i] = remote.ShellQuote(o)
 	}
 	_, err := fmt.Fprintf(w, "exec ssh -t %s %s %s\n",
-		strings.Join(quoted, " "), remote.ShellQuote(remote.Target(m)), remote.ShellQuote(inner))
+		strings.Join(quoted, " "), remote.ShellQuote(e.Target()), remote.ShellQuote(inner))
 	return err
 }
 

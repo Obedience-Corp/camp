@@ -310,7 +310,7 @@ func TestCopyRemoteScpFallbackRefusesToClobberRemoteDestination(t *testing.T) {
 		},
 	}
 
-	err := copyWithFallback(context.Background(), opts, "/local/x.md", "archdtop:/remote/x.md")
+	err := copyWithFallback(context.Background(), opts, "/local/x.md", "lance@archdtop.tail37114b.ts.net:/remote/x.md")
 	if !errors.Is(err, ErrDestinationExists) {
 		t.Fatalf("err = %v, want ErrDestinationExists", err)
 	}
@@ -338,7 +338,7 @@ func TestCopyRemoteScpFallbackCopiesWhenRemoteDestinationIsFree(t *testing.T) {
 			return nil, nil
 		},
 	}
-	if err := copyWithFallback(context.Background(), opts, "/local/x.md", "archdtop:/remote/x.md"); err != nil {
+	if err := copyWithFallback(context.Background(), opts, "/local/x.md", "lance@archdtop.tail37114b.ts.net:/remote/x.md"); err != nil {
 		t.Fatalf("a free destination must copy: %v", err)
 	}
 	if !slices.Contains(calls, "scp") {
@@ -362,7 +362,7 @@ func TestCopyRemoteScpFallbackSkipsTheProbeUnderForce(t *testing.T) {
 			return nil, nil
 		},
 	}
-	if err := copyWithFallback(context.Background(), opts, "/local/x.md", "archdtop:/remote/x.md"); err != nil {
+	if err := copyWithFallback(context.Background(), opts, "/local/x.md", "lance@archdtop.tail37114b.ts.net:/remote/x.md"); err != nil {
 		t.Fatal(err)
 	}
 	if slices.Contains(calls, "ssh") {
@@ -391,7 +391,7 @@ func TestCopyRemoteScpFallbackTreatsAFailedProbeAsAnError(t *testing.T) {
 			return nil, nil
 		},
 	}
-	err := copyWithFallback(context.Background(), opts, "/local/x.md", "archdtop:/remote/x.md")
+	err := copyWithFallback(context.Background(), opts, "/local/x.md", "lance@archdtop.tail37114b.ts.net:/remote/x.md")
 	if err == nil {
 		t.Fatal("an unreadable destination must not be overwritten")
 	}

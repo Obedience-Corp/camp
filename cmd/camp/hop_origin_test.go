@@ -12,6 +12,7 @@ import (
 	"github.com/spf13/cobra"
 
 	"github.com/Obedience-Corp/camp/internal/machines"
+	"github.com/Obedience-Corp/camp/internal/remote"
 )
 
 func TestEncodeHopOrigin(t *testing.T) {
@@ -312,7 +313,7 @@ func TestEmitShellConnectEmbedsOrigin(t *testing.T) {
 	var buf bytes.Buffer
 	m := &machines.Machine{ID: "archdtop", Host: "archdtop.tail37114b.ts.net", SSHUser: "lance", AuthMethod: machines.AuthTailscaleSSH}
 	origin := "v1;host=mac-studio.tail37114b.ts.net;user=lancerogers;campaign=obey-campaign;id=mac-studio"
-	if err := emitShellConnect(&buf, true, "/home/lance/campaigns/obey-campaign", m, origin); err != nil {
+	if err := emitShellConnect(&buf, true, "/home/lance/campaigns/obey-campaign", remote.Direct(m), origin); err != nil {
 		t.Fatal(err)
 	}
 	out := buf.String()
@@ -341,7 +342,7 @@ func TestEmitShellConnectHostileOriginIsQuoted(t *testing.T) {
 	// it) must still be inert after ShellQuote. Belt and suspenders: this pins
 	// the shell layer independently of the encoding layer.
 	hostile := `v1;host=box.local;user=lance;campaign=x'; rm -rf ~;'`
-	if err := emitShellConnect(&buf, true, "/x", m, hostile); err != nil {
+	if err := emitShellConnect(&buf, true, "/x", remote.Direct(m), hostile); err != nil {
 		t.Fatal(err)
 	}
 	out := buf.String()
@@ -359,7 +360,7 @@ func TestEmitShellConnectWithoutOriginIsUnchanged(t *testing.T) {
 	// it does today.
 	var buf bytes.Buffer
 	m := &machines.Machine{ID: "devbox", Host: "devbox.ts.net", SSHUser: "lance", AuthMethod: machines.AuthSSHAgent}
-	if err := emitShellConnect(&buf, true, "/srv/campaigns/obey", m, ""); err != nil {
+	if err := emitShellConnect(&buf, true, "/srv/campaigns/obey", remote.Direct(m), ""); err != nil {
 		t.Fatal(err)
 	}
 	out := buf.String()

@@ -576,7 +576,7 @@ func remoteCampBinary() string {
 // profile for the shell the account actually uses instead of incorrectly
 // assuming its PATH is configured for /bin/sh.
 func RunCampCommand(ctx context.Context, m *machines.Machine, args string) ([]byte, error) {
-	return runCampCommand(ctx, m, args, Opts(m))
+	return runCampCommand(ctx, m, args, false)
 }
 
 // RunCampCommandReuseOnly is RunCampCommand for callers that also report m's
@@ -584,15 +584,25 @@ func RunCampCommand(ctx context.Context, m *machines.Machine, args string) ([]by
 // with OptsReuseOnly so the probe cannot create or replace the very socket
 // being reported alongside it.
 func RunCampCommandReuseOnly(ctx context.Context, m *machines.Machine, args string) ([]byte, error) {
-	return runCampCommand(ctx, m, args, OptsReuseOnly(m))
+	return runCampCommand(ctx, m, args, true)
 }
 
-func runCampCommand(ctx context.Context, m *machines.Machine, args string, opts []string) ([]byte, error) {
+// runCampCommand resolves the dial endpoint itself (rather than taking
+// pre-built opts) so every remote camp invocation — version probe, ResolveRoot,
+// the machine screen — survives a MagicDNS outage without its callers knowing
+// the fallback exists. The per-process peer-table memo makes the repeated
+// resolution effectively free.
+func runCampCommand(ctx context.Context, m *machines.Machine, args string, reuseOnly bool) ([]byte, error) {
 	if err := EnsureKeyAuth(m); err != nil {
 		return nil, err
 	}
+	e := ResolveEndpoint(ctx, m)
+	opts := e.Opts()
+	if reuseOnly {
+		opts = e.OptsReuseOnly()
+	}
 	binary := remoteCampBinary()
-	out, err := Run(ctx, Target(m), opts, campRemoteCommandLine(binary, args))
+	out, err := Run(ctx, e.Target(), opts, campRemoteCommandLine(binary, args))
 	if err != nil {
 		return nil, campNotFoundHint(err, m, binary)
 	}

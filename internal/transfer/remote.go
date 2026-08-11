@@ -48,6 +48,21 @@ type CopyOptions struct {
 	Force    bool     // overwrite an existing destination
 	Run      Runner
 	LookPath lookPathFunc
+
+	// dial is the resolved ssh endpoint, populated once by CopyRemote so the
+	// rsync/scp argv, the no-clobber probe, and the copy itself all dial the
+	// same address. Nil (tests entering below CopyRemote) means a direct dial.
+	dial *remote.Endpoint
+}
+
+// dialEndpoint returns the endpoint CopyRemote resolved, or the direct one for
+// callers that entered below it. Never resolves live: argv builders must stay
+// pure so tests never touch a resolver or a tailnet.
+func (o CopyOptions) dialEndpoint() remote.Endpoint {
+	if o.dial != nil {
+		return *o.dial
+	}
+	return remote.Direct(o.Machine)
 }
 
 // CopyRemote moves one file between this machine and Machine, reusing the same
@@ -65,6 +80,10 @@ func CopyRemote(ctx context.Context, opts CopyOptions) error {
 	if opts.LookPath == nil {
 		opts.LookPath = exec.LookPath
 	}
+	// One resolution for the whole copy: ResolveRoot below and every ssh/scp/
+	// rsync invocation after it must agree on the dial address.
+	e := remote.ResolveEndpoint(ctx, opts.Machine)
+	opts.dial = &e
 	src, dest, err := opts.endpoints(ctx)
 	if err != nil {
 		return err
@@ -148,7 +167,7 @@ func (o CopyOptions) endpoints(ctx context.Context) (src, dest string, err error
 	if err != nil {
 		return "", "", err
 	}
-	target := remote.Target(o.Machine) + ":" + remotePath
+	target := o.dialEndpoint().TransferTarget(remotePath)
 	if o.Pull {
 		return target, o.Local, nil
 	}
@@ -200,7 +219,7 @@ func (o CopyOptions) rsyncArgs(src, dest string) []string {
 		// is clobbered without --force.
 		args = append(args, "--ignore-existing")
 	}
-	if sshCmd := peer.SSHCommandFor(o.Machine); sshCmd != "" {
+	if sshCmd := peer.SSHCommandForEndpoint(o.dialEndpoint()); sshCmd != "" {
 		args = append(args, "-e", sshCmd)
 	}
 	return append(args, src, dest)
@@ -210,7 +229,7 @@ func (o CopyOptions) rsyncArgs(src, dest string) []string {
 // paths go through the remote shell in this mode, so they are quoted; that is
 // the layer rsync's -s makes unnecessary.
 func (o CopyOptions) scpArgs(src, dest string) []string {
-	args := append([]string{}, remote.Opts(o.Machine)...)
+	args := append([]string{}, o.dialEndpoint().Opts()...)
 	args = append(args, "-o", "ServerAliveInterval=15", "-o", "ServerAliveCountMax=4")
 	return append(args, quoteRemote(src), quoteRemote(dest))
 }
@@ -220,8 +239,12 @@ func (o CopyOptions) scpArgs(src, dest string) []string {
 // using the same option set as the copy, which the ControlMaster socket already
 // opened for the resolve.
 func (o CopyOptions) destinationExists(ctx context.Context, dest string) (bool, error) {
-	host, remotePath, isRemote := strings.Cut(dest, ":")
-	if !isRemote {
+	// A remote dest was built by endpoints() as TransferTarget(path), so the
+	// same endpoint splits it back exactly. Cutting at the first ':' would
+	// mis-split a bracketed IPv6 fallback ("[fd7a::1]:/path").
+	e := o.dialEndpoint()
+	prefix := e.TransferTarget("")
+	if !strings.HasPrefix(dest, prefix) {
 		if _, err := os.Stat(dest); err == nil {
 			return true, nil
 		} else if !os.IsNotExist(err) {
@@ -229,9 +252,10 @@ func (o CopyOptions) destinationExists(ctx context.Context, dest string) (bool, 
 		}
 		return false, nil
 	}
+	remotePath := strings.TrimPrefix(dest, prefix)
 
-	args := append([]string{}, remote.Opts(o.Machine)...)
-	args = append(args, host, "test", "-e", remote.ShellQuote(remotePath))
+	args := append([]string{}, e.Opts()...)
+	args = append(args, e.Target(), "test", "-e", remote.ShellQuote(remotePath))
 	out, err := o.Run(ctx, "ssh", args...)
 	if err == nil {
 		return true, nil

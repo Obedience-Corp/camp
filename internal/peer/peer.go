@@ -70,7 +70,10 @@ func FromMachine(ctx context.Context, machineID, remainder string) (*Source, err
 		// callers degrade to origin.
 		return nil, err
 	}
-	return &Source{id: m.ID, root: root, target: remote.Target(m), sshOpts: remote.Opts(m)}, nil
+	// Resolved (not Direct): the peer source must reach the machine even when
+	// MagicDNS is down, same as the hop that will follow it.
+	e := remote.ResolveEndpoint(ctx, m)
+	return &Source{id: m.ID, root: root, target: e.Target(), sshOpts: e.Opts()}, nil
 }
 
 // FromPath builds a filesystem source rooted at an absolute campaign root on
@@ -276,13 +279,15 @@ func (s *Source) RunShell(ctx context.Context, script string) ([]byte, error) {
 	return stdout.Bytes(), nil
 }
 
-// SSHCommandFor builds the `-e` value for a copy to m: the ssh binary plus the
-// same quoted option set a hop uses. Exposed so transfer rides one ssh option
-// construction rather than a second one that has to be kept in sync, which is
-// what makes "no new auth surface" structural rather than a promise.
-func SSHCommandFor(m *machines.Machine) string {
-	if m == nil {
+// SSHCommandForEndpoint builds the `-e` value for a copy over e: the ssh
+// binary plus the same quoted option set a hop uses. Exposed so transfer rides
+// one ssh option construction rather than a second one that has to be kept in
+// sync, which is what makes "no new auth surface" structural rather than a
+// promise. Taking the resolved endpoint (not the machine) keeps the copy's
+// dial — and its HostKeyAlias on a fallback — identical to the hop's.
+func SSHCommandForEndpoint(e remote.Endpoint) string {
+	if e.Machine == nil {
 		return ""
 	}
-	return (&Source{target: remote.Target(m), sshOpts: remote.Opts(m)}).SSHCommand()
+	return (&Source{target: e.Target(), sshOpts: e.Opts()}).SSHCommand()
 }
