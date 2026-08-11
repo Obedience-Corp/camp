@@ -28,10 +28,15 @@ const execTimeout = 2 * time.Minute
 
 // exec runs a command in the container, bounded by execTimeout, classifying
 // transport faults and reporting them to the run-level infrastructure latch.
+// The reader yields the command's demultiplexed output in full — transports
+// drain and decode before returning, so reads from it cannot fail.
 //
 // Every container command in this file goes through here rather than calling
 // container.Exec directly, so a Docker transport failure is labelled once,
-// where it happens.
+// where it happens, and so the transport itself is swappable: by default each
+// command is one frame on the container's persistent shell session (see
+// helpers_session.go); CAMP_TEST_EXEC_TRANSPORT=exec selects the old
+// one-docker-exec-per-command path as a bisect lever.
 //
 // The failure it exists for looks like this:
 //
@@ -63,10 +68,35 @@ func (tc *TestContainer) execUnrecorded(ctx context.Context, cmd []string) (int,
 }
 
 func (tc *TestContainer) execWith(ctx context.Context, cmd []string, record bool) (int, io.Reader, error) {
+	start := time.Now()
+	var (
+		exitCode int
+		out      []byte
+		err      error
+	)
+	if execTransportName() == transportSession {
+		exitCode, out, err = tc.execViaSession(ctx, cmd)
+	} else {
+		exitCode, out, err = tc.execViaDockerExec(ctx, cmd)
+	}
+	observeExecDuration(time.Since(start))
+
+	if err != nil {
+		var ie *infraError
+		if record && errors.As(err, &ie) {
+			runInfra.recordMember(tc.container.GetContainerID(), ie.Error())
+		}
+	}
+	return exitCode, bytes.NewReader(out), err
+}
+
+// execViaDockerExec is the one-docker-exec-per-command transport: exec
+// create/start/attach on the daemon for every command. Errors come back
+// already classified.
+func (tc *TestContainer) execViaDockerExec(ctx context.Context, cmd []string) (int, []byte, error) {
 	execCtx, cancel := context.WithTimeout(ctx, execTimeout)
 	defer cancel()
 
-	start := time.Now()
 	exitCode, reader, err := tc.container.Exec(execCtx, cmd)
 	var buf []byte
 	if err == nil && reader != nil {
@@ -78,16 +108,10 @@ func (tc *TestContainer) execWith(ctx context.Context, cmd []string, record bool
 		// wait.
 		buf, err = io.ReadAll(reader)
 	}
-	observeExecDuration(time.Since(start))
-
 	if err != nil {
-		err = classifyExecOutcome(err, execCtx.Err() != nil && ctx.Err() == nil)
-		var ie *infraError
-		if record && errors.As(err, &ie) {
-			runInfra.recordMember(tc.container.GetContainerID(), ie.Error())
-		}
+		return exitCode, nil, classifyExecOutcome(err, execCtx.Err() != nil && ctx.Err() == nil)
 	}
-	return exitCode, bytes.NewReader(buf), err
+	return exitCode, demuxDockerOutput(buf), nil
 }
 
 // infraError marks a fault of the Docker transport rather than of the code
@@ -222,6 +246,9 @@ func (tc *TestContainer) Reset() error {
 
 // Cleanup terminates the container
 func (tc *TestContainer) Cleanup() {
+	if tc.sessions != nil {
+		tc.sessions.closeIdle()
+	}
 	if tc.container != nil {
 		// A pooled container holds nothing worth a graceful shutdown; the
 		// default 10s stop grace was pure teardown latency.
@@ -243,14 +270,11 @@ func (tc *TestContainer) RunCamp(args ...string) (string, error) {
 		return "", fmt.Errorf("failed to read output: %w", err)
 	}
 
-	// Strip Docker exec multiplexed stream headers
-	output := demuxDockerOutput(rawOutput)
-
 	if exitCode != 0 {
-		return string(output), fmt.Errorf("camp exited with code %d: %s", exitCode, output)
+		return string(rawOutput), fmt.Errorf("camp exited with code %d: %s", exitCode, rawOutput)
 	}
 
-	return string(output), nil
+	return string(rawOutput), nil
 }
 
 // RunCampInDir runs the camp command from a specific directory
@@ -277,13 +301,11 @@ func (tc *TestContainer) RunCampInDir(dir string, args ...string) (string, error
 		return "", fmt.Errorf("failed to read output: %w", err)
 	}
 
-	output := demuxDockerOutput(rawOutput)
-
 	if exitCode != 0 {
-		return string(output), fmt.Errorf("camp exited with code %d: %s", exitCode, output)
+		return string(rawOutput), fmt.Errorf("camp exited with code %d: %s", exitCode, rawOutput)
 	}
 
-	return string(output), nil
+	return string(rawOutput), nil
 }
 
 // RunLegacyCampInDir runs the pinned pre-reader camp binary (/camp-legacy) from
@@ -305,11 +327,10 @@ func (tc *TestContainer) RunLegacyCampInDir(dir string, args ...string) (string,
 	if err != nil {
 		return "", fmt.Errorf("failed to read output: %w", err)
 	}
-	output := demuxDockerOutput(rawOutput)
 	if exitCode != 0 {
-		return string(output), fmt.Errorf("legacy camp exited with code %d: %s", exitCode, output)
+		return string(rawOutput), fmt.Errorf("legacy camp exited with code %d: %s", exitCode, rawOutput)
 	}
-	return string(output), nil
+	return string(rawOutput), nil
 }
 
 // InitCampaign creates a new campaign via camp init and initializes it as a git repo
@@ -331,7 +352,7 @@ func (tc *TestContainer) InitCampaign(path, name, campType string) (string, erro
 	}
 	if exitCode != 0 {
 		rawOutput, _ := readExecOutput(reader)
-		return output, fmt.Errorf("git init failed: %s", string(demuxDockerOutput(rawOutput)))
+		return output, fmt.Errorf("git init failed: %s", string(rawOutput))
 	}
 
 	return output, nil
@@ -349,13 +370,11 @@ func (tc *TestContainer) ReadFile(path string) (string, error) {
 		return "", fmt.Errorf("failed to read output: %w", err)
 	}
 
-	output := demuxDockerOutput(rawOutput)
-
 	if exitCode != 0 {
-		return "", fmt.Errorf("cat command failed with exit code %d: %s", exitCode, output)
+		return "", fmt.Errorf("cat command failed with exit code %d: %s", exitCode, rawOutput)
 	}
 
-	return string(output), nil
+	return string(rawOutput), nil
 }
 
 // WriteFile writes content to a file in the container
@@ -413,9 +432,7 @@ func (tc *TestContainer) ListDirectory(path string) ([]string, error) {
 		return nil, fmt.Errorf("failed to read output: %w", err)
 	}
 
-	output := demuxDockerOutput(rawOutput)
-
-	lines := strings.Split(strings.TrimSpace(string(output)), "\n")
+	lines := strings.Split(strings.TrimSpace(string(rawOutput)), "\n")
 	var files []string
 	for _, line := range lines {
 		if line != "" && line != path {
@@ -470,8 +487,7 @@ func (tc *TestContainer) ExecCommand(args ...string) (string, int, error) {
 		return "", exitCode, fmt.Errorf("failed to read output: %w", err)
 	}
 
-	output := demuxDockerOutput(rawOutput)
-	return string(output), exitCode, nil
+	return string(rawOutput), exitCode, nil
 }
 
 // RunCampSplit runs a camp command inside the container and returns stdout and

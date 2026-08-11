@@ -34,18 +34,21 @@ func observeExecDuration(d time.Duration) {
 }
 
 // execTelemetryLine renders the per-run capacity summary. Pure so it is
-// testable without a run.
-func execTelemetryLine(durations []time.Duration, poolSize int, wall time.Duration) string {
+// testable without a run. The transport is part of the record: a p50 from
+// session frames and a p50 from docker execs are different populations, and
+// trend analysis must not mix them silently.
+func execTelemetryLine(durations []time.Duration, transport string, poolSize int, wall time.Duration) string {
 	if len(durations) == 0 {
-		return fmt.Sprintf("harness telemetry: execs=0 pool=%d wall=%s",
-			poolSize, wall.Round(time.Second))
+		return fmt.Sprintf("harness telemetry: transport=%s execs=0 pool=%d wall=%s",
+			transport, poolSize, wall.Round(time.Second))
 	}
 	sorted := slices.Clone(durations)
 	slices.Sort(sorted)
 	quantile := func(q float64) time.Duration {
 		return sorted[int(q*float64(len(sorted)-1))]
 	}
-	return fmt.Sprintf("harness telemetry: execs=%d p50=%s p95=%s max=%s pool=%d wall=%s",
+	return fmt.Sprintf("harness telemetry: transport=%s execs=%d p50=%s p95=%s max=%s pool=%d wall=%s",
+		transport,
 		len(sorted),
 		quantile(0.50).Round(time.Millisecond),
 		quantile(0.95).Round(time.Millisecond),
@@ -62,7 +65,7 @@ func reportExecTelemetry(poolSize int, wall time.Duration, exitCode int) {
 	durations := slices.Clone(execStats.durations)
 	execStats.mu.Unlock()
 
-	fmt.Fprintln(os.Stderr, execTelemetryLine(durations, poolSize, wall))
+	fmt.Fprintln(os.Stderr, execTelemetryLine(durations, execTransportName(), poolSize, wall))
 	appendTelemetryHistory(durations, poolSize, wall, exitCode)
 }
 
@@ -70,11 +73,12 @@ func appendTelemetryHistory(durations []time.Duration, poolSize int, wall time.D
 	sorted := slices.Clone(durations)
 	slices.Sort(sorted)
 	record := map[string]any{
-		"ts":     time.Now().UTC().Format(time.RFC3339),
-		"execs":  len(sorted),
-		"pool":   poolSize,
-		"wall_s": int(wall.Seconds()),
-		"exit":   exitCode,
+		"ts":        time.Now().UTC().Format(time.RFC3339),
+		"transport": execTransportName(),
+		"execs":     len(sorted),
+		"pool":      poolSize,
+		"wall_s":    int(wall.Seconds()),
+		"exit":      exitCode,
 	}
 	if len(sorted) > 0 {
 		record["p50_ms"] = sorted[int(0.50*float64(len(sorted)-1))].Milliseconds()

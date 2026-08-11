@@ -54,6 +54,10 @@ type TestContainer struct {
 	container testcontainers.Container
 	ctx       context.Context
 	t         *testing.T
+	// sessions holds the container's persistent exec session (session
+	// transport). Shared by pointer between the pool member and every
+	// per-test wrapper, so the session outlives individual checkouts.
+	sessions *sessionBox
 	// deferral opts this container's camp invocations into the deferred-commit
 	// queue. Off by default; see campEnvPrefix.
 	deferral bool
@@ -294,6 +298,7 @@ func newPooledContainer(ctx context.Context, bins sharedBinaries, image string) 
 		container: container,
 		ctx:       ctx,
 		t:         nil, // No test context yet - will be set per-test
+		sessions:  &sessionBox{},
 	}, nil
 }
 

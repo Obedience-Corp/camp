@@ -127,7 +127,7 @@ func TestBaseImageTag(t *testing.T) {
 func TestExecTelemetryLine(t *testing.T) {
 	t.Parallel()
 
-	if got := execTelemetryLine(nil, 4, 90*time.Second); got != "harness telemetry: execs=0 pool=4 wall=1m30s" {
+	if got := execTelemetryLine(nil, "session", 4, 90*time.Second); got != "harness telemetry: transport=session execs=0 pool=4 wall=1m30s" {
 		t.Fatalf("empty-run line = %q", got)
 	}
 
@@ -135,8 +135,8 @@ func TestExecTelemetryLine(t *testing.T) {
 		10 * time.Millisecond, 20 * time.Millisecond, 30 * time.Millisecond,
 		40 * time.Millisecond, 1 * time.Second,
 	}
-	got := execTelemetryLine(durations, 4, 20*time.Minute)
-	for _, want := range []string{"execs=5", "p50=30ms", "p95=40ms", "max=1s", "pool=4", "wall=20m0s"} {
+	got := execTelemetryLine(durations, "exec", 4, 20*time.Minute)
+	for _, want := range []string{"transport=exec", "execs=5", "p50=30ms", "p95=40ms", "max=1s", "pool=4", "wall=20m0s"} {
 		if !strings.Contains(got, want) {
 			t.Fatalf("telemetry line = %q, want it to contain %q", got, want)
 		}
