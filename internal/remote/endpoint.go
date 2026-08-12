@@ -85,6 +85,13 @@ func ResolveEndpointWith(ctx context.Context, m *machines.Machine, p EndpointPro
 	if os.Getenv(NoPeerFallbackEnv) != "" || p.LookupHost == nil || p.PeerAddress == nil {
 		return e
 	}
+	// DNS is tried first and in full, because DNS winning when it works is the
+	// property that makes the fallback safe (an operator's split-DNS override
+	// must keep the address they configured). The cost is deliberate: while
+	// DNS is broken, every dial pays for the failed lookup — up to
+	// endpointResolveTimeout when the resolver hangs rather than answering
+	// SERVFAIL — before the peer table rescues it. Slower-but-working during
+	// an outage, never slower when healthy.
 	lctx, cancel := context.WithTimeout(ctx, endpointResolveTimeout)
 	addrs, err := p.LookupHost(lctx, host)
 	cancel()

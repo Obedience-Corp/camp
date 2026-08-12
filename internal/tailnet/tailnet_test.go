@@ -4,6 +4,7 @@ import (
 	"errors"
 	"sync"
 	"testing"
+	"time"
 )
 
 // Moved from cmd/camp/machine_resolve_test.go when the parser moved here.
@@ -87,6 +88,7 @@ func TestParseHealthShapes(t *testing.T) {
 
 func TestParsePeerAddress(t *testing.T) {
 	status := `{
+		"Self": {"DNSName": "thinkpad.example-net.ts.net.", "TailscaleIPs": ["100.64.0.1"]},
 		"Peer": {
 			"key1": {"DNSName": "mac-studio.example-net.ts.net.", "TailscaleIPs": ["100.72.165.77", "fd7a:115c:a1e0::1"]},
 			"key2": {"DNSName": "v6only.example-net.ts.net.", "TailscaleIPs": ["fd7a:115c:a1e0::2"]},
@@ -126,6 +128,12 @@ func TestParsePeerAddress(t *testing.T) {
 		{
 			name: "unknown peer is not found",
 			data: status, dnsName: "ghost.example-net.ts.net", wantFound: false,
+		},
+		{
+			// A machines.yaml entry naming this node's own MagicDNS name (a
+			// loopback hop, or a shared machines file) is rescued like a peer.
+			name: "self is consulted too",
+			data: status, dnsName: "thinkpad.example-net.ts.net", want: "100.64.0.1", wantFound: true,
 		},
 		{
 			name: "empty name is not found",
@@ -215,20 +223,41 @@ func TestStatusSourceReadsOnceUnderConcurrency(t *testing.T) {
 	}
 }
 
-// A failed read is memoized too: a machine without tailscale must not pay a
-// failed subprocess per machine in a fleet operation.
-func TestStatusSourceMemoizesFailure(t *testing.T) {
+// A failed read is memoized too — a machine without tailscale must not pay a
+// failed subprocess per machine in a fleet operation — but only for
+// failureRetryInterval, so a long-lived process recovers when tailscaled
+// comes back instead of freezing "no fallback" until exit.
+func TestStatusSourceFailureIsMemoizedThenRetried(t *testing.T) {
 	calls := 0
-	src := &statusSource{run: func() ([]byte, error) {
-		calls++
-		return nil, errors.New("tailscale: command not found")
-	}}
+	clock := time.Unix(1000, 0)
+	src := &statusSource{
+		run: func() ([]byte, error) {
+			calls++
+			if calls == 1 {
+				return nil, errors.New("tailscale: command not found")
+			}
+			return []byte(`{"Health":[]}`), nil
+		},
+		now: func() time.Time { return clock },
+	}
 	for range 3 {
 		if _, err := src.get(); err == nil {
-			t.Fatal("want error")
+			t.Fatal("want memoized error inside the retry interval")
 		}
 	}
 	if calls != 1 {
-		t.Fatalf("status read %d times, want 1", calls)
+		t.Fatalf("status read %d times inside the interval, want 1", calls)
+	}
+
+	clock = clock.Add(failureRetryInterval)
+	if _, err := src.get(); err != nil {
+		t.Fatalf("retry after the interval: %v", err)
+	}
+	if calls != 2 {
+		t.Fatalf("status read %d times after the interval, want 2", calls)
+	}
+	// The recovered success is then held for the life of the process.
+	if _, err := src.get(); err != nil || calls != 2 {
+		t.Fatalf("success must be memoized: err=%v calls=%d", err, calls)
 	}
 }

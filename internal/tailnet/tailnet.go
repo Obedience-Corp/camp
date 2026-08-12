@@ -41,20 +41,47 @@ func IsMagicDNSName(host string) bool {
 	return strings.HasSuffix(strings.ToLower(NormalizeDNSName(host)), magicDNSSuffix)
 }
 
+// failureRetryInterval is how long a failed `tailscale status --json` read is
+// remembered before the next caller may retry it. Failure is memoized at all —
+// rather than retried per caller — so a fleet operation on a machine without
+// tailscale pays for one failed subprocess, not one per row. It expires so a
+// long-lived process (the machine TUI) recovers when tailscaled comes back,
+// instead of freezing "no fallback" until exit. Success is kept for the whole
+// process: tailnet 100.x addresses are stable, and every consumer here is
+// advisory.
+const failureRetryInterval = 15 * time.Second
+
 // statusSource memoizes one raw `tailscale status --json` read. The peer table
 // and the health array are two views of the same snapshot, and a process that
 // consults both (or consults either for many machines, as `list --remote`
-// does) should pay for the subprocess once. sync.Once makes the memo safe
-// under the concurrent fan-out.
+// does) should pay for the subprocess once. The mutex makes the memo safe
+// under the concurrent fan-out: later callers block on the first read rather
+// than racing their own.
 type statusSource struct {
-	once sync.Once
-	data []byte
-	err  error
-	run  func() ([]byte, error)
+	mu       sync.Mutex
+	read     bool
+	data     []byte
+	err      error
+	failedAt time.Time
+	run      func() ([]byte, error)
+	now      func() time.Time // test seam; nil means time.Now
 }
 
 func (s *statusSource) get() ([]byte, error) {
-	s.once.Do(func() { s.data, s.err = s.run() })
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	nowFn := s.now
+	if nowFn == nil {
+		nowFn = time.Now
+	}
+	if s.read && (s.err == nil || nowFn().Sub(s.failedAt) < failureRetryInterval) {
+		return s.data, s.err
+	}
+	s.data, s.err = s.run()
+	s.read = true
+	if s.err != nil {
+		s.failedAt = nowFn()
+	}
 	return s.data, s.err
 }
 
@@ -144,7 +171,10 @@ func ParseHealth(data []byte) ([]string, bool) {
 
 // ParsePeerAddress is the pure half of PeerAddress. Matching is on normalized
 // DNSName (trailing dot, casing), the comparison machine discovery already
-// performs — the cases where a hand-rolled comparison drifts.
+// performs — the cases where a hand-rolled comparison drifts. Self is
+// consulted alongside the peers: a machines.yaml entry that names this node's
+// own MagicDNS name (a loopback hop, or one machines file shared across the
+// fleet) deserves the same rescue as any peer.
 func ParsePeerAddress(data []byte, dnsName string) (string, bool) {
 	want := strings.ToLower(NormalizeDNSName(dnsName))
 	if want == "" {
@@ -154,20 +184,29 @@ func ParsePeerAddress(data []byte, dnsName string) (string, bool) {
 	if start < 0 {
 		return "", false
 	}
+	type node struct {
+		DNSName      string   `json:"DNSName"`
+		TailscaleIPs []string `json:"TailscaleIPs"`
+	}
 	var status struct {
-		Peer map[string]struct {
-			DNSName      string   `json:"DNSName"`
-			TailscaleIPs []string `json:"TailscaleIPs"`
-		} `json:"Peer"`
+		Self *node           `json:"Self"`
+		Peer map[string]node `json:"Peer"`
 	}
 	if err := json.Unmarshal(data[start:], &status); err != nil {
 		return "", false
 	}
-	for _, node := range status.Peer {
-		if strings.ToLower(NormalizeDNSName(node.DNSName)) != want {
+	nodes := make([]node, 0, len(status.Peer)+1)
+	for _, n := range status.Peer {
+		nodes = append(nodes, n)
+	}
+	if status.Self != nil {
+		nodes = append(nodes, *status.Self)
+	}
+	for _, n := range nodes {
+		if strings.ToLower(NormalizeDNSName(n.DNSName)) != want {
 			continue
 		}
-		return preferredAddress(node.TailscaleIPs)
+		return preferredAddress(n.TailscaleIPs)
 	}
 	return "", false
 }
