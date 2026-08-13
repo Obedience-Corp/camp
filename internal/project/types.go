@@ -34,6 +34,7 @@ const (
 // Project source kinds.
 const (
 	SourceSubmodule    = "submodule"
+	SourceCampaign     = "campaign"
 	SourceLinked       = "linked"
 	SourceLinkedNonGit = "linked-non-git"
 )

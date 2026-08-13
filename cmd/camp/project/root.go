@@ -19,6 +19,7 @@ var Cmd = &cobra.Command{
 A project can be:
   - a git repository tracked as a submodule under projects/
   - a machine-local linked workspace attached via symlink under projects/
+  - an ordinary campaign-owned directory tracked by the campaign repository
 
 Use 'camp project add' for submodules and 'camp project link' / 'camp project unlink'
 for linked workspaces. Use 'camp project run' (or the 'cr -p' shell shorthand)
@@ -30,6 +31,7 @@ Examples:
   camp project link ~/code/my-project  Link an existing local workspace
   camp project run -p fest -- just build  Run a command inside a project
   camp project commit -p fest -m "fix"  Commit changes in a project submodule
+  camp project rename api-old api        Rename a managed project
   camp project prune                   Delete merged branches in the cwd's project
   camp project worktree add my-branch --project fest  Create a worktree for a project
   camp project remove api-service      Remove a project`,
@@ -39,6 +41,7 @@ Examples:
 }
 
 func init() {
+	Cmd.AddCommand(newProjectRenameCommand())
 	linkResolverFactory := func(stderr io.Writer, usageLine string) projectlinked.CampaignResolver {
 		return newProjectCampaignResolver(stderr, usageLine)
 	}

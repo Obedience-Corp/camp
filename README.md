@@ -105,7 +105,7 @@ cgo p api      # Fuzzy find "api" in projects/
 ## Features
 
 - **Navigation** — Category shortcuts, fuzzy finding, pins, and a cached index for instant project lookups (`go`, `pin`, `shortcuts`, `cache`)
-- **Project Management** — Git submodules, linked local workspaces, worktrees, and scaffolding (`project add/link/list/new/remote/remove/run/unlink/worktree/prune`)
+- **Project Management** — Git submodules, linked local workspaces, campaign-owned directories, worktrees, and scaffolding (`project add/link/list/new/rename/remote/remove/run/unlink/worktree/prune`)
 - **Planning** — Intents, promotion, dungeon for deprioritized work, and a unified work-item dashboard (`intent`, `promote`, `dungeon`, `gather`, `workitem`)
 - **Productivity** — Leverage scoring to identify high-impact work (`leverage`)
 - **Git Integration** — Campaign-level git operations with submodule fan-out (`stage`, `commit`, `log`, `push [all]`, `pull [all]`, `status [all]`, `fresh [all]`, `refs-sync`)
@@ -196,11 +196,22 @@ the campaign if they're already on your machine.
 ```bash
 camp project add <url>      # Add as a git submodule
 camp project link <path>    # Link an existing local directory as a project
+camp project rename old new # Rename a managed project and its Camp references
 ```
 
 Use submodules via `camp project add` (or `camp p add`) if you plan to use
 your campaign on multiple devices — linked projects must exist in the same
 location on each device in order to work.
+
+When an upstream repository was renamed too, pass the new URL explicitly:
+
+```bash
+camp project rename old new --remote-url git@github.com:org/new.git
+```
+
+Camp preserves dirty checkouts and conventional Camp worktrees, migrates
+typed settings and work-item references, and reports historical prose it
+intentionally leaves unchanged. Use `--dry-run` to inspect the transaction.
 
 For the rest of the project surface (`list`, `remove`, `unlink`, `stage`,
 `commit`, `run`, `worktree`, `prune`, `remote`, `new`), see

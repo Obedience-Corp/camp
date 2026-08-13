@@ -10,6 +10,7 @@ const (
 	ProjectLink   ProjectAction = "Link"
 	ProjectNew    ProjectAction = "New"
 	ProjectRemove ProjectAction = "Remove"
+	ProjectRename ProjectAction = "Rename"
 	ProjectUnlink ProjectAction = "Unlink"
 )
 

@@ -4795,6 +4795,7 @@ Manage git submodules and project repositories in the campaign.
 A project can be:
   - a git repository tracked as a submodule under projects/
   - a machine-local linked workspace attached via symlink under projects/
+  - an ordinary campaign-owned directory tracked by the campaign repository
 
 Use 'camp project add' for submodules and 'camp project link' / 'camp project unlink'
 for linked workspaces. Use 'camp project run' (or the 'cr -p' shell shorthand)
@@ -4806,6 +4807,7 @@ Examples:
   camp project link ~/code/my-project  Link an existing local workspace
   camp project run -p fest -- just build  Run a command inside a project
   camp project commit -p fest -m "fix"  Commit changes in a project submodule
+  camp project rename api-old api        Rename a managed project
   camp project prune                   Delete merged branches in the cwd's project
   camp project worktree add my-branch --project fest  Create a worktree for a project
   camp project remove api-service      Remove a project
@@ -5417,6 +5419,52 @@ camp project remove <name> [flags]
   -f, --force       Skip confirmation prompts
   -h, --help        help for remove
       --no-commit   Skip automatic git commit
+```
+
+### Options inherited from parent commands
+
+```
+      --no-color   disable colored output
+```
+---
+
+## camp project rename
+
+Rename a managed project
+
+### Synopsis
+
+Rename a managed project and migrate its active Camp references.
+
+Supported projects are declared Git submodules, linked workspace symlinks,
+and ordinary campaign-owned directories tracked by the campaign repository.
+Dirty project checkouts and linked worktrees are preserved. Destination
+collisions and unmanaged directories are rejected before mutation.
+
+Camp never guesses that an upstream repository was renamed. Pass --remote-url
+to change origin explicitly as part of the same transaction.
+
+Examples:
+  camp project rename api-old api
+  camp project mv api-old api
+  camp project rename obey-installer festival-installer \
+    --remote-url git@github.com:Obedience-Corp/festival-installer.git
+  camp project rename api-old api --dry-run --json
+
+```
+camp project rename <current> <new> [flags]
+```
+
+### Options
+
+```
+  -c, --campaign string     Target campaign by name or ID; omit value to pick interactively
+      --dry-run             Print the complete plan without writing
+  -h, --help                help for rename
+      --json                Output a versioned JSON plan or result
+      --no-commit           Apply the rename without a campaign commit
+      --no-verify           Skip remote connectivity verification
+      --remote-url string   Explicitly update the project's origin URL
 ```
 
 ### Options inherited from parent commands
