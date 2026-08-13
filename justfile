@@ -223,6 +223,8 @@ gate-fast:
     just build-camp
     echo "=== gate-fast: dev build ==="
     BUILD_TAGS=dev just build-camp
+    echo "=== gate-fast: install over a running binary (ETXTBSY regression) ==="
+    just install test-live-overwrite
     echo "=== gate-fast: vet stable ==="
     go vet ./...
     echo "=== gate-fast: vet dev ==="
