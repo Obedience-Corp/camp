@@ -1,0 +1,71 @@
+#!/usr/bin/env bash
+# A stand-in for ssh that is reachable ONLY at the tailnet peer address, used
+# when recording docs/demos/machine-hop-dns-fallback.tape.
+#
+# It reproduces the outage the fallback exists for, choosing branches the same
+# way ssh does — by whether the destination resolves:
+#
+#   MagicDNS name    "Could not resolve hostname ...: Name or service not known"
+#                    (real lookup, against the same resolver camp uses; the
+#                    invented tailnet genuinely does not resolve)
+#   100.72.165.77    connects, and answers the remote commands camp actually
+#                    sends: the version probe, the remote root resolve, and the
+#                    reachability probe
+#   anything else    "Connection refused"
+#
+# The success branch answering only at the peer address is the proof the tape
+# records: any camp output that shows a working remote command demonstrates the
+# dial went to the peer-table address, because the name path cannot succeed.
+set -euo pipefail
+
+# Find the destination: the first argument that is neither a flag nor the value
+# belonging to one, mirroring docs/demos/fixtures/ssh-unreachable. Everything
+# after it is the remote command.
+dest=""
+remote_cmd=""
+skip_next=0
+seen_dest=0
+for arg in "$@"; do
+    if [ "$seen_dest" -eq 1 ]; then
+        remote_cmd="$remote_cmd $arg"
+        continue
+    fi
+    if [ "$skip_next" -eq 1 ]; then
+        skip_next=0
+        continue
+    fi
+    case "$arg" in
+        -o | -i | -l | -p | -F) skip_next=1 ;;
+        -*) ;;
+        *)
+            dest="$arg"
+            seen_dest=1
+            ;;
+    esac
+done
+
+host="${dest#*@}"
+
+is_ip_literal() {
+    [[ "$1" =~ ^[0-9]{1,3}(\.[0-9]{1,3}){3}$ ]] || [[ "$1" == *:* ]]
+}
+
+if [ -n "$host" ] && ! is_ip_literal "$host" && ! getent hosts "$host" >/dev/null 2>&1; then
+    echo "ssh: Could not resolve hostname $host: Name or service not known" >&2
+    exit 255
+fi
+
+if [ "$host" != "100.72.165.77" ]; then
+    echo "ssh: connect to host $host port 22: Connection refused" >&2
+    exit 255
+fi
+
+case "$remote_cmd" in
+    *"version --json"*)
+        echo '{"version":"v0.2.0-demo","commit":"feedca0"}'
+        ;;
+    *"switch"*"--print"*)
+        echo "/srv/campaigns/demo"
+        ;;
+esac
+exit 0

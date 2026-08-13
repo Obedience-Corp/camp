@@ -74,7 +74,15 @@ func emitHopOrRefuse(ctx context.Context, cmd *cobra.Command, m *machines.Machin
 		_, _ = fmt.Fprintln(cmd.ErrOrStderr(), ui.Dim("camp: "+warning))
 	}
 	if shellConnect {
-		if err := emitShellConnect(cmd.OutOrStdout(), true, root, m, hopOriginForEmit(ctx, cmd)); err != nil {
+		// The peer table is memoized per process, so this repeats the decision
+		// the resolve step already made rather than a second subprocess call.
+		e := remote.ResolveEndpoint(ctx, m)
+		// stderr like the skew warning above, never stdout: a working hop must
+		// still tell the operator their DNS is broken, without breaking the eval.
+		if notice := e.FallbackNotice(); notice != "" {
+			_, _ = fmt.Fprintln(cmd.ErrOrStderr(), ui.Dim("camp: "+notice))
+		}
+		if err := emitShellConnect(cmd.OutOrStdout(), true, root, e, hopOriginForEmit(ctx, cmd)); err != nil {
 			return err
 		}
 		// After the line is written, never before: the operator is waiting on

@@ -1,26 +1,25 @@
 package main
 
 import (
-	"bytes"
 	"context"
-	"encoding/json"
+	"errors"
 	"net"
-	"os/exec"
 	"strings"
 	"sync"
 	"time"
+
+	"github.com/Obedience-Corp/camp/internal/tailnet"
 )
+
+// errHostDidNotResolve feeds diagnose's already-computed lookup failure back
+// through remote.ResolveEndpointWith, so the dial decision reuses the check's
+// result instead of paying for a second live lookup.
+var errHostDidNotResolve = errors.New("host did not resolve")
 
 // resolveProbeTimeout bounds the name lookup diagnose runs before it lets ssh
 // try. A resolver that cannot answer inside this budget is itself the finding,
 // so the deadline is short and the failure is reported rather than retried.
 const resolveProbeTimeout = 2 * time.Second
-
-// magicDNSSuffix is the domain every MagicDNS name sits under. A host below it
-// that will not resolve is a MagicDNS failure specifically, which has a
-// different cause and a different fix than an ordinary DNS miss, so the two
-// get different hints.
-const magicDNSSuffix = ".ts.net"
 
 // resolveReport is what diagnose can say about turning a machine's host into an
 // address, established before any ssh is attempted.
@@ -57,10 +56,12 @@ type resolveProbes struct {
 // otherwise shell out to tailscale once per broken machine to learn the same
 // sentence. checkReverseReachability solves the same problem by being hoisted
 // out of the loop; this one cannot be, because whether it is consulted at all
-// depends on the individual host.
+// depends on the individual host. (tailnet.HealthMessages memoizes the status
+// read process-wide as well; the OnceValues here keeps this seam's contract
+// independent of that.)
 func defaultResolveProbes() resolveProbes {
 	health := sync.OnceValues(func() ([]string, bool) {
-		return tailscaleHealthMessages(context.Background())
+		return tailnet.HealthMessages(context.Background())
 	})
 	return resolveProbes{
 		LookupHost: func(ctx context.Context, host string) ([]string, error) {
@@ -104,7 +105,7 @@ func checkHostResolves(ctx context.Context, host string, p resolveProbes) resolv
 // because that sentence is the actual diagnosis and camp should not paraphrase
 // it — and everything else gets the ordinary-DNS answer.
 func resolveFailureHint(ctx context.Context, host string, p resolveProbes) string {
-	if !isMagicDNSName(host) {
+	if !tailnet.IsMagicDNSName(host) {
 		return "this name does not resolve; check it for a typo, then confirm your resolver " +
 			"can answer for it ('getent hosts " + host + "')"
 	}
@@ -119,13 +120,6 @@ func resolveFailureHint(ctx context.Context, host string, p resolveProbes) strin
 		"the health output at the bottom for the reason"
 }
 
-// isMagicDNSName reports whether host sits under the MagicDNS domain, tolerating
-// the trailing FQDN dot and any casing (hostnames are case-insensitive).
-func isMagicDNSName(host string) bool {
-	h := strings.ToLower(strings.TrimSuffix(strings.TrimSpace(host), "."))
-	return strings.HasSuffix(h, magicDNSSuffix)
-}
-
 // firstDNSHealthMessage picks the DNS-related entry out of tailscale's health
 // messages. The array carries every current complaint, most of which have
 // nothing to do with name resolution, and pasting an unrelated one under a
@@ -138,64 +132,4 @@ func firstDNSHealthMessage(msgs []string) string {
 		}
 	}
 	return ""
-}
-
-// tailscaleHealthMessages reads the Health array out of `tailscale status --json`.
-//
-// The field has carried two shapes across tailscale releases — plain strings,
-// and structured objects with a title/text — so each entry is decoded either
-// way and an entry matching neither is skipped rather than failing the read.
-// The whole call is advisory: when it cannot answer, the caller loses a better
-// sentence, never the diagnosis.
-func tailscaleHealthMessages(ctx context.Context) ([]string, bool) {
-	ctx, cancel := context.WithTimeout(ctx, resolveProbeTimeout)
-	defer cancel()
-
-	out, err := exec.CommandContext(ctx, "tailscale", "status", "--json").Output()
-	if err != nil {
-		return nil, false
-	}
-	return parseTailscaleHealth(out)
-}
-
-// parseTailscaleHealth is the pure half of tailscaleHealthMessages, split out so
-// the shape tolerance is testable without a tailscale binary. It skips any
-// warning banner printed before the JSON, matching parseTailscaleStatus.
-func parseTailscaleHealth(data []byte) ([]string, bool) {
-	start := bytes.IndexByte(data, '{')
-	if start < 0 {
-		return nil, false
-	}
-	var status struct {
-		Health []json.RawMessage `json:"Health"`
-	}
-	if err := json.Unmarshal(data[start:], &status); err != nil {
-		return nil, false
-	}
-	msgs := make([]string, 0, len(status.Health))
-	for _, raw := range status.Health {
-		var s string
-		if json.Unmarshal(raw, &s) == nil {
-			if s = strings.TrimSpace(s); s != "" {
-				msgs = append(msgs, s)
-			}
-			continue
-		}
-		var obj struct {
-			Title string `json:"Title"`
-			Text  string `json:"Text"`
-		}
-		if json.Unmarshal(raw, &obj) == nil {
-			// Prefer the longer, more specific sentence; a bare title such as
-			// "DNS" diagnoses nothing on its own.
-			if s := strings.TrimSpace(obj.Text); s != "" {
-				msgs = append(msgs, s)
-			} else if s := strings.TrimSpace(obj.Title); s != "" {
-				msgs = append(msgs, s)
-			}
-		}
-	}
-	// Readable but empty is a real answer: tailscale is healthy. Distinguishing
-	// it from unreadable is what stops the hint from quoting silence.
-	return msgs, true
 }

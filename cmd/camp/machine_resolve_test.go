@@ -175,84 +175,6 @@ func TestCheckHostResolvesWithoutSeam(t *testing.T) {
 	}
 }
 
-func TestParseTailscaleHealthShapes(t *testing.T) {
-	tests := []struct {
-		name    string
-		data    string
-		wantOK  bool
-		want    []string
-		wantLen int
-	}{
-		{
-			name:    "string array (the shape tailscale ships today)",
-			data:    `{"Health":["DNS is broken","exit status 1"]}`,
-			wantOK:  true,
-			want:    []string{"DNS is broken", "exit status 1"},
-			wantLen: 2,
-		},
-		{
-			name:    "structured entries prefer the specific text over the title",
-			data:    `{"Health":[{"Title":"DNS","Text":"DNS config could not be read"}]}`,
-			wantOK:  true,
-			want:    []string{"DNS config could not be read"},
-			wantLen: 1,
-		},
-		{
-			name:    "structured entry with only a title still reports it",
-			data:    `{"Health":[{"Title":"DNS unavailable"}]}`,
-			wantOK:  true,
-			want:    []string{"DNS unavailable"},
-			wantLen: 1,
-		},
-		{
-			name: "unknown entry shapes are skipped, not fatal",
-			data: `{"Health":["DNS is broken",12345,{"Title":"DNS","Text":"also this"}]}`,
-			// The number decodes as neither string nor object and drops out;
-			// the entries around it survive.
-			wantOK:  true,
-			want:    []string{"DNS is broken", "also this"},
-			wantLen: 2,
-		},
-		{
-			name:    "a warning banner before the JSON is skipped",
-			data:    "Warning: client version is older than the server\n{\"Health\":[\"DNS is broken\"]}",
-			wantOK:  true,
-			want:    []string{"DNS is broken"},
-			wantLen: 1,
-		},
-		{
-			name: "healthy tailnet reports readable-but-empty",
-			data: `{"Health":[]}`,
-			// Readable and empty is a real answer (nothing is wrong) and must
-			// be distinguishable from unreadable, or the hint quotes silence.
-			wantOK:  true,
-			wantLen: 0,
-		},
-		{name: "no JSON at all is unreadable", data: "command not found", wantOK: false},
-		{name: "malformed JSON is unreadable", data: `{"Health":[`, wantOK: false},
-	}
-
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			got, ok := parseTailscaleHealth([]byte(tt.data))
-			if ok != tt.wantOK {
-				t.Fatalf("ok = %v, want %v", ok, tt.wantOK)
-			}
-			if !ok {
-				return
-			}
-			if len(got) != tt.wantLen {
-				t.Fatalf("got %d message(s) %q, want %d", len(got), got, tt.wantLen)
-			}
-			for i, want := range tt.want {
-				if got[i] != want {
-					t.Errorf("message %d = %q, want %q", i, got[i], want)
-				}
-			}
-		})
-	}
-}
-
 func TestFirstDNSHealthMessage(t *testing.T) {
 	tests := []struct {
 		name string
@@ -355,5 +277,44 @@ func TestRenderMachineDiagnoseOmitsResolveWhenUnchecked(t *testing.T) {
 	}
 	if strings.Contains(buf.String(), "RESOLVE") {
 		t.Errorf("unchecked host still rendered a RESOLVE line:\n%s", buf.String())
+	}
+}
+
+// A host that did not resolve but has a peer-table fallback reports the
+// address a hop will actually dial — and probes the remote camp over it
+// instead of declaring the machine unaddressable.
+func TestRenderMachineDiagnoseFallbackDialShowsPeerAddress(t *testing.T) {
+	var buf bytes.Buffer
+	err := renderMachineDiagnoseTable(&buf, []machineDiagnoseRow{{
+		ID:             "mac-studio",
+		Host:           "mac-studio.tailnet.ts.net",
+		AuthMethod:     "tailscale-ssh",
+		AuthLabel:      "Tailscale SSH (identity)",
+		Socket:         "/tmp/mac-studio.sock",
+		State:          "none",
+		ResolveChecked: true,
+		Resolves:       false,
+		ResolveHint:    "MagicDNS is not resolving here; tailscale reports: DNS config unreadable",
+		DialHost:       "100.72.165.77",
+		DialViaPeer:    true,
+		CampVersion:    "v0.2.0",
+	}})
+	if err != nil {
+		t.Fatalf("render: %v", err)
+	}
+	out := buf.String()
+	for _, want := range []string{
+		"RESOLVE",
+		"100.72.165.77 (via tailnet peer table; MagicDNS is not resolving here",
+		"v0.2.0",
+	} {
+		if !strings.Contains(out, want) {
+			t.Errorf("output missing %q:\n%s", want, out)
+		}
+	}
+	for _, reject := range []string{"not probed (the host does not resolve)", "camp missing / too old"} {
+		if strings.Contains(out, reject) {
+			t.Errorf("fallback row still reads as undialable (%q):\n%s", reject, out)
+		}
 	}
 }

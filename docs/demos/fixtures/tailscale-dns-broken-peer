@@ -1,0 +1,47 @@
+#!/usr/bin/env bash
+# A stand-in for the tailscale CLI whose MagicDNS is down but whose peer table
+# still knows the machine, used only when recording
+# docs/demos/machine-hop-dns-fallback.tape.
+#
+# This is the precise condition the dial fallback exists for, and it is a
+# separate stub from tailscale-dns-broken on purpose: that fixture's peer table
+# deliberately does NOT contain the diagnosed machine, because its recording
+# shows the no-fallback outcome ("the host does not resolve, and camp has no
+# second source of truth"). This one adds mac-studio to the peer table so the
+# same broken-DNS health state produces a working dial instead.
+#
+# The Health text is verbatim what tailscale reports when tailscaled cannot
+# read the host's DNS configuration. The tailnet, nodes, and addresses are
+# invented, so no real device or tailnet name is published.
+set -euo pipefail
+
+if [ "${1:-}" != "status" ]; then
+    echo "demo tailscale stub: only 'status --json' is implemented" >&2
+    exit 1
+fi
+
+cat <<'JSON'
+{
+  "BackendState": "Running",
+  "Health": [
+    "Tailscale failed to fetch the DNS configuration of your device: exit status 1",
+    "exit status 1"
+  ],
+  "Self": {
+    "HostName": "thinkpad",
+    "DNSName": "thinkpad.example-net.ts.net.",
+    "TailscaleIPs": ["100.64.0.1"],
+    "Online": true,
+    "OS": "linux"
+  },
+  "Peer": {
+    "nodekey:0000000000000000000000000000000000000000000000000000000000000002": {
+      "HostName": "mac-studio",
+      "DNSName": "mac-studio.example-net.ts.net.",
+      "TailscaleIPs": ["100.72.165.77", "fd7a:115c:a1e0:ab12::1"],
+      "Online": true,
+      "OS": "macOS"
+    }
+  }
+}
+JSON

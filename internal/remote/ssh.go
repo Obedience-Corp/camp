@@ -1,8 +1,11 @@
 // Package remote holds camp's ssh primitives for reaching campaigns on other
 // machines listed in ~/.obey/machines.yaml. It mirrors the festival app's ssh
-// construction (src-tauri/src/remote/connection.rs) so the terminal and the app
-// reach the same hosts the same way. v1 is agent/key auth only; password-auth
-// machines are rejected here (EnsureKeyAuth) rather than prompted.
+// OPTION construction (src-tauri/src/remote/connection.rs) so the terminal and
+// the app build hops the same way. Address RESOLUTION is deliberately not part
+// of that mirror: camp falls back to the tailnet peer table when a MagicDNS
+// name stops resolving (endpoint.go, design WI-feedca), which the app does not
+// yet do. v1 is agent/key auth only; password-auth machines are rejected here
+// (EnsureKeyAuth) rather than prompted.
 package remote
 
 import (
@@ -23,13 +26,12 @@ import (
 // the app uses DEFAULT_TIMEOUT (cli/executor) as the reference order of magnitude.
 const DefaultTimeout = 10 * time.Second
 
-// Target returns the ssh destination: user@host when ssh_user is set, else host.
-// Mirrors the app's ssh_target (remote/connection.rs:209-214).
+// Target returns the ssh destination for a direct (non-fallback) dial:
+// user@host when ssh_user is set, else host. Mirrors the app's ssh_target
+// (remote/connection.rs:209-214). Dial paths that should survive a MagicDNS
+// outage go through ResolveEndpoint instead (endpoint.go).
 func Target(m *machines.Machine) string {
-	if m.SSHUser != "" {
-		return m.SSHUser + "@" + m.Host
-	}
-	return m.Host
+	return Direct(m).Target()
 }
 
 // authArgs builds OpenSSH auth-related options for a hop. Per the dual-auth
@@ -76,17 +78,14 @@ func AuthDisplayName(auth string) string {
 
 // ProbeCommand returns a copy-paste BatchMode ssh line the operator can run
 // outside camp to isolate hop failures (D7). It mirrors camp's target and
-// identity options, not the full ControlMaster multiplex path.
+// identity options, not the full ControlMaster multiplex path. This is the
+// direct-dial form; surfaces that resolved a fallback endpoint use
+// Endpoint.ProbeCommand so the pasted line reproduces the real dial.
 func ProbeCommand(m *machines.Machine) string {
 	if m == nil {
 		return ""
 	}
-	parts := []string{"ssh", "-o", "BatchMode=yes"}
-	if m.IdentityFile != "" {
-		parts = append(parts, "-o", "IdentitiesOnly=yes", "-i", expandTilde(m.IdentityFile))
-	}
-	parts = append(parts, Target(m), "true")
-	return strings.Join(parts, " ")
+	return Direct(m).ProbeCommand()
 }
 
 // AuthModeHint returns an optional one-line diagnose note for the machine's
@@ -580,7 +579,7 @@ func remoteCampBinary() string {
 // profile for the shell the account actually uses instead of incorrectly
 // assuming its PATH is configured for /bin/sh.
 func RunCampCommand(ctx context.Context, m *machines.Machine, args string) ([]byte, error) {
-	return runCampCommand(ctx, m, args, Opts(m))
+	return runCampCommand(ctx, m, args, false)
 }
 
 // RunCampCommandReuseOnly is RunCampCommand for callers that also report m's
@@ -588,15 +587,25 @@ func RunCampCommand(ctx context.Context, m *machines.Machine, args string) ([]by
 // with OptsReuseOnly so the probe cannot create or replace the very socket
 // being reported alongside it.
 func RunCampCommandReuseOnly(ctx context.Context, m *machines.Machine, args string) ([]byte, error) {
-	return runCampCommand(ctx, m, args, OptsReuseOnly(m))
+	return runCampCommand(ctx, m, args, true)
 }
 
-func runCampCommand(ctx context.Context, m *machines.Machine, args string, opts []string) ([]byte, error) {
+// runCampCommand resolves the dial endpoint itself (rather than taking
+// pre-built opts) so every remote camp invocation — version probe, ResolveRoot,
+// the machine screen — survives a MagicDNS outage without its callers knowing
+// the fallback exists. The per-process peer-table memo makes the repeated
+// resolution effectively free.
+func runCampCommand(ctx context.Context, m *machines.Machine, args string, reuseOnly bool) ([]byte, error) {
 	if err := EnsureKeyAuth(m); err != nil {
 		return nil, err
 	}
+	e := ResolveEndpoint(ctx, m)
+	opts := e.Opts()
+	if reuseOnly {
+		opts = e.OptsReuseOnly()
+	}
 	binary := remoteCampBinary()
-	out, err := Run(ctx, Target(m), opts, campRemoteCommandLine(binary, args))
+	out, err := Run(ctx, e.Target(), opts, campRemoteCommandLine(binary, args))
 	if err != nil {
 		return nil, campNotFoundHint(err, m, binary)
 	}

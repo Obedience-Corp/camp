@@ -15,6 +15,7 @@ import (
 	"github.com/Obedience-Corp/camp/internal/machines"
 	"github.com/Obedience-Corp/camp/internal/pathutil"
 	"github.com/Obedience-Corp/camp/internal/remote"
+	"github.com/Obedience-Corp/camp/internal/tailnet"
 	"github.com/Obedience-Corp/camp/internal/ui"
 	"github.com/Obedience-Corp/camp/internal/version"
 )
@@ -159,9 +160,13 @@ is given):
   probe    copy-paste BatchMode ssh line to test outside camp
   resolve  whether the host becomes an address at all, checked before any ssh
            is attempted. A MagicDNS name that will not resolve reports
-           tailscale's own health text as the reason, and the remote camp
-           version probe is skipped instead of blaming a machine that was
-           never addressable
+           tailscale's own health text as the reason. When the local tailnet
+           peer table still knows the machine's address, camp dials that
+           address instead (pinning the host key to the configured name) and
+           the line shows which address a hop will actually use; otherwise
+           the remote camp version probe is skipped instead of blaming a
+           machine that was never addressable. Set CAMP_NO_PEER_FALLBACK=1
+           to disable the fallback and fail exactly as ssh would
   socket   ControlMaster multiplex state:
              none   no socket — the next hop opens a fresh master
              live   socket present and the master answers 'ssh -O check'
@@ -396,6 +401,11 @@ type machineDiagnoseRow struct {
 	Resolves       bool     `json:"resolves"`
 	ResolveAddrs   []string `json:"resolve_addrs,omitempty"`
 	ResolveHint    string   `json:"resolve_hint,omitempty"`
+	// DialHost is the address camp actually hands ssh; DialViaPeer marks it as
+	// a tailnet peer-table fallback for a host that did not resolve. Additive
+	// with omitempty, so existing --json consumers are unaffected.
+	DialHost    string `json:"dial_host,omitempty"`
+	DialViaPeer bool   `json:"dial_via_peer"`
 }
 
 // probeRemoteCampVersion asks the machine's own camp for its version. It is
@@ -473,14 +483,27 @@ func runMachineDiagnose(cmd *cobra.Command, args []string) error {
 		m := &targets[i]
 		d := remote.CheckControlMaster(ctx, m)
 		resolved := checkHostResolves(ctx, m.Host, resolveProbeSet)
-		// A host that does not resolve cannot be dialed, so the version probe
-		// would spend its ssh budget proving what the lookup already showed —
-		// and then report the failure as "camp missing / too old", which is the
-		// wrong diagnosis. Skipping it makes the broken case faster and honest.
-		// An unprobed version is recorded exactly as a failed probe is:
-		// writeMachineVersionCache ignores an empty version either way.
+		// The dial decision, made through the same code path a hop uses — but
+		// fed the lookup result already in hand, so diagnose does not pay for
+		// (or race against) a second live resolution.
+		endpoint := remote.ResolveEndpointWith(ctx, m, remote.EndpointProbes{
+			LookupHost: func(context.Context, string) ([]string, error) {
+				if resolved.Resolved {
+					return resolved.Addrs, nil
+				}
+				return nil, errHostDidNotResolve
+			},
+			PeerAddress: tailnet.PeerAddress,
+		})
+		// A host that does not resolve — and has no peer-table fallback —
+		// cannot be dialed, so the version probe would spend its ssh budget
+		// proving what the lookup already showed, and then report the failure
+		// as "camp missing / too old", which is the wrong diagnosis. Skipping
+		// it makes the broken case faster and honest. An unprobed version is
+		// recorded exactly as a failed probe is: writeMachineVersionCache
+		// ignores an empty version either way.
 		var remoteVersion, remoteCommit, checkURL string
-		if !resolved.Checked || resolved.Resolved {
+		if !resolved.Checked || resolved.Resolved || endpoint.ViaPeer {
 			remoteVersion, remoteCommit, checkURL = probeRemoteCampVersion(ctx, m)
 		}
 		// Diagnose is the only surface that pays for a live probe, so it is the
@@ -493,7 +516,7 @@ func runMachineDiagnose(cmd *cobra.Command, args []string) error {
 			AuthLabel:    remote.AuthDisplayName(m.AuthMethod),
 			SSHUser:      m.SSHUser,
 			IdentityFile: m.IdentityFile,
-			Probe:        remote.ProbeCommand(m),
+			Probe:        endpoint.ProbeCommand(),
 			Hint:         remote.AuthModeHint(m),
 			Socket:       d.Socket,
 			State:        string(d.State),
@@ -511,6 +534,8 @@ func runMachineDiagnose(cmd *cobra.Command, args []string) error {
 			Resolves:       resolved.Resolved,
 			ResolveAddrs:   resolved.Addrs,
 			ResolveHint:    resolved.Hint,
+			DialHost:       endpoint.DialHost,
+			DialViaPeer:    endpoint.ViaPeer,
 		}
 		if machineDiagnoseReset && d.State == remote.ControlStale {
 			if err := remote.ResetControlMaster(ctx, m); err != nil {
@@ -570,13 +595,19 @@ func renderMachineDiagnoseTable(w io.Writer, rows []machineDiagnoseRow) error {
 		// has nothing to report, and the two read as cause and effect in order.
 		if r.ResolveChecked {
 			mark, detail := "✓", strings.Join(r.ResolveAddrs, ", ")
-			if !r.Resolves {
+			switch {
+			case r.Resolves:
+			case r.DialViaPeer:
+				// The name is still broken — say so — but camp has an address,
+				// so the line leads with what will actually be dialed.
+				detail = r.DialHost + " (via tailnet peer table; " + r.ResolveHint + ")"
+			default:
 				mark, detail = "✗", r.ResolveHint
 			}
 			lines = append(lines, fmt.Sprintf("%s  %s %s", ui.Label("RESOLVE"), mark, detail))
 		}
 		switch {
-		case r.ResolveChecked && !r.Resolves:
+		case r.ResolveChecked && !r.Resolves && !r.DialViaPeer:
 			// Never "camp missing / too old" for a host that was never
 			// addressable: that sends the operator to the far machine to fix
 			// something, when nothing on it is wrong.
