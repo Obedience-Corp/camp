@@ -101,8 +101,8 @@ func handleMergedBackstop(ctx context.Context, out io.Writer, root, projectPath 
 		return
 	}
 	for _, m := range surviving {
-		_, _ = fmt.Fprintf(out, "%s workitem %s had a merged branch and is still active; promote when done:\n    %s\n",
-			ui.InfoIcon(), backstopWorkitemLabel(m.Workitem), backstopPromoteCommand(m.Workitem))
+		_, _ = fmt.Fprintf(out, "%s workitem %s (%s) had a merged branch and is still active; promote when done:\n    %s\n",
+			ui.InfoIcon(), backstopWorkitemLabel(m.Workitem), backstopWorkitemContext(m.Workitem), backstopPromoteCommand(m.Workitem))
 	}
 }
 
@@ -123,7 +123,7 @@ func promoteMergedMatches(ctx context.Context, out io.Writer, cfg *config.Campai
 			}
 			seen[key] = true
 		}
-		promote, err := confirmMergedPromote(ctx, backstopPromptTitle(m))
+		promote, err := confirmMergedPromote(ctx, backstopPromptTitle(m), backstopPromptDescription(m))
 		if err != nil {
 			_, _ = fmt.Fprintf(out, "%s prompt failed for %s: %v\n", ui.WarningIcon(), backstopWorkitemLabel(m.Workitem), err)
 			continue
@@ -146,13 +146,30 @@ func promoteMergedMatches(ctx context.Context, out io.Writer, cfg *config.Campai
 
 // backstopPromptTitle is the per-item prompt question.
 func backstopPromptTitle(m MergedBackstopMatch) string {
-	return fmt.Sprintf("Workitem %s had a merged branch and is still active. Promote to completed?", backstopWorkitemLabel(m.Workitem))
+	return fmt.Sprintf("Workitem %q had a merged branch and is still active. Promote to completed?", backstopWorkitemLabel(m.Workitem))
 }
 
-func confirmMergedPromote(ctx context.Context, title string) (bool, error) {
+// backstopPromptDescription identifies the workitem beyond its title so the
+// promote decision can be made from the prompt alone: the resolvable id, the
+// campaign-relative directory, and the merged evidence that triggered the
+// match (the pruned branch, or WI-tagged commits for commit-tag matches).
+func backstopPromptDescription(m MergedBackstopMatch) string {
+	lines := []string{"ID:        " + backstopWorkitemID(m.Workitem)}
+	if m.Workitem.RelativePath != "" {
+		lines = append(lines, "Directory: "+m.Workitem.RelativePath)
+	}
+	if m.Branch != "" {
+		lines = append(lines, "Branch:    "+m.Branch+" (merged)")
+	} else {
+		lines = append(lines, "Evidence:  workitem-tagged commits merged to the default branch")
+	}
+	return strings.Join(lines, "\n")
+}
+
+func confirmMergedPromote(ctx context.Context, title, description string) (bool, error) {
 	var promote bool
 	form := huh.NewForm(huh.NewGroup(
-		huh.NewConfirm().Title(title).Affirmative("Promote").Negative("Skip").Value(&promote),
+		huh.NewConfirm().Title(title).Description(description).Affirmative("Promote").Negative("Skip").Value(&promote),
 	))
 	if err := theme.RunForm(ctx, form); err != nil {
 		if theme.IsCancelled(err) {
@@ -192,6 +209,16 @@ func backstopWorkitemID(wi wkitem.WorkItem) string {
 func backstopWorkitemLabel(wi wkitem.WorkItem) string {
 	if wi.Title != "" {
 		return wi.Title
+	}
+	return backstopWorkitemID(wi)
+}
+
+// backstopWorkitemContext identifies a workitem beyond its display label for
+// report lines: the resolvable id, plus the campaign-relative directory when
+// known.
+func backstopWorkitemContext(wi wkitem.WorkItem) string {
+	if wi.RelativePath != "" {
+		return backstopWorkitemID(wi) + ", " + wi.RelativePath
 	}
 	return backstopWorkitemID(wi)
 }

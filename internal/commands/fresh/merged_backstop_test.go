@@ -54,8 +54,48 @@ func TestResolveBackstopMode_DryRunNeverPrompts(t *testing.T) {
 
 func TestBackstopPromptTitle(t *testing.T) {
 	title := backstopPromptTitle(MergedBackstopMatch{Workitem: wkitem.WorkItem{Title: "Fix login", StableID: "design-x"}})
-	if !strings.Contains(title, "Fix login") || !strings.Contains(title, "Promote to completed?") {
-		t.Errorf("prompt title missing label or question: %q", title)
+	if !strings.Contains(title, `"Fix login"`) || !strings.Contains(title, "Promote to completed?") {
+		t.Errorf("prompt title missing quoted label or question: %q", title)
+	}
+}
+
+func TestBackstopPromptDescription(t *testing.T) {
+	wi := wkitem.WorkItem{Title: "Fix login", StableID: "design-foo-01", RelativePath: "workflow/design/foo"}
+
+	t.Run("worktree-link match shows id, directory, and merged branch", func(t *testing.T) {
+		desc := backstopPromptDescription(MergedBackstopMatch{Workitem: wi, Branch: "myfeature", Signal: SignalWorktreeLink})
+		for _, want := range []string{"design-foo-01", "workflow/design/foo", "myfeature (merged)"} {
+			if !strings.Contains(desc, want) {
+				t.Errorf("description missing %q:\n%s", want, desc)
+			}
+		}
+	})
+
+	t.Run("commit-tag match shows evidence instead of a branch", func(t *testing.T) {
+		desc := backstopPromptDescription(MergedBackstopMatch{Workitem: wi, Signal: SignalCommitTag})
+		if strings.Contains(desc, "Branch:") {
+			t.Errorf("commit-tag match must not claim a branch:\n%s", desc)
+		}
+		if !strings.Contains(desc, "workitem-tagged commits merged") {
+			t.Errorf("commit-tag match missing evidence line:\n%s", desc)
+		}
+	})
+
+	t.Run("missing directory omits the Directory line", func(t *testing.T) {
+		desc := backstopPromptDescription(MergedBackstopMatch{Workitem: wkitem.WorkItem{StableID: "design-x"}, Branch: "b"})
+		if strings.Contains(desc, "Directory:") {
+			t.Errorf("description must omit Directory when RelativePath is empty:\n%s", desc)
+		}
+	})
+}
+
+func TestBackstopWorkitemContext(t *testing.T) {
+	got := backstopWorkitemContext(wkitem.WorkItem{StableID: "design-foo-01", RelativePath: "workflow/design/foo"})
+	if want := "design-foo-01, workflow/design/foo"; got != want {
+		t.Errorf("context = %q, want %q", got, want)
+	}
+	if got := backstopWorkitemContext(wkitem.WorkItem{StableID: "design-foo-01"}); got != "design-foo-01" {
+		t.Errorf("context without path = %q, want bare id", got)
 	}
 }
 
