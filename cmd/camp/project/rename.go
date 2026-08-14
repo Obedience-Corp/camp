@@ -7,6 +7,7 @@ import (
 	"strings"
 
 	projectlinked "github.com/Obedience-Corp/camp/cmd/camp/project/linked"
+	camperrors "github.com/Obedience-Corp/camp/internal/errors"
 	"github.com/Obedience-Corp/camp/internal/git/commit"
 	"github.com/Obedience-Corp/camp/internal/jsoncontract"
 	projectrename "github.com/Obedience-Corp/camp/internal/project/rename"
@@ -100,6 +101,10 @@ func runProjectRename(cmd *cobra.Command, args []string, flags projectRenameFlag
 		if err != nil {
 			return err
 		}
+		plan, err = appliedProjectRenamePlan(result)
+		if err != nil {
+			return err
+		}
 	}
 
 	var commitResult *projectRenameCommit
@@ -138,6 +143,17 @@ func runProjectRename(cmd *cobra.Command, args []string, flags projectRenameFlag
 		})
 	}
 	return printProjectRename(cmd.OutOrStdout(), result, flags.dryRun, flags.noCommit, commitResult)
+}
+
+// appliedProjectRenamePlan makes Apply's refreshed plan authoritative for all
+// post-mutation behavior. Apply deliberately re-plans immediately before
+// mutation, so its eligibility and commit file set may be newer than the
+// command's initial dry-run-capable plan.
+func appliedProjectRenamePlan(result *projectrename.Result) (*projectrename.PlanResult, error) {
+	if result == nil || result.Plan == nil {
+		return nil, camperrors.New("project rename apply returned no refreshed plan")
+	}
+	return result.Plan, nil
 }
 
 func writeProjectRenameJSON(w io.Writer, envelope projectRenameEnvelope) error {
