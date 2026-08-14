@@ -29,6 +29,11 @@ func List(ctx context.Context, campaignRoot string) ([]Project, error) {
 		}
 		return nil, err
 	}
+	declaredPaths, _ := git.ListSubmodulePaths(ctx, campaignRoot)
+	declared := make(map[string]bool, len(declaredPaths))
+	for _, path := range declaredPaths {
+		declared[filepath.ToSlash(filepath.Clean(path))] = true
+	}
 
 	var projects []Project
 	for _, entry := range entries {
@@ -57,17 +62,42 @@ func List(ctx context.Context, campaignRoot string) ([]Project, error) {
 			continue
 		}
 
-		// Check if it's a git repo (has .git file or directory)
-		gitPath := filepath.Join(projectPath, ".git")
-		if _, err := os.Stat(gitPath); err != nil {
+		relPath := filepath.ToSlash(filepath.Join("projects", name))
+		if declared[relPath] {
+			// An uninitialized submodule is still a managed project even though
+			// its checkout has no .git pointer yet.
+			gitPath := filepath.Join(projectPath, ".git")
+			if _, err := os.Stat(gitPath); err != nil {
+				projects = append(projects, Project{Name: name, Path: relPath, Source: SourceSubmodule})
+				continue
+			}
+			resolved := resolveProject(ctx, name, projectPath)
+			for i := range resolved {
+				resolved[i].Source = SourceSubmodule
+			}
+			projects = append(projects, resolved...)
 			continue
 		}
 
-		resolved := resolveProject(ctx, name, projectPath)
-		for i := range resolved {
-			resolved[i].Source = SourceSubmodule
+		// Preserve standalone Git-backed project discovery for compatibility.
+		// Rename itself uses stricter exact classification and rejects an
+		// undeclared nested repository before mutation.
+		gitPath := filepath.Join(projectPath, ".git")
+		if _, err := os.Stat(gitPath); err == nil {
+			resolved := resolveProject(ctx, name, projectPath)
+			for i := range resolved {
+				resolved[i].Source = SourceSubmodule
+			}
+			projects = append(projects, resolved...)
+			continue
 		}
-		projects = append(projects, resolved...)
+		tracked, err := git.RunGitCmd(ctx, campaignRoot, "ls-files", "--", relPath)
+		if err != nil || strings.TrimSpace(tracked) == "" {
+			continue
+		}
+		projects = append(projects, Project{
+			Name: name, Path: relPath, Type: detectProjectType(projectPath), Source: SourceCampaign,
+		})
 	}
 
 	projects = deduplicateByRemoteURL(ctx, campaignRoot, projects)

@@ -40,6 +40,25 @@ type GitWorktreeEntry struct {
 	Prunable   string // Reason if prunable, empty otherwise
 }
 
+// Move relocates an existing worktree while preserving its branch and dirty
+// state. Git updates the administrative gitdir metadata as part of the move.
+func (g *GitWorktree) Move(ctx context.Context, oldPath, newPath string) error {
+	ctx, cancel := context.WithTimeout(ctx, g.timeout)
+	defer cancel()
+
+	cmd := exec.CommandContext(ctx, "git", "worktree", "move", oldPath, newPath)
+	cmd.Dir = g.projectPath
+	output, err := cmd.CombinedOutput()
+	if err != nil {
+		return GitOperationFailed(
+			filepath.Base(g.projectPath),
+			"worktree move",
+			parseGitError(err, output),
+		)
+	}
+	return nil
+}
+
 // CurrentBranch returns the current branch name.
 func (g *GitWorktree) CurrentBranch(ctx context.Context) (string, error) {
 	ctx, cancel := context.WithTimeout(ctx, g.timeout)

@@ -5,10 +5,10 @@ description: Manage campaign projects with `camp project`. Use when the user wan
 
 # Campaign Projects
 
-A project in a campaign is either a git submodule under `projects/` or a
-linked project — a symlink placed at `projects/<name>` that points to a
-directory elsewhere on the same machine. Most users prefer linking.
-Default toward link unless the user has stated a reason for a submodule.
+A project in a campaign may be a git submodule under `projects/`, a linked
+project (a symlink at `projects/<name>`), or an ordinary directory owned by
+the campaign repository. Most external repositories prefer linking. Default
+toward link unless the user has stated a reason for a submodule.
 
 ## Decide: `add` or `link` — ASK the User
 
@@ -38,6 +38,22 @@ on disk for submodules.
 Prefer `camp project unlink <name>` when the intent is specifically to
 remove a link.
 
+## Rename
+
+Use the first-class transaction instead of remove/add or a raw filesystem
+move:
+
+```bash
+camp project rename <current> <new>
+camp project rename <current> <new> --remote-url <new-origin-url>
+camp project rename <current> <new> --dry-run --json
+```
+
+It supports declared submodules, linked workspace symlinks, and ordinary
+campaign-owned directories. It preserves dirty project/worktree content and
+migrates typed Camp references. Camp never infers a provider-side repository
+rename; pass `--remote-url` when origin changed too.
+
 ## Scope Limits for Links (Current Behavior)
 
 `camp status --sub`, `camp pull --sub`, `camp push --sub`, and the
@@ -65,6 +81,7 @@ camp refs-sync projects/camp
 ```bash
 camp project list [--format table|simple|json]
 camp project new <name> [--no-commit]          # scaffold new submodule
+camp project rename <current> <new> [--remote-url <url>]
 camp project run -p <name> -- <command>        # run command inside a project
 camp project prune [<name>] [--dry-run] [--remote] [--remote-delete]
 camp project remote {list|add|set-url|remove|rename} [args] [-p <name>]
