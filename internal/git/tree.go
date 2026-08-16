@@ -198,6 +198,26 @@ func IsGitlink(ctx context.Context, repoPath, path string) bool {
 	return strings.HasPrefix(strings.TrimSpace(out), "160000 ")
 }
 
+// CaptureGitlink snapshots the commit currently checked out at a gitlink path.
+// Unlike CaptureBlobs, which refuses nested repositories, this is deliberately
+// limited to a path already recorded as mode 160000 in the parent repository.
+// It lets a deferred pointer follow-up retain the exact project commit even if
+// the checkout moves again before the campaign-root lane reaches the job.
+func CaptureGitlink(ctx context.Context, repoPath, path string) (BlobRef, error) {
+	clean := filepath.ToSlash(filepath.Clean(filepath.FromSlash(path)))
+	if clean == "." || !filepath.IsLocal(filepath.FromSlash(clean)) {
+		return BlobRef{}, camperrors.NewValidation("gitlink path", "must be repository-relative", nil)
+	}
+	if !IsGitlink(ctx, repoPath, clean) {
+		return BlobRef{}, camperrors.NewValidation("gitlink path", clean+" is not a gitlink in HEAD", nil)
+	}
+	sha, err := FullHash(ctx, filepath.Join(repoPath, filepath.FromSlash(clean)))
+	if err != nil {
+		return BlobRef{}, camperrors.Wrapf(err, "capture gitlink %s", clean)
+	}
+	return BlobRef{Path: clean, Mode: "160000", SHA: sha}, nil
+}
+
 // commitHookNames are the hooks that run during an ordinary `git commit`.
 //
 // Only these three. A repository with a `pre-push` hook can still defer
@@ -256,7 +276,7 @@ func HasCommitHooks(ctx context.Context, repoPath string) bool {
 type BlobRef struct {
 	// Path is repo-relative.
 	Path string
-	// Mode is the git file mode ("100644", "100755", "120000").
+	// Mode is the git file mode ("100644", "100755", "120000", "160000").
 	Mode string
 	// SHA is the blob object. Empty means the path was already gone at
 	// capture time and should be removed from the tree.
@@ -276,7 +296,11 @@ func CaptureBlobs(ctx context.Context, repoPath string, paths []string) ([]BlobR
 		info, err := os.Lstat(abs)
 		if err != nil {
 			if os.IsNotExist(err) {
-				refs = append(refs, BlobRef{Path: p})
+				deleted, captureErr := captureDeletedPath(ctx, repoPath, p)
+				if captureErr != nil {
+					return nil, captureErr
+				}
+				refs = append(refs, deleted...)
 				continue
 			}
 			return nil, camperrors.Wrapf(err, "capture %s", p)
@@ -301,6 +325,27 @@ func CaptureBlobs(ctx context.Context, repoPath string, paths []string) ([]BlobR
 			Mode: blobMode(info),
 			SHA:  strings.TrimSpace(sha),
 		})
+	}
+	return refs, nil
+}
+
+// captureDeletedPath expands a missing tracked directory into its former
+// files. update-index --force-remove removes exact entries, not a directory
+// prefix, so recording only the absent directory would leave every descendant
+// in the deferred commit's tree.
+func captureDeletedPath(ctx context.Context, repoPath, path string) ([]BlobRef, error) {
+	out, err := Output(ctx, repoPath, "ls-files", "-z", "--", path)
+	if err != nil {
+		return nil, camperrors.Wrapf(err, "capture deleted path %s", path)
+	}
+	var refs []BlobRef
+	for entry := range strings.SplitSeq(strings.TrimRight(out, "\x00"), "\x00") {
+		if entry != "" {
+			refs = append(refs, BlobRef{Path: entry})
+		}
+	}
+	if len(refs) == 0 {
+		refs = append(refs, BlobRef{Path: path})
 	}
 	return refs, nil
 }

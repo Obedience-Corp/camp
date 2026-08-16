@@ -359,7 +359,8 @@ func projectDeferOptions(
 			cfg.Name, cfg.ID, questID, festivalRef, workitemRef)
 	}
 
-	if (prefs.SyncProjectRefs || projectCommitSync) && !projectCommitNoSync && relPath != "" {
+	if (prefs.SyncProjectRefs || projectCommitSync) && !projectCommitNoSync && relPath != "" &&
+		git.IsGitlink(ctx, campRoot, filepath.ToSlash(relPath)) {
 		opts.Then = &jobs.Follow{
 			Kind:  jobs.KindCommitPaths,
 			Repo:  ".",

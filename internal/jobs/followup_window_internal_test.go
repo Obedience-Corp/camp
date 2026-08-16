@@ -28,7 +28,17 @@ func parentWithFollowUp() Job {
 	}
 }
 
+func stubFollowUpCapture(t *testing.T) {
+	t.Helper()
+	old := captureFollowUpBlobs
+	captureFollowUpBlobs = func(context.Context, string, *Follow) ([]BlobRef, error) {
+		return []BlobRef{{Path: "projects/widget", Mode: "160000", SHA: "deadbeef"}}, nil
+	}
+	t.Cleanup(func() { captureFollowUpBlobs = old })
+}
+
 func TestFollowUpIsDurableBeforeTheParentCompletes(t *testing.T) {
+	stubFollowUpCapture(t)
 	root := t.TempDir()
 
 	parent := enqueueForTest(t, root, parentWithFollowUp())
@@ -62,6 +72,7 @@ func TestFollowUpIsDurableBeforeTheParentCompletes(t *testing.T) {
 }
 
 func TestFollowUpEnqueueFailureFailsTheParent(t *testing.T) {
+	stubFollowUpCapture(t)
 	root := t.TempDir()
 
 	parent := enqueueForTest(t, root, parentWithFollowUp())

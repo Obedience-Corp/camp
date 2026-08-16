@@ -227,9 +227,11 @@ func TestDrainMatrixCoversEveryPackageWithADrain(t *testing.T) {
 	// history-moving command, so it is expected to drain without a row.
 	covered["jobs.go"] = true
 	// fresh lives in internal/commands and has its own tests; the matrix reads
-	// cmd/camp only.
+	// cmd/camp only. Its batch helper owns the target-scoped drains shared by
+	// the single-project and all-project entrypoints.
 	covered["fresh.go"] = true
 	covered["all.go"] = true
+	covered["batch.go"] = true
 
 	for _, path := range strings.Fields(string(out)) {
 		if strings.HasSuffix(path, "_test.go") {

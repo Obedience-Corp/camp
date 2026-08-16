@@ -11,6 +11,7 @@ import (
 
 	"github.com/Obedience-Corp/camp/internal/campaign"
 	"github.com/Obedience-Corp/camp/internal/config"
+	"github.com/Obedience-Corp/camp/internal/drain"
 	camperrors "github.com/Obedience-Corp/camp/internal/errors"
 	"github.com/Obedience-Corp/camp/internal/project"
 	"github.com/Obedience-Corp/camp/internal/ui"
@@ -32,6 +33,27 @@ type freshFlagSet struct {
 type freshTarget struct {
 	name string
 	path string
+}
+
+// drainFreshTargets waits only on repositories whose history this invocation
+// will move. Campaign-root bookkeeping produced later by fresh is deterministic
+// and joins the root queue in order; an unrelated root message writer must not
+// hold project branch cycling on the user's terminal.
+func drainFreshTargets(ctx context.Context, targets []freshTarget, noDrain, dryRun bool) error {
+	if noDrain || dryRun {
+		return nil
+	}
+	seen := make(map[string]struct{}, len(targets))
+	for _, target := range targets {
+		if _, ok := seen[target.path]; ok {
+			continue
+		}
+		seen[target.path] = struct{}{}
+		if _, err := drain.Repo(ctx, target.path, drain.Write); err != nil {
+			return err
+		}
+	}
+	return nil
 }
 
 // getFreshFlagSet extracts the fresh persistent flags from the parent command.
