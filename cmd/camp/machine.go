@@ -381,6 +381,16 @@ type machineDiagnoseRow struct {
 	Reset        bool   `json:"reset"`
 	CampVersion  string `json:"camp_version,omitempty"`
 	CampCommit   string `json:"camp_commit,omitempty"`
+	// CampPath is where the far machine's camp binary was found, and
+	// CampOnPath whether the account's login shell finds it unaided (false
+	// means the hop works only because camp fell back to its usual install
+	// locations). CampMissing is the login-shell PATH and every usual
+	// location coming up empty: ssh worked, camp is not there. Additive with
+	// omitempty on the strings, so existing --json consumers are unaffected.
+	CampPath     string `json:"camp_path,omitempty"`
+	CampOnPath   bool   `json:"camp_on_path"`
+	CampOverride bool   `json:"camp_path_override,omitempty"`
+	CampMissing  bool   `json:"camp_missing"`
 	// CheckURL is the Tailscale approval URL when that is why the probe could
 	// not reach the machine. Additive and omitempty, so existing --json
 	// consumers are unaffected.
@@ -428,6 +438,27 @@ func probeRemoteCampVersion(ctx context.Context, m *machines.Machine) (versionSt
 		return "", "", ""
 	}
 	return info.Version, info.Commit, ""
+}
+
+// probeRemoteCamp asks the machine where its camp is before asking that camp
+// for its version, so diagnose can tell "ssh failed" from "ssh worked, no
+// camp there" from "camp ran" — three states the old single probe collapsed
+// into one "unavailable". Ordering also keeps a dead host to one timeout:
+// when the location probe fails at the ssh level, the version probe would
+// only fail the same way, so it is skipped and the location error supplies
+// any Tailscale check URL. missing is true when the far side exhausted the
+// login-shell PATH and camp's usual install locations (exit 127).
+func probeRemoteCamp(ctx context.Context, m *machines.Machine) (loc remote.CampLocation, versionStr, commit, checkURL string, missing bool) {
+	loc, err := remote.RemoteCampLocation(ctx, m)
+	switch {
+	case err == nil:
+		versionStr, commit, checkURL = probeRemoteCampVersion(ctx, m)
+		return loc, versionStr, commit, checkURL, false
+	case remote.IsCampNotFound(err):
+		return remote.CampLocation{}, "", "", "", true
+	default:
+		return remote.CampLocation{}, "", "", remote.TailscaleCheckURL(err), false
+	}
 }
 
 // campVersionSkew reports whether a probed remote version differs from this
@@ -503,8 +534,10 @@ func runMachineDiagnose(cmd *cobra.Command, args []string) error {
 		// recorded exactly as a failed probe is: writeMachineVersionCache
 		// ignores an empty version either way.
 		var remoteVersion, remoteCommit, checkURL string
+		var campLoc remote.CampLocation
+		var campMissing bool
 		if !resolved.Checked || resolved.Resolved || endpoint.ViaPeer {
-			remoteVersion, remoteCommit, checkURL = probeRemoteCampVersion(ctx, m)
+			campLoc, remoteVersion, remoteCommit, checkURL, campMissing = probeRemoteCamp(ctx, m)
 		}
 		// Diagnose is the only surface that pays for a live probe, so it is the
 		// only one that can warm the cache the hop path reads.
@@ -522,6 +555,10 @@ func runMachineDiagnose(cmd *cobra.Command, args []string) error {
 			State:        string(d.State),
 			CampVersion:  remoteVersion,
 			CampCommit:   remoteCommit,
+			CampPath:     campLoc.Path,
+			CampOnPath:   campLoc.OnPATH,
+			CampOverride: campLoc.Override,
+			CampMissing:  campMissing,
 			CheckURL:     checkURL,
 			VersionSkew:  campVersionSkew(localInfo, remoteVersion, remoteCommit),
 			// What this machine can honestly say about being reachable FROM
@@ -555,6 +592,28 @@ func runMachineDiagnose(cmd *cobra.Command, args []string) error {
 		}{Machines: rows})
 	}
 	return renderMachineDiagnoseTable(cmd.OutOrStdout(), rows)
+}
+
+// machineDiagnoseBinaryLine renders where the far machine's camp is, or that
+// there is none, so the operator can tell a working-by-fallback hop from a
+// clean one and a missing binary from a dead host. Empty when the location
+// was never probed (host unresolvable, ssh failed, or check-mode blocked it).
+func machineDiagnoseBinaryLine(r machineDiagnoseRow) string {
+	switch {
+	case r.CampMissing:
+		return fmt.Sprintf("%s  ✗ %s", ui.Label("BINARY"),
+			"not found on the login-shell PATH or in "+remote.CampInstallDirsDisplay()+
+				"; install camp there, or set "+remote.RemoteCampPathEnv+" to its exact path")
+	case r.CampPath == "":
+		return ""
+	case r.CampOverride:
+		return fmt.Sprintf("%s  %s %s", ui.Label("BINARY"), r.CampPath, ui.Dim("("+remote.RemoteCampPathEnv+")"))
+	case r.CampOnPath:
+		return fmt.Sprintf("%s  %s %s", ui.Label("BINARY"), r.CampPath, ui.Dim("(on the login-shell PATH)"))
+	default:
+		return fmt.Sprintf("%s  %s %s", ui.Label("BINARY"), r.CampPath,
+			ui.Dim("(found in a usual install location, not on the login-shell PATH; hops work, but interactive shells may run a different camp)"))
+	}
 }
 
 func renderMachineDiagnoseTable(w io.Writer, rows []machineDiagnoseRow) error {
@@ -606,6 +665,9 @@ func renderMachineDiagnoseTable(w io.Writer, rows []machineDiagnoseRow) error {
 			}
 			lines = append(lines, fmt.Sprintf("%s  %s %s", ui.Label("RESOLVE"), mark, detail))
 		}
+		if line := machineDiagnoseBinaryLine(r); line != "" {
+			lines = append(lines, line)
+		}
 		switch {
 		case r.ResolveChecked && !r.Resolves && !r.DialViaPeer:
 			// Never "camp missing / too old" for a host that was never
@@ -618,9 +680,17 @@ func renderMachineDiagnoseTable(w io.Writer, rows []machineDiagnoseRow) error {
 			// broken here, the hop is waiting on a browser approval.
 			lines = append(lines, fmt.Sprintf("%s  %s", ui.Label("CAMP"),
 				ui.Dim("blocked on a Tailscale SSH check")))
+		case r.CampMissing:
+			// ssh got in and found nothing to run. Not "unreachable": the
+			// network and auth are fine, the far machine needs camp.
+			lines = append(lines, fmt.Sprintf("%s  %s", ui.Label("CAMP"),
+				ui.Dim("not probed (no camp binary to run; see BINARY)")))
+		case r.CampVersion == "" && r.CampPath == "":
+			lines = append(lines, fmt.Sprintf("%s  %s", ui.Label("CAMP"),
+				ui.Dim("unavailable (the machine could not be reached)")))
 		case r.CampVersion == "":
 			lines = append(lines, fmt.Sprintf("%s  %s", ui.Label("CAMP"),
-				ui.Dim("unavailable (unreachable, or camp missing / too old for 'version --json')")))
+				ui.Dim("found, but 'version --json' failed (too old to report a version?)")))
 		case r.VersionSkew:
 			lines = append(lines, fmt.Sprintf("%s  %s", ui.Label("CAMP"),
 				campVersionDisplay(r)+"  ⚠ differs from this machine ("+campLocalVersionDisplay()+"); remote errors may not match current behavior"))

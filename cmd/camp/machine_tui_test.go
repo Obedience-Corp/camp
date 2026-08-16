@@ -783,3 +783,29 @@ func TestApplyDevicesDropsStaleGeneration(t *testing.T) {
 		t.Errorf("current result not applied: %+v", m.devices)
 	}
 }
+
+// Exit 127 means ssh logged in and the far side found no camp. The screen
+// must not call that "unreachable": badge, pane headline, and status line all
+// name the missing binary, and the pane still carries the actionable hint.
+func TestHealthCampMissingIsNotFramedAsUnreachable(t *testing.T) {
+	if _, label, _ := healthBadge(healthCampMissing); label != "camp not found" {
+		t.Errorf("camp-missing badge label = %q", label)
+	}
+	detail := "remote camp not found on devbox: nothing named camp on the account's login-shell PATH, and none of camp's usual install locations (~/go/bin) has one; if it lives elsewhere, set CAMP_REMOTE_CAMP_PATH to its exact path on that machine"
+	m := newMachineTUIModel(t.Context(), fleetFile())
+	m.health["devbox"] = machineHealth{State: healthCampMissing, Detail: detail}
+	joined := strings.Join(m.healthSection("devbox", 60), "\n")
+	if !strings.Contains(joined, "camp is not installed there") {
+		t.Errorf("pane headline does not name the missing binary: %q", joined)
+	}
+	if strings.Contains(joined, "Could not reach it") {
+		t.Errorf("pane frames a missing binary as unreachable: %q", joined)
+	}
+	if got := strings.Join(strings.Fields(joined), " "); !strings.Contains(got, "CAMP_REMOTE_CAMP_PATH") {
+		t.Errorf("pane dropped the escape-hatch hint: %q", joined)
+	}
+	status := healthStatusLine("devbox", machineHealth{State: healthCampMissing, Detail: detail})
+	if strings.Contains(status, "could not reach") || !strings.Contains(status, "camp is not installed there") {
+		t.Errorf("status line = %q", status)
+	}
+}

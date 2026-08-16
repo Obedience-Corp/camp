@@ -318,3 +318,108 @@ func TestRenderMachineDiagnoseFallbackDialShowsPeerAddress(t *testing.T) {
 		}
 	}
 }
+
+// A machine ssh reached whose far side found no camp anywhere must read as
+// exactly that — not "unreachable", which sends the operator at the network.
+func TestRenderMachineDiagnoseCampMissingIsNotUnreachable(t *testing.T) {
+	var buf bytes.Buffer
+	err := renderMachineDiagnoseTable(&buf, []machineDiagnoseRow{{
+		ID:             "archdtop",
+		Host:           "archdtop.tailnet.ts.net",
+		AuthMethod:     "tailscale-ssh",
+		AuthLabel:      "Tailscale SSH (identity)",
+		Socket:         "/tmp/archdtop.sock",
+		State:          "none",
+		ResolveChecked: true,
+		Resolves:       true,
+		ResolveAddrs:   []string{"100.74.252.71"},
+		CampMissing:    true,
+	}})
+	if err != nil {
+		t.Fatalf("render: %v", err)
+	}
+	out := buf.String()
+	for _, want := range []string{
+		"BINARY", "not found on the login-shell PATH", "~/go/bin", "CAMP_REMOTE_CAMP_PATH",
+		"no camp binary to run",
+	} {
+		if !strings.Contains(out, want) {
+			t.Errorf("output missing %q:\n%s", want, out)
+		}
+	}
+	for _, reject := range []string{"unreachable", "too old"} {
+		if strings.Contains(out, reject) {
+			t.Errorf("a missing binary was reported as %q:\n%s", reject, out)
+		}
+	}
+}
+
+// The archdtop shape after the fix: the login shell cannot see camp, the far
+// side found it in ~/go/bin, and the version probe ran against it. Diagnose
+// must show the path, say the login shell did not find it, and still report
+// the version.
+func TestRenderMachineDiagnoseReportsFallbackBinary(t *testing.T) {
+	var buf bytes.Buffer
+	err := renderMachineDiagnoseTable(&buf, []machineDiagnoseRow{{
+		ID:             "archdtop",
+		Host:           "archdtop.tailnet.ts.net",
+		AuthMethod:     "tailscale-ssh",
+		AuthLabel:      "Tailscale SSH (identity)",
+		Socket:         "/tmp/archdtop.sock",
+		State:          "none",
+		ResolveChecked: true,
+		Resolves:       true,
+		ResolveAddrs:   []string{"100.74.252.71"},
+		CampVersion:    "dev",
+		CampCommit:     "a3a1cee2",
+		CampPath:       "/home/lance/go/bin/camp",
+		CampOnPath:     false,
+	}})
+	if err != nil {
+		t.Fatalf("render: %v", err)
+	}
+	out := buf.String()
+	for _, want := range []string{"BINARY", "/home/lance/go/bin/camp", "not on the login-shell PATH", "a3a1cee2"} {
+		if !strings.Contains(out, want) {
+			t.Errorf("output missing %q:\n%s", want, out)
+		}
+	}
+	if strings.Contains(out, "unavailable") || strings.Contains(out, "not probed") {
+		t.Errorf("a found-and-versioned camp was reported as unavailable:\n%s", out)
+	}
+}
+
+func TestMachineDiagnoseBinaryLineShapes(t *testing.T) {
+	cases := []struct {
+		name string
+		row  machineDiagnoseRow
+		want []string
+		none bool
+	}{
+		{name: "never probed", row: machineDiagnoseRow{}, none: true},
+		{name: "on path", row: machineDiagnoseRow{CampPath: "/usr/local/bin/camp", CampOnPath: true},
+			want: []string{"/usr/local/bin/camp", "on the login-shell PATH"}},
+		{name: "fallback", row: machineDiagnoseRow{CampPath: "/home/u/.local/bin/camp"},
+			want: []string{"/home/u/.local/bin/camp", "not on the login-shell PATH"}},
+		{name: "override", row: machineDiagnoseRow{CampPath: "/opt/x/camp", CampOverride: true},
+			want: []string{"/opt/x/camp", "CAMP_REMOTE_CAMP_PATH"}},
+		{name: "missing", row: machineDiagnoseRow{CampMissing: true},
+			want: []string{"✗", "~/.local/bin", "$GOBIN", "CAMP_REMOTE_CAMP_PATH"}},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			got := machineDiagnoseBinaryLine(tc.row)
+			if tc.none {
+				if got != "" {
+					t.Errorf("expected no BINARY line, got %q", got)
+				}
+				return
+			}
+			for _, w := range tc.want {
+				if !strings.Contains(got, w) {
+					t.Errorf("BINARY line %q missing %q", got, w)
+				}
+			}
+		})
+	}
+}

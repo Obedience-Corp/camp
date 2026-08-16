@@ -184,6 +184,8 @@ func healthBadge(state healthState) (string, string, lipgloss.Style) {
 		return "●", "reachable", machineOKStyle
 	case healthUnreachable:
 		return "✗", "unreachable", machineErrorStyle
+	case healthCampMissing:
+		return "✗", "camp not found", machineErrorStyle
 	case healthUnsupported:
 		return "!", "unsupported", machineWarn
 	case healthTesting:
@@ -270,6 +272,14 @@ func (m *machineTUIModel) healthSection(id string, width int) []string {
 			lines = append(lines, machineMuted.Render("  "+line))
 		}
 		return append(lines, machineMuted.Render("  e edits it · t tries again"))
+	case healthCampMissing:
+		// ssh got in; the machine simply has no camp where camp looks. Say
+		// that, not "unreachable", or the operator debugs the network.
+		lines := []string{style.Render(glyph + " Reached it, but camp is not installed there")}
+		for _, line := range healthDetailLines(health.Detail, max(width-4, 20), false) {
+			lines = append(lines, machineMuted.Render("  "+line))
+		}
+		return append(lines, machineMuted.Render("  install camp on it (or set CAMP_REMOTE_CAMP_PATH) · t tries again"))
 	case healthUnsupported:
 		return []string{
 			style.Render(glyph + " Cannot be used yet"),

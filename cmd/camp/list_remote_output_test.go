@@ -7,6 +7,8 @@ import (
 	"io"
 	"strings"
 	"testing"
+
+	camperrors "github.com/Obedience-Corp/camp/internal/errors"
 )
 
 func TestCampaignEntryMachineOmittedByDefault(t *testing.T) {
@@ -99,5 +101,30 @@ func TestOutputRemoteListJSONCleanStdoutUnreachableToStderr(t *testing.T) {
 	}
 	if !strings.Contains(errBuf.String(), "dead") || !strings.Contains(errBuf.String(), "unreachable") {
 		t.Errorf("unreachable machine not reported on stderr: %q", errBuf.String())
+	}
+}
+
+// A machine whose far side found no camp is labeled as such in the table row
+// and the stderr warning; every other failure keeps the "unreachable" label.
+func TestRemoteFailureLabelDistinguishesCampNotFound(t *testing.T) {
+	notFound := camperrors.Wrap(camperrors.NewCommand("ssh devbox", 127, "camp: not found", nil), "remote camp not found on devbox")
+	if got := remoteFailureLabel(notFound); got != "camp not found" {
+		t.Errorf("exit 127 labeled %q, want %q", got, "camp not found")
+	}
+	if got := remoteFailureLabel(errors.New("ssh: connect to host devbox: timed out")); got != "unreachable" {
+		t.Errorf("timeout labeled %q, want %q", got, "unreachable")
+	}
+
+	var table, warn bytes.Buffer
+	results := []remoteResult{{machineID: "devbox", err: notFound}}
+	if err := outputRemoteList(&table, io.Discard, nil, results, "table"); err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(table.String(), "(camp not found:") || strings.Contains(table.String(), "unreachable") {
+		t.Errorf("table row for exit 127 = %q", table.String())
+	}
+	warnUnreachable(&warn, results)
+	if !strings.Contains(warn.String(), "devbox camp not found:") {
+		t.Errorf("stderr warning for exit 127 = %q", warn.String())
 	}
 }
