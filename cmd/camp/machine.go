@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"os"
 	"strings"
 	"text/tabwriter"
 
@@ -455,6 +456,11 @@ func probeRemoteCamp(ctx context.Context, m *machines.Machine) (loc remote.CampL
 		versionStr, commit, checkURL = probeRemoteCampVersion(ctx, m)
 		return loc, versionStr, commit, checkURL, false
 	case remote.IsCampNotFound(err):
+		// With an override in force the miss is that path, not the fallback
+		// list, and the BINARY line should say which path was tried.
+		if p := os.Getenv(remote.RemoteCampPathEnv); p != "" {
+			return remote.CampLocation{Path: p, Override: true}, "", "", "", true
+		}
 		return remote.CampLocation{}, "", "", "", true
 	default:
 		return remote.CampLocation{}, "", "", remote.TailscaleCheckURL(err), false
@@ -600,6 +606,9 @@ func runMachineDiagnose(cmd *cobra.Command, args []string) error {
 // was never probed (host unresolvable, ssh failed, or check-mode blocked it).
 func machineDiagnoseBinaryLine(r machineDiagnoseRow) string {
 	switch {
+	case r.CampMissing && r.CampOverride:
+		return fmt.Sprintf("%s  ✗ %s %s", ui.Label("BINARY"), r.CampPath,
+			"("+remote.RemoteCampPathEnv+") is not an executable on that machine")
 	case r.CampMissing:
 		return fmt.Sprintf("%s  ✗ %s", ui.Label("BINARY"),
 			"not found on the login-shell PATH or in "+remote.CampInstallDirsDisplay()+

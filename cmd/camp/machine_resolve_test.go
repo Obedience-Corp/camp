@@ -405,6 +405,8 @@ func TestMachineDiagnoseBinaryLineShapes(t *testing.T) {
 			want: []string{"/opt/x/camp", "CAMP_REMOTE_CAMP_PATH"}},
 		{name: "missing", row: machineDiagnoseRow{CampMissing: true},
 			want: []string{"✗", "~/.local/bin", "$GOBIN", "CAMP_REMOTE_CAMP_PATH"}},
+		{name: "missing override", row: machineDiagnoseRow{CampMissing: true, CampOverride: true, CampPath: "/nope/camp"},
+			want: []string{"✗", "/nope/camp", "CAMP_REMOTE_CAMP_PATH", "not an executable"}},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {

@@ -75,6 +75,7 @@ func remoteCampOverride() string {
 const (
 	campFoundOnPath     = "path"
 	campFoundInInstall  = "fallback"
+	campFoundOverride   = "override"
 	campResolverExec    = `exec "$c" "$@"`
 	campResolverReport  = `echo "$how $c"`
 	campResolverNoQuote = "'"
@@ -90,11 +91,20 @@ const (
 // rest of camp already keys on — after naming every place it looked, so the
 // operator's next step is never a PATH hunt.
 //
-// The script is deliberately free of single quotes and backslashes: it is
-// single-quoted once for /bin/sh -c and then a second time by
-// LoginShellCommand for the account's login shell, and that outer shell may
-// be fish, whose single-quote escaping differs from POSIX exactly for those
-// two characters. Keeping them out means both shells read the same bytes.
+// The script is deliberately free of single quotes and backslashes. It is
+// single-quoted once for /bin/sh -c and then that whole inner command is
+// single-quoted again by LoginShellCommand, so the login shell's -c text
+// contains the POSIX close-escape-reopen idiom ('\”) exactly once around
+// the script. POSIX shells and fish parse that idiom identically at one
+// level (fish treats a backslash-escaped quote outside quotes as a literal
+// quote); they diverge only when a backslash or quote appears INSIDE a
+// single-quoted region, i.e. when the idiom is nested a second time. Keeping
+// '\” out of the script guarantees the script itself never introduces
+// that second level. Args can still do so (a campaign name containing an
+// apostrophe), which is the same nesting main already produced for such
+// names and is a known fish limitation, not a new one. Proof for fish is
+// tests/integration/remote_fish_shell_test.go (real sshd, real fish passwd
+// shell); the POSIX shells are exercised in campbin_test.go.
 //
 // dirs is campInstallDirs in production; tests pass a HOME-relative subset so
 // a camp installed at an absolute prefix on the developer machine cannot leak
@@ -243,20 +253,33 @@ type CampLocation struct {
 // a hop would execute. Reuse-only: it exists for diagnose, which must not
 // disturb the socket it is reporting. Returns a 127-classified error (see
 // IsCampNotFound) when nothing was found; any other error is the hop itself
-// failing.
+// failing. With CAMP_REMOTE_CAMP_PATH set it still hops, to test that the
+// path is an executable on that machine: an override that is wrong or a
+// machine that is down must not print as a healthy BINARY line.
 func RemoteCampLocation(ctx context.Context, m *machines.Machine) (CampLocation, error) {
-	if override := remoteCampOverride(); override != "" {
-		return CampLocation{Path: os.Getenv(RemoteCampPathEnv), Override: true}, nil
-	}
 	if err := EnsureKeyAuth(m); err != nil {
 		return CampLocation{}, err
 	}
 	e := ResolveEndpoint(ctx, m)
-	out, err := Run(ctx, e.Target(), e.OptsReuseOnly(), campLocationCommandLine(campInstallDirs))
+	override := remoteCampOverride()
+	line := campLocationCommandLine(campInstallDirs)
+	if override != "" {
+		line = campOverrideLocationCommandLine(override)
+	}
+	out, err := Run(ctx, e.Target(), e.OptsReuseOnly(), line)
 	if err != nil {
-		return CampLocation{}, campNotFoundHint(err, m, "")
+		return CampLocation{}, campNotFoundHint(err, m, override)
 	}
 	return parseCampLocation(string(out))
+}
+
+// campOverrideLocationCommandLine is the report-mode probe for an explicit
+// CAMP_REMOTE_CAMP_PATH: is that path executable over there. It exits 127
+// when not, so the failure classifies exactly like a resolver miss. quoted
+// is the override already shell-quoted; the line stays one quoting level
+// deep, like every override invocation.
+func campOverrideLocationCommandLine(quoted string) string {
+	return LoginShellCommand("test -x " + quoted + " && echo " + campFoundOverride + " " + quoted + " || exit 127")
 }
 
 // campLocationCommandLine is the ssh remote command for the resolver's report
@@ -278,6 +301,8 @@ func parseCampLocation(out string) (CampLocation, error) {
 		return CampLocation{Path: path, OnPATH: true}, nil
 	case campFoundInInstall:
 		return CampLocation{Path: path}, nil
+	case campFoundOverride:
+		return CampLocation{Path: path, Override: true}, nil
 	default:
 		return CampLocation{}, camperrors.New("remote camp resolver returned an unexpected report: " + strings.TrimSpace(out))
 	}

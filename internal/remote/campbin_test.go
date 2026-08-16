@@ -123,6 +123,30 @@ func writeProbeCamp(t *testing.T, dir string) string {
 	return path
 }
 
+// writeLoginProfiles makes dir the first PATH entry for every login shell
+// under home: ~/.profile (sh, dash, bash without a .bash_profile),
+// ~/.zprofile (zsh), and config.fish (fish). This is how a real account
+// whose profile exports camp's directory looks. It has to be a profile file
+// rather than PATH in the environment because /etc/profile on Alpine and
+// Debian overwrites PATH on login, so an env PATH would not survive the -l.
+func writeLoginProfiles(t *testing.T, home, dir string) {
+	t.Helper()
+	posix := "export PATH=" + ShellQuote(dir) + ":\"$PATH\"\n"
+	for _, name := range []string{".profile", ".zprofile"} {
+		if err := os.WriteFile(filepath.Join(home, name), []byte(posix), 0o600); err != nil {
+			t.Fatal(err)
+		}
+	}
+	fishDir := filepath.Join(home, ".config", "fish")
+	if err := os.MkdirAll(fishDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	fish := "set -gx PATH " + ShellQuote(dir) + " $PATH\n"
+	if err := os.WriteFile(filepath.Join(fishDir, "config.fish"), []byte(fish), 0o600); err != nil {
+		t.Fatal(err)
+	}
+}
+
 // runAsRemoteLoginShell executes the full remote command line the way sshd
 // does — the account's shell parses it (`$SHELL -c <line>`), which re-enters
 // itself with -l and runs the inner command — under a controlled HOME and
@@ -148,22 +172,35 @@ func runAsRemoteLoginShell(t *testing.T, shell, home, path, line string) (stdout
 	return out.String(), errb.String(), code
 }
 
-// loginShellsForTest returns the POSIX shells present on this machine to
-// stand in for the remote account's login shell. sh always; dash, bash and
-// zsh when installed, because their -l startup and quoting corner cases
-// differ and every one of them ships as somebody's login shell.
+// loginShellsForTest returns the shells present on this machine to stand in
+// for the remote account's login shell. sh always; dash, bash, zsh and fish
+// when installed, because their -l startup and quoting corner cases differ
+// and every one of them ships as somebody's login shell. fish is the one
+// non-POSIX entry: it only ever has to parse the outer command line (the
+// resolver runs under /bin/sh), and that parse is what these tests check.
+// tests/integration/remote_fish_shell_test.go runs the same thing over a
+// real sshd for machines without fish on the developer's PATH.
 func loginShellsForTest(t *testing.T) []string {
 	t.Helper()
 	shells := []string{}
-	for _, name := range []string{"sh", "dash", "bash", "zsh"} {
+	for _, name := range []string{"sh", "dash", "bash", "zsh", "fish"} {
 		if p, err := exec.LookPath(name); err == nil {
 			shells = append(shells, p)
 		}
 	}
 	if len(shells) == 0 {
-		t.Skip("no POSIX shell on PATH")
+		t.Skip("no shell on PATH")
 	}
 	return shells
+}
+
+// isFish reports whether shell is a fish binary, for the one case fish is
+// known not to parse: a campaign name containing an apostrophe nests the
+// close-escape-reopen idiom twice, which fish rejects. That is the command
+// line main already produced for such names, so it is documented here rather
+// than fixed here.
+func isFish(shell string) bool {
+	return filepath.Base(shell) == "fish"
 }
 
 // TestResolverFindsCampInInstallDirWhenPathIsBlind is the archdtop case: the
@@ -189,6 +226,9 @@ func TestResolverFindsCampInInstallDirWhenPathIsBlind(t *testing.T) {
 	for _, shell := range loginShellsForTest(t) {
 		for _, tc := range cases {
 			t.Run(filepath.Base(shell)+"/"+tc.name, func(t *testing.T) {
+				if isFish(shell) && strings.Contains(tc.remainder, "'") {
+					t.Skip("fish cannot parse a doubly nested quote idiom; pre-existing on main for names with an apostrophe")
+				}
 				line := campRemoteCommandLineWith(homeOnlyDirs, "", resolveRootArgs(tc.remainder))
 				stdout, stderr, code := runAsRemoteLoginShell(t, shell, home, barePath, line)
 				if code != 0 {
@@ -204,8 +244,9 @@ func TestResolverFindsCampInInstallDirWhenPathIsBlind(t *testing.T) {
 	}
 }
 
-// When the login shell can already see camp, that camp wins — the fallback
-// list must never shadow a PATH the operator configured on purpose.
+// When the login shell can already see camp — its profile exports the
+// directory — that camp wins; the fallback list must never shadow a PATH the
+// operator configured on purpose.
 func TestResolverPrefersLoginShellPath(t *testing.T) {
 	home := t.TempDir()
 	writeProbeCamp(t, filepath.Join(home, "go", "bin"))
@@ -216,10 +257,11 @@ func TestResolverPrefersLoginShellPath(t *testing.T) {
 	if err := os.WriteFile(filepath.Join(onPath, "camp"), []byte("#!/bin/sh\necho from-path\n"), 0o700); err != nil {
 		t.Fatal(err)
 	}
+	writeLoginProfiles(t, home, onPath)
 	for _, shell := range loginShellsForTest(t) {
 		t.Run(filepath.Base(shell), func(t *testing.T) {
 			line := campRemoteCommandLineWith(homeOnlyDirs, "", "list --json")
-			stdout, stderr, code := runAsRemoteLoginShell(t, shell, home, onPath+":/usr/bin:/bin", line)
+			stdout, stderr, code := runAsRemoteLoginShell(t, shell, home, "/usr/bin:/bin", line)
 			if code != 0 {
 				t.Fatalf("exit %d, stderr: %s", code, stderr)
 			}
@@ -271,17 +313,28 @@ func TestResolverReportModeRoundTrip(t *testing.T) {
 				t.Errorf("reported path %q, want %q", loc.Path, installed)
 			}
 
-			line = campLocationCommandLine(homeOnlyDirs)
-			stdout, stderr, code = runAsRemoteLoginShell(t, shell, home, filepath.Dir(installed)+":/usr/bin:/bin", line)
+		})
+	}
+}
+
+// The other half of the report: a camp the login shell's own profile exports
+// is reported as on-PATH, not as a fallback.
+func TestResolverReportModeSeesProfilePath(t *testing.T) {
+	home := t.TempDir()
+	installed := writeProbeCamp(t, filepath.Join(home, "on-path"))
+	writeLoginProfiles(t, home, filepath.Dir(installed))
+	for _, shell := range loginShellsForTest(t) {
+		t.Run(filepath.Base(shell), func(t *testing.T) {
+			stdout, stderr, code := runAsRemoteLoginShell(t, shell, home, "/usr/bin:/bin", campLocationCommandLine(homeOnlyDirs))
 			if code != 0 {
 				t.Fatalf("exit %d, stderr: %s", code, stderr)
 			}
-			loc, err = parseCampLocation(stdout)
+			loc, err := parseCampLocation(stdout)
 			if err != nil {
 				t.Fatalf("parseCampLocation(%q): %v", stdout, err)
 			}
-			if !loc.OnPATH {
-				t.Errorf("reported fallback for a camp that is on PATH: %q", stdout)
+			if !loc.OnPATH || loc.Path != installed {
+				t.Errorf("reported %+v for a camp the profile exports, want on-PATH %q", loc, installed)
 			}
 		})
 	}
@@ -296,6 +349,7 @@ func TestParseCampLocation(t *testing.T) {
 		{in: "path /home/lance/go/bin/camp\n", want: CampLocation{Path: "/home/lance/go/bin/camp", OnPATH: true}},
 		{in: "fallback /home/lance/.local/bin/camp", want: CampLocation{Path: "/home/lance/.local/bin/camp"}},
 		{in: "fallback /opt/my camp/camp", want: CampLocation{Path: "/opt/my camp/camp"}},
+		{in: "override /opt/x/camp\n", want: CampLocation{Path: "/opt/x/camp", Override: true}},
 		{in: "", wantErr: true},
 		{in: "path", wantErr: true},
 		{in: "weird /x/camp", wantErr: true},
@@ -318,14 +372,32 @@ func TestParseCampLocation(t *testing.T) {
 	}
 }
 
-func TestRemoteCampLocationOverrideNeedsNoHop(t *testing.T) {
-	t.Setenv(RemoteCampPathEnv, "/opt/my camp/camp")
-	loc, err := RemoteCampLocation(t.Context(), &machines.Machine{ID: "devbox", Host: "devbox.invalid"})
-	if err != nil {
-		t.Fatalf("RemoteCampLocation with override: %v", err)
-	}
-	if !loc.Override || loc.Path != "/opt/my camp/camp" {
-		t.Errorf("RemoteCampLocation with override = %+v", loc)
+// An explicit CAMP_REMOTE_CAMP_PATH is still probed on the far side: a path
+// that is executable reports as override, a path that is not exits 127 so
+// diagnose says "not found" instead of printing the override as if it ran.
+func TestOverrideLocationRoundTrip(t *testing.T) {
+	home := t.TempDir()
+	installed := writeProbeCamp(t, filepath.Join(home, "opt", "my camp"))
+	for _, shell := range loginShellsForTest(t) {
+		t.Run(filepath.Base(shell), func(t *testing.T) {
+			stdout, stderr, code := runAsRemoteLoginShell(t, shell, home, "/usr/bin:/bin",
+				campOverrideLocationCommandLine(ShellQuote(installed)))
+			if code != 0 {
+				t.Fatalf("exit %d, stderr: %s", code, stderr)
+			}
+			loc, err := parseCampLocation(stdout)
+			if err != nil {
+				t.Fatalf("parseCampLocation(%q): %v", stdout, err)
+			}
+			if !loc.Override || loc.Path != installed {
+				t.Errorf("override report = %+v, want Override with path %q", loc, installed)
+			}
+			_, _, code = runAsRemoteLoginShell(t, shell, home, "/usr/bin:/bin",
+				campOverrideLocationCommandLine(ShellQuote(filepath.Join(home, "nope", "camp"))))
+			if code != 127 {
+				t.Errorf("missing override exited %d, want 127", code)
+			}
+		})
 	}
 }
 
