@@ -94,15 +94,16 @@ const (
 // The script is deliberately free of single quotes and backslashes. It is
 // single-quoted once for /bin/sh -c and then that whole inner command is
 // single-quoted again by LoginShellCommand, so the login shell's -c text
-// contains the POSIX close-escape-reopen idiom ('\”) exactly once around
-// the script. POSIX shells and fish parse that idiom identically at one
-// level (fish treats a backslash-escaped quote outside quotes as a literal
-// quote); they diverge only when a backslash or quote appears INSIDE a
-// single-quoted region, i.e. when the idiom is nested a second time. Keeping
-// '\” out of the script guarantees the script itself never introduces
-// that second level. Args can still do so (a campaign name containing an
-// apostrophe), which is the same nesting main already produced for such
-// names and is a known fish limitation, not a new one. Proof for fish is
+// contains the POSIX close-escape-reopen idiom (close quote, backslash
+// quote, open quote) exactly once around the script. POSIX shells and fish
+// parse that idiom identically at one level (fish treats a backslash-escaped
+// quote outside quotes as a literal quote); they diverge only when a
+// backslash or quote appears INSIDE a single-quoted region, i.e. when the
+// idiom is nested a second time. Keeping quotes and backslashes out of the
+// script guarantees the script itself never introduces that second level.
+// Args can still do so (a campaign name containing an apostrophe), which is
+// the same nesting main already produced for such names and is a known fish
+// limitation, not a new one. Proof for fish is
 // tests/integration/remote_fish_shell_test.go (real sshd, real fish passwd
 // shell); the POSIX shells are exercised in campbin_test.go.
 //

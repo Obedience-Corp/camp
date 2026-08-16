@@ -234,6 +234,12 @@ hangs:
   one; if it lives elsewhere, set CAMP_REMOTE_CAMP_PATH to its exact path on that machine
   ```
   `CAMP_REMOTE_CAMP_PATH` is used verbatim when set: no resolution, no fallback.
+- **Login shells camp can hop through.** The far account's login shell must accept
+  `-lc`: sh, bash, zsh, dash, and fish all do (fish 3 and 4 both parse the generated
+  line). csh/tcsh do not accept `-lc` at all and have never been supported for hops;
+  the interactive session on such a machine still works, but `camp list --remote` and
+  remote resolution will fail with tcsh's usage message.
+
 - **Version skew.** If a previous `camp machine diagnose` observed a different camp version
   on the target, every hop warns, reading that cached result rather than paying for a
   probe:
