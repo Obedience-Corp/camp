@@ -13,7 +13,6 @@ import (
 
 	"github.com/Obedience-Corp/camp/internal/campaign"
 	"github.com/Obedience-Corp/camp/internal/config"
-	"github.com/Obedience-Corp/camp/internal/drain"
 	camperrors "github.com/Obedience-Corp/camp/internal/errors"
 	"github.com/Obedience-Corp/camp/internal/git"
 	"github.com/Obedience-Corp/camp/internal/project"
@@ -94,15 +93,6 @@ Examples:
 				return camperrors.Wrap(err, "not in a campaign")
 			}
 
-			// fresh checks out and pulls against a HEAD the queue may still be
-			// moving, and it may cycle several projects in one run, so it waits
-			// on every lane rather than the one it happens to start in.
-			if !freshNoDrain {
-				if _, err := drain.AllLanes(ctx, campRoot, drain.Write); err != nil {
-					return err
-				}
-			}
-
 			// Load fresh config
 			cfg, err := config.LoadFreshConfig(ctx, campRoot)
 			if err != nil {
@@ -133,6 +123,9 @@ Examples:
 				if err != nil {
 					return err
 				}
+				if err := drainFreshTargets(ctx, targets, freshNoDrain, freshDryRun); err != nil {
+					return err
+				}
 				header := fmt.Sprintf("Running fresh across %d project(s)...", len(targets))
 				return runFreshBatch(ctx, cfg, targets, flags, header)
 			}
@@ -149,6 +142,9 @@ Examples:
 				if errors.As(err, &notFound) {
 					fmt.Println(ui.Dim("\n" + project.FormatProjectList(notFound.AvailableProjects())))
 				}
+				return err
+			}
+			if err := drainFreshTargets(ctx, []freshTarget{{name: result.Name, path: result.Path}}, freshNoDrain, freshDryRun); err != nil {
 				return err
 			}
 

@@ -4,12 +4,65 @@
 package integration
 
 import (
+	"fmt"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
+
+// A campaign-root message writer is unrelated to the project branch fresh is
+// cycling. Fresh must complete the project work immediately, then capture its
+// deterministic sweep commit behind the existing root job without touching
+// the user's real index.
+func TestIntegration_FreshQueuesSweepBehindBusyRootLane(t *testing.T) {
+	skipIfShort(t)
+	tc := GetSharedContainer(t)
+	campaignPath, _, _ := setupFreshCampaignWithSubmodule(t, tc, "freshsweep-root-queue")
+	addFreshEligibleWorkitem(t, tc, campaignPath, "done-feature")
+	tc.EnableDeferral()
+
+	writeJob(t, tc, campaignPath, rootLane, 1, map[string]any{
+		"kind": "commit-paths", "repo": ".",
+		"paths":   []string{"held-message.md"},
+		"message": "root commit already writing its message",
+	})
+	tc.Shell(t, fmt.Sprintf(`
+		cd %s/.campaign/cache/jobs
+		printf '99999\n' > worker-%s.lock
+	`, campaignPath, rootLane))
+	headBefore := strings.TrimSpace(tc.GitOutput(t, campaignPath, "rev-parse", "HEAD"))
+
+	started := time.Now()
+	out, err := tc.RunCampInDir(campaignPath, "fresh", "test-project",
+		"--no-push", "--no-follow-up", "--no-prune")
+	elapsed := time.Since(started)
+	require.NoError(t, err, "fresh: %s", out)
+	assert.Less(t, elapsed, 15*time.Second,
+		"fresh waited on an unrelated root job for %s; output:\n%s", elapsed, out)
+	assert.Equal(t, headBefore, strings.TrimSpace(tc.GitOutput(t, campaignPath, "rev-parse", "HEAD")),
+		"the sweep must be queued behind the held root commit, not committed ahead of it")
+	assert.Equal(t, 2, pendingJobCount(t, tc, campaignPath, "pending", rootLane),
+		"the deterministic sweep commit must join the root lane behind the existing job")
+	assert.Empty(t, strings.TrimSpace(tc.GitOutput(t, campaignPath, "diff", "--cached", "--name-only")),
+		"queueing the sweep must not stage source deletions in the user's real index")
+
+	queued := tc.Shell(t, fmt.Sprintf(
+		"grep -l 'workflow/design/done-feature' %s/.campaign/cache/jobs/pending/%s/*.json",
+		campaignPath, rootLane))
+	assert.NotEmpty(t, strings.TrimSpace(queued),
+		"the queued sweep must capture the moved workitem's source deletion")
+
+	tc.Shell(t, fmt.Sprintf("rm -f %s/.campaign/cache/jobs/worker-%s.lock", campaignPath, rootLane))
+	drainJobs(t, tc, campaignPath)
+	assert.NotEqual(t, headBefore, strings.TrimSpace(tc.GitOutput(t, campaignPath, "rev-parse", "HEAD")),
+		"the queued sweep commit must land after the root lane is released")
+	assert.Empty(t, strings.TrimSpace(tc.GitOutput(t, campaignPath, "status", "--porcelain", "--",
+		"workflow/design")),
+		"the landed sweep commit must contain both sides of the workitem move")
+}
 
 // addFreshEligibleWorkitem creates a design workitem with a completed workflow
 // run at the campaign root and commits it, making it eligible for the tier-1

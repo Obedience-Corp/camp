@@ -7,10 +7,58 @@ import (
 	"fmt"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
+
+// A project commit's root follow-up may sit behind unrelated campaign work.
+// Fresh is allowed to move the project checkout once the project lane drains,
+// so the follow-up must carry the exact gitlink SHA captured when its parent
+// landed rather than reading the checkout later.
+func TestIntegration_FollowUpRetainsGitlinkAcrossFreshWithBusyRootLane(t *testing.T) {
+	tc := GetSharedContainer(t)
+	tc.EnableDeferral()
+	campPath, projectRel := setupSubmoduleCampaign(t, tc, "followup-fresh-root-busy")
+	projectPath := campPath + "/" + projectRel
+
+	writeJob(t, tc, campPath, rootLane, 1, map[string]any{
+		"kind": "commit-paths", "repo": ".",
+		"paths":   []string{"held-message.md"},
+		"message": "root commit already writing its message",
+	})
+	tc.Shell(t, fmt.Sprintf(`
+		cd %s/.campaign/cache/jobs
+		printf '99999\n' > worker-%s.lock
+	`, campPath, rootLane))
+	tc.Shell(t, fmt.Sprintf("cd %s && printf 'queued project change\n' > queued.md", projectPath))
+
+	stdout, stderr, exitCode, err := tc.RunCampSplitInDir(projectPath,
+		"p", "commit", "--auto-write", "--sync")
+	require.NoError(t, err)
+	require.Equal(t, 0, exitCode, "stdout:\n%s\nstderr:\n%s", stdout, stderr)
+	require.True(t, laneDrains(t, tc, campPath, "projects%2Fwidget", 30*time.Second),
+		"the project commit did not land")
+	committedProjectHead := strings.TrimSpace(tc.GitOutput(t, projectPath, "rev-parse", "HEAD"))
+	require.Equal(t, 2, pendingJobCount(t, tc, campPath, "pending", rootLane),
+		"the captured pointer follow-up must queue behind the held root job")
+
+	started := time.Now()
+	out, err := tc.RunCampInDir(projectPath, "fresh", "--no-push", "--no-follow-up", "--no-prune")
+	elapsed := time.Since(started)
+	require.NoError(t, err, "fresh: %s", out)
+	assert.Less(t, elapsed, 15*time.Second,
+		"fresh waited on the unrelated root lane for %s; output:\n%s", elapsed, out)
+	currentProjectHead := strings.TrimSpace(tc.GitOutput(t, projectPath, "rev-parse", "HEAD"))
+	require.NotEqual(t, committedProjectHead, currentProjectHead,
+		"fresh must move the ahead-only project checkout back to its remote default")
+
+	tc.Shell(t, fmt.Sprintf("rm -f %s/.campaign/cache/jobs/worker-%s.lock", campPath, rootLane))
+	drainJobs(t, tc, campPath)
+	assert.Equal(t, committedProjectHead, gitlinkSHA(t, tc, campPath, projectRel),
+		"the delayed follow-up must record the parent commit, not the HEAD fresh selected later")
+}
 
 // commit.sync_project_refs records a submodule's new HEAD in the campaign root
 // after a project commit. Under deferral the project commit happens in a

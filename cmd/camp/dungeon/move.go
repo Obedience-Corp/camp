@@ -151,16 +151,21 @@ func StageAndCommitDungeonMove(ctx context.Context, move *DungeonMoveCommit) *Du
 	outcome := &DungeonMoveCommitOutcome{}
 	files := commit.NormalizeFiles(move.CampaignRoot, move.DestinationPaths...)
 	files = append(files, commit.NormalizeFiles(move.CampaignRoot, move.RewrittenFiles...)...)
-	preStaged, err := StageTrackedMoveSourceDeletions(ctx, move.CampaignRoot, move.SourcePaths)
+	sources := commit.NormalizeFiles(move.CampaignRoot, move.SourcePaths...)
+	trackedSources, err := git.FilterTracked(ctx, move.CampaignRoot, sources)
 	if err != nil {
 		outcome.StagingErr = err
 		return outcome
 	}
+	// Keep source deletions in the explicit file set instead of pre-staging
+	// them in the user's real index. The deferred bookkeeping path captures
+	// each tracked source as a deletion blob, so a dungeon/workitem move can
+	// queue behind an existing root commit without mixing or blocking on it.
+	files = append(files, trackedSources...)
 	result := commit.Crawl(ctx, commit.CrawlOptions{
 		Options: commit.Options{
 			CampaignRoot: move.CampaignRoot,
 			CampaignID:   move.Config.ID,
-			PreStaged:    preStaged,
 		},
 		Description: strings.TrimSpace(move.Description),
 		Files:       files,

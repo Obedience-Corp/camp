@@ -240,6 +240,7 @@ func TestManifestFollowUpInheritsTheExemption(t *testing.T) {
 // too. Follow carries no class of its own; the parent's is copied, and this is
 // the test that says so.
 func TestWorkerWritesFollowUpsWithTheParentsClass(t *testing.T) {
+	stubFollowUpCapture(t)
 	for _, class := range []Class{ClassManifest, ClassCommit} {
 		t.Run(string(class), func(t *testing.T) {
 			root := testCampaign(t)

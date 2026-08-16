@@ -10,6 +10,8 @@ import (
 	"sync"
 	"sync/atomic"
 	"time"
+
+	"github.com/Obedience-Corp/camp/internal/git"
 )
 
 // MaxAttempts is how many times a job may be reclaimed before it is parked in
@@ -217,11 +219,17 @@ var executeJob = execute
 // the drains the manifest itself is exempt from, defeating the exemption one
 // level down.
 func enqueueFollowUp(ctx context.Context, campaignRoot string, job *Job) error {
+	blobs, err := captureFollowUpBlobs(ctx, campaignRoot, job.Then)
+	if err != nil {
+		logWorker(campaignRoot, "follow-up-capture-error parent=%s err=%v", job.ID, err)
+		return err
+	}
 	follow := Job{
 		Kind:     job.Then.Kind,
 		Class:    job.Class,
 		Repo:     job.Then.Repo,
 		Paths:    job.Then.Paths,
+		Blobs:    blobs,
 		FollowUp: true,
 		Message:  job.Then.Message,
 	}
@@ -231,6 +239,27 @@ func enqueueFollowUp(ctx context.Context, campaignRoot string, job *Job) error {
 	}
 	logWorker(campaignRoot, "follow-up lane=%s parent=%s", job.Then.Repo, job.ID)
 	return nil
+}
+
+// captureFollowUpBlobs is replaceable only so queue lifecycle tests can stay
+// filesystem-only. Production always snapshots the checked-out gitlink after
+// the parent project commit lands and before the follow-up becomes durable.
+var captureFollowUpBlobs = snapshotFollowUpBlobs
+
+func snapshotFollowUpBlobs(ctx context.Context, campaignRoot string, follow *Follow) ([]BlobRef, error) {
+	repoPath, err := resolveRepoPath(campaignRoot, follow.Repo)
+	if err != nil {
+		return nil, err
+	}
+	refs := make([]BlobRef, 0, len(follow.Paths))
+	for _, path := range follow.Paths {
+		ref, err := git.CaptureGitlink(ctx, repoPath, path)
+		if err != nil {
+			return nil, err
+		}
+		refs = append(refs, BlobRef{Path: ref.Path, Mode: ref.Mode, SHA: ref.SHA})
+	}
+	return refs, nil
 }
 
 // reclaimLane returns abandoned jobs to pending and parks the exhausted ones.
