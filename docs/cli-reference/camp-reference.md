@@ -3724,8 +3724,12 @@ positional argument to open the browser filtered to that org. Piped, with
 paths display as '~'.
 
 Shell integration (recommended for go/hop from the browser):
-  eval "$(camp shell-init zsh)"   # or bash / fish
+  eval "$(camp shell-init zsh)"   # or bash / sh
+  camp shell-init fish | source   # fish
   camp list                       # interactive browser; g hops remote rows
+
+Use the shell you actually run. "sh" covers dash, busybox ash, and any other
+Bourne shell that is not bash or zsh; the bash script will not parse there.
 
 Output formats:
   table   - Aligned columns with headers (default)
@@ -6468,6 +6472,14 @@ Add to your shell config:
   zsh:  eval "$(camp shell-init zsh)"
   bash: eval "$(camp shell-init bash)"
   fish: camp shell-init fish | source
+  sh:   eval "$(camp shell-init sh)"
+
+Use 'sh' for dash, busybox ash, and any other Bourne-family shell that is
+neither bash nor zsh, including the /bin/sh on minimal and embedded systems.
+The bash script uses bash arrays and programmable completion, so it does not
+parse under those shells. The sh script provides the wrapper, cgo, and the
+shorthand functions; it installs no tab completion, because POSIX sh has no
+completion mechanism to install into.
 
 This provides:
   - A camp shell function that wraps the camp binary
@@ -6507,6 +6519,9 @@ camp shell-init <shell> [flags]
 
   # Add to ~/.config/fish/config.fish
   camp shell-init fish | source
+
+  # Add to ~/.profile (dash, busybox ash, other POSIX shells)
+  eval "$(camp shell-init sh)"
 ```
 
 ### Options
@@ -7093,7 +7108,8 @@ With an argument, looks up the campaign by name or ID prefix.
 Use --org or org/campaign to resolve inside one organization.
 
 Use with the shell-init wrappers for instant navigation (recommended):
-  eval "$(camp shell-init zsh)"   # or bash / fish — once per shell
+  eval "$(camp shell-init zsh)"   # or bash / sh, once per shell
+  camp shell-init fish | source   # fish
   csw                            # Interactive picker (local + remote machines)
   csw my-campaign                # Switch by name
   csw a1b2                       # Switch by ID prefix
