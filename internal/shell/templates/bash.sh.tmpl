@@ -63,7 +63,7 @@ _camp_complete() {
       ;;
     shell-init)
       if [ "$COMP_CWORD" -eq 2 ]; then
-        COMPREPLY=($(compgen -W "zsh bash fish" -- "$cur"))
+        COMPREPLY=($(compgen -W "{{.ShellWords}}" -- "$cur"))
       fi
       ;;
   esac

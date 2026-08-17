@@ -148,3 +148,101 @@ func stripTemplateComments(script string) string {
 		rest = rest[end:]
 	}
 }
+
+// Adding a shell to SupportedShells must update every shell's completion menu.
+// It did not: sh became a valid argument while bash, zsh, and fish all still
+// offered only "zsh bash fish", because each template hardcoded that list.
+func TestEveryShellCompletesEverySupportedShell(t *testing.T) {
+	// POSIX sh is absent: it installs no completion, so it has no menu to keep
+	// in step. Every shell that does install one must offer the full list.
+	for _, shellType := range []string{"zsh", "bash", "fish"} {
+		script, err := Generate(shellType)
+		if err != nil {
+			t.Fatalf("Generate(%q) error = %v", shellType, err)
+		}
+		candidates := shellInitCompletionCandidates(t, shellType, script)
+		for _, want := range SupportedShells {
+			if !slicesContains(candidates, want) {
+				t.Errorf("%s shell-init completion does not offer %q; it offers %v", shellType, want, candidates)
+			}
+		}
+	}
+}
+
+// shellInitCompletionCandidates returns the exact tokens a script offers as
+// completions for the shell-init argument.
+//
+// It returns tokens rather than a blob because a substring check cannot do this
+// job: "sh" appears inside both "bash" and "fish", so asserting that a menu
+// "contains sh" passes against a menu of exactly zsh, bash, and fish. That is
+// the bug this test was written to catch, so it must not be able to make it.
+func shellInitCompletionCandidates(t *testing.T, shellType, script string) []string {
+	t.Helper()
+	var candidates []string
+	switch shellType {
+	case "bash":
+		m := regexp.MustCompile(`compgen -W "([a-z ]+)" -- "\$cur"`).FindAllStringSubmatch(script, -1)
+		for _, match := range m {
+			fields := strings.Fields(match[1])
+			// The shell-init menu is the one listing shell names, not shortcuts.
+			if slicesContains(fields, "zsh") {
+				candidates = fields
+			}
+		}
+	case "zsh":
+		m := regexp.MustCompile(`shells=\(([^)]*)\)`).FindStringSubmatch(script)
+		if m != nil {
+			for _, f := range strings.Fields(m[1]) {
+				candidates = append(candidates, strings.Trim(f, "'"))
+			}
+		}
+	case "fish":
+		for _, line := range strings.Split(script, "\n") {
+			if !strings.Contains(line, "__fish_seen_subcommand_from shell-init") {
+				continue
+			}
+			if m := regexp.MustCompile(`-a "([^"]+)"`).FindStringSubmatch(line); m != nil {
+				candidates = append(candidates, m[1])
+			}
+		}
+	}
+	if len(candidates) == 0 {
+		t.Fatalf("%s: could not extract the shell-init completion candidates", shellType)
+	}
+	return candidates
+}
+
+func slicesContains(haystack []string, needle string) bool {
+	for _, h := range haystack {
+		if h == needle {
+			return true
+		}
+	}
+	return false
+}
+
+// The wrapper functions scope their working variables with 'local'. Where that
+// is missing the failure is silent and wrong, not loud: ksh93 does not abort on
+// it, so the assignment simply never happens and the function reads whatever
+// the caller had in that name. The script must detect this and refuse.
+func TestShScriptGuardsAgainstMissingLocal(t *testing.T) {
+	script := generateSh()
+
+	if !strings.Contains(script, `[ "$_camp_v" = inner ]`) {
+		t.Error("the local-support probe must assert the effect of local, not merely that it ran")
+	}
+	if !strings.Contains(script, "has no 'local' builtin") {
+		t.Error("the script must say why it refused")
+	}
+
+	// The probe has to run before any wrapper is defined, or the shell installs
+	// functions it cannot execute correctly before reaching the check.
+	probeAt := strings.Index(script, "_camp_probe")
+	wrapperAt := strings.Index(script, "camp() {")
+	if probeAt < 0 || wrapperAt < 0 {
+		t.Fatalf("could not locate probe (%d) or wrapper (%d)", probeAt, wrapperAt)
+	}
+	if probeAt > wrapperAt {
+		t.Error("the local-support probe must run before the wrapper is defined")
+	}
+}

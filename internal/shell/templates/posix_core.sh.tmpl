@@ -11,6 +11,22 @@ dropping it would leak wrapper variables into the user's shell.
 if ! command -v camp >/dev/null 2>&1; then
   return 2>/dev/null || exit 0
 fi
+
+# The wrapper functions below scope their working variables with 'local'. It is
+# not in POSIX, but dash, busybox ash, and mksh all implement it; ksh93 does
+# not, and there it fails in the worst way: the assignment does not happen at
+# all, so the function reads whatever the caller had in that name. Refuse up
+# front rather than install a wrapper that quietly does the wrong thing.
+# The probe checks the EFFECT, not just that the command ran: under ksh93 a
+# failed 'local' does not abort the function, so merely calling it still
+# returns 0. What actually breaks is that the assignment never happens, so the
+# variable still holds the caller's value inside the function body.
+if ! (_camp_v=outer; _camp_probe() { local _camp_v=inner; [ "$_camp_v" = inner ]; }; _camp_probe) >/dev/null 2>&1; then
+  echo "camp: this shell has no 'local' builtin, which camp's sh integration requires." >&2
+  echo "camp: known affected: ksh93. Use bash, zsh, dash, busybox ash, or mksh." >&2
+  return 2>/dev/null || exit 0
+fi
+unset -f _camp_probe 2>/dev/null || true
 {{end}}
 {{define "posix_wrapper"}}# Wrap camp binary so directory-changing subcommands work natively.
 # Uses "command camp" to call the real binary, avoiding recursion.

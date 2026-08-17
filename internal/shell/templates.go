@@ -21,6 +21,15 @@ type templateData struct {
 
 	// ShortcutCompletions is fish complete commands for cgo shortcuts.
 	ShortcutCompletions string
+
+	// ShellWords is the supported shells for bash compgen -W, space separated.
+	ShellWords string
+
+	// ShellQuoted is the supported shells as a zsh array literal.
+	ShellQuoted string
+
+	// ShellCompletions is fish complete commands for the shell-init argument.
+	ShellCompletions string
 }
 
 // parsedTemplates caches the parsed template tree so we parse once per process.

@@ -35,6 +35,12 @@ function; it installs no tab completion, because POSIX sh has no completion
 mechanism to install into. Not sure which you have? `camp list` names the right
 command for your shell when integration is missing.
 
+Verified working: dash, busybox ash, and mksh. **ksh93 is not supported**: it
+parses the script but has no `local` builtin, and rather than erroring it
+silently skips the assignment, so a wrapper function would read whatever the
+caller happened to have in that variable. The script detects this and refuses
+with an explanation instead of installing itself.
+
 ## The `cgo` Function
 
 The `cgo` (camp-go) function is the primary interface for navigation. It's a shell function (not an alias or script) because it needs to change the current working directory.

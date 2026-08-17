@@ -472,9 +472,7 @@ complete -c camp -n __fish_use_subcommand -a "version" -d "Show version informat
 
 # Subcommand completions
 complete -c camp -n "__fish_seen_subcommand_from go" -a "(NO_COLOR=1 command camp complete --described (commandline -opc)[3..-1] 2>/dev/null)"
-complete -c camp -n "__fish_seen_subcommand_from shell-init" -a "zsh" -d "Zsh shell"
-complete -c camp -n "__fish_seen_subcommand_from shell-init" -a "bash" -d "Bash shell"
-complete -c camp -n "__fish_seen_subcommand_from shell-init" -a "fish" -d "Fish shell"
+{{.ShellCompletions}}
 
 # Project subcommands
 complete -c camp -n "__fish_seen_subcommand_from project" -a "add" -d "Add a project (submodule)"

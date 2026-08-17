@@ -33,7 +33,12 @@ func detect(shellPath string) string {
 		return "bash"
 	case "fish":
 		return "fish"
-	case "sh", "ash", "dash", "busybox", "ksh", "mksh", "yash":
+	case "sh", "ash", "dash", "busybox", "mksh", "yash":
+		// Verified to run the POSIX script correctly, including its use of
+		// 'local'. ksh is deliberately absent: it parses the script but does
+		// not implement 'local', so it falls through to the same script via
+		// FallbackShell and is stopped by the script's own guard with an
+		// explanation, rather than being told here that it is supported.
 		return "sh"
 	default:
 		return FallbackShell
