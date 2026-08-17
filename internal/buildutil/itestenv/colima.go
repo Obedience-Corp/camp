@@ -124,6 +124,8 @@ func (c colimaCLI) Start(ctx context.Context, spec StartSpec, out io.Writer) err
 	if spec.MemoryGiB > 0 {
 		args = append(args, memoryFlag, strconv.Itoa(spec.MemoryGiB))
 	}
+	// Named here rather than left to the command line, so the adapter's errors
+	// say what they were doing whatever runner produced them.
 	if err := c.run.Run(ctx, out, colimaBinary, args...); err != nil {
 		return camperrors.Wrapf(err, "start Colima profile %s", spec.Profile)
 	}

@@ -3,9 +3,11 @@ package tasks
 
 import (
 	"bufio"
+	"bytes"
 	"context"
 	"encoding/json"
 	"fmt"
+	"io"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -83,6 +85,13 @@ const (
 	// VM, which is not where the host reaches it.
 	socketOverrideEnv = "TESTCONTAINERS_DOCKER_SOCKET_OVERRIDE"
 	inVMDockerSocket  = "/var/run/docker.sock"
+
+	integrationSuiteDir = "tests/integration"
+
+	// maxBannerLine bounds the unterminated tail bannerWatcher will hold, so a
+	// suite that prints a very long line without a newline cannot grow it
+	// without limit.
+	maxBannerLine = 8192
 )
 
 // infraBannerMarker is the label the integration harness stamps on every
@@ -97,7 +106,7 @@ func Integration(ctx context.Context, verbose bool) error {
 	ui.Section("Running Integration Tests")
 
 	if err := prepareDaemon(ctx); err != nil {
-		return err
+		return reportDaemonRefusal(runStart, err)
 	}
 
 	// Prune orphans on the resolved daemon, after the daemon is chosen: this
@@ -146,9 +155,9 @@ func Integration(ctx context.Context, verbose bool) error {
 
 	// Run each test suite
 	for i, suite := range suites {
-		name := strings.TrimPrefix(suite, "tests/integration/")
+		name := strings.TrimPrefix(suite, integrationSuiteDir+"/")
 		if name == "" {
-			name = "tests/integration"
+			name = integrationSuiteDir
 		}
 
 		start := time.Now()
@@ -160,13 +169,22 @@ func Integration(ctx context.Context, verbose bool) error {
 		dockerEnv := append(os.Environ(), socketOverrideEnv+"="+inVMDockerSocket)
 
 		if verbose {
-			// In verbose mode, show output directly
+			// In verbose mode, show output directly. There are no JSON events
+			// to classify here, so the harness's own banner is the only signal
+			// that the run did not happen; without watching for it, a refused
+			// verbose run renders as a bare non-zero exit.
 			cmd := exec.CommandContext(ctx, "go", "test", "-count=1", "-v", "-tags", "integration", "-timeout", integrationTestTimeout, "./"+suite)
 			cmd.Env = dockerEnv
-			cmd.Stdout = os.Stdout
-			cmd.Stderr = os.Stderr
+			watcher := &bannerWatcher{}
+			cmd.Stdout = io.MultiWriter(os.Stdout, watcher)
+			cmd.Stderr = io.MultiWriter(os.Stderr, watcher)
 			ui.Progress(i+1, total, fmt.Sprintf("Testing %s", name))
 			pass = cmd.Run() == nil
+			if refused, reason := watcher.refusal(); refused {
+				tally.infraPackage = true
+				tally.infraReason = reason
+				pass = false
+			}
 		} else {
 			// Run with -json for real-time progress
 			cmd := exec.CommandContext(ctx, "go", "test", "-count=1", "-json", "-tags", "integration", "-timeout", integrationTestTimeout, "./"+suite)
@@ -345,6 +363,75 @@ func prepareDaemon(ctx context.Context) error {
 		return camperrors.Wrapf(err, "publish %s for the integration run", socketOverrideEnv)
 	}
 	return nil
+}
+
+// reportDaemonRefusal renders a daemon that could not be prepared in the same
+// vocabulary the suite uses when it refuses one itself: a single non-run
+// verdict with the cause, and no test rows. The refusal is the same event
+// whether it is the runner or the test binary that notices it, so it must not
+// read as two different kinds of failure.
+func reportDaemonRefusal(runStart time.Time, cause error) error {
+	summary := summarizeIntegration([]IntegrationResult{{
+		Suite:       integrationSuiteDir,
+		Collapsed:   true,
+		InfraReason: infraBannerMarker + " (not a test failure): " + cause.Error(),
+	}}, ui.ColourEnabled())
+	ui.SummaryCardWithStatus("Integration Test Summary", summary.rows,
+		fmt.Sprintf("%.2fs", time.Since(runStart).Seconds()),
+		summary.success, summary.successMsg, summary.failMsg)
+	return camperrors.Newf(
+		"integration run did not happen: infrastructure failure (the suite never started): %w. "+
+			"Repair the daemon with '%s' or inspect it with '%s'",
+		cause, itestenv.StartCommand, itestenv.DoctorCommand)
+}
+
+// bannerWatcher tees a stream while watching for the harness's package-level
+// infrastructure banner.
+//
+// It matches only at the start of a line. `go test -v` indents everything a
+// test prints, so an indented banner belongs to one test's failure (a single
+// member-local fault the run can survive), while a banner at column zero is
+// the harness saying the run itself did not happen. Treating the two alike
+// would turn one unlucky container into a non-run.
+type bannerWatcher struct {
+	mu      sync.Mutex
+	partial []byte
+	reason  string
+}
+
+func (w *bannerWatcher) Write(p []byte) (int, error) {
+	w.mu.Lock()
+	defer w.mu.Unlock()
+	if w.reason != "" {
+		return len(p), nil
+	}
+	w.partial = append(w.partial, p...)
+	for {
+		end := bytes.IndexByte(w.partial, '\n')
+		if end < 0 {
+			break
+		}
+		line := string(w.partial[:end])
+		w.partial = w.partial[end+1:]
+		if strings.HasPrefix(line, infraBannerMarker) {
+			w.reason = strings.TrimSpace(line)
+			w.partial = nil
+			return len(p), nil
+		}
+	}
+	if len(w.partial) > maxBannerLine {
+		// Keep the head: the banner starts its line, so that is the part worth
+		// holding on to.
+		w.partial = w.partial[:maxBannerLine]
+	}
+	return len(p), nil
+}
+
+// refusal reports the banner line, if the stream carried one.
+func (w *bannerWatcher) refusal() (bool, string) {
+	w.mu.Lock()
+	defer w.mu.Unlock()
+	return w.reason != "", w.reason
 }
 
 // surfaceTelemetry prints the harness's capacity record for this run beneath

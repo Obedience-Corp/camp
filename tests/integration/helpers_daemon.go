@@ -135,6 +135,7 @@ func reportTransportFallback(cause error) {
 func reportInfrastructureRefusal(reason string) {
 	fmt.Println(infraBannerPrefix + reason)
 	fmt.Printf("The integration run did not happen: no test executed. "+
-		"Check the daemon with 'just test integration-doctor', or set %s to "+
-		"point the suite somewhere else.\n", itestenv.EnvDockerHost)
+		"Repair the daemon with '%s', inspect it with '%s', or set %s to point "+
+		"the suite somewhere else.\n",
+		itestenv.StartCommand, itestenv.DoctorCommand, itestenv.EnvDockerHost)
 }

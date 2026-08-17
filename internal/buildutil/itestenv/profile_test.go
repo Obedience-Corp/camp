@@ -17,10 +17,23 @@ type fakeColima struct {
 	startErr    error
 	starts      []StartSpec
 	statusCalls int
+	// later, when set, is the answer from the second Status call onwards: what
+	// the profile looks like after this entrant waited for the start lock,
+	// which is when a racing entrant gets to change it.
+	later    *ProfileStatus
+	laterErr error
 }
 
 func (f *fakeColima) Status(_ context.Context, profile string) (ProfileStatus, error) {
 	f.statusCalls++
+	if f.statusCalls > 1 {
+		if f.laterErr != nil {
+			return ProfileStatus{Name: profile}, f.laterErr
+		}
+		if f.later != nil {
+			return *f.later, nil
+		}
+	}
 	if f.statusErr != nil {
 		return ProfileStatus{Name: profile}, f.statusErr
 	}
@@ -58,6 +71,7 @@ func TestResolveDecisions(t *testing.T) {
 		wantHost   string // "" means "the dedicated profile socket"
 		wantStart  bool
 		wantReason string
+		wantErr    string
 	}{
 		{
 			name:       "explicit override wins over everything",
@@ -118,18 +132,31 @@ func TestResolveDecisions(t *testing.T) {
 			wantReason: "is stopped",
 		},
 		{
-			name:       "no colima falls back loudly",
+			// Sharing a daemon after failing to get a dedicated one re-creates
+			// the collapse this package exists to remove, so the run refuses
+			// instead of running somewhere it was not asked to run.
+			name:      "a failed start refuses the run rather than sharing a daemon",
+			colima:    &fakeColima{status: absent, startErr: io.ErrClosedPipe},
+			autoStart: true,
+			wantErr:   "could not start the dedicated integration daemon",
+		},
+		{
+			// A machine with no Colima has no dedicated daemon to be given, so
+			// sharing one loudly is the only thing left that runs the suite.
+			name:       "no colima still falls back loudly",
 			colima:     &fakeColima{statusErr: io.ErrUnexpectedEOF},
 			autoStart:  true,
 			wantSource: SourceFallback,
 			wantReason: "Colima is unavailable",
 		},
 		{
-			name:       "failed start falls back rather than failing the run",
-			colima:     &fakeColima{status: absent, startErr: io.ErrClosedPipe},
-			autoStart:  true,
-			wantSource: SourceFallback,
-			wantReason: "could not start profile",
+			// Reading the profile's state after the lock is what makes the
+			// sizing decision safe; if that read fails, both sizing answers are
+			// wrong in a way somebody has to undo.
+			name:      "an unreadable state after the lock refuses rather than guesses",
+			colima:    &fakeColima{status: absent, laterErr: io.ErrUnexpectedEOF},
+			autoStart: true,
+			wantErr:   "confirm the state of profile",
 		},
 	}
 
@@ -150,6 +177,18 @@ func TestResolveDecisions(t *testing.T) {
 				AutoStart: tt.autoStart,
 				Out:       io.Discard,
 			})
+			if tt.wantErr != "" {
+				if err == nil {
+					t.Fatalf("Resolve() = %+v, want an error mentioning %q", got, tt.wantErr)
+				}
+				if !strings.Contains(err.Error(), tt.wantErr) {
+					t.Fatalf("Resolve() error = %v, want it to mention %q", err, tt.wantErr)
+				}
+				if got.Source != "" {
+					t.Errorf("Resolve() returned %+v alongside its error, want the zero resolution", got)
+				}
+				return
+			}
 			if err != nil {
 				t.Fatalf("Resolve() error = %v", err)
 			}
@@ -223,6 +262,78 @@ func TestResolveSizesOnlyNewProfiles(t *testing.T) {
 			}
 			if got := colima.starts[0].CPUs; got != tt.wantCPUs {
 				t.Errorf("CPUs = %d, want %d", got, tt.wantCPUs)
+			}
+			if got := colima.starts[0].MemoryGiB; got != tt.wantMemory {
+				t.Errorf("MemoryGiB = %d, want %d", got, tt.wantMemory)
+			}
+		})
+	}
+}
+
+// The race the start lock exists for: two entrants both see no profile, one
+// creates it and leaves it stopped, and the other wakes up holding the lock.
+// The waiter must size from what it finds now, not from what it saw before it
+// waited, or it hands Colima --cpus/--memory for a VM that already exists and
+// silently resizes somebody's machine.
+func TestResolveSizesFromThePostLockState(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name       string
+		before     ProfileStatus
+		after      ProfileStatus
+		wantStarts int
+		wantCPUs   int
+		wantMemory int
+	}{
+		{
+			name:       "created by another entrant while this one waited",
+			before:     ProfileStatus{Name: ProfileName},
+			after:      ProfileStatus{Name: ProfileName, Exists: true, Status: "Stopped"},
+			wantStarts: 1,
+		},
+		{
+			name:       "still absent after the wait, so this entrant creates it",
+			before:     ProfileStatus{Name: ProfileName},
+			after:      ProfileStatus{Name: ProfileName},
+			wantStarts: 1,
+			wantCPUs:   ProfileCPUs,
+			wantMemory: ProfileMemoryGiB,
+		},
+		{
+			name:       "started by another entrant while this one waited",
+			before:     ProfileStatus{Name: ProfileName},
+			after:      ProfileStatus{Name: ProfileName, Exists: true, Running: true},
+			wantStarts: 0,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+			after := tt.after
+			colima := &fakeColima{status: tt.before, later: &after}
+			got, err := Resolve(context.Background(), Options{
+				Getenv:    env(nil),
+				Home:      t.TempDir(),
+				Colima:    colima,
+				AutoStart: true,
+				Out:       io.Discard,
+			})
+			if err != nil {
+				t.Fatalf("Resolve() error = %v", err)
+			}
+			if got.Source != SourceProfile {
+				t.Fatalf("Source = %q, want %q", got.Source, SourceProfile)
+			}
+			if len(colima.starts) != tt.wantStarts {
+				t.Fatalf("start calls = %d, want %d", len(colima.starts), tt.wantStarts)
+			}
+			if tt.wantStarts == 0 {
+				return
+			}
+			if got := colima.starts[0].CPUs; got != tt.wantCPUs {
+				t.Errorf("CPUs = %d, want %d (sizing an existing profile silently resizes it)", got, tt.wantCPUs)
 			}
 			if got := colima.starts[0].MemoryGiB; got != tt.wantMemory {
 				t.Errorf("MemoryGiB = %d, want %d", got, tt.wantMemory)
