@@ -227,3 +227,128 @@ func TestSummarizeGreenRun(t *testing.T) {
 		t.Fatalf("green run should render only the totals row, got %v", s.rows)
 	}
 }
+
+// A run that refuses to start has no test to attach its failure to. The
+// harness prints its banner as package-level output, and that has to reach the
+// summary as the non-run verdict; otherwise a preflight refusal renders as an
+// unattributable "the test package failed" row, which is the same lie the
+// non-run banner exists to replace.
+func TestTallyPackageBannerIsANonRun(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name       string
+		output     string
+		wantNonRun bool
+		wantReason string
+	}{
+		{
+			name:       "a lock refusal is a non-run",
+			output:     "INFRASTRUCTURE FAILURE (not a test failure): integration suite is still locked after 30m0s by pid 4711\n",
+			wantNonRun: true,
+			wantReason: "pid 4711",
+		},
+		{
+			name:       "a preflight probe refusal is a non-run",
+			output:     "INFRASTRUCTURE FAILURE (not a test failure): the Docker daemon at unix:///d.sock did not answer\n",
+			wantNonRun: true,
+			wantReason: "did not answer",
+		},
+		{
+			name:   "ordinary package output is not a non-run",
+			output: "container pool: 6 (docker daemon reports 6 CPUs)\n",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+			ta := newIntegrationTally()
+			ta.observe(integrationTestEvent{Action: "output", Output: tt.output})
+
+			if got := ta.collapsed(); got != tt.wantNonRun {
+				t.Fatalf("collapsed() = %v, want %v", got, tt.wantNonRun)
+			}
+			if tt.wantReason != "" && !strings.Contains(ta.infraReason, tt.wantReason) {
+				t.Fatalf("infraReason = %q, want it to contain %q", ta.infraReason, tt.wantReason)
+			}
+			// The banner is also the whole story: an exit code arriving after
+			// it must not be reported as a separate suite failure.
+			if got := classifyRunFailure(nil, errExitStatus1, 0, true, ta.infraPackage); tt.wantNonRun && got != "" {
+				t.Fatalf("classifyRunFailure() = %q, want the banner to speak alone", got)
+			}
+		})
+	}
+}
+
+// The first banner wins: a refusal that cascades into further infrastructure
+// noise still has exactly one cause, and the summary shows exactly one row.
+func TestTallyKeepsTheFirstInfraReason(t *testing.T) {
+	t.Parallel()
+
+	ta := newIntegrationTally()
+	ta.observe(integrationTestEvent{Action: "output",
+		Output: "INFRASTRUCTURE FAILURE (not a test failure): the daemon did not answer\n"})
+	ta.observe(integrationTestEvent{Action: "output",
+		Output: "INFRASTRUCTURE FAILURE (not a test failure): and then the tunnel died\n"})
+
+	if !strings.Contains(ta.infraReason, "did not answer") {
+		t.Fatalf("infraReason = %q, want the first cause", ta.infraReason)
+	}
+}
+
+// A refused run has no denominator to report, so the verdict has to say the
+// suite never started rather than that zero tests never ran, and the recovery
+// row has to carry the harness's own reason.
+func TestSummarizeRefusedRunNamesTheReason(t *testing.T) {
+	t.Parallel()
+
+	results := []IntegrationResult{{
+		Suite:       "tests/integration",
+		Pass:        false,
+		Collapsed:   true,
+		InfraReason: "INFRASTRUCTURE FAILURE (not a test failure): integration suite is still locked after 30m0s by pid 4711",
+	}}
+
+	s := summarizeIntegration(results, false)
+
+	if s.success {
+		t.Fatal("a refused run must not be a success")
+	}
+	if !strings.Contains(s.failMsg, "RUN DID NOT HAPPEN") {
+		t.Fatalf("failMsg = %q, want the non-run banner", s.failMsg)
+	}
+	if !strings.Contains(s.failMsg, "never started") {
+		t.Fatalf("failMsg = %q, want it to say the suite never started", s.failMsg)
+	}
+	found := false
+	for _, row := range s.rows {
+		if len(row) > 1 && row[1] == "✗ NON-RUN" {
+			found = true
+			if !strings.Contains(row[0], "pid 4711") {
+				t.Fatalf("non-run row = %q, want the harness's own reason", row[0])
+			}
+		}
+	}
+	if !found {
+		t.Fatalf("no non-run row in %v", s.rows)
+	}
+}
+
+// Without a reason from the harness, the row still has to offer a recovery
+// step rather than an empty cell.
+func TestSummarizeCollapseFallsBackToGenericRecovery(t *testing.T) {
+	t.Parallel()
+
+	s := summarizeIntegration([]IntegrationResult{{
+		Suite:        "tests/integration",
+		TestsSkipped: 900,
+		Collapsed:    true,
+	}}, false)
+
+	for _, row := range s.rows {
+		if len(row) > 1 && row[1] == "✗ NON-RUN" && !strings.Contains(row[0], "idle machine") {
+			t.Fatalf("non-run row = %q, want the generic recovery step", row[0])
+		}
+	}
+}

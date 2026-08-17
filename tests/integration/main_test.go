@@ -13,6 +13,8 @@ import (
 	"testing"
 	"time"
 
+	camperrors "github.com/Obedience-Corp/camp/internal/errors"
+
 	"github.com/moby/moby/client"
 	"github.com/testcontainers/testcontainers-go"
 )
@@ -40,17 +42,48 @@ var legacyCampSkip string
 // pool (rather than a single container) lets tests run concurrently via
 // t.Parallel(), since each test gets exclusive use of one isolated container.
 func TestMain(m *testing.M) {
+	os.Exit(runSuite(m))
+}
+
+// runSuite owns every step a run has to undo: the suite lock, the Docker
+// transport, and the container pool. It exists because os.Exit skips deferred
+// calls, so TestMain can do nothing but carry the code out. A run that exits
+// while still holding the machine-wide suite lock makes the next run wait for
+// a process that is already gone.
+func runSuite(m *testing.M) int {
 	// Fail a typo'd transport selection here, before any container exists,
 	// rather than silently running the whole suite on the default.
 	if err := validateExecTransport(); err != nil {
 		os.Stderr.WriteString(err.Error() + "\n")
-		os.Exit(1)
+		return 1
 	}
+
+	ctx := context.Background()
+	daemon, err := prepareDaemon(ctx)
+	if err != nil {
+		reportInfrastructureRefusal(err.Error())
+		return 1
+	}
+	defer daemon.release()
 
 	cleanupTransport, err := startDedicatedColimaDockerTransport()
 	if err != nil {
-		os.Stderr.WriteString("Failed to create isolated Docker transport: " + err.Error() + "\n")
-		os.Exit(1)
+		// Not fatal any more. The tunnel protects the user's global Docker
+		// transport from this suite's load; a run that owns its own daemon
+		// has little left to protect, and refusing to run is worse than
+		// running on Colima's own socket. Announced either way, because
+		// which transport carried a run is part of reading its telemetry.
+		reportTransportFallback(err)
+		cleanupTransport = func() {}
+	}
+	defer cleanupTransport()
+
+	// Probed through the tunnel, which is the transport every exec in this run
+	// will use: measuring the daemon by a path the run does not take would
+	// answer for a different machine.
+	if err := probeDaemon(ctx, os.Getenv(dockerHostEnvName)); err != nil {
+		reportInfrastructureRefusal(err.Error())
+		return 1
 	}
 
 	// Sized after the transport exists, so the daemon it asks about is the one
@@ -68,18 +101,37 @@ func TestMain(m *testing.M) {
 
 	bins, cleanupBins, err := buildSharedBinaries()
 	if err != nil {
-		cleanupTransport()
+		// A binary that will not build is a failure of the code under test,
+		// not of the machine, so it must not wear the infrastructure banner.
 		os.Stderr.WriteString("Failed to build test binaries: " + err.Error() + "\n")
-		os.Exit(1)
+		return 1
+	}
+	poolErr := startContainerPool(ctx, size, bins)
+	// Binaries are now copied into every container; the host temp dirs can go.
+	cleanupBins()
+	defer teardownPool()
+	if poolErr != nil {
+		reportInfrastructureRefusal(poolErr.Error())
+		return 1
 	}
 
+	start := time.Now()
+	code := m.Run()
+
+	// Wall is the test-execution window (pool setup and teardown excluded):
+	// that is the phase whose exec rate and latency predict collapse.
+	reportExecTelemetry(size, time.Since(start), code)
+	return code
+}
+
+// startContainerPool builds the shared containers. Every failure here is a
+// failure of the daemon rather than of the code under test: the binaries are
+// already built by this point.
+func startContainerPool(ctx context.Context, size int, bins sharedBinaries) error {
 	// Cached after the first run: one image inspect, no build, no network.
-	baseImage, err := ensureBaseImage(context.Background())
+	baseImage, err := ensureBaseImage(ctx)
 	if err != nil {
-		cleanupBins()
-		cleanupTransport()
-		os.Stderr.WriteString("Failed to prepare base image: " + err.Error() + "\n")
-		os.Exit(1)
+		return camperrors.Wrap(err, "prepare the base image")
 	}
 
 	containerPool = make(chan *TestContainer, size)
@@ -90,7 +142,7 @@ func TestMain(m *testing.M) {
 	)
 	for range size {
 		wg.Go(func() {
-			c, err := newPooledContainer(context.Background(), bins, baseImage)
+			c, err := newPooledContainer(ctx, bins, baseImage)
 			mu.Lock()
 			defer mu.Unlock()
 			if err != nil {
@@ -104,35 +156,20 @@ func TestMain(m *testing.M) {
 		})
 	}
 	wg.Wait()
+	return camperrors.Wrap(buildErr, "create the container pool")
+}
 
-	// Binaries are now copied into every container; the host temp dirs can go.
-	cleanupBins()
-
-	if buildErr != nil {
-		for _, c := range poolMembers {
-			c.Cleanup()
-		}
-		cleanupTransport()
-		os.Stderr.WriteString("Failed to create container pool: " + buildErr.Error() + "\n")
-		os.Exit(1)
-	}
-
-	start := time.Now()
-	code := m.Run()
-
-	// Wall is the test-execution window (pool setup and teardown excluded):
-	// that is the phase whose exec rate and latency predict collapse.
-	reportExecTelemetry(size, time.Since(start), code)
-
-	// Concurrent teardown: sequential Terminate cost 10s per member (~40s per
-	// run) waiting out graceful stops that throwaway containers do not need.
-	var teardown sync.WaitGroup
+// teardownPool removes every container this run created, including the ones
+// that survived a partially built pool.
+//
+// Concurrent because sequential Terminate cost 10s per member (~40s per run)
+// waiting out graceful stops that throwaway containers do not need.
+func teardownPool() {
+	var wg sync.WaitGroup
 	for _, c := range poolMembers {
-		teardown.Go(c.Cleanup)
+		wg.Go(c.Cleanup)
 	}
-	teardown.Wait()
-	cleanupTransport()
-	os.Exit(code)
+	wg.Wait()
 }
 
 // poolSize returns how many containers to run concurrently. Override with
