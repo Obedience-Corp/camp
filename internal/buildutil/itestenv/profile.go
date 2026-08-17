@@ -214,15 +214,8 @@ func Resolve(ctx context.Context, opts Options) (Resolution, error) {
 		return fallback(o, "profile "+profile+" is "+status.State()+
 			" (start it with: "+StartCommand+")"), nil
 	}
-	// A failed start is not a reason to run somewhere else. AutoStart means
-	// the caller asked for a daemon of its own; handing it the shared one
-	// instead re-creates the exact oversubscription this package exists to
-	// remove, and the run would then flake in a way that reads as broken
-	// tests. Colima being absent can justify sharing a daemon, because that
-	// machine has no other option. "I tried to boot it and could not" cannot.
-	// The recovery step is not repeated here: whoever presents this failure
-	// prints it once, and a verdict line that carries its own instructions
-	// twice is a verdict nobody finishes reading.
+	// Sharing a daemon after failing to get a dedicated one is the collapse
+	// this package removes, so a failed start refuses instead.
 	if err := startProfile(ctx, o, profile); err != nil {
 		return Resolution{}, camperrors.Wrap(err,
 			"could not start the dedicated integration daemon")
@@ -242,17 +235,9 @@ func ConfiguredProfile(getenv func(string) string) string {
 	return ProfileName
 }
 
-// startProfile boots the profile under its own lock so two runs racing to
-// create the same VM do not both hand Colima the same job. Sizing flags are
-// passed only when the profile does not exist yet: on an existing profile they
-// would silently resize a VM someone may have tuned deliberately.
-//
-// It deliberately takes no ProfileStatus. The state that decides whether to
-// pass sizing flags has to be read after the lock is held, because the whole
-// point of waiting was that somebody else was changing it: an entrant that
-// saw "absent", waited while another created the profile and left it stopped,
-// and then sized from its own stale snapshot would resize a VM that already
-// exists. A parameter here is an invitation to use the pre-wait answer.
+// startProfile boots the profile under its own lock, sizing it only when it
+// does not exist yet: flags on an existing profile silently resize it. It
+// takes no ProfileStatus because that decision must use post-lock state.
 func startProfile(ctx context.Context, o Options, profile string) error {
 	lockPath, err := profileLockPath(o.Home, profile)
 	if err != nil {
@@ -268,13 +253,9 @@ func startProfile(ctx context.Context, o Options, profile string) error {
 	}
 	defer func() { _ = lock.Release() }()
 
-	// The world may have moved while this entrant waited: another one may have
-	// started the profile, or created it and left it stopped.
+	// Another entrant may have changed the profile while this one waited.
 	current, err := o.Colima.Status(ctx, profile)
 	if err != nil {
-		// Starting blind here means guessing whether to pass sizing flags, and
-		// both guesses are wrong in a way somebody has to undo: a silent
-		// resize, or a VM created at Colima's 2 CPU default.
 		return camperrors.Wrapf(err, "confirm the state of profile %s before starting it", profile)
 	}
 	if current.Running {

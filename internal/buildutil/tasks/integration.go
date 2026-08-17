@@ -163,10 +163,8 @@ func Integration(ctx context.Context, verbose bool) error {
 		dockerEnv := append(os.Environ(), socketOverrideEnv+"="+inVMDockerSocket)
 
 		if verbose {
-			// In verbose mode, show output directly. There are no JSON events
-			// to classify here, so the harness's own banner is the only signal
-			// that the run did not happen; without watching for it, a refused
-			// verbose run renders as a bare non-zero exit.
+			// No JSON events here, so the raw banner is the only signal that
+			// the run did not happen.
 			cmd := exec.CommandContext(ctx, "go", "test", "-count=1", "-v", "-tags", "integration", "-timeout", integrationTestTimeout, "./"+suite)
 			cmd.Env = dockerEnv
 			watcher := &bannerWatcher{}
@@ -359,11 +357,8 @@ func prepareDaemon(ctx context.Context) error {
 	return nil
 }
 
-// reportDaemonRefusal renders a daemon that could not be prepared in the same
-// vocabulary the suite uses when it refuses one itself: a single non-run
-// verdict with the cause, and no test rows. The refusal is the same event
-// whether it is the runner or the test binary that notices it, so it must not
-// read as two different kinds of failure.
+// reportDaemonRefusal renders a daemon that could not be prepared as the same
+// non-run verdict the suite prints when it refuses one itself.
 func reportDaemonRefusal(runStart time.Time, cause error) error {
 	summary := summarizeIntegration([]IntegrationResult{{
 		Suite:       integrationSuiteDir,

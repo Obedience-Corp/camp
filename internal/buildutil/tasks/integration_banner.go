@@ -7,19 +7,12 @@ import (
 	"sync"
 )
 
-// maxBannerLine bounds the unterminated tail bannerWatcher will hold, so a
-// suite that prints a very long line without a newline cannot grow it without
-// limit over a twelve minute run.
+// maxBannerLine bounds the unterminated tail bannerWatcher holds.
 const maxBannerLine = 8192
 
 // bannerWatcher tees a stream while watching for the harness's package-level
-// infrastructure banner.
-//
-// It matches only at the start of a line. `go test -v` indents everything a
-// test prints, so an indented banner belongs to one test's failure (a single
-// member-local fault the run can survive), while a banner at column zero is
-// the harness saying the run itself did not happen. Treating the two alike
-// would turn one unlucky container into a non-run.
+// infrastructure banner. It matches at column zero only: go test indents what
+// a test prints, and one test's infra fault is not a non-run.
 type bannerWatcher struct {
 	mu      sync.Mutex
 	partial []byte
@@ -47,8 +40,7 @@ func (w *bannerWatcher) Write(p []byte) (int, error) {
 		}
 	}
 	if len(w.partial) > maxBannerLine {
-		// Keep the head: the banner starts its line, so that is the part worth
-		// holding on to.
+		// The banner starts its line, so the head is the part worth keeping.
 		w.partial = w.partial[:maxBannerLine]
 	}
 	return len(p), nil
