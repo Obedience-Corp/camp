@@ -21,6 +21,20 @@ eval "$(camp shell-init bash)"
 camp shell-init fish | source
 ```
 
+**POSIX sh** (~/.profile) for dash, busybox ash, and the `/bin/sh` on minimal
+and embedded systems:
+```sh
+eval "$(camp shell-init sh)"
+```
+
+Use the script for the shell you actually run. The bash script uses bash arrays
+and programmable completion, so a shell like busybox ash rejects the whole thing
+with `syntax error: unexpected "(" (expecting "fi")` and you get no integration
+at all. The sh script gives you the `camp` wrapper, `cgo`, and every shorthand
+function; it installs no tab completion, because POSIX sh has no completion
+mechanism to install into. Not sure which you have? `camp list` names the right
+command for your shell when integration is missing.
+
 ## The `cgo` Function
 
 The `cgo` (camp-go) function is the primary interface for navigation. It's a shell function (not an alias or script) because it needs to change the current working directory.

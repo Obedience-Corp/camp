@@ -2,11 +2,16 @@
 package shell
 
 import (
+	"strings"
+
 	camperrors "github.com/Obedience-Corp/camp/internal/errors"
 )
 
-// SupportedShells lists all shells with integration support.
-var SupportedShells = []string{"zsh", "bash", "fish"}
+// SupportedShells lists all shells with integration support. "sh" is the
+// POSIX fallback and covers dash, busybox ash, and anything else that is
+// Bourne-family but neither bash nor zsh; it is the shell that ships as
+// /bin/sh on minimal and embedded systems.
+var SupportedShells = []string{"zsh", "bash", "fish", "sh"}
 
 // Generate produces shell initialization code for the given shell type.
 func Generate(shellType string) (string, error) {
@@ -17,8 +22,10 @@ func Generate(shellType string) (string, error) {
 		return generateBash(), nil
 	case "fish":
 		return generateFish(), nil
+	case "sh":
+		return generateSh(), nil
 	default:
-		return "", camperrors.Newf("unsupported shell: %s (supported: zsh, bash, fish)", shellType)
+		return "", camperrors.Newf("unsupported shell: %s (supported: %s)", shellType, strings.Join(SupportedShells, ", "))
 	}
 }
 

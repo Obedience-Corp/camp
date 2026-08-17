@@ -31,7 +31,8 @@ With an argument, looks up the campaign by name or ID prefix.
 Use --org or org/campaign to resolve inside one organization.
 
 Use with the shell-init wrappers for instant navigation (recommended):
-  eval "$(camp shell-init zsh)"   # or bash / fish — once per shell
+  eval "$(camp shell-init zsh)"   # or bash / sh, once per shell
+  camp shell-init fish | source   # fish
   csw                            # Interactive picker (local + remote machines)
   csw my-campaign                # Switch by name
   csw a1b2                       # Switch by ID prefix

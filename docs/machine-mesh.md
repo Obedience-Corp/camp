@@ -99,12 +99,17 @@ is duplicated: the far machine's own registry decides the path, exactly as it do
 for a typed `csw devbox:notes`.
 
 This needs the wrapper. A subprocess cannot replace the shell that launched it, so
-without `eval "$(camp shell-init zsh)"` the key reports what is missing instead of
+without `eval "$(camp shell-init <your shell>)"` the key reports what is missing instead of
 silently doing nothing:
 
 ```
-hop needs shell integration: run eval "$(camp shell-init <shell>)"
+hop needs shell integration: run eval "$(camp shell-init sh)"
 ```
+
+The command in that line is built for the shell camp detects from `$SHELL`, so
+it is one you can paste as-is: a fish user is told to pipe into `source`, and a
+dash or busybox user is told `sh` rather than `bash`, whose script their shell
+cannot parse.
 
 `t` remains the connection test — the two are separate gestures, because "can camp
 reach this?" is a question worth asking about a machine you are not about to enter.
