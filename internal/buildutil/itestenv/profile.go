@@ -11,6 +11,7 @@ import (
 	"time"
 
 	camperrors "github.com/Obedience-Corp/camp/internal/errors"
+	"github.com/Obedience-Corp/camp/internal/pathutil"
 )
 
 const (
@@ -129,7 +130,7 @@ func (r Resolution) Line() string {
 type Options struct {
 	// Getenv reads environment variables (defaults to os.Getenv).
 	Getenv func(string) string
-	// Home is the user's home directory (defaults to os.UserHomeDir).
+	// Home is the user's home directory (defaults to pathutil.Home).
 	Home string
 	// Colima talks to the Colima CLI (defaults to the real one).
 	Colima Colima
@@ -146,7 +147,7 @@ func (o Options) normalize() (Options, error) {
 		o.Getenv = os.Getenv
 	}
 	if o.Home == "" {
-		home, err := os.UserHomeDir()
+		home, err := pathutil.Home()
 		if err != nil {
 			return o, camperrors.Wrap(err, "resolve home directory for the integration daemon")
 		}

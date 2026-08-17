@@ -14,6 +14,7 @@ import (
 
 	"github.com/Obedience-Corp/camp/internal/buildutil/itestenv"
 	"github.com/Obedience-Corp/camp/internal/buildutil/ui"
+	"github.com/Obedience-Corp/camp/internal/pathutil"
 )
 
 const (
@@ -85,12 +86,11 @@ func hostRow(resolution itestenv.Resolution) string {
 
 // shortHome keeps a summary row inside the card by writing paths the way a
 // shell prompt would.
+//
+// pathutil.AbbreviateHome anchors the match to a leading $HOME, where the
+// previous strings.Replace rewrote the first occurrence anywhere in the path.
 func shortHome(path string) string {
-	home, err := os.UserHomeDir()
-	if err != nil || home == "" {
-		return path
-	}
-	return strings.Replace(path, home, "~", 1)
+	return pathutil.AbbreviateHome(path)
 }
 
 func probeRow(probe itestenv.ProbeResult) string {
@@ -156,7 +156,7 @@ func containersRow(ctx context.Context, resolution itestenv.Resolution) string {
 }
 
 func lockRow(resolution itestenv.Resolution) string {
-	home, err := os.UserHomeDir()
+	home, err := pathutil.Home()
 	if err != nil {
 		return "unknown: " + err.Error()
 	}
