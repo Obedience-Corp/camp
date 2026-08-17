@@ -71,6 +71,12 @@ const (
 	healthTesting
 	healthReachable
 	healthUnreachable
+	// healthCampMissing is a machine ssh reached and logged into, where the
+	// far side then found no camp to run: not on the login-shell PATH and not
+	// in any of camp's usual install locations. It is kept apart from
+	// healthUnreachable because the fix is on the far machine (install camp,
+	// or point CAMP_REMOTE_CAMP_PATH at it), not in the network or auth.
+	healthCampMissing
 	// healthUnsupported is a machine camp will not hop to regardless of
 	// whether ssh could reach it, currently password auth.
 	healthUnsupported
@@ -517,8 +523,12 @@ func (m *machineTUIModel) testMachine(target machines.Machine) tea.Cmd {
 		}
 		out, err := remote.RunCampCommandReuseOnly(ctx, &target, "--version")
 		if err != nil {
+			state := healthUnreachable
+			if remote.IsCampNotFound(err) {
+				state = healthCampMissing
+			}
 			return healthMsg{id: target.ID, health: machineHealth{
-				State:    healthUnreachable,
+				State:    state,
 				Detail:   connectionFailureDetailFor(err, &target),
 				CheckURL: remote.TailscaleCheckURL(err),
 			}}
@@ -553,10 +563,11 @@ func parseRemoteVersion(out string) string {
 // cannot complete the browser approval. Prefer the extracted check URL over a
 // generic "timed out" / "unreachable" line so the operator knows what to do.
 //
-// Exit 127 is special: RunCampCommand wraps it with login-shell PATH context
-// and CAMP_REMOTE_CAMP_PATH guidance. Digging past that wrap to the bare
-// "command not found" stderr line is exactly the failure mode the health
-// check exists to surface, so preserve the outer message instead.
+// Exit 127 is special: RunCampCommand wraps it with what the far side tried
+// (login-shell PATH, then camp's usual install locations) and the
+// CAMP_REMOTE_CAMP_PATH escape hatch. Digging past that wrap to the bare
+// "not found" stderr line is exactly the failure mode the health check
+// exists to surface, so preserve the outer message instead.
 func connectionFailureDetail(err error) string {
 	return connectionFailureDetailFor(err, nil)
 }

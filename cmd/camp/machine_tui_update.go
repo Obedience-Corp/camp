@@ -62,6 +62,8 @@ func healthStatusLine(id string, health machineHealth) string {
 		return id + " is reachable"
 	case healthUnsupported:
 		return health.Detail
+	case healthCampMissing:
+		return "reached " + id + ", but camp is not installed there: " + health.Detail
 	default:
 		return "could not reach " + id + ": " + health.Detail
 	}

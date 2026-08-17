@@ -200,9 +200,20 @@ func outputRemoteList(stdout, stderr io.Writer, campaigns []campaignEntry, resul
 func warnUnreachable(stderr io.Writer, results []remoteResult) {
 	for _, r := range results {
 		if r.err != nil {
-			_, _ = fmt.Fprintln(stderr, ui.Warning(fmt.Sprintf("machine %s unreachable: %s", r.machineID, formatUnreachableErr(r.err))))
+			_, _ = fmt.Fprintln(stderr, ui.Warning(fmt.Sprintf("machine %s %s: %s", r.machineID, remoteFailureLabel(r.err), formatUnreachableErr(r.err))))
 		}
 	}
+}
+
+// remoteFailureLabel is the one-word verdict for a machine that returned no
+// rows. "unreachable" is right for the network and auth failures; when ssh
+// got in and the far side found no camp to run, saying so keeps the operator
+// off the network and on the far machine, where the fix is.
+func remoteFailureLabel(err error) string {
+	if remote.IsCampNotFound(err) {
+		return "camp not found"
+	}
+	return "unreachable"
 }
 
 // formatUnreachableErr prefers classified hop failures (check-mode, host-key,
@@ -241,7 +252,7 @@ func renderRemoteTable(stdout io.Writer, campaigns []campaignEntry, results []re
 	}
 	for _, r := range results {
 		if r.err != nil {
-			p("%s\t%s\t\t\t\t\n", ui.Dim(r.machineID), ui.Dim(fmt.Sprintf("(unreachable: %s)", formatUnreachableErr(r.err))))
+			p("%s\t%s\t\t\t\t\n", ui.Dim(r.machineID), ui.Dim(fmt.Sprintf("(%s: %s)", remoteFailureLabel(r.err), formatUnreachableErr(r.err))))
 		}
 	}
 	if werr != nil {

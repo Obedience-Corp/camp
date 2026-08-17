@@ -210,14 +210,36 @@ hangs:
 - **Unreachable target.** Bounded probe, then the diagnose pointer. `camp machine diagnose`
   reports the socket state, the exact probe command it ran, whether camp is present on the
   far side, and whether *this* machine is accepting connections.
-- **camp missing on the far side.** Named explicitly, with the variable that fixes it:
+- **camp not on the far side's login-shell PATH.** Every remote camp invocation runs
+  through the account's login shell (`$SHELL -lc`), and on Linux a login shell does not
+  read `~/.zshrc` / `~/.bashrc` — which is where both a stock `go install` setup
+  (`~/go/bin`) and the festival installer (`~/.local/bin`) put their PATH line. So the
+  far side resolves the binary itself: the login-shell PATH first (`command -v camp`),
+  then camp's usual install locations in order — `~/.local/bin`, `$GOBIN`, `$GOPATH/bin`,
+  `~/go/bin`, `/opt/homebrew/bin`, `/home/linuxbrew/.linuxbrew/bin`, `/usr/local/bin` —
+  all in the one ssh round trip the hop was already making. `camp machine diagnose`
+  reports which binary that produced and whether the login shell could see it unaided:
   ```
-  remote camp not found on devbox (tried "camp" via the account's login shell,
-  i.e. its login-shell PATH); if camp lives outside that PATH, set
-  CAMP_REMOTE_CAMP_PATH to its exact path on that machine
+  BINARY  /home/lance/go/bin/camp (found in a usual install location, not on the login-shell PATH; hops work, but interactive shells may run a different camp)
   ```
-  This is common on a fresh fleet member: a stock `go install` puts camp in `~/go/bin`,
-  which a non-interactive login shell does not have on its PATH.
+- **camp missing on the far side.** ssh logged in, and neither the login-shell PATH nor
+  any usual location had a camp. This is reported as exactly that — the machine screen
+  says "camp not found", `list --remote` labels the row `(camp not found: …)`, and
+  diagnose prints `BINARY ✗` — never as "unreachable", so nobody debugs the network for
+  a binary that is not installed. The error names the escape hatch:
+  ```
+  remote camp not found on devbox: nothing named camp on the account's login-shell
+  PATH, and none of camp's usual install locations (~/.local/bin, $GOBIN, $GOPATH/bin,
+  ~/go/bin, /opt/homebrew/bin, /home/linuxbrew/.linuxbrew/bin, /usr/local/bin) has
+  one; if it lives elsewhere, set CAMP_REMOTE_CAMP_PATH to its exact path on that machine
+  ```
+  `CAMP_REMOTE_CAMP_PATH` is used verbatim when set: no resolution, no fallback.
+- **Login shells camp can hop through.** The far account's login shell must accept
+  `-lc`: sh, bash, zsh, dash, and fish all do (fish 3 and 4 both parse the generated
+  line). csh/tcsh do not accept `-lc` at all and have never been supported for hops;
+  the interactive session on such a machine still works, but `camp list --remote` and
+  remote resolution will fail with tcsh's usage message.
+
 - **Version skew.** If a previous `camp machine diagnose` observed a different camp version
   on the target, every hop warns, reading that cached result rather than paying for a
   probe:
