@@ -37,8 +37,12 @@ func (e versionCacheEntry) fresh(now time.Time) bool {
 // versionCachePath keeps the probe beside the completion cache, under the same
 // per-machine directory, so one `rm -rf ~/.obey/cache` clears every derived
 // artifact camp keeps about a machine.
-func versionCachePath(id string) string {
-	return filepath.Join(machineCacheDir(), id+".version.json")
+func versionCachePath(id string) (string, bool) {
+	dir, ok := machineCacheDir()
+	if !ok {
+		return "", false
+	}
+	return filepath.Join(dir, id+".version.json"), true
 }
 
 // writeMachineVersionCache records a probe result. Best-effort: a failure just
@@ -49,7 +53,14 @@ func writeMachineVersionCache(id, versionStr, commit string) {
 	if id == "" || versionStr == "" {
 		return
 	}
-	dir := machineCacheDir()
+	dir, ok := machineCacheDir()
+	if !ok {
+		return
+	}
+	path, ok := versionCachePath(id)
+	if !ok {
+		return
+	}
 	if os.MkdirAll(dir, 0o700) != nil {
 		return
 	}
@@ -57,7 +68,7 @@ func writeMachineVersionCache(id, versionStr, commit string) {
 	if err != nil {
 		return
 	}
-	_ = fsutil.WriteFileAtomically(versionCachePath(id), data, 0o600)
+	_ = fsutil.WriteFileAtomically(path, data, 0o600)
 }
 
 // readMachineVersionCache returns a fresh cached probe, or false. Absent,
@@ -66,7 +77,11 @@ func writeMachineVersionCache(id, versionStr, commit string) {
 // to record failed probes, but a hand-written or half-written cache file must
 // not read as a real answer.
 func readMachineVersionCache(id string) (versionCacheEntry, bool) {
-	data, err := os.ReadFile(versionCachePath(id))
+	path, ok := versionCachePath(id)
+	if !ok {
+		return versionCacheEntry{}, false
+	}
+	data, err := os.ReadFile(path)
 	if err != nil {
 		return versionCacheEntry{}, false
 	}

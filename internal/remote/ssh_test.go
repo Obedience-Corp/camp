@@ -7,6 +7,7 @@ import (
 	"os/exec"
 	"path/filepath"
 	"slices"
+	"strconv"
 	"strings"
 	"testing"
 
@@ -136,6 +137,28 @@ func TestControlSocketPathNoSideEffect(t *testing.T) {
 	// Purely computing the path must not create the ssh-ctl directory.
 	if _, err := os.Stat(filepath.Join(home, ".obey", "ssh-ctl")); !os.IsNotExist(err) {
 		t.Errorf("ControlSocketPath created the socket dir (stat err = %v); it must be side-effect free", err)
+	}
+}
+
+// With no home directory there is nowhere to put a multiplex socket. The hop
+// must still be buildable — just without ControlMaster — rather than pointing
+// ssh at a working-directory-relative ControlPath.
+func TestControlPathDropsMultiplexingWithoutHome(t *testing.T) {
+	t.Chdir(t.TempDir())
+	t.Setenv("HOME", "")
+	t.Setenv("USERPROFILE", "")
+
+	m := &machines.Machine{ID: "devbox", Host: "devbox.local"}
+	if got := ControlSocketPath(m); got != "" {
+		t.Errorf("ControlSocketPath = %q, want empty with no resolvable home", got)
+	}
+	for _, opt := range append(Opts(m), OptsReuseOnly(m)...) {
+		if strings.HasPrefix(opt, "ControlPath=") || strings.HasPrefix(opt, "ControlMaster=") {
+			t.Errorf("hop opts still carry %q with no resolvable home", opt)
+		}
+	}
+	if _, err := os.Stat(".obey"); !os.IsNotExist(err) {
+		t.Errorf("building hop opts created a relative .obey dir (stat err = %v)", err)
 	}
 }
 
@@ -419,5 +442,23 @@ func TestCompactSSHStderr(t *testing.T) {
 	}
 	if got := compactSSHStderr("single line"); got != "single line" {
 		t.Errorf("single line = %q", got)
+	}
+}
+
+// A blank HOME is not a home directory, so ~ stays unexpanded and ssh gets the
+// literal path to resolve itself. Expanding against a blank home would hand ssh
+// a relative IdentityFile resolved from the operator's working directory.
+func TestExpandTildeLeavesPathAloneWithBlankHome(t *testing.T) {
+	for _, home := range []string{"", "   "} {
+		t.Run("home="+strconv.Quote(home), func(t *testing.T) {
+			t.Setenv("HOME", home)
+			t.Setenv("USERPROFILE", home)
+
+			for _, in := range []string{"~", "~/.ssh/id_ed25519"} {
+				if got := expandTilde(in); got != in {
+					t.Errorf("expandTilde(%q) = %q, want it unchanged with no usable home", in, got)
+				}
+			}
+		})
 	}
 }

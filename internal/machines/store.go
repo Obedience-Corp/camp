@@ -17,7 +17,10 @@ import (
 // stay byte-identical when no fleet is configured. Unknown/future YAML fields
 // are ignored, not fatal, so a file written by a newer version still loads.
 func Load() (*File, error) {
-	path := MachinesPath()
+	path, err := MachinesPath()
+	if err != nil {
+		return nil, err
+	}
 	data, err := os.ReadFile(path)
 	if errors.Is(err, fs.ErrNotExist) {
 		return &File{Version: currentVersion}, nil
@@ -42,7 +45,10 @@ func decode(data []byte) (*File, error) {
 // names ssh identities and hosts). The reserved id "local" is never persisted,
 // even if present in f.Machines, keeping the current machine implicit.
 func (f *File) Save() error {
-	path := MachinesPath()
+	path, err := MachinesPath()
+	if err != nil {
+		return err
+	}
 	data, err := encode(f)
 	if err != nil {
 		return err

@@ -170,7 +170,13 @@ func scopeOptions(cat []settings.SettingEntry, scope settings.Scope) []huh.Optio
 func scopeHeader(scope settings.Scope, campaignRoot string) (title, description string) {
 	switch scope {
 	case settings.ScopeGlobal:
-		return "Global Settings", "Files under " + pathutil.AbbreviateHome(config.ConfigDir()) + "/"
+		// Display only: BuildCatalog already failed if the dir cannot resolve,
+		// so this header never renders with the fallback in practice.
+		dir, err := config.ConfigDir()
+		if err != nil {
+			dir = "~/.obey/campaign"
+		}
+		return "Global Settings", "Files under " + pathutil.AbbreviateHome(dir) + "/"
 	case settings.ScopeLocal:
 		return "Local Settings (this campaign)", "Files under .campaign/"
 	default:

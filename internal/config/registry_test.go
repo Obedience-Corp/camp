@@ -115,7 +115,7 @@ func TestSaveRegistry(t *testing.T) {
 	}
 
 	// Verify file was created
-	path := RegistryPath()
+	path := mustRegistryPath(t)
 	if _, err := os.Stat(path); os.IsNotExist(err) {
 		t.Error("registry file was not created")
 	}
@@ -200,7 +200,7 @@ func TestUpdateRegistryConcurrent(t *testing.T) {
 func TestUpdateRegistryContextCancellationWhileWaitingForLock(t *testing.T) {
 	dir := t.TempDir()
 	t.Setenv("CAMP_REGISTRY_PATH", filepath.Join(dir, "registry.json"))
-	path := RegistryPath()
+	path := mustRegistryPath(t)
 	if err := os.MkdirAll(filepath.Dir(path), 0755); err != nil {
 		t.Fatal(err)
 	}
@@ -633,7 +633,7 @@ func TestRegistryPath(t *testing.T) {
 	dir := t.TempDir()
 	t.Setenv("XDG_CONFIG_HOME", dir)
 
-	got := RegistryPath()
+	got := mustRegistryPath(t)
 	want := filepath.Join(dir, OrgName, AppName, "registry.json")
 	if got != want {
 		t.Errorf("RegistryPath() = %q, want %q", got, want)
@@ -645,7 +645,7 @@ func TestRegistryPath_Override(t *testing.T) {
 	customPath := filepath.Join(dir, "custom-registry.json")
 	t.Setenv("CAMP_REGISTRY_PATH", customPath)
 
-	got := RegistryPath()
+	got := mustRegistryPath(t)
 	if got != customPath {
 		t.Errorf("RegistryPath() = %q, want %q", got, customPath)
 	}

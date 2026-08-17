@@ -33,12 +33,40 @@ func TestSchemaContract(t *testing.T) {
 func TestMachinesPathIsObeySibling(t *testing.T) {
 	t.Setenv("CAMP_MACHINES_PATH", "")
 	t.Setenv("XDG_CONFIG_HOME", "/tmp/mm-xdg-unit-only")
-	if got, want := MachinesPath(), "/tmp/mm-xdg-unit-only/obey/machines.yaml"; got != want {
+	got, err := MachinesPath()
+	if err != nil {
+		t.Fatalf("MachinesPath() error = %v", err)
+	}
+	if want := "/tmp/mm-xdg-unit-only/obey/machines.yaml"; got != want {
 		t.Fatalf("MachinesPath() under XDG = %q, want %q", got, want)
 	}
 
 	t.Setenv("CAMP_MACHINES_PATH", "/explicit/override/machines.yaml")
-	if got, want := MachinesPath(), "/explicit/override/machines.yaml"; got != want {
+	got, err = MachinesPath()
+	if err != nil {
+		t.Fatalf("MachinesPath() error = %v", err)
+	}
+	if want := "/explicit/override/machines.yaml"; got != want {
 		t.Fatalf("MachinesPath() with override = %q, want %q", got, want)
+	}
+}
+
+// machines.yaml resolved to a relative path would be written next to whatever
+// directory camp ran in, so an unresolvable home is an error, not a fallback.
+func TestMachinesPathNoHomeIsAnError(t *testing.T) {
+	t.Setenv("CAMP_MACHINES_PATH", "")
+	t.Setenv("XDG_CONFIG_HOME", "")
+	t.Setenv("HOME", "")
+	t.Setenv("USERPROFILE", "")
+
+	got, err := MachinesPath()
+	if err == nil {
+		t.Fatalf("MachinesPath() = %q, want an error when no home directory resolves", got)
+	}
+	if got != "" {
+		t.Errorf("MachinesPath() = %q, want empty path alongside the error", got)
+	}
+	if want := "~/.obey/machines.yaml"; DisplayPath() != want {
+		t.Errorf("DisplayPath() = %q, want the canonical %q fallback", DisplayPath(), want)
 	}
 }

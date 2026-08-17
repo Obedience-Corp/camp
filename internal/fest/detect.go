@@ -10,6 +10,7 @@ import (
 	"time"
 
 	camperrors "github.com/Obedience-Corp/camp/internal/errors"
+	"github.com/Obedience-Corp/camp/internal/pathutil"
 )
 
 var (
@@ -35,13 +36,19 @@ func findFestCLI() (string, error) {
 		return path, nil
 	}
 
-	// Check common installation locations
-	home, _ := os.UserHomeDir()
+	// Check common installation locations. Home-relative candidates are dropped
+	// when no home directory resolves: joining onto "" would leave relative
+	// paths like "go/bin/fest", which stat against the working directory and
+	// would run a binary that merely happens to sit next to the operator.
 	locations := []string{
-		filepath.Join(home, "go", "bin", "fest"),
-		filepath.Join(home, ".local", "bin", "fest"),
 		"/usr/local/bin/fest",
 		"/opt/homebrew/bin/fest", // macOS homebrew
+	}
+	if home, err := pathutil.Home(); err == nil {
+		locations = append([]string{
+			filepath.Join(home, "go", "bin", "fest"),
+			filepath.Join(home, ".local", "bin", "fest"),
+		}, locations...)
 	}
 
 	for _, loc := range locations {

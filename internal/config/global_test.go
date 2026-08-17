@@ -39,7 +39,7 @@ func TestLoadGlobalConfig_AutoCreate(t *testing.T) {
 	}
 
 	// Verify config file was auto-created
-	path := GlobalConfigPath()
+	path := mustGlobalConfigPath(t)
 	if _, err := os.Stat(path); os.IsNotExist(err) {
 		t.Error("config file was not auto-created on first load")
 	}
@@ -156,7 +156,7 @@ func TestSaveGlobalConfig(t *testing.T) {
 	}
 
 	// Verify file was created
-	path := GlobalConfigPath()
+	path := mustGlobalConfigPath(t)
 	if _, err := os.Stat(path); os.IsNotExist(err) {
 		t.Error("config file was not created")
 	}
@@ -196,7 +196,7 @@ func TestInitGlobalConfig(t *testing.T) {
 	}
 
 	// File should exist
-	path := GlobalConfigPath()
+	path := mustGlobalConfigPath(t)
 	if _, err := os.Stat(path); os.IsNotExist(err) {
 		t.Error("config file was not created")
 	}
@@ -222,7 +222,7 @@ func TestConfigDir_XDG(t *testing.T) {
 	dir := t.TempDir()
 	t.Setenv("XDG_CONFIG_HOME", dir)
 
-	got := ConfigDir()
+	got := mustConfigDir(t)
 	want := filepath.Join(dir, OrgName, AppName)
 	if got != want {
 		t.Errorf("ConfigDir() = %q, want %q", got, want)
@@ -235,7 +235,7 @@ func TestConfigDir_Default(t *testing.T) {
 	home, _ := os.UserHomeDir()
 	want := filepath.Join(home, ".obey", AppName)
 
-	got := ConfigDir()
+	got := mustConfigDir(t)
 	if got != want {
 		t.Errorf("ConfigDir() = %q, want %q", got, want)
 	}
@@ -245,7 +245,7 @@ func TestGlobalConfigPath(t *testing.T) {
 	dir := t.TempDir()
 	t.Setenv("XDG_CONFIG_HOME", dir)
 
-	got := GlobalConfigPath()
+	got := mustGlobalConfigPath(t)
 	want := filepath.Join(dir, OrgName, AppName, "config.json")
 	if got != want {
 		t.Errorf("GlobalConfigPath() = %q, want %q", got, want)

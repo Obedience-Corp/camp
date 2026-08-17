@@ -134,7 +134,7 @@ func TestPushedSnapshotSurvivesTheShortCompletionTTL(t *testing.T) {
 	// still be offered, or the feature is a no-op an hour after it works.
 	dir := t.TempDir()
 	t.Setenv("XDG_CONFIG_HOME", dir)
-	if err := os.MkdirAll(machineCacheDir(), 0o700); err != nil {
+	if err := os.MkdirAll(mustMachineCacheDir(t), 0o700); err != nil {
 		t.Fatal(err)
 	}
 	old := time.Now().Add(-30 * time.Minute).UnixNano()
@@ -144,7 +144,7 @@ func TestPushedSnapshotSurvivesTheShortCompletionTTL(t *testing.T) {
 		if err != nil {
 			t.Fatal(err)
 		}
-		if err := os.WriteFile(machineCacheDir()+"/"+id+".json", data, 0o600); err != nil {
+		if err := os.WriteFile(mustMachineCacheDir(t)+"/"+id+".json", data, 0o600); err != nil {
 			t.Fatal(err)
 		}
 	}

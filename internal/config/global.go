@@ -16,7 +16,10 @@ func LoadGlobalConfig(ctx context.Context) (*GlobalConfig, error) {
 		return nil, ctx.Err()
 	}
 
-	path := GlobalConfigPath()
+	path, err := GlobalConfigPath()
+	if err != nil {
+		return nil, err
+	}
 	data, err := os.ReadFile(path)
 	if err != nil {
 		if os.IsNotExist(err) {
@@ -60,7 +63,10 @@ func SaveGlobalConfig(ctx context.Context, cfg *GlobalConfig) error {
 		return camperrors.Wrap(err, "failed to marshal global config")
 	}
 
-	path := GlobalConfigPath()
+	path, err := GlobalConfigPath()
+	if err != nil {
+		return err
+	}
 
 	if err := fsutil.WriteFileAtomically(path, data, 0o644); err != nil {
 		return camperrors.Wrap(err, "failed to write global config")
@@ -75,7 +81,10 @@ func InitGlobalConfig(ctx context.Context) error {
 		return ctx.Err()
 	}
 
-	path := GlobalConfigPath()
+	path, err := GlobalConfigPath()
+	if err != nil {
+		return err
+	}
 	if _, err := os.Stat(path); err == nil {
 		// Config already exists
 		return nil

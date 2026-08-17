@@ -204,7 +204,7 @@ func adoptPreview(origin HopOrigin, entry machines.Machine) string {
 	if origin.Campaign != "" {
 		fmt.Fprintf(&b, "  campaign  %s\n", origin.Campaign)
 	}
-	b.WriteString("\nThis entry will be appended to " + machines.MachinesPath() + ":\n\n")
+	b.WriteString("\nThis entry will be appended to " + machines.DisplayPath() + ":\n\n")
 	// Marshal the row the same way Save does so quoting/escaping match disk.
 	yml, err := yaml.Marshal([]machines.Machine{entry})
 	if err != nil {

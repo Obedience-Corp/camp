@@ -65,6 +65,7 @@ lint:
     fi
     just lint-no-host-fs-tests
     just lint-no-fmt-errorf
+    just lint-no-raw-userhomedir
     go vet -tags=integration ./...
 
 # Reject NEW host-side filesystem-mutating test patterns outside
@@ -172,6 +173,39 @@ lint-no-fmt-errorf:
         exit 1
     fi
     echo "lint-no-fmt-errorf: clean (no fmt.Errorf count regressions; $current_files current file(s) at/below merge-base baseline)"
+
+# Reject os.UserHomeDir in production code outside internal/pathutil/home.go.
+#
+# os.UserHomeDir returns ("", err) for an unset HOME and hands back a
+# whitespace-only HOME as a valid answer. Joining state paths onto either
+# produces a RELATIVE path, so camp writes ~/.obey state into whatever directory
+# it was invoked from and cannot find it again from anywhere else. That shipped
+# as "camp create succeeded but camp list is empty".
+#
+# pathutil.Home is the single resolver that rejects both. Unlike the other two
+# lint rules this is absolute, not a ratchet: there are zero violators and no
+# allowlist, because there is no case where raw os.UserHomeDir is the right call.
+lint-no-raw-userhomedir:
+    #!/usr/bin/env sh
+    set -eu
+    allowed="internal/pathutil/home.go"
+    violators=$(find ./cmd ./internal ./pkg -name '*.go' -not -name '*_test.go' -print 2>/dev/null \
+        | sed 's#^\./##' \
+        | while read -r file; do
+            [ "$file" = "$allowed" ] && continue
+            if grep -q "os\.UserHomeDir" "$file" 2>/dev/null; then
+                echo "$file"
+            fi
+        done)
+    if [ -n "$violators" ]; then
+        echo "FAIL: os.UserHomeDir in production code outside $allowed:"
+        echo "$violators" | sed 's/^/  /'
+        echo ""
+        echo "Use pathutil.Home() instead. It fails on unset AND whitespace-only"
+        echo "HOME, so a state path can never resolve relative to the cwd."
+        exit 1
+    fi
+    echo "lint-no-raw-userhomedir: clean (only $allowed resolves the home directory)"
 
 # Verify the fmt.Errorf ratchet rejects a new production violator.
 test-ratchet:

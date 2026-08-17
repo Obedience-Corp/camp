@@ -28,7 +28,10 @@ func LoadRegistry(ctx context.Context) (*Registry, error) {
 		return nil, ctx.Err()
 	}
 
-	path := RegistryPath()
+	path, err := RegistryPath()
+	if err != nil {
+		return nil, err
+	}
 	file, err := registryfile.Load()
 	if err != nil {
 		return nil, camperrors.Wrapf(err, "failed to read registry %s", path)
@@ -111,7 +114,10 @@ func SaveRegistry(ctx context.Context, reg *Registry) error {
 		return camperrors.Wrap(err, "failed to marshal registry")
 	}
 
-	path := RegistryPath()
+	path, err := RegistryPath()
+	if err != nil {
+		return err
+	}
 
 	if err := fsutil.WriteFileAtomically(path, data, 0o644); err != nil {
 		return camperrors.Wrap(err, "failed to write registry")
@@ -149,7 +155,10 @@ func UpdateRegistry(ctx context.Context, mutate func(*Registry) error) error {
 		return err
 	}
 
-	path := RegistryPath()
+	path, err := RegistryPath()
+	if err != nil {
+		return err
+	}
 	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
 		return camperrors.Wrap(err, "failed to create registry directory")
 	}

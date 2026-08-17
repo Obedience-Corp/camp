@@ -56,7 +56,7 @@ func FromMachine(ctx context.Context, machineID, remainder string) (*Source, err
 	m, isLocal, found := file.Lookup(machineID)
 	if !found {
 		return nil, camperrors.WrapJoinf(ErrPeerConfig, nil, "machine %q not found in %s (see 'camp machine list')",
-			machineID, machines.MachinesPath())
+			machineID, machines.DisplayPath())
 	}
 	if isLocal {
 		return nil, camperrors.WrapJoinf(ErrPeerConfig, nil, "machine %q is this machine; --from needs a different machine", machineID)
