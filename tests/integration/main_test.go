@@ -15,6 +15,8 @@ import (
 
 	camperrors "github.com/Obedience-Corp/camp/internal/errors"
 
+	"github.com/Obedience-Corp/camp/internal/buildutil/itestenv"
+
 	"github.com/moby/moby/client"
 	"github.com/testcontainers/testcontainers-go"
 )
@@ -81,7 +83,7 @@ func runSuite(m *testing.M) int {
 	// Probed through the tunnel, which is the transport every exec in this run
 	// will use: measuring the daemon by a path the run does not take would
 	// answer for a different machine.
-	if err := probeDaemon(ctx, os.Getenv(dockerHostEnvName)); err != nil {
+	if err := probeDaemon(ctx, os.Getenv(itestenv.DockerHostVar)); err != nil {
 		reportInfrastructureRefusal(err.Error())
 		return 1
 	}

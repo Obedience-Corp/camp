@@ -1,9 +1,4 @@
 // internal/buildutil/tasks/integration_summary.go
-//
-// Reducing a run's event stream to a verdict, kept apart from the code that
-// drives the run so the property that matters most stays testable without a
-// terminal or a daemon: a collapsed run must never render as a table of broken
-// tests.
 package tasks
 
 import (

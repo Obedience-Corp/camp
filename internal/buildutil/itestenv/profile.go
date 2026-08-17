@@ -41,7 +41,15 @@ const (
 	// machine with no Colima at all.
 	EnvDockerHost = "CAMP_ITEST_DOCKER_HOST"
 
-	dockerHostEnv    = "DOCKER_HOST"
+	// DockerHostVar is Docker's own environment variable, exported so the
+	// runner and the suite publish and read the resolved daemon by one name.
+	DockerHostVar = "DOCKER_HOST"
+
+	// StartCommand is the recovery step named in every message about a profile
+	// that is not up. It is the recipe name, because that is what a reader can
+	// paste.
+	StartCommand = "just test daemon-start"
+
 	colimaHomeDir    = ".colima"
 	dockerSocketName = "docker.sock"
 	unixScheme       = "unix"
@@ -173,13 +181,23 @@ func Resolve(ctx context.Context, opts Options) (Resolution, error) {
 	}
 
 	socket := ProfileDockerHost(o.Home, profile)
+	ambient := strings.TrimSpace(o.Getenv(DockerHostVar))
 	// The dashboard runner resolves first and hands the answer to the test
 	// binary through DOCKER_HOST. Recognising it here keeps the child from
 	// shelling out to Colima again for an answer it was already given. The
 	// socket has to exist: an inherited value pointing at a VM that has since
 	// stopped is worth re-resolving, not trusting.
-	if sameDockerHost(o.Getenv(dockerHostEnv), socket) && socketExists(socket) {
+	if sameDockerHost(ambient, socket) && socketExists(socket) {
 		return Resolution{DockerHost: socket, Profile: profile, Source: SourceProfile}, nil
+	}
+	// A DOCKER_HOST that is not a Colima socket at all is somebody's decision:
+	// a remote daemon, a native Linux one, Docker Desktop. Switching that run
+	// onto a local profile (and creating a VM to do it) would override a
+	// choice this package was never asked to make. Only the Colima case is
+	// ours to redirect, and it is the one the isolation exists for: the
+	// ambient value there is the shared default profile.
+	if ambient != "" && !isColimaSocket(o.Home, ambient) {
+		return Resolution{DockerHost: ambient, Source: SourceOverride}, nil
 	}
 
 	status, err := o.Colima.Status(ctx, profile)
@@ -191,7 +209,7 @@ func Resolve(ctx context.Context, opts Options) (Resolution, error) {
 	}
 	if !o.AutoStart {
 		return fallback(o, "profile "+profile+" is "+status.State()+
-			" (start it with: just test daemon-start)"), nil
+			" (start it with: "+StartCommand+")"), nil
 	}
 	if err := startProfile(ctx, o, profile, status); err != nil {
 		return fallback(o, "could not start profile "+profile+": "+err.Error()), nil
@@ -259,7 +277,7 @@ func describeSpec(spec StartSpec) string {
 // or Colima's default socket when it is present, or nothing at all so Docker's
 // own default applies.
 func fallback(o Options, reason string) Resolution {
-	host := strings.TrimSpace(o.Getenv(dockerHostEnv))
+	host := strings.TrimSpace(o.Getenv(DockerHostVar))
 	if host == "" {
 		if candidate := ProfileDockerHost(o.Home, defaultProfileName); socketExists(candidate) {
 			host = candidate
@@ -281,6 +299,17 @@ func SocketPath(dockerHost string) string {
 		return ""
 	}
 	return filepath.Clean(u.Path)
+}
+
+// isColimaSocket reports whether a Docker host is one of Colima's profile
+// sockets under the user's home directory.
+func isColimaSocket(home, dockerHost string) bool {
+	path := SocketPath(dockerHost)
+	if path == "" {
+		return false
+	}
+	colimaRoot := filepath.Join(home, colimaHomeDir) + string(filepath.Separator)
+	return strings.HasPrefix(path, colimaRoot) && filepath.Base(path) == dockerSocketName
 }
 
 func socketExists(dockerHost string) bool {

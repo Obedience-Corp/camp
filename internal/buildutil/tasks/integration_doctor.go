@@ -66,8 +66,8 @@ func IntegrationDoctor(ctx context.Context, start bool) error {
 		return camperrors.Newf("the integration daemon is not usable: %s", reason)
 	}
 	if resolution.Source == itestenv.SourceFallback {
-		ui.Warning("no dedicated daemon: run 'just test daemon-start' to create or boot the " +
-			itestenv.ProfileName + " profile")
+		ui.Warning("no dedicated daemon: run '" + itestenv.StartCommand +
+			"' to create or boot the " + itestenv.ProfileName + " profile")
 	}
 	return nil
 }
@@ -135,7 +135,7 @@ func containersRow(ctx context.Context, resolution itestenv.Resolution) string {
 	cmd := exec.CommandContext(ctx, "docker", "ps", "--format", "{{.Names}}")
 	cmd.Env = os.Environ()
 	if resolution.DockerHost != "" {
-		cmd.Env = append(cmd.Env, dockerHostEnv+"="+resolution.DockerHost)
+		cmd.Env = append(cmd.Env, itestenv.DockerHostVar+"="+resolution.DockerHost)
 	}
 	out, err := cmd.Output()
 	if err != nil {

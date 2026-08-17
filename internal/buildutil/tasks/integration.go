@@ -79,7 +79,6 @@ type IntegrationResult struct {
 const integrationTestTimeout = "30m"
 
 const (
-	dockerHostEnv = "DOCKER_HOST"
 	// socketOverrideEnv tells Ryuk where the daemon socket lives *inside* the
 	// VM, which is not where the host reaches it.
 	socketOverrideEnv = "TESTCONTAINERS_DOCKER_SOCKET_OVERRIDE"
@@ -116,7 +115,7 @@ func Integration(ctx context.Context, verbose bool) error {
 		return camperrors.Newf("failed to create bin/linux directory: %w", err)
 	}
 
-	cmd := exec.Command("go", "build", "-ldflags", "-s -w", "-o", "bin/linux/camp", "./cmd/camp")
+	cmd := exec.CommandContext(ctx, "go", "build", "-ldflags", "-s -w", "-o", "bin/linux/camp", "./cmd/camp")
 	cmd.Env = append(os.Environ(), "GOOS=linux", "GOARCH="+runtime.GOARCH)
 	if verbose {
 		cmd.Stdout = os.Stdout
@@ -332,8 +331,8 @@ func prepareDaemon(ctx context.Context) error {
 		fmt.Printf("  %s\n", resolution.Line())
 	}
 	if resolution.DockerHost != "" {
-		if err := os.Setenv(dockerHostEnv, resolution.DockerHost); err != nil {
-			return camperrors.Wrapf(err, "publish %s for the integration run", dockerHostEnv)
+		if err := os.Setenv(itestenv.DockerHostVar, resolution.DockerHost); err != nil {
+			return camperrors.Wrapf(err, "publish %s for the integration run", itestenv.DockerHostVar)
 		}
 	}
 	if err := os.Setenv(socketOverrideEnv, inVMDockerSocket); err != nil {

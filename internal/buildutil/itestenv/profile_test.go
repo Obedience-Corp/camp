@@ -68,11 +68,28 @@ func TestResolveDecisions(t *testing.T) {
 		},
 		{
 			name:       "isolation disabled falls back to the ambient daemon",
-			vars:       map[string]string{EnvProfile: ProfileDisabled, dockerHostEnv: "unix:///shared/docker.sock"},
+			vars:       map[string]string{EnvProfile: ProfileDisabled, DockerHostVar: "unix:///shared/docker.sock"},
 			colima:     &fakeColima{status: running},
 			wantSource: SourceFallback,
 			wantHost:   "unix:///shared/docker.sock",
 			wantReason: EnvProfile + "=" + ProfileDisabled,
+		},
+		{
+			name: "a non-Colima DOCKER_HOST is somebody's decision, not ours",
+			vars: map[string]string{DockerHostVar: "tcp://remote:2375"},
+			// A remote daemon must not be redirected onto a local profile, and
+			// must not cause a VM to be created behind the operator's back.
+			colima:     &fakeColima{status: absent},
+			autoStart:  true,
+			wantSource: SourceOverride,
+			wantHost:   "tcp://remote:2375",
+		},
+		{
+			name:       "the shared Colima profile is ours to redirect",
+			vars:       map[string]string{DockerHostVar: "unix:///HOME/.colima/default/docker.sock"},
+			colima:     &fakeColima{status: running},
+			autoStart:  true,
+			wantSource: SourceProfile,
 		},
 		{
 			name:       "running profile is used without starting anything",
@@ -120,8 +137,14 @@ func TestResolveDecisions(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			t.Parallel()
 			home := t.TempDir()
+			vars := make(map[string]string, len(tt.vars))
+			for key, value := range tt.vars {
+				// "/HOME/..." stands in for the per-test home directory, which
+				// only exists once the test is running.
+				vars[key] = strings.Replace(value, "/HOME", home, 1)
+			}
 			got, err := Resolve(context.Background(), Options{
-				Getenv:    env(tt.vars),
+				Getenv:    env(vars),
 				Home:      home,
 				Colima:    tt.colima,
 				AutoStart: tt.autoStart,
@@ -148,6 +171,9 @@ func TestResolveDecisions(t *testing.T) {
 			}
 			if tt.wantStart && len(tt.colima.starts) != 1 {
 				t.Errorf("start calls = %d, want 1", len(tt.colima.starts))
+			}
+			if !tt.wantStart && len(tt.colima.starts) != 0 {
+				t.Errorf("start calls = %d, want none", len(tt.colima.starts))
 			}
 		})
 	}
@@ -216,7 +242,7 @@ func TestResolveTrustsInheritedProfileSocket(t *testing.T) {
 
 	colima := &fakeColima{status: ProfileStatus{Name: ProfileName}}
 	got, err := Resolve(context.Background(), Options{
-		Getenv: env(map[string]string{dockerHostEnv: socket}),
+		Getenv: env(map[string]string{DockerHostVar: socket}),
 		Home:   home,
 		Colima: colima,
 	})
@@ -239,7 +265,7 @@ func TestResolveRejectsInheritedSocketThatIsGone(t *testing.T) {
 	home := t.TempDir()
 	colima := &fakeColima{status: ProfileStatus{Name: ProfileName, Exists: true, Running: true}}
 	got, err := Resolve(context.Background(), Options{
-		Getenv: env(map[string]string{dockerHostEnv: ProfileDockerHost(home, ProfileName)}),
+		Getenv: env(map[string]string{DockerHostVar: ProfileDockerHost(home, ProfileName)}),
 		Home:   home,
 		Colima: colima,
 	})
@@ -338,6 +364,35 @@ func TestSocketPathAndSameDockerHost(t *testing.T) {
 				if got := SocketPath(tt.a); got != tt.wantPath {
 					t.Errorf("SocketPath(%q) = %q, want %q", tt.a, got, tt.wantPath)
 				}
+			}
+		})
+	}
+}
+
+func TestIsColimaSocket(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name       string
+		dockerHost string
+		want       bool
+	}{
+		{name: "default profile", dockerHost: "unix:///home/u/.colima/default/docker.sock", want: true},
+		{name: "dedicated profile", dockerHost: "unix:///home/u/.colima/camp-itest/docker.sock", want: true},
+		{name: "legacy top level socket", dockerHost: "unix:///home/u/.colima/docker.sock", want: true},
+		{name: "another user's colima", dockerHost: "unix:///home/other/.colima/default/docker.sock"},
+		{name: "native Docker", dockerHost: "unix:///var/run/docker.sock"},
+		{name: "Docker Desktop", dockerHost: "unix:///home/u/.docker/run/docker.sock"},
+		{name: "remote daemon", dockerHost: "tcp://remote:2375"},
+		{name: "not a docker socket", dockerHost: "unix:///home/u/.colima/default/containerd.sock"},
+		{name: "unset", dockerHost: ""},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+			if got := isColimaSocket("/home/u", tt.dockerHost); got != tt.want {
+				t.Errorf("isColimaSocket(%q) = %v, want %v", tt.dockerHost, got, tt.want)
 			}
 		})
 	}

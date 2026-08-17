@@ -24,8 +24,6 @@ import (
 // resolve a daemon the suite owns, take the lock that keeps a second run off
 // it, and refuse to start at all if it is already too slow to finish.
 
-const dockerHostEnvName = "DOCKER_HOST"
-
 // infraBannerPrefix is the marker the dashboard's tally matches on. Printed to
 // stdout rather than stderr on purpose: `go test -json` discards the test
 // binary's stderr, and a refusal nobody can see is the failure mode this whole
@@ -58,8 +56,8 @@ func prepareDaemon(ctx context.Context) (*daemonSession, error) {
 		fmt.Println(resolution.Line())
 	}
 	if resolution.DockerHost != "" {
-		if err := os.Setenv(dockerHostEnvName, resolution.DockerHost); err != nil {
-			return nil, camperrors.Wrapf(err, "publish %s", dockerHostEnvName)
+		if err := os.Setenv(itestenv.DockerHostVar, resolution.DockerHost); err != nil {
+			return nil, camperrors.Wrapf(err, "publish %s", itestenv.DockerHostVar)
 		}
 	}
 
