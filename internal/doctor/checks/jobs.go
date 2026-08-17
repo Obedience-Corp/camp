@@ -54,6 +54,10 @@ const (
 	// reasonJobStuck is a claimed job whose worker is gone. It is not lost:
 	// the next worker to take the lane reclaims it.
 	reasonJobStuck = "job_stuck"
+	// reasonJobStalled is a claimed job whose worker is present and has been
+	// on it longer than the writer's budget. Nothing will reclaim this one:
+	// the lane is held by a live worker, so the queue reads it as progress.
+	reasonJobStalled = "job_stalled"
 	// reasonQueueLost is bookkeeping content on disk with no job to commit it,
 	// which is what deleting .campaign/cache mid-queue leaves behind.
 	reasonQueueLost = "queue_lost"
@@ -71,7 +75,7 @@ func (c *JobsCheck) Run(ctx context.Context, repoRoot string) (*doctor.CheckResu
 		Details: make(map[string]any),
 	}
 
-	entries, err := jobs.Snapshot(repoRoot)
+	entries, err := jobs.Snapshot(ctx, repoRoot)
 	if err != nil {
 		return nil, camperrors.Wrap(err, "read deferred commit queue")
 	}
@@ -101,6 +105,23 @@ func (c *JobsCheck) Run(ctx context.Context, repoRoot string) (*doctor.CheckResu
 				FixCommand: "camp jobs run",
 				Details: map[string]any{
 					jobsDetailReason: reasonJobStuck,
+					jobsDetailID:     entry.ID,
+					jobsDetailLane:   entry.Lane,
+				},
+			})
+		case entry.Stalled:
+			// The quietest failure the queue has. A stuck job at least has an
+			// absent worker to notice; this one has a live worker holding the
+			// lane, heartbeating, blocking every drain behind it, and looking
+			// from the outside exactly like work in progress.
+			result.Issues = append(result.Issues, doctor.Issue{
+				Severity: doctor.SeverityWarning,
+				CheckID:  c.ID(),
+				Description: fmt.Sprintf("deferred commit is not making progress (%s): %s",
+					entry.StalledReason, jobs.Describe(entry.Job)),
+				FixCommand: "camp jobs drop --running " + entry.ID,
+				Details: map[string]any{
+					jobsDetailReason: reasonJobStalled,
 					jobsDetailID:     entry.ID,
 					jobsDetailLane:   entry.Lane,
 				},

@@ -69,6 +69,14 @@ type HooksConfig struct {
 type CommitMessageHookConfig struct {
 	// Command is executed as-written from the target repository.
 	Command string `yaml:"command,omitempty"`
+	// Timeout bounds one deferred run of the writer, as a Go duration
+	// ("5m", "90s"). Empty takes autowrite.DefaultWriterTimeout.
+	//
+	// It bounds the deferred run only. A foreground `camp commit --auto-write`
+	// has a user in front of it who can see the writer working and interrupt
+	// it; a worker's writer has nobody watching, so an unbounded one holds a
+	// lane, and every drain behind it, until someone notices.
+	Timeout string `yaml:"timeout,omitempty"`
 }
 
 // ConceptEntry defines a concept for the picker with ordering and depth control.

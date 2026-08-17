@@ -8,7 +8,6 @@ import (
 	"path/filepath"
 	"strings"
 
-	"github.com/Obedience-Corp/camp/internal/autowrite"
 	camperrors "github.com/Obedience-Corp/camp/internal/errors"
 	"github.com/Obedience-Corp/camp/internal/git"
 )
@@ -221,43 +220,6 @@ var alreadyApplied = func(ctx context.Context, repoPath string, job *Job) bool {
 	return git.FirstParentChainContains(ctx, repoPath, job.Tree, job.Parent)
 }
 
-// messageForTree returns the commit message for a commit-tree job, running the
-// configured writer when the job asked for one.
-//
-// The writer runs against a temporary index materializing the captured tree, so
-// what it sees is the snapshot being committed rather than whatever the working
-// tree looks like now. That is the difference between a deferred message that
-// describes the commit and one that describes an unrelated later state.
-//
-// A writer that fails or prints nothing fails the job. Camp does not invent a
-// subject: a filler commit in history is worse than a parked job the user can
-// retry once the writer is healthy, or drop and re-commit by hand.
-func messageForTree(ctx context.Context, campaignRoot, repoPath string, job *Job) (string, error) {
-	if !job.AutoWrite {
-		if strings.TrimSpace(job.Message) == "" {
-			return "", camperrors.Newf("job %s has no message", job.ID)
-		}
-		return job.Message, nil
-	}
-
-	message, err := writeMessage(ctx, campaignRoot, repoPath, job)
-	if err != nil {
-		return "", err
-	}
-	if strings.TrimSpace(message) == "" {
-		return "", camperrors.Newf("the commit message writer produced no message for job %s", job.ID)
-	}
-
-	// The tag goes on the subject line, which is why it is prepended here
-	// rather than composed into the writer's prompt: the writer owns the
-	// message, camp owns the tag, and a deferred commit has to end up with the
-	// same subject a synchronous one would.
-	if job.MessagePrefix != "" {
-		return job.MessagePrefix + " " + message, nil
-	}
-	return message, nil
-}
-
 // isEmptyCommitTree reports whether the job's tree is identical to its
 // parent's tree — an empty commit that must never land.
 //
@@ -272,41 +234,6 @@ func treeUnchangedFromParent(ctx context.Context, repoPath string, job *Job) (bo
 		return false, camperrors.Wrapf(err, "resolve parent tree for job %s", job.ID)
 	}
 	return parentTree == job.Tree, nil
-}
-
-// writeMessage runs the configured writer against the job's captured tree.
-//
-// The temp index is the point. The writer's job is to describe *this* commit,
-// and by the time it runs the working tree and the real index may both have
-// moved on. Materializing the captured tree into a scratch index and pointing
-// GIT_INDEX_FILE at it means `git diff --cached` inside the writer shows the
-// snapshot being committed rather than whatever the user is doing now.
-//
-// A variable so tests can drive the worker's lifecycle without a configured
-// writer; runWriter is always what runs in production.
-var writeMessage = runWriter
-
-func runWriter(ctx context.Context, campaignRoot, repoPath string, job *Job) (string, error) {
-	tmp, err := os.CreateTemp("", "camp-job-index-*")
-	if err != nil {
-		return "", camperrors.Wrap(err, "create a scratch index for the message writer")
-	}
-	indexPath := tmp.Name()
-	_ = tmp.Close()
-	// git refuses to read-tree into a file it did not create, so the empty
-	// placeholder goes away before git is asked to write there.
-	_ = os.Remove(indexPath)
-	defer func() { _ = os.Remove(indexPath) }()
-
-	env := append(os.Environ(), "GIT_INDEX_FILE="+indexPath)
-	if err := git.RunWithEnv(ctx, repoPath, env, "read-tree", job.Tree); err != nil {
-		return "", camperrors.Wrapf(err, "materialize tree %s for the message writer", shortSHA(job.Tree))
-	}
-
-	// The job's own variables first, GIT_INDEX_FILE last so a malformed job
-	// cannot point the writer at a different index than the one just built.
-	writerEnv := append(append([]string(nil), job.Env...), "GIT_INDEX_FILE="+indexPath)
-	return autowrite.AutoWriteCommitMessageWithEnv(ctx, campaignRoot, repoPath, writerEnv)
 }
 
 // shortSHA abbreviates a hash for a message a human reads.
@@ -465,8 +392,13 @@ func SpawnIfNeeded(ctx context.Context, campaignRoot, repo string) {
 		logWorker(campaignRoot, "spawn-error lane=%s err=%v", repo, err)
 		return
 	}
+	// Read before releasing. Release zeroes the handle's pid, so logging it
+	// afterwards recorded "pid=-1" on every spawn the queue has ever made: the
+	// one line that says which process was sent to serve a lane named no
+	// process at all.
+	pid := cmd.Process.Pid
 	// Never Wait: the child is detached on purpose. Releasing the process
 	// handle leaves it to init rather than making this process linger.
 	_ = cmd.Process.Release()
-	logWorker(campaignRoot, "spawned lane=%s pid=%d", repo, cmd.Process.Pid)
+	logWorker(campaignRoot, "spawned lane=%s pid=%d", repo, pid)
 }

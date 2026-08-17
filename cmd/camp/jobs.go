@@ -3,7 +3,9 @@ package main
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
+	"io"
 	"os"
 	"strings"
 	"time"
@@ -80,7 +82,21 @@ var jobsDropCmd = &cobra.Command{
 Only the job file is removed. The intent, manifest, or marker the job was going
 to commit stays in your working tree, uncommitted, for the next ordinary commit
 to pick up. Dropping a job means "stop trying to commit this for me", never
-"throw away my work".`,
+"throw away my work".
+
+Failed jobs only, unless you pass --running. A running job has a worker on it,
+so giving up means stopping that worker: --running sends it SIGTERM, waits for
+it to stop, and drops the job. Use it for a job 'camp jobs' reports as stalled,
+where a commit message writer has stopped answering and nothing else will end
+the wait.
+
+Stopping a worker returns the other jobs it was running to pending, so they are
+served again by the next worker. Only the jobs you named are dropped.
+
+Examples:
+  camp jobs drop <id>              # a failed job
+  camp jobs drop all               # every failed job
+  camp jobs drop --running <id>    # a stalled job, and the worker holding it`,
 	Args: cobra.ExactArgs(1),
 	RunE: runJobsDrop,
 }
@@ -103,6 +119,7 @@ they describe, so they are correct whenever they land.`,
 var jobsOpts struct {
 	campaign string
 	json     bool
+	running  bool
 }
 
 func init() {
@@ -112,6 +129,8 @@ func init() {
 		"Campaign root to serve (defaults to the detected campaign)")
 	jobsCmd.Flags().BoolVar(&jobsOpts.json, "json", false,
 		"Emit a structured JSON result")
+	jobsDropCmd.Flags().BoolVar(&jobsOpts.running, "running", false,
+		"Also drop running jobs, stopping the worker on each one's lane")
 
 	jobsCmd.AddCommand(jobsRunCmd, jobsRetryCmd, jobsDropCmd, jobsDrainCmd)
 	rootCmd.AddCommand(jobsCmd)
@@ -143,11 +162,29 @@ type jobJSON struct {
 	AgeMs    int64  `json:"age_ms"`
 	Attempts int    `json:"attempts"`
 	Stuck    bool   `json:"stuck"`
+	// RunningMs is how long the current attempt has been running, zero when
+	// the job is not running. Age answers "how long ago was this asked for",
+	// which a backed-up queue can make large with nothing wrong; this answers
+	// "how long has this been in progress", which is the one that says whether
+	// anything is happening.
+	RunningMs int64 `json:"running_ms"`
+	// Stalled marks a running job that needs a person: nobody is serving its
+	// lane, or the attempt has outrun the writer's budget. A superset of
+	// Stuck, which keeps its exact meaning so a consumer reading it does not
+	// change behavior under this field.
+	Stalled bool `json:"stalled"`
+	// StalledReason says which, in the same words the table prints. Empty
+	// unless Stalled.
+	StalledReason string `json:"stalled_reason,omitempty"`
 	// Superseded marks a failed job that retrying can never fix, because
 	// history moved past the commit it was queued against. An agent reading
 	// this queue needs it to pick 'drop' over 'retry' without first failing.
 	Superseded bool   `json:"superseded"`
 	Summary    string `json:"summary"`
+	// LastError is why the most recent attempt failed, as the worker recorded
+	// it when it parked the job. Empty for anything not parked, and prose
+	// rather than a code: it is there to be read, not matched on.
+	LastError string `json:"last_error,omitempty"`
 }
 
 func runJobsList(cmd *cobra.Command, _ []string) error {
@@ -157,7 +194,7 @@ func runJobsList(cmd *cobra.Command, _ []string) error {
 		return camperrors.Wrap(err, "not in a campaign")
 	}
 
-	entries, err := jobs.Snapshot(campRoot)
+	entries, err := jobs.Snapshot(ctx, campRoot)
 	if err != nil {
 		return err
 	}
@@ -206,23 +243,58 @@ func emitJobsJSON(cmd *cobra.Command, campRoot string, entries []jobs.Entry, sup
 			class = string(jobs.ClassCommit)
 		}
 		payload.Jobs = append(payload.Jobs, jobJSON{
-			ID:         e.ID,
-			Seq:        e.Seq,
-			State:      e.State,
-			Lane:       e.Lane,
-			Kind:       string(e.Kind),
-			Class:      class,
-			AgeMs:      e.Age(now).Milliseconds(),
-			Attempts:   e.Attempts,
-			Stuck:      e.Stuck,
-			Superseded: superseded[e.ID],
-			Summary:    jobs.Describe(e.Job),
+			ID:            e.ID,
+			Seq:           e.Seq,
+			State:         e.State,
+			Lane:          e.Lane,
+			Kind:          string(e.Kind),
+			Class:         class,
+			AgeMs:         e.Age(now).Milliseconds(),
+			Attempts:      e.Attempts,
+			Stuck:         e.Stuck,
+			RunningMs:     e.RunningFor.Milliseconds(),
+			Stalled:       e.Stalled,
+			StalledReason: e.StalledReason,
+			Superseded:    superseded[e.ID],
+			Summary:       jobs.Describe(e.Job),
+			LastError:     e.LastError,
 		})
 	}
 
 	enc := json.NewEncoder(cmd.OutOrStdout())
 	enc.SetIndent("", "  ")
 	return enc.Encode(payload)
+}
+
+// jobsWhat renders the WHAT column: what the job is, then whatever about it
+// needs a decision.
+//
+// A running job always reports how long its attempt has been going. Without it
+// the listing describes a state and never a rate, and "running" reads the same
+// at three seconds and at fifty minutes, which is precisely the confusion that
+// let a wedged commit message writer look like ordinary progress.
+func jobsWhat(e jobs.Entry, superseded bool) string {
+	var notes []string
+	switch {
+	case e.Stalled:
+		notes = append(notes, e.StalledReason)
+	case e.State == "running":
+		notes = append(notes, "running "+jobs.ShortDuration(e.RunningFor))
+	}
+	if note := jobs.AttemptNote(e.Attempts, e.State == "failed"); note != "" {
+		notes = append(notes, note)
+	}
+	if superseded {
+		// The row carries it too, not only the footer: with a mix of
+		// retryable and superseded jobs the footer can say how many but not
+		// which, and "which" is what the user has to act on.
+		notes = append(notes, "cannot retry")
+	}
+	what := jobs.Describe(e.Job)
+	if len(notes) == 0 {
+		return what
+	}
+	return what + " (" + strings.Join(notes, ", ") + ")"
 }
 
 func renderJobsHuman(cmd *cobra.Command, entries []jobs.Entry, superseded map[string]bool) {
@@ -240,29 +312,31 @@ func renderJobsHuman(cmd *cobra.Command, entries []jobs.Entry, superseded map[st
 	fmt.Fprintf(&b, "%-9s %-25s %-22s %-14s %6s  %s\n",
 		"STATE", "ID", "LANE", "KIND", "AGE", "WHAT")
 	for _, e := range entries {
+		// One word for "this row is trouble". A running job whose lane has no
+		// worker and one whose writer stopped answering are different
+		// diagnoses with different fixes, but they are the same discovery, and
+		// the reason beside them says which.
 		state := e.State
-		if e.Stuck {
-			state = "stuck"
-		}
-		what := jobs.Describe(e.Job)
-		note := jobs.AttemptNote(e.Attempts, e.State == "failed")
-		if superseded[e.ID] {
-			// The row carries it too, not only the footer: with a mix of
-			// retryable and superseded jobs the footer can say how many but
-			// not which, and "which" is what the user has to act on.
-			note = strings.TrimPrefix(note+", cannot retry", ", ")
-		}
-		if note != "" {
-			what = fmt.Sprintf("%s (%s)", what, note)
+		if e.Stalled {
+			state = "stalled"
 		}
 		fmt.Fprintf(&b, "%-9s %-25s %-22s %-14s %6s  %s\n",
-			state, e.ID, e.Lane, e.Kind, shortDuration(e.Age(now)), what)
+			state, e.ID, e.Lane, e.Kind, jobs.ShortDuration(e.Age(now)),
+			jobsWhat(e, superseded[e.ID]))
+		// The failure reason gets a line of its own rather than a longer WHAT.
+		// The columns already reach past sixty characters, so a sentence
+		// appended to the last one wraps in the middle of itself; indented
+		// underneath, it stays readable in a narrow terminal, and it is the
+		// one thing on the row the user cannot work out for themselves.
+		if e.LastError != "" {
+			fmt.Fprintf(&b, "%s\n", ui.Dim("  "+e.LastError))
+		}
 	}
 	_, _ = fmt.Fprint(out, b.String())
 
 	// Every state that needs a decision names the command that makes it, so
 	// the listing is actionable rather than merely informative.
-	failed, stuck, stale := 0, 0, 0
+	failed, noWorker, overBudget, stale := 0, 0, 0, 0
 	for _, e := range entries {
 		switch {
 		case e.State == "failed":
@@ -271,7 +345,9 @@ func renderJobsHuman(cmd *cobra.Command, entries []jobs.Entry, superseded map[st
 				stale++
 			}
 		case e.Stuck:
-			stuck++
+			noWorker++
+		case e.Stalled:
+			overBudget++
 		}
 	}
 	// The blank separator is its own Fprintln rather than a "\n" inside Dim,
@@ -302,26 +378,23 @@ func renderJobsHuman(cmd *cobra.Command, entries []jobs.Entry, superseded map[st
 		_, _ = fmt.Fprintln(out, ui.Dim(
 			"Dropping keeps the files on disk; your next commit picks them up."))
 	}
-	if stuck > 0 {
+	if noWorker > 0 {
 		_, _ = fmt.Fprintln(out)
 		_, _ = fmt.Fprintln(out, ui.Dim(
-			"Stuck jobs have no live worker. 'camp jobs run' serves them now."))
+			"Stalled with no live worker: nothing is running them. 'camp jobs run' serves them now."))
 	}
-}
-
-// shortDuration renders an age in the largest unit that stays readable.
-func shortDuration(d time.Duration) string {
-	switch {
-	case d <= 0:
-		return "-"
-	case d < time.Minute:
-		return fmt.Sprintf("%ds", int(d.Seconds()))
-	case d < time.Hour:
-		return fmt.Sprintf("%dm", int(d.Minutes()))
-	case d < 24*time.Hour:
-		return fmt.Sprintf("%dh", int(d.Hours()))
-	default:
-		return fmt.Sprintf("%dd", int(d.Hours()/24))
+	// The other stall needs the opposite thing said. There is a worker, it is
+	// heartbeating, and that is exactly why nothing will rescue this job: the
+	// queue reads a held lane as work in progress, so it waits, and every
+	// drain behind it waits too. Only a person can decide it is over.
+	if overBudget > 0 {
+		_, _ = fmt.Fprintln(out)
+		_, _ = fmt.Fprintln(out, ui.Dim(
+			"Stalled past the writer budget: a worker is on it and has stopped making progress."))
+		_, _ = fmt.Fprintln(out, ui.Dim(
+			"Give up with 'camp jobs drop --running <id>', which stops that worker too."))
+		_, _ = fmt.Fprintln(out, ui.Dim(
+			"Dropping keeps the files on disk; your next commit picks them up."))
 	}
 }
 
@@ -378,24 +451,121 @@ func runJobsDrop(cmd *cobra.Command, args []string) error {
 	if err != nil {
 		return camperrors.Wrap(err, "not in a campaign")
 	}
-
-	dropped, err := jobs.Drop(ctx, campRoot, args[0])
-	if err != nil {
-		return err
-	}
+	selector := args[0]
 	out := cmd.OutOrStdout()
+
+	if jobsOpts.running {
+		return dropIncludingRunning(ctx, out, campRoot, selector)
+	}
+
+	dropped, err := jobs.Drop(ctx, campRoot, selector)
+	if err != nil {
+		return runningDropHint(campRoot, selector, err)
+	}
 	if len(dropped) == 0 {
 		_, _ = fmt.Fprintln(out, ui.Dim("No failed jobs to drop."))
 		return nil
 	}
+	reportDropped(out, len(dropped))
+	return nil
+}
 
-	// Say what survived, every time. Camp discarding something on the user's
-	// instruction has to be explicit about what it did not discard, or "drop"
-	// reads as "delete my work".
-	_, _ = fmt.Fprintln(out, ui.Success(fmt.Sprintf("Dropped %s.", jobCountPhrase(len(dropped)))))
+// dropIncludingRunning drops the failed and running jobs a selector names.
+//
+// Failed first, because dropping one is a file removal and dropping a running
+// one stops a process. If the selector matches nothing at all there is no
+// reason to have signalled anybody, and doing the reversible half first keeps
+// the irreversible half from happening on a typo.
+func dropIncludingRunning(ctx context.Context, out io.Writer, campRoot, selector string) error {
+	// A selector matching nothing in failed/ is deferred rather than returned:
+	// with --running it may legitimately name a job that is running and not
+	// failed, and "no failed job with that id" would be a wrong answer to a
+	// right command. Anything else that went wrong is returned now, because a
+	// job file camp could not remove is a problem in its own right.
+	dropped, failedErr := jobs.Drop(ctx, campRoot, selector)
+	var noMatch *jobs.NoMatchError
+	if failedErr != nil && !errors.As(failedErr, &noMatch) {
+		return failedErr
+	}
+
+	running, stops, err := jobs.DropRunning(ctx, campRoot, selector)
+	dropped = append(dropped, running...)
+	// Reported before any error, because a worker camp stopped stays stopped
+	// whether or not the rest of the command succeeded.
+	reportWorkerStops(out, stops)
+	if err != nil {
+		return err
+	}
+
+	if len(dropped) == 0 {
+		if failedErr != nil {
+			return camperrors.Newf("no failed or running job with id %q", selector)
+		}
+		_, _ = fmt.Fprintln(out, ui.Dim("No failed or running jobs to drop."))
+		return nil
+	}
+	reportDropped(out, len(dropped))
+
+	// The worker camp just stopped may have been serving jobs that had nothing
+	// to do with this one, and stopping it returned them to pending. Leaving
+	// them there would make "give up on this commit" quietly mean "and stall
+	// the ones behind it", which is not what the user asked for.
+	if blocking, err := jobs.OutstandingAll(campRoot); err == nil {
+		jobs.EnsureServed(ctx, campRoot, blocking)
+	}
+	return nil
+}
+
+// reportDropped says what was dropped and, every time, what survived.
+//
+// Camp discarding something on the user's instruction has to be explicit about
+// what it did not discard, or "drop" reads as "delete my work".
+func reportDropped(out io.Writer, n int) {
+	_, _ = fmt.Fprintln(out, ui.Success(fmt.Sprintf("Dropped %s.", jobCountPhrase(n))))
 	_, _ = fmt.Fprintln(out, ui.Dim(
 		"Their files are still in your working tree; your next commit picks them up."))
-	return nil
+}
+
+// runningDropHint turns "no failed job with that id" into the truth when the
+// id names a job that is running.
+//
+// The plain refusal is accurate and useless: the user is looking at the job in
+// 'camp jobs' and being told it does not exist. This says which state it is in
+// and the flag that acts on it, in one line, because being one flag away from
+// the thing you asked for should not require reading the help.
+func runningDropHint(campRoot, selector string, dropErr error) error {
+	entry, ok := jobs.RunningMatch(campRoot, selector)
+	if !ok {
+		return dropErr
+	}
+	return camperrors.Newf(
+		"job %s is running, not failed; stop its worker and drop it with "+
+			"'camp jobs drop --running %s'", entry.ID, selector)
+}
+
+// reportWorkerStops says which workers camp stopped.
+//
+// Never silent. Camp killed a process the user did not start, on their
+// instruction but out of their sight, and a stop that leaves no trace is
+// indistinguishable from a job that finished on its own.
+func reportWorkerStops(out io.Writer, stops []jobs.WorkerStop) {
+	for _, stop := range stops {
+		switch {
+		case stop.PID == 0:
+			_, _ = fmt.Fprintln(out, ui.Dim(
+				fmt.Sprintf("Lane %s had no live worker to stop.", stop.Lane)))
+		case stop.Killed:
+			// Worth its own wording: a killed worker never ran its cleanup, so
+			// a message writer it had started may still be alive.
+			_, _ = fmt.Fprintln(out, ui.Warning(fmt.Sprintf(
+				"Worker %d on lane %s ignored the stop signal and was killed; "+
+					"check for a commit message writer it left behind.",
+				stop.PID, stop.Lane)))
+		default:
+			_, _ = fmt.Fprintln(out, ui.Success(fmt.Sprintf(
+				"Stopped the worker on lane %s (pid %d).", stop.Lane, stop.PID)))
+		}
+	}
 }
 
 func runJobsDrain(cmd *cobra.Command, _ []string) error {

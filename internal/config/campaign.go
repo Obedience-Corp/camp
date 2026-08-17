@@ -166,5 +166,9 @@ func commentedHooksPlaceholder() []byte {
 #     # emitted when the hook finishes, not while it is generating). Amend
 #     # auto-write invocations receive CAMP_COMMIT_AMEND=1.
 #     command: ob commit --print-session-id
+#     # How long a deferred run of that command may take before camp stops it
+#     # and parks the job in failed/. Foreground runs are not bounded: you are
+#     # watching those and can interrupt them yourself. Default 5m.
+#     timeout: 5m
 `)
 }

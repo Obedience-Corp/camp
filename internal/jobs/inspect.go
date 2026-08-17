@@ -5,9 +5,11 @@ import (
 	"os"
 	"path/filepath"
 	"sort"
+	"strconv"
 	"strings"
 	"time"
 
+	"github.com/Obedience-Corp/camp/internal/autowrite"
 	camperrors "github.com/Obedience-Corp/camp/internal/errors"
 	"github.com/Obedience-Corp/camp/internal/git"
 )
@@ -35,7 +37,34 @@ type Entry struct {
 	// job will be reclaimed when a worker next takes the lane, not that it has
 	// failed; naming it is how a user tells "slow" from "nobody is home".
 	Stuck bool
+	// RunningFor is how long the current attempt has been running. Zero for a
+	// job that is not running, and for one whose file went away underneath the
+	// listing.
+	//
+	// It is not Age. Age is how long ago the work was asked for, which for a
+	// queue that is behind can be hours with nothing wrong; this is how long
+	// the thing in front of you has been in progress, which is the number that
+	// says whether anything is happening.
+	RunningFor time.Duration
+	// Stalled marks a running job that needs a person: either nobody is
+	// serving its lane, or the attempt has outrun the writer's budget.
+	//
+	// A superset of Stuck rather than a replacement for it. Stuck is a
+	// specific claim about the worker and stays exactly what it was; this is
+	// the question a user is actually asking, which is whether this row is
+	// trouble.
+	Stalled bool
+	// StalledReason says which, in the words the listing prints. Empty unless
+	// Stalled.
+	StalledReason string
 }
+
+// Stall reasons, as a user reads them.
+const (
+	// reasonNoWorker is a claimed job nobody is running. The next worker to
+	// take the lane reclaims it, so this is a wait, not a loss.
+	reasonNoWorker = "no live worker"
+)
 
 // Age is how long ago the job was enqueued. Zero when the timestamp is
 // unreadable, which is better than a nonsense duration.
@@ -52,9 +81,16 @@ func (e Entry) Age(now time.Time) time.Duration {
 
 // Snapshot returns every job in every lane, ordered by state, then lane, then
 // sequence, which is the order they would run.
-func Snapshot(campaignRoot string) ([]Entry, error) {
+//
+// It takes a context for the writer budget, which comes from campaign config:
+// how long an attempt may run before the listing calls it stalled is the same
+// number the worker enforces, read from the same place, so the row that says a
+// job is over budget and the worker that acts on it cannot disagree.
+func Snapshot(ctx context.Context, campaignRoot string) ([]Entry, error) {
 	var out []Entry
 	queueDir := QueueDir(campaignRoot)
+	budget := autowrite.WriterTimeout(ctx, campaignRoot)
+	now := time.Now()
 
 	for _, state := range States {
 		slugs, err := Lanes(campaignRoot, state)
@@ -71,12 +107,21 @@ func Snapshot(campaignRoot string) ([]Entry, error) {
 			// worker, so the answer cannot differ between its jobs.
 			laneAlive := laneLockFresh(queueDir, slug)
 			for _, job := range jobList {
-				out = append(out, Entry{
+				entry := Entry{
 					Job:   job,
 					State: state,
 					Lane:  lane,
 					Stuck: state == stateRunning && !laneAlive,
-				})
+				}
+				if state == stateRunning {
+					started, known := attemptStart(campaignRoot, lane, job.Seq)
+					if known {
+						entry.RunningFor = max(now.Sub(started), 0)
+					}
+					entry.Stalled, entry.StalledReason =
+						stallStatus(job, laneAlive, entry.RunningFor, known, budget)
+				}
+				out = append(out, entry)
 			}
 		}
 	}
@@ -90,6 +135,58 @@ func Snapshot(campaignRoot string) ([]Entry, error) {
 		return out[i].Seq < out[j].Seq
 	})
 	return out, nil
+}
+
+// stallStatus decides whether a running job is in trouble, and says why.
+//
+// Two conditions, one word, because they are the same question from the user's
+// side: is this row going to resolve itself. Naming them separately would ask
+// the user to learn a vocabulary before they can tell a queue that is working
+// from one that is not, and the reason string tells them apart anyway.
+//
+// An attempt whose start is unknown is never called stalled. Its file went
+// away between the listing and the stat, which means the job finished; a job
+// that finished is the opposite of stuck, and guessing at a duration to
+// compare against a budget would invent trouble out of a completed commit.
+func stallStatus(job Job, laneAlive bool, runningFor time.Duration, known bool,
+	budget time.Duration,
+) (bool, string) {
+	if !laneAlive {
+		return true, reasonNoWorker
+	}
+	if !known || budget <= 0 || runningFor <= budget {
+		return false, ""
+	}
+	// The writer is named when it is the step that is over, because that is
+	// the difference between "camp is slow" and "the tool you configured has
+	// not answered": one of those is camp's problem and the other is not, and
+	// the user cannot act on either without being told which.
+	step := "attempt"
+	if job.AutoWrite && job.Kind == KindCommitTree {
+		step = "writer"
+	}
+	return true, step + " running " + ShortDuration(runningFor) +
+		", budget " + ShortDuration(budget)
+}
+
+// ShortDuration renders a duration in the largest unit that stays readable.
+//
+// Exported so the queue's listing and the reasons the queue itself composes
+// render a duration the same way. They appear on the same row: an age of "51m"
+// beside a reason saying "3060 seconds" would read as two different facts.
+func ShortDuration(d time.Duration) string {
+	switch {
+	case d <= 0:
+		return "-"
+	case d < time.Minute:
+		return strconv.Itoa(int(d.Seconds())) + "s"
+	case d < time.Hour:
+		return strconv.Itoa(int(d.Minutes())) + "m"
+	case d < 24*time.Hour:
+		return strconv.Itoa(int(d.Hours())) + "h"
+	default:
+		return strconv.Itoa(int(d.Hours()/24)) + "d"
+	}
 }
 
 func stateRank(state string) int {
@@ -179,6 +276,11 @@ const SelectorAll = "all"
 func Retry(ctx context.Context, campaignRoot, selector string) ([]Job, error) {
 	return moveFailed(ctx, campaignRoot, selector, func(job *Job, path, name string) error {
 		job.Attempts = 0
+		// The recorded reason goes with the count. It describes a run the user
+		// has just decided is history, and a pending job carrying the reason
+		// its last attempt failed would report a failure that has not happened
+		// yet.
+		job.LastError = ""
 		pendingDir := laneDir(campaignRoot, statePending, job.Repo)
 		if err := os.MkdirAll(pendingDir, 0o755); err != nil {
 			return camperrors.Wrapf(err, "create pending lane %s", pendingDir)
@@ -256,9 +358,28 @@ func moveFailed(ctx context.Context, campaignRoot, selector string,
 		}
 	}
 	if len(acted) == 0 && selector != SelectorAll {
-		return nil, camperrors.Newf("no failed job with id %q", selector)
+		return nil, &NoMatchError{Selector: selector, State: stateFailed}
 	}
 	return acted, nil
+}
+
+// NoMatchError reports that a selector named no job in the state a command
+// searched.
+//
+// Typed because a caller that searches more than one state has to tell it
+// apart from a real failure. `camp jobs drop --running <id>` looks in failed/
+// and running/; "not in failed/" is an ordinary half-answer there, while a job
+// file that could not be removed is a problem, and a caller matching on prose
+// would swallow the second along with the first.
+type NoMatchError struct {
+	// Selector is what was asked for.
+	Selector string
+	// State is the queue state that was searched.
+	State string
+}
+
+func (e *NoMatchError) Error() string {
+	return "no " + e.State + " job with id " + strconv.Quote(e.Selector)
 }
 
 // StuckRunning returns running jobs whose lane has no live worker.
@@ -267,8 +388,8 @@ func moveFailed(ctx context.Context, campaignRoot, selector string,
 // lane. They are worth reporting because the wait is invisible otherwise, and a
 // user watching a job sit in running/ has no way to tell whether something is
 // working on it.
-func StuckRunning(campaignRoot string) ([]Entry, error) {
-	all, err := Snapshot(campaignRoot)
+func StuckRunning(ctx context.Context, campaignRoot string) ([]Entry, error) {
+	all, err := Snapshot(ctx, campaignRoot)
 	if err != nil {
 		return nil, err
 	}
