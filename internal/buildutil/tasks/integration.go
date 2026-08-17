@@ -3,8 +3,10 @@ package tasks
 
 import (
 	"bufio"
+	"context"
 	"encoding/json"
 	"fmt"
+	"io"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -15,6 +17,7 @@ import (
 
 	camperrors "github.com/Obedience-Corp/camp/internal/errors"
 
+	"github.com/Obedience-Corp/camp/internal/buildutil/itestenv"
 	"github.com/Obedience-Corp/camp/internal/buildutil/ui"
 )
 
@@ -54,6 +57,12 @@ type IntegrationResult struct {
 	// infrastructure died partway, so the pass/fail counts describe whatever
 	// happened to run, not the suite.
 	Collapsed bool
+	// InfraReason is the harness's own account of why the run did not happen,
+	// carried up from the banner it printed. Without it the summary can only
+	// offer a generic guess, and a run refused for a nameable reason (a lock
+	// held by another suite, a daemon that never answered) reads as the same
+	// unexplained collapse as any other.
+	InfraReason string
 	// SuiteError is a failure of the run itself rather than of any test: a
 	// build error, a panic that took the process down, a timeout. Kept apart
 	// from FailedTests because it is not a test and must not be counted as
@@ -70,6 +79,15 @@ type IntegrationResult struct {
 // against the telemetry line's wall figure when the suite grows.
 const integrationTestTimeout = "30m"
 
+const (
+	// socketOverrideEnv tells Ryuk where the daemon socket lives *inside* the
+	// VM, which is not where the host reaches it.
+	socketOverrideEnv = "TESTCONTAINERS_DOCKER_SOCKET_OVERRIDE"
+	inVMDockerSocket  = "/var/run/docker.sock"
+
+	integrationSuiteDir = "tests/integration"
+)
+
 // infraBannerMarker is the label the integration harness stamps on every
 // infrastructure fault (classifyExecOutcome and infraLatch in
 // tests/integration). Matching output on it is what lets this dashboard tell
@@ -77,27 +95,21 @@ const integrationTestTimeout = "30m"
 const infraBannerMarker = "INFRASTRUCTURE FAILURE"
 
 // Integration runs integration tests
-func Integration(verbose bool) error {
+func Integration(ctx context.Context, verbose bool) error {
 	runStart := time.Now()
 	ui.Section("Running Integration Tests")
 
-	// Clean up any orphaned test containers from previous runs
+	if err := prepareDaemon(ctx); err != nil {
+		return reportDaemonRefusal(runStart, err)
+	}
+
+	// Prune orphans on the resolved daemon, after the daemon is chosen: this
+	// used to run against whatever DOCKER_HOST happened to say, which is the
+	// shared daemon other people's containers live on.
 	ui.Task("Cleaning", "orphaned test containers")
-	cleanCmd := exec.Command("docker", "container", "prune", "-f", "--filter", "label=org.testcontainers=true")
+	cleanCmd := exec.CommandContext(ctx, "docker", "container", "prune", "-f", "--filter", "label=org.testcontainers=true")
 	cleanCmd.Run() // Ignore errors - Docker might not be available
 	ui.TaskPass()
-
-	// Set up Docker environment for Colima compatibility
-	dockerHost := os.Getenv("DOCKER_HOST")
-	if dockerHost == "" {
-		// Try Colima's default socket path
-		colimaSocket := filepath.Join(os.Getenv("HOME"), ".colima", "default", "docker.sock")
-		if _, err := os.Stat(colimaSocket); err == nil {
-			os.Setenv("DOCKER_HOST", "unix://"+colimaSocket)
-		}
-	}
-	// Override Docker socket path for Ryuk inside Colima VM
-	os.Setenv("TESTCONTAINERS_DOCKER_SOCKET_OVERRIDE", "/var/run/docker.sock")
 
 	// Build Linux binary for Docker-based integration tests
 	ui.Task("Building", "Linux binary for Docker tests")
@@ -106,7 +118,7 @@ func Integration(verbose bool) error {
 		return camperrors.Newf("failed to create bin/linux directory: %w", err)
 	}
 
-	cmd := exec.Command("go", "build", "-ldflags", "-s -w", "-o", "bin/linux/camp", "./cmd/camp")
+	cmd := exec.CommandContext(ctx, "go", "build", "-ldflags", "-s -w", "-o", "bin/linux/camp", "./cmd/camp")
 	cmd.Env = append(os.Environ(), "GOOS=linux", "GOARCH="+runtime.GOARCH)
 	if verbose {
 		cmd.Stdout = os.Stdout
@@ -137,9 +149,9 @@ func Integration(verbose bool) error {
 
 	// Run each test suite
 	for i, suite := range suites {
-		name := strings.TrimPrefix(suite, "tests/integration/")
+		name := strings.TrimPrefix(suite, integrationSuiteDir+"/")
 		if name == "" {
-			name = "tests/integration"
+			name = integrationSuiteDir
 		}
 
 		start := time.Now()
@@ -148,21 +160,26 @@ func Integration(verbose bool) error {
 		var suiteError string
 		tally := newIntegrationTally()
 
-		dockerEnv := append(os.Environ(),
-			"TESTCONTAINERS_DOCKER_SOCKET_OVERRIDE=/var/run/docker.sock",
-		)
+		dockerEnv := append(os.Environ(), socketOverrideEnv+"="+inVMDockerSocket)
 
 		if verbose {
-			// In verbose mode, show output directly
-			cmd := exec.Command("go", "test", "-count=1", "-v", "-tags", "integration", "-timeout", integrationTestTimeout, "./"+suite)
+			// No JSON events here, so the raw banner is the only signal that
+			// the run did not happen.
+			cmd := exec.CommandContext(ctx, "go", "test", "-count=1", "-v", "-tags", "integration", "-timeout", integrationTestTimeout, "./"+suite)
 			cmd.Env = dockerEnv
-			cmd.Stdout = os.Stdout
-			cmd.Stderr = os.Stderr
+			watcher := &bannerWatcher{}
+			cmd.Stdout = io.MultiWriter(os.Stdout, watcher)
+			cmd.Stderr = io.MultiWriter(os.Stderr, watcher)
 			ui.Progress(i+1, total, fmt.Sprintf("Testing %s", name))
 			pass = cmd.Run() == nil
+			if refused, reason := watcher.refusal(); refused {
+				tally.infraPackage = true
+				tally.infraReason = reason
+				pass = false
+			}
 		} else {
 			// Run with -json for real-time progress
-			cmd := exec.Command("go", "test", "-count=1", "-json", "-tags", "integration", "-timeout", integrationTestTimeout, "./"+suite)
+			cmd := exec.CommandContext(ctx, "go", "test", "-count=1", "-json", "-tags", "integration", "-timeout", integrationTestTimeout, "./"+suite)
 			cmd.Env = dockerEnv
 			stdout, err := cmd.StdoutPipe()
 			if err != nil {
@@ -261,7 +278,7 @@ func Integration(verbose bool) error {
 			scanErr := scanner.Err()
 			waitErr := cmd.Wait()
 
-			suiteError = classifyRunFailure(scanErr, waitErr, tally.testsFailed, tally.packageFailed)
+			suiteError = classifyRunFailure(scanErr, waitErr, tally.testsFailed, tally.packageFailed, tally.infraPackage)
 			// A collapsed suite is not a pass even when nothing that ran
 			// failed: most of it never ran.
 			pass = tally.testsFailed == 0 && suiteError == "" && !tally.collapsed()
@@ -272,6 +289,7 @@ func Integration(verbose bool) error {
 
 		results = append(results, IntegrationResult{
 			Suite:        name,
+			InfraReason:  tally.infraReason,
 			Pass:         pass,
 			Duration:     duration,
 			TestsPassed:  tally.testsPassed,
@@ -294,6 +312,12 @@ func Integration(verbose bool) error {
 
 	if !s.success {
 		if s.collapsed {
+			// Same words as the card: a reader comparing the two must not have
+			// to work out whether they describe one event or two.
+			if s.neverRan == 0 {
+				return camperrors.New(
+					"integration run did not happen: infrastructure failure (the suite never started)")
+			}
 			return camperrors.Newf(
 				"integration run did not happen: infrastructure failure (%d tests never ran)",
 				s.neverRan)
@@ -302,6 +326,52 @@ func Integration(verbose bool) error {
 	}
 
 	return nil
+}
+
+// prepareDaemon chooses the Docker daemon this run uses and publishes it, so
+// the test binary inherits the decision instead of making its own.
+//
+// The suite used to run wherever DOCKER_HOST already pointed, which on a
+// development machine is the general-purpose Colima profile shared with
+// whatever else is running. Its container pool then sized itself as if it
+// owned that VM. Choosing the daemon here, out loud, is what makes the pool's
+// capacity assumption true rather than hopeful.
+func prepareDaemon(ctx context.Context) error {
+	resolution, err := itestenv.Resolve(ctx, itestenv.Options{AutoStart: true, Out: os.Stdout})
+	if err != nil {
+		return camperrors.Wrap(err, "resolve the integration Docker daemon")
+	}
+	if resolution.Source == itestenv.SourceFallback {
+		ui.Warning(resolution.Line())
+	} else {
+		fmt.Printf("  %s\n", resolution.Line())
+	}
+	if resolution.DockerHost != "" {
+		if err := os.Setenv(itestenv.DockerHostVar, resolution.DockerHost); err != nil {
+			return camperrors.Wrapf(err, "publish %s for the integration run", itestenv.DockerHostVar)
+		}
+	}
+	if err := os.Setenv(socketOverrideEnv, inVMDockerSocket); err != nil {
+		return camperrors.Wrapf(err, "publish %s for the integration run", socketOverrideEnv)
+	}
+	return nil
+}
+
+// reportDaemonRefusal renders a daemon that could not be prepared as the same
+// non-run verdict the suite prints when it refuses one itself.
+func reportDaemonRefusal(runStart time.Time, cause error) error {
+	summary := summarizeIntegration([]IntegrationResult{{
+		Suite:       integrationSuiteDir,
+		Collapsed:   true,
+		InfraReason: infraBannerMarker + " (not a test failure): " + cause.Error(),
+	}}, ui.ColourEnabled())
+	ui.SummaryCardWithStatus("Integration Test Summary", summary.rows,
+		fmt.Sprintf("%.2fs", time.Since(runStart).Seconds()),
+		summary.success, summary.successMsg, summary.failMsg)
+	return camperrors.Newf(
+		"integration run did not happen: infrastructure failure (the suite never started): %w. "+
+			"Repair the daemon with '%s' or inspect it with '%s'",
+		cause, itestenv.StartCommand, itestenv.DoctorCommand)
 }
 
 // surfaceTelemetry prints the harness's capacity record for this run beneath
@@ -333,232 +403,6 @@ func latestTelemetryRecord(data []byte) string {
 		return ""
 	}
 	return strings.TrimSpace(lines[len(lines)-1])
-}
-
-// integrationTally reduces the go test -json event stream for one suite into
-// the counts and classifications the summary renders. Kept apart from the
-// display loop so its behavior is testable without a terminal or a daemon.
-type integrationTally struct {
-	testsPassed, testsFailed, testsSkipped int
-	failedTests                            []string // failures of the code under test (rerunnable)
-	infraTests                             []string // failures carrying the infrastructure banner
-	infraSkipped                           int
-	packageFailed                          bool
-	sawBanner                              map[string]bool
-}
-
-func newIntegrationTally() *integrationTally {
-	return &integrationTally{sawBanner: make(map[string]bool)}
-}
-
-func (ta *integrationTally) observe(event integrationTestEvent) {
-	if event.Action == "output" && event.Test != "" &&
-		strings.Contains(event.Output, infraBannerMarker) {
-		ta.sawBanner[event.Test] = true
-	}
-
-	if event.Test == "" {
-		// A fail with no test name is the package failing as a whole: a
-		// panic outside a test, a TestMain that exited non-zero, output
-		// arriving after a test finished.
-		//
-		// Dropping these is why a run could report every test passing and
-		// still exit non-zero, leaving the only evidence as "go test exited:
-		// exit status 1" with nothing to attribute it to. The package is not
-		// a test, so it is recorded as a run-level failure.
-		if event.Action == "fail" {
-			ta.packageFailed = true
-		}
-		return
-	}
-
-	topLevel := !strings.Contains(event.Test, "/")
-	switch event.Action {
-	case "pass":
-		if topLevel {
-			ta.testsPassed++
-		}
-	case "fail":
-		// Track all failed tests (including subtests), split by whether the
-		// failure carried the infrastructure banner.
-		if ta.sawBanner[event.Test] {
-			ta.infraTests = append(ta.infraTests, event.Test)
-		} else {
-			ta.failedTests = append(ta.failedTests, event.Test)
-		}
-		if topLevel {
-			ta.testsFailed++
-		}
-	case "skip":
-		if topLevel {
-			ta.testsSkipped++
-			if ta.sawBanner[event.Test] {
-				ta.infraSkipped++
-			}
-		}
-	}
-}
-
-func (ta *integrationTally) total() int {
-	return ta.testsPassed + ta.testsFailed + ta.testsSkipped
-}
-
-// collapsed reports whether this suite's numbers are a verdict or a non-run.
-// Any latch-driven skip means the harness itself declared the run dead. The
-// percentage backstop catches a collapse whose banner never got attributed
-// (e.g. output interleaving): mass skipping is this harness's
-// infrastructure-death signature, while legitimate skips are a handful
-// (currently 8 of ~915). The absolute floor keeps a small suite with a
-// couple of ordinary skips from tripping it.
-func (ta *integrationTally) collapsed() bool {
-	if ta.infraSkipped > 0 {
-		return true
-	}
-	return ta.testsSkipped >= 10 && ta.testsSkipped*5 > ta.total()
-}
-
-// runSummary is the fully-rendered verdict for a set of suite results.
-type runSummary struct {
-	rows         [][]string
-	totalTime    time.Duration
-	success      bool
-	successMsg   string
-	failMsg      string
-	collapsed    bool
-	neverRan     int
-	failedSuites int
-}
-
-// summarizeIntegration reduces per-suite results into the final card. Pure so
-// the property that matters most stays testable: a collapsed run must never
-// render as a table of broken tests. The 2026-08-10 incident rendered six
-// daemon casualties as six ✗ FAILED rows over an 871-test skip, and the
-// reader went debugging product code that was fine.
-func summarizeIntegration(results []IntegrationResult, colour bool) runSummary {
-	var s runSummary
-	totalPassed, totalFailed, totalSkipped := 0, 0, 0
-	for _, r := range results {
-		s.totalTime += r.Duration
-		totalPassed += r.TestsPassed
-		totalFailed += r.TestsFailed
-		totalSkipped += r.TestsSkipped
-		if !r.Pass {
-			s.failedSuites++
-		}
-		if r.Collapsed {
-			s.collapsed = true
-			s.neverRan += r.TestsSkipped
-		}
-	}
-	totalTests := totalPassed + totalFailed + totalSkipped
-
-	paint := func(label, colourCode string) string {
-		if colour {
-			return colourCode + label + ui.Reset
-		}
-		return label
-	}
-
-	for _, r := range results {
-		if r.Pass {
-			continue
-		}
-		for _, testName := range r.FailedTests {
-			s.rows = append(s.rows, []string{testName, paint("✗ FAILED", ui.Red), ""})
-		}
-		// Daemon casualties are listed for completeness but labelled so
-		// nobody debugs the code they name.
-		for _, testName := range r.InfraTests {
-			s.rows = append(s.rows, []string{testName, paint("✗ INFRA", ui.Yellow), ""})
-		}
-		// A run-level failure gets its own row, labelled so it cannot be
-		// mistaken for a test someone could go and rerun.
-		if r.SuiteError != "" {
-			s.rows = append(s.rows, []string{
-				fmt.Sprintf("%s: %s", r.Suite, r.SuiteError), paint("✗ SUITE", ui.Red), ""})
-		}
-	}
-	if s.collapsed {
-		s.rows = append(s.rows, []string{
-			"Docker daemon out of headroom - rerun on an idle machine, or lower CAMP_TEST_POOL_SIZE",
-			paint("✗ NON-RUN", ui.Red), ""})
-	}
-
-	if len(s.rows) > 0 {
-		s.rows = append([][]string{{"Failed Test", "Status", ""}}, s.rows...)
-	}
-
-	totalStatus := testTally(totalPassed, totalTests, totalSkipped)
-	if colour {
-		if totalFailed > 0 || s.collapsed {
-			totalStatus = ui.Red + totalStatus + ui.Reset
-		} else {
-			totalStatus = ui.Green + totalStatus + ui.Reset
-		}
-	}
-	s.rows = append(s.rows, []string{
-		fmt.Sprintf("%d suites", len(results)),
-		totalStatus,
-		fmt.Sprintf("%.2fs", s.totalTime.Seconds()),
-	})
-
-	s.success = s.failedSuites == 0 && !s.collapsed
-	s.successMsg = fmt.Sprintf("✓ ALL %d TESTS PASSED", totalPassed)
-	if s.collapsed {
-		// The headline of a daemon incident is the incident, never a test
-		// table: these numbers describe a run that did not happen.
-		s.failMsg = fmt.Sprintf("✗ RUN DID NOT HAPPEN - INFRASTRUCTURE FAILURE (%d tests never ran)", s.neverRan)
-	} else {
-		s.failMsg = fmt.Sprintf("✗ %d/%d TESTS FAILED", totalFailed, totalTests)
-	}
-	return s
-}
-
-// testTally renders the headline count most people read instead of the run.
-//
-// Skips are in the denominator, and called out when there are any, because
-// this harness expresses infrastructure death as skips: once the container
-// pool stops resetting, every later test t.Skips (see TestMain in
-// tests/integration). Counting only pass and fail made the denominator shrink
-// to whatever ran, so a run that collapsed after 44 of 905 tests reported
-// "23/44 tests passed" beside 21 red rows. That reads as a branch that broke
-// 21 tests. It was a run that never happened, and the 21 all pass on an idle
-// machine.
-func testTally(passed, total, skipped int) string {
-	tally := fmt.Sprintf("%d/%d tests passed", passed, total)
-	if skipped > 0 {
-		tally += fmt.Sprintf(" (%d skipped)", skipped)
-	}
-	return tally
-}
-
-// classifyRunFailure decides whether a `go test` process failure is news, and
-// returns the line describing it, or "" when it is not.
-//
-// A non-zero exit is how `go test` reports that a test failed, so recording it
-// as a failure of its own double-counts every real one: a single broken test
-// was summarized as "2/734 tests failed", and the extra row read "go test
-// exited: exit status 1", which is not a test, cannot be looked up, and cannot
-// be rerun. Anyone reading that goes looking for a second broken test that
-// does not exist.
-//
-// The exit only carries information when no test claimed the failure. That is
-// a build error, a panic that took the process down, or a timeout, and then it
-// is the only evidence there is, so it has to be surfaced. Still not as a test.
-func classifyRunFailure(scanErr, waitErr error, testsFailed int, packageFailed bool) string {
-	switch {
-	case scanErr != nil:
-		return fmt.Sprintf("could not read test output: %v", scanErr)
-	case packageFailed && testsFailed == 0:
-		return "the test package failed with no failing test: a panic outside " +
-			"a test, a TestMain that exited non-zero, or output after a test " +
-			"finished. Rerun with 'just test integration-verbose' to see it."
-	case waitErr != nil && testsFailed == 0:
-		return fmt.Sprintf("go test exited without reporting a failing test "+
-			"(build error, panic, or timeout): %v", waitErr)
-	default:
-		return ""
-	}
 }
 
 // discoverIntegrationSuites finds all integration test directories

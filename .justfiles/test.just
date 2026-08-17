@@ -53,6 +53,20 @@ bench-verbose:
 integration:
     @{{BUILDTOOL}} integration
 
+# Report whether this machine can run the integration suite: which Docker
+# daemon the suite would use, whether it answers fast enough, what else is
+# running on it, and whether another run holds the suite lock. Read-only.
+[no-cd]
+integration-doctor:
+    @{{BUILDTOOL}} integration-doctor
+
+# Create or boot the dedicated camp-itest Colima profile the suite runs on.
+# The suite does this on demand too; run it by hand to pay the VM boot before
+# a timed run, or to repair the profile after stopping it.
+[no-cd]
+daemon-start:
+    @{{BUILDTOOL}} integration-doctor start
+
 # Run integration tests with verbose output (standard go test)
 #
 # The timeout is generous on purpose. A timeout reports as `FAIL <pkg> Ns`
@@ -68,11 +82,17 @@ integration-verbose:
     mkdir -p bin/linux
     GOOS=linux GOARCH=$(go env GOARCH) go build -o bin/linux/camp ./cmd/camp
     echo "Running container-based integration tests (verbose)..."
-    DOCKER_HOST="unix://${HOME}/.colima/default/docker.sock" \
+    # No DOCKER_HOST here on purpose: the harness resolves the dedicated
+    # camp-itest profile itself (and says so), so this lane cannot silently
+    # run against the shared daemon while the dashboard lane runs isolated.
     TESTCONTAINERS_DOCKER_SOCKET_OVERRIDE=/var/run/docker.sock \
-    go test -v -tags=integration ./tests/integration/... -timeout 30m 2>&1
+    go test -count=1 -v -tags=integration ./tests/integration/... -timeout 30m 2>&1
 
 # Run a specific integration test
+#
+# -count=1 because a cached PASS here is the worst kind of green: go's test
+# cache will replay a previous result without starting a container, so the run
+# reports success for work it never did.
 [no-cd]
 integration-run TEST:
     #!/usr/bin/env bash
@@ -81,9 +101,8 @@ integration-run TEST:
     mkdir -p bin/linux
     GOOS=linux GOARCH=$(go env GOARCH) go build -o bin/linux/camp ./cmd/camp
     echo "Running integration test: {{TEST}}"
-    DOCKER_HOST="unix://${HOME}/.colima/default/docker.sock" \
     TESTCONTAINERS_DOCKER_SOCKET_OVERRIDE=/var/run/docker.sock \
-    go test -v -tags=integration ./tests/integration/... -run "{{TEST}}" -timeout 5m
+    go test -count=1 -v -tags=integration ./tests/integration/... -run "{{TEST}}" -timeout 5m
 
 # Build Linux binary for integration tests (useful for debugging)
 [no-cd]

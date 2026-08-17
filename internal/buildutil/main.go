@@ -2,6 +2,7 @@
 package main
 
 import (
+	"context"
 	"flag"
 	"fmt"
 	"log"
@@ -19,6 +20,10 @@ var (
 	verbose bool
 )
 
+// doctorStartArg turns the read-only daemon report into the one command that
+// changes the machine.
+const doctorStartArg = "start"
+
 func main() {
 	flag.BoolVar(&noColor, "no-color", false, "disable ANSI colours")
 	flag.BoolVar(&verbose, "v", false, "verbose output")
@@ -28,11 +33,12 @@ func main() {
 	ui.Init(noColor)
 
 	if flag.NArg() == 0 {
-		log.Fatalf("usage: buildutil <build|build-only|test|integration|clean|all>")
+		log.Fatalf("usage: buildutil <build|build-only|test|integration|integration-doctor [start]|clean|all>")
 	}
 
 	cmd := flag.Arg(0)
 	startTime := time.Now()
+	ctx := context.Background()
 
 	// Hide cursor during operations
 	if ui.ColourEnabled() {
@@ -53,7 +59,12 @@ func main() {
 		err = tasks.Test(verbose)
 
 	case "integration":
-		err = tasks.Integration(verbose)
+		err = tasks.Integration(ctx, verbose)
+
+	case "integration-doctor":
+		// `integration-doctor start` is the only writing form: it creates or
+		// boots the dedicated profile. Bare, the command only reports.
+		err = tasks.IntegrationDoctor(ctx, flag.Arg(1) == doctorStartArg)
 
 	case "clean":
 		err = tasks.Clean(verbose)
@@ -81,7 +92,7 @@ func main() {
 		}
 
 		fmt.Println("\n🔗 Integration Testing...")
-		if integrationErr := tasks.Integration(verbose); integrationErr != nil {
+		if integrationErr := tasks.Integration(ctx, verbose); integrationErr != nil {
 			errors = append(errors, camperrors.Newf("integration tests failed: %w", integrationErr))
 		}
 

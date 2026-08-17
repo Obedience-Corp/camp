@@ -6,9 +6,6 @@ import (
 	"bytes"
 	"context"
 	"fmt"
-	"io"
-	"net"
-	"net/http"
 	"net/url"
 	"os"
 	"os/exec"
@@ -17,9 +14,14 @@ import (
 	"sync"
 	"syscall"
 	"time"
+
+	"github.com/Obedience-Corp/camp/internal/buildutil/itestenv"
 )
 
-const colimaTransportStartupTimeout = 10 * time.Second
+const (
+	colimaTransportStartupTimeout = 10 * time.Second
+	tunnelPingTimeout             = 500 * time.Millisecond
+)
 
 // startDedicatedColimaDockerTransport isolates the integration suite's Docker
 // traffic from Colima's lifecycle ControlMaster. Lima normally forwards
@@ -88,7 +90,7 @@ func startDedicatedColimaDockerTransport() (func(), error) {
 
 	deadline := time.Now().Add(colimaTransportStartupTimeout)
 	for {
-		if err := pingDockerSocket(socket); err == nil {
+		if err := pingTunnel(socket); err == nil {
 			break
 		}
 		select {
@@ -149,27 +151,13 @@ func colimaSSHConfig(dockerHost string) (config, host string, ok bool) {
 	return filepath.Join(colimaHome, "_lima", instance, "ssh.config"), "lima-" + instance, true
 }
 
-func pingDockerSocket(socket string) error {
-	transport := &http.Transport{
-		DialContext: func(ctx context.Context, _, _ string) (net.Conn, error) {
-			return (&net.Dialer{Timeout: 200 * time.Millisecond}).DialContext(ctx, "unix", socket)
-		},
-	}
-	defer transport.CloseIdleConnections()
-	client := &http.Client{Transport: transport, Timeout: 500 * time.Millisecond}
-	response, err := client.Get("http://docker/_ping")
-	if err != nil {
-		return err
-	}
-	defer response.Body.Close()
-	body, err := io.ReadAll(response.Body)
-	if err != nil {
-		return err
-	}
-	if response.StatusCode != http.StatusOK || strings.TrimSpace(string(body)) != "OK" {
-		return fmt.Errorf("Docker ping returned %s: %s", response.Status, strings.TrimSpace(string(body)))
-	}
-	return nil
+// pingTunnel checks whether the freshly started tunnel is carrying Docker API
+// traffic yet. The budget is short because this runs in a startup poll loop:
+// a socket that is not listening yet must be retried, not waited on.
+func pingTunnel(socket string) error {
+	ctx, cancel := context.WithTimeout(context.Background(), tunnelPingTimeout)
+	defer cancel()
+	return itestenv.Ping(ctx, "unix://"+socket)
 }
 
 // raiseOpenFileLimitForChild temporarily raises this process's soft descriptor

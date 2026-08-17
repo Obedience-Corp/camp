@@ -28,6 +28,7 @@ func TestClassifyRunFailure(t *testing.T) {
 		waitErr       error
 		testsFailed   int
 		packageFailed bool
+		infraPackage  bool
 		want          string // "" means the run failure is not news
 		wantContain   string
 	}{
@@ -77,6 +78,16 @@ func TestClassifyRunFailure(t *testing.T) {
 			want:          "",
 		},
 		{
+			// The harness printed its own infrastructure banner, which the
+			// summary renders as the non-run verdict. Reporting the exit as
+			// well invents a second incident out of the same one.
+			name:          "an infrastructure refusal speaks for itself",
+			waitErr:       errExitStatus1,
+			packageFailed: true,
+			infraPackage:  true,
+			want:          "",
+		},
+		{
 			// Output we could not read means the counts themselves are
 			// suspect, so it is reported even when tests did fail.
 			name:        "unreadable output is surfaced regardless of counts",
@@ -90,7 +101,7 @@ func TestClassifyRunFailure(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			t.Parallel()
-			got := classifyRunFailure(tt.scanErr, tt.waitErr, tt.testsFailed, tt.packageFailed)
+			got := classifyRunFailure(tt.scanErr, tt.waitErr, tt.testsFailed, tt.packageFailed, tt.infraPackage)
 			if tt.wantContain != "" {
 				if !strings.Contains(got, tt.wantContain) {
 					t.Fatalf("classifyRunFailure() = %q, want it to mention %q",
@@ -163,7 +174,7 @@ func TestTestTally(t *testing.T) {
 func TestClassifyRunFailureNeverLooksLikeATestName(t *testing.T) {
 	t.Parallel()
 
-	got := classifyRunFailure(nil, errExitStatus1, 0, false)
+	got := classifyRunFailure(nil, errExitStatus1, 0, false, false)
 	if got == "" {
 		t.Fatal("an unexplained exit must be surfaced")
 	}
