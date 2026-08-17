@@ -2,11 +2,11 @@ package config
 
 import (
 	"context"
-	"os"
 	"path/filepath"
 	"strings"
 
 	camperrors "github.com/Obedience-Corp/camp/internal/errors"
+	"github.com/Obedience-Corp/camp/internal/pathutil"
 )
 
 // ResolvedCampaignsDir returns the absolute path for the campaigns directory.
@@ -27,7 +27,7 @@ func (c *GlobalConfig) ResolvedCampaignsDir(ctx context.Context) (string, error)
 		if err := ctx.Err(); err != nil {
 			return "", err
 		}
-		home, err := os.UserHomeDir()
+		home, err := pathutil.Home()
 		if err != nil {
 			return "", camperrors.Wrap(err, "resolving $HOME for campaigns_dir")
 		}
@@ -37,7 +37,7 @@ func (c *GlobalConfig) ResolvedCampaignsDir(ctx context.Context) (string, error)
 		if err := ctx.Err(); err != nil {
 			return "", err
 		}
-		home, err := os.UserHomeDir()
+		home, err := pathutil.Home()
 		if err != nil {
 			return "", camperrors.Wrap(err, "resolving $HOME for relative campaigns_dir")
 		}

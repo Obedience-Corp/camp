@@ -2,6 +2,9 @@ package settings
 
 import (
 	"context"
+	"path/filepath"
+	"strconv"
+	"strings"
 	"testing"
 )
 
@@ -184,5 +187,24 @@ func TestSettingEntry_EditableListable(t *testing.T) {
 		if got := e.Listable(); got != tt.wantListable {
 			t.Errorf("Edit %d Listable() = %v, want %v", tt.edit, got, tt.wantListable)
 		}
+	}
+}
+
+// Secret entries are display-only, but a blank HOME must still not turn their
+// paths into working-directory-relative ones: the settings surface would then
+// name a file that is not the operator's real secret file. Both blank forms
+// fall back to the "~" placeholder the display path is meant to use.
+func TestSecretEntries_BlankHomeFallsBackToTilde(t *testing.T) {
+	for _, home := range []string{"", "   "} {
+		t.Run("home="+strconv.Quote(home), func(t *testing.T) {
+			t.Setenv("HOME", home)
+			t.Setenv("USERPROFILE", home)
+
+			for _, e := range secretEntries() {
+				if !strings.HasPrefix(e.Path, "~"+string(filepath.Separator)) {
+					t.Errorf("secret %q path = %q, want a ~/ display path", e.ID, e.Path)
+				}
+			}
+		})
 	}
 }

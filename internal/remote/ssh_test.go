@@ -7,6 +7,7 @@ import (
 	"os/exec"
 	"path/filepath"
 	"slices"
+	"strconv"
 	"strings"
 	"testing"
 
@@ -441,5 +442,23 @@ func TestCompactSSHStderr(t *testing.T) {
 	}
 	if got := compactSSHStderr("single line"); got != "single line" {
 		t.Errorf("single line = %q", got)
+	}
+}
+
+// A blank HOME is not a home directory, so ~ stays unexpanded and ssh gets the
+// literal path to resolve itself. Expanding against a blank home would hand ssh
+// a relative IdentityFile resolved from the operator's working directory.
+func TestExpandTildeLeavesPathAloneWithBlankHome(t *testing.T) {
+	for _, home := range []string{"", "   "} {
+		t.Run("home="+strconv.Quote(home), func(t *testing.T) {
+			t.Setenv("HOME", home)
+			t.Setenv("USERPROFILE", home)
+
+			for _, in := range []string{"~", "~/.ssh/id_ed25519"} {
+				if got := expandTilde(in); got != in {
+					t.Errorf("expandTilde(%q) = %q, want it unchanged with no usable home", in, got)
+				}
+			}
+		})
 	}
 }

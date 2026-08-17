@@ -9,6 +9,7 @@ import (
 
 	camperrors "github.com/Obedience-Corp/camp/internal/errors"
 	"github.com/Obedience-Corp/camp/internal/fsutil"
+	"github.com/Obedience-Corp/camp/internal/pathutil"
 )
 
 // A probe costs an ssh round-trip and a process launch, and the answer changes
@@ -51,12 +52,17 @@ func (e cacheEntry) fresh(now time.Time) bool {
 
 // CachePath returns the probe cache location, alongside the other
 // machine-adjacent state in ~/.obey (XDG_CONFIG_HOME when set, matching
-// machines.MachinesPath).
+// machines.MachinesPath). An unresolvable home returns "", which disables
+// caching (see Prober.path): this is a derived cache, so no location means
+// re-probe, never a path relative to the working directory. It resolves through
+// pathutil.Home so a blank HOME counts as "no home" here too. The stdlib
+// resolver accepts whitespace as a real answer, and joining onto it yields a
+// relative path that store would MkdirAll under the cwd.
 func CachePath() string {
 	if xdg := os.Getenv("XDG_CONFIG_HOME"); xdg != "" {
 		return filepath.Join(xdg, "obey", "rsync-probe.json")
 	}
-	home, err := os.UserHomeDir()
+	home, err := pathutil.Home()
 	if err != nil {
 		return ""
 	}

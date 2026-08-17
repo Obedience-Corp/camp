@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"os"
 	"path/filepath"
+	"strconv"
 	"testing"
 	"time"
 
@@ -250,5 +251,39 @@ func TestCachedRespectsContextCancellation(t *testing.T) {
 	}
 	if probe.calls != 0 {
 		t.Errorf("probe ran %d times under a cancelled context, want 0", probe.calls)
+	}
+}
+
+// A blank HOME is not a home directory. The stdlib resolver accepts it, and
+// joining onto it yields a relative path that store would MkdirAll under the
+// working directory, scattering ~/.obey state through the user's tree. With no
+// resolvable location this cache is simply disabled: a miss, a re-probe, and no
+// writes anywhere.
+func TestCachePathDisabledWithoutUsableHome(t *testing.T) {
+	for _, home := range []string{"", "   "} {
+		t.Run("home="+strconv.Quote(home), func(t *testing.T) {
+			t.Chdir(t.TempDir())
+			t.Setenv("XDG_CONFIG_HOME", "")
+			t.Setenv("HOME", home)
+			t.Setenv("USERPROFILE", home)
+
+			if got := CachePath(); got != "" {
+				t.Fatalf("CachePath() = %q, want \"\" (caching disabled)", got)
+			}
+
+			p := NewProber(false)
+			if _, ok := p.lookup(localKey); ok {
+				t.Error("lookup() reported a hit with caching disabled")
+			}
+			p.store(localKey, Engine{Kind: KindRsync, Protocol: 32})
+
+			entries, err := os.ReadDir(".")
+			if err != nil {
+				t.Fatal(err)
+			}
+			for _, e := range entries {
+				t.Errorf("store() wrote %q into the working directory", e.Name())
+			}
+		})
 	}
 }

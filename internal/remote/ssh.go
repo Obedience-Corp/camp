@@ -139,13 +139,13 @@ func FormatHopFailure(err error, m *machines.Machine) string {
 // be determined, the original path is returned so ssh still sees something.
 func expandTilde(path string) string {
 	if path == "~" {
-		if home, err := os.UserHomeDir(); err == nil {
+		if home, err := pathutil.Home(); err == nil {
 			return home
 		}
 		return path
 	}
 	if strings.HasPrefix(path, "~/") {
-		if home, err := os.UserHomeDir(); err == nil {
+		if home, err := pathutil.Home(); err == nil {
 			return filepath.Join(home, path[len("~/"):])
 		}
 	}

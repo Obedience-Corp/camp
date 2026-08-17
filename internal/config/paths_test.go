@@ -1,8 +1,10 @@
 package config
 
 import (
+	"context"
 	"os"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"testing"
 )
@@ -125,5 +127,46 @@ func TestConfigDir_XDGWinsWithoutHome(t *testing.T) {
 	}
 	if want := filepath.Join(dir, OrgName, AppName); got != want {
 		t.Errorf("ConfigDir() = %q, want %q", got, want)
+	}
+}
+
+// campaigns_dir is where `camp create` puts the campaign itself. A blank HOME
+// expands "~/campaigns" to a relative path, and the "still relative" repair step
+// then joins it onto the same blank home again, so the campaign lands in
+// ./<blank>/<blank>/campaigns under the invoking directory. Refuse instead.
+func TestResolvedCampaignsDir_NoUsableHomeIsAnError(t *testing.T) {
+	for _, home := range []string{"", "   "} {
+		t.Run("home="+strconv.Quote(home), func(t *testing.T) {
+			t.Setenv("HOME", home)
+			t.Setenv("USERPROFILE", home)
+
+			cfg := DefaultGlobalConfig()
+			got, err := cfg.ResolvedCampaignsDir(context.Background())
+			if err == nil {
+				t.Fatalf("ResolvedCampaignsDir() = %q, want an error with no usable home", got)
+			}
+			if got != "" {
+				t.Errorf("ResolvedCampaignsDir() = %q, want empty path alongside the error", got)
+			}
+		})
+	}
+}
+
+// An absolute campaigns_dir never consults the home directory, so it keeps
+// working where HOME does not exist.
+func TestResolvedCampaignsDir_AbsoluteNeedsNoHome(t *testing.T) {
+	t.Setenv("HOME", "")
+	t.Setenv("USERPROFILE", "")
+
+	want := t.TempDir()
+	cfg := DefaultGlobalConfig()
+	cfg.CampaignsDir = want
+
+	got, err := cfg.ResolvedCampaignsDir(context.Background())
+	if err != nil {
+		t.Fatalf("ResolvedCampaignsDir() error = %v", err)
+	}
+	if got != want {
+		t.Errorf("ResolvedCampaignsDir() = %q, want %q", got, want)
 	}
 }
