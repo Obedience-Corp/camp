@@ -284,6 +284,75 @@ func TestExhaustedJobIsParkedInFailed(t *testing.T) {
 	}
 }
 
+// A worker told to stop mid-job records no verdict on the job it was running.
+//
+// Cancellation kills the message writer and every git subprocess it started, so
+// the error the job returns describes the shutdown rather than the work.
+// Parking it spends the job's one recorded attempt on nothing, and a
+// commit-tree job whose parent later stops being HEAD is then unretryable
+// forever: the user is told a commit failed, offered a retry that cannot work,
+// and left to notice the missing commit themselves.
+func TestCancelledJobIsLeftForReclaimNotParkedInFailed(t *testing.T) {
+	withFastTiming(t, time.Millisecond, time.Millisecond)
+	root := testCampaign(t)
+	ctx, cancel := context.WithCancel(context.Background())
+	t.Cleanup(cancel)
+
+	job, err := Enqueue(ctx, root, Job{
+		Kind: KindCommitPaths, Repo: ".", Paths: []string{"a.md"},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	// The shape of the real failure: SIGTERM reaches the detached worker while
+	// the commit message writer is mid-generation, so exec.CommandContext kills
+	// the writer and the job returns the cancellation rather than a verdict.
+	origExecute := executeJob
+	executeJob = func(ctx context.Context, _ string, _ *Job) error {
+		cancel()
+		return ctx.Err()
+	}
+	t.Cleanup(func() { executeJob = origExecute })
+
+	runLane(ctx, root, ".")
+
+	if failed, err := List(root, stateFailed, "."); err != nil {
+		t.Fatal(err)
+	} else if len(failed) != 0 {
+		t.Errorf("%d jobs parked in failed/, want 0: a cancelled worker must not "+
+			"record a verdict on the job it was running", len(failed))
+	}
+
+	running, err := List(root, stateRunning, ".")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(running) != 1 || running[0].ID != job.ID {
+		t.Fatalf("running lane = %+v, want the cancelled job %s left for reclaim",
+			running, job.ID)
+	}
+
+	// Reclaim is the path that picks it up, the same one a worker that died
+	// outright takes: back to pending with the attempt counted and bounded.
+	time.Sleep(2 * time.Millisecond)
+	n, err := Reclaim(context.Background(), root, ".", laneLiveness)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if n != 1 {
+		t.Fatalf("Reclaim() = %d, want 1: the cancelled job must come back", n)
+	}
+	pending, err := List(root, statePending, ".")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(pending) != 1 || pending[0].Attempts != 1 {
+		t.Errorf("pending after reclaim = %+v, want the job requeued with attempts=1",
+			pending)
+	}
+}
+
 // A campaign with nothing queued does no work and reports no error.
 func TestRunOnAnEmptyQueueIsANoOp(t *testing.T) {
 	root := testCampaign(t)

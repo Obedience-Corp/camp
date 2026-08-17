@@ -121,11 +121,6 @@ func runLane(ctx context.Context, campaignRoot, repo string) (served bool) {
 
 			logWorker(campaignRoot, "claimed lane=%s seq=%d id=%s kind=%s", repo, job.Seq, job.ID, job.Kind)
 			execErr := executeJob(ctx, campaignRoot, job)
-			if execErr != nil {
-				logWorker(campaignRoot, "failed lane=%s seq=%d id=%s err=%v", repo, job.Seq, job.ID, execErr)
-			} else {
-				logWorker(campaignRoot, "done lane=%s seq=%d id=%s", repo, job.Seq, job.ID)
-			}
 			// The follow-up is made durable before the parent is completed.
 			//
 			// Completing unlinks the parent's queue file. Enqueuing after that
@@ -150,7 +145,40 @@ func runLane(ctx context.Context, campaignRoot, repo string) (served bool) {
 			// A follow-up that could not be written fails the parent even
 			// though its commit succeeded, so the job is retried rather than
 			// quietly half-done. Camp promised a commit and a pointer update.
-			if err := complete(cmp.Or(execErr, followErr)); err != nil {
+			jobErr := cmp.Or(execErr, followErr)
+
+			// A worker told to stop has no verdict to give. Cancellation kills
+			// the message writer and every git subprocess mid-run, so the error
+			// that came back describes the shutdown rather than the work.
+			// Parking it would spend the job's one recorded attempt on nothing,
+			// and a commit-tree job whose parent later stops being HEAD can
+			// never be retried at all: the user is told a commit failed, offered
+			// a retry that cannot work, and left to notice the missing commit
+			// themselves.
+			//
+			// Left in running/ instead, which is exactly what reclaim is for.
+			// The next worker to take this lane requeues it with attempts+1,
+			// bounded by MaxAttempts, the same as for a worker that died
+			// outright. Shutdown is that case; the only difference is that this
+			// worker had time to notice it was going.
+			if jobErr != nil && ctx.Err() != nil {
+				logWorker(campaignRoot, "cancelled lane=%s seq=%d id=%s err=%v",
+					repo, job.Seq, job.ID, jobErr)
+				lock.release()
+				return served
+			}
+
+			// Logged after the follow-up rather than before it, so one line per
+			// job states the outcome the queue actually recorded. A parent whose
+			// commit landed and whose pointer update did not is parked in
+			// failed/, and logging "done" before discovering that put the
+			// contradiction in the log.
+			if jobErr != nil {
+				logWorker(campaignRoot, "failed lane=%s seq=%d id=%s err=%v", repo, job.Seq, job.ID, jobErr)
+			} else {
+				logWorker(campaignRoot, "done lane=%s seq=%d id=%s", repo, job.Seq, job.ID)
+			}
+			if err := complete(jobErr); err != nil {
 				logWorker(campaignRoot, "complete-error lane=%s id=%s err=%v", repo, job.ID, err)
 			}
 			// A worker-made commit in the campaign root moves the history the
