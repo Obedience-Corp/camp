@@ -284,6 +284,110 @@ func TestExhaustedJobIsParkedInFailed(t *testing.T) {
 	}
 }
 
+// A worker told to stop mid-job records no verdict on the job it was running.
+//
+// Cancellation kills the message writer and every git subprocess it started, so
+// the error the job returns describes the shutdown rather than the work.
+// Parking it spends the job's one recorded attempt on nothing, and a
+// commit-tree job whose parent later stops being HEAD is then unretryable
+// forever: the user is told a commit failed, offered a retry that cannot work,
+// and left to notice the missing commit themselves.
+//
+// Back to pending rather than left in running/, because SpawnIfNeeded starts a
+// worker only for a lane with pending work. A job left running would block the
+// next commit's drain for its whole timeout with nothing coming to serve it.
+func TestCancelledJobIsRequeuedNotParkedInFailed(t *testing.T) {
+	withFastTiming(t, time.Millisecond, time.Millisecond)
+	root := testCampaign(t)
+	ctx, cancel := context.WithCancel(context.Background())
+	t.Cleanup(cancel)
+
+	job, err := Enqueue(ctx, root, Job{
+		Kind: KindCommitPaths, Repo: ".", Paths: []string{"a.md"},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	// The shape of the real failure: SIGTERM reaches the detached worker while
+	// the commit message writer is mid-generation, so exec.CommandContext kills
+	// the writer and the job returns the cancellation rather than a verdict.
+	origExecute := executeJob
+	executeJob = func(ctx context.Context, _ string, _ *Job) error {
+		cancel()
+		return ctx.Err()
+	}
+	t.Cleanup(func() { executeJob = origExecute })
+
+	runLane(ctx, root, ".")
+
+	if failed, err := List(root, stateFailed, "."); err != nil {
+		t.Fatal(err)
+	} else if len(failed) != 0 {
+		t.Errorf("%d jobs parked in failed/, want 0: a cancelled worker must not "+
+			"record a verdict on the job it was running", len(failed))
+	}
+	if running, err := List(root, stateRunning, "."); err != nil {
+		t.Fatal(err)
+	} else if len(running) != 0 {
+		t.Errorf("%d jobs left in running/, want 0: a job nothing will spawn for "+
+			"blocks the next drain for its whole timeout", len(running))
+	}
+
+	pending, err := List(root, statePending, ".")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(pending) != 1 || pending[0].ID != job.ID {
+		t.Fatalf("pending lane = %+v, want the cancelled job %s requeued",
+			pending, job.ID)
+	}
+	if pending[0].Attempts != 1 {
+		t.Errorf("Attempts = %d, want 1: a shutdown counts as an attempt, or a "+
+			"job that dies this way every time is retried forever",
+			pending[0].Attempts)
+	}
+}
+
+// The attempt a shutdown counts is bounded by the same ceiling as any other, or
+// a job that is always mid-flight when the worker stops cycles forever.
+func TestRepeatedCancellationIsStillBoundedByMaxAttempts(t *testing.T) {
+	withFastTiming(t, time.Millisecond, time.Millisecond)
+	root := testCampaign(t)
+
+	job, err := Enqueue(context.Background(), root, Job{
+		Kind: KindCommitPaths, Repo: ".", Paths: []string{"a.md"},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	origExecute := executeJob
+	t.Cleanup(func() { executeJob = origExecute })
+
+	for range MaxAttempts {
+		ctx, cancel := context.WithCancel(context.Background())
+		executeJob = func(ctx context.Context, _ string, _ *Job) error {
+			cancel()
+			return ctx.Err()
+		}
+		runLane(ctx, root, ".")
+		cancel()
+	}
+
+	if err := parkExhausted(root, "."); err != nil {
+		t.Fatalf("parkExhausted() error = %v", err)
+	}
+	failed, err := List(root, stateFailed, ".")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(failed) != 1 || failed[0].ID != job.ID {
+		t.Errorf("failed lane = %+v, want the exhausted job %s: a job cancelled "+
+			"MaxAttempts times must stop coming back", failed, job.ID)
+	}
+}
+
 // A campaign with nothing queued does no work and reports no error.
 func TestRunOnAnEmptyQueueIsANoOp(t *testing.T) {
 	root := testCampaign(t)
