@@ -352,3 +352,53 @@ func TestSummarizeCollapseFallsBackToGenericRecovery(t *testing.T) {
 		}
 	}
 }
+
+// The table's heading has to match what the rows are. A refused run lists one
+// finding, not a failed test, and heading that column "Failed Test" repeats in
+// miniature the category error the non-run verdict exists to correct.
+func TestSummarizeHeadingMatchesTheRows(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name    string
+		results []IntegrationResult
+		want    string
+	}{
+		{
+			name: "a refused run heads its column with a finding",
+			results: []IntegrationResult{{
+				Suite: "tests/integration", Collapsed: true,
+				InfraReason: "INFRASTRUCTURE FAILURE (not a test failure): the daemon did not answer",
+			}},
+			want: "Finding",
+		},
+		{
+			name: "a run with a broken test still heads it with the test",
+			results: []IntegrationResult{{
+				Suite: "tests/integration", TestsFailed: 1, FailedTests: []string{"TestRealBug"},
+			}},
+			want: "Failed Test",
+		},
+		{
+			name: "daemon casualties are named tests too",
+			results: []IntegrationResult{{
+				Suite: "tests/integration", TestsSkipped: 900, Collapsed: true,
+				InfraTests: []string{"TestCasualty"},
+			}},
+			want: "Failed Test",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+			s := summarizeIntegration(tt.results, false)
+			if len(s.rows) == 0 {
+				t.Fatal("expected rows")
+			}
+			if got := s.rows[0][0]; got != tt.want {
+				t.Fatalf("heading = %q, want %q", got, tt.want)
+			}
+		})
+	}
+}

@@ -302,6 +302,12 @@ func Integration(ctx context.Context, verbose bool) error {
 
 	if !s.success {
 		if s.collapsed {
+			// Same words as the card: a reader comparing the two must not have
+			// to work out whether they describe one event or two.
+			if s.neverRan == 0 {
+				return camperrors.New(
+					"integration run did not happen: infrastructure failure (the suite never started)")
+			}
 			return camperrors.Newf(
 				"integration run did not happen: infrastructure failure (%d tests never ran)",
 				s.neverRan)

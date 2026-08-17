@@ -147,9 +147,13 @@ func summarizeIntegration(results []IntegrationResult, colour bool) runSummary {
 		return label
 	}
 
+	namesATest := false
 	for _, r := range results {
 		if r.Pass {
 			continue
+		}
+		if len(r.FailedTests) > 0 || len(r.InfraTests) > 0 {
+			namesATest = true
 		}
 		for _, testName := range r.FailedTests {
 			s.rows = append(s.rows, []string{testName, paint("✗ FAILED", ui.Red), ""})
@@ -171,7 +175,14 @@ func summarizeIntegration(results []IntegrationResult, colour bool) runSummary {
 	}
 
 	if len(s.rows) > 0 {
-		s.rows = append([][]string{{"Failed Test", "Status", ""}}, s.rows...)
+		// A refused run has no failed test to head a column with, and calling
+		// its one row a failed test is the same category error the non-run
+		// verdict exists to correct.
+		heading := "Finding"
+		if namesATest {
+			heading = "Failed Test"
+		}
+		s.rows = append([][]string{{heading, "Status", ""}}, s.rows...)
 	}
 
 	totalStatus := testTally(totalPassed, totalTests, totalSkipped)
