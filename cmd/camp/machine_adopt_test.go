@@ -60,7 +60,7 @@ func TestAdoptPayloadAbsent(t *testing.T) {
 	if out.Len() != 0 {
 		t.Errorf("stdout must stay empty, got %q", out.String())
 	}
-	if _, statErr := os.Stat(machines.MachinesPath()); !os.IsNotExist(statErr) {
+	if _, statErr := os.Stat(mustMachinesPath(t)); !os.IsNotExist(statErr) {
 		t.Error("a failed adopt must not create the fleet file")
 	}
 }
@@ -99,7 +99,7 @@ func TestAdoptNonTTYWritesNothing(t *testing.T) {
 	if err.Error() != want {
 		t.Errorf("error\n got %q\nwant %q", err.Error(), want)
 	}
-	if _, statErr := os.Stat(machines.MachinesPath()); !os.IsNotExist(statErr) {
+	if _, statErr := os.Stat(mustMachinesPath(t)); !os.IsNotExist(statErr) {
 		t.Error("non-TTY adopt must not write the fleet file")
 	}
 }
@@ -181,7 +181,7 @@ func TestAdoptSelfOriginDetectionErrorFailsClosed(t *testing.T) {
 	if out.Len() != 0 {
 		t.Errorf("stdout must stay empty, got %q", out.String())
 	}
-	if _, statErr := os.Stat(machines.MachinesPath()); !os.IsNotExist(statErr) {
+	if _, statErr := os.Stat(mustMachinesPath(t)); !os.IsNotExist(statErr) {
 		t.Error("fail-closed adopt must not write the fleet file")
 	}
 }
@@ -281,10 +281,10 @@ func TestAdoptCancelDoesNotWriteDecline(t *testing.T) {
 	if !strings.Contains(out.String(), "Not adopted.") {
 		t.Errorf("stdout = %q, want Not adopted", out.String())
 	}
-	if _, err := os.Stat(machines.DeclinedPath()); !os.IsNotExist(err) {
+	if _, err := os.Stat(mustDeclinedPath(t)); !os.IsNotExist(err) {
 		t.Error("cancel must not create declined_origins.yaml")
 	}
-	if _, err := os.Stat(machines.MachinesPath()); !os.IsNotExist(err) {
+	if _, err := os.Stat(mustMachinesPath(t)); !os.IsNotExist(err) {
 		t.Error("cancel must not write machines.yaml")
 	}
 }
@@ -430,10 +430,10 @@ func TestDeclineMemoryRoundTrip(t *testing.T) {
 
 func TestDeclineFileLivesBesideMachinesFile(t *testing.T) {
 	dir := isolateFleet(t)
-	if got, want := filepath.Dir(machines.DeclinedPath()), dir; got != want {
+	if got, want := filepath.Dir(mustDeclinedPath(t)), dir; got != want {
 		t.Errorf("declined path dir = %q, want %q", got, want)
 	}
-	if filepath.Base(machines.DeclinedPath()) == filepath.Base(machines.MachinesPath()) {
+	if filepath.Base(mustDeclinedPath(t)) == filepath.Base(mustMachinesPath(t)) {
 		t.Error("the decline file must not collide with machines.yaml")
 	}
 }

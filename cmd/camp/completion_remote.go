@@ -11,6 +11,7 @@ import (
 	"github.com/Obedience-Corp/camp/internal/config"
 	"github.com/Obedience-Corp/camp/internal/fsutil"
 	"github.com/Obedience-Corp/camp/internal/machines"
+	"github.com/Obedience-Corp/camp/internal/pathutil"
 )
 
 // machineCompletionTTL bounds how long a warmed per-machine campaign cache is
@@ -55,19 +56,31 @@ func (e machineCacheEntry) ttl() time.Duration {
 	return machineCompletionTTL
 }
 
-func machineCacheDir() string {
+// machineCacheDir reports where derived per-machine caches live, or false when
+// no home directory can be resolved. It returns false rather than a
+// working-directory-relative path: this is a throwaway cache on the keystroke
+// path, so having no location is a miss, never an error and never a stray
+// .obey/ directory in whatever tree the operator happened to be standing in.
+func machineCacheDir() (string, bool) {
 	if xdg := os.Getenv("XDG_CONFIG_HOME"); xdg != "" {
-		return filepath.Join(xdg, "obey", "cache", "machines")
+		return filepath.Join(xdg, "obey", "cache", "machines"), true
 	}
-	home, _ := os.UserHomeDir()
-	return filepath.Join(home, ".obey", "cache", "machines")
+	home, err := pathutil.Home()
+	if err != nil {
+		return "", false
+	}
+	return filepath.Join(home, ".obey", "cache", "machines"), true
 }
 
 // readMachineCacheCampaigns returns a machine's cached campaign names only on a
 // fresh cache hit. It performs NO ssh — the keystroke path must never block on the
 // network. A miss (absent/corrupt/stale) returns (nil, false).
 func readMachineCacheCampaigns(id string) ([]string, bool) {
-	data, err := os.ReadFile(filepath.Join(machineCacheDir(), id+".json"))
+	dir, ok := machineCacheDir()
+	if !ok {
+		return nil, false
+	}
+	data, err := os.ReadFile(filepath.Join(dir, id+".json"))
 	if err != nil {
 		return nil, false
 	}
@@ -99,7 +112,10 @@ func writeMachineCacheCampaigns(id string, campaigns []string) {
 }
 
 func writeMachineCacheEntry(id string, entry machineCacheEntry) {
-	dir := machineCacheDir()
+	dir, ok := machineCacheDir()
+	if !ok {
+		return
+	}
 	if os.MkdirAll(dir, 0o700) != nil {
 		return
 	}

@@ -39,8 +39,12 @@ type DeclinedHost struct {
 
 // DeclinedPath returns the decline file path, resolved from MachinesPath so the
 // CAMP_MACHINES_PATH and XDG_CONFIG_HOME overrides isolate both files together.
-func DeclinedPath() string {
-	return filepath.Join(filepath.Dir(MachinesPath()), declinedFileName)
+func DeclinedPath() (string, error) {
+	base, err := MachinesPath()
+	if err != nil {
+		return "", err
+	}
+	return filepath.Join(filepath.Dir(base), declinedFileName), nil
 }
 
 // LoadDeclined reads the decline list. An absent file is not an error: it is the
@@ -48,7 +52,11 @@ func DeclinedPath() string {
 // treat it as empty, because a broken suppression list must never prevent an
 // operator from adopting.
 func LoadDeclined() (*DeclinedFile, error) {
-	data, err := os.ReadFile(DeclinedPath())
+	path, err := DeclinedPath()
+	if err != nil {
+		return &DeclinedFile{Version: currentVersion}, err
+	}
+	data, err := os.ReadFile(path)
 	if errors.Is(err, fs.ErrNotExist) {
 		return &DeclinedFile{Version: currentVersion}, nil
 	}
@@ -65,7 +73,10 @@ func LoadDeclined() (*DeclinedFile, error) {
 // Save writes f atomically with 0600 perms, matching machines.yaml: the file
 // names hosts an operator chose not to register.
 func (f *DeclinedFile) Save() error {
-	path := DeclinedPath()
+	path, err := DeclinedPath()
+	if err != nil {
+		return err
+	}
 	f.Version = currentVersion
 	data, err := yaml.Marshal(f)
 	if err != nil {

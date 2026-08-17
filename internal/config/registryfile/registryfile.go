@@ -5,6 +5,9 @@ import (
 	"os"
 	"path/filepath"
 	"time"
+
+	camperrors "github.com/Obedience-Corp/camp/internal/errors"
+	"github.com/Obedience-Corp/camp/internal/pathutil"
 )
 
 // File is the on-disk registry representation shared by registry readers.
@@ -33,22 +36,32 @@ type Campaign struct {
 	Status string   `json:"status,omitempty"`
 }
 
-// Path returns the path to the campaign registry file.
-func Path() string {
+// Path returns the path to the campaign registry file. It fails rather than
+// falling back to a working-directory-relative path when the home directory
+// cannot be resolved: a registry written to ./.obey is invisible to the next
+// camp invocation from any other directory, which reads as "camp create did not
+// register my campaign".
+func Path() (string, error) {
 	if override := os.Getenv("CAMP_REGISTRY_PATH"); override != "" {
-		return override
+		return override, nil
 	}
 	if xdg := os.Getenv("XDG_CONFIG_HOME"); xdg != "" {
-		return filepath.Join(xdg, "obey", "campaign", "registry.json")
+		return filepath.Join(xdg, "obey", "campaign", "registry.json"), nil
 	}
-	home, _ := os.UserHomeDir()
-	return filepath.Join(home, ".obey", "campaign", "registry.json")
+	home, err := pathutil.Home()
+	if err != nil {
+		return "", camperrors.Wrap(err, "resolving campaign registry path (set HOME, XDG_CONFIG_HOME, or CAMP_REGISTRY_PATH)")
+	}
+	return filepath.Join(home, ".obey", "campaign", "registry.json"), nil
 }
 
 // Load reads the raw registry file from disk. Missing registries return an
 // empty File so callers can share the same load path without special casing.
 func Load() (*File, error) {
-	path := Path()
+	path, err := Path()
+	if err != nil {
+		return nil, err
+	}
 	data, err := os.ReadFile(path)
 	if err != nil {
 		if os.IsNotExist(err) {

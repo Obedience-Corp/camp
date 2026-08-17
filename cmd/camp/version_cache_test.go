@@ -21,7 +21,7 @@ import (
 // rule is tested rather than raced against wall-clock.
 func seedVersionCache(t *testing.T, id, ver, commit string, age time.Duration) {
 	t.Helper()
-	dir := machineCacheDir()
+	dir := mustMachineCacheDir(t)
 	if err := os.MkdirAll(dir, 0o700); err != nil {
 		t.Fatal(err)
 	}
@@ -33,7 +33,7 @@ func seedVersionCache(t *testing.T, id, ver, commit string, age time.Duration) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if err := os.WriteFile(versionCachePath(id), data, 0o600); err != nil {
+	if err := os.WriteFile(mustVersionCachePath(t, id), data, 0o600); err != nil {
 		t.Fatal(err)
 	}
 }
@@ -106,17 +106,17 @@ func TestHopSkewWarningMatrix(t *testing.T) {
 func TestVersionCacheWriteSkipsEmptyProbe(t *testing.T) {
 	t.Setenv("XDG_CONFIG_HOME", t.TempDir())
 	writeMachineVersionCache("archdtop", "", "")
-	if _, err := os.Stat(versionCachePath("archdtop")); !os.IsNotExist(err) {
+	if _, err := os.Stat(mustVersionCachePath(t, "archdtop")); !os.IsNotExist(err) {
 		t.Error("a failed probe must not be cached; it would look like a real answer")
 	}
 }
 
 func TestVersionCacheCorruptIsIgnored(t *testing.T) {
 	t.Setenv("XDG_CONFIG_HOME", t.TempDir())
-	if err := os.MkdirAll(machineCacheDir(), 0o700); err != nil {
+	if err := os.MkdirAll(mustMachineCacheDir(t), 0o700); err != nil {
 		t.Fatal(err)
 	}
-	if err := os.WriteFile(versionCachePath("archdtop"), []byte("{not json"), 0o600); err != nil {
+	if err := os.WriteFile(mustVersionCachePath(t, "archdtop"), []byte("{not json"), 0o600); err != nil {
 		t.Fatal(err)
 	}
 	if _, ok := readMachineVersionCache("archdtop"); ok {
@@ -142,7 +142,7 @@ func TestVersionCacheEmptyVersionIsMiss(t *testing.T) {
 
 func TestVersionCacheLivesBesideTheCompletionCache(t *testing.T) {
 	t.Setenv("XDG_CONFIG_HOME", t.TempDir())
-	if got, want := filepath.Dir(versionCachePath("x")), machineCacheDir(); got != want {
+	if got, want := filepath.Dir(mustVersionCachePath(t, "x")), mustMachineCacheDir(t); got != want {
 		t.Errorf("version cache dir = %q, want %q", got, want)
 	}
 }

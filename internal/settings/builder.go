@@ -23,7 +23,10 @@ func BuildCatalog(ctx context.Context, campaignRoot string) ([]SettingEntry, err
 		return nil, err
 	}
 
-	entries := staticEntries()
+	entries, err := staticEntries()
+	if err != nil {
+		return nil, err
+	}
 	entries = append(entries, hiddenFromContract(entries)...)
 	entries = append(entries, secretEntries()...)
 	return entries, nil
@@ -43,8 +46,17 @@ func ForScope(entries []SettingEntry, s Scope) []SettingEntry {
 
 // staticEntries declares the camp-owned structured settings files. Local paths
 // are campaign-root-relative; Global paths are resolved to their real location
-// (honoring $CAMP_REGISTRY_PATH and $XDG_CONFIG_HOME via internal/config).
-func staticEntries() []SettingEntry {
+// (honoring $CAMP_REGISTRY_PATH and $XDG_CONFIG_HOME via internal/config), so
+// resolution can fail when none of those and no home directory are set.
+func staticEntries() ([]SettingEntry, error) {
+	registryPath, err := config.RegistryPath()
+	if err != nil {
+		return nil, err
+	}
+	globalConfigPath, err := config.GlobalConfigPath()
+	if err != nil {
+		return nil, err
+	}
 	return []SettingEntry{
 		{
 			ID:     "campaign_manifest",
@@ -82,7 +94,7 @@ func staticEntries() []SettingEntry {
 			Title:  "Campaign registry",
 			Desc:   "Campaigns registered on this machine.",
 			Scope:  ScopeGlobal,
-			Path:   config.RegistryPath(),
+			Path:   registryPath,
 			Format: FormatJSON,
 			Edit:   EditStructured,
 			Owner:  "camp",
@@ -92,12 +104,12 @@ func staticEntries() []SettingEntry {
 			Title:  "Global config",
 			Desc:   "Machine-wide camp defaults.",
 			Scope:  ScopeGlobal,
-			Path:   config.GlobalConfigPath(),
+			Path:   globalConfigPath,
 			Format: FormatJSON,
 			Edit:   EditStructured,
 			Owner:  "camp",
 		},
-	}
+	}, nil
 }
 
 // hiddenFromContract derives Hidden entries from the watcher contract so every

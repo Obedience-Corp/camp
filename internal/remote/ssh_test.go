@@ -139,6 +139,28 @@ func TestControlSocketPathNoSideEffect(t *testing.T) {
 	}
 }
 
+// With no home directory there is nowhere to put a multiplex socket. The hop
+// must still be buildable — just without ControlMaster — rather than pointing
+// ssh at a working-directory-relative ControlPath.
+func TestControlPathDropsMultiplexingWithoutHome(t *testing.T) {
+	t.Chdir(t.TempDir())
+	t.Setenv("HOME", "")
+	t.Setenv("USERPROFILE", "")
+
+	m := &machines.Machine{ID: "devbox", Host: "devbox.local"}
+	if got := ControlSocketPath(m); got != "" {
+		t.Errorf("ControlSocketPath = %q, want empty with no resolvable home", got)
+	}
+	for _, opt := range append(Opts(m), OptsReuseOnly(m)...) {
+		if strings.HasPrefix(opt, "ControlPath=") || strings.HasPrefix(opt, "ControlMaster=") {
+			t.Errorf("hop opts still carry %q with no resolvable home", opt)
+		}
+	}
+	if _, err := os.Stat(".obey"); !os.IsNotExist(err) {
+		t.Errorf("building hop opts created a relative .obey dir (stat err = %v)", err)
+	}
+}
+
 func TestCheckControlMasterNoSocket(t *testing.T) {
 	home := t.TempDir()
 	t.Setenv("HOME", home)

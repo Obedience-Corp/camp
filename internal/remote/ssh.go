@@ -20,6 +20,7 @@ import (
 
 	camperrors "github.com/Obedience-Corp/camp/internal/errors"
 	"github.com/Obedience-Corp/camp/internal/machines"
+	"github.com/Obedience-Corp/camp/internal/pathutil"
 )
 
 // DefaultTimeout bounds a single remote ssh operation. camp picks its own bound;
@@ -158,11 +159,14 @@ func expandTilde(path string) string {
 // Conceptually mirrors the app's ssh_base_args (connection.rs:241-255); host
 // details beyond the machine's identity_file are left to the user's ~/.ssh/config.
 func Opts(m *machines.Machine) []string {
-	opts := append(baseOpts(),
-		"-o", "ControlMaster=auto",
-		"-o", "ControlPath="+controlPath(m),
-		"-o", "ControlPersist=30s",
-	)
+	opts := baseOpts()
+	if path := controlPath(m); path != "" {
+		opts = append(opts,
+			"-o", "ControlMaster=auto",
+			"-o", "ControlPath="+path,
+			"-o", "ControlPersist=30s",
+		)
+	}
 	return append(opts, authArgs(m)...)
 }
 
@@ -177,10 +181,13 @@ func Opts(m *machines.Machine) []string {
 // and the path comes from ControlSocketPath (not controlPath) so a read-only
 // diagnostic does not create ~/.obey/ssh-ctl as a side effect.
 func OptsReuseOnly(m *machines.Machine) []string {
-	opts := append(baseOpts(),
-		"-o", "ControlMaster=no",
-		"-o", "ControlPath="+ControlSocketPath(m),
-	)
+	opts := baseOpts()
+	if path := ControlSocketPath(m); path != "" {
+		opts = append(opts,
+			"-o", "ControlMaster=no",
+			"-o", "ControlPath="+path,
+		)
+	}
 	return append(opts, authArgs(m)...)
 }
 
@@ -194,24 +201,37 @@ func baseOpts() []string {
 }
 
 // controlDir is ~/.obey/ssh-ctl, the directory holding one ControlMaster socket
-// per machine.
-func controlDir() string {
-	home, _ := os.UserHomeDir()
-	return filepath.Join(home, ".obey", "ssh-ctl")
+// per machine. It reports false when no home directory resolves rather than
+// falling back to a relative ".obey/ssh-ctl", which would scatter socket
+// directories through whatever tree camp was invoked from.
+func controlDir() (string, bool) {
+	home, err := pathutil.Home()
+	if err != nil {
+		return "", false
+	}
+	return filepath.Join(home, ".obey", "ssh-ctl"), true
 }
 
 // ControlSocketPath returns the per-machine ssh ControlMaster socket path under
 // ~/.obey/ssh-ctl without creating anything. A short, per-id name keeps the path
 // under the OS socket-length limit for typical home directories. Exposed so
-// diagnostics can inspect and clear a machine's multiplex socket.
+// diagnostics can inspect and clear a machine's multiplex socket. It returns ""
+// when there is nowhere to put the socket; callers treat that as "no
+// multiplexing", which costs an extra handshake but never breaks a hop.
 func ControlSocketPath(m *machines.Machine) string {
-	return filepath.Join(controlDir(), m.ID+".sock")
+	dir, ok := controlDir()
+	if !ok {
+		return ""
+	}
+	return filepath.Join(dir, m.ID+".sock")
 }
 
 // controlPath returns the machine's ControlMaster socket path and
 // best-effort-creates ~/.obey/ssh-ctl so ControlMaster=auto can bind the socket.
 func controlPath(m *machines.Machine) string {
-	_ = os.MkdirAll(controlDir(), 0o700)
+	if dir, ok := controlDir(); ok {
+		_ = os.MkdirAll(dir, 0o700)
+	}
 	return ControlSocketPath(m)
 }
 
