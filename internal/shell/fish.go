@@ -5,6 +5,7 @@ package shell
 func generateFish() string {
 	out, err := renderTemplate("fish.sh.tmpl", templateData{
 		ShortcutCompletions: fishShortcutCompletions(),
+		ShellCompletions:    shellCompletions(),
 	})
 	if err != nil {
 		// Template is embedded and parsed at init; failure here is a programming error.

@@ -1,0 +1,11 @@
+# Camp CLI - POSIX sh Integration
+# Add to your profile: eval "$(camp shell-init sh)"
+#
+# For dash, busybox ash, and any other Bourne-family shell that is not
+# bash or zsh. Navigation, the camp wrapper, and the shorthand functions
+# all work. Tab completion does not: POSIX sh has no programmable
+# completion to hook, so there is nothing for camp to install.
+
+{{template "posix_guard" .}}
+{{template "posix_wrapper" .}}
+{{template "posix_helpers" .}}

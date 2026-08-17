@@ -4,14 +4,14 @@ import (
 	"fmt"
 	"strings"
 
-	"github.com/charmbracelet/bubbles/spinner"
-	"github.com/charmbracelet/bubbles/textinput"
-	tea "github.com/charmbracelet/bubbletea"
-
 	camperrors "github.com/Obedience-Corp/camp/internal/errors"
 	"github.com/Obedience-Corp/camp/internal/machines"
 	"github.com/Obedience-Corp/camp/internal/remote"
+	"github.com/Obedience-Corp/camp/internal/shell"
 	"github.com/Obedience-Corp/camp/internal/ui"
+	"github.com/charmbracelet/bubbles/spinner"
+	"github.com/charmbracelet/bubbles/textinput"
+	tea "github.com/charmbracelet/bubbletea"
 )
 
 func (m *machineTUIModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
@@ -198,7 +198,7 @@ func (m *machineTUIModel) openHopPicker() (tea.Model, tea.Cmd) {
 		return m, nil
 	}
 	if !m.hopEnabled {
-		m.setError(camperrors.New("hop needs shell integration: run eval \"$(camp shell-init <shell>)\""))
+		m.setError(camperrors.New("hop needs shell integration: run " + shell.InitHint()))
 		return m, nil
 	}
 	if err := remote.EnsureKeyAuth(row.Machine); err != nil {

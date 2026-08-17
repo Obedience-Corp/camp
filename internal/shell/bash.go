@@ -5,6 +5,7 @@ package shell
 func generateBash() string {
 	out, err := renderTemplate("bash.sh.tmpl", templateData{
 		ShortcutWords: bashShortcutWords(),
+		ShellWords:    shellWords(),
 	})
 	if err != nil {
 		// Template is embedded and parsed at init; failure here is a programming error.

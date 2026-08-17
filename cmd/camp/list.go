@@ -55,8 +55,12 @@ positional argument to open the browser filtered to that org. Piped, with
 paths display as '~'.
 
 Shell integration (recommended for go/hop from the browser):
-  eval "$(camp shell-init zsh)"   # or bash / fish
+  eval "$(camp shell-init zsh)"   # or bash / sh
+  camp shell-init fish | source   # fish
   camp list                       # interactive browser; g hops remote rows
+
+Use the shell you actually run. "sh" covers dash, busybox ash, and any other
+Bourne shell that is not bash or zsh; the bash script will not parse there.
 
 Output formats:
   table   - Aligned columns with headers (default)

@@ -186,7 +186,7 @@ func TestIsSupported(t *testing.T) {
 		{"zsh", true},
 		{"bash", true},
 		{"fish", true},
-		{"sh", false},
+		{"sh", true},
 		{"ksh", false},
 		{"", false},
 	}

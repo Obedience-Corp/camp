@@ -5,6 +5,7 @@ package shell
 func generateZsh() string {
 	out, err := renderTemplate("zsh.sh.tmpl", templateData{
 		ShortcutTargets: zshShortcutTargets(),
+		ShellQuoted:     shellQuoted(),
 	})
 	if err != nil {
 		// Template is embedded and parsed at init; failure here is a programming error.

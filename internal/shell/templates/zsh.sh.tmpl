@@ -585,7 +585,7 @@ _camp() {
           ;;
         shell-init)
           local -a shells
-          shells=('zsh' 'bash' 'fish')
+          shells=({{.ShellQuoted}})
           _describe 'shell' shells
           ;;
         register|unregister)
