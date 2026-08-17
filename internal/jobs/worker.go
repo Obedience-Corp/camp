@@ -156,14 +156,18 @@ func runLane(ctx context.Context, campaignRoot, repo string) (served bool) {
 			// a retry that cannot work, and left to notice the missing commit
 			// themselves.
 			//
-			// Left in running/ instead, which is exactly what reclaim is for.
-			// The next worker to take this lane requeues it with attempts+1,
-			// bounded by MaxAttempts, the same as for a worker that died
-			// outright. Shutdown is that case; the only difference is that this
-			// worker had time to notice it was going.
+			// Returned to pending instead, with the attempt counted, which is
+			// what reclaim does for a worker that died outright. Shutdown is
+			// that case; the only difference is that this worker had time to
+			// notice it was going, and it uses that time to put the job back
+			// itself rather than leave it for the liveness window to expire.
+			// Retries stay bounded: three shutdowns still park it.
 			if jobErr != nil && ctx.Err() != nil {
 				logWorker(campaignRoot, "cancelled lane=%s seq=%d id=%s err=%v",
 					repo, job.Seq, job.ID, jobErr)
+				if _, err := RequeueRunning(campaignRoot, repo); err != nil {
+					logWorker(campaignRoot, "requeue-error lane=%s id=%s err=%v", repo, job.ID, err)
+				}
 				lock.release()
 				return served
 			}

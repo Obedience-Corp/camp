@@ -310,30 +310,86 @@ func Reclaim(ctx context.Context, campaignRoot, repo string, olderThan time.Dura
 		if statErr != nil || info.ModTime().After(cutoff) {
 			continue // gone, or still heartbeating
 		}
-
-		job, readErr := readJob(path)
-		if readErr != nil {
-			continue
+		if requeueJobFile(pendingDir, path, name) {
+			reclaimed++
 		}
-		job.Attempts++
-		data, marshalErr := json.MarshalIndent(job, "", "  ")
-		if marshalErr != nil {
-			continue
-		}
-		// Write the incremented job into pending under the same name, then
-		// drop the running copy. Written before the unlink so a crash between
-		// the two duplicates a job rather than losing it: a job that runs
-		// twice is recoverable, a job that never runs is not.
-		dst := filepath.Join(pendingDir, name)
-		if err := os.WriteFile(dst, data, 0o644); err != nil {
-			continue
-		}
-		if err := os.Remove(path); err != nil && !os.IsNotExist(err) {
-			continue
-		}
-		reclaimed++
 	}
 	return reclaimed, nil
+}
+
+// RequeueRunning returns every running job in a lane to pending with the
+// attempt counted, and reports how many moved.
+//
+// Called by a worker told to stop while it holds the lane. It consults no
+// mtime, unlike Reclaim: the caller holds the lane lock, so every running job
+// in the lane is either this worker's own or was abandoned by a worker that is
+// already gone, and nobody still alive is going to finish either.
+//
+// Returning them to pending rather than leaving them for the next Reclaim is
+// what keeps a shutdown off the user's critical path. SpawnIfNeeded starts a
+// worker only for a lane with pending work, so a job left in running/ would
+// block the next commit's drain for its whole timeout with nothing coming to
+// serve it.
+//
+// It takes no context on purpose. This is the cleanup that runs precisely when
+// the worker's context is already cancelled, so honoring one would decline to
+// do the only thing standing between a cancelled job and the failed lane.
+func RequeueRunning(campaignRoot, repo string) (int, error) {
+	runningDir := laneDir(campaignRoot, stateRunning, repo)
+	names, err := sortedJobFiles(runningDir)
+	if err != nil {
+		return 0, err
+	}
+	if len(names) == 0 {
+		return 0, nil
+	}
+
+	pendingDir := laneDir(campaignRoot, statePending, repo)
+	if err := os.MkdirAll(pendingDir, 0o755); err != nil {
+		return 0, camperrors.Wrapf(err, "create pending lane %s", pendingDir)
+	}
+
+	requeued := 0
+	for _, name := range names {
+		if requeueJobFile(pendingDir, filepath.Join(runningDir, name), name) {
+			requeued++
+		}
+	}
+	return requeued, nil
+}
+
+// requeueJobFile moves one running job back to pending with its attempt
+// counted, and reports whether it moved.
+//
+// The incremented copy is written to the destination and the source removed
+// after, never edited in place. Reclaim skips a job it cannot parse, so an
+// interrupted in-place write would leave unreadable JSON in running/ that
+// nothing ever picks up again: the one failure this queue treats as
+// unforgivable. Written this way a crash in the window leaves the job in both
+// lanes instead, and reclaim resolves that by running it again. Duplicating a
+// job is recoverable; stranding one is not.
+//
+// A job that cannot be read, marshalled, or written stays in running/ rather
+// than being reported. Both callers are recovery paths with nowhere better to
+// put a job they cannot parse, and leaving it is what lets the next reclaim try
+// again.
+func requeueJobFile(pendingDir, runningPath, name string) bool {
+	job, err := readJob(runningPath)
+	if err != nil {
+		return false
+	}
+	job.Attempts++
+	data, err := json.MarshalIndent(job, "", "  ")
+	if err != nil {
+		return false
+	}
+	if err := os.WriteFile(filepath.Join(pendingDir, name), data, 0o644); err != nil {
+		return false
+	}
+	if err := os.Remove(runningPath); err != nil && !os.IsNotExist(err) {
+		return false
+	}
+	return true
 }
 
 // List returns the jobs in one state of one lane, in execution order.
