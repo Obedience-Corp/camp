@@ -194,7 +194,26 @@ type Job struct {
 	CreatedAt string `json:"created_at"`
 	// Attempts counts how many times this job has been claimed.
 	Attempts int `json:"attempts"`
+	// LastError is why the most recent attempt failed, recorded when the job
+	// is parked.
+	//
+	// The worker log already has it, but the log is a file the user has to
+	// know exists, in a cache directory, keyed by an id they would have to
+	// copy out of another command. A parked job that says a commit failed and
+	// not why sends them looking; the whole point of the failed-job notice is
+	// that they should not have to.
+	//
+	// Advisory, not a contract: it is prose from whatever failed, bounded to
+	// maxJobErrorBytes, and nothing decides anything by parsing it.
+	LastError string `json:"last_error,omitempty"`
 }
+
+// maxJobErrorBytes bounds the recorded failure reason.
+//
+// A writer that fails by printing its own usage produces a screenful, and this
+// string is rendered in a table row. autowrite already reduces a writer failure
+// to one line; this is the backstop for every other source.
+const maxJobErrorBytes = 300
 
 // BlobRef is one captured path and its content object. It mirrors
 // git.BlobRef, which the queue cannot embed directly without making the job

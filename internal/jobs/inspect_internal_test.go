@@ -44,7 +44,7 @@ func TestFailedCountAgreesWithSnapshot(t *testing.T) {
 		t.Errorf("FailedCount = %d, want 2", got)
 	}
 
-	entries, err := Snapshot(root)
+	entries, err := Snapshot(context.Background(), root)
 	if err != nil {
 		t.Fatalf("snapshot: %v", err)
 	}
@@ -71,7 +71,7 @@ func TestSnapshotSortsFailuresFirst(t *testing.T) {
 	enqueueForTest(t, root, Job{Kind: KindCommitPaths, Repo: ".", Paths: []string{"pending.md"}})
 	failJobForTest(t, root, Job{Kind: KindCommitPaths, Repo: ".", Paths: []string{"failed.md"}})
 
-	entries, err := Snapshot(root)
+	entries, err := Snapshot(context.Background(), root)
 	if err != nil {
 		t.Fatalf("snapshot: %v", err)
 	}
@@ -89,7 +89,7 @@ func TestSnapshotMarksRunningJobsWithNoWorkerStuck(t *testing.T) {
 		t.Fatalf("claim: %v", err)
 	}
 
-	entries, err := Snapshot(root)
+	entries, err := Snapshot(context.Background(), root)
 	if err != nil {
 		t.Fatalf("snapshot: %v", err)
 	}
@@ -104,7 +104,7 @@ func TestSnapshotMarksRunningJobsWithNoWorkerStuck(t *testing.T) {
 	}
 	defer lock.release()
 
-	entries, err = Snapshot(root)
+	entries, err = Snapshot(context.Background(), root)
 	if err != nil {
 		t.Fatalf("snapshot: %v", err)
 	}

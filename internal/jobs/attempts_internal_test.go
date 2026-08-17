@@ -165,7 +165,7 @@ func TestParkingAnUnreadableJobStillLeavesRunning(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	if err := parkFailedJob(root, ".", path, name); err != nil {
+	if err := parkFailedJob(root, ".", path, name, errors.New("boom")); err != nil {
 		t.Fatalf("parkFailedJob() error = %v; an unparseable job must still be parked", err)
 	}
 
@@ -203,7 +203,7 @@ func TestParkingWritesTheCountToItsDestination(t *testing.T) {
 	}
 	name := names[0]
 	runningPath := filepath.Join(runningDir, name)
-	if err := parkFailedJob(root, ".", runningPath, name); err != nil {
+	if err := parkFailedJob(root, ".", runningPath, name, errors.New("boom")); err != nil {
 		t.Fatalf("parkFailedJob() error = %v", err)
 	}
 

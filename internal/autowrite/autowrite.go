@@ -17,7 +17,9 @@ import (
 	"os/exec"
 	"regexp"
 	"runtime"
+	"strconv"
 	"strings"
+	"time"
 
 	"github.com/Obedience-Corp/camp/internal/config"
 	camperrors "github.com/Obedience-Corp/camp/internal/errors"
@@ -121,12 +123,42 @@ func WithCommitAmendEnv(env []string, amend bool) []string {
 	return append(env, commitAmendEnv)
 }
 
+// DefaultWriterTimeout bounds one deferred run of the writer.
+//
+// Five minutes because that is already camp's number for "past any real
+// commit message writer": a job-aware drain waits exactly this long for a
+// heartbeating lane before it gives up (jobs.drainMaxWait). Choosing anything
+// shorter would kill writers the drain is still happily waiting for, which is
+// camp aborting work it just promised to wait for; anything longer, and the
+// drain gives up first and the user is told a commit is late by a queue that
+// has not yet decided the writer is late.
+//
+// It is a ceiling, not a budget to spend. A writer that reaches it is wedged,
+// not slow: an LLM commit-message call that has produced nothing in five
+// minutes has lost its connection, not its train of thought.
+const DefaultWriterTimeout = 5 * time.Minute
+
+// writerWaitDelay bounds the wait between a killed writer exiting and its
+// output pipes closing.
+//
+// Killing a writer does not close a pipe that something it started still
+// holds, and os/exec waits for the pipes as well as for the process. Without
+// this a writer whose grandchild outlived it hangs the worker on Wait forever,
+// which is the exact failure the timeout exists to bound: the bound has to
+// cover the wait too, or it is not a bound.
+const writerWaitDelay = 2 * time.Second
+
 // CommitMessageHook is the configured commit message writer command.
 type CommitMessageHook struct {
+	// Command is executed as-written from the target repository.
 	Command string
+	// Timeout bounds one deferred run. Never zero: an unset config takes
+	// DefaultWriterTimeout, so a caller that honors this field cannot end up
+	// running the writer unbounded by forgetting to check for zero.
+	Timeout time.Duration
 }
 
-// LoadCommitMessageHook loads hooks.commit_message.command from campaign config.
+// LoadCommitMessageHook loads hooks.commit_message from campaign config.
 func LoadCommitMessageHook(ctx context.Context, campaignRoot string) (*CommitMessageHook, error) {
 	if err := ctx.Err(); err != nil {
 		return nil, err
@@ -142,7 +174,54 @@ func LoadCommitMessageHook(ctx context.Context, campaignRoot string) (*CommitMes
 		return nil, ErrCommitMessageHookNotConfigured
 	}
 
-	return &CommitMessageHook{Command: command}, nil
+	timeout, err := parseWriterTimeout(cfg.Hooks.CommitMessage.Timeout)
+	if err != nil {
+		return nil, err
+	}
+
+	return &CommitMessageHook{Command: command, Timeout: timeout}, nil
+}
+
+// parseWriterTimeout resolves the configured bound, defaulting when unset.
+//
+// A value camp cannot parse is an error rather than a silent fallback, the
+// same call the staging guards make about their thresholds: a typo must not
+// quietly restore the unbounded writer this field exists to bound.
+func parseWriterTimeout(raw string) (time.Duration, error) {
+	trimmed := strings.TrimSpace(raw)
+	if trimmed == "" {
+		return DefaultWriterTimeout, nil
+	}
+	d, err := time.ParseDuration(trimmed)
+	if err != nil {
+		return 0, camperrors.NewValidation("hooks.commit_message.timeout",
+			"must be a duration such as \"5m\", got "+strconv.Quote(raw), err)
+	}
+	if d <= 0 {
+		return 0, camperrors.NewValidation("hooks.commit_message.timeout",
+			"must be positive, got "+strconv.Quote(raw)+
+				"; there is no way to spell \"let the writer run forever\"", nil)
+	}
+	return d, nil
+}
+
+// WriterTimeout reports the bound a deferred writer runs under, for the
+// commands that describe the queue rather than serve it.
+//
+// Best effort on purpose: a campaign whose config cannot be read still has a
+// queue to report on, and a listing that failed because of an unrelated config
+// problem would hide the very jobs the user came to look at. The run path uses
+// LoadCommitMessageHook, which does refuse a malformed value.
+func WriterTimeout(ctx context.Context, campaignRoot string) time.Duration {
+	cfg, err := config.LoadCampaignConfig(ctx, campaignRoot)
+	if err != nil {
+		return DefaultWriterTimeout
+	}
+	timeout, err := parseWriterTimeout(cfg.Hooks.CommitMessage.Timeout)
+	if err != nil {
+		return DefaultWriterTimeout
+	}
+	return timeout
 }
 
 // AutoWriteCommitMessage runs the configured commit message hook from repoPath.
@@ -169,6 +248,44 @@ func AutoWriteCommitMessageWithEnv(ctx context.Context, campaignRoot, repoPath s
 	return RunCommitMessageCommandWithEnv(ctx, repoPath, hook.Command, extraEnv)
 }
 
+// RunOptions configures one run of the writer.
+type RunOptions struct {
+	// Env are extra KEY=VALUE entries appended to os.Environ().
+	Env []string
+	// Timeout bounds the run. Zero means unbounded, which is what the
+	// foreground path wants: a user watching "generating..." can decide for
+	// themselves how long to wait and press Ctrl+C.
+	Timeout time.Duration
+	// OwnProcessGroup starts the writer in a process group of its own, so
+	// cancelling the run kills what the writer started and not merely the
+	// shell in front of it.
+	//
+	// Only the detached worker sets it. In the foreground the writer must stay
+	// in the terminal's process group or the user's Ctrl+C stops reaching it,
+	// and camp would answer an interrupt by orphaning the very process the
+	// user was trying to stop.
+	OwnProcessGroup bool
+	// DiagnosticOut receives the writer's stderr live. Nil keeps it buffered
+	// for the error and prints nothing.
+	DiagnosticOut io.Writer
+}
+
+// TimeoutError is a writer that was still running when its bound expired.
+//
+// Typed rather than formatted so the queue can name the timeout and the
+// command in the reason it parks with, without either side parsing prose.
+type TimeoutError struct {
+	// Command is the configured writer, as written in campaign.yaml.
+	Command string
+	// Timeout is the bound it exceeded.
+	Timeout time.Duration
+}
+
+func (e *TimeoutError) Error() string {
+	return "the commit message writer (" + e.Command + ") did not finish within " +
+		e.Timeout.String()
+}
+
 // RunCommitMessageCommand executes command exactly as configured from repoPath
 // and returns trimmed stdout as the raw commit message.
 func RunCommitMessageCommand(ctx context.Context, repoPath, command string) (string, error) {
@@ -178,7 +295,16 @@ func RunCommitMessageCommand(ctx context.Context, repoPath, command string) (str
 // RunCommitMessageCommandWithEnv is RunCommitMessageCommand with extra
 // environment variables passed to the subprocess (appended to os.Environ()).
 func RunCommitMessageCommandWithEnv(ctx context.Context, repoPath, command string, extraEnv []string) (string, error) {
-	return runCommitMessageCommandWithEnv(ctx, repoPath, command, extraEnv, os.Stderr)
+	return RunCommitMessageCommandWithOptions(ctx, repoPath, command,
+		RunOptions{Env: extraEnv, DiagnosticOut: os.Stderr})
+}
+
+// RunCommitMessageCommandWithOptions is RunCommitMessageCommand with the run
+// bounded, isolated, and reported as the caller asks.
+func RunCommitMessageCommandWithOptions(
+	ctx context.Context, repoPath, command string, opts RunOptions,
+) (string, error) {
+	return runCommitMessageCommand(ctx, repoPath, command, opts)
 }
 
 func runCommitMessageCommandWithEnv(
@@ -187,6 +313,16 @@ func runCommitMessageCommandWithEnv(
 	command string,
 	extraEnv []string,
 	diagnosticOut io.Writer,
+) (string, error) {
+	return runCommitMessageCommand(ctx, repoPath, command,
+		RunOptions{Env: extraEnv, DiagnosticOut: diagnosticOut})
+}
+
+func runCommitMessageCommand(
+	ctx context.Context,
+	repoPath string,
+	command string,
+	opts RunOptions,
 ) (string, error) {
 	if err := ctx.Err(); err != nil {
 		return "", err
@@ -197,12 +333,37 @@ func runCommitMessageCommandWithEnv(
 		return "", ErrCommitMessageHookNotConfigured
 	}
 
-	name, args := shellCommand(command)
-	cmd := exec.CommandContext(ctx, name, args...)
-	cmd.Dir = repoPath
-	if len(extraEnv) > 0 {
-		cmd.Env = append(os.Environ(), extraEnv...)
+	// The deadline gets a context of its own so a writer that ran out of time
+	// stays distinguishable from a camp that was told to stop. The worker
+	// needs exactly that difference: a timed-out writer is a verdict on the
+	// job and parks it, while a shutdown is a verdict on nothing and puts it
+	// back.
+	runCtx := ctx
+	if opts.Timeout > 0 {
+		var cancel context.CancelFunc
+		runCtx, cancel = context.WithTimeout(ctx, opts.Timeout)
+		defer cancel()
 	}
+
+	name, args := shellCommand(command)
+	cmd := exec.CommandContext(runCtx, name, args...)
+	cmd.Dir = repoPath
+	if len(opts.Env) > 0 {
+		cmd.Env = append(os.Environ(), opts.Env...)
+	}
+	if opts.OwnProcessGroup {
+		// The configured command runs through a login shell, which may or may
+		// not exec the tool it was given. Killing the shell alone therefore
+		// leaves the tool running often enough to matter, and an orphaned
+		// `ob commit` holding an LLM session is precisely what the timeout was
+		// added to end.
+		startInOwnProcessGroup(cmd)
+		cmd.Cancel = func() error { return killProcessGroup(cmd.Process.Pid) }
+	}
+	if opts.Timeout > 0 {
+		cmd.WaitDelay = writerWaitDelay
+	}
+	diagnosticOut := opts.DiagnosticOut
 
 	var stdout bytes.Buffer
 	var stderr bytes.Buffer
@@ -221,8 +382,22 @@ func runCommitMessageCommandWithEnv(
 	}
 
 	if err := cmd.Run(); err != nil {
+		// The caller's own cancellation is reported first: when camp is
+		// shutting down, both contexts are done, and the shutdown is the
+		// truthful answer.
 		if ctx.Err() != nil {
 			return "", ctx.Err()
+		}
+		if runCtx.Err() != nil {
+			return "", &TimeoutError{Command: command, Timeout: opts.Timeout}
+		}
+		// The writer finished and said its piece, but something it started
+		// still holds the output pipe. The message is complete, so take it:
+		// failing a job over a stray background process would discard a
+		// commit message that was successfully written.
+		if message := strings.TrimSpace(stdout.String()); message != "" &&
+			errors.Is(err, exec.ErrWaitDelay) {
+			return message, nil
 		}
 		// Only the reason reaches the error. The full stderr was already
 		// streamed live to diagnosticOut, so repeating it here would render a
