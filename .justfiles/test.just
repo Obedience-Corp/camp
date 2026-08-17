@@ -86,9 +86,13 @@ integration-verbose:
     # camp-itest profile itself (and says so), so this lane cannot silently
     # run against the shared daemon while the dashboard lane runs isolated.
     TESTCONTAINERS_DOCKER_SOCKET_OVERRIDE=/var/run/docker.sock \
-    go test -v -tags=integration ./tests/integration/... -timeout 30m 2>&1
+    go test -count=1 -v -tags=integration ./tests/integration/... -timeout 30m 2>&1
 
 # Run a specific integration test
+#
+# -count=1 because a cached PASS here is the worst kind of green: go's test
+# cache will replay a previous result without starting a container, so the run
+# reports success for work it never did.
 [no-cd]
 integration-run TEST:
     #!/usr/bin/env bash
@@ -98,7 +102,7 @@ integration-run TEST:
     GOOS=linux GOARCH=$(go env GOARCH) go build -o bin/linux/camp ./cmd/camp
     echo "Running integration test: {{TEST}}"
     TESTCONTAINERS_DOCKER_SOCKET_OVERRIDE=/var/run/docker.sock \
-    go test -v -tags=integration ./tests/integration/... -run "{{TEST}}" -timeout 5m
+    go test -count=1 -v -tags=integration ./tests/integration/... -run "{{TEST}}" -timeout 5m
 
 # Build Linux binary for integration tests (useful for debugging)
 [no-cd]
