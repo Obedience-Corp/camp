@@ -80,8 +80,11 @@ test-live-overwrite:
     }
     trap cleanup EXIT
     # A real executable occupying the destination, held open by a live process.
-    cp "$(command -v sleep)" "$workdir/{{binary_name}}"
-    "$workdir/{{binary_name}}" 60 &
+    # Built here rather than copied from the system: macOS 26 kills a copied
+    # platform binary (/bin/sleep) on exec, so the victim never stayed alive.
+    printf 'package main\n\nimport "time"\n\nfunc main() { time.Sleep(time.Minute) }\n' > "$workdir/victim.go"
+    (cd "$workdir" && go mod init victim >/dev/null 2>&1 && go build -o "$workdir/{{binary_name}}" ./victim.go)
+    "$workdir/{{binary_name}}" &
     victim=$!
     sleep 0.2
     before="$(ls -i "$workdir/{{binary_name}}" | awk '{print $1}')"
@@ -95,7 +98,14 @@ test-live-overwrite:
         echo "FAIL: destination inode unchanged ($before) -- not a rename swap"
         exit 1
     fi
-    if ! cmp -s {{bin_dir}}/{{binary_name}} "$workdir/{{binary_name}}"; then
+    # _copy re-signs on macOS, so compare against a copy signed the same way.
+    mkdir -p "$workdir/expected"
+    expected="$workdir/expected/{{binary_name}}"
+    cp {{bin_dir}}/{{binary_name}} "$expected"
+    if [[ "$(uname)" == "Darwin" ]]; then
+        codesign --force --sign - "$expected" 2>/dev/null || true
+    fi
+    if ! cmp -s "$expected" "$workdir/{{binary_name}}"; then
         echo "FAIL: installed binary does not match {{bin_dir}}/{{binary_name}}"
         exit 1
     fi
