@@ -5,6 +5,24 @@ The committed GIFs are the optimized delivery artifacts; raw GIFs, PTY
 transcripts, frame captures, and build details remain in the private VHS
 evidence bundles.
 
+The two GIFs in the top-level README are not in this table. They come from the
+shared [termcast](https://github.com/Obedience-Corp/termcast) festival content
+pack (`camp-cgo-navigation` and `camp-workitems`), so camp, fest, and the
+Festival docs site publish one palette and one fixture campaign. Re-record them
+there and copy the results in:
+
+```sh
+cd /path/to/termcast
+node bin/termcast.mjs tui camp-cgo-navigation --width 860
+node bin/termcast.mjs tui camp-workitems --width 860
+cp out/tui-camp-cgo-navigation-opt.gif /path/to/camp/docs/images/demos/cgo-navigation.gif
+cp out/tui-camp-workitems-opt.gif      /path/to/camp/docs/images/demos/tui-workitems.gif
+```
+
+Those seeds build the newest released camp tag with no build tags, so the
+recording is the stable command surface a reader can install. Pass
+`CAMP_SRC=/path/to/camp` to record an unreleased change instead.
+
 | Journey | Tape | Delivery GIF | Manifest |
 | --- | --- | --- | --- |
 | Fresh configure | [fresh-configure.tape](fresh-configure.tape) | [fresh-configure.gif](fresh-configure.gif) | [fresh-configure.manifest.json](fresh-configure.manifest.json) |
