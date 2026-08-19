@@ -343,23 +343,55 @@ func parkExhausted(campaignRoot, repo string) error {
 	return nil
 }
 
-// lanesWithWork returns the repos whose pending lane holds at least one job.
+// lanesWithWork returns the repos whose lanes hold work a worker would serve.
 func lanesWithWork(campaignRoot string) ([]string, error) {
-	slugs, err := Lanes(campaignRoot, statePending)
-	if err != nil {
-		return nil, err
+	seen := make(map[string]struct{})
+	for _, state := range []string{statePending, stateRunning} {
+		slugs, err := Lanes(campaignRoot, state)
+		if err != nil {
+			return nil, err
+		}
+		for _, slug := range slugs {
+			seen[RepoFromLaneSlug(slug)] = struct{}{}
+		}
 	}
-	var repos []string
-	for _, slug := range slugs {
-		repo := RepoFromLaneSlug(slug)
-		empty, err := laneEmpty(campaignRoot, repo)
-		if err != nil || empty {
+	repos := make([]string, 0, len(seen))
+	for repo := range seen {
+		work, err := laneNeedsWorker(campaignRoot, repo)
+		if err != nil || !work {
 			continue
 		}
 		repos = append(repos, repo)
 	}
 	sort.Strings(repos)
 	return repos, nil
+}
+
+// laneNeedsWorker reports whether a lane holds work a worker would serve.
+//
+// Pending jobs are the obvious case. Running jobs count too: a job in running/
+// belongs to a worker that claimed it, and if that worker died nobody finishes
+// it until another one takes the lane and reclaims it. Gating discovery on the
+// pending lane alone stranded exactly that job, because a crashed worker leaves
+// running/ occupied and pending/ empty. It then waited for an unrelated later
+// enqueue to wake the same lane, which on a quiet lane never came.
+//
+// Whether a running job's worker is really gone is not decided here. Both
+// callers settle that immediately afterward against the lane lock:
+// SpawnIfNeeded declines to start a second worker for a live lane, and
+// runLane's acquireLane refuses a lock that is still being heartbeated. This
+// answers only whether there is anything in the lane at all.
+func laneNeedsWorker(campaignRoot, repo string) (bool, error) {
+	for _, state := range []string{statePending, stateRunning} {
+		names, err := sortedJobFiles(laneDir(campaignRoot, state, repo))
+		if err != nil {
+			return false, err
+		}
+		if len(names) > 0 {
+			return true, nil
+		}
+	}
+	return false, nil
 }
 
 // laneEmpty reports whether a lane has no pending jobs.

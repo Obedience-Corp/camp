@@ -350,7 +350,7 @@ func SpawnIfNeeded(ctx context.Context, campaignRoot, repo string) {
 	if ctx.Err() != nil {
 		return
 	}
-	if empty, err := laneEmpty(campaignRoot, repo); err != nil || empty {
+	if work, err := laneNeedsWorker(campaignRoot, repo); err != nil || !work {
 		return
 	}
 

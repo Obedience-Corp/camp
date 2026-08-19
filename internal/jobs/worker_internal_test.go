@@ -545,3 +545,109 @@ func assertNoWorkerStarted(t *testing.T, root string) {
 		t.Errorf("a worker was spawned when the guards should have prevented it:\n%s", data)
 	}
 }
+
+// A job stranded in running/ by a worker that died is recovered on its own.
+//
+// Discovery used to consult the pending lane alone, in both lanesWithWork and
+// SpawnIfNeeded. A job whose worker died mid-flight sits in running/ with an
+// empty pending lane beside it, so no worker was ever started for that lane and
+// no started worker would have listed it: the job waited for an unrelated later
+// enqueue to happen to wake the same lane, which for a quiet lane is never.
+func TestStrandedRunningJobIsServedWithoutANewEnqueue(t *testing.T) {
+	withFastTiming(t, time.Millisecond, time.Millisecond)
+	root := testCampaign(t)
+	ctx := context.Background()
+
+	if _, err := Enqueue(ctx, root, Job{
+		Kind: KindCommitPaths, Repo: ".", Paths: []string{"a.md"},
+	}); err != nil {
+		t.Fatal(err)
+	}
+
+	// A worker that claimed the job and died leaves exactly this: the file in
+	// running/, nothing holding the lane, and no pending work to advertise it.
+	if _, _, err := Claim(ctx, root, "."); err != nil {
+		t.Fatal(err)
+	}
+	if pending, err := List(root, statePending, "."); err != nil {
+		t.Fatal(err)
+	} else if len(pending) != 0 {
+		t.Fatalf("setup: %d pending jobs, want 0", len(pending))
+	}
+
+	var served atomic.Int32
+	origExecute := executeJob
+	executeJob = func(context.Context, string, *Job) error {
+		served.Add(1)
+		return nil
+	}
+	t.Cleanup(func() { executeJob = origExecute })
+
+	time.Sleep(2 * time.Millisecond) // age past laneLiveness so reclaim takes it
+
+	if err := Run(ctx, root); err != nil {
+		t.Fatalf("Run() error = %v", err)
+	}
+
+	if got := served.Load(); got != 1 {
+		t.Errorf("served %d jobs, want 1: a job stranded in running/ must be "+
+			"recovered without waiting for an unrelated enqueue", got)
+	}
+	if running, err := List(root, stateRunning, "."); err != nil {
+		t.Fatal(err)
+	} else if len(running) != 0 {
+		t.Errorf("%d jobs left in running/, want 0", len(running))
+	}
+}
+
+// Counting running jobs as work must not let a second worker take a job the
+// first one is still running.
+//
+// Lane locking is what prevents that, and it always has. This is the case that
+// now reaches the guard: before, a lane holding only a running job was never
+// discovered at all, so the protection was never exercised there.
+func TestRunningJobWithALiveWorkerIsNotServedTwice(t *testing.T) {
+	withFastTiming(t, time.Second, 10*time.Millisecond)
+	root := testCampaign(t)
+	ctx := context.Background()
+
+	if _, err := Enqueue(ctx, root, Job{
+		Kind: KindCommitPaths, Repo: ".", Paths: []string{"a.md"},
+	}); err != nil {
+		t.Fatal(err)
+	}
+	if _, _, err := Claim(ctx, root, "."); err != nil {
+		t.Fatal(err)
+	}
+
+	// Stand in for the live worker: hold the lane the way runLane does, with
+	// the heartbeat keeping the lock fresh for the duration.
+	lock, ok, err := acquireLane(QueueDir(root), LaneSlug("."))
+	if err != nil || !ok {
+		t.Fatalf("acquireLane = (%v, %v), want the lane held", ok, err)
+	}
+	defer lock.release()
+
+	var served atomic.Int32
+	origExecute := executeJob
+	executeJob = func(context.Context, string, *Job) error {
+		served.Add(1)
+		return nil
+	}
+	t.Cleanup(func() { executeJob = origExecute })
+
+	if err := Run(ctx, root); err != nil {
+		t.Fatalf("Run() error = %v", err)
+	}
+
+	if got := served.Load(); got != 0 {
+		t.Errorf("served %d jobs, want 0: a running job whose worker is alive "+
+			"must not be reclaimed and run by a second worker", got)
+	}
+	if running, err := List(root, stateRunning, "."); err != nil {
+		t.Fatal(err)
+	} else if len(running) != 1 {
+		t.Errorf("%d jobs in running/, want 1: the live worker's job must be "+
+			"left alone", len(running))
+	}
+}
