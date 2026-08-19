@@ -113,6 +113,37 @@ func TestGenerateBash_FestivalsArm(t *testing.T) {
 	}
 }
 
+func TestGenerateBash_ProjectListArm(t *testing.T) {
+	output := generateBash()
+	section := shellWrapperSection(t, output, "    project|p)", "    festivals)")
+
+	checks := []struct {
+		name    string
+		content string
+	}{
+		{"subcommand guard", `case "${1:-}" in`},
+		{"list shift", "list|ls)"},
+		{"non-list passthrough", `command camp project "$@"`},
+		{"list path output", `command camp project list "$@" --path-output`},
+		{"project list temp file", "camp-project-list.XXXXXX"},
+		{"absolute cd", `cd "$dest"`},
+		{"json passthrough", `--json|--json=*`},
+		{"count passthrough", `--count|--count=*`},
+		{"format passthrough", `--format|--format=*`},
+	}
+	for _, check := range checks {
+		t.Run(check.name, func(t *testing.T) {
+			if !strings.Contains(section, check.content) {
+				t.Errorf("bash project list arm missing %s: %q", check.name, check.content)
+			}
+		})
+	}
+
+	if strings.Contains(section, `cd "$root/$dest"`) {
+		t.Error("project list arm must not use the root-relative cd form (paths are absolute)")
+	}
+}
+
 func TestGenerateBash_ContainsDynamicShortcuts(t *testing.T) {
 	output := generateBash()
 

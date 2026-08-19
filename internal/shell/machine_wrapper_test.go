@@ -27,7 +27,7 @@ func TestMachineArm_AllShells(t *testing.T) {
 			name:        "zsh",
 			output:      generateZsh(),
 			start:       "    machine)",
-			end:         "    festivals)",
+			end:         "    project|p)",
 			passthrough: `command camp machine "$@"`,
 			hopVia:      `line=$(command camp switch "$sel" --shell-connect)`,
 			tmpFile:     "camp-machine.XXXXXX",
@@ -36,7 +36,7 @@ func TestMachineArm_AllShells(t *testing.T) {
 			name:        "bash",
 			output:      generateBash(),
 			start:       "    machine)",
-			end:         "    festivals)",
+			end:         "    project|p)",
 			passthrough: `command camp machine "$@"`,
 			hopVia:      `line=$(command camp switch "$sel" --shell-connect)`,
 			tmpFile:     "camp-machine.XXXXXX",
@@ -45,7 +45,7 @@ func TestMachineArm_AllShells(t *testing.T) {
 			name:        "fish",
 			output:      generateFish(),
 			start:       "        case machine",
-			end:         "        case festivals",
+			end:         "        case project p",
 			passthrough: "command camp machine $rest",
 			hopVia:      "command camp switch $sel --shell-connect",
 			tmpFile:     "camp-machine.XXXXXX",
@@ -88,9 +88,9 @@ func TestMachineArm_BareWordSubcommandGuard(t *testing.T) {
 		start, end string
 		guard      string
 	}{
-		{"zsh", generateZsh(), "    machine)", "    festivals)", `""|-*) ;;`},
-		{"bash", generateBash(), "    machine)", "    festivals)", `""|-*) ;;`},
-		{"fish", generateFish(), "        case machine", "        case festivals",
+		{"zsh", generateZsh(), "    machine)", "    project|p)", `""|-*) ;;`},
+		{"bash", generateBash(), "    machine)", "    project|p)", `""|-*) ;;`},
+		{"fish", generateFish(), "        case machine", "        case project p",
 			`if test (count $rest) -gt 0; and not string match -qr -- '^-' $rest[1]`},
 	} {
 		t.Run(sh.name, func(t *testing.T) {
