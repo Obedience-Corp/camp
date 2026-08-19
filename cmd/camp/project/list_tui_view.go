@@ -372,7 +372,7 @@ func (m projListModel) footerLines(cw int) []string {
 	}
 	if m.overlay == projOverlaySearch {
 		lines = append(lines, m.input.View())
-		lines = append(lines, projHelpStyle.Render("enter: apply  ·  esc: clear  ·  ↑↓ move"))
+		lines = append(lines, projHelpStyle.Render("enter: go  ·  esc: clear  ·  j/k move"))
 		return lines
 	}
 	lines = append(lines, m.footer(cw))

@@ -64,16 +64,16 @@ func (m projListModel) updateSearch(key tea.KeyMsg) (tea.Model, tea.Cmd) {
 		m.query = ""
 		m.rebuildVisible()
 		return m, nil
-	case "enter":
+	case "enter", "g":
 		m.overlay = projOverlayNone
 		m.input.Blur()
 		m.query = strings.TrimSpace(m.input.Value())
 		m.rebuildVisible()
-		return m, nil
-	case "down":
+		return m.goSelected()
+	case "down", "j":
 		m.move(1)
 		return m, nil
-	case "up":
+	case "up", "k":
 		m.move(-1)
 		return m, nil
 	}

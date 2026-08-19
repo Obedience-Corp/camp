@@ -111,15 +111,61 @@ func TestProjModel_SearchFilter(t *testing.T) {
 	}
 	m = projKey(m, "enter")
 	if m.overlay != projOverlayNone {
-		t.Fatal("enter should keep the filter and leave search")
+		t.Fatal("enter should leave search")
 	}
 	if m.query != "scripts" {
 		t.Fatalf("query = %q, want scripts", m.query)
 	}
+	if m.quitting {
+		t.Fatal("enter without shell integration must not jump")
+	}
+	if !m.statusErr || m.status == "" {
+		t.Fatal("enter without shell integration should hint how to enable go")
+	}
+	m = newTestProjModel()
 	m = projKey(m, "/")
+	for _, r := range "scripts" {
+		m = projKey(m, string(r))
+	}
 	m = projKey(m, "esc")
 	if m.query != "" || len(m.visible) != 5 {
 		t.Fatalf("esc should clear search, query=%q visible=%v", m.query, visibleNames(m))
+	}
+}
+
+func TestProjModel_SearchThenGo(t *testing.T) {
+	m := newTestProjModel()
+	m.gotoEnabled = true
+	m = projKey(m, "/")
+	for _, r := range "scripts" {
+		m = projKey(m, string(r))
+	}
+	m = projKey(m, "enter")
+	if !m.quitting {
+		t.Fatal("enter in search should jump when shell integration is on")
+	}
+	want := filepath.Join("/tmp/campaign-root", "projects", "scripts")
+	if m.gotoPath != want {
+		t.Fatalf("gotoPath = %q, want %q", m.gotoPath, want)
+	}
+}
+
+func TestProjModel_SearchMoveWithJK(t *testing.T) {
+	m := newTestProjModel()
+	m = projKey(m, "/")
+	for _, r := range "go" {
+		m = projKey(m, string(r))
+	}
+	if len(m.visible) < 2 {
+		t.Fatalf("expected multiple go matches, got %v", visibleNames(m))
+	}
+	m = projKey(m, "j")
+	if m.cursor != 1 {
+		t.Fatalf("j in search should move, cursor=%d", m.cursor)
+	}
+	m = projKey(m, "k")
+	if m.cursor != 0 {
+		t.Fatalf("k in search should move back, cursor=%d", m.cursor)
 	}
 }
 
