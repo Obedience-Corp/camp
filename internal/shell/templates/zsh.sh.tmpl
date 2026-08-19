@@ -240,7 +240,7 @@ camp() {
       local arg passthrough=0
       for arg in "$@"; do
         case "$arg" in
-          --help|-h|--json|--json=*|--count|--count=*|--format|--format=*)
+          --help|-h|--json|--json=*|--count|--count=*|--format|--format=*|-f|-f=*)
             passthrough=1
             break
             ;;

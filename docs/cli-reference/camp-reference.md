@@ -5007,16 +5007,17 @@ Projects are discovered from the projects/ directory. They may be regular
 git-backed entries or linked external directories.
 
 In a terminal, 'camp project list' (with no flags) opens an interactive
-browser. Press / to filter, j/k to select, and g or enter to jump to the
-selected project when shell integration is loaded:
+browser. Press / to filter (letters including g type into the query; j/k
+move among matches; enter jumps), and from the browse list g or enter jumps
+to the selected project when shell integration is loaded:
 
   eval "$(camp shell-init zsh)"   # or bash / sh
   camp shell-init fish | source   # fish
   camp project list               # interactive browser; g cds into the project
 
-Piped, with --json/--count, or with a non-table --format it prints the table
-instead. -i forces the browser (and still prints the table when stdout is not
-a terminal).
+Piped, with --json/--count, or with a non-table --format it prints that
+format instead. -i forces the browser (and still prints the table when stdout
+is not a terminal).
 
 Output formats:
   table   - Aligned columns with headers (default)

@@ -25,9 +25,9 @@ to the selected project when shell integration is loaded:
   camp shell-init fish | source   # fish
   camp project list               # interactive browser; g cds into the project
 
-Piped, with --json/--count, or with a non-table --format it prints the table
-instead. -i forces the browser (and still prints the table when stdout is not
-a terminal).
+Piped, with --json/--count, or with a non-table --format it prints that
+format instead. -i forces the browser (and still prints the table when stdout
+is not a terminal).
 
 Output formats:
   table   - Aligned columns with headers (default)

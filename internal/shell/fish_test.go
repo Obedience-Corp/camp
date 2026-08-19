@@ -121,7 +121,7 @@ func TestGenerateFish_ProjectListArm(t *testing.T) {
 		{"absolute cd", `cd "$dest"`},
 		{"json passthrough", "--json '--json=*'"},
 		{"count passthrough", "--count '--count=*'"},
-		{"format passthrough", "--format '--format=*'"},
+		{"format passthrough", "--format '--format=*' -f '-f=*'"},
 	}
 	for _, check := range checks {
 		t.Run(check.name, func(t *testing.T) {
