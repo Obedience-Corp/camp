@@ -17,8 +17,9 @@ Projects are discovered from the projects/ directory. They may be regular
 git-backed entries or linked external directories.
 
 In a terminal, 'camp project list' (with no flags) opens an interactive
-browser. Press / to filter, j/k to select, and g or enter to jump to the
-selected project when shell integration is loaded:
+browser. Press / to filter (letters including g type into the query; j/k
+move among matches; enter jumps), and from the browse list g or enter jumps
+to the selected project when shell integration is loaded:
 
   eval "$(camp shell-init zsh)"   # or bash / sh
   camp shell-init fish | source   # fish

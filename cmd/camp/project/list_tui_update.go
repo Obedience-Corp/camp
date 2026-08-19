@@ -64,7 +64,9 @@ func (m projListModel) updateSearch(key tea.KeyMsg) (tea.Model, tea.Cmd) {
 		m.query = ""
 		m.rebuildVisible()
 		return m, nil
-	case "enter", "g":
+	case "enter":
+		// Jump only on enter. Binding g here would steal the letter from the
+		// live filter (go, golang, grok, …). g remains browse-only.
 		m.overlay = projOverlayNone
 		m.input.Blur()
 		m.query = strings.TrimSpace(m.input.Value())

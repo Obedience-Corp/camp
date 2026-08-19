@@ -156,16 +156,46 @@ func TestProjModel_SearchMoveWithJK(t *testing.T) {
 	for _, r := range "go" {
 		m = projKey(m, string(r))
 	}
-	if len(m.visible) < 2 {
-		t.Fatalf("expected multiple go matches, got %v", visibleNames(m))
+	if m.overlay != projOverlaySearch {
+		t.Fatal("typing the filter must keep the search overlay open (g must not jump)")
+	}
+	if m.query != "go" {
+		t.Fatalf("query = %q, want go (g must be typeable in search)", m.query)
+	}
+	got := visibleNames(m)
+	if len(got) < 2 {
+		t.Fatalf("expected multiple go matches, got %v", got)
+	}
+	for _, name := range got {
+		if name != "camp" && name != "fest" {
+			t.Fatalf("filtered visible = %v, want only Go projects (camp, fest)", got)
+		}
 	}
 	m = projKey(m, "j")
+	if m.overlay != projOverlaySearch {
+		t.Fatal("j in search should move among filtered rows, not leave search")
+	}
 	if m.cursor != 1 {
 		t.Fatalf("j in search should move, cursor=%d", m.cursor)
 	}
 	m = projKey(m, "k")
 	if m.cursor != 0 {
 		t.Fatalf("k in search should move back, cursor=%d", m.cursor)
+	}
+}
+
+func TestProjModel_SearchTypesLetterG(t *testing.T) {
+	m := newTestProjModel()
+	m = projKey(m, "/")
+	m = projKey(m, "g")
+	if m.overlay != projOverlaySearch {
+		t.Fatalf("g in search must type into the filter, overlay=%v query=%q status=%q", m.overlay, m.query, m.status)
+	}
+	if m.query != "g" {
+		t.Fatalf("query = %q, want g", m.query)
+	}
+	if m.quitting {
+		t.Fatal("g in search must not jump/quit")
 	}
 }
 
