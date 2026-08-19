@@ -484,3 +484,71 @@ func contains(ss []string, s string) bool {
 	}
 	return false
 }
+
+// TestBlameCache_LoadStaleVersion verifies entries written under older blame
+// semantics are treated as cold. Version 1 entries included vendored trees, so
+// reusing them would keep the inflated line counts alive after the fix.
+func TestBlameCache_LoadStaleVersion(t *testing.T) {
+	dir := t.TempDir()
+	cache := NewBlameCache(dir)
+	ctx := context.Background()
+
+	stale := `{"version":1,"project":"legacy","commit_hash":"abc123",` +
+		`"file_blame":{"node_modules/react/index.js":{"bob@example.com":900}}}`
+	if err := os.WriteFile(filepath.Join(dir, "legacy.json"), []byte(stale), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	loaded, err := cache.Load(ctx, "legacy")
+	if err != nil {
+		t.Fatalf("Load: %v", err)
+	}
+	if loaded != nil {
+		t.Errorf("Load() = %+v, want nil for stale version", loaded)
+	}
+}
+
+// TestBlameCache_LoadUnversioned covers entries written before cache
+// versioning existed, which have no version field at all.
+func TestBlameCache_LoadUnversioned(t *testing.T) {
+	dir := t.TempDir()
+	cache := NewBlameCache(dir)
+	ctx := context.Background()
+
+	old := `{"project":"legacy","commit_hash":"abc123"}`
+	if err := os.WriteFile(filepath.Join(dir, "legacy.json"), []byte(old), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	loaded, err := cache.Load(ctx, "legacy")
+	if err != nil {
+		t.Fatalf("Load: %v", err)
+	}
+	if loaded != nil {
+		t.Errorf("Load() = %+v, want nil for unversioned entry", loaded)
+	}
+}
+
+// TestBlameCache_SaveStampsVersion asserts Save owns the version invariant so
+// callers cannot write an unversioned entry.
+func TestBlameCache_SaveStampsVersion(t *testing.T) {
+	dir := t.TempDir()
+	cache := NewBlameCache(dir)
+	ctx := context.Background()
+
+	entry := &BlameCacheEntry{Project: "p", CommitHash: "h"}
+	if err := cache.Save(ctx, entry); err != nil {
+		t.Fatalf("Save: %v", err)
+	}
+	if entry.Version != blameCacheVersion {
+		t.Errorf("Save left Version = %d, want %d", entry.Version, blameCacheVersion)
+	}
+
+	loaded, err := cache.Load(ctx, "p")
+	if err != nil {
+		t.Fatalf("Load: %v", err)
+	}
+	if loaded == nil {
+		t.Fatal("Load() = nil, want round-tripped entry")
+	}
+}

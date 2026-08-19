@@ -13,8 +13,20 @@ import (
 	camperrors "github.com/Obedience-Corp/camp/internal/errors"
 )
 
+// blameCacheVersion identifies the blame semantics an entry was built with.
+// Entries written by an older version are treated as cold so their data is
+// recomputed rather than reused.
+//
+// Version 2 excludes vendored, generated, and submodule directories from blame,
+// so version 1 entries carry inflated per-author line counts.
+const blameCacheVersion = 2
+
 // BlameCacheEntry stores cached blame data for a single project.
 type BlameCacheEntry struct {
+	// Version is the blameCacheVersion in effect when the entry was written.
+	// Absent (zero) in entries predating cache versioning.
+	Version int `json:"version,omitempty"`
+
 	Project    string                    `json:"project"`
 	CommitHash string                    `json:"commit_hash"`
 	SCCDir     string                    `json:"scc_dir"`
@@ -73,14 +85,22 @@ func (c *BlameCache) Load(ctx context.Context, project string) (*BlameCacheEntry
 		return nil, nil // corrupt JSON → cold cache
 	}
 
+	if entry.Version != blameCacheVersion {
+		return nil, nil // stale blame semantics → cold cache
+	}
+
 	return &entry, nil
 }
 
 // Save persists a cache entry to disk, creating directories as needed.
+// The entry is stamped with the current blameCacheVersion so a later binary
+// with different blame semantics treats it as cold.
 func (c *BlameCache) Save(ctx context.Context, entry *BlameCacheEntry) error {
 	if err := ctx.Err(); err != nil {
 		return err
 	}
+
+	entry.Version = blameCacheVersion
 
 	if err := os.MkdirAll(c.dir, 0o755); err != nil {
 		return camperrors.Wrap(err, "creating cache dir")
@@ -313,7 +333,7 @@ func PopulateOneProjectCached(ctx context.Context, p *ResolvedProject, cache *Bl
 		p.AuthorCount = count
 	}
 
-	contribs, fileBlame, err := AuthorLOCWithFiles(ctx, p.SCCDir)
+	contribs, fileBlame, err := AuthorLOCWithFiles(ctx, p.SCCDir, p.ExcludeDirs)
 	if err != nil || len(contribs) == 0 {
 		// Fall back to non-cached path.
 		PopulateOneProject(ctx, p, resolver)
