@@ -61,7 +61,7 @@ func TestAuthorLOC_SingleAuthor(t *testing.T) {
 	dir := initGitRepo(t)
 	commitFile(t, dir, "main.go", "package main\n\nfunc main() {\n}\n", "Alice", "alice@example.com")
 
-	authors, err := AuthorLOC(context.Background(), dir)
+	authors, err := AuthorLOC(context.Background(), dir, nil)
 	if err != nil {
 		t.Fatalf("AuthorLOC: %v", err)
 	}
@@ -94,7 +94,7 @@ func TestAuthorLOC_MultipleAuthors(t *testing.T) {
 	// Bob writes 4 lines in a separate file
 	commitFile(t, dir, "b.go", "package a\n\nfunc B() {\n}\n", "Bob", "bob@example.com")
 
-	authors, err := AuthorLOC(context.Background(), dir)
+	authors, err := AuthorLOC(context.Background(), dir, nil)
 	if err != nil {
 		t.Fatalf("AuthorLOC: %v", err)
 	}
@@ -142,7 +142,7 @@ func TestAuthorLOC_EmptyRepo(t *testing.T) {
 		t.Fatalf("git commit: %s: %v", out, err)
 	}
 
-	authors, err := AuthorLOC(context.Background(), dir)
+	authors, err := AuthorLOC(context.Background(), dir, nil)
 	if err != nil {
 		t.Fatalf("AuthorLOC: %v", err)
 	}
@@ -159,7 +159,7 @@ func TestAuthorLOC_ContextCancellation(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	cancel()
 
-	_, err := AuthorLOC(ctx, dir)
+	_, err := AuthorLOC(ctx, dir, nil)
 	if err == nil {
 		t.Fatal("expected context error")
 	}
@@ -175,7 +175,7 @@ func TestAuthorLOC_MultipleFiles(t *testing.T) {
 	// Bob writes one file (3 lines)
 	commitFile(t, dir, "z.go", "package x\n\nvar Z = 3\n", "Bob", "bob@example.com")
 
-	authors, err := AuthorLOC(context.Background(), dir)
+	authors, err := AuthorLOC(context.Background(), dir, nil)
 	if err != nil {
 		t.Fatalf("AuthorLOC: %v", err)
 	}
@@ -480,7 +480,7 @@ func TestProjectActualPersonMonths_SingleAuthor(t *testing.T) {
 	commitFileWithDate(t, dir, "a.go", "package a\n", "Alice", "alice@example.com", "2025-01-01T12:00:00+00:00")
 	commitFileWithDate(t, dir, "b.go", "package a\n", "Alice", "alice@example.com", "2025-04-01T12:00:00+00:00")
 
-	pm, err := ProjectActualPersonMonths(context.Background(), dir, dir, NewAuthorResolver(nil))
+	pm, err := ProjectActualPersonMonths(context.Background(), dir, dir, nil, NewAuthorResolver(nil))
 	if err != nil {
 		t.Fatalf("ProjectActualPersonMonths: %v", err)
 	}
@@ -502,7 +502,7 @@ func TestProjectActualPersonMonths_TwoAuthors_DifferentDurations(t *testing.T) {
 	commitFileWithDate(t, dir, "b1.go", "package a\nvar y = 1\n", "Bob", "bob@example.com", "2025-03-01T12:00:00+00:00")
 	commitFileWithDate(t, dir, "b2.go", "package a\nvar z = 1\n", "Bob", "bob@example.com", "2025-04-01T12:00:00+00:00")
 
-	pm, err := ProjectActualPersonMonths(context.Background(), dir, dir, NewAuthorResolver(nil))
+	pm, err := ProjectActualPersonMonths(context.Background(), dir, dir, nil, NewAuthorResolver(nil))
 	if err != nil {
 		t.Fatalf("ProjectActualPersonMonths: %v", err)
 	}
@@ -531,7 +531,7 @@ func TestProjectActualPersonMonths_SingleCommitAuthor(t *testing.T) {
 	// Author with a single commit should get minimum 0.1 months
 	commitFileWithDate(t, dir, "a.go", "package a\n", "Alice", "alice@example.com", "2025-01-01T12:00:00+00:00")
 
-	pm, err := ProjectActualPersonMonths(context.Background(), dir, dir, NewAuthorResolver(nil))
+	pm, err := ProjectActualPersonMonths(context.Background(), dir, dir, nil, NewAuthorResolver(nil))
 	if err != nil {
 		t.Fatalf("ProjectActualPersonMonths: %v", err)
 	}
@@ -548,7 +548,7 @@ func TestProjectActualPersonMonths_ContextCancelled(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	cancel()
 
-	_, err := ProjectActualPersonMonths(ctx, dir, dir, NewAuthorResolver(nil))
+	_, err := ProjectActualPersonMonths(ctx, dir, dir, nil, NewAuthorResolver(nil))
 	if err == nil {
 		t.Fatal("expected error from cancelled context")
 	}
@@ -649,8 +649,8 @@ func TestCampaignActualPersonMonths_DeduplicatesAcrossRepos(t *testing.T) {
 	}
 
 	// Must be less than naive sum of per-project PMs
-	pm1, _ := ProjectActualPersonMonths(ctx, repo1, repo1, resolver)
-	pm2, _ := ProjectActualPersonMonths(ctx, repo2, repo2, resolver)
+	pm1, _ := ProjectActualPersonMonths(ctx, repo1, repo1, nil, resolver)
+	pm2, _ := ProjectActualPersonMonths(ctx, repo2, repo2, nil, resolver)
 	naiveSum := pm1 + pm2
 	if campaignPM >= naiveSum {
 		t.Errorf("campaign PM (%.2f) should be less than naive sum (%.2f)", campaignPM, naiveSum)
@@ -677,7 +677,7 @@ func TestCampaignActualPersonMonths_DeduplicatesMonorepo(t *testing.T) {
 	}
 
 	// Single author, ~6 months. Should NOT be doubled.
-	singlePM, _ := ProjectActualPersonMonths(ctx, repo, repo, resolver)
+	singlePM, _ := ProjectActualPersonMonths(ctx, repo, repo, nil, resolver)
 	if math.Abs(campaignPM-singlePM) > 0.5 {
 		t.Errorf("campaignPM = %.2f, singlePM = %.2f; monorepo should not double-count", campaignPM, singlePM)
 	}
@@ -739,7 +739,7 @@ func TestBlameWeightedPersonMonths_SingleAuthor(t *testing.T) {
 	commitFileWithDate(t, dir, "main.go", "package main\n\nfunc main() {\n}\n", "Alice", "alice@example.com", "2025-01-01T12:00:00+00:00")
 	commitFileWithDate(t, dir, "util.go", "package main\n\nvar X = 1\n", "Alice", "alice@example.com", "2025-04-01T12:00:00+00:00")
 
-	pm, authors, err := BlameWeightedPersonMonths(context.Background(), dir, dir, NewAuthorResolver(nil))
+	pm, authors, err := BlameWeightedPersonMonths(context.Background(), dir, dir, nil, NewAuthorResolver(nil))
 	if err != nil {
 		t.Fatalf("BlameWeightedPersonMonths: %v", err)
 	}
@@ -773,7 +773,7 @@ func TestBlameWeightedPersonMonths_MixedContributions(t *testing.T) {
 	commitFileWithDate(t, dir, "b.go", "package a\n\nfunc B() {\n}\n", "Bob", "bob@example.com", "2025-03-01T12:00:00+00:00")
 	commitFileWithDate(t, dir, "b2.go", "package a\n", "Bob", "bob@example.com", "2025-04-01T12:00:00+00:00")
 
-	pm, authors, err := BlameWeightedPersonMonths(context.Background(), dir, dir, NewAuthorResolver(nil))
+	pm, authors, err := BlameWeightedPersonMonths(context.Background(), dir, dir, nil, NewAuthorResolver(nil))
 	if err != nil {
 		t.Fatalf("BlameWeightedPersonMonths: %v", err)
 	}
@@ -811,7 +811,7 @@ func TestBlameWeightedPersonMonths_FiltersBelowOnePercent(t *testing.T) {
 	commitFileWithDate(t, dir, "tiny.go", "package a\n", "Bob", "bob@example.com", "2025-01-01T12:00:00+00:00")
 	commitFileWithDate(t, dir, "tiny2.go", "package a\n", "Bob", "bob@example.com", "2025-09-01T12:00:00+00:00")
 
-	pm, authors, err := BlameWeightedPersonMonths(context.Background(), dir, dir, NewAuthorResolver(nil))
+	pm, authors, err := BlameWeightedPersonMonths(context.Background(), dir, dir, nil, NewAuthorResolver(nil))
 	if err != nil {
 		t.Fatalf("BlameWeightedPersonMonths: %v", err)
 	}
@@ -834,7 +834,7 @@ func TestBlameWeightedPersonMonths_SingleCommitAuthor(t *testing.T) {
 	dir := initGitRepo(t)
 	commitFileWithDate(t, dir, "a.go", "package a\n", "Alice", "alice@example.com", "2025-01-01T12:00:00+00:00")
 
-	pm, _, err := BlameWeightedPersonMonths(context.Background(), dir, dir, NewAuthorResolver(nil))
+	pm, _, err := BlameWeightedPersonMonths(context.Background(), dir, dir, nil, NewAuthorResolver(nil))
 	if err != nil {
 		t.Fatalf("BlameWeightedPersonMonths: %v", err)
 	}
@@ -852,7 +852,7 @@ func TestBlameWeightedPersonMonths_ContextCancelled(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	cancel()
 
-	_, _, err := BlameWeightedPersonMonths(ctx, dir, dir, NewAuthorResolver(nil))
+	_, _, err := BlameWeightedPersonMonths(ctx, dir, dir, nil, NewAuthorResolver(nil))
 	if err == nil {
 		t.Fatal("expected error from cancelled context")
 	}
@@ -880,5 +880,69 @@ func TestAuthorContribution_WeightedPM_BackwardCompat(t *testing.T) {
 	}
 	if ac2.WeightedPM != 3.5 {
 		t.Errorf("WeightedPM = %f, want 3.5", ac2.WeightedPM)
+	}
+}
+
+// TestAuthorLOC_ExcludesVendoredTrees verifies blame skips committed
+// dependency trees. Counting them costs one git subprocess per vendored file
+// and credits the vendored lines to whoever ran the install.
+func TestAuthorLOC_ExcludesVendoredTrees(t *testing.T) {
+	dir := initGitRepo(t)
+	commitFile(t, dir, "main.go", "package main\n\nfunc main() {\n}\n", "Alice", "alice@example.com")
+	commitFile(t, dir, "node_modules/react/index.js",
+		"a\nb\nc\nd\ne\nf\ng\nh\n", "Bob", "bob@example.com")
+	commitFile(t, dir, "vendor/x/y.go",
+		"a\nb\nc\nd\ne\nf\ng\nh\n", "Bob", "bob@example.com")
+
+	authors, err := AuthorLOC(context.Background(), dir, nil)
+	if err != nil {
+		t.Fatalf("AuthorLOC() error = %v", err)
+	}
+
+	for _, a := range authors {
+		if a.Email == "bob@example.com" {
+			t.Errorf("vendored-only author credited %d lines, want no attribution", a.Lines)
+		}
+	}
+	if len(authors) != 1 || authors[0].Email != "alice@example.com" {
+		t.Fatalf("authors = %+v, want only alice", authors)
+	}
+}
+
+// TestTrackedFiles_ExcludesVendored asserts the vendored files never reach the
+// blame stage at all, which is what keeps the run from spawning tens of
+// thousands of git subprocesses.
+func TestTrackedFiles_ExcludesVendored(t *testing.T) {
+	dir := initGitRepo(t)
+	commitFile(t, dir, "main.go", "package main\n", "Alice", "alice@example.com")
+	commitFile(t, dir, "node_modules/react/index.js", "x\n", "Alice", "alice@example.com")
+	commitFile(t, dir, "web/dist/bundle.js", "x\n", "Alice", "alice@example.com")
+
+	files, err := trackedFiles(context.Background(), dir, nil)
+	if err != nil {
+		t.Fatalf("trackedFiles() error = %v", err)
+	}
+
+	if len(files) != 1 || files[0] != "main.go" {
+		t.Errorf("trackedFiles() = %v, want [main.go]", files)
+	}
+}
+
+// TestAuthorLOC_HonorsProjectExcludeDirs covers the monorepo case, where
+// submodule paths are excluded to avoid double-counting.
+func TestAuthorLOC_HonorsProjectExcludeDirs(t *testing.T) {
+	dir := initGitRepo(t)
+	commitFile(t, dir, "main.go", "package main\n", "Alice", "alice@example.com")
+	commitFile(t, dir, "sub/mod/lib.go", "a\nb\nc\n", "Bob", "bob@example.com")
+
+	authors, err := AuthorLOC(context.Background(), dir, []string{"sub/mod"})
+	if err != nil {
+		t.Fatalf("AuthorLOC() error = %v", err)
+	}
+
+	for _, a := range authors {
+		if a.Email == "bob@example.com" {
+			t.Errorf("excluded submodule author credited %d lines", a.Lines)
+		}
 	}
 }

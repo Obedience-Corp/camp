@@ -195,7 +195,7 @@ func PopulateOneProject(ctx context.Context, p *ResolvedProject, resolver *Autho
 	if err == nil {
 		p.AuthorCount = count
 	}
-	pm, authors, err := BlameWeightedPersonMonths(ctx, p.GitDir, p.SCCDir, resolver)
+	pm, authors, err := BlameWeightedPersonMonths(ctx, p.GitDir, p.SCCDir, p.ExcludeDirs, resolver)
 	if err == nil {
 		p.ActualPersonMonths = pm
 		p.Authors = authors

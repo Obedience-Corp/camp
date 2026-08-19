@@ -75,8 +75,11 @@ type authorAccum struct {
 // It runs git blame --line-porcelain on each tracked source file concurrently
 // (bounded by NumCPU, max 8), counts lines per author email, and returns
 // AuthorContribution slices sorted by lines descending.
-func AuthorLOC(ctx context.Context, dir string) ([]AuthorContribution, error) {
-	contribs, _, err := authorLOCInternal(ctx, dir)
+//
+// excludeDirs is the project's own exclusion list; DefaultExcludeDirs is always
+// applied on top so vendored and generated trees are skipped, matching scc.
+func AuthorLOC(ctx context.Context, dir string, excludeDirs []string) ([]AuthorContribution, error) {
+	contribs, _, err := authorLOCInternal(ctx, dir, excludeDirs)
 	return contribs, err
 }
 
@@ -84,19 +87,19 @@ func AuthorLOC(ctx context.Context, dir string) ([]AuthorContribution, error) {
 // blame data. The returned map is file → email → lines. This is the same
 // concurrent pipeline as AuthorLOC but additionally captures per-file results
 // for use by the blame cache.
-func AuthorLOCWithFiles(ctx context.Context, dir string) ([]AuthorContribution, map[string]map[string]int, error) {
-	return authorLOCInternal(ctx, dir)
+func AuthorLOCWithFiles(ctx context.Context, dir string, excludeDirs []string) ([]AuthorContribution, map[string]map[string]int, error) {
+	return authorLOCInternal(ctx, dir, excludeDirs)
 }
 
 // authorLOCInternal is the shared implementation for AuthorLOC and
 // AuthorLOCWithFiles. Returns both aggregated contributions and per-file
 // blame data (file → email → lines).
-func authorLOCInternal(ctx context.Context, dir string) ([]AuthorContribution, map[string]map[string]int, error) {
+func authorLOCInternal(ctx context.Context, dir string, excludeDirs []string) ([]AuthorContribution, map[string]map[string]int, error) {
 	if err := ctx.Err(); err != nil {
 		return nil, nil, err
 	}
 
-	files, err := trackedFiles(ctx, dir)
+	files, err := trackedFiles(ctx, dir, excludeDirs)
 	if err != nil {
 		return nil, nil, err
 	}
@@ -162,8 +165,12 @@ func authorLOCInternal(ctx context.Context, dir string) ([]AuthorContribution, m
 	return buildContributions(accum), fileBlame, nil
 }
 
-// trackedFiles returns all git-tracked files under dir.
-func trackedFiles(ctx context.Context, dir string) ([]string, error) {
+// trackedFiles returns git-tracked files under dir, minus those inside
+// vendored, generated, or submodule directories. Blaming a committed
+// node_modules tree costs one git subprocess per file and attributes vendored
+// lines to whoever committed them, so the same exclusions scc applies are
+// applied here.
+func trackedFiles(ctx context.Context, dir string, excludeDirs []string) ([]string, error) {
 	cmd := exec.CommandContext(ctx, "git", "-C", dir, "ls-files")
 	out, err := cmd.Output()
 	if err != nil {
@@ -176,7 +183,7 @@ func trackedFiles(ctx context.Context, dir string) ([]string, error) {
 			files = append(files, line)
 		}
 	}
-	return files, nil
+	return filterExcluded(files, excludeDirs), nil
 }
 
 // blameFile runs git blame --line-porcelain on a single file and accumulates
@@ -451,7 +458,7 @@ func gitDirAuthors(ctx context.Context, gitDir string, resolver *AuthorResolver)
 //
 // Authors with < 1% LOC ownership are excluded from the effort calculation (D2).
 // Returns total weighted PM and enriched AuthorContribution slice with WeightedPM set.
-func BlameWeightedPersonMonths(ctx context.Context, gitDir, sccDir string, resolver *AuthorResolver) (float64, []AuthorContribution, error) {
+func BlameWeightedPersonMonths(ctx context.Context, gitDir, sccDir string, excludeDirs []string, resolver *AuthorResolver) (float64, []AuthorContribution, error) {
 	if err := ctx.Err(); err != nil {
 		return 0, nil, err
 	}
@@ -463,7 +470,7 @@ func BlameWeightedPersonMonths(ctx context.Context, gitDir, sccDir string, resol
 	}
 
 	// Get blame LOC per author.
-	contribs, err := AuthorLOC(ctx, sccDir)
+	contribs, err := AuthorLOC(ctx, sccDir, excludeDirs)
 	if err != nil || len(contribs) == 0 {
 		// Fall back to unweighted date-span PM.
 		return dateSpanOnlyPM(dateSpans, minAuthorMonths), nil, nil
@@ -527,9 +534,9 @@ func blameWeightedPMFromContribs(contribs []AuthorContribution, dateSpans map[st
 // When sccDir is non-empty, uses blame-weighted calculation via
 // BlameWeightedPersonMonths. When sccDir is empty, falls back to unweighted
 // date-span calculation for backward compatibility.
-func ProjectActualPersonMonths(ctx context.Context, gitDir, sccDir string, resolver *AuthorResolver) (float64, error) {
+func ProjectActualPersonMonths(ctx context.Context, gitDir, sccDir string, excludeDirs []string, resolver *AuthorResolver) (float64, error) {
 	if sccDir != "" {
-		pm, _, err := BlameWeightedPersonMonths(ctx, gitDir, sccDir, resolver)
+		pm, _, err := BlameWeightedPersonMonths(ctx, gitDir, sccDir, excludeDirs, resolver)
 		return pm, err
 	}
 
