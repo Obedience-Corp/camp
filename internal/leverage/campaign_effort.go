@@ -70,7 +70,7 @@ func CampaignActualPersonMonths(ctx context.Context, projects []ResolvedProject,
 			contribs = p.Authors
 		} else {
 			var err error
-			contribs, err = AuthorLOC(ctx, p.SCCDir)
+			contribs, err = AuthorLOC(ctx, p.SCCDir, p.ExcludeDirs)
 			if err != nil {
 				continue
 			}
