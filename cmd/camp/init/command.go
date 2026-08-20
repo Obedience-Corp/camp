@@ -234,8 +234,10 @@ func RunFlow(ctx context.Context, p Params, w Writers, isInteractive bool) error
 		return err
 	}
 
-	// Repair mode: compute and preview changes before applying.
-	if p.Repair && !p.DryRun {
+	// Repair mode: compute and preview changes before applying. The preview runs
+	// under --dry-run too: previewing a generic init instead would answer a
+	// question the caller did not ask, which is the whole point of the flag.
+	if p.Repair {
 		plan, err := scaffold.ComputeRepairPlan(ctx, dir, opts)
 		if err != nil {
 			return camperrors.Wrap(err, "failed to compute repair plan")
@@ -254,6 +256,12 @@ func RunFlow(ctx context.Context, p Params, w Writers, isInteractive bool) error
 		if skillsPending {
 			writeLine(w.HumanOut, ui.Subheader("Skills to (re)link:"))
 			writef(w.HumanOut, "  %s project skill bundles into %s\n", ui.SuccessIcon(), strings.Join(intskills.ToolNames(), ", "))
+		}
+
+		if p.DryRun {
+			writeLine(w.HumanOut)
+			writeLine(w.HumanOut, ui.Warning("Dry run - no changes applied."))
+			return nil
 		}
 
 		if !p.Yes {
