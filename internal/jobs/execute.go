@@ -339,6 +339,35 @@ func containsSequence(args, seq []string) bool {
 	return false
 }
 
+// shouldSpawnWorker reports whether a lane warrants starting a detached worker.
+//
+// Split out from the spawn itself so the decision can be asserted without
+// starting a process. The guard tests could previously only state the negative
+// cases, by observing that no worker was spawned; the positive ones had no way
+// to be written at all, because saying "it would spawn" meant actually
+// spawning. That gap is why this function's first question, the one that
+// decides whether a lane holding only an abandoned running job is worth a
+// worker, shipped without a test of its own.
+//
+// Cheap and approximate on purpose, like the spawn it guards: losing a race
+// only wastes a process, because the loser's acquireLane returns !ok and it
+// exits. Failing to spawn strands work, which is the expensive direction, so
+// when in doubt this says yes.
+func shouldSpawnWorker(campaignRoot, repo string) bool {
+	work, err := laneNeedsWorker(campaignRoot, repo)
+	if err != nil || !work {
+		return false
+	}
+
+	queueDir := QueueDir(campaignRoot)
+	if laneLockFresh(queueDir, LaneSlug(repo)) {
+		return false // a live worker already has this lane
+	}
+	// At the cap. The running workers rediscover lanes when they finish, so
+	// this lane is served without another process.
+	return countFreshLaneLocks(queueDir) < laneCap
+}
+
 // SpawnIfNeeded starts a detached worker when a lane has work and no live
 // worker.
 //
@@ -350,18 +379,7 @@ func SpawnIfNeeded(ctx context.Context, campaignRoot, repo string) {
 	if ctx.Err() != nil {
 		return
 	}
-	if work, err := laneNeedsWorker(campaignRoot, repo); err != nil || !work {
-		return
-	}
-
-	queueDir := QueueDir(campaignRoot)
-	slug := LaneSlug(repo)
-	if laneLockFresh(queueDir, slug) {
-		return // a live worker already has this lane
-	}
-	if countFreshLaneLocks(queueDir) >= laneCap {
-		// At the cap. The running workers rediscover lanes when they finish,
-		// so this lane is served without another process.
+	if !shouldSpawnWorker(campaignRoot, repo) {
 		return
 	}
 
