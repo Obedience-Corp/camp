@@ -480,3 +480,62 @@ func TestInit_RepairStableDoesNotRestoreQuestScaffold(t *testing.T) {
 		t.Fatalf("stable repair should not create quest scaffold, stat err = %v", err)
 	}
 }
+
+// Repair writes machine-local rules into .campaign/.gitignore. The repair commit
+// stages a selective file list, so an edit missing from FilesModified lands on
+// disk and is then left behind as an uncommitted change.
+func TestInit_RepairRecordsModifiedCampaignGitignore(t *testing.T) {
+	tmpDir := t.TempDir()
+	tmpDir, _ = filepath.EvalSymlinks(tmpDir)
+	t.Setenv("XDG_CONFIG_HOME", tmpDir)
+
+	campaignDir := filepath.Join(tmpDir, "repair-campaign-gitignore")
+	mustMkdirAll(t, filepath.Join(campaignDir, config.CampaignDir))
+
+	ctx := context.Background()
+
+	initialCfg := &config.CampaignConfig{
+		ID:        "test-id",
+		Name:      "repair-campaign-gitignore",
+		Type:      config.CampaignTypeProduct,
+		CreatedAt: time.Now(),
+	}
+	if err := config.SaveCampaignConfig(ctx, campaignDir, initialCfg); err != nil {
+		t.Fatalf("SaveCampaignConfig() error = %v", err)
+	}
+
+	// A pre-fix campaign .gitignore: exists, but without the machine-local rules
+	// repair backfills.
+	campaignGitignore := filepath.Join(campaignDir, config.CampaignDir, ".gitignore")
+	if err := os.WriteFile(campaignGitignore, []byte("state.yaml\n"), 0644); err != nil {
+		t.Fatal(err)
+	}
+
+	result, err := Init(ctx, campaignDir, InitOptions{
+		Name:       "repair-campaign-gitignore",
+		Repair:     true,
+		NoRegister: true,
+	})
+	if err != nil {
+		t.Fatalf("Init() with repair error = %v", err)
+	}
+
+	content, err := os.ReadFile(campaignGitignore)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !gitignoreHasRule(string(content), campaignEventsGitignoreRule) {
+		t.Fatalf("repair did not append %q:\n%s", campaignEventsGitignoreRule, content)
+	}
+
+	var recorded bool
+	for _, f := range result.FilesModified {
+		if f == campaignGitignore {
+			recorded = true
+		}
+	}
+	if !recorded {
+		t.Fatalf("repair edited %s but did not record it in FilesModified, so the repair commit leaves it dirty; got %v",
+			campaignGitignore, result.FilesModified)
+	}
+}

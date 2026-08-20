@@ -372,10 +372,18 @@ workitems/current.yaml
 			}
 			result.FilesCreated = append(result.FilesCreated, ".campaign/.gitignore")
 		} else if opts.Repair {
+			appended := false
 			for _, entry := range campaignGitignoreRequiredRules {
-				if err := appendGitignoreEntryIfMissing(absDir, entry); err != nil {
+				modified, err := appendGitignoreEntryIfMissing(absDir, entry)
+				if err != nil {
 					return nil, camperrors.Wrapf(err, "failed to append %s to .gitignore", entry)
 				}
+				appended = appended || modified
+			}
+			// The repair commit stages a selective file list, so an edit that is
+			// not recorded here is written to disk and then left uncommitted.
+			if appended {
+				result.FilesModified = append(result.FilesModified, gitignorePath)
 			}
 		}
 	}
