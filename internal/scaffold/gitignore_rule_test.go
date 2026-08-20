@@ -92,8 +92,12 @@ func TestAppendGitignoreEntryIfMissingRoundTrip(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	if err := appendGitignoreEntryIfMissing(dir, "workitems/current.yaml"); err != nil {
+	modified, err := appendGitignoreEntryIfMissing(dir, "workitems/current.yaml")
+	if err != nil {
 		t.Fatalf("appendGitignoreEntryIfMissing() error = %v", err)
+	}
+	if !modified {
+		t.Fatal("appendGitignoreEntryIfMissing() reported no change while appending a missing rule")
 	}
 	first, err := os.ReadFile(gitignorePath)
 	if err != nil {
@@ -106,8 +110,12 @@ func TestAppendGitignoreEntryIfMissingRoundTrip(t *testing.T) {
 		t.Fatalf("gitignore missing explanatory comment:\n%s", first)
 	}
 
-	if err := appendGitignoreEntryIfMissing(dir, "workitems/current.yaml"); err != nil {
+	modified, err = appendGitignoreEntryIfMissing(dir, "workitems/current.yaml")
+	if err != nil {
 		t.Fatalf("second appendGitignoreEntryIfMissing() error = %v", err)
+	}
+	if modified {
+		t.Fatal("second appendGitignoreEntryIfMissing() reported a change on an already-present rule")
 	}
 	second, err := os.ReadFile(gitignorePath)
 	if err != nil {

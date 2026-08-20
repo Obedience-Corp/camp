@@ -746,11 +746,10 @@ var campaignGitignoreRequiredRules = []string{
 // using gitignore-line semantics (non-comment, trimmed exact match) so a
 // commented-out or substring-match line does not fool the check. The
 // operation is append-only and never rewrites the file wholesale.
-func appendGitignoreEntryIfMissing(absDir, entry string) error {
+func appendGitignoreEntryIfMissing(absDir, entry string) (modified bool, err error) {
 	gitignorePath := filepath.Join(absDir, config.CampaignDir, ".gitignore")
 	// TODO(seq06-lock): concurrent repair runs can still race this read-modify-write append.
-	_, err := fsutil.AppendGitignoreEntryIfMissing(gitignorePath, entry, campaignGitignoreRuleComment(entry))
-	return err
+	return fsutil.AppendGitignoreEntryIfMissing(gitignorePath, entry, campaignGitignoreRuleComment(entry))
 }
 
 func campaignGitignoreRuleComment(entry string) string {
