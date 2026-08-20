@@ -106,6 +106,32 @@ func TestGenerateFish_FestivalsArm(t *testing.T) {
 	}
 }
 
+func TestGenerateFish_ProjectListArm(t *testing.T) {
+	output := generateFish()
+	section := shellWrapperSection(t, output, "        case project p", "        case festivals")
+
+	checks := []struct {
+		name    string
+		content string
+	}{
+		{"list subcommand", "case list ls"},
+		{"non-list passthrough", "command camp project $rest"},
+		{"list path output", "command camp project list $rest --path-output"},
+		{"project list temp file", "camp-project-list.XXXXXX"},
+		{"absolute cd", `cd "$dest"`},
+		{"json passthrough", "--json '--json=*'"},
+		{"count passthrough", "--count '--count=*'"},
+		{"format passthrough", "--format '--format=*' -f '-f=*'"},
+	}
+	for _, check := range checks {
+		t.Run(check.name, func(t *testing.T) {
+			if !strings.Contains(section, check.content) {
+				t.Errorf("fish project list arm missing %s: %q", check.name, check.content)
+			}
+		})
+	}
+}
+
 func TestGenerateFish_ValidSyntax(t *testing.T) {
 	// Skip if fish is not available
 	if _, err := exec.LookPath("fish"); err != nil {

@@ -29,6 +29,7 @@ recording is the stable command surface a reader can install. Pass
 | Machine/status | [machine-tui.tape](machine-tui.tape) | [machine-tui.gif](machine-tui.gif) | [machine-tui.manifest.json](machine-tui.manifest.json) |
 | Machine dual-auth CLI | [machine-dual-auth.tape](machine-dual-auth.tape) | [machine-dual-auth.gif](machine-dual-auth.gif) | (WI-ca06e1 record-time proof; private gist optional) |
 | Project-aware worktree list | [worktree-list.tape](worktree-list.tape) | [worktree-list.gif](worktree-list.gif) | — |
+| Project list browser | [project-list.tape](project-list.tape) | [project-list.gif](project-list.gif) | — |
 | Tailscale SSH approval | [machine-tailscale-check.tape](machine-tailscale-check.tape) | private gist | (PR evidence bundle) |
 | Diagnose an unresolvable host | [machine-diagnose-dns.tape](machine-diagnose-dns.tape) | private gist | (PR evidence bundle) |
 | Hop survives a MagicDNS outage | [machine-hop-dns-fallback.tape](machine-hop-dns-fallback.tape) | private gist | (PR evidence bundle) |
