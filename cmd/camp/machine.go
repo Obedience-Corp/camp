@@ -468,8 +468,9 @@ func probeRemoteCamp(ctx context.Context, m *machines.Machine) (loc remote.CampL
 }
 
 // campVersionSkew reports whether a probed remote version differs from this
-// binary. Same version string but different commits (the dev-build case) also
-// counts — two "dev" builds from different commits are not the same camp.
+// binary. Builds carry a git-describe version, so two commits normally differ
+// by version alone. The commit is still compared because builds can share a
+// version string: two builds of one tag, or an explicit VERSION override.
 func campVersionSkew(local version.Info, remoteVersion, remoteCommit string) bool {
 	if remoteVersion == "" {
 		return false
@@ -745,7 +746,9 @@ func renderMachineDiagnoseTable(w io.Writer, rows []machineDiagnoseRow) error {
 }
 
 // campVersionDisplay formats a probed remote camp version, appending the
-// commit only when it disambiguates (dev builds all report version "dev").
+// commit whenever the probe returned one. Versions are git-describe strings and
+// usually differ on their own; the commit still separates builds that share a
+// version string, such as two builds of one tag or a matching VERSION override.
 func campVersionDisplay(r machineDiagnoseRow) string {
 	if r.CampCommit != "" {
 		return r.CampVersion + " (" + r.CampCommit + ")"

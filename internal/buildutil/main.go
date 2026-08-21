@@ -50,10 +50,10 @@ func main() {
 
 	switch cmd {
 	case "build":
-		err = tasks.Build(verbose)
+		err = tasks.Build(ctx, verbose)
 
 	case "build-only":
-		err = tasks.BuildOnly(verbose)
+		err = tasks.BuildOnly(ctx, verbose)
 
 	case "test":
 		err = tasks.Test(verbose)
@@ -79,7 +79,7 @@ func main() {
 		}
 
 		fmt.Println("\n🔨 Building...")
-		if buildErr := tasks.Build(verbose); buildErr != nil {
+		if buildErr := tasks.Build(ctx, verbose); buildErr != nil {
 			// Don't continue if build fails - can't test broken code
 			err = camperrors.Newf("stopping due to build failure: %w", buildErr)
 			break

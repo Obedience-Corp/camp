@@ -4,7 +4,7 @@ bin_dir := "bin"
 BUILDTOOL := "go run ./internal/buildutil"
 build_tags := env_var_or_default("BUILD_TAGS", "")
 version_pkg := "github.com/Obedience-Corp/camp/internal/version"
-version := env_var_or_default("VERSION", "dev")
+version := env_var_or_default("VERSION", `git describe --tags --always --dirty 2>/dev/null || echo "dev"`)
 commit := `git rev-parse --short HEAD 2>/dev/null || echo "unknown"`
 build_date := `date -u +"%Y-%m-%dT%H:%M:%SZ"`
 platform_ldflags := "-s -w -X " + version_pkg + ".Version=" + version + " -X " + version_pkg + ".Commit=" + commit + " -X " + version_pkg + ".BuildDate=" + build_date
@@ -104,9 +104,9 @@ windows:
     #!/usr/bin/env bash
     set -euo pipefail
     if [ -n "{{build_tags}}" ]; then
-        GOOS=windows GOARCH=amd64 go build -tags '{{build_tags}}' -ldflags '-s -w' -o {{bin_dir}}/{{binary_name}}-windows-amd64.exe ./cmd/camp
+        GOOS=windows GOARCH=amd64 go build -tags '{{build_tags}}' -ldflags '{{platform_ldflags}}' -o {{bin_dir}}/{{binary_name}}-windows-amd64.exe ./cmd/camp
     else
-        GOOS=windows GOARCH=amd64 go build -ldflags '-s -w' -o {{bin_dir}}/{{binary_name}}-windows-amd64.exe ./cmd/camp
+        GOOS=windows GOARCH=amd64 go build -ldflags '{{platform_ldflags}}' -o {{bin_dir}}/{{binary_name}}-windows-amd64.exe ./cmd/camp
     fi
 
 # Build for all platforms

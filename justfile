@@ -8,7 +8,7 @@ binary_name := "camp"
 bin_dir := "bin"
 gobin := env_var_or_default("GOBIN", `go env GOPATH` + "/bin")
 version_pkg := "github.com/Obedience-Corp/camp/internal/version"
-version := env_var_or_default("VERSION", "dev")
+version := env_var_or_default("VERSION", `git describe --tags --always --dirty 2>/dev/null || echo "dev"`)
 commit := `git rev-parse --short HEAD 2>/dev/null || echo "unknown"`
 build_date := `date -u +"%Y-%m-%dT%H:%M:%SZ"`
 ldflags := "-X " + version_pkg + ".Version=" + version + " -X " + version_pkg + ".Commit=" + commit + " -X " + version_pkg + ".BuildDate=" + build_date
