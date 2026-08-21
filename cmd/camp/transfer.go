@@ -24,7 +24,7 @@ var transferCmd = &cobra.Command{
 	Long: `Copy files between campaigns, and between this machine and a registered
 fleet machine.
 
-Transfer always copies — it never moves or deletes the source.
+Transfer always copies; it never moves or deletes the source.
 
 Local forms:
   campaign:path     another registered campaign on this machine

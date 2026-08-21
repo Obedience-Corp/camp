@@ -16,7 +16,7 @@ var projectRemoteAddCmd = &cobra.Command{
 	Short: "Add a new remote to the project",
 	Long: `Add a new git remote to the project repository.
 
-This does NOT modify .gitmodules — use set-url to change the canonical
+This does NOT modify .gitmodules. Use set-url to change the canonical
 origin for a submodule. Use this command to add secondary remotes such
 as an upstream fork or a mirror.
 

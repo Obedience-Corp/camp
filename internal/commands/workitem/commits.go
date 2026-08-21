@@ -105,7 +105,7 @@ warns on stderr when repo queries fail.`,
 		}),
 	}
 	cmd.SetFlagErrorFunc(jsoncontract.FlagErrorFunc(WorkitemCommitsJSONVersion, func() bool { return flagJSON }))
-	cmd.Flags().StringVar(&flagRef, "ref", "", "query by workitem ref directly (e.g. WI-abc123) — skips resolver")
+	cmd.Flags().StringVar(&flagRef, "ref", "", "query by workitem ref directly (e.g. WI-abc123); skips resolver")
 	cmd.Flags().StringVar(&flagWorkitem, "workitem", "", "alias for the positional <selector>")
 	cmd.Flags().BoolVar(&flagJSON, "json", false, "emit JSON instead of the default table")
 	cmd.Flags().IntVar(&flagLimit, "limit", commitsDefaultLimit, "maximum commits to return")

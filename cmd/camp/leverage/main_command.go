@@ -26,7 +26,7 @@ func init() {
 	Cmd.Flags().Int("people", 0, "override team size (0 = auto-detect from git)")
 	Cmd.Flags().Bool("no-legend", false, "hide the leverage formula legend")
 	Cmd.Flags().BoolP("verbose", "v", false, "show diagnostic details (config, project resolution, exclusions)")
-	Cmd.Flags().String("author", "", "filter by author email (git substring match — 'alice@co' matches 'alice@co.com')")
+	Cmd.Flags().String("author", "", "filter by author email (git substring match: 'alice@co' matches 'alice@co.com')")
 	Cmd.Flags().Bool("by-author", false, "show per-author leverage breakdown")
 	Cmd.Flags().String("dir", "", "score a specific directory (skips campaign project resolution)")
 	Cmd.SetFlagErrorFunc(jsoncontract.FlagErrorFunc(LeverageJSONVersion, func() bool { return leverageJSON }))

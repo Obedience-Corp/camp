@@ -13,7 +13,7 @@ var Cmd = &cobra.Command{
 	GroupID: "campaign",
 	Long: `Manage working contexts within a campaign.
 
-A quest is a long-lived working context — a sub-initiative that may span
+A quest is a long-lived working context: a sub-initiative that may span
 multiple projects, agent sessions, documents, and festivals over days or
 weeks. Think of it as the current "what am I working on" scope, not a
 single task or feature ticket.
