@@ -26,6 +26,11 @@ type Result struct {
 	NoChanges bool   // True if there was nothing to commit
 	Err       error  // Set when a commit attempt failed
 	Message   string // User-facing message
+	// Hash is the SHA of the commit this Result describes. Empty when the
+	// attempt did not produce a commit (skip, no-op, deferral, or error).
+	// Receipt writers must use this instead of rereading HEAD, which races
+	// under concurrent movers.
+	Hash string
 
 	// Skipped is true when the commit was never attempted because of a
 	// caller-detectable precondition (missing campaign context, or a
@@ -139,6 +144,7 @@ func doCommit(ctx context.Context, opts Options, action, subject, description st
 	return Result{
 		Committed: true,
 		Message:   "Committed changes to git",
+		Hash:      git.HeadSHA(ctx, opts.CampaignRoot),
 	}
 }
 

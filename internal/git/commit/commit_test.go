@@ -111,6 +111,9 @@ func TestDoCommit_SkippedReasons(t *testing.T) {
 			if result.Committed {
 				t.Error("Committed = true, want false for a skip precondition")
 			}
+			if result.Hash != "" {
+				t.Errorf("Hash = %q, want empty when the attempt did not commit", result.Hash)
+			}
 			if tt.wantReasonPart != "" && !strings.Contains(result.SkipReason, tt.wantReasonPart) {
 				t.Errorf("SkipReason = %q, want it to contain %q", result.SkipReason, tt.wantReasonPart)
 			}
@@ -239,6 +242,9 @@ func TestIntent_NoChanges(t *testing.T) {
 	}
 	if result.Message != "(no changes to commit)" {
 		t.Errorf("expected 'no changes to commit' message, got: %s", result.Message)
+	}
+	if result.Hash != "" {
+		t.Errorf("Hash = %q, want empty when nothing committed", result.Hash)
 	}
 }
 
@@ -1571,5 +1577,55 @@ func TestCrawl_FilesAndPreStaged_CombinedScope(t *testing.T) {
 	}
 	if strings.Contains(committedFiles, "untouched.txt") {
 		t.Errorf("untouched.txt should NOT appear in commit, got: %s", committedFiles)
+	}
+
+	head, err := exec.Command("git", "-C", tmpDir, "rev-parse", "HEAD").Output()
+	if err != nil {
+		t.Fatalf("failed to read HEAD: %v", err)
+	}
+	if result.Hash != strings.TrimSpace(string(head)) {
+		t.Errorf("Hash = %q, want HEAD %q so receipt writers need not reread it", result.Hash, strings.TrimSpace(string(head)))
+	}
+}
+
+func TestCrawl_PopulatesHash(t *testing.T) {
+	tmpDir := t.TempDir()
+	if err := exec.Command("git", "-C", tmpDir, "init").Run(); err != nil {
+		t.Fatalf("failed to init git repo: %v", err)
+	}
+	if err := exec.Command("git", "-C", tmpDir, "config", "user.email", "test@test.com").Run(); err != nil {
+		t.Fatalf("failed to configure git email: %v", err)
+	}
+	if err := exec.Command("git", "-C", tmpDir, "config", "user.name", "Test").Run(); err != nil {
+		t.Fatalf("failed to configure git name: %v", err)
+	}
+
+	testFile := filepath.Join(tmpDir, "moved.txt")
+	if err := os.WriteFile(testFile, []byte("moved"), 0644); err != nil {
+		t.Fatalf("failed to create test file: %v", err)
+	}
+
+	result := Crawl(context.Background(), CrawlOptions{
+		Options: Options{
+			CampaignRoot: tmpDir,
+			CampaignID:   "test1234",
+		},
+		Description: "thread auto-commit hash",
+		Files:       []string{"moved.txt"},
+	})
+	if !result.Committed {
+		t.Fatalf("expected commit to succeed, got message=%q err=%v", result.Message, result.Err)
+	}
+	if result.Hash == "" {
+		t.Fatal("Hash empty on successful Crawl commit")
+	}
+
+	head, err := exec.Command("git", "-C", tmpDir, "rev-parse", "HEAD").Output()
+	if err != nil {
+		t.Fatalf("failed to read HEAD: %v", err)
+	}
+	want := strings.TrimSpace(string(head))
+	if result.Hash != want {
+		t.Fatalf("Hash = %q, want %q", result.Hash, want)
 	}
 }

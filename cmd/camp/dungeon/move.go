@@ -145,6 +145,9 @@ type DungeonMoveCommitOutcome struct {
 	NoChanges  bool
 	Message    string
 	CommitErr  error
+	// Hash is the auto-commit SHA from commit.Crawl, empty when nothing
+	// committed. Receipt writers must use this rather than git.HeadSHA.
+	Hash string
 }
 
 func StageAndCommitDungeonMove(ctx context.Context, move *DungeonMoveCommit) *DungeonMoveCommitOutcome {
@@ -170,11 +173,16 @@ func StageAndCommitDungeonMove(ctx context.Context, move *DungeonMoveCommit) *Du
 		Description: strings.TrimSpace(move.Description),
 		Files:       files,
 	})
+	applyCrawlResult(outcome, result)
+	return outcome
+}
+
+func applyCrawlResult(outcome *DungeonMoveCommitOutcome, result commit.Result) {
 	outcome.Committed = result.Committed
 	outcome.NoChanges = result.NoChanges
 	outcome.Message = result.Message
 	outcome.CommitErr = result.Err
-	return outcome
+	outcome.Hash = result.Hash
 }
 
 func PrintDungeonMoveOutcome(w io.Writer, outcome *DungeonMoveCommitOutcome) {
