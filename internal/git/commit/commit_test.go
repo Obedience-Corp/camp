@@ -500,7 +500,7 @@ func TestStageAndCommit_PreStagedCommitsStagedBlobNotWorktree(t *testing.T) {
 	runCommitTestGit(t, repo, "add", "f.txt")
 	writeCommitTestFile(t, repo, "f.txt", "v3\n")
 
-	err := stageAndCommit(context.Background(), Options{
+	_, err := stageAndCommit(context.Background(), Options{
 		CampaignRoot:  repo,
 		PreStaged:     []string{"f.txt"},
 		SelectiveOnly: true,
@@ -535,7 +535,7 @@ func TestStageAndCommit_FilesCaptureAddTimeSnapshot(t *testing.T) {
 		t.Fatalf("failed to write pre-commit hook: %v", err)
 	}
 
-	err := stageAndCommit(context.Background(), Options{
+	_, err := stageAndCommit(context.Background(), Options{
 		CampaignRoot:  repo,
 		Files:         []string{"f.txt"},
 		SelectiveOnly: true,
@@ -562,7 +562,7 @@ func TestStageAndCommit_PreStagedRenameClearsIndex(t *testing.T) {
 	runCommitTestGit(t, repo, "commit", "-m", "init")
 	runCommitTestGit(t, repo, "mv", "a.txt", "b.txt")
 
-	err := stageAndCommit(context.Background(), Options{
+	_, err := stageAndCommit(context.Background(), Options{
 		CampaignRoot:  repo,
 		PreStaged:     []string{"a.txt", "b.txt"},
 		SelectiveOnly: true,
@@ -591,7 +591,7 @@ func TestStageAndCommit_RemovesTempIndexOnNoChanges(t *testing.T) {
 	runCommitTestGit(t, repo, "add", "f.txt")
 	runCommitTestGit(t, repo, "commit", "-m", "init")
 
-	err := stageAndCommit(context.Background(), Options{
+	_, err := stageAndCommit(context.Background(), Options{
 		CampaignRoot:  repo,
 		Files:         []string{"f.txt"},
 		SelectiveOnly: true,
