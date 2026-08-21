@@ -269,11 +269,20 @@ func Enqueue(ctx context.Context, campaignRoot, repoPath string, opts EnqueueOpt
 		return nil, err
 	}
 	// Empty parent is unborn HEAD: the job creates a root commit. FullHash
-	// fails in that state, which used to make TryDeferAutoWrite print a false
+	// used to fail in that state, which made TryDeferAutoWrite print a false
 	// "Could not queue this commit" warning and fall back to a synchronous
-	// write. HeadSHA returns "" instead, and empty Parent is a valid
-	// KindCommitTree snapshot.
-	parent := git.HeadSHA(ctx, repoPath)
+	// write. ResolveHeadSHA reports unborn=true instead, and empty Parent is
+	// a valid KindCommitTree snapshot for that case.
+	//
+	// Any other rev-parse failure (corrupt repo, missing .git, transient I/O)
+	// still returns an error here rather than being folded into "unborn": a
+	// repo that already has history but is momentarily unreadable must not
+	// get queued as a root-commit job, or execution would try to create a
+	// root commit against a HEAD that was never actually unborn.
+	parent, _, err := git.ResolveHeadSHA(ctx, repoPath)
+	if err != nil {
+		return nil, err
+	}
 	// Refuse empty snapshots. A deferred commit whose tree equals its parent
 	// would land a no-op commit (and previously a filler message when the
 	// writer correctly reported "no staged changes"). Same sentinel the

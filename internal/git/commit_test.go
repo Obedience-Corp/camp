@@ -1472,6 +1472,70 @@ func TestUpdateHeadFrom_UnbornFailsOnceHeadExists(t *testing.T) {
 	}
 }
 
+func TestResolveHeadSHA_UnbornRepo(t *testing.T) {
+	tmpDir := initTestRepo(t)
+	ctx := context.Background()
+
+	sha, unborn, err := ResolveHeadSHA(ctx, tmpDir)
+	if err != nil {
+		t.Fatalf("ResolveHeadSHA() on a fresh repo error = %v, want nil", err)
+	}
+	if !unborn {
+		t.Fatal("ResolveHeadSHA() unborn = false, want true on a fresh repo")
+	}
+	if sha != "" {
+		t.Fatalf("ResolveHeadSHA() sha = %q, want empty on a fresh repo", sha)
+	}
+}
+
+func TestResolveHeadSHA_BornRepo(t *testing.T) {
+	tmpDir := initTestRepo(t)
+	ctx := context.Background()
+
+	if err := os.WriteFile(filepath.Join(tmpDir, "seed.md"), []byte("seed\n"), 0644); err != nil {
+		t.Fatalf("write seed.md: %v", err)
+	}
+	if err := StageAll(ctx, tmpDir); err != nil {
+		t.Fatalf("StageAll() error = %v", err)
+	}
+	if err := Commit(ctx, tmpDir, &CommitOptions{Message: "seed"}); err != nil {
+		t.Fatalf("Commit() error = %v", err)
+	}
+
+	sha, unborn, err := ResolveHeadSHA(ctx, tmpDir)
+	if err != nil {
+		t.Fatalf("ResolveHeadSHA() error = %v, want nil", err)
+	}
+	if unborn {
+		t.Fatal("ResolveHeadSHA() unborn = true, want false once a commit exists")
+	}
+	want := runGit(t, "", nil, "-C", tmpDir, "rev-parse", "HEAD")
+	if sha != want {
+		t.Fatalf("ResolveHeadSHA() sha = %q, want %q", sha, want)
+	}
+}
+
+// ResolveHeadSHA must not fold a genuine rev-parse failure into "unborn": a
+// caller building a root commit for unborn HEAD must never do that for a repo
+// that has history but is momentarily unreadable. A path with no .git at all
+// fails rev-parse for a different, distinguishable reason than an unborn
+// HEAD, so it stands in for that class of error here.
+func TestResolveHeadSHA_NonUnbornErrorIsReturned(t *testing.T) {
+	notARepo := t.TempDir()
+	ctx := context.Background()
+
+	sha, unborn, err := ResolveHeadSHA(ctx, notARepo)
+	if err == nil {
+		t.Fatal("ResolveHeadSHA() on a non-repo error = nil, want an error")
+	}
+	if unborn {
+		t.Fatal("ResolveHeadSHA() unborn = true, want false for a non-unborn failure")
+	}
+	if sha != "" {
+		t.Fatalf("ResolveHeadSHA() sha = %q, want empty on error", sha)
+	}
+}
+
 // CaptureBlobs must refuse a nested repository rather than walk into it.
 //
 // Walking would hash the nested checkout as ordinary blobs, including a

@@ -185,6 +185,38 @@ func HeadSHA(ctx context.Context, repoPath string) string {
 	return strings.TrimSpace(out)
 }
 
+// ResolveHeadSHA returns the commit HEAD points at. When HEAD genuinely has
+// no commits yet, it reports unborn=true with sha="" instead of an error: an
+// unborn HEAD is a real, expected repository state (a fresh `camp init`), not
+// a failure.
+//
+// Unlike HeadSHA, any other rev-parse failure (corrupt repo, missing .git,
+// transient I/O) is returned as err rather than folded into the empty-string
+// case. A caller that treats an empty parent as "build a root commit" must
+// not do that for a HEAD that is merely unreadable right now: that would
+// enqueue a root-commit job against a repository that already has history.
+func ResolveHeadSHA(ctx context.Context, repoPath string) (sha string, unborn bool, err error) {
+	out, err := Output(ctx, repoPath, "rev-parse", "HEAD")
+	if err == nil {
+		return strings.TrimSpace(out), false, nil
+	}
+	if isUnbornHeadRevParseError(err) {
+		return "", true, nil
+	}
+	return "", false, err
+}
+
+// isUnbornHeadRevParseError reports whether err is `git rev-parse HEAD`
+// failing because HEAD has no commits yet, as opposed to any other reason
+// rev-parse could fail. Git's message for the unborn case is stable across
+// versions: "unknown revision or path not in the working tree".
+func isUnbornHeadRevParseError(err error) bool {
+	if err == nil {
+		return false
+	}
+	return strings.Contains(strings.ToLower(err.Error()), "unknown revision or path not in the working tree")
+}
+
 // StagedFileCount returns how many paths are staged, for the line a deferred
 // commit prints in place of a hash.
 func StagedFileCount(ctx context.Context, repoPath string) (int, error) {
