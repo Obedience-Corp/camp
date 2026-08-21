@@ -111,7 +111,7 @@ Examples:
 
 			switch {
 			case flagList:
-				return outputList(cmd.OutOrStdout(), items, displayGroupBy)
+				return outputList(cmd.OutOrStdout(), items, displayGroupBy, triageNoticeLine(ctx, state.campaignRoot))
 			case flagJSON:
 				return outputJSON(ctx, state.campaignRoot, state.cfg, items, displayGroupBy)
 			default:
@@ -394,6 +394,7 @@ func runTUIWithFilters(ctx context.Context, state *discoveredWorkitems, filters 
 	model := wktui.New(ctx, state.items, state.campaignRoot, state.resolver, state.store, state.storePath, filters.ShowParked)
 	model.SetCategoryResolver(state.cfg.WorkflowCategoryForType)
 	model.SetInitialFilters(filters)
+	model.SetTriageBanner(triageNoticeLine(ctx, state.campaignRoot))
 	p := tea.NewProgram(model, tea.WithAltScreen())
 	result, err := p.Run()
 	if err != nil {

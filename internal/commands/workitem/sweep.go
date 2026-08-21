@@ -17,6 +17,7 @@ import (
 	"github.com/Obedience-Corp/camp/internal/ledger"
 	navindex "github.com/Obedience-Corp/camp/internal/nav/index"
 	"github.com/Obedience-Corp/camp/internal/paths"
+	"github.com/Obedience-Corp/camp/internal/triage"
 	"github.com/Obedience-Corp/camp/internal/ui"
 	wkitem "github.com/Obedience-Corp/camp/internal/workitem"
 	wkaudit "github.com/Obedience-Corp/camp/internal/workitem/audit"
@@ -363,9 +364,9 @@ func runWorkitemSweep(cmd *cobra.Command, opts sweepOptions) error {
 		}
 		if opts.DryRun {
 			fillSweepPlan(work.root, work.actionable, &result)
-			return emitSweepResult(cmd, &result, false)
+			return emitSweepResultWithNotice(ctx, cmd, work, &result)
 		}
-		return emitSweepReport(cmd.OutOrStdout(), work)
+		return emitSweepReport(ctx, cmd.OutOrStdout(), work)
 	}
 
 	if mode == FreshSweepModePrompt {
@@ -376,7 +377,11 @@ func runWorkitemSweep(cmd *cobra.Command, opts sweepOptions) error {
 	// success; emit whatever completed before surfacing the cancellation.
 	sweepErr := executeSweepCandidates(ctx, cmd, work.cfg, work.root, work.actionable, &result)
 
-	if err := emitSweepResult(cmd, &result, opts.JSON); err != nil {
+	if opts.JSON {
+		if err := emitSweepResult(cmd, &result, true); err != nil {
+			return err
+		}
+	} else if err := emitSweepResultWithNotice(ctx, cmd, work, &result); err != nil {
 		return err
 	}
 	if sweepErr != nil {
@@ -610,7 +615,9 @@ func RunFreshSweep(ctx context.Context, out io.Writer, mode string) error {
 		return err
 	}
 	if len(work.actionable) == 0 && len(work.skipped) == 0 {
-		return nil
+		// Nothing to sweep, but camp fresh is still a high-traffic surface:
+		// print the stale-triage notice when there is one.
+		return triage.WriteBanner(ctx, out, work.root, time.Now())
 	}
 
 	cmd := &cobra.Command{}
@@ -620,7 +627,7 @@ func RunFreshSweep(ctx context.Context, out io.Writer, mode string) error {
 
 	switch mode {
 	case FreshSweepModeReport:
-		return emitSweepReport(out, work)
+		return emitSweepReport(ctx, out, work)
 	case FreshSweepModePrompt:
 		return runSweepPrompt(ctx, cmd, work)
 	}
@@ -664,11 +671,14 @@ func PromoteMergedWorkitem(ctx context.Context, out io.Writer, cfg *config.Campa
 // workitem naming what would happen or why nothing will. It is what camp fresh
 // prints by default on a non-TTY, so an agent reading a fresh transcript learns
 // both the actionable set and the reasons for every non-move.
-func emitSweepReport(out io.Writer, work *sweepWork) error {
+func emitSweepReport(ctx context.Context, out io.Writer, work *sweepWork) error {
 	if banner := wkitem.SweepBannerText(len(work.actionable)); banner != "" {
 		if _, err := fmt.Fprintln(out, banner); err != nil {
 			return err
 		}
+	}
+	if err := triage.WriteBanner(ctx, out, work.root, time.Now()); err != nil {
+		return err
 	}
 	for _, cand := range work.actionable {
 		verb := "promote to completed"
@@ -687,6 +697,13 @@ func emitSweepReport(out io.Writer, work *sweepWork) error {
 		}
 	}
 	return nil
+}
+
+func emitSweepResultWithNotice(ctx context.Context, cmd *cobra.Command, work *sweepWork, result *workitemSweepResult) error {
+	if err := emitSweepResult(cmd, result, false); err != nil {
+		return err
+	}
+	return triage.WriteBanner(ctx, cmd.OutOrStdout(), work.root, time.Now())
 }
 
 func emitSweepResult(cmd *cobra.Command, result *workitemSweepResult, jsonOut bool) error {

@@ -2,6 +2,8 @@ package triage
 
 import (
 	"context"
+	"fmt"
+	"io"
 	"os"
 	"path/filepath"
 	"sort"
@@ -527,6 +529,9 @@ func (s *Store) ReadNotice() *Notice {
 // out. A profile camp cannot read costs the notice its accuracy, never the
 // command: the built-in threshold stands in.
 func BannerFor(ctx context.Context, campaignRoot string, now time.Time) string {
+	if campaignRoot == "" {
+		return ""
+	}
 	store := NewStore(campaignRoot, nil)
 
 	notice := store.ReadNotice()
@@ -541,4 +546,19 @@ func BannerFor(ctx context.Context, campaignRoot string, now time.Time) string {
 
 	days := int(now.Sub(notice.CheckedAt).Hours() / 24)
 	return TriageBannerText(days, staleAfterDays, notice.ChangedRows)
+}
+
+// WriteBanner prints the stale-triage notice when there is one, and is a
+// no-op otherwise. High-traffic commands share this so they cannot drift
+// into different wording or a different cache read.
+func WriteBanner(ctx context.Context, w io.Writer, campaignRoot string, now time.Time) error {
+	if err := ctx.Err(); err != nil {
+		return err
+	}
+	line := BannerFor(ctx, campaignRoot, now)
+	if line == "" {
+		return nil
+	}
+	_, err := fmt.Fprintln(w, line)
+	return err
 }

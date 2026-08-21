@@ -150,6 +150,9 @@ func (m Model) renderFooter() string {
 	if banner := workitem.SweepBannerText(m.sweepEligible); banner != "" {
 		footer = fmt.Sprintf("%s  |  %s", footer, banner)
 	}
+	if m.triageBanner != "" {
+		footer = fmt.Sprintf("%s  |  %s", footer, m.triageBanner)
+	}
 	return footerStyle.Render(footer)
 }
 

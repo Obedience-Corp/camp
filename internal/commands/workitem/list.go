@@ -116,7 +116,7 @@ Examples:
 			if opts.json {
 				return outputJSON(cmd.Context(), state.campaignRoot, state.cfg, items, groupBy)
 			}
-			return outputList(cmd.OutOrStdout(), items, groupBy)
+			return outputList(cmd.OutOrStdout(), items, groupBy, triageNoticeLine(cmd.Context(), state.campaignRoot))
 		}),
 	}
 	cmd.SetFlagErrorFunc(jsoncontract.FlagErrorFunc(wkitem.SchemaVersion, func() bool { return opts.json }))
