@@ -172,6 +172,10 @@ type Model struct {
 	// sweep, computed once at construction from the full item list. Drives the
 	// read-only footer banner; never triggers a mutation.
 	sweepEligible int
+
+	// triageBanner is the cache-only stale-triage notice, set by the command
+	// layer from triage.BannerFor. Empty when there is nothing to say.
+	triageBanner string
 }
 
 // New creates the dashboard model from a pre-discovered item list.
@@ -202,6 +206,11 @@ func New(ctx context.Context, items []workitem.WorkItem, campaignRoot string, re
 
 func (m *Model) SetCategoryResolver(fn func(string) string) {
 	m.categoryForType = fn
+}
+
+// SetTriageBanner installs the shared stale-triage notice for the footer.
+func (m *Model) SetTriageBanner(line string) {
+	m.triageBanner = line
 }
 
 // SetInitialFilters seeds visible, editable filters supplied by the command.

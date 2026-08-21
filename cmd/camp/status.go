@@ -116,10 +116,8 @@ func runStatus(cmd *cobra.Command, args []string) error {
 	// constantly and a banner that cost a discovery walk would be a tax on
 	// every invocation.
 	if !target.IsSubmodule {
-		if line := triage.BannerFor(ctx, target.Path, time.Now()); line != "" {
-			if _, err := fmt.Fprintln(os.Stdout, line); err != nil {
-				return camperrors.Wrap(err, "write triage notice")
-			}
+		if err := triage.WriteBanner(ctx, os.Stdout, target.Path, time.Now()); err != nil {
+			return camperrors.Wrap(err, "write triage notice")
 		}
 	}
 	return nil

@@ -562,6 +562,19 @@ func TestModel_HelpListsFilterMode(t *testing.T) {
 	}
 }
 
+func TestModel_FooterIncludesTriageBanner(t *testing.T) {
+	m := New(context.Background(), makeTestItems(1), "", nil, priority.NewStore(), "")
+	m.width = 200
+	m.height = 24
+	m.ready = true
+	const notice = "last triage was 20 days ago — run: camp triage start"
+	m.SetTriageBanner(notice)
+	footer := m.renderFooter()
+	if !strings.Contains(footer, notice) {
+		t.Errorf("footer = %q, want triage notice", footer)
+	}
+}
+
 func TestModel_FooterRendersFilterChips(t *testing.T) {
 	items := []workitem.WorkItem{
 		{WorkflowType: workitem.WorkflowTypeIntent, Title: "intent"},

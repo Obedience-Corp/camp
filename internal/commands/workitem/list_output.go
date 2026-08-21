@@ -1,6 +1,7 @@
 package workitem
 
 import (
+	"context"
 	"fmt"
 	"hash/fnv"
 	"io"
@@ -10,6 +11,7 @@ import (
 	"github.com/charmbracelet/lipgloss"
 
 	"github.com/Obedience-Corp/camp/internal/listview"
+	"github.com/Obedience-Corp/camp/internal/triage"
 	"github.com/Obedience-Corp/camp/internal/ui/theme"
 	wkitem "github.com/Obedience-Corp/camp/internal/workitem"
 	"github.com/Obedience-Corp/camp/internal/workitem/priority"
@@ -17,10 +19,12 @@ import (
 
 var listPalette = theme.TUI()
 
-func outputList(w io.Writer, items []wkitem.WorkItem, groupBy string) error {
+func outputList(w io.Writer, items []wkitem.WorkItem, groupBy string, notices ...string) error {
 	if len(items) == 0 {
-		_, err := fmt.Fprintln(w, "No work items found.")
-		return err
+		if _, err := fmt.Fprintln(w, "No work items found."); err != nil {
+			return err
+		}
+		return writeNoticeLines(w, notices)
 	}
 	if groupBy == "" {
 		groupBy = "group"
@@ -52,7 +56,23 @@ func outputList(w io.Writer, items []wkitem.WorkItem, groupBy string) error {
 			return err
 		}
 	}
+	return writeNoticeLines(w, notices)
+}
+
+func writeNoticeLines(w io.Writer, notices []string) error {
+	for _, line := range notices {
+		if line == "" {
+			continue
+		}
+		if _, err := fmt.Fprintln(w, line); err != nil {
+			return err
+		}
+	}
 	return nil
+}
+
+func triageNoticeLine(ctx context.Context, root string) string {
+	return triage.BannerFor(ctx, root, time.Now())
 }
 
 // sweepBannerLine returns the read-only completed-runs banner, or "" when no

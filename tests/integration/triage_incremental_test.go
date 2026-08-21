@@ -5,7 +5,6 @@ package integration
 
 import (
 	"encoding/json"
-	"strings"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
@@ -290,8 +289,47 @@ func TestTriageNotice_SaysNothingWithoutARun(t *testing.T) {
 	tc := GetSharedContainer(t)
 	path := setupTriageCampaign(t, tc, "triage-notice-silent", 2, 0)
 
-	out, err := tc.RunCampInDir(path, "status")
-	require.NoError(t, err, out)
-	assert.NotContains(t, out, "camp triage start")
-	assert.False(t, strings.Contains(out, "last triage was"))
+	for _, args := range [][]string{
+		{"status"},
+		{"workitem", "--list"},
+		{"workitem", "sweep"},
+		{"triage", "status"},
+	} {
+		out, err := tc.RunCampInDir(path, args...)
+		require.NoError(t, err, "%v: %s", args, out)
+		assert.NotContains(t, out, "last triage was", args)
+		assert.NotContains(t, out, "changed since the last triage", args)
+	}
+}
+
+// TestTriageNotice_ReachesSweepBannerSurfacesAndTriageStatus is the follow-up
+// to CT0003 S3: the notice shipped on camp status only. It must also print from
+// the SweepBannerText surfaces and from camp triage status (doc 03).
+func TestTriageNotice_ReachesSweepBannerSurfacesAndTriageStatus(t *testing.T) {
+	tc := GetSharedContainer(t)
+	path := setupTriageCampaign(t, tc, "triage-notice-surfaces", 2, 0)
+
+	runID, _ := startTriageRun(t, tc, path)
+	refresh(t, tc, path)
+	notice := `{"schema_version":"triage/v1alpha1","run_id":"` + runID +
+		`","checked_at":"2026-01-01T00:00:00Z","changed_rows":0}`
+	require.NoError(t, tc.WriteFile(path+"/.campaign/triage/notice.json", notice))
+
+	const want = "run: camp triage start"
+	for _, args := range [][]string{
+		{"status"},
+		{"workitem", "--list"},
+		{"workitem", "sweep"},
+		{"triage", "status"},
+	} {
+		out, err := tc.RunCampInDir(path, args...)
+		require.NoError(t, err, "%v: %s", args, out)
+		assert.Contains(t, out, want, args)
+	}
+
+	jsonOut, err := tc.RunCampInDir(path, "triage", "status", "--json")
+	require.NoError(t, err, jsonOut)
+	payload := decodeTriageJSON(t, jsonOut)
+	got, _ := payload["stale_notice"].(string)
+	assert.Contains(t, got, want)
 }

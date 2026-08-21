@@ -301,6 +301,41 @@ func TestOutputListGroupsByGroup(t *testing.T) {
 	}
 }
 
+func TestOutputList_PrintsTriageNotice(t *testing.T) {
+	var out bytes.Buffer
+	items := []wkitem.WorkItem{
+		{
+			Key:          "design:workflow/design/example",
+			WorkflowType: wkitem.WorkflowTypeDesign,
+			Title:        "Example Workitem",
+			RelativePath: "workflow/design/example",
+			Group:        "camp-workflow",
+		},
+	}
+	const notice = "last triage was 20 days ago — run: camp triage start"
+	if err := outputList(&out, items, "group", notice); err != nil {
+		t.Fatalf("outputList() error = %v", err)
+	}
+	if !strings.Contains(out.String(), notice) {
+		t.Fatalf("list missing triage notice:\n%s", out.String())
+	}
+}
+
+func TestOutputList_PrintsTriageNoticeWhenEmpty(t *testing.T) {
+	var out bytes.Buffer
+	const notice = "1 workitem has changed since the last triage — run: camp triage start"
+	if err := outputList(&out, nil, "group", notice); err != nil {
+		t.Fatalf("outputList() error = %v", err)
+	}
+	got := out.String()
+	if !strings.Contains(got, "No work items found.") {
+		t.Fatalf("empty list missing placeholder:\n%s", got)
+	}
+	if !strings.Contains(got, notice) {
+		t.Fatalf("empty list missing triage notice:\n%s", got)
+	}
+}
+
 func captureStdout(fn func() error) (string, error) {
 	old := os.Stdout
 	r, w, err := os.Pipe()

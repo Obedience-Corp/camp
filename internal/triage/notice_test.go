@@ -1,9 +1,14 @@
 package triage
 
 import (
+	"bytes"
+	"context"
+	"io"
 	"testing"
+	"time"
 
 	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 )
 
 // TestTriageBannerText covers the wording every high-traffic command shares.
@@ -86,4 +91,22 @@ func TestTriageBannerTextHonorsARaisedThreshold(t *testing.T) {
 		"the default threshold must still fire at 20 days")
 	assert.Empty(t, TriageBannerText(daysSince, 30, 0),
 		"a campaign that raised the threshold to 30 must not be nagged at 20 days")
+}
+
+func TestBannerForEmptyRootSaysNothing(t *testing.T) {
+	assert.Empty(t, BannerFor(context.Background(), "", time.Now()),
+		"an unset campaign root must not read notice.json from cwd")
+}
+
+func TestWriteBannerHonorsCancellation(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+	err := WriteBanner(ctx, io.Discard, "/unused", time.Now())
+	assert.ErrorIs(t, err, context.Canceled)
+}
+
+func TestWriteBannerSilentWhenEmpty(t *testing.T) {
+	var buf bytes.Buffer
+	require.NoError(t, WriteBanner(context.Background(), &buf, "", time.Now()))
+	assert.Empty(t, buf.String())
 }

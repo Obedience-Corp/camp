@@ -3,6 +3,7 @@ package triage
 import (
 	"fmt"
 	"io"
+	"time"
 
 	"github.com/spf13/cobra"
 
@@ -21,6 +22,9 @@ type statusResult struct {
 	// still exits 0: "no run yet" is an answer, not a failure.
 	HasRun bool           `json:"has_run"`
 	Run    *triage.Status `json:"run"`
+	// StaleNotice is the same one-liner high-traffic commands print, omitted
+	// when the last refresh is still fresh (or there has never been one).
+	StaleNotice string `json:"stale_notice,omitempty"`
 }
 
 func newStatusCommand() *cobra.Command {
@@ -38,6 +42,11 @@ Status reports the session, not the campaign. It reads the run's own recorded
 data and never walks the filesystem, so it is instant and keeps meaning even
 after the campaign moves underneath the run. Comparing a run against the
 current state of the campaign is what camp triage refresh does.
+
+When the last refresh is older than the campaign's runs.stale_after_days
+threshold, or workitems have changed since, it also prints the same one-line
+notice high-traffic commands share (from the cached verdict, not a discovery
+walk).
 
 Exits 0 when there is no run: a campaign that has not triaged yet is a state,
 not an error.`,
@@ -83,11 +92,17 @@ func runStatus(cmd *cobra.Command, jsonOut bool, runID string) error {
 		return err
 	}
 
-	result := statusResult{SchemaVersion: StatusJSONVersion, HasRun: true, Run: status}
+	staleNotice := triage.BannerFor(ctx, root, time.Now())
+	result := statusResult{
+		SchemaVersion: StatusJSONVersion,
+		HasRun:        true,
+		Run:           status,
+		StaleNotice:   staleNotice,
+	}
 	if jsonOut {
 		return writeJSON(cmd.OutOrStdout(), result)
 	}
-	return writeStatusText(cmd.OutOrStdout(), status)
+	return writeStatusText(cmd.OutOrStdout(), status, staleNotice)
 }
 
 // emitNoRun answers the never-triaged case without failing.
@@ -103,7 +118,7 @@ func emitNoRun(cmd *cobra.Command, jsonOut bool) error {
 	return err
 }
 
-func writeStatusText(w io.Writer, status *triage.Status) error {
+func writeStatusText(w io.Writer, status *triage.Status, staleNotice string) error {
 	state := "active"
 	if !status.Active {
 		state = string(status.Phase)
@@ -152,6 +167,11 @@ func writeStatusText(w io.Writer, status *triage.Status) error {
 	if len(status.Consolidations) > 0 {
 		if _, err := fmt.Fprintf(w, "  consolidations pending: %d\n",
 			len(status.Consolidations)); err != nil {
+			return err
+		}
+	}
+	if staleNotice != "" {
+		if _, err := fmt.Fprintln(w, staleNotice); err != nil {
 			return err
 		}
 	}
