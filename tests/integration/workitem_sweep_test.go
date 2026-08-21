@@ -106,7 +106,10 @@ func createSweepWorkitem(t *testing.T, tc *TestContainer, campaignPath, wkType, 
 func backdateWorkitemContent(t *testing.T, tc *TestContainer, campaignPath, wkType, slug string) {
 	t.Helper()
 	dir := campaignPath + "/workflow/" + wkType + "/" + slug
-	tc.Shell(t, "find "+dir+" -not -path '"+dir+"/.workflow*' -exec touch -d '2 hours ago' {} +")
+	// A fixed absolute stamp in the -t [[CC]YY]MMDDhhmm form: the container's
+	// busybox touch has no relative -d ("2 hours ago" is rejected), and any date
+	// well outside the fresh-write window makes the same point deterministically.
+	tc.Shell(t, "find "+dir+" -not -path '"+dir+"/.workflow*' -exec touch -t 202601010000 {} +")
 }
 
 func commitFixture(t *testing.T, tc *TestContainer, path string) {
