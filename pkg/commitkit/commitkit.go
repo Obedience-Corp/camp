@@ -72,10 +72,27 @@ type TagComponents = git.TagComponents
 // "FE-" festival ref, which is how fest records where inside a festival a
 // commit happened. They are dependent segments: Phase is emitted only when
 // FestRef is set, and Sequence only when Phase is, since both index into a
-// festival and mean nothing without one. Supplying neither yields exactly the
-// tag the positional helpers produce today.
+// festival and mean nothing without one. Each must also be 1 to 4 digits, the
+// shape the parser accepts. Supplying neither yields exactly the tag the
+// positional helpers produce today.
+//
+// FormatTag never fails: anything it cannot emit verbatim is dropped, which
+// leaves the caller no signal. Run ValidateTagComponents first to learn what
+// would be dropped.
 func FormatTag(tc TagComponents) string {
 	return git.FormatTag(tc)
+}
+
+// ValidateTagComponents reports what FormatTag would drop from tc: a missing
+// campaign id, a value failing its segment's shape check, or a phase or
+// sequence whose parent segment is absent. It returns nil when FormatTag
+// would emit tc in full, and a joined error naming every problem otherwise.
+//
+// It is advisory. FormatTag stays lenient, so a caller that does not mind
+// losing a segment can skip it; a caller that would rather fix its input than
+// write a commit tag missing its festival locator should call this first.
+func ValidateTagComponents(tc TagComponents) error {
+	return git.ValidateTagComponents(tc)
 }
 
 // FormatContextTagsFull composes the legacy id-only tag from any subset of
