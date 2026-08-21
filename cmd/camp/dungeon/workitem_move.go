@@ -11,6 +11,7 @@ import (
 
 	"github.com/Obedience-Corp/camp/internal/config"
 	intdungeon "github.com/Obedience-Corp/camp/internal/dungeon"
+	"github.com/Obedience-Corp/camp/internal/dungeon/spelling"
 	camperrors "github.com/Obedience-Corp/camp/internal/errors"
 	navindex "github.com/Obedience-Corp/camp/internal/nav/index"
 	"github.com/Obedience-Corp/camp/internal/paths"
@@ -52,7 +53,7 @@ func moveWorkitemToDungeon(ctx context.Context, cmd *cobra.Command, target, stat
 		return nil, err
 	}
 
-	resolved, err := resolveWorkitemDungeonTarget(campaignRoot, item)
+	resolved, err := resolveWorkitemDungeonTarget(ctx, campaignRoot, item)
 	if err != nil {
 		return nil, err
 	}
@@ -185,21 +186,27 @@ func normalizeRelativeWorkitemPath(path string) string {
 	return filepath.ToSlash(cleaned)
 }
 
-func resolveWorkitemDungeonTarget(campaignRoot string, item wkitem.WorkItem) (*resolvedWorkitemDungeonTarget, error) {
+func resolveWorkitemDungeonTarget(ctx context.Context, campaignRoot string, item wkitem.WorkItem) (*resolvedWorkitemDungeonTarget, error) {
+	if err := ctx.Err(); err != nil {
+		return nil, camperrors.Wrap(err, "context cancelled")
+	}
 	if item.ItemKind != wkitem.ItemKindDirectory {
 		return nil, camperrors.Newf("workitem %q resolves to %s, but only directory workitems under workflow/<type>/<slug> can be moved with --workitem", item.RelativePath, item.ItemKind)
 	}
 
 	rel := normalizeRelativeWorkitemPath(item.RelativePath)
 	parts := strings.Split(rel, "/")
-	if len(parts) != 3 || parts[0] != "workflow" || parts[1] == "" || parts[2] == "" || parts[1] == "dungeon" || parts[2] == "dungeon" {
+	if !isWorkitemDungeonMovePath(parts) {
 		return nil, camperrors.Newf("workitem %q is not under workflow/<type>/<slug>; only directory workitems under workflow/<type>/<slug> can be moved with --workitem", item.RelativePath)
 	}
 
 	parentRel := filepath.FromSlash(strings.Join(parts[:2], "/"))
 	itemName := parts[2]
 	parentPath := filepath.Join(campaignRoot, parentRel)
-	dungeonPath := filepath.Join(parentPath, "dungeon")
+	dungeonPath, err := resolveWorkitemTypeDungeonPath(ctx, campaignRoot, parentPath)
+	if err != nil {
+		return nil, err
+	}
 
 	return &resolvedWorkitemDungeonTarget{
 		Item:        item,
@@ -208,6 +215,33 @@ func resolveWorkitemDungeonTarget(campaignRoot string, item wkitem.WorkItem) (*r
 		DungeonPath: dungeonPath,
 		SourcePath:  filepath.Join(parentPath, itemName),
 	}, nil
+}
+
+func isWorkitemDungeonMovePath(parts []string) bool {
+	return len(parts) == 3 &&
+		parts[0] == "workflow" &&
+		parts[1] != "" &&
+		parts[2] != "" &&
+		!spelling.IsDungeonName(parts[1]) &&
+		!spelling.IsDungeonName(parts[2])
+}
+
+// resolveWorkitemTypeDungeonPath uses spelling.NameForNew so an existing
+// type-local dungeon wins; otherwise the campaign spelling / dungeon_hidden.
+func resolveWorkitemTypeDungeonPath(ctx context.Context, campaignRoot, parentPath string) (string, error) {
+	globalCfg, err := config.LoadGlobalConfig(ctx)
+	if err != nil {
+		return "", camperrors.Wrap(err, "loading global config")
+	}
+	campaignName, err := spelling.CampaignName(ctx, campaignRoot, globalCfg.ResolveDungeonHidden())
+	if err != nil {
+		return "", camperrors.Wrap(err, "resolving campaign dungeon spelling")
+	}
+	name, err := spelling.NameForNew(ctx, parentPath, campaignName)
+	if err != nil {
+		return "", camperrors.Wrap(err, "resolving workitem dungeon spelling")
+	}
+	return filepath.Join(parentPath, name), nil
 }
 
 func formatWorkitemMatches(matches []wkitem.WorkItem) string {

@@ -1,9 +1,15 @@
 package dungeon
 
 import (
+	"context"
+	"fmt"
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 
+	"github.com/Obedience-Corp/camp/internal/dungeon/spelling"
+	camperrors "github.com/Obedience-Corp/camp/internal/errors"
 	wkitem "github.com/Obedience-Corp/camp/internal/workitem"
 )
 
@@ -81,27 +87,124 @@ func TestSelectWorkitemDungeonTarget_AmbiguousSlug(t *testing.T) {
 }
 
 func TestResolveWorkitemDungeonTarget(t *testing.T) {
+	hiddenTrue, hiddenFalse := true, false
 	item := wkitem.WorkItem{
 		RelativePath: "workflow/feature/foo",
 		ItemKind:     wkitem.ItemKindDirectory,
 	}
 
-	got, err := resolveWorkitemDungeonTarget("/campaign", item)
-	if err != nil {
-		t.Fatalf("resolveWorkitemDungeonTarget() error = %v", err)
+	tests := []struct {
+		name         string
+		hidden       *bool
+		rootDungeon  string
+		typeDungeon  string
+		wantName     string
+		wantConflict bool
+	}{
+		{
+			name:        "type-local hidden wins over campaign visible",
+			rootDungeon: spelling.Visible,
+			typeDungeon: spelling.Hidden,
+			wantName:    spelling.Hidden,
+		},
+		{
+			name:        "type-local visible wins over campaign hidden",
+			rootDungeon: spelling.Hidden,
+			typeDungeon: spelling.Visible,
+			wantName:    spelling.Visible,
+		},
+		{
+			name:        "no type dungeon follows hidden campaign",
+			rootDungeon: spelling.Hidden,
+			wantName:    spelling.Hidden,
+		},
+		{
+			name:        "no type dungeon follows visible campaign",
+			rootDungeon: spelling.Visible,
+			wantName:    spelling.Visible,
+		},
+		{
+			name:     "empty campaign honors hidden default",
+			hidden:   &hiddenTrue,
+			wantName: spelling.Hidden,
+		},
+		{
+			name:     "empty campaign honors visible default",
+			hidden:   &hiddenFalse,
+			wantName: spelling.Visible,
+		},
+		{
+			name:         "both type-local spellings are a conflict",
+			typeDungeon:  "both",
+			wantConflict: true,
+		},
 	}
 
-	if got.ItemName != "foo" {
-		t.Fatalf("ItemName = %q, want foo", got.ItemName)
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			isolateGlobalConfig(t, tt.hidden)
+			root := t.TempDir()
+			typeDir := filepath.Join(root, "workflow", "feature")
+			mkdirAll(t, typeDir)
+
+			switch tt.rootDungeon {
+			case spelling.Hidden, spelling.Visible:
+				mkdirAll(t, filepath.Join(root, tt.rootDungeon))
+			}
+			switch tt.typeDungeon {
+			case spelling.Hidden, spelling.Visible:
+				mkdirAll(t, filepath.Join(typeDir, tt.typeDungeon))
+			case "both":
+				mkdirAll(t, filepath.Join(typeDir, spelling.Hidden))
+				mkdirAll(t, filepath.Join(typeDir, spelling.Visible))
+			}
+
+			got, err := resolveWorkitemDungeonTarget(context.Background(), root, item)
+			if tt.wantConflict {
+				if err == nil {
+					t.Fatalf("resolveWorkitemDungeonTarget() DungeonPath = %q, want conflict", got.DungeonPath)
+				}
+				if !camperrors.Is(err, camperrors.ErrConflict) {
+					t.Fatalf("resolveWorkitemDungeonTarget() error = %v, want ErrConflict", err)
+				}
+				return
+			}
+			if err != nil {
+				t.Fatalf("resolveWorkitemDungeonTarget() error = %v", err)
+			}
+			if got.ItemName != "foo" {
+				t.Fatalf("ItemName = %q, want foo", got.ItemName)
+			}
+			if got.ParentPath != typeDir {
+				t.Fatalf("ParentPath = %q, want %q", got.ParentPath, typeDir)
+			}
+			wantDungeon := filepath.Join(typeDir, tt.wantName)
+			if got.DungeonPath != wantDungeon {
+				t.Fatalf("DungeonPath = %q, want %q", got.DungeonPath, wantDungeon)
+			}
+			wantSource := filepath.Join(typeDir, "foo")
+			if got.SourcePath != wantSource {
+				t.Fatalf("SourcePath = %q, want %q", got.SourcePath, wantSource)
+			}
+		})
 	}
-	if got.ParentPath != "/campaign/workflow/feature" {
-		t.Fatalf("ParentPath = %q", got.ParentPath)
+}
+
+func TestResolveWorkitemDungeonTarget_ContextCancelled(t *testing.T) {
+	isolateGlobalConfig(t, nil)
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+
+	item := wkitem.WorkItem{
+		RelativePath: "workflow/feature/foo",
+		ItemKind:     wkitem.ItemKindDirectory,
 	}
-	if got.DungeonPath != "/campaign/workflow/feature/dungeon" {
-		t.Fatalf("DungeonPath = %q", got.DungeonPath)
+	_, err := resolveWorkitemDungeonTarget(ctx, t.TempDir(), item)
+	if err == nil {
+		t.Fatal("expected context cancellation error")
 	}
-	if got.SourcePath != "/campaign/workflow/feature/foo" {
-		t.Fatalf("SourcePath = %q", got.SourcePath)
+	if !camperrors.Is(err, context.Canceled) {
+		t.Fatalf("error = %v, want context.Canceled", err)
 	}
 }
 
@@ -115,15 +218,47 @@ func TestResolveWorkitemDungeonTarget_RejectsUnsupportedItems(t *testing.T) {
 			RelativePath: "festivals/active/demo",
 			ItemKind:     wkitem.ItemKindDirectory,
 		},
+		{
+			RelativePath: "workflow/feature/.dungeon",
+			ItemKind:     wkitem.ItemKindDirectory,
+		},
+		{
+			RelativePath: "workflow/dungeon/foo",
+			ItemKind:     wkitem.ItemKindDirectory,
+		},
 	}
 
 	for _, item := range tests {
-		_, err := resolveWorkitemDungeonTarget("/campaign", item)
+		_, err := resolveWorkitemDungeonTarget(context.Background(), "/campaign", item)
 		if err == nil {
 			t.Fatalf("expected unsupported item error for %+v", item)
 		}
 		if !strings.Contains(err.Error(), "workflow/<type>/<slug>") {
 			t.Fatalf("expected workflow path guidance, got: %s", err)
 		}
+	}
+}
+
+func isolateGlobalConfig(t *testing.T, hidden *bool) {
+	t.Helper()
+	xdg := t.TempDir()
+	t.Setenv("XDG_CONFIG_HOME", xdg)
+	if hidden == nil {
+		return
+	}
+	cfgDir := filepath.Join(xdg, "obey", "campaign")
+	if err := os.MkdirAll(cfgDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	body := fmt.Sprintf(`{"dungeon_hidden": %v}`, *hidden)
+	if err := os.WriteFile(filepath.Join(cfgDir, "config.json"), []byte(body), 0o644); err != nil {
+		t.Fatal(err)
+	}
+}
+
+func mkdirAll(t *testing.T, path string) {
+	t.Helper()
+	if err := os.MkdirAll(path, 0o755); err != nil {
+		t.Fatal(err)
 	}
 }
