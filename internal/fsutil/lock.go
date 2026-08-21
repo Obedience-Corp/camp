@@ -37,8 +37,24 @@ var onContendedLock func()
 // AcquireFileLock takes an exclusive lock on lockPath via O_CREATE|O_EXCL.
 // The returned release closure removes the lock file. Locks older than 30s
 // are treated as stale and removed before retrying.
+//
+// Wait is bounded by defaultLockTimeout (5s) independently of a longer
+// context deadline. That fail-fast bound is the production contract: another
+// camp invocation is assumed to hold a short write. Tests that must wait
+// through contention without measuring the scheduler should inject a
+// liveness budget via AcquireFileLockTimeout.
 func AcquireFileLock(ctx context.Context, lockPath string) (func(), error) {
-	deadline := time.Now().Add(defaultLockTimeout)
+	return AcquireFileLockTimeout(ctx, lockPath, defaultLockTimeout)
+}
+
+// AcquireFileLockTimeout is AcquireFileLock with an explicit wait bound.
+// Production callers should keep using AcquireFileLock. A timeout of 0 or
+// negative uses the 5s production default.
+func AcquireFileLockTimeout(ctx context.Context, lockPath string, timeout time.Duration) (func(), error) {
+	if timeout <= 0 {
+		timeout = defaultLockTimeout
+	}
+	deadline := time.Now().Add(timeout)
 	for {
 		if err := ctx.Err(); err != nil {
 			return nil, err

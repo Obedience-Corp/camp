@@ -22,11 +22,10 @@ import (
 // because the honest response to a red gate becomes "run it again" rather than
 // "read it".
 //
-// This outer budget coexists with AcquireFileLock's independent
-// defaultLockTimeout (5s in lock.go). A contending waiter can still fail with
-// ErrTimeout from that internal bound while the test context has time left;
-// lengthening only this budget does not extend the production wait. "Stuck"
-// may therefore surface as the 5s timeout rather than this 60s deadline.
+// Contended waiters must pass this bound into AcquireFileLockTimeout. The
+// production AcquireFileLock wait is an independent 5s default; a longer
+// test context alone does not extend it, which is what flaked under
+// saturation (camp#614). "Stuck" should now surface as this 60s deadline.
 const lockLivenessBudget = 60 * time.Second
 
 func TestAcquireFileLock_RemovesStaleLock(t *testing.T) {
@@ -134,7 +133,7 @@ func TestAcquireFileLock_StaleLockStealRaceAcquiresSerially(t *testing.T) {
 			// where both finish in milliseconds.
 			ctx, cancel := context.WithTimeout(context.Background(), lockLivenessBudget)
 			defer cancel()
-			release, err := AcquireFileLock(ctx, lockPath)
+			release, err := AcquireFileLockTimeout(ctx, lockPath, lockLivenessBudget)
 			errs[i] = err
 			if release != nil {
 				release()
@@ -187,7 +186,7 @@ func TestAcquireFileLock_ContextCancellationWhileWaiting(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	done := make(chan error, 1)
 	go func() {
-		_, err := AcquireFileLock(ctx, lockPath)
+		_, err := AcquireFileLockTimeout(ctx, lockPath, lockLivenessBudget)
 		done <- err
 	}()
 
@@ -221,5 +220,30 @@ func TestAcquireFileLock_TimeoutIsCategorized(t *testing.T) {
 	}
 	if !errors.Is(err, context.DeadlineExceeded) && !errors.Is(err, camperrors.ErrTimeout) {
 		t.Fatalf("AcquireFileLock timeout error = %v, want deadline or ErrTimeout", err)
+	}
+}
+
+func TestAcquireFileLockTimeout_IndependentOfContext(t *testing.T) {
+	lockPath := filepath.Join(t.TempDir(), "links.yaml.lock")
+	if err := os.WriteFile(lockPath, []byte("held"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	// A live, long context must not stretch the injected wait, and the
+	// injected wait must not surface as context.DeadlineExceeded. This is
+	// the inverse of the saturation flake: tests inject a long bound so
+	// the 5s production default cannot fail a waiter that is still making
+	// progress.
+	ctx, cancel := context.WithTimeout(context.Background(), lockLivenessBudget)
+	defer cancel()
+	_, err := AcquireFileLockTimeout(ctx, lockPath, time.Millisecond)
+	if err == nil {
+		t.Fatal("expected lock acquisition error")
+	}
+	if !errors.Is(err, camperrors.ErrTimeout) {
+		t.Fatalf("AcquireFileLockTimeout error = %v, want ErrTimeout", err)
+	}
+	if errors.Is(err, context.DeadlineExceeded) {
+		t.Fatalf("injected timeout should not surface as context deadline: %v", err)
 	}
 }
