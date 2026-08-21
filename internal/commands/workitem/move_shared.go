@@ -10,7 +10,7 @@ import (
 	dungeoncmd "github.com/Obedience-Corp/camp/cmd/camp/dungeon"
 	"github.com/Obedience-Corp/camp/internal/config"
 	camperrors "github.com/Obedience-Corp/camp/internal/errors"
-	"github.com/Obedience-Corp/camp/internal/mdlinks"
+	"github.com/Obedience-Corp/camp/internal/moveref"
 	navindex "github.com/Obedience-Corp/camp/internal/nav/index"
 	"github.com/Obedience-Corp/camp/internal/statusmove"
 	"github.com/Obedience-Corp/camp/internal/ui"
@@ -43,10 +43,10 @@ func applyWorkitemMove(ctx context.Context, root string, mv workitemMove, result
 		}
 		return nil, camperrors.Wrapf(err, "moving %s to %s", mv.OldRel, mv.NewRel)
 	}
-	rewritten, err := mdlinks.RewriteForMove(ctx, root, mv.SourcePath, mv.DestPath)
+	rewritten, err := moveref.RewriteForMove(ctx, root, mv.SourcePath, mv.DestPath)
 	if err != nil {
 		return nil, camperrors.Wrapf(err,
-			"rewriting markdown links after moving %s (move applied; recover with git status)", mv.OldRel)
+			"rewriting references after moving %s (move applied; recover with git status)", mv.OldRel)
 	}
 
 	destPaths := []string{mv.DestPath}

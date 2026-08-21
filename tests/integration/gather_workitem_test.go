@@ -240,3 +240,51 @@ func TestGatherDesign_Guards(t *testing.T) {
 	require.Error(t, err)
 	assert.Contains(t, output, "pass at least 2 design workitem selectors")
 }
+
+func TestGatherDesign_RewritesMarkdownAndQuestLinks(t *testing.T) {
+	tc := GetSharedContainer(t)
+	campaign := "/campaigns/gather-design-refs"
+
+	_, err := tc.InitCampaign(campaign, "gather-design-refs", "product")
+	require.NoError(t, err)
+
+	createDesignWorkitem(t, tc, campaign, "auth-flow", "Auth Flow",
+		"# Auth Flow\n\nSee [billing](../billing/README.md).\n")
+	createDesignWorkitem(t, tc, campaign, "auth-tokens", "Auth Tokens", "# Auth Tokens\n")
+	createDesignWorkitem(t, tc, campaign, "billing", "Billing", "# Billing\n")
+	require.NoError(t, tc.WriteFile(campaign+"/docs/note.md",
+		"# Note\n\nSee [auth](../workflow/design/auth-flow/README.md).\n"))
+
+	qOut, err := tc.RunCampInDir(campaign, "quest", "create", "auth-quest",
+		"--no-editor", "--workitem", "auth-flow", "--no-commit")
+	require.NoError(t, err, "quest create: %s", qOut)
+
+	tc.GitOutput(t, campaign, "add", "-A")
+	tc.GitOutput(t, campaign, "commit", "-m", "seed design workitems and refs")
+
+	output, err := tc.RunCampInDir(campaign, "gather", "design", "auth-flow", "auth-tokens", "--title", "Unified Auth")
+	require.NoError(t, err, "gather output: %s", output)
+
+	note, err := tc.ReadFile(campaign + "/docs/note.md")
+	require.NoError(t, err)
+	assert.Contains(t, note, "../workflow/design/unified-auth/auth-flow/README.md")
+	assert.NotContains(t, note, "design/auth-flow/README.md")
+
+	movedReadme, err := tc.ReadFile(campaign + "/workflow/design/unified-auth/auth-flow/README.md")
+	require.NoError(t, err)
+	assert.Contains(t, movedReadme, "../../billing/README.md",
+		"internal markdown in the moved package should retarget the unmoved sibling")
+	assert.NotContains(t, movedReadme, "](../billing/README.md)")
+
+	linksOut, err := tc.RunCampInDir(campaign, "quest", "links", "auth-quest", "--json")
+	require.NoError(t, err, "quest links: %s", linksOut)
+	assert.Contains(t, linksOut, "workflow/design/unified-auth/auth-flow")
+	assert.NotContains(t, linksOut, `"path": "workflow/design/auth-flow"`)
+
+	gitStatus := tc.GitOutput(t, campaign, "status", "--porcelain")
+	assert.Empty(t, strings.TrimSpace(gitStatus), "rewritten refs must land in the gather commit")
+
+	files := tc.GitOutput(t, campaign, "show", "--name-only", "--format=", "HEAD")
+	assert.Contains(t, files, "docs/note.md")
+	assert.Contains(t, files, "quest.yaml")
+}

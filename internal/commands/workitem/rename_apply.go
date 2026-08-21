@@ -12,7 +12,7 @@ import (
 	dungeoncmd "github.com/Obedience-Corp/camp/cmd/camp/dungeon"
 	"github.com/Obedience-Corp/camp/internal/config"
 	camperrors "github.com/Obedience-Corp/camp/internal/errors"
-	"github.com/Obedience-Corp/camp/internal/mdlinks"
+	"github.com/Obedience-Corp/camp/internal/moveref"
 	navindex "github.com/Obedience-Corp/camp/internal/nav/index"
 	"github.com/Obedience-Corp/camp/internal/statusmove"
 	"github.com/Obedience-Corp/camp/internal/ui"
@@ -62,8 +62,8 @@ func applyRename(ctx context.Context, cmd *cobra.Command, cfg *config.CampaignCo
 	return emitRenameOutcome(cmd, opts, result)
 }
 
-// renameMove applies the physical basename change and rewrites the markdown
-// links that referenced the moved path.
+// renameMove applies the physical basename change and rewrites markdown and
+// quest links that referenced the moved path.
 func renameMove(ctx context.Context, root string, plan *renamePlan) ([]string, error) {
 	if _, err := statusmove.Move(ctx, plan.srcPath, plan.dstPath, statusmove.MoveOptions{BoundaryRoot: root}); err != nil {
 		if errors.Is(err, statusmove.ErrAlreadyExists) {
@@ -73,9 +73,9 @@ func renameMove(ctx context.Context, root string, plan *renamePlan) ([]string, e
 		}
 		return nil, camperrors.Wrapf(err, "renaming %s to %s", filepath.ToSlash(plan.oldRel), filepath.ToSlash(plan.newRel))
 	}
-	rewritten, err := mdlinks.RewriteForMove(ctx, root, plan.srcPath, plan.dstPath)
+	rewritten, err := moveref.RewriteForMove(ctx, root, plan.srcPath, plan.dstPath)
 	if err != nil {
-		return nil, camperrors.Wrapf(err, "rewriting markdown links after renaming %s (move applied; recover with git status)", filepath.Base(plan.oldRel))
+		return nil, camperrors.Wrapf(err, "rewriting references after renaming %s (move applied; recover with git status)", filepath.Base(plan.oldRel))
 	}
 	return rewritten, nil
 }

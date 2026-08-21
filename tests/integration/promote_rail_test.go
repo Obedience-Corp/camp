@@ -220,6 +220,26 @@ func TestPromoteRail_PriorityStoreRekeyedNotStaged(t *testing.T) {
 		"the priority store is gitignored machine state and must not be staged")
 }
 
+func TestPromoteRail_RepairsQuestLinks(t *testing.T) {
+	tc := GetSharedContainer(t)
+	path := setupRailCampaign(t, tc, "rail-quest-links")
+
+	out, err := tc.RunCampInDir(path, "quest", "create", "rail-quest",
+		"--no-editor", "--workitem", "design-rail-feature-fixed")
+	require.NoError(t, err, "quest create should succeed: %s", out)
+
+	railTo(t, tc, path+"/workflow/design/rail-feature", "ready")
+
+	linksOut, err := tc.RunCampInDir(path, "quest", "links", "rail-quest", "--json")
+	require.NoError(t, err, "quest links: %s", linksOut)
+	assert.Contains(t, linksOut, "festivals/ready/rail-feature")
+	assert.NotContains(t, linksOut, `"path": "workflow/design/rail-feature"`)
+
+	status, _, err := tc.ExecCommand("sh", "-c", "cd "+path+" && git status --porcelain")
+	require.NoError(t, err)
+	assert.Empty(t, strings.TrimSpace(status), "rewritten quest.yaml must land in the promote commit")
+}
+
 // TestPromoteRail_StampsUnmarkedSource is why stamping happens at rail entry.
 // Directory workitems are not uniformly marked, but a resident without a marker
 // cannot be resolved, so entering the rail unmarked would strand it.

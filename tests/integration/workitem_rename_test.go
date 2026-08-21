@@ -79,6 +79,27 @@ func TestWorkitemRename_RepairsReferences(t *testing.T) {
 	assert.Empty(t, strings.TrimSpace(status), "git tree should be clean after rename")
 }
 
+func TestWorkitemRename_RepairsQuestLinks(t *testing.T) {
+	tc := GetSharedContainer(t)
+	path := setupRenameWorkitem(t, tc, "wi-rename-quest", "design", "timeline")
+
+	out, err := tc.RunCampInDir(path, "quest", "create", "timeline-quest",
+		"--no-editor", "--workitem", "timeline")
+	require.NoError(t, err, "quest create should succeed: %s", out)
+
+	_, err = tc.RunCampInDir(path, "workitem", "rename", "timeline", "release-timeline")
+	require.NoError(t, err)
+
+	linksOut, err := tc.RunCampInDir(path, "quest", "links", "timeline-quest", "--json")
+	require.NoError(t, err, "quest links: %s", linksOut)
+	assert.Contains(t, linksOut, "workflow/design/release-timeline")
+	assert.NotContains(t, linksOut, `"path": "workflow/design/timeline"`)
+
+	status, _, err := tc.ExecCommand("sh", "-c", "cd "+path+" && git status --porcelain")
+	require.NoError(t, err)
+	assert.Empty(t, strings.TrimSpace(status), "rewritten quest.yaml must land in the rename commit")
+}
+
 func TestWorkitemRename_LinksRegistryRepaired(t *testing.T) {
 	tc := GetSharedContainer(t)
 	path := setupRenameWorkitem(t, tc, "wi-rename-links", "design", "alpha")

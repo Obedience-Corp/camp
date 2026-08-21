@@ -281,3 +281,29 @@ func TestDungeonMove_TriageDirectToStatusWithCommit(t *testing.T) {
 	)
 	assert.Regexp(t, `(?m)^A\tdungeon/archived/[0-9]{4}-[0-9]{2}-[0-9]{2}/stale-doc\.md$`, diff)
 }
+
+func TestDungeonMove_RepairsQuestLinks(t *testing.T) {
+	tc := GetSharedContainer(t)
+	path := setupDungeonCampaign(t, tc, "dmove-quest-links")
+
+	require.NoError(t, tc.WriteFile(path+"/dungeon/stale-notes.md", "# Stale\n"))
+	out, err := tc.RunCampInDir(path, "quest", "create", "notes-quest", "--no-editor", "--no-commit")
+	require.NoError(t, err, "quest create: %s", out)
+	out, err = tc.RunCampInDir(path, "quest", "link", "notes-quest", "dungeon/stale-notes.md", "--no-commit")
+	require.NoError(t, err, "quest link: %s", out)
+	_, _, err = tc.ExecCommand("sh", "-c", "cd "+path+" && git add . && git commit -m 'seed quest link'")
+	require.NoError(t, err)
+
+	out, err = tc.RunCampInDir(path, "dungeon", "move", "stale-notes.md", "archived")
+	require.NoError(t, err, "dungeon move: %s", out)
+
+	linksOut, err := tc.RunCampInDir(path, "quest", "links", "notes-quest", "--json")
+	require.NoError(t, err, "quest links: %s", linksOut)
+	assert.Contains(t, linksOut, "archived")
+	assert.Contains(t, linksOut, "stale-notes.md")
+	assert.NotContains(t, linksOut, `"path": "dungeon/stale-notes.md"`)
+
+	statusOutput, _, err := tc.ExecCommand("sh", "-c", "cd "+path+" && git status --porcelain")
+	require.NoError(t, err)
+	assert.Empty(t, strings.TrimSpace(statusOutput), "rewritten quest.yaml must land in the crawl commit")
+}
