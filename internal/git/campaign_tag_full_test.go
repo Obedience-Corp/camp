@@ -32,6 +32,11 @@ func TestFormatContextTagsFull_AllCombinations(t *testing.T) {
 			want: "[OBEY-CAMPAIGN-8deed8b4-FE-CW0003]",
 		},
 		{
+			name:     "campaign + ritual festival",
+			campaign: "8deed8b4", fest: "RI-XX0001",
+			want: "[OBEY-CAMPAIGN-8deed8b4-FE-RI-XX0001]",
+		},
+		{
 			name:     "campaign + workitem",
 			campaign: "8deed8b4", workitem: "WI-abcdef",
 			want: "[OBEY-CAMPAIGN-8deed8b4-WI-abcdef]",
@@ -75,6 +80,11 @@ func TestFormatContextTagsFull_AllCombinations(t *testing.T) {
 			name:  "name + all components",
 			cname: "obey-campaign", campaign: "8deed8b4", quest: "qst_abc", fest: "CW0003", workitem: "WI-abcdef",
 			want: "[obey-campaign:8deed8b4-qst_abc-FE-CW0003-WI-abcdef]",
+		},
+		{
+			name:  "name + ritual festival",
+			cname: "obey-campaign", campaign: "8deed8b4", fest: "RI-WR0001",
+			want: "[obey-campaign:8deed8b4-FE-RI-WR0001]",
 		},
 		{
 			name:  "name slugified (spaces and case)",
@@ -194,6 +204,14 @@ func TestParseTag_KnownCombinations(t *testing.T) {
 		{
 			subject:      "[OBEY-CAMPAIGN-8deed8b4-FE-CW0003] feat: ...",
 			wantCampaign: "8deed8b4", wantFest: "CW0003",
+		},
+		{
+			subject:      "[OBEY-CAMPAIGN-8deed8b4-FE-RI-XX0001] feat: ritual",
+			wantCampaign: "8deed8b4", wantFest: "RI-XX0001",
+		},
+		{
+			subject:      "[obey-campaign:8deed8b4-FE-RI-WR0001-WI-abcdef] ritual + workitem",
+			wantCampaign: "8deed8b4", wantName: "obey-campaign", wantFest: "RI-WR0001", wantWorkitem: "WI-abcdef",
 		},
 		{
 			subject:      "[OBEY-CAMPAIGN-8deed8b4-WI-WI-abcdef] x",
@@ -722,6 +740,21 @@ func TestFormatTag_ParseRoundTrip(t *testing.T) {
 				WorkitemRef: "WI-abcdef", NoteRef: "NT-123456",
 			},
 		},
+		{
+			name: "ritual festival",
+			tc: TagComponents{
+				CampaignName: "obey-campaign", CampaignID: "8deed8b4",
+				FestRef: "RI-XX0001",
+			},
+		},
+		{
+			name: "ritual festival with phase sequence and workitem",
+			tc: TagComponents{
+				CampaignName: "obey-campaign", CampaignID: "8deed8b4",
+				FestRef: "RI-WR0001", Phase: "001", Sequence: "02",
+				WorkitemRef: "WI-abcdef",
+			},
+		},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
@@ -732,6 +765,88 @@ func TestFormatTag_ParseRoundTrip(t *testing.T) {
 			}
 			if got != tc.tc {
 				t.Fatalf("round trip of %q = %+v, want %+v", tag, got, tc.tc)
+			}
+		})
+	}
+}
+
+func TestParseTagDetailed_RitualFestRef(t *testing.T) {
+	cases := []struct {
+		name             string
+		subject          string
+		wantFest         string
+		wantPhase        string
+		wantSequence     string
+		wantWorkitem     string
+		wantWarningField []string
+	}{
+		{
+			name:     "name-style ritual id is a single fest ref",
+			subject:  "[obey-campaign:8deed8b4-FE-RI-XX0001] feat: ritual",
+			wantFest: "RI-XX0001",
+		},
+		{
+			name:     "legacy ritual id is a single fest ref",
+			subject:  "[OBEY-CAMPAIGN-8deed8b4-FE-RI-WR0001] feat: ritual",
+			wantFest: "RI-WR0001",
+		},
+		{
+			name:         "ritual id then workitem leaves WI for the next segment",
+			subject:      "[obey-campaign:8deed8b4-FE-RI-DJ0001-WI-abcdef] x",
+			wantFest:     "RI-DJ0001",
+			wantWorkitem: "WI-abcdef",
+		},
+		{
+			name:         "ritual id then phase and sequence",
+			subject:      "[obey-campaign:8deed8b4-FE-RI-XX0001-PH-001-SQ-02] x",
+			wantFest:     "RI-XX0001",
+			wantPhase:    "001",
+			wantSequence: "02",
+		},
+		{
+			name:         "ritual id with phase sequence and workitem",
+			subject:      "[obey-campaign:8deed8b4-FE-RI-XX0001-PH-001-SQ-02-WI-abcdef] x",
+			wantFest:     "RI-XX0001",
+			wantPhase:    "001",
+			wantSequence: "02",
+			wantWorkitem: "WI-abcdef",
+		},
+		{
+			name:             "incomplete ritual prefix fails shape",
+			subject:          "[OBEY-CAMPAIGN-abc-FE-RI-] x",
+			wantWarningField: []string{"fest_ref"},
+		},
+		{
+			name:             "ritual id then unknown extra then valid WI",
+			subject:          "[OBEY-CAMPAIGN-abc-FE-RI-XX0001-extra-WI-abcdef] x",
+			wantFest:         "RI-XX0001",
+			wantWorkitem:     "WI-abcdef",
+			wantWarningField: []string{"unknown"},
+		},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			got, warnings := ParseTagDetailed(tc.subject)
+			if got.FestRef != tc.wantFest {
+				t.Errorf("FestRef = %q, want %q", got.FestRef, tc.wantFest)
+			}
+			if got.Phase != tc.wantPhase {
+				t.Errorf("Phase = %q, want %q", got.Phase, tc.wantPhase)
+			}
+			if got.Sequence != tc.wantSequence {
+				t.Errorf("Sequence = %q, want %q", got.Sequence, tc.wantSequence)
+			}
+			if got.WorkitemRef != tc.wantWorkitem {
+				t.Errorf("WorkitemRef = %q, want %q", got.WorkitemRef, tc.wantWorkitem)
+			}
+			if len(warnings) != len(tc.wantWarningField) {
+				t.Fatalf("warnings count = %d, want %d: %+v",
+					len(warnings), len(tc.wantWarningField), warnings)
+			}
+			for i, want := range tc.wantWarningField {
+				if warnings[i].Field != want {
+					t.Errorf("warning[%d].Field = %q, want %q", i, warnings[i].Field, want)
+				}
 			}
 		})
 	}

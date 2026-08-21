@@ -487,9 +487,16 @@ func TestValidateTagComponents_DistinguishesDroppedFromDegraded(t *testing.T) {
 			wantNote: "dropped on emit",
 		},
 		{
+			// RI-XX0001 used to be the example here, but the ritual festival
+			// grammar (splitFestRef, tagFestRefRe) now parses it cleanly as a
+			// valid FestRef, so it no longer demonstrates a degraded reparse.
+			// CC-0008 keeps the internal dash that trips the naive split
+			// while still failing tagFestRefRe (only a leading RI- may
+			// precede a dash), so it still proves the fest_ref segment is
+			// unguarded on emit.
 			name:      "an unguarded festival ref reaches the tag",
-			tc:        TagComponents{CampaignID: "8deed8b4", FestRef: "RI-XX0001", Phase: "001"},
-			bad:       "RI-XX0001",
+			tc:        TagComponents{CampaignID: "8deed8b4", FestRef: "CC-0008", Phase: "001"},
+			bad:       "CC-0008",
 			wantNote:  "emitted verbatim but reparses degraded",
 			wantInTag: true,
 		},

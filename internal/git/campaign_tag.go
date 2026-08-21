@@ -25,6 +25,11 @@ const (
 	tagNotePrefix     = "NT-"
 )
 
+// ritualFestRefPrefix is the festival-id marker fest prepends to ritual
+// festivals (RI-XX0001). It is part of FestRef, not a tag segment of its own,
+// so the FE- splitter must consume it instead of stopping at the first dash.
+const ritualFestRefPrefix = "RI-"
+
 // FormatTag is the canonical campaign tag emitter: every tag camp writes is
 // composed here. The leading token is the slugified campaign name plus the
 // short id ("[obey-campaign:8deed8b4]"), falling back to
@@ -181,9 +186,11 @@ var (
 	tagWorkitemRefRe = regexp.MustCompile(`^WI-[0-9a-f]{6}$`)
 	tagNoteRefRe     = regexp.MustCompile(`^NT-[0-9a-f]{6}$`)
 	tagQuestIDRe     = regexp.MustCompile(`^qst_[A-Za-z0-9_]{1,40}$`)
-	tagFestRefRe     = regexp.MustCompile(`^[A-Za-z0-9]{1,32}$`)
-	tagPhaseRe       = regexp.MustCompile(`^[0-9]{1,4}$`)
-	tagSequenceRe    = regexp.MustCompile(`^[0-9]{1,4}$`)
+	// Ordinary festival refs are PREFIX+digits (CW0003). Ritual refs keep the
+	// RI- marker as part of the id (RI-XX0001).
+	tagFestRefRe  = regexp.MustCompile(`^(?:RI-)?[A-Za-z0-9]{1,32}$`)
+	tagPhaseRe    = regexp.MustCompile(`^[0-9]{1,4}$`)
+	tagSequenceRe = regexp.MustCompile(`^[0-9]{1,4}$`)
 	// Real campaign ids are UUID-derived hex; gating on it rejects ordinary
 	// bracket prefixes like "[scope:msg]".
 	tagNameStyleIDRe  = regexp.MustCompile(`^[0-9a-f]{1,8}$`)
@@ -250,8 +257,8 @@ var tagSegments = []tagSegment{
 	},
 	{
 		prefix: tagFestPrefix, field: "fest_ref", shape: tagFestRefRe,
-		want:        "1 to 32 letters or digits",
-		stripPrefix: true, split: splitAtDash,
+		want:        "1 to 32 letters or digits, optionally RI- prefixed",
+		stripPrefix: true, split: splitFestRef,
 		target: func(tc *TagComponents) *string { return &tc.FestRef },
 	},
 	{
@@ -405,6 +412,17 @@ func splitAtDash(s string) (string, string) {
 		return s[:i], s[i+1:]
 	}
 	return s, ""
+}
+
+// splitFestRef extracts the festival ref from an FE- payload. Ritual ids
+// (RI-XX0001) contain an internal dash that is not a segment boundary;
+// ordinary ids (CW0003) have none, so they still split at the first dash.
+func splitFestRef(payload string) (string, string) {
+	if strings.HasPrefix(payload, ritualFestRefPrefix) {
+		token, after := splitAtDash(payload[len(ritualFestRefPrefix):])
+		return ritualFestRefPrefix + token, after
+	}
+	return splitAtDash(payload)
 }
 
 // splitTerminalSegment consumes the whole remainder as one segment. NT- is
