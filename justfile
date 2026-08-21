@@ -73,62 +73,21 @@ lint:
 # exec.Command("git", ...) and similar must run through the containerized
 # harness, not host t.TempDir.
 #
-# The allowlist captures the pre-existing violators tracked under
-# CW0003-tests-01 and follow-up migration scope. Adding a NEW file to the
-# violator set fails the build. Removing a file from the allowlist as you
-# migrate it tightens the rule. The end state is an empty allowlist.
+# Detection covers direct git exec AND helper usage (runGit, mustRunGit,
+# initTestRepo, exec.Command(args[0]) wrappers, …). Files that only call
+# those helpers were invisible to the old grep; that hole is the point of
+# the scanner. Allowlist: internal/hostfslint/allowlist.go.
+#
+# A test that mutates real filesystem state is compliant when it cannot run
+# on a developer's machine. There are two ways to achieve that, and the rule
+# accepts both (decision D007):
+#
+#   1. it lives under tests/integration/ and drives the camp binary, or
+#   2. it carries the container_fs build tag, so a plain `just test` does
+#      not compile it, and the integration lane cross-compiles it and runs
+#      it inside a pooled container (tests/integration/containerfs_test.go).
 lint-no-host-fs-tests:
-    #!/usr/bin/env sh
-    set -eu
-    # A test that mutates real filesystem state is compliant when it cannot run
-    # on a developer's machine. There are two ways to achieve that, and the rule
-    # accepts both (decision D007):
-    #
-    #   1. it lives under tests/integration/ and drives the camp binary, or
-    #   2. it carries the container_fs build tag, so a plain `just test` does
-    #      not compile it, and the integration lane cross-compiles it and runs
-    #      it inside a pooled container (tests/integration/containerfs_test.go).
-    #
-    # Form 2 exists because the internal/clone and internal/sync suites assert
-    # on unexported package internals; relocating them into package integration
-    # would have deleted those assertions rather than moved them.
-    #
-    # Allowlist: legacy host-FS violators tracked under CW0003-tests-01 and
-    # adjacent patterns, still to migrate. The rule blocks any NEW addition
-    # beyond this set. Goal: drive this list to empty.
-    allowlist="./internal/git/remote_test.go ./internal/git/commit_test.go ./internal/git/info_exclude_test.go ./pkg/commitkit/commitkit_test.go ./cmd/camp/project/remote/remote_test.go ./tools/release-notes/main_test.go ./internal/doctor/checks/orphan_test.go ./internal/doctor/checks/head_test.go ./internal/doctor/checks/url_test.go ./internal/project/add_test.go ./internal/project/resolve_test.go ./internal/project/list_test.go ./internal/attach/attach_test.go ./internal/leverage/backfill_test.go ./internal/leverage/authors_test.go ./internal/leverage/projects_test.go ./internal/leverage/blame_cache_test.go ./internal/leverage/sampler_test.go ./internal/leverage/config_test.go ./internal/quest/autocommit_integration_test.go ./internal/scaffold/init_behavior_test.go ./internal/git/commit/commit_test.go ./internal/git/executor_test.go ./internal/git/submodule_test.go ./internal/git/submodule_list_test.go ./internal/git/branches_test.go ./internal/git/submodule_orphan_test.go ./internal/git/resolve_test.go"
-    # Candidates: FS-mutating tests outside tests/integration/. Files carrying
-    # the container_fs tag are excluded here rather than allowlisted, because
-    # they are compliant by construction: the tag keeps them off the host and
-    # the lane runs them in a container.
-    candidates=$(find . -name '*_test.go' -not -path './tests/integration/*' -not -path './vendor/*' -print0 2>/dev/null | \
-        xargs -0 grep -lE 'exec\.Command\("git"|exec\.CommandContext\(.*"git"' 2>/dev/null || true)
-    hits=""
-    for c in $candidates; do
-        if head -3 "$c" | grep -q '^//go:build container_fs'; then
-            continue
-        fi
-        hits="$hits $c"
-    done
-    new_violators=""
-    for hit in $hits; do
-        case " $allowlist " in
-            *" $hit "*) ;;
-            *) new_violators="$new_violators $hit" ;;
-        esac
-    done
-    if [ -n "$new_violators" ]; then
-        echo "FAIL: NEW host-side git exec.Command in _test.go outside tests/integration/:"
-        for v in $new_violators; do echo "  $v"; done
-        echo ""
-        echo "Fix by either:"
-        echo "  - moving it to tests/integration/ (GetSharedContainer + RunCampInDir), or"
-        echo "  - tagging the file //go:build container_fs and registering its package"
-        echo "    in containerFSPackages (tests/integration/containerfs_test.go), or"
-        echo "  - (if it is genuinely pure-logic) adding it to the allowlist in justfile."
-        exit 1
-    fi
-    echo "lint-no-host-fs-tests: clean (no NEW violators; $(echo $hits | wc -w | tr -d ' ') legacy files on allowlist)"
+    go run ./internal/hostfslint
 
 # Reject NEW fmt.Errorf occurrences in production code outside tools/.
 # This is a count ratchet against the merge-base with origin/main, so legacy
