@@ -656,9 +656,16 @@ git -C %[2]s push origin main
 `, projectDir, mainWorktree))
 
 	output, err := tc.RunCampInDir(projectDir, "fresh", "--no-branch", "--no-push")
-	require.NoError(t, err, "camp fresh should not delete remote branches:\n%s", output)
+	if err != nil {
+		t.Fatalf("camp fresh should not delete remote branches (container %s):\n%s\n%s",
+			tc.ShortID(), output, tc.SharedStateDump())
+	}
 
-	remoteHeads := tc.GitOutput(t, bareDir, "show-ref", "--verify", "refs/heads/feature-remote")
+	remoteHeads, code, gitErr := tc.ExecCommand("git", "-C", bareDir, "show-ref", "--verify", "refs/heads/feature-remote")
+	if gitErr != nil || code != 0 {
+		t.Fatalf("remote feature-remote missing after camp fresh (container %s): err=%v exit=%d\n%s\n%s",
+			tc.ShortID(), gitErr, code, remoteHeads, tc.SharedStateDump())
+	}
 	assert.Contains(t, remoteHeads, "refs/heads/feature-remote")
 }
 

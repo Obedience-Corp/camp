@@ -103,20 +103,32 @@ func TestIntentPromote_MigratesLegacyIntentMarkerToCanonicalRoot(t *testing.T) {
 	writeIntent(t, tc, path, intentID, "Marker Migration Intent", "ready")
 
 	output, err := tc.RunCampInDir(path, "intent", "promote", intentID, "--target", "design", "--no-commit")
-	require.NoError(t, err, "design promote should succeed, output: %s", output)
+	if err != nil {
+		t.Fatalf("design promote should succeed (container %s): %v\noutput: %s\n%s",
+			tc.ShortID(), err, output, tc.SharedStateDump())
+	}
 
 	canonicalObeyPath := fmt.Sprintf("%s/.campaign/intents/OBEY.md", path)
 	canonicalObey, err := tc.ReadFile(canonicalObeyPath)
-	require.NoError(t, err)
+	if err != nil {
+		t.Fatalf("canonical marker missing after promote (container %s): %v\n%s",
+			tc.ShortID(), err, tc.SharedStateDump())
+	}
 	assert.Equal(t, "# legacy intent marker\n", canonicalObey, "canonical marker should preserve migrated legacy content")
 
 	legacyExists, err := tc.CheckFileExists(fmt.Sprintf("%s/workflow/intents/OBEY.md", path))
 	require.NoError(t, err)
-	assert.False(t, legacyExists, "legacy marker should be removed after command-path migration")
+	if legacyExists {
+		t.Fatalf("legacy marker should be removed after command-path migration (container %s)\n%s",
+			tc.ShortID(), tc.SharedStateDump())
+	}
 
 	legacyDirExists, err := tc.CheckDirExists(fmt.Sprintf("%s/workflow/intents", path))
 	require.NoError(t, err)
-	assert.False(t, legacyDirExists, "legacy intent root should be removed once migration empties it")
+	if legacyDirExists {
+		t.Fatalf("legacy intent root should be removed once migration empties it (container %s)\n%s",
+			tc.ShortID(), tc.SharedStateDump())
+	}
 }
 
 func TestIntentPromote_TargetFestival_NoExistingFestivals_CreatesFestivalAndActivatesIntent(t *testing.T) {

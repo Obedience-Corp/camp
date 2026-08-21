@@ -196,6 +196,56 @@ func readExecOutput(reader io.Reader) ([]byte, error) {
 	return data, nil
 }
 
+// resetContainerScript is the checkout isolation contract for pooled members.
+//
+// The previous script chained `rm -rf ... 2>/dev/null; mkdir; printf` so the
+// exit code was always printf's. A busy leftover under /test, /campaigns, or
+// /root/.obey was swallowed, and the next test inherited a dirty member —
+// the "passes alone / fails in the full suite / passes on rerun" class.
+//
+// Work roots are moved aside before rm so a leftover process with cwd inside
+// them cannot block the next checkout from getting a clean /test. Config
+// homes must actually disappear: if they survive, Reset fails and
+// GetSharedContainer retries / records the member instead of hiding the leak.
+const resetContainerScript = `set -eu
+# Kill detached deferred-commit workers first. Camp spawns them with setsid
+# so they outlive the command that started them, which is the point in
+# production and a leak in a pooled container: a worker from the previous
+# test would still be scanning directories the next test is creating.
+# Clearing files alone does not stop a running process.
+# The bracket is not cosmetic: pkill -f matches full command lines, and this
+# very shell's command line contains the pattern. Written plainly it kills
+# itself and the rest of the reset never runs.
+pkill -f '[j]obs run' 2>/dev/null || true
+stamp=$$
+rm -rf /test.stale.* /campaigns.stale.*
+for p in /test /campaigns; do
+  if [ -e "$p" ]; then
+    mv "$p" "$p.stale.$stamp"
+  fi
+done
+rm -rf \
+  /test.stale.$stamp \
+  /campaigns.stale.$stamp \
+  /root/.obey \
+  /root/.config/camp \
+  /root/.camp \
+  /tmp/create-* \
+  /tmp/.camp_frame_* \
+  /tmp/_camp_* \
+  || true
+for p in /root/.obey /root/.config/camp /root/.camp /test /campaigns; do
+  if [ -e "$p" ]; then
+    echo "reset leftover: $p" >&2
+    ls -la "$p" >&2 || true
+    exit 1
+  fi
+done
+mkdir -p /test /campaigns /root/.config/camp /root/.obey/campaign
+sync
+printf '{"dungeon_hidden": false}' > /root/.obey/campaign/config.json
+`
+
 // Reset clears container state between tests.
 // This removes all test artifacts while keeping the container and binary intact.
 // The trailing `sync` ensures filesystem buffers are flushed before the next test
@@ -212,36 +262,60 @@ func (tc *TestContainer) Reset() error {
 	// A deferral opt-in belongs to one test only.
 	tc.deferral = false
 
-	// Remove all test artifacts and recreate clean directories. Include both
-	// current and legacy config homes so registry/global settings never leak
-	// between tests that share a pooled container.
-	//
 	// execUnrecorded, not exec: GetSharedContainer retries a failed Reset and
 	// records the member itself only on double failure. Letting exec report
 	// the first attempt would arm members for blips the retry absorbs.
-	exitCode, _, err := tc.execUnrecorded(tc.ctx, []string{
-		"sh", "-c",
-		// Kill detached deferred-commit workers first. Camp spawns them with
-		// setsid so they outlive the command that started them, which is the
-		// point in production and a leak in a pooled container: a worker from
-		// the previous test would still be scanning directories the next test
-		// is creating. Clearing files alone does not stop a running process.
-		// The bracket is not cosmetic: pkill -f matches full command lines,
-		// and this very shell's command line contains the pattern. Written
-		// plainly it kills itself and the rest of the reset never runs, which
-		// presents as every later test failing in its setup.
-		"pkill -f '[j]obs run' 2>/dev/null; " +
-			"rm -rf /test /campaigns /root/.obey /root/.config/camp /root/.camp /tmp/create-* 2>/dev/null; " +
-			"mkdir -p /test /campaigns /root/.config/camp /root/.obey/campaign; sync; " +
-			`printf '{"dungeon_hidden": false}' > /root/.obey/campaign/config.json`,
-	})
+	exitCode, reader, err := tc.execUnrecorded(tc.ctx, []string{"sh", "-c", resetContainerScript})
+	out, _ := readExecOutput(reader)
+	msg := strings.TrimSpace(string(out))
 	if err != nil {
-		return fmt.Errorf("failed to reset container: %w", err)
+		if msg != "" {
+			return fmt.Errorf("failed to reset container %s: %w\n%s", tc.ShortID(), err, msg)
+		}
+		return fmt.Errorf("failed to reset container %s: %w", tc.ShortID(), err)
 	}
 	if exitCode != 0 {
-		return fmt.Errorf("reset command failed with exit code %d", exitCode)
+		if msg == "" {
+			msg = "(no output)"
+		}
+		return fmt.Errorf("reset command failed on %s with exit code %d: %s", tc.ShortID(), exitCode, msg)
 	}
 	return nil
+}
+
+// ShortID returns the 12-character Docker id for failure messages.
+func (tc *TestContainer) ShortID() string {
+	if tc == nil || tc.container == nil {
+		return "none"
+	}
+	id := tc.container.GetContainerID()
+	if len(id) > 12 {
+		return id[:12]
+	}
+	return id
+}
+
+// SharedStateDump lists the pooled paths that leak between checkouts. Call
+// only on the failure path: the listing is an extra exec.
+func (tc *TestContainer) SharedStateDump() string {
+	if tc == nil {
+		return "shared-state dump: nil container"
+	}
+	out, code, err := tc.ExecCommand("sh", "-c",
+		`echo "--- /test ---"
+ls -la /test 2>/dev/null || echo "(missing)"
+echo "--- /campaigns ---"
+ls -la /campaigns 2>/dev/null || echo "(missing)"
+echo "--- /root/.obey ---"
+ls -la /root/.obey /root/.obey/campaign 2>/dev/null || echo "(missing)"
+echo "--- /tmp create/frame ---"
+ls -la /tmp/create-* /tmp/.camp_frame_* /tmp/_camp_* 2>/dev/null || echo "(none)"
+echo "--- leftover procs ---"
+ps | grep -E '[j]obs run|[g]it ' || echo "(none)"`)
+	if err != nil {
+		return fmt.Sprintf("shared-state dump failed (container %s): %v", tc.ShortID(), err)
+	}
+	return fmt.Sprintf("container %s (dump exit %d):\n%s", tc.ShortID(), code, strings.TrimSpace(out))
 }
 
 // Cleanup terminates the container
@@ -579,6 +653,6 @@ func (tc *TestContainer) GitOutput(t *testing.T, dir string, args ...string) str
 	cmd := append([]string{"git", "-C", dir}, args...)
 	output, exitCode, err := tc.ExecCommand(cmd...)
 	require.NoError(t, err)
-	require.Equal(t, 0, exitCode, "git %v failed:\n%s", args, output)
+	require.Equal(t, 0, exitCode, "git %v failed (container %s):\n%s", args, tc.ShortID(), output)
 	return strings.TrimSpace(output)
 }
