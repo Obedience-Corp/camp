@@ -43,7 +43,7 @@ func (m *Model) schedulePreviewLoadImmediate() tea.Cmd {
 }
 
 func (m *Model) enqueuePreviewLoad(delay time.Duration) tea.Cmd {
-	if !m.showPreview {
+	if !m.shouldShowPreview() {
 		return nil
 	}
 	m.previewSeq++

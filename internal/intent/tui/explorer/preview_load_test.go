@@ -179,6 +179,21 @@ func TestHiddenPreviewDoesNotScheduleLoad(t *testing.T) {
 	}
 }
 
+func TestForceHiddenPreviewDoesNotScheduleLoad(t *testing.T) {
+	m := previewNavModel(t)
+	m.showPreview = true
+	m.previewForceHidden = true
+
+	updated, cmd := m.Update(tea.KeyMsg{Type: tea.KeyDown})
+	m = updated.(Model)
+	if cmd != nil {
+		t.Fatal("force-hidden preview must not schedule a load")
+	}
+	if m.previewSeq != 0 {
+		t.Fatalf("previewSeq = %d, want 0 when preview is force-hidden", m.previewSeq)
+	}
+}
+
 func TestLoadPreviewCmdMissingFileReturnsErrorText(t *testing.T) {
 	cmd := loadPreviewCmd(previewDebounceMsg{
 		seq:   1,
