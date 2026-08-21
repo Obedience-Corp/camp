@@ -2,6 +2,7 @@ package main
 
 import (
 	"fmt"
+	"strings"
 
 	"github.com/Obedience-Corp/camp/internal/campaign"
 	"github.com/Obedience-Corp/camp/internal/drain"
@@ -72,8 +73,8 @@ func runStage(cmd *cobra.Command, args []string) error {
 		return camperrors.Wrap(err, "failed to resolve target")
 	}
 
-	if target.IsSubmodule {
-		fmt.Println(ui.Info(fmt.Sprintf("Operating on submodule: %s", target.Name)))
+	if kind := target.NestedKindTitle(); kind != "" {
+		fmt.Println(ui.Info(fmt.Sprintf("Operating on %s: %s", strings.ToLower(kind), target.Name)))
 	}
 
 	// Same barrier as camp commit, for the same reason: stage is the front
@@ -92,7 +93,7 @@ func runStage(cmd *cobra.Command, args []string) error {
 	}
 
 	fmt.Println(ui.Info("Staging changes..."))
-	refsExcluded := !target.IsSubmodule && !stageIncludeRefs
+	refsExcluded := !target.IsNestedRepo() && !stageIncludeRefs
 	if refsExcluded {
 		paths, pathErr := git.ListSubmodulePaths(ctx, target.Path)
 		if pathErr != nil {

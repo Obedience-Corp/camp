@@ -197,6 +197,48 @@ func TestResolveFromCwd_NestedSubmoduleWins(t *testing.T) {
 	}
 }
 
+func TestResolveFromCwd_WorktreeUsesOwningProjectName(t *testing.T) {
+	campRoot := setupTestCampaign(t, "myproj")
+	if resolved, err := filepath.EvalSymlinks(campRoot); err == nil {
+		campRoot = resolved
+	}
+
+	wtDir := filepath.Join(campRoot, "projects", "worktrees", "myproj", "feature")
+	if err := os.MkdirAll(wtDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	gitDir := filepath.Join(campRoot, ".git", "modules", "projects", "myproj", "worktrees", "feature")
+	if err := os.MkdirAll(gitDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(wtDir, ".git"), []byte("gitdir: "+gitDir+"\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	origDir, err := os.Getwd()
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = os.Chdir(origDir) })
+	if err := os.Chdir(wtDir); err != nil {
+		t.Fatal(err)
+	}
+
+	ctx := context.Background()
+	result, err := ResolveFromCwd(ctx, campRoot)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if result.Name != "myproj" {
+		t.Fatalf("got name %q, want %q (not worktrees)", result.Name, "myproj")
+	}
+	gotPath, _ := filepath.EvalSymlinks(result.Path)
+	wantPath, _ := filepath.EvalSymlinks(wtDir)
+	if gotPath != wantPath {
+		t.Fatalf("got path %q, want worktree path %q", gotPath, wantPath)
+	}
+}
+
 func TestResolve_WithFlag(t *testing.T) {
 	campRoot := setupTestCampaign(t, "api", "web")
 

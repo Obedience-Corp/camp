@@ -59,6 +59,48 @@ func TestIsSubmoduleDistinguishesWorktrees(t *testing.T) {
 	}
 }
 
+func TestIsSubmoduleDistinguishesSubmoduleWorktrees(t *testing.T) {
+	tmpDir := t.TempDir()
+	worktreeDir := filepath.Join(tmpDir, "projects", "worktrees", "camp", "feature")
+	gitDir := filepath.Join(tmpDir, ".git", "modules", "projects", "camp", "worktrees", "feature")
+	if err := os.MkdirAll(worktreeDir, 0755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.MkdirAll(gitDir, 0755); err != nil {
+		t.Fatal(err)
+	}
+	content := "gitdir: " + gitDir + "\n"
+	if err := os.WriteFile(filepath.Join(worktreeDir, ".git"), []byte(content), 0644); err != nil {
+		t.Fatal(err)
+	}
+
+	result, err := IsSubmodule(worktreeDir)
+	if err != nil {
+		t.Fatalf("IsSubmodule() error = %v", err)
+	}
+	if result {
+		t.Fatal("IsSubmodule() = true, want false for submodule-linked worktree")
+	}
+}
+
+func TestIsWorktreeGitDir(t *testing.T) {
+	tests := []struct {
+		gitDir string
+		want   bool
+	}{
+		{filepath.Join("/repo", ".git", "worktrees", "feature"), true},
+		{filepath.Join("/campaign", ".git", "modules", "projects", "camp", "worktrees", "feature"), true},
+		{filepath.Join("/campaign", ".git", "modules", "projects", "camp"), false},
+		{filepath.Join("/repo", ".git"), false},
+		{"/tmp/repo.git", false},
+	}
+	for _, tt := range tests {
+		if got := isWorktreeGitDir(tt.gitDir); got != tt.want {
+			t.Errorf("isWorktreeGitDir(%q) = %v, want %v", tt.gitDir, got, tt.want)
+		}
+	}
+}
+
 func TestIsSubmodule_NoGit(t *testing.T) {
 	tmpDir := t.TempDir()
 	// No .git at all

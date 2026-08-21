@@ -28,8 +28,7 @@ func IsSubmodule(path string) (bool, error) {
 		return false, nil
 	}
 
-	// Submodules and git worktrees both have .git as a gitdir file. Worktree
-	// gitdirs live under the main repository's .git/worktrees area.
+	// Submodules and git worktrees both have .git as a gitdir file.
 	gitDir, err := ResolveGitDir(path)
 	if err != nil {
 		return false, err
@@ -37,10 +36,14 @@ func IsSubmodule(path string) (bool, error) {
 	return !isWorktreeGitDir(gitDir), nil
 }
 
+// isWorktreeGitDir reports whether gitDir is a linked worktree git directory.
+// Git stores those at $GIT_COMMON_DIR/worktrees/<name>, which is the on-disk
+// form of `rev-parse --git-dir` differing from `--git-common-dir`. Matching
+// only `/.git/worktrees/` misses submodule worktrees at
+// `.git/modules/<path>/worktrees/<name>`.
 func isWorktreeGitDir(gitDir string) bool {
 	clean := filepath.Clean(gitDir)
-	needle := string(filepath.Separator) + ".git" + string(filepath.Separator) + "worktrees" + string(filepath.Separator)
-	return strings.Contains(clean, needle)
+	return filepath.Base(filepath.Dir(clean)) == "worktrees"
 }
 
 // GetSubmoduleGitDir resolves the actual .git directory for a submodule.
