@@ -72,3 +72,36 @@ func TestWriterFailureDoesNotInventMessage(t *testing.T) {
 		t.Fatalf("err = %v, want boom", err)
 	}
 }
+
+// Empty Parent is unborn HEAD, not a missing field. The execute guard must
+// not reject it before the empty-tree / writer path runs; otherwise enqueue
+// would accept a promise the worker immediately fails.
+func TestUnbornHeadParentIsNotMalformed(t *testing.T) {
+	writerRuns := 0
+	oldWrite := writeMessage
+	writeMessage = func(context.Context, string, string, *Job) (string, error) {
+		writerRuns++
+		return "should not run", nil
+	}
+	t.Cleanup(func() { writeMessage = oldWrite })
+
+	oldEmpty := isEmptyCommitTree
+	isEmptyCommitTree = func(context.Context, string, *Job) (bool, error) {
+		return true, nil
+	}
+	t.Cleanup(func() { isEmptyCommitTree = oldEmpty })
+
+	job := &Job{
+		ID:        "job-unborn",
+		Kind:      KindCommitTree,
+		Repo:      ".",
+		Tree:      "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+		AutoWrite: true,
+	}
+	if err := executeCommitTree(context.Background(), t.TempDir(), t.TempDir(), job); err != nil {
+		t.Fatalf("empty parent (unborn HEAD) error = %v, want nil", err)
+	}
+	if writerRuns != 0 {
+		t.Fatalf("writer runs = %d, want 0 for the empty-tree short-circuit", writerRuns)
+	}
+}

@@ -40,7 +40,12 @@ func WriteTree(ctx context.Context, repoPath string) (string, error) {
 // TreeSHA returns the tree object for commitish (a commit SHA, ref, or
 // commit^{tree} form). Used to refuse empty deferred commits: when the staged
 // tree equals the parent commit's tree there is nothing to land.
+//
+// Empty commitish is the empty tree (unborn HEAD).
 func TreeSHA(ctx context.Context, repoPath, commitish string) (string, error) {
+	if strings.TrimSpace(commitish) == "" {
+		return EmptyTreeSHA(ctx, repoPath)
+	}
 	out, err := Output(ctx, repoPath, "rev-parse", commitish+"^{tree}")
 	if err != nil {
 		return "", camperrors.Wrapf(err, "resolve tree for %s", shortForMessage(commitish))
@@ -66,8 +71,15 @@ func shortForMessage(sha string) string {
 // reach this path, because a hook is a user's own code that expects to run at
 // commit time in the foreground, and the enqueue side degrades those to a full
 // synchronous commit.
+//
+// An empty parent makes a root commit (no `-p`): unborn HEAD.
 func CommitTree(ctx context.Context, repoPath, tree, parent, message string) (string, error) {
-	out, err := Output(ctx, repoPath, "commit-tree", tree, "-p", parent, "-m", message)
+	args := []string{"commit-tree", tree}
+	if strings.TrimSpace(parent) != "" {
+		args = append(args, "-p", parent)
+	}
+	args = append(args, "-m", message)
+	out, err := Output(ctx, repoPath, args...)
 	if err != nil {
 		return "", camperrors.Wrap(err, "create the deferred commit object")
 	}
@@ -87,8 +99,12 @@ func CommitTree(ctx context.Context, repoPath, tree, parent, message string) (st
 // silently discard it by pointing HEAD somewhere that never had it as an
 // ancestor.
 func UpdateHeadFrom(ctx context.Context, repoPath, newSHA, oldSHA, reason string) error {
+	expected, err := expectedHEAD(ctx, repoPath, oldSHA)
+	if err != nil {
+		return err
+	}
 	if _, err := Output(ctx, repoPath,
-		"update-ref", "-m", reason, "HEAD", newSHA, oldSHA); err != nil {
+		"update-ref", "-m", reason, "HEAD", newSHA, expected); err != nil {
 		return camperrors.Wrap(err, "move HEAD to the deferred commit")
 	}
 	return nil

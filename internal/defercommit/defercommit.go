@@ -256,7 +256,9 @@ type Enqueued struct {
 //
 // The parent is recorded for the same reason the tree is. At execution time the
 // worker moves HEAD only if it still points at this commit, so a queued commit
-// can never silently discard work someone else committed in the gap.
+// can never silently discard work someone else committed in the gap. Empty
+// parent means HEAD was unborn: the worker creates a root commit and moves
+// HEAD only if it is still unborn.
 func Enqueue(ctx context.Context, campaignRoot, repoPath string, opts EnqueueOptions) (*Enqueued, error) {
 	if ctx.Err() != nil {
 		return nil, ctx.Err()
@@ -266,14 +268,17 @@ func Enqueue(ctx context.Context, campaignRoot, repoPath string, opts EnqueueOpt
 	if err != nil {
 		return nil, err
 	}
-	parent, err := git.FullHash(ctx, repoPath)
-	if err != nil {
-		return nil, err
-	}
+	// Empty parent is unborn HEAD: the job creates a root commit. FullHash
+	// fails in that state, which used to make TryDeferAutoWrite print a false
+	// "Could not queue this commit" warning and fall back to a synchronous
+	// write. HeadSHA returns "" instead, and empty Parent is a valid
+	// KindCommitTree snapshot.
+	parent := git.HeadSHA(ctx, repoPath)
 	// Refuse empty snapshots. A deferred commit whose tree equals its parent
 	// would land a no-op commit (and previously a filler message when the
 	// writer correctly reported "no staged changes"). Same sentinel the
-	// synchronous path uses when there is nothing to commit.
+	// synchronous path uses when there is nothing to commit. Unborn HEAD
+	// compares against the empty tree.
 	parentTree, err := git.TreeSHA(ctx, repoPath, parent)
 	if err != nil {
 		return nil, err

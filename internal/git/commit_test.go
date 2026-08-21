@@ -1375,6 +1375,103 @@ func TestCommitBlobs_UnbornHead(t *testing.T) {
 	}
 }
 
+// KindCommitTree on an unborn HEAD records an empty Parent. CommitTree must
+// produce a root commit (no `-p`) and UpdateHeadFrom must CAS from the zero
+// OID, or --auto-write would still have to fall back to a synchronous commit.
+func TestCommitTreeAndUpdateHeadFrom_UnbornHead(t *testing.T) {
+	tmpDir := initTestRepo(t)
+	ctx := context.Background()
+
+	if err := os.WriteFile(filepath.Join(tmpDir, "first.md"), []byte("root\n"), 0644); err != nil {
+		t.Fatalf("write first.md: %v", err)
+	}
+	if err := StageAll(ctx, tmpDir); err != nil {
+		t.Fatalf("StageAll() error = %v", err)
+	}
+	tree, err := WriteTree(ctx, tmpDir)
+	if err != nil {
+		t.Fatalf("WriteTree() error = %v", err)
+	}
+
+	sha, err := CommitTree(ctx, tmpDir, tree, "", "first commit")
+	if err != nil {
+		t.Fatalf("CommitTree() on an unborn HEAD error = %v", err)
+	}
+	if sha == "" {
+		t.Fatal("CommitTree() produced no SHA")
+	}
+
+	if err := UpdateHeadFrom(ctx, tmpDir, sha, "", "test: unborn HEAD"); err != nil {
+		t.Fatalf("UpdateHeadFrom() from unborn HEAD error = %v", err)
+	}
+	if !headResolvable(ctx, tmpDir) {
+		t.Fatal("HEAD still unborn after UpdateHeadFrom")
+	}
+	got := runGit(t, "", nil, "-C", tmpDir, "rev-parse", "HEAD")
+	if got != sha {
+		t.Fatalf("HEAD = %q, want %q", got, sha)
+	}
+	parents := runGit(t, "", nil, "-C", tmpDir, "rev-list", "--parents", "-n", "1", "HEAD")
+	fields := strings.Fields(parents)
+	if len(fields) != 1 {
+		t.Fatalf("root commit should have no parents; rev-list --parents: %q", parents)
+	}
+	if !FirstParentChainContains(ctx, tmpDir, tree, "") {
+		t.Fatal("FirstParentChainContains did not recognize the root commit")
+	}
+}
+
+func TestTreeSHA_EmptyCommitishIsEmptyTree(t *testing.T) {
+	tmpDir := initTestRepo(t)
+	ctx := context.Background()
+
+	got, err := TreeSHA(ctx, tmpDir, "")
+	if err != nil {
+		t.Fatalf("TreeSHA empty commitish error = %v", err)
+	}
+	want, err := EmptyTreeSHA(ctx, tmpDir)
+	if err != nil {
+		t.Fatalf("EmptyTreeSHA() error = %v", err)
+	}
+	if got != want {
+		t.Fatalf("TreeSHA(\"\") = %q, want empty tree %q", got, want)
+	}
+	written, err := WriteTree(ctx, tmpDir)
+	if err != nil {
+		t.Fatalf("WriteTree() on empty unborn index error = %v", err)
+	}
+	if written != want {
+		t.Fatalf("empty index write-tree = %q, want empty tree %q", written, want)
+	}
+}
+
+func TestUpdateHeadFrom_UnbornFailsOnceHeadExists(t *testing.T) {
+	tmpDir := initTestRepo(t)
+	ctx := context.Background()
+
+	if err := os.WriteFile(filepath.Join(tmpDir, "seed.md"), []byte("seed\n"), 0644); err != nil {
+		t.Fatalf("write seed.md: %v", err)
+	}
+	if err := StageAll(ctx, tmpDir); err != nil {
+		t.Fatalf("StageAll() error = %v", err)
+	}
+	if err := Commit(ctx, tmpDir, &CommitOptions{Message: "seed"}); err != nil {
+		t.Fatalf("Commit() error = %v", err)
+	}
+
+	tree, err := WriteTree(ctx, tmpDir)
+	if err != nil {
+		t.Fatalf("WriteTree() error = %v", err)
+	}
+	sha, err := CommitTree(ctx, tmpDir, tree, "", "would-be root")
+	if err != nil {
+		t.Fatalf("CommitTree() error = %v", err)
+	}
+	if err := UpdateHeadFrom(ctx, tmpDir, sha, "", "test: refuse born HEAD"); err == nil {
+		t.Fatal("UpdateHeadFrom from unborn must fail once HEAD already exists")
+	}
+}
+
 // CaptureBlobs must refuse a nested repository rather than walk into it.
 //
 // Walking would hash the nested checkout as ordinary blobs, including a
