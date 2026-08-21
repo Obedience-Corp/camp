@@ -9,8 +9,8 @@ import (
 // The retry path must recognize landed work before paying for message
 // generation: the writer is an external process a retry should not run twice,
 // and a writer failing on the retry must not fail a job whose commit is
-// sitting in the log. Attempts is only incremented by reclaim, so the check
-// runs on reclaimed jobs and never on a first run.
+// sitting in the log. The check runs when Attempts > 0 (a reclaimed job) and
+// never on a first run.
 
 func TestCommitTreeRetryShortCircuitsBeforeTheWriter(t *testing.T) {
 	cases := []struct {

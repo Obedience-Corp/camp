@@ -17,6 +17,9 @@ import (
 // MaxAttempts is how many times a job may be reclaimed before it is parked in
 // failed/. A job that has died three times is not going to succeed on the
 // fourth; retrying forever would hide a real problem behind a busy queue.
+// Execution failures do not spend this budget: completionFor parks them on the
+// first error. Listing copy has to match that split, or "attempt 2 of 3" reads
+// as retries a failed job never gets.
 //
 // Exported because every message that mentions an attempt count renders it
 // ("attempt 2 of 3"), and a hardcoded 3 in the copy would silently disagree

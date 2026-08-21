@@ -151,7 +151,7 @@ type jobsPayload struct {
 }
 
 // jobJSON is one row. The fields are what a caller needs to decide what to do:
-// which job, where, how old, how many tries left, and whether anyone is on it.
+// which job, where, how old, how many attempts have started, and whether anyone is on it.
 type jobJSON struct {
 	ID       string `json:"id"`
 	Seq      int    `json:"seq"`

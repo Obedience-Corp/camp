@@ -154,9 +154,8 @@ func executeCommitTree(ctx context.Context, campaignRoot, repoPath string, job *
 	// A reclaimed job may have died after its commit landed. Recognize that
 	// before generating the message, not after: the writer is an external
 	// process a retry should not pay for again, and a writer failing on the
-	// retry must not fail a job whose commit is sitting in the log. Attempts
-	// is only ever incremented by reclaim, so a first run never pays for this
-	// check.
+	// retry must not fail a job whose commit is sitting in the log. A first
+	// run has Attempts == 0 and skips the check.
 	if job.Attempts > 0 && alreadyApplied(ctx, repoPath, job) {
 		return nil
 	}
