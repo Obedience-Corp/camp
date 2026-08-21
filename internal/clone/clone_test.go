@@ -17,6 +17,18 @@ func TestClone_ContextCanceled(t *testing.T) {
 	}
 }
 
+func TestValidate_NoSubmodulesDoesNotFailMissingSubmodules(t *testing.T) {
+	c := NewCloner(WithNoSubmodules(true))
+	result := c.validate(context.Background(), "/tmp/unused")
+
+	if !result.Passed {
+		t.Fatalf("validate().Passed = false, want true when NoSubmodules")
+	}
+	if len(result.Issues) != 0 {
+		t.Fatalf("validate().Issues = %v, want none", result.Issues)
+	}
+}
+
 func TestValidate_ContextCanceled(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	cancel()

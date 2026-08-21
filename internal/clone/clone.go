@@ -373,6 +373,11 @@ func (c *Cloner) validate(ctx context.Context, dir string) *ValidationResult {
 		URLsMatch:      true,
 	}
 
+	// --no-submodules leaves declared entries uninitialized on purpose.
+	if c.options.NoSubmodules {
+		return result
+	}
+
 	// Use parseGitmodules as the canonical list (same source as Phase 3)
 	declared, err := parseGitmodules(ctx, dir)
 	if err != nil {

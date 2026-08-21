@@ -241,12 +241,10 @@ func TestClone_NoSubmodulesSkipsValidation(t *testing.T) {
 	targetDir := t.TempDir()
 	targetPath := filepath.Join(targetDir, "cloned")
 
-	// Clone with NoSubmodules - validation still runs but no submodule processing
 	c := NewCloner(
 		WithURL(sourceDir),
 		WithDirectory(targetPath),
 		WithNoSubmodules(true),
-		WithNoValidate(true), // Skip validation since we're not handling submodules
 	)
 
 	result, err := c.Clone(ctx)
@@ -258,14 +256,24 @@ func TestClone_NoSubmodulesSkipsValidation(t *testing.T) {
 		t.Errorf("Clone().Success = false, want true. Errors: %v", result.Errors)
 	}
 
-	// Should have directory set
 	if result.Directory == "" {
 		t.Error("Clone().Directory is empty")
 	}
 
-	// Submodules should not be processed
 	if len(result.Submodules) != 0 {
 		t.Errorf("Clone().Submodules = %d, want 0 with NoSubmodules", len(result.Submodules))
+	}
+
+	if result.Validation == nil {
+		t.Fatal("Clone().Validation is nil")
+	}
+	if !result.Validation.Passed {
+		t.Errorf("Clone().Validation.Passed = false, want true. Issues: %v", result.Validation.Issues)
+	}
+	for _, issue := range result.Validation.Issues {
+		if issue.Description == "not initialized" {
+			t.Errorf("validation reported skipped submodule %q as not initialized", issue.Submodule)
+		}
 	}
 }
 
