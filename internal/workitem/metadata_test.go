@@ -355,6 +355,11 @@ func TestValidateMetadata_TagsProjects(t *testing.T) {
 		{"absolute project", func(m *Metadata) { m.Projects = []string{"/etc/passwd"} }, true, "projects"},
 		{"escaping project", func(m *Metadata) { m.Projects = []string{"../outside"} }, true, "projects"},
 		{"duplicate project", func(m *Metadata) { m.Projects = []string{"projects/camp", "projects/camp"} }, true, "projects"},
+		{"missing projects/ prefix", func(m *Metadata) { m.Projects = []string{"camp"} }, true, "projects"},
+		{"campaign root as project", func(m *Metadata) { m.Projects = []string{"."} }, true, "projects"},
+		{"projects root without child", func(m *Metadata) { m.Projects = []string{"projects"} }, true, "projects"},
+		{"worktree path rejected", func(m *Metadata) { m.Projects = []string{"projects/worktrees/camp/feat"} }, true, "projects"},
+		{"worktrees dir rejected", func(m *Metadata) { m.Projects = []string{"projects/worktrees"} }, true, "projects"},
 		{"nonexistent project accepted", func(m *Metadata) { m.Projects = []string{"projects/does-not-exist"} }, false, ""},
 		{"well-formed tags and projects", func(m *Metadata) {
 			m.Tags = []string{"ux", "perf"}
@@ -397,6 +402,8 @@ func TestValidateProjectPaths_DelegatesToLoaderCheck(t *testing.T) {
 		{"../outside"},
 		{"/etc/passwd"},
 		{"projects/camp", "projects/camp"},
+		{"camp"},
+		{"projects/worktrees/camp/feat"},
 	} {
 		err := ValidateProjectPaths(bad)
 		if err == nil {

@@ -205,9 +205,18 @@ func validateProjects(paths []string) error {
 			return camperrors.NewValidation("projects",
 				"project path must be campaign-relative, got absolute path "+p, nil)
 		}
-		if strings.HasPrefix(filepath.Clean(p), "..") {
+		clean := filepath.ToSlash(filepath.Clean(p))
+		if clean == ".." || strings.HasPrefix(clean, "../") {
 			return camperrors.NewValidation("projects",
 				"project path must not escape the campaign root, got "+p, nil)
+		}
+		if !strings.HasPrefix(clean, "projects/") {
+			return camperrors.NewValidation("projects",
+				"project path must be under projects/, got "+p, nil)
+		}
+		if clean == "projects/worktrees" || strings.HasPrefix(clean, "projects/worktrees/") {
+			return camperrors.NewValidation("projects",
+				"project path must not be under projects/worktrees/ (use a worktree link), got "+p, nil)
 		}
 		if seen[p] {
 			return camperrors.NewValidation("projects", "duplicate project path: "+p, nil)
@@ -285,8 +294,9 @@ func ValidTag(s string) bool {
 }
 
 // ValidateProjectPaths reports the first shape problem among project paths
-// (empty, absolute, escaping the campaign root, or duplicate), or nil. It is
-// the exported form of the loader's projects validation.
+// (empty, absolute, escaping the campaign root, missing the projects/ prefix,
+// under projects/worktrees/, or duplicate), or nil. It is the exported form of
+// the loader's projects validation and the write-path check create/adopt call.
 func ValidateProjectPaths(paths []string) error {
 	return validateProjects(paths)
 }

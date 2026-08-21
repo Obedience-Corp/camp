@@ -2,6 +2,8 @@ package workitem
 
 const (
 	// WorkitemCreateJSONVersion is the schema version of camp workitem create --json.
+	// v1alpha1 additively gained workitem.tags and workitem.projects (empty
+	// slices serialize as [], never null); existing identity fields are unchanged.
 	WorkitemCreateJSONVersion = "workitem-create/v1alpha1"
 	// WorkitemResolveJSONVersion is the schema version of camp workitem resolve --json.
 	WorkitemResolveJSONVersion = "workitem-resolve/v1alpha1"
