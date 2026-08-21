@@ -46,6 +46,21 @@ func isWorktreeGitDir(gitDir string) bool {
 	return filepath.Base(filepath.Dir(clean)) == "worktrees"
 }
 
+// IsLinkedWorktree reports whether path is the root of a real linked git
+// worktree (of a top-level repo or of a submodule), based on git's on-disk
+// gitdir layout rather than the path's location on disk. Callers that infer a
+// worktree from a filesystem layout (e.g. projects/worktrees/<project>/<name>)
+// must gate on this before trusting the shape alone: a plain, non-git
+// directory that happens to sit in that layout is not a worktree, and
+// resolving it as one mislabels/misdirects git operations run against it.
+func IsLinkedWorktree(path string) bool {
+	gitDir, err := ResolveGitDir(path)
+	if err != nil {
+		return false
+	}
+	return isWorktreeGitDir(gitDir)
+}
+
 // GetSubmoduleGitDir resolves the actual .git directory for a submodule.
 // For regular repos, returns <path>/.git.
 // For submodules, parses the gitdir file and resolves the path.

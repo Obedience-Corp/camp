@@ -83,6 +83,68 @@ func TestIsSubmoduleDistinguishesSubmoduleWorktrees(t *testing.T) {
 	}
 }
 
+// TestIsLinkedWorktree covers the exported gate used by
+// project.listedWorktreeAt (PR #636 CHANGES_REQUESTED fix): a plain directory
+// with no .git at all, or a regular (non-worktree) .git, must read false even
+// when it sits in the projects/worktrees/<project>/<name> path shape.
+func TestIsLinkedWorktree(t *testing.T) {
+	t.Run("plain directory with no .git", func(t *testing.T) {
+		dir := filepath.Join(t.TempDir(), "not-a-worktree")
+		if err := os.MkdirAll(dir, 0755); err != nil {
+			t.Fatal(err)
+		}
+		if IsLinkedWorktree(dir) {
+			t.Fatal("IsLinkedWorktree() = true, want false for a non-git directory")
+		}
+	})
+
+	t.Run("regular repo root is not a worktree", func(t *testing.T) {
+		dir := t.TempDir()
+		if err := os.MkdirAll(filepath.Join(dir, ".git"), 0755); err != nil {
+			t.Fatal(err)
+		}
+		if IsLinkedWorktree(dir) {
+			t.Fatal("IsLinkedWorktree() = true, want false for a regular repo (.git is a directory)")
+		}
+	})
+
+	t.Run("submodule root is not a worktree", func(t *testing.T) {
+		tmpDir := t.TempDir()
+		subDir := filepath.Join(tmpDir, "sub")
+		gitDir := filepath.Join(tmpDir, ".git", "modules", "sub")
+		if err := os.MkdirAll(subDir, 0755); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.MkdirAll(gitDir, 0755); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(filepath.Join(subDir, ".git"), []byte("gitdir: "+gitDir+"\n"), 0644); err != nil {
+			t.Fatal(err)
+		}
+		if IsLinkedWorktree(subDir) {
+			t.Fatal("IsLinkedWorktree() = true, want false for a submodule root")
+		}
+	})
+
+	t.Run("submodule-linked worktree is a worktree", func(t *testing.T) {
+		tmpDir := t.TempDir()
+		worktreeDir := filepath.Join(tmpDir, "projects", "worktrees", "camp", "feature")
+		gitDir := filepath.Join(tmpDir, ".git", "modules", "projects", "camp", "worktrees", "feature")
+		if err := os.MkdirAll(worktreeDir, 0755); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.MkdirAll(gitDir, 0755); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(filepath.Join(worktreeDir, ".git"), []byte("gitdir: "+gitDir+"\n"), 0644); err != nil {
+			t.Fatal(err)
+		}
+		if !IsLinkedWorktree(worktreeDir) {
+			t.Fatal("IsLinkedWorktree() = false, want true for a submodule-linked worktree")
+		}
+	})
+}
+
 func TestIsWorktreeGitDir(t *testing.T) {
 	tests := []struct {
 		gitDir string

@@ -260,6 +260,16 @@ func listedWorktreeAt(campRoot, path string, projects []Project) *ResolveResult 
 		if resolved, err := filepath.EvalSymlinks(wtPath); err == nil {
 			wtPath = resolved
 		}
+		// The path shape alone (projects/worktrees/<project>/<name>) is not
+		// proof of a worktree: a plain, non-git directory can sit there too
+		// (integration fixtures use exactly this, e.g. .../not-a-worktree).
+		// Require git's on-disk worktree gitdir layout before trusting the
+		// shape, mirroring git.nestedWorktreeOwner's guard. Without this, a
+		// non-worktree dir silently resolves to the owning project instead of
+		// falling through to the FindProjectRootWithType error path.
+		if !git.IsLinkedWorktree(wtPath) {
+			return nil
+		}
 		return &ResolveResult{
 			Name:        projects[i].Name,
 			Path:        wtPath,

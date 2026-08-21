@@ -239,6 +239,42 @@ func TestResolveFromCwd_WorktreeUsesOwningProjectName(t *testing.T) {
 	}
 }
 
+// TestResolveFromCwd_PlainDirUnderWorktreesLayoutDoesNotMatch is the
+// CHANGES_REQUESTED fix for PR #636: listedWorktreeAt used to trust the
+// projects/worktrees/<project>/<name> path shape alone, so a plain,
+// non-git directory sitting in that layout (scratch dirs, integration
+// fixtures) silently resolved as the owning project instead of erroring.
+// It must fall through to the "not inside a project directory" error, same
+// as before resolveListedWorktree existed.
+func TestResolveFromCwd_PlainDirUnderWorktreesLayoutDoesNotMatch(t *testing.T) {
+	campRoot := setupTestCampaign(t, "myproj")
+	if resolved, err := filepath.EvalSymlinks(campRoot); err == nil {
+		campRoot = resolved
+	}
+
+	// Not a git worktree at all: no .git file/dir, just a plain directory
+	// under the projects/worktrees/<project>/<name> layout.
+	notWT := filepath.Join(campRoot, "projects", "worktrees", "myproj", "not-a-worktree")
+	if err := os.MkdirAll(notWT, 0o755); err != nil {
+		t.Fatal(err)
+	}
+
+	origDir, err := os.Getwd()
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = os.Chdir(origDir) })
+	if err := os.Chdir(notWT); err != nil {
+		t.Fatal(err)
+	}
+
+	ctx := context.Background()
+	result, err := ResolveFromCwd(ctx, campRoot)
+	if err == nil {
+		t.Fatalf("expected error for a non-worktree dir under the worktrees layout, got result: %+v", result)
+	}
+}
+
 func TestResolve_WithFlag(t *testing.T) {
 	campRoot := setupTestCampaign(t, "api", "web")
 
