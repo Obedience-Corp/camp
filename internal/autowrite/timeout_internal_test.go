@@ -198,3 +198,18 @@ func TestParseWriterTimeout(t *testing.T) {
 		})
 	}
 }
+
+func TestDefaultWriterTimeoutNestsAboveObCommitQueueBudget(t *testing.T) {
+	t.Parallel()
+
+	// ob/internal/registry.DefaultCommitQueueTimeout; duplicated so camp
+	// does not import ob.
+	const obCommitQueueBudget = 10 * time.Minute
+	if DefaultWriterTimeout <= obCommitQueueBudget {
+		t.Fatalf("DefaultWriterTimeout = %v, want > %v so the caller wait nests above ob commit's queue budget",
+			DefaultWriterTimeout, obCommitQueueBudget)
+	}
+	if DefaultWriterTimeout != 12*time.Minute {
+		t.Fatalf("DefaultWriterTimeout = %v, want 12m (10m queue budget plus margin)", DefaultWriterTimeout)
+	}
+}

@@ -7,6 +7,8 @@ import (
 	"sort"
 	"strings"
 	"time"
+
+	"github.com/Obedience-Corp/camp/internal/autowrite"
 )
 
 // Drain timing.
@@ -30,11 +32,10 @@ var (
 	drainProgressEvery = 2 * time.Second
 	// DrainTimeout is the default ceiling for a drain.
 	DrainTimeout = 30 * time.Second
-	// drainMaxWait bounds a job-aware drain. Job-aware means "keep waiting
-	// while the lane is heartbeating", and a wedged worker heartbeats forever,
-	// so without a ceiling the promise to wait for progress becomes a hang. Five
-	// minutes is well past any real message writer and still finite.
-	drainMaxWait = 5 * time.Minute
+	// drainMaxWait bounds a job-aware drain. A wedged worker heartbeats
+	// forever, so without a ceiling the wait is a hang. Same value as
+	// DefaultWriterTimeout so drain and writer cannot disagree on "late".
+	drainMaxWait = autowrite.DefaultWriterTimeout
 	// drainSpawnRecheck throttles the spawn check inside the wait loop. The
 	// first check happens immediately; re-checking is only for the case where
 	// the serving worker dies mid-drain, which is rare enough not to warrant a
