@@ -34,6 +34,11 @@ func TestWorktreeError(t *testing.T) {
 			contains: "project=my-api",
 		},
 		{
+			name:     "remote branch exists",
+			err:      RemoteBranchExistsError("my-api", "judge-command-tools"),
+			contains: "WORKTREE_REMOTE_BRANCH_EXISTS",
+		},
+		{
 			name:     "invalid name",
 			err:      InvalidWorktreeName("bad/name", "contains slash"),
 			contains: "contains slash",
@@ -98,6 +103,16 @@ func TestWorktreeError_SentinelErrors(t *testing.T) {
 			name:     "branch not found wraps sentinel",
 			err:      BranchNotFoundError("test", "main"),
 			sentinel: ErrBranchNotFound,
+		},
+		{
+			name:     "remote branch exists wraps sentinel",
+			err:      RemoteBranchExistsError("test", "feat"),
+			sentinel: ErrRemoteBranchExists,
+		},
+		{
+			name:     "branch already exists wraps sentinel",
+			err:      BranchAlreadyExists("test", "feat"),
+			sentinel: ErrBranchExists,
 		},
 	}
 

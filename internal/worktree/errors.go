@@ -9,32 +9,34 @@ import (
 
 // Error codes for worktree operations.
 const (
-	ErrCodeProjectNotFound  = "WORKTREE_PROJECT_NOT_FOUND"
-	ErrCodeWorktreeExists   = "WORKTREE_ALREADY_EXISTS"
-	ErrCodeWorktreeNotFound = "WORKTREE_NOT_FOUND"
-	ErrCodeBranchNotFound   = "WORKTREE_BRANCH_NOT_FOUND"
-	ErrCodeBranchExists     = "WORKTREE_BRANCH_EXISTS"
-	ErrCodeInvalidName      = "WORKTREE_INVALID_NAME"
-	ErrCodeGitFailed        = "WORKTREE_GIT_FAILED"
-	ErrCodeStaleWorktree    = "WORKTREE_STALE"
-	ErrCodeCorrupted        = "WORKTREE_CORRUPTED"
-	ErrCodeNotInWorktree    = "WORKTREE_NOT_IN_WORKTREE"
-	ErrCodeRemovalFailed    = "WORKTREE_REMOVAL_FAILED"
+	ErrCodeProjectNotFound    = "WORKTREE_PROJECT_NOT_FOUND"
+	ErrCodeWorktreeExists     = "WORKTREE_ALREADY_EXISTS"
+	ErrCodeWorktreeNotFound   = "WORKTREE_NOT_FOUND"
+	ErrCodeBranchNotFound     = "WORKTREE_BRANCH_NOT_FOUND"
+	ErrCodeBranchExists       = "WORKTREE_BRANCH_EXISTS"
+	ErrCodeRemoteBranchExists = "WORKTREE_REMOTE_BRANCH_EXISTS"
+	ErrCodeInvalidName        = "WORKTREE_INVALID_NAME"
+	ErrCodeGitFailed          = "WORKTREE_GIT_FAILED"
+	ErrCodeStaleWorktree      = "WORKTREE_STALE"
+	ErrCodeCorrupted          = "WORKTREE_CORRUPTED"
+	ErrCodeNotInWorktree      = "WORKTREE_NOT_IN_WORKTREE"
+	ErrCodeRemovalFailed      = "WORKTREE_REMOVAL_FAILED"
 )
 
 // Sentinel errors for common cases.
 // Sentinels marked with %w wrap the canonical sentinel from internal/errors
 // to enable cross-package errors.Is() matching.
 var (
-	ErrProjectNotFound  = camperrors.Wrap(camperrors.ErrNotFound, "project not found")
-	ErrWorktreeExists   = camperrors.Wrap(camperrors.ErrAlreadyExists, "worktree already exists")
-	ErrWorktreeNotFound = camperrors.Wrap(camperrors.ErrNotFound, "worktree not found")
-	ErrBranchNotFound   = camperrors.Wrap(camperrors.ErrNotFound, "branch not found")
-	ErrBranchExists     = camperrors.Wrap(camperrors.ErrAlreadyExists, "branch already exists")
-	ErrInvalidName      = camperrors.Wrap(camperrors.ErrInvalidInput, "invalid worktree name")
-	ErrNotInWorktree    = errors.New("not inside a worktree")
-	ErrStaleWorktree    = errors.New("worktree is stale")
-	ErrCorrupted        = errors.New("worktree is corrupted")
+	ErrProjectNotFound    = camperrors.Wrap(camperrors.ErrNotFound, "project not found")
+	ErrWorktreeExists     = camperrors.Wrap(camperrors.ErrAlreadyExists, "worktree already exists")
+	ErrWorktreeNotFound   = camperrors.Wrap(camperrors.ErrNotFound, "worktree not found")
+	ErrBranchNotFound     = camperrors.Wrap(camperrors.ErrNotFound, "branch not found")
+	ErrBranchExists       = camperrors.Wrap(camperrors.ErrAlreadyExists, "branch already exists")
+	ErrRemoteBranchExists = camperrors.Wrap(camperrors.ErrAlreadyExists, "remote branch already exists")
+	ErrInvalidName        = camperrors.Wrap(camperrors.ErrInvalidInput, "invalid worktree name")
+	ErrNotInWorktree      = errors.New("not inside a worktree")
+	ErrStaleWorktree      = errors.New("worktree is stale")
+	ErrCorrupted          = errors.New("worktree is corrupted")
 )
 
 // WorktreeError wraps worktree-specific errors with context.
@@ -141,6 +143,16 @@ func BranchAlreadyExists(project, branch string) error {
 		WithProject(project).
 		WithBranch(branch).
 		WithCause(ErrBranchExists)
+}
+
+// RemoteBranchExistsError creates an error for a new-branch worktree whose
+// name already exists as origin/<branch>. git worktree add -b will create a
+// local branch from HEAD anyway, silently shadowing the remote.
+func RemoteBranchExistsError(project, branch string) error {
+	return NewError(ErrCodeRemoteBranchExists).
+		WithProject(project).
+		WithBranch(branch).
+		WithCause(ErrRemoteBranchExists)
 }
 
 // InvalidWorktreeName creates an error for invalid name.
