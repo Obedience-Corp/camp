@@ -190,3 +190,17 @@ func TestCommitkit_FormatTag_DropsWhatValidateRejects(t *testing.T) {
 		t.Fatalf("emitted tag %q reparsed with warnings: %+v", got, warnings)
 	}
 }
+
+func TestCommitkit_ParseTagDetailed_RitualFestRef(t *testing.T) {
+	subject := "[obey-campaign:8deed8b4-FE-RI-XX0001-WI-abcdef] chore: ritual"
+	got, warnings := commitkit.ParseTagDetailed(subject)
+	if len(warnings) != 0 {
+		t.Fatalf("warnings = %+v, want none", warnings)
+	}
+	if got.FestRef != "RI-XX0001" {
+		t.Errorf("FestRef = %q, want RI-XX0001", got.FestRef)
+	}
+	if got.WorkitemRef != "WI-abcdef" {
+		t.Errorf("WorkitemRef = %q, want WI-abcdef", got.WorkitemRef)
+	}
+}

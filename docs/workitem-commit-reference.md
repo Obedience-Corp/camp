@@ -226,8 +226,11 @@ Segment rules:
   components are omitted entirely; their separators do not appear.
 - `<campaign-id>` is the first 8 hex characters of the campaign UUID.
 - `<quest-id>` matches `qst_<digits>_<alphanum>` when a quest is active.
-- `<festival-ref>` is the festival slug when the commit is scoped to a
-  festival workitem.
+- `<festival-ref>` is the festival id when the commit is scoped to a
+  festival. Ordinary ids are `PREFIX` plus digits (`CW0003`). Ritual
+  festival ids keep the `RI-` marker as part of the payload (`RI-XX0001`),
+  so the `FE-` segment is `FE-RI-XX0001` and the parser consumes the leading
+  `RI-` instead of treating it as a segment boundary.
 - `<phase>` and `<sequence>` are the festival phase and sequence numbers,
   written by `fest commit` to record where inside a festival the commit
   happened. Each is the numeric prefix of the matching directory name (phase
@@ -265,6 +268,7 @@ Concrete examples:
 [obey-campaign:2736169c-WI-861089] fix: workitem only
 [obey-campaign:2736169c-qst_1_alpha-WI-861089] fix: with quest
 [obey-campaign:2736169c-FE-CW0003-WI-861089] feat: festival + workitem
+[obey-campaign:2736169c-FE-RI-XX0001] feat: ritual festival
 [obey-campaign:2736169c-FE-CC0008-PH-001-SQ-02] feat: festival phase + sequence
 [OBEY-CAMPAIGN-2736169c] feat: legacy fallback (name unavailable)
 ```

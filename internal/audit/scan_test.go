@@ -15,6 +15,8 @@ func TestClassifyCommit(t *testing.T) {
 		{"name-style tag clean", "[obey-campaign:8deed8b4] docs: update", ClassTagged},
 		{"legacy id tag clean", "[OBEY-CAMPAIGN-8deed8b4] Create: thing", ClassTagged},
 		{"tag with fest ref clean", "[obey-campaign:8deed8b4-FE-CA0002] verify: shipped", ClassTagged},
+		{"tag with ritual fest ref clean", "[obey-campaign:8deed8b4-FE-RI-XX0001] chore: ritual", ClassTagged},
+		{"tag with ritual fest ref and workitem clean", "[obey-campaign:8deed8b4-FE-RI-WR0001-WI-abcdef] chore: ritual", ClassTagged},
 		{"tag with fest phase and sequence clean", "[obey-campaign:8deed8b4-FE-CC0008-PH-001-SQ-02] feat: scaffold", ClassTagged},
 		{"tag with fest phase and sequence and workitem clean", "[obey-campaign:8deed8b4-FE-CC0008-PH-001-SQ-02-WI-abcdef] feat: scaffold", ClassTagged},
 		{"degraded sequence without phase", "[obey-campaign:8deed8b4-FE-CC0008-SQ-02] feat: scaffold", ClassDegraded},
