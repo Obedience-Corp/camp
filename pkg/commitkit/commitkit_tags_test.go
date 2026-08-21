@@ -65,3 +65,60 @@ func TestCommitkit_ParseTagDetailed_ReExport(t *testing.T) {
 		t.Errorf("warning[0].Field = %q, want workitem_ref", warnings[0].Field)
 	}
 }
+
+func TestCommitkit_FormatTag_PhaseAndSequence(t *testing.T) {
+	cases := []struct {
+		name string
+		tc   commitkit.TagComponents
+		want string
+	}{
+		{
+			name: "no campaign id emits nothing",
+			tc:   commitkit.TagComponents{FestRef: "CC0008", Phase: "001", Sequence: "02"},
+			want: "",
+		},
+		{
+			name: "sequence without phase is dropped",
+			tc: commitkit.TagComponents{
+				CampaignName: "obey-campaign", CampaignID: "8deed8b4",
+				FestRef: "CC0008", Sequence: "02",
+			},
+			want: "[obey-campaign:8deed8b4-FE-CC0008]",
+		},
+		{
+			name: "phase without festival is dropped",
+			tc: commitkit.TagComponents{
+				CampaignName: "obey-campaign", CampaignID: "8deed8b4", Phase: "001",
+			},
+			want: "[obey-campaign:8deed8b4]",
+		},
+		{
+			name: "festival phase and sequence",
+			tc: commitkit.TagComponents{
+				CampaignName: "obey-campaign", CampaignID: "8deed8b4",
+				FestRef: "CC0008", Phase: "001", Sequence: "02",
+			},
+			want: "[obey-campaign:8deed8b4-FE-CC0008-PH-001-SQ-02]",
+		},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			if got := commitkit.FormatTag(tc.tc); got != tc.want {
+				t.Fatalf("FormatTag = %q, want %q", got, tc.want)
+			}
+		})
+	}
+}
+
+func TestCommitkit_FormatTag_ParseRoundTrip(t *testing.T) {
+	want := commitkit.TagComponents{
+		CampaignName: "obey-campaign", CampaignID: "8deed8b4", QuestID: "qst_abc",
+		FestRef: "CC0008", Phase: "001", Sequence: "02",
+		WorkitemRef: "WI-abcdef", NoteRef: "NT-123456",
+	}
+	tag := commitkit.FormatTag(want)
+	got := commitkit.ParseTag(tag + " feat: update camp scaffold")
+	if got != want {
+		t.Fatalf("round trip of %q = %#v, want %#v", tag, got, want)
+	}
+}

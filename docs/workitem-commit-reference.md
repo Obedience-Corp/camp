@@ -118,7 +118,7 @@ skipped:
   <path> (out of scope)
   <path> (submodule pointer; use --include-submodule-pointer)
   <path> (--exclude)
-tag:    [<campaign-name>:<8hex>[-qst_<...>][-FE-<festival-ref>][-WI-<6hex>]]
+tag:    [<campaign-name>:<8hex>[-qst_<...>][-FE-<festival-ref>][-PH-<n>][-SQ-<n>][-WI-<6hex>]]
 ```
 
 `S` marks files already in the index (from `--staged` mode). `A` marks files
@@ -211,7 +211,7 @@ Every commit produced by `camp workitem commit` (and `camp commit` / `camp p
 commit` when run in a workitem context) carries a tag with this structure:
 
 ```
-[<campaign-name>:<campaign-id>[-<quest-id>][-FE-<festival-ref>][-<workitem-ref>]]
+[<campaign-name>:<campaign-id>[-<quest-id>][-FE-<festival-ref>][-PH-<phase>][-SQ-<sequence>][-<workitem-ref>]]
 ```
 
 Segment rules:
@@ -228,6 +228,18 @@ Segment rules:
 - `<quest-id>` matches `qst_<digits>_<alphanum>` when a quest is active.
 - `<festival-ref>` is the festival slug when the commit is scoped to a
   festival workitem.
+- `<phase>` and `<sequence>` are the festival phase and sequence numbers,
+  written by `fest commit` to record where inside a festival the commit
+  happened. Each is the numeric prefix of the matching directory name (phase
+  `001_IMPLEMENT` and sequence `02_camp_pilot` give `PH-001-SQ-02`), carried
+  as 1 to 4 digits with the `PH-` / `SQ-` marker stripped from the value.
+- Both are dependent segments that only ever appear after `FE-`. `PH-` is
+  emitted only alongside a festival ref, and `SQ-` only alongside a phase,
+  because a phase or sequence number indexes into a festival and means
+  nothing without one. A commit carrying neither is byte-identical to what
+  camp wrote before these segments existed. The parser accepts them in any
+  position among the other segments and reports a sequence found without a
+  phase as a degraded parse, keeping the value rather than zeroing it.
 - `<workitem-ref>` is the canonical `WI-<6 lowercase hex>` ref, embedded
   verbatim. It is self-identifying via its own `WI-` prefix, the same way quest
   ids lead with `qst_`. The parser also accepts the historical doubled
@@ -245,18 +257,23 @@ Concrete examples:
 [obey-campaign:2736169c-WI-861089] fix: workitem only
 [obey-campaign:2736169c-qst_1_alpha-WI-861089] fix: with quest
 [obey-campaign:2736169c-FE-CW0003-WI-861089] feat: festival + workitem
+[obey-campaign:2736169c-FE-CC0008-PH-001-SQ-02] feat: festival phase + sequence
 [OBEY-CAMPAIGN-2736169c] feat: legacy fallback (name unavailable)
 ```
 
 The composers are `FormatContextTagsFull` / `FormatContextTagsFullNamed` in
-`pkg/commitkit/`, wrapping `internal/git/campaign_tag.go`.
+`pkg/commitkit/`, wrapping `internal/git/campaign_tag.go`. Both route through
+`commitkit.FormatTag`, which takes a `TagComponents` directly and is the only
+composer able to emit the `PH-` and `SQ-` segments.
 
 ### ParseTag
 
 `ParseTag(subject string) TagComponents` reverses the grammar. It returns a
-zero-valued `TagComponents` when no tag is present in the subject. The four
-fields of `TagComponents` are `CampaignID`, `QuestID`, `FestRef`, and
-`WorkitemRef` (the last includes its `WI-` prefix, e.g. `"WI-861089"`).
+zero-valued `TagComponents` when no tag is present in the subject. The fields
+of `TagComponents` are `CampaignID`, `CampaignName`, `QuestID`, `FestRef`,
+`Phase`, `Sequence`, `WorkitemRef`, and `NoteRef`. `WorkitemRef` and `NoteRef`
+include their `WI-` / `NT-` prefixes (e.g. `"WI-861089"`), while `Phase` and
+`Sequence` hold bare digits (e.g. `"001"`, `"02"`) with no marker.
 
 The parse contract is designed for subjects produced by `FormatContextTagsFull`.
 `ParseTag` only accepts a leading tag. Embedded examples in revert subjects,
@@ -308,7 +325,7 @@ Each `CommitRecord`:
 | `date` | string | RFC 3339 timestamp |
 | `subject` | string | Full commit subject line |
 | `repo` | string | Campaign-relative path of the repo (`"."` for campaign root) |
-| `tag` | object | Parsed `TagComponents` (fields: `CampaignID`, `QuestID`, `FestRef`, `WorkitemRef`) |
+| `tag` | object | Parsed `TagComponents` (fields: `CampaignID`, `QuestID`, `FestRef`, `Phase`, `Sequence`, `WorkitemRef`) |
 
 ---
 
@@ -335,4 +352,5 @@ Each `CommitRecord`:
 - `ref` values must match `WI-<6 lowercase hex>` and `quest_id` values must
   match the supported quest-id shape when `.workitem` metadata is loaded.
 - `ParseTagDetailed` returns warnings for duplicate, unknown, or malformed tag
-  segments. `ParseTag` returns the parsed components only.
+  segments, and for an `SQ-` segment with no `PH-` alongside it (that value is
+  kept, not zeroed). `ParseTag` returns the parsed components only.
