@@ -83,4 +83,7 @@ func TestChooseWriters(t *testing.T) {
 	if w.HumanOut != os.Stdout {
 		t.Errorf("default mode HumanOut = %v, want os.Stdout", w.HumanOut)
 	}
+	if w.ErrOut != os.Stderr {
+		t.Errorf("default mode ErrOut = %v, want os.Stderr", w.ErrOut)
+	}
 }
