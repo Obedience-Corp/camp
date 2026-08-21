@@ -7,9 +7,8 @@ import (
 
 	wicommands "github.com/Obedience-Corp/camp/internal/commands/workitem"
 	"github.com/Obedience-Corp/camp/internal/config"
-	"github.com/Obedience-Corp/camp/internal/intent"
 	camperrors "github.com/Obedience-Corp/camp/internal/errors"
-	"github.com/Obedience-Corp/camp/internal/git"
+	"github.com/Obedience-Corp/camp/internal/intent"
 	"github.com/Obedience-Corp/camp/internal/paths"
 	"github.com/Obedience-Corp/camp/internal/triage"
 	wkitem "github.com/Obedience-Corp/camp/internal/workitem"
@@ -102,13 +101,7 @@ func (m *serviceMover) Promote(ctx context.Context, stableID, target string) (tr
 		result.Undo = "camp move " + path.Clean(outcome.PromotedTo) + " " + path.Clean(outcome.From)
 	}
 	if outcome.Committed {
-		// Read after the commit rather than threaded through it. The commit
-		// plumbing (commit.Crawl -> DungeonMoveCommitOutcome) does not carry a
-		// hash today, and adding one touches every dungeon and workitem mover
-		// that shares it. A campaign is single-user and this read happens
-		// immediately after the commit it describes, so the window is not a
-		// practical race; the cleaner fix is recorded in the review.
-		result.Commit = git.HeadSHA(ctx, m.campaignRoot)
+		result.Commit = outcome.Hash
 	}
 	return result, nil
 }

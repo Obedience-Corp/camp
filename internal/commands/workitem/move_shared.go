@@ -145,5 +145,6 @@ func commitWorkitemMove(
 	}
 	result.Committed = outcome.Committed
 	result.CommitMessage = outcome.Message
+	result.Hash = outcome.Hash
 	return outcome.Err()
 }

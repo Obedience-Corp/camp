@@ -6,6 +6,7 @@ import (
 	"testing"
 
 	intdungeon "github.com/Obedience-Corp/camp/internal/dungeon"
+	"github.com/Obedience-Corp/camp/internal/git/commit"
 )
 
 func TestWrapDungeonMoveError_InvalidItemPath(t *testing.T) {
@@ -105,5 +106,39 @@ func TestWrapDungeonDocsRouteError_InvalidItemPath(t *testing.T) {
 		if !strings.Contains(msg, want) {
 			t.Fatalf("expected error message to contain %q, got: %s", want, msg)
 		}
+	}
+}
+
+func TestApplyCrawlResult_CopiesHash(t *testing.T) {
+	outcome := &DungeonMoveCommitOutcome{}
+	applyCrawlResult(outcome, commit.Result{
+		Committed: true,
+		NoChanges: false,
+		Message:   "Committed changes to git",
+		Hash:      "deadbeefcafebabe",
+	})
+	if !outcome.Committed {
+		t.Fatal("Committed not copied from commit.Result")
+	}
+	if outcome.Message != "Committed changes to git" {
+		t.Fatalf("Message = %q", outcome.Message)
+	}
+	if outcome.Hash != "deadbeefcafebabe" {
+		t.Fatalf("Hash = %q, want the crawl result hash so receipt writers need not reread HEAD", outcome.Hash)
+	}
+}
+
+func TestApplyCrawlResult_EmptyHashWhenNotCommitted(t *testing.T) {
+	outcome := &DungeonMoveCommitOutcome{}
+	applyCrawlResult(outcome, commit.Result{
+		Committed: false,
+		NoChanges: true,
+		Message:   "(no changes to commit)",
+	})
+	if outcome.Committed {
+		t.Fatal("Committed = true, want false")
+	}
+	if outcome.Hash != "" {
+		t.Fatalf("Hash = %q, want empty when crawl did not commit", outcome.Hash)
 	}
 }

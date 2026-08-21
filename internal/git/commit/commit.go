@@ -26,6 +26,11 @@ type Result struct {
 	NoChanges bool   // True if there was nothing to commit
 	Err       error  // Set when a commit attempt failed
 	Message   string // User-facing message
+	// Hash is the SHA of the commit this Result describes. Empty when the
+	// attempt did not produce a commit (skip, no-op, deferral, or error).
+	// Receipt writers must use this instead of rereading HEAD, which races
+	// under concurrent movers.
+	Hash string
 
 	// Skipped is true when the commit was never attempted because of a
 	// caller-detectable precondition (missing campaign context, or a
@@ -115,7 +120,8 @@ func doCommit(ctx context.Context, opts Options, action, subject, description st
 		commitMsg += "\n\n" + description
 	}
 
-	if err := stageAndCommit(ctx, opts, commitMsg); err != nil {
+	hash, err := stageAndCommit(ctx, opts, commitMsg)
+	if err != nil {
 		if errors.Is(err, errDeferred) {
 			return Result{
 				Deferred: true,
@@ -139,6 +145,7 @@ func doCommit(ctx context.Context, opts Options, action, subject, description st
 	return Result{
 		Committed: true,
 		Message:   "Committed changes to git",
+		Hash:      hash,
 	}
 }
 
@@ -147,7 +154,13 @@ func doCommit(ctx context.Context, opts Options, action, subject, description st
 // copy the real index so the commit captures exactly the staged blobs.
 // When SelectiveOnly is true and no paths exist, returns ErrNoChanges instead
 // of falling back to CommitAll. Otherwise all changes are staged (legacy behavior).
-func stageAndCommit(ctx context.Context, opts Options, message string) error {
+//
+// The returned hash is read immediately after the underlying git commit
+// succeeds, before any unrelated bookkeeping (manifest enqueue, temp-index
+// reset) runs. Those steps take real wall-clock time; reading HEAD only after
+// they finish would race a concurrent mover that lands its own commit in that
+// window and hand the caller someone else's SHA instead of this commit's.
+func stageAndCommit(ctx context.Context, opts Options, message string) (string, error) {
 	// Camp's own bookkeeping is the work the deferred queue exists for: the
 	// user asked to capture an intent or move a workitem, not to wait for a
 	// commit. When it is safe, the file is already written and the commit
@@ -160,7 +173,7 @@ func stageAndCommit(ctx context.Context, opts Options, message string) error {
 		if _, err := defercommit.EnqueuePaths(
 			ctx, opts.CampaignRoot, opts.CampaignRoot, message, opts.Files); err == nil {
 			defercommit.SpawnWorker(ctx, opts.CampaignRoot, opts.CampaignRoot)
-			return errDeferred
+			return "", errDeferred
 		}
 		// A queue that cannot be written, or a set of paths that must not be
 		// deferred at all, must not cost the user their commit. Fall through
@@ -170,51 +183,56 @@ func stageAndCommit(ctx context.Context, opts Options, message string) error {
 	commitScope := append(append([]string{}, opts.Files...), opts.PreStaged...)
 	if len(commitScope) == 0 {
 		if opts.SelectiveOnly {
-			return git.ErrNoChanges
+			return "", git.ErrNoChanges
 		}
 		if err := git.CommitAll(ctx, opts.CampaignRoot, message); err != nil {
-			return err
+			return "", err
 		}
+		hash := git.HeadSHA(ctx, opts.CampaignRoot)
 		enqueueManifestRecords(ctx, opts.CampaignRoot)
-		return nil
+		return hash, nil
 	}
 
 	tmpPath, realIndex, err := git.BuildTempIndexPath(opts.CampaignRoot)
 	if err != nil {
-		return err
+		return "", err
 	}
 	defer git.RemoveTempIndex(tmpPath)
 
 	if len(opts.Files) > 0 {
 		if err := git.ReadTreeIntoTempIndex(ctx, opts.CampaignRoot, tmpPath); err != nil {
-			return err
+			return "", err
 		}
 		if err := git.AddPathsToTempIndex(ctx, opts.CampaignRoot, tmpPath, opts.Files); err != nil {
-			return err
+			return "", err
 		}
 		if err := git.ApplyCachedDiffToTempIndex(ctx, opts.CampaignRoot, tmpPath, opts.PreStaged); err != nil {
-			return err
+			return "", err
 		}
 	} else if err := git.CopyFile(realIndex, tmpPath); err != nil {
-		return err
+		return "", err
 	}
 
 	expandedScope, err := git.ExpandTrackedPathsFromTempIndex(ctx, opts.CampaignRoot, tmpPath, commitScope)
 	if err != nil {
-		return err
+		return "", err
 	}
 	if len(expandedScope) == 0 {
-		return git.ErrNoChanges
+		return "", git.ErrNoChanges
 	}
 
 	if err := git.Commit(ctx, opts.CampaignRoot, &git.CommitOptions{
 		Message:       message,
 		TempIndexPath: tmpPath,
 	}); err != nil {
-		return err
+		return "", err
 	}
+	hash := git.HeadSHA(ctx, opts.CampaignRoot)
 	enqueueManifestRecords(ctx, opts.CampaignRoot)
-	return git.ResetIndexToHead(ctx, opts.CampaignRoot, expandedScope)
+	if err := git.ResetIndexToHead(ctx, opts.CampaignRoot, expandedScope); err != nil {
+		return "", err
+	}
+	return hash, nil
 }
 
 // enqueueManifestRecords re-queues each declared root's committed manifest so

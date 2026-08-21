@@ -408,6 +408,57 @@ func TestPromoteJSONSingleObject(t *testing.T) {
 	}
 }
 
+func TestPromoteOutcomeFrom_ThreadsCommitHash(t *testing.T) {
+	got := promoteOutcomeFrom(&workitemPromoteResult{
+		From:      "workflow/design/a",
+		To:        "festivals/active/a",
+		Committed: true,
+		Hash:      "abc123def456",
+	})
+	if got.PromotedTo != "festivals/active/a" {
+		t.Fatalf("PromotedTo = %q, want festivals/active/a", got.PromotedTo)
+	}
+	if got.From != "workflow/design/a" {
+		t.Fatalf("From = %q", got.From)
+	}
+	if !got.Committed {
+		t.Fatal("Committed = false, want true")
+	}
+	if got.Hash != "abc123def456" {
+		t.Fatalf("Hash = %q, want abc123def456", got.Hash)
+	}
+}
+
+func TestPromoteOutcomeFrom_PrefersPromotedTo(t *testing.T) {
+	got := promoteOutcomeFrom(&workitemPromoteResult{
+		PromotedTo: "festivals/planning/x",
+		To:         "dungeon/completed/x",
+		From:       "workflow/design/x",
+		Committed:  true,
+		Hash:       "facefeed",
+	})
+	if got.PromotedTo != "festivals/planning/x" {
+		t.Fatalf("PromotedTo = %q, want festivals/planning/x", got.PromotedTo)
+	}
+	if got.Hash != "facefeed" {
+		t.Fatalf("Hash = %q, want facefeed", got.Hash)
+	}
+}
+
+func TestPromoteOutcomeFrom_EmptyHashWhenNotCommitted(t *testing.T) {
+	got := promoteOutcomeFrom(&workitemPromoteResult{
+		To:        "workflow/design/a",
+		From:      "workflow/design/a",
+		Committed: false,
+	})
+	if got.Committed {
+		t.Fatal("Committed = true, want false")
+	}
+	if got.Hash != "" {
+		t.Fatalf("Hash = %q, want empty", got.Hash)
+	}
+}
+
 func TestPromoteDocRejectsDestEscape(t *testing.T) {
 	root := promoteCampaign(t)
 	src := addWorkitem(t, root, "design", "feat", "Feat", "body")

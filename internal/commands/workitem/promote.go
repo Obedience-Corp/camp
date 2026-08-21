@@ -41,16 +41,18 @@ type runWorkitemPromoteOptions struct {
 }
 
 type workitemPromoteResult struct {
-	ID            string   `json:"id"`
-	Type          string   `json:"type"`
-	Target        string   `json:"target"`
-	From          string   `json:"from"`
-	To            string   `json:"to"`
-	PromotedTo    string   `json:"promoted_to"`
-	SourceShelved string   `json:"source_shelved,omitempty"`
-	Committed     bool     `json:"committed"`
-	CommitMessage string   `json:"commit_message,omitempty"`
-	Warnings      []string `json:"warnings,omitempty"`
+	ID            string `json:"id"`
+	Type          string `json:"type"`
+	Target        string `json:"target"`
+	From          string `json:"from"`
+	To            string `json:"to"`
+	PromotedTo    string `json:"promoted_to"`
+	SourceShelved string `json:"source_shelved,omitempty"`
+	Committed     bool   `json:"committed"`
+	CommitMessage string `json:"commit_message,omitempty"`
+	// Hash is the auto-commit SHA, empty when the action did not commit.
+	Hash     string   `json:"hash,omitempty"`
+	Warnings []string `json:"warnings,omitempty"`
 	// ReleasedLinks are the links dropped because the workitem is no longer
 	// active. Reported so an automatic removal is never silent.
 	ReleasedLinks []releasedLink `json:"released_links,omitempty"`
@@ -256,6 +258,10 @@ type PromoteOutcome struct {
 	From string
 	// Committed reports whether the auto-commit ran.
 	Committed bool
+	// Hash is the auto-commit SHA from commit.Crawl plumbing, empty when
+	// the action did not commit. Receipt writers must use this rather than
+	// rereading HEAD after the mover returns.
+	Hash string
 }
 
 // PromoteWorkitem promotes a workitem to a rail or dungeon target through the
@@ -279,6 +285,10 @@ func PromoteWorkitem(ctx context.Context, out io.Writer, stableID, target string
 	if result == nil {
 		return nil, camperrors.New("promote reported no result for " + stableID)
 	}
+	return promoteOutcomeFrom(result), nil
+}
+
+func promoteOutcomeFrom(result *workitemPromoteResult) *PromoteOutcome {
 	// PromotedTo is set by the festival and doc paths; the dungeon and rail
 	// paths record their destination in To. Preferring one and falling back
 	// to the other keeps the caller from having to know which promote it
@@ -293,7 +303,8 @@ func PromoteWorkitem(ctx context.Context, out io.Writer, stableID, target string
 		PromotedTo: destination,
 		From:       result.From,
 		Committed:  result.Committed,
-	}, nil
+		Hash:       result.Hash,
+	}
 }
 
 // isTerminalTarget reports whether a promote target retires a workitem.
