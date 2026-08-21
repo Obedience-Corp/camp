@@ -20,28 +20,64 @@ const EvidenceMergedBranch = "merged_branch"
 // workflow_run_completed event (internal/workitem/localrun.go).
 const runStatusCompleted = "completed"
 
-// SweepCandidate is a workitem eligible for tier-1 auto-promotion: its active
-// workflow run reached completed. Reason names the evidence kind so a future
-// evidence tier can share this shape; today it is always
-// EvidenceWorkflowRunCompleted. ActiveRunID is the run whose completion made
-// the item eligible, carried through for the promote event's evidence payload.
+// SweepDisposition is what a completed run entitles a workitem to. It varies by
+// type: the loop is the work for a bug or chore, but not for research or design.
+type SweepDisposition string
+
+const (
+	// DispositionPromote: run completion retires the workitem.
+	DispositionPromote SweepDisposition = "promote"
+	// DispositionRoute: findings need a destination before the item is retired.
+	DispositionRoute SweepDisposition = "route"
+)
+
+// Sweep skip reason codes: the stable machine-readable half of a reported skip.
+const (
+	SkipDesignAwaitsImplementation = "design_awaits_implementation"
+	SkipRecentWrites               = "recent_writes"
+	SkipLinkedScope                = "linked_scope"
+	SkipNeedsRouting               = "needs_routing"
+)
+
+// WorkflowTypeResearch is a custom type, not a builtin, but carries explore's
+// "findings need a home" semantics and must get the same disposition.
+const WorkflowTypeResearch WorkflowType = "research"
+
+// SweepCandidate is a workitem whose workflow run reached completed. Reason
+// names the evidence kind so a future evidence tier can share this shape; today
+// it is always EvidenceWorkflowRunCompleted.
 type SweepCandidate struct {
-	Item   WorkItem
-	Reason string
+	Item        WorkItem
+	Reason      string
+	Disposition SweepDisposition
 	// RunID is the completed run whose terminal state made the item eligible.
 	// Because fest clears active_run_id on completion, this is the workitem's
 	// latest run (not an active run), carried through for the promote evidence.
 	RunID string
 }
 
-// PlanSweep returns the subset of items eligible for tier-1 (loop-completion)
-// auto-promotion. Pure function: no I/O, no mutation, no context to cancel.
-// items is expected to come from Discover(), whose walk already excludes
-// dungeon subtrees and never populates WorkflowMeta for intents or festivals;
-// the checks below are still explicit so this rule survives a future change to
-// how items are gathered.
-func PlanSweep(items []WorkItem) []SweepCandidate {
-	var out []SweepCandidate
+// SweepSkip is a workitem the sweep deliberately left alone. Reason is one of
+// the codes above; Detail is the sentence reported to the user.
+type SweepSkip struct {
+	Item   WorkItem
+	Reason string
+	Detail string
+	RunID  string
+}
+
+// SweepPlan is one discovery pass classified: actionable, and deliberately not.
+type SweepPlan struct {
+	Candidates []SweepCandidate
+	Skipped    []SweepSkip
+}
+
+// PlanSweep classifies items whose workflow run completed. Pure function: no
+// I/O, no mutation, no context to cancel. items is expected to come from
+// Discover(), whose walk already excludes dungeon subtrees and never populates
+// WorkflowMeta for intents or festivals; the checks below are still explicit so
+// this rule survives a future change to how items are gathered.
+func PlanSweep(items []WorkItem) SweepPlan {
+	var plan SweepPlan
 	for _, item := range items {
 		if !sweepEligibleType(item.WorkflowType) {
 			continue
@@ -64,19 +100,40 @@ func PlanSweep(items []WorkItem) []SweepCandidate {
 		if InDungeonPath(item.RelativePath) {
 			continue
 		}
-		out = append(out, SweepCandidate{
-			Item:   item,
-			Reason: EvidenceWorkflowRunCompleted,
-			RunID:  wf.LatestRunID,
+		if item.WorkflowType == WorkflowTypeDesign {
+			plan.Skipped = append(plan.Skipped, SweepSkip{
+				Item:   item,
+				Reason: SkipDesignAwaitsImplementation,
+				Detail: "design awaits implementation evidence (a merged branch or a completed festival)",
+				RunID:  wf.LatestRunID,
+			})
+			continue
+		}
+		plan.Candidates = append(plan.Candidates, SweepCandidate{
+			Item:        item,
+			Reason:      EvidenceWorkflowRunCompleted,
+			Disposition: DispositionOf(item.WorkflowType),
+			RunID:       wf.LatestRunID,
 		})
 	}
-	return out
+	return plan
+}
+
+// DispositionOf maps a workflow type to its disposition. Design never reaches
+// here; PlanSweep records it as a skip.
+func DispositionOf(wt WorkflowType) SweepDisposition {
+	switch wt {
+	case WorkflowTypeExplore, WorkflowTypeResearch:
+		return DispositionRoute
+	default:
+		return DispositionPromote
+	}
 }
 
 // SweepBannerText returns the read-only banner reporting n workitems with
-// completed runs awaiting sweep, or "" when n <= 0. Singular "workitem" for
-// n == 1, matching spec doc 03's example wording. Shared by camp wi and camp
-// fresh (report mode) so the wording lives in exactly one place.
+// completed runs awaiting a decision, or "" when n <= 0. Shared by camp wi and
+// camp fresh (report mode) so the wording lives in exactly one place. It names
+// --prompt: the bare command declines to touch explore and research items.
 func SweepBannerText(n int) string {
 	if n <= 0 {
 		return ""
@@ -85,7 +142,7 @@ func SweepBannerText(n int) string {
 	if n == 1 {
 		noun, verb = "workitem", "has"
 	}
-	return fmt.Sprintf("%d %s %s completed runs; run camp workitem sweep", n, noun, verb)
+	return fmt.Sprintf("%d %s %s completed runs; run camp workitem sweep --prompt", n, noun, verb)
 }
 
 // sweepEligibleType excludes the workflow types that fest owns (festivals) or
@@ -96,14 +153,9 @@ func sweepEligibleType(wt WorkflowType) bool {
 	return wt != WorkflowTypeFestival && wt != WorkflowTypeIntent
 }
 
-// InDungeonPath reports whether relPath contains a dungeon path segment.
-// Discover() structurally cannot produce such an item, so this is a defensive
-// guard for differently-sourced callers; it compares whole segments so a
-// workitem literally named "my-dungeon-notes" is not falsely excluded.
-//
-// Exported because triage's staleness diff asks the same question when it
-// decides a row is gone, and "outside dungeons" has to mean the same thing in
-// both places or a row could be swept here and reported gone there.
+// InDungeonPath reports whether relPath contains a dungeon path segment. It
+// compares whole segments (a workitem named "my-dungeon-notes" is not excluded)
+// and is shared with triage so "outside dungeons" means one thing everywhere.
 func InDungeonPath(relPath string) bool {
 	for _, seg := range strings.Split(filepath.ToSlash(relPath), "/") {
 		// Both spellings, because both exist in the wild: campaigns created

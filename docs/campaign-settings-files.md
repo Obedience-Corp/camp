@@ -268,6 +268,49 @@ Behavior:
   one project.
 - `camp init` scaffolds this file with commented examples and field guidance.
 
+Workitem completion (`completed_runs` and `merged_workitems`):
+
+```yaml
+completed_runs: prompt      # prompt | report | sweep | off
+merged_workitems: prompt    # prompt | report | off
+```
+
+Both are campaign-root scoped, with no per-project override.
+
+`completed_runs` decides what `camp fresh` does about workitems whose workflow
+run has completed. It defaults to `prompt`, which asks per workitem on a
+terminal and prints a report on a non-TTY, so an agent's `camp fresh` never
+moves a directory on its own. `report` always prints; `sweep` promotes
+automatically (the behavior that was the default before 2026-08); `off` skips
+the check entirely, doing no discovery pass at all.
+
+What a completed run entitles a workitem to depends on its type:
+
+| Type | On run completion |
+| --- | --- |
+| `bug`, `chore`, `feature`, custom | The loop was the work: promoted to the local `dungeon/completed`. |
+| `explore`, `research` | Findings exist and need a home: the prompt offers `docs/<subdir>`, completed, someday, archive, or keep working. Never moved automatically. |
+| `design` | Never promoted here. A design is done when it is implemented, so it waits for a merged branch (`merged_workitems`) or a completed festival. |
+
+Two guards apply in every mode and are always reported with their reason:
+
+- A directory with a file modified in the last 10 minutes is left alone,
+  because a session is probably still writing in it. The report names
+  `camp workitem promote <id> --target completed`, which is a direct
+  instruction and is not guarded.
+- In `sweep` mode a directory holding a link is left alone rather than moved
+  out from under whoever holds it. In `prompt` mode the links appear in the
+  question instead, and accepting releases them in the same commit as the move.
+
+`merged_workitems` is the tier-2 backstop, run per project: a workitem whose
+branch merged is inferred evidence, so it never promotes on its own. `prompt`
+asks on a TTY and reports otherwise, `report` prints the exact promote command,
+`off` skips it.
+
+`camp workitem sweep` performs the same tier-1 work outside a fresh cycle. It
+promotes automatically by default (which is what a script wants) and takes
+`--prompt` to ask instead.
+
 Branch resolution order:
 
 1. `camp fresh --no-branch`

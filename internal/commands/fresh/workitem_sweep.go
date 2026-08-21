@@ -16,11 +16,11 @@ import (
 // which stays project-scoped: the sweep operates on workflow/<type>/ at the
 // campaign root and has nothing to do with any one project's prune result.
 //
-// It honors completed_runs: "off" does no discovery at all; "report" prints the
-// read-only banner; "sweep" (default) promotes eligible items. A dry-run fresh
-// downgrades to "report" so it never mutates. A sweep failure is reported but
-// never fails the fresh run, matching how executeFresh failures are surfaced in
-// the batch summary without aborting the command; hence this returns nothing.
+// It honors completed_runs: "off" does no discovery; "report" prints the
+// read-only banner and reasons; "prompt" (default) asks per item on a TTY and
+// reports on a non-TTY; "sweep" promotes automatically. A dry-run fresh
+// downgrades to "report". A sweep failure is reported and never fails the
+// fresh run, hence this returns nothing.
 func runCampaignWorkitemSweep(ctx context.Context, cfg *config.FreshConfig, dryRun bool) {
 	mode := cfg.ResolveFreshCompletedRuns()
 	if mode == "off" {

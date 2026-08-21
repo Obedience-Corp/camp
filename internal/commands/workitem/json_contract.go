@@ -30,5 +30,10 @@ const (
 	// WorkitemRenameJSONVersion is the schema version of camp workitem rename --json.
 	WorkitemRenameJSONVersion = "workitem-rename/v1alpha1"
 	// WorkitemSweepJSONVersion is the schema version of camp workitem sweep --json.
+	// v1alpha1 additively gained two top-level fields: "skipped" (per-workitem
+	// non-moves with a stable "reason" code and a human "detail") and
+	// "released_links" (links dropped because the workitem holding them was
+	// shelved). Existing fields are unchanged, so a reader of the previous shape
+	// keeps working.
 	WorkitemSweepJSONVersion = "workitem-sweep/v1alpha1"
 )

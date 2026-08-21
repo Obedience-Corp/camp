@@ -120,7 +120,7 @@ func runTriageCrawlWithPrompt(ctx context.Context, svc *Service, parentPath stri
 				break itemLoop
 
 			case actionDocs:
-				destination, err := promptDocsDestination(ctx, item.Name, svc.campaignRoot)
+				destination, err := PromptDocsDestination(ctx, item.Name, svc.campaignRoot)
 				if err != nil {
 					if errors.Is(err, ErrCrawlAborted) {
 						return summary, err
@@ -174,10 +174,14 @@ func runTriageCrawlWithPrompt(ctx context.Context, svc *Service, parentPath stri
 	return summary, nil
 }
 
-// promptDocsDestination presents a level-aware docs browser for selecting a
+// PromptDocsDestination presents a level-aware docs browser for selecting a
 // docs/ subdirectory. Enter selects the current directory. Right/l drills into
 // children. Escape goes back up one level, and Escape at root returns "".
-func promptDocsDestination(ctx context.Context, itemName string, campaignRoot string) (string, error) {
+//
+// Exported because the workitem sweep's route-to-docs answer asks the same
+// question, and docs routing must have one picker and one set of boundary rules
+// regardless of which command reached it.
+func PromptDocsDestination(ctx context.Context, itemName string, campaignRoot string) (string, error) {
 	return runDocsBrowser(ctx, itemName, campaignRoot)
 }
 

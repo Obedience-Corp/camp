@@ -26,6 +26,7 @@ recording is the stable command surface a reader can install. Pass
 | Journey | Tape | Delivery GIF | Manifest |
 | --- | --- | --- | --- |
 | Fresh configure | [fresh-configure.tape](fresh-configure.tape) | [fresh-configure.gif](fresh-configure.gif) | [fresh-configure.manifest.json](fresh-configure.manifest.json) |
+| Completed-run sweep prompt | [sweep-prompt.tape](sweep-prompt.tape) | [sweep-prompt.gif](sweep-prompt.gif) | — |
 | Machine/status | [machine-tui.tape](machine-tui.tape) | [machine-tui.gif](machine-tui.gif) | [machine-tui.manifest.json](machine-tui.manifest.json) |
 | Machine dual-auth CLI | [machine-dual-auth.tape](machine-dual-auth.tape) | [machine-dual-auth.gif](machine-dual-auth.gif) | (WI-ca06e1 record-time proof; private gist optional) |
 | Project-aware worktree list | [worktree-list.tape](worktree-list.tape) | [worktree-list.gif](worktree-list.gif) | — |
@@ -58,6 +59,21 @@ CAMP_VHS_ROOT=/path/to/machine-fixture \
   env -u NO_COLOR TERM=xterm-256color COLORTERM=truecolor FORCE_COLOR=1 \
   vhs "$(pwd)/docs/demos/machine-dual-auth.tape"
 ```
+
+`sweep-prompt` needs no `CAMP_VHS_ROOT`: it builds its own throwaway campaign
+under a fake `HOME` from the fixture the pty check uses, so the recording and
+`just tui pty-sweep-prompt` assert the same three workitems. Build the binary
+first, then record:
+
+```sh
+just build stable
+just vhs record-color docs/demos/sweep-prompt.tape
+```
+
+It drives `camp workitem sweep --prompt` rather than `camp fresh`. Fresh's
+`completed_runs: prompt` calls the same `runSweepPrompt`, but the prompt is
+campaign-root work that runs after a project's git cycle, and the fixture
+campaign has no project submodules to cycle.
 
 Machine fixture layout (disposable, no live tailnet):
 

@@ -38,9 +38,14 @@ venv:
     #!/usr/bin/env bash
     set -euo pipefail
     venv_dir="${TMPDIR:-/tmp}/camp-tui-venv"
-    if [ ! -x "$venv_dir/bin/python" ]; then
+    # The precondition is "pyte imports here", not "a python exists here". A
+    # venv whose creation was interrupted leaves bin/python behind without pip
+    # or pyte, and an existence check reuses it forever; the checks then fail
+    # with ModuleNotFoundError and look like a broken harness.
+    if ! "$venv_dir/bin/python" -c "import pyte" >/dev/null 2>&1; then
+        rm -rf "$venv_dir"
         python3 -m venv "$venv_dir"
-        "$venv_dir/bin/pip" install --quiet pyte
+        "$venv_dir/bin/python" -m pip install --quiet pyte
     fi
     echo "$venv_dir"
 
@@ -56,6 +61,20 @@ pty-triage-review:
     just build-camp >/dev/null
     venv_dir="$(just tui venv)"
     "$venv_dir/bin/python" tests/tui/triage_review_pty.py bin/camp
+
+# Run the pty checks for the completed-run sweep prompt.
+#
+# Asserts what a passing unit test cannot: that the five-way routing select
+# actually renders every answer, that a design is reported rather than offered,
+# that accepting the confirm moves the directory on disk, and that Ctrl+C ends
+# the run instead of re-asking per workitem.
+pty-sweep-prompt:
+    #!/usr/bin/env bash
+    set -euo pipefail
+    cd "{{root}}"
+    just build-camp >/dev/null
+    venv_dir="$(just tui venv)"
+    "$venv_dir/bin/python" tests/tui/sweep_prompt_pty.py bin/camp
 
 # Build the disposable fixture the Tailscale-check recording and pty check
 # share: the branch binary, a stub ssh that answers the way Tailscale SSH does
@@ -97,7 +116,7 @@ pty-machine-tailscale-check:
         "$venv_dir/bin/python" tests/tui/machine_tailscale_check_pty.py "$fixture" "$evidence"
 
 # Run every pty check.
-pty: pty-triage-review pty-machine-tailscale-check
+pty: pty-triage-review pty-machine-tailscale-check pty-sweep-prompt
 
 # Record one tape. The tape owns its output path and its fixture bootstrap.
 tape tape_path:

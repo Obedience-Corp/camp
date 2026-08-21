@@ -66,6 +66,10 @@ type releasedLink struct {
 	ScopeKind string `json:"scope_kind"`
 	ScopePath string `json:"scope_path"`
 	Role      string `json:"role"`
+	// Workitem names which workitem's shelving released this link. Set only in
+	// the sweep envelope, where one result can carry links from several
+	// workitems; promote's own result is about a single workitem already.
+	Workitem string `json:"workitem,omitempty"`
 }
 
 type commitInputs struct {
@@ -403,7 +407,7 @@ func doDungeonPromote(ctx context.Context, campaignRoot string, loc *locate.Loca
 	// link left behind only resolves to a workitem the selector cannot see
 	// (`camp p commit` silently stops stamping the ref). So the links go with
 	// the workitem, reported rather than dropped quietly.
-	if err := releaseLinksForShelvedSource(ctx, campaignRoot, oldID, oldKey, ci, result); err != nil {
+	if err := releaseLinksForShelvedSource(ctx, campaignRoot, oldID, oldKey, result.From, ci, result); err != nil {
 		return nil, err
 	}
 	if err := releasePathStateForShelvedSource(ctx, campaignRoot, oldID, oldKey, result); err != nil {
@@ -412,10 +416,15 @@ func doDungeonPromote(ctx context.Context, campaignRoot string, loc *locate.Loca
 	return ci, nil
 }
 
-// unlinkShelvedWorkitem removes every link pointing at a workitem that just
+// unlinkShelvedWorkitem removes every link orphaned by a workitem that just
 // moved into a dungeon and returns them so the caller can report what went.
-func unlinkShelvedWorkitem(ctx context.Context, campaignRoot, oldID, oldKey string) ([]releasedLink, error) {
-	if oldID == "" && oldKey == "" {
+//
+// oldDirRel is where the workitem lived before the move, campaign-relative: a
+// link scoped inside that directory is orphaned by the move whatever workitem id
+// it happens to name, which is the case an id-only match misses after a rename.
+// See links.ReleasedOnShelve.
+func unlinkShelvedWorkitem(ctx context.Context, campaignRoot, oldID, oldKey, oldDirRel string) ([]releasedLink, error) {
+	if oldID == "" && oldKey == "" && oldDirRel == "" {
 		return nil, nil
 	}
 
@@ -423,9 +432,7 @@ func unlinkShelvedWorkitem(ctx context.Context, campaignRoot, oldID, oldKey stri
 	err := links.WithLock(ctx, campaignRoot, func(reg *links.Links) error {
 		kept := reg.Links[:0]
 		for _, l := range reg.Links {
-			matches := (oldID != "" && l.WorkitemID == oldID) ||
-				(oldKey != "" && l.WorkitemKey == oldKey)
-			if matches {
+			if links.ReleasedOnShelve(l, oldID, oldKey, oldDirRel) {
 				dropped = append(dropped, releasedLink{
 					ID:        l.ID,
 					ScopeKind: string(l.Scope.Kind),
@@ -594,7 +601,7 @@ func doDocPromote(ctx context.Context, opts runWorkitemPromoteOptions, campaignR
 	// its rows have somewhere to go and migratePromotedLinks re-points them
 	// afterward. A doc has no workitem identity to carry them.
 	if !opts.Keep {
-		if err := releaseLinksForShelvedSource(ctx, campaignRoot, oldID, oldKey, ci, result); err != nil {
+		if err := releaseLinksForShelvedSource(ctx, campaignRoot, oldID, oldKey, result.From, ci, result); err != nil {
 			return nil, err
 		}
 		if err := releasePathStateForShelvedSource(ctx, campaignRoot, oldID, oldKey, result); err != nil {
@@ -606,11 +613,13 @@ func doDocPromote(ctx context.Context, opts runWorkitemPromoteOptions, campaignR
 
 // releaseLinksForShelvedSource drops the links a workitem held once its source
 // has been shelved, recording them on result and adding links.yaml to the
-// commit when anything changed.
-func releaseLinksForShelvedSource(ctx context.Context, campaignRoot, oldID, oldKey string,
+// commit when anything changed. oldDirRel is the source's campaign-relative path
+// before the move, which catches links scoped into the directory under an id it
+// no longer answers to.
+func releaseLinksForShelvedSource(ctx context.Context, campaignRoot, oldID, oldKey, oldDirRel string,
 	ci *commitInputs, result *workitemPromoteResult,
 ) error {
-	dropped, err := unlinkShelvedWorkitem(ctx, campaignRoot, oldID, oldKey)
+	dropped, err := unlinkShelvedWorkitem(ctx, campaignRoot, oldID, oldKey, oldDirRel)
 	if err != nil {
 		return camperrors.Wrap(err, "release workitem links on shelve")
 	}
