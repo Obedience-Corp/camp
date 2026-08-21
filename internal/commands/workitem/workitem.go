@@ -156,6 +156,7 @@ Examples:
 	cmd.AddCommand(newDemoteCommand())
 	cmd.AddCommand(newSweepCommand())
 	cmd.AddCommand(newRenameCommand())
+	cmd.AddCommand(newConvertCommand())
 	cmd.AddCommand(newDoctorCommand())
 	cmd.AddCommand(newValidateCommand())
 	cmd.AddCommand(newRepairCommand())

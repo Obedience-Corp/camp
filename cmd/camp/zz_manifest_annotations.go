@@ -107,6 +107,7 @@ var manifestAgentAllowedReasons = map[string]string{
 	"workitem priority":          "Non-interactive priority update with explicit selector",
 	"workitem demote":            "Non-interactive demote off the festival rail, fully specified by flags",
 	"workitem promote":           "Non-interactive promote fully specified by --target and flags",
+	"workitem convert":           "Non-interactive type-root convert fully specified by selector and --type",
 	"workitem rename":            "Non-interactive rename fully specified by positional args and flags",
 	"workitem repair":            "Idempotent, non-destructive marker repair with --json and --dry-run",
 	"workitem resolve":           "Read-only workitem context resolution",

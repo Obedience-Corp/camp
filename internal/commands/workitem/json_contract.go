@@ -29,6 +29,8 @@ const (
 	WorkitemGatherJSONVersion = "workitem-gather/v1alpha1"
 	// WorkitemRenameJSONVersion is the schema version of camp workitem rename --json.
 	WorkitemRenameJSONVersion = "workitem-rename/v1alpha1"
+	// WorkitemConvertJSONVersion is the schema version of camp workitem convert --json.
+	WorkitemConvertJSONVersion = "workitem-convert/v1alpha1"
 	// WorkitemSweepJSONVersion is the schema version of camp workitem sweep --json.
 	// v1alpha1 additively gained two top-level fields: "skipped" (per-workitem
 	// non-moves with a stable "reason" code and a human "detail") and
