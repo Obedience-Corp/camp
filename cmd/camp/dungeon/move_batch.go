@@ -346,7 +346,7 @@ func planWorkitemMove(ctx context.Context, target, status string) (movePreview, 
 	if err != nil {
 		return movePreview{}, err
 	}
-	resolved, err := resolveWorkitemDungeonTarget(campaignRoot, item)
+	resolved, err := resolveWorkitemDungeonTarget(ctx, campaignRoot, item)
 	if err != nil {
 		return movePreview{}, err
 	}
