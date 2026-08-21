@@ -71,6 +71,65 @@ func TestOutputRemoteListMultiMachineAddsColumnAndUnreachableRow(t *testing.T) {
 	if !strings.Contains(s, "dead") || !strings.Contains(s, "unreachable") {
 		t.Errorf("missing unreachable muted row: %q", s)
 	}
+	campLine := lineContaining(s, "remote-camp")
+	failLine := lineContaining(s, "dead")
+	if campLine == "" || failLine == "" {
+		t.Fatalf("missing campaign or failure line: %q", s)
+	}
+	if strings.Contains(campLine, "dead") || strings.Contains(campLine, "unreachable") {
+		t.Errorf("failed machine rendered in the campaign table row: %q", campLine)
+	}
+	if strings.Index(s, failLine) < strings.Index(s, campLine) {
+		t.Errorf("failed machine must render below the table:\n%s", s)
+	}
+}
+
+// A camp-not-found / unreachable message used to sit in the ID column of the
+// same tabwriter as successful rows, so every ID cell padded to that length.
+// Failed machines belong under the table; campaign rows must not change.
+func TestRenderRemoteTableFailedMachinesDoNotPadIDColumn(t *testing.T) {
+	campaigns := []campaignEntry{
+		{ID: "a1", Name: "local-camp", Machine: "local", Type: "standard", Org: "obey", Status: "active", Path: "/p", Tags: []string{}},
+		{ID: "b2", Name: "remote-camp", Machine: "devbox", Type: "standard", Org: "obey", Status: "active", Path: "/q", Tags: []string{}},
+	}
+	long := errors.New("remote camp not found on archdtop: nothing named camp on the account's login-shell PATH, and none of camp's usual install locations (~/go/bin) has one; if it lives elsewhere, set CAMP_REMOTE_CAMP_PATH to its exact path on that machine")
+	var clean, dirty bytes.Buffer
+	if err := outputRemoteList(&clean, io.Discard, campaigns, []remoteResult{{machineID: "devbox"}}, "table"); err != nil {
+		t.Fatal(err)
+	}
+	if err := outputRemoteList(&dirty, io.Discard, campaigns, []remoteResult{
+		{machineID: "devbox", rows: campaigns[1:2]},
+		{machineID: "archdtop", err: long},
+	}, "table"); err != nil {
+		t.Fatal(err)
+	}
+	cleanRow := lineContaining(clean.String(), "local-camp")
+	dirtyRow := lineContaining(dirty.String(), "local-camp")
+	if cleanRow == "" || dirtyRow == "" {
+		t.Fatalf("missing local-camp row\nclean=%q\ndirty=%q", clean.String(), dirty.String())
+	}
+	if cleanRow != dirtyRow {
+		t.Errorf("campaign row padded by failed-machine error:\nclean=%q\ndirty=%q", cleanRow, dirtyRow)
+	}
+	fail := lineContaining(dirty.String(), "archdtop")
+	if fail == "" || !strings.Contains(fail, "CAMP_REMOTE_CAMP_PATH") {
+		t.Fatalf("failed machine not rendered below the table:\n%s", dirty.String())
+	}
+	if strings.Contains(dirtyRow, "archdtop") || strings.Contains(dirtyRow, "CAMP_REMOTE_CAMP_PATH") {
+		t.Errorf("failure text leaked into a campaign row: %q", dirtyRow)
+	}
+	if strings.Index(dirty.String(), fail) <= strings.Index(dirty.String(), dirtyRow) {
+		t.Errorf("failed machine must render below the table:\n%s", dirty.String())
+	}
+}
+
+func lineContaining(s, sub string) string {
+	for _, ln := range strings.Split(s, "\n") {
+		if strings.Contains(ln, sub) {
+			return ln
+		}
+	}
+	return ""
 }
 
 func TestFormatUnreachableErrPrefersHopClassification(t *testing.T) {
@@ -122,6 +181,9 @@ func TestRemoteFailureLabelDistinguishesCampNotFound(t *testing.T) {
 	}
 	if !strings.Contains(table.String(), "(camp not found:") || strings.Contains(table.String(), "unreachable") {
 		t.Errorf("table row for exit 127 = %q", table.String())
+	}
+	if strings.Contains(table.String(), "MACHINE") {
+		t.Errorf("failure-only output must not print an empty table: %q", table.String())
 	}
 	warnUnreachable(&warn, results)
 	if !strings.Contains(warn.String(), "devbox camp not found:") {
