@@ -651,3 +651,109 @@ func TestRunningJobWithALiveWorkerIsNotServedTwice(t *testing.T) {
 			"left alone", len(running))
 	}
 }
+
+// The spawn decision, stated in both directions.
+//
+// TestSpawnIfNeededGuards covers the cases where no worker should start, which
+// it can observe because nothing being spawned leaves no trace. The cases where
+// one *should* start were unwritable there: asserting them meant actually
+// forking a process. So the question that decides whether an abandoned running
+// job ever gets a worker went untested, in the one direction where being wrong
+// strands the job forever rather than wasting a process.
+//
+// That matters beyond the enqueue path. Drain reaches SpawnIfNeeded through
+// spawnForJobs, and spawnForJobs calls it unconditionally, so a drain test that
+// stubs the spawn seam cannot see this decision at all: it would pass whether
+// the lane check reads pending alone or pending and running both. This is the
+// only place the Drain claim can actually be held.
+func TestShouldSpawnWorker(t *testing.T) {
+	withFastTiming(t, time.Second, 10*time.Millisecond)
+	ctx := context.Background()
+
+	t.Run("empty lane", func(t *testing.T) {
+		root := testCampaign(t)
+		if shouldSpawnWorker(root, ".") {
+			t.Error("shouldSpawnWorker() = true on an empty lane, want false")
+		}
+	})
+
+	t.Run("pending work", func(t *testing.T) {
+		root := testCampaign(t)
+		if _, err := Enqueue(ctx, root, Job{
+			Kind: KindCommitPaths, Repo: ".", Paths: []string{"a.md"},
+		}); err != nil {
+			t.Fatal(err)
+		}
+		if !shouldSpawnWorker(root, ".") {
+			t.Error("shouldSpawnWorker() = false with pending work, want true")
+		}
+	})
+
+	// The case the running-lane discovery fix exists for: a worker claimed the
+	// job and died, so running/ is occupied and pending/ is empty. Reading the
+	// pending lane alone answers false here and the job is never served.
+	t.Run("only an abandoned running job", func(t *testing.T) {
+		root := testCampaign(t)
+		if _, err := Enqueue(ctx, root, Job{
+			Kind: KindCommitPaths, Repo: ".", Paths: []string{"a.md"},
+		}); err != nil {
+			t.Fatal(err)
+		}
+		if _, _, err := Claim(ctx, root, "."); err != nil {
+			t.Fatal(err)
+		}
+		if pending, err := List(root, statePending, "."); err != nil {
+			t.Fatal(err)
+		} else if len(pending) != 0 {
+			t.Fatalf("setup: %d pending jobs, want 0", len(pending))
+		}
+
+		if !shouldSpawnWorker(root, ".") {
+			t.Error("shouldSpawnWorker() = false for a lane holding only an " +
+				"abandoned running job, want true: nothing else will ever " +
+				"come for it, so the job strands and any drain waiting on it " +
+				"stalls for its whole timeout")
+		}
+	})
+
+	t.Run("running job whose worker is alive", func(t *testing.T) {
+		root := testCampaign(t)
+		if _, err := Enqueue(ctx, root, Job{
+			Kind: KindCommitPaths, Repo: ".", Paths: []string{"a.md"},
+		}); err != nil {
+			t.Fatal(err)
+		}
+		if _, _, err := Claim(ctx, root, "."); err != nil {
+			t.Fatal(err)
+		}
+		lock, ok, err := acquireLane(QueueDir(root), LaneSlug("."))
+		if err != nil || !ok {
+			t.Fatalf("setup acquire = (%v, %v), want the lane held", ok, err)
+		}
+		defer lock.release()
+
+		if shouldSpawnWorker(root, ".") {
+			t.Error("shouldSpawnWorker() = true for a lane a live worker holds, " +
+				"want false: a second worker would reclaim a job still running")
+		}
+	})
+
+	t.Run("at the lane cap", func(t *testing.T) {
+		root := testCampaign(t)
+		if _, err := Enqueue(ctx, root, Job{
+			Kind: KindCommitPaths, Repo: "projects/z", Paths: []string{"a.md"},
+		}); err != nil {
+			t.Fatal(err)
+		}
+		for i := range laneCap {
+			lock, ok, err := acquireLane(QueueDir(root), LaneSlug(fmt.Sprintf("projects/held%d", i)))
+			if err != nil || !ok {
+				t.Fatalf("setup acquire %d = (%v, %v)", i, ok, err)
+			}
+			defer lock.release()
+		}
+		if shouldSpawnWorker(root, "projects/z") {
+			t.Error("shouldSpawnWorker() = true at the lane cap, want false")
+		}
+	})
+}
