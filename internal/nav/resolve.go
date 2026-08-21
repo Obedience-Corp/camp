@@ -71,11 +71,29 @@ func fuzzyResolveDirectory(ctx context.Context, basePath, query, relativePath st
 	}
 
 	matches := fuzzy.FilterMulti(names, query)
-	if len(matches) == 0 {
-		return "", camperrors.Wrapf(errNavigationNoMatch, "%q in %s", query, strings.TrimRight(relativePath, "/"))
+	if len(matches) > 0 {
+		return filepath.Join(basePath, matches[0].Target), nil
 	}
+	if nested, ok, err := fuzzyResolveNestedFestival(ctx, basePath, query, relativePath); ok {
+		return nested, err
+	}
+	return "", camperrors.Wrapf(errNavigationNoMatch, "%q in %s", query, strings.TrimRight(relativePath, "/"))
+}
 
-	return filepath.Join(basePath, matches[0].Target), nil
+func fuzzyResolveNestedFestival(ctx context.Context, basePath, query, relativePath string) (string, bool, error) {
+	if !IsFestivalsRelativePath(relativePath) {
+		return "", false, nil
+	}
+	for _, bucket := range FestivalStatusDirs {
+		if ctx.Err() != nil {
+			return "", true, ctx.Err()
+		}
+		nested, err := fuzzyResolveDirectory(ctx, filepath.Join(basePath, bucket), query, filepath.Join(relativePath, bucket))
+		if err == nil {
+			return nested, true, nil
+		}
+	}
+	return "", false, nil
 }
 
 var (

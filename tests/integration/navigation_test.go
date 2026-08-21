@@ -128,6 +128,43 @@ func TestGo_CategoryShortcuts(t *testing.T) {
 	})
 }
 
+func TestGo_TwoArgumentForm_ResolvesSecondArg(t *testing.T) {
+	tc := GetSharedContainer(t)
+
+	root := "/campaigns/two-arg-go"
+	_, err := tc.InitCampaign(root, "two-arg-go", "product")
+	require.NoError(t, err)
+
+	_, _, err = tc.ExecCommand("mkdir", "-p",
+		root+"/projects/mobile-app/src",
+		root+"/projects/api-service/src",
+		root+"/projects/web-dashboard/src",
+		root+"/festivals/planning/weekly-streaks",
+		root+"/festivals/planning/push-reminders",
+	)
+	require.NoError(t, err)
+
+	output, err := tc.RunCampInDir(root, "go", "p", "api", "--print")
+	require.NoError(t, err, "camp go p api --print should succeed")
+	assert.Contains(t, output, "projects/api-service")
+	assert.NotContains(t, output, "festivals/planning")
+
+	output, err = tc.RunCampInDir(root, "go", "p", "mobile", "--print")
+	require.NoError(t, err, "camp go p mobile --print should succeed")
+	assert.Contains(t, output, "projects/mobile-app")
+	assert.NotContains(t, output, "festivals/planning")
+
+	output, err = tc.RunCampInDir(root, "go", "p", "api-service", "--print")
+	require.NoError(t, err, "camp go p api-service --print should succeed")
+	assert.Contains(t, output, "projects/api-service")
+
+	output, err = tc.RunCampInDir(root, "go", "f", "weekly", "--print")
+	require.NoError(t, err, "camp go f weekly --print should succeed")
+	assert.Contains(t, output, "festivals/planning/weekly-streaks")
+	assert.NotContains(t, strings.ToLower(output), `no targets matching "f"`)
+	assert.NotContains(t, strings.ToLower(output), `no targets matching "weekly"`)
+}
+
 func TestGo_ShellInit(t *testing.T) {
 	tc := GetSharedContainer(t)
 

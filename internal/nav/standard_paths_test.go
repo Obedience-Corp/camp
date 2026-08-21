@@ -41,6 +41,26 @@ func TestCategoryForStandardPath_LegacyIntentPathNotStandard(t *testing.T) {
 	}
 }
 
+func TestIsFestivalStatusDir(t *testing.T) {
+	for _, name := range []string{"planning", "active", "ready", "ritual", "chains", "Planning"} {
+		if !IsFestivalStatusDir(name) {
+			t.Fatalf("IsFestivalStatusDir(%q) = false, want true", name)
+		}
+	}
+	if IsFestivalStatusDir("weekly-streaks") {
+		t.Fatal("IsFestivalStatusDir(weekly-streaks) = true, want false")
+	}
+}
+
+func TestIsFestivalsRelativePath(t *testing.T) {
+	if !IsFestivalsRelativePath("festivals") || !IsFestivalsRelativePath("festivals/") {
+		t.Fatal("IsFestivalsRelativePath should match festivals root")
+	}
+	if IsFestivalsRelativePath("festivals/planning") || IsFestivalsRelativePath("projects") {
+		t.Fatal("IsFestivalsRelativePath should not match nested or other paths")
+	}
+}
+
 func TestBuildCategoryMappings(t *testing.T) {
 	shortcuts := map[string]config.ShortcutConfig{
 		"p": {

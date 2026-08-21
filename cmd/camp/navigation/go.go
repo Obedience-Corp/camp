@@ -92,14 +92,12 @@ func runGo(cmd *cobra.Command, args []string) error {
 		}
 	}
 
-	// Check for sub-shortcut in remaining args
-	// Example: "camp p fest cli" -> result.Query="fest", subShortcut="cli"
-	var subShortcut string
-	queryParts := strings.Fields(result.Query)
-	if len(queryParts) > 1 {
-		result.Query = queryParts[0]
-		subShortcut = queryParts[1]
-	}
+	// Project sub-shortcut only when the first token was a category shortcut.
+	// Example: "camp go p fest cli" -> query="fest", subShortcut="cli".
+	// Unmatched two-arg forms must keep the full query; splitting "p api" into
+	// query="p" would fuzzy-match festivals/planning and drop the second arg.
+	query, subShortcut := queryAndSubShortcut(result.Query, result.IsShortcut)
+	result.Query = query
 
 	// When no shortcut matched, check if the query matches a pin name
 	if !result.IsShortcut && result.Query != "" {
@@ -373,6 +371,20 @@ func handleRelativePathNavigation(ctx context.Context, campaignRoot, relativePat
 		fmt.Printf("cd %s\n", targetPath)
 	}
 	return nil
+}
+
+// queryAndSubShortcut splits a shortcut query into the project match and an
+// optional project sub-shortcut. Non-shortcut queries keep every token so
+// "camp go p api" cannot collapse to a fuzzy search for "p".
+func queryAndSubShortcut(query string, isShortcut bool) (string, string) {
+	if !isShortcut {
+		return query, ""
+	}
+	parts := strings.Fields(query)
+	if len(parts) > 1 {
+		return parts[0], parts[1]
+	}
+	return query, ""
 }
 
 // evalSymlinks resolves symlinks in a path, returning the original path if resolution fails.

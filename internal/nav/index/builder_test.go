@@ -442,6 +442,46 @@ func TestBuilder_scanCategory_SkipsDungeonSubdirs(t *testing.T) {
 	}
 }
 
+func TestBuilder_scanCategory_IndexesNestedFestivalDestinations(t *testing.T) {
+	root := t.TempDir()
+	root, _ = filepath.EvalSymlinks(root)
+
+	planning := filepath.Join(root, "festivals", "planning", "weekly-streaks")
+	active := filepath.Join(root, "festivals", "active", "push-reminders")
+	if err := os.MkdirAll(planning, 0755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.MkdirAll(active, 0755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.MkdirAll(filepath.Join(planning, "001_PHASE"), 0755); err != nil {
+		t.Fatal(err)
+	}
+
+	builder := NewBuilder(root)
+	targets, err := builder.scanCategory(context.Background(), nav.CategoryFestivals)
+	if err != nil {
+		t.Fatalf("scanCategory() error = %v", err)
+	}
+
+	got := map[string]string{}
+	for _, target := range targets {
+		got[target.Name] = target.Path
+	}
+	if got["planning"] == "" || got["active"] == "" {
+		t.Fatalf("status buckets missing from index: %v", got)
+	}
+	if got["weekly-streaks"] != planning {
+		t.Fatalf("weekly-streaks path = %q, want %q", got["weekly-streaks"], planning)
+	}
+	if got["push-reminders"] != active {
+		t.Fatalf("push-reminders path = %q, want %q", got["push-reminders"], active)
+	}
+	if _, ok := got["001_PHASE"]; ok {
+		t.Fatal("festival phase directories must not be indexed as targets")
+	}
+}
+
 // Benchmarks
 
 func BenchmarkBuilder_Build(b *testing.B) {
