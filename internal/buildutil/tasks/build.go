@@ -15,12 +15,32 @@ import (
 
 const versionPkg = "github.com/Obedience-Corp/camp/internal/version"
 
+// versionFrom picks the version to stamp: an explicit VERSION wins, then the
+// git description, then a placeholder for a checkout without git.
+func versionFrom(env, describe string) string {
+	if v := strings.TrimSpace(env); v != "" {
+		return v
+	}
+	if d := strings.TrimSpace(describe); d != "" {
+		return d
+	}
+	return "dev"
+}
+
+// gitDescribe returns the git-derived version: the exact tag when HEAD is
+// tagged, otherwise tag-distance-hash, with a -dirty suffix for uncommitted
+// changes. Empty when git cannot answer.
+func gitDescribe() string {
+	out, err := exec.Command("git", "describe", "--tags", "--always", "--dirty").Output()
+	if err != nil {
+		return ""
+	}
+	return strings.TrimSpace(string(out))
+}
+
 // buildLDFlags returns the -ldflags string that injects version metadata.
 func buildLDFlags() string {
-	version := os.Getenv("VERSION")
-	if version == "" {
-		version = "dev"
-	}
+	version := versionFrom(os.Getenv("VERSION"), gitDescribe())
 
 	commit := "unknown"
 	if out, err := exec.Command("git", "rev-parse", "--short", "HEAD").Output(); err == nil {

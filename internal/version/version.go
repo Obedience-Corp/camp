@@ -18,6 +18,10 @@ var (
 
 	// BuildDate is the build timestamp (set via ldflags)
 	BuildDate = "unknown"
+
+	// Bundle is the festival suite version this binary shipped in (set via
+	// ldflags by the festival release build). Empty for standalone builds.
+	Bundle = ""
 )
 
 func init() {
@@ -50,6 +54,7 @@ func applyBuildInfo(version, commit, date string, info *debug.BuildInfo) (string
 type Info struct {
 	SchemaVersion string `json:"schema_version"`
 	Version       string `json:"version"`
+	Bundle        string `json:"bundle,omitempty"`
 	Commit        string `json:"commit"`
 	BuildDate     string `json:"build_date"`
 	GoVersion     string `json:"go_version"`
@@ -62,6 +67,7 @@ func Get() Info {
 	return Info{
 		SchemaVersion: SchemaVersion,
 		Version:       Version,
+		Bundle:        Bundle,
 		Commit:        Commit,
 		BuildDate:     BuildDate,
 		GoVersion:     runtime.Version(),

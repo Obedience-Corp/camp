@@ -1,6 +1,7 @@
 package version
 
 import (
+	"encoding/json"
 	"runtime"
 	"runtime/debug"
 	"testing"
@@ -168,6 +169,57 @@ func TestApplyBuildInfo(t *testing.T) {
 			if gotV != tt.wantV || gotC != tt.wantC || gotD != tt.wantD {
 				t.Fatalf("applyBuildInfo() = (%q, %q, %q); want (%q, %q, %q)",
 					gotV, gotC, gotD, tt.wantV, tt.wantC, tt.wantD)
+			}
+		})
+	}
+}
+
+func TestBundleDefaultsEmpty(t *testing.T) {
+	// Only the festival release build stamps Bundle. A camp built from source
+	// has no suite around it, so the default must stay empty.
+	if Bundle != "" {
+		t.Errorf("Bundle = %q; want empty by default", Bundle)
+	}
+}
+
+func TestGetBundle(t *testing.T) {
+	original := Bundle
+	t.Cleanup(func() { Bundle = original })
+
+	tests := []struct {
+		name     string
+		bundle   string
+		wantJSON bool
+	}{
+		{name: "unset bundle is omitted from JSON", bundle: "", wantJSON: false},
+		{name: "festival suite version is carried", bundle: "v0.2.17", wantJSON: true},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			Bundle = tt.bundle
+
+			info := Get()
+			if info.Bundle != tt.bundle {
+				t.Fatalf("Get().Bundle = %q; want %q", info.Bundle, tt.bundle)
+			}
+
+			raw, err := json.Marshal(info)
+			if err != nil {
+				t.Fatalf("json.Marshal() error = %v", err)
+			}
+
+			var payload map[string]string
+			if err := json.Unmarshal(raw, &payload); err != nil {
+				t.Fatalf("json.Unmarshal() error = %v\nraw: %s", err, raw)
+			}
+
+			got, ok := payload["bundle"]
+			if ok != tt.wantJSON {
+				t.Fatalf("bundle key present = %v; want %v\nraw: %s", ok, tt.wantJSON, raw)
+			}
+			if tt.wantJSON && got != tt.bundle {
+				t.Fatalf("bundle = %q; want %q", got, tt.bundle)
 			}
 		})
 	}

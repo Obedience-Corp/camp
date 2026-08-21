@@ -47,6 +47,11 @@ func runVersion(cmd *cobra.Command, args []string) error {
 	if _, err := fmt.Fprintf(out, "camp %s\n", info.Version); err != nil {
 		return err
 	}
+	if info.Bundle != "" {
+		if _, err := fmt.Fprintf(out, "bundle: festival %s\n", info.Bundle); err != nil {
+			return err
+		}
+	}
 	if _, err := fmt.Fprintf(out, "commit: %s\n", info.Commit); err != nil {
 		return err
 	}

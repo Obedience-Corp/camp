@@ -50,7 +50,7 @@ Schema versions in this release:
 | `camp workflow shortcut add --json` | `workflow/v1` | Existing workflow collection contract. |
 | `camp workflow doctor --json` | `workflow/v1` | Emits findings; exits 2 when error findings exist. |
 | `camp workflow sync --json` | `workflow/v1` | Existing workflow repair-plan contract. |
-| `camp version --json` | `version/v1alpha1` | Emits version, build metadata, platform, and build profile. Uses snake_case keys only; legacy camelCase keys were dropped before public release. |
+| `camp version --json` | `version/v1alpha1` | Emits version, build metadata, platform, and build profile. Carries `bundle` (the festival suite version) only when the binary shipped inside a festival release; standalone builds omit the key. Uses snake_case keys only; legacy camelCase keys were dropped before public release. |
 
 ## Scope: contract vs best-effort
 
