@@ -125,18 +125,10 @@ func WithCommitAmendEnv(env []string, amend bool) []string {
 
 // DefaultWriterTimeout bounds one deferred run of the writer.
 //
-// Five minutes because that is already camp's number for "past any real
-// commit message writer": a job-aware drain waits exactly this long for a
-// heartbeating lane before it gives up (jobs.drainMaxWait). Choosing anything
-// shorter would kill writers the drain is still happily waiting for, which is
-// camp aborting work it just promised to wait for; anything longer, and the
-// drain gives up first and the user is told a commit is late by a queue that
-// has not yet decided the writer is late.
-//
-// It is a ceiling, not a budget to spend. A writer that reaches it is wedged,
-// not slow: an LLM commit-message call that has produced nothing in five
-// minutes has lost its connection, not its train of thought.
-const DefaultWriterTimeout = 5 * time.Minute
+// Must stay strictly above ob commit's shipped --queue-timeout (10m) or camp
+// kills a writer still allowed to wait for a slot. jobs.drainMaxWait uses
+// this same value so a drain cannot give up first.
+const DefaultWriterTimeout = 12 * time.Minute
 
 // writerWaitDelay bounds the wait between a killed writer exiting and its
 // output pipes closing.

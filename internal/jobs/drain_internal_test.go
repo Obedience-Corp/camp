@@ -8,6 +8,8 @@ import (
 	"sync"
 	"testing"
 	"time"
+
+	"github.com/Obedience-Corp/camp/internal/autowrite"
 )
 
 // A drain's job is to be a barrier, so these tests are about what it refuses to
@@ -557,5 +559,12 @@ func TestDescribeNamesTheWork(t *testing.T) {
 				t.Errorf("Describe = %q, want %q", got, tt.want)
 			}
 		})
+	}
+}
+
+func TestDrainMaxWaitMatchesWriterTimeout(t *testing.T) {
+	if drainMaxWait != autowrite.DefaultWriterTimeout {
+		t.Fatalf("drainMaxWait = %v, want autowrite.DefaultWriterTimeout (%v)",
+			drainMaxWait, autowrite.DefaultWriterTimeout)
 	}
 }
