@@ -23,7 +23,7 @@ var questCreateCmd = &cobra.Command{
 	Short: "Create a new quest",
 	Long: `Create a new working context within a campaign.
 
-A quest is a long-lived scope of work — not a single feature or task, but a
+A quest is a long-lived scope of work: not a single feature or task, but a
 broader initiative that may span projects, sessions, and festivals.
 
 CAPTURE MODES:

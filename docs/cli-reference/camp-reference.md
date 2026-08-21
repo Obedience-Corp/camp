@@ -2305,7 +2305,7 @@ Edit an idea in your preferred editor or programmatically via flags.
 
 If no programmatic flags are given, opens the idea in $EDITOR.
 If any programmatic flag is present, applies the update directly and
-emits an audit event — no editor is launched.
+emits an audit event; no editor is launched.
 
 PICKER / EDITOR PATH:
   If ID is provided, opens the idea directly (supports partial matching).
@@ -3402,7 +3402,7 @@ camp leverage [directory] [flags]
 ### Options
 
 ```
-      --author string    filter by author email (git substring match — 'alice@co' matches 'alice@co.com')
+      --author string    filter by author email (git substring match: 'alice@co' matches 'alice@co.com')
       --by-author        show per-author leverage breakdown
       --dir string       score a specific directory (skips campaign project resolution)
   -h, --help             help for leverage
@@ -4043,7 +4043,7 @@ is given):
            machine that was never addressable. Set CAMP_NO_PEER_FALLBACK=1
            to disable the fallback and fail exactly as ssh would
   socket   ControlMaster multiplex state:
-             none   no socket — the next hop opens a fresh master
+             none   no socket: the next hop opens a fresh master
              live   socket present and the master answers 'ssh -O check'
              stale  socket present but the master no longer answers
 
@@ -5234,7 +5234,7 @@ Add a new remote to the project
 
 Add a new git remote to the project repository.
 
-This does NOT modify .gitmodules — use set-url to change the canonical
+This does NOT modify .gitmodules. Use set-url to change the canonical
 origin for a submodule. Use this command to add secondary remotes such
 as an upstream fork or a mirror.
 
@@ -6907,7 +6907,7 @@ Examples:
   camp skills link --tool claude       Project skills into .claude/skills/
   camp skills link --tool agents       Project skills into .agents/skills/
   camp skills link --path custom/dir   Project skills into custom/dir
-  camp skills link --tool claude -n    Dry run — show what would happen
+  camp skills link --tool claude -n    Dry run: show what would happen
   camp skills link --tool claude -f    Replace conflicting symlink entries
 
 ```
@@ -6982,7 +6982,7 @@ Examples:
   camp skills unlink --tool claude       Remove projected entries in .claude/skills/
   camp skills unlink --tool agents       Remove projected entries in .agents/skills/
   camp skills unlink --path custom/dir   Remove projected entries in custom/dir
-  camp skills unlink --tool claude -n    Dry run — show what would happen
+  camp skills unlink --tool claude -n    Dry run: show what would happen
 
 ```
 camp skills unlink [flags]
@@ -7157,8 +7157,8 @@ Use with the shell-init wrappers for instant navigation (recommended):
   csw -                          # Hop back to the machine/campaign this session came from
 
 'camp switch -' (csw -) is the hop-back gesture: it returns to the origin
-encoded in CAMP_HOP_ORIGIN by the outbound hop. It is registration-independent
-— the origin need not be in this machine's machines.yaml. Like other remote
+encoded in CAMP_HOP_ORIGIN by the outbound hop. It is registration-independent:
+the origin need not be in this machine's machines.yaml. Like other remote
 targets it refuses --print/--json. '-' is reserved and is no longer a fuzzy
 campaign query.
 
@@ -7172,7 +7172,7 @@ Use campaign@tab to navigate to a specific location in the target campaign:
 Use machine:campaign to resolve a campaign on a machine registered in
 ~/.obey/machines.yaml. The interactive picker also lists remote campaigns when
 machines are configured (locals open instantly; remotes append as they load).
-Bare 'command camp switch machine:…' resolves without hopping — use the csw
+Bare 'command camp switch machine:…' resolves without hopping: use the csw
 shell wrapper (or --shell-connect under shell-init) to hop.
 
 Remote resolution runs the far machine's own 'camp switch' through that
@@ -7464,7 +7464,7 @@ Copy files between campaigns (and machines)
 Copy files between campaigns, and between this machine and a registered
 fleet machine.
 
-Transfer always copies — it never moves or deletes the source.
+Transfer always copies; it never moves or deletes the source.
 
 Local forms:
   campaign:path     another registered campaign on this machine
@@ -7674,7 +7674,7 @@ Selectors:
   camp triage approve --lane parked      every row in a lane
   camp triage approve --batch 2          every row in a review batch
 
-Bulk selectors deliberately do not cover terminal rows — anything that retires
+Bulk selectors deliberately do not cover terminal rows: anything that retires
 a workitem into the dungeon or splits it. Approving a batch is not meaningful
 consent to each irreversible action inside it, so those rows are listed and
 skipped, and approving one means naming it. When you do, the confirmation
@@ -7837,7 +7837,7 @@ Scaffold .campaign/triage with the profile and guide
 Write .campaign/triage/ if it is not there yet.
 
 The profile ships with every key written out and commented, not as an empty
-file inheriting invisible defaults — you should be able to read what triage
+file inheriting invisible defaults: you should be able to read what triage
 will do before you run it, and change it by deleting a line.
 
 Nothing is ever overwritten. A file you have edited is reported as diverged
@@ -7913,7 +7913,7 @@ Print the profile a run would use, fully merged.
 Resolution is: the campaign's .campaign/triage/profile.yaml when it exists,
 otherwise the named built-in. Keys the file omits inherit the built-in default.
 A type's policy is types/<type>.yaml, else types/_default.yaml, else camp's
-built-in — and a type policy that declares dispositions replaces the inherited
+built-in, and a type policy that declares dispositions replaces the inherited
 vocabulary rather than adding to it, so a type can genuinely restrict what it
 may be decided into.
 
@@ -8039,8 +8039,8 @@ Re-check the active run against the world
 
 Re-check every row against a fresh discovery pass and its evidence anchors.
 
-Verdicts expire. A row judged an hour ago rested on facts — a file's contents, a
-workitem's stage, a festival's status — and refresh is what notices when one of
+Verdicts expire. A row judged an hour ago rested on facts (a file's contents, a
+workitem's stage, a festival's status), and refresh is what notices when one of
 them moved. Each row comes back in one of five classes:
 
   fresh    identity resolves and every anchor still matches; the verdict stands
@@ -8049,7 +8049,7 @@ them moved. Each row comes back in one of five classes:
   changed  an anchor observes a different value; the verdict goes stale and the
            row returns to the judgment queue
   gone     the item is no longer discoverable outside dungeons; the verdict goes
-           stale and the row is flagged — someone likely finished it elsewhere
+           stale and the row is flagged: someone likely finished it elsewhere
   new      discovered but absent from the snapshot; appended and queued
 
 Every row prints the reason for its class, naming the anchor or the location
@@ -8059,7 +8059,7 @@ Anchors that need the network are recorded unchecked rather than assumed
 current, and the summary counts them separately: not knowing is reported as not
 knowing.
 
-Refresh only records. It retires verdicts, re-keys rows, and appends new ones —
+Refresh only records. It retires verdicts, re-keys rows, and appends new ones;
 it never moves a workitem. That is camp triage apply, which refuses any row this
 command did not return fresh or moved.
 
@@ -8095,7 +8095,7 @@ camp triage approve; re-rendering replaces the files, so an edit made in them
 is lost rather than honored. Each carries that statement at the top.
 
 Every row in the run appears exactly once across the review's lanes, including
-rows nobody has proposed anything for — a document that quietly omitted them
+rows nobody has proposed anything for. A document that quietly omitted them
 could be approved without the operator ever seeing what it left out.
 
 Rendering is pure: the same run data always produces the same bytes, so
@@ -8788,7 +8788,7 @@ camp workitem commits [selector] [flags]
       --json              emit JSON instead of the default table
       --limit int         maximum commits to return (default 100)
       --offset int        number of commits to skip (after sorting)
-      --ref string        query by workitem ref directly (e.g. WI-abc123) — skips resolver
+      --ref string        query by workitem ref directly (e.g. WI-abc123); skips resolver
       --source string     where to read commits from: auto (ledger when present, else scan), ledger, or scan (default "auto")
       --workitem string   alias for the positional <selector>
 ```
@@ -8960,7 +8960,7 @@ stable id, key, campaign-relative path, directory slug, festival id, or intent
 frontmatter id. A filesystem path (absolute or relative to the current directory)
 is accepted and translated to the campaign-relative form the selector expects.
 
-Stdout is the bare durable id for shell scripting — stable .workitem id when
+Stdout is the bare durable id for shell scripting: stable .workitem id when
 present, otherwise a source-declared id (festival fest.yaml id or intent
 frontmatter id), otherwise the path-derived key. It is the id sibling of
 `camp workitem --print`, which prints a path. Use --key for the
