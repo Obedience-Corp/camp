@@ -178,13 +178,12 @@ func TestColdSeedOverSSH_MatchesAPlainOriginClone(t *testing.T) {
 	seeded := "/campaigns/seeded/" + name
 	plain := "/campaigns/plain/" + name
 
-	// Root repo only, and validation off on BOTH sides. The fixture's submodule
-	// origin is a local path and git refuses file transport for submodules
-	// (CVE-2022-39253), so a plain origin clone cannot initialise it; and
-	// --no-submodules still validates submodules, so it reports the skipped one
-	// as missing. Neither is about the transport under test, and the full
-	// validation path is exercised by the quiescent-peer case above.
-	flags := []string{"--no-submodules", "--no-validate"}
+	// Root repo only. The fixture's submodule origin is a local path and git
+	// refuses file transport for submodules (CVE-2022-39253), so a plain
+	// origin clone cannot initialise it. --no-submodules must not fail
+	// validation for skipping that init. Full validation is exercised by
+	// the quiescent-peer case above.
+	flags := []string{"--no-submodules"}
 	out, err := tc.RunCampInDir("/campaigns", append([]string{"clone", rootOrigin, seeded,
 		"--from", loopbackMachineID}, flags...)...)
 	require.NoError(t, err, "cold-seed clone failed: %s", out)
