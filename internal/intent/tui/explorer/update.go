@@ -110,6 +110,12 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.recalculateLayout()
 		m.ready = true
 
+	case previewDebounceMsg:
+		return m.handlePreviewDebounce(msg)
+
+	case previewLoadedMsg:
+		return m.handlePreviewLoaded(msg)
+
 	case intentsLoadedMsg:
 		if msg.err != nil {
 			m.statusMessage = "Error: " + msg.err.Error()

@@ -117,6 +117,10 @@ type Model struct {
 	showPreview        bool // Whether preview pane is visible
 	previewFocused     bool // Whether preview has focus (vs list)
 	previewForceHidden bool // True when terminal is too narrow
+	// previewSeq increments on every selection change so in-flight markdown
+	// renders (tea.Cmd) are ignored once the cursor has moved on. Rapid j/k
+	// must not run glamour inside Update — that queued work in front of q.
+	previewSeq uint64
 
 	// Help overlay state
 	helpOverlay tui.HelpOverlay
