@@ -513,25 +513,10 @@ type sweptIdentity struct {
 	LedgerTitle string
 }
 
-// sweptWorkitemIdentity reads the .workitem marker at loc.SourcePath before the
-// move and splits what it finds into a display identity and a link identity.
-//
-// LedgerID falls back to the slug when no marker resolves, so a directory that
-// was never adopted still sweeps instead of failing the command (matching
-// runWorkitemPromote's ledger capture).
-//
-// LinkID must never carry that fallback. unlinkShelvedWorkitem matches on
-// workitem_id OR workitem_key, so a slug in the ID position would drop the links
-// of any unrelated workitem whose real workitem_id happened to equal this slug,
-// and link deletion is the destructive half of a sweep. An unmarked source
-// therefore gets an empty LinkID and is matched by key and path alone -- the same
-// separation doDungeonPromote gets from promotedWorkitemIdentity, which returns
-// an empty id for an unmarked directory.
-//
-// item.StableID is the fallback because it is the marker id resolved at
-// discovery (empty when unmarked, never a slug), which covers a file-shaped
-// source whose identity lives in its own frontmatter rather than in a .workitem
-// sibling LoadMetadata can read.
+// sweptWorkitemIdentity splits the .workitem marker into a display identity
+// and a link identity. LinkID must never carry the slug fallback that LedgerID
+// uses: the unlink matcher compares workitem ids, and a slug there would drop
+// an unrelated workitem's links. Unmarked sources match by key and path only.
 func sweptWorkitemIdentity(ctx context.Context, loc *locate.Location, item wkitem.WorkItem) sweptIdentity {
 	ident := sweptIdentity{LedgerID: loc.Slug}
 	if meta, err := wkitem.LoadMetadata(ctx, loc.SourcePath); err == nil && meta != nil {
@@ -580,16 +565,10 @@ const (
 	FreshSweepModePrompt = "prompt"
 )
 
-// resolveSweepMode resolves the mode a sweep actually runs in from the mode that
-// was asked for and the situation it finds itself in. One function so the
-// command flag and the fresh.yaml setting cannot drift into different answers.
-//
-// A dry run is always a report: a dry run that could still prompt its way into
-// moving something is not a dry run. A prompt with no terminal, or one whose
-// output a --json consumer is parsing, is a report too, because there is nobody
-// to answer it; this is what keeps agents off an automatic path without any
-// agent-specific special case. Anything unrecognized behaves as "sweep", which is
-// the mode this function is only ever reached with by an explicit caller.
+// resolveSweepMode is the single place the flag and the fresh setting resolve.
+// Invariants: dry-run is always report; prompt with no terminal or with --json
+// is report (nobody can answer); unrecognized falls back to sweep, which only an
+// explicit caller reaches.
 func resolveSweepMode(configured string, terminal, jsonOut, dryRun bool) string {
 	if configured == FreshSweepModeOff {
 		return FreshSweepModeOff

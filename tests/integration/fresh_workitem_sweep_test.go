@@ -65,15 +65,9 @@ func TestIntegration_FreshQueuesSweepBehindBusyRootLane(t *testing.T) {
 		"the landed sweep commit must contain both sides of the workitem move")
 }
 
-// addFreshEligibleWorkitem creates a chore workitem with a completed workflow run
-// at the campaign root and commits it, making it eligible for the tier-1 sweep
-// that camp fresh runs. A chore rather than a design because run completion is
-// only sufficient evidence for work whose loop WAS the work; a design would be
-// reported as awaiting implementation and never moved.
-//
-// Its content is backdated past the fresh-write window: a fixture written moments
-// before the sweep is exactly the "a session is still writing here" shape the
-// guard exists to catch.
+// addFreshEligibleWorkitem commits a chore with a completed workflow run (a
+// design would only be reported as awaiting implementation) and backdates its
+// content past the fresh-write window so the guard does not treat it as live.
 func addFreshEligibleWorkitem(t *testing.T, tc *TestContainer, campaignPath, slug string) {
 	t.Helper()
 	out, err := tc.RunCampInDir(campaignPath,

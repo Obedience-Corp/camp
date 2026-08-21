@@ -55,14 +55,9 @@ func outputList(w io.Writer, items []wkitem.WorkItem, groupBy string) error {
 	return nil
 }
 
-// sweepBannerLine returns the read-only "N workitems have completed runs"
-// banner for the listed items, or "" when none are actionable. Pure: it calls
-// only wkitem.PlanSweep for the count, never any sweep mutation path, so camp wi
-// stays read-only.
-//
-// It counts candidates only. A design with a completed run is in the plan's skip
-// list because it waits for implementation evidence, and pointing a banner at a
-// command that will decline to touch it would be a false prompt to act.
+// sweepBannerLine returns the read-only completed-runs banner, or "" when no
+// item is actionable. It counts PlanSweep candidates only (never the skip
+// list) and touches no mutation path, so camp wi stays read-only.
 func sweepBannerLine(items []wkitem.WorkItem) string {
 	return wkitem.SweepBannerText(len(wkitem.PlanSweep(items).Candidates))
 }

@@ -332,20 +332,9 @@ func (c *FreshConfig) ResolveFreshPrune() bool {
 	return true
 }
 
-// ResolveFreshCompletedRuns resolves completed_runs using the global config or
-// default ("prompt"). Global only: workitems live at the campaign root, not per
-// project, so there is no per-project override, matching Prune's shape. Any
-// unrecognized or empty value defaults to "prompt" (never fail closed to "off"
-// on a typo).
-//
-// The default is "prompt" rather than "sweep" because a completed authoring loop
-// is not the same thing as finished work. It says a run reached its last step,
-// which for research means findings now need a home and for a design means a
-// specification exists that nobody has built yet. Sweeping on that signal buried
-// live work twice: once with agents still writing into the directory, once with
-// links still pointing into it. "sweep" is still available for a campaign that
-// wants the old behavior. Same shape as MergedWorkitems: "prompt" asks on a TTY
-// and reports on a non-TTY, so agents never get an automatic path.
+// ResolveFreshCompletedRuns resolves completed_runs from the global config.
+// Default and any unrecognized value is "prompt" (never fail closed to "off"
+// on a typo). Global only, matching Prune and MergedWorkitems.
 func (c *FreshConfig) ResolveFreshCompletedRuns() string {
 	switch c.CompletedRuns {
 	case "prompt", "sweep", "report", "off":

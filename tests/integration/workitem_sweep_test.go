@@ -355,16 +355,9 @@ func writeStaleScopedLink(t *testing.T, tc *TestContainer, campaignPath, linkID,
 			"      created_by: integration-test\n"))
 }
 
-// Scenario 7: promoting a workitem releases a link scoped INSIDE its directory
-// in the same commit as the move, even though the link names a workitem id the
-// directory no longer answers to. Before this fix promote matched links by id or
-// key only, so a renamed directory's older links survived the move and camp
-// status reported them as broken until camp workitem doctor --fix removed them
-// by hand (campaign commits 6dc51fab8 and 871818db4, 2026-08-20).
-//
-// Driven through camp workitem promote rather than the automatic sweep on
-// purpose: an explicit promote is a direct instruction with no guards, while the
-// automatic sweep now declines to move a linked directory at all (scenario 11).
+// Scenario 7: an explicit promote releases a link scoped inside the moved
+// directory in the same commit even when the link names a different workitem
+// id (renamed directory). The automatic sweep declines such dirs (scenario 11).
 func TestIntegration_WorkitemPromote_ReleasesPathScopedLinkAfterRename(t *testing.T) {
 	tc := GetSharedContainer(t)
 	path := setupDungeonCampaign(t, tc, "promote-stale-link")
