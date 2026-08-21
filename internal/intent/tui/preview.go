@@ -33,47 +33,51 @@ func NewPreviewPane(width, height int) PreviewPane {
 	}
 }
 
-// SetContent sets the title and content to display.
-// Content is rendered as markdown with frontmatter stripped.
-func (p *PreviewPane) SetContent(title, rawContent string) {
+// Width returns the pane width used for markdown wrapping.
+func (p PreviewPane) Width() int {
+	return p.width
+}
+
+// Title returns the currently displayed preview title.
+func (p PreviewPane) Title() string {
+	return p.title
+}
+
+// ApplyRendered installs already-rendered markdown. Callers that must not
+// block the Bubble Tea Update goroutine (explorer navigation) render via
+// RenderPreviewContent in a tea.Cmd, then apply the result here.
+func (p *PreviewPane) ApplyRendered(title, rawContent, rendered string) {
 	p.title = title
 	p.rawContent = rawContent
-
-	// Debug: check if raw content is empty
-	if rawContent == "" {
-		p.content = "DEBUG: rawContent is empty"
-		p.viewport.SetContent(p.content)
-		p.viewport.GotoTop()
-		return
+	if rendered == "" {
+		rendered = "No content"
 	}
-
-	// Strip YAML frontmatter
-	content := stripFrontmatter(rawContent)
-
-	// Debug: check if content is empty after stripping
-	if strings.TrimSpace(content) == "" {
-		debugMsg := fmt.Sprintf("DEBUG: Empty after stripFrontmatter\nRaw length: %d\nFirst 300 chars:\n%s",
-			len(rawContent), truncatePreview(rawContent, 300))
-		p.content = debugMsg
-		p.viewport.SetContent(debugMsg)
-		p.viewport.GotoTop()
-		return
-	}
-
-	// Render markdown
-	rendered := p.renderPreviewMarkdown(content)
-
 	p.content = rendered
 	p.viewport.SetContent(rendered)
 	p.viewport.GotoTop()
 }
 
-// truncatePreview truncates a string for debug display.
-func truncatePreview(s string, maxLen int) string {
-	if len(s) <= maxLen {
-		return s
+// SetContent sets the title and content to display.
+// Content is rendered as markdown with frontmatter stripped.
+func (p *PreviewPane) SetContent(title, rawContent string) {
+	p.ApplyRendered(title, rawContent, RenderPreviewContent(rawContent, p.width))
+}
+
+// RenderPreviewContent strips YAML frontmatter and renders markdown. Safe to
+// call from a tea.Cmd goroutine.
+func RenderPreviewContent(rawContent string, width int) string {
+	if strings.TrimSpace(rawContent) == "" {
+		return "No content"
 	}
-	return s[:maxLen] + "..."
+	content := stripFrontmatter(rawContent)
+	if strings.TrimSpace(content) == "" {
+		return "No content"
+	}
+	wrap := width - 6
+	if wrap < 20 {
+		wrap = 20
+	}
+	return renderMarkdown(content, wrap)
 }
 
 // SetSize updates the dimensions of the preview pane.
@@ -85,16 +89,8 @@ func (p *PreviewPane) SetSize(width, height int) {
 
 	// Re-render content with new width if we have content
 	if p.rawContent != "" {
-		content := stripFrontmatter(p.rawContent)
-		rendered := p.renderPreviewMarkdown(content)
-		p.content = rendered
-		p.viewport.SetContent(rendered)
+		p.ApplyRendered(p.title, p.rawContent, RenderPreviewContent(p.rawContent, p.width))
 	}
-}
-
-// renderPreviewMarkdown renders content using the shared glamour renderer.
-func (p *PreviewPane) renderPreviewMarkdown(content string) string {
-	return renderMarkdown(content, p.width-6)
 }
 
 // stripFrontmatter removes YAML frontmatter from content.

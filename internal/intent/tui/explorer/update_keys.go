@@ -40,8 +40,7 @@ func (m Model) updateNormal(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			} else {
 				m.jumpToTop()
 			}
-			m.updatePreviewForSelection()
-			return m, nil
+			return m, m.schedulePreviewLoad()
 		case "a":
 			// ga: gather intents
 			if m.cursorItem == -1 && len(m.selectedIntents) == 0 {
@@ -52,9 +51,12 @@ func (m Model) updateNormal(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		// Unrecognized — fall through to normal handling
 	}
 
+	var previewCmd tea.Cmd
+
 	switch key {
 	case "q", "ctrl+c":
 		m.quitting = true
+		m.previewSeq++
 		return m, tea.Quit
 	case "?":
 		// Toggle help overlay
@@ -221,12 +223,10 @@ func (m Model) updateNormal(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		// Toggle preview pane visibility
 		m.showPreview = !m.showPreview
 		m.recalculateLayout()
-		// Load preview content for currently selected intent
 		if m.shouldShowPreview() {
-			if selected := m.SelectedIntent(); selected != nil {
-				m.loadPreviewContent(selected)
-			}
+			return m, m.schedulePreviewLoadImmediate()
 		}
+		m.previewSeq++
 		return m, nil
 	case "j", "down":
 		if m.previewFocused && m.showPreview {
@@ -235,7 +235,7 @@ func (m Model) updateNormal(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			return m, cmd
 		}
 		m.moveCursorDownN(count)
-		m.updatePreviewForSelection()
+		previewCmd = m.schedulePreviewLoad()
 	case "k", "up":
 		if m.previewFocused && m.showPreview {
 			var cmd tea.Cmd
@@ -243,7 +243,7 @@ func (m Model) updateNormal(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			return m, cmd
 		}
 		m.moveCursorUpN(count)
-		m.updatePreviewForSelection()
+		previewCmd = m.schedulePreviewLoad()
 	case "l", "right":
 		// Expand nest parent under the cursor (Notes folders / Dungeon).
 		if m.cursorItem == -1 && len(m.groups) > 0 {
@@ -253,13 +253,13 @@ func (m Model) updateNormal(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 				m.ensureCursorVisible()
 			}
 		}
-		m.updatePreviewForSelection()
+		previewCmd = m.schedulePreviewLoad()
 	case "h", "left":
 		// Collapse nest parent under the cursor, or jump to parent header.
 		if len(m.groups) > 0 {
 			m.handleNestCollapse()
 		}
-		m.updatePreviewForSelection()
+		previewCmd = m.schedulePreviewLoad()
 	case "ctrl+d":
 		if m.previewFocused && m.showPreview {
 			var cmd tea.Cmd
@@ -268,7 +268,7 @@ func (m Model) updateNormal(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		}
 		halfPage := max(m.listHeight/2, 1)
 		m.moveCursorDownN(halfPage)
-		m.updatePreviewForSelection()
+		previewCmd = m.schedulePreviewLoad()
 	case "ctrl+u":
 		if m.previewFocused && m.showPreview {
 			var cmd tea.Cmd
@@ -277,7 +277,7 @@ func (m Model) updateNormal(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		}
 		halfPage := max(m.listHeight/2, 1)
 		m.moveCursorUpN(halfPage)
-		m.updatePreviewForSelection()
+		previewCmd = m.schedulePreviewLoad()
 	case "g":
 		if m.previewFocused && m.showPreview {
 			var cmd tea.Cmd
@@ -304,7 +304,7 @@ func (m Model) updateNormal(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		} else {
 			m.jumpToBottom()
 		}
-		m.updatePreviewForSelection()
+		previewCmd = m.schedulePreviewLoad()
 	case "enter":
 		m.handleSelect()
 	case " ":
@@ -328,7 +328,7 @@ func (m Model) updateNormal(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		}
 	}
 
-	return m, nil
+	return m, previewCmd
 }
 
 func (m *Model) focusFilterChip(index int) {
