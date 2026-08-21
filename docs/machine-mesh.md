@@ -229,7 +229,7 @@ hangs:
   ```
 - **camp missing on the far side.** ssh logged in, and neither the login-shell PATH nor
   any usual location had a camp. This is reported as exactly that — the machine screen
-  says "camp not found", `list --remote` labels the row `(camp not found: …)`, and
+  says "camp not found", `list --remote` prints `(camp not found: …)` below the table, and
   diagnose prints `BINARY ✗` — never as "unreachable", so nobody debugs the network for
   a binary that is not installed. The error names the escape hatch:
   ```

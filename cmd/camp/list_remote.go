@@ -17,8 +17,8 @@ import (
 )
 
 // remoteResult is one machine's contribution to `camp list --remote`. A non-nil
-// err means the machine was unreachable/failed and becomes a labeled row (task 2's
-// renderer); it never contaminates or delays the other machines' rows.
+// err means the machine was unreachable/failed and is printed below the table;
+// it never contaminates or delays the other machines' rows.
 type remoteResult struct {
 	machineID string
 	rows      []campaignEntry
@@ -172,9 +172,10 @@ func hasRemoteDimension(campaigns []campaignEntry, results []remoteResult) bool 
 
 // outputRemoteList renders `camp list --remote`. JSON stays the successful-row
 // contract (unreachable machines go to stderr so stdout stays parseable); the
-// table gains a leading MACHINE column only when a remote machine is present and
-// appends one muted labeled row per unreachable machine. With only local rows it
-// defers to outputCampaigns, so single-machine output is identical to today.
+// table gains a leading MACHINE column only when a remote machine is present.
+// Failed machines are muted lines under the table so their error text cannot
+// pad the ID column. With only local rows it defers to outputCampaigns, so
+// single-machine output is identical to today.
 func outputRemoteList(stdout, stderr io.Writer, campaigns []campaignEntry, results []remoteResult, format string) error {
 	switch format {
 	case "json":
@@ -233,6 +234,22 @@ func formatUnreachableErr(err error) string {
 }
 
 func renderRemoteTable(stdout io.Writer, campaigns []campaignEntry, results []remoteResult) error {
+	if len(campaigns) > 0 {
+		if err := writeRemoteCampaignTable(stdout, campaigns); err != nil {
+			return err
+		}
+	}
+	if err := writeRemoteFailureLines(stdout, results, len(campaigns) > 0); err != nil {
+		return err
+	}
+	if _, err := fmt.Fprintln(stdout); err != nil {
+		return err
+	}
+	_, err := fmt.Fprintln(stdout, ui.Dim(ui.CountLabel(len(campaigns), "campaign", "campaigns")))
+	return err
+}
+
+func writeRemoteCampaignTable(stdout io.Writer, campaigns []campaignEntry) error {
 	w := tabwriter.NewWriter(stdout, 0, 0, 2, ' ', 0)
 	var werr error
 	p := func(format string, a ...any) {
@@ -250,20 +267,39 @@ func renderRemoteTable(stdout io.Writer, campaigns []campaignEntry, results []re
 		}
 		p("%s\t%s\t%s\t%s\t%s\t%s\n", ui.Label(machine), id, name, org, typ, path)
 	}
-	for _, r := range results {
-		if r.err != nil {
-			p("%s\t%s\t\t\t\t\n", ui.Dim(r.machineID), ui.Dim(fmt.Sprintf("(%s: %s)", remoteFailureLabel(r.err), formatUnreachableErr(r.err))))
-		}
-	}
 	if werr != nil {
 		return werr
 	}
-	if err := w.Flush(); err != nil {
-		return err
+	return w.Flush()
+}
+
+func writeRemoteFailureLines(stdout io.Writer, results []remoteResult, afterTable bool) error {
+	hasFailed := false
+	for _, r := range results {
+		if r.err != nil {
+			hasFailed = true
+			break
+		}
 	}
-	if _, err := fmt.Fprintln(stdout); err != nil {
-		return err
+	if !hasFailed {
+		return nil
 	}
-	_, err := fmt.Fprintln(stdout, ui.Dim(ui.CountLabel(len(campaigns), "campaign", "campaigns")))
-	return err
+	if afterTable {
+		if _, err := fmt.Fprintln(stdout); err != nil {
+			return err
+		}
+	}
+	for _, r := range results {
+		if r.err == nil {
+			continue
+		}
+		if _, err := fmt.Fprintln(stdout, ui.Dim(remoteFailureLine(r))); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+func remoteFailureLine(r remoteResult) string {
+	return fmt.Sprintf("%s  (%s: %s)", r.machineID, remoteFailureLabel(r.err), formatUnreachableErr(r.err))
 }
