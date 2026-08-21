@@ -2,9 +2,11 @@ package git
 
 import (
 	"errors"
+	"strings"
 	"testing"
 
 	camperrors "github.com/Obedience-Corp/camp/internal/errors"
+	"github.com/Obedience-Corp/camp/internal/slug"
 )
 
 // warningKeys renders warnings as "field:reason" so a table can pin both
@@ -84,7 +86,7 @@ func TestParseTagDetailed_OrphanSegments(t *testing.T) {
 			name:    "a malformed phase is zeroed, so no orphan warning follows",
 			subject: "[obey-campaign:8deed8b4-PH-abc] x",
 			wantWarnings: []string{
-				"phase:shape check failed (want PH-<1-4 digits>)",
+				"phase:shape check failed (want 1 to 4 digits)",
 			},
 		},
 		{
@@ -217,7 +219,13 @@ var adversarialPhaseSequence = []struct {
 	{"PH-001", "02"},
 }
 
-func TestFormatTag_NeverEmitsWhatItsParserDegrades(t *testing.T) {
+// TestFormatTag_GuardedSegmentsNeverEmitWhatTheParserDegrades covers the two
+// segments FormatTag shape-guards. The unguarded segments are deliberately
+// out of scope: a malformed festival ref, quest id, workitem ref, or note ref
+// is emitted as given by design, so a base carrying one would fail this
+// property for a reason the guards are not meant to fix.
+// ValidateTagComponents is the signal for those.
+func TestFormatTag_GuardedSegmentsNeverEmitWhatTheParserDegrades(t *testing.T) {
 	bases := []TagComponents{
 		{CampaignName: "obey-campaign", CampaignID: "8deed8b4", FestRef: "CC0008"},
 		{CampaignID: "8deed8b4", FestRef: "CC0008"},
@@ -295,6 +303,21 @@ func TestValidateTagComponents(t *testing.T) {
 			name:       "phase carrying a dash",
 			tc:         TagComponents{CampaignID: "8deed8b4", FestRef: "CC0008", Phase: "1-2"},
 			wantFields: []string{"phase"},
+		},
+		{
+			name:       "a malformed phase names the sequence it takes with it",
+			tc:         TagComponents{CampaignID: "8deed8b4", FestRef: "CC0008", Phase: "abc", Sequence: "02"},
+			wantFields: []string{"phase", "sequence"},
+		},
+		{
+			name:       "a valid phase with a malformed sequence names only the sequence",
+			tc:         TagComponents{CampaignID: "8deed8b4", FestRef: "CC0008", Phase: "001", Sequence: "02_camp_pilot"},
+			wantFields: []string{"sequence"},
+		},
+		{
+			name:       "both malformed names both, once each",
+			tc:         TagComponents{CampaignID: "8deed8b4", FestRef: "CC0008", Phase: "abc", Sequence: "xy"},
+			wantFields: []string{"phase", "sequence"},
 		},
 		{
 			name:       "malformed sequence",
@@ -385,12 +408,37 @@ func TestValidateTagComponents(t *testing.T) {
 	}
 }
 
-func TestValidateTagComponents_NilMeansNothingIsDropped(t *testing.T) {
-	// A clean validation is a promise about FormatTag: every component
-	// survives the emit and comes back from the parser unchanged, modulo the
-	// WI-/NT- prefixes the emitter normalizes.
+// normalizedForRoundTrip is what a faithful round trip is allowed to change:
+// the emitter truncates the campaign id, slugifies the name into the head or
+// falls back to the legacy marker (which carries no name at all), and adds
+// the WI- / NT- prefixes to bare refs.
+func normalizedForRoundTrip(tc TagComponents) TagComponents {
+	want := tc
+	want.CampaignID = shortCampaignID(tc.CampaignID)
+	if nameSlug := slug.Generate(tc.CampaignName); nameSlug != "" && tagNameStyleIDRe.MatchString(want.CampaignID) {
+		want.CampaignName = nameSlug
+	} else {
+		want.CampaignName = ""
+	}
+	if want.WorkitemRef != "" {
+		want.WorkitemRef = ensureTagPrefix(want.WorkitemRef, tagWorkitemPrefix)
+	}
+	if want.NoteRef != "" {
+		want.NoteRef = ensureTagPrefix(want.NoteRef, tagNotePrefix)
+	}
+	return want
+}
+
+func TestValidateTagComponents_NilMeansFaithfulRoundTripAfterNormalization(t *testing.T) {
+	// A clean validation is a promise about FormatTag: the tag reparses with
+	// zero warnings and gives every component back, modulo the normalization
+	// the emitter applies. It is not a promise that tc is emitted verbatim.
 	cases := []TagComponents{
 		{CampaignID: "8deed8b4"},
+		{CampaignID: "8deed8b4abcdef0123456789"},
+		{CampaignName: "obey-campaign", CampaignID: "8deed8b4abcdef0123456789", FestRef: "CC0008", Phase: "001"},
+		{CampaignName: "Brainshare Planning", CampaignID: "8deed8b4"},
+		{CampaignName: "!!!", CampaignID: "8deed8b4", FestRef: "CC0008", Phase: "001", Sequence: "02"},
 		{CampaignName: "obey-campaign", CampaignID: "8deed8b4", FestRef: "CC0008", Phase: "001"},
 		{CampaignName: "obey-campaign", CampaignID: "8deed8b4", FestRef: "CC0008", Phase: "001", Sequence: "02"},
 		{CampaignID: "8deed8b4", WorkitemRef: "abcdef", NoteRef: "123456"},
@@ -404,13 +452,7 @@ func TestValidateTagComponents_NilMeansNothingIsDropped(t *testing.T) {
 		if err := ValidateTagComponents(tc); err != nil {
 			t.Fatalf("ValidateTagComponents(%+v) = %v, want nil", tc, err)
 		}
-		want := tc
-		if want.WorkitemRef != "" {
-			want.WorkitemRef = ensureTagPrefix(want.WorkitemRef, tagWorkitemPrefix)
-		}
-		if want.NoteRef != "" {
-			want.NoteRef = ensureTagPrefix(want.NoteRef, tagNotePrefix)
-		}
+		want := normalizedForRoundTrip(tc)
 		tag := FormatTag(tc)
 		got, warnings := ParseTagDetailed(tag + " subject")
 		if len(warnings) != 0 {
@@ -419,5 +461,67 @@ func TestValidateTagComponents_NilMeansNothingIsDropped(t *testing.T) {
 		if got != want {
 			t.Errorf("%q reparsed as %+v, want %+v", tag, got, want)
 		}
+	}
+}
+
+func TestValidateTagComponents_DistinguishesDroppedFromDegraded(t *testing.T) {
+	// The two kinds of problem differ in what the emitted tag contains, so
+	// each case asserts the wording and the fact behind it together.
+	cases := []struct {
+		name      string
+		tc        TagComponents
+		bad       string
+		wantNote  string
+		wantInTag bool
+	}{
+		{
+			name:     "a guarded phase is dropped",
+			tc:       TagComponents{CampaignID: "8deed8b4", FestRef: "CC0008", Phase: "001_IMPLEMENT"},
+			bad:      "001_IMPLEMENT",
+			wantNote: "dropped on emit",
+		},
+		{
+			name:     "a guarded sequence is dropped",
+			tc:       TagComponents{CampaignID: "8deed8b4", FestRef: "CC0008", Phase: "001", Sequence: "02_camp_pilot"},
+			bad:      "02_camp_pilot",
+			wantNote: "dropped on emit",
+		},
+		{
+			name:      "an unguarded festival ref reaches the tag",
+			tc:        TagComponents{CampaignID: "8deed8b4", FestRef: "RI-XX0001", Phase: "001"},
+			bad:       "RI-XX0001",
+			wantNote:  "emitted verbatim but reparses degraded",
+			wantInTag: true,
+		},
+		{
+			name:      "an unguarded quest id reaches the tag",
+			tc:        TagComponents{CampaignID: "8deed8b4", QuestID: "nope"},
+			bad:       "nope",
+			wantNote:  "emitted verbatim but reparses degraded",
+			wantInTag: true,
+		},
+		{
+			name:      "an unguarded workitem ref reaches the tag",
+			tc:        TagComponents{CampaignID: "8deed8b4", WorkitemRef: "WI-ZZZZZZ"},
+			bad:       "WI-ZZZZZZ",
+			wantNote:  "emitted verbatim but reparses degraded",
+			wantInTag: true,
+		},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			err := ValidateTagComponents(tc.tc)
+			if err == nil {
+				t.Fatalf("ValidateTagComponents(%+v) = nil, want an error", tc.tc)
+			}
+			if !strings.Contains(err.Error(), tc.wantNote) {
+				t.Errorf("error %q does not describe the value as %q", err, tc.wantNote)
+			}
+			tag := FormatTag(tc.tc)
+			if got := strings.Contains(tag, tc.bad); got != tc.wantInTag {
+				t.Errorf("tag %q contains %q = %v, want %v (the error says %q)",
+					tag, tc.bad, got, tc.wantInTag, tc.wantNote)
+			}
+		})
 	}
 }

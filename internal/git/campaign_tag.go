@@ -216,8 +216,22 @@ type tagSegment struct {
 	// supplied a bare ref, so validation checks the value that would be
 	// emitted rather than the one that was passed.
 	normalize bool
-	split     func(string) (string, string)
-	target    func(*TagComponents) *string
+	// guarded marks the segments FormatTag shape-checks before emitting them
+	// (see the guards there). A bad value in a guarded segment is dropped; a
+	// bad value anywhere else is written into the tag as given and shows up
+	// only when the tag is parsed back.
+	guarded bool
+	split   func(string) (string, string)
+	target  func(*TagComponents) *string
+}
+
+// fate describes what FormatTag does with a value that fails this segment's
+// shape check.
+func (s tagSegment) fate() string {
+	if s.guarded {
+		return "dropped on emit"
+	}
+	return "emitted verbatim but reparses degraded"
 }
 
 // shapeReason is the parse warning text for a value that failed s.shape.
@@ -242,13 +256,15 @@ var tagSegments = []tagSegment{
 	},
 	{
 		prefix: tagPhasePrefix, field: "phase", shape: tagPhaseRe,
-		want:        "PH-<1-4 digits>",
+		want:        "1 to 4 digits",
+		guarded:     true,
 		stripPrefix: true, split: splitAtDash,
 		target: func(tc *TagComponents) *string { return &tc.Phase },
 	},
 	{
 		prefix: tagSequencePrefix, field: "sequence", shape: tagSequenceRe,
-		want:        "SQ-<1-4 digits>",
+		want:        "1 to 4 digits",
+		guarded:     true,
 		stripPrefix: true, split: splitAtDash,
 		target: func(tc *TagComponents) *string { return &tc.Sequence },
 	},

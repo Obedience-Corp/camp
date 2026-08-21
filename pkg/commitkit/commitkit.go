@@ -83,10 +83,25 @@ func FormatTag(tc TagComponents) string {
 	return git.FormatTag(tc)
 }
 
-// ValidateTagComponents reports what FormatTag would drop from tc: a missing
-// campaign id, a value failing its segment's shape check, or a phase or
-// sequence whose parent segment is absent. It returns nil when FormatTag
-// would emit tc in full, and a joined error naming every problem otherwise.
+// ValidateTagComponents reports where FormatTag's output would not faithfully
+// carry tc: a missing campaign id, a value failing its segment's shape check,
+// or a phase or sequence whose parent segment is missing or itself dropped.
+//
+// It returns nil when FormatTag's output reparses with zero warnings and
+// components equal to tc after the normalization the emitter applies: the
+// campaign id truncated to 8 characters, the campaign name slugified into the
+// head or dropped for the legacy marker, and the WI- / NT- prefixes added to
+// bare refs. Nil does not promise tc is emitted verbatim (a 16-character
+// campaign id validates clean and is still truncated), only that nothing is
+// lost that ParseTag cannot give back.
+//
+// A reported problem is one of two kinds, and the message says which:
+// FormatTag guards the phase and sequence, so a malformed one is dropped,
+// while a malformed quest id, festival ref, workitem ref, or note ref is
+// written into the tag as given and degrades only when it is parsed back.
+//
+// The result is a joined error whose message names every field. Enumerate the
+// individual problems by unwrapping it through interface{ Unwrap() []error }.
 //
 // It is advisory. FormatTag stays lenient, so a caller that does not mind
 // losing a segment can skip it; a caller that would rather fix its input than
