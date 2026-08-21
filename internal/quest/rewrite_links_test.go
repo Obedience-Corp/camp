@@ -3,6 +3,8 @@ package quest
 import (
 	"context"
 	"errors"
+	"os"
+	"path/filepath"
 	"testing"
 	"time"
 )
@@ -50,6 +52,55 @@ func TestRewriteCampaignRelPath(t *testing.T) {
 			path: "",
 			want: "",
 			ok:   false,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got, ok := rewriteCampaignRelPath(tt.path, moves)
+			if ok != tt.ok || got != tt.want {
+				t.Fatalf("rewriteCampaignRelPath(%q) = %q, %v; want %q, %v", tt.path, got, ok, tt.want, tt.ok)
+			}
+		})
+	}
+}
+
+func TestRewriteCampaignRelPath_NonCanonicalStoredPath(t *testing.T) {
+	t.Parallel()
+
+	moves := []relMove{
+		{src: "workflow/design/auth-flow", dst: "workflow/design/unified-auth/auth-flow"},
+	}
+
+	tests := []struct {
+		name string
+		path string
+		want string
+		ok   bool
+	}{
+		{
+			name: "leading dot-slash still matches",
+			path: "./workflow/design/auth-flow",
+			want: "workflow/design/unified-auth/auth-flow",
+			ok:   true,
+		},
+		{
+			name: "double slash still matches",
+			path: "workflow//design/auth-flow",
+			want: "workflow/design/unified-auth/auth-flow",
+			ok:   true,
+		},
+		{
+			name: "dot segment still matches",
+			path: "workflow/design/./auth-flow",
+			want: "workflow/design/unified-auth/auth-flow",
+			ok:   true,
+		},
+		{
+			name: "non-canonical nested file still matches",
+			path: "./workflow/design/auth-flow/README.md",
+			want: "workflow/design/unified-auth/auth-flow/README.md",
+			ok:   true,
 		},
 	}
 
@@ -151,6 +202,63 @@ func TestToCampaignRel_RejectsEscape(t *testing.T) {
 	_, err := toCampaignRel("/campaign", "/outside")
 	if err == nil {
 		t.Fatal("expected error for path outside campaign root")
+	}
+}
+
+// RewriteLinksForMoves must bump UpdatedAt on save, the same way every other
+// quest mutation does (AddLink's caller, Edit, Rename, ...). A tool that
+// keys off UpdatedAt to detect changed quests would otherwise miss a link
+// rewrite entirely, since Save itself never touches the timestamp.
+func TestRewriteLinksForMoves_BumpsUpdatedAt(t *testing.T) {
+	ctx, root, svc := setupQuestCampaign(t)
+
+	srcDir := filepath.Join(root, "workflow", "design", "auth-flow")
+	if err := os.MkdirAll(srcDir, 0o755); err != nil {
+		t.Fatalf("mkdir link target: %v", err)
+	}
+
+	created, err := svc.Create(ctx, "test quest", "", "", nil)
+	if err != nil {
+		t.Fatalf("Create() error = %v", err)
+	}
+	q := created.Quest
+
+	if _, err := svc.Link(ctx, q.ID, "workflow/design/auth-flow", ""); err != nil {
+		t.Fatalf("Link() error = %v", err)
+	}
+
+	before, err := Load(ctx, q.Path)
+	if err != nil {
+		t.Fatalf("Load() before rewrite error = %v", err)
+	}
+
+	// yaml timestamps round-trip at second precision, so back-date the
+	// pre-rewrite record instead of sleeping to guarantee a distinguishable
+	// UpdatedAt after the rewrite.
+	before.UpdatedAt = before.UpdatedAt.Add(-time.Hour)
+	if err := Save(ctx, before.Path, before); err != nil {
+		t.Fatalf("Save() backdating error = %v", err)
+	}
+
+	modified, err := RewriteLinksForMoves(ctx, root, []PathMove{
+		{Src: "workflow/design/auth-flow", Dst: "festivals/ready/auth-flow"},
+	})
+	if err != nil {
+		t.Fatalf("RewriteLinksForMoves() error = %v", err)
+	}
+	if len(modified) != 1 {
+		t.Fatalf("modified = %v, want exactly one rewritten quest", modified)
+	}
+
+	after, err := Load(ctx, q.Path)
+	if err != nil {
+		t.Fatalf("Load() after rewrite error = %v", err)
+	}
+	if len(after.Links) != 1 || after.Links[0].Path != "festivals/ready/auth-flow" {
+		t.Fatalf("links after rewrite = %+v, want festivals/ready/auth-flow", after.Links)
+	}
+	if !after.UpdatedAt.After(before.UpdatedAt) {
+		t.Fatalf("UpdatedAt not bumped by rewrite: before=%v after=%v", before.UpdatedAt, after.UpdatedAt)
 	}
 }
 

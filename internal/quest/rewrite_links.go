@@ -58,6 +58,7 @@ func RewriteLinksForMoves(ctx context.Context, campaignRoot string, moves []Path
 		if !rewriteQuestLinkPaths(q, relMoves) {
 			continue
 		}
+		q.UpdatedAt = nowUTC()
 		if err := Save(ctx, q.Path, q); err != nil {
 			return nil, camperrors.Wrapf(err, "saving rewritten quest links in %s", q.Path)
 		}
@@ -96,7 +97,7 @@ func toCampaignRel(campaignRoot, path string) (string, error) {
 	}
 	cleaned := filepath.Clean(path)
 	if !filepath.IsAbs(cleaned) {
-		return strings.TrimSuffix(filepath.ToSlash(cleaned), "/"), nil
+		return cleanCampaignRelPath(path), nil
 	}
 	if campaignRoot == "" {
 		return "", camperrors.Wrap(camperrors.ErrInvalidInput, "campaign root is required to rewrite quest links")
@@ -113,6 +114,29 @@ func toCampaignRel(campaignRoot, path string) (string, error) {
 		return "", camperrors.Wrapf(camperrors.ErrInvalidInput, "move path escapes campaign root: %s", path)
 	}
 	return strings.TrimSuffix(rel, "/"), nil
+}
+
+// cleanCampaignRelPath cleans and slash-normalizes a campaign-relative path
+// candidate: it collapses "./" prefixes, "//" runs, and trailing slashes to
+// the same canonical form filepath.Clean produces, then converts to forward
+// slashes for storage. Move src/dst (via toCampaignRel) and stored
+// Link.Path values both run through this before comparison, because
+// AddLink stores whatever path a caller passes (e.g. "./workflow/design/foo"
+// from shell tab-completion) without normalizing it first, and a raw
+// TrimSuffix-only comparison would silently leave that link stale.
+//
+// The empty string means "no path", matching toCampaignRel's contract that
+// a Clean result of "." (the campaign root itself) is not a real relative
+// path either.
+func cleanCampaignRelPath(path string) string {
+	if path == "" {
+		return ""
+	}
+	cleaned := filepath.ToSlash(filepath.Clean(path))
+	if cleaned == "." {
+		return ""
+	}
+	return cleaned
 }
 
 func rewriteQuestLinkPaths(q *Quest, moves []relMove) bool {
@@ -134,7 +158,7 @@ func rewriteQuestLinkPaths(q *Quest, moves []relMove) bool {
 // rewriteCampaignRelPath maps a campaign-relative slash path through moves in
 // order so chained relocations resolve to the final destination.
 func rewriteCampaignRelPath(path string, moves []relMove) (string, bool) {
-	current := strings.TrimSuffix(filepath.ToSlash(path), "/")
+	current := cleanCampaignRelPath(path)
 	if current == "" {
 		return path, false
 	}
