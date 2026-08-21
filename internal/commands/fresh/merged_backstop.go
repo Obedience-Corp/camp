@@ -56,9 +56,17 @@ func resolveBackstopMode(configured string, dryRun bool) string {
 	return configured
 }
 
-func handleMergedBackstop(ctx context.Context, out io.Writer, root, projectPath string, deletedBranches []string, beforeSHA, mode string) {
+func handleMergedBackstop(ctx context.Context, out io.Writer, root, projectPath string, deletedBranches []string, beforeSHA, mode string, branchPaths map[string]string, branchPathsErr error) {
 	if mode == "off" || root == "" || len(deletedBranches) == 0 {
 		return
+	}
+	// branchPathsErr means the pre-prune git worktree list could not be
+	// captured (cancelled ctx, or `git worktree list` failed). Say so rather
+	// than silently falling back to directory-basename guessing, which is the
+	// exact bug (feat/fix/chore prefixes never matching) this backstop exists
+	// to stop. Matching still proceeds via the commit-tag signal.
+	if branchPathsErr != nil {
+		_, _ = fmt.Fprintf(out, "%s merged-branch backstop: worktree branch map unavailable (%v); matching via commit-tag only\n", ui.WarningIcon(), branchPathsErr)
 	}
 	// Load the campaign config once, keyed by the threaded root, so a non-root
 	// cwd with a threaded campRoot cannot resolve a different campaign than the
@@ -68,7 +76,7 @@ func handleMergedBackstop(ctx context.Context, out io.Writer, root, projectPath 
 		_, _ = fmt.Fprintf(out, "%s merged-branch backstop skipped: %v\n", ui.WarningIcon(), err)
 		return
 	}
-	matches, err := MapMergedBranchesToWorkitems(ctx, cfg, root, projectPath, deletedBranches, beforeSHA)
+	matches, err := MapMergedBranchesToWorkitems(ctx, cfg, root, projectPath, deletedBranches, beforeSHA, branchPaths, branchPathsErr != nil)
 	if err != nil {
 		_, _ = fmt.Fprintf(out, "%s merged-branch backstop skipped: %v\n", ui.WarningIcon(), err)
 		return
@@ -226,9 +234,9 @@ func backstopWorkitemContext(wi wkitem.WorkItem) string {
 // Tier-2 evidence signals. A merged branch is inference-tier evidence: it
 // prompts or reports, never auto-promotes (FESTIVAL_RULES rule 2).
 const (
-	// SignalWorktreeLink means a pruned branch's name matched a worktree-scope
-	// link's directory basename (high confidence: the branch and its worktree
-	// dir share a name by construction at `camp workitem worktree` time).
+	// SignalWorktreeLink means a pruned branch matched a worktree-scope link
+	// via the worktree's recorded git branch (captured before prune), or via
+	// directory basename when git has no live worktree for that branch.
 	SignalWorktreeLink = "worktree_link"
 	// SignalCommitTag means a WI- tag was found on a commit newly reachable
 	// from the default branch since this fresh cycle's pull (the fallback for
@@ -255,14 +263,17 @@ type MergedBackstopMatch struct {
 
 // MapMergedBranchesToWorkitems maps the branches camp fresh's prune step just
 // deleted for one project back to still-active workitems. Two signals, in
-// order of confidence: worktree-scope links (branch name == worktree dir
-// basename), then WI- commit tags on commits newly reachable from the default
+// order of confidence: worktree-scope links (pruned branch → git worktree
+// path captured in branchPaths before prune, then the workitem linked at that
+// path), then WI- commit tags on commits newly reachable from the default
 // branch since beforeSHA (captured before the pull, since the pruned branch ref
 // is gone by the time prune returns). Festivals and intents are excluded per
 // doc 03's scope boundary. Pure of prompt/UI concerns; git calls are I/O so it
 // takes ctx. Returns no error on "no matches": absence of evidence is not an
-// error.
-func MapMergedBranchesToWorkitems(ctx context.Context, cfg *config.CampaignConfig, root, projectPath string, prunedBranches []string, beforeSHA string) ([]MergedBackstopMatch, error) {
+// error. listFailed disables the worktree-link signal's basename fallback
+// (see matchWorktreeLinkBranch); branches that would have gone through it
+// still get a chance via the commit-tag signal.
+func MapMergedBranchesToWorkitems(ctx context.Context, cfg *config.CampaignConfig, root, projectPath string, prunedBranches []string, beforeSHA string, branchPaths map[string]string, listFailed bool) ([]MergedBackstopMatch, error) {
 	if len(prunedBranches) == 0 {
 		return nil, nil
 	}
@@ -280,7 +291,7 @@ func MapMergedBranchesToWorkitems(ctx context.Context, cfg *config.CampaignConfi
 	projectScope := projectRelPath(root, projectPath)
 
 	// Signal 1: worktree-scope links, deduped by workitem key.
-	matches, unmatchedBranches, matchedKeys := collectWorktreeLinkMatches(registry.Links, active, prunedBranches)
+	matches, unmatchedBranches, matchedKeys := collectWorktreeLinkMatches(registry.Links, active, prunedBranches, branchPaths, listFailed)
 
 	// Signal 2: WI- commit tags on commits newly reachable from the default
 	// branch, only when some pruned branch had no worktree link. beforeSHA is
@@ -295,40 +306,17 @@ func MapMergedBranchesToWorkitems(ctx context.Context, cfg *config.CampaignConfi
 				continue
 			}
 			if refMatchesActiveItem(refs, wi) {
-				matches = append(matches, MergedBackstopMatch{Workitem: wi, Signal: SignalCommitTag, ScopePath: projectScope})
+				matches = append(matches, MergedBackstopMatch{
+					Workitem:  wi,
+					Signal:    SignalCommitTag,
+					ScopePath: commitTagScopePath(wi, registry.Links, projectScope, unmatchedBranches, branchPaths),
+				})
 				matchedKeys[wi.Key] = true
 			}
 		}
 	}
 
 	return matches, nil
-}
-
-// collectWorktreeLinkMatches maps pruned branches to active workitems via
-// worktree-link basenames, at most once per key. Unmatched branches fall through
-// to the commit-tag signal. Pure.
-func collectWorktreeLinkMatches(all []links.Link, active []wkitem.WorkItem, prunedBranches []string) (matches []MergedBackstopMatch, unmatched []string, matchedKeys map[string]bool) {
-	matchedKeys = map[string]bool{}
-	for _, branch := range prunedBranches {
-		wi, scopePath, ok := matchWorktreeLinkBranch(all, active, branch)
-		if !ok {
-			unmatched = append(unmatched, branch)
-			continue
-		}
-		if matchedKeys[wi.Key] {
-			// Another worktree of the same item merged. Not unmatched: that would
-			// wrongly open the commit-tag path.
-			continue
-		}
-		matches = append(matches, MergedBackstopMatch{
-			Workitem:  wi,
-			Branch:    branch,
-			Signal:    SignalWorktreeLink,
-			ScopePath: scopePath,
-		})
-		matchedKeys[wi.Key] = true
-	}
-	return matches, unmatched, matchedKeys
 }
 
 // activeBackstopItems returns the discovered items eligible for tier-2 matching:
@@ -343,25 +331,6 @@ func activeBackstopItems(items []wkitem.WorkItem) []wkitem.WorkItem {
 		out = append(out, item)
 	}
 	return out
-}
-
-// matchWorktreeLinkBranch finds the active workitem whose worktree-scope link's
-// directory basename equals branch. Only ScopeWorktree links carry a
-// branch<->workitem correlation (via the shared name at creation); repo/project
-// scope links carry none, so they are ignored here.
-func matchWorktreeLinkBranch(all []links.Link, active []wkitem.WorkItem, branch string) (wkitem.WorkItem, string, bool) {
-	for _, link := range all {
-		if link.Scope.Kind != links.ScopeWorktree {
-			continue
-		}
-		if filepath.Base(filepath.FromSlash(link.Scope.Path)) != branch {
-			continue
-		}
-		if wi, ok := resolveLinkedActiveItem(link, active); ok {
-			return wi, link.Scope.Path, true
-		}
-	}
-	return wkitem.WorkItem{}, "", false
 }
 
 // projectRelPath returns projectPath relative to the campaign root, slash-form.

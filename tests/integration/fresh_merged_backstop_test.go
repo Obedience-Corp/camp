@@ -171,3 +171,40 @@ func TestIntegration_FreshMergedBackstop_NoMatchIsSilent(t *testing.T) {
 	require.NoError(t, err, "fresh: %s", output)
 	assert.NotContains(t, output, "had a merged branch", "a branch matching no workitem must not be reported:\n%s", output)
 }
+
+// TestIntegration_FreshMergedBackstop_PrefixedBranchWorktreeReported is the
+// regression for camp#589: signal 1 used to compare the pruned branch to the
+// worktree directory basename, so feat/fix/chore prefixes never matched.
+func TestIntegration_FreshMergedBackstop_PrefixedBranchWorktreeReported(t *testing.T) {
+	skipIfShort(t)
+	tc := GetSharedContainer(t)
+	campaignPath, projectDir, _ := setupFreshCampaignWithSubmodule(t, tc, "backstop-prefixed")
+
+	createBackstopWorkitem(t, tc, campaignPath, "ledger-emission")
+	wtRel := "projects/worktrees/test-project/campaign-ledger-emission"
+	wtAbs := campaignPath + "/" + wtRel
+	tc.Shell(t, fmt.Sprintf(`
+set -e
+mkdir -p %[1]s/projects/worktrees/test-project
+git -C %[2]s worktree add -b feat/campaign-ledger-emission %[3]s
+printf 'work\n' > %[3]s/work.txt
+git -C %[3]s add .
+git -C %[3]s commit -m 'work on feat/campaign-ledger-emission'
+git -C %[2]s merge --no-ff -m 'merge feat/campaign-ledger-emission' feat/campaign-ledger-emission
+git -C %[2]s push origin main
+`, campaignPath, projectDir, wtAbs))
+
+	out, err := tc.RunCampInDir(campaignPath, "workitem", "link", "design-ledger-emission", "--worktree", wtRel)
+	require.NoError(t, err, "link: %s", out)
+	require.NoError(t, tc.WriteFile(campaignPath+"/.campaign/settings/fresh.yaml", "merged_workitems: \"report\"\n"))
+	_, _, err = tc.ExecCommand("sh", "-c", "cd "+campaignPath+" && git add -A && git commit -q -m 'link prefixed worktree'")
+	require.NoError(t, err)
+
+	output, err := tc.RunCampInDir(campaignPath, "fresh", "test-project", "--no-push")
+	require.NoError(t, err, "fresh: %s", output)
+
+	assert.Contains(t, output, "had a merged branch and is still active",
+		"prefixed branch must match the live worktree via git, not basename:\n%s", output)
+	assert.Contains(t, output, "camp workitem promote design-ledger-emission --target completed",
+		"report should print the exact promote command:\n%s", output)
+}
