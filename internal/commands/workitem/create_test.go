@@ -16,6 +16,16 @@ import (
 	wkitem "github.com/Obedience-Corp/camp/internal/workitem"
 )
 
+func TestJSONStringSliceNilBecomesEmpty(t *testing.T) {
+	got := jsonStringSlice(nil)
+	if got == nil {
+		t.Fatal("nil input must encode as empty slice, not null")
+	}
+	if len(got) != 0 {
+		t.Fatalf("got %#v", got)
+	}
+}
+
 func TestRecommendsWorkflowScaffold(t *testing.T) {
 	cases := []struct {
 		typeFlag string

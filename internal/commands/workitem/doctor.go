@@ -66,6 +66,11 @@ type docFinding struct {
 	// stay out of the --json contract.
 	migrateToID  string
 	migrateToKey string
+	// renameFrom/renameTo rewrite a stale projects: entry when git recorded
+	// the project directory rename. Unexported; --json still uses the public
+	// auto_fixable / fix_hint fields.
+	renameFrom string
+	renameTo   string
 }
 
 // errDoctorIssues triggers a non-zero exit from cobra after we have already
@@ -86,8 +91,9 @@ func newDoctorCommand() *cobra.Command {
 
 The command reads .campaign/workitems/links.yaml, scans .workitem metadata on
 disk, and checks current-workitem and priority stores for stale or inconsistent
-references. Use --fix to apply auto-repairs for supported findings. Use --json
-for machine-readable findings and stable finding codes.`,
+references. Use --fix to apply auto-repairs for supported findings, including
+rewriting projects: entries whose path git recorded as a project rename. Use
+--json for machine-readable findings and stable finding codes.`,
 		Args: jsoncontract.Args(WorkitemDoctorJSONVersion, func() bool { return jsonOut }, cobra.NoArgs),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			return runDoctor(cmd.Context(), cmd, jsonOut, fix)
@@ -379,6 +385,8 @@ func collectWorkitemFindings(ctx context.Context, root string, registry *links.L
 		}
 	}
 
+	var renames map[string]string
+	renamesLoaded := false
 	for _, item := range items {
 		for _, projectPath := range item.Projects {
 			_, statErr := os.Stat(filepath.Join(root, filepath.FromSlash(projectPath)))
@@ -386,14 +394,26 @@ func collectWorkitemFindings(ctx context.Context, root string, registry *links.L
 			case statErr == nil:
 				continue
 			case errors.Is(statErr, fs.ErrNotExist):
-				findings = append(findings, docFinding{
+				finding := docFinding{
 					Code:        codeProjectNotFound,
 					Severity:    docSeverityWarning,
 					Target:      "workitem:" + item.RelativePath,
 					Message:     "projects entry " + projectPath + " does not exist",
 					FixHint:     "verify the project was renamed/removed intentionally; doctor --fix does not auto-remove this entry",
 					AutoFixable: false,
-				})
+				}
+				if !renamesLoaded {
+					renames = loadProjectRenameMap(ctx, root)
+					renamesLoaded = true
+				}
+				if toRoot, ok := renames[projectRootPath(projectPath)]; ok && toRoot != "" {
+					to := mappedProjectPath(projectPath, toRoot)
+					finding.AutoFixable = true
+					finding.FixHint = "run `camp workitem doctor --fix` to rewrite " + projectPath + " -> " + to
+					finding.renameFrom = projectPath
+					finding.renameTo = to
+				}
+				findings = append(findings, finding)
 			default:
 				findings = append(findings, docFinding{
 					Code:        codeProjectUnvalidatable,
@@ -440,6 +460,18 @@ func autoFixWorkitemFindings(ctx context.Context, root string, registry *links.L
 			}
 		case codeMissingRefField:
 			needsRefBackfill = true
+		case codeProjectNotFound:
+			rel := strings.TrimPrefix(f.Target, "workitem:")
+			if f.renameFrom == "" || f.renameTo == "" || rel == "" {
+				continue
+			}
+			if err := rewriteWorkitemProjectPath(ctx, root, rel, f.renameFrom, f.renameTo); err != nil {
+				if _, writeErr := fmt.Fprintf(errw, "warning: cannot rewrite project path on %s: %v\n", rel, err); writeErr != nil {
+					return applied, writeErr
+				}
+				continue
+			}
+			applied++
 		case codeDeprecatedRelatedProject:
 			linkID := strings.TrimPrefix(f.Target, "link:")
 			link, ok := registry.FindByID(linkID)

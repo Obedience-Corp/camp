@@ -37,6 +37,8 @@ type CreatedWorkitem struct {
 	QuestID      string
 	RelativePath string
 	AbsPath      string
+	Tags         []string
+	Projects     []string
 }
 
 // CreateWorkitemDir creates a directory workitem and its `.workitem` marker.
@@ -148,5 +150,7 @@ func CreateWorkitemDir(
 		QuestID:      req.QuestID,
 		RelativePath: filepath.ToSlash(filepath.Join(parent, req.Slug)),
 		AbsPath:      target,
+		Tags:         normalizedTags,
+		Projects:     normalizedProjects,
 	}, nil
 }

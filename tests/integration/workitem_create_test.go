@@ -201,13 +201,15 @@ func TestIntegration_WorkitemCreateJSON(t *testing.T) {
 		SchemaVersion string    `json:"schema_version"`
 		GeneratedAt   time.Time `json:"generated_at"`
 		Workitem      struct {
-			ID            string `json:"id"`
-			Ref           string `json:"ref"`
-			Type          string `json:"type"`
-			Title         string `json:"title"`
-			QuestID       string `json:"quest_id"`
-			RelativePath  string `json:"relative_path"`
-			MarkerVersion string `json:"marker_version"`
+			ID            string   `json:"id"`
+			Ref           string   `json:"ref"`
+			Type          string   `json:"type"`
+			Title         string   `json:"title"`
+			QuestID       string   `json:"quest_id"`
+			RelativePath  string   `json:"relative_path"`
+			MarkerVersion string   `json:"marker_version"`
+			Tags          []string `json:"tags"`
+			Projects      []string `json:"projects"`
 		} `json:"workitem"`
 		Next struct {
 			Command string `json:"command"`
@@ -225,6 +227,10 @@ func TestIntegration_WorkitemCreateJSON(t *testing.T) {
 	assert.Empty(t, payload.Workitem.QuestID)
 	assert.Equal(t, "workflow/feature/agent-json", payload.Workitem.RelativePath)
 	assert.Equal(t, "v1alpha8", payload.Workitem.MarkerVersion)
+	require.NotNil(t, payload.Workitem.Tags, "tags must serialize as [], never null")
+	require.NotNil(t, payload.Workitem.Projects, "projects must serialize as [], never null")
+	assert.Empty(t, payload.Workitem.Tags)
+	assert.Empty(t, payload.Workitem.Projects)
 	// feature/bug/chore: no agent-executable scaffold command
 	assert.Empty(t, payload.Next.Command,
 		"non-explore/design types must not ship unconditional fest create workflow")

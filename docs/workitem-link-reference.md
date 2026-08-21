@@ -208,8 +208,13 @@ Doctor checks for:
 - Links whose `scope.path` no longer exists on disk (orphaned scope).
 - Duplicate primary links for the same scope.
 - Schema violations in `links.yaml`.
+- Workitem `projects:` entries whose path does not exist. This is a warning.
+  When git recorded a `projects/<name>` directory rename, the finding is
+  `auto_fixable` and `--fix` rewrites the stale path.
 
-`--fix` auto-removes findings tagged `auto_fixable`. This includes broken links. The fix is applied in one pass before re-checking.
+`--fix` auto-repairs findings tagged `auto_fixable`. This includes broken
+links and rename-mapped `projects:` entries. The fix is applied in one pass
+before re-checking.
 
 `--json` emits structured finding output.
 

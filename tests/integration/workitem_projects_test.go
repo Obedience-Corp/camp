@@ -62,6 +62,32 @@ func TestIntegration_WorkitemProjects(t *testing.T) {
 		require.NoError(t, execErr, "directory-absence check should execute")
 		require.NotEqual(t, 0, exitCode, "no directory should be created when validation fails")
 	})
+
+	t.Run("CreateRejectsBareNameWithoutProjectsPrefix", func(t *testing.T) {
+		out, err := tc.RunCampInDir(campaignDir, "workitem", "create", "bare-proj",
+			"--type", "feature", "--title", "Bare", "--project", "camp")
+		require.Error(t, err, "create --project camp must fail: %s", out)
+		assert.Contains(t, out, "projects/")
+		_, exitCode, execErr := tc.ExecCommand("test", "-d", campaignDir+"/workflow/feature/bare-proj")
+		require.NoError(t, execErr)
+		require.NotEqual(t, 0, exitCode, "no directory should be created when prefix validation fails")
+	})
+
+	t.Run("CreateRejectsWorktreePath", func(t *testing.T) {
+		out, err := tc.RunCampInDir(campaignDir, "workitem", "create", "wt-proj",
+			"--type", "feature", "--title", "WT", "--project", "projects/worktrees/camp/feat")
+		require.Error(t, err, "create --project worktree path must fail: %s", out)
+		assert.Contains(t, out, "worktrees")
+	})
+
+	t.Run("AdoptRejectsBareNameWithoutProjectsPrefix", func(t *testing.T) {
+		_, _, err := tc.ExecCommand("mkdir", "-p", campaignDir+"/scratch/adopt-me")
+		require.NoError(t, err)
+		out, err := tc.RunCampInDir(campaignDir, "workitem", "adopt", "scratch/adopt-me",
+			"--type", "feature", "--title", "Adopt", "--project", "camp")
+		require.Error(t, err, "adopt --project camp must fail: %s", out)
+		assert.Contains(t, out, "projects/")
+	})
 }
 
 func TestIntegration_WorkitemProjectsDoctorWarning(t *testing.T) {

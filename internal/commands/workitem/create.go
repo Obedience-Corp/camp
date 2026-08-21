@@ -186,13 +186,15 @@ func runCreateFile(ctx context.Context, cmd *cobra.Command, filePath, typeFlag, 
 			SchemaVersion string    `json:"schema_version"`
 			GeneratedAt   time.Time `json:"generated_at"`
 			Workitem      struct {
-				ID            string `json:"id"`
-				Ref           string `json:"ref"`
-				Type          string `json:"type"`
-				Title         string `json:"title,omitempty"`
-				RelativePath  string `json:"relative_path"`
-				ItemKind      string `json:"item_kind"`
-				MarkerVersion string `json:"marker_version"`
+				ID            string   `json:"id"`
+				Ref           string   `json:"ref"`
+				Type          string   `json:"type"`
+				Title         string   `json:"title,omitempty"`
+				RelativePath  string   `json:"relative_path"`
+				ItemKind      string   `json:"item_kind"`
+				MarkerVersion string   `json:"marker_version"`
+				Tags          []string `json:"tags"`
+				Projects      []string `json:"projects"`
 			} `json:"workitem"`
 		}{SchemaVersion: WorkitemCreateJSONVersion, GeneratedAt: time.Now().UTC()}
 		payload.Workitem.ID = id
@@ -202,6 +204,8 @@ func runCreateFile(ctx context.Context, cmd *cobra.Command, filePath, typeFlag, 
 		payload.Workitem.RelativePath = rel
 		payload.Workitem.ItemKind = "file"
 		payload.Workitem.MarkerVersion = wkitem.WorkitemSchemaVersion
+		payload.Workitem.Tags = jsonStringSlice(normalizedTags)
+		payload.Workitem.Projects = jsonStringSlice(normalizedProjects)
 		enc := json.NewEncoder(cmd.OutOrStdout())
 		enc.SetIndent("", "  ")
 		return enc.Encode(payload)
@@ -252,13 +256,15 @@ func runCreate(ctx context.Context, cmd *cobra.Command, slug, typeFlag, title, i
 			SchemaVersion string    `json:"schema_version"`
 			GeneratedAt   time.Time `json:"generated_at"`
 			Workitem      struct {
-				ID            string `json:"id"`
-				Ref           string `json:"ref"`
-				Type          string `json:"type"`
-				Title         string `json:"title,omitempty"`
-				QuestID       string `json:"quest_id,omitempty"`
-				RelativePath  string `json:"relative_path"`
-				MarkerVersion string `json:"marker_version"`
+				ID            string   `json:"id"`
+				Ref           string   `json:"ref"`
+				Type          string   `json:"type"`
+				Title         string   `json:"title,omitempty"`
+				QuestID       string   `json:"quest_id,omitempty"`
+				RelativePath  string   `json:"relative_path"`
+				MarkerVersion string   `json:"marker_version"`
+				Tags          []string `json:"tags"`
+				Projects      []string `json:"projects"`
 			} `json:"workitem"`
 			Next struct {
 				Command string `json:"command,omitempty"`
@@ -273,6 +279,8 @@ func runCreate(ctx context.Context, cmd *cobra.Command, slug, typeFlag, title, i
 		payload.Workitem.QuestID = questID
 		payload.Workitem.RelativePath = rel
 		payload.Workitem.MarkerVersion = wkitem.WorkitemSchemaVersion
+		payload.Workitem.Tags = jsonStringSlice(created.Tags)
+		payload.Workitem.Projects = jsonStringSlice(created.Projects)
 		payload.Next.Command = nextCommand
 		payload.Next.Cwd = rel
 		payload.Next.Hint = nextHint
@@ -288,6 +296,13 @@ func runCreate(ctx context.Context, cmd *cobra.Command, slug, typeFlag, title, i
 		"created workitem tracking at %s\n  id: %s\n  ref: %s\n  type: %s\n%s  note: directory + .workitem only — not a design/explore/festival scaffold\n%s",
 		rel, id, ref, typeFlag, questLine, humanNextLine)
 	return nil
+}
+
+func jsonStringSlice(s []string) []string {
+	if s == nil {
+		return []string{}
+	}
+	return s
 }
 
 // recommendsWorkflowScaffold reports whether fest create workflow is the

@@ -20,7 +20,8 @@ func TestIntegration_WorkitemCreate_JSON(t *testing.T) {
 
 	out, err := tc.RunCampInDir(dir,
 		"workitem", "create", "agent-test",
-		"--type", "feature", "--title", "Agent Test", "--json")
+		"--type", "feature", "--title", "Agent Test",
+		"--tag", "schema", "--project", "projects/camp", "--json")
 	require.NoError(t, err, "workitem create --json: %s", out)
 
 	start := strings.Index(out, "{")
@@ -30,13 +31,15 @@ func TestIntegration_WorkitemCreate_JSON(t *testing.T) {
 	var got struct {
 		SchemaVersion string `json:"schema_version"`
 		Workitem      struct {
-			ID            string `json:"id"`
-			Ref           string `json:"ref"`
-			Type          string `json:"type"`
-			Title         string `json:"title"`
-			QuestID       string `json:"quest_id"`
-			RelativePath  string `json:"relative_path"`
-			MarkerVersion string `json:"marker_version"`
+			ID            string   `json:"id"`
+			Ref           string   `json:"ref"`
+			Type          string   `json:"type"`
+			Title         string   `json:"title"`
+			QuestID       string   `json:"quest_id"`
+			RelativePath  string   `json:"relative_path"`
+			MarkerVersion string   `json:"marker_version"`
+			Tags          []string `json:"tags"`
+			Projects      []string `json:"projects"`
 		} `json:"workitem"`
 	}
 	require.NoError(t, json.Unmarshal([]byte(payload), &got), "parse: %s", payload)
@@ -48,6 +51,8 @@ func TestIntegration_WorkitemCreate_JSON(t *testing.T) {
 	assert.Equal(t, "Agent Test", got.Workitem.Title)
 	assert.Equal(t, "workflow/feature/agent-test", got.Workitem.RelativePath)
 	assert.NotEmpty(t, got.Workitem.MarkerVersion, "marker_version missing: %s", payload)
+	assert.Equal(t, []string{"schema"}, got.Workitem.Tags)
+	assert.Equal(t, []string{"projects/camp"}, got.Workitem.Projects)
 
 	for _, key := range topLevelKeys(t, payload) {
 		assert.False(t, isPascalCase(key),
