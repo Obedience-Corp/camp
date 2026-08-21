@@ -337,8 +337,9 @@ func executeFresh(ctx context.Context, name, path string, opts freshOptions) err
 		// instead of guessing the branch from the worktree directory name.
 		campRoot := backstopRoot(ctx, opts)
 		var branchPaths map[string]string
+		var branchPathsErr error
 		if campRoot != "" {
-			branchPaths = listWorktreeBranchPaths(ctx, campRoot, path)
+			branchPaths, branchPathsErr = listWorktreeBranchPaths(ctx, campRoot, path)
 		}
 		pruneOpts := prune.Options{
 			DryRun:        opts.dryRun,
@@ -404,7 +405,7 @@ func executeFresh(ctx context.Context, name, path string, opts freshOptions) err
 		// tier-1 sweep) so it never reaches the prompt/promote path, matching
 		// the tier-1 dry-run contract.
 		handleMergedBackstop(ctx, os.Stdout, campRoot, path,
-			deletedNames, beforeSHA, resolveBackstopMode(opts.mergedWorkitems, opts.dryRun), branchPaths)
+			deletedNames, beforeSHA, resolveBackstopMode(opts.mergedWorkitems, opts.dryRun), branchPaths, branchPathsErr)
 	}
 
 	// Step 4: Create branch (optional)

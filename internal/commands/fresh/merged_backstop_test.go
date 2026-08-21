@@ -131,19 +131,42 @@ func TestMatchWorktreeLinkBranch(t *testing.T) {
 		{WorkitemID: "design-foo-01", Scope: links.LinkScope{Kind: links.ScopeRepo, Path: "projects/other/foo"}},
 	}
 
-	wi, _, ok := matchWorktreeLinkBranch(linkList, active, "foo", nil)
+	wi, _, ok := matchWorktreeLinkBranch(linkList, active, "foo", nil, false)
 	if !ok || wi.Key != "design:workflow/design/foo" {
 		t.Fatalf("expected worktree-link match for branch foo, got ok=%v wi=%+v", ok, wi)
 	}
 
-	if _, _, ok := matchWorktreeLinkBranch(linkList, active, "unrelated", nil); ok {
+	if _, _, ok := matchWorktreeLinkBranch(linkList, active, "unrelated", nil, false); ok {
 		t.Errorf("expected no match for a branch with no worktree link")
 	}
 
 	// Repo-scope only (no worktree link) must not match by basename.
 	repoOnly := []links.Link{{WorkitemID: "design-foo-01", Scope: links.LinkScope{Kind: links.ScopeRepo, Path: "projects/other/foo"}}}
-	if _, _, ok := matchWorktreeLinkBranch(repoOnly, active, "foo", nil); ok {
+	if _, _, ok := matchWorktreeLinkBranch(repoOnly, active, "foo", nil, false); ok {
 		t.Errorf("repo-scope link must not match a branch by basename")
+	}
+}
+
+// TestMatchWorktreeLinkBranch_ListFailedNeverBasenameGuesses is the CHANGES_REQUESTED
+// fix for PR #639: when the pre-prune git worktree list could not be captured
+// (listFailed=true), the basename fallback must not run even for a branch whose
+// name equals the worktree directory's basename. Falling back there would
+// silently reintroduce Bug A on any List() error or cancelled ctx, with no
+// signal to the caller.
+func TestMatchWorktreeLinkBranch_ListFailedNeverBasenameGuesses(t *testing.T) {
+	active := []wkitem.WorkItem{
+		{Key: "design:workflow/design/foo", StableID: "design-foo-01", RelativePath: "workflow/design/foo"},
+	}
+	linkList := []links.Link{
+		{WorkitemID: "design-foo-01", Scope: links.LinkScope{Kind: links.ScopeWorktree, Path: "projects/worktrees/camp/foo"}},
+	}
+
+	if _, _, ok := matchWorktreeLinkBranch(linkList, active, "foo", nil, true); ok {
+		t.Fatal("listFailed=true must not fall back to basename matching, even for an exact-name match")
+	}
+	// Sanity: the same inputs DO match when the list succeeded (listFailed=false).
+	if _, _, ok := matchWorktreeLinkBranch(linkList, active, "foo", nil, false); !ok {
+		t.Fatal("precondition: basename fallback must still work when listFailed=false")
 	}
 }
 
@@ -183,7 +206,7 @@ func TestCollectWorktreeLinkMatches_DedupesSameWorkitem(t *testing.T) {
 		"unrelated-merged-branch",
 	}
 
-	matches, unmatched, matchedKeys := collectWorktreeLinkMatches(linkList, active, pruned, nil)
+	matches, unmatched, matchedKeys := collectWorktreeLinkMatches(linkList, active, pruned, nil, false)
 
 	if len(matches) != 2 {
 		t.Fatalf("expected 2 unique workitem matches, got %d: %+v", len(matches), matches)

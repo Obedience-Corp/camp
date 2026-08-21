@@ -45,7 +45,7 @@ func TestMatchWorktreeLinkBranch_PrefixedBranchUsesGitMap(t *testing.T) {
 		"feat/campaign-ledger-emission": "projects/worktrees/camp/campaign-ledger-emission",
 	}
 
-	wi, scope, ok := matchWorktreeLinkBranch(linkList, active, "feat/campaign-ledger-emission", branchPaths)
+	wi, scope, ok := matchWorktreeLinkBranch(linkList, active, "feat/campaign-ledger-emission", branchPaths, false)
 	if !ok {
 		t.Fatal("prefixed branch must match via git worktree path, not directory basename")
 	}
@@ -65,7 +65,7 @@ func TestMatchWorktreeLinkBranch_PrefixedBranchMissesWithoutMap(t *testing.T) {
 		{WorkitemID: "design-ledger-01", Scope: links.LinkScope{Kind: links.ScopeWorktree, Path: "projects/worktrees/camp/campaign-ledger-emission"}},
 	}
 
-	if _, _, ok := matchWorktreeLinkBranch(linkList, active, "feat/campaign-ledger-emission", nil); ok {
+	if _, _, ok := matchWorktreeLinkBranch(linkList, active, "feat/campaign-ledger-emission", nil, false); ok {
 		t.Fatal("must not match feat/branch to a different directory basename (no prefix-strip heuristic)")
 	}
 }
@@ -80,7 +80,7 @@ func TestMatchWorktreeLinkBranch_GitPathWithNoLinkDoesNotBasenameGuess(t *testin
 	branchPaths := map[string]string{
 		"foo": "projects/worktrees/camp/other-dir",
 	}
-	if _, _, ok := matchWorktreeLinkBranch(linkList, active, "foo", branchPaths); ok {
+	if _, _, ok := matchWorktreeLinkBranch(linkList, active, "foo", branchPaths, false); ok {
 		t.Fatal("when git recorded a path, do not fall back to a different basename")
 	}
 }
@@ -97,7 +97,7 @@ func TestCollectWorktreeLinkMatches_PrefixedAndOriginDeduped(t *testing.T) {
 	}
 	pruned := []string{"origin/feat/ledger", "feat/ledger"}
 
-	matches, unmatched, _ := collectWorktreeLinkMatches(linkList, active, pruned, branchPaths)
+	matches, unmatched, _ := collectWorktreeLinkMatches(linkList, active, pruned, branchPaths, false)
 	if len(matches) != 1 {
 		t.Fatalf("expected 1 match after origin/ local dedupe, got %d: %+v", len(matches), matches)
 	}

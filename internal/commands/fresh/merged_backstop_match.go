@@ -5,6 +5,7 @@ import (
 	"path/filepath"
 	"strings"
 
+	camperrors "github.com/Obedience-Corp/camp/internal/errors"
 	wkitem "github.com/Obedience-Corp/camp/internal/workitem"
 	"github.com/Obedience-Corp/camp/internal/workitem/links"
 	"github.com/Obedience-Corp/camp/internal/worktree"
@@ -14,13 +15,22 @@ import (
 // branch → campaign-relative path. Capture this BEFORE prune: after prune the
 // branch is gone and the worktree is often detached or removed, so git can no
 // longer answer "which worktree held this branch."
-func listWorktreeBranchPaths(ctx context.Context, root, projectPath string) map[string]string {
-	if ctx.Err() != nil || projectPath == "" {
-		return nil
+//
+// A non-nil error means the map could not be captured (ctx already cancelled,
+// or `git worktree list` failed): callers must NOT treat that the same as "git
+// has no live worktree for this branch" and fall back to basename guessing.
+// That fallback is exactly Bug A (feat/fix/chore prefixes never matching); an
+// unrequested map must not silently reopen it.
+func listWorktreeBranchPaths(ctx context.Context, root, projectPath string) (map[string]string, error) {
+	if projectPath == "" {
+		return nil, nil
+	}
+	if err := ctx.Err(); err != nil {
+		return nil, err
 	}
 	entries, err := worktree.NewGitWorktree(projectPath).List(ctx)
 	if err != nil {
-		return nil
+		return nil, camperrors.Wrap(err, "list worktrees for merged-branch backstop")
 	}
 	out := make(map[string]string, len(entries))
 	for _, e := range entries {
@@ -29,7 +39,7 @@ func listWorktreeBranchPaths(ctx context.Context, root, projectPath string) map[
 		}
 		out[e.Branch] = worktreeScopePath(root, e.Path)
 	}
-	return out
+	return out, nil
 }
 
 // worktreeScopePath converts a git worktree absolute path to the slash-form
@@ -86,7 +96,10 @@ func sameScopePath(a, b string) bool {
 // pre-prune git worktree branch map (recorded fact), then directory basename
 // only when git has no live worktree for that branch. At most one match per
 // workitem key. Unmatched branches fall through to the commit-tag signal.
-func collectWorktreeLinkMatches(all []links.Link, active []wkitem.WorkItem, prunedBranches []string, branchPaths map[string]string) (matches []MergedBackstopMatch, unmatched []string, matchedKeys map[string]bool) {
+// listFailed reports that branchPaths could not be captured (see
+// listWorktreeBranchPaths); it disables the basename fallback entirely rather
+// than guessing from an incomplete/absent map.
+func collectWorktreeLinkMatches(all []links.Link, active []wkitem.WorkItem, prunedBranches []string, branchPaths map[string]string, listFailed bool) (matches []MergedBackstopMatch, unmatched []string, matchedKeys map[string]bool) {
 	matchedKeys = map[string]bool{}
 	seenBranch := map[string]bool{}
 	for _, raw := range prunedBranches {
@@ -95,7 +108,7 @@ func collectWorktreeLinkMatches(all []links.Link, active []wkitem.WorkItem, prun
 			continue
 		}
 		seenBranch[branch] = true
-		wi, scopePath, ok := matchWorktreeLinkBranch(all, active, branch, branchPaths)
+		wi, scopePath, ok := matchWorktreeLinkBranch(all, active, branch, branchPaths, listFailed)
 		if !ok {
 			unmatched = append(unmatched, branch)
 			continue
@@ -120,8 +133,13 @@ func collectWorktreeLinkMatches(all []links.Link, active []wkitem.WorkItem, prun
 // Primary: the pre-prune git worktree list maps branch → path, then a
 // worktree-scope link at that path. Fallback: directory basename equals the
 // full branch name (covers leftover links after the worktree is already gone;
-// does not strip feat/fix/chore prefixes).
-func matchWorktreeLinkBranch(all []links.Link, active []wkitem.WorkItem, branch string, branchPaths map[string]string) (wkitem.WorkItem, string, bool) {
+// does not strip feat/fix/chore prefixes). The fallback only runs when the map
+// was successfully captured (listFailed is false); when git worktree list
+// itself could not be read, basename guessing would silently reintroduce Bug A
+// (prefixed branches never matching) with no signal to the caller, so unmapped
+// branches are left unmatched and fall through to the commit-tag signal
+// instead.
+func matchWorktreeLinkBranch(all []links.Link, active []wkitem.WorkItem, branch string, branchPaths map[string]string, listFailed bool) (wkitem.WorkItem, string, bool) {
 	if path, ok := lookupBranchPath(branchPaths, branch); ok {
 		if wi, scope, found := matchWorktreeLinkPath(all, active, path); found {
 			return wi, scope, true
@@ -131,6 +149,9 @@ func matchWorktreeLinkBranch(all []links.Link, active []wkitem.WorkItem, branch 
 		// Git recorded a path for this branch that no workitem owns. Do not
 		// guess from the directory name; that is the bug this matcher exists
 		// to stop.
+		return wkitem.WorkItem{}, "", false
+	}
+	if listFailed {
 		return wkitem.WorkItem{}, "", false
 	}
 	for _, link := range all {
