@@ -104,9 +104,9 @@ windows:
     #!/usr/bin/env bash
     set -euo pipefail
     if [ -n "{{build_tags}}" ]; then
-        GOOS=windows GOARCH=amd64 go build -tags '{{build_tags}}' -ldflags '-s -w' -o {{bin_dir}}/{{binary_name}}-windows-amd64.exe ./cmd/camp
+        GOOS=windows GOARCH=amd64 go build -tags '{{build_tags}}' -ldflags '{{platform_ldflags}}' -o {{bin_dir}}/{{binary_name}}-windows-amd64.exe ./cmd/camp
     else
-        GOOS=windows GOARCH=amd64 go build -ldflags '-s -w' -o {{bin_dir}}/{{binary_name}}-windows-amd64.exe ./cmd/camp
+        GOOS=windows GOARCH=amd64 go build -ldflags '{{platform_ldflags}}' -o {{bin_dir}}/{{binary_name}}-windows-amd64.exe ./cmd/camp
     fi
 
 # Build for all platforms

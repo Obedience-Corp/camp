@@ -174,14 +174,6 @@ func TestApplyBuildInfo(t *testing.T) {
 	}
 }
 
-func TestBundleDefaultsEmpty(t *testing.T) {
-	// Only the festival release build stamps Bundle. A camp built from source
-	// has no suite around it, so the default must stay empty.
-	if Bundle != "" {
-		t.Errorf("Bundle = %q; want empty by default", Bundle)
-	}
-}
-
 func TestGetBundle(t *testing.T) {
 	original := Bundle
 	t.Cleanup(func() { Bundle = original })

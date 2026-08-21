@@ -108,8 +108,8 @@ func hopSkewWarning(id string) string {
 	// Says only that they differ. The skew check does not order versions, and
 	// the remote is as likely to be ahead as behind, so naming a direction
 	// would be wrong half the time. Reuse the diagnose display helpers so
-	// matching versions with different commits (e.g. two "dev" builds) still
-	// disambiguate with the commit short hash.
+	// matching versions with different commits (two builds of one tag, or a
+	// matching VERSION override) still disambiguate with the commit short hash.
 	remoteDisp := campVersionDisplay(machineDiagnoseRow{CampVersion: entry.Version, CampCommit: entry.Commit})
 	return "camp on " + id + " is " + remoteDisp + ", this machine is " + campLocalVersionDisplay() +
 		"; features may not match (run 'camp machine diagnose " + id + "' to re-check)"

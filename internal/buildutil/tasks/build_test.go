@@ -1,6 +1,11 @@
 package tasks
 
-import "testing"
+import (
+	"context"
+	"os"
+	"strings"
+	"testing"
+)
 
 func TestVersionFrom(t *testing.T) {
 	tests := []struct {
@@ -25,5 +30,40 @@ func TestVersionFrom(t *testing.T) {
 				t.Fatalf("versionFrom(%q, %q) = %q; want %q", tt.env, tt.describe, got, tt.want)
 			}
 		})
+	}
+}
+
+// A cancelled context stands in for the wedged-git case the timeout exists to
+// bound: the probe cannot answer, and the caller must fall back rather than
+// stamp a partial version.
+func TestGitProbesOnDeadContext(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+
+	if got := gitDescribe(ctx); got != "" {
+		t.Errorf("gitDescribe(cancelled) = %q; want empty", got)
+	}
+	if got := gitCommit(ctx); got != "unknown" {
+		t.Errorf("gitCommit(cancelled) = %q; want %q", got, "unknown")
+	}
+	if got := versionFrom(os.Getenv("NO_SUCH_VERSION_VAR"), gitDescribe(ctx)); got != "dev" {
+		t.Errorf("versionFrom with a dead probe = %q; want %q", got, "dev")
+	}
+}
+
+func TestBuildLDFlagsOnDeadContext(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+
+	t.Setenv("VERSION", "")
+
+	got := buildLDFlags(ctx)
+	for _, want := range []string{
+		"-X " + versionPkg + ".Version=dev",
+		"-X " + versionPkg + ".Commit=unknown",
+	} {
+		if !strings.Contains(got, want) {
+			t.Errorf("buildLDFlags(cancelled) = %q; want it to contain %q", got, want)
+		}
 	}
 }

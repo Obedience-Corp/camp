@@ -2,6 +2,7 @@
 package tasks
 
 import (
+	"context"
 	"fmt"
 	"os"
 	"os/exec"
@@ -14,6 +15,11 @@ import (
 )
 
 const versionPkg = "github.com/Obedience-Corp/camp/internal/version"
+
+// gitProbeTimeout bounds the version probes as a whole. A wedged git (a stale
+// index.lock, an unreachable filesystem) must cost the build a few seconds and
+// an unstamped version, never an indefinite hang.
+const gitProbeTimeout = 10 * time.Second
 
 // versionFrom picks the version to stamp: an explicit VERSION wins, then the
 // git description, then a placeholder for a checkout without git.
@@ -29,24 +35,35 @@ func versionFrom(env, describe string) string {
 
 // gitDescribe returns the git-derived version: the exact tag when HEAD is
 // tagged, otherwise tag-distance-hash, with a -dirty suffix for uncommitted
-// changes. Empty when git cannot answer.
-func gitDescribe() string {
-	out, err := exec.Command("git", "describe", "--tags", "--always", "--dirty").Output()
+// changes. Empty when git cannot answer, including a cancelled context.
+func gitDescribe(ctx context.Context) string {
+	out, err := exec.CommandContext(ctx, "git", "describe", "--tags", "--always", "--dirty").Output()
 	if err != nil {
 		return ""
 	}
 	return strings.TrimSpace(string(out))
 }
 
-// buildLDFlags returns the -ldflags string that injects version metadata.
-func buildLDFlags() string {
-	version := versionFrom(os.Getenv("VERSION"), gitDescribe())
-
-	commit := "unknown"
-	if out, err := exec.Command("git", "rev-parse", "--short", "HEAD").Output(); err == nil {
-		commit = strings.TrimSpace(string(out))
+// gitCommit returns the short hash of HEAD, or "unknown" when git cannot
+// answer, including a cancelled context.
+func gitCommit(ctx context.Context) string {
+	out, err := exec.CommandContext(ctx, "git", "rev-parse", "--short", "HEAD").Output()
+	if err != nil {
+		return "unknown"
 	}
+	if commit := strings.TrimSpace(string(out)); commit != "" {
+		return commit
+	}
+	return "unknown"
+}
 
+// buildLDFlags returns the -ldflags string that injects version metadata.
+func buildLDFlags(ctx context.Context) string {
+	ctx, cancel := context.WithTimeout(ctx, gitProbeTimeout)
+	defer cancel()
+
+	version := versionFrom(os.Getenv("VERSION"), gitDescribe(ctx))
+	commit := gitCommit(ctx)
 	buildDate := time.Now().UTC().Format("2006-01-02T15:04:05Z")
 
 	return fmt.Sprintf("-X %s.Version=%s -X %s.Commit=%s -X %s.BuildDate=%s",
@@ -96,7 +113,7 @@ func goListArgs(args ...string) []string {
 }
 
 // Build runs go vet and go build on all packages
-func Build(verbose bool) error {
+func Build(ctx context.Context, verbose bool) error {
 	ui.Section("Building Camp CLI")
 
 	packages, err := discoverPackages()
@@ -160,7 +177,7 @@ func Build(verbose bool) error {
 	// Create bin directory
 	os.MkdirAll("bin", 0o755)
 
-	cmd := exec.Command("go", goBuildArgs("-ldflags", buildLDFlags(), "-o", "bin/camp", "./cmd/camp")...)
+	cmd := exec.Command("go", goBuildArgs("-ldflags", buildLDFlags(ctx), "-o", "bin/camp", "./cmd/camp")...)
 	if verbose {
 		cmd.Stdout = os.Stdout
 		cmd.Stderr = os.Stderr
@@ -310,7 +327,7 @@ func getModuleName() string {
 }
 
 // BuildOnly builds the main camp binary without running go vet (fast user installation)
-func BuildOnly(verbose bool) error {
+func BuildOnly(ctx context.Context, verbose bool) error {
 	ui.Section("Building Camp CLI")
 
 	// Create bin directory
@@ -321,7 +338,7 @@ func BuildOnly(verbose bool) error {
 	ui.Task("Building", "camp binary")
 
 	// Build main binary only
-	cmd := exec.Command("go", goBuildArgs("-ldflags", buildLDFlags(), "-o", "bin/camp", "./cmd/camp")...)
+	cmd := exec.Command("go", goBuildArgs("-ldflags", buildLDFlags(ctx), "-o", "bin/camp", "./cmd/camp")...)
 	if verbose {
 		cmd.Stdout = os.Stdout
 		cmd.Stderr = os.Stderr
