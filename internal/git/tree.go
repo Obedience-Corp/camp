@@ -3,7 +3,9 @@ package git
 import (
 	"bytes"
 	"context"
+	"errors"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"strings"
 
@@ -169,6 +171,160 @@ func FirstParentChainContains(ctx context.Context, repoPath, tree, parent string
 		}
 	}
 	return false
+}
+
+// TreeChangesContained reports whether every path changed from base to wanted
+// has exactly the wanted content and mode in current.
+//
+// A deferred commit leaves its captured tree staged until the worker lands it.
+// Another commit can therefore sweep that exact content into history while a
+// slow message writer is still running. That fulfills the queue's promise even
+// though no commit has the queued tree and parent pair. Comparing whole trees
+// would miss that case whenever the later commit also carried unrelated work;
+// this projection compares only the paths the queued snapshot changed.
+//
+// Rename detection is disabled so a rename contributes both its deleted and
+// added path. Literal pathspecs preserve unusual filenames, including names
+// that begin with ':' and would otherwise be interpreted as pathspec magic.
+func TreeChangesContained(ctx context.Context, repoPath, base, wanted, current string) (bool, error) {
+	paths, err := treeChangePaths(ctx, repoPath, base, wanted)
+	if err != nil {
+		return false, err
+	}
+	return diffQuietAtPaths(ctx, repoPath, []string{"diff", "--quiet", wanted, current, "--"}, paths)
+}
+
+func treeChangePaths(ctx context.Context, repoPath, base, wanted string) ([]string, error) {
+	cmd := gitCmd(ctx, repoPath, "diff", "--no-renames", "--name-only", "-z", base, wanted)
+	var stderr bytes.Buffer
+	cmd.Stderr = &stderr
+	out, err := cmd.Output()
+	if err != nil {
+		return nil, camperrors.Wrapf(err, "list captured tree changes: %s", strings.TrimSpace(stderr.String()))
+	}
+
+	rawPaths := bytes.Split(out, []byte{0})
+	paths := make([]string, 0, len(rawPaths))
+	for _, path := range rawPaths {
+		if len(path) == 0 {
+			continue
+		}
+		paths = append(paths, string(path))
+	}
+	return paths, nil
+}
+
+func diffQuietAtPaths(ctx context.Context, repoPath string, prefix, paths []string) (bool, error) {
+	if len(paths) == 0 {
+		return true, nil
+	}
+	pathspecs := make([]string, 0, len(paths))
+	for _, path := range paths {
+		pathspecs = append(pathspecs, ":(literal)"+path)
+	}
+
+	// Stay comfortably below the smallest common exec argument limit while
+	// avoiding one git process per path for large campaign-root snapshots.
+	const maxPathspecBytes = 24 * 1024
+	for start := 0; start < len(pathspecs); {
+		end, size := start, 0
+		for end < len(pathspecs) {
+			next := len(pathspecs[end]) + 1
+			if end > start && size+next > maxPathspecBytes {
+				break
+			}
+			size += next
+			end++
+		}
+
+		args := append([]string(nil), prefix...)
+		args = append(args, pathspecs[start:end]...)
+		compare := gitCmd(ctx, repoPath, args...)
+		var compareErr bytes.Buffer
+		compare.Stderr = &compareErr
+		err := compare.Run()
+		if err == nil {
+			start = end
+			continue
+		}
+		var exitErr *exec.ExitError
+		if errors.As(err, &exitErr) && exitErr.ExitCode() == 1 {
+			return false, nil
+		}
+		return false, camperrors.Wrapf(err, "compare captured tree changes: %s",
+			strings.TrimSpace(compareErr.String()))
+	}
+	return true, nil
+}
+
+// FirstParentChainContainsOrSupersedesTreeChanges reports whether current or
+// one of its recent first-parent ancestors fulfilled base..wanted.
+//
+// Exact path-state equality is the strongest evidence. A later commit can also
+// supersede the snapshot by versioning every captured path at a newer state.
+// Camp accepts that only when none of those paths remains staged relative to
+// current: a scratch-index commit leaves the queued snapshot in the real index
+// and therefore cannot be mistaken for fulfillment.
+//
+// Looking through history matters on retry because a path may be versioned by
+// one commit and edited or deleted again by the next. Once the later state was
+// committed, the deferred job must not demand that an obsolete intermediate
+// tree be recreated.
+func FirstParentChainContainsOrSupersedesTreeChanges(
+	ctx context.Context, repoPath, base, wanted, current string,
+) (bool, error) {
+	capturedPaths, err := treeChangePaths(ctx, repoPath, base, wanted)
+	if err != nil {
+		return false, err
+	}
+	if len(capturedPaths) == 0 {
+		return true, nil
+	}
+	indexSettled, err := diffQuietAtPaths(ctx, repoPath,
+		[]string{"diff", "--cached", "--quiet", current, "--"}, capturedPaths)
+	if err != nil {
+		return false, err
+	}
+
+	out, err := Output(ctx, repoPath, "rev-list", "--first-parent", "--max-count=100", current)
+	if err != nil {
+		return false, camperrors.Wrap(err, "walk history for captured tree changes")
+	}
+	for _, commit := range strings.Fields(out) {
+		if commit == base {
+			return false, nil
+		}
+		contained, err := diffQuietAtPaths(ctx, repoPath,
+			[]string{"diff", "--quiet", wanted, commit, "--"}, capturedPaths)
+		if err != nil {
+			return false, err
+		}
+		if contained {
+			return true, nil
+		}
+		if !indexSettled {
+			continue
+		}
+		committedPaths, err := treeChangePaths(ctx, repoPath, base, commit)
+		if err != nil {
+			return false, err
+		}
+		covered := make(map[string]struct{}, len(committedPaths))
+		for _, path := range committedPaths {
+			covered[path] = struct{}{}
+		}
+		allCovered := true
+		for _, path := range capturedPaths {
+			if _, ok := covered[path]; !ok {
+				allCovered = false
+				break
+			}
+		}
+		if allCovered {
+			return true, nil
+		}
+	}
+	return false, nil
 }
 
 // HeadSHA returns the commit HEAD points at, or "" when HEAD is unborn or
