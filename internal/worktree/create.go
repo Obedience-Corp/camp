@@ -90,11 +90,13 @@ func (c *Creator) Create(ctx context.Context, opts *CreateOptions) (*CreateResul
 		if branchName == "" {
 			branchName = opts.Name
 		}
-		// Detect a leftover branch before git does, so callers can surface an
-		// actionable hint instead of a raw "fatal: a branch named ... already
-		// exists" from git worktree add.
-		if git.LocalBranchExists(ctx, branchName) {
-			return nil, BranchAlreadyExists(opts.Project, branchName)
+		// Detect leftover local branches and same-named origin branches
+		// before git does. git worktree add -b only refuses the local case;
+		// origin/<name> would silently fork from HEAD.
+		if err := newBranchConflict(opts.Project, branchName,
+			git.LocalBranchExists(ctx, branchName),
+			git.RemoteBranchExists(ctx, branchName)); err != nil {
+			return nil, err
 		}
 		if err := git.Add(ctx, wtPath, branchName, true, opts.StartPoint); err != nil {
 			return nil, err
@@ -118,6 +120,20 @@ func (c *Creator) Create(ctx context.Context, opts *CreateOptions) (*CreateResul
 		RelativePath: c.pathManager.RelativeWorktreePath(opts.Project, opts.Name),
 		Branch:       branch,
 	}, nil
+}
+
+// newBranchConflict returns an error when creating a new local branch named
+// branch would collide with an existing local branch or silently shadow
+// origin/branch. Local collisions win because git worktree add -b already
+// refuses them.
+func newBranchConflict(project, branch string, localExists, remoteExists bool) error {
+	if localExists {
+		return BranchAlreadyExists(project, branch)
+	}
+	if remoteExists {
+		return RemoteBranchExistsError(project, branch)
+	}
+	return nil
 }
 
 // resolveProject finds the project path from campaign config or filesystem.

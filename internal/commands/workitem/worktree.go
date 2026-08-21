@@ -196,6 +196,12 @@ func createWorktree(
 					"without deleting its branch); pass --name to pick a different name, or delete "+
 					"it with 'git branch -D %s'", name, name))
 		}
+		if errors.Is(err, intworktree.ErrRemoteBranchExists) {
+			return nil, camperrors.Wrap(err,
+				fmt.Sprintf("origin/%s exists; creating a new local %q from HEAD would silently diverge. "+
+					"Pass --name to pick a different name, or use 'camp project worktree add --track origin/%s'",
+					name, name, name))
+		}
 		return nil, err
 	}
 	return result, nil

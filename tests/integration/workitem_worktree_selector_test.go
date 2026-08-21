@@ -98,3 +98,57 @@ func TestIntegration_WorktreeAdd_LeftoverBranchHint(t *testing.T) {
 	require.NoError(t, err)
 	assert.True(t, exists, "recovered worktree should exist")
 }
+
+// origin/<name> with no local branch must not silently fork from HEAD. The
+// default new-branch path refuses and names --track/--branch; --track then
+// checks out the remote branch.
+func TestIntegration_WorktreeAdd_RemoteBranchHint(t *testing.T) {
+	tc := GetSharedContainer(t)
+	dir := "/test/worktree-add-remote-branch"
+	initCommitTagsCampaign(t, tc, dir)
+
+	_, err := tc.RunCampInDir(dir, "project", "new", "demo-app")
+	require.NoError(t, err, "camp project new")
+
+	proj := dir + "/projects/demo-app"
+	bare := dir + "-origin.git"
+	base := tc.GitOutput(t, proj, "rev-parse", "--abbrev-ref", "HEAD")
+	tc.Shell(t, `
+set -e
+git init --bare "`+bare+`"
+git -C "`+proj+`" remote add origin "`+bare+`"
+git -C "`+proj+`" checkout -b judge-command-tools
+printf 'pr work\n' > "`+proj+`/pr.txt"
+git -C "`+proj+`" add pr.txt
+git -C "`+proj+`" commit -m 'pr work'
+git -C "`+proj+`" push -u origin judge-command-tools
+git -C "`+proj+`" checkout "`+base+`"
+git -C "`+proj+`" branch -D judge-command-tools
+`)
+
+	out, err := tc.RunCampInDir(dir, "project", "worktree", "add", "judge-command-tools", "--project", "demo-app")
+	require.Error(t, err, "add over origin/<name> must error; output:\n%s", out)
+	assert.Contains(t, out, "origin/judge-command-tools", "error should name the remote branch: %s", out)
+	assert.Contains(t, out, "--track", "error should point at --track: %s", out)
+	assert.Contains(t, out, "--branch", "error should point at --branch: %s", out)
+
+	exists, err := tc.CheckDirExists(dir + "/projects/worktrees/demo-app/judge-command-tools")
+	require.NoError(t, err)
+	assert.False(t, exists, "a refused add must not leave a dangling worktree")
+
+	otherOut, err := tc.RunCampInDir(dir, "project", "worktree", "add", "other-name", "--project", "demo-app")
+	require.NoError(t, err, "a different name must still create: %s", otherOut)
+
+	recoverOut, err := tc.RunCampInDir(dir, "project", "worktree", "add", "judge-command-tools",
+		"--project", "demo-app", "--track", "origin/judge-command-tools")
+	require.NoError(t, err, "recovery via --track should succeed: %s", recoverOut)
+
+	wt := dir + "/projects/worktrees/demo-app/judge-command-tools"
+	exists, err = tc.CheckDirExists(wt)
+	require.NoError(t, err)
+	assert.True(t, exists, "tracked worktree should exist")
+
+	originSHA := tc.GitOutput(t, proj, "rev-parse", "origin/judge-command-tools")
+	headSHA := tc.GitOutput(t, wt, "rev-parse", "HEAD")
+	assert.Equal(t, originSHA, headSHA, "tracked worktree must land on origin/<name>, not HEAD")
+}

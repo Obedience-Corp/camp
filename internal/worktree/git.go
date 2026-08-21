@@ -224,7 +224,8 @@ func (g *GitWorktree) Prune(ctx context.Context, dryRun bool) ([]string, error) 
 // LocalBranchExists reports whether a local branch (refs/heads/<branch>)
 // exists. Unlike BranchExists it ignores remote-tracking refs, because
 // 'git worktree add -b <branch>' only conflicts with a local branch of the
-// same name; a matching origin/<branch> is created locally, not rejected.
+// same name. Creator.Create separately refuses origin/<branch> so the
+// default new-branch path cannot silently fork from HEAD.
 func (g *GitWorktree) LocalBranchExists(ctx context.Context, branch string) bool {
 	ctx, cancel := context.WithTimeout(ctx, g.timeout)
 	defer cancel()
@@ -235,24 +236,21 @@ func (g *GitWorktree) LocalBranchExists(ctx context.Context, branch string) bool
 	return cmd.Run() == nil
 }
 
-// BranchExists checks if a branch exists.
-func (g *GitWorktree) BranchExists(ctx context.Context, branch string) bool {
+// RemoteBranchExists reports whether origin/<branch> is present as a
+// remote-tracking ref (refs/remotes/origin/<branch>).
+func (g *GitWorktree) RemoteBranchExists(ctx context.Context, branch string) bool {
 	ctx, cancel := context.WithTimeout(ctx, g.timeout)
 	defer cancel()
 
-	// Check local branches
 	cmd := exec.CommandContext(ctx, "git", "show-ref", "--verify", "--quiet",
-		"refs/heads/"+branch)
-	cmd.Dir = g.projectPath
-	if cmd.Run() == nil {
-		return true
-	}
-
-	// Check remote branches
-	cmd = exec.CommandContext(ctx, "git", "show-ref", "--verify", "--quiet",
 		"refs/remotes/origin/"+branch)
 	cmd.Dir = g.projectPath
 	return cmd.Run() == nil
+}
+
+// BranchExists checks if a branch exists locally or as origin/<branch>.
+func (g *GitWorktree) BranchExists(ctx context.Context, branch string) bool {
+	return g.LocalBranchExists(ctx, branch) || g.RemoteBranchExists(ctx, branch)
 }
 
 // parseWorktreeList parses git worktree list --porcelain output.

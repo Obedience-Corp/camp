@@ -43,6 +43,10 @@ The worktree will be created at: projects/worktrees/<project>/<name>/
 By default, creates a new branch with the worktree name based on the current branch.
 Use --branch to checkout an existing branch instead.
 
+If origin/<name> exists and no local branch does, camp refuses rather than
+forking a divergent local branch from HEAD. Use --track origin/<name> (or
+--branch <name>) instead.
+
 Examples:
   # Create worktree with new branch based on current branch (default)
   camp project worktree add feature-auth
@@ -158,6 +162,12 @@ func runProjectWorktreeAdd(cmd *cobra.Command, args []string) error {
 					"without deleting its branch); reuse it with --branch %s, choose a "+
 					"different name, or delete it with 'git branch -D %s'",
 				opts.Branch, opts.Branch, opts.Branch))
+		}
+		if errors.Is(err, intworktree.ErrRemoteBranchExists) {
+			return camperrors.Wrap(err, fmt.Sprintf(
+				"origin/%s exists; creating a new local %q from HEAD would silently diverge. "+
+					"Track it with --track origin/%s, check it out with --branch %s, or choose a different name",
+				opts.Branch, opts.Branch, opts.Branch, opts.Branch))
 		}
 		return err
 	}
