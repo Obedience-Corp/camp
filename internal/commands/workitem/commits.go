@@ -449,6 +449,19 @@ func commitsWorkerCount(repoCount int) int {
 	return workers
 }
 
+// commitsLogArgs builds the `git log` argv for a workitem-ref grep scan. Its
+// traversal flags come from commitkit.GitLogTraversalArgs, the contract
+// shared with `camp audit backfill` (internal/audit/backfill.go's
+// commitLogGitArgs): --all (every ref) and merge commits included. Extracted
+// to a pure function, rather than inlined in the exec.CommandContext call, so
+// a unit test can assert the shared contract without shelling out to git.
+func commitsLogArgs(repo, grep string) []string {
+	args := []string{"-C", repo, "log"}
+	args = append(args, commitkit.GitLogTraversalArgs()...)
+	args = append(args, "--pretty=format:"+commitsLogFormat, "--grep="+grep)
+	return args
+}
+
 // queryRepo runs `git log` in repo, parses the tab-separated output, and
 // filters out commits whose parsed tag does not match ref exactly. Returns
 // nil records (not an error) when the directory is not a git repo so the
@@ -468,12 +481,7 @@ func queryRepo(ctx context.Context, campaignRoot, repo, ref string) ([]CommitRec
 	// separator and matches both the single-prefix (-WI-abc123) and the
 	// historical doubled (-WI-WI-abc123) subject forms.
 	grep := "-" + ref
-	cmd := exec.CommandContext(cctx, "git",
-		"-C", repo,
-		"log", "--all",
-		"--pretty=format:"+commitsLogFormat,
-		"--grep="+grep,
-	)
+	cmd := exec.CommandContext(cctx, "git", commitsLogArgs(repo, grep)...)
 	output, err := cmd.Output()
 	if errors.Is(cctx.Err(), context.DeadlineExceeded) {
 		return nil, camperrors.New(fmt.Sprintf("git log timeout after %s", commitsPerRepoTimeout))

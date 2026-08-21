@@ -82,11 +82,22 @@ type RepoTarget struct {
 	Path  string
 }
 
-// commitLogGitArgs is the git-log invocation used to derive commit facts.
-// It matches `camp workitem commits --source scan`: --all (every ref) and
-// merge commits included. Default-branch `git log --no-merges` was the
-// 13-vs-20 ledger/scan gap on backfilled campaigns (camp#615).
-var commitLogGitArgs = []string{"log", "--all", "--format=%H%x1f%an%x1f%aI%x1f%s"}
+// commitLogGitArgs is the git-log invocation used to derive commit facts. Its
+// traversal flags come from commitkit.GitLogTraversalArgs, the contract
+// shared with `camp workitem commits --source scan` (internal/commands/
+// workitem/commits.go's commitsLogArgs): --all (every ref) and merge commits
+// included. Default-branch `git log --no-merges` was the 13-vs-20 ledger/scan
+// gap on backfilled campaigns (camp#615); building both call sites on the
+// shared slice, instead of each hardcoding its own flags, is what stops that
+// gap from reopening silently.
+var commitLogGitArgs = buildCommitLogGitArgs()
+
+func buildCommitLogGitArgs() []string {
+	args := []string{"log"}
+	args = append(args, commitkit.GitLogTraversalArgs()...)
+	args = append(args, "--format=%H%x1f%an%x1f%aI%x1f%s")
+	return args
+}
 
 // deriveCommitFacts turns tagged/degraded commits into evidence_attached facts,
 // with scope from the tag. Untagged commits produce no fact (they are the

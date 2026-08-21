@@ -3,11 +3,43 @@ package workitem
 import (
 	"bytes"
 	"encoding/json"
+	"strings"
 	"testing"
 
 	wkitem "github.com/Obedience-Corp/camp/internal/workitem"
+	"github.com/Obedience-Corp/camp/pkg/commitkit"
 	"github.com/Obedience-Corp/camp/pkg/ledgerkit"
 )
+
+// TestCommitsLogArgsUsesSharedTraversalContract is the CHANGES_REQUESTED fix
+// for PR #635: `--source scan` (this file) and `camp audit backfill`
+// (internal/audit/backfill.go's commitLogGitArgs) used to build their `git
+// log` argv independently, so a future edit could drift one side back to
+// --no-merges (or drop --all) without the other noticing. Both now build on
+// commitkit.GitLogTraversalArgs; this asserts commitsLogArgs actually
+// contains that shared slice's flags, not merely flags that happen to match.
+func TestCommitsLogArgsUsesSharedTraversalContract(t *testing.T) {
+	args := commitsLogArgs("/some/repo", "-WI-abc123")
+
+	for _, want := range commitkit.GitLogTraversalArgs() {
+		found := false
+		for _, got := range args {
+			if got == want {
+				found = true
+				break
+			}
+		}
+		if !found {
+			t.Errorf("commitsLogArgs() = %v, missing shared traversal flag %q", args, want)
+		}
+	}
+	if strings.Contains(strings.Join(args, " "), "--no-merges") {
+		t.Errorf("commitsLogArgs() = %v, must not exclude merge commits (camp#615 gap)", args)
+	}
+	if args[0] != "-C" || args[1] != "/some/repo" || args[2] != "log" {
+		t.Errorf("commitsLogArgs() = %v, want [-C repo log ...]", args)
+	}
+}
 
 func TestCommitsWorkerCountCapsFanout(t *testing.T) {
 	for _, repoCount := range []int{0, 1, 2, 100} {

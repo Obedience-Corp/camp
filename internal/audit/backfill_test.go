@@ -5,6 +5,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/Obedience-Corp/camp/pkg/commitkit"
 	"github.com/Obedience-Corp/camp/pkg/ledgerkit"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -48,6 +49,21 @@ func TestCommitLogGitArgsMatchScanCoverage(t *testing.T) {
 	assert.NotContains(t, joined, "--no-merges",
 		"backfill must include merge commits; --no-merges was the 13-vs-20 gap")
 	assert.Equal(t, "log", commitLogGitArgs[0])
+}
+
+// TestCommitLogGitArgsUsesSharedTraversalContract is the CHANGES_REQUESTED fix
+// for PR #635: backfill and `camp workitem commits --source scan`
+// (internal/commands/workitem/commits.go's commitsLogArgs) used to build
+// independent `git log` argv, so one side could drift back to --no-merges
+// without the other noticing. Both now build on commitkit.GitLogTraversalArgs;
+// this asserts commitLogGitArgs actually contains every flag from that shared
+// slice, in order, right after "log": not merely flags that happen to match.
+func TestCommitLogGitArgsUsesSharedTraversalContract(t *testing.T) {
+	shared := commitkit.GitLogTraversalArgs()
+	require.GreaterOrEqual(t, len(commitLogGitArgs), 1+len(shared))
+	require.Equal(t, "log", commitLogGitArgs[0])
+	assert.Equal(t, shared, commitLogGitArgs[1:1+len(shared)],
+		"commitLogGitArgs traversal flags must equal commitkit.GitLogTraversalArgs(), the contract shared with --source scan")
 }
 
 func TestCommitFactFromLogLine(t *testing.T) {

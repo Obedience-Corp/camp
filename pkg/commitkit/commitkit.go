@@ -104,6 +104,19 @@ func ParseTagDetailed(subject string) (TagComponents, []TagParseWarning) {
 	return git.ParseTagDetailed(subject)
 }
 
+// GitLogTraversalArgs are the `git log` traversal flags every commit-tag
+// reader must share so they observe identical commit history: --all walks
+// every ref (not just the default branch), and merge commits are included by
+// omitting --no-merges. `camp audit backfill` (internal/audit) and
+// `camp workitem commits --source scan` (internal/commands/workitem) both
+// build their git-log invocation on top of this shared slice instead of
+// duplicating the flags, so neither can drift back to --no-merges or a
+// default-branch-only scan without breaking a test that reads this function.
+// Diverging here reintroduces the 13-vs-20 ledger/scan SHA gap from camp#615.
+func GitLogTraversalArgs() []string {
+	return []string{"--all"}
+}
+
 // DetectCampaign finds the campaign root by walking up from the current
 // working directory. Returns the campaign ID string from the campaign's
 // config, or an error if the working directory is not inside a campaign.
