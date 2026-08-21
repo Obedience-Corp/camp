@@ -36,6 +36,24 @@ func TestListOptions_FilterOptionsRejectsEmptyProject(t *testing.T) {
 	}
 }
 
+func TestListOptions_FilterOptionsRejectsNonProjectsPrefix(t *testing.T) {
+	for _, raw := range []string{".", "camp", "docs/foo", "projects"} {
+		opts := listOptions{projects: []string{raw}}
+		if _, err := opts.filterOptions(); err == nil {
+			t.Fatalf("expected error for --project %q (must be under projects/)", raw)
+		}
+	}
+}
+
+func TestListOptions_FilterOptionsRejectsWorktreePath(t *testing.T) {
+	for _, raw := range []string{"projects/worktrees/camp/feat", "projects/worktrees"} {
+		opts := listOptions{projects: []string{raw}}
+		if _, err := opts.filterOptions(); err == nil {
+			t.Fatalf("expected error for --project %q (must not be a worktree path)", raw)
+		}
+	}
+}
+
 func TestListOptions_FilterOptionsEmptyIsNoError(t *testing.T) {
 	fo, err := listOptions{}.filterOptions()
 	if err != nil {

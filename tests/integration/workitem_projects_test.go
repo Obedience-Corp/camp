@@ -88,6 +88,26 @@ func TestIntegration_WorkitemProjects(t *testing.T) {
 		require.Error(t, err, "adopt --project camp must fail: %s", out)
 		assert.Contains(t, out, "projects/")
 	})
+
+	t.Run("CreateRejectsNonProjectsPrefixAndCreatesNoDir", func(t *testing.T) {
+		cases := []struct {
+			slug string
+			path string
+		}{
+			{slug: "dot-item", path: "."},
+			{slug: "docs-item", path: "docs/foo"},
+		}
+		for _, tcCase := range cases {
+			out, err := tc.RunCampInDir(campaignDir, "workitem", "create", tcCase.slug,
+				"--type", "feature", "--title", "Prefix", "--project", tcCase.path)
+			require.Error(t, err, "create --project %q must fail: %s", tcCase.path, out)
+			assert.Contains(t, out, "under projects/", "error must name the projects/ prefix rule: %s", out)
+
+			_, exitCode, execErr := tc.ExecCommand("test", "-d", campaignDir+"/workflow/feature/"+tcCase.slug)
+			require.NoError(t, execErr, "directory-absence check should execute")
+			require.NotEqual(t, 0, exitCode, "no directory should be created when prefix validation fails for %q", tcCase.path)
+		}
+	})
 }
 
 func TestIntegration_WorkitemProjectsDoctorWarning(t *testing.T) {
