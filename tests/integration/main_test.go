@@ -270,6 +270,7 @@ func GetSharedContainer(t *testing.T) *TestContainer {
 	}
 
 	c := <-containerPool
+	t.Logf("shared container %s", c.ShortID())
 
 	if err := c.Reset(); err != nil {
 		// One retry absorbs a transient blip; a second failure means this
