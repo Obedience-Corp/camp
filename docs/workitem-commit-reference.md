@@ -237,9 +237,17 @@ Segment rules:
   emitted only alongside a festival ref, and `SQ-` only alongside a phase,
   because a phase or sequence number indexes into a festival and means
   nothing without one. A commit carrying neither is byte-identical to what
-  camp wrote before these segments existed. The parser accepts them in any
-  position among the other segments and reports a sequence found without a
-  phase as a degraded parse, keeping the value rather than zeroing it.
+  camp wrote before these segments existed.
+- The emitter shape-checks both against the same regexes the parser applies,
+  so a value that is not 1 to 4 digits (a whole directory name such as
+  `001_IMPLEMENT`, or anything containing a dash such as `1-2`) is dropped
+  rather than written into a tag the parser would reject or, worse, truncate
+  at the dash. A dropped phase takes its sequence with it.
+- The parser accepts both segments in any position among the others, and
+  reports every break in the chain as a degraded parse while keeping the
+  value rather than zeroing it: a phase with no festival ref, a sequence with
+  no phase, and a sequence with no festival ref. A `SQ-` carrying neither
+  parent therefore reports two warnings.
 - `<workitem-ref>` is the canonical `WI-<6 lowercase hex>` ref, embedded
   verbatim. It is self-identifying via its own `WI-` prefix, the same way quest
   ids lead with `qst_`. The parser also accepts the historical doubled
@@ -265,6 +273,47 @@ The composers are `FormatContextTagsFull` / `FormatContextTagsFullNamed` in
 `pkg/commitkit/`, wrapping `internal/git/campaign_tag.go`. Both route through
 `commitkit.FormatTag`, which takes a `TagComponents` directly and is the only
 composer able to emit the `PH-` and `SQ-` segments.
+
+`FormatTag` is lenient by contract: it never fails, and it neither rejects nor
+reports a component it cannot carry, which on its own leaves the caller no
+signal that anything went missing. `commitkit.ValidateTagComponents(tc) error`
+is that signal.
+
+It returns nil when `FormatTag`'s output reparses with zero warnings and gives
+back components equal to `tc` after the normalization the emitter applies: the
+campaign id truncated to 8 characters, the campaign name slugified into the
+head or dropped for the legacy marker, and the `WI-` / `NT-` prefixes added to
+bare refs. Nil is not a promise that `tc` is emitted verbatim. A 16-character
+campaign id validates clean and is still truncated.
+
+Otherwise it returns a joined error naming every problem: a missing campaign
+id (which suppresses the tag entirely) or one containing a dash (which the
+parser truncates), any value that fails its segment's shape check, and any
+phase or sequence whose parent segment is missing or itself dropped. A
+malformed phase takes its sequence with it, and both are named.
+
+A reported problem is one of two kinds, and the message says which, because
+`FormatTag` shape-guards only `PH-` and `SQ-`:
+
+- `dropped on emit` for a malformed phase or sequence, which never reaches the
+  tag.
+- `emitted verbatim but reparses degraded` for a malformed quest id, festival
+  ref, workitem ref, or note ref. Guarding those would change what existing
+  callers emit, so the value is written into the tag as given and goes wrong
+  only when the tag is parsed back.
+
+On the emit side the chain asks whether the parent segment survives, not
+whether it is well formed in every respect: a malformed festival ref is still
+written, so it still anchors a phase, and it is reported under `fest_ref`
+instead. A malformed phase is different, because it is guarded: it is dropped,
+so it anchors nothing and its sequence is reported as dropped with it.
+
+Each problem is a typed validation error carrying the field name inside camp.
+Callers outside camp get a plain error whose message names every field; to
+iterate them, unwrap the join through `interface{ Unwrap() []error }`.
+Validation is advisory: a caller that does not mind losing a segment can skip
+it, while one that would rather fix its input than write a tag missing its
+festival locator should call it first.
 
 ### ParseTag
 
@@ -352,5 +401,12 @@ Each `CommitRecord`:
 - `ref` values must match `WI-<6 lowercase hex>` and `quest_id` values must
   match the supported quest-id shape when `.workitem` metadata is loaded.
 - `ParseTagDetailed` returns warnings for duplicate, unknown, or malformed tag
-  segments, and for an `SQ-` segment with no `PH-` alongside it (that value is
-  kept, not zeroed). `ParseTag` returns the parsed components only.
+  segments, and for every break in the phase/sequence chain: a `PH-` with no
+  `FE-`, a `SQ-` with no `PH-`, and a `SQ-` with no `FE-`. Those values are
+  kept, not zeroed. `ParseTag` returns the parsed components only.
+- In the parser the chain check runs after the shape checks, so a parent that
+  failed its own shape has already been zeroed and reads as absent. A tag
+  carrying a malformed `FE-` and a valid `PH-` reports both the `fest_ref`
+  shape failure and `phase segment without festival`. The emit side differs,
+  because the unguarded segments are written even when malformed; see the
+  `ValidateTagComponents` notes above.

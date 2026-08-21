@@ -122,3 +122,71 @@ func TestCommitkit_FormatTag_ParseRoundTrip(t *testing.T) {
 		t.Fatalf("round trip of %q = %#v, want %#v", tag, got, want)
 	}
 }
+
+func TestCommitkit_ValidateTagComponents(t *testing.T) {
+	cases := []struct {
+		name    string
+		tc      commitkit.TagComponents
+		wantErr bool
+	}{
+		{
+			name:    "no campaign id",
+			tc:      commitkit.TagComponents{FestRef: "CC0008", Phase: "001"},
+			wantErr: true,
+		},
+		{
+			name:    "phase without festival would be dropped",
+			tc:      commitkit.TagComponents{CampaignID: "8deed8b4", Phase: "001"},
+			wantErr: true,
+		},
+		{
+			name:    "sequence without phase would be dropped",
+			tc:      commitkit.TagComponents{CampaignID: "8deed8b4", FestRef: "CC0008", Sequence: "02"},
+			wantErr: true,
+		},
+		{
+			name:    "phase carrying a directory suffix would be dropped",
+			tc:      commitkit.TagComponents{CampaignID: "8deed8b4", FestRef: "CC0008", Phase: "001_IMPLEMENT"},
+			wantErr: true,
+		},
+		{
+			name: "fully anchored components validate clean",
+			tc: commitkit.TagComponents{
+				CampaignName: "obey-campaign", CampaignID: "8deed8b4",
+				FestRef: "CC0008", Phase: "001", Sequence: "02",
+			},
+		},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			err := commitkit.ValidateTagComponents(tc.tc)
+			if tc.wantErr && err == nil {
+				t.Fatalf("ValidateTagComponents(%+v) = nil, want an error", tc.tc)
+			}
+			if !tc.wantErr && err != nil {
+				t.Fatalf("ValidateTagComponents(%+v) = %v, want nil", tc.tc, err)
+			}
+		})
+	}
+}
+
+func TestCommitkit_FormatTag_DropsWhatValidateRejects(t *testing.T) {
+	// The two halves of the documented contract: FormatTag stays lenient and
+	// drops the malformed phase, and ValidateTagComponents is the signal that
+	// it did.
+	tc := commitkit.TagComponents{
+		CampaignName: "obey-campaign", CampaignID: "8deed8b4",
+		FestRef: "CC0008", Phase: "001_IMPLEMENT", Sequence: "02",
+	}
+	if err := commitkit.ValidateTagComponents(tc); err == nil {
+		t.Fatal("ValidateTagComponents = nil, want an error naming the phase")
+	}
+	got := commitkit.FormatTag(tc)
+	want := "[obey-campaign:8deed8b4-FE-CC0008]"
+	if got != want {
+		t.Fatalf("FormatTag = %q, want %q", got, want)
+	}
+	if _, warnings := commitkit.ParseTagDetailed(got + " x"); len(warnings) != 0 {
+		t.Fatalf("emitted tag %q reparsed with warnings: %+v", got, warnings)
+	}
+}

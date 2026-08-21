@@ -14,6 +14,17 @@ const campaignTagMaxIDLen = 8
 // recognizes it so historical commits resolve.
 const legacyTagMarker = "OBEY-CAMPAIGN"
 
+// Segment markers. The emitter and the parse table (tagSegments) both read
+// them from here so the two sides cannot drift apart.
+const (
+	tagQuestPrefix    = "qst_"
+	tagFestPrefix     = "FE-"
+	tagPhasePrefix    = "PH-"
+	tagSequencePrefix = "SQ-"
+	tagWorkitemPrefix = "WI-"
+	tagNotePrefix     = "NT-"
+)
+
 // FormatTag is the canonical campaign tag emitter: every tag camp writes is
 // composed here. The leading token is the slugified campaign name plus the
 // short id ("[obey-campaign:8deed8b4]"), falling back to
@@ -23,15 +34,19 @@ const legacyTagMarker = "OBEY-CAMPAIGN"
 //
 // Phase is emitted only alongside a festival ref, and sequence only alongside
 // a phase, because a phase or sequence number indexes into a festival and
-// carries no meaning without it. Returns "" when CampaignID is empty.
+// carries no meaning without it. Both are also shape-checked against the same
+// regexes the parser applies, so FormatTag never emits a segment its own
+// parser would reject or silently truncate.
+//
+// It is lenient by design and never fails: a component that cannot be emitted
+// verbatim is dropped. Callers that need to know that happened should run
+// ValidateTagComponents first, which reports exactly what FormatTag would
+// drop. Returns "" when CampaignID is empty.
 func FormatTag(tc TagComponents) string {
 	if tc.CampaignID == "" {
 		return ""
 	}
-	shortID := tc.CampaignID
-	if len(shortID) > campaignTagMaxIDLen {
-		shortID = shortID[:campaignTagMaxIDLen]
-	}
+	shortID := shortCampaignID(tc.CampaignID)
 
 	// Only emit the name-style head when shortID has the hex shape the parser
 	// requires (isNameStyleHead); otherwise fall back to the legacy form so the
@@ -46,23 +61,35 @@ func FormatTag(tc TagComponents) string {
 		parts = append(parts, tc.QuestID)
 	}
 	if tc.FestRef != "" {
-		parts = append(parts, "FE-"+tc.FestRef)
-		if tc.Phase != "" {
-			parts = append(parts, "PH-"+tc.Phase)
-			if tc.Sequence != "" {
-				parts = append(parts, "SQ-"+tc.Sequence)
+		parts = append(parts, tagFestPrefix+tc.FestRef)
+		// The shape checks stand in for the "is it set" checks: neither regex
+		// matches the empty string, and a value that fails one would reparse
+		// as a shape failure (PH-001_IMPLEMENT) or, worse, truncate silently
+		// at its first dash (PH-1-2 parsing back as phase "1").
+		if tagPhaseRe.MatchString(tc.Phase) {
+			parts = append(parts, tagPhasePrefix+tc.Phase)
+			if tagSequenceRe.MatchString(tc.Sequence) {
+				parts = append(parts, tagSequencePrefix+tc.Sequence)
 			}
 		}
 	}
 	if tc.WorkitemRef != "" {
 		// The ref already carries WI-, so it is self-identifying and embedded
 		// verbatim (no extra marker).
-		parts = append(parts, ensureTagPrefix(tc.WorkitemRef, "WI-"))
+		parts = append(parts, ensureTagPrefix(tc.WorkitemRef, tagWorkitemPrefix))
 	}
 	if tc.NoteRef != "" {
-		parts = append(parts, ensureTagPrefix(tc.NoteRef, "NT-"))
+		parts = append(parts, ensureTagPrefix(tc.NoteRef, tagNotePrefix))
 	}
 	return "[" + strings.Join(parts, "-") + "]"
+}
+
+// shortCampaignID truncates a campaign id to the length a tag carries.
+func shortCampaignID(id string) string {
+	if len(id) > campaignTagMaxIDLen {
+		return id[:campaignTagMaxIDLen]
+	}
+	return id
 }
 
 func ensureTagPrefix(ref, prefix string) string {
@@ -175,56 +202,85 @@ type TagParseWarning struct {
 // front of the remainder, the shape its payload must satisfy, and which
 // TagComponents field it fills.
 type tagSegment struct {
-	prefix      string
-	field       string
-	shape       *regexp.Regexp
-	shapeReason string
+	prefix string
+	field  string
+	shape  *regexp.Regexp
+	// want describes the shape in the terms a reader sees, for both the parse
+	// warning and the ValidateTagComponents error.
+	want string
 	// stripPrefix drops the marker before the shape check, for segments whose
 	// stored value excludes it (FE-, PH-, SQ-). Quest, workitem, and note
 	// values keep their self-identifying prefix.
 	stripPrefix bool
-	split       func(string) (string, string)
-	target      func(*TagComponents) *string
+	// normalize marks the segments FormatTag will prefix for a caller that
+	// supplied a bare ref, so validation checks the value that would be
+	// emitted rather than the one that was passed.
+	normalize bool
+	// guarded marks the segments FormatTag shape-checks before emitting them
+	// (see the guards there). A bad value in a guarded segment is dropped; a
+	// bad value anywhere else is written into the tag as given and shows up
+	// only when the tag is parsed back.
+	guarded bool
+	split   func(string) (string, string)
+	target  func(*TagComponents) *string
+}
+
+// fate describes what FormatTag does with a value that fails this segment's
+// shape check.
+func (s tagSegment) fate() string {
+	if s.guarded {
+		return "dropped on emit"
+	}
+	return "emitted verbatim but reparses degraded"
+}
+
+// shapeReason is the parse warning text for a value that failed s.shape.
+func (s tagSegment) shapeReason() string {
+	return "shape check failed (want " + s.want + ")"
 }
 
 // tagSegments is scanned in order for a prefix match; the prefixes are
 // mutually exclusive, so position within the tag does not matter.
 var tagSegments = []tagSegment{
 	{
-		prefix: "qst_", field: "quest_id", shape: tagQuestIDRe,
-		shapeReason: "shape check failed (want qst_<id>)",
-		split:       splitAtDash,
-		target:      func(tc *TagComponents) *string { return &tc.QuestID },
+		prefix: tagQuestPrefix, field: "quest_id", shape: tagQuestIDRe,
+		want:   "qst_<id>",
+		split:  splitAtDash,
+		target: func(tc *TagComponents) *string { return &tc.QuestID },
 	},
 	{
-		prefix: "FE-", field: "fest_ref", shape: tagFestRefRe,
-		shapeReason: "shape check failed (want <PREFIX><4 digits>)",
+		prefix: tagFestPrefix, field: "fest_ref", shape: tagFestRefRe,
+		want:        "1 to 32 letters or digits",
 		stripPrefix: true, split: splitAtDash,
 		target: func(tc *TagComponents) *string { return &tc.FestRef },
 	},
 	{
-		prefix: "PH-", field: "phase", shape: tagPhaseRe,
-		shapeReason: "shape check failed (want PH-<1-4 digits>)",
+		prefix: tagPhasePrefix, field: "phase", shape: tagPhaseRe,
+		want:        "1 to 4 digits",
+		guarded:     true,
 		stripPrefix: true, split: splitAtDash,
 		target: func(tc *TagComponents) *string { return &tc.Phase },
 	},
 	{
-		prefix: "SQ-", field: "sequence", shape: tagSequenceRe,
-		shapeReason: "shape check failed (want SQ-<1-4 digits>)",
+		prefix: tagSequencePrefix, field: "sequence", shape: tagSequenceRe,
+		want:        "1 to 4 digits",
+		guarded:     true,
 		stripPrefix: true, split: splitAtDash,
 		target: func(tc *TagComponents) *string { return &tc.Sequence },
 	},
 	{
-		prefix: "WI-", field: "workitem_ref", shape: tagWorkitemRefRe,
-		shapeReason: "shape check failed (want WI-<6 hex>)",
-		split:       splitWorkitemSegment,
-		target:      func(tc *TagComponents) *string { return &tc.WorkitemRef },
+		prefix: tagWorkitemPrefix, field: "workitem_ref", shape: tagWorkitemRefRe,
+		want:      "WI-<6 hex>",
+		normalize: true,
+		split:     splitWorkitemSegment,
+		target:    func(tc *TagComponents) *string { return &tc.WorkitemRef },
 	},
 	{
-		prefix: "NT-", field: "note_ref", shape: tagNoteRefRe,
-		shapeReason: "shape check failed (want NT-<6 hex>)",
-		split:       splitTerminalSegment,
-		target:      func(tc *TagComponents) *string { return &tc.NoteRef },
+		prefix: tagNotePrefix, field: "note_ref", shape: tagNoteRefRe,
+		want:      "NT-<6 hex>",
+		normalize: true,
+		split:     splitTerminalSegment,
+		target:    func(tc *TagComponents) *string { return &tc.NoteRef },
 	},
 }
 
@@ -240,7 +296,7 @@ func (s tagSegment) parse(rest string, out *TagComponents) (string, *TagParseWar
 	dst := s.target(out)
 	switch {
 	case !s.shape.MatchString(seg):
-		return after, &TagParseWarning{Field: s.field, Value: seg, Reason: s.shapeReason}
+		return after, &TagParseWarning{Field: s.field, Value: seg, Reason: s.shapeReason()}
 	case *dst != "":
 		return after, &TagParseWarning{
 			Field: s.field, Value: seg,
@@ -305,15 +361,7 @@ func ParseTagDetailed(subject string) (TagComponents, []TagParseWarning) {
 		rest = after
 	}
 
-	// A sequence indexes into a phase, so one without the other is reported as
-	// degraded. The value is kept: it is still the best available locator.
-	if out.Sequence != "" && out.Phase == "" {
-		warnings = append(warnings, TagParseWarning{
-			Field: "sequence", Value: out.Sequence,
-			Reason: "sequence segment without phase",
-		})
-	}
-	return out, warnings
+	return out, append(warnings, tagDependencyWarnings(out)...)
 }
 
 // parseTagHead peels the leading bracket and its head token, returning
@@ -378,18 +426,18 @@ func splitTerminalSegment(s string) (string, string) {
 // the historical ref-detection step) so existing malformed-tag warnings are
 // unchanged.
 func splitWorkitemSegment(rest string) (seg, after string) {
-	doubled := strings.HasPrefix(rest, "WI-WI-")
-	prefixLen := len("WI-")
+	doubled := strings.HasPrefix(rest, tagWorkitemPrefix+tagWorkitemPrefix)
+	prefixLen := len(tagWorkitemPrefix)
 	if doubled {
-		prefixLen = len("WI-WI-")
+		prefixLen = 2 * len(tagWorkitemPrefix)
 	}
 	if len(rest) >= prefixLen+6 && isLowerHex(rest[prefixLen:prefixLen+6]) {
 		end := prefixLen + 6
-		return "WI-" + rest[prefixLen:end], strings.TrimPrefix(rest[end:], "-")
+		return tagWorkitemPrefix + rest[prefixLen:end], strings.TrimPrefix(rest[end:], "-")
 	}
 	seg = rest
 	if doubled {
-		seg = rest[len("WI-"):]
+		seg = rest[len(tagWorkitemPrefix):]
 	}
 	return seg, ""
 }
