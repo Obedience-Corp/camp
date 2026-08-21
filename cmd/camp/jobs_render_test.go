@@ -84,10 +84,11 @@ func TestRenderJobsHuman(t *testing.T) {
 				Job: failed, State: "failed", Lane: ".",
 			}},
 			wantContains: []string{
-				"gave up after 1 attempt",
+				"failed after 1 attempt",
 				"did not finish within 5m0s",
 				"camp jobs retry all",
 			},
+			wantOmits: []string{"gave up after", "of 3"},
 		},
 	}
 

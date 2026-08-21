@@ -381,17 +381,21 @@ func Describe(job Job) string {
 // AttemptNote renders a job's attempt count, or "" when there is nothing worth
 // saying.
 //
-// The two states need opposite tenses, and conflating them produces the
-// nonsense "attempt 4 of 3": a job parked in failed/ has already used all
-// MaxAttempts tries, so counting the next one describes a run that will never
-// happen. A pending job's count is forward-looking, a failed job's is final.
+// Pending jobs count forward against the crash-reclaim budget (MaxAttempts).
+// Failed jobs that spent that budget say they gave up. Execution failures park
+// after one run and must not borrow the crash copy: "gave up after 1 attempt"
+// next to a budget of 3 reads as two unused retries.
 func AttemptNote(attempts int, failed bool) string {
 	switch {
-	case failed:
+	case failed && attempts >= MaxAttempts:
 		if attempts <= 1 {
 			return "gave up after 1 attempt"
 		}
 		return fmt.Sprintf("gave up after %d attempts", attempts)
+	case failed && attempts == 1:
+		return "failed after 1 attempt"
+	case failed && attempts > 1:
+		return fmt.Sprintf("failed after %d attempts", attempts)
 	case attempts <= 0:
 		return ""
 	default:

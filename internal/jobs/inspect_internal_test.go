@@ -223,8 +223,10 @@ func TestAttemptNote(t *testing.T) {
 	}{
 		{"a fresh pending job says nothing", 0, false, ""},
 		{"a retried pending job counts forward", 1, false, "attempt 2 of 3"},
-		{"a failed job counts what it used", 3, true, "gave up after 3 attempts"},
-		{"one attempt agrees in number", 1, true, "gave up after 1 attempt"},
+		{"crash-budget exhaustion says it gave up", 3, true, "gave up after 3 attempts"},
+		{"an execution failure does not claim unused retries", 1, true, "failed after 1 attempt"},
+		{"reclaimed then failed still did not spend the budget", 2, true, "failed after 2 attempts"},
+		{"a failed job with no count says nothing", 0, true, ""},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
