@@ -178,3 +178,95 @@ func TestDoctor_FixHandlesCollisionsAcrossManyWorkitems(t *testing.T) {
 		seen[meta.Ref] = slug
 	}
 }
+
+func TestDoctorFindingCodeScanFailedStable(t *testing.T) {
+	// Discover failures now abort from workitemIDsOnDisk, but the dotted-domain
+	// code stays part of workitem-doctor/v1alpha1 so consumers keep a stable set.
+	if codeWorkitemScanFailed != "workitem.scan.failed" {
+		t.Fatalf("scan-failed code drifted: %s", codeWorkitemScanFailed)
+	}
+}
+
+func TestWorkitemPathsMissingRef_UsesProvidedItemsNotDiskWalk(t *testing.T) {
+	root := t.TempDir()
+	writeLegacyWorkitem(t, root, "in-slice")
+	writeLegacyWorkitem(t, root, "on-disk-only")
+	writeLegacyWorkitem(t, root, "has-ref")
+	writeLegacyWorkitem(t, root, "z-later")
+
+	items := []wkitem.WorkItem{
+		{RelativePath: "workflow/design/z-later", SourceMetadata: map[string]any{}},
+		{RelativePath: "workflow/design/has-ref", SourceMetadata: map[string]any{"ref": "WI-abcdef"}},
+		{RelativePath: "workflow/design/no-marker", SourceMetadata: map[string]any{}},
+		{RelativePath: "workflow/design/in-slice", SourceMetadata: map[string]any{}},
+	}
+
+	got := workitemPathsMissingRef(root, items)
+	want := []string{"workflow/design/in-slice", "workflow/design/z-later"}
+	if len(got) != len(want) {
+		t.Fatalf("missing-ref paths = %v, want %v", got, want)
+	}
+	for i := range want {
+		if got[i] != want[i] {
+			t.Fatalf("missing-ref paths = %v, want %v", got, want)
+		}
+	}
+}
+
+func TestBackfillMissingRefs_UsesProvidedItemsNotDiskWalk(t *testing.T) {
+	root := t.TempDir()
+	writeLegacyWorkitem(t, root, "passed")
+	writeLegacyWorkitem(t, root, "ignored")
+
+	items := []wkitem.WorkItem{{
+		RelativePath:   "workflow/design/passed",
+		StableID:       "design-passed-2026-05-24",
+		SourceMetadata: map[string]any{},
+	}}
+
+	n, failures, err := backfillMissingRefs(context.Background(), root, items)
+	if err != nil {
+		t.Fatalf("backfillMissingRefs: %v", err)
+	}
+	if n != 1 {
+		t.Fatalf("applied = %d, want 1", n)
+	}
+	if len(failures) != 0 {
+		t.Fatalf("failures = %#v, want none", failures)
+	}
+
+	passed, err := wkitem.LoadMetadata(context.Background(), filepath.Join(root, "workflow", "design", "passed"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if passed.Ref == "" {
+		t.Fatal("provided item was not backfilled")
+	}
+	ignored, err := wkitem.LoadMetadata(context.Background(), filepath.Join(root, "workflow", "design", "ignored"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if ignored.Ref != "" {
+		t.Fatalf("item omitted from the snapshot was backfilled: %q", ignored.Ref)
+	}
+}
+
+func TestBackfillMissingRefs_ContextCancelled(t *testing.T) {
+	root := t.TempDir()
+	writeLegacyWorkitem(t, root, "legacy")
+	items := []wkitem.WorkItem{{
+		RelativePath:   "workflow/design/legacy",
+		StableID:       "design-legacy-2026-05-24",
+		SourceMetadata: map[string]any{},
+	}}
+
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+	n, _, err := backfillMissingRefs(ctx, root, items)
+	if err == nil {
+		t.Fatal("backfillMissingRefs() error = nil, want context cancellation")
+	}
+	if n != 0 {
+		t.Fatalf("applied = %d, want 0", n)
+	}
+}

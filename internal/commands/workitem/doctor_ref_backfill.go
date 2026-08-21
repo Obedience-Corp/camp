@@ -6,9 +6,6 @@ import (
 	"path/filepath"
 	"sort"
 
-	"github.com/Obedience-Corp/camp/internal/config"
-	camperrors "github.com/Obedience-Corp/camp/internal/errors"
-	"github.com/Obedience-Corp/camp/internal/paths"
 	wkitem "github.com/Obedience-Corp/camp/internal/workitem"
 )
 
@@ -25,33 +22,29 @@ func hasWorkitemMarker(root, relPath string) bool {
 	return !info.IsDir()
 }
 
-// workitemPathsMissingRef discovers every workitem on disk and returns the
-// campaign-relative paths to those whose .workitem marker exists and has no
-// ref field. Paths are sorted lexicographically so DeriveUnique's collision
-// retry has deterministic input ordering during a doctor --fix pass.
-func workitemPathsMissingRef(ctx context.Context, root string) ([]string, error) {
-	cfg, err := config.LoadCampaignConfig(ctx, root)
-	if err != nil {
-		return nil, camperrors.Wrap(err, "load campaign config")
-	}
-	resolver := paths.NewResolverFromConfig(root, cfg)
-	items, err := wkitem.Discover(ctx, root, resolver)
-	if err != nil {
-		return nil, err
-	}
+func itemSourceRef(item wkitem.WorkItem) string {
+	ref, _ := item.SourceMetadata["ref"].(string)
+	return ref
+}
+
+// workitemPathsMissingRef returns campaign-relative paths from items whose
+// `.workitem` marker exists and has no ref field. Callers must pass the
+// already-discovered campaign items; this function does not walk the tree.
+// Paths are sorted lexicographically so DeriveUnique's collision retry has
+// deterministic input ordering during a doctor --fix pass.
+func workitemPathsMissingRef(root string, items []wkitem.WorkItem) []string {
 	var missing []string
 	for _, item := range items {
 		if !hasWorkitemMarker(root, item.RelativePath) {
 			continue
 		}
-		ref, _ := item.SourceMetadata["ref"].(string)
-		if ref != "" {
+		if itemSourceRef(item) != "" {
 			continue
 		}
 		missing = append(missing, item.RelativePath)
 	}
 	sort.Strings(missing)
-	return missing, nil
+	return missing
 }
 
 type backfillFailure struct {
@@ -59,14 +52,11 @@ type backfillFailure struct {
 	Err          error
 }
 
-func backfillMissingRefs(ctx context.Context, root string) (int, []backfillFailure, error) {
-	cfg, err := config.LoadCampaignConfig(ctx, root)
-	if err != nil {
-		return 0, nil, camperrors.Wrap(err, "load campaign config")
-	}
-	resolver := paths.NewResolverFromConfig(root, cfg)
-	items, err := wkitem.Discover(ctx, root, resolver)
-	if err != nil {
+// backfillMissingRefs writes unique refs onto items that still lack one.
+// items must be the already-discovered campaign snapshot from the same doctor
+// pass; this function does not Discover again.
+func backfillMissingRefs(ctx context.Context, root string, items []wkitem.WorkItem) (int, []backfillFailure, error) {
+	if err := ctx.Err(); err != nil {
 		return 0, nil, err
 	}
 
@@ -76,7 +66,7 @@ func backfillMissingRefs(ctx context.Context, root string) (int, []backfillFailu
 		if !hasWorkitemMarker(root, item.RelativePath) {
 			continue
 		}
-		ref, _ := item.SourceMetadata["ref"].(string)
+		ref := itemSourceRef(item)
 		if ref != "" {
 			existingRefs[ref] = true
 			continue

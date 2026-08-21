@@ -127,7 +127,7 @@ func runDoctor(ctx context.Context, cmd *cobra.Command, jsonOut, fix bool) error
 		}
 		err = links.WithLock(ctx, root, func(registry *links.Links) error {
 			findings = collectWorkitemFindings(ctx, root, registry, knownIDs, items)
-			applied, fixErr := autoFixWorkitemFindings(ctx, root, registry, findings, cmd.ErrOrStderr())
+			applied, fixErr := autoFixWorkitemFindings(ctx, root, registry, findings, items, cmd.ErrOrStderr())
 			if fixErr != nil {
 				return fixErr
 			}
@@ -355,28 +355,18 @@ func collectWorkitemFindings(ctx context.Context, root string, registry *links.L
 		}
 	}
 
-	// Workitems missing the ref field added in v1alpha6. Sorted by path so
-	// the order in which DeriveUnique fills collisions during --fix is
-	// deterministic.
-	missingRefPaths, err := workitemPathsMissingRef(ctx, root)
-	if err != nil {
+	// Workitems missing the ref field added in v1alpha6. Uses the Discover
+	// snapshot from workitemIDsOnDisk. Sorted by path so DeriveUnique's
+	// collision retry during --fix is deterministic.
+	for _, rel := range workitemPathsMissingRef(root, items) {
 		findings = append(findings, docFinding{
-			Code:     codeWorkitemScanFailed,
-			Severity: docSeverityError,
-			Target:   "workitem-tree",
-			Message:  "could not scan workitems for ref backfill: " + err.Error(),
+			Code:        codeMissingRefField,
+			Severity:    docSeverityWarning,
+			Target:      "workitem:" + rel,
+			Message:     "workitem at " + rel + " is missing the ref field added in v1alpha6",
+			FixHint:     "run camp workitem doctor --fix to backfill",
+			AutoFixable: true,
 		})
-	} else {
-		for _, rel := range missingRefPaths {
-			findings = append(findings, docFinding{
-				Code:        codeMissingRefField,
-				Severity:    docSeverityWarning,
-				Target:      "workitem:" + rel,
-				Message:     "workitem at " + rel + " is missing the ref field added in v1alpha6",
-				FixHint:     "run camp workitem doctor --fix to backfill",
-				AutoFixable: true,
-			})
-		}
 	}
 
 	for _, item := range items {
@@ -416,7 +406,7 @@ func collectWorkitemFindings(ctx context.Context, root string, registry *links.L
 	return findings
 }
 
-func autoFixWorkitemFindings(ctx context.Context, root string, registry *links.Links, findings []docFinding, errw io.Writer) (int, error) {
+func autoFixWorkitemFindings(ctx context.Context, root string, registry *links.Links, findings []docFinding, items []wkitem.WorkItem, errw io.Writer) (int, error) {
 	applied := 0
 	needsRefBackfill := false
 	for _, f := range findings {
@@ -458,7 +448,7 @@ func autoFixWorkitemFindings(ctx context.Context, root string, registry *links.L
 		}
 	}
 	if needsRefBackfill {
-		n, failures, err := backfillMissingRefs(ctx, root)
+		n, failures, err := backfillMissingRefs(ctx, root, items)
 		applied += n
 		for _, f := range failures {
 			if _, writeErr := fmt.Fprintf(errw, "warning: backfill ref for %s: %v\n", f.RelativePath, f.Err); writeErr != nil {
