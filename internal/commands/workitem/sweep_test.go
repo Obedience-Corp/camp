@@ -6,12 +6,14 @@ import (
 	"encoding/json"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 
 	"github.com/spf13/cobra"
 
 	"github.com/Obedience-Corp/camp/internal/config"
 	wkitem "github.com/Obedience-Corp/camp/internal/workitem"
+	"github.com/Obedience-Corp/camp/internal/workitem/links"
 )
 
 // TestExecuteSweepCandidates_ContextCancelledPropagates locks that a mid-sweep
@@ -183,5 +185,108 @@ func TestSweepPlanEnvelopeShape(t *testing.T) {
 	}
 	if it.To == "" {
 		t.Errorf("dry-run item should carry a destination, got empty")
+	}
+}
+
+// TestResolveSweepMode covers the one place the flag and the fresh.yaml setting
+// agree on what a sweep actually does. The cases that matter most are the
+// downgrades: a prompt nobody can answer must report rather than block, and must
+// never fall through to moving directories on its own.
+func TestResolveSweepMode(t *testing.T) {
+	tests := []struct {
+		name       string
+		configured string
+		terminal   bool
+		jsonOut    bool
+		dryRun     bool
+		want       string
+	}{
+		{
+			name:       "off stays off even on a terminal",
+			configured: FreshSweepModeOff, terminal: true,
+			want: FreshSweepModeOff,
+		},
+		{
+			name:       "prompt without a terminal reports; an agent never gets an auto path",
+			configured: FreshSweepModePrompt, terminal: false,
+			want: FreshSweepModeReport,
+		},
+		{
+			name:       "prompt with --json reports; a json consumer cannot answer a form",
+			configured: FreshSweepModePrompt, terminal: true, jsonOut: true,
+			want: FreshSweepModeReport,
+		},
+		{
+			name:       "a dry run never prompts",
+			configured: FreshSweepModePrompt, terminal: true, dryRun: true,
+			want: FreshSweepModeReport,
+		},
+		{
+			name:       "a dry run never sweeps",
+			configured: FreshSweepModeSweep, terminal: true, dryRun: true,
+			want: FreshSweepModeReport,
+		},
+		{
+			name:       "prompt on a terminal prompts",
+			configured: FreshSweepModePrompt, terminal: true,
+			want: FreshSweepModePrompt,
+		},
+		{
+			name:       "report stays report",
+			configured: FreshSweepModeReport, terminal: true,
+			want: FreshSweepModeReport,
+		},
+		{
+			name:       "sweep stays sweep without a terminal (it is an explicit opt-in)",
+			configured: FreshSweepModeSweep, terminal: false,
+			want: FreshSweepModeSweep,
+		},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			got := resolveSweepMode(tc.configured, tc.terminal, tc.jsonOut, tc.dryRun)
+			if got != tc.want {
+				t.Errorf("resolveSweepMode(%q, terminal=%v, json=%v, dryRun=%v) = %q, want %q",
+					tc.configured, tc.terminal, tc.jsonOut, tc.dryRun, got, tc.want)
+			}
+		})
+	}
+}
+
+// TestLinksWithin locks that the link guard asks about containment, not string
+// prefixes: a sibling directory sharing a name prefix must not make a workitem
+// look linked.
+func TestLinksWithin(t *testing.T) {
+	registry := &links.Links{Links: []links.Link{
+		{ID: "lnk_20260820_6c045e", Scope: links.LinkScope{Kind: links.ScopeCampaignPath, Path: "workflow/explore/analysis"}},
+		{ID: "lnk_20260820_c312f7", Scope: links.LinkScope{Kind: links.ScopeCampaignPath, Path: "workflow/explore/analysis/notes"}},
+		{ID: "lnk_20260820_aaaaaa", Scope: links.LinkScope{Kind: links.ScopeCampaignPath, Path: "workflow/explore/analysis-notes"}},
+		{ID: "lnk_20260820_bbbbbb", Scope: links.LinkScope{Kind: links.ScopeProject, Path: "projects/camp"}},
+	}}
+
+	got := linksWithin(registry, "workflow/explore/analysis")
+	if len(got) != 2 {
+		t.Fatalf("expected 2 links scoped inside the directory, got %d: %+v", len(got), got)
+	}
+	if got[0].ID != "lnk_20260820_6c045e" || got[1].ID != "lnk_20260820_c312f7" {
+		t.Errorf("unexpected link set: %+v", got)
+	}
+
+	if none := linksWithin(nil, "workflow/explore/analysis"); len(none) != 0 {
+		t.Errorf("a missing registry must yield no links, got %+v", none)
+	}
+}
+
+func TestLinkedScopeDetail(t *testing.T) {
+	one := []links.Link{{ID: "lnk_20260820_6c045e", Scope: links.LinkScope{Kind: links.ScopeWorktree, Path: "projects/worktrees/camp/x"}}}
+	detail := linkedScopeDetail(one)
+	if !strings.Contains(detail, "lnk_20260820_6c045e") || !strings.Contains(detail, "projects/worktrees/camp/x") {
+		t.Errorf("a single-link detail must name the link and its scope, got %q", detail)
+	}
+
+	many := append(one, links.Link{ID: "lnk_20260820_c312f7"})
+	if detail := linkedScopeDetail(many); !strings.Contains(detail, "2 links") {
+		t.Errorf("a multi-link detail must report the count, got %q", detail)
 	}
 }

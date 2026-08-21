@@ -22,6 +22,7 @@ func TestIntegration_FreshQueuesSweepBehindBusyRootLane(t *testing.T) {
 	tc := GetSharedContainer(t)
 	campaignPath, _, _ := setupFreshCampaignWithSubmodule(t, tc, "freshsweep-root-queue")
 	addFreshEligibleWorkitem(t, tc, campaignPath, "done-feature")
+	enableAutoSweep(t, tc, campaignPath)
 	tc.EnableDeferral()
 
 	writeJob(t, tc, campaignPath, rootLane, 1, map[string]any{
@@ -50,7 +51,7 @@ func TestIntegration_FreshQueuesSweepBehindBusyRootLane(t *testing.T) {
 		"queueing the sweep must not stage source deletions in the user's real index")
 
 	queued := tc.Shell(t, fmt.Sprintf(
-		"grep -l 'workflow/design/done-feature' %s/.campaign/cache/jobs/pending/%s/*.json",
+		"grep -l 'workflow/chore/done-feature' %s/.campaign/cache/jobs/pending/%s/*.json",
 		campaignPath, rootLane))
 	assert.NotEmpty(t, strings.TrimSpace(queued),
 		"the queued sweep must capture the moved workitem's source deletion")
@@ -60,19 +61,26 @@ func TestIntegration_FreshQueuesSweepBehindBusyRootLane(t *testing.T) {
 	assert.NotEqual(t, headBefore, strings.TrimSpace(tc.GitOutput(t, campaignPath, "rev-parse", "HEAD")),
 		"the queued sweep commit must land after the root lane is released")
 	assert.Empty(t, strings.TrimSpace(tc.GitOutput(t, campaignPath, "status", "--porcelain", "--",
-		"workflow/design")),
+		"workflow/chore")),
 		"the landed sweep commit must contain both sides of the workitem move")
 }
 
-// addFreshEligibleWorkitem creates a design workitem with a completed workflow
-// run at the campaign root and commits it, making it eligible for the tier-1
-// sweep that camp fresh runs.
+// addFreshEligibleWorkitem creates a chore workitem with a completed workflow run
+// at the campaign root and commits it, making it eligible for the tier-1 sweep
+// that camp fresh runs. A chore rather than a design because run completion is
+// only sufficient evidence for work whose loop WAS the work; a design would be
+// reported as awaiting implementation and never moved.
+//
+// Its content is backdated past the fresh-write window: a fixture written moments
+// before the sweep is exactly the "a session is still writing here" shape the
+// guard exists to catch.
 func addFreshEligibleWorkitem(t *testing.T, tc *TestContainer, campaignPath, slug string) {
 	t.Helper()
 	out, err := tc.RunCampInDir(campaignPath,
-		"workitem", "create", slug, "--type", "design", "--title", slug, "--id", "design-"+slug)
+		"workitem", "create", slug, "--type", "chore", "--title", slug, "--id", "chore-"+slug)
 	require.NoError(t, err, "workitem create: %s", out)
-	stampCompletedRun(t, tc, campaignPath, "design", slug)
+	stampCompletedRun(t, tc, campaignPath, "chore", slug)
+	backdateWorkitemContent(t, tc, campaignPath, "chore", slug)
 	_, _, err = tc.ExecCommand("sh", "-c", "cd "+campaignPath+" && git add -A && git commit -q -m 'add eligible workitem'")
 	require.NoError(t, err)
 }
@@ -102,9 +110,20 @@ func setCompletedRuns(t *testing.T, tc *TestContainer, campaignPath, mode string
 		"completed_runs: \""+mode+"\"\n"))
 }
 
-// Scenario 3 (default "sweep"): single-project fresh promotes the eligible item
-// exactly once.
-func TestIntegration_FreshSweep_DefaultPromotes(t *testing.T) {
+// enableAutoSweep opts the campaign into the pre-2026-08 automatic behavior. The
+// default is now "prompt", which reports on the non-TTY these tests run on, so a
+// test about the MOVE has to ask for the mode that moves.
+func enableAutoSweep(t *testing.T, tc *TestContainer, campaignPath string) {
+	t.Helper()
+	setCompletedRuns(t, tc, campaignPath, "sweep")
+	commitFixture(t, tc, campaignPath)
+}
+
+// Scenario 3 (default "prompt", non-TTY): fresh reports and moves nothing. This
+// is the behavior change: a fresh run with no configuration used to promote every
+// workitem with a completed run, and an agent's fresh run is always a non-TTY, so
+// it now reports instead of moving directories on its own.
+func TestIntegration_FreshSweep_DefaultPromptReportsOnNonTTY(t *testing.T) {
 	skipIfShort(t)
 	tc := GetSharedContainer(t)
 	campaignPath, _, _ := setupFreshCampaignWithSubmodule(t, tc, "freshsweep-default")
@@ -113,8 +132,28 @@ func TestIntegration_FreshSweep_DefaultPromotes(t *testing.T) {
 	out, err := tc.RunCampInDir(campaignPath, "fresh", "test-project", "--no-push")
 	require.NoError(t, err, "fresh: %s", out)
 
+	assert.Contains(t, out, "completed runs; run camp workitem sweep --prompt",
+		"the default must report what it found")
+	assert.Equal(t, 0, countSweepEvidence(t, tc, campaignPath), "the default must not promote")
+	stays, err := tc.CheckDirExists(campaignPath + "/workflow/chore/done-feature")
+	require.NoError(t, err)
+	assert.True(t, stays, "the default must not move the item")
+}
+
+// Scenario 3b ("sweep" opt-in): the pre-2026-08 behavior is still available and
+// still promotes the eligible item exactly once.
+func TestIntegration_FreshSweep_SweepOptInPromotes(t *testing.T) {
+	skipIfShort(t)
+	tc := GetSharedContainer(t)
+	campaignPath, _, _ := setupFreshCampaignWithSubmodule(t, tc, "freshsweep-optin")
+	addFreshEligibleWorkitem(t, tc, campaignPath, "done-feature")
+	enableAutoSweep(t, tc, campaignPath)
+
+	out, err := tc.RunCampInDir(campaignPath, "fresh", "test-project", "--no-push")
+	require.NoError(t, err, "fresh: %s", out)
+
 	assert.Equal(t, 1, countSweepEvidence(t, tc, campaignPath), "sweep ran once")
-	gone, err := tc.CheckDirExists(campaignPath + "/workflow/design/done-feature")
+	gone, err := tc.CheckDirExists(campaignPath + "/workflow/chore/done-feature")
 	require.NoError(t, err)
 	assert.False(t, gone, "eligible item should have moved to the dungeon")
 }
@@ -134,7 +173,7 @@ func TestIntegration_FreshSweep_OffIsNoop(t *testing.T) {
 	require.NoError(t, err, "fresh: %s", out)
 
 	assert.Equal(t, 0, countSweepEvidence(t, tc, campaignPath), "off must not sweep")
-	stays, err := tc.CheckDirExists(campaignPath + "/workflow/design/done-feature")
+	stays, err := tc.CheckDirExists(campaignPath + "/workflow/chore/done-feature")
 	require.NoError(t, err)
 	assert.True(t, stays, "off must not move the item")
 }
@@ -154,7 +193,7 @@ func TestIntegration_FreshSweep_ReportPrintsBanner(t *testing.T) {
 
 	assert.Contains(t, out, "completed runs; run camp workitem sweep", "report prints the banner")
 	assert.Equal(t, 0, countSweepEvidence(t, tc, campaignPath), "report must not sweep")
-	stays, err := tc.CheckDirExists(campaignPath + "/workflow/design/done-feature")
+	stays, err := tc.CheckDirExists(campaignPath + "/workflow/chore/done-feature")
 	require.NoError(t, err)
 	assert.True(t, stays, "report must not move the item")
 }
@@ -167,13 +206,14 @@ func TestIntegration_FreshSweep_AllRunsExactlyOnce(t *testing.T) {
 	tc := GetSharedContainer(t)
 	campaignPath, _, _ := setupFreshCampaignWithTwoSubmodules(t, tc, "freshsweep-all")
 	addFreshEligibleWorkitem(t, tc, campaignPath, "done-feature")
+	enableAutoSweep(t, tc, campaignPath)
 
 	out, err := tc.RunCampInDir(campaignPath, "fresh", "all", "--no-push")
 	require.NoError(t, err, "fresh all: %s", out)
 
 	assert.Equal(t, 1, countSweepEvidence(t, tc, campaignPath),
 		"sweep must run exactly once for the whole batch, not once per project")
-	gone, err := tc.CheckDirExists(campaignPath + "/workflow/design/done-feature")
+	gone, err := tc.CheckDirExists(campaignPath + "/workflow/chore/done-feature")
 	require.NoError(t, err)
 	assert.False(t, gone, "eligible item should have moved once")
 }
@@ -188,6 +228,7 @@ func TestIntegration_FreshSweep_RunsDespitePerProjectFailure(t *testing.T) {
 	tc := GetSharedContainer(t)
 	campaignPath, projectDirA, _ := setupFreshCampaignWithTwoSubmodules(t, tc, "freshsweep-partial")
 	addFreshEligibleWorkitem(t, tc, campaignPath, "done-feature")
+	enableAutoSweep(t, tc, campaignPath)
 
 	// Make project A dirty so its fresh cycle fails freshSafetyChecks.
 	require.NoError(t, tc.WriteFile(projectDirA+"/dirty.txt", "uncommitted"))
@@ -197,7 +238,7 @@ func TestIntegration_FreshSweep_RunsDespitePerProjectFailure(t *testing.T) {
 
 	assert.Equal(t, 1, countSweepEvidence(t, tc, campaignPath),
 		"sweep still runs once despite the per-project failure")
-	gone, err := tc.CheckDirExists(campaignPath + "/workflow/design/done-feature")
+	gone, err := tc.CheckDirExists(campaignPath + "/workflow/chore/done-feature")
 	require.NoError(t, err)
 	assert.False(t, gone, "eligible item should have moved despite the failed project")
 }

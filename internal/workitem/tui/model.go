@@ -196,7 +196,7 @@ func New(ctx context.Context, items []workitem.WorkItem, campaignRoot string, re
 		priorityStore: store,
 		storePath:     storePath,
 		showParked:    includeParked,
-		sweepEligible: len(workitem.PlanSweep(items)),
+		sweepEligible: len(workitem.PlanSweep(items).Candidates),
 	}
 }
 

@@ -212,10 +212,11 @@ type FreshConfig struct {
 	// PruneRemote controls whether to prune stale remote tracking refs.
 	PruneRemote *bool `yaml:"prune_remote,omitempty"`
 	// CompletedRuns controls the tier-1 workitem sweep run once per camp fresh:
-	// "sweep" (default) promotes items with a completed run, "report" prints a
-	// read-only banner, "off" does nothing. Campaign-root scoped (workitems live
-	// at the root, not per project), so there is no per-project override, the
-	// same shape as Prune.
+	// "prompt" (default) asks per workitem on a TTY and reports otherwise,
+	// "report" prints a read-only banner and the per-item reasons, "sweep"
+	// promotes items with a completed run automatically, "off" does nothing.
+	// Campaign-root scoped (workitems live at the root, not per project), so
+	// there is no per-project override, the same shape as Prune.
 	CompletedRuns string `yaml:"completed_runs,omitempty"`
 	// MergedWorkitems controls the tier-2 merged-branch backstop run per project
 	// in camp fresh: "prompt" asks on a TTY (reports otherwise), "report" prints
@@ -332,16 +333,25 @@ func (c *FreshConfig) ResolveFreshPrune() bool {
 }
 
 // ResolveFreshCompletedRuns resolves completed_runs using the global config or
-// default ("sweep"). Global only: workitems live at the campaign root, not per
+// default ("prompt"). Global only: workitems live at the campaign root, not per
 // project, so there is no per-project override, matching Prune's shape. Any
-// unrecognized or empty value defaults to "sweep" (never fail closed to "off"
+// unrecognized or empty value defaults to "prompt" (never fail closed to "off"
 // on a typo).
+//
+// The default is "prompt" rather than "sweep" because a completed authoring loop
+// is not the same thing as finished work. It says a run reached its last step,
+// which for research means findings now need a home and for a design means a
+// specification exists that nobody has built yet. Sweeping on that signal buried
+// live work twice: once with agents still writing into the directory, once with
+// links still pointing into it. "sweep" is still available for a campaign that
+// wants the old behavior. Same shape as MergedWorkitems: "prompt" asks on a TTY
+// and reports on a non-TTY, so agents never get an automatic path.
 func (c *FreshConfig) ResolveFreshCompletedRuns() string {
 	switch c.CompletedRuns {
-	case "sweep", "report", "off":
+	case "prompt", "sweep", "report", "off":
 		return c.CompletedRuns
 	default:
-		return "sweep"
+		return "prompt"
 	}
 }
 

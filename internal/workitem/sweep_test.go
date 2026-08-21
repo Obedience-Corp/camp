@@ -42,8 +42,8 @@ func TestPlanSweep_Eligibility(t *testing.T) {
 		{
 			name: "nil workflow meta is excluded and never panics",
 			item: WorkItem{
-				WorkflowType: WorkflowTypeDesign,
-				RelativePath: "workflow/design/foo",
+				WorkflowType: WorkflowType("chore"),
+				RelativePath: "workflow/chore/foo",
 				WorkflowMeta: nil,
 			},
 			wantIncluded: false,
@@ -51,8 +51,8 @@ func TestPlanSweep_Eligibility(t *testing.T) {
 		{
 			name: "a newer run is active is excluded (multi-run: latest completed but a new run started)",
 			item: WorkItem{
-				WorkflowType: WorkflowTypeDesign,
-				RelativePath: "workflow/design/foo",
+				WorkflowType: WorkflowType("chore"),
+				RelativePath: "workflow/chore/foo",
 				WorkflowMeta: &WorkItemWorkflow{ActiveRunID: "run-002", RunStatus: "active", LatestRunStatus: "completed", LatestRunID: "run-001"},
 			},
 			wantIncluded: false,
@@ -69,8 +69,8 @@ func TestPlanSweep_Eligibility(t *testing.T) {
 		{
 			name: "latest run abandoned is excluded (not completed)",
 			item: WorkItem{
-				WorkflowType: WorkflowTypeDesign,
-				RelativePath: "workflow/design/foo",
+				WorkflowType: WorkflowType("chore"),
+				RelativePath: "workflow/chore/foo",
 				WorkflowMeta: &WorkItemWorkflow{LatestRunStatus: "abandoned", LatestRunID: "run-001"},
 			},
 			wantIncluded: false,
@@ -78,8 +78,8 @@ func TestPlanSweep_Eligibility(t *testing.T) {
 		{
 			name: "latest completed but empty latest run id is excluded as malformed",
 			item: WorkItem{
-				WorkflowType: WorkflowTypeDesign,
-				RelativePath: "workflow/design/foo",
+				WorkflowType: WorkflowType("chore"),
+				RelativePath: "workflow/chore/foo",
 				WorkflowMeta: &WorkItemWorkflow{LatestRunStatus: "completed", LatestRunID: ""},
 			},
 			wantIncluded: false,
@@ -87,8 +87,8 @@ func TestPlanSweep_Eligibility(t *testing.T) {
 		{
 			name: "relative path with dungeon segment is excluded by defensive guard",
 			item: WorkItem{
-				WorkflowType: WorkflowTypeDesign,
-				RelativePath: "workflow/design/dungeon/foo",
+				WorkflowType: WorkflowType("chore"),
+				RelativePath: "workflow/chore/dungeon/foo",
 				WorkflowMeta: completedMeta(),
 			},
 			wantIncluded: false,
@@ -96,18 +96,18 @@ func TestPlanSweep_Eligibility(t *testing.T) {
 		{
 			name: "workitem named my-dungeon-notes is NOT excluded (segment match, not substring)",
 			item: WorkItem{
-				WorkflowType: WorkflowTypeDesign,
-				RelativePath: "workflow/design/my-dungeon-notes",
+				WorkflowType: WorkflowType("chore"),
+				RelativePath: "workflow/chore/my-dungeon-notes",
 				WorkflowMeta: completedMeta(),
 			},
 			wantIncluded: true,
 		},
 		// Happy paths.
 		{
-			name: "design item with completed run is included",
+			name: "chore item with completed run is included",
 			item: WorkItem{
-				WorkflowType: WorkflowTypeDesign,
-				RelativePath: "workflow/design/foo",
+				WorkflowType: WorkflowType("chore"),
+				RelativePath: "workflow/chore/foo",
 				WorkflowMeta: completedMeta(),
 			},
 			wantIncluded: true,
@@ -134,12 +134,107 @@ func TestPlanSweep_Eligibility(t *testing.T) {
 
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
-			got := PlanSweep([]WorkItem{tc.item})
+			got := PlanSweep([]WorkItem{tc.item}).Candidates
 			if tc.wantIncluded && len(got) != 1 {
 				t.Fatalf("expected item included, got %d candidates", len(got))
 			}
 			if !tc.wantIncluded && len(got) != 0 {
 				t.Fatalf("expected item excluded, got %d candidates: %+v", len(got), got)
+			}
+		})
+	}
+}
+
+// TestPlanSweep_TypeGating is the type-aware half of the plan: a completed
+// authoring run means something different for each kind of work, so it must not
+// be turned into the same action for all of them.
+func TestPlanSweep_TypeGating(t *testing.T) {
+	tests := []struct {
+		name            string
+		workflowType    WorkflowType
+		wantCandidate   bool
+		wantDisposition SweepDisposition
+		wantSkipReason  string
+	}{
+		{
+			name:           "design is never a candidate on run completion",
+			workflowType:   WorkflowTypeDesign,
+			wantSkipReason: SkipDesignAwaitsImplementation,
+		},
+		{
+			name:            "explore is a candidate that needs routing",
+			workflowType:    WorkflowTypeExplore,
+			wantCandidate:   true,
+			wantDisposition: DispositionRoute,
+		},
+		{
+			name:            "research is routed like explore despite being a custom type",
+			workflowType:    WorkflowTypeResearch,
+			wantCandidate:   true,
+			wantDisposition: DispositionRoute,
+		},
+		{
+			name:            "bug is promotable",
+			workflowType:    WorkflowType("bug"),
+			wantCandidate:   true,
+			wantDisposition: DispositionPromote,
+		},
+		{
+			name:            "chore is promotable",
+			workflowType:    WorkflowType("chore"),
+			wantCandidate:   true,
+			wantDisposition: DispositionPromote,
+		},
+		{
+			name:            "feature is promotable",
+			workflowType:    WorkflowType("feature"),
+			wantCandidate:   true,
+			wantDisposition: DispositionPromote,
+		},
+		{
+			name:            "an unknown custom type is promotable",
+			workflowType:    WorkflowType("incident"),
+			wantCandidate:   true,
+			wantDisposition: DispositionPromote,
+		},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			item := WorkItem{
+				WorkflowType: tc.workflowType,
+				RelativePath: "workflow/" + string(tc.workflowType) + "/thing",
+				WorkflowMeta: completedMeta(),
+			}
+			plan := PlanSweep([]WorkItem{item})
+
+			if !tc.wantCandidate {
+				if len(plan.Candidates) != 0 {
+					t.Fatalf("expected no candidates, got %+v", plan.Candidates)
+				}
+				if len(plan.Skipped) != 1 {
+					t.Fatalf("expected exactly 1 reported skip, got %d", len(plan.Skipped))
+				}
+				if plan.Skipped[0].Reason != tc.wantSkipReason {
+					t.Errorf("skip reason = %q, want %q", plan.Skipped[0].Reason, tc.wantSkipReason)
+				}
+				if plan.Skipped[0].Detail == "" {
+					t.Error("a reported skip must carry a human-readable detail")
+				}
+				if plan.Skipped[0].RunID != "run-001" {
+					t.Errorf("skip RunID = %q, want run-001", plan.Skipped[0].RunID)
+				}
+				return
+			}
+
+			if len(plan.Skipped) != 0 {
+				t.Fatalf("expected no skips, got %+v", plan.Skipped)
+			}
+			if len(plan.Candidates) != 1 {
+				t.Fatalf("expected 1 candidate, got %d", len(plan.Candidates))
+			}
+			if plan.Candidates[0].Disposition != tc.wantDisposition {
+				t.Errorf("Disposition = %q, want %q", plan.Candidates[0].Disposition, tc.wantDisposition)
 			}
 		})
 	}
@@ -152,8 +247,8 @@ func TestSweepBannerText(t *testing.T) {
 	}{
 		{0, ""},
 		{-3, ""},
-		{1, "1 workitem has completed runs; run camp workitem sweep"},
-		{2, "2 workitems have completed runs; run camp workitem sweep"},
+		{1, "1 workitem has completed runs; run camp workitem sweep --prompt"},
+		{2, "2 workitems have completed runs; run camp workitem sweep --prompt"},
 	}
 	for _, tc := range tests {
 		if got := SweepBannerText(tc.n); got != tc.want {
@@ -164,11 +259,11 @@ func TestSweepBannerText(t *testing.T) {
 
 func TestPlanSweep_CandidatePayload(t *testing.T) {
 	item := WorkItem{
-		WorkflowType: WorkflowTypeDesign,
-		RelativePath: "workflow/design/foo",
+		WorkflowType: WorkflowType("chore"),
+		RelativePath: "workflow/chore/foo",
 		WorkflowMeta: &WorkItemWorkflow{LatestRunStatus: "completed", LatestRunID: "run-042"},
 	}
-	got := PlanSweep([]WorkItem{item})
+	got := PlanSweep([]WorkItem{item}).Candidates
 	if len(got) != 1 {
 		t.Fatalf("expected 1 candidate, got %d", len(got))
 	}
@@ -186,16 +281,16 @@ func TestPlanSweep_CandidatePayload(t *testing.T) {
 func TestPlanSweep_MixedSliceReturnsOnlyEligible(t *testing.T) {
 	items := []WorkItem{
 		{WorkflowType: WorkflowTypeFestival, RelativePath: "festivals/active/x-FA0001", WorkflowMeta: completedMeta()},
-		{WorkflowType: WorkflowTypeDesign, RelativePath: "workflow/design/keep", WorkflowMeta: completedMeta()},
+		{WorkflowType: WorkflowType("chore"), RelativePath: "workflow/chore/keep", WorkflowMeta: completedMeta()},
 		{WorkflowType: WorkflowTypeExplore, RelativePath: "workflow/explore/drop", WorkflowMeta: &WorkItemWorkflow{ActiveRunID: "run-001", RunStatus: "active"}}, // a run is active -> excluded
 		{WorkflowType: WorkflowTypeExplore, RelativePath: "workflow/explore/keep2", WorkflowMeta: completedMeta()},
 	}
-	got := PlanSweep(items)
+	got := PlanSweep(items).Candidates
 	if len(got) != 2 {
 		t.Fatalf("expected 2 candidates, got %d: %+v", len(got), got)
 	}
 	paths := map[string]bool{got[0].Item.RelativePath: true, got[1].Item.RelativePath: true}
-	if !paths["workflow/design/keep"] || !paths["workflow/explore/keep2"] {
+	if !paths["workflow/chore/keep"] || !paths["workflow/explore/keep2"] {
 		t.Errorf("unexpected candidate set: %v", paths)
 	}
 }
@@ -254,12 +349,14 @@ summary:
 	// The planner consuming this meta must NOT treat the item as eligible:
 	// run-002 is active, not completed.
 	item := WorkItem{
-		WorkflowType: WorkflowTypeDesign,
-		RelativePath: "workflow/design/multi",
+		WorkflowType: WorkflowType("chore"),
+		RelativePath: "workflow/chore/multi",
 		WorkflowMeta: &WorkItemWorkflow{ActiveRunID: got.ActiveRunID, RunStatus: got.RunStatus},
 	}
-	if cands := PlanSweep([]WorkItem{item}); len(cands) != 0 {
-		t.Errorf("expected multi-run item excluded (active run), got %d candidates", len(cands))
+	plan := PlanSweep([]WorkItem{item})
+	if len(plan.Candidates) != 0 || len(plan.Skipped) != 0 {
+		t.Errorf("expected multi-run item excluded (active run), got %d candidates and %d skips",
+			len(plan.Candidates), len(plan.Skipped))
 	}
 }
 
@@ -309,11 +406,11 @@ summary:
 	}
 
 	item := WorkItem{
-		WorkflowType: WorkflowTypeDesign,
-		RelativePath: "workflow/design/done",
+		WorkflowType: WorkflowType("chore"),
+		RelativePath: "workflow/chore/done",
 		WorkflowMeta: &WorkItemWorkflow{ActiveRunID: got.ActiveRunID, LatestRunID: got.LatestRunID, LatestRunStatus: got.LatestRunStatus},
 	}
-	cands := PlanSweep([]WorkItem{item})
+	cands := PlanSweep([]WorkItem{item}).Candidates
 	if len(cands) != 1 {
 		t.Fatalf("expected the completed item eligible, got %d candidates", len(cands))
 	}

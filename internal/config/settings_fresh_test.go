@@ -117,9 +117,10 @@ func TestResolveFreshCompletedRuns(t *testing.T) {
 		set  string
 		want string
 	}{
-		{"empty defaults to sweep", "", "sweep"},
-		{"typo defaults to sweep (never fails closed to off)", "swep", "sweep"},
-		{"explicit sweep", "sweep", "sweep"},
+		{"empty defaults to prompt", "", "prompt"},
+		{"typo defaults to prompt (never fails closed to off)", "promt", "prompt"},
+		{"explicit prompt", "prompt", "prompt"},
+		{"explicit sweep is still available as an opt-in", "sweep", "sweep"},
 		{"explicit report", "report", "report"},
 		{"explicit off", "off", "off"},
 	}

@@ -141,7 +141,7 @@ func TestUnlinkShelvedWorkitem(t *testing.T) {
 		oldKey = "design:workflow/design/example"
 	)
 
-	dropped, err := unlinkShelvedWorkitem(ctx, root, oldID, oldKey)
+	dropped, err := unlinkShelvedWorkitem(ctx, root, oldID, oldKey, "workflow/design/example")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -163,7 +163,7 @@ func TestUnlinkShelvedWorkitem(t *testing.T) {
 
 	// Unrelated rows survive.
 	seedExampleLink(t, root)
-	if dropped, err = unlinkShelvedWorkitem(ctx, root, "design-other-2026-01-01", "design:workflow/design/other"); err != nil {
+	if dropped, err = unlinkShelvedWorkitem(ctx, root, "design-other-2026-01-01", "design:workflow/design/other", "workflow/design/other"); err != nil {
 		t.Fatal(err)
 	}
 	if len(dropped) != 0 {

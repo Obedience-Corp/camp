@@ -65,7 +65,7 @@ camp workitem [flags]
 * [camp workitem resolve](camp_workitem_resolve.md)	 - Print the workitem for the current context
 * [camp workitem split](camp_workitem_split.md)	 - Split a workitem into successors with lineage
 * [camp workitem stage](camp_workitem_stage.md)	 - Set or clear the attention stage
-* [camp workitem sweep](camp_workitem_sweep.md)	 - Promote workitems with completed runs
+* [camp workitem sweep](camp_workitem_sweep.md)	 - Act on workitems with completed runs
 * [camp workitem unlink](camp_workitem_unlink.md)	 - Remove workitem links
 * [camp workitem validate](camp_workitem_validate.md)	 - Validate workitem directories
 * [camp workitem worktree](camp_workitem_worktree.md)	 - Create a project worktree from a workitem
