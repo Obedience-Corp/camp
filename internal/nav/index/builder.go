@@ -117,7 +117,24 @@ func (b *Builder) withNestedFestivalTargets(ctx context.Context, buckets []Targe
 		}
 		nested, err := b.scanDirTargets(ctx, bucket.Path, cat)
 		if err != nil {
-			continue
+			if os.IsNotExist(err) {
+				// The bucket existed moments ago during the top-level scan
+				// but is gone now: it lost a race with a concurrent
+				// festival move, not a real scan failure. That bucket
+				// simply has no nested festivals to index.
+				continue
+			}
+			// A real scan error (permission, I/O) on a status bucket must
+			// not produce a silently incomplete festival index: callers
+			// resolving "camp go f <name>" against a partial index would
+			// miss festivals that are actually there, and the result can be
+			// cached for up to cacheMaxAge. Propagate the error so
+			// scanCategory returns it too; Build's per-category loop then
+			// omits the whole festivals category from the index (its
+			// existing "some directories may not exist" degradation path)
+			// instead of caching a status-bucket list that looks complete
+			// but silently dropped one bucket's festivals.
+			return nil, err
 		}
 		all = append(all, nested...)
 	}

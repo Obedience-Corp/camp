@@ -482,6 +482,54 @@ func TestBuilder_scanCategory_IndexesNestedFestivalDestinations(t *testing.T) {
 	}
 }
 
+func TestBuilder_withNestedFestivalTargets_PropagatesScanError(t *testing.T) {
+	root := t.TempDir()
+	root, _ = filepath.EvalSymlinks(root)
+
+	// "active" is a real status-bucket target, but the path it points at is
+	// a regular file, not a directory: scanDirTargets's os.ReadDir call
+	// fails with a genuine (non-ENOENT) error. Before this fix, that error
+	// was swallowed and the bucket silently contributed zero nested
+	// festivals to the index instead of failing the build.
+	notADir := filepath.Join(root, "active-is-a-file")
+	if err := os.WriteFile(notADir, []byte("x"), 0644); err != nil {
+		t.Fatal(err)
+	}
+
+	builder := NewBuilder(root)
+	buckets := []Target{
+		{Name: "active", Path: notADir, Category: nav.CategoryFestivals},
+	}
+
+	if _, err := builder.withNestedFestivalTargets(context.Background(), buckets, nav.CategoryFestivals); err == nil {
+		t.Fatal("withNestedFestivalTargets() error = nil, want propagated scan error")
+	}
+}
+
+func TestBuilder_withNestedFestivalTargets_SkipsMissingBucketWithoutError(t *testing.T) {
+	root := t.TempDir()
+	root, _ = filepath.EvalSymlinks(root)
+
+	// A status bucket that lost a race with a concurrent festival move (the
+	// directory listed a moment ago in the top-level scan is gone by the
+	// time the nested scan runs) is not a build failure: it just has no
+	// nested festivals left to index.
+	gone := filepath.Join(root, "festivals", "active")
+
+	builder := NewBuilder(root)
+	buckets := []Target{
+		{Name: "active", Path: gone, Category: nav.CategoryFestivals},
+	}
+
+	targets, err := builder.withNestedFestivalTargets(context.Background(), buckets, nav.CategoryFestivals)
+	if err != nil {
+		t.Fatalf("withNestedFestivalTargets() error = %v, want nil for a missing bucket", err)
+	}
+	if len(targets) != 1 || targets[0].Name != "active" {
+		t.Fatalf("targets = %v, want only the bucket itself", targets)
+	}
+}
+
 // Benchmarks
 
 func BenchmarkBuilder_Build(b *testing.B) {
