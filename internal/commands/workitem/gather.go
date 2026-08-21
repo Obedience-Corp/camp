@@ -62,8 +62,9 @@ type workitemGatherResultMove struct {
 // NewGatherCommand creates a `camp gather <type>` subcommand that combines
 // user-selected directory workitems of the given workflow type into one
 // gathered package. Unlike `camp intent gather`, which merges file contents,
-// this moves each source directory inside the new package so nothing is
-// rewritten or lost.
+// this moves each source directory inside the new package so source content
+// is not merged. Campaign markdown and quest links that pointed at the
+// sources are rewritten onto the new paths.
 func NewGatherCommand(workflowType string) *cobra.Command {
 	var (
 		title    string
@@ -90,7 +91,8 @@ The gather process:
      the rename)
   3. Stamp gathered_into/gathered_at on each source .workitem
   4. Migrate manual priority state and re-home workitem links
-  5. Commit the move (unless --no-commit)
+  5. Rewrite campaign markdown and quest links that pointed at the sources
+  6. Commit the move (unless --no-commit)
 
 Moved sources stop appearing as separate workitems because discovery only
 scans the top level of workflow/` + workflowType + `/.

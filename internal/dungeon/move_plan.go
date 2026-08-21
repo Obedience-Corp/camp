@@ -177,7 +177,7 @@ func (s *Service) ApplyMove(ctx context.Context, mp *MovePlan) (string, error) {
 		return "", mp.translateErr(err)
 	}
 	if err := s.rewriteLinksAfterMove(ctx, mp.Source, dst); err != nil {
-		return "", camperrors.Wrapf(err, "rewriting markdown links after moving %s", mp.ItemName)
+		return "", camperrors.Wrapf(err, "rewriting references after moving %s", mp.ItemName)
 	}
 	return dst, nil
 }

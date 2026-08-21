@@ -16,6 +16,8 @@ import (
 	camperrors "github.com/Obedience-Corp/camp/internal/errors"
 	"github.com/Obedience-Corp/camp/internal/fsutil"
 	"github.com/Obedience-Corp/camp/internal/git/commit"
+	"github.com/Obedience-Corp/camp/internal/mdlinks"
+	"github.com/Obedience-Corp/camp/internal/moveref"
 	navindex "github.com/Obedience-Corp/camp/internal/nav/index"
 	wkitem "github.com/Obedience-Corp/camp/internal/workitem"
 	wkaudit "github.com/Obedience-Corp/camp/internal/workitem/audit"
@@ -34,9 +36,9 @@ type gatherExecution struct {
 
 // executeGather applies a validated gather plan: it creates the gathered
 // package, moves each source directory inside it, stamps gather lineage,
-// migrates priority and link state, appends audit events, and commits.
-// Bookkeeping failures after the moves are reported as warnings rather than
-// errors so a partial failure never strands the filesystem mid-operation.
+// rewrites markdown and quest references, migrates priority and link state,
+// appends audit events, and commits. Priority, registry, and audit failures
+// after the moves are warnings. Reference rewrite failures are errors.
 func executeGather(ctx context.Context, cmd *cobra.Command, cfg *config.CampaignConfig, root string, plan gatherPlan, opts gatherOptions, warnings []string) (*gatherExecution, error) {
 	if err := ctx.Err(); err != nil {
 		return nil, err
@@ -132,6 +134,11 @@ func executeGather(ctx context.Context, cmd *cobra.Command, cfg *config.Campaign
 		}
 	}
 
+	rewritten, err := rewriteGatherReferences(ctx, root, execution.Moves)
+	if err != nil {
+		return nil, err
+	}
+
 	targetKey := plan.WorkflowType + ":" + plan.TargetRel
 	if err := priority.WithLock(ctx, priority.StorePath(root), func(store *priority.Store) error {
 		migrateGatherPriorities(store, sourceKeys, targetKey)
@@ -193,6 +200,9 @@ func executeGather(ctx context.Context, cmd *cobra.Command, cfg *config.Campaign
 		if linksChanged {
 			dest = append(dest, links.LinksPath(root))
 		}
+		if len(rewritten) > 0 {
+			dest = append(dest, rewritten...)
+		}
 		preStaged, stageErr := dungeoncmd.StageTrackedMoveSourceDeletions(ctx, root, sourceAbs)
 		if stageErr != nil {
 			return nil, camperrors.Wrap(stageErr, "staging move source deletions (gather was applied on disk; recover with git status)")
@@ -226,4 +236,21 @@ func executeGather(ctx context.Context, cmd *cobra.Command, cfg *config.Campaign
 	}
 
 	return execution, nil
+}
+
+// rewriteGatherReferences repairs markdown links and quest Link.Path values
+// that pointed at the gathered sources. Physical moves have already landed.
+func rewriteGatherReferences(ctx context.Context, root string, moves []workitemGatherResultMove) ([]string, error) {
+	mdMoves := make([]mdlinks.Move, 0, len(moves))
+	for _, move := range moves {
+		mdMoves = append(mdMoves, mdlinks.Move{
+			Src: filepath.Join(root, filepath.FromSlash(move.From)),
+			Dst: filepath.Join(root, filepath.FromSlash(move.To)),
+		})
+	}
+	rewritten, err := moveref.RewriteMoves(ctx, root, mdMoves)
+	if err != nil {
+		return nil, camperrors.Wrap(err, "rewriting references after gather (gather was applied on disk; recover with git status)")
+	}
+	return rewritten, nil
 }

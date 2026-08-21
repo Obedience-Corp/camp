@@ -9,6 +9,7 @@ import (
 
 	camperrors "github.com/Obedience-Corp/camp/internal/errors"
 	"github.com/Obedience-Corp/camp/internal/mdlinks"
+	"github.com/Obedience-Corp/camp/internal/moveref"
 )
 
 // Service errors.
@@ -77,18 +78,18 @@ func (s *Service) recordRewrittenLinkFiles(paths []string) {
 	s.rewrittenLinkFiles = append(s.rewrittenLinkFiles, paths...)
 }
 
-// BeginLinkBatch defers external markdown-link rewriting until FlushLinkRewrites
+// BeginLinkBatch defers external reference rewriting until FlushLinkRewrites
 // is called. A multi-move crawl can then scan the campaign tree a single time
 // instead of once per move, which otherwise dominates wall-clock time on large
-// workspaces. The moved item's own internal links are still rewritten on each
-// move regardless of batching.
+// workspaces. The moved item's own internal markdown links are still rewritten
+// on each move regardless of batching.
 func (s *Service) BeginLinkBatch() {
 	s.batchLinks = true
 }
 
-// FlushLinkRewrites performs the deferred external-link rewrite for every move
-// recorded since BeginLinkBatch, scanning the campaign tree once, then exits
-// batch mode. It is a no-op when no moves were recorded.
+// FlushLinkRewrites performs the deferred external rewrite (markdown + quest
+// links) for every move recorded since BeginLinkBatch, then exits batch mode.
+// It is a no-op when no moves were recorded.
 func (s *Service) FlushLinkRewrites(ctx context.Context) error {
 	s.batchLinks = false
 	if len(s.pendingMoves) == 0 {
@@ -97,17 +98,17 @@ func (s *Service) FlushLinkRewrites(ctx context.Context) error {
 	moves := s.pendingMoves
 	s.pendingMoves = nil
 
-	rewritten, err := mdlinks.RewriteExternalLinksForMoves(ctx, s.campaignRoot, moves)
+	rewritten, err := moveref.RewriteExternal(ctx, s.campaignRoot, moves)
 	if err != nil {
-		return camperrors.Wrap(err, "rewriting markdown links after moves")
+		return camperrors.Wrap(err, "rewriting references after moves")
 	}
 	s.recordRewrittenLinkFiles(rewritten)
 	return nil
 }
 
-// rewriteLinksAfterMove rewrites the moved item's own internal links
-// immediately, then either records the move for a batched external-link
-// rewrite (batch mode) or rewrites external links right away.
+// rewriteLinksAfterMove rewrites the moved item's own internal markdown
+// immediately, then either records the move for a batched external rewrite
+// (batch mode) or rewrites external markdown and quest links right away.
 func (s *Service) rewriteLinksAfterMove(ctx context.Context, srcPath, dstPath string) error {
 	internal, err := mdlinks.RewriteMovedInternalLinks(ctx, s.campaignRoot, srcPath, dstPath)
 	if err != nil {
@@ -120,7 +121,7 @@ func (s *Service) rewriteLinksAfterMove(ctx context.Context, srcPath, dstPath st
 		return nil
 	}
 
-	external, err := mdlinks.RewriteExternalLinksForMoves(ctx, s.campaignRoot, []mdlinks.Move{{Src: srcPath, Dst: dstPath}})
+	external, err := moveref.RewriteExternal(ctx, s.campaignRoot, []mdlinks.Move{{Src: srcPath, Dst: dstPath}})
 	if err != nil {
 		return err
 	}
@@ -129,8 +130,8 @@ func (s *Service) rewriteLinksAfterMove(ctx context.Context, srcPath, dstPath st
 }
 
 // RewrittenLinkFiles returns the deduplicated, sorted campaign-relative paths of
-// files whose markdown links were rewritten by moves on this Service, for the
-// caller to stage into the same commit as the move.
+// files whose references were rewritten by moves on this Service (markdown and
+// quest.yaml), for the caller to stage into the same commit as the move.
 func (s *Service) RewrittenLinkFiles() []string {
 	if len(s.rewrittenLinkFiles) == 0 {
 		return nil
