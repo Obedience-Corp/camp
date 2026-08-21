@@ -82,6 +82,23 @@ type RepoTarget struct {
 	Path  string
 }
 
+// commitLogGitArgs is the git-log invocation used to derive commit facts. Its
+// traversal flags come from commitkit.GitLogTraversalArgs, the contract
+// shared with `camp workitem commits --source scan` (internal/commands/
+// workitem/commits.go's commitsLogArgs): --all (every ref) and merge commits
+// included. Default-branch `git log --no-merges` was the 13-vs-20 ledger/scan
+// gap on backfilled campaigns (camp#615); building both call sites on the
+// shared slice, instead of each hardcoding its own flags, is what stops that
+// gap from reopening silently.
+var commitLogGitArgs = buildCommitLogGitArgs()
+
+func buildCommitLogGitArgs() []string {
+	args := []string{"log"}
+	args = append(args, commitkit.GitLogTraversalArgs()...)
+	args = append(args, "--format=%H%x1f%an%x1f%aI%x1f%s")
+	return args
+}
+
 // deriveCommitFacts turns tagged/degraded commits into evidence_attached facts,
 // with scope from the tag. Untagged commits produce no fact (they are the
 // bypass population the doctor reports, not backfillable to a scope).
@@ -96,34 +113,50 @@ func deriveCommitFacts(ctx context.Context, campaignRoot, campaignID string, rep
 			continue // an unreadable/empty repo contributes nothing
 		}
 		for _, ln := range lines {
-			cols := strings.SplitN(ln, "\x1f", 4)
-			if len(cols) != 4 {
-				continue
+			if f, ok := commitFactFromLogLine(campaignID, r.Label, ln); ok {
+				facts = append(facts, f)
 			}
-			sha, author, date, subject := cols[0], cols[1], cols[2], cols[3]
-			tc, _ := commitkit.ParseTagDetailed(subject)
-			if tc.CampaignID == "" {
-				continue // untagged: not attributable
-			}
-			facts = append(facts, DerivedFact{
-				Kind: ledgerkit.KindEvidenceAttached,
-				Scope: ledgerkit.Scope{
-					Campaign: campaignID, Festival: tc.FestRef,
-					Workitem: tc.WorkitemRef, Quest: tc.QuestID,
-				},
-				TS:          normalizeTS(date),
-				Why:         firstLineOf(subject),
-				Evidence:    []ledgerkit.Evidence{{Type: ledgerkit.EvidenceCommit, Repo: r.Label, SHA: sha}},
-				Payload:     map[string]any{"author": author},
-				IdentityKey: "commit:" + r.Label + "@" + sha,
-			})
 		}
 	}
 	return facts, nil
 }
 
+// commitFactFromLogLine turns one `git log` line (sha, author, date, subject
+// joined by 0x1f) into a commit evidence fact. Untagged subjects yield false.
+// ParseTagDetailed already normalizes historical doubled WI-WI- refs to WI-<hex>,
+// so scope.workitem matches the live scan's parsed tag.
+func commitFactFromLogLine(campaignID, repoLabel, line string) (DerivedFact, bool) {
+	cols := strings.SplitN(line, "\x1f", 4)
+	if len(cols) != 4 {
+		return DerivedFact{}, false
+	}
+	sha, author, date, subject := cols[0], cols[1], cols[2], cols[3]
+	if sha == "" {
+		return DerivedFact{}, false
+	}
+	tc, _ := commitkit.ParseTagDetailed(subject)
+	if tc.CampaignID == "" {
+		return DerivedFact{}, false
+	}
+	return DerivedFact{
+		Kind: ledgerkit.KindEvidenceAttached,
+		Scope: ledgerkit.Scope{
+			Campaign: campaignID, Festival: tc.FestRef,
+			Workitem: tc.WorkitemRef, Quest: tc.QuestID,
+		},
+		TS:          normalizeTS(date),
+		Why:         firstLineOf(subject),
+		Evidence:    []ledgerkit.Evidence{{Type: ledgerkit.EvidenceCommit, Repo: repoLabel, SHA: sha}},
+		Payload:     map[string]any{"author": author},
+		IdentityKey: "commit:" + repoLabel + "@" + sha,
+	}, true
+}
+
 func commitLog(ctx context.Context, repoPath string) ([]string, error) {
-	out, err := exec.CommandContext(ctx, "git", "-C", repoPath, "log", "--no-merges", "--format=%H%x1f%an%x1f%aI%x1f%s").Output()
+	args := make([]string, 0, 2+len(commitLogGitArgs))
+	args = append(args, "-C", repoPath)
+	args = append(args, commitLogGitArgs...)
+	out, err := exec.CommandContext(ctx, "git", args...).Output()
 	if err != nil {
 		return nil, err
 	}

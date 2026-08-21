@@ -14,7 +14,9 @@ anything below.
 
 1. `camp audit backfill` (dry run) - shows how many events would be derived from
    your history (tagged commits across linked repos, intent frontmatter, and
-   festival status histories) and how many are already captured.
+   festival status histories) and how many are already captured. Commit facts
+   come from `git log --all` (every ref, including merge commits) so a
+   subsequent `camp workitem commits --source ledger` matches `--source scan`.
 2. `camp audit backfill --apply` - writes the derived `source: backfill` events
    into the standard shard layout.
 3. `camp audit reconcile` then `camp audit reconcile --apply` - fills any state

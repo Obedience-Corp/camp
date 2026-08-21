@@ -274,7 +274,7 @@ func commitsFromLedgerEvents(events []*ledgerkit.Event, aliases map[string]bool)
 	var records []CommitRecord
 	seen := map[string]bool{}
 	for _, ev := range events {
-		if !aliases[ev.Scope.Workitem] {
+		if !ledgerEventMatchesWorkitem(ev, aliases) {
 			continue
 		}
 		for _, e := range ev.Evidence {
@@ -297,6 +297,28 @@ func commitsFromLedgerEvents(events []*ledgerkit.Event, aliases map[string]bool)
 		}
 	}
 	return records
+}
+
+// ledgerEventMatchesWorkitem reports whether an evidence event names the
+// queried workitem. Prefer scope.workitem (live capture and current backfill).
+// Fall back to the parsed commit subject when scope.workitem is empty or still
+// carries a historical doubled WI-WI- prefix — those events were written before
+// the parser normalized doubled refs, and they are the scan-vs-ledger miss.
+func ledgerEventMatchesWorkitem(ev *ledgerkit.Event, aliases map[string]bool) bool {
+	if ev == nil || len(aliases) == 0 {
+		return false
+	}
+	if aliases[ev.Scope.Workitem] {
+		return true
+	}
+	parsed := commitkit.ParseTag(ev.Why).WorkitemRef
+	if parsed == "" || !aliases[parsed] {
+		return false
+	}
+	if ev.Scope.Workitem == "" || strings.HasPrefix(ev.Scope.Workitem, "WI-WI-") {
+		return true
+	}
+	return false
 }
 
 func ledgerCommitAuthor(ev *ledgerkit.Event) string {
@@ -427,6 +449,19 @@ func commitsWorkerCount(repoCount int) int {
 	return workers
 }
 
+// commitsLogArgs builds the `git log` argv for a workitem-ref grep scan. Its
+// traversal flags come from commitkit.GitLogTraversalArgs, the contract
+// shared with `camp audit backfill` (internal/audit/backfill.go's
+// commitLogGitArgs): --all (every ref) and merge commits included. Extracted
+// to a pure function, rather than inlined in the exec.CommandContext call, so
+// a unit test can assert the shared contract without shelling out to git.
+func commitsLogArgs(repo, grep string) []string {
+	args := []string{"-C", repo, "log"}
+	args = append(args, commitkit.GitLogTraversalArgs()...)
+	args = append(args, "--pretty=format:"+commitsLogFormat, "--grep="+grep)
+	return args
+}
+
 // queryRepo runs `git log` in repo, parses the tab-separated output, and
 // filters out commits whose parsed tag does not match ref exactly. Returns
 // nil records (not an error) when the directory is not a git repo so the
@@ -446,12 +481,7 @@ func queryRepo(ctx context.Context, campaignRoot, repo, ref string) ([]CommitRec
 	// separator and matches both the single-prefix (-WI-abc123) and the
 	// historical doubled (-WI-WI-abc123) subject forms.
 	grep := "-" + ref
-	cmd := exec.CommandContext(cctx, "git",
-		"-C", repo,
-		"log", "--all",
-		"--pretty=format:"+commitsLogFormat,
-		"--grep="+grep,
-	)
+	cmd := exec.CommandContext(cctx, "git", commitsLogArgs(repo, grep)...)
 	output, err := cmd.Output()
 	if errors.Is(cctx.Err(), context.DeadlineExceeded) {
 		return nil, camperrors.New(fmt.Sprintf("git log timeout after %s", commitsPerRepoTimeout))
