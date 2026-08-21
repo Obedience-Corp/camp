@@ -107,7 +107,11 @@ type Index struct {
 // Version 4 enumerates worktree targets from git worktree list rather than the
 // projects/worktrees/<project>/ directory layout, so pre-existing version 3
 // indexes miss worktrees outside the conventional location and must be rebuilt.
-const IndexVersion = 4
+//
+// Version 5 indexes individual festivals nested under dest buckets
+// (planning/active/ready/ritual/chains), so pre-existing version 4 indexes
+// cannot resolve `camp go f weekly` and must be rebuilt.
+const IndexVersion = 5
 
 // NewIndex creates a new empty index for a campaign root.
 func NewIndex(campaignRoot string) *Index {

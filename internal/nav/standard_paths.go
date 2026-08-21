@@ -1,6 +1,10 @@
 package nav
 
-import "github.com/Obedience-Corp/camp/internal/config"
+import (
+	"strings"
+
+	"github.com/Obedience-Corp/camp/internal/config"
+)
 
 var standardPathCategories = map[string]Category{
 	"projects/":              CategoryProjects,
@@ -39,6 +43,28 @@ func CategoryForStandardPath(path string) (Category, bool) {
 func IsStandardPath(path string) bool {
 	_, ok := CategoryForStandardPath(path)
 	return ok
+}
+
+// FestivalStatusDirs are dest buckets that hold individual festival directories.
+// Live statuses are listed first so nested fuzzy search prefers an active
+// festival over a planning copy of the same name.
+var FestivalStatusDirs = []string{"active", "ready", "planning", "ritual", "chains"}
+
+// IsFestivalStatusDir reports whether name is a festival dest bucket.
+func IsFestivalStatusDir(name string) bool {
+	normalized := NormalizeNavigationName(name)
+	for _, dir := range FestivalStatusDirs {
+		if normalized == dir {
+			return true
+		}
+	}
+	return false
+}
+
+// IsFestivalsRelativePath reports whether relativePath is the festivals root.
+func IsFestivalsRelativePath(relativePath string) bool {
+	cleaned := strings.Trim(strings.TrimSpace(relativePath), "/")
+	return cleaned == string(CategoryFestivals)
 }
 
 // BuildCategoryMappings converts configured shortcut keys to nav.Category

@@ -220,6 +220,35 @@ func TestResolve_MultipleMatches(t *testing.T) {
 	}
 }
 
+func TestResolve_NestedFestivalQuery(t *testing.T) {
+	root := t.TempDir()
+	if err := os.MkdirAll(filepath.Join(root, ".campaign"), 0755); err != nil {
+		t.Fatal(err)
+	}
+	want := filepath.Join(root, "festivals", "planning", "weekly-streaks")
+	if err := os.MkdirAll(want, 0755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.MkdirAll(filepath.Join(root, "festivals", "planning", "push-reminders"), 0755); err != nil {
+		t.Fatal(err)
+	}
+
+	result, err := Resolve(context.Background(), ResolveOptions{
+		CampaignRoot: root,
+		Category:     nav.CategoryFestivals,
+		Query:        "weekly",
+	})
+	if err != nil {
+		t.Fatalf("Resolve() error = %v", err)
+	}
+	if result.Name != "weekly-streaks" {
+		t.Fatalf("Name = %q, want weekly-streaks", result.Name)
+	}
+	if result.Path != want {
+		t.Fatalf("Path = %q, want %q", result.Path, want)
+	}
+}
+
 func TestResolve_ContextCancellation(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	cancel() // Cancel immediately

@@ -94,10 +94,11 @@ func TopLevelNavigationNames(cfg *config.CampaignConfig) []string {
 // Resolution order (first match wins):
 //  1. Shortcut-drill form "<key>@<query>" (e.g. "de@festival_app")
 //  2. Plain shortcut key from jumps.yaml (e.g. "de")
-//  3. Slash-drill form "<token>/<query>" (e.g. "design/festival_app"),
-//     where <token> is resolved via step 4 or 5 below
-//  4. Configured concept name from campaign.yaml (e.g. "design")
-//  5. Long-form directory alias derived from a navigation shortcut's target
+//  3. Documented default category shortcut (e.g. "p", "f") when jumps.yaml omitted it
+//  4. Slash-drill form "<token>/<query>" (e.g. "design/festival_app"),
+//     where <token> is resolved via step 5 or 6 below
+//  5. Configured concept name from campaign.yaml (e.g. "design")
+//  6. Long-form directory alias derived from a navigation shortcut's target
 //     path (e.g. shortcut "de" → path "workflow/design/" → alias "design")
 //
 // Concepts shadow path aliases at the same normalized name by design:
@@ -119,10 +120,20 @@ func ResolveConfiguredTarget(cfg *config.CampaignConfig, args []string) Configur
 			target.Drill = true
 			return target
 		}
+		if target, ok := resolveDefaultCategoryShortcut(parsedArgs); ok {
+			target.Drill = true
+			return target
+		}
 	}
 
 	// (2) Plain shortcut key: "de"
 	if target, ok := resolveNavigationShortcut(shortcuts, args); ok {
+		return target
+	}
+
+	// (2b) Documented default category keys (p, f, ...) even when jumps.yaml
+	// omitted them. Campaign shortcuts above still win when present.
+	if target, ok := resolveDefaultCategoryShortcut(args); ok {
 		return target
 	}
 
@@ -135,6 +146,25 @@ func ResolveConfiguredTarget(cfg *config.CampaignConfig, args []string) Configur
 
 	// (4)/(5) Plain concept or path alias: "design" or "ai_docs"
 	return resolveDrillTarget(cfg, aliases, args)
+}
+
+func resolveDefaultCategoryShortcut(args []string) (ConfiguredTarget, bool) {
+	if len(args) == 0 {
+		return ConfiguredTarget{}, false
+	}
+	cat, ok := DefaultShortcuts[NormalizeNavigationName(args[0])]
+	if !ok {
+		return ConfiguredTarget{}, false
+	}
+	query := ""
+	if len(args) > 1 {
+		query = strings.Join(args[1:], " ")
+	}
+	return ConfiguredTarget{
+		Category: cat,
+		Query:    query,
+		Matched:  true,
+	}, true
 }
 
 func resolveNavigationShortcut(shortcuts map[string]config.ShortcutConfig, args []string) (ConfiguredTarget, bool) {

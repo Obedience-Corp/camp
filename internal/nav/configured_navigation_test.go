@@ -6,6 +6,83 @@ import (
 	"github.com/Obedience-Corp/camp/internal/config"
 )
 
+func TestResolveConfiguredTarget_FallsBackToDefaultCategoryShortcut(t *testing.T) {
+	cfg := &config.CampaignConfig{
+		Jumps: &config.JumpsConfig{
+			Shortcuts: map[string]config.ShortcutConfig{
+				"de": {Path: "workflow/design/"},
+			},
+		},
+	}
+
+	got := ResolveConfiguredTarget(cfg, []string{"p", "api"})
+	if !got.Matched {
+		t.Fatal("ResolveConfiguredTarget() did not fall back to default shortcut p")
+	}
+	if got.Category != CategoryProjects {
+		t.Fatalf("Category = %q, want %q", got.Category, CategoryProjects)
+	}
+	if got.Query != "api" {
+		t.Fatalf("Query = %q, want %q", got.Query, "api")
+	}
+
+	fest := ResolveConfiguredTarget(cfg, []string{"f", "weekly"})
+	if !fest.Matched {
+		t.Fatal("ResolveConfiguredTarget() did not fall back to default shortcut f")
+	}
+	if fest.Category != CategoryFestivals {
+		t.Fatalf("Category = %q, want %q", fest.Category, CategoryFestivals)
+	}
+	if fest.Query != "weekly" {
+		t.Fatalf("Query = %q, want %q", fest.Query, "weekly")
+	}
+}
+
+func TestResolveConfiguredTarget_CampaignShortcutWinsOverDefault(t *testing.T) {
+	cfg := &config.CampaignConfig{
+		Jumps: &config.JumpsConfig{
+			Shortcuts: map[string]config.ShortcutConfig{
+				"p": {Path: "workflow/design/"},
+			},
+		},
+	}
+
+	got := ResolveConfiguredTarget(cfg, []string{"p", "api"})
+	if !got.Matched {
+		t.Fatal("ResolveConfiguredTarget() did not match campaign shortcut p")
+	}
+	if got.Category != CategoryDesign {
+		t.Fatalf("Category = %q, want %q", got.Category, CategoryDesign)
+	}
+	if got.Query != "api" {
+		t.Fatalf("Query = %q, want %q", got.Query, "api")
+	}
+}
+
+func TestResolveConfiguredTarget_DefaultShortcutAtDrill(t *testing.T) {
+	cfg := &config.CampaignConfig{
+		Jumps: &config.JumpsConfig{
+			Shortcuts: map[string]config.ShortcutConfig{
+				"de": {Path: "workflow/design/"},
+			},
+		},
+	}
+
+	got := ResolveConfiguredTarget(cfg, []string{"f@weekly"})
+	if !got.Matched {
+		t.Fatal("ResolveConfiguredTarget() did not match default shortcut drill")
+	}
+	if got.Category != CategoryFestivals {
+		t.Fatalf("Category = %q, want %q", got.Category, CategoryFestivals)
+	}
+	if got.Query != "weekly" {
+		t.Fatalf("Query = %q, want %q", got.Query, "weekly")
+	}
+	if !got.Drill {
+		t.Fatal("Drill = false, want true")
+	}
+}
+
 func TestResolveConfiguredTarget_UsesShortcutKey(t *testing.T) {
 	cfg := &config.CampaignConfig{
 		Jumps: &config.JumpsConfig{

@@ -82,17 +82,14 @@ func (b *Builder) Build(ctx context.Context) (*Index, error) {
 
 // scanCategory scans a single category directory for targets.
 func (b *Builder) scanCategory(ctx context.Context, cat nav.Category) ([]Target, error) {
-	dir := filepath.Join(b.root, cat.Dir())
-
-	// Check context
 	if ctx.Err() != nil {
 		return nil, ctx.Err()
 	}
 
-	// Check if directory exists
+	dir := filepath.Join(b.root, cat.Dir())
 	info, err := os.Stat(dir)
 	if os.IsNotExist(err) {
-		return nil, nil // Not an error, just skip
+		return nil, nil
 	}
 	if err != nil {
 		return nil, err
@@ -101,50 +98,93 @@ func (b *Builder) scanCategory(ctx context.Context, cat nav.Category) ([]Target,
 		return nil, nil
 	}
 
-	// List immediate children
+	targets, err := b.scanDirTargets(ctx, dir, cat)
+	if err != nil || cat != nav.CategoryFestivals {
+		return targets, err
+	}
+	return b.withNestedFestivalTargets(ctx, targets, cat)
+}
+
+func (b *Builder) withNestedFestivalTargets(ctx context.Context, buckets []Target, cat nav.Category) ([]Target, error) {
+	all := make([]Target, 0, len(buckets))
+	for _, bucket := range buckets {
+		if ctx.Err() != nil {
+			return nil, ctx.Err()
+		}
+		all = append(all, bucket)
+		if !nav.IsFestivalStatusDir(bucket.Name) {
+			continue
+		}
+		nested, err := b.scanDirTargets(ctx, bucket.Path, cat)
+		if err != nil {
+			if os.IsNotExist(err) {
+				// The bucket existed moments ago during the top-level scan
+				// but is gone now: it lost a race with a concurrent
+				// festival move, not a real scan failure. That bucket
+				// simply has no nested festivals to index.
+				continue
+			}
+			// A real scan error (permission, I/O) on a status bucket must
+			// not produce a silently incomplete festival index: callers
+			// resolving "camp go f <name>" against a partial index would
+			// miss festivals that are actually there, and the result can be
+			// cached for up to cacheMaxAge. Propagate the error so
+			// scanCategory returns it too; Build's per-category loop then
+			// omits the whole festivals category from the index (its
+			// existing "some directories may not exist" degradation path)
+			// instead of caching a status-bucket list that looks complete
+			// but silently dropped one bucket's festivals.
+			return nil, err
+		}
+		all = append(all, nested...)
+	}
+	return all, nil
+}
+
+func (b *Builder) scanDirTargets(ctx context.Context, dir string, cat nav.Category) ([]Target, error) {
+	if ctx.Err() != nil {
+		return nil, ctx.Err()
+	}
 	entries, err := os.ReadDir(dir)
 	if err != nil {
 		return nil, err
 	}
-
 	var targets []Target
 	for _, entry := range entries {
-		// Skip hidden entries
-		if strings.HasPrefix(entry.Name(), ".") {
-			continue
+		if ctx.Err() != nil {
+			return nil, ctx.Err()
 		}
-
-		// Skip dungeon directories (archived/old work)
-		if entry.Name() == "dungeon" {
-			continue
+		target, ok := b.entryTarget(dir, entry, cat)
+		if ok {
+			targets = append(targets, target)
 		}
-
-		isDir := entry.IsDir()
-		if !isDir && entry.Type()&os.ModeSymlink != 0 {
-			targetInfo, err := os.Stat(filepath.Join(dir, entry.Name()))
-			isDir = err == nil && targetInfo.IsDir()
-		}
-		if !isDir {
-			continue
-		}
-
-		target := Target{
-			Name:     entry.Name(),
-			Path:     filepath.Join(dir, entry.Name()),
-			Category: cat,
-		}
-
-		// For projects, attach shortcuts from project config if available
-		if cat == nav.CategoryProjects {
-			if projectCfg := b.findProjectConfig(entry.Name()); projectCfg != nil {
-				target.Shortcuts = projectCfg.Shortcuts
-			}
-		}
-
-		targets = append(targets, target)
 	}
-
 	return targets, nil
+}
+
+func (b *Builder) entryTarget(dir string, entry os.DirEntry, cat nav.Category) (Target, bool) {
+	if strings.HasPrefix(entry.Name(), ".") || entry.Name() == "dungeon" {
+		return Target{}, false
+	}
+	isDir := entry.IsDir()
+	if !isDir && entry.Type()&os.ModeSymlink != 0 {
+		info, err := os.Stat(filepath.Join(dir, entry.Name()))
+		isDir = err == nil && info.IsDir()
+	}
+	if !isDir {
+		return Target{}, false
+	}
+	target := Target{
+		Name:     entry.Name(),
+		Path:     filepath.Join(dir, entry.Name()),
+		Category: cat,
+	}
+	if cat == nav.CategoryProjects {
+		if projectCfg := b.findProjectConfig(entry.Name()); projectCfg != nil {
+			target.Shortcuts = projectCfg.Shortcuts
+		}
+	}
+	return target, true
 }
 
 // scanWorktrees enumerates git worktrees for every project in the campaign,

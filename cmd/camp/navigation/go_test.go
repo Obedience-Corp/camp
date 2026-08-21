@@ -14,6 +14,33 @@ import (
 	"github.com/spf13/cobra"
 )
 
+func TestQueryAndSubShortcut_UnmatchedTwoArgKeepsFullQuery(t *testing.T) {
+	query, sub := queryAndSubShortcut("p api", false)
+	if query != "p api" {
+		t.Fatalf("query = %q, want %q", query, "p api")
+	}
+	if sub != "" {
+		t.Fatalf("subShortcut = %q, want empty", sub)
+	}
+}
+
+func TestQueryAndSubShortcut_ShortcutSplitsProjectSubShortcut(t *testing.T) {
+	query, sub := queryAndSubShortcut("fest cli", true)
+	if query != "fest" {
+		t.Fatalf("query = %q, want %q", query, "fest")
+	}
+	if sub != "cli" {
+		t.Fatalf("subShortcut = %q, want %q", sub, "cli")
+	}
+}
+
+func TestQueryAndSubShortcut_SingleTokenUnchanged(t *testing.T) {
+	query, sub := queryAndSubShortcut("api", true)
+	if query != "api" || sub != "" {
+		t.Fatalf("query=%q sub=%q, want api / empty", query, sub)
+	}
+}
+
 func TestHandleToggle_ReturnsLastLocation(t *testing.T) {
 	ctx := context.Background()
 	campaignRoot := t.TempDir()
