@@ -120,19 +120,24 @@ func askSweepAnswer(ctx context.Context, work *sweepWork, cand wkitem.SweepCandi
 		return answerKeep, false, nil
 	}
 
+	// Options before Value, and not the other way around. huh's Select resolves
+	// the pointer's current value against the option list at the moment Value is
+	// called, so setting it first leaves the list unresolved and the form renders
+	// with a single row where five belong. That is invisible to a unit test and
+	// was caught by tests/tui/sweep_prompt_pty.py.
 	answer := answerKeep
 	form := huh.NewForm(huh.NewGroup(
 		huh.NewSelect[sweepAnswer]().
 			Title(title).
 			Description(description).
-			Value(&answer).
 			Options(
 				huh.NewOption("Route to docs - move the findings into a docs/ subdirectory", answerRouteDocs),
 				huh.NewOption("Mark completed - shelve it in dungeon/completed", answerCompleted),
 				huh.NewOption("Someday - shelve it in dungeon/someday", answerSomeday),
 				huh.NewOption("Archive - shelve it in dungeon/archived", answerArchived),
 				huh.NewOption("Keep working - leave it where it is", answerKeep),
-			),
+			).
+			Value(&answer),
 	))
 	if err := theme.RunForm(ctx, form); err != nil {
 		if theme.IsCancelled(err) {
