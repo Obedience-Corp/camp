@@ -332,6 +332,14 @@ func executeFresh(ctx context.Context, name, path string, opts freshOptions) err
 	// Step 2 already refreshed and pruned remote tracking refs, so prune does
 	// not perform a second network fetch.
 	if opts.prune {
+		// Record branch → worktree path before prune deletes the branch and
+		// detaches/removes the worktree. The tier-2 backstop uses this map
+		// instead of guessing the branch from the worktree directory name.
+		campRoot := backstopRoot(ctx, opts)
+		var branchPaths map[string]string
+		if campRoot != "" {
+			branchPaths = listWorktreeBranchPaths(ctx, campRoot, path)
+		}
 		pruneOpts := prune.Options{
 			DryRun:        opts.dryRun,
 			Force:         true,  // Skip confirmation — fresh is deliberate
@@ -395,8 +403,8 @@ func executeFresh(ctx context.Context, name, path string, opts freshOptions) err
 		// auto-promotes. A dry-run downgrades to report-only (mirroring the
 		// tier-1 sweep) so it never reaches the prompt/promote path, matching
 		// the tier-1 dry-run contract.
-		handleMergedBackstop(ctx, os.Stdout, backstopRoot(ctx, opts), path,
-			deletedNames, beforeSHA, resolveBackstopMode(opts.mergedWorkitems, opts.dryRun))
+		handleMergedBackstop(ctx, os.Stdout, campRoot, path,
+			deletedNames, beforeSHA, resolveBackstopMode(opts.mergedWorkitems, opts.dryRun), branchPaths)
 	}
 
 	// Step 4: Create branch (optional)

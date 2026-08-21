@@ -131,18 +131,18 @@ func TestMatchWorktreeLinkBranch(t *testing.T) {
 		{WorkitemID: "design-foo-01", Scope: links.LinkScope{Kind: links.ScopeRepo, Path: "projects/other/foo"}},
 	}
 
-	wi, _, ok := matchWorktreeLinkBranch(linkList, active, "foo")
+	wi, _, ok := matchWorktreeLinkBranch(linkList, active, "foo", nil)
 	if !ok || wi.Key != "design:workflow/design/foo" {
 		t.Fatalf("expected worktree-link match for branch foo, got ok=%v wi=%+v", ok, wi)
 	}
 
-	if _, _, ok := matchWorktreeLinkBranch(linkList, active, "unrelated"); ok {
+	if _, _, ok := matchWorktreeLinkBranch(linkList, active, "unrelated", nil); ok {
 		t.Errorf("expected no match for a branch with no worktree link")
 	}
 
 	// Repo-scope only (no worktree link) must not match by basename.
 	repoOnly := []links.Link{{WorkitemID: "design-foo-01", Scope: links.LinkScope{Kind: links.ScopeRepo, Path: "projects/other/foo"}}}
-	if _, _, ok := matchWorktreeLinkBranch(repoOnly, active, "foo"); ok {
+	if _, _, ok := matchWorktreeLinkBranch(repoOnly, active, "foo", nil); ok {
 		t.Errorf("repo-scope link must not match a branch by basename")
 	}
 }
@@ -183,7 +183,7 @@ func TestCollectWorktreeLinkMatches_DedupesSameWorkitem(t *testing.T) {
 		"unrelated-merged-branch",
 	}
 
-	matches, unmatched, matchedKeys := collectWorktreeLinkMatches(linkList, active, pruned)
+	matches, unmatched, matchedKeys := collectWorktreeLinkMatches(linkList, active, pruned, nil)
 
 	if len(matches) != 2 {
 		t.Fatalf("expected 2 unique workitem matches, got %d: %+v", len(matches), matches)
