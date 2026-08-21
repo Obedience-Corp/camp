@@ -114,6 +114,8 @@ type Params struct {
 // Writers routes init flow output for command callers.
 type Writers struct {
 	HumanOut io.Writer
+	// ErrOut receives diagnostics (warnings). Nil means os.Stderr.
+	ErrOut io.Writer
 }
 
 func write(w io.Writer, args ...any) {
@@ -130,7 +132,7 @@ func writef(w io.Writer, format string, args ...any) {
 
 // ChooseWriters returns the default writer set for command output.
 func ChooseWriters() Writers {
-	return Writers{HumanOut: os.Stdout}
+	return Writers{HumanOut: os.Stdout, ErrOut: os.Stderr}
 }
 
 func runInit(cmd *cobra.Command, args []string) error {
@@ -247,6 +249,7 @@ func RunFlow(ctx context.Context, p Params, w Writers, isInteractive bool) error
 
 		if !plan.HasChanges() && !skillsPending {
 			writeLine(w.HumanOut, ui.Success("Campaign is up to date — nothing to repair."))
+			emitHermesContextWarning(ctx, dir, w)
 			return nil
 		}
 
@@ -261,6 +264,7 @@ func RunFlow(ctx context.Context, p Params, w Writers, isInteractive bool) error
 		if p.DryRun {
 			writeLine(w.HumanOut)
 			writeLine(w.HumanOut, ui.Warning("Dry run - no changes applied."))
+			emitHermesContextWarning(ctx, dir, w)
 			return nil
 		}
 
@@ -274,6 +278,7 @@ func RunFlow(ctx context.Context, p Params, w Writers, isInteractive bool) error
 			answer = strings.TrimSpace(strings.ToLower(answer))
 			if answer != "y" && answer != "yes" {
 				writeLine(w.HumanOut, "Repair cancelled.")
+				emitHermesContextWarning(ctx, dir, w)
 				return nil
 			}
 			writeLine(w.HumanOut)
@@ -405,6 +410,7 @@ func RunFlow(ctx context.Context, p Params, w Writers, isInteractive bool) error
 		}
 	}
 
+	emitHermesContextWarning(ctx, result.CampaignRoot, w)
 	return nil
 }
 
