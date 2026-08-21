@@ -27,9 +27,10 @@ func newBackfillCommand() *cobra.Command {
 		Use:   "backfill",
 		Short: "Derive a source:backfill event stream from history (opt-in write)",
 		Long: `Derive ledger events from a campaign's existing history - tagged commits across
-linked repos, intent frontmatter, and festival status histories - so a pre-ledger
-campaign (or the pre-ledger history of this one) renders on the same timeline as
-new activity.
+linked repos (git log --all, including merges), intent frontmatter, and festival
+status histories - so a pre-ledger campaign (or the pre-ledger history of this
+one) renders on the same timeline as new activity. Historical doubled WI-WI-
+workitem tags are stored as the normalized WI-<hex> ref.
 
 Backfill is optional and never required. It is idempotent and live-wins: a fact
 already captured live or by a prior backfill is skipped, so consecutive runs

@@ -117,6 +117,96 @@ func TestCommitsFromLedgerEventsMatchesAliasesAndShapesRecords(t *testing.T) {
 	}
 }
 
+func TestLedgerEventMatchesWorkitemHistoricalDoubledTags(t *testing.T) {
+	aliases := map[string]bool{"WI-25121c": true}
+	tests := []struct {
+		name string
+		ev   *ledgerkit.Event
+		want bool
+	}{
+		{
+			name: "empty scope with doubled WI-WI- subject matches parsed tag",
+			ev: &ledgerkit.Event{
+				Scope: ledgerkit.Scope{},
+				Why:   "[OBEY-CAMPAIGN-8deed8b4-WI-WI-25121c] feat: backfill miss",
+			},
+			want: true,
+		},
+		{
+			name: "doubled scope prefix with matching subject matches",
+			ev: &ledgerkit.Event{
+				Scope: ledgerkit.Scope{Workitem: "WI-WI-25121c"},
+				Why:   "[OBEY-CAMPAIGN-8deed8b4-WI-WI-25121c] feat: doubled scope",
+			},
+			want: true,
+		},
+		{
+			name: "canonical scope still matches",
+			ev: &ledgerkit.Event{
+				Scope: ledgerkit.Scope{Workitem: "WI-25121c"},
+				Why:   "[obey-campaign:8deed8b4-WI-25121c] feat: current backfill",
+			},
+			want: true,
+		},
+		{
+			name: "different workitem on scope is not overridden by subject",
+			ev: &ledgerkit.Event{
+				Scope: ledgerkit.Scope{Workitem: "WI-other1"},
+				Why:   "[OBEY-CAMPAIGN-8deed8b4-WI-WI-25121c] feat: other item",
+			},
+			want: false,
+		},
+		{
+			name: "empty scope and untagged subject does not match",
+			ev: &ledgerkit.Event{
+				Scope: ledgerkit.Scope{},
+				Why:   "fix: no campaign tag",
+			},
+			want: false,
+		},
+		{
+			name: "nil event does not match",
+			ev:   nil,
+			want: false,
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if got := ledgerEventMatchesWorkitem(tt.ev, aliases); got != tt.want {
+				t.Fatalf("ledgerEventMatchesWorkitem() = %v, want %v", got, tt.want)
+			}
+		})
+	}
+}
+
+func TestCommitsFromLedgerEventsMatchesDoubledSubjectWhenScopeEmpty(t *testing.T) {
+	aliases := map[string]bool{"WI-25121c": true}
+	events := []*ledgerkit.Event{
+		{
+			Kind:     ledgerkit.KindEvidenceAttached,
+			TS:       "2026-07-11T22:00:00Z",
+			Scope:    ledgerkit.Scope{Campaign: "8deed8b4"}, // historical: workitem left empty
+			Why:      "[OBEY-CAMPAIGN-8deed8b4-WI-WI-25121c] feat: merge on side branch",
+			Payload:  map[string]any{"author": "Lance"},
+			Evidence: []ledgerkit.Evidence{{Type: ledgerkit.EvidenceCommit, Repo: "campaign-root", SHA: "deadbee"}},
+		},
+		{
+			Kind:     ledgerkit.KindEvidenceAttached,
+			TS:       "2026-07-11T23:00:00Z",
+			Scope:    ledgerkit.Scope{Campaign: "8deed8b4", Workitem: "WI-other1"},
+			Why:      "[OBEY-CAMPAIGN-8deed8b4-WI-other1] chore: unrelated",
+			Evidence: []ledgerkit.Evidence{{Type: ledgerkit.EvidenceCommit, Repo: "campaign-root", SHA: "eeeeeee"}},
+		},
+	}
+	got := commitsFromLedgerEvents(events, aliases)
+	if len(got) != 1 || got[0].SHA != "deadbee" {
+		t.Fatalf("want the historically empty-scope commit only, got %+v", got)
+	}
+	if got[0].TagParts.WorkitemRef != "WI-25121c" {
+		t.Fatalf("parsed tag = %q, want WI-25121c", got[0].TagParts.WorkitemRef)
+	}
+}
+
 func TestCommitsFromLedgerEventsAuthorFallsBackToActor(t *testing.T) {
 	events := []*ledgerkit.Event{{
 		Kind:     ledgerkit.KindEvidenceAttached,
