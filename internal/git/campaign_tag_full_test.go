@@ -593,3 +593,291 @@ func randHex(t *testing.T, n int) string {
 	}
 	return hex.EncodeToString(b)
 }
+
+func TestFormatTag_PhaseAndSequence(t *testing.T) {
+	cases := []struct {
+		name string
+		tc   TagComponents
+		want string
+	}{
+		{
+			name: "empty campaign returns empty",
+			tc:   TagComponents{FestRef: "CC0008", Phase: "001", Sequence: "02"},
+			want: "",
+		},
+		{
+			name: "sequence without phase is dropped",
+			tc:   TagComponents{CampaignID: "8deed8b4", FestRef: "CC0008", Sequence: "02"},
+			want: "[OBEY-CAMPAIGN-8deed8b4-FE-CC0008]",
+		},
+		{
+			name: "phase without festival is dropped",
+			tc:   TagComponents{CampaignID: "8deed8b4", Phase: "001"},
+			want: "[OBEY-CAMPAIGN-8deed8b4]",
+		},
+		{
+			name: "phase and sequence without festival are both dropped",
+			tc:   TagComponents{CampaignID: "8deed8b4", Phase: "001", Sequence: "02"},
+			want: "[OBEY-CAMPAIGN-8deed8b4]",
+		},
+		{
+			name: "phase only",
+			tc:   TagComponents{CampaignID: "8deed8b4", FestRef: "CC0008", Phase: "001"},
+			want: "[OBEY-CAMPAIGN-8deed8b4-FE-CC0008-PH-001]",
+		},
+		{
+			name: "phase and sequence",
+			tc:   TagComponents{CampaignID: "8deed8b4", FestRef: "CC0008", Phase: "001", Sequence: "02"},
+			want: "[OBEY-CAMPAIGN-8deed8b4-FE-CC0008-PH-001-SQ-02]",
+		},
+		{
+			name: "name-style head with phase and sequence",
+			tc: TagComponents{
+				CampaignName: "obey-campaign", CampaignID: "8deed8b4",
+				FestRef: "CC0008", Phase: "001", Sequence: "02",
+			},
+			want: "[obey-campaign:8deed8b4-FE-CC0008-PH-001-SQ-02]",
+		},
+		{
+			name: "unslugifiable name falls back to legacy head",
+			tc: TagComponents{
+				CampaignName: "!!!", CampaignID: "8deed8b4",
+				FestRef: "CC0008", Phase: "001", Sequence: "02",
+			},
+			want: "[OBEY-CAMPAIGN-8deed8b4-FE-CC0008-PH-001-SQ-02]",
+		},
+		{
+			name: "campaign id truncated to 8 chars",
+			tc: TagComponents{
+				CampaignName: "obey-campaign", CampaignID: "8deed8b4abcdef",
+				FestRef: "CC0008", Phase: "001",
+			},
+			want: "[obey-campaign:8deed8b4-FE-CC0008-PH-001]",
+		},
+		{
+			name: "full segment set in canonical order",
+			tc: TagComponents{
+				CampaignName: "obey-campaign", CampaignID: "8deed8b4", QuestID: "qst_abc",
+				FestRef: "CC0008", Phase: "001", Sequence: "02",
+				WorkitemRef: "WI-abcdef", NoteRef: "NT-123456",
+			},
+			want: "[obey-campaign:8deed8b4-qst_abc-FE-CC0008-PH-001-SQ-02-WI-abcdef-NT-123456]",
+		},
+		{
+			name: "workitem and note prefixes are normalized",
+			tc: TagComponents{
+				CampaignID: "8deed8b4", FestRef: "CC0008", Phase: "001", Sequence: "02",
+				WorkitemRef: "abcdef", NoteRef: "123456",
+			},
+			want: "[OBEY-CAMPAIGN-8deed8b4-FE-CC0008-PH-001-SQ-02-WI-abcdef-NT-123456]",
+		},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			if got := FormatTag(tc.tc); got != tc.want {
+				t.Fatalf("FormatTag = %q, want %q", got, tc.want)
+			}
+		})
+	}
+}
+
+func TestFormatTag_MatchesPositionalEmitter(t *testing.T) {
+	// FormatContextTagsFull is a wrapper over FormatTag; a components struct
+	// with no phase or sequence must emit byte-identically to the positional
+	// call every existing caller makes.
+	want := FormatContextTagsFull("obey-campaign", "8deed8b4", "qst_abc", "CW0003", "WI-abcdef", "NT-123456")
+	got := FormatTag(TagComponents{
+		CampaignName: "obey-campaign", CampaignID: "8deed8b4", QuestID: "qst_abc",
+		FestRef: "CW0003", WorkitemRef: "WI-abcdef", NoteRef: "NT-123456",
+	})
+	if got != want {
+		t.Fatalf("FormatTag = %q, want %q", got, want)
+	}
+}
+
+func TestFormatTag_ParseRoundTrip(t *testing.T) {
+	cases := []struct {
+		name string
+		tc   TagComponents
+	}{
+		{
+			name: "festival phase and sequence",
+			tc: TagComponents{
+				CampaignName: "obey-campaign", CampaignID: "8deed8b4",
+				FestRef: "CC0008", Phase: "001", Sequence: "02",
+			},
+		},
+		{
+			name: "festival and phase only",
+			tc: TagComponents{
+				CampaignName: "obey-campaign", CampaignID: "8deed8b4",
+				FestRef: "CC0008", Phase: "001",
+			},
+		},
+		{
+			name: "every segment",
+			tc: TagComponents{
+				CampaignName: "obey-campaign", CampaignID: "8deed8b4", QuestID: "qst_abc",
+				FestRef: "CC0008", Phase: "001", Sequence: "02",
+				WorkitemRef: "WI-abcdef", NoteRef: "NT-123456",
+			},
+		},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			tag := FormatTag(tc.tc)
+			got, warnings := ParseTagDetailed(tag)
+			if len(warnings) != 0 {
+				t.Fatalf("round trip of %q warned: %+v", tag, warnings)
+			}
+			if got != tc.tc {
+				t.Fatalf("round trip of %q = %+v, want %+v", tag, got, tc.tc)
+			}
+		})
+	}
+}
+
+func TestParseTagDetailed_PhaseAndSequence(t *testing.T) {
+	cases := []struct {
+		name             string
+		subject          string
+		wantFest         string
+		wantPhase        string
+		wantSequence     string
+		wantWorkitem     string
+		wantNote         string
+		wantWarningField []string
+	}{
+		{
+			name:             "non-numeric phase zeroes phase",
+			subject:          "[OBEY-CAMPAIGN-abc-FE-CC0008-PH-abc] x",
+			wantFest:         "CC0008",
+			wantWarningField: []string{"phase"},
+		},
+		{
+			name:             "over-long phase zeroes phase",
+			subject:          "[OBEY-CAMPAIGN-abc-FE-CC0008-PH-12345] x",
+			wantFest:         "CC0008",
+			wantWarningField: []string{"phase"},
+		},
+		{
+			name:             "empty sequence payload zeroes sequence",
+			subject:          "[OBEY-CAMPAIGN-abc-FE-CC0008-PH-001-SQ-] x",
+			wantFest:         "CC0008",
+			wantPhase:        "001",
+			wantWarningField: []string{"sequence"},
+		},
+		{
+			name:             "non-numeric sequence zeroes sequence",
+			subject:          "[OBEY-CAMPAIGN-abc-FE-CC0008-PH-001-SQ-abc] x",
+			wantFest:         "CC0008",
+			wantPhase:        "001",
+			wantWarningField: []string{"sequence"},
+		},
+		{
+			name:             "duplicate phase warns and keeps the first",
+			subject:          "[OBEY-CAMPAIGN-abc-FE-CC0008-PH-001-PH-002] x",
+			wantFest:         "CC0008",
+			wantPhase:        "001",
+			wantWarningField: []string{"phase"},
+		},
+		{
+			name:             "duplicate sequence warns and keeps the first",
+			subject:          "[OBEY-CAMPAIGN-abc-FE-CC0008-PH-001-SQ-02-SQ-03] x",
+			wantFest:         "CC0008",
+			wantPhase:        "001",
+			wantSequence:     "02",
+			wantWarningField: []string{"sequence"},
+		},
+		{
+			name:             "sequence without phase warns but keeps the value",
+			subject:          "[OBEY-CAMPAIGN-abc-FE-CC0008-SQ-02] x",
+			wantFest:         "CC0008",
+			wantSequence:     "02",
+			wantWarningField: []string{"sequence"},
+		},
+		{
+			name:         "phase and sequence parse clean",
+			subject:      "[obey-campaign:8deed8b4-FE-CC0008-PH-001-SQ-02] feat: update camp scaffold",
+			wantFest:     "CC0008",
+			wantPhase:    "001",
+			wantSequence: "02",
+		},
+		{
+			name:         "legacy head carries the new segments",
+			subject:      "[OBEY-CAMPAIGN-8deed8b4-FE-CC0008-PH-001-SQ-02] feat: x",
+			wantFest:     "CC0008",
+			wantPhase:    "001",
+			wantSequence: "02",
+		},
+		{
+			name:         "phase and sequence leave workitem and note intact",
+			subject:      "[obey-campaign:8deed8b4-FE-CC0008-PH-001-SQ-02-WI-abcdef-NT-123456] x",
+			wantFest:     "CC0008",
+			wantPhase:    "001",
+			wantSequence: "02",
+			wantWorkitem: "WI-abcdef",
+			wantNote:     "NT-123456",
+		},
+		{
+			name:         "phase and sequence leave the doubled workitem form intact",
+			subject:      "[OBEY-CAMPAIGN-abc-FE-CC0008-PH-001-SQ-02-WI-WI-abcdef] x",
+			wantFest:     "CC0008",
+			wantPhase:    "001",
+			wantSequence: "02",
+			wantWorkitem: "WI-abcdef",
+		},
+		{
+			name:         "segments parse regardless of position",
+			subject:      "[OBEY-CAMPAIGN-abc-PH-001-SQ-02-FE-CC0008] x",
+			wantFest:     "CC0008",
+			wantPhase:    "001",
+			wantSequence: "02",
+		},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			got, warnings := ParseTagDetailed(tc.subject)
+			if got.FestRef != tc.wantFest {
+				t.Errorf("FestRef = %q, want %q", got.FestRef, tc.wantFest)
+			}
+			if got.Phase != tc.wantPhase {
+				t.Errorf("Phase = %q, want %q", got.Phase, tc.wantPhase)
+			}
+			if got.Sequence != tc.wantSequence {
+				t.Errorf("Sequence = %q, want %q", got.Sequence, tc.wantSequence)
+			}
+			if got.WorkitemRef != tc.wantWorkitem {
+				t.Errorf("WorkitemRef = %q, want %q", got.WorkitemRef, tc.wantWorkitem)
+			}
+			if got.NoteRef != tc.wantNote {
+				t.Errorf("NoteRef = %q, want %q", got.NoteRef, tc.wantNote)
+			}
+			if len(warnings) != len(tc.wantWarningField) {
+				t.Fatalf("warnings count = %d, want %d: %+v",
+					len(warnings), len(tc.wantWarningField), warnings)
+			}
+			for i, want := range tc.wantWarningField {
+				if warnings[i].Field != want {
+					t.Errorf("warning[%d].Field = %q, want %q", i, warnings[i].Field, want)
+				}
+			}
+		})
+	}
+}
+
+func TestParseTagDetailed_SequenceWithoutPhaseReason(t *testing.T) {
+	got, warnings := ParseTagDetailed("[OBEY-CAMPAIGN-abc-FE-CC0008-SQ-02] x")
+	if got.Sequence != "02" {
+		t.Fatalf("Sequence = %q, want 02 (the value is kept, not zeroed)", got.Sequence)
+	}
+	if len(warnings) != 1 {
+		t.Fatalf("warnings = %+v, want exactly one", warnings)
+	}
+	if warnings[0].Reason != "sequence segment without phase" {
+		t.Errorf("warning reason = %q, want %q", warnings[0].Reason, "sequence segment without phase")
+	}
+	if warnings[0].Value != "02" {
+		t.Errorf("warning value = %q, want 02", warnings[0].Value)
+	}
+}

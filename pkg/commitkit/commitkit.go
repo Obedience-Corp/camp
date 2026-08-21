@@ -64,6 +64,20 @@ func PrependCampaignTag(campaignID, message string) string {
 // TagComponents is the parsed form of a campaign tag.
 type TagComponents = git.TagComponents
 
+// FormatTag is the canonical tag emitter: it composes a tag from any subset of
+// TagComponents, and every other Format/Prepend helper here routes through it.
+// Use it when you need the segments the positional helpers cannot express.
+//
+// Those are Phase and Sequence, emitted as "PH-<n>" and "SQ-<n>" after the
+// "FE-" festival ref, which is how fest records where inside a festival a
+// commit happened. They are dependent segments: Phase is emitted only when
+// FestRef is set, and Sequence only when Phase is, since both index into a
+// festival and mean nothing without one. Supplying neither yields exactly the
+// tag the positional helpers produce today.
+func FormatTag(tc TagComponents) string {
+	return git.FormatTag(tc)
+}
+
 // FormatContextTagsFull composes the legacy id-only tag from any subset of
 // (campaign id, quest id, festival ref, workitem ref). Use FormatContextTagsFullNamed
 // to emit a name-style "[{name}:{id}]" tag.
