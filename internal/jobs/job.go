@@ -132,8 +132,9 @@ type Job struct {
 	Blobs []BlobRef `json:"blobs,omitempty"`
 	// Tree is the captured tree SHA, for KindCommitTree.
 	Tree string `json:"tree,omitempty"`
-	// Parent is the HEAD the tree was captured against. A mismatch at
-	// execution time fails the job rather than guessing.
+	// Parent is the HEAD the tree was captured against. Empty means HEAD was
+	// unborn: the captured tree is a root commit. A mismatch at execution
+	// time fails the job rather than guessing.
 	Parent string `json:"parent,omitempty"`
 	// Message is the commit message. Empty with AutoWrite set means the worker
 	// generates it.
@@ -293,14 +294,10 @@ func (j *Job) Validate() error {
 		if strings.TrimSpace(j.Tree) == "" {
 			return camperrors.NewValidation("tree", "commit-tree requires a captured tree", nil)
 		}
-		// Execution refuses a job with no parent, so accepting one here would
-		// let a malformed job become a promise camp cannot keep: it would sit
-		// in the queue, fail, and be retried to exhaustion for a reason the
-		// enqueuer could have been told immediately.
-		if strings.TrimSpace(j.Parent) == "" {
-			return camperrors.NewValidation("parent",
-				"commit-tree requires the HEAD its tree was captured against", nil)
-		}
+		// Empty Parent is a documented valid state: HEAD was unborn when the
+		// tree was captured, so the job creates a root commit. Execution
+		// compare-and-swaps from the zero OID, so a later first commit still
+		// fails the job rather than being discarded.
 		if strings.TrimSpace(j.Message) == "" && !j.AutoWrite {
 			return camperrors.NewValidation("message",
 				"commit-tree requires a message or auto_write", nil)

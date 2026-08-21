@@ -147,8 +147,8 @@ func isMissingPathspec(err error) bool {
 // captured at enqueue and is immutable, so this produces exactly the commit the
 // user staged however long ago, regardless of what they have done since.
 func executeCommitTree(ctx context.Context, campaignRoot, repoPath string, job *Job) error {
-	if strings.TrimSpace(job.Tree) == "" || strings.TrimSpace(job.Parent) == "" {
-		return camperrors.Newf("job %s has no captured tree or parent", job.ID)
+	if strings.TrimSpace(job.Tree) == "" {
+		return camperrors.Newf("job %s has no captured tree", job.ID)
 	}
 
 	// A reclaimed job may have died after its commit landed. Recognize that
@@ -202,6 +202,11 @@ func executeCommitTree(ctx context.Context, campaignRoot, repoPath string, job *
 		// Otherwise HEAD genuinely moved. Fail, and never rebase: the queued
 		// commit was built against a tree the user staged, and replaying it
 		// onto someone else's commit would produce a result nobody chose.
+		if strings.TrimSpace(job.Parent) == "" {
+			return camperrors.Wrapf(err,
+				"HEAD is no longer unborn; %s was not applied (queued as the first commit)",
+				shortSHA(newSHA))
+		}
 		return camperrors.Wrapf(err,
 			"HEAD moved since this commit was queued; %s was not applied (expected parent %s)",
 			shortSHA(newSHA), shortSHA(job.Parent))

@@ -40,7 +40,12 @@ func WriteTree(ctx context.Context, repoPath string) (string, error) {
 // TreeSHA returns the tree object for commitish (a commit SHA, ref, or
 // commit^{tree} form). Used to refuse empty deferred commits: when the staged
 // tree equals the parent commit's tree there is nothing to land.
+//
+// Empty commitish is the empty tree (unborn HEAD).
 func TreeSHA(ctx context.Context, repoPath, commitish string) (string, error) {
+	if strings.TrimSpace(commitish) == "" {
+		return EmptyTreeSHA(ctx, repoPath)
+	}
 	out, err := Output(ctx, repoPath, "rev-parse", commitish+"^{tree}")
 	if err != nil {
 		return "", camperrors.Wrapf(err, "resolve tree for %s", shortForMessage(commitish))
@@ -66,8 +71,15 @@ func shortForMessage(sha string) string {
 // reach this path, because a hook is a user's own code that expects to run at
 // commit time in the foreground, and the enqueue side degrades those to a full
 // synchronous commit.
+//
+// An empty parent makes a root commit (no `-p`): unborn HEAD.
 func CommitTree(ctx context.Context, repoPath, tree, parent, message string) (string, error) {
-	out, err := Output(ctx, repoPath, "commit-tree", tree, "-p", parent, "-m", message)
+	args := []string{"commit-tree", tree}
+	if strings.TrimSpace(parent) != "" {
+		args = append(args, "-p", parent)
+	}
+	args = append(args, "-m", message)
+	out, err := Output(ctx, repoPath, args...)
 	if err != nil {
 		return "", camperrors.Wrap(err, "create the deferred commit object")
 	}
@@ -87,8 +99,12 @@ func CommitTree(ctx context.Context, repoPath, tree, parent, message string) (st
 // silently discard it by pointing HEAD somewhere that never had it as an
 // ancestor.
 func UpdateHeadFrom(ctx context.Context, repoPath, newSHA, oldSHA, reason string) error {
+	expected, err := expectedHEAD(ctx, repoPath, oldSHA)
+	if err != nil {
+		return err
+	}
 	if _, err := Output(ctx, repoPath,
-		"update-ref", "-m", reason, "HEAD", newSHA, oldSHA); err != nil {
+		"update-ref", "-m", reason, "HEAD", newSHA, expected); err != nil {
 		return camperrors.Wrap(err, "move HEAD to the deferred commit")
 	}
 	return nil
@@ -167,6 +183,38 @@ func HeadSHA(ctx context.Context, repoPath string) string {
 		return ""
 	}
 	return strings.TrimSpace(out)
+}
+
+// ResolveHeadSHA returns the commit HEAD points at. When HEAD genuinely has
+// no commits yet, it reports unborn=true with sha="" instead of an error: an
+// unborn HEAD is a real, expected repository state (a fresh `camp init`), not
+// a failure.
+//
+// Unlike HeadSHA, any other rev-parse failure (corrupt repo, missing .git,
+// transient I/O) is returned as err rather than folded into the empty-string
+// case. A caller that treats an empty parent as "build a root commit" must
+// not do that for a HEAD that is merely unreadable right now: that would
+// enqueue a root-commit job against a repository that already has history.
+func ResolveHeadSHA(ctx context.Context, repoPath string) (sha string, unborn bool, err error) {
+	out, err := Output(ctx, repoPath, "rev-parse", "HEAD")
+	if err == nil {
+		return strings.TrimSpace(out), false, nil
+	}
+	if isUnbornHeadRevParseError(err) {
+		return "", true, nil
+	}
+	return "", false, err
+}
+
+// isUnbornHeadRevParseError reports whether err is `git rev-parse HEAD`
+// failing because HEAD has no commits yet, as opposed to any other reason
+// rev-parse could fail. Git's message for the unborn case is stable across
+// versions: "unknown revision or path not in the working tree".
+func isUnbornHeadRevParseError(err error) bool {
+	if err == nil {
+		return false
+	}
+	return strings.Contains(strings.ToLower(err.Error()), "unknown revision or path not in the working tree")
 }
 
 // StagedFileCount returns how many paths are staged, for the line a deferred

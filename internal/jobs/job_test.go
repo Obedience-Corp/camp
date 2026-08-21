@@ -76,14 +76,6 @@ func TestJobValidateRejects(t *testing.T) {
 
 		{name: "commit-tree with no tree", job: Job{Kind: KindCommitTree, Repo: ".", Message: "m"}},
 		{
-			// Execution refuses a job with no parent, so accepting one at
-			// enqueue would let a malformed job become a promise camp cannot
-			// keep: queued, failed, retried to exhaustion, for something the
-			// enqueuer could have been told immediately.
-			name: "commit-tree with no parent",
-			job:  Job{Kind: KindCommitTree, Repo: ".", Tree: "9f2a", AutoWrite: true},
-		},
-		{
 			name: "commit-tree with neither message nor auto_write",
 			job:  Job{Kind: KindCommitTree, Repo: ".", Tree: "9f2a"},
 		},
@@ -152,6 +144,13 @@ func TestJobValidateAccepts(t *testing.T) {
 		{
 			name: "captured tree with auto_write and no message",
 			job:  Job{Kind: KindCommitTree, Repo: ".", Tree: "9f2a", Parent: "6000fd8f", AutoWrite: true},
+		},
+		{
+			// Empty Parent is unborn HEAD: the captured tree is a root commit,
+			// not a malformed job. Execution compare-and-swaps from the zero
+			// OID so a later first commit still fails the job.
+			name: "captured tree against an unborn HEAD",
+			job:  Job{Kind: KindCommitTree, Repo: ".", Tree: "9f2a", AutoWrite: true},
 		},
 		{
 			name: "one level of follow-up",

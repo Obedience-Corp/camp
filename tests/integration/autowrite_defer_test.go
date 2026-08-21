@@ -454,6 +454,59 @@ func TestIntegration_WriterFailureFailsTheJob(t *testing.T) {
 // commits exclude submodule refs, so only-submodule dirt used to pass
 // HasChanges, write-tree equal to HEAD, then land a no-op with a filler
 // message after the writer correctly reported "no staged changes".
+// `camp init` leaves HEAD unborn until the first commit. A deferred
+// --auto-write used to fail git.FullHash, print "Could not queue this commit",
+// and fall back to a synchronous write. Empty Parent is a valid KindCommitTree
+// snapshot, so the first --auto-write must enqueue and land as a root commit.
+func TestIntegration_AutoWriteDefersOnUnbornHead(t *testing.T) {
+	tc := GetSharedContainer(t)
+	tc.EnableDeferral()
+
+	campPath := "/campaigns/aw-defer-unborn"
+	_, err := tc.RunCamp("init", campPath, "--name", "aw-defer-unborn",
+		"-d", "Test campaign", "-m", "Test mission", "--type", "product")
+	require.NoError(t, err)
+
+	_, exitCode, err := tc.ExecCommand("git", "-C", campPath, "rev-parse", "--verify", "HEAD")
+	require.NoError(t, err)
+	require.NotEqual(t, 0, exitCode, "fixture is not reproducing an unborn HEAD; HEAD already resolves")
+
+	configureWriter(t, tc, campPath, "plain")
+	tc.Shell(t, fmt.Sprintf(`
+		cd %s
+		printf 'first auto-write\n' > first.md
+	`, campPath))
+
+	stdout, stderr, exitCode, err := tc.RunCampSplitInDir(campPath, "commit", "--auto-write")
+	require.NoError(t, err)
+	require.Equal(t, 0, exitCode, "stdout:\n%s\nstderr:\n%s", stdout, stderr)
+	assert.NotContains(t, stdout+stderr, "Could not queue this commit",
+		"unborn HEAD must not warn about a queue failure; output:\n%s", stdout+stderr)
+	assert.Contains(t, stdout+stderr, "queued",
+		"unborn-HEAD --auto-write must enqueue; output:\n%s", stdout+stderr)
+
+	drainJobs(t, tc, campPath)
+
+	assert.Zero(t, pendingJobCount(t, tc, campPath, "failed", rootLane),
+		"the deferred --auto-write must not land in the failed lane on an unborn HEAD")
+
+	head := tc.GitOutput(t, campPath, "rev-parse", "HEAD")
+	assert.NotEmpty(t, head, "the deferred job must create the repository's first commit")
+
+	count := strings.TrimSpace(tc.GitOutput(t, campPath, "rev-list", "--count", "HEAD"))
+	assert.Equal(t, "1", count, "the worker must produce exactly one commit, got %s", count)
+
+	parents := strings.TrimSpace(tc.GitOutput(t, campPath, "rev-list", "--parents", "-n", "1", "HEAD"))
+	assert.Len(t, strings.Fields(parents), 1, "the first commit must be a root commit; got %q", parents)
+
+	tracked := tc.GitOutput(t, campPath, "ls-tree", "-r", "--name-only", "HEAD")
+	assert.Contains(t, tracked, "first.md",
+		"the first commit must contain the staged file; tree:\n%s", tracked)
+
+	assert.Contains(t, headSubject(t, tc, campPath), "deferred: written by the background writer",
+		"the deferred commit must carry the writer's message")
+}
+
 func TestIntegration_EmptyStagedTreeDoesNotDefer(t *testing.T) {
 	tc := GetSharedContainer(t)
 	tc.EnableDeferral()
