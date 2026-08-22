@@ -12,10 +12,34 @@ import (
 type TargetResult struct {
 	// Path is the resolved absolute path to the target repository.
 	Path string
-	// IsSubmodule indicates whether the target is a submodule.
+	// IsSubmodule indicates whether the target is a git submodule checkout.
 	IsSubmodule bool
-	// Name is a display name (submodule directory name or "campaign root").
+	// IsWorktree indicates whether the target is a linked worktree of a
+	// campaign project (including a worktree of a submodule).
+	IsWorktree bool
+	// Name is a display name (project name, worktree owner, or "campaign root").
 	Name string
+}
+
+// IsNestedRepo reports whether the target is a nested campaign checkout
+// (submodule or linked project worktree) rather than the campaign root.
+func (t *TargetResult) IsNestedRepo() bool {
+	return t != nil && (t.IsSubmodule || t.IsWorktree)
+}
+
+// NestedKindTitle returns "Worktree" or "Submodule" for nested checkouts.
+func (t *TargetResult) NestedKindTitle() string {
+	if t == nil {
+		return ""
+	}
+	switch {
+	case t.IsWorktree:
+		return "Worktree"
+	case t.IsSubmodule:
+		return "Submodule"
+	default:
+		return ""
+	}
 }
 
 // ResolveTarget determines the git repository path based on submodule flags.
@@ -61,11 +85,7 @@ func resolveProjectPath(_ context.Context, campaignRoot, project string) (*Targe
 		return nil, camperrors.Wrapf(err, "project path %q is not a git repository", project)
 	}
 
-	return &TargetResult{
-		Path:        root,
-		IsSubmodule: isSubmodule,
-		Name:        filepath.Base(root),
-	}, nil
+	return targetFromRoot(campaignRoot, root, isSubmodule), nil
 }
 
 // resolveFromCwd auto-detects the submodule from the current working directory.
@@ -84,15 +104,100 @@ func resolveFromCwd(_ context.Context, campaignRoot string) (*TargetResult, erro
 		}, nil
 	}
 
-	if !isSubmodule {
-		return nil, camperrors.Newf("current directory is in a git repository but not a submodule of the campaign")
+	result := targetFromRoot(campaignRoot, root, isSubmodule)
+	if result.IsNestedRepo() {
+		return result, nil
 	}
 
-	return &TargetResult{
+	return nil, camperrors.Newf("current directory is in a git repository but not a submodule of the campaign")
+}
+
+func targetFromRoot(campaignRoot, root string, isSubmodule bool) *TargetResult {
+	result := &TargetResult{
 		Path:        root,
-		IsSubmodule: true,
+		IsSubmodule: isSubmodule,
 		Name:        filepath.Base(root),
-	}, nil
+	}
+	if isSubmodule {
+		return result
+	}
+	if name, ok := nestedWorktreeOwner(campaignRoot, root); ok {
+		result.IsWorktree = true
+		result.Name = name
+	}
+	return result
+}
+
+// nestedWorktreeOwner returns the owning project name for a linked worktree of
+// a campaign project. Prefers the projects/worktrees/<project>/<name> layout,
+// then the gitdir under .git/modules/<path>/worktrees/<name>.
+func nestedWorktreeOwner(campaignRoot, repoRoot string) (string, bool) {
+	gitDir, err := ResolveGitDir(repoRoot)
+	if err != nil || !isWorktreeGitDir(gitDir) {
+		return "", false
+	}
+
+	if name, ok := projectNameFromWorktreesLayout(campaignRoot, repoRoot); ok {
+		return name, true
+	}
+	if name, ok := projectNameFromModulesWorktree(filepath.Join(campaignRoot, ".git", "modules"), gitDir); ok {
+		return name, true
+	}
+	if resolvedCamp, err := filepath.EvalSymlinks(campaignRoot); err == nil && resolvedCamp != campaignRoot {
+		if name, ok := projectNameFromWorktreesLayout(resolvedCamp, repoRoot); ok {
+			return name, true
+		}
+		if name, ok := projectNameFromModulesWorktree(filepath.Join(resolvedCamp, ".git", "modules"), gitDir); ok {
+			return name, true
+		}
+	}
+	return "", false
+}
+
+func projectNameFromWorktreesLayout(campaignRoot, repoRoot string) (string, bool) {
+	return firstTwoRelSegments(filepath.Join(campaignRoot, "projects", "worktrees"), repoRoot)
+}
+
+func projectNameFromModulesWorktree(modulesRoot, gitDir string) (string, bool) {
+	rel, ok := relWithin(modulesRoot, gitDir)
+	if !ok {
+		return "", false
+	}
+	const marker = "/worktrees/"
+	idx := strings.LastIndex(rel, marker)
+	if idx <= 0 {
+		return "", false
+	}
+	modulePath := rel[:idx]
+	base := filepath.Base(modulePath)
+	if base == "." || base == ".." || base == "" {
+		return "", false
+	}
+	return base, true
+}
+
+func firstTwoRelSegments(parent, child string) (string, bool) {
+	rel, ok := relWithin(parent, child)
+	if !ok {
+		return "", false
+	}
+	parts := strings.Split(rel, "/")
+	if len(parts) < 2 || parts[0] == "" || parts[1] == "" {
+		return "", false
+	}
+	return parts[0], true
+}
+
+func relWithin(parent, child string) (string, bool) {
+	rel, err := filepath.Rel(parent, child)
+	if err != nil {
+		return "", false
+	}
+	rel = filepath.ToSlash(rel)
+	if rel == "." || rel == ".." || strings.HasPrefix(rel, "../") {
+		return "", false
+	}
+	return rel, true
 }
 
 // HasPullStrategyFlag reports whether gitArgs contains a pull reconciliation
