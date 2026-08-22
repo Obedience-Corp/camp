@@ -270,10 +270,24 @@ func diffQuietAtPaths(ctx context.Context, repoPath string, prefix, paths []stri
 // one commit and edited or deleted again by the next. Once the later state was
 // committed, the deferred job must not demand that an obsolete intermediate
 // tree be recreated.
+//
+// An empty base means the tree was captured against an unborn HEAD (see
+// Job.Parent): every path in wanted is "captured", so base is resolved to the
+// empty tree before diffing. `git diff` rejects an empty string as an
+// ambiguous revision, and the empty tree is what an unborn HEAD's "parent" is
+// for diff purposes.
 func FirstParentChainContainsOrSupersedesTreeChanges(
 	ctx context.Context, repoPath, base, wanted, current string,
 ) (bool, error) {
-	capturedPaths, err := treeChangePaths(ctx, repoPath, base, wanted)
+	diffBase := base
+	if strings.TrimSpace(diffBase) == "" {
+		emptyTree, err := EmptyTreeSHA(ctx, repoPath)
+		if err != nil {
+			return false, err
+		}
+		diffBase = emptyTree
+	}
+	capturedPaths, err := treeChangePaths(ctx, repoPath, diffBase, wanted)
 	if err != nil {
 		return false, err
 	}
@@ -305,7 +319,7 @@ func FirstParentChainContainsOrSupersedesTreeChanges(
 		if !indexSettled {
 			continue
 		}
-		committedPaths, err := treeChangePaths(ctx, repoPath, base, commit)
+		committedPaths, err := treeChangePaths(ctx, repoPath, diffBase, commit)
 		if err != nil {
 			return false, err
 		}

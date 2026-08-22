@@ -596,6 +596,70 @@ func TestIntegration_AutoWriteDefersOnUnbornHead(t *testing.T) {
 		"the deferred commit must carry the writer's message")
 }
 
+// A deferred --auto-write captured on an unborn HEAD (empty Job.Parent) must
+// fail cleanly, with the same "HEAD moved" contract as a born-HEAD job, when
+// someone else creates the repository's actual first commit while the writer
+// is still running and that commit does not carry the queued paths.
+//
+// Regression: FirstParentChainContainsOrSupersedesTreeChanges diffed an empty
+// Parent as a literal empty-string git revision, which git rejects as an
+// ambiguous argument, so the worker surfaced that raw plumbing error instead
+// of the "HEAD is no longer unborn" message every other HEAD-moved failure
+// gets.
+func TestIntegration_DeferredCommitFailsWhenUnbornHeadRaced(t *testing.T) {
+	tc := GetSharedContainer(t)
+	tc.EnableDeferral()
+
+	campPath := "/campaigns/aw-defer-unborn-race"
+	_, err := tc.RunCamp("init", campPath, "--name", "aw-defer-unborn-race",
+		"-d", "Test campaign", "-m", "Test mission", "--type", "product")
+	require.NoError(t, err)
+
+	_, exitCode, err := tc.ExecCommand("git", "-C", campPath, "rev-parse", "--verify", "HEAD")
+	require.NoError(t, err)
+	require.NotEqual(t, 0, exitCode, "fixture is not reproducing an unborn HEAD; HEAD already resolves")
+
+	configureWriter(t, tc, campPath, "slow")
+	tc.Shell(t, fmt.Sprintf(`
+		cd %s
+		printf 'queued\n' > queued.md
+	`, campPath))
+
+	_, stderr, exitCode, err := tc.RunCampSplitInDir(campPath, "commit", "--auto-write")
+	require.NoError(t, err)
+	require.Equal(t, 0, exitCode, "stderr:\n%s", stderr)
+
+	// Someone else creates the repository's real first commit independently
+	// while the writer is still running, via a scratch index so the queued
+	// paths stay staged and out of that commit's tree.
+	tc.Shell(t, fmt.Sprintf(`
+		cd %s
+		index=/tmp/camp-autowrite-unborn-race.index
+		rm -f "$index"
+		printf 'interloper\n' > interloper.md
+		GIT_INDEX_FILE="$index" git add -- interloper.md
+		GIT_INDEX_FILE="$index" git commit -q -m "committed independently before the queued job landed"
+		rm -f "$index"
+	`, campPath))
+
+	_, _, _, err = tc.RunCampSplitInDir(campPath, "jobs", "drain")
+	require.NoError(t, err)
+
+	head := strings.TrimSpace(tc.GitOutput(t, campPath, "rev-parse", "HEAD"))
+	assert.NotEmpty(t, head, "the interloper's commit must still exist")
+
+	subject := headSubject(t, tc, campPath)
+	assert.Contains(t, subject, "committed independently",
+		"the interloping commit must still be HEAD; camp must never rebase over it")
+
+	jobsOut, _, _, err := tc.RunCampSplitInDir(campPath, "jobs", "--json")
+	require.NoError(t, err)
+	assert.Contains(t, jobsOut, "HEAD is no longer unborn",
+		"the failure must use the unborn-HEAD-moved message, not a raw git error; camp jobs --json:\n%s", jobsOut)
+	assert.NotContains(t, jobsOut, "ambiguous argument",
+		"an empty Parent must not reach git as a literal revision string; camp jobs --json:\n%s", jobsOut)
+}
+
 func TestIntegration_EmptyStagedTreeDoesNotDefer(t *testing.T) {
 	tc := GetSharedContainer(t)
 	tc.EnableDeferral()
