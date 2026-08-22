@@ -271,6 +271,7 @@ func TestManifestCommand_InteractiveFlags(t *testing.T) {
 	}
 	if questCommandsRegistered() {
 		interactiveCommands["quest edit"] = true
+		interactiveCommands["quest list"] = true
 	}
 
 	nonInteractiveCommands := map[string]bool{
@@ -293,7 +294,6 @@ func TestManifestCommand_InteractiveFlags(t *testing.T) {
 		nonInteractiveCommands["quest create"] = true
 		nonInteractiveCommands["quest link"] = true
 		nonInteractiveCommands["quest links"] = true
-		nonInteractiveCommands["quest list"] = true
 		nonInteractiveCommands["quest pause"] = true
 		nonInteractiveCommands["quest rename"] = true
 		nonInteractiveCommands["quest restore"] = true
