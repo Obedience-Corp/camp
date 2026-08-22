@@ -1723,7 +1723,8 @@ The gather process:
      the rename)
   3. Stamp gathered_into/gathered_at on each source .workitem
   4. Migrate manual priority state and re-home workitem links
-  5. Commit the move (unless --no-commit)
+  5. Rewrite campaign markdown and quest links that pointed at the sources
+  6. Commit the move (unless --no-commit)
 
 Moved sources stop appearing as separate workitems because discovery only
 scans the top level of workflow/design/.
@@ -1776,7 +1777,8 @@ The gather process:
      the rename)
   3. Stamp gathered_into/gathered_at on each source .workitem
   4. Migrate manual priority state and re-home workitem links
-  5. Commit the move (unless --no-commit)
+  5. Rewrite campaign markdown and quest links that pointed at the sources
+  6. Commit the move (unless --no-commit)
 
 Moved sources stop appearing as separate workitems because discovery only
 scans the top level of workflow/explore/.
@@ -5727,6 +5729,10 @@ The worktree will be created at: projects/worktrees/<project>/<name>/
 By default, creates a new branch with the worktree name based on the current branch.
 Use --branch to checkout an existing branch instead.
 
+If origin/<name> exists and no local branch does, camp refuses rather than
+forking a divergent local branch from HEAD. Use --track origin/<name> (or
+--branch <name>) instead.
+
 Examples:
   # Create worktree with new branch based on current branch (default)
   camp project worktree add feature-auth
@@ -8185,6 +8191,11 @@ Status reports the session, not the campaign. It reads the run's own recorded
 data and never walks the filesystem, so it is instant and keeps meaning even
 after the campaign moves underneath the run. Comparing a run against the
 current state of the campaign is what camp triage refresh does.
+
+When the last refresh is older than the campaign's runs.stale_after_days
+threshold, or workitems have changed since, it also prints the same one-line
+notice high-traffic commands share (from the cached verdict, not a discovery
+walk).
 
 Exits 0 when there is no run: a campaign that has not triaged yet is a state,
 not an error.
