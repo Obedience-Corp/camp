@@ -4,7 +4,6 @@ package quest
 
 import (
 	"github.com/Obedience-Corp/camp/internal/jsoncontract"
-	"github.com/Obedience-Corp/camp/internal/quest"
 	"github.com/spf13/cobra"
 )
 
@@ -35,10 +34,6 @@ the selected quest when shell integration is loaded:
 Piped or with --json it prints that format instead. --status/--all/--dungeon
 print the filtered table. -i forces the browser (and still prints the table
 when stdout is not a terminal).`,
-	Annotations: map[string]string{
-		"agent_allowed": "true",
-		"agent_reason":  "Non-interactive quest listing",
-	},
 	RunE: jsoncontract.RunE(QuestListJSONVersion, func() bool { return questListJSON }, runQuestList),
 }
 
@@ -70,18 +65,12 @@ func runQuestList(cmd *cobra.Command, args []string) error {
 		return err
 	}
 
-	// The browser holds every quest and applies live/all/dungeon as a live
-	// filter (the way camp worktrees list loads unfiltered so f can toggle
-	// stale). --json and the shaping flags still print the table/JSON.
-	openTUI := questListTUIRequested(cmd, stdoutIsTTY())
-	opts := &quest.ListOptions{
-		Statuses: statuses,
-		All:      questListAll,
-		Dungeon:  questListDungeon,
-	}
-	if openTUI {
-		opts = &quest.ListOptions{All: true}
-	}
+	// The browser holds every quest so f can cycle live/all/dungeon. Expand
+	// the loaded set only when the browser will actually start; -i on a
+	// non-TTY still prints the table and must keep the caller's filter.
+	isTTY := stdoutIsTTY()
+	runTUI := questListShouldRunTUI(cmd, isTTY)
+	opts := questListLoadOptions(runTUI, statuses)
 
 	quests, err := qctx.service.List(ctx, opts)
 	if err != nil {
@@ -91,7 +80,7 @@ func runQuestList(cmd *cobra.Command, args []string) error {
 	if questListJSON {
 		return outputQuestListJSON(qctx, quests)
 	}
-	if openTUI {
+	if runTUI {
 		return runQuestListTUI(cmd, qctx, quests, statuses)
 	}
 	return outputQuestTable(qctx, quests)

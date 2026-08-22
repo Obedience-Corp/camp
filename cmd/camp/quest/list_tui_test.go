@@ -228,6 +228,78 @@ func TestQuestListTUIRequested(t *testing.T) {
 	})
 }
 
+func TestQuestListShouldRunTUI(t *testing.T) {
+	prevJSON := questListJSON
+	t.Cleanup(func() { questListJSON = prevJSON })
+	questListJSON = false
+
+	t.Run("bare TTY runs browser", func(t *testing.T) {
+		if !questListShouldRunTUI(questListTestCmd(), true) {
+			t.Fatal("bare TTY should run the browser")
+		}
+	})
+	t.Run("interactive TTY runs browser", func(t *testing.T) {
+		c := questListTestCmd()
+		_ = c.Flags().Set("interactive", "true")
+		if !questListShouldRunTUI(c, true) {
+			t.Fatal("-i on a TTY should run the browser")
+		}
+	})
+	t.Run("interactive non-TTY falls back to table", func(t *testing.T) {
+		c := questListTestCmd()
+		_ = c.Flags().Set("interactive", "true")
+		if !questListTUIRequested(c, false) {
+			t.Fatal("-i should still request the browser")
+		}
+		if questListShouldRunTUI(c, false) {
+			t.Fatal("-i without a TTY must not start the browser")
+		}
+	})
+}
+
+func TestQuestListLoadOptions_KeepsCallerFilterWhenNotRunningTUI(t *testing.T) {
+	prevAll, prevDungeon := questListAll, questListDungeon
+	t.Cleanup(func() {
+		questListAll = prevAll
+		questListDungeon = prevDungeon
+	})
+
+	t.Run("TTY browser loads all", func(t *testing.T) {
+		opts := questListLoadOptions(true, []quest.Status{quest.StatusOpen})
+		if !opts.All || opts.Dungeon || len(opts.Statuses) != 0 {
+			t.Fatalf("TUI load = %+v, want All with no caller filters", opts)
+		}
+	})
+	t.Run("non-TTY -i keeps default live filter", func(t *testing.T) {
+		questListAll, questListDungeon = false, false
+		opts := questListLoadOptions(false, nil)
+		if opts.All || opts.Dungeon || len(opts.Statuses) != 0 {
+			t.Fatalf("table fallback = %+v, want caller live filter", opts)
+		}
+	})
+	t.Run("non-TTY -i keeps --all", func(t *testing.T) {
+		questListAll, questListDungeon = true, false
+		opts := questListLoadOptions(false, nil)
+		if !opts.All || opts.Dungeon {
+			t.Fatalf("table fallback = %+v, want --all", opts)
+		}
+	})
+	t.Run("non-TTY -i keeps --dungeon", func(t *testing.T) {
+		questListAll, questListDungeon = false, true
+		opts := questListLoadOptions(false, nil)
+		if !opts.Dungeon || opts.All {
+			t.Fatalf("table fallback = %+v, want dungeon", opts)
+		}
+	})
+	t.Run("non-TTY -i keeps --status", func(t *testing.T) {
+		questListAll, questListDungeon = false, false
+		opts := questListLoadOptions(false, []quest.Status{quest.StatusOpen})
+		if opts.All || opts.Dungeon || len(opts.Statuses) != 1 || opts.Statuses[0] != quest.StatusOpen {
+			t.Fatalf("table fallback = %+v, want status=open", opts)
+		}
+	})
+}
+
 func visibleQuestNames(m questListModel) string {
 	names := make([]string, 0, len(m.visible))
 	for _, e := range m.visible {

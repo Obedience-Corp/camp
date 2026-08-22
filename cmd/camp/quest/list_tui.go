@@ -80,10 +80,10 @@ type questListModel struct {
 	quitting bool
 }
 
-// questListTUIRequested decides whether bare `camp quest list` opens the
-// browser. --json never does; -i forces it; a shaping flag (--status/--all/
-// --dungeon) prints the table instead; otherwise an interactive terminal opens
-// it.
+// questListTUIRequested reports whether the user asked for the browser.
+// --json never does; -i forces the request; a shaping flag prints the table
+// instead. -i on a non-TTY still requests it; questListShouldRunTUI is what
+// actually starts the browser.
 func questListTUIRequested(cmd *cobra.Command, isTTY bool) bool {
 	if questListJSON {
 		return false
@@ -97,6 +97,24 @@ func questListTUIRequested(cmd *cobra.Command, isTTY bool) bool {
 		}
 	}
 	return isTTY
+}
+
+// questListShouldRunTUI is true only when the interactive browser will start.
+func questListShouldRunTUI(cmd *cobra.Command, isTTY bool) bool {
+	return questListTUIRequested(cmd, isTTY) && isTTY
+}
+
+// questListLoadOptions returns ListOptions for the table or JSON path, or an
+// unfiltered --all set when the browser will run (so f can cycle filters).
+func questListLoadOptions(runTUI bool, statuses []quest.Status) *quest.ListOptions {
+	if runTUI {
+		return &quest.ListOptions{All: true}
+	}
+	return &quest.ListOptions{
+		Statuses: statuses,
+		All:      questListAll,
+		Dungeon:  questListDungeon,
+	}
 }
 
 func initialQuestFilter() questListFilter {
