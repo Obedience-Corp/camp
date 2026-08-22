@@ -129,6 +129,41 @@ func TestRunGendocs_RemovesStaleFilesAndSkipsHiddenCommands(t *testing.T) {
 	}
 }
 
+func TestRunGendocs_IncludesPackAndUnbundle(t *testing.T) {
+	dir := t.TempDir()
+
+	gendocsOutput = dir
+	gendocsFormat = "markdown"
+	gendocsSingle = true
+
+	if err := runGendocs(rootCmd, nil); err != nil {
+		t.Fatalf("runGendocs: %v", err)
+	}
+
+	for _, name := range []string{"camp_pack.md", "camp_unbundle.md", "camp-reference.md"} {
+		path := filepath.Join(dir, name)
+		data, err := os.ReadFile(path)
+		if err != nil {
+			t.Fatalf("expected generated %s: %v", name, err)
+		}
+		content := string(data)
+		switch name {
+		case "camp_pack.md":
+			if !strings.Contains(content, "## camp pack") {
+				t.Fatalf("%s missing pack heading", name)
+			}
+		case "camp_unbundle.md":
+			if !strings.Contains(content, "## camp unbundle") {
+				t.Fatalf("%s missing unbundle heading", name)
+			}
+		case "camp-reference.md":
+			if !strings.Contains(content, "## camp pack") || !strings.Contains(content, "## camp unbundle") {
+				t.Fatal("combined reference missing pack/unbundle sections")
+			}
+		}
+	}
+}
+
 func TestRunGendocs_StripsNoOptDefValSentinelsFromDocs(t *testing.T) {
 	dir := t.TempDir()
 

@@ -207,7 +207,8 @@ gate-push:
     go test -short -tags dev ./...
     echo "=== gate-push: PASSED ==="
 
-# Run both-profile builds, vet (stable/dev/integration), lint both profiles, and dev unit tests.
+# Run both-profile builds, vet (stable/dev/integration), lint both profiles,
+# CLI docs freshness, and dev unit tests.
 # Use this before moving a PR out of draft or when touching broad behavior. See also: just gate.
 gate-fast:
     #!/usr/bin/env sh
@@ -228,6 +229,8 @@ gate-fast:
     just lint
     echo "=== gate-fast: lint dev ==="
     BUILD_TAGS=dev just lint
+    echo "=== gate-fast: CLI docs ==="
+    just docs-check
     echo "=== gate-fast: unit tests dev (the profile festival-app ships) ==="
     BUILD_TAGS=dev just test unit
     echo "=== gate-fast: PASSED ==="
@@ -272,6 +275,23 @@ uninstall:
 docs:
     BUILD_TAGS='' just build-camp
     ./{{bin_dir}}/{{binary_name}} gendocs --output docs/cli-reference --format markdown --single
+
+# Fail when the committed CLI reference no longer matches the code.
+# Generates into a temp dir rather than the working tree, so running the gate
+# never leaves modified files behind. Release recipes run this via `just gate`.
+docs-check:
+    #!/usr/bin/env sh
+    set -eu
+    BUILD_TAGS='' just build-camp
+    tmp="$(mktemp -d)"
+    trap 'rm -rf "$tmp"' EXIT
+    ./{{bin_dir}}/{{binary_name}} gendocs --output "$tmp" --format markdown --single
+    if ! diff -ru docs/cli-reference "$tmp" >/dev/null 2>&1; then
+        echo "FAIL: docs/cli-reference is stale. Run 'just docs' and commit the result." >&2
+        diff -ru docs/cli-reference "$tmp" | head -40 >&2
+        exit 1
+    fi
+    echo "docs/cli-reference is up to date"
 
 # Run camp (for development)
 run *ARGS:

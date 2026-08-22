@@ -19,5 +19,8 @@ with sign-offs before merge.
 
 ## Practical notes
 
-- Run the repo gates before opening a PR: `just build`, `just test`, `just lint`.
+- Run the repo gates before opening a PR: `just gate-fast` (release tags use `just gate`).
+- Changing command help, flags, or adding CLI commands: run `just docs` and commit
+  the regenerated `docs/cli-reference/`. `just docs-check` (wired into `gate-fast`
+  and `gate`) fails when that generated reference is stale.
 - Match the surrounding code's conventions; see the README for project layout.

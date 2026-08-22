@@ -11,7 +11,10 @@
 #   create tags from a failing tree. Every recipe below gates on `just gate` first.
 #
 # Gate: no GitHub Actions (C-1). Enforcement is local via `just gate` (both-profile
-# build, vet, lint, and unit tests), run on demand and required before every release tag.
+# build, vet, lint, unit tests, and CLI docs freshness via `just docs-check`),
+# run on demand and required before every release tag. Command-surface changes
+# (pack/unbundle/clone/transport included) must run `just docs` and commit the
+# regenerated docs/cli-reference; the gate fails if they lag.
 
 # Show available release commands (default)
 [private]

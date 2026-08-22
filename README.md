@@ -611,6 +611,7 @@ just install              # Show install options (stable, dev, current)
 just install stable       # Install stable profile to $GOBIN
 just gate-fast            # Run the local quality gate on demand
 just docs                 # Regenerate CLI reference docs
+just docs-check           # Fail if committed CLI reference is stale
 just run <args>           # Run with arguments
 ```
 
@@ -620,12 +621,15 @@ Camp has no hosted CI. Quality gates run locally, on demand:
 
 ```bash
 just gate-push   # quick smoke: whitespace, build, vet, lint, short dev tests
-just gate-fast   # broader: both-profile build, vet, lint, full dev unit tests
+just gate-fast   # broader: both-profile build, vet, lint, CLI docs check, full dev unit tests
 just gate        # full matrix: gate-fast plus stable unit tests
 ```
 
 Every release recipe runs `just gate` before tagging, so releases are always
-gated. There is no pre-push hook; run a gate when you want a signal.
+gated (including `just docs-check`: generated `docs/cli-reference/` must match
+the current command surface). There is no pre-push hook; run a gate when you
+want a signal. Changing pack/unbundle/clone/transport (or any) command help
+requires `just docs` and a commit of the regenerated reference.
 
 If you previously ran `just hooks-install`, run `git config --unset core.hooksPath`
 once to fully revert that local setting, it now points at a removed directory.
