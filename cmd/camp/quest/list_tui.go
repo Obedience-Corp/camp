@@ -159,9 +159,15 @@ func itemsFromQuests(qctx *questCommandContext, quests []*quest.Quest) []questLi
 		if q == nil {
 			continue
 		}
+		// q.Path is the quest.yaml FILE (see quest.QuestPathForDir); go/copy need
+		// the containing directory, not the manifest file, or "cd" fails with
+		// "not a directory".
 		abs := q.Path
 		if abs != "" && !filepath.IsAbs(abs) {
 			abs = filepath.Join(qctx.campaignRoot, abs)
+		}
+		if abs != "" {
+			abs = filepath.Dir(abs)
 		}
 		items = append(items, questListItem{
 			Name:    q.Name,
