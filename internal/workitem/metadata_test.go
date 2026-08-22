@@ -358,6 +358,7 @@ func TestValidateMetadata_TagsProjects(t *testing.T) {
 		{"missing projects/ prefix", func(m *Metadata) { m.Projects = []string{"camp"} }, true, "projects"},
 		{"campaign root as project", func(m *Metadata) { m.Projects = []string{"."} }, true, "projects"},
 		{"projects root without child", func(m *Metadata) { m.Projects = []string{"projects"} }, true, "projects"},
+		{"non-projects prefix rejected", func(m *Metadata) { m.Projects = []string{"docs/foo"} }, true, "projects"},
 		{"worktree path rejected", func(m *Metadata) { m.Projects = []string{"projects/worktrees/camp/feat"} }, true, "projects"},
 		{"worktrees dir rejected", func(m *Metadata) { m.Projects = []string{"projects/worktrees"} }, true, "projects"},
 		{"nonexistent project accepted", func(m *Metadata) { m.Projects = []string{"projects/does-not-exist"} }, false, ""},
@@ -395,6 +396,9 @@ func TestValidateProjectPaths_DelegatesToLoaderCheck(t *testing.T) {
 	if err := ValidateProjectPaths([]string{"projects/camp", "projects/fest"}); err != nil {
 		t.Fatalf("well-formed project paths should be accepted: %v", err)
 	}
+	if err := ValidateProjectPaths([]string{"./projects/camp"}); err != nil {
+		t.Fatalf("cleaned path under projects/ should be accepted: %v", err)
+	}
 	if err := ValidateProjectPaths(nil); err != nil {
 		t.Fatalf("empty list should be accepted: %v", err)
 	}
@@ -402,8 +406,12 @@ func TestValidateProjectPaths_DelegatesToLoaderCheck(t *testing.T) {
 		{"../outside"},
 		{"/etc/passwd"},
 		{"projects/camp", "projects/camp"},
+		{"."},
 		{"camp"},
+		{"docs/foo"},
+		{"projects"},
 		{"projects/worktrees/camp/feat"},
+		{"projects/worktrees"},
 	} {
 		err := ValidateProjectPaths(bad)
 		if err == nil {

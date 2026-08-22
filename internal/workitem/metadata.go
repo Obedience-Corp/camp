@@ -297,6 +297,9 @@ func ValidTag(s string) bool {
 // (empty, absolute, escaping the campaign root, missing the projects/ prefix,
 // under projects/worktrees/, or duplicate), or nil. It is the exported form of
 // the loader's projects validation and the write-path check create/adopt call.
+// Paths must clean to something under projects/ (for example projects/camp).
+// "." and other campaign-relative paths are rejected. Missing on-disk projects
+// remain a doctor warning, not a load error.
 func ValidateProjectPaths(paths []string) error {
 	return validateProjects(paths)
 }
