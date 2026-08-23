@@ -155,6 +155,110 @@ func setupRefsSyncCampaignWithDrift(t *testing.T, tc *TestContainer, campaignDir
 	}
 }
 
+func TestIntegration_RefsSyncWarnsUnpushedSubmoduleCommits(t *testing.T) {
+	tc := GetSharedContainer(t)
+
+	const campaignDir = "/campaigns/refs-sync-unpushed"
+
+	// Set up a submodule backed by a bare remote so the submodule has a real
+	// upstream branch. The existing setupRefsSyncCampaignWithDrift helper uses
+	// CreateGitRepo which produces a repo with no remote, so @{u}..HEAD cannot
+	// report unpushed commits.
+	bareRepo := "/test/refs-unpushed-origin.git"
+	seedDir := "/test/refs-unpushed-seed"
+	tc.Shell(t, fmt.Sprintf(`
+set -e
+git init --bare %[1]s
+git clone %[1]s %[2]s
+git -C %[2]s config user.email test@test.com
+git -C %[2]s config user.name Test
+printf '# Unpushed\n' > %[2]s/README.md
+git -C %[2]s add . && git -C %[2]s commit -m 'init'
+git -C %[2]s branch -M main
+git -C %[2]s push -u origin main
+git --git-dir %[1]s symbolic-ref HEAD refs/heads/main
+`, bareRepo, seedDir))
+
+	_, err := tc.InitCampaign(campaignDir, "Refs Unpushed", "product")
+	require.NoError(t, err)
+
+	// Add the bare repo as a submodule. The submodule's origin tracks main.
+	tc.Shell(t, fmt.Sprintf(`
+set -e
+cd %[1]s
+GIT_ALLOW_PROTOCOL=file git submodule add %[2]s projects/alpha
+git commit -m 'add alpha submodule'
+`, campaignDir, bareRepo))
+
+	// Make a commit in the submodule but do NOT push it. This creates the
+	// drift the refs-sync command will detect, and the unpushed-commits
+	// condition the warning must surface.
+	tc.Shell(t, fmt.Sprintf(`
+set -e
+cd %[1]s/projects/alpha
+printf 'unpushed work' > advance.txt
+git add advance.txt
+git commit -m 'advance alpha (unpushed)'
+`, campaignDir))
+
+	output, err := tc.RunCampInDir(campaignDir, "refs-sync")
+	require.NoError(t, err, "refs-sync should succeed; output:\n%s", output)
+
+	// The warning must name the submodule and report unpushed commits.
+	require.Contains(t, output, "unpushed commit",
+		"refs-sync must warn about unpushed submodule commits; output:\n%s", output)
+	require.Contains(t, output, "projects/alpha",
+		"warning must name the submodule with unpushed commits; output:\n%s", output)
+}
+
+func TestIntegration_RefsSyncNoWarningWhenSubmodulePushed(t *testing.T) {
+	tc := GetSharedContainer(t)
+
+	const campaignDir = "/campaigns/refs-sync-pushed"
+
+	bareRepo := "/test/refs-pushed-origin.git"
+	seedDir := "/test/refs-pushed-seed"
+	tc.Shell(t, fmt.Sprintf(`
+set -e
+git init --bare %[1]s
+git clone %[1]s %[2]s
+git -C %[2]s config user.email test@test.com
+git -C %[2]s config user.name Test
+printf '# Pushed\n' > %[2]s/README.md
+git -C %[2]s add . && git -C %[2]s commit -m 'init'
+git -C %[2]s branch -M main
+git -C %[2]s push -u origin main
+git --git-dir %[1]s symbolic-ref HEAD refs/heads/main
+`, bareRepo, seedDir))
+
+	_, err := tc.InitCampaign(campaignDir, "Refs Pushed", "product")
+	require.NoError(t, err)
+
+	tc.Shell(t, fmt.Sprintf(`
+set -e
+cd %[1]s
+GIT_ALLOW_PROTOCOL=file git submodule add %[2]s projects/alpha
+git commit -m 'add alpha submodule'
+`, campaignDir, bareRepo))
+
+	// Make a commit in the submodule AND push it. No unpushed-commits warning
+	// should appear.
+	tc.Shell(t, fmt.Sprintf(`
+set -e
+cd %[1]s/projects/alpha
+printf 'pushed work' > advance.txt
+git add advance.txt
+git commit -m 'advance alpha (pushed)'
+GIT_ALLOW_PROTOCOL=file git push origin main
+`, campaignDir))
+
+	output, err := tc.RunCampInDir(campaignDir, "refs-sync")
+	require.NoError(t, err, "refs-sync should succeed; output:\n%s", output)
+
+	require.NotContains(t, output, "unpushed commit",
+		"refs-sync must not warn when submodule commits are pushed; output:\n%s", output)
+}
+
 func gitCommitCount(t *testing.T, tc *TestContainer, repo string) int {
 	t.Helper()
 

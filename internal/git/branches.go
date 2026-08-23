@@ -438,3 +438,34 @@ func IsAncestor(ctx context.Context, repoPath, ancestor, descendant string) (boo
 
 	return false, camperrors.Wrapf(err, "check %s reachable from %s", ancestor, descendant)
 }
+
+// UnpushedCommitCount returns the number of commits in repoPath that are ahead
+// of its upstream tracking branch (i.e., committed locally but not pushed).
+//
+// Returns 0 when no upstream is configured: a submodule without an upstream
+// branch has no remote to be out of sync with, and that is not a condition a
+// refs-sync warning should surface. Any other git error also returns 0 so the
+// caller degrades to silence rather than blocking a sync over a transient
+// failure.
+//
+// Uses the same @{u}..HEAD range that camp sync's preflight uses, so the two
+// paths agree on what "unpushed" means.
+func UnpushedCommitCount(ctx context.Context, repoPath string) int {
+	if ctx.Err() != nil {
+		return 0
+	}
+
+	cmd := exec.CommandContext(ctx, "git", "-C", repoPath,
+		"log", "--oneline", "@{u}..HEAD")
+	output, err := cmd.Output()
+	if err != nil {
+		// No upstream configured or other error — treat as zero.
+		return 0
+	}
+
+	commits := strings.TrimSpace(string(output))
+	if commits == "" {
+		return 0
+	}
+	return len(strings.Split(commits, "\n"))
+}
