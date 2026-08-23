@@ -356,8 +356,13 @@ Emitted on stdout. Pretty-printed with two-space indent.
 | `stage` | []string | Paths passed to `git add` |
 | `pre_staged` | []string | Paths already in the index (from `--staged`), omitted when empty |
 | `skip` | []object | Each entry has `path` and `reason` strings, omitted when empty |
-| `sha` | string | Commit SHA after a successful commit; omitted on `--dry-run` or no-changes |
+| `sha` | string | Commit SHA after a successful commit; omitted on `--dry-run`, no-changes, or when `deferred` is true |
+| `deferred` | bool | `true` when the commit was queued but has not landed; omitted otherwise |
 | `warnings` | []string | Planner warnings such as legacy ref backfill notes, omitted when empty |
+
+When a commit is deferred, text output is `queued (<subject>)`. Machine callers
+should treat `deferred: true` with no `sha` as queued work whose commit hash is
+not available until the deferred job runs.
 
 ### `camp workitem commits --json`
 
