@@ -197,6 +197,27 @@ func TestResolveFromCwd_NestedSubmoduleWins(t *testing.T) {
 	}
 }
 
+func TestResolveListedProject_LogicalWorktreeIdentityWins(t *testing.T) {
+	campRoot := filepath.Join(string(filepath.Separator), "campaign")
+	projects := []Project{
+		{Name: "alpha", Path: filepath.Join("projects", "alpha"), Source: SourceSubmodule},
+		{Name: "beta", Path: filepath.Join("projects", "beta"), Source: SourceSubmodule},
+	}
+	logicalCwd := filepath.Join(campRoot, "projects", "worktrees", "alpha", "feature")
+	physicalCwd := filepath.Join(campRoot, "projects", "beta")
+
+	result := resolveListedProject(campRoot, logicalCwd, physicalCwd, projects)
+	if result == nil {
+		t.Fatal("expected a project result")
+	}
+	if result.Name != "alpha" {
+		t.Fatalf("resolved name = %q, want alpha", result.Name)
+	}
+	if result.Path != filepath.Join(campRoot, "projects", "alpha") {
+		t.Fatalf("resolved path = %q, want alpha project path", result.Path)
+	}
+}
+
 func TestResolve_WithFlag(t *testing.T) {
 	campRoot := setupTestCampaign(t, "api", "web")
 

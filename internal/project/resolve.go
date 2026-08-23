@@ -104,12 +104,61 @@ func ResolveFromCwd(ctx context.Context, campRoot string) (*ResolveResult, error
 		return nil, camperrors.Wrap(listErr, "failed to list projects")
 	}
 
-	// Find the project with the longest (deepest) matching path. This ensures
-	// nested submodules win over their parent monorepo — e.g. from cwd inside
-	// `projects/mono/sub`, the resolver returns `mono@sub`, not `mono`.
+	if result := resolveListedProject(campRoot, cwd, resolvedCwd, projects); result != nil {
+		return result, nil
+	}
+
+	projectRoot, isSubmodule, err := git.FindProjectRootWithType(cwd)
+	if err != nil {
+		return nil, camperrors.Wrap(err, "not inside a project directory")
+	}
+
+	// Resolve symlinks for reliable comparison (e.g., macOS /var → /private/var)
+	resolvedRoot, _ := filepath.EvalSymlinks(projectRoot)
+	resolvedCamp, _ := filepath.EvalSymlinks(campRoot)
+	if resolvedRoot == resolvedCamp || projectRoot == campRoot {
+		return nil, errors.New("you're in the campaign root, not a project\nUse 'camp commit' for campaign-level commits")
+	}
+
+	for _, proj := range projects {
+		projPath := ResolveProjectPath(campRoot, proj)
+		logicalPath := filepath.Join(campRoot, proj.Path)
+		if resolvedProj, _ := filepath.EvalSymlinks(projPath); resolvedProj == resolvedRoot || logicalPath == projectRoot || projPath == projectRoot {
+			return resultForProject(campRoot, &proj), nil
+		}
+	}
+
+	// If it's a submodule but not in our list, still accept it
+	if isSubmodule {
+		name := nameFromPath(campRoot, projectRoot)
+		return &ResolveResult{
+			Name:        name,
+			Path:        projectRoot,
+			LogicalPath: filepath.Join("projects", name),
+			Source:      SourceSubmodule,
+		}, nil
+	}
+
+	return nil, &ProjectNotFoundError{
+		Name:     projectRoot,
+		CampRoot: campRoot,
+		Projects: projects,
+	}
+}
+
+// resolveListedProject gives an explicit logical worktree path precedence
+// over physical symlink matches, then falls back to the deepest project path.
+func resolveListedProject(campRoot, cwd, resolvedCwd string, projects []Project) *ResolveResult {
+	if name := projectFromLogicalWorktreePath(campRoot, cwd); name != "" {
+		for i := range projects {
+			if projects[i].Name == name {
+				return resultForProject(campRoot, &projects[i])
+			}
+		}
+	}
+
 	var (
 		bestProject *Project
-		bestPath    string
 		bestLen     int
 	)
 	for i := range projects {
@@ -129,61 +178,35 @@ func ResolveFromCwd(ctx context.Context, campRoot string) (*ResolveResult, error
 		}
 		if len(match) > bestLen {
 			bestProject = proj
-			bestPath = projectPath
 			bestLen = len(match)
 		}
 	}
 	if bestProject != nil {
-		return &ResolveResult{
-			Name:        bestProject.Name,
-			Path:        bestPath,
-			LogicalPath: bestProject.Path,
-			Source:      bestProject.Source,
-			LinkedPath:  bestProject.LinkedPath,
-		}, nil
+		return resultForProject(campRoot, bestProject)
 	}
+	return nil
+}
 
-	projectRoot, isSubmodule, err := git.FindProjectRootWithType(cwd)
-	if err != nil {
-		return nil, camperrors.Wrap(err, "not inside a project directory")
+func projectFromLogicalWorktreePath(campRoot, cwd string) string {
+	worktreesRoot := filepath.Join(campRoot, "projects", "worktrees")
+	rel, err := filepath.Rel(worktreesRoot, cwd)
+	if err != nil || rel == "." || rel == ".." || filepath.IsAbs(rel) || strings.HasPrefix(rel, ".."+string(filepath.Separator)) {
+		return ""
 	}
-
-	// Resolve symlinks for reliable comparison (e.g., macOS /var → /private/var)
-	resolvedRoot, _ := filepath.EvalSymlinks(projectRoot)
-	resolvedCamp, _ := filepath.EvalSymlinks(campRoot)
-	if resolvedRoot == resolvedCamp || projectRoot == campRoot {
-		return nil, errors.New("you're in the campaign root, not a project\nUse 'camp commit' for campaign-level commits")
+	parts := strings.Split(rel, string(filepath.Separator))
+	if len(parts) < 2 || parts[0] == "" || parts[1] == "" {
+		return ""
 	}
+	return parts[0]
+}
 
-	for _, proj := range projects {
-		projPath := ResolveProjectPath(campRoot, proj)
-		logicalPath := filepath.Join(campRoot, proj.Path)
-		if resolvedProj, _ := filepath.EvalSymlinks(projPath); resolvedProj == resolvedRoot || logicalPath == projectRoot || projPath == projectRoot {
-			return &ResolveResult{
-				Name:        proj.Name,
-				Path:        projPath,
-				LogicalPath: proj.Path,
-				Source:      proj.Source,
-				LinkedPath:  proj.LinkedPath,
-			}, nil
-		}
-	}
-
-	// If it's a submodule but not in our list, still accept it
-	if isSubmodule {
-		name := nameFromPath(campRoot, projectRoot)
-		return &ResolveResult{
-			Name:        name,
-			Path:        projectRoot,
-			LogicalPath: filepath.Join("projects", name),
-			Source:      SourceSubmodule,
-		}, nil
-	}
-
-	return nil, &ProjectNotFoundError{
-		Name:     projectRoot,
-		CampRoot: campRoot,
-		Projects: projects,
+func resultForProject(campRoot string, proj *Project) *ResolveResult {
+	return &ResolveResult{
+		Name:        proj.Name,
+		Path:        ResolveProjectPath(campRoot, *proj),
+		LogicalPath: proj.Path,
+		Source:      proj.Source,
+		LinkedPath:  proj.LinkedPath,
 	}
 }
 
