@@ -34,7 +34,7 @@ func ResolveCommitContext(ctx context.Context, campaignRoot, cwd string, errw io
 		errw = os.Stderr
 	}
 
-	festivalID := inferFestivalIDFromCwd(campaignRoot, cwd)
+	festivalID := InferFestivalIDFromCwd(campaignRoot, cwd)
 	res, err := resolver.Resolve(ctx, campaignRoot, resolver.Options{
 		Cwd:        cwd,
 		FestivalID: festivalID,
@@ -50,7 +50,7 @@ func ResolveCommitContext(ctx context.Context, campaignRoot, cwd string, errw io
 
 	return CommitContext{
 		QuestID:     res.QuestID,
-		FestivalRef: festivalRefForResolved(res, festivalID),
+		FestivalRef: FestivalRefForResolved(res, festivalID),
 		WorkitemRef: ref,
 	}
 }

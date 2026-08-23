@@ -87,14 +87,14 @@ func (p *StagingPlan) addStageNote(path, note string) {
 // matrix row that applies, and returns a StagingPlan that the commit runner
 // can hand to commit.Workitem. Refusal modes (no workitem, empty plan with no
 // override) surface as typed errors so the CLI can map them to exit codes.
-// festivalRefForResolved derives the FE-<ref> segment for a commit tag from a
+// FestivalRefForResolved derives the FE-<ref> segment for a commit tag from a
 // resolver result. It fires in two cases: the festival resolver tier matched
 // (cwd inside a festival, or --festival), or a worktree/link tier resolved to a
 // festival-typed workitem. The latter is how a worktree whose primary link was
 // migrated to a festival by `camp workitem promote --target festival` keeps
 // carrying a context ref (FE-<festival id>) instead of an empty tag. Returns ""
 // for non-festival contexts.
-func festivalRefForResolved(res *resolver.Resolution, festivalID string) string {
+func FestivalRefForResolved(res *resolver.Resolution, festivalID string) string {
 	if res == nil || res.Workitem == nil {
 		return ""
 	}
@@ -111,7 +111,7 @@ func ComputePlan(ctx context.Context, campaignRoot string, opts PlanOptions) (*S
 
 	festivalID := opts.FestivalID
 	if festivalID == "" {
-		festivalID = inferFestivalIDFromCwd(campaignRoot, opts.Cwd)
+		festivalID = InferFestivalIDFromCwd(campaignRoot, opts.Cwd)
 	}
 
 	res, err := resolver.Resolve(ctx, campaignRoot, resolver.Options{
@@ -135,7 +135,7 @@ func ComputePlan(ctx context.Context, campaignRoot string, opts PlanOptions) (*S
 	if err != nil {
 		return nil, err
 	}
-	festivalRef := festivalRefForResolved(res, festivalID)
+	festivalRef := FestivalRefForResolved(res, festivalID)
 	plan := &StagingPlan{
 		Workitem:    wi,
 		WorkitemRef: ref,
