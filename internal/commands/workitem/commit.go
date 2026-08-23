@@ -200,12 +200,7 @@ func runCommit(ctx context.Context, cmd *cobra.Command, flags commitFlags) error
 		return err
 	}
 
-	// A deferred commit has been queued but not made: HEAD has not moved, so
-	// reading it now would report the pre-commit parent as the committed hash
-	// (camp#561). Print "queued" and return without recording ledger evidence
-	// against a SHA that does not exist yet. The --json document carries
-	// deferred=true and an empty sha, so machine callers know no hash is
-	// available rather than acting on the wrong one.
+	// Deferred work has no commit SHA until the queued job runs.
 	if res.Deferred {
 		if flags.JSON {
 			return emitJSON(cmd.OutOrStdout(), plan, "", true)
