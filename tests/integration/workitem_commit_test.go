@@ -564,3 +564,87 @@ func TestIntegration_WorkitemCommit_FailureModes(t *testing.T) {
 	assert.Contains(t, envelope.Error.Hint, "camp workitem link")
 	assert.Equal(t, 2, envelope.Error.ExitCode)
 }
+
+// TestIntegration_WorkitemCommit_DeferredDoesNotReportPreCommitHash is the
+// regression test for camp#561: when a workitem commit is deferred (the commit
+// is queued but not yet made), the command must not read HEAD and print it as
+// the committed hash. HEAD at that moment is the pre-commit parent, so the
+// printed hash would be wrong — agents acting on it would target unrelated
+// work. The command must say "queued" and print no hash.
+func TestIntegration_WorkitemCommit_DeferredDoesNotReportPreCommitHash(t *testing.T) {
+	tc := GetSharedContainer(t)
+	tc.EnableDeferral()
+	dir := "/test/wi-commit-deferred"
+	initWorkitemCommitCampaign(t, tc, dir)
+	ref := seedDesignWorkitemWithRef(t, tc, dir, "timeline")
+
+	require.NoError(t, tc.WriteFile(dir+"/workflow/design/timeline/notes.md", "notes\n"))
+
+	before := strings.TrimSpace(tc.GitOutput(t, dir, "rev-parse", "HEAD"))
+
+	stdout, stderr, exitCode, err := tc.RunCampSplitInDir(dir,
+		"workitem", "commit", "timeline", "-m", "deferred commit")
+	require.NoError(t, err)
+	require.Equal(t, 0, exitCode, "stdout:\n%s\nstderr:\n%s", stdout, stderr)
+
+	// The command must report a queued commit, not a made one.
+	combined := stdout + stderr
+	assert.Contains(t, combined, "queued",
+		"deferred workitem commit must say 'queued', not 'committed <sha>'; output:\n%s", combined)
+
+	// The pre-commit HEAD must never appear as a committed hash. This is the
+	// core of camp#561: the old code printed the pre-commit HEAD as the
+	// committed hash.
+	assert.NotContains(t, combined, "committed "+before,
+		"deferred workitem commit must not print the pre-commit HEAD as a committed hash; output:\n%s", combined)
+
+	// Drain so the deferred commit lands and we can verify it carries the
+	// workitem tag.
+	drainJobs(t, tc, dir)
+
+	after := strings.TrimSpace(tc.GitOutput(t, dir, "rev-parse", "HEAD"))
+	assert.NotEqual(t, before, after,
+		"the deferred commit must land after the worker runs")
+
+	subject := strings.TrimSpace(tc.GitOutput(t, dir, "log", "-1", "--format=%s"))
+	assert.Contains(t, subject, ref,
+		"the deferred commit must carry the workitem ref tag; got %q", subject)
+	assert.Contains(t, subject, "deferred commit",
+		"the deferred commit must carry the message subject; got %q", subject)
+}
+
+// TestIntegration_WorkitemCommit_DeferredJSONCarriesNoSHA is the --json variant
+// of the camp#561 regression: when deferred, the JSON document must carry
+// deferred=true and no sha field, never a pre-commit HEAD hash.
+func TestIntegration_WorkitemCommit_DeferredJSONCarriesNoSHA(t *testing.T) {
+	tc := GetSharedContainer(t)
+	tc.EnableDeferral()
+	dir := "/test/wi-commit-deferred-json"
+	initWorkitemCommitCampaign(t, tc, dir)
+	seedDesignWorkitemWithRef(t, tc, dir, "timeline")
+
+	require.NoError(t, tc.WriteFile(dir+"/workflow/design/timeline/spec.md", "spec\n"))
+
+	before := strings.TrimSpace(tc.GitOutput(t, dir, "rev-parse", "HEAD"))
+
+	stdout, stderr, exitCode, err := tc.RunCampSplitInDir(dir,
+		"workitem", "commit", "timeline", "-m", "deferred json", "--json")
+	require.NoError(t, err)
+	require.Equal(t, 0, exitCode, "stdout:\n%s\nstderr:\n%s", stdout, stderr)
+
+	var payload struct {
+		SchemaVersion string `json:"schema_version"`
+		SHA           string `json:"sha"`
+		Deferred      bool   `json:"deferred"`
+	}
+	require.NoError(t, json.Unmarshal([]byte(stdout), &payload), "stdout=%s", stdout)
+	assert.Equal(t, "workitem-commit/v1alpha1", payload.SchemaVersion)
+	assert.True(t, payload.Deferred,
+		"deferred workitem commit --json must carry deferred=true; got: %s", stdout)
+	assert.Empty(t, payload.SHA,
+		"deferred workitem commit --json must not carry a sha; got: %s", payload.SHA)
+	assert.NotEqual(t, before, payload.SHA,
+		"deferred workitem commit --json must not carry the pre-commit HEAD as sha")
+
+	drainJobs(t, tc, dir)
+}

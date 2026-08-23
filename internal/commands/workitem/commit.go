@@ -168,7 +168,7 @@ func runCommit(ctx context.Context, cmd *cobra.Command, flags commitFlags) error
 
 	if flags.DryRun {
 		if flags.JSON {
-			return emitJSON(cmd.OutOrStdout(), plan, "")
+			return emitJSON(cmd.OutOrStdout(), plan, "", false)
 		}
 		return nil
 	}
@@ -194,7 +194,21 @@ func runCommit(ctx context.Context, cmd *cobra.Command, flags commitFlags) error
 	}
 	if res.NoChanges {
 		if flags.JSON {
-			return emitJSON(cmd.OutOrStdout(), plan, "")
+			return emitJSON(cmd.OutOrStdout(), plan, "", false)
+		}
+		_, err := fmt.Fprintln(cmd.OutOrStdout(), res.Message)
+		return err
+	}
+
+	// A deferred commit has been queued but not made: HEAD has not moved, so
+	// reading it now would report the pre-commit parent as the committed hash
+	// (camp#561). Print "queued" and return without recording ledger evidence
+	// against a SHA that does not exist yet. The --json document carries
+	// deferred=true and an empty sha, so machine callers know no hash is
+	// available rather than acting on the wrong one.
+	if res.Deferred {
+		if flags.JSON {
+			return emitJSON(cmd.OutOrStdout(), plan, "", true)
 		}
 		_, err := fmt.Fprintln(cmd.OutOrStdout(), res.Message)
 		return err
@@ -227,7 +241,7 @@ func runCommit(ctx context.Context, cmd *cobra.Command, flags commitFlags) error
 		}
 	}
 	if flags.JSON {
-		return emitJSON(cmd.OutOrStdout(), plan, sha)
+		return emitJSON(cmd.OutOrStdout(), plan, sha, false)
 	}
 	_, err = fmt.Fprintf(cmd.OutOrStdout(), "committed %s\n", sha)
 	return err
@@ -237,7 +251,7 @@ func runCommit(ctx context.Context, cmd *cobra.Command, flags commitFlags) error
 // rest of the agent-facing JSON schema versions so the seq-06 contract is
 // authored in one place.
 
-func emitJSON(w writeFlusher, plan *StagingPlan, sha string) error {
+func emitJSON(w writeFlusher, plan *StagingPlan, sha string, deferred bool) error {
 	stage := plan.Stage
 	if stage == nil {
 		stage = []string{}
@@ -256,6 +270,7 @@ func emitJSON(w writeFlusher, plan *StagingPlan, sha string) error {
 		PreStaged     []string       `json:"pre_staged,omitempty"`
 		Skip          []SkippedEntry `json:"skip,omitempty"`
 		SHA           string         `json:"sha,omitempty"`
+		Deferred      bool           `json:"deferred,omitempty"`
 		Warnings      []string       `json:"warnings,omitempty"`
 	}{
 		SchemaVersion: WorkitemCommitJSONVersion,
@@ -271,6 +286,7 @@ func emitJSON(w writeFlusher, plan *StagingPlan, sha string) error {
 		PreStaged:     plan.PreStaged,
 		Skip:          plan.Skip,
 		SHA:           sha,
+		Deferred:      deferred,
 		Warnings:      plan.Warnings,
 	}
 	enc := json.NewEncoder(w)
