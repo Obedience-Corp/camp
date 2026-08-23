@@ -10,7 +10,15 @@ import (
 	wkitem "github.com/Obedience-Corp/camp/internal/workitem"
 )
 
-func inferFestivalIDFromCwd(campaignRoot, cwd string) string {
+// InferFestivalIDFromCwd returns the festival ref token (e.g. "CF0005")
+// implied by cwd's position inside a festivals/ lifecycle directory, or ""
+// when cwd is not inside a festival. It reads the fest.yaml metadata id
+// when available and falls back to the directory-name suffix.
+//
+// This is the shared cwd-to-festival-id bridge used by every commit path
+// (camp commit, camp p commit, camp workitem commit) so the resolver's
+// SourceFestival tier fires consistently across all entry points.
+func InferFestivalIDFromCwd(campaignRoot, cwd string) string {
 	rel := festivalRootRelFromCwd(campaignRoot, cwd)
 	if rel == "" {
 		return ""

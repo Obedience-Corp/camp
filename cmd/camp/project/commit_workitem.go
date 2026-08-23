@@ -4,6 +4,7 @@ import (
 	"context"
 	"os"
 
+	wkcmd "github.com/Obedience-Corp/camp/internal/commands/workitem"
 	wkitem "github.com/Obedience-Corp/camp/internal/workitem"
 	"github.com/Obedience-Corp/camp/internal/workitem/resolver"
 	"github.com/Obedience-Corp/camp/pkg/commitkit"
@@ -15,6 +16,10 @@ import (
 // non-fatal: empty strings are returned so callers can still produce a quest-,
 // festival-, and workitem-free tag.
 //
+// Festival context comes from the festival cwd, a festival-typed workitem, or
+// the primary festival link attached to a workitem resolved through this
+// project/worktree path.
+//
 // A worktree whose primary link resolves to a festival (the state left by
 // `camp workitem promote --target festival`) carries the festival ref (FE-),
 // not a workitem ref (WI-), since a festival has no WI- ref of its own.
@@ -23,14 +28,16 @@ import (
 // explicit, when non-empty, is the user-supplied --workitem selector and
 // short-circuits cwd-based resolution.
 func resolveProjectCommitContext(ctx context.Context, campaignRoot, cwd, explicit string) (questID, festivalRef, workitemRef string) {
+	festivalID := wkcmd.InferFestivalIDFromCwd(campaignRoot, cwd)
 	res, err := resolver.Resolve(ctx, campaignRoot, resolver.Options{
-		Explicit: explicit,
-		Cwd:      cwd,
+		Explicit:   explicit,
+		Cwd:        cwd,
+		FestivalID: festivalID,
 	})
 	if err != nil || res == nil || res.Workitem == nil {
 		return "", "", ""
 	}
-	festivalRef = wkitem.FestivalRef(res.Workitem)
+	festivalRef = wkcmd.FestivalRefForResolved(ctx, campaignRoot, res, festivalID)
 	ref, ensureErr := wkitem.EnsureRefForCommit(ctx, campaignRoot, res.Workitem, os.Stderr)
 	if ensureErr != nil || ref == "" {
 		ref = wkitem.RefOf(res.Workitem)
@@ -42,9 +49,11 @@ func resolveProjectCommitContext(ctx context.Context, campaignRoot, cwd, explici
 // CAMP_WORKITEM_* env vars for the auto-write hook. Returns nil when no
 // workitem context resolves.
 func workitemEnvForProjectCommit(ctx context.Context, campaignRoot, cwd, explicit string) []string {
+	festivalID := wkcmd.InferFestivalIDFromCwd(campaignRoot, cwd)
 	res, err := resolver.Resolve(ctx, campaignRoot, resolver.Options{
-		Explicit: explicit,
-		Cwd:      cwd,
+		Explicit:   explicit,
+		Cwd:        cwd,
+		FestivalID: festivalID,
 	})
 	if err != nil || res == nil || res.Workitem == nil {
 		return nil
