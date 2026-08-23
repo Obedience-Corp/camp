@@ -16,12 +16,9 @@ import (
 // non-fatal: empty strings are returned so callers can still produce a quest-,
 // festival-, and workitem-free tag.
 //
-// Festival context is inferred from cwd the same way `camp commit` and
-// `camp workitem commit` do (via InferFestivalIDFromCwd), so a project repo
-// linked to a festival via a ScopeFestival link, or a commit from a cwd
-// inside a festival directory, carries the FE-<ref> tag that `fest commit`
-// would produce. Without this, the resolver's SourceFestival tier never
-// fires from the project-commit path because no FestivalID is passed.
+// Festival context comes from the festival cwd, a festival-typed workitem, or
+// the primary festival link attached to a workitem resolved through this
+// project/worktree path.
 //
 // A worktree whose primary link resolves to a festival (the state left by
 // `camp workitem promote --target festival`) carries the festival ref (FE-),
@@ -40,7 +37,7 @@ func resolveProjectCommitContext(ctx context.Context, campaignRoot, cwd, explici
 	if err != nil || res == nil || res.Workitem == nil {
 		return "", "", ""
 	}
-	festivalRef = wkcmd.FestivalRefForResolved(res, festivalID)
+	festivalRef = wkcmd.FestivalRefForResolved(ctx, campaignRoot, res, festivalID)
 	ref, ensureErr := wkitem.EnsureRefForCommit(ctx, campaignRoot, res.Workitem, os.Stderr)
 	if ensureErr != nil || ref == "" {
 		ref = wkitem.RefOf(res.Workitem)
@@ -51,9 +48,6 @@ func resolveProjectCommitContext(ctx context.Context, campaignRoot, cwd, explici
 // workitemEnvForProjectCommit resolves the active workitem and returns the
 // CAMP_WORKITEM_* env vars for the auto-write hook. Returns nil when no
 // workitem context resolves.
-//
-// Like resolveProjectCommitContext, this infers the festival ID from cwd so
-// the resolver's SourceFestival tier can match a festival-scoped link.
 func workitemEnvForProjectCommit(ctx context.Context, campaignRoot, cwd, explicit string) []string {
 	festivalID := wkcmd.InferFestivalIDFromCwd(campaignRoot, cwd)
 	res, err := resolver.Resolve(ctx, campaignRoot, resolver.Options{

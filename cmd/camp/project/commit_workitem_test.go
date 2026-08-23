@@ -66,6 +66,67 @@ func writeFestivalCampaign(t *testing.T, festID string) (root, festDir string) {
 	return root, festDir
 }
 
+func writeFestivalLinkedProjectCampaign(t *testing.T, festID string) (root, projectDir string) {
+	t.Helper()
+	root = t.TempDir()
+
+	if err := os.MkdirAll(filepath.Join(root, ".campaign", "workitems"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(root, ".campaign", "campaign.yaml"),
+		[]byte("id: test-campaign\nname: Test\ntype: product\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	projectDir = filepath.Join(root, "projects", "alpha")
+	if err := os.MkdirAll(projectDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	designDir := filepath.Join(root, "workflow", "design", "linked")
+	if err := os.MkdirAll(designDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	marker := "version: v1alpha8\nkind: workitem\nid: design-linked\ntype: design\ntitle: Linked\nref: WI-aabbcc\n"
+	if err := os.WriteFile(filepath.Join(designDir, ".workitem"), []byte(marker), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(designDir, "README.md"), []byte("# Linked\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	festDirName := "linked-" + festID
+	festDir := filepath.Join(root, "festivals", "active", festDirName)
+	if err := os.MkdirAll(festDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(festDir, "fest.yaml"),
+		[]byte("version: fest/v1\nmetadata:\n  id: "+festID+"\n  name: Linked\n  festival_type: standard\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	reg := links.Empty()
+	reg.Links = append(reg.Links,
+		links.Link{
+			ID: "lnk_20260101_000001", WorkitemID: "design-linked",
+			Scope: links.LinkScope{Kind: links.ScopeProject, Path: "projects/alpha"},
+			Role:  links.RolePrimary, CreatedAt: time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC), CreatedBy: "test",
+		},
+		links.Link{
+			ID: "lnk_20260101_000002", WorkitemID: "design-linked",
+			Scope: links.LinkScope{Kind: links.ScopeFestival, Path: "festivals/active/" + festDirName},
+			Role:  links.RolePrimary, CreatedAt: time.Date(2026, 1, 1, 0, 0, 1, 0, time.UTC), CreatedBy: "test",
+		},
+	)
+	data, err := yaml.Marshal(reg)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(root, ".campaign", "workitems", "links.yaml"), data, 0o644); err != nil {
+		t.Fatal(err)
+	}
+	return root, projectDir
+}
+
 // TestResolveProjectCommitContext_InfersFestivalIDFromCwd verifies the core
 // fix for camp#306: camp p commit's context resolver infers the festival ID
 // from cwd (when cwd is inside a festival directory) and passes it to the
@@ -83,6 +144,24 @@ func TestResolveProjectCommitContext_InfersFestivalIDFromCwd(t *testing.T) {
 	}
 	if workitemRef != "" {
 		t.Errorf("workitemRef = %q, want empty (festival has no WI- ref)", workitemRef)
+	}
+	if questID != "" {
+		t.Errorf("questID = %q, want empty", questID)
+	}
+}
+
+func TestResolveProjectCommitContext_ProjectLinkCarriesFestivalContext(t *testing.T) {
+	const festID = "CF9999"
+	root, projectDir := writeFestivalLinkedProjectCampaign(t, festID)
+
+	questID, festivalRef, workitemRef := resolveProjectCommitContext(
+		context.Background(), root, projectDir, "")
+
+	if festivalRef != festID {
+		t.Errorf("festivalRef = %q, want %q from the resolved workitem's festival link", festivalRef, festID)
+	}
+	if workitemRef != "WI-aabbcc" {
+		t.Errorf("workitemRef = %q, want WI-aabbcc", workitemRef)
 	}
 	if questID != "" {
 		t.Errorf("questID = %q, want empty", questID)

@@ -95,6 +95,34 @@ func TestIntegration_CommitTags_CampPCommit(t *testing.T) {
 	assert.Contains(t, subject, "feat: stub", "subject = %s", subject)
 }
 
+func TestIntegration_CommitTags_CampPCommitLinkedFestival(t *testing.T) {
+	tc := GetSharedContainer(t)
+	dir := "/test/commit-tags-p-festival"
+	initCommitTagsCampaign(t, tc, dir)
+	ref := seedDesignWorkitemWithRef(t, tc, dir, "timeline")
+
+	require.NoError(t, tc.CreateGitRepo(dir+"/projects/camp-timeline"))
+	_, err := tc.RunCampInDir(dir, "workitem", "link", "timeline", "--project", "camp-timeline")
+	require.NoError(t, err)
+
+	festName := "timeline-CF9999"
+	_, _, err = tc.ExecCommand("mkdir", "-p", dir+"/festivals/active/"+festName)
+	require.NoError(t, err)
+	require.NoError(t, tc.WriteFile(dir+"/festivals/active/"+festName+"/fest.yaml",
+		"version: fest/v1\nmetadata:\n  id: CF9999\n  name: Timeline\n  festival_type: standard\n"))
+	_, err = tc.RunCampInDir(dir, "workitem", "link", "timeline", "--festival", festName)
+	require.NoError(t, err)
+
+	require.NoError(t, tc.WriteFile(dir+"/projects/camp-timeline/foo.go", "package x\n"))
+	out, err := tc.RunCampInDir(dir+"/projects/camp-timeline",
+		"p", "commit", "-m", "feat: festival-linked stub")
+	require.NoError(t, err, "camp p commit: %s", out)
+
+	subject := lastCommitSubject(t, tc, dir+"/projects/camp-timeline")
+	assert.Contains(t, subject, "FE-CF9999", "subject should include the linked festival ref: %s", subject)
+	assert.Contains(t, subject, ref, "subject should retain the linked workitem ref: %s", subject)
+}
+
 func TestIntegration_CommitTags_NoContext(t *testing.T) {
 	tc := GetSharedContainer(t)
 	dir := "/test/commit-tags-no-context"
@@ -114,9 +142,6 @@ func TestIntegration_CommitTags_NoContext(t *testing.T) {
 	assert.Regexp(t, `^\[commit-tags:[0-9a-f]{1,8}\]`, subject,
 		"subject should still carry the campaign tag: %s", subject)
 }
-
-
-
 
 func TestIntegration_CommitTags_ExplicitOverride(t *testing.T) {
 	tc := GetSharedContainer(t)
@@ -356,8 +381,6 @@ func TestIntegration_AutoWriteEnv(t *testing.T) {
 	subject := lastCommitSubject(t, tc, dir)
 	assert.Contains(t, subject, "auto: from hook", "commit subject should come from hook: %s", subject)
 }
-
-
 
 // fest commit and fest-side workitem resolution are deferred until camp is
 // re-tagged with commitkit.PrependContextTagsFull and

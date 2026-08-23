@@ -50,7 +50,7 @@ func ResolveCommitContext(ctx context.Context, campaignRoot, cwd string, errw io
 
 	return CommitContext{
 		QuestID:     res.QuestID,
-		FestivalRef: FestivalRefForResolved(res, festivalID),
+		FestivalRef: FestivalRefForResolved(ctx, campaignRoot, res, festivalID),
 		WorkitemRef: ref,
 	}
 }
