@@ -4,12 +4,12 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"os"
 	"path/filepath"
 	"strings"
 
 	camperrors "github.com/Obedience-Corp/camp/internal/errors"
 	"github.com/Obedience-Corp/camp/internal/git"
+	"github.com/Obedience-Corp/camp/internal/pathutil"
 )
 
 // ResolveResult holds the resolved project name and absolute path.
@@ -81,12 +81,18 @@ func findProjectByName(ctx context.Context, campRoot, name string) (Project, err
 
 // ResolveFromCwd detects the project from the current working directory
 // and validates it against project.List().
+//
+// Uses pathutil.LogicalCwd to preserve the shell's logical $PWD when the
+// process cwd was entered through a symlink. This matters when a worktree
+// holder (projects/worktrees/<project>) is a symlink into another project's
+// tree: os.Getwd returns the physical target, which matches the wrong
+// project. The logical $PWD preserves the path the user actually typed.
 func ResolveFromCwd(ctx context.Context, campRoot string) (*ResolveResult, error) {
 	if ctx.Err() != nil {
 		return nil, ctx.Err()
 	}
 
-	cwd, err := os.Getwd()
+	cwd, err := pathutil.LogicalCwd()
 	if err != nil {
 		return nil, camperrors.Wrap(err, "failed to get working directory")
 	}

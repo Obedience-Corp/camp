@@ -6,6 +6,7 @@ import (
 	"strings"
 
 	"github.com/Obedience-Corp/camp/internal/paths"
+	"github.com/Obedience-Corp/camp/internal/pathutil"
 )
 
 // Context represents the detected worktree context.
@@ -32,8 +33,14 @@ func NewDetector(resolver *paths.Resolver) *Detector {
 }
 
 // DetectFromCwd detects worktree context from current working directory.
+//
+// Uses pathutil.LogicalCwd to preserve the shell's logical $PWD when the
+// process cwd was entered through a symlink. os.Getwd alone returns the
+// physical target, which loses the logical worktree holder path
+// (projects/worktrees/<project>) when that holder is a symlink — the root
+// cause of camp#245.
 func (d *Detector) DetectFromCwd() (*Context, error) {
-	cwd, err := os.Getwd()
+	cwd, err := pathutil.LogicalCwd()
 	if err != nil {
 		return nil, err
 	}

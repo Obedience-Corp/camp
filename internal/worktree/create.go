@@ -3,6 +3,8 @@ package worktree
 import (
 	"context"
 	"os"
+	"path/filepath"
+	"strings"
 
 	"github.com/Obedience-Corp/camp/internal/config"
 	"github.com/Obedience-Corp/camp/internal/paths"
@@ -73,8 +75,20 @@ func (c *Creator) Create(ctx context.Context, opts *CreateOptions) (*CreateResul
 			WithCause(err)
 	}
 
-	// 5. Create git worktree
+	// 5. Guard against cross-project symlinks.
+	//
+	// If the worktree holder (projects/worktrees/<project>) is itself a
+	// symlink into another project's working tree, the canonical worktree
+	// path lands inside that other project. Git then registers the worktree
+	// at the resolved path, and camp p commit — which relies on
+	// os.Getwd() (already symlink-resolved on macOS) — commits against the
+	// wrong project. Refuse early so the situation never arises.
 	wtPath := c.pathManager.WorktreePath(opts.Project, opts.Name)
+	if err := c.guardCrossProjectSymlink(opts.Project, opts.Name, wtPath); err != nil {
+		return nil, err
+	}
+
+	// 6. Create git worktree
 	git := NewGitWorktree(projectPath)
 
 	var branch string
@@ -134,6 +148,60 @@ func newBranchConflict(project, branch string, localExists, remoteExists bool) e
 		return RemoteBranchExistsError(project, branch)
 	}
 	return nil
+}
+
+// guardCrossProjectSymlink refuses a worktree whose destination resolves
+// (via symlinks) into a different registered project's working tree.
+//
+// The worktree holder path is logical (e.g.
+// <root>/projects/worktrees/<project>/<name>). When <project> is a symlink
+// into another project's directory, the resolved path falls inside that other
+// project, and camp p commit would detect the wrong project from the
+// worktree's cwd. This guard catches the situation at creation time.
+func (c *Creator) guardCrossProjectSymlink(project, worktreeName, logicalPath string) error {
+	// Resolve the worktree's parent directory (which already exists after
+	// EnsureWorktreesDir). The worktree path itself does not exist yet.
+	parent := filepath.Dir(logicalPath)
+	resolvedParent, err := filepath.EvalSymlinks(parent)
+	if err != nil {
+		// If the parent does not resolve, there is no symlink to cross a
+		// project boundary. Let git create the worktree.
+		return nil
+	}
+	resolvedPath := filepath.Join(resolvedParent, filepath.Base(logicalPath))
+
+	// Check whether the resolved path falls inside any other registered
+	// project's directory. The requesting project's own source directory
+	// is excluded — a worktree that resolves into its own project is fine
+	// (e.g. a linked project whose worktrees dir is under the project).
+	for _, proj := range c.cfg.Projects {
+		if proj.Name == project {
+			continue
+		}
+		projPath := c.resolver.Project(proj.Name)
+		resolvedProj, err := filepath.EvalSymlinks(projPath)
+		if err != nil {
+			continue
+		}
+		if isPathUnder(resolvedPath, resolvedProj) {
+			return CrossProjectSymlinkError(project, worktreeName, logicalPath, resolvedPath, proj.Name)
+		}
+	}
+
+	return nil
+}
+
+// isPathUnder reports whether child is the same as or inside parent.
+func isPathUnder(child, parent string) bool {
+	if child == "" || parent == "" {
+		return false
+	}
+	child = filepath.Clean(child)
+	parent = filepath.Clean(parent)
+	if child == parent {
+		return true
+	}
+	return strings.HasPrefix(child, parent+string(filepath.Separator))
 }
 
 // resolveProject finds the project path from campaign config or filesystem.

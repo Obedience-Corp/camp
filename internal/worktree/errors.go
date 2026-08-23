@@ -9,34 +9,36 @@ import (
 
 // Error codes for worktree operations.
 const (
-	ErrCodeProjectNotFound    = "WORKTREE_PROJECT_NOT_FOUND"
-	ErrCodeWorktreeExists     = "WORKTREE_ALREADY_EXISTS"
-	ErrCodeWorktreeNotFound   = "WORKTREE_NOT_FOUND"
-	ErrCodeBranchNotFound     = "WORKTREE_BRANCH_NOT_FOUND"
-	ErrCodeBranchExists       = "WORKTREE_BRANCH_EXISTS"
-	ErrCodeRemoteBranchExists = "WORKTREE_REMOTE_BRANCH_EXISTS"
-	ErrCodeInvalidName        = "WORKTREE_INVALID_NAME"
-	ErrCodeGitFailed          = "WORKTREE_GIT_FAILED"
-	ErrCodeStaleWorktree      = "WORKTREE_STALE"
-	ErrCodeCorrupted          = "WORKTREE_CORRUPTED"
-	ErrCodeNotInWorktree      = "WORKTREE_NOT_IN_WORKTREE"
-	ErrCodeRemovalFailed      = "WORKTREE_REMOVAL_FAILED"
+	ErrCodeProjectNotFound      = "WORKTREE_PROJECT_NOT_FOUND"
+	ErrCodeWorktreeExists       = "WORKTREE_ALREADY_EXISTS"
+	ErrCodeWorktreeNotFound     = "WORKTREE_NOT_FOUND"
+	ErrCodeBranchNotFound      = "WORKTREE_BRANCH_NOT_FOUND"
+	ErrCodeBranchExists        = "WORKTREE_BRANCH_EXISTS"
+	ErrCodeRemoteBranchExists   = "WORKTREE_REMOTE_BRANCH_EXISTS"
+	ErrCodeInvalidName          = "WORKTREE_INVALID_NAME"
+	ErrCodeGitFailed           = "WORKTREE_GIT_FAILED"
+	ErrCodeStaleWorktree        = "WORKTREE_STALE"
+	ErrCodeCorrupted            = "WORKTREE_CORRUPTED"
+	ErrCodeNotInWorktree        = "WORKTREE_NOT_IN_WORKTREE"
+	ErrCodeRemovalFailed        = "WORKTREE_REMOVAL_FAILED"
+	ErrCodeCrossProjectSymlink  = "WORKTREE_CROSS_PROJECT_SYMLINK"
 )
 
 // Sentinel errors for common cases.
 // Sentinels marked with %w wrap the canonical sentinel from internal/errors
 // to enable cross-package errors.Is() matching.
 var (
-	ErrProjectNotFound    = camperrors.Wrap(camperrors.ErrNotFound, "project not found")
-	ErrWorktreeExists     = camperrors.Wrap(camperrors.ErrAlreadyExists, "worktree already exists")
-	ErrWorktreeNotFound   = camperrors.Wrap(camperrors.ErrNotFound, "worktree not found")
-	ErrBranchNotFound     = camperrors.Wrap(camperrors.ErrNotFound, "branch not found")
-	ErrBranchExists       = camperrors.Wrap(camperrors.ErrAlreadyExists, "branch already exists")
-	ErrRemoteBranchExists = camperrors.Wrap(camperrors.ErrAlreadyExists, "remote branch already exists")
-	ErrInvalidName        = camperrors.Wrap(camperrors.ErrInvalidInput, "invalid worktree name")
-	ErrNotInWorktree      = errors.New("not inside a worktree")
-	ErrStaleWorktree      = errors.New("worktree is stale")
-	ErrCorrupted          = errors.New("worktree is corrupted")
+	ErrProjectNotFound     = camperrors.Wrap(camperrors.ErrNotFound, "project not found")
+	ErrWorktreeExists      = camperrors.Wrap(camperrors.ErrAlreadyExists, "worktree already exists")
+	ErrWorktreeNotFound    = camperrors.Wrap(camperrors.ErrNotFound, "worktree not found")
+	ErrBranchNotFound      = camperrors.Wrap(camperrors.ErrNotFound, "branch not found")
+	ErrBranchExists        = camperrors.Wrap(camperrors.ErrAlreadyExists, "branch already exists")
+	ErrRemoteBranchExists  = camperrors.Wrap(camperrors.ErrAlreadyExists, "remote branch already exists")
+	ErrInvalidName         = camperrors.Wrap(camperrors.ErrInvalidInput, "invalid worktree name")
+	ErrNotInWorktree       = errors.New("not inside a worktree")
+	ErrStaleWorktree       = errors.New("worktree is stale")
+	ErrCorrupted           = errors.New("worktree is corrupted")
+	ErrCrossProjectSymlink = camperrors.Wrap(camperrors.ErrInvalidInput, "worktree destination crosses into a different project via symlink")
 )
 
 // WorktreeError wraps worktree-specific errors with context.
@@ -183,4 +185,18 @@ func RemovalFailed(project, worktree string, err error) error {
 		WithProject(project).
 		WithWorktree(worktree).
 		WithCause(err)
+}
+
+// CrossProjectSymlinkError creates an error for a worktree destination whose
+// canonical (symlink-resolved) path lands inside a different registered
+// project. This prevents camp p commit from silently operating on the wrong
+// project when the worktree holder is a symlink into another project's tree.
+func CrossProjectSymlinkError(project, worktree, logicalPath, resolvedPath, otherProject string) error {
+	return NewError(ErrCodeCrossProjectSymlink).
+		WithProject(project).
+		WithWorktree(worktree).
+		WithPath(resolvedPath).
+		WithCause(camperrors.Wrapf(ErrCrossProjectSymlink,
+			"worktree path %s resolves to %s inside project %s; refusing to create a worktree that crosses project boundaries",
+			logicalPath, resolvedPath, otherProject))
 }
