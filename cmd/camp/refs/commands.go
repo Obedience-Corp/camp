@@ -96,6 +96,14 @@ func runRefsSync(cmd *cobra.Command, args []string) error {
 		return nil
 	}
 
+	// Warn about submodules whose HEAD points at commits not yet pushed to
+	// their remote. Recording the gitlink now and pushing the campaign root
+	// would publish a pointer to an unreachable commit, breaking recursive
+	// clones. The warning is informational, not blocking: the user may have
+	// reasons to record the ref locally first, but they need to know the
+	// submodule commit is not yet reachable from its remote.
+	warnUnpushedSubmodules(ctx, campRoot, toSync)
+
 	if refsSyncOpts.dryRun {
 		fmt.Println(ui.Info("Dry run — no changes made"))
 		return nil
@@ -204,4 +212,30 @@ func filterRefPaths(all []string, targets []string) []string {
 		}
 	}
 	return filtered
+}
+
+// warnUnpushedSubmodules prints a warning for each submodule path whose HEAD
+// has commits not yet pushed to its remote. Called after the sync plan is
+// determined but before the gitlink is committed, so the user can push the
+// submodule first if they care about a reachable published pointer.
+func warnUnpushedSubmodules(ctx context.Context, campRoot string, paths []string) {
+	var warnings []string
+	for _, p := range paths {
+		fullPath := filepath.Join(campRoot, p)
+		count := git.UnpushedCommitCount(ctx, fullPath)
+		if count > 0 {
+			warnings = append(warnings, fmt.Sprintf(
+				"  %s: %d unpushed commit(s) — the recorded ref will point at an unreachable commit until pushed",
+				p, count))
+		}
+	}
+	if len(warnings) == 0 {
+		return
+	}
+	fmt.Println(ui.Warning("Warning: submodules with unpushed commits:"))
+	for _, w := range warnings {
+		fmt.Println(ui.Warning(w))
+	}
+	fmt.Println(ui.Dim("  Push these submodules before pushing the campaign root."))
+	fmt.Println()
 }

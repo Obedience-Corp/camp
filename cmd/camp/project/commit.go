@@ -309,6 +309,16 @@ func syncParentRef(ctx context.Context, campRoot, relPath string, cfg *config.Ca
 		return nil
 	}
 
+	// Warn if the submodule's HEAD has commits not yet pushed to its remote.
+	// Recording the gitlink now and pushing the campaign root would publish a
+	// pointer to an unreachable commit, breaking recursive clones.
+	submodulePath := filepath.Join(campRoot, relPath)
+	if count := git.UnpushedCommitCount(ctx, submodulePath); count > 0 {
+		fmt.Println(ui.Warning(fmt.Sprintf(
+			"Warning: %s has %d unpushed commit(s) — the recorded ref will point at an unreachable commit until pushed",
+			relPath, count)))
+	}
+
 	msg := submoduleRefMessage(relPath, cfg, prefs)
 
 	opts := &git.CommitOptions{Message: msg}
