@@ -3,6 +3,7 @@ package jobs
 import (
 	"context"
 	"os"
+	"path/filepath"
 	"strings"
 
 	"github.com/Obedience-Corp/camp/internal/autowrite"
@@ -79,25 +80,54 @@ func runWriter(ctx context.Context, campaignRoot, repoPath string, job *Job) (st
 		return "", err
 	}
 
-	tmp, err := os.CreateTemp("", "camp-job-index-*")
+	commonDir, err := git.Output(ctx, repoPath, "rev-parse", "--git-common-dir")
 	if err != nil {
-		return "", camperrors.Wrap(err, "create a scratch index for the message writer")
+		return "", camperrors.Wrap(err, "resolve the repository for the message writer")
 	}
-	indexPath := tmp.Name()
-	_ = tmp.Close()
-	// git refuses to read-tree into a file it did not create, so the empty
-	// placeholder goes away before git is asked to write there.
-	_ = os.Remove(indexPath)
-	defer func() { _ = os.Remove(indexPath) }()
+	if !filepath.IsAbs(commonDir) {
+		commonDir = filepath.Join(repoPath, commonDir)
+	}
+	commonDir, err = filepath.Abs(commonDir)
+	if err != nil {
+		return "", camperrors.Wrap(err, "resolve the repository path for the message writer")
+	}
 
-	env := append(os.Environ(), "GIT_INDEX_FILE="+indexPath)
+	// GIT_INDEX_FILE isolates only the staged tree. `git diff --cached` still
+	// compares that index to the repository's live HEAD, so a commit landing
+	// while a slow writer runs changes the input underneath it. Give the writer
+	// a private per-worktree git directory whose detached HEAD is the captured
+	// parent, while GIT_COMMON_DIR keeps objects and config in the real repo.
+	// Together these two files are the complete staged snapshot the writer was
+	// asked to describe: parent plus index, both immutable for the whole run.
+	gitDir, err := os.MkdirTemp("", "camp-job-git-*")
+	if err != nil {
+		return "", camperrors.Wrap(err, "create a scratch git directory for the message writer")
+	}
+	defer func() { _ = os.RemoveAll(gitDir) }()
+	if err := os.WriteFile(filepath.Join(gitDir, "HEAD"), []byte(job.Parent+"\n"), 0o600); err != nil {
+		return "", camperrors.Wrap(err, "pin the captured parent for the message writer")
+	}
+	indexPath := filepath.Join(gitDir, "index")
+
+	env := append(os.Environ(),
+		"GIT_DIR="+gitDir,
+		"GIT_COMMON_DIR="+commonDir,
+		"GIT_WORK_TREE="+repoPath,
+		"GIT_INDEX_FILE="+indexPath,
+	)
 	if err := git.RunWithEnv(ctx, repoPath, env, "read-tree", job.Tree); err != nil {
 		return "", camperrors.Wrapf(err, "materialize tree %s for the message writer", shortSHA(job.Tree))
 	}
 
-	// The job's own variables first, GIT_INDEX_FILE last so a malformed job
-	// cannot point the writer at a different index than the one just built.
-	writerEnv := append(append([]string(nil), job.Env...), "GIT_INDEX_FILE="+indexPath)
+	// The job's own variables first and Camp's git snapshot last, so a malformed
+	// or stale job cannot point the writer at a different repository, parent, or
+	// index than the ones just materialized.
+	writerEnv := append(append([]string(nil), job.Env...),
+		"GIT_DIR="+gitDir,
+		"GIT_COMMON_DIR="+commonDir,
+		"GIT_WORK_TREE="+repoPath,
+		"GIT_INDEX_FILE="+indexPath,
+	)
 
 	// Bounded, and in a process group of its own, because this is the deferred
 	// path: there is no terminal in front of the writer and nobody to press

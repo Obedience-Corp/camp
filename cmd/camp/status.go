@@ -80,8 +80,8 @@ func runStatus(cmd *cobra.Command, args []string) error {
 		return camperrors.Wrap(err, "failed to resolve target")
 	}
 
-	if target.IsSubmodule {
-		fmt.Fprintln(os.Stderr, ui.Info(fmt.Sprintf("Submodule: %s", target.Name)))
+	if kind := target.NestedKindTitle(); kind != "" {
+		fmt.Fprintln(os.Stderr, ui.Info(fmt.Sprintf("%s: %s", kind, target.Name)))
 	}
 
 	// Status reports; it does not wait. It is the first thing a user runs to
@@ -96,7 +96,7 @@ func runStatus(cmd *cobra.Command, args []string) error {
 	}
 
 	// Hide submodule ref noise by default (only at campaign root)
-	if !showRefs && !target.IsSubmodule {
+	if !showRefs && !target.IsNestedRepo() {
 		gitArgs = append(gitArgs, "--ignore-submodules=all")
 	}
 
@@ -115,7 +115,7 @@ func runStatus(cmd *cobra.Command, args []string) error {
 	// never the filesystem at large — because this is the command people run
 	// constantly and a banner that cost a discovery walk would be a tax on
 	// every invocation.
-	if !target.IsSubmodule {
+	if !target.IsNestedRepo() {
 		if err := triage.WriteBanner(ctx, os.Stdout, target.Path, time.Now()); err != nil {
 			return camperrors.Wrap(err, "write triage notice")
 		}

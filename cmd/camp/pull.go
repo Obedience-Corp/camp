@@ -62,8 +62,8 @@ func runPull(cmd *cobra.Command, args []string) error {
 		return camperrors.Wrap(err, "failed to resolve target")
 	}
 
-	if target.IsSubmodule {
-		fmt.Fprintln(os.Stderr, ui.Info(fmt.Sprintf("Submodule: %s", target.Name)))
+	if kind := target.NestedKindTitle(); kind != "" {
+		fmt.Fprintln(os.Stderr, ui.Info(fmt.Sprintf("%s: %s", kind, target.Name)))
 	}
 
 	// A merge or rebase against a HEAD the queue is about to move is how a

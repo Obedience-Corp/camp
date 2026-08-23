@@ -80,7 +80,7 @@ func TestGenerateFish_CrProjectShorthand(t *testing.T) {
 
 func TestGenerateFish_FestivalsArm(t *testing.T) {
 	output := generateFish()
-	section := shellWrapperSection(t, output, "        case festivals", "        case '*'")
+	section := shellWrapperSection(t, output, "        case festivals", "        case quest")
 
 	checks := []struct {
 		name    string
@@ -129,6 +129,34 @@ func TestGenerateFish_ProjectListArm(t *testing.T) {
 				t.Errorf("fish project list arm missing %s: %q", check.name, check.content)
 			}
 		})
+	}
+}
+
+func TestGenerateFish_QuestListArm(t *testing.T) {
+	output := generateFish()
+	section := shellWrapperSection(t, output, "        case quest", "# Shorthand for camp go")
+
+	checks := []struct {
+		name    string
+		content string
+	}{
+		{"use/clear intercept", "case use clear"},
+		{"list case", "case list"},
+		{"non-list passthrough", "command camp $argv"},
+		{"list path output", "command camp quest list $rest --path-output"},
+		{"quest list temp file", "camp-quest-list.XXXXXX"},
+		{"absolute cd", `cd "$dest"`},
+		{"json passthrough", "--json '--json=*'"},
+	}
+	for _, check := range checks {
+		t.Run(check.name, func(t *testing.T) {
+			if !strings.Contains(section, check.content) {
+				t.Errorf("fish quest list arm missing %s: %q", check.name, check.content)
+			}
+		})
+	}
+	if strings.Contains(section, "command camp $argv --path-output") {
+		t.Error("quest wrapper must not append --path-output to non-list subcommands")
 	}
 }
 

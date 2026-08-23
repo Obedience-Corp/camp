@@ -28,8 +28,7 @@ func IsSubmodule(path string) (bool, error) {
 		return false, nil
 	}
 
-	// Submodules and git worktrees both have .git as a gitdir file. Worktree
-	// gitdirs live under the main repository's .git/worktrees area.
+	// Submodules and git worktrees both have .git as a gitdir file.
 	gitDir, err := ResolveGitDir(path)
 	if err != nil {
 		return false, err
@@ -37,10 +36,29 @@ func IsSubmodule(path string) (bool, error) {
 	return !isWorktreeGitDir(gitDir), nil
 }
 
+// isWorktreeGitDir reports whether gitDir is a linked worktree git directory.
+// Git stores those at $GIT_COMMON_DIR/worktrees/<name>, which is the on-disk
+// form of `rev-parse --git-dir` differing from `--git-common-dir`. Matching
+// only `/.git/worktrees/` misses submodule worktrees at
+// `.git/modules/<path>/worktrees/<name>`.
 func isWorktreeGitDir(gitDir string) bool {
 	clean := filepath.Clean(gitDir)
-	needle := string(filepath.Separator) + ".git" + string(filepath.Separator) + "worktrees" + string(filepath.Separator)
-	return strings.Contains(clean, needle)
+	return filepath.Base(filepath.Dir(clean)) == "worktrees"
+}
+
+// IsLinkedWorktree reports whether path is the root of a real linked git
+// worktree (of a top-level repo or of a submodule), based on git's on-disk
+// gitdir layout rather than the path's location on disk. Callers that infer a
+// worktree from a filesystem layout (e.g. projects/worktrees/<project>/<name>)
+// must gate on this before trusting the shape alone: a plain, non-git
+// directory that happens to sit in that layout is not a worktree, and
+// resolving it as one mislabels/misdirects git operations run against it.
+func IsLinkedWorktree(path string) bool {
+	gitDir, err := ResolveGitDir(path)
+	if err != nil {
+		return false
+	}
+	return isWorktreeGitDir(gitDir)
 }
 
 // GetSubmoduleGitDir resolves the actual .git directory for a submodule.

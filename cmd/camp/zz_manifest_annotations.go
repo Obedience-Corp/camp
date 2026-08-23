@@ -58,7 +58,7 @@ var manifestAgentAllowedReasons = map[string]string{
 	"quest item unlink-workitem": "Non-interactive workitem unlink on a checklist item",
 	"quest link":                 "Non-interactive quest link operation",
 	"quest links":                "Read-only quest link listing",
-	"quest list":                 "Read-only quest listing",
+	"quest list":                 "Read-only quest listing; TTY opens an interactive browser",
 	"quest pause":                "Non-interactive quest pause with explicit selector",
 	"quest rename":               "Non-interactive quest rename with explicit selector",
 	"quest restore":              "Non-interactive quest restore with explicit selector",
@@ -125,6 +125,7 @@ var manifestAllowedInteractivePaths = map[string]bool{
 	"gather design":  true,
 	"gather explore": true,
 	"idea add":       true,
+	"quest list":     true,
 	"switch":         true,
 }
 
