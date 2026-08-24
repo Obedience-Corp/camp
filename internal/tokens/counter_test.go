@@ -6,6 +6,8 @@ import (
 	"path/filepath"
 	"testing"
 
+	"github.com/lancekrogers/tcount/tokenizer"
+
 	wkitem "github.com/Obedience-Corp/camp/internal/workitem"
 )
 
@@ -169,6 +171,100 @@ func TestNewCounter_DefaultModelWhenEmpty(t *testing.T) {
 	}
 	if c.model != DefaultModel {
 		t.Errorf("model = %q, want %q", c.model, DefaultModel)
+	}
+}
+
+func TestTokensFromMethods_PrefersExactThenFirst(t *testing.T) {
+	tests := []struct {
+		name    string
+		methods []tokenizer.MethodResult
+		want    int
+	}{
+		{name: "empty", want: 0},
+		{
+			name: "first exact",
+			methods: []tokenizer.MethodResult{
+				{Name: "exact", Tokens: 4, IsExact: true},
+			},
+			want: 4,
+		},
+		{
+			name: "exact not first",
+			methods: []tokenizer.MethodResult{
+				{Name: "approx", Tokens: 10, IsExact: false},
+				{Name: "exact", Tokens: 42, IsExact: true},
+			},
+			want: 42,
+		},
+		{
+			name: "no exact uses first",
+			methods: []tokenizer.MethodResult{
+				{Name: "character_based_div4", Tokens: 21, IsExact: false},
+				{Name: "word_based_mul133", Tokens: 17, IsExact: false},
+				{Name: "whitespace_split", Tokens: 13, IsExact: false},
+			},
+			want: 21,
+		},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			got := tokensFromMethods(tc.methods)
+			if got != tc.want {
+				t.Errorf("tokensFromMethods() = %d, want %d", got, tc.want)
+			}
+		})
+	}
+}
+
+func TestCountFile_UnknownModelUsesSingleMethodNotSum(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "doc.md")
+	content := "The campaign work item token counter must not sum alternative estimators."
+	if err := os.WriteFile(path, []byte(content), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	const unknownModel = "not-a-real-model"
+	c, err := NewCounter(unknownModel, dir)
+	if err != nil {
+		t.Fatalf("NewCounter: %v", err)
+	}
+	count, err := c.CountFile(context.Background(), path)
+	if err != nil {
+		t.Fatalf("CountFile: %v", err)
+	}
+
+	tc, err := tokenizer.NewCounter(tokenizer.CounterOptions{})
+	if err != nil {
+		t.Fatalf("tokenizer.NewCounter: %v", err)
+	}
+	result, err := tc.Count(context.Background(), content, unknownModel, false)
+	if err != nil {
+		t.Fatalf("tcount Count: %v", err)
+	}
+	if len(result.Methods) < 2 {
+		t.Fatalf("unknown model should return multiple methods, got %d", len(result.Methods))
+	}
+	want := 0
+	foundExact := false
+	for _, m := range result.Methods {
+		if m.IsExact {
+			want = m.Tokens
+			foundExact = true
+			break
+		}
+	}
+	if !foundExact {
+		want = result.Methods[0].Tokens
+	}
+	sum := 0
+	for _, m := range result.Methods {
+		sum += m.Tokens
+	}
+	if sum == want {
+		t.Fatalf("sum of methods (%d) equals chosen method; test cannot detect summing", sum)
+	}
+	if count != want {
+		t.Errorf("CountFile = %d, want single method %d (sum would be %d across %d methods)", count, want, sum, len(result.Methods))
 	}
 }
 

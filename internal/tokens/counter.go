@@ -93,10 +93,7 @@ func (c *Counter) CountFile(ctx context.Context, path string) (int, error) {
 	if err != nil {
 		return 0, err
 	}
-	tokens := 0
-	for _, m := range result.Methods {
-		tokens += m.Tokens
-	}
+	tokens := tokensFromMethods(result.Methods)
 
 	c.mu.Lock()
 	c.cache.Entries[key] = cacheEntry{
@@ -138,4 +135,19 @@ func (c *Counter) loadCache() {
 
 func cacheKey(path, model string) string {
 	return model + ":" + path
+}
+
+// tokensFromMethods picks one estimator. tcount Methods are alternative
+// counts of the same text, not partitions; summing them over-counts when an
+// unknown model falls back to multiple approximations.
+func tokensFromMethods(methods []tokenizer.MethodResult) int {
+	for _, m := range methods {
+		if m.IsExact {
+			return m.Tokens
+		}
+	}
+	if len(methods) == 0 {
+		return 0
+	}
+	return methods[0].Tokens
 }
