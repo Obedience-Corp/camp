@@ -40,7 +40,7 @@ func TestIntegration_WorkitemListFiltersNonTTYAndJSON(t *testing.T) {
 		} `json:"items"`
 	}
 	require.NoError(t, json.Unmarshal([]byte(raw[start:]), &payload))
-	assert.Equal(t, "workitems/v1alpha10", payload.SchemaVersion)
+	assert.Equal(t, "workitems/v1alpha11", payload.SchemaVersion)
 	require.NotEmpty(t, payload.Items)
 	for _, item := range payload.Items {
 		assert.True(t, item.AttentionStage == "active" || item.LifecycleStage == "active")

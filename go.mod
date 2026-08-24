@@ -15,6 +15,7 @@ require (
 	github.com/google/uuid v1.6.0
 	github.com/ktr0731/go-fuzzyfinder v0.9.0
 	github.com/lancekrogers/guild-scaffold v0.1.0
+	github.com/lancekrogers/tcount v0.6.0
 	github.com/moby/moby/client v0.4.0
 	github.com/moby/patternmatcher v0.6.1
 	github.com/muesli/termenv v0.16.0
@@ -58,6 +59,7 @@ require (
 	github.com/docker/go-units v0.5.0 // indirect
 	github.com/dustin/go-humanize v1.0.1 // indirect
 	github.com/ebitengine/purego v0.10.0 // indirect
+	github.com/eliben/go-sentencepiece v0.7.0 // indirect
 	github.com/erikgeiser/coninput v0.0.0-20211004153227-1c3628e74d0f // indirect
 	github.com/felixge/httpsnoop v1.0.4 // indirect
 	github.com/gdamore/encoding v1.0.1 // indirect
@@ -95,6 +97,7 @@ require (
 	github.com/power-devops/perfstat v0.0.0-20240221224432-82ca36839d55 // indirect
 	github.com/rivo/uniseg v0.4.7 // indirect
 	github.com/russross/blackfriday/v2 v2.1.0 // indirect
+	github.com/sabhiram/go-gitignore v0.0.0-20210923224102-525f6e181f06 // indirect
 	github.com/shirou/gopsutil/v4 v4.26.3 // indirect
 	github.com/sirupsen/logrus v1.9.4 // indirect
 	github.com/tklauser/go-sysconf v0.3.16 // indirect
@@ -114,4 +117,5 @@ require (
 	golang.org/x/crypto v0.54.0 // indirect
 	golang.org/x/net v0.56.0 // indirect
 	golang.org/x/text v0.40.0 // indirect
+	google.golang.org/protobuf v1.34.2 // indirect
 )

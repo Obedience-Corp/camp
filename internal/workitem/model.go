@@ -56,6 +56,7 @@ type WorkItem struct {
 	Tags         []string          `json:"tags"`
 	Projects     []string          `json:"-"`
 	ProjectRefs  []ProjectRef      `json:"projects"`
+	TokenCount   int               `json:"token_count,omitempty"`
 }
 
 // ProjectRef is one entry in a workitem's merged projects view: a

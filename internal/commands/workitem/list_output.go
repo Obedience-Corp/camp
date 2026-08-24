@@ -99,9 +99,10 @@ func listRow(item wkitem.WorkItem) string {
 	priorityMark := listPriorityStyle(item.ManualPriority).Render(padList(listPriorityLabel(item.ManualPriority), 1))
 	wfType := lipgloss.NewStyle().Foreground(listPalette.TextSecondary).Render(padList(string(item.WorkflowType), 8))
 	age := lipgloss.NewStyle().Foreground(listPalette.TextMuted).Render(padList(listRecency(item.SortTimestamp), 4))
+	tokens := lipgloss.NewStyle().Foreground(listPalette.TextMuted).Render(padList(listTokenLabel(item.TokenCount), 6))
 	title := lipgloss.NewStyle().Foreground(listPalette.TextPrimary).Render(item.Title)
 	path := lipgloss.NewStyle().Foreground(listPalette.TextDim).Render(item.RelativePath)
-	return fmt.Sprintf("  %s %s %s %s  %s  %s", status, priorityMark, wfType, age, title, path)
+	return fmt.Sprintf("  %s %s %s %s %s  %s  %s", status, priorityMark, wfType, age, tokens, title, path)
 }
 
 func listStatus(item wkitem.WorkItem) (string, lipgloss.Style) {
@@ -177,6 +178,23 @@ func listRecency(t time.Time) string {
 		return fmt.Sprintf("%dd", int(d.Hours()/24))
 	default:
 		return fmt.Sprintf("%dw", int(d.Hours()/(24*7)))
+	}
+}
+
+// listTokenLabel renders a compact token-count label. Zero means the count was
+// skipped or the file was unreadable; "-" keeps it visually distinct from a
+// genuine 0-token file (which is astronomically unlikely for a work item).
+func listTokenLabel(count int) string {
+	if count <= 0 {
+		return "-"
+	}
+	switch {
+	case count < 1000:
+		return fmt.Sprintf("%d", count)
+	case count < 1_000_000:
+		return fmt.Sprintf("%.1fk", float64(count)/1000)
+	default:
+		return fmt.Sprintf("%.1fM", float64(count)/1_000_000)
 	}
 }
 
