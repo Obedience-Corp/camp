@@ -17,6 +17,7 @@ import (
 	"github.com/Obedience-Corp/camp/internal/jsoncontract"
 	"github.com/Obedience-Corp/camp/internal/paths"
 	"github.com/Obedience-Corp/camp/internal/pathutil"
+	"github.com/Obedience-Corp/camp/internal/tokens"
 	wkitem "github.com/Obedience-Corp/camp/internal/workitem"
 	"github.com/Obedience-Corp/camp/internal/workitem/links"
 	"github.com/Obedience-Corp/camp/internal/workitem/priority"
@@ -40,6 +41,8 @@ func NewWorkitemCommand() *cobra.Command {
 		flagShowParked      bool
 		flagLimit           int
 		flagQuery           string
+		flagTokenModel      string
+		flagNoTokens        bool
 	)
 
 	cmd := &cobra.Command{
@@ -112,8 +115,10 @@ Examples:
 
 			switch {
 			case flagList:
+				annotateTokens(ctx, state.campaignRoot, items, flagTokenModel, flagNoTokens)
 				return outputList(cmd.OutOrStdout(), items, displayGroupBy, triageNoticeLine(ctx, state.campaignRoot))
 			case flagJSON:
+				annotateTokens(ctx, state.campaignRoot, items, flagTokenModel, flagNoTokens)
 				return outputJSON(ctx, state.campaignRoot, state.cfg, items, displayGroupBy)
 			default:
 				// Non-interactive --print/--path-output: output first item path directly.
@@ -141,6 +146,8 @@ Examples:
 	cmd.Flags().BoolVar(&flagShowParked, "show-parked", false, "Include parked workitems")
 	cmd.Flags().IntVar(&flagLimit, "limit", 0, "Maximum items to return")
 	cmd.Flags().StringVar(&flagQuery, "query", "", "Filter by search query")
+	cmd.Flags().StringVar(&flagTokenModel, "token-model", tokens.DefaultModel, "Tokenizer model for token counts")
+	cmd.Flags().BoolVar(&flagNoTokens, "no-tokens", false, "Skip token count annotation")
 
 	cmd.AddCommand(newCreateCommand())
 	cmd.AddCommand(newAdoptCommand())
@@ -201,6 +208,22 @@ func discoverWorkitems(ctx context.Context) (*discoveredWorkitems, error) {
 	items = priority.Apply(store, items)
 	wkitem.Sort(items)
 	return &discoveredWorkitems{cfg: cfg, campaignRoot: campaignRoot, resolver: resolver, items: items, store: store, storePath: storePath}, nil
+}
+
+// annotateTokens counts tokens for each work item's primary document using
+// the tcount tokenizer and sets TokenCount on the item. When noTokens is true
+// or the counter cannot be initialized, annotation is skipped silently: the
+// listing remains correct, only the token_count field/column is absent.
+func annotateTokens(ctx context.Context, campaignRoot string, items []wkitem.WorkItem, model string, noTokens bool) {
+	if noTokens || len(items) == 0 {
+		return
+	}
+	counter, err := tokens.NewCounter(model, campaignRoot)
+	if err != nil {
+		return
+	}
+	tokens.AnnotateItems(ctx, counter, campaignRoot, items)
+	_ = counter.SaveCache()
 }
 
 func outputSelectedPath(item wkitem.WorkItem, printOnly bool, pathOutput string) error {

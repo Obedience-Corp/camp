@@ -9,6 +9,7 @@ import (
 	"github.com/Obedience-Corp/camp/internal/config"
 	camperrors "github.com/Obedience-Corp/camp/internal/errors"
 	"github.com/Obedience-Corp/camp/internal/jsoncontract"
+	"github.com/Obedience-Corp/camp/internal/tokens"
 	wkitem "github.com/Obedience-Corp/camp/internal/workitem"
 )
 
@@ -26,6 +27,8 @@ type listOptions struct {
 	showParked      bool
 	limit           int
 	query           string
+	tokenModel      string
+	noTokens        bool
 }
 
 func (o listOptions) filterOptions() (wkitem.FilterOptions, error) {
@@ -119,8 +122,10 @@ Examples:
 				}
 			}
 			if opts.json {
+				annotateTokens(cmd.Context(), state.campaignRoot, items, opts.tokenModel, opts.noTokens)
 				return outputJSON(cmd.Context(), state.campaignRoot, state.cfg, items, groupBy)
 			}
+			annotateTokens(cmd.Context(), state.campaignRoot, items, opts.tokenModel, opts.noTokens)
 			return outputList(cmd.OutOrStdout(), items, groupBy, triageNoticeLine(cmd.Context(), state.campaignRoot))
 		}),
 	}
@@ -139,6 +144,8 @@ Examples:
 	cmd.Flags().BoolVar(&opts.showParked, "show-parked", false, "Include parked attention-stage workitems")
 	cmd.Flags().IntVar(&opts.limit, "limit", 0, "Maximum number of items to return (non-interactive / --json only)")
 	cmd.Flags().StringVar(&opts.query, "query", "", "Search query to filter items")
+	cmd.Flags().StringVar(&opts.tokenModel, "token-model", tokens.DefaultModel, "Tokenizer model for token counts")
+	cmd.Flags().BoolVar(&opts.noTokens, "no-tokens", false, "Skip token count annotation")
 	return cmd
 }
 

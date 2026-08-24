@@ -39,7 +39,10 @@ import (
 //     type. Field names and vocabularies are unchanged; only the observed
 //     combinations widen. explore gains ready in stage_vocabulary. A campaign
 //     with no residents serializes byte-identically except for this constant.
-const SchemaVersion = "workitems/v1alpha10"
+//   - v1alpha11: add optional token_count field on each item (omitempty).
+//     Populated by tcount token counting when the workitem has a readable
+//     primary document; omitted when zero or when --no-tokens is set.
+const SchemaVersion = "workitems/v1alpha11"
 
 // Payload is the top-level JSON output for camp workitem --json.
 type Payload struct {

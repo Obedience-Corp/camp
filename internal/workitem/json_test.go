@@ -154,9 +154,9 @@ func TestWorkItemWorkflow_ZeroValuesAreEmitted(t *testing.T) {
 	}
 }
 
-func TestSchemaVersion_IsV1Alpha10(t *testing.T) {
-	if SchemaVersion != "workitems/v1alpha10" {
-		t.Errorf("SchemaVersion = %q, want workitems/v1alpha10", SchemaVersion)
+func TestSchemaVersion_IsV1Alpha11(t *testing.T) {
+	if SchemaVersion != "workitems/v1alpha11" {
+		t.Errorf("SchemaVersion = %q, want workitems/v1alpha11", SchemaVersion)
 	}
 }
 
@@ -281,6 +281,25 @@ func TestWorkItem_PopulatedTagsProjectsRoundTrip(t *testing.T) {
 	// primary. Order is preserved.
 	if !strings.Contains(got, `"projects":[{"path":"projects/camp","primary":false},{"path":"projects/fest","primary":false}]`) {
 		t.Errorf("projects not preserved as merged view in order: %s", got)
+	}
+}
+
+func TestWorkItem_TokenCountOmittedWhenZero(t *testing.T) {
+	item := WorkItem{Key: "intent:foo"}
+	data, _ := json.Marshal(item)
+	if strings.Contains(string(data), "token_count") {
+		t.Errorf("token_count should be omitted when zero, got: %s", data)
+	}
+}
+
+func TestWorkItem_TokenCountPresentWhenNonZero(t *testing.T) {
+	item := WorkItem{Key: "intent:foo", TokenCount: 42}
+	data, err := json.Marshal(item)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(string(data), `"token_count":42`) {
+		t.Errorf("expected token_count:42 in output, got: %s", data)
 	}
 }
 
