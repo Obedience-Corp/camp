@@ -107,6 +107,9 @@ func ResolveFromCwd(ctx context.Context, campRoot string) (*ResolveResult, error
 	if result := resolveListedProject(campRoot, cwd, resolvedCwd, projects); result != nil {
 		return result, nil
 	}
+	if wt := resolveListedWorktree(campRoot, resolvedCwd, cwd, projects); wt != nil {
+		return wt, nil
+	}
 
 	projectRoot, isSubmodule, err := git.FindProjectRootWithType(cwd)
 	if err != nil {
@@ -149,12 +152,8 @@ func ResolveFromCwd(ctx context.Context, campRoot string) (*ResolveResult, error
 // resolveListedProject gives an explicit logical worktree path precedence
 // over physical symlink matches, then falls back to the deepest project path.
 func resolveListedProject(campRoot, cwd, resolvedCwd string, projects []Project) *ResolveResult {
-	if name := projectFromLogicalWorktreePath(campRoot, cwd); name != "" {
-		for i := range projects {
-			if projects[i].Name == name {
-				return resultForProject(campRoot, &projects[i])
-			}
-		}
+	if wt := listedLogicalWorktreeAt(campRoot, cwd, projects); wt != nil {
+		return wt
 	}
 
 	var (
@@ -185,19 +184,6 @@ func resolveListedProject(campRoot, cwd, resolvedCwd string, projects []Project)
 		return resultForProject(campRoot, bestProject)
 	}
 	return nil
-}
-
-func projectFromLogicalWorktreePath(campRoot, cwd string) string {
-	worktreesRoot := filepath.Join(campRoot, "projects", "worktrees")
-	rel, err := filepath.Rel(worktreesRoot, cwd)
-	if err != nil || rel == "." || rel == ".." || filepath.IsAbs(rel) || strings.HasPrefix(rel, ".."+string(filepath.Separator)) {
-		return ""
-	}
-	parts := strings.Split(rel, string(filepath.Separator))
-	if len(parts) < 2 || parts[0] == "" || parts[1] == "" {
-		return ""
-	}
-	return parts[0]
 }
 
 func resultForProject(campRoot string, proj *Project) *ResolveResult {
@@ -239,6 +225,84 @@ func isPathWithin(child, parent string) bool {
 		return false
 	}
 	return rel != ".." && !strings.HasPrefix(rel, ".."+string(filepath.Separator))
+}
+
+// resolveListedWorktree maps cwd under projects/worktrees/<project>/<name>
+// onto a listed project so the label is the owning project, not "worktrees".
+func resolveListedWorktree(campRoot, resolvedCwd, cwd string, projects []Project) *ResolveResult {
+	for _, candidate := range []string{resolvedCwd, cwd} {
+		if candidate == "" {
+			continue
+		}
+		if result := listedWorktreeAt(campRoot, candidate, projects); result != nil {
+			return result
+		}
+	}
+	return nil
+}
+
+func listedWorktreeAt(campRoot, path string, projects []Project) *ResolveResult {
+	wtRoot := filepath.Join(campRoot, "projects", "worktrees")
+	if resolved, err := filepath.EvalSymlinks(wtRoot); err == nil {
+		wtRoot = resolved
+	}
+	resolvedPath, err := filepath.EvalSymlinks(path)
+	if err != nil {
+		resolvedPath = path
+	}
+	rel, err := filepath.Rel(wtRoot, resolvedPath)
+	if err != nil {
+		return nil
+	}
+	return listedWorktreeFromRel(campRoot, rel, projects)
+}
+
+func listedLogicalWorktreeAt(campRoot, path string, projects []Project) *ResolveResult {
+	wtRoot := filepath.Join(campRoot, "projects", "worktrees")
+	rel, err := filepath.Rel(wtRoot, path)
+	if err != nil {
+		return nil
+	}
+	return listedWorktreeFromRel(campRoot, rel, projects)
+}
+
+func listedWorktreeFromRel(campRoot, rel string, projects []Project) *ResolveResult {
+	rel = filepath.ToSlash(rel)
+	if rel == "." || rel == ".." || strings.HasPrefix(rel, "../") {
+		return nil
+	}
+	parts := strings.Split(rel, "/")
+	if len(parts) < 2 || parts[0] == "" || parts[1] == "" {
+		return nil
+	}
+	projName, wtName := parts[0], parts[1]
+	for i := range projects {
+		if projects[i].Name != projName {
+			continue
+		}
+		wtPath := filepath.Join(campRoot, "projects", "worktrees", projName, wtName)
+		if resolved, err := filepath.EvalSymlinks(wtPath); err == nil {
+			wtPath = resolved
+		}
+		// The path shape alone (projects/worktrees/<project>/<name>) is not
+		// proof of a worktree: a plain, non-git directory can sit there too
+		// (integration fixtures use exactly this, e.g. .../not-a-worktree).
+		// Require git's on-disk worktree gitdir layout before trusting the
+		// shape, mirroring git.nestedWorktreeOwner's guard. Without this, a
+		// non-worktree dir silently resolves to the owning project instead of
+		// falling through to the FindProjectRootWithType error path.
+		if !git.IsLinkedWorktree(wtPath) {
+			return nil
+		}
+		return &ResolveResult{
+			Name:        projects[i].Name,
+			Path:        wtPath,
+			LogicalPath: projects[i].Path,
+			Source:      projects[i].Source,
+			LinkedPath:  projects[i].LinkedPath,
+		}
+	}
+	return nil
 }
 
 // nameFromPath extracts a project name from its absolute path relative to

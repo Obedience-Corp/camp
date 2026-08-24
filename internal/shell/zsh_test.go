@@ -63,7 +63,7 @@ func TestGenerateZsh(t *testing.T) {
 
 func TestGenerateZsh_FestivalsArm(t *testing.T) {
 	output := generateZsh()
-	section := shellWrapperSection(t, output, "    festivals)", "    *)")
+	section := shellWrapperSection(t, output, "    festivals)", "    quest)")
 
 	checks := []struct {
 		name    string
@@ -121,6 +121,38 @@ func TestGenerateZsh_ProjectListArm(t *testing.T) {
 
 	if strings.Contains(section, `cd "$root/$dest"`) {
 		t.Error("project list arm must not use the root-relative cd form (paths are absolute)")
+	}
+}
+
+func TestGenerateZsh_QuestListArm(t *testing.T) {
+	output := generateZsh()
+	section := shellWrapperSection(t, output, "    quest)", "    *)")
+
+	checks := []struct {
+		name    string
+		content string
+	}{
+		{"use/clear intercept", "use|clear)"},
+		{"list case", "list)"},
+		{"non-list passthrough", `command camp "$@"`},
+		{"list path output", `command camp quest list "$@" --path-output`},
+		{"quest list temp file", "camp-quest-list.XXXXXX"},
+		{"absolute cd", `cd "$dest"`},
+		{"json passthrough", `--json|--json=*`},
+	}
+	for _, check := range checks {
+		t.Run(check.name, func(t *testing.T) {
+			if !strings.Contains(section, check.content) {
+				t.Errorf("zsh quest list arm missing %s: %q", check.name, check.content)
+			}
+		})
+	}
+
+	if strings.Contains(section, `cd "$root/$dest"`) {
+		t.Error("quest list arm must not use the root-relative cd form (paths are absolute)")
+	}
+	if strings.Contains(section, `command camp "$@" --path-output`) {
+		t.Error("quest wrapper must not append --path-output to non-list subcommands")
 	}
 }
 

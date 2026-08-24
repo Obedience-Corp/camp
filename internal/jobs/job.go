@@ -133,8 +133,11 @@ type Job struct {
 	// Tree is the captured tree SHA, for KindCommitTree.
 	Tree string `json:"tree,omitempty"`
 	// Parent is the HEAD the tree was captured against. Empty means HEAD was
-	// unborn: the captured tree is a root commit. A mismatch at execution
-	// time fails the job rather than guessing.
+	// unborn: the captured tree is a root commit. If HEAD moves before
+	// execution, the job succeeds only when later history explicitly
+	// versioned every captured path and the real index no longer holds
+	// queued work; otherwise it fails rather than replaying the tree onto a
+	// parent the user did not choose.
 	Parent string `json:"parent,omitempty"`
 	// Message is the commit message. Empty with AutoWrite set means the worker
 	// generates it.

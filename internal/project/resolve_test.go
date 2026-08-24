@@ -197,24 +197,121 @@ func TestResolveFromCwd_NestedSubmoduleWins(t *testing.T) {
 	}
 }
 
-func TestResolveListedProject_LogicalWorktreeIdentityWins(t *testing.T) {
-	campRoot := filepath.Join(string(filepath.Separator), "campaign")
+func TestListedLogicalWorktreeAt_PreservesOwningProjectAcrossSymlink(t *testing.T) {
+	campRoot := t.TempDir()
+	physicalWorktree := filepath.Join(campRoot, "projects", "beta", "feature")
+	gitDir := filepath.Join(campRoot, ".git", "modules", "projects", "alpha", "worktrees", "feature")
+	if err := os.MkdirAll(physicalWorktree, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.MkdirAll(gitDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(physicalWorktree, ".git"), []byte("gitdir: "+gitDir+"\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	holderRoot := filepath.Join(campRoot, "projects", "worktrees")
+	if err := os.MkdirAll(holderRoot, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Symlink(filepath.Join(campRoot, "projects", "beta"), filepath.Join(holderRoot, "alpha")); err != nil {
+		t.Fatal(err)
+	}
+
 	projects := []Project{
 		{Name: "alpha", Path: filepath.Join("projects", "alpha"), Source: SourceSubmodule},
 		{Name: "beta", Path: filepath.Join("projects", "beta"), Source: SourceSubmodule},
 	}
-	logicalCwd := filepath.Join(campRoot, "projects", "worktrees", "alpha", "feature")
-	physicalCwd := filepath.Join(campRoot, "projects", "beta")
-
-	result := resolveListedProject(campRoot, logicalCwd, physicalCwd, projects)
+	logicalCwd := filepath.Join(holderRoot, "alpha", "feature")
+	result := resolveListedProject(campRoot, logicalCwd, physicalWorktree, projects)
 	if result == nil {
 		t.Fatal("expected a project result")
 	}
 	if result.Name != "alpha" {
 		t.Fatalf("resolved name = %q, want alpha", result.Name)
 	}
-	if result.Path != filepath.Join(campRoot, "projects", "alpha") {
-		t.Fatalf("resolved path = %q, want alpha project path", result.Path)
+	gotPath, _ := filepath.EvalSymlinks(result.Path)
+	wantPath, _ := filepath.EvalSymlinks(physicalWorktree)
+	if gotPath != wantPath {
+		t.Fatalf("resolved path = %q, want physical worktree %q", gotPath, wantPath)
+	}
+}
+
+func TestResolveFromCwd_WorktreeUsesOwningProjectName(t *testing.T) {
+	campRoot := setupTestCampaign(t, "myproj")
+	if resolved, err := filepath.EvalSymlinks(campRoot); err == nil {
+		campRoot = resolved
+	}
+
+	wtDir := filepath.Join(campRoot, "projects", "worktrees", "myproj", "feature")
+	if err := os.MkdirAll(wtDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	gitDir := filepath.Join(campRoot, ".git", "modules", "projects", "myproj", "worktrees", "feature")
+	if err := os.MkdirAll(gitDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(wtDir, ".git"), []byte("gitdir: "+gitDir+"\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	origDir, err := os.Getwd()
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = os.Chdir(origDir) })
+	if err := os.Chdir(wtDir); err != nil {
+		t.Fatal(err)
+	}
+
+	ctx := context.Background()
+	result, err := ResolveFromCwd(ctx, campRoot)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if result.Name != "myproj" {
+		t.Fatalf("got name %q, want %q (not worktrees)", result.Name, "myproj")
+	}
+	gotPath, _ := filepath.EvalSymlinks(result.Path)
+	wantPath, _ := filepath.EvalSymlinks(wtDir)
+	if gotPath != wantPath {
+		t.Fatalf("got path %q, want worktree path %q", gotPath, wantPath)
+	}
+}
+
+// TestResolveFromCwd_PlainDirUnderWorktreesLayoutDoesNotMatch is the
+// CHANGES_REQUESTED fix for PR #636: listedWorktreeAt used to trust the
+// projects/worktrees/<project>/<name> path shape alone, so a plain,
+// non-git directory sitting in that layout (scratch dirs, integration
+// fixtures) silently resolved as the owning project instead of erroring.
+// It must fall through to the "not inside a project directory" error, same
+// as before resolveListedWorktree existed.
+func TestResolveFromCwd_PlainDirUnderWorktreesLayoutDoesNotMatch(t *testing.T) {
+	campRoot := setupTestCampaign(t, "myproj")
+	if resolved, err := filepath.EvalSymlinks(campRoot); err == nil {
+		campRoot = resolved
+	}
+
+	// Not a git worktree at all: no .git file/dir, just a plain directory
+	// under the projects/worktrees/<project>/<name> layout.
+	notWT := filepath.Join(campRoot, "projects", "worktrees", "myproj", "not-a-worktree")
+	if err := os.MkdirAll(notWT, 0o755); err != nil {
+		t.Fatal(err)
+	}
+
+	origDir, err := os.Getwd()
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = os.Chdir(origDir) })
+	if err := os.Chdir(notWT); err != nil {
+		t.Fatal(err)
+	}
+
+	ctx := context.Background()
+	result, err := ResolveFromCwd(ctx, campRoot)
+	if err == nil {
+		t.Fatalf("expected error for a non-worktree dir under the worktrees layout, got result: %+v", result)
 	}
 }
 

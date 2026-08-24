@@ -143,9 +143,10 @@ func isMissingPathspec(err error) bool {
 // executeCommitTree builds a commit from the job's captured tree and moves HEAD
 // to it.
 //
-// Nothing here touches the real index or the working tree. The tree was
-// captured at enqueue and is immutable, so this produces exactly the commit the
-// user staged however long ago, regardless of what they have done since.
+// Nothing here touches the real index or the working tree. While HEAD remains
+// at the captured parent, the immutable tree produces exactly the commit the
+// user staged. A later commit that already versioned every captured path makes
+// the job a no-op; an unrelated HEAD move fails rather than being overwritten.
 func executeCommitTree(ctx context.Context, campaignRoot, repoPath string, job *Job) error {
 	if strings.TrimSpace(job.Tree) == "" {
 		return camperrors.Newf("job %s has no captured tree", job.ID)
@@ -170,6 +171,31 @@ func executeCommitTree(ctx context.Context, campaignRoot, repoPath string, job *
 		return err
 	} else if empty {
 		return nil
+	}
+
+	// The real index keeps the captured tree staged until this job lands. A
+	// direct commit (or another tool that stages everything) can therefore
+	// sweep the queued content into a later commit while the worker is alive.
+	// If that happened, the promise is fulfilled: requiring the exact queued
+	// tree and parent pair would park a false failure whenever the later commit
+	// also carried unrelated paths. If HEAD moved without carrying the captured
+	// changes, fail before paying for an external message writer that can no
+	// longer lead to a commit.
+	if head := git.HeadSHA(ctx, repoPath); head != "" && head != job.Parent {
+		if alreadyApplied(ctx, repoPath, job) {
+			return nil
+		}
+		integrated, err := git.FirstParentChainContainsOrSupersedesTreeChanges(
+			ctx, repoPath, job.Parent, job.Tree, head)
+		if err != nil {
+			return err
+		}
+		if integrated {
+			return nil
+		}
+		return camperrors.Newf(
+			"HEAD moved since this commit was queued; captured changes were not applied (expected parent %s)",
+			shortSHA(job.Parent))
 	}
 
 	message, err := messageForTree(ctx, campaignRoot, repoPath, job)
@@ -198,6 +224,17 @@ func executeCommitTree(ctx context.Context, campaignRoot, repoPath string, job *
 		// tree and parent is this job's commit, whenever it was made.
 		if alreadyApplied(ctx, repoPath, job) {
 			return nil
+		}
+		// A concurrent commit may have swept or intentionally superseded the
+		// still-staged captured paths while the writer ran. A later version of
+		// every path with no queued staging left fulfills the job; unrelated
+		// additions in that commit do not make it a failure.
+		if head := git.HeadSHA(ctx, repoPath); head != "" {
+			integrated, integratedErr := git.FirstParentChainContainsOrSupersedesTreeChanges(
+				ctx, repoPath, job.Parent, job.Tree, head)
+			if integratedErr == nil && integrated {
+				return nil
+			}
 		}
 		// Otherwise HEAD genuinely moved. Fail, and never rebase: the queued
 		// commit was built against a tree the user staged, and replaying it

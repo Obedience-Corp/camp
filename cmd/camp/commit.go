@@ -153,8 +153,8 @@ func runCommit(cmd *cobra.Command, args []string) error {
 		return camperrors.Wrap(err, "failed to resolve target")
 	}
 
-	if target.IsSubmodule {
-		_, _ = fmt.Fprintln(humanOut, ui.Info(fmt.Sprintf("Operating on submodule: %s", target.Name)))
+	if kind := target.NestedKindTitle(); kind != "" {
+		_, _ = fmt.Fprintln(humanOut, ui.Info(fmt.Sprintf("Operating on %s: %s", strings.ToLower(kind), target.Name)))
 	}
 
 	if commitAutoWrite && commitMessage != "" {
@@ -192,7 +192,7 @@ func runCommit(cmd *cobra.Command, args []string) error {
 	message := commitMessage
 	if !commitAutoWrite && message == "" && !commitAmend {
 		var promptErr error
-		message, promptErr = ui.PromptCommitMessageSimple(ctx, executor, !target.IsSubmodule && !commitIncludeRefs)
+		message, promptErr = ui.PromptCommitMessageSimple(ctx, executor, !target.IsNestedRepo() && !commitIncludeRefs)
 		if promptErr != nil {
 			return camperrors.Wrap(promptErr, "prompt failed")
 		}
@@ -213,7 +213,7 @@ func runCommit(cmd *cobra.Command, args []string) error {
 			guardOutcome *git.StageOutcome
 			stageErr     error
 		)
-		if target.IsSubmodule || commitIncludeRefs {
+		if target.IsNestedRepo() || commitIncludeRefs {
 			guardOutcome, stageErr = git.StageWithGuardOptions(
 				ctx, target.Path, nil, git.StageOptions{CommitLarge: commitLarge, CommitNested: commitNested})
 		} else {
@@ -271,7 +271,7 @@ func runCommit(cmd *cobra.Command, args []string) error {
 	// Refuse root content commits that would accidentally sweep pre-staged
 	// submodule gitlinks into this commit's message/tag context. The user can
 	// make that coupling explicit with --include-refs or use refs-sync instead.
-	if !target.IsSubmodule && !commitIncludeRefs {
+	if !target.IsNestedRepo() && !commitIncludeRefs {
 		stagedRefs, refErr := listStagedProjectRefs(ctx, target.Path)
 		if refErr != nil {
 			return camperrors.Wrap(refErr, "check staged submodule refs")
@@ -291,7 +291,7 @@ func runCommit(cmd *cobra.Command, args []string) error {
 		return err
 	}
 	if !hasStaged && !commitAmend {
-		if !target.IsSubmodule && !commitIncludeRefs {
+		if !target.IsNestedRepo() && !commitIncludeRefs {
 			driftRefs, driftErr := listUnstagedProjectRefs(ctx, target.Path)
 			if driftErr != nil {
 				return camperrors.Wrap(driftErr, "check unstaged submodule refs")
@@ -368,7 +368,7 @@ func runCommit(cmd *cobra.Command, args []string) error {
 
 	if err := executor.Commit(ctx, opts); err != nil {
 		if errors.Is(err, git.ErrNoChanges) {
-			if !target.IsSubmodule && !commitIncludeRefs {
+			if !target.IsNestedRepo() && !commitIncludeRefs {
 				driftRefs, driftErr := listUnstagedProjectRefs(ctx, target.Path)
 				if driftErr != nil {
 					return camperrors.Wrap(driftErr, "check unstaged submodule refs")
@@ -400,7 +400,7 @@ func runCommit(cmd *cobra.Command, args []string) error {
 	// any of it begins. A failure to queue warns rather than failing a commit
 	// that already succeeded: the record is eventually consistent, and the
 	// next commit re-queues it.
-	if !target.IsSubmodule {
+	if !target.IsNestedRepo() {
 		if n, mErr := jobs.EnqueueManifestsForRoots(ctx, campRoot); mErr != nil {
 			_, _ = fmt.Fprintln(cmd.ErrOrStderr(), ui.Warning("artifact manifest not queued: "+mErr.Error()))
 		} else if n > 0 {

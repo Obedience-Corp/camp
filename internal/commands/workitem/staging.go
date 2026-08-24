@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"io"
 	"os"
+	"path/filepath"
 
 	camperrors "github.com/Obedience-Corp/camp/internal/errors"
 	wkitem "github.com/Obedience-Corp/camp/internal/workitem"
@@ -87,21 +88,29 @@ func (p *StagingPlan) addStageNote(path, note string) {
 // matrix row that applies, and returns a StagingPlan that the commit runner
 // can hand to commit.Workitem. Refusal modes (no workitem, empty plan with no
 // override) surface as typed errors so the CLI can map them to exit codes.
-// festivalRefForResolved derives the FE-<ref> segment for a commit tag from a
-// resolver result. It fires in two cases: the festival resolver tier matched
-// (cwd inside a festival, or --festival), or a worktree/link tier resolved to a
-// festival-typed workitem. The latter is how a worktree whose primary link was
-// migrated to a festival by `camp workitem promote --target festival` keeps
-// carrying a context ref (FE-<festival id>) instead of an empty tag. Returns ""
-// for non-festival contexts.
-func festivalRefForResolved(res *resolver.Resolution, festivalID string) string {
+// FestivalRefForResolved derives the FE-<ref> segment for a resolved commit
+// context. Besides direct festival context and festival-typed workitems, it
+// follows a resolved workitem's primary festival link. That preserves festival
+// traceability when cwd first resolves through a project or worktree link.
+func FestivalRefForResolved(ctx context.Context, campaignRoot string, res *resolver.Resolution, festivalID string) string {
 	if res == nil || res.Workitem == nil {
 		return ""
 	}
-	if res.Source == resolver.SourceFestival {
+	if festivalID != "" {
 		return festivalRefFromString(festivalID)
 	}
-	return wkitem.FestivalRef(res.Workitem)
+	if ref := wkitem.FestivalRef(res.Workitem); ref != "" {
+		return ref
+	}
+
+	scope := primaryFestivalScopePath(ctx, campaignRoot, res.Workitem, "")
+	if scope == "" {
+		return ""
+	}
+	if ref := InferFestivalIDFromCwd(campaignRoot, filepath.Join(campaignRoot, filepath.FromSlash(scope))); ref != "" {
+		return ref
+	}
+	return festivalRefFromString(scope)
 }
 
 func ComputePlan(ctx context.Context, campaignRoot string, opts PlanOptions) (*StagingPlan, error) {
@@ -111,7 +120,7 @@ func ComputePlan(ctx context.Context, campaignRoot string, opts PlanOptions) (*S
 
 	festivalID := opts.FestivalID
 	if festivalID == "" {
-		festivalID = inferFestivalIDFromCwd(campaignRoot, opts.Cwd)
+		festivalID = InferFestivalIDFromCwd(campaignRoot, opts.Cwd)
 	}
 
 	res, err := resolver.Resolve(ctx, campaignRoot, resolver.Options{
@@ -135,7 +144,7 @@ func ComputePlan(ctx context.Context, campaignRoot string, opts PlanOptions) (*S
 	if err != nil {
 		return nil, err
 	}
-	festivalRef := festivalRefForResolved(res, festivalID)
+	festivalRef := FestivalRefForResolved(ctx, campaignRoot, res, festivalID)
 	plan := &StagingPlan{
 		Workitem:    wi,
 		WorkitemRef: ref,

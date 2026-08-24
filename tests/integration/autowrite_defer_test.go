@@ -46,6 +46,20 @@ echo "deferred: written by the background writer"`,
 	"slow": `#!/bin/sh
 sleep 3
 echo "deferred: the slow writer finished"`,
+	"stable-head": `#!/bin/sh
+before=$(git diff --cached | git hash-object --stdin)
+touch /tmp/camp-writer-stable-ready
+i=0
+while [ ! -e /tmp/camp-writer-stable-release ] && [ "$i" -lt 100 ]; do
+  sleep 0.1
+  i=$((i + 1))
+done
+after=$(git diff --cached | git hash-object --stdin)
+if [ "$before" != "$after" ]; then
+  echo "writer saw its staged input change" >&2
+  exit 91
+fi
+echo "deferred: stable captured input"`,
 	"empty": `#!/bin/sh
 exit 0`,
 	// A writer whose backing daemon is down prints usage and exits non-zero.
@@ -55,6 +69,24 @@ echo "Usage:" >&2
 echo "  writer [flags]" >&2
 echo "connect to daemon: writer: daemon not running" >&2
 exit 1`,
+}
+
+// commitWithScratchIndex advances HEAD without sweeping the real index, which
+// still contains a deferred commit's captured tree. It models an independent
+// history writer rather than the common "git add -A" case that carries the
+// queued content along with its own commit.
+func commitWithScratchIndex(t *testing.T, tc *TestContainer, campPath, filename string) {
+	t.Helper()
+	tc.Shell(t, fmt.Sprintf(`
+		cd %s
+		index=/tmp/camp-autowrite-%s.index
+		rm -f "$index"
+		GIT_INDEX_FILE="$index" git read-tree HEAD
+		printf 'interloper\n' > %s
+		GIT_INDEX_FILE="$index" git add -- %s
+		GIT_INDEX_FILE="$index" git commit -q -m "committed independently while the job was queued"
+		rm -f "$index"
+	`, campPath, filename, filename, filename))
 }
 
 // drainJobs waits for the queue so an assertion does not race the worker.
@@ -168,13 +200,10 @@ func TestIntegration_DeferredCommitFailsWhenHeadMoved(t *testing.T) {
 	require.NoError(t, err)
 	require.Equal(t, 0, exitCode, "stderr:\n%s", stderr)
 
-	// Someone commits directly while the writer is still running.
-	tc.Shell(t, fmt.Sprintf(`
-		cd %s
-		printf 'interloper\n' > interloper.md
-		git add interloper.md
-		git commit -q -m "committed directly while the job was queued"
-	`, campPath))
+	// Someone commits independently while the writer is still running. A
+	// scratch index is essential here: an ordinary commit would sweep the
+	// queued paths that Camp deliberately leaves staged, fulfilling the job.
+	commitWithScratchIndex(t, tc, campPath, "interloper.md")
 
 	beforeDrain := strings.TrimSpace(tc.GitOutput(t, campPath, "rev-parse", "HEAD"))
 
@@ -188,7 +217,7 @@ func TestIntegration_DeferredCommitFailsWhenHeadMoved(t *testing.T) {
 		"a job whose parent moved must not touch HEAD")
 
 	subject := headSubject(t, tc, campPath)
-	assert.Contains(t, subject, "committed directly",
+	assert.Contains(t, subject, "committed independently",
 		"the interloping commit must still be HEAD; camp must never rebase over it")
 
 	// The failure is visible, both in the queue and on the next command.
@@ -201,6 +230,66 @@ func TestIntegration_DeferredCommitFailsWhenHeadMoved(t *testing.T) {
 	require.NoError(t, err)
 	assert.Contains(t, stderr, "deferred commit failed",
 		"the failure must surface on an ordinary command; stderr:\n%s", stderr)
+}
+
+// A later commit that sweeps the still-staged queued paths fulfills the job.
+// This is the real shared-campaign case: an auto-written message can take
+// minutes, and another Camp/Fest operation may commit all staged content while
+// it runs. The writer must keep seeing the captured parent, and the worker must
+// not park a false failure merely because the later commit also added files.
+func TestIntegration_DeferredCommitAcceptsSnapshotSweptByLaterCommit(t *testing.T) {
+	tc := GetSharedContainer(t)
+	tc.EnableDeferral()
+	campPath, _ := setupDrainCampaign(t, tc, "aw-defer-swept")
+	configureWriter(t, tc, campPath, "stable-head")
+	tc.Shell(t, "rm -f /tmp/camp-writer-stable-ready /tmp/camp-writer-stable-release")
+
+	tc.Shell(t, fmt.Sprintf(`
+		cd %s
+		printf 'queued\n' > queued.md
+		: > ephemeral.lock
+	`, campPath))
+
+	_, stderr, exitCode, err := tc.RunCampSplitInDir(campPath, "commit", "--auto-write")
+	require.NoError(t, err)
+	require.Equal(t, 0, exitCode, "stderr:\n%s", stderr)
+
+	// Wait until the writer has captured its first digest, then advance live
+	// HEAD with the real index. The first commit carries a newer queued.md plus
+	// its own file; the second removes another queued path. No history entry has
+	// the exact queued projection, but every path was versioned and the index is
+	// settled, which is the supersession contract this regression exercises.
+	tc.Shell(t, `
+		i=0
+		while [ ! -e /tmp/camp-writer-stable-ready ] && [ "$i" -lt 100 ]; do
+		  sleep 0.1
+		  i=$((i + 1))
+		done
+		test -e /tmp/camp-writer-stable-ready
+	`)
+	tc.Shell(t, fmt.Sprintf(`
+		cd %s
+		printf 'later\n' >> queued.md
+		printf 'later\n' > later.md
+		git add queued.md later.md
+		git commit -q -m "later commit swept the queued snapshot"
+		git rm -q ephemeral.lock
+		git commit -q -m "later commit removed an obsolete queued path"
+		touch /tmp/camp-writer-stable-release
+	`, campPath))
+
+	drainJobs(t, tc, campPath)
+	jobsOut, _, _, err := tc.RunCampSplitInDir(campPath, "jobs")
+	require.NoError(t, err)
+	assert.Contains(t, jobsOut, "No deferred commits queued",
+		"a later commit containing the captured paths fulfills the job; camp jobs:\n%s", jobsOut)
+
+	queued := tc.GitOutput(t, campPath, "show", "HEAD:queued.md")
+	assert.Contains(t, queued, "queued")
+	assert.Contains(t, queued, "later")
+	tree := tc.GitOutput(t, campPath, "ls-tree", "-r", "--name-only", "HEAD")
+	assert.Contains(t, tree, "later.md")
+	assert.NotContains(t, tree, "ephemeral.lock")
 }
 
 // Deferred criterion 37c2: `camp commit -m` stays synchronous and prints a
@@ -507,6 +596,70 @@ func TestIntegration_AutoWriteDefersOnUnbornHead(t *testing.T) {
 		"the deferred commit must carry the writer's message")
 }
 
+// A deferred --auto-write captured on an unborn HEAD (empty Job.Parent) must
+// fail cleanly, with the same "HEAD moved" contract as a born-HEAD job, when
+// someone else creates the repository's actual first commit while the writer
+// is still running and that commit does not carry the queued paths.
+//
+// Regression: FirstParentChainContainsOrSupersedesTreeChanges diffed an empty
+// Parent as a literal empty-string git revision, which git rejects as an
+// ambiguous argument, so the worker surfaced that raw plumbing error instead
+// of the "HEAD is no longer unborn" message every other HEAD-moved failure
+// gets.
+func TestIntegration_DeferredCommitFailsWhenUnbornHeadRaced(t *testing.T) {
+	tc := GetSharedContainer(t)
+	tc.EnableDeferral()
+
+	campPath := "/campaigns/aw-defer-unborn-race"
+	_, err := tc.RunCamp("init", campPath, "--name", "aw-defer-unborn-race",
+		"-d", "Test campaign", "-m", "Test mission", "--type", "product")
+	require.NoError(t, err)
+
+	_, exitCode, err := tc.ExecCommand("git", "-C", campPath, "rev-parse", "--verify", "HEAD")
+	require.NoError(t, err)
+	require.NotEqual(t, 0, exitCode, "fixture is not reproducing an unborn HEAD; HEAD already resolves")
+
+	configureWriter(t, tc, campPath, "slow")
+	tc.Shell(t, fmt.Sprintf(`
+		cd %s
+		printf 'queued\n' > queued.md
+	`, campPath))
+
+	_, stderr, exitCode, err := tc.RunCampSplitInDir(campPath, "commit", "--auto-write")
+	require.NoError(t, err)
+	require.Equal(t, 0, exitCode, "stderr:\n%s", stderr)
+
+	// Someone else creates the repository's real first commit independently
+	// while the writer is still running, via a scratch index so the queued
+	// paths stay staged and out of that commit's tree.
+	tc.Shell(t, fmt.Sprintf(`
+		cd %s
+		index=/tmp/camp-autowrite-unborn-race.index
+		rm -f "$index"
+		printf 'interloper\n' > interloper.md
+		GIT_INDEX_FILE="$index" git add -- interloper.md
+		GIT_INDEX_FILE="$index" git commit -q -m "committed independently before the queued job landed"
+		rm -f "$index"
+	`, campPath))
+
+	_, _, _, err = tc.RunCampSplitInDir(campPath, "jobs", "drain")
+	require.NoError(t, err)
+
+	head := strings.TrimSpace(tc.GitOutput(t, campPath, "rev-parse", "HEAD"))
+	assert.NotEmpty(t, head, "the interloper's commit must still exist")
+
+	subject := headSubject(t, tc, campPath)
+	assert.Contains(t, subject, "committed independently",
+		"the interloping commit must still be HEAD; camp must never rebase over it")
+
+	jobsOut, _, _, err := tc.RunCampSplitInDir(campPath, "jobs", "--json")
+	require.NoError(t, err)
+	assert.Contains(t, jobsOut, "HEAD is no longer unborn",
+		"the failure must use the unborn-HEAD-moved message, not a raw git error; camp jobs --json:\n%s", jobsOut)
+	assert.NotContains(t, jobsOut, "ambiguous argument",
+		"an empty Parent must not reach git as a literal revision string; camp jobs --json:\n%s", jobsOut)
+}
+
 func TestIntegration_EmptyStagedTreeDoesNotDefer(t *testing.T) {
 	tc := GetSharedContainer(t)
 	tc.EnableDeferral()
@@ -560,13 +713,9 @@ func TestIntegration_SupersededJobIsNotOfferedForRetry(t *testing.T) {
 	require.NoError(t, err)
 	require.Equal(t, 0, exitCode, "stderr:\n%s", stderr)
 
-	// Someone commits directly, moving HEAD past the queued job's parent.
-	tc.Shell(t, fmt.Sprintf(`
-		cd %s
-		printf 'interloper\n' > interloper.md
-		git add interloper.md
-		git commit -q -m "committed directly while the job was queued"
-	`, campPath))
+	// Move HEAD without carrying the queued snapshot, so the job is genuinely
+	// superseded rather than already fulfilled by the later commit.
+	commitWithScratchIndex(t, tc, campPath, "superseding.md")
 
 	_, _, _, err = tc.RunCampSplitInDir(campPath, "jobs", "drain")
 	require.NoError(t, err)

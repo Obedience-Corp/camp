@@ -78,6 +78,119 @@ func TestResolveTarget_InvalidProject(t *testing.T) {
 	}
 }
 
+func TestResolveTarget_SubmoduleWorktreeFromCwd(t *testing.T) {
+	ctx := context.Background()
+	campRoot := t.TempDir()
+	if resolved, err := filepath.EvalSymlinks(campRoot); err == nil {
+		campRoot = resolved
+	}
+
+	wtDir := filepath.Join(campRoot, "projects", "worktrees", "camp", "feature")
+	gitDir := filepath.Join(campRoot, ".git", "modules", "projects", "camp", "worktrees", "feature")
+	if err := os.MkdirAll(wtDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.MkdirAll(gitDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(wtDir, ".git"), []byte("gitdir: "+gitDir+"\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	wd, err := os.Getwd()
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = os.Chdir(wd) })
+	if err := os.Chdir(wtDir); err != nil {
+		t.Fatal(err)
+	}
+
+	result, err := ResolveTarget(ctx, campRoot, true, "")
+	if err != nil {
+		t.Fatalf("ResolveTarget() error = %v", err)
+	}
+	if result.IsSubmodule {
+		t.Fatal("IsSubmodule should be false for a submodule worktree")
+	}
+	if !result.IsWorktree {
+		t.Fatal("IsWorktree should be true for a submodule worktree")
+	}
+	if !result.IsNestedRepo() {
+		t.Fatal("IsNestedRepo should be true so campaign-root ref handling stays off")
+	}
+	if result.Name != "camp" {
+		t.Fatalf("Name = %q, want %q", result.Name, "camp")
+	}
+	if result.NestedKindTitle() != "Worktree" {
+		t.Fatalf("NestedKindTitle() = %q, want Worktree", result.NestedKindTitle())
+	}
+	gotPath, _ := filepath.EvalSymlinks(result.Path)
+	wantPath, _ := filepath.EvalSymlinks(wtDir)
+	if gotPath != wantPath {
+		t.Fatalf("Path = %q, want %q", gotPath, wantPath)
+	}
+}
+
+func TestResolveTarget_SubmoduleWorktreeExplicitPath(t *testing.T) {
+	ctx := context.Background()
+	campRoot := t.TempDir()
+	if resolved, err := filepath.EvalSymlinks(campRoot); err == nil {
+		campRoot = resolved
+	}
+
+	wtDir := filepath.Join(campRoot, "elsewhere", "feature")
+	gitDir := filepath.Join(campRoot, ".git", "modules", "projects", "fest", "worktrees", "feature")
+	if err := os.MkdirAll(wtDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.MkdirAll(gitDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(wtDir, ".git"), []byte("gitdir: "+gitDir+"\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	result, err := ResolveTarget(ctx, campRoot, false, wtDir)
+	if err != nil {
+		t.Fatalf("ResolveTarget() error = %v", err)
+	}
+	if result.IsSubmodule {
+		t.Fatal("IsSubmodule should be false for a submodule worktree")
+	}
+	if !result.IsWorktree {
+		t.Fatal("IsWorktree should be true via .git/modules/.../worktrees/")
+	}
+	if result.Name != "fest" {
+		t.Fatalf("Name = %q, want %q (from modules path)", result.Name, "fest")
+	}
+}
+
+func TestTargetResultNestedHelpers(t *testing.T) {
+	var nilTarget *TargetResult
+	if nilTarget.IsNestedRepo() {
+		t.Fatal("nil TargetResult should not be a nested repo")
+	}
+	if got := nilTarget.NestedKindTitle(); got != "" {
+		t.Fatalf("nil NestedKindTitle() = %q, want empty", got)
+	}
+
+	sub := &TargetResult{IsSubmodule: true, Name: "camp"}
+	if !sub.IsNestedRepo() || sub.NestedKindTitle() != "Submodule" {
+		t.Fatalf("submodule helpers: nested=%v kind=%q", sub.IsNestedRepo(), sub.NestedKindTitle())
+	}
+
+	wt := &TargetResult{IsWorktree: true, Name: "camp"}
+	if !wt.IsNestedRepo() || wt.NestedKindTitle() != "Worktree" {
+		t.Fatalf("worktree helpers: nested=%v kind=%q", wt.IsNestedRepo(), wt.NestedKindTitle())
+	}
+
+	root := &TargetResult{Name: "campaign root"}
+	if root.IsNestedRepo() || root.NestedKindTitle() != "" {
+		t.Fatalf("root helpers: nested=%v kind=%q", root.IsNestedRepo(), root.NestedKindTitle())
+	}
+}
+
 func TestResolveTarget_ContextCancelled(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	cancel()

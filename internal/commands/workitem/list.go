@@ -37,6 +37,9 @@ func (o listOptions) filterOptions() (wkitem.FilterOptions, error) {
 	if err != nil {
 		return wkitem.FilterOptions{}, err
 	}
+	if err := wkitem.ValidateProjectPaths(projects); err != nil {
+		return wkitem.FilterOptions{}, err
+	}
 	return wkitem.FilterOptions{
 		Types:           o.types,
 		Categories:      o.categories,
