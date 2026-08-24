@@ -45,6 +45,8 @@ func execute(ctx context.Context, campaignRoot string, job *Job) error {
 		return executeCommitTree(ctx, campaignRoot, repoPath, job)
 	case KindManifest:
 		return executeManifest(ctx, campaignRoot, repoPath, job)
+	case KindPush:
+		return executePush(ctx, repoPath, job)
 	default:
 		return camperrors.Newf("unknown job kind %q in job %s", job.Kind, job.ID)
 	}
@@ -344,6 +346,14 @@ func GitArgsForJob(job *Job) []string {
 		return args
 	case KindCommitTree:
 		return []string{"commit-tree", job.Tree}
+	case KindManifest:
+		return nil
+	case KindPush:
+		// A push job IS a push, so the forbidden-args rule — which exists to
+		// prevent commit jobs from pushing as a side effect — does not apply.
+		// The push runs through executePush directly, not through the staging
+		// path GitArgsForJob exists to constrain.
+		return nil
 	default:
 		return nil
 	}

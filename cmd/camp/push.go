@@ -13,6 +13,7 @@ import (
 	"github.com/Obedience-Corp/camp/internal/campaign"
 	"github.com/Obedience-Corp/camp/internal/drain"
 	"github.com/Obedience-Corp/camp/internal/git"
+	"github.com/Obedience-Corp/camp/internal/jobs"
 	"github.com/Obedience-Corp/camp/internal/ui"
 	"github.com/charmbracelet/lipgloss"
 	"github.com/spf13/cobra"
@@ -64,16 +65,48 @@ func runPush(cmd *cobra.Command, args []string) error {
 		return camperrors.Wrap(err, "failed to resolve target")
 	}
 
-	if kind := target.NestedKindTitle(); kind != "" {
-		fmt.Fprintln(os.Stderr, ui.Info(fmt.Sprintf("%s: %s", kind, target.Name)))
+	if target.IsSubmodule {
+		fmt.Fprintln(os.Stderr, ui.Info(fmt.Sprintf("Submodule: %s", target.Name)))
 	}
 
 	// Drain before the push, not after: a bookkeeping commit that lands after
 	// the push stays local, and nothing in the output would say so. This is the
 	// drain point the whole ordering barrier exists for.
 	if !noDrain {
-		if _, err := drain.Repo(ctx, target.Path, drain.Write); err != nil {
-			return err
+		// When the drain would block — outstanding work is in the lane — and the
+		// caller is a human at a terminal, enqueue the push as a job at the tail
+		// of the same lane instead of holding the terminal. Lane Seq ordering
+		// guarantees the push runs after the pending commits, so the ordering
+		// barrier holds without the latency. Non-TTY / scripted callers keep the
+		// blocking drain so the machine-facing contract is untouched.
+		outstanding, drainErr := outstandingForPush(ctx, campRoot, target.Path)
+		if drainErr != nil {
+			// A check failure degrades to the blocking drain: the ordering
+			// barrier is the property that matters, and not knowing whether the
+			// queue is empty is not a reason to skip it.
+			if _, err := drain.Repo(ctx, target.Path, drain.Write); err != nil {
+				return err
+			}
+		} else if len(outstanding) > 0 && ui.IsTerminal() {
+			remote, branch := resolvePushTarget(ctx, target.Path, gitArgs)
+			if remote == "" || branch == "" {
+				// Cannot enqueue without a named remote and branch. Degrade to
+				// the blocking drain rather than guessing.
+				if _, err := drain.Repo(ctx, target.Path, drain.Write); err != nil {
+					return err
+				}
+			} else {
+				repo := jobs.RepoForPath(campRoot, target.Path)
+				if repo != "" {
+					return enqueueDeferredPush(ctx, campRoot, repo, remote, branch, outstanding)
+				}
+				// Not in a campaign: no lane to enqueue into. The synchronous
+				// drain already returned (empty), so fall through to push.
+			}
+		} else {
+			if _, err := drain.Repo(ctx, target.Path, drain.Write); err != nil {
+				return err
+			}
 		}
 	}
 
@@ -84,6 +117,83 @@ func runPush(cmd *cobra.Command, args []string) error {
 	gitCmd.Stdin = os.Stdin
 
 	return gitCmd.Run()
+}
+
+// outstandingForPush returns the outstanding blocking jobs for the repo without
+// waiting, so the push command can decide whether to enqueue or proceed.
+func outstandingForPush(ctx context.Context, campRoot, repoPath string) ([]jobs.Job, error) {
+	repo := jobs.RepoForPath(campRoot, repoPath)
+	if repo == "" {
+		return nil, nil
+	}
+	return jobs.Outstanding(campRoot, repo)
+}
+
+// resolvePushTarget determines the remote and branch a push would use, from the
+// gitArgs the user passed or the repo's upstream defaults.
+//
+// The remote and branch are recorded at enqueue so a deferred push publishes
+// what the user asked for, not whatever the upstream happens to be at
+// execution.
+func resolvePushTarget(ctx context.Context, repoPath string, gitArgs []string) (remote, branch string) {
+	// gitArgs after ExtractSubFlags is what would follow "git push": e.g.
+	// ["origin", "main"], ["origin"], or [].
+	nonFlag := make([]string, 0, len(gitArgs))
+	for _, a := range gitArgs {
+		if !strings.HasPrefix(a, "-") {
+			nonFlag = append(nonFlag, a)
+		}
+	}
+	if len(nonFlag) >= 1 {
+		remote = nonFlag[0]
+	}
+	if len(nonFlag) >= 2 {
+		branch = nonFlag[1]
+	}
+	if remote == "" {
+		remote = defaultRemote(ctx, repoPath)
+	}
+	if branch == "" {
+		branch = git.CurrentBranch(ctx, repoPath)
+	}
+	return remote, branch
+}
+
+// defaultRemote returns the upstream remote name, or "origin" if none is
+// configured. A push with no explicit remote falls back to the tracked one.
+func defaultRemote(ctx context.Context, repoPath string) string {
+	output, err := git.RunGitCmd(ctx, repoPath, "rev-parse", "--abbrev-ref", "@{upstream}")
+	if err == nil {
+		ref := strings.TrimSpace(output)
+		if idx := strings.Index(ref, "/"); idx > 0 {
+			return ref[:idx]
+		}
+	}
+	return "origin"
+}
+
+// enqueueDeferredPush queues the push and prints the one-line report that
+// replaces the hold.
+func enqueueDeferredPush(ctx context.Context, campRoot, repo, remote, branch string, outstanding []jobs.Job) error {
+	_, err := jobs.EnqueuePush(ctx, campRoot, repo, remote, branch)
+	if err != nil {
+		return camperrors.Wrap(err, "queue push")
+	}
+	// Spawn a worker for the lane so the queue makes progress without the
+	// terminal holding open. The drain already would have spawned one; this
+	// keeps the property alive now that the drain did not run.
+	jobs.EnsureServed(ctx, campRoot, outstanding)
+	fmt.Println(ui.Info(fmt.Sprintf(
+		"push queued behind %s; camp jobs drain waits for it (camp jobs)",
+		pluralCommit(len(outstanding)))))
+	return nil
+}
+
+func pluralCommit(n int) string {
+	if n == 1 {
+		return "1 commit"
+	}
+	return fmt.Sprintf("%d commits", n)
 }
 
 // pushTarget holds information about a repo to potentially push.

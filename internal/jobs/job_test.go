@@ -112,6 +112,19 @@ func TestJobValidateRejects(t *testing.T) {
 				Then: &Follow{Kind: KindCommitPaths, Repo: "../x", Paths: []string{"b"}, Message: "m"},
 			},
 		},
+
+		// A push job carries only a remote and branch. Carrying fields that belong
+		// to commit jobs would make it ambiguous what the worker should do.
+		{name: "push with no remote", job: Job{Kind: KindPush, Repo: ".", Branch: "main"}},
+		{name: "push with no branch", job: Job{Kind: KindPush, Repo: ".", Remote: "origin"}},
+		{name: "push carrying paths", job: Job{Kind: KindPush, Repo: ".", Remote: "origin", Branch: "main", Paths: []string{"a"}}},
+		{name: "push carrying a tree", job: Job{Kind: KindPush, Repo: ".", Remote: "origin", Branch: "main", Tree: "9f2a"}},
+		{name: "push carrying auto_write", job: Job{Kind: KindPush, Repo: ".", Remote: "origin", Branch: "main", AutoWrite: true}},
+		{
+			name: "push carrying a follow-up",
+			job: Job{Kind: KindPush, Repo: ".", Remote: "origin", Branch: "main",
+				Then: &Follow{Kind: KindCommitPaths, Repo: ".", Paths: []string{"a"}, Message: "m"}},
+		},
 	}
 
 	for _, tc := range cases {
@@ -163,6 +176,14 @@ func TestJobValidateAccepts(t *testing.T) {
 			job: Job{Kind: KindCommitPaths, Repo: ".",
 				Paths: []string{"a-file.name.md", "dir/sub.dir/f.txt"}},
 		},
+		{
+			name: "push with remote and branch",
+			job:  Job{Kind: KindPush, Repo: ".", Remote: "origin", Branch: "main"},
+		},
+		{
+			name: "push in a submodule lane",
+			job:  Job{Kind: KindPush, Repo: "projects/camp", Remote: "origin", Branch: "main"},
+		},
 	}
 
 	for _, tc := range cases {
@@ -197,6 +218,7 @@ func TestKindValid(t *testing.T) {
 	}{
 		{kind: KindCommitPaths, want: true},
 		{kind: KindCommitTree, want: true},
+		{kind: KindPush, want: true},
 		{kind: "", want: false},
 		// The design doc's early sample used "commit"; it is not a kind.
 		{kind: "commit", want: false},
