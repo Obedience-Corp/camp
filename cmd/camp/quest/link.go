@@ -72,6 +72,12 @@ func runQuestLink(cmd *cobra.Command, args []string) error {
 		return err
 	}
 
+	// Enrich empty quest metadata from the linked workitem when the link
+	// target is a discoverable workitem. Best-effort: non-workitem paths and
+	// discovery failures are silent no-ops. User-supplied fields are never
+	// overwritten.
+	result, _ = enrichFromLinkedWorkitem(ctx, qctx, result, path)
+
 	detectedType := linkType
 	if detectedType == "" {
 		detectedType = quest.DetectLinkType(path)

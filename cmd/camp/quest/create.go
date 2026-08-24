@@ -214,8 +214,10 @@ func createQuestWithEditor(cmd *cobra.Command, name, purpose, description, tags 
 
 // bindWorkitem links a resolved workitem path to a freshly created quest through
 // the same service path `camp quest link` uses (auto-detecting the link type).
-// It returns the post-link MutationResult so the binding lands in the same
-// create commit. A no-op when boundPath is empty.
+// After linking it enriches empty quest metadata (Purpose/Description) from the
+// workitem's Title/Summary so a quest created with placeholder details reflects
+// the work it is bound to. It returns the post-link MutationResult so the
+// binding lands in the same create commit. A no-op when boundPath is empty.
 func bindWorkitem(ctx context.Context, qctx *questCommandContext, result *quest.MutationResult, boundPath string) (*quest.MutationResult, error) {
 	if boundPath == "" {
 		return result, nil
@@ -224,7 +226,7 @@ func bindWorkitem(ctx context.Context, qctx *questCommandContext, result *quest.
 	if err != nil {
 		return nil, camperrors.Wrapf(err, "quest created, but workitem binding failed for %s", boundPath)
 	}
-	return linked, nil
+	return enrichFromLinkedWorkitem(ctx, qctx, linked, boundPath)
 }
 
 func emitQuestCreated(cmd *cobra.Command, qctx *questCommandContext, result *quest.MutationResult) {

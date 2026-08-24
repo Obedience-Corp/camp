@@ -13,6 +13,7 @@ import (
 	camperrors "github.com/Obedience-Corp/camp/internal/errors"
 	"github.com/Obedience-Corp/camp/internal/paths"
 	"github.com/Obedience-Corp/camp/internal/pathutil"
+	questsvc "github.com/Obedience-Corp/camp/internal/quest"
 	questtui "github.com/Obedience-Corp/camp/internal/quest/tui"
 	wkitem "github.com/Obedience-Corp/camp/internal/workitem"
 	"github.com/Obedience-Corp/camp/internal/workitem/selector"
@@ -82,6 +83,72 @@ func workitemChoiceRef(item wkitem.WorkItem) string {
 		return ref
 	}
 	return item.SourceID
+}
+
+// resolveWorkitemEnrichment discovers workitem metadata (Title, Summary) for a
+// campaign-relative path. It returns zero values when the path is not a
+// discoverable workitem — enrichment is best-effort and never blocks linking.
+func resolveWorkitemEnrichment(ctx context.Context, root, relPath string) (title, summary string) {
+	cfg, err := config.LoadCampaignConfig(ctx, root)
+	if err != nil {
+		return "", ""
+	}
+	resolver := paths.NewResolverFromConfig(root, cfg)
+	items, err := wkitem.Discover(ctx, root, resolver)
+	if err != nil {
+		return "", ""
+	}
+	normalized := filepath.ToSlash(filepath.Clean(relPath))
+	for _, item := range items {
+		if filepath.ToSlash(filepath.Clean(item.RelativePath)) == normalized {
+			return item.Title, item.Summary
+		}
+	}
+	return "", ""
+}
+
+// enrichFromLinkedWorkitem fills empty quest Purpose/Description from the
+// workitem at relPath, if that path resolves to a discoverable workitem. The
+// enrichment is best-effort: discovery failures or non-workitem paths are
+// silent no-ops. User-supplied fields are never overwritten.
+//
+// When enrichment writes nothing, the prior MutationResult is returned
+// unchanged so autoCommitQuest still stages the post-Link quest file. When it
+// does write, Files is the union of prior and enriched paths.
+func enrichFromLinkedWorkitem(ctx context.Context, qctx *questCommandContext, result *questsvc.MutationResult, relPath string) (*questsvc.MutationResult, error) {
+	if result == nil || result.Quest == nil {
+		return result, nil
+	}
+	title, summary := resolveWorkitemEnrichment(ctx, qctx.campaignRoot, relPath)
+	if title == "" && summary == "" {
+		return result, nil
+	}
+	enriched, err := qctx.service.EnrichFromWorkitem(ctx, result.Quest.ID, questsvc.WorkitemEnrichment{
+		Title:   title,
+		Summary: summary,
+	})
+	if err != nil || enriched == nil || len(enriched.Files) == 0 {
+		// Enrichment failure or no-op must not discard the post-Link Files.
+		return result, nil
+	}
+	enriched.Files = unionFiles(result.Files, enriched.Files)
+	return enriched, nil
+}
+
+func unionFiles(prior, extra []string) []string {
+	seen := make(map[string]struct{}, len(prior)+len(extra))
+	out := make([]string, 0, len(prior)+len(extra))
+	for _, p := range append(append([]string{}, prior...), extra...) {
+		if p == "" {
+			continue
+		}
+		if _, ok := seen[p]; ok {
+			continue
+		}
+		seen[p] = struct{}{}
+		out = append(out, p)
+	}
+	return out
 }
 
 // completeWorkitemSelector offers workitem refs, stable ids, directory slugs,
