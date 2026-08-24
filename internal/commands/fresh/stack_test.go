@@ -1,40 +1,20 @@
 package fresh
 
 import (
+	"context"
+	"strings"
 	"testing"
 
 	"github.com/Obedience-Corp/camp/internal/worktree"
 )
 
-func TestStackPlanKeepTargetBranch(t *testing.T) {
-	// The target branch's own worktree must never be a removal candidate.
-	plan := stackCleanupPlan{
-		targetBranch: "feat/aggregate",
-		primaryPath:  "/projects/camp",
-	}
-	entry := worktree.GitWorktreeEntry{
-		Path:   "/projects/worktrees/camp/aggregate",
-		Branch: "feat/aggregate",
-	}
-	p := stackWorktreePlan{entry: entry, action: stackActionKeep}
-	plan.keep = append(plan.keep, p)
-
-	if len(plan.keep) != 1 {
-		t.Fatalf("expected 1 keep, got %d", len(plan.keep))
-	}
-	if plan.keep[0].entry.Branch != "feat/aggregate" {
-		t.Errorf("keep entry should be the target branch")
-	}
-}
-
-func TestStackPlanClassifiesCorrectly(t *testing.T) {
-	// Verify the action constants are distinct so the plan's classification
-	// is unambiguous.
+func TestStackCleanupActionsAreDistinct(t *testing.T) {
 	actions := []stackCleanupAction{
 		stackActionKeep,
 		stackActionRemove,
 		stackActionSkipDirty,
 		stackActionSkipUnmerged,
+		stackActionSkipOffStack,
 	}
 	seen := make(map[stackCleanupAction]bool)
 	for _, a := range actions {
@@ -45,22 +25,87 @@ func TestStackPlanClassifiesCorrectly(t *testing.T) {
 	}
 }
 
-func TestStackPlanMergedSet(t *testing.T) {
-	// Simulates the merged-set logic: branches in the set are candidates for
-	// removal; branches not in the set are kept. This mirrors the branching
-	// in planStackCleanup without requiring a real git repo.
-	merged := []string{"child-a", "child-b"}
-	mergedSet := make(map[string]struct{}, len(merged))
-	for _, b := range merged {
-		mergedSet[b] = struct{}{}
+func TestIsProtectedDefaultBranch(t *testing.T) {
+	cases := []struct {
+		target, def string
+		want        bool
+	}{
+		{"main", "main", true},
+		{"master", "develop", true},
+		{"develop", "develop", true},
+		{"feat/aggregate", "main", false},
+		{"feat/aggregate", "", false},
+		{"", "main", false},
+		{"  main  ", "main", true},
 	}
+	for _, tc := range cases {
+		got := isProtectedDefaultBranch(tc.target, tc.def)
+		if got != tc.want {
+			t.Errorf("isProtectedDefaultBranch(%q, %q) = %v, want %v", tc.target, tc.def, got, tc.want)
+		}
+	}
+}
 
-	// child-a is merged → candidate.
-	if _, ok := mergedSet["child-a"]; !ok {
-		t.Error("child-a should be in merged set")
+func TestShouldScopeToStackChildren(t *testing.T) {
+	if !shouldScopeToStackChildren("feat/aggregate", "main", false) {
+		t.Error("aggregate target should stay scoped")
 	}
-	// child-c is not merged → not a candidate.
-	if _, ok := mergedSet["child-c"]; ok {
-		t.Error("child-c should not be in merged set")
+	if !shouldScopeToStackChildren("feat/aggregate", "main", true) {
+		t.Error("allow-default-target must not disable scoping for a non-default target")
+	}
+	if shouldScopeToStackChildren("main", "main", true) {
+		t.Error("explicit default-branch override should disable off-stack filtering")
+	}
+	if !shouldScopeToStackChildren("main", "main", false) {
+		t.Error("without the override, default targets stay scoped (and are refused separately)")
+	}
+}
+
+func TestValidateStackCleanupTarget_EmptyBranch(t *testing.T) {
+	err := validateStackCleanupTarget(context.Background(), "/nope", "", false)
+	if err == nil {
+		t.Fatal("expected error for empty target branch")
+	}
+	if !strings.Contains(err.Error(), "--cleanup-stack requires --branch") {
+		t.Errorf("error = %q", err)
+	}
+}
+
+func TestValidateStackCleanupTarget_CancelledContext(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+	err := validateStackCleanupTarget(ctx, "/nope", "feat/aggregate", false)
+	if err == nil {
+		t.Fatal("expected cancelled context error")
+	}
+}
+
+func TestPlanStackCleanup_CancelledContext(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+	_, err := planStackCleanup(ctx, "/nope", "feat/aggregate", false)
+	if err == nil {
+		t.Fatal("expected cancelled context error")
+	}
+}
+
+func TestExecuteStackCleanup_EmptyRemove(t *testing.T) {
+	removed, errs := executeStackCleanup(context.Background(), stackCleanupPlan{projectPath: "/nope"})
+	if removed != 0 || len(errs) != 0 {
+		t.Fatalf("empty plan: removed=%d errs=%v", removed, errs)
+	}
+}
+
+func TestExecuteStackCleanup_CancelledContext(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+	_, errs := executeStackCleanup(ctx, stackCleanupPlan{
+		projectPath: "/nope",
+		remove: []stackWorktreePlan{{
+			entry: worktree.GitWorktreeEntry{Path: "/x", Branch: "y"},
+		}},
+	})
+	if len(errs) == 0 {
+		t.Fatal("expected cancellation error")
 	}
 }

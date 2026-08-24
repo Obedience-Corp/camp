@@ -20,15 +20,19 @@ const (
 	// stackActionKeep preserves the target branch's own worktree and the
 	// primary project path. They are never candidates for removal.
 	stackActionKeep stackCleanupAction = iota
-	// stackActionRemove targets a clean worktree whose branch is merged into
-	// the selected stack root.
+	// stackActionRemove targets a clean worktree whose branch landed on the
+	// selected stack root (ancestry-merged or squash/patch-id equivalent)
+	// and did not also land on the default branch.
 	stackActionRemove
 	// stackActionSkipDirty leaves a worktree in place because it has
 	// uncommitted changes.
 	stackActionSkipDirty
 	// stackActionSkipUnmerged leaves a worktree in place because its branch
-	// is not merged into the stack root.
+	// is neither ancestry-merged nor squash-equivalent to the stack root.
 	stackActionSkipUnmerged
+	// stackActionSkipOffStack leaves a worktree whose branch already landed
+	// on the default branch. Those are not stack children of the aggregate.
+	stackActionSkipOffStack
 )
 
 // stackWorktreePlan is the per-worktree entry in a cleanup plan.
@@ -48,32 +52,22 @@ type stackCleanupPlan struct {
 	remove       []stackWorktreePlan
 	skipDirty    []stackWorktreePlan
 	skipUnmerged []stackWorktreePlan
+	skipOffStack []stackWorktreePlan
 }
 
 // planStackCleanup discovers linked worktrees for the project and classifies
 // each against the target branch. The target branch's own worktree and the
-// primary project path are always kept; linked worktrees whose branches are
-// merged into the target branch are candidates for removal; dirty worktrees
-// are skipped rather than destroyed.
-func planStackCleanup(ctx context.Context, projectPath, targetBranch string) (stackCleanupPlan, error) {
+// primary project path are always kept. Linked worktrees whose branches
+// landed on the target (ancestry or squash/patch-id) and not also on the
+// default branch are removal candidates; dirty worktrees are skipped.
+func planStackCleanup(ctx context.Context, projectPath, targetBranch string, allowDefaultTarget bool) (stackCleanupPlan, error) {
 	plan := stackCleanupPlan{
 		targetBranch: targetBranch,
 		projectPath:  projectPath,
 		primaryPath:  filepath.Clean(projectPath),
 	}
-
-	if !git.BranchExists(ctx, projectPath, targetBranch) {
-		return plan, camperrors.Newf("branch %q does not exist — use --branch with an existing branch for --cleanup-stack", targetBranch)
-	}
-
-	// Branches merged into the target branch are the stack's completed children.
-	merged, err := git.MergedBranchesFromRef(ctx, projectPath, targetBranch)
-	if err != nil {
-		return plan, camperrors.Wrapf(err, "list branches merged into %s", targetBranch)
-	}
-	mergedSet := make(map[string]struct{}, len(merged))
-	for _, b := range merged {
-		mergedSet[b] = struct{}{}
+	if err := validateStackCleanupTarget(ctx, projectPath, targetBranch, allowDefaultTarget); err != nil {
+		return plan, err
 	}
 
 	wt := worktree.NewGitWorktree(projectPath)
@@ -82,118 +76,177 @@ func planStackCleanup(ctx context.Context, projectPath, targetBranch string) (st
 		return plan, camperrors.Wrap(err, "list project worktrees")
 	}
 
-	primaryToplevel := worktreeToplevel(ctx, projectPath)
-
-	for _, entry := range entries {
-		// Only consider real linked worktrees, not the main working tree or
-		// git-internal paths.
-		if !worktree.IsLinkedWorktree(projectPath, entry) {
-			plan.keep = append(plan.keep, stackWorktreePlan{entry: entry, action: stackActionKeep})
-			continue
-		}
-
-		// Never remove the primary project path or the worktree that holds
-		// the target branch itself.
-		if sameWorktreePath(primaryToplevel, worktreeToplevel(ctx, entry.Path)) {
-			plan.keep = append(plan.keep, stackWorktreePlan{entry: entry, action: stackActionKeep})
-			continue
-		}
-		if entry.Branch == targetBranch {
-			plan.keep = append(plan.keep, stackWorktreePlan{entry: entry, action: stackActionKeep})
-			continue
-		}
-
-		// Detached worktrees are not part of a named-branch stack; keep them
-		// so the default prune pass (or the user) handles them separately.
-		if entry.IsDetached {
-			plan.keep = append(plan.keep, stackWorktreePlan{entry: entry, action: stackActionKeep})
-			continue
-		}
-
-		// Branch not merged into the stack root → keep it.
-		if _, ok := mergedSet[entry.Branch]; !ok {
-			plan.skipUnmerged = append(plan.skipUnmerged, stackWorktreePlan{entry: entry, action: stackActionSkipUnmerged})
-			continue
-		}
-
-		// Merged into the stack root → check cleanliness before removing.
-		hasChanges, err := git.HasChanges(ctx, entry.Path)
-		if err != nil {
-			// Treat an error as a skip: never destroy something we could not
-			// verify.
-			plan.skipDirty = append(plan.skipDirty, stackWorktreePlan{entry: entry, action: stackActionSkipDirty})
-			continue
-		}
-		if hasChanges {
-			plan.skipDirty = append(plan.skipDirty, stackWorktreePlan{entry: entry, action: stackActionSkipDirty})
-			continue
-		}
-
-		plan.remove = append(plan.remove, stackWorktreePlan{entry: entry, action: stackActionRemove})
+	keep, pending := partitionStackEntries(ctx, projectPath, targetBranch, entries)
+	plan.keep = keep
+	if len(pending) == 0 {
+		return plan, nil
 	}
 
+	defaultBranch := git.DefaultBranch(ctx, projectPath)
+	scopeToStack := shouldScopeToStackChildren(targetBranch, defaultBranch, allowDefaultTarget)
+	targetEq, defaultEq, err := stackEquivalence(ctx, projectPath, targetBranch, defaultBranch, scopeToStack, pending)
+	if err != nil {
+		return plan, err
+	}
+
+	remove, skipDirty, skipUnmerged, skipOffStack, err := classifyPendingWorktrees(ctx, pending, targetEq, defaultEq, scopeToStack)
+	if err != nil {
+		return plan, err
+	}
+	plan.remove = remove
+	plan.skipDirty = skipDirty
+	plan.skipUnmerged = skipUnmerged
+	plan.skipOffStack = skipOffStack
 	return plan, nil
+}
+
+// partitionStackEntries splits worktrees into always-keep (primary, target,
+// detached, non-linked) and pending classification candidates.
+func partitionStackEntries(ctx context.Context, projectPath, target string, entries []worktree.GitWorktreeEntry) (keep, pending []stackWorktreePlan) {
+	primary := worktreeToplevel(ctx, projectPath)
+	for _, entry := range entries {
+		p := stackWorktreePlan{entry: entry, action: stackActionKeep}
+		if !worktree.IsLinkedWorktree(projectPath, entry) ||
+			sameWorktreePath(primary, worktreeToplevel(ctx, entry.Path)) ||
+			entry.Branch == target ||
+			entry.IsDetached {
+			keep = append(keep, p)
+			continue
+		}
+		pending = append(pending, stackWorktreePlan{entry: entry})
+	}
+	return keep, pending
+}
+
+// stackEquivalence computes target (and, when scoping, default-branch)
+// merge-equivalence for pending worktree branches.
+func stackEquivalence(ctx context.Context, projectPath, target, defaultBranch string, scopeToStack bool, pending []stackWorktreePlan) (targetEq, defaultEq map[string]struct{}, err error) {
+	branches := uniquePlanBranches(pending)
+	targetEq, err = git.BranchesEquivalentToRef(ctx, projectPath, target, branches)
+	if err != nil {
+		return nil, nil, camperrors.Wrapf(err, "detect branches equivalent to %s", target)
+	}
+	if !scopeToStack {
+		return targetEq, nil, nil
+	}
+	base := stackScopingBase(ctx, projectPath, target, defaultBranch)
+	if base == "" {
+		return targetEq, nil, nil
+	}
+	defaultEq, err = git.BranchesEquivalentToRef(ctx, projectPath, base, branches)
+	if err != nil {
+		return nil, nil, camperrors.Wrapf(err, "detect branches equivalent to %s", base)
+	}
+	return targetEq, defaultEq, nil
+}
+
+func uniquePlanBranches(pending []stackWorktreePlan) []string {
+	seen := make(map[string]struct{}, len(pending))
+	out := make([]string, 0, len(pending))
+	for _, p := range pending {
+		b := p.entry.Branch
+		if b == "" {
+			continue
+		}
+		if _, ok := seen[b]; ok {
+			continue
+		}
+		seen[b] = struct{}{}
+		out = append(out, b)
+	}
+	return out
+}
+
+func classifyPendingWorktrees(ctx context.Context, pending []stackWorktreePlan, targetEq, defaultEq map[string]struct{}, scopeToStack bool) (remove, skipDirty, skipUnmerged, skipOffStack []stackWorktreePlan, err error) {
+	for _, p := range pending {
+		if err := ctx.Err(); err != nil {
+			return nil, nil, nil, nil, err
+		}
+		if _, ok := targetEq[p.entry.Branch]; !ok {
+			p.action = stackActionSkipUnmerged
+			skipUnmerged = append(skipUnmerged, p)
+			continue
+		}
+		if scopeToStack {
+			if _, onDefault := defaultEq[p.entry.Branch]; onDefault {
+				p.action = stackActionSkipOffStack
+				skipOffStack = append(skipOffStack, p)
+				continue
+			}
+		}
+		hasChanges, err := git.HasChanges(ctx, p.entry.Path)
+		if err != nil || hasChanges {
+			p.action = stackActionSkipDirty
+			skipDirty = append(skipDirty, p)
+			continue
+		}
+		p.action = stackActionRemove
+		remove = append(remove, p)
+	}
+	return remove, skipDirty, skipUnmerged, skipOffStack, nil
 }
 
 // printStackPlan writes the cleanup plan to stdout so the user sees exactly
 // what will be kept, removed, and skipped before any mutation occurs. In
 // dry-run mode this is the only output for the stack step.
 func printStackPlan(prefix string, plan stackCleanupPlan, dryRun bool) {
-	total := len(plan.keep) + len(plan.remove) + len(plan.skipDirty) + len(plan.skipUnmerged)
+	total := len(plan.keep) + len(plan.remove) + len(plan.skipDirty) + len(plan.skipUnmerged) + len(plan.skipOffStack)
 	fmt.Printf("%s── Stack cleanup plan %-16s %s\n", prefix,
 		ui.Value(plan.targetBranch), freshStepDim.Render(fmt.Sprintf("(%d worktree(s) found)", total)))
 
-	if len(plan.keep) > 0 {
-		fmt.Printf("%s   %s\n", prefix, freshStepDim.Render("keep:"))
-		for _, p := range plan.keep {
-			fmt.Printf("%s     %s %s\n", prefix, ui.Dim(filepath.Base(p.entry.Path)), freshStepDim.Render(p.entry.Branch))
-		}
+	printPlanGroup(prefix, "keep:", plan.keep, false)
+	removeLabel := "remove:"
+	if dryRun {
+		removeLabel = "would remove:"
 	}
+	printPlanGroup(prefix, removeLabel, plan.remove, true)
+	printPlanGroup(prefix, "skip (dirty):", plan.skipDirty, false)
+	printPlanGroup(prefix, "skip (not merged):", plan.skipUnmerged, false)
+	printPlanGroup(prefix, "skip (not stacked):", plan.skipOffStack, false)
+}
 
-	if len(plan.remove) > 0 {
-		action := "remove"
-		if dryRun {
-			action = "would remove"
-		}
-		fmt.Printf("%s   %s\n", prefix, freshStepGreen.Render(action+":"))
-		for _, p := range plan.remove {
-			fmt.Printf("%s     %s %s\n", prefix, filepath.Base(p.entry.Path), freshStepDim.Render(p.entry.Branch))
-		}
+func printPlanGroup(prefix, label string, entries []stackWorktreePlan, highlight bool) {
+	if len(entries) == 0 {
+		return
 	}
-
-	if len(plan.skipDirty) > 0 {
-		fmt.Printf("%s   %s\n", prefix, ui.Warning("skip (dirty):"))
-		for _, p := range plan.skipDirty {
-			fmt.Printf("%s     %s %s\n", prefix, filepath.Base(p.entry.Path), freshStepDim.Render(p.entry.Branch))
-		}
+	rendered := freshStepDim.Render(label)
+	if highlight {
+		rendered = freshStepGreen.Render(label)
+	} else if strings.HasPrefix(label, "skip") {
+		rendered = ui.Warning(label)
 	}
-
-	if len(plan.skipUnmerged) > 0 {
-		fmt.Printf("%s   %s\n", prefix, ui.Warning("skip (not merged):"))
-		for _, p := range plan.skipUnmerged {
-			fmt.Printf("%s     %s %s\n", prefix, filepath.Base(p.entry.Path), freshStepDim.Render(p.entry.Branch))
+	fmt.Printf("%s   %s\n", prefix, rendered)
+	for _, p := range entries {
+		name := filepath.Base(p.entry.Path)
+		if highlight {
+			fmt.Printf("%s     %s %s\n", prefix, name, freshStepDim.Render(p.entry.Branch))
+			continue
 		}
+		fmt.Printf("%s     %s %s\n", prefix, ui.Dim(name), freshStepDim.Render(p.entry.Branch))
 	}
 }
 
 // executeStackCleanup removes the planned worktrees and their local branches.
-// It is called only when not in dry-run mode. Dirty and unmerged worktrees are
-// never touched. Each removal is independent: a failure on one worktree does
-// not abort the remaining removals.
+// It is called only when not in dry-run mode. Dirty, unmerged, and off-stack
+// worktrees are never touched. Each removal is independent: a failure on one
+// worktree does not abort the remaining removals.
 func executeStackCleanup(ctx context.Context, plan stackCleanupPlan) (removed int, errs []string) {
 	wt := worktree.NewGitWorktree(plan.projectPath)
 
 	for _, p := range plan.remove {
+		if err := ctx.Err(); err != nil {
+			errs = append(errs, err.Error())
+			return removed, errs
+		}
 		if err := wt.Remove(ctx, p.entry.Path, true); err != nil {
 			errs = append(errs, fmt.Sprintf("remove worktree %s: %v", p.entry.Path, err))
 			continue
 		}
 
-		// Delete the local branch now that its worktree is gone. Force-delete
-		// because squash-merged branches are not ancestry-merged and git
-		// branch -d would refuse them. The branch was confirmed merged into
-		// the target branch via MergedBranchesFromRef above, so removal is
-		// safe regardless of whether git sees it as ancestry-merged.
+		// Force-delete: squash-equivalent branches are not ancestry-merged,
+		// so git branch -d refuses them. Removal is still safe — the branch
+		// was confirmed equivalent to the target (ancestor or cumulative
+		// patch-id match) during planning.
 		if err := git.DeleteBranchForce(ctx, plan.projectPath, p.entry.Branch); err != nil {
 			errs = append(errs, fmt.Sprintf("delete branch %s: %v", p.entry.Branch, err))
 			continue
@@ -201,7 +254,6 @@ func executeStackCleanup(ctx context.Context, plan stackCleanupPlan) (removed in
 		removed++
 	}
 
-	// Clean up stale worktree administrative refs after removals.
 	if removed > 0 {
 		if _, err := wt.Prune(ctx, false); err != nil {
 			errs = append(errs, fmt.Sprintf("worktree prune: %v", err))
@@ -217,12 +269,12 @@ func executeStackCleanup(ctx context.Context, plan stackCleanupPlan) (removed in
 // plan cannot be computed; per-worktree removal failures are collected and
 // reported as warnings, not fatal errors, so a single bad worktree does not
 // abort the fresh cycle.
-func runStackCleanup(ctx context.Context, name, path, targetBranch string, dryRun bool, prefix string) error {
+func runStackCleanup(ctx context.Context, name, path, targetBranch string, dryRun, allowDefaultTarget bool, prefix string) error {
 	if strings.TrimSpace(targetBranch) == "" {
 		return camperrors.New("--cleanup-stack requires --branch <existing-branch>")
 	}
 
-	plan, err := planStackCleanup(ctx, path, targetBranch)
+	plan, err := planStackCleanup(ctx, path, targetBranch, allowDefaultTarget)
 	if err != nil {
 		return err
 	}
