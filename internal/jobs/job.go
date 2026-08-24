@@ -48,11 +48,20 @@ const (
 	// describes DescribesCommit whenever it lands, which is why manifest jobs
 	// are the one class exempt from drains.
 	KindManifest Kind = "manifest"
+	// KindPush is a deferred `git push` enqueued at the tail of a lane when a
+	// blocking drain would hold the terminal. Lane Seq ordering guarantees the
+	// push runs after the pending commits it was waiting for, so the ordering
+	// barrier holds without costing the user their critical path.
+	//
+	// The remote and branch are recorded at enqueue, and the worker pushes the
+	// ref by name — never HEAD — so a branch switch between enqueue and
+	// execution cannot publish the wrong branch.
+	KindPush Kind = "push"
 )
 
 // Valid reports whether k is a kind this package executes.
 func (k Kind) Valid() bool {
-	return k == KindCommitPaths || k == KindCommitTree || k == KindManifest
+	return k == KindCommitPaths || k == KindCommitTree || k == KindManifest || k == KindPush
 }
 
 // Class says whether a drain waits for a job.
@@ -194,6 +203,14 @@ type Job struct {
 	// commit current at observation rather than silently claiming to
 	// describe state it never saw.
 	StateFingerprint string `json:"state_fingerprint,omitempty"`
+	// Remote is the git remote name a KindPush job pushes to, captured at
+	// enqueue so a deferred push publishes the branch the user asked for rather
+	// than whatever the upstream happens to be at execution.
+	Remote string `json:"remote,omitempty"`
+	// Branch is the branch name a KindPush job pushes. Recorded at enqueue and
+	// pushed by name — never HEAD — so a branch switch between enqueue and
+	// execution cannot publish the wrong branch.
+	Branch string `json:"branch,omitempty"`
 	// CreatedAt is the enqueuing process's clock, RFC3339 with millis.
 	CreatedAt string `json:"created_at"`
 	// Attempts counts how many times this job has been claimed.
@@ -331,6 +348,20 @@ func (j *Job) Validate() error {
 		if j.Then != nil || j.FollowUp || len(j.Paths) != 0 {
 			return camperrors.NewValidation("manifest",
 				"a manifest job carries no paths, follow-up, or chain", nil)
+		}
+	case KindPush:
+		if strings.TrimSpace(j.Remote) == "" {
+			return camperrors.NewValidation("remote",
+				"a push job requires a remote name", nil)
+		}
+		if strings.TrimSpace(j.Branch) == "" {
+			return camperrors.NewValidation("branch",
+				"a push job requires a branch name", nil)
+		}
+		if j.Then != nil || j.FollowUp || len(j.Paths) != 0 ||
+			j.Tree != "" || j.Parent != "" || j.AutoWrite {
+			return camperrors.NewValidation("push",
+				"a push job carries only remote and branch, not paths, trees, or follow-ups", nil)
 		}
 	}
 	return nil

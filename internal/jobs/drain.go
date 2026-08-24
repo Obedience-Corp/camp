@@ -367,6 +367,9 @@ func Describe(job Job) string {
 	if subject := firstLine(job.Message); subject != "" {
 		return subject
 	}
+	if job.Kind == KindPush {
+		return "push " + job.Branch + " to " + job.Remote + " in " + job.Repo
+	}
 	if job.Class == ClassManifest {
 		return "artifact manifest for " + job.Repo
 	}
