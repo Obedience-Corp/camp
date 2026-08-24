@@ -95,6 +95,7 @@ Examples:
 			if err := validateDisplayStatuses(opts.statuses); err != nil {
 				return err
 			}
+			warnDeprecatedStatus(cmd, opts.statuses)
 			filters, err := opts.filterOptions()
 			if err != nil {
 				return err
@@ -127,7 +128,7 @@ Examples:
 	cmd.Flags().BoolVar(&opts.json, "json", false, "Output as JSON")
 	cmd.Flags().StringArrayVar(&opts.types, "type", nil, "Filter by workflow type (repeat for OR)")
 	cmd.Flags().StringArrayVar(&opts.categories, "category", nil, "Filter by workflow category (repeat for OR)")
-	cmd.Flags().StringArrayVar(&opts.statuses, "status", nil, "Filter by displayed status: current, next, active, parked, inbox, ready, plan, ritual, chains, none (repeat for OR)")
+	cmd.Flags().StringArrayVar(&opts.statuses, "status", nil, "Deprecated: use --stage and/or --attention-stage")
 	cmd.Flags().StringArrayVar(&opts.stages, "stage", nil, "Filter by lifecycle stage (repeat for OR)")
 	cmd.Flags().StringArrayVar(&opts.attentionStages, "attention-stage", nil, "Filter by attention stage (repeat for OR)")
 	cmd.Flags().StringArrayVar(&opts.groups, "group", nil, "Filter by workitem group (repeat for OR)")

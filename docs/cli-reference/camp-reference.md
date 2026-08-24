@@ -8676,7 +8676,7 @@ camp workitem [flags]
       --query string                  Filter by search query
       --show-parked                   Include parked workitems
       --stage stringArray             Filter by lifecycle stage
-      --status stringArray            Filter by displayed status
+      --status stringArray            Deprecated: use --stage and/or --attention-stage
       --type stringArray              Filter by workflow type
 ```
 
@@ -9186,7 +9186,7 @@ camp workitem list [type|status|category] [flags]
       --query string                  Search query to filter items
       --show-parked                   Include parked attention-stage workitems
       --stage stringArray             Filter by lifecycle stage (repeat for OR)
-      --status stringArray            Filter by displayed status: current, next, active, parked, inbox, ready, plan, ritual, chains, none (repeat for OR)
+      --status stringArray            Deprecated: use --stage and/or --attention-stage
       --tag stringArray               Filter by tag (repeat; item must have ALL given tags)
       --type stringArray              Filter by workflow type (repeat for OR)
 ```

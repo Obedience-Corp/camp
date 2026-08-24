@@ -34,7 +34,7 @@ camp workitem [flags]
       --query string                  Filter by search query
       --show-parked                   Include parked workitems
       --stage stringArray             Filter by lifecycle stage
-      --status stringArray            Filter by displayed status
+      --status stringArray            Deprecated: use --stage and/or --attention-stage
       --type stringArray              Filter by workflow type
 ```
 
