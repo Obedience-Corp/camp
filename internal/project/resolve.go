@@ -4,12 +4,12 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"os"
 	"path/filepath"
 	"strings"
 
 	camperrors "github.com/Obedience-Corp/camp/internal/errors"
 	"github.com/Obedience-Corp/camp/internal/git"
+	"github.com/Obedience-Corp/camp/internal/pathutil"
 )
 
 // ResolveResult holds the resolved project name and absolute path.
@@ -81,12 +81,18 @@ func findProjectByName(ctx context.Context, campRoot, name string) (Project, err
 
 // ResolveFromCwd detects the project from the current working directory
 // and validates it against project.List().
+//
+// Uses pathutil.LogicalCwd to preserve the shell's logical $PWD when the
+// process cwd was entered through a symlink. This matters when a worktree
+// holder (projects/worktrees/<project>) is a symlink into another project's
+// tree: os.Getwd returns the physical target, which matches the wrong
+// project. The logical $PWD preserves the path the user actually typed.
 func ResolveFromCwd(ctx context.Context, campRoot string) (*ResolveResult, error) {
 	if ctx.Err() != nil {
 		return nil, ctx.Err()
 	}
 
-	cwd, err := os.Getwd()
+	cwd, err := pathutil.LogicalCwd()
 	if err != nil {
 		return nil, camperrors.Wrap(err, "failed to get working directory")
 	}
@@ -98,45 +104,9 @@ func ResolveFromCwd(ctx context.Context, campRoot string) (*ResolveResult, error
 		return nil, camperrors.Wrap(listErr, "failed to list projects")
 	}
 
-	// Find the project with the longest (deepest) matching path. This ensures
-	// nested submodules win over their parent monorepo — e.g. from cwd inside
-	// `projects/mono/sub`, the resolver returns `mono@sub`, not `mono`.
-	var (
-		bestProject *Project
-		bestPath    string
-		bestLen     int
-	)
-	for i := range projects {
-		proj := &projects[i]
-		projectPath := ResolveProjectPath(campRoot, *proj)
-		logicalPath := filepath.Join(campRoot, proj.Path)
-
-		var match string
-		switch {
-		case isPathWithin(resolvedCwd, projectPath):
-			match = projectPath
-		case isPathWithin(cwd, logicalPath):
-			match = logicalPath
-		}
-		if match == "" {
-			continue
-		}
-		if len(match) > bestLen {
-			bestProject = proj
-			bestPath = projectPath
-			bestLen = len(match)
-		}
+	if result := resolveListedProject(campRoot, cwd, resolvedCwd, projects); result != nil {
+		return result, nil
 	}
-	if bestProject != nil {
-		return &ResolveResult{
-			Name:        bestProject.Name,
-			Path:        bestPath,
-			LogicalPath: bestProject.Path,
-			Source:      bestProject.Source,
-			LinkedPath:  bestProject.LinkedPath,
-		}, nil
-	}
-
 	if wt := resolveListedWorktree(campRoot, resolvedCwd, cwd, projects); wt != nil {
 		return wt, nil
 	}
@@ -157,13 +127,7 @@ func ResolveFromCwd(ctx context.Context, campRoot string) (*ResolveResult, error
 		projPath := ResolveProjectPath(campRoot, proj)
 		logicalPath := filepath.Join(campRoot, proj.Path)
 		if resolvedProj, _ := filepath.EvalSymlinks(projPath); resolvedProj == resolvedRoot || logicalPath == projectRoot || projPath == projectRoot {
-			return &ResolveResult{
-				Name:        proj.Name,
-				Path:        projPath,
-				LogicalPath: proj.Path,
-				Source:      proj.Source,
-				LinkedPath:  proj.LinkedPath,
-			}, nil
+			return resultForProject(campRoot, &proj), nil
 		}
 	}
 
@@ -182,6 +146,53 @@ func ResolveFromCwd(ctx context.Context, campRoot string) (*ResolveResult, error
 		Name:     projectRoot,
 		CampRoot: campRoot,
 		Projects: projects,
+	}
+}
+
+// resolveListedProject gives an explicit logical worktree path precedence
+// over physical symlink matches, then falls back to the deepest project path.
+func resolveListedProject(campRoot, cwd, resolvedCwd string, projects []Project) *ResolveResult {
+	if wt := listedLogicalWorktreeAt(campRoot, cwd, projects); wt != nil {
+		return wt
+	}
+
+	var (
+		bestProject *Project
+		bestLen     int
+	)
+	for i := range projects {
+		proj := &projects[i]
+		projectPath := ResolveProjectPath(campRoot, *proj)
+		logicalPath := filepath.Join(campRoot, proj.Path)
+
+		var match string
+		switch {
+		case isPathWithin(resolvedCwd, projectPath):
+			match = projectPath
+		case isPathWithin(cwd, logicalPath):
+			match = logicalPath
+		}
+		if match == "" {
+			continue
+		}
+		if len(match) > bestLen {
+			bestProject = proj
+			bestLen = len(match)
+		}
+	}
+	if bestProject != nil {
+		return resultForProject(campRoot, bestProject)
+	}
+	return nil
+}
+
+func resultForProject(campRoot string, proj *Project) *ResolveResult {
+	return &ResolveResult{
+		Name:        proj.Name,
+		Path:        ResolveProjectPath(campRoot, *proj),
+		LogicalPath: proj.Path,
+		Source:      proj.Source,
+		LinkedPath:  proj.LinkedPath,
 	}
 }
 
@@ -243,6 +254,19 @@ func listedWorktreeAt(campRoot, path string, projects []Project) *ResolveResult 
 	if err != nil {
 		return nil
 	}
+	return listedWorktreeFromRel(campRoot, rel, projects)
+}
+
+func listedLogicalWorktreeAt(campRoot, path string, projects []Project) *ResolveResult {
+	wtRoot := filepath.Join(campRoot, "projects", "worktrees")
+	rel, err := filepath.Rel(wtRoot, path)
+	if err != nil {
+		return nil
+	}
+	return listedWorktreeFromRel(campRoot, rel, projects)
+}
+
+func listedWorktreeFromRel(campRoot, rel string, projects []Project) *ResolveResult {
 	rel = filepath.ToSlash(rel)
 	if rel == "." || rel == ".." || strings.HasPrefix(rel, "../") {
 		return nil

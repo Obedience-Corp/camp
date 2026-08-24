@@ -47,22 +47,26 @@ func (pm *PathManager) RelativeWorktreePath(project, name string) string {
 
 // ParseWorktreePath extracts project and worktree name from a path.
 // Returns ("", "", error) if path is not a worktree.
+//
+// os.Getwd() (the usual source of path) resolves symlinks on macOS, so a
+// worktree whose holder path crosses a symlink (e.g.
+// projects/worktrees/<name> → ../other-project/<name>) produces a canonical
+// cwd that no longer starts with the logical worktrees root. To stay robust
+// against that, the logical prefix check is supplemented with a resolved
+// comparison: if the logical root did not match, resolve both sides through
+// EvalSymlinks and try again before declaring the path outside the worktrees
+// area.
 func (pm *PathManager) ParseWorktreePath(path string) (project, name string, err error) {
 	absPath, err := filepath.Abs(path)
 	if err != nil {
 		return "", "", err
 	}
 
-	wtRoot := pm.WorktreesRoot()
-	wtRoot = filepath.Clean(wtRoot)
-	if absPath != wtRoot && !strings.HasPrefix(absPath, wtRoot+string(filepath.Separator)) {
-		return "", "", ErrNotInWorktree
-	}
+	wtRoot := filepath.Clean(pm.WorktreesRoot())
 
-	// Get path relative to worktrees root
-	rel, err := filepath.Rel(wtRoot, absPath)
-	if err != nil {
-		return "", "", err
+	rel, ok := matchWorktreeRoot(absPath, wtRoot)
+	if !ok {
+		return "", "", ErrNotInWorktree
 	}
 
 	// Parse: <project>/<worktree>/...
@@ -72,6 +76,41 @@ func (pm *PathManager) ParseWorktreePath(path string) (project, name string, err
 	}
 
 	return parts[0], parts[1], nil
+}
+
+// matchWorktreeRoot returns the path relative to wtRoot if absPath falls
+// inside the worktrees directory. It tries the logical (un-resolved) path
+// first, then falls back to EvalSymlinks on both sides so a symlinked worktree
+// holder is still recognised. The returned bool is false when the path is not
+// inside the worktrees area by either measure.
+func matchWorktreeRoot(absPath, wtRoot string) (string, bool) {
+	if absPath == wtRoot || strings.HasPrefix(absPath, wtRoot+string(filepath.Separator)) {
+		rel, err := filepath.Rel(wtRoot, absPath)
+		if err == nil {
+			return rel, true
+		}
+	}
+
+	resolvedPath, err := filepath.EvalSymlinks(absPath)
+	if err != nil {
+		return "", false
+	}
+	resolvedRoot, err := filepath.EvalSymlinks(wtRoot)
+	if err != nil {
+		return "", false
+	}
+	resolvedRoot = filepath.Clean(resolvedRoot)
+	resolvedPath = filepath.Clean(resolvedPath)
+
+	if resolvedPath != resolvedRoot && !strings.HasPrefix(resolvedPath, resolvedRoot+string(filepath.Separator)) {
+		return "", false
+	}
+
+	rel, err := filepath.Rel(resolvedRoot, resolvedPath)
+	if err != nil {
+		return "", false
+	}
+	return rel, true
 }
 
 // ValidateName checks if a worktree name is valid.

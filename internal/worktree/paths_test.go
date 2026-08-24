@@ -238,3 +238,69 @@ func TestPathManager_ListProjectWorktrees_Empty(t *testing.T) {
 		t.Errorf("ListProjectWorktrees() = %v, want nil", list)
 	}
 }
+
+// TestPathManager_ParseWorktreePath_SymlinkedHolder reproduces camp#245:
+// when the worktrees root itself (or a parent) is behind a symlink, the
+// physical cwd from os.Getwd no longer starts with the logical worktrees
+// root. ParseWorktreePath must still recognise the path as a worktree by
+// resolving both sides through EvalSymlinks.
+//
+// The primary prevention for a project holder that symlinks into another
+// project's tree is the guard in Creator.Create (see
+// TestGuardCrossProjectSymlink_Refuses). This test covers the secondary
+// case: the campaign root or worktrees directory is behind a symlink, which
+// is common on macOS (/var → /private/var).
+func TestPathManager_ParseWorktreePath_SymlinkedHolder(t *testing.T) {
+	tmpDir := t.TempDir()
+
+	// Simulate a symlinked parent: real-root/ → logical-root/
+	realRoot := filepath.Join(tmpDir, "real-root")
+	logicalRoot := filepath.Join(tmpDir, "logical-root")
+
+	// Create the real worktree structure under real-root.
+	realWtDir := filepath.Join(realRoot, "projects", "worktrees", "my-api", "feature")
+	if err := os.MkdirAll(realWtDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	// Create a fake .git file so DetectFromPath would also accept it.
+	if err := os.WriteFile(filepath.Join(realWtDir, ".git"), []byte("gitdir: /fake"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	// Symlink: logical-root → real-root
+	if err := os.Symlink(realRoot, logicalRoot); err != nil {
+		t.Fatal(err)
+	}
+
+	// The PathManager is constructed with the logical root (what camp sees).
+	pm := newTestPathManager(t, logicalRoot)
+
+	// The physical path (what os.Getwd returns on macOS) uses real-root.
+	physicalPath := realWtDir
+
+	// The physical path must parse even though it doesn't start with the
+	// logical worktrees root.
+	project, name, err := pm.ParseWorktreePath(physicalPath)
+	if err != nil {
+		t.Fatalf("ParseWorktreePath(physical) error = %v", err)
+	}
+	if project != "my-api" {
+		t.Errorf("project = %q, want my-api", project)
+	}
+	if name != "feature" {
+		t.Errorf("name = %q, want feature", name)
+	}
+
+	// The logical path must also parse (backward compatibility).
+	logicalPath := filepath.Join(logicalRoot, "projects", "worktrees", "my-api", "feature")
+	project, name, err = pm.ParseWorktreePath(logicalPath)
+	if err != nil {
+		t.Fatalf("ParseWorktreePath(logical) error = %v", err)
+	}
+	if project != "my-api" {
+		t.Errorf("project = %q, want my-api", project)
+	}
+	if name != "feature" {
+		t.Errorf("name = %q, want feature", name)
+	}
+}

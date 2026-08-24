@@ -197,6 +197,46 @@ func TestResolveFromCwd_NestedSubmoduleWins(t *testing.T) {
 	}
 }
 
+func TestListedLogicalWorktreeAt_PreservesOwningProjectAcrossSymlink(t *testing.T) {
+	campRoot := t.TempDir()
+	physicalWorktree := filepath.Join(campRoot, "projects", "beta", "feature")
+	gitDir := filepath.Join(campRoot, ".git", "modules", "projects", "alpha", "worktrees", "feature")
+	if err := os.MkdirAll(physicalWorktree, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.MkdirAll(gitDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(physicalWorktree, ".git"), []byte("gitdir: "+gitDir+"\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	holderRoot := filepath.Join(campRoot, "projects", "worktrees")
+	if err := os.MkdirAll(holderRoot, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Symlink(filepath.Join(campRoot, "projects", "beta"), filepath.Join(holderRoot, "alpha")); err != nil {
+		t.Fatal(err)
+	}
+
+	projects := []Project{
+		{Name: "alpha", Path: filepath.Join("projects", "alpha"), Source: SourceSubmodule},
+		{Name: "beta", Path: filepath.Join("projects", "beta"), Source: SourceSubmodule},
+	}
+	logicalCwd := filepath.Join(holderRoot, "alpha", "feature")
+	result := resolveListedProject(campRoot, logicalCwd, physicalWorktree, projects)
+	if result == nil {
+		t.Fatal("expected a project result")
+	}
+	if result.Name != "alpha" {
+		t.Fatalf("resolved name = %q, want alpha", result.Name)
+	}
+	gotPath, _ := filepath.EvalSymlinks(result.Path)
+	wantPath, _ := filepath.EvalSymlinks(physicalWorktree)
+	if gotPath != wantPath {
+		t.Fatalf("resolved path = %q, want physical worktree %q", gotPath, wantPath)
+	}
+}
+
 func TestResolveFromCwd_WorktreeUsesOwningProjectName(t *testing.T) {
 	campRoot := setupTestCampaign(t, "myproj")
 	if resolved, err := filepath.EvalSymlinks(campRoot); err == nil {

@@ -7,6 +7,8 @@ import (
 	"path/filepath"
 	"strings"
 	"time"
+
+	"github.com/Obedience-Corp/camp/internal/pathutil"
 )
 
 // DefaultDetectTimeout is the maximum time to spend detecting a campaign root.
@@ -72,45 +74,10 @@ func Detect(ctx context.Context, startDir string) (string, error) {
 // logicalWorkingDirectory recovers the shell's logical working directory when
 // the process cwd has been entered through a symlink. os.Getwd may return the
 // physical target path, which loses the campaign-local symlink context needed
-// to resolve shared attachments. PWD is only trusted when it is absolute,
-// exists, and resolves to the same physical directory as os.Getwd.
+// to resolve shared attachments. Delegates to pathutil.LogicalCwd so the
+// same logical-cwd recovery is shared with worktree and project resolution.
 func logicalWorkingDirectory() (string, error) {
-	physical, err := os.Getwd()
-	if err != nil {
-		return "", err
-	}
-	physical, err = filepath.Abs(physical)
-	if err != nil {
-		return "", err
-	}
-	physical = filepath.Clean(physical)
-
-	logical := os.Getenv("PWD")
-	if logical == "" || !filepath.IsAbs(logical) {
-		return physical, nil
-	}
-	logical, err = filepath.Abs(logical)
-	if err != nil {
-		return physical, nil
-	}
-	logical = filepath.Clean(logical)
-	if _, err := os.Stat(logical); err != nil {
-		return physical, nil
-	}
-
-	resolvedPhysical, err := filepath.EvalSymlinks(physical)
-	if err != nil {
-		return physical, nil
-	}
-	resolvedLogical, err := filepath.EvalSymlinks(logical)
-	if err != nil {
-		return physical, nil
-	}
-	if resolvedPhysical == resolvedLogical {
-		return logical, nil
-	}
-
-	return physical, nil
+	return pathutil.LogicalCwd()
 }
 
 func detectCampaignRootOverride() (string, bool) {
