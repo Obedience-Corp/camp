@@ -65,7 +65,7 @@ func TestIntegration_WorkitemCreateAndAdopt(t *testing.T) {
 
 		manifest, err := tc.ReadFile(campaignDir + "/workflow/feature/demo-feature/.workitem")
 		require.NoError(t, err)
-		assert.Contains(t, manifest, "version: v1alpha8")
+		assert.Contains(t, manifest, "version: v1alpha9")
 		assert.Contains(t, manifest, "kind: workitem")
 		assert.Contains(t, manifest, "type: feature")
 		assert.Contains(t, manifest, "title: Demo")
@@ -97,7 +97,7 @@ func TestIntegration_WorkitemCreateAndAdopt(t *testing.T) {
 		require.NoError(t, err)
 		assert.Contains(t, manifest, "type: incident")
 		assert.Contains(t, manifest, "title: P99 spike")
-		assert.Contains(t, manifest, "version: v1alpha8")
+		assert.Contains(t, manifest, "version: v1alpha9")
 	})
 
 	t.Run("AdoptRefusesAlreadyAdopted", func(t *testing.T) {
@@ -226,7 +226,7 @@ func TestIntegration_WorkitemCreateJSON(t *testing.T) {
 	assert.Equal(t, "Agent JSON", payload.Workitem.Title)
 	assert.Empty(t, payload.Workitem.QuestID)
 	assert.Equal(t, "workflow/feature/agent-json", payload.Workitem.RelativePath)
-	assert.Equal(t, "v1alpha8", payload.Workitem.MarkerVersion)
+	assert.Equal(t, "v1alpha9", payload.Workitem.MarkerVersion)
 	require.NotNil(t, payload.Workitem.Tags, "tags must serialize as [], never null")
 	require.NotNil(t, payload.Workitem.Projects, "projects must serialize as [], never null")
 	assert.Empty(t, payload.Workitem.Tags)

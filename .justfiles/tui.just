@@ -64,10 +64,10 @@ pty-triage-review:
 
 # Run the pty checks for the completed-run sweep prompt.
 #
-# Asserts what a passing unit test cannot: that the five-way routing select
+# Asserts what a passing unit test cannot: that the six-way routing select
 # actually renders every answer, that a design is reported rather than offered,
-# that accepting the confirm moves the directory on disk, and that Ctrl+C ends
-# the run instead of re-asking per workitem.
+# that promote moves on disk, acknowledgement/recurrence persist, and Ctrl+C
+# ends the run instead of re-asking per workitem.
 pty-sweep-prompt:
     #!/usr/bin/env bash
     set -euo pipefail

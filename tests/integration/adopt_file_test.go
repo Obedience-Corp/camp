@@ -25,7 +25,7 @@ func TestIntegration_AdoptFileNoFrontmatterPreservesBody(t *testing.T) {
 
 	result, err := tc.ReadFile(dir + "/workflow/design/notes.md")
 	require.NoError(t, err)
-	assert.True(t, strings.HasPrefix(result, "---\nversion: v1alpha8\nkind: workitem\n"),
+	assert.True(t, strings.HasPrefix(result, "---\nversion: v1alpha9\nkind: workitem\n"),
 		"a valid frontmatter block must be prepended:\n%s", result)
 	assert.True(t, strings.HasSuffix(result, orig),
 		"the original body must be preserved byte-for-byte at the tail:\n%s", result)

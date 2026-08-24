@@ -40,4 +40,6 @@ const (
 	// shelved). Existing fields are unchanged, so a reader of the previous shape
 	// keeps working.
 	WorkitemSweepJSONVersion = "workitem-sweep/v1alpha1"
+	// WorkitemCompletionJSONVersion is the schema version of camp workitem completion --json.
+	WorkitemCompletionJSONVersion = "workitem-completion/v1alpha1"
 )

@@ -240,6 +240,32 @@ func TestPlanSweep_TypeGating(t *testing.T) {
 	}
 }
 
+func TestPlanSweep_CompletionState(t *testing.T) {
+	tests := []struct {
+		name       string
+		completion *CompletionState
+		want       bool
+	}{
+		{name: "default remains eligible", want: true},
+		{name: "same run reviewed", completion: &CompletionState{Policy: CompletionPolicyReview, ReviewedRunID: "run-001"}},
+		{name: "older run reviewed", completion: &CompletionState{Policy: CompletionPolicyReview, ReviewedRunID: "run-000"}, want: true},
+		{name: "recurring", completion: &CompletionState{Policy: CompletionPolicyRecurring}},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			plan := PlanSweep([]WorkItem{{
+				WorkflowType: WorkflowTypeExplore,
+				RelativePath: "workflow/explore/example",
+				WorkflowMeta: completedMeta(),
+				Completion:   tc.completion,
+			}})
+			if got := len(plan.Candidates) == 1; got != tc.want {
+				t.Fatalf("candidate = %v, want %v (plan=%+v)", got, tc.want, plan)
+			}
+		})
+	}
+}
+
 func TestSweepBannerText(t *testing.T) {
 	tests := []struct {
 		n    int

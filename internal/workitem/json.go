@@ -32,7 +32,7 @@ import (
 //     absent), where path is a campaign-relative project path and primary
 //     reflects whether that project is the workitem-scope primary link in
 //     links.yaml. See internal/workitem/metadata.go for the marker-level
-//     v1alpha8 schema these are sourced from.
+//     v1alpha9 schema these are sourced from.
 //   - v1alpha10: no new fields. Non-festival types can now report
 //     lifecycle_stage ready/active with a relative_path under festivals/, since a
 //     workitem promoted onto the festival rail lives on a stage while keeping its
@@ -42,7 +42,8 @@ import (
 //   - v1alpha11: add optional token_count field on each item (omitempty).
 //     Populated by tcount token counting when the workitem has a readable
 //     primary document; omitted when zero or when --no-tokens is set.
-const SchemaVersion = "workitems/v1alpha11"
+//   - v1alpha12: add optional completion object with policy and reviewed_run_id.
+const SchemaVersion = "workitems/v1alpha12"
 
 // Payload is the top-level JSON output for camp workitem --json.
 type Payload struct {

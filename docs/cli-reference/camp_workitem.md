@@ -30,11 +30,13 @@ camp workitem [flags]
       --json                          Output as JSON
       --limit int                     Maximum items to return
       --list                          Output a compact grouped list
+      --no-tokens                     Skip token count annotation
       --print                         Print path only
       --query string                  Filter by search query
       --show-parked                   Include parked workitems
       --stage stringArray             Filter by lifecycle stage
       --status stringArray            Deprecated: use --stage and/or --attention-stage
+      --token-model string            Tokenizer model for token counts (default "gpt-4o")
       --type stringArray              Filter by workflow type
 ```
 
@@ -50,6 +52,7 @@ camp workitem [flags]
 * [camp workitem adopt](camp_workitem_adopt.md)	 - Adopt an existing directory or file as a workitem
 * [camp workitem commit](camp_workitem_commit.md)	 - Commit changes scoped to a workitem
 * [camp workitem commits](camp_workitem_commits.md)	 - List commits referencing a workitem
+* [camp workitem completion](camp_workitem_completion.md)	 - Set completed-run review behavior for a workitem
 * [camp workitem convert](camp_workitem_convert.md)	 - Move a workitem to another workflow type
 * [camp workitem create](camp_workitem_create.md)	 - Create workitem tracking metadata
 * [camp workitem demote](camp_workitem_demote.md)	 - Move a rail resident back to its type root

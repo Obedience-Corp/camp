@@ -57,6 +57,14 @@ type WorkItem struct {
 	Projects     []string          `json:"-"`
 	ProjectRefs  []ProjectRef      `json:"projects"`
 	TokenCount   int               `json:"token_count,omitempty"`
+	Completion   *CompletionState  `json:"completion,omitempty"`
+}
+
+// CompletionState is emitted only when a workitem carries a non-default
+// completion decision. Policy is normalized to review or recurring.
+type CompletionState struct {
+	Policy        CompletionPolicy `json:"policy"`
+	ReviewedRunID string           `json:"reviewed_run_id,omitempty"`
 }
 
 // ProjectRef is one entry in a workitem's merged projects view: a

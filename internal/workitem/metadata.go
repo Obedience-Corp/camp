@@ -25,14 +25,14 @@ var (
 
 const MetadataFilename = ".workitem"
 
-const WorkitemSchemaVersion = "v1alpha8"
+const WorkitemSchemaVersion = "v1alpha9"
 
 const MetadataKind = "workitem"
 
 // acceptedWorkitemVersions are loadable .workitem schema versions. v1alpha4
-// through v1alpha7 are accepted for backward compatibility (v1alpha7 added the
-// GatheredInto/GatheredAt fields); v1alpha8 is the current write version and
-// adds the Tags and Projects fields. validateMetadata additionally accepts
+// through v1alpha8 are accepted for backward compatibility (v1alpha8 added the
+// Tags and Projects fields); v1alpha9 is the current write version and adds
+// explicit completed-run review state. validateMetadata additionally accepts
 // unknown future v1alphaN via the forward-compat rule.
 var acceptedWorkitemVersions = map[string]bool{
 	"v1alpha4": true,
@@ -40,7 +40,18 @@ var acceptedWorkitemVersions = map[string]bool{
 	"v1alpha6": true,
 	"v1alpha7": true,
 	"v1alpha8": true,
+	"v1alpha9": true,
 }
+
+// CompletionPolicy controls whether a completed standalone workflow run makes
+// a workitem eligible for completed-run review. The empty value is the
+// backward-compatible review policy and is omitted from canonical markers.
+type CompletionPolicy string
+
+const (
+	CompletionPolicyReview    CompletionPolicy = "review"
+	CompletionPolicyRecurring CompletionPolicy = "recurring"
+)
 
 type Metadata struct {
 	Version   string `yaml:"version"`
@@ -97,6 +108,12 @@ type Metadata struct {
 	// already written in. A comparison, not a guess: undo deletes only what
 	// it can prove nobody touched. Added in v1alpha8.
 	SplitSeedHash string `yaml:"split_seed_hash,omitempty"`
+	// CompletionPolicy is omitted for the default review behavior. Recurring
+	// workitems remain active across completed runs and never enter sweep review.
+	CompletionPolicy CompletionPolicy `yaml:"completion_policy,omitempty"`
+	// CompletionReviewedRunID acknowledges exactly one completed run while
+	// retaining review behavior for any later run.
+	CompletionReviewedRunID string `yaml:"completion_reviewed_run_id,omitempty"`
 }
 
 // LoadMetadata reads .workitem from dir on the host filesystem.
@@ -176,6 +193,14 @@ func validateMetadata(m *Metadata) error {
 	}
 	if err := validateProjects(m.Projects); err != nil {
 		return err
+	}
+	if m.CompletionPolicy != "" && m.CompletionPolicy != CompletionPolicyReview && m.CompletionPolicy != CompletionPolicyRecurring {
+		return camperrors.NewValidation("completion_policy",
+			"must be review or recurring", nil)
+	}
+	if m.CompletionPolicy == CompletionPolicyRecurring && m.CompletionReviewedRunID != "" {
+		return camperrors.NewValidation("completion_reviewed_run_id",
+			"must be empty when completion_policy is recurring", nil)
 	}
 	return nil
 }

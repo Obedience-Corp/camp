@@ -23,6 +23,7 @@ const (
 	EventGather  EventType = "gather"
 	EventCreate  EventType = "create"
 	EventAdopt   EventType = "adopt"
+	EventDecide  EventType = "decide"
 	// EventMove records a directory-workitem relocation that is not itself a
 	// promote (e.g. `camp dungeon move` triage or status changes). Mirrors
 	// the intent audit log's own "move" event for cross-ledger consistency.
@@ -45,6 +46,8 @@ type Event struct {
 	// "workflow_run_completed" for a tier-1 sweep promote. Empty for manual
 	// promotes. Additive and omitempty: existing readers ignore it.
 	Evidence string `json:"evidence,omitempty"`
+	Decision string `json:"decision,omitempty"`
+	RunID    string `json:"run_id,omitempty"`
 }
 
 func AppendEvent(ctx context.Context, campaignRoot string, e Event) error {

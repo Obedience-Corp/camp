@@ -384,7 +384,7 @@ func (tc *TestContainer) RunCampInDir(dir string, args ...string) (string, error
 
 // RunLegacyCampInDir runs the pinned pre-reader camp binary (/camp-legacy) from
 // dir. Used only by the criterion-17 rollout-contract test to prove a pre-reader
-// binary hard-fails on a v1alpha8 marker. Mirrors RunCampInDir: the returned
+// binary hard-fails on a v1alpha9 marker. Mirrors RunCampInDir: the returned
 // error is non-nil on a non-zero exit, with the merged stdout/stderr as output.
 func (tc *TestContainer) RunLegacyCampInDir(dir string, args ...string) (string, error) {
 	quotedArgs := make([]string, len(args))

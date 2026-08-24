@@ -120,10 +120,10 @@ func TestIntegration_Crit13_InvalidMarkerExcludedFromFilterAndSurfaced(t *testin
 
 // doc 08 criterion 17 (the load-bearing one): a shipped pre-reader binary
 // (v0.3.0-rc.2, commit 1f06e423, allowlist stops at v1alpha6, no forward-compat
-// rule) hard-fails to load a v1alpha8 marker written by the current binary, with
+// rule) hard-fails to load a v1alpha9 marker written by the current binary, with
 // a non-zero exit and a versions error naming its supported list. This proves the
 // staged reader-before-writer rollout was necessary.
-func TestIntegration_Crit17_PreReaderBinaryRejectsV1Alpha8(t *testing.T) {
+func TestIntegration_Crit17_PreReaderBinaryRejectsV1Alpha9(t *testing.T) {
 	if legacyCampSkip != "" {
 		t.Skip(legacyCampSkip)
 	}
@@ -131,18 +131,18 @@ func TestIntegration_Crit17_PreReaderBinaryRejectsV1Alpha8(t *testing.T) {
 	dir := "/test/acc-crit17"
 	initLinksCampaign(t, tc, dir)
 
-	// The CURRENT binary writes a v1alpha8 marker.
+	// The CURRENT binary writes a v1alpha9 marker.
 	out, err := tc.RunCampInDir(dir, "workitem", "create", "feat", "--type", "design", "--title", "Feat")
 	require.NoError(t, err, "current create: %s", out)
 	marker, err := tc.ReadFile(dir + "/workflow/design/feat/.workitem")
 	require.NoError(t, err)
-	require.Contains(t, marker, "version: v1alpha8", "the current binary writes a v1alpha8 marker")
+	require.Contains(t, marker, "version: v1alpha9", "the current binary writes a v1alpha9 marker")
 
 	// The pre-reader binary must hard-fail on that campaign rather than silently
 	// accept the marker: non-zero exit, versions error naming its supported list.
 	lout, lerr := tc.RunLegacyCampInDir(dir, "workitem", "validate")
-	require.Error(t, lerr, "pre-reader binary must exit non-zero on a v1alpha8 marker: %s", lout)
-	assert.Contains(t, lout, "v1alpha8", "the error names the unsupported version it read")
+	require.Error(t, lerr, "pre-reader binary must exit non-zero on a v1alpha9 marker: %s", lout)
+	assert.Contains(t, lout, "v1alpha9", "the error names the unsupported version it read")
 	assert.Contains(t, lout, "v1alpha6", "the error names the pre-reader supported list (which stops at v1alpha6)")
 }
 

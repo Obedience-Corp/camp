@@ -199,7 +199,7 @@ func TestTriagePreflight_AdoptedItemMatchesCampWorkitemAdopt(t *testing.T) {
 	require.NoError(t, err)
 	byTriage, err := tc.ReadFile(path + "/workflow/design/by-triage/.workitem")
 	require.NoError(t, err)
-	for _, required := range []string{"version: v1alpha8", "kind: workitem", "type: design"} {
+	for _, required := range []string{"version: v1alpha9", "kind: workitem", "type: design"} {
 		assert.Contains(t, byCommand, required)
 		assert.Contains(t, byTriage, required)
 	}

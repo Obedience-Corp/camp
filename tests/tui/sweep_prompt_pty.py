@@ -7,15 +7,17 @@ passes, so this drives the real compiled binary on a pty, renders its output
 through a terminal emulator, and reads the screen a user would actually see.
 It then checks the disk, because the render and the write are separate claims.
 
-Four assertions:
+Six assertions:
 
-  1. an explore item's question offers all five routing answers, so the
+  1. an explore item's question offers all six routing answers, so the
      route-to-docs answer cannot silently go missing
   2. a design with a completed run is reported as awaiting implementation
      evidence and is never offered as a question
-  3. accepting the chore's Promote confirm actually moves it into the dungeon
+  3. accepting the chore's Promote choice actually moves it into the dungeon
      (the directory on disk, not the word on the screen)
-  4. Ctrl+C ends the run instead of re-asking about every remaining workitem
+  4. acknowledging one run writes its ID and disappears from the next sweep
+  5. marking an item recurring writes the durable policy visible in JSON
+  6. Ctrl+C ends the run instead of re-asking about every remaining workitem
 
 Run it through the justfile:  just tui sweep-prompt
 
@@ -165,14 +167,14 @@ def find_first_question(session, needle, limit=6):
             return True
         if not session.alive:
             return False
-        # Confirm defaults to the negative answer, and the select defaults to
-        # "Keep working"; Enter therefore declines whatever is on screen.
+        # Both selects default to the one-run acknowledgement; Enter therefore
+        # leaves the item active while walking to the next question.
         session.press("ENTER")
     return needle in session.display
 
 
 def check_explore_offers_every_routing_answer(binary):
-    """1. The five-way routing select renders with all five answers."""
+    """1. The six-way routing select renders with every answer."""
     campaign, home = fixture(binary)
     session = Session(campaign, home, binary)
     found = find_first_question(session, "Where do the findings go?")
@@ -180,7 +182,7 @@ def check_explore_offers_every_routing_answer(binary):
     session.close()
 
     check("explore: the routing question renders", found, rendered)
-    for answer in ("Route to docs", "Mark completed", "Someday", "Archive", "Keep working"):
+    for answer in ("Route to docs", "Mark completed", "Someday", "Archive", "Keep active", "Recurring"):
         check(f"explore: the {answer!r} answer is on screen", answer in rendered, rendered)
     check("explore: the prompt names the directory it is asking about",
           "workflow/explore/provider-scan" in rendered, rendered)
@@ -204,15 +206,15 @@ def check_design_is_reported_not_asked(binary):
 
 
 def check_promote_confirm_moves_the_chore(binary):
-    """3. Accepting the confirm moves the directory, not just the screen."""
+    """3. Accepting Promote moves the directory, not just the screen."""
     campaign, home = fixture(binary)
     check("chore: it starts in workflow/", item_exists(campaign, "workflow/chore/tidy-imports"))
 
     session = Session(campaign, home, binary)
     found = find_first_question(session, "Promote to completed?")
-    check("chore: the promote confirm renders", found, session.display)
-    # huh's Confirm starts on the negative; move to the affirmative and accept.
-    session.press("LEFT", "ENTER")
+    check("chore: the promote select renders", found, session.display)
+    # The select defaults to Keep active (second row); move to Promote.
+    session.press("UP", "ENTER")
     rendered = session.display
     session.close()
 
@@ -223,8 +225,58 @@ def check_promote_confirm_moves_the_chore(binary):
           rendered)
 
 
+def read_completion(campaign, home, binary, query):
+    out = subprocess.run(
+        [binary, "workitem", "--json", "--no-tokens", "--query", query],
+        cwd=campaign,
+        env={"HOME": home, "PATH": os.environ.get("PATH", "/usr/bin:/bin"), "NO_COLOR": "1"},
+        capture_output=True, text=True, check=True,
+    ).stdout
+    import json
+    return json.loads(out)["items"][0].get("completion", {})
+
+
+def check_acknowledge_writes_and_suppresses(binary):
+    """4. Keep active records the exact run and suppresses that candidate."""
+    campaign, home = fixture(binary)
+    session = Session(campaign, home, binary)
+    found = find_first_question(session, "Where do the findings go?")
+    check("acknowledge: explore question renders", found, session.display)
+    session.press("ENTER")
+    session.close()
+
+    completion = read_completion(campaign, home, binary, "provider-scan")
+    check("acknowledge: JSON reports review policy", completion.get("policy") == "review", str(completion))
+    check("acknowledge: JSON reports the exact completed run",
+          completion.get("reviewed_run_id") == "r1", str(completion))
+
+    out = subprocess.run(
+        [binary, "workitem", "sweep", "--json", "--dry-run"], cwd=campaign,
+        env={"HOME": home, "PATH": os.environ.get("PATH", "/usr/bin:/bin"), "NO_COLOR": "1"},
+        capture_output=True, text=True, check=True,
+    ).stdout
+    check("acknowledge: next sweep omits provider-scan", "provider-scan" not in out, out)
+
+
+def check_recurring_writes_policy(binary):
+    """5. Recurring is reachable and persists as workitem metadata."""
+    campaign, home = fixture(binary)
+    session = Session(campaign, home, binary)
+    found = find_first_question(session, "Where do the findings go?")
+    check("recurring: explore question renders", found, session.display)
+    session.press("DOWN", "ENTER")
+    session.close()
+
+    completion = read_completion(campaign, home, binary, "provider-scan")
+    check("recurring: JSON reports recurring policy",
+          completion.get("policy") == "recurring", str(completion))
+    marker = open(os.path.join(campaign, "workflow/explore/provider-scan/.workitem"), encoding="utf-8").read()
+    check("recurring: marker stores the durable policy",
+          "completion_policy: recurring" in marker, marker)
+
+
 def check_ctrl_c_ends_the_run(binary):
-    """4. Cancelling one question stops, rather than re-asking for each item."""
+    """6. Cancelling one question stops, rather than re-asking for each item."""
     campaign, home = fixture(binary)
     session = Session(campaign, home, binary)
     session.press("CTRLC")
@@ -249,6 +301,8 @@ def main():
     check_explore_offers_every_routing_answer(binary)
     check_design_is_reported_not_asked(binary)
     check_promote_confirm_moves_the_chore(binary)
+    check_acknowledge_writes_and_suppresses(binary)
+    check_recurring_writes_policy(binary)
     check_ctrl_c_ends_the_run(binary)
 
     print()

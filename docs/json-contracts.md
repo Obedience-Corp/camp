@@ -16,8 +16,9 @@ Schema versions in this release:
 
 | Command | Schema version | Notes |
 | --- | --- | --- |
-| `camp workitem --json` | `workitems/v1alpha8` | Workitem dashboard contract. Each item carries a config-derived `workflow_category` (omitempty); the payload adds `category_vocabulary` (ordered categories with labels), `category_counts`, `category` in `grouping.available_group_by`, and a `category` field on section rows. Filter with `--category` and group with `--group-by category`. |
+| `camp workitem --json` | `workitems/v1alpha12` | Workitem dashboard contract. Items can carry an optional `completion` object with `policy` and `reviewed_run_id`; omitted means default review behavior with no acknowledged run. |
 | `camp workitem create --json` | `workitem-create/v1alpha1` | Create response with next-step hint. Additive `workitem.tags` and `workitem.projects` arrays (empty serializes as `[]`). |
+| `camp workitem completion --json` | `workitem-completion/v1alpha1` | Emits workitem identity, before/after completion state, and changed/adopted/committed/deferred outcomes. |
 | `camp workitem link --json` | `workitem-links/v1alpha1` | Emits one `link`. |
 | `camp workitem unlink --json` | `workitem-links/v1alpha1` | Emits `removed`. |
 | `camp workitem links --json` | `workitem-links/v1alpha1` | Emits `links`. |
