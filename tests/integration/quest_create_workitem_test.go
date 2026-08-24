@@ -183,6 +183,96 @@ func TestQuestCreate_WorkitemEnrichment_PreservesUserPurpose(t *testing.T) {
 		"user-supplied purpose must not be overwritten")
 }
 
+// TestQuestCreate_WorkitemEnrichment_PreSetPurposeCommitsQuestFile asserts that
+// creating a quest with --purpose already set still commits the quest file.
+// Enrichment is a no-op in that case; the post-Link Files must not be dropped.
+func TestQuestCreate_WorkitemEnrichment_PreSetPurposeCommitsQuestFile(t *testing.T) {
+	path := "/campaigns/quest-enrich-preset-create-commit"
+	tc := setupBindingCampaign(t, path)
+
+	wcOut, err := tc.RunCampInDir(path, "workitem", "create", "preset-design",
+		"--type", "design", "--title", "Preset Design")
+	require.NoError(t, err, wcOut)
+
+	require.NoError(t, tc.WriteFile(path+"/unrelated-dirty.txt", "leave me unstaged\n"))
+
+	createOut, err := tc.RunCampInDir(path, "quest", "create", "preset-quest",
+		"--no-editor", "--purpose", "My explicit purpose",
+		"--workitem", "preset-design")
+	require.NoError(t, err, createOut)
+
+	showOut, err := tc.RunCampInDir(path, "quest", "show", "preset-quest", "--json")
+	require.NoError(t, err, showOut)
+	var show questShowResult
+	require.NoError(t, json.Unmarshal([]byte(showOut), &show), "show --json: %s", showOut)
+	assert.Equal(t, "My explicit purpose", show.Quest.Purpose,
+		"user-supplied purpose must not be overwritten")
+	require.Len(t, show.Quest.Links, 1, "expected one bound link: %s", showOut)
+
+	statusOut, exitCode, err := tc.ExecCommand("sh", "-c",
+		"cd "+path+" && git status --porcelain")
+	require.NoError(t, err)
+	require.Zero(t, exitCode, statusOut)
+	assert.NotContains(t, statusOut, ".campaign/quests",
+		"quest file must be committed even when Purpose was pre-set: %q", statusOut)
+	assert.Contains(t, statusOut, "unrelated-dirty.txt",
+		"unrelated dirty file must not be swept into a non-selective commit: %q", statusOut)
+
+	treeOut, exitCode, err := tc.ExecCommand("sh", "-c",
+		"cd "+path+" && git ls-tree -r HEAD --name-only")
+	require.NoError(t, err)
+	require.Zero(t, exitCode, treeOut)
+	assert.Contains(t, treeOut, ".campaign/quests/",
+		"committed tree must include the quest file: %q", treeOut)
+	assert.NotContains(t, treeOut, "unrelated-dirty.txt")
+}
+
+// TestQuestLink_WorkitemEnrichment_PreSetPurposeCommitsQuestFile is the link
+// counterpart: a quest that already has Purpose still stages/commits the
+// quest file after `camp quest link`.
+func TestQuestLink_WorkitemEnrichment_PreSetPurposeCommitsQuestFile(t *testing.T) {
+	path := "/campaigns/quest-enrich-preset-link-commit"
+	tc := setupBindingCampaign(t, path)
+
+	wcOut, err := tc.RunCampInDir(path, "workitem", "create", "preset-link",
+		"--type", "design", "--title", "Preset Link")
+	require.NoError(t, err, wcOut)
+
+	createOut, err := tc.RunCampInDir(path, "quest", "create", "preset-link-quest",
+		"--no-editor", "--purpose", "My explicit purpose", "--no-commit")
+	require.NoError(t, err, createOut)
+
+	require.NoError(t, tc.WriteFile(path+"/unrelated-dirty.txt", "leave me unstaged\n"))
+
+	linkOut, err := tc.RunCampInDir(path, "quest", "link", "preset-link-quest",
+		"workflow/design/preset-link")
+	require.NoError(t, err, linkOut)
+
+	showOut, err := tc.RunCampInDir(path, "quest", "show", "preset-link-quest", "--json")
+	require.NoError(t, err, showOut)
+	var show questShowResult
+	require.NoError(t, json.Unmarshal([]byte(showOut), &show), "show --json: %s", showOut)
+	assert.Equal(t, "My explicit purpose", show.Quest.Purpose)
+	require.Len(t, show.Quest.Links, 1, "expected one bound link")
+
+	statusOut, exitCode, err := tc.ExecCommand("sh", "-c",
+		"cd "+path+" && git status --porcelain")
+	require.NoError(t, err)
+	require.Zero(t, exitCode, statusOut)
+	assert.NotContains(t, statusOut, ".campaign/quests",
+		"quest file must be committed after link when Purpose was pre-set: %q", statusOut)
+	assert.Contains(t, statusOut, "unrelated-dirty.txt",
+		"unrelated dirty file must not be swept into a non-selective commit: %q", statusOut)
+
+	treeOut, exitCode, err := tc.ExecCommand("sh", "-c",
+		"cd "+path+" && git ls-tree -r HEAD --name-only")
+	require.NoError(t, err)
+	require.Zero(t, exitCode, treeOut)
+	assert.Contains(t, treeOut, ".campaign/quests/",
+		"committed tree must include the quest file: %q", treeOut)
+	assert.NotContains(t, treeOut, "unrelated-dirty.txt")
+}
+
 // TestQuestLink_WorkitemEnrichment_FillsEmptyFields asserts that linking a
 // workitem to an existing quest (via `camp quest link`) also enriches empty
 // metadata — the same enrichment applies whether the link happens at create

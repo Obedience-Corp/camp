@@ -111,7 +111,14 @@ func resolveWorkitemEnrichment(ctx context.Context, root, relPath string) (title
 // workitem at relPath, if that path resolves to a discoverable workitem. The
 // enrichment is best-effort: discovery failures or non-workitem paths are
 // silent no-ops. User-supplied fields are never overwritten.
+//
+// When enrichment writes nothing, the prior MutationResult is returned
+// unchanged so autoCommitQuest still stages the post-Link quest file. When it
+// does write, Files is the union of prior and enriched paths.
 func enrichFromLinkedWorkitem(ctx context.Context, qctx *questCommandContext, result *questsvc.MutationResult, relPath string) (*questsvc.MutationResult, error) {
+	if result == nil || result.Quest == nil {
+		return result, nil
+	}
 	title, summary := resolveWorkitemEnrichment(ctx, qctx.campaignRoot, relPath)
 	if title == "" && summary == "" {
 		return result, nil
@@ -120,11 +127,28 @@ func enrichFromLinkedWorkitem(ctx context.Context, qctx *questCommandContext, re
 		Title:   title,
 		Summary: summary,
 	})
-	if err != nil {
-		// Enrichment failure must not fail the linking flow.
+	if err != nil || enriched == nil || len(enriched.Files) == 0 {
+		// Enrichment failure or no-op must not discard the post-Link Files.
 		return result, nil
 	}
+	enriched.Files = unionFiles(result.Files, enriched.Files)
 	return enriched, nil
+}
+
+func unionFiles(prior, extra []string) []string {
+	seen := make(map[string]struct{}, len(prior)+len(extra))
+	out := make([]string, 0, len(prior)+len(extra))
+	for _, p := range append(append([]string{}, prior...), extra...) {
+		if p == "" {
+			continue
+		}
+		if _, ok := seen[p]; ok {
+			continue
+		}
+		seen[p] = struct{}{}
+		out = append(out, p)
+	}
+	return out
 }
 
 // completeWorkitemSelector offers workitem refs, stable ids, directory slugs,
