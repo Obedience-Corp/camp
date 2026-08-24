@@ -5,6 +5,9 @@ import (
 	"context"
 	"strings"
 	"testing"
+
+	"github.com/Obedience-Corp/camp/internal/config"
+	wkitem "github.com/Obedience-Corp/camp/internal/workitem"
 )
 
 // TestStatusDeprecationNoticeOnBareWorkitem verifies that --status on the bare
@@ -97,6 +100,62 @@ func TestStatusStillFilters(t *testing.T) {
 	}
 	if !strings.Contains(stderr.String(), "deprecated") {
 		t.Fatalf("deprecation notice should fire on --json --status too, got stderr:\n%s", stderr.String())
+	}
+}
+
+// TestStatusDeprecationListExampleAvoidsStatusFlag verifies operator examples
+// teach --stage / --attention-stage instead of the deprecated --status flag.
+func TestStatusDeprecationListExampleAvoidsStatusFlag(t *testing.T) {
+	cmd := newListCommand()
+	if strings.Contains(cmd.Long, "--status") {
+		t.Fatalf("list command Long still steers to --status:\n%s", cmd.Long)
+	}
+	if !strings.Contains(cmd.Long, "--stage ready") {
+		t.Fatalf("list command Long should show --stage, got:\n%s", cmd.Long)
+	}
+	if !strings.Contains(cmd.Long, "--attention-stage") {
+		t.Fatalf("list command Long should show --attention-stage, got:\n%s", cmd.Long)
+	}
+}
+
+// TestStatusDeprecationUnknownFilterGuidesToReplacementFlags verifies unknown
+// positional filters name the two real axes, not --status.
+func TestStatusDeprecationUnknownFilterGuidesToReplacementFlags(t *testing.T) {
+	state := &discoveredWorkitems{cfg: &config.CampaignConfig{}}
+	err := applyPositionalFilter("does-not-exist", state, &listOptions{})
+	if err == nil {
+		t.Fatal("applyPositionalFilter(does-not-exist) error = nil")
+	}
+	msg := err.Error()
+	if strings.Contains(msg, "--status") {
+		t.Fatalf("unknown filter error still steers to --status: %s", msg)
+	}
+	for _, want := range []string{"--type", "--stage", "--attention-stage", "--category"} {
+		if !strings.Contains(msg, want) {
+			t.Fatalf("unknown filter error missing %s: %s", want, msg)
+		}
+	}
+}
+
+// TestStatusDeprecationAmbiguousFilterGuidesToReplacementFlags verifies
+// ambiguous positional filters pin --type/--category and the two real axes.
+func TestStatusDeprecationAmbiguousFilterGuidesToReplacementFlags(t *testing.T) {
+	state := &discoveredWorkitems{
+		cfg:   &config.CampaignConfig{},
+		items: []wkitem.WorkItem{{WorkflowType: wkitem.WorkflowType("plan"), WorkflowCategory: "plan"}},
+	}
+	err := applyPositionalFilter("plan", state, &listOptions{})
+	if err == nil {
+		t.Fatal("applyPositionalFilter(plan) error = nil")
+	}
+	msg := err.Error()
+	if strings.Contains(msg, "--status") {
+		t.Fatalf("ambiguous filter error still steers to --status: %s", msg)
+	}
+	for _, want := range []string{"--type plan", "--category plan", "--stage plan", "--attention-stage plan"} {
+		if !strings.Contains(msg, want) {
+			t.Fatalf("ambiguous filter error missing %s: %s", want, msg)
+		}
 	}
 }
 

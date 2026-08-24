@@ -9166,7 +9166,8 @@ Examples:
   camp workitem list active
   camp workitem list --category research --query auth
   camp workitem list --tag public-launch --tag schema
-  camp workitem list festival --status ready --json
+  camp workitem list festival --stage ready --json
+  camp workitem list --attention-stage active --json
 
 ```
 camp workitem list [type|status|category] [flags]
