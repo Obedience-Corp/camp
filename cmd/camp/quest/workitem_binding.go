@@ -13,6 +13,7 @@ import (
 	camperrors "github.com/Obedience-Corp/camp/internal/errors"
 	"github.com/Obedience-Corp/camp/internal/paths"
 	"github.com/Obedience-Corp/camp/internal/pathutil"
+	questsvc "github.com/Obedience-Corp/camp/internal/quest"
 	questtui "github.com/Obedience-Corp/camp/internal/quest/tui"
 	wkitem "github.com/Obedience-Corp/camp/internal/workitem"
 	"github.com/Obedience-Corp/camp/internal/workitem/selector"
@@ -82,6 +83,48 @@ func workitemChoiceRef(item wkitem.WorkItem) string {
 		return ref
 	}
 	return item.SourceID
+}
+
+// resolveWorkitemEnrichment discovers workitem metadata (Title, Summary) for a
+// campaign-relative path. It returns zero values when the path is not a
+// discoverable workitem — enrichment is best-effort and never blocks linking.
+func resolveWorkitemEnrichment(ctx context.Context, root, relPath string) (title, summary string) {
+	cfg, err := config.LoadCampaignConfig(ctx, root)
+	if err != nil {
+		return "", ""
+	}
+	resolver := paths.NewResolverFromConfig(root, cfg)
+	items, err := wkitem.Discover(ctx, root, resolver)
+	if err != nil {
+		return "", ""
+	}
+	normalized := filepath.ToSlash(filepath.Clean(relPath))
+	for _, item := range items {
+		if filepath.ToSlash(filepath.Clean(item.RelativePath)) == normalized {
+			return item.Title, item.Summary
+		}
+	}
+	return "", ""
+}
+
+// enrichFromLinkedWorkitem fills empty quest Purpose/Description from the
+// workitem at relPath, if that path resolves to a discoverable workitem. The
+// enrichment is best-effort: discovery failures or non-workitem paths are
+// silent no-ops. User-supplied fields are never overwritten.
+func enrichFromLinkedWorkitem(ctx context.Context, qctx *questCommandContext, result *questsvc.MutationResult, relPath string) (*questsvc.MutationResult, error) {
+	title, summary := resolveWorkitemEnrichment(ctx, qctx.campaignRoot, relPath)
+	if title == "" && summary == "" {
+		return result, nil
+	}
+	enriched, err := qctx.service.EnrichFromWorkitem(ctx, result.Quest.ID, questsvc.WorkitemEnrichment{
+		Title:   title,
+		Summary: summary,
+	})
+	if err != nil {
+		// Enrichment failure must not fail the linking flow.
+		return result, nil
+	}
+	return enriched, nil
 }
 
 // completeWorkitemSelector offers workitem refs, stable ids, directory slugs,

@@ -14,9 +14,11 @@ import (
 // bound workitem link back out.
 type questShowResult struct {
 	Quest struct {
-		ID    string `json:"id"`
-		Name  string `json:"name"`
-		Links []struct {
+		ID          string `json:"id"`
+		Name        string `json:"name"`
+		Purpose     string `json:"purpose"`
+		Description string `json:"description"`
+		Links       []struct {
 			Path string `json:"path"`
 			Type string `json:"type"`
 		} `json:"links"`
@@ -128,4 +130,87 @@ func TestQuestCreate_WorkitemBinding_CommittedInCreateCommit(t *testing.T) {
 	require.Zero(t, exitCode, statusOut)
 	assert.NotContains(t, statusOut, ".campaign/quests",
 		"quest binding must be committed, not left dirty: %q", statusOut)
+}
+
+// TestQuestCreate_WorkitemEnrichment_FillsEmptyFields asserts that creating a
+// quest with no purpose/description, then binding a workitem with a title,
+// results in the quest's purpose being auto-populated from the workitem title.
+// This is the camp#583 acceptance criterion: placeholder metadata is updated
+// once purpose is determined.
+func TestQuestCreate_WorkitemEnrichment_FillsEmptyFields(t *testing.T) {
+	path := "/campaigns/quest-enrich-fill"
+	tc := setupBindingCampaign(t, path)
+
+	wcOut, err := tc.RunCampInDir(path, "workitem", "create", "api-gateway",
+		"--type", "design", "--title", "API Gateway Redesign")
+	require.NoError(t, err, wcOut)
+
+	// Create a quest with empty purpose and description, binding the workitem.
+	createOut, err := tc.RunCampInDir(path, "quest", "create", "gateway-quest",
+		"--no-editor", "--workitem", "api-gateway", "--no-commit")
+	require.NoError(t, err, createOut)
+
+	showOut, err := tc.RunCampInDir(path, "quest", "show", "gateway-quest", "--json")
+	require.NoError(t, err, showOut)
+
+	var show questShowResult
+	require.NoError(t, json.Unmarshal([]byte(showOut), &show), "show --json: %s", showOut)
+	assert.Equal(t, "API Gateway Redesign", show.Quest.Purpose,
+		"empty purpose must be enriched from workitem title")
+}
+
+// TestQuestCreate_WorkitemEnrichment_PreservesUserPurpose asserts that a
+// user-supplied purpose is never overwritten by workitem enrichment.
+func TestQuestCreate_WorkitemEnrichment_PreservesUserPurpose(t *testing.T) {
+	path := "/campaigns/quest-enrich-preserve"
+	tc := setupBindingCampaign(t, path)
+
+	wcOut, err := tc.RunCampInDir(path, "workitem", "create", "auth-refactor",
+		"--type", "design", "--title", "Auth Refactor")
+	require.NoError(t, err, wcOut)
+
+	createOut, err := tc.RunCampInDir(path, "quest", "create", "auth-quest",
+		"--no-editor", "--purpose", "My explicit purpose",
+		"--workitem", "auth-refactor", "--no-commit")
+	require.NoError(t, err, createOut)
+
+	showOut, err := tc.RunCampInDir(path, "quest", "show", "auth-quest", "--json")
+	require.NoError(t, err, showOut)
+
+	var show questShowResult
+	require.NoError(t, json.Unmarshal([]byte(showOut), &show), "show --json: %s", showOut)
+	assert.Equal(t, "My explicit purpose", show.Quest.Purpose,
+		"user-supplied purpose must not be overwritten")
+}
+
+// TestQuestLink_WorkitemEnrichment_FillsEmptyFields asserts that linking a
+// workitem to an existing quest (via `camp quest link`) also enriches empty
+// metadata — the same enrichment applies whether the link happens at create
+// time or afterwards.
+func TestQuestLink_WorkitemEnrichment_FillsEmptyFields(t *testing.T) {
+	path := "/campaigns/quest-enrich-link"
+	tc := setupBindingCampaign(t, path)
+
+	wcOut, err := tc.RunCampInDir(path, "workitem", "create", "cache-layer",
+		"--type", "design", "--title", "Cache Layer Design")
+	require.NoError(t, err, wcOut)
+
+	// Create a quest first with no purpose/description.
+	createOut, err := tc.RunCampInDir(path, "quest", "create", "cache-quest",
+		"--no-editor", "--no-commit")
+	require.NoError(t, err, createOut)
+
+	// Then link the workitem.
+	linkOut, err := tc.RunCampInDir(path, "quest", "link", "cache-quest",
+		"workflow/design/cache-layer", "--no-commit")
+	require.NoError(t, err, linkOut)
+
+	showOut, err := tc.RunCampInDir(path, "quest", "show", "cache-quest", "--json")
+	require.NoError(t, err, showOut)
+
+	var show questShowResult
+	require.NoError(t, json.Unmarshal([]byte(showOut), &show), "show --json: %s", showOut)
+	assert.Equal(t, "Cache Layer Design", show.Quest.Purpose,
+		"empty purpose must be enriched from workitem title after quest link")
+	assert.Len(t, show.Quest.Links, 1, "expected one bound link")
 }
