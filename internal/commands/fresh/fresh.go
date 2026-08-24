@@ -30,15 +30,17 @@ var (
 // NewFreshCommand creates and returns the fresh cobra command with all subcommands.
 func NewFreshCommand() *cobra.Command {
 	var (
-		freshBranch      string
-		freshNoBranch    bool
-		freshNoPush      bool
-		freshNoPrune     bool
-		freshNoFollowUp  bool
-		freshDryRun      bool
-		freshProjectFlag string
-		freshList        []string
-		freshNoDrain     bool
+		freshBranch             string
+		freshNoBranch           bool
+		freshNoPush             bool
+		freshNoPrune            bool
+		freshNoFollowUp         bool
+		freshDryRun             bool
+		freshProjectFlag        string
+		freshList               []string
+		freshNoDrain            bool
+		freshCleanupStack       bool
+		freshAllowDefaultTarget bool
 	)
 
 	freshCmd := &cobra.Command{
@@ -92,7 +94,19 @@ Examples:
   camp fresh --list camp,fest,festival  # Sync a specific set of projects
   camp fresh --no-prune                 # Sync without pruning
   camp fresh --no-follow-up             # Sync without running configured follow-ups
-  camp fresh --dry-run                  # Preview what would happen (follow-ups listed, not run)`,
+  camp fresh --dry-run                  # Preview what would happen (follow-ups listed, not run)
+
+  camp fresh --branch feat/aggregate-CW0003 --cleanup-stack
+                                        # Switch to an existing aggregate branch and
+                                        # remove child worktrees merged into it
+                                        # (ancestry or squash/patch-id). Refuses
+                                        # main/master unless --allow-default-target.
+                                        # Worktrees whose branches also landed on
+                                        # the default branch are skipped (not stack
+                                        # children). The default-branch prune still
+                                        # runs first; pass --no-prune to skip it.
+  camp fresh --branch feat/aggregate-CW0003 --cleanup-stack --dry-run
+                                        # Preview the stack cleanup plan without removing anything`,
 		Args:              cobra.MaximumNArgs(1),
 		ValidArgsFunction: completeProjectName,
 		RunE: func(cmd *cobra.Command, args []string) error {
@@ -110,12 +124,24 @@ Examples:
 			}
 
 			flags := freshFlagSet{
-				branch:     freshBranch,
-				noBranch:   freshNoBranch,
-				noPush:     freshNoPush,
-				noPrune:    freshNoPrune,
-				noFollowUp: freshNoFollowUp,
-				dryRun:     freshDryRun,
+				branch:             freshBranch,
+				noBranch:           freshNoBranch,
+				noPush:             freshNoPush,
+				noPrune:            freshNoPrune,
+				noFollowUp:         freshNoFollowUp,
+				dryRun:             freshDryRun,
+				cleanupStack:       freshCleanupStack,
+				allowDefaultTarget: freshAllowDefaultTarget,
+			}
+
+			if freshCleanupStack && freshBranch == "" {
+				return camperrors.New("--cleanup-stack requires --branch <existing-branch>")
+			}
+			if freshCleanupStack && freshNoBranch {
+				return camperrors.New("--cleanup-stack cannot be used with --no-branch")
+			}
+			if freshAllowDefaultTarget && !freshCleanupStack {
+				return camperrors.New("--allow-default-target requires --cleanup-stack")
 			}
 
 			// --list runs a batch across an explicit set of projects. It is
@@ -165,14 +191,16 @@ Examples:
 			followUps := resolveFreshFollowUps(cfg, result.Name, freshNoFollowUp)
 
 			if err := executeFresh(ctx, result.Name, result.Path, freshOptions{
-				branch:          branch,
-				prune:           doPrune,
-				pruneRemote:     cfg.ResolveFreshPruneRemote(),
-				push:            doPush,
-				followUps:       followUps,
-				dryRun:          freshDryRun,
-				campRoot:        campRoot,
-				mergedWorkitems: cfg.ResolveFreshMergedWorkitems(),
+				branch:             branch,
+				prune:              doPrune,
+				pruneRemote:        cfg.ResolveFreshPruneRemote(),
+				push:               doPush,
+				followUps:          followUps,
+				dryRun:             freshDryRun,
+				campRoot:           campRoot,
+				mergedWorkitems:    cfg.ResolveFreshMergedWorkitems(),
+				cleanupStack:       freshCleanupStack,
+				allowDefaultTarget: freshAllowDefaultTarget,
 			}); err != nil {
 				return err
 			}
@@ -191,6 +219,10 @@ Examples:
 	freshCmd.PersistentFlags().BoolVar(&freshNoPrune, "no-prune", false, "Skip pruning merged branches")
 	freshCmd.PersistentFlags().BoolVar(&freshNoFollowUp, "no-follow-up", false, "Skip configured follow-up command workflows")
 	freshCmd.PersistentFlags().BoolVarP(&freshDryRun, "dry-run", "n", false, "Preview without making changes")
+	freshCmd.PersistentFlags().BoolVar(&freshCleanupStack, "cleanup-stack", false,
+		"Target an existing aggregate branch and remove child worktrees merged into it by ancestry or squash (requires --branch; refuses the default branch unless --allow-default-target)")
+	freshCmd.PersistentFlags().BoolVar(&freshAllowDefaultTarget, "allow-default-target", false,
+		"Permit --cleanup-stack against the default branch (main/master). Without this, cleanup-stack refuses default-branch targets because every merged feature worktree would look like a stack child")
 	freshCmd.Flags().StringVarP(&freshProjectFlag, "project", "p", "", "Project name (auto-detected from cwd)")
 	freshCmd.RegisterFlagCompletionFunc("project", completeProjectName)
 	freshCmd.Flags().StringSliceVar(&freshList, "list", nil, "Comma-separated set of projects to cycle in one run")
@@ -207,14 +239,16 @@ Examples:
 }
 
 type freshOptions struct {
-	branch          string
-	prune           bool
-	pruneRemote     bool
-	push            bool
-	followUps       []config.FollowUpConfig
-	dryRun          bool
-	campRoot        string
-	mergedWorkitems string
+	branch             string
+	prune              bool
+	pruneRemote        bool
+	push               bool
+	followUps          []config.FollowUpConfig
+	dryRun             bool
+	campRoot           string
+	mergedWorkitems    string
+	cleanupStack       bool
+	allowDefaultTarget bool
 }
 
 type freshSyncState struct {
@@ -234,6 +268,12 @@ type freshSyncState struct {
 }
 
 func executeFresh(ctx context.Context, name, path string, opts freshOptions) error {
+	if opts.cleanupStack {
+		if err := validateStackCleanupTarget(ctx, path, opts.branch, opts.allowDefaultTarget); err != nil {
+			return err
+		}
+	}
+
 	prefix := "  "
 	if opts.dryRun {
 		fmt.Printf("  %s %s\n", ui.Value(name), freshStepDim.Render("(dry-run)"))
@@ -408,10 +448,38 @@ func executeFresh(ctx context.Context, name, path string, opts freshOptions) err
 			deletedNames, beforeSHA, resolveBackstopMode(opts.mergedWorkitems, opts.dryRun), branchPaths, branchPathsErr)
 	}
 
-	// Step 4: Create branch (optional)
+	// Step 4: Create or checkout branch (optional)
+	//
+	// --cleanup-stack changes the semantics of --branch: instead of creating a
+	// new branch, it switches to an existing target branch and then removes
+	// child worktrees whose branches landed on that target (step 4a below),
+	// by ancestry or squash/patch-id equivalence. This is the post-stack-merge
+	// cleanup flow: the child PRs are already merged into the aggregate, and
+	// the stale child worktrees need to be torn down. Default-branch targets
+	// are refused unless --allow-default-target.
+	branchCheckedOut := false
 	branchCreated := false
 	if opts.branch != "" {
-		if git.BranchExists(ctx, path, opts.branch) {
+		if opts.cleanupStack {
+			if !git.BranchExists(ctx, path, opts.branch) {
+				return camperrors.Newf("--cleanup-stack: branch %q does not exist", opts.branch)
+			}
+			currentBranch := git.CurrentBranch(ctx, path)
+			if currentBranch == opts.branch {
+				fmt.Printf("%s── Checkout %-24s %s\n", prefix, opts.branch, freshStepDim.Render("already on it"))
+				branchCheckedOut = true
+			} else if opts.dryRun {
+				fmt.Printf("%s── Would checkout %-19s %s\n", prefix, opts.branch,
+					freshStepDim.Render(fmt.Sprintf("(currently on %s)", emptyBranchLabel(currentBranch))))
+				branchCheckedOut = true
+			} else {
+				if err := git.Checkout(ctx, path, opts.branch); err != nil {
+					return camperrors.Wrapf(err, "checkout %s", opts.branch)
+				}
+				fmt.Printf("%s── Checkout %-24s %s\n", prefix, opts.branch, freshStepGreen.Render("done"))
+				branchCheckedOut = true
+			}
+		} else if git.BranchExists(ctx, path, opts.branch) {
 			fmt.Fprintf(os.Stderr, "%s── Branch %-25s %s\n", prefix, opts.branch,
 				freshStepDim.Render(fmt.Sprintf("already exists, staying on %s", syncState.displayRef)))
 		} else if opts.dryRun {
@@ -424,6 +492,17 @@ func executeFresh(ctx context.Context, name, path string, opts freshOptions) err
 				branchCreated = true
 				fmt.Printf("%s── Create branch %-19s %s\n", prefix, opts.branch, freshStepGreen.Render("done"))
 			}
+		}
+	}
+
+	// Step 4a: Stack cleanup (only when --cleanup-stack is set and the target
+	// branch was checked out). Discovers linked worktrees whose branches
+	// landed on the target (ancestry or squash) and not also on the default
+	// branch, then removes them, skipping dirty or unmerged ones. Dry-run
+	// prints the plan without acting.
+	if opts.cleanupStack && branchCheckedOut {
+		if err := runStackCleanup(ctx, name, path, opts.branch, opts.dryRun, opts.allowDefaultTarget, prefix); err != nil {
+			return camperrors.Wrapf(err, "stack cleanup for %s", opts.branch)
 		}
 	}
 
@@ -451,6 +530,8 @@ func executeFresh(ctx context.Context, name, path string, opts freshOptions) err
 	fmt.Println()
 	if opts.dryRun {
 		fmt.Println(freshStepDim.Render("  (dry-run — remote refs refreshed; no local branches or files changed)"))
+	} else if opts.cleanupStack && branchCheckedOut {
+		fmt.Printf("  %s On %s — stack cleaned.\n", freshStepGreen.Render("Fresh!"), ui.Value(opts.branch))
 	} else if branchCreated {
 		fmt.Printf("  %s Ready to work on %s.\n", freshStepGreen.Render("Fresh!"), ui.Value(opts.branch))
 	} else if syncState.detached {

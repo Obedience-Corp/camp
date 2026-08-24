@@ -21,12 +21,14 @@ import (
 // invocation. It is passed to runFreshBatch so per-project settings can be
 // resolved against the fresh config.
 type freshFlagSet struct {
-	branch     string
-	noBranch   bool
-	noPush     bool
-	noPrune    bool
-	noFollowUp bool
-	dryRun     bool
+	branch             string
+	noBranch           bool
+	noPush             bool
+	noPrune            bool
+	noFollowUp         bool
+	dryRun             bool
+	cleanupStack       bool
+	allowDefaultTarget bool
 }
 
 // freshTarget is a resolved project to run the fresh cycle against.
@@ -65,13 +67,17 @@ func getFreshFlagSet(freshCmd *cobra.Command) freshFlagSet {
 	noPrune, _ := freshCmd.PersistentFlags().GetBool("no-prune")
 	noFollowUp, _ := freshCmd.PersistentFlags().GetBool("no-follow-up")
 	dryRun, _ := freshCmd.PersistentFlags().GetBool("dry-run")
+	cleanupStack, _ := freshCmd.PersistentFlags().GetBool("cleanup-stack")
+	allowDefaultTarget, _ := freshCmd.PersistentFlags().GetBool("allow-default-target")
 	return freshFlagSet{
-		branch:     branch,
-		noBranch:   noBranch,
-		noPush:     noPush,
-		noPrune:    noPrune,
-		noFollowUp: noFollowUp,
-		dryRun:     dryRun,
+		branch:             branch,
+		noBranch:           noBranch,
+		noPush:             noPush,
+		noPrune:            noPrune,
+		noFollowUp:         noFollowUp,
+		dryRun:             dryRun,
+		cleanupStack:       cleanupStack,
+		allowDefaultTarget: allowDefaultTarget,
 	}
 }
 
@@ -149,14 +155,16 @@ func runFreshBatch(ctx context.Context, cfg *config.FreshConfig, targets []fresh
 		followUps := resolveFreshFollowUps(cfg, t.name, flags.noFollowUp)
 
 		err := executeFresh(ctx, t.name, t.path, freshOptions{
-			branch:          branch,
-			prune:           doPrune,
-			pruneRemote:     cfg.ResolveFreshPruneRemote(),
-			push:            doPush,
-			followUps:       followUps,
-			dryRun:          flags.dryRun,
-			campRoot:        batchCampRoot,
-			mergedWorkitems: cfg.ResolveFreshMergedWorkitems(),
+			branch:             branch,
+			prune:              doPrune,
+			pruneRemote:        cfg.ResolveFreshPruneRemote(),
+			push:               doPush,
+			followUps:          followUps,
+			dryRun:             flags.dryRun,
+			campRoot:           batchCampRoot,
+			mergedWorkitems:    cfg.ResolveFreshMergedWorkitems(),
+			cleanupStack:       flags.cleanupStack,
+			allowDefaultTarget: flags.allowDefaultTarget,
 		})
 		if err != nil {
 			fmt.Printf("  %s %s: %s\n", red.Render("FAILED"), t.name, err)
