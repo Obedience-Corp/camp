@@ -72,6 +72,7 @@ Examples:
 			if err := validateDisplayStatuses(flagStatuses); err != nil {
 				return err
 			}
+			warnDeprecatedStatus(cmd, flagStatuses)
 
 			interactive := isInteractive()
 			if needsExplicitOutputMode(interactive, flagJSON, flagList, flagPrint, flagPathOutput) {
@@ -132,7 +133,7 @@ Examples:
 	_ = cmd.Flags().MarkHidden("path-output")
 	cmd.Flags().StringArrayVar(&flagTypes, "type", nil, "Filter by workflow type")
 	cmd.Flags().StringArrayVar(&flagCategories, "category", nil, "Filter by workflow category")
-	cmd.Flags().StringArrayVar(&flagStatuses, "status", nil, "Filter by displayed status")
+	cmd.Flags().StringArrayVar(&flagStatuses, "status", nil, "Deprecated: use --stage and/or --attention-stage")
 	cmd.Flags().StringArrayVar(&flagStages, "stage", nil, "Filter by lifecycle stage")
 	cmd.Flags().StringArrayVar(&flagAttentionStages, "attention-stage", nil, "Filter by attention stage")
 	cmd.Flags().StringArrayVar(&flagGroups, "group", nil, "Filter by workitem group")
@@ -352,6 +353,19 @@ func validateDisplayStatuses(statuses []string) error {
 		}
 	}
 	return nil
+}
+
+// warnDeprecatedStatus writes a deprecation notice to stderr when --status is
+// used. It does not alter behavior: --status still filters exactly as before,
+// and --json output is unchanged. The notice names the replacement flags so a
+// user or agent knows which of the two real axes (lifecycle stage or attention
+// stage) to use instead of the ambiguous union.
+func warnDeprecatedStatus(cmd *cobra.Command, statuses []string) {
+	if len(statuses) == 0 {
+		return
+	}
+	_, _ = fmt.Fprintln(cmd.ErrOrStderr(),
+		"warning: --status is deprecated and will be removed in a future release; use --stage (lifecycle) and/or --attention-stage instead.")
 }
 
 func outputJSON(ctx context.Context, campaignRoot string, cfg *config.CampaignConfig, items []wkitem.WorkItem, groupBy string) error {

@@ -73,7 +73,8 @@ Examples:
   camp workitem list active
   camp workitem list --category research --query auth
   camp workitem list --tag public-launch --tag schema
-  camp workitem list festival --status ready --json`,
+  camp workitem list festival --stage ready --json
+  camp workitem list --attention-stage active --json`,
 		Args: cobra.MaximumNArgs(1),
 		Annotations: map[string]string{
 			"agent_allowed": "true",
@@ -95,6 +96,7 @@ Examples:
 			if err := validateDisplayStatuses(opts.statuses); err != nil {
 				return err
 			}
+			warnDeprecatedStatus(cmd, opts.statuses)
 			filters, err := opts.filterOptions()
 			if err != nil {
 				return err
@@ -127,7 +129,7 @@ Examples:
 	cmd.Flags().BoolVar(&opts.json, "json", false, "Output as JSON")
 	cmd.Flags().StringArrayVar(&opts.types, "type", nil, "Filter by workflow type (repeat for OR)")
 	cmd.Flags().StringArrayVar(&opts.categories, "category", nil, "Filter by workflow category (repeat for OR)")
-	cmd.Flags().StringArrayVar(&opts.statuses, "status", nil, "Filter by displayed status: current, next, active, parked, inbox, ready, plan, ritual, chains, none (repeat for OR)")
+	cmd.Flags().StringArrayVar(&opts.statuses, "status", nil, "Deprecated: use --stage and/or --attention-stage")
 	cmd.Flags().StringArrayVar(&opts.stages, "stage", nil, "Filter by lifecycle stage (repeat for OR)")
 	cmd.Flags().StringArrayVar(&opts.attentionStages, "attention-stage", nil, "Filter by attention stage (repeat for OR)")
 	cmd.Flags().StringArrayVar(&opts.groups, "group", nil, "Filter by workitem group (repeat for OR)")
@@ -177,18 +179,15 @@ func applyPositionalFilter(raw string, state *discoveredWorkitems, opts *listOpt
 		dimensions = append(dimensions, "status")
 	}
 	if len(dimensions) == 0 {
-		return camperrors.NewValidation("filter", fmt.Sprintf("unknown workitem filter %q; use --type, --status, or --category", raw), nil)
+		return camperrors.NewValidation("filter", fmt.Sprintf("unknown workitem filter %q; use --type, --stage, --attention-stage, or --category", raw), nil)
 	}
 	if len(dimensions) > 1 {
 		// Name the flags so callers (especially always-ambiguous "plan") know
-		// which dimension to pin without re-reading the help text.
-		flagHints := make([]string, 0, len(dimensions))
-		for _, d := range dimensions {
-			flagHints = append(flagHints, "--"+d+" "+value)
-		}
+		// which dimension to pin without re-reading the help text. Display
+		// status is the deprecated union; steer to the two real axes.
 		return camperrors.NewValidation("filter", fmt.Sprintf(
 			"ambiguous workitem filter %q matches %s; use %s",
-			raw, strings.Join(dimensions, " and "), strings.Join(flagHints, " or ")), nil)
+			raw, strings.Join(dimensions, " and "), strings.Join(positionalFilterFlagHints(dimensions, value), " or ")), nil)
 	}
 	switch dimensions[0] {
 	case "type":
@@ -199,4 +198,20 @@ func applyPositionalFilter(raw string, state *discoveredWorkitems, opts *listOpt
 		opts.statuses = append(opts.statuses, status)
 	}
 	return nil
+}
+
+// positionalFilterFlagHints maps matched positional dimensions to the flags
+// callers should use. Display status is the deprecated union of lifecycle and
+// attention stage, so that dimension names --stage and --attention-stage.
+func positionalFilterFlagHints(dimensions []string, value string) []string {
+	hints := make([]string, 0, len(dimensions)+1)
+	for _, d := range dimensions {
+		switch d {
+		case "status":
+			hints = append(hints, "--stage "+value, "--attention-stage "+value)
+		default:
+			hints = append(hints, "--"+d+" "+value)
+		}
+	}
+	return hints
 }
