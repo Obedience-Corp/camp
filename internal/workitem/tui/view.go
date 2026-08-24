@@ -549,6 +549,15 @@ func renderPreview(item workitem.WorkItem, width, height int) string {
 			previewLabelStyle.Render("stable id:"),
 			previewValueStyle.Render(truncate(item.StableID, maxValueWidth))))
 	}
+	if item.Completion != nil {
+		completion := string(item.Completion.Policy)
+		if item.Completion.ReviewedRunID != "" {
+			completion = "reviewed " + item.Completion.ReviewedRunID
+		}
+		fmt.Fprintf(&b, "%s %s\n",
+			previewLabelStyle.Render("completion:"),
+			previewValueStyle.Render(truncate(completion, maxValueWidth)))
+	}
 	if item.WorkflowMeta != nil && (item.WorkflowMeta.WorkflowID != "" || item.WorkflowMeta.TotalSteps > 0 ||
 		item.WorkflowMeta.RunStatus != "" || item.WorkflowMeta.LatestRunStatus != "") {
 		b.WriteString("\n")

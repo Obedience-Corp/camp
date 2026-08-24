@@ -37,6 +37,16 @@ func ApplyMetadata(item WorkItem, md *Metadata) (WorkItem, error) {
 	// on a WorkItem that never reaches the output layer. outputJSON re-derives it
 	// with the primary annotation from links.yaml (which is unavailable here).
 	item.ProjectRefs = projectRefsBase(item.Projects)
+	if md.CompletionPolicy != "" || md.CompletionReviewedRunID != "" {
+		policy := md.CompletionPolicy
+		if policy == "" {
+			policy = CompletionPolicyReview
+		}
+		item.Completion = &CompletionState{
+			Policy:        policy,
+			ReviewedRunID: md.CompletionReviewedRunID,
+		}
+	}
 	return item, nil
 }
 

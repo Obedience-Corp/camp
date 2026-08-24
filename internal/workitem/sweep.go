@@ -97,6 +97,11 @@ func PlanSweep(items []WorkItem) SweepPlan {
 		if wf.LatestRunStatus != runStatusCompleted || wf.LatestRunID == "" {
 			continue
 		}
+		if item.Completion != nil {
+			if item.Completion.Policy == CompletionPolicyRecurring || item.Completion.ReviewedRunID == wf.LatestRunID {
+				continue
+			}
+		}
 		if InDungeonPath(item.RelativePath) {
 			continue
 		}

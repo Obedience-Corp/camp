@@ -8700,11 +8700,13 @@ camp workitem [flags]
       --json                          Output as JSON
       --limit int                     Maximum items to return
       --list                          Output a compact grouped list
+      --no-tokens                     Skip token count annotation
       --print                         Print path only
       --query string                  Filter by search query
       --show-parked                   Include parked workitems
       --stage stringArray             Filter by lifecycle stage
       --status stringArray            Deprecated: use --stage and/or --attention-stage
+      --token-model string            Tokenizer model for token counts (default "gpt-4o")
       --type stringArray              Filter by workflow type
 ```
 
@@ -8833,6 +8835,38 @@ camp workitem commits [selector] [flags]
       --ref string        query by workitem ref directly (e.g. WI-abc123); skips resolver
       --source string     where to read commits from: auto (ledger when present, else scan), ledger, or scan (default "auto")
       --workitem string   alias for the positional <selector>
+```
+
+### Options inherited from parent commands
+
+```
+      --no-color   disable colored output
+```
+---
+
+## camp workitem completion
+
+Set completed-run review behavior for a workitem
+
+### Synopsis
+
+Set how completed standalone workflow runs affect one workitem.
+
+review restores the default and clears any one-run acknowledgement.
+acknowledge keeps the workitem active and suppresses only its latest completed
+run. recurring keeps the workitem active and suppresses every completed-run
+review until review is restored. Persistent decisions live in the versioned
+.workitem marker and apply to both camp fresh and camp workitem sweep.
+
+```
+camp workitem completion <selector> <review|acknowledge|recurring> [flags]
+```
+
+### Options
+
+```
+  -h, --help   help for completion
+      --json   emit a structured JSON result
 ```
 
 ### Options inherited from parent commands
@@ -9211,12 +9245,14 @@ camp workitem list [type|status|category] [flags]
   -h, --help                          help for list
       --json                          Output as JSON
       --limit int                     Maximum number of items to return (non-interactive / --json only)
+      --no-tokens                     Skip token count annotation
       --project stringArray           Filter by related project (repeat for OR)
       --query string                  Search query to filter items
       --show-parked                   Include parked attention-stage workitems
       --stage stringArray             Filter by lifecycle stage (repeat for OR)
       --status stringArray            Deprecated: use --stage and/or --attention-stage
       --tag stringArray               Filter by tag (repeat; item must have ALL given tags)
+      --token-model string            Tokenizer model for token counts (default "gpt-4o")
       --type stringArray              Filter by workflow type (repeat for OR)
 ```
 

@@ -28,11 +28,12 @@ import (
 type sweepAnswer string
 
 const (
-	answerRouteDocs sweepAnswer = "docs"
-	answerCompleted sweepAnswer = "completed"
-	answerSomeday   sweepAnswer = "someday"
-	answerArchived  sweepAnswer = "archived"
-	answerKeep      sweepAnswer = "keep"
+	answerRouteDocs   sweepAnswer = "docs"
+	answerCompleted   sweepAnswer = "completed"
+	answerSomeday     sweepAnswer = "someday"
+	answerArchived    sweepAnswer = "archived"
+	answerAcknowledge sweepAnswer = "acknowledge"
+	answerRecurring   sweepAnswer = "recurring"
 )
 
 // runSweepPrompt asks per workitem and acts on the answer. Nothing moves without
@@ -103,21 +104,22 @@ func askSweepAnswer(ctx context.Context, work *sweepWork, cand wkitem.SweepCandi
 	description := sweepPromptDescription(work, cand)
 
 	if cand.Disposition != wkitem.DispositionRoute {
-		var promote bool
+		answer := answerAcknowledge
 		form := huh.NewForm(huh.NewGroup(
-			huh.NewConfirm().Title(title).Description(description).
-				Affirmative("Promote").Negative("Skip").Value(&promote),
+			huh.NewSelect[sweepAnswer]().Title(title).Description(description).
+				Options(
+					huh.NewOption("Promote - shelve it in dungeon/completed", answerCompleted),
+					huh.NewOption("Keep active - don't ask about this completed run again", answerAcknowledge),
+					huh.NewOption("Recurring - don't ask after completed runs", answerRecurring),
+				).Value(&answer),
 		))
 		if err := theme.RunForm(ctx, form); err != nil {
 			if theme.IsCancelled(err) {
-				return answerKeep, true, nil
+				return answerAcknowledge, true, nil
 			}
-			return answerKeep, false, err
+			return answerAcknowledge, false, err
 		}
-		if promote {
-			return answerCompleted, false, nil
-		}
-		return answerKeep, false, nil
+		return answer, false, nil
 	}
 
 	// Options before Value, and not the other way around. huh's Select resolves
@@ -125,7 +127,7 @@ func askSweepAnswer(ctx context.Context, work *sweepWork, cand wkitem.SweepCandi
 	// called, so setting it first leaves the list unresolved and the form renders
 	// with a single row where five belong. That is invisible to a unit test and
 	// was caught by tests/tui/sweep_prompt_pty.py.
-	answer := answerKeep
+	answer := answerAcknowledge
 	form := huh.NewForm(huh.NewGroup(
 		huh.NewSelect[sweepAnswer]().
 			Title(title).
@@ -135,15 +137,16 @@ func askSweepAnswer(ctx context.Context, work *sweepWork, cand wkitem.SweepCandi
 				huh.NewOption("Mark completed - shelve it in dungeon/completed", answerCompleted),
 				huh.NewOption("Someday - shelve it in dungeon/someday", answerSomeday),
 				huh.NewOption("Archive - shelve it in dungeon/archived", answerArchived),
-				huh.NewOption("Keep working - leave it where it is", answerKeep),
+				huh.NewOption("Keep active - don't ask about this completed run again", answerAcknowledge),
+				huh.NewOption("Recurring - don't ask after completed runs", answerRecurring),
 			).
 			Value(&answer),
 	))
 	if err := theme.RunForm(ctx, form); err != nil {
 		if theme.IsCancelled(err) {
-			return answerKeep, true, nil
+			return answerAcknowledge, true, nil
 		}
-		return answerKeep, false, err
+		return answerAcknowledge, false, err
 	}
 	return answer, false, nil
 }
@@ -170,6 +173,9 @@ func sweepPromptDescription(work *sweepWork, cand wkitem.SweepCandidate) string 
 	if cand.RunID != "" {
 		lines = append(lines, "Run:       "+cand.RunID+" (completed)")
 	}
+	if cand.Item.Completion != nil && cand.Item.Completion.Policy != wkitem.CompletionPolicyReview {
+		lines = append(lines, "Completion: "+string(cand.Item.Completion.Policy))
+	}
 	for _, l := range work.linkedScopes[cand.Item.RelativePath] {
 		lines = append(lines, fmt.Sprintf("Link:      %s (%s:%s) is released if this moves",
 			l.ID, l.Scope.Kind, l.Scope.Path))
@@ -184,9 +190,16 @@ func sweepPromptDescription(work *sweepWork, cand wkitem.SweepCandidate) string 
 func applySweepAnswer(ctx context.Context, cmd *cobra.Command, work *sweepWork, cand wkitem.SweepCandidate, answer sweepAnswer) error {
 	out := cmd.OutOrStdout()
 	switch answer {
-	case answerKeep:
-		_, err := fmt.Fprintf(out, "  %s %s left in place\n", ui.InfoIcon(), cand.Item.RelativePath)
-		return err
+	case answerAcknowledge, answerRecurring:
+		decision := completionAcknowledge
+		if answer == answerRecurring {
+			decision = completionRecurring
+		}
+		result, err := setWorkitemCompletion(ctx, cmd, wkitem.LinkWorkitemID(&cand.Item), decision)
+		if err != nil {
+			return err
+		}
+		return emitCompletionHuman(out, result, decision)
 	case answerRouteDocs:
 		return routeCandidateToDocs(ctx, cmd, work, cand)
 	case answerCompleted, answerSomeday, answerArchived:

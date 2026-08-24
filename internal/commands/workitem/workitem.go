@@ -163,6 +163,7 @@ Examples:
 	cmd.AddCommand(newPromoteCommand())
 	cmd.AddCommand(newDemoteCommand())
 	cmd.AddCommand(newSweepCommand())
+	cmd.AddCommand(newCompletionCommand())
 	cmd.AddCommand(newRenameCommand())
 	cmd.AddCommand(newConvertCommand())
 	cmd.AddCommand(newDoctorCommand())

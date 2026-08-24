@@ -54,7 +54,7 @@ func TestWorkitemJSON_SchemaVersionIsV1Alpha10(t *testing.T) {
 	_, err := tc.InitCampaign(path, "wi-json-version", "product")
 	require.NoError(t, err)
 
-	assert.Equal(t, "workitems/v1alpha11", wiList(t, tc, path).SchemaVersion)
+	assert.Equal(t, "workitems/v1alpha12", wiList(t, tc, path).SchemaVersion)
 }
 
 // The resident row's shape is asserted from real command output so casing is
@@ -65,7 +65,7 @@ func TestWorkitemJSON_ResidentRowShape(t *testing.T) {
 	railTo(t, tc, path+"/workflow/design/rail-feature", "active")
 
 	payload := wiList(t, tc, path)
-	assert.Equal(t, "workitems/v1alpha11", payload.SchemaVersion)
+	assert.Equal(t, "workitems/v1alpha12", payload.SchemaVersion)
 
 	got, ok := itemByPath(payload.Items, "festivals/active/rail-feature")
 	require.True(t, ok, "resident missing from camp wi --json: %+v", payload.Items)
@@ -204,7 +204,7 @@ func TestWorkitemJSON_FestivalOnlyCampaignHasNoResidents(t *testing.T) {
 	require.NoError(t, tc.WriteFile(path+"/festivals/planning/f-two/FESTIVAL_GOAL.md", "# Goal\n"))
 
 	payload := wiList(t, tc, path)
-	assert.Equal(t, "workitems/v1alpha11", payload.SchemaVersion)
+	assert.Equal(t, "workitems/v1alpha12", payload.SchemaVersion)
 	for _, it := range payload.Items {
 		if strings.HasPrefix(it.RelativePath, "festivals/") {
 			assert.Equal(t, "festival", it.WorkflowType,

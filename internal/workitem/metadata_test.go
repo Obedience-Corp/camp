@@ -318,8 +318,9 @@ func TestValidateMetadata_VersionAcceptance(t *testing.T) {
 		{"v1alpha6 accepted", "v1alpha6", false, false},
 		{"v1alpha7 accepted", "v1alpha7", false, false},
 		{"v1alpha8 accepted", "v1alpha8", false, false},
+		{"v1alpha9 accepted", "v1alpha9", false, false},
 		{"future version accepted via forward-compat", "v1alpha12", false, true},
-		{"leading-zero future version accepted via forward-compat", "v1alpha09", false, true},
+		{"leading-zero current version rejected", "v1alpha09", true, false},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
@@ -336,6 +337,41 @@ func TestValidateMetadata_VersionAcceptance(t *testing.T) {
 			}
 			if got := IsForwardCompatVersion(md.Version); got != tc.wantForwardCompat {
 				t.Errorf("IsForwardCompatVersion(%q) = %v, want %v", md.Version, got, tc.wantForwardCompat)
+			}
+		})
+	}
+}
+
+func TestValidateMetadata_CompletionState(t *testing.T) {
+	tests := []struct {
+		name      string
+		policy    CompletionPolicy
+		reviewed  string
+		wantField string
+	}{
+		{name: "default review"},
+		{name: "explicit review", policy: CompletionPolicyReview},
+		{name: "reviewed run", reviewed: "run-001"},
+		{name: "recurring", policy: CompletionPolicyRecurring},
+		{name: "unknown policy", policy: "forever", wantField: "completion_policy"},
+		{name: "recurring cannot carry reviewed run", policy: CompletionPolicyRecurring, reviewed: "run-001", wantField: "completion_reviewed_run_id"},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			m := Metadata{
+				Version: WorkitemSchemaVersion, Kind: MetadataKind, ID: "x", Type: "explore",
+				CompletionPolicy: tc.policy, CompletionReviewedRunID: tc.reviewed,
+			}
+			err := validateMetadata(&m)
+			if tc.wantField == "" {
+				if err != nil {
+					t.Fatalf("validateMetadata() error = %v", err)
+				}
+				return
+			}
+			var validationErr *camperrors.ValidationError
+			if !errors.As(err, &validationErr) || validationErr.Field != tc.wantField {
+				t.Fatalf("validateMetadata() error = %v, want field %q", err, tc.wantField)
 			}
 		})
 	}

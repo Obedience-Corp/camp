@@ -211,7 +211,7 @@ func TestIntegration_ResolverTiers(t *testing.T) {
 }
 
 // Legacy `camp workitem current --json` must not fall through to the parent
-// list command (which would exit 0 with a workitems/v1alpha11 payload).
+// list command (which would exit 0 with a workitems/v1alpha12 payload).
 // The subcommand is gone; the parent rejects positionals, so this fails.
 func TestIntegration_CurrentRemovedLegacyArgv(t *testing.T) {
 	tc := GetSharedContainer(t)
@@ -239,7 +239,7 @@ func TestIntegration_CurrentRemovedLegacyArgv(t *testing.T) {
 		} `json:"error"`
 	}
 	require.NoError(t, json.Unmarshal([]byte(stderr), &envelope), "stderr=%s", stderr)
-	assert.Equal(t, "workitems/v1alpha11", envelope.SchemaVersion)
+	assert.Equal(t, "workitems/v1alpha12", envelope.SchemaVersion)
 	assert.Contains(t, envelope.Error.Message, `unknown command "current"`)
 	assert.Equal(t, code, envelope.Error.ExitCode)
 }

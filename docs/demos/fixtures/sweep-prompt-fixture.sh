@@ -4,8 +4,8 @@
 # Builds a campaign under a throwaway HOME holding one workitem of each kind the
 # prompt has to treat differently:
 #
-#   workflow/chore/tidy-imports    completed run -> Promote/Skip confirm
-#   workflow/explore/provider-scan completed run -> the five-way routing select
+#   workflow/chore/tidy-imports    completed run -> three-way lifecycle select
+#   workflow/explore/provider-scan completed run -> the six-way routing select
 #   workflow/design/observation    completed run -> never offered, reported
 #
 # Every content file is stamped well into the past so the fresh-write guard does
@@ -37,7 +37,7 @@ seed_item() {
     local type="$1" slug="$2" title="$3"
     local dir="workflow/$type/$slug"
     mkdir -p "$dir/.workflow/runs/r1"
-    printf 'version: v1alpha8\nkind: workitem\nid: %s\ntype: %s\ntitle: %s\n' \
+    printf 'version: v1alpha9\nkind: workitem\nid: %s\ntype: %s\ntitle: %s\n' \
         "$type-$slug" "$type" "$title" > "$dir/.workitem"
     printf '# %s\n\nFixture body.\n' "$title" > "$dir/README.md"
     printf 'workflow_id: wf-%s\nruns:\n    - run_id: r1\n      status: completed\n      ended_at: "2026-07-24T19:00:00Z"\n' \
