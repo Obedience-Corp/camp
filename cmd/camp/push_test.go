@@ -5,9 +5,48 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"slices"
 	"strings"
 	"testing"
 )
+
+func TestParsePushArgs(t *testing.T) {
+	cases := []struct {
+		name            string
+		args            []string
+		wantRemote      string
+		wantBranch      string
+		wantExtras      []string
+		wantEnqueueable bool
+	}{
+		{name: "no args", args: nil, wantEnqueueable: true},
+		{name: "remote only", args: []string{"origin"}, wantRemote: "origin", wantEnqueueable: true},
+		{name: "remote and branch", args: []string{"origin", "main"}, wantRemote: "origin", wantBranch: "main", wantEnqueueable: true},
+		{name: "force", args: []string{"--force"}, wantExtras: []string{"--force"}},
+		{name: "force-with-lease and target", args: []string{"--force-with-lease", "origin", "main"}, wantRemote: "origin", wantBranch: "main", wantExtras: []string{"--force-with-lease"}},
+		{name: "tags", args: []string{"--tags"}, wantExtras: []string{"--tags"}},
+		{name: "set-upstream", args: []string{"-u", "origin", "feature"}, wantRemote: "origin", wantBranch: "feature", wantExtras: []string{"-u"}},
+		{name: "extra refspec", args: []string{"origin", "main", "other"}, wantRemote: "origin", wantBranch: "main", wantExtras: []string{"other"}},
+		{name: "refspec mapping", args: []string{"origin", "main:other"}, wantRemote: "origin", wantExtras: []string{"main:other"}},
+		{name: "force refspec", args: []string{"origin", "+main"}, wantRemote: "origin", wantExtras: []string{"+main"}},
+		{name: "dash-dash separator", args: []string{"--", "origin", "main"}, wantRemote: "origin", wantBranch: "main", wantExtras: []string{"--"}},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			remote, branch, extras := parsePushArgs(tc.args)
+			if remote != tc.wantRemote || branch != tc.wantBranch {
+				t.Errorf("remote/branch = %q/%q, want %q/%q", remote, branch, tc.wantRemote, tc.wantBranch)
+			}
+			if !slices.Equal(extras, tc.wantExtras) {
+				t.Errorf("extras = %v, want %v", extras, tc.wantExtras)
+			}
+			enqueueable := len(extras) == 0
+			if enqueueable != tc.wantEnqueueable {
+				t.Errorf("enqueueable = %v, want %v (extras=%v)", enqueueable, tc.wantEnqueueable, extras)
+			}
+		})
+	}
+}
 
 func TestRunPushAll_PushesWhenRemoteURLChanges(t *testing.T) {
 	campDir, _ := setupPushAllCampaignWithSubmodule(t)

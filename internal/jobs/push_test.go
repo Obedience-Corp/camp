@@ -97,19 +97,98 @@ func TestEnqueuePushRejectsMissing(t *testing.T) {
 	}
 }
 
-// A non-fast-forward rejection must be classified so the user knows what to do,
-// and a nil error stays nil.
+// A non-fast-forward rejection must be classified from git's output, not from
+// a synthetic err.Error(): executePush's cmd.Run() is typically "exit status 1".
 func TestClassifyPushError(t *testing.T) {
-	err := classifyPushError(&simpleError{msg: "! [rejected] main -> main (non-fast-forward)"})
+	err := classifyPushError(&simpleError{msg: "exit status 1"},
+		"! [rejected] main -> main (non-fast-forward)")
 	if err == nil {
 		t.Fatal("classifyPushError returned nil for a rejection")
 	}
 	if !strings.Contains(err.Error(), "non-fast-forward") {
 		t.Errorf("classified error does not mention non-fast-forward: %v", err)
 	}
+	if !strings.Contains(err.Error(), "[rejected]") {
+		t.Errorf("classified error dropped git's rejection text: %v", err)
+	}
 
-	if err := classifyPushError(nil); err != nil {
+	if err := classifyPushError(nil, "ignored"); err != nil {
 		t.Errorf("classifyPushError(nil) = %v, want nil", err)
+	}
+
+	bare := classifyPushError(&simpleError{msg: "exit status 1"}, "")
+	if bare == nil {
+		t.Fatal("bare exit status 1 must still be an error")
+	}
+	if strings.Contains(bare.Error(), "push rejected") {
+		t.Errorf("bare exit status 1 must not be classified as non-fast-forward: %v", bare)
+	}
+}
+
+// executePush must classify from CombinedOutput, not from err.Error() alone.
+// A live git push that is rejected reports "exit status 1"; the phrase
+// "non-fast-forward" is on stderr.
+func TestExecutePushClassifiesNonFastForwardFromStderr(t *testing.T) {
+	old := gitPushCombined
+	t.Cleanup(func() { gitPushCombined = old })
+	gitPushCombined = func(context.Context, string, *Job) ([]byte, error) {
+		return []byte("! [rejected]        main -> main (non-fast-forward)\nerror: failed to push some refs to 'origin'\n"),
+			&simpleError{msg: "exit status 1"}
+	}
+
+	err := executePush(context.Background(), t.TempDir(), &Job{
+		ID: "job-push", Remote: "origin", Branch: "main",
+	})
+	if err == nil {
+		t.Fatal("executePush returned nil for a rejected push")
+	}
+	if !strings.Contains(err.Error(), "non-fast-forward") {
+		t.Errorf("executePush error does not mention non-fast-forward: %v", err)
+	}
+	if !strings.Contains(err.Error(), "[rejected]") {
+		t.Errorf("executePush error dropped git's rejection text: %v", err)
+	}
+}
+
+// Failures that are not rejections still keep git's output, so LastError is
+// not a useless "exit status 1".
+func TestExecutePushKeepsStderrOnGenericFailure(t *testing.T) {
+	old := gitPushCombined
+	t.Cleanup(func() { gitPushCombined = old })
+	gitPushCombined = func(context.Context, string, *Job) ([]byte, error) {
+		return []byte("fatal: could not read Username for 'https://example.com'\n"),
+			&simpleError{msg: "exit status 128"}
+	}
+
+	err := executePush(context.Background(), t.TempDir(), &Job{
+		ID: "job-push", Remote: "origin", Branch: "main",
+	})
+	if err == nil {
+		t.Fatal("executePush returned nil for an auth failure")
+	}
+	if !strings.Contains(err.Error(), "could not read Username") {
+		t.Errorf("executePush error lost git stderr: %v", err)
+	}
+}
+
+func TestPushGitEnvSetsPromptAndCLocale(t *testing.T) {
+	got := pushGitEnv([]string{
+		"PATH=/bin",
+		"LANG=en_US.UTF-8",
+		"LC_ALL=en_US.UTF-8",
+		"GIT_TERMINAL_PROMPT=1",
+	})
+	joined := strings.Join(got, "\n")
+	if !strings.Contains(joined, "GIT_TERMINAL_PROMPT=0") {
+		t.Errorf("missing GIT_TERMINAL_PROMPT=0: %v", got)
+	}
+	if !strings.Contains(joined, "LC_ALL=C") {
+		t.Errorf("missing LC_ALL=C: %v", got)
+	}
+	for _, item := range got {
+		if item == "GIT_TERMINAL_PROMPT=1" || item == "LANG=en_US.UTF-8" || item == "LC_ALL=en_US.UTF-8" {
+			t.Errorf("stale env leaked through: %q in %v", item, got)
+		}
 	}
 }
 

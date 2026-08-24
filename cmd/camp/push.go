@@ -88,20 +88,12 @@ func runPush(cmd *cobra.Command, args []string) error {
 				return err
 			}
 		} else if len(outstanding) > 0 && ui.IsTerminal() {
-			remote, branch := resolvePushTarget(ctx, target.Path, gitArgs)
-			if remote == "" || branch == "" {
-				// Cannot enqueue without a named remote and branch. Degrade to
-				// the blocking drain rather than guessing.
-				if _, err := drain.Repo(ctx, target.Path, drain.Write); err != nil {
-					return err
-				}
-			} else {
-				repo := jobs.RepoForPath(campRoot, target.Path)
-				if repo != "" {
-					return enqueueDeferredPush(ctx, campRoot, repo, remote, branch, outstanding)
-				}
-				// Not in a campaign: no lane to enqueue into. The synchronous
-				// drain already returned (empty), so fall through to push.
+			queued, err := enqueueOrDrainPush(ctx, campRoot, target.Path, gitArgs, outstanding)
+			if err != nil {
+				return err
+			}
+			if queued {
+				return nil
 			}
 		} else {
 			if _, err := drain.Repo(ctx, target.Path, drain.Write); err != nil {
@@ -129,26 +121,19 @@ func outstandingForPush(ctx context.Context, campRoot, repoPath string) ([]jobs.
 	return jobs.Outstanding(campRoot, repo)
 }
 
-// resolvePushTarget determines the remote and branch a push would use, from the
-// gitArgs the user passed or the repo's upstream defaults.
+// enqueueOrDrainPush either queues a plain remote+branch push behind
+// outstanding, or drains synchronously so extra flags/refspecs are not dropped.
 //
-// The remote and branch are recorded at enqueue so a deferred push publishes
-// what the user asked for, not whatever the upstream happens to be at
-// execution.
-func resolvePushTarget(ctx context.Context, repoPath string, gitArgs []string) (remote, branch string) {
-	// gitArgs after ExtractSubFlags is what would follow "git push": e.g.
-	// ["origin", "main"], ["origin"], or [].
-	nonFlag := make([]string, 0, len(gitArgs))
-	for _, a := range gitArgs {
-		if !strings.HasPrefix(a, "-") {
-			nonFlag = append(nonFlag, a)
-		}
-	}
-	if len(nonFlag) >= 1 {
-		remote = nonFlag[0]
-	}
-	if len(nonFlag) >= 2 {
-		branch = nonFlag[1]
+// queued is true only when the push was written to the lane; the caller must
+// not then run git push itself.
+func enqueueOrDrainPush(ctx context.Context, campRoot, repoPath string, gitArgs []string, outstanding []jobs.Job) (queued bool, err error) {
+	remote, branch, extras := parsePushArgs(gitArgs)
+	if len(extras) > 0 {
+		fmt.Fprintln(os.Stderr, ui.Info(fmt.Sprintf(
+			"push with extra arguments (%s) cannot be queued; draining first so they are kept",
+			strings.Join(extras, " "))))
+		_, err = drain.Repo(ctx, repoPath, drain.Write)
+		return false, err
 	}
 	if remote == "" {
 		remote = defaultRemote(ctx, repoPath)
@@ -156,7 +141,45 @@ func resolvePushTarget(ctx context.Context, repoPath string, gitArgs []string) (
 	if branch == "" {
 		branch = git.CurrentBranch(ctx, repoPath)
 	}
-	return remote, branch
+	if remote == "" || branch == "" {
+		_, err = drain.Repo(ctx, repoPath, drain.Write)
+		return false, err
+	}
+	repo := jobs.RepoForPath(campRoot, repoPath)
+	if repo == "" {
+		return false, nil
+	}
+	return true, enqueueDeferredPush(ctx, campRoot, repo, remote, branch, outstanding)
+}
+
+// parsePushArgs splits git-push operands into a remote, a branch, and extras a
+// deferred job cannot keep.
+//
+// Flags (--force, --tags, -u, …) and extra refspecs (a third positional,
+// src:dst, +force) would be dropped by a job that only stores remote+branch.
+// Returning them as extras lets the caller drain instead of silently changing
+// the push.
+func parsePushArgs(gitArgs []string) (remote, branch string, extras []string) {
+	positionals := make([]string, 0, 2)
+	for _, a := range gitArgs {
+		switch {
+		case a == "" || a == "--" || strings.HasPrefix(a, "-"):
+			extras = append(extras, a)
+		case strings.HasPrefix(a, "+") || strings.Contains(a, ":"):
+			extras = append(extras, a)
+		case len(positionals) >= 2:
+			extras = append(extras, a)
+		default:
+			positionals = append(positionals, a)
+		}
+	}
+	if len(positionals) >= 1 {
+		remote = positionals[0]
+	}
+	if len(positionals) >= 2 {
+		branch = positionals[1]
+	}
+	return remote, branch, extras
 }
 
 // defaultRemote returns the upstream remote name, or "origin" if none is

@@ -59,42 +59,76 @@ func executePush(ctx context.Context, repoPath string, job *Job) error {
 		return camperrors.Newf("push job %s has no remote or branch", job.ID)
 	}
 
-	cmd := exec.CommandContext(ctx, "git", "-C", repoPath,
-		"push", job.Remote, job.Branch)
-	cmd.Stdout = nil
-	cmd.Stderr = nil
-	cmd.Stdin = nil
-	// A detached worker has no terminal. Without this, an auth prompt hangs the
-	// lane forever: the process blocks waiting for input nobody can give, and
-	// the job never fails so it never parks and never gets noticed.
-	cmd.Env = append(os.Environ(), "GIT_TERMINAL_PROMPT=0")
-
-	if err := cmd.Run(); err != nil {
-		return classifyPushError(err)
+	out, err := gitPushCombined(ctx, repoPath, job)
+	if err != nil {
+		return classifyPushError(err, string(out))
 	}
 	return nil
 }
 
+// gitPushCombined runs `git push <remote> <branch>` and returns combined
+// output. A variable so tests can feed a rejection without a live remote.
+var gitPushCombined = runGitPush
+
+func runGitPush(ctx context.Context, repoPath string, job *Job) ([]byte, error) {
+	cmd := exec.CommandContext(ctx, "git", "-C", repoPath,
+		"push", job.Remote, job.Branch)
+	cmd.Stdin = nil
+	// A detached worker has no terminal. Without GIT_TERMINAL_PROMPT=0, an
+	// auth prompt hangs the lane forever: the process blocks waiting for
+	// input nobody can give, and the job never fails so it never parks.
+	cmd.Env = pushGitEnv(os.Environ())
+	return cmd.CombinedOutput()
+}
+
+func pushGitEnv(base []string) []string {
+	env := make([]string, 0, len(base)+3)
+	for _, item := range base {
+		if strings.HasPrefix(item, "LC_ALL=") ||
+			strings.HasPrefix(item, "LANG=") ||
+			strings.HasPrefix(item, "GIT_TERMINAL_PROMPT=") {
+			continue
+		}
+		env = append(env, item)
+	}
+	return append(env, "LC_ALL=C", "LANG=C", "GIT_TERMINAL_PROMPT=0")
+}
+
 // classifyPushError turns a git push failure into one the worker can act on.
+//
+// output is CombinedOutput from the git process. cmd.Run() errors are typically
+// "exit status 1"; the rejection text lives on stderr, so classification must
+// read that, not only err.Error().
 //
 // A non-fast-forward rejection is not a transient failure: retrying will hit the
 // same rejection and burn the job's attempts for nothing. Parking it on the
 // first rejection tells the user the push needs a decision (pull, rebase, or
 // force-push) rather than letting the queue retry pointlessly.
 //
-// Auth and network failures are returned as-is: they may be transient (the
-// remote was momentarily unreachable), and the worker's retry budget handles
-// them the same way it handles any other potentially transient failure.
-func classifyPushError(err error) error {
+// Auth and network failures keep their git output so LastError is not a bare
+// exit status; they may still be transient, and the worker's retry budget
+// handles them the same way it handles any other potentially transient failure.
+func classifyPushError(err error, output string) error {
 	if err == nil {
 		return nil
 	}
-	msg := strings.ToLower(err.Error())
+	detail := strings.TrimSpace(output)
+	combined := err.Error()
+	if detail != "" {
+		combined = combined + "\n" + detail
+	}
+	lower := strings.ToLower(combined)
 	// Non-fast-forward: the remote has commits this branch does not. Retrying
 	// without integrating them is a guaranteed repeat of the same rejection.
-	if strings.Contains(msg, "non-fast-forward") ||
-		strings.Contains(msg, "[rejected]") {
-		return camperrors.Newf("push rejected (non-fast-forward); pull or force-push: %w", err)
+	if strings.Contains(lower, "non-fast-forward") ||
+		strings.Contains(lower, "[rejected]") {
+		if detail == "" {
+			detail = err.Error()
+		}
+		return camperrors.Newf("push rejected (non-fast-forward); pull or force-push: %s", detail)
+	}
+	if detail != "" {
+		return camperrors.Wrapf(err, "git push: %s", detail)
 	}
 	return err
 }
