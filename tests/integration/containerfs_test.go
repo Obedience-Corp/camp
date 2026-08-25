@@ -219,7 +219,8 @@ func tailLines(s string, n int) string {
 //
 // The per-package minimum count in RunContainerFSSuite cannot catch it: it only
 // checks packages already registered. This walks the tree instead and fails on
-// any tagged file whose package is absent from the list.
+// any tagged file whose package is absent from the list. testdata/ is skipped:
+// those files are scanner fixtures, not packages whose tests should run.
 func TestContainerFSPackagesAreAllRegistered(t *testing.T) {
 	root := repoRootForContainerFS()
 
@@ -235,7 +236,7 @@ func TestContainerFSPackagesAreAllRegistered(t *testing.T) {
 		}
 		if d.IsDir() {
 			switch d.Name() {
-			case ".git", "vendor", "node_modules", "bin":
+			case ".git", "vendor", "node_modules", "bin", "testdata":
 				return filepath.SkipDir
 			}
 			return nil

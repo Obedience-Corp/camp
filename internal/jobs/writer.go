@@ -95,17 +95,18 @@ func runWriter(ctx context.Context, campaignRoot, repoPath string, job *Job) (st
 	// GIT_INDEX_FILE isolates only the staged tree. `git diff --cached` still
 	// compares that index to the repository's live HEAD, so a commit landing
 	// while a slow writer runs changes the input underneath it. Give the writer
-	// a private per-worktree git directory whose detached HEAD is the captured
-	// parent, while GIT_COMMON_DIR keeps objects and config in the real repo.
-	// Together these two files are the complete staged snapshot the writer was
-	// asked to describe: parent plus index, both immutable for the whole run.
+	// a private per-worktree git directory whose HEAD is the captured parent
+	// (a detached SHA, or an unborn symbolic ref when Parent is empty), while
+	// GIT_COMMON_DIR keeps objects and config in the real repo. Together these
+	// two files are the complete staged snapshot the writer was asked to
+	// describe: parent plus index, both immutable for the whole run.
 	gitDir, err := os.MkdirTemp("", "camp-job-git-*")
 	if err != nil {
 		return "", camperrors.Wrap(err, "create a scratch git directory for the message writer")
 	}
 	defer func() { _ = os.RemoveAll(gitDir) }()
-	if err := os.WriteFile(filepath.Join(gitDir, "HEAD"), []byte(job.Parent+"\n"), 0o600); err != nil {
-		return "", camperrors.Wrap(err, "pin the captured parent for the message writer")
+	if err := pinCapturedParent(gitDir, job.Parent); err != nil {
+		return "", err
 	}
 	indexPath := filepath.Join(gitDir, "index")
 
@@ -146,4 +147,26 @@ func runWriter(ctx context.Context, campaignRoot, repoPath string, job *Job) (st
 			OwnProcessGroup: true,
 			DiagnosticOut:   os.Stderr,
 		})
+}
+
+// scratchUnbornHEAD is GIT_DIR/HEAD for a job captured against an unborn
+// branch. A detached SHA cannot be written because there is no parent object,
+// and a blank HEAD file makes git reject the directory as "not a git
+// repository". A symbolic ref that does not exist in GIT_COMMON_DIR stays
+// unborn even after the live branch gets its first commit, which is the
+// isolation the rest of runWriter exists for.
+const scratchUnbornHEAD = "ref: refs/camp/unborn-parent\n"
+
+func capturedParentHEAD(parent string) string {
+	if strings.TrimSpace(parent) == "" {
+		return scratchUnbornHEAD
+	}
+	return parent + "\n"
+}
+
+func pinCapturedParent(gitDir, parent string) error {
+	if err := os.WriteFile(filepath.Join(gitDir, "HEAD"), []byte(capturedParentHEAD(parent)), 0o600); err != nil {
+		return camperrors.Wrap(err, "pin the captured parent for the message writer")
+	}
+	return nil
 }
