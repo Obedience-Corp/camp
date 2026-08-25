@@ -195,9 +195,7 @@ func executeCommitTree(ctx context.Context, campaignRoot, repoPath string, job *
 		if integrated {
 			return nil
 		}
-		return camperrors.Newf(
-			"HEAD moved since this commit was queued; captured changes were not applied (expected parent %s)",
-			shortSHA(job.Parent))
+		return headMovedError(nil, job.Parent, "")
 	}
 
 	message, err := messageForTree(ctx, campaignRoot, repoPath, job)
@@ -241,14 +239,7 @@ func executeCommitTree(ctx context.Context, campaignRoot, repoPath string, job *
 		// Otherwise HEAD genuinely moved. Fail, and never rebase: the queued
 		// commit was built against a tree the user staged, and replaying it
 		// onto someone else's commit would produce a result nobody chose.
-		if strings.TrimSpace(job.Parent) == "" {
-			return camperrors.Wrapf(err,
-				"HEAD is no longer unborn; %s was not applied (queued as the first commit)",
-				shortSHA(newSHA))
-		}
-		return camperrors.Wrapf(err,
-			"HEAD moved since this commit was queued; %s was not applied (expected parent %s)",
-			shortSHA(newSHA), shortSHA(job.Parent))
+		return headMovedError(err, job.Parent, newSHA)
 	}
 	return nil
 }
@@ -285,6 +276,34 @@ func shortSHA(sha string) string {
 		return sha[:8]
 	}
 	return sha
+}
+
+// headMovedError is the user-visible failure when HEAD is no longer the
+// captured parent. Noticing that before the writer and noticing it at
+// update-ref must produce the same text: empty parent is unborn HEAD, not
+// a missing "expected parent".
+func headMovedError(cause error, parent, newSHA string) error {
+	msg := headMovedMessage(parent, newSHA)
+	if cause != nil {
+		return camperrors.Wrap(cause, msg)
+	}
+	return camperrors.New(msg)
+}
+
+func headMovedMessage(parent, newSHA string) string {
+	if strings.TrimSpace(parent) == "" {
+		if newSHA != "" {
+			return "HEAD is no longer unborn; " + shortSHA(newSHA) +
+				" was not applied (queued as the first commit)"
+		}
+		return "HEAD is no longer unborn; captured changes were not applied (queued as the first commit)"
+	}
+	if newSHA != "" {
+		return "HEAD moved since this commit was queued; " + shortSHA(newSHA) +
+			" was not applied (expected parent " + shortSHA(parent) + ")"
+	}
+	return "HEAD moved since this commit was queued; captured changes were not applied (expected parent " +
+		shortSHA(parent) + ")"
 }
 
 // resolveRepoPath turns a campaign-relative repo into an absolute path,
