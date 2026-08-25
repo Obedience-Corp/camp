@@ -51,10 +51,11 @@ var ErrCommitMessageHookEmptyOutput = errors.New("auto-write commit message comm
 // message.
 //
 // It exists so callers can act on the writer's own diagnostic without parsing
-// a formatted error string. The deferred-commit worker needs exactly that: it
-// commits anyway when the writer fails and puts the reason in the commit
-// message, and a message built by scraping err.Error() would carry camp's
-// wrapping and the writer's ANSI codes into git history.
+// a formatted error string. The deferred-commit worker needs exactly that: a
+// failing writer parks the job instead of committing with an invented
+// subject, and the parked job's LastError needs the writer's own diagnostic,
+// not a message built by scraping err.Error(), which would carry camp's
+// wrapping and the writer's ANSI codes into that record.
 type WriterError struct {
 	// Command is the configured writer, as written in campaign.yaml.
 	Command string
