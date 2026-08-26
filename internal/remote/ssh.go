@@ -465,7 +465,7 @@ func classifySSHFailure(text string) string {
 		return formatHostKeyMismatch(text)
 	}
 	if isPermissionDenied(text) {
-		return formatPermissionDenied()
+		return formatPermissionDenied(deniedAuthMethods(text))
 	}
 	return ""
 }
@@ -509,7 +509,52 @@ func isPermissionDenied(text string) bool {
 	return strings.Contains(strings.ToLower(text), "permission denied")
 }
 
-func formatPermissionDenied() string {
+// deniedAuthMethods extracts the auth-continuation list from OpenSSH's denial
+// line ("Permission denied (publickey,password,keyboard-interactive)."). The
+// list identifies WHAT answered: Tailscale SSH's server never offers password
+// or keyboard-interactive, so their presence is proof the denial came from
+// classic sshd. Empty when the denial carries no parenthesized list.
+func deniedAuthMethods(text string) []string {
+	lower := strings.ToLower(text)
+	idx := strings.Index(lower, "permission denied (")
+	if idx < 0 {
+		return nil
+	}
+	rest := lower[idx+len("permission denied ("):]
+	end := strings.IndexByte(rest, ')')
+	if end <= 0 {
+		return nil
+	}
+	var methods []string
+	for _, m := range strings.Split(rest[:end], ",") {
+		if m = strings.TrimSpace(m); m != "" {
+			methods = append(methods, m)
+		}
+	}
+	return methods
+}
+
+// formatPermissionDenied words the denial by what the method list proves. A
+// list with password/keyboard-interactive means classic sshd answered, and
+// recommending auth_method=tailscale-ssh there is exactly backwards — the live
+// failure this rewords WAS tailscale-ssh landing on macOS system sshd
+// (design WI-44f57e). Without a list nothing is proven, so the generic wording
+// keeps both possibilities.
+func formatPermissionDenied(methods []string) string {
+	classicSSHD := false
+	for _, m := range methods {
+		if m == "password" || m == "keyboard-interactive" {
+			classicSSHD = true
+			break
+		}
+	}
+	if classicSSHD {
+		return "SSH permission denied — classic OpenSSH sshd answered (offering " +
+			strings.Join(methods, ",") + "), not Tailscale SSH. The offered key was rejected: " +
+			"check remote authorized_keys, ssh_user, and identity_file. If this machine is set to " +
+			"auth_method=tailscale-ssh, the destination is not serving Tailscale SSH " +
+			"(GUI macOS Tailscale cannot)"
+	}
 	return "SSH permission denied (publickey) — check ssh-agent keys (`ssh-add -l`), identity_file, remote authorized_keys, and ssh_user; for Tailscale SSH use auth_method=tailscale-ssh and complete any check URL"
 }
 
