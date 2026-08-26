@@ -436,6 +436,55 @@ func TestSSHExitErrorClassifiesPermissionDenied(t *testing.T) {
 	}
 }
 
+// The auth-continuation list identifies what answered: password or
+// keyboard-interactive in the denial proves classic sshd, and the message must
+// not recommend auth_method=tailscale-ssh there — the fleet row the live
+// failure had was already tailscale-ssh (design WI-44f57e).
+func TestClassifyPermissionDeniedByAuthMethods(t *testing.T) {
+	classic := "lance@100.72.165.77: Permission denied (publickey,password,keyboard-interactive)."
+	detail := classifySSHFailure(classic)
+	if !strings.Contains(detail, "classic OpenSSH sshd answered") {
+		t.Fatalf("classic-sshd denial not identified: %q", detail)
+	}
+	if strings.Contains(detail, "use auth_method=tailscale-ssh") {
+		t.Errorf("classic-sshd denial must not recommend tailscale-ssh: %q", detail)
+	}
+	if !strings.Contains(detail, "authorized_keys") {
+		t.Errorf("classic-sshd denial should point at key installation: %q", detail)
+	}
+
+	// publickey-only proves nothing about the server; generic wording stays.
+	generic := classifySSHFailure("Permission denied (publickey).")
+	if strings.Contains(generic, "classic OpenSSH sshd answered") {
+		t.Errorf("publickey-only denial must stay generic: %q", generic)
+	}
+	if !strings.Contains(generic, "auth_method=tailscale-ssh") {
+		t.Errorf("generic denial lost its tailscale-ssh pointer: %q", generic)
+	}
+
+	// No parenthesized list at all: still classified, still generic.
+	bare := classifySSHFailure("server rejected: permission denied")
+	if !strings.Contains(strings.ToLower(bare), "permission denied") {
+		t.Errorf("bare denial not classified: %q", bare)
+	}
+}
+
+func TestDeniedAuthMethods(t *testing.T) {
+	got := deniedAuthMethods("x: Permission denied (publickey,password,keyboard-interactive).")
+	want := []string{"publickey", "password", "keyboard-interactive"}
+	if len(got) != len(want) {
+		t.Fatalf("deniedAuthMethods = %v, want %v", got, want)
+	}
+	for i := range want {
+		if got[i] != want[i] {
+			t.Fatalf("deniedAuthMethods = %v, want %v", got, want)
+		}
+	}
+	if m := deniedAuthMethods("permission denied, no list"); m != nil {
+		t.Errorf("no-list denial should yield nil, got %v", m)
+	}
+}
+
 func TestCompactSSHStderr(t *testing.T) {
 	if got := compactSSHStderr("# ignore\nreal problem here\n"); got != "real problem here" {
 		t.Errorf("compactSSHStderr = %q", got)

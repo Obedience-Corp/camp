@@ -5,8 +5,14 @@ Camp can move you between machines the same way it moves you between campaigns:
 describes the model that makes that safe, and what each piece degrades to when the
 network or the far machine does not cooperate.
 
-The short version: **camp never registers a machine for you, never installs a key, and
-never claims reachability it has not observed.** Everything below follows from that.
+The short version: **camp never changes your machines without asking, never enables a
+login service, and never claims reachability it has not observed.** Everything below
+follows from that.
+
+Two commands are allowed to write, and both are interactive, preview every byte first,
+and have no flag that skips the confirmation: `camp machine adopt` (a fleet row) and
+`camp machine pair` (ssh keys, see [Pairing](#pairing)). Neither can run without a
+terminal, so agents and scripts stay read-only.
 
 ## The fleet file
 
@@ -116,9 +122,22 @@ reach this?" is a question worth asking about a machine you are not about to ent
 
 ## The hop-back gesture
 
-`csw -` returns to the origin campaign. There is no history file and no daemon: the
-gesture is stateless by construction, which is why it survives a machine reboot on
-either end and why it cannot drift.
+`csw -` returns to the machine and campaign you hopped from. There is no history file
+and no daemon: the gesture is stateless by construction, which is why it survives a
+machine reboot on either end and why it cannot drift.
+
+**Inside a hopped shell it does not dial at all.** A hop runs `ssh` without `exec`, so
+the shell that hopped is still alive underneath its ssh client; returning is `exit`, and
+the origin shell resumes exactly where it was. That is why hopping back and forth cannot
+grow a chain of nested connections: each return pops one real level of the shell stack
+rather than opening a second ssh into the machine that already has an inbound session to
+you. A selector naming that origin behaves the same way — `csw devbox:notes`, typed in a
+shell hopped from `devbox`, unwinds instead of dialing, and naming a *different* campaign
+on the origin tells you to `csw -` first rather than nesting.
+
+The dial-back below remains for the case where the payload is present but the shell has
+no ssh markers around it (an exotic transport, or an exported variable that outlived its
+session), so that case still works exactly as it always did.
 
 It is registration-*independent*, not fleet-blind. Camp looks for a `machines.yaml` row
 whose host matches the payload's, so your own `ssh_user`, `identity_file`, and
@@ -200,12 +219,47 @@ The Tailscale SSH server does not run in sandboxed Tailscale GUI builds.
 ```
 
 So a mac can Tailscale-SSH *out* but cannot accept Tailscale SSH *in*. To reach a mac you
-either install standalone `tailscaled`, or add a key to its `~/.ssh/authorized_keys` and
-use `auth_method: ssh-agent`. Camp will diagnose this and refuse to fix it: installing a
-credential on a machine is your explicit act.
+either install standalone `tailscaled`, or put a key in its `~/.ssh/authorized_keys` and
+use `auth_method: ssh-agent`. `camp machine pair` does the second one for you, with your
+consent — see below.
 
 Until you do, the mesh still works in the direction that is available, and the mac's
 campaign names still reach the other machine by push.
+
+## Pairing
+
+`camp machine pair <machine>` exchanges ssh keys so hops work **both ways**. Run it from
+the machine that can already reach the other one:
+
+```
+$ camp machine pair mac-studio
+```
+
+One working direction is enough to pair both, because ssh gives camp read and write on
+the far side: it installs this machine's key over there, reads that machine's key back,
+and installs it here. That is what makes a GUI macOS peer reachable without standalone
+`tailscaled`.
+
+What it writes, after showing you all of it and asking once:
+
+| Side | Write |
+| --- | --- |
+| here | `~/.obey/keys/camp_<peer>_ed25519` (new ed25519, no passphrase) |
+| here | the peer's public key appended to `~/.ssh/authorized_keys` |
+| here | the fleet row's `identity_file`, `ssh_user`, `auth_method` |
+| there | `~/.obey/keys/camp_<this>_ed25519` |
+| there | this machine's public key appended to `~/.ssh/authorized_keys` |
+
+Keys are one per direction per pair, so a pairing is revocable on its own: delete the key
+and its one `authorized_keys` line. Appends are idempotent — re-pairing does not grow the
+file. Camp never touches `~/.ssh/id_*`.
+
+The passphrase-less key is a deliberate, stated trade: a hop runs under `BatchMode=yes`
+and cannot answer a prompt, so the alternative is not a safer pairing but no pairing.
+
+**What pairing still will not do:** enable a login service. If the reverse direction needs
+`sshd` started or macOS Remote Login switched on, camp says so and stops. Turning on a way
+to log into your machine stays your act, at any terminal.
 
 ## Degradation
 

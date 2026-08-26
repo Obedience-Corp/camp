@@ -124,6 +124,37 @@ func PeerAddress(_ context.Context, dnsName string) (addr string, found bool) {
 	return ParsePeerAddress(out, dnsName)
 }
 
+// SelfAddress returns this machine's own tailnet address from the local
+// status — the Self-node sibling of PeerAddress. It exists for probes that ask
+// "can a peer reach me at the address the dial fallback would use": when
+// MagicDNS is broken, this machine's own DNS name does not resolve locally
+// either, and a probe that dials only the name reports "not listening" about
+// an sshd that is (design WI-44f57e, Q7).
+func SelfAddress(_ context.Context) (addr string, found bool) {
+	out, err := defaultStatus.get()
+	if err != nil {
+		return "", false
+	}
+	return ParseSelfAddress(out)
+}
+
+// ParseSelfAddress is the pure half of SelfAddress.
+func ParseSelfAddress(data []byte) (string, bool) {
+	start := bytes.IndexByte(data, '{')
+	if start < 0 {
+		return "", false
+	}
+	var status struct {
+		Self *struct {
+			TailscaleIPs []string `json:"TailscaleIPs"`
+		} `json:"Self"`
+	}
+	if err := json.Unmarshal(data[start:], &status); err != nil || status.Self == nil {
+		return "", false
+	}
+	return preferredAddress(status.Self.TailscaleIPs)
+}
+
 // ParseHealth is the pure half of HealthMessages, split out so the shape
 // tolerance is testable without a tailscale binary.
 //

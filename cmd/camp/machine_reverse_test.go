@@ -147,3 +147,51 @@ func TestReverseReachabilityHonorsContextCancellation(t *testing.T) {
 		t.Error("want a hint even under cancellation")
 	}
 }
+
+// The reverse probe must reach the same conclusion as a hop's dial fallback:
+// when MagicDNS is broken locally, the machine's own name does not connect,
+// and the probe retries the tailnet self-address before declaring "no sshd"
+// (design WI-44f57e, Q7).
+func TestSSHDListeningFallsBackToTailnetSelfAddress(t *testing.T) {
+	ctx := context.Background()
+	dialed := []string{}
+	probes := listenProbes{
+		ReachableName: func(context.Context) string { return "archdtop.tail37114b.ts.net" },
+		SelfAddress:   func(context.Context) (string, bool) { return "100.94.55.106", true },
+		Dial: func(_ context.Context, addr string) bool {
+			dialed = append(dialed, addr)
+			return addr == "100.94.55.106:22"
+		},
+	}
+	if !sshdListeningWith(ctx, probes) {
+		t.Fatalf("want listening via self-address fallback; dialed %v", dialed)
+	}
+	if len(dialed) != 2 || dialed[0] != "archdtop.tail37114b.ts.net:22" || dialed[1] != "100.94.55.106:22" {
+		t.Errorf("dial order = %v, want name then self address", dialed)
+	}
+
+	// A non-MagicDNS name gets no tailnet retry: guessing an address for an
+	// ordinary hostname would be worse than failing.
+	probes.ReachableName = func(context.Context) string { return "workstation.internal" }
+	dialed = nil
+	if sshdListeningWith(ctx, probes) {
+		t.Error("plain hostname must not be rescued by the tailnet address")
+	}
+	if len(dialed) != 1 {
+		t.Errorf("dialed %v, want only the configured name", dialed)
+	}
+
+	// Refused on both addresses is the answer; loopback must not turn it into
+	// a yes.
+	probes.ReachableName = func(context.Context) string { return "archdtop.tail37114b.ts.net" }
+	probes.Dial = func(_ context.Context, addr string) bool { return addr == "127.0.0.1:22" }
+	if sshdListeningWith(ctx, probes) {
+		t.Error("refused name+self address must not fall back to loopback")
+	}
+
+	// No name at all: loopback is the last honest resort.
+	probes.ReachableName = func(context.Context) string { return "" }
+	if !sshdListeningWith(ctx, probes) {
+		t.Error("with no reachable name, loopback should decide")
+	}
+}

@@ -261,3 +261,18 @@ func TestStatusSourceFailureIsMemoizedThenRetried(t *testing.T) {
 		t.Fatalf("success must be memoized: err=%v calls=%d", err, calls)
 	}
 }
+
+func TestParseSelfAddress(t *testing.T) {
+	data := []byte(`Warning: banner
+{"Self":{"DNSName":"archdtop.tail37114b.ts.net.","TailscaleIPs":["fd7a:115c:a1e0::1","100.94.55.106"]}}`)
+	addr, ok := ParseSelfAddress(data)
+	if !ok || addr != "100.94.55.106" {
+		t.Fatalf("ParseSelfAddress = %q, %v; want the v4 self address", addr, ok)
+	}
+	if _, ok := ParseSelfAddress([]byte(`{"Peer":{}}`)); ok {
+		t.Error("no Self node must report not found")
+	}
+	if _, ok := ParseSelfAddress([]byte("not json")); ok {
+		t.Error("garbage must report not found")
+	}
+}

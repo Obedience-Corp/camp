@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"fmt"
 	"os"
 	"os/exec"
 	"os/user"
@@ -16,6 +17,7 @@ import (
 	camperrors "github.com/Obedience-Corp/camp/internal/errors"
 	"github.com/Obedience-Corp/camp/internal/machines"
 	"github.com/Obedience-Corp/camp/internal/remote"
+	"github.com/Obedience-Corp/camp/internal/ui"
 )
 
 // HopOriginEnvVar carries the origin machine identity into a hopped session.
@@ -380,6 +382,12 @@ const transientOriginSuffix = "-origin"
 // session was hopped from. Registration-independent by design — the origin need
 // never have been adopted here — so it reads the payload and builds a transient
 // machine rather than consulting ~/.obey/machines.yaml. Nothing is written.
+//
+// Inside an ssh session it does not dial at all: the shell that hopped here is
+// still alive beneath its ssh client (hops no longer exec, emitShellConnect),
+// so the return is an `exit` unwind. The dial-back below survives as the
+// fallback for a payload with no ssh markers around it, and for bare
+// invocations that resolve-and-refuse.
 func runHopBack(ctx context.Context, cmd *cobra.Command, printOnly, shellConnect, jsonOut bool) error {
 	raw := os.Getenv(HopOriginEnvVar)
 	if strings.TrimSpace(raw) == "" {
@@ -391,6 +399,19 @@ func runHopBack(ctx context.Context, cmd *cobra.Command, printOnly, shellConnect
 		return camperrors.New("camp switch -: " + HopOriginEnvVar + " is malformed (" + err.Error() +
 			"); hop back with 'camp switch <machine>:<campaign>'")
 	}
+
+	// The unwind needs no campaign and no reachability: it returns to a shell
+	// that already exists, wherever it was. Output flags are refused first so
+	// `--print`/`--json` fail identically on both return paths.
+	if shellConnect && insideSSHSession() {
+		if err := guardRemoteOutputFlags(origin.Host, printOnly, jsonOut); err != nil {
+			return err
+		}
+		_, _ = fmt.Fprintln(cmd.ErrOrStderr(), ui.Dim("camp: returning to "+hopOriginLabel(origin)+
+			" — unwinding this ssh session, no new connection"))
+		return emitUnwind(cmd.OutOrStdout())
+	}
+
 	if origin.Campaign == "" {
 		return camperrors.New("camp switch -: origin campaign unknown (the outbound hop did not start " +
 			"inside a campaign); hop back with 'camp switch <machine>:<campaign>'")
@@ -413,6 +434,15 @@ func runHopBack(ctx context.Context, cmd *cobra.Command, printOnly, shellConnect
 		return hopBackFailure(err, m, registered)
 	}
 	return emitHopOrRefuse(ctx, cmd, m, origin.Campaign, root, shellConnect)
+}
+
+// hopOriginLabel names the origin for a human: "host (campaign)" when the
+// campaign is known, the host alone otherwise.
+func hopOriginLabel(origin HopOrigin) string {
+	if origin.Campaign != "" {
+		return origin.Host + " (" + origin.Campaign + ")"
+	}
+	return origin.Host
 }
 
 // originTarget resolves the payload to a machine to hop to. A registered entry

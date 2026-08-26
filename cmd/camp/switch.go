@@ -337,6 +337,18 @@ func runSwitch(cmd *cobra.Command, args []string) error {
 		// mac) would try to ssh archdtop to itself once you are on it, which is
 		// the shape agents and humans both produce after a hop.
 		if msel.Machine != "" && msel.Machine != machines.LocalMachineID && !isSelfMachine(ctx, msel.Machine) {
+			// A selector naming the ORIGIN of this hopped shell must not open a
+			// second ssh back into the machine that already has a live inbound
+			// session to us — that is the recursive-ssh shape. Exact origin
+			// campaign (or none) is the hop-back gesture in different words;
+			// anything else gets guidance rather than a nested connection.
+			unwind, refuse := originSwitchGuard(msel)
+			if refuse != nil {
+				return refuse
+			}
+			if unwind {
+				return runHopBack(ctx, cmd, printOnly, shellConnect, jsonOut)
+			}
 			return runRemoteSwitch(ctx, cmd, msel, printOnly, shellConnect, jsonOut)
 		}
 		if reg.Len() == 0 {
@@ -398,11 +410,18 @@ func runSwitch(cmd *cobra.Command, args []string) error {
 
 // emitShellConnect prints exactly one shell line for the camp() wrapper to eval.
 // Local: `cd -- '<abs-path>'` (identical effect to today's --print + wrapper cd).
-// Remote: `exec ssh -t <opts> '<target>' '<export origin && cd root && exec $SHELL -l>'`,
-// where exec replaces the shell (so quitting the remote shell returns the user
-// locally), -t forces a PTY, and $SHELL expands on the REMOTE side because the
+// Remote: `ssh -t <opts> '<target>' '<export origin && cd root && exec $SHELL -l>'`,
+// where -t forces a PTY, and $SHELL expands on the REMOTE side because the
 // whole remote command is single-quoted here so the local shell never touches
 // the '$'.
+//
+// Deliberately NOT `exec ssh`: the local shell survives beneath the ssh
+// client, which is what makes hop-back an unwind (`exit` pops one real level,
+// hop_session.go) instead of a dial that nests a new connection inside the
+// inbound one. exec never prevented that nesting — it replaced the shell
+// process while the transport chain still grew on every dial-back — and it
+// meant quitting the remote shell terminated the terminal's process instead
+// of returning the user locally.
 //
 // origin is a complete CAMP_HOP_ORIGIN payload or "". It is exported before the
 // cd so it survives into the login shell that replaces this process image: an
@@ -432,7 +451,7 @@ func emitShellConnect(w io.Writer, isRemote bool, path string, e remote.Endpoint
 	for i, o := range opts {
 		quoted[i] = remote.ShellQuote(o)
 	}
-	_, err := fmt.Fprintf(w, "exec ssh -t %s %s %s\n",
+	_, err := fmt.Fprintf(w, "ssh -t %s %s %s\n",
 		strings.Join(quoted, " "), remote.ShellQuote(e.Target()), remote.ShellQuote(inner))
 	return err
 }
