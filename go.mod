@@ -3,6 +3,7 @@ module github.com/Obedience-Corp/camp
 go 1.25.6
 
 require (
+	github.com/Obedience-Corp/build-util v0.1.0
 	github.com/Obedience-Corp/obey-shared v0.5.0
 	github.com/alecthomas/chroma/v2 v2.23.1
 	github.com/aymanbagabas/go-osc52/v2 v2.0.1

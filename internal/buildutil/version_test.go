@@ -1,4 +1,4 @@
-package tasks
+package main
 
 import (
 	"context"
@@ -33,9 +33,6 @@ func TestVersionFrom(t *testing.T) {
 	}
 }
 
-// A cancelled context stands in for the wedged-git case the timeout exists to
-// bound: the probe cannot answer, and the caller must fall back rather than
-// stamp a partial version.
 func TestGitProbesOnDeadContext(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	cancel()
@@ -51,19 +48,51 @@ func TestGitProbesOnDeadContext(t *testing.T) {
 	}
 }
 
-func TestBuildLDFlagsOnDeadContext(t *testing.T) {
+func TestLDFlagsOnDeadContext(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	cancel()
 
 	t.Setenv("VERSION", "")
 
-	got := buildLDFlags(ctx)
+	got := ldflagsFrom(ctx)
 	for _, want := range []string{
 		"-X " + versionPkg + ".Version=dev",
 		"-X " + versionPkg + ".Commit=unknown",
 	} {
 		if !strings.Contains(got, want) {
-			t.Errorf("buildLDFlags(cancelled) = %q; want it to contain %q", got, want)
+			t.Errorf("ldflagsFrom(cancelled) = %q; want it to contain %q", got, want)
 		}
+	}
+}
+
+func TestRequestedCommand(t *testing.T) {
+	tests := []struct {
+		name string
+		args []string
+		want string
+	}{
+		{name: "empty", args: nil, want: ""},
+		{name: "plain", args: []string{"test"}, want: "test"},
+		{name: "skips flags", args: []string{"-v", "-no-color", "integration"}, want: "integration"},
+		{name: "skips double dash", args: []string{"--", "build"}, want: "build"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if got := requestedCommand(tt.args); got != tt.want {
+				t.Fatalf("requestedCommand(%q) = %q, want %q", tt.args, got, tt.want)
+			}
+		})
+	}
+}
+
+func TestDoctorStartRequested(t *testing.T) {
+	if doctorStartRequested([]string{"integration-doctor"}) {
+		t.Fatal("bare doctor should be read-only")
+	}
+	if !doctorStartRequested([]string{"integration-doctor", "start"}) {
+		t.Fatal("start should be requested")
+	}
+	if !doctorStartRequested([]string{"-v", "integration-doctor", "start"}) {
+		t.Fatal("start after flags should be requested")
 	}
 }

@@ -17,8 +17,8 @@ import (
 
 	camperrors "github.com/Obedience-Corp/camp/internal/errors"
 
+	"github.com/Obedience-Corp/build-util/ui"
 	"github.com/Obedience-Corp/camp/internal/buildutil/itestenv"
-	"github.com/Obedience-Corp/camp/internal/buildutil/ui"
 )
 
 // integrationTestEvent represents a go test -json output line
