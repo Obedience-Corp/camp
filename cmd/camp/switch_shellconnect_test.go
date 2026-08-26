@@ -26,8 +26,8 @@ func TestEmitShellConnectRemoteWithUser(t *testing.T) {
 		t.Fatal(err)
 	}
 	out := buf.String()
-	if !strings.HasPrefix(out, "exec ssh -t ") {
-		t.Errorf("remote line must start with exec ssh -t: %q", out)
+	if !strings.HasPrefix(out, "ssh -t ") {
+		t.Errorf("remote line must start with ssh -t: %q", out)
 	}
 	if !strings.Contains(out, "'lance@devbox.ts.net'") {
 		t.Errorf("remote target must be quoted user@host: %q", out)

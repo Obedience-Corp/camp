@@ -327,7 +327,7 @@ func TestEmitShellConnectEmbedsOrigin(t *testing.T) {
 	if strings.Index(out, "export CAMP_HOP_ORIGIN") > strings.Index(out, "cd ") {
 		t.Errorf("export must come before cd: %q", out)
 	}
-	if !strings.HasPrefix(out, "exec ssh -t ") || !strings.HasSuffix(out, "\n") {
+	if !strings.HasPrefix(out, "ssh -t ") || !strings.HasSuffix(out, "\n") {
 		t.Errorf("hop line shape changed: %q", out)
 	}
 	if strings.Count(out, "\n") != 1 {
@@ -456,7 +456,7 @@ func TestRunHopBackDecisionTable(t *testing.T) {
 			payload:      testOriginPayload,
 			setPayload:   true,
 			shellConnect: true,
-			wantStdout:   "exec ssh -t ",
+			wantStdout:   "ssh -t ",
 		},
 		{
 			name:       "unreachable transient origin points at a probe, not diagnose",
@@ -473,6 +473,13 @@ func TestRunHopBackDecisionTable(t *testing.T) {
 				t.Setenv(HopOriginEnvVar, tt.payload)
 			} else {
 				t.Setenv(HopOriginEnvVar, "")
+			}
+			// This table pins the DIAL-BACK path. Clear the ssh session markers
+			// so it stays on that path even when the test process itself runs
+			// inside an ssh login; the unwind path has its own tests
+			// (hop_session_test.go).
+			for _, v := range sshSessionEnvVars {
+				t.Setenv(v, "")
 			}
 			// Point machines.yaml at an absent file so the transient path is
 			// exercised deterministically, regardless of the developer's fleet.

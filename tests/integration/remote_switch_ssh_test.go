@@ -50,7 +50,7 @@ machines:
 
 	trimmed := strings.TrimSpace(shellConnectOut)
 	require.Len(t, strings.Split(trimmed, "\n"), 1, "shell-connect output must be exactly one line: %q", trimmed)
-	require.True(t, strings.HasPrefix(trimmed, "exec ssh -t "), "shell-connect line must start with 'exec ssh -t ': %q", trimmed)
+	require.True(t, strings.HasPrefix(trimmed, "ssh -t "), "shell-connect line must start with 'ssh -t ': %q", trimmed)
 	require.Contains(t, trimmed, "cd ", "shell-connect line must cd into the resolved root: %q", trimmed)
 	require.Contains(t, trimmed, root, "shell-connect line must reference the resolved remote campaign root %q: %q", root, trimmed)
 
