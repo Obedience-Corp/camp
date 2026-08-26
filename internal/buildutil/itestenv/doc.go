@@ -21,7 +21,7 @@
 //  3. Probe measures a daemon round trip before the pool is built, so a daemon
 //     that is already wedged costs five seconds instead of a wedged run.
 //
-// The package is shared by the dashboard runner (internal/buildutil/tasks) and
-// by the suite's own TestMain, so both lanes resolve, lock, and probe the same
+// The package is shared by the dashboard runner (internal/buildutil) and by
+// the suite's own TestMain, so both lanes resolve, lock, and probe the same
 // way. Nothing here is product code: it configures how camp is tested.
 package itestenv

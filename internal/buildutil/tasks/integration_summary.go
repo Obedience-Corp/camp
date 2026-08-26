@@ -6,7 +6,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/Obedience-Corp/camp/internal/buildutil/ui"
+	"github.com/Obedience-Corp/build-util/ui"
 )
 
 // integrationTally reduces the go test -json event stream for one suite into
