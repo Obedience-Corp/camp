@@ -8,6 +8,8 @@ import (
 	"runtime"
 	"strings"
 	"time"
+
+	"github.com/Obedience-Corp/camp/internal/tailnet"
 )
 
 // reverseProbeTimeout bounds the local reachability checks. They are local
@@ -105,21 +107,52 @@ func remoteLoginState(ctx context.Context, p reverseProbes) (on, knowable bool) 
 // and gets both directions wrong: an sshd (or Tailscale SSH) bound only to the
 // tailnet address reads as "not listening", and a sshd_config with
 // ListenAddress 127.0.0.1 reads as "listening" when no peer can reach it.
-//
-// Loopback remains the fallback for when no reachable name can be determined,
-// which is a weaker observation than the caller would like but still better
-// than reporting nothing.
 func sshdListening(ctx context.Context) bool {
-	if host, err := detectReachableName(ctx, runTailscaleStatusForSelf); err == nil && host != "" {
-		if dialSSH(ctx, net.JoinHostPort(host, "22")) {
+	return sshdListeningWith(ctx, listenProbes{
+		ReachableName: func(ctx context.Context) string {
+			host, err := detectReachableName(ctx, runTailscaleStatusForSelf)
+			if err != nil {
+				return ""
+			}
+			return host
+		},
+		SelfAddress: tailnet.SelfAddress,
+		Dial:        dialSSH,
+	})
+}
+
+// listenProbes are the seams sshdListeningWith is tested through.
+type listenProbes struct {
+	ReachableName func(ctx context.Context) string
+	SelfAddress   func(ctx context.Context) (string, bool)
+	Dial          func(ctx context.Context, addr string) bool
+}
+
+// sshdListeningWith is the probe logic behind sshdListening. When the
+// reachable name does not connect and that name is a MagicDNS name, it retries
+// on this machine's own tailnet address — the same rescue hops already perform
+// via the peer-table dial fallback. Without it, a broken MagicDNS makes
+// diagnose report "no sshd is listening" about a machine hops reach fine
+// (design WI-44f57e, Q7): same machine, opposite conclusions.
+//
+// A name (or address) that refuses the connection is the answer: a peer
+// dialing the same address would be refused too. Loopback remains the
+// fallback only when no reachable name can be determined at all, which is a
+// weaker observation than the caller would like but still better than
+// reporting nothing.
+func sshdListeningWith(ctx context.Context, p listenProbes) bool {
+	if host := p.ReachableName(ctx); host != "" {
+		if p.Dial(ctx, net.JoinHostPort(host, "22")) {
 			return true
 		}
-		// A reachable name that refuses the connection is the answer: a peer
-		// dialing the same address would be refused too. Do not fall back to
-		// loopback and turn that into a yes.
+		if tailnet.IsMagicDNSName(host) && p.SelfAddress != nil {
+			if addr, ok := p.SelfAddress(ctx); ok {
+				return p.Dial(ctx, net.JoinHostPort(addr, "22"))
+			}
+		}
 		return false
 	}
-	return dialSSH(ctx, "127.0.0.1:22")
+	return p.Dial(ctx, "127.0.0.1:22")
 }
 
 func dialSSH(ctx context.Context, addr string) bool {
