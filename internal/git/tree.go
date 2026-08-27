@@ -523,6 +523,20 @@ func CaptureBlobs(ctx context.Context, repoPath string, paths []string) ([]BlobR
 			}
 			return nil, camperrors.Wrapf(err, "capture %s", p)
 		}
+		if info.Mode()&os.ModeSymlink != 0 {
+			// A symlink's content is its target string, and `git hash-object
+			// -w -- <path>` follows the link instead of reading it. For a link
+			// to a file that stored the file's whole content under mode
+			// 120000, so the deferred commit recorded a symlink pointing at
+			// the bytes of its own target; for a link to a directory it failed
+			// outright, which is how this was noticed. Read the link.
+			ref, err := captureSymlink(ctx, repoPath, p)
+			if err != nil {
+				return nil, err
+			}
+			refs = append(refs, ref)
+			continue
+		}
 		if info.IsDir() {
 			// A directory expands to its files. Capturing it as one object is
 			// not possible, and a deferred job naming a directory means the
@@ -545,6 +559,33 @@ func CaptureBlobs(ctx context.Context, repoPath string, paths []string) ([]BlobR
 		})
 	}
 	return refs, nil
+}
+
+// captureSymlink records a symlink the way git does: the blob is the link's
+// target string, under mode 120000.
+//
+// The target is written to git hash-object over stdin rather than named as a
+// path, because naming the path is exactly what makes git read through the
+// link.
+func captureSymlink(ctx context.Context, repoPath, path string) (BlobRef, error) {
+	target, err := os.Readlink(filepath.Join(repoPath, filepath.FromSlash(path)))
+	if err != nil {
+		return BlobRef{}, camperrors.Wrapf(err, "capture symlink %s", path)
+	}
+	cmd := gitCmd(ctx, repoPath, "hash-object", "-w", "--stdin")
+	cmd.Stdin = strings.NewReader(target)
+	var stderr bytes.Buffer
+	cmd.Stderr = &stderr
+	out, err := cmd.Output()
+	if err != nil {
+		return BlobRef{}, camperrors.Wrapf(err, "capture symlink %s: %s",
+			path, strings.TrimSpace(stderr.String()))
+	}
+	sha := strings.TrimSpace(string(out))
+	if sha == "" {
+		return BlobRef{}, camperrors.Newf("git hash-object produced no object for symlink %s", path)
+	}
+	return BlobRef{Path: path, Mode: "120000", SHA: sha}, nil
 }
 
 // captureDeletedPath expands a missing tracked directory into its former
@@ -696,5 +737,5 @@ func CommitBlobs(ctx context.Context, repoPath string, refs []BlobRef, opts *Com
 	if err := Commit(ctx, repoPath, &scoped); err != nil {
 		return err
 	}
-	return ResetIndexToHead(ctx, repoPath, changed)
+	return ResetIndexToHead(ctx, repoPath, changed, opts.Retry)
 }

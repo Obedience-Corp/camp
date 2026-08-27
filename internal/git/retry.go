@@ -2,6 +2,7 @@ package git
 
 import (
 	"context"
+	"errors"
 	"log/slog"
 	"time"
 
@@ -24,6 +25,13 @@ type RetryConfig struct {
 	WaitForActive bool
 	// ActiveLockWait is how long to wait for active locks (if WaitForActive is true).
 	ActiveLockWait time.Duration
+	// MaxActiveLockWaits is how many ActiveLockWait timeouts to absorb before
+	// giving up. Zero fails on the first one, which is what a user waiting in
+	// front of a terminal wants: a lock that has not cleared in ActiveLockWait
+	// is worth reporting rather than waiting on again. A background worker has
+	// nobody waiting and sets this so a busy repository costs patience rather
+	// than a dropped job.
+	MaxActiveLockWaits int
 	// Logger is the logger for retry operations (optional).
 	Logger *slog.Logger
 	// OperationName is used for log messages (e.g., "commit", "submodule add").
@@ -61,6 +69,38 @@ func SubmoduleRetryConfig() RetryConfig {
 	}
 }
 
+// BackgroundRetryConfig returns retry settings for work with no user waiting
+// on it — the detached deferred-commit worker.
+//
+// The interactive profile is tuned for a person watching a prompt: six
+// attempts across two cycles and one five-second active-lock wait, then report
+// and let them decide. That budget is spent in about ten seconds, and it is
+// too thin for a campaign root several agent sessions commit into at once.
+// Every one of those sessions holds index.lock for a few milliseconds at a
+// time, so the worker loses a race it would have won a moment later and parks
+// a commit it had already been told to make. Execution failures do not spend
+// the reclaim budget, so one lost race is a job in failed/, not a retry.
+//
+// The numbers, and what bounds them: twenty-four attempts over eight cycles
+// (about ten seconds of backoff in total), a fifteen-second active-lock wait,
+// and three such timeouts absorbed before the operation reports. Worst case is
+// therefore a little over a minute — well inside jobs.drainMaxWait, so a drain
+// still gives up after the worker rather than before it, and far short of the
+// writer timeout a job may already be paying.
+func BackgroundRetryConfig() RetryConfig {
+	return RetryConfig{
+		AttemptsPerCycle:   3,
+		MaxCycles:          8,
+		InitialBackoff:     250 * time.Millisecond,
+		MaxBackoff:         2 * time.Second,
+		WaitForActive:      true,
+		ActiveLockWait:     15 * time.Second,
+		MaxActiveLockWaits: 3,
+		Logger:             slog.Default(),
+		OperationName:      "operation",
+	}
+}
+
 // WithLockRetry executes an operation with cycle-based lock handling.
 //
 // Within each cycle, fast retries execute immediately with no delay — this handles
@@ -91,6 +131,7 @@ func WithLockRetry(ctx context.Context, repoPath string, cfg RetryConfig, operat
 
 	var lastErr error
 	backoff := cfg.InitialBackoff
+	activeWaits := 0
 
 	for cycle := 1; cycle <= cfg.MaxCycles; cycle++ {
 		// Fast retry loop — no delays, no lock cleanup
@@ -139,9 +180,23 @@ func WithLockRetry(ctx context.Context, repoPath string, cfg RetryConfig, operat
 				CleanStaleLocks(ctx, repoPath, cfg.Logger)
 				continue // Start next cycle immediately
 			}
-			// When WaitForActive is true, an active-lock timeout is terminal — MaxCycles does not apply.
-			return camperrors.WrapJoinf(ErrLockActive, waitErr, "%s failed: active lock persisted at %s",
-				cfg.OperationName, result.Active[0].Path)
+			// An active-lock timeout is terminal by default: MaxCycles does not
+			// apply, because a user waiting on the operation has already waited
+			// ActiveLockWait for an answer. A caller that budgeted for more of
+			// them absorbs this one and takes another cycle. Only a timeout is
+			// absorbed — a cancelled wait is the process being told to stop.
+			activeWaits++
+			if !errors.Is(waitErr, ErrLockTimeout) || activeWaits > cfg.MaxActiveLockWaits {
+				return camperrors.WrapJoinf(ErrLockActive, waitErr, "%s failed: active lock persisted at %s",
+					cfg.OperationName, result.Active[0].Path)
+			}
+			cfg.Logger.Debug("active lock persisted, waiting again",
+				"operation", cfg.OperationName,
+				"cycle", cycle,
+				"path", result.Active[0].Path,
+				"waits", activeWaits,
+				"budget", cfg.MaxActiveLockWaits)
+			continue
 		}
 
 		// Active locks found but not waiting — fail fast

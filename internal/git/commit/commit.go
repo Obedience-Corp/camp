@@ -203,7 +203,7 @@ func stageAndCommit(ctx context.Context, opts Options, message string) (string, 
 		if err := git.ReadTreeIntoTempIndex(ctx, opts.CampaignRoot, tmpPath); err != nil {
 			return "", err
 		}
-		if err := git.AddPathsToTempIndex(ctx, opts.CampaignRoot, tmpPath, opts.Files); err != nil {
+		if err := git.AddPathsToTempIndex(ctx, opts.CampaignRoot, tmpPath, opts.Files, nil); err != nil {
 			return "", err
 		}
 		if err := git.ApplyCachedDiffToTempIndex(ctx, opts.CampaignRoot, tmpPath, opts.PreStaged); err != nil {
@@ -229,7 +229,7 @@ func stageAndCommit(ctx context.Context, opts Options, message string) (string, 
 	}
 	hash := git.HeadSHA(ctx, opts.CampaignRoot)
 	enqueueManifestRecords(ctx, opts.CampaignRoot)
-	if err := git.ResetIndexToHead(ctx, opts.CampaignRoot, expandedScope); err != nil {
+	if err := git.ResetIndexToHead(ctx, opts.CampaignRoot, expandedScope, nil); err != nil {
 		return "", err
 	}
 	return hash, nil

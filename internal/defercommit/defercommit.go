@@ -11,7 +11,6 @@ package defercommit
 
 import (
 	"context"
-	"errors"
 	"os"
 	"strings"
 
@@ -156,34 +155,26 @@ func EnqueuePaths(ctx context.Context, campaignRoot, repoPath, message string, p
 	// recorded paths would defer the read as well as the write, so an edit made
 	// between the enqueue and the run would land under this message.
 	//
-	// A capture failure degrades to a path-only job rather than costing the
-	// user their commit: the coalescing risk is real but smaller than not
-	// committing at all, and the failure is a repository camp could not read.
-	// Degrading silently is not an option, so the worker log records it; the
-	// job itself also shows it, since a captured job carries blobs.
+	// A capture camp cannot complete therefore refuses the job rather than
+	// queueing a coarser one. A path-only job is not a smaller promise, it is a
+	// different one: it commits whatever those paths hold when the worker runs,
+	// minutes later, under a message written for what they held now. That
+	// substitution is invisible in the commit it produces, which is the reason
+	// it cannot be the fallback — the honest fallback already exists, and it is
+	// the synchronous commit the caller falls through to, which captures
+	// exactly the content the user is looking at.
 	//
-	// A nested repository is the exception, because there the degraded job is
-	// wrong rather than merely coarser. See the refusal below.
-	blobs, err := git.CaptureBlobs(ctx, repoPath, paths)
-	switch {
-	case errors.Is(err, git.ErrNestedRepo):
-		// A submodule cannot be deferred at all, so this is the one capture
-		// failure that refuses the job rather than degrading it. Git records
-		// the path as a gitlink pointing at the nested HEAD, which is neither
-		// something the enqueuer can snapshot nor something a job may commit
-		// from an execution-time read: `camp project add` would publish
-		// whatever that submodule's HEAD had become by the time the worker
-		// ran. Returning an error puts the caller back on the synchronous
-		// path, where `git add` records the pointer the user just created.
+	// A nested repository is the same refusal for a sharper reason. Git records
+	// the path as a gitlink pointing at the nested HEAD, which is neither
+	// something the enqueuer can snapshot nor something a job may commit from
+	// an execution-time read: `camp project add` would publish whatever that
+	// submodule's HEAD had become by the time the worker ran.
+	blobs, err := captureBlobs(ctx, repoPath, paths)
+	if err != nil {
 		jobs.LogEvent(campaignRoot,
 			"capture-refused repo=%s paths=%d err=%v; committing synchronously instead",
 			jobs.RepoForPath(campaignRoot, repoPath), len(paths), err)
 		return nil, err
-	case err != nil:
-		jobs.LogEvent(campaignRoot,
-			"capture-degraded repo=%s paths=%d err=%v; the job will commit execution-time content",
-			jobs.RepoForPath(campaignRoot, repoPath), len(paths), err)
-		blobs = nil
 	}
 
 	return jobs.Enqueue(ctx, campaignRoot, jobs.Job{
@@ -195,6 +186,13 @@ func EnqueuePaths(ctx context.Context, campaignRoot, repoPath, message string, p
 		Message: message,
 	})
 }
+
+// captureBlobs is the enqueue-time snapshot.
+//
+// A variable so a test can drive the refusal above without building a
+// repository camp cannot read. git.CaptureBlobs is always what runs in
+// production.
+var captureBlobs = git.CaptureBlobs
 
 // toJobBlobs converts captured content into the job document's form.
 func toJobBlobs(refs []git.BlobRef) []jobs.BlobRef {
