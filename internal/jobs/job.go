@@ -143,10 +143,12 @@ type Job struct {
 	Tree string `json:"tree,omitempty"`
 	// Parent is the HEAD the tree was captured against. Empty means HEAD was
 	// unborn: the captured tree is a root commit. If HEAD moves before
-	// execution, the job succeeds only when later history explicitly
-	// versioned every captured path and the real index no longer holds
-	// queued work; otherwise it fails rather than replaying the tree onto a
-	// parent the user did not choose.
+	// execution, the job succeeds when later history already versioned every
+	// captured path, and otherwise re-applies the change this snapshot made
+	// on top of what landed. The tree is never simply re-parented: it is a
+	// whole-repository snapshot, so hanging it off a newer commit would
+	// revert every path that commit touched. A content conflict fails the
+	// job rather than being resolved on the user's behalf.
 	Parent string `json:"parent,omitempty"`
 	// Message is the commit message. Empty with AutoWrite set means the worker
 	// generates it.

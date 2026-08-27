@@ -820,15 +820,20 @@ func TestIntegration_EmptyStagedTreeDoesNotDefer(t *testing.T) {
 		"empty snapshot must not leave a failed job; camp jobs:\n%s", jobsOut)
 }
 
-// A failed job that can never be retried must not be advertised as retryable.
+// A job that failed for a reason unrelated to the moved HEAD is still
+// retryable, and the listing must say so.
 //
-// The queue's advice is the only thing standing between a user and a loop with
-// no exit: retrying a job whose parent moved fails identically every time.
-func TestIntegration_SupersededJobIsNotOfferedForRetry(t *testing.T) {
+// The re-application changed what "superseded" means. It used to be enough
+// that HEAD had moved, because the worker refused to replay onto a parent the
+// user did not choose; now a moved HEAD is only terminal when the captured
+// change conflicts with what landed. A listing that still called this one
+// beyond retry would offer `camp jobs drop` for work a retry would commit,
+// which is camp telling a user to throw away a recoverable commit.
+func TestIntegration_JobFailedForAnotherReasonStaysRetryableAfterHeadMoves(t *testing.T) {
 	tc := GetSharedContainer(t)
 	tc.EnableDeferral()
-	campPath, _ := setupDrainCampaign(t, tc, "aw-defer-superseded")
-	configureWriter(t, tc, campPath, "slow")
+	campPath, _ := setupDrainCampaign(t, tc, "aw-defer-retryable")
+	configureWriter(t, tc, campPath, "broken")
 
 	tc.Shell(t, fmt.Sprintf(`
 		cd %s
@@ -839,9 +844,88 @@ func TestIntegration_SupersededJobIsNotOfferedForRetry(t *testing.T) {
 	require.NoError(t, err)
 	require.Equal(t, 0, exitCode, "stderr:\n%s", stderr)
 
+	// HEAD moves, but to something the captured change merges with cleanly.
+	// The job fails on the writer, not on the move.
+	commitWithScratchIndex(t, tc, campPath, "unrelated.md")
+
+	_, _, _, err = tc.RunCampSplitInDir(campPath, "jobs", "drain")
+	require.NoError(t, err)
+
+	stdout, _, _, err := tc.RunCampSplitInDir(campPath, "jobs")
+	require.NoError(t, err)
+	assert.NotContains(t, stdout, "cannot retry",
+		"a writer failure over a cleanly re-appliable change is retryable; camp jobs:\n%s", stdout)
+
+	jsonOut, _, _, err := tc.RunCampSplitInDir(campPath, "jobs", "--json")
+	require.NoError(t, err)
+	assert.Contains(t, jsonOut, `"superseded": false`,
+		"--json must not report a retryable job as superseded; output:\n%s", jsonOut)
+
+	// And the claim is true: with the writer fixed, the retry lands the commit
+	// on top of the interloper. The command is rewritten in place rather than
+	// appended, because a second `hooks:` block would be a duplicate YAML key
+	// and the config would stop describing either writer.
+	tc.Shell(t, fmt.Sprintf(`
+		mkdir -p /writers
+		cat > /writers/retryable-fixed.sh <<'SCRIPT'
+#!/bin/sh
+echo "deferred: the fixed writer finished"
+SCRIPT
+		chmod +x /writers/retryable-fixed.sh
+		cd %s
+		sed -i 's|/writers/broken.sh|/writers/retryable-fixed.sh|' .campaign/campaign.yaml
+	`, campPath))
+	_, _, _, err = tc.RunCampSplitInDir(campPath, "jobs", "retry", "all")
+	require.NoError(t, err)
+	_, _, _, err = tc.RunCampSplitInDir(campPath, "jobs", "drain")
+	require.NoError(t, err)
+
+	assert.Contains(t, headSubject(t, tc, campPath), "the fixed writer finished",
+		"the retried job must land under the writer's message")
+	tracked := tc.GitOutput(t, campPath, "ls-tree", "-r", "--name-only", "HEAD")
+	assert.Contains(t, tracked, "queued.md",
+		"the retried job must land the captured change; tree:\n%s", tracked)
+	assert.Contains(t, tracked, "unrelated.md",
+		"the retry must not revert the interloper; tree:\n%s", tracked)
+}
+
+// A failed job that can never be retried must not be advertised as retryable.
+//
+// The queue's advice is the only thing standing between a user and a loop with
+// no exit: retrying a job whose parent moved fails identically every time.
+func TestIntegration_SupersededJobIsNotOfferedForRetry(t *testing.T) {
+	tc := GetSharedContainer(t)
+	tc.EnableDeferral()
+	campPath, _ := setupDrainCampaign(t, tc, "aw-defer-superseded")
+	configureWriter(t, tc, campPath, "slow")
+
+	// A moved HEAD alone is no longer beyond retry: the worker re-applies the
+	// captured change onto it. What is beyond retry is a conflicting edit to
+	// the same lines, so that is what this fixture builds.
+	tc.Shell(t, fmt.Sprintf(`
+		cd %s
+		printf 'original\n' > contested.md
+		git add -- contested.md
+		git commit -q -m "add the contested file"
+		printf 'queued\n' > contested.md
+	`, campPath))
+
+	_, stderr, exitCode, err := tc.RunCampSplitInDir(campPath, "commit", "--auto-write")
+	require.NoError(t, err)
+	require.Equal(t, 0, exitCode, "stderr:\n%s", stderr)
+
 	// Move HEAD without carrying the queued snapshot, so the job is genuinely
 	// superseded rather than already fulfilled by the later commit.
-	commitWithScratchIndex(t, tc, campPath, "superseding.md")
+	tc.Shell(t, fmt.Sprintf(`
+		cd %s
+		index=/tmp/camp-autowrite-superseded.index
+		rm -f "$index"
+		GIT_INDEX_FILE="$index" git read-tree HEAD
+		printf 'superseding\n' > contested.md
+		GIT_INDEX_FILE="$index" git add -- contested.md
+		GIT_INDEX_FILE="$index" git commit -q -m "committed independently while the job was queued"
+		rm -f "$index"
+	`, campPath))
 
 	_, _, _, err = tc.RunCampSplitInDir(campPath, "jobs", "drain")
 	require.NoError(t, err)
