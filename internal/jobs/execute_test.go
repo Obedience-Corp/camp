@@ -1,6 +1,11 @@
 package jobs
 
-import "testing"
+import (
+	"context"
+	"testing"
+
+	"github.com/Obedience-Corp/camp/internal/git"
+)
 
 // The forbidden list is a claim about what the worker *can* do, not what it
 // currently happens to do. A deferred job runs after the user's terminal has
@@ -127,5 +132,75 @@ func TestIsLaneLockName(t *testing.T) {
 				t.Errorf("isLaneLockName(%q) = %v, want %v", tc.name, got, tc.want)
 			}
 		})
+	}
+}
+
+// Every job the worker runs commits under the background lock-retry profile.
+//
+// This is the whole of the index.lock fix. The interactive profile gives up
+// after six attempts and one five-second wait for a lock another process
+// holds — right for a person watching a prompt, wrong for a detached worker
+// whose failure parks the commit instead of retrying it. A campaign several
+// agent sessions commit into loses that race routinely, and the campaign's own
+// worker log has three parked jobs to show for it.
+func TestDeferredCommitsRunUnderTheBackgroundRetryProfile(t *testing.T) {
+	background := git.BackgroundRetryConfig()
+
+	cases := []struct {
+		name string
+		job  Job
+	}{
+		{
+			name: "captured content",
+			job: Job{ID: "job-blobs", Kind: KindCommitPaths, Repo: ".",
+				Paths:   []string{"note.md"},
+				Blobs:   []BlobRef{{Path: "note.md", Mode: "100644", SHA: "0123456789abcdef0123456789abcdef01234567"}},
+				Message: "m"},
+		},
+		{
+			name: "paths only",
+			job: Job{ID: "job-paths", Kind: KindCommitPaths, Repo: ".",
+				Paths: []string{"note.md"}, Message: "m"},
+		},
+	}
+
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			originalBlobs, originalScoped := commitBlobs, commitScoped
+			t.Cleanup(func() { commitBlobs, commitScoped = originalBlobs, originalScoped })
+
+			var seen *git.CommitOptions
+			commitBlobs = func(_ context.Context, _ string, _ []git.BlobRef, opts *git.CommitOptions) error {
+				seen = opts
+				return nil
+			}
+			commitScoped = func(_ context.Context, _ string, _ []string, opts *git.CommitOptions) error {
+				seen = opts
+				return nil
+			}
+
+			if err := executeCommitPaths(context.Background(), t.TempDir(), &tc.job); err != nil {
+				t.Fatalf("executeCommitPaths() error = %v", err)
+			}
+			if seen == nil || seen.Retry == nil {
+				t.Fatal("the worker committed under the default retry profile; a lost index.lock race parks the job")
+			}
+			if *seen.Retry != background {
+				t.Errorf("retry profile = %+v, want the background profile %+v", *seen.Retry, background)
+			}
+		})
+	}
+}
+
+// A fresh copy per call, so a job that mutated its profile could not change
+// the one the next job runs under.
+func TestWorkerRetryHandsOutIndependentProfiles(t *testing.T) {
+	first, second := WorkerRetry(), WorkerRetry()
+	if first == second {
+		t.Fatal("WorkerRetry returned the same pointer twice; one job could retune every other job's patience")
+	}
+	first.MaxCycles = 99
+	if second.MaxCycles == 99 {
+		t.Fatal("WorkerRetry profiles share state")
 	}
 }

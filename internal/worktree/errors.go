@@ -9,19 +9,19 @@ import (
 
 // Error codes for worktree operations.
 const (
-	ErrCodeProjectNotFound      = "WORKTREE_PROJECT_NOT_FOUND"
-	ErrCodeWorktreeExists       = "WORKTREE_ALREADY_EXISTS"
-	ErrCodeWorktreeNotFound     = "WORKTREE_NOT_FOUND"
+	ErrCodeProjectNotFound     = "WORKTREE_PROJECT_NOT_FOUND"
+	ErrCodeWorktreeExists      = "WORKTREE_ALREADY_EXISTS"
+	ErrCodeWorktreeNotFound    = "WORKTREE_NOT_FOUND"
 	ErrCodeBranchNotFound      = "WORKTREE_BRANCH_NOT_FOUND"
 	ErrCodeBranchExists        = "WORKTREE_BRANCH_EXISTS"
-	ErrCodeRemoteBranchExists   = "WORKTREE_REMOTE_BRANCH_EXISTS"
-	ErrCodeInvalidName          = "WORKTREE_INVALID_NAME"
+	ErrCodeRemoteBranchExists  = "WORKTREE_REMOTE_BRANCH_EXISTS"
+	ErrCodeInvalidName         = "WORKTREE_INVALID_NAME"
 	ErrCodeGitFailed           = "WORKTREE_GIT_FAILED"
-	ErrCodeStaleWorktree        = "WORKTREE_STALE"
-	ErrCodeCorrupted            = "WORKTREE_CORRUPTED"
-	ErrCodeNotInWorktree        = "WORKTREE_NOT_IN_WORKTREE"
-	ErrCodeRemovalFailed        = "WORKTREE_REMOVAL_FAILED"
-	ErrCodeCrossProjectSymlink  = "WORKTREE_CROSS_PROJECT_SYMLINK"
+	ErrCodeStaleWorktree       = "WORKTREE_STALE"
+	ErrCodeCorrupted           = "WORKTREE_CORRUPTED"
+	ErrCodeNotInWorktree       = "WORKTREE_NOT_IN_WORKTREE"
+	ErrCodeRemovalFailed       = "WORKTREE_REMOVAL_FAILED"
+	ErrCodeCrossProjectSymlink = "WORKTREE_CROSS_PROJECT_SYMLINK"
 )
 
 // Sentinel errors for common cases.

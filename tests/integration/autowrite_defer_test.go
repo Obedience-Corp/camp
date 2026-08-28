@@ -179,13 +179,14 @@ func TestIntegration_DeferredCommitIgnoresLaterEdits(t *testing.T) {
 		"the later edit must be left uncommitted, not silently absorbed")
 }
 
-// Deferred criterion 2d: if HEAD moved since the enqueue, the job fails and
-// says so. It never rebases.
+// Deferred criterion 2d: if HEAD moved since the enqueue, the job re-applies
+// its captured change on top of whatever landed. It never discards either side.
 //
-// Replaying a queued commit onto someone else's commit would produce a tree
-// nobody chose. Failing is the only honest outcome, and the failure has to be
-// visible rather than silent.
-func TestIntegration_DeferredCommitFailsWhenHeadMoved(t *testing.T) {
+// The queued commit is not abandoned and the interloper is not overwritten.
+// What lands is the commit the same work would have produced had it run in the
+// foreground after the interloper rather than before it: their content, plus
+// the captured change, under the message the writer wrote for that change.
+func TestIntegration_DeferredCommitReappliesWhenHeadMoved(t *testing.T) {
 	tc := GetSharedContainer(t)
 	tc.EnableDeferral()
 	campPath, _ := setupDrainCampaign(t, tc, "aw-defer-2d")
@@ -204,27 +205,96 @@ func TestIntegration_DeferredCommitFailsWhenHeadMoved(t *testing.T) {
 	// scratch index is essential here: an ordinary commit would sweep the
 	// queued paths that Camp deliberately leaves staged, fulfilling the job.
 	commitWithScratchIndex(t, tc, campPath, "interloper.md")
+	interloper := strings.TrimSpace(tc.GitOutput(t, campPath, "rev-parse", "HEAD"))
 
-	beforeDrain := strings.TrimSpace(tc.GitOutput(t, campPath, "rev-parse", "HEAD"))
-
-	// The drain reports the failure rather than hanging: the job leaves
-	// pending/, so the wait ends.
 	_, _, _, err = tc.RunCampSplitInDir(campPath, "jobs", "drain")
 	require.NoError(t, err)
 
 	afterDrain := strings.TrimSpace(tc.GitOutput(t, campPath, "rev-parse", "HEAD"))
-	assert.Equal(t, beforeDrain, afterDrain,
-		"a job whose parent moved must not touch HEAD")
+	assert.NotEqual(t, interloper, afterDrain,
+		"the queued commit must land rather than be abandoned")
+	assert.Equal(t, interloper, strings.TrimSpace(tc.GitOutput(t, campPath, "rev-parse", "HEAD^")),
+		"the deferred commit must sit on top of the interloper, not replace it")
 
-	subject := headSubject(t, tc, campPath)
-	assert.Contains(t, subject, "committed independently",
-		"the interloping commit must still be HEAD; camp must never rebase over it")
+	assert.Contains(t, headSubject(t, tc, campPath), "deferred: the slow writer finished",
+		"the landed commit must carry the writer's message for the captured change")
 
-	// The failure is visible, both in the queue and on the next command.
+	tracked := tc.GitOutput(t, campPath, "ls-tree", "-r", "--name-only", "HEAD")
+	assert.Contains(t, tracked, "queued.md",
+		"the captured change must be in the tree; tree:\n%s", tracked)
+	assert.Contains(t, tracked, "interloper.md",
+		"re-applying must not revert the interloper's work; tree:\n%s", tracked)
+
 	stdout, _, _, err := tc.RunCampSplitInDir(campPath, "jobs")
 	require.NoError(t, err)
-	assert.Contains(t, stdout, "failed",
-		"the job must be parked as failed, not vanish; camp jobs:\n%s", stdout)
+	assert.NotContains(t, stdout, "failed",
+		"a re-applied job must not be parked; camp jobs:\n%s", stdout)
+
+	_, stderr, _, err = tc.RunCampSplitInDir(campPath, "status", "--short")
+	require.NoError(t, err)
+	assert.NotContains(t, stderr, "deferred commit failed",
+		"nothing failed; stderr:\n%s", stderr)
+}
+
+// The fallback the re-application does not remove: a content conflict still
+// fails the job, visibly, and leaves the interloper as HEAD.
+//
+// Re-applying is safe only because it is a three-way merge git resolved
+// cleanly. When the two commits disagree about the same lines there is no
+// answer camp can pick on its own, and the tree git produces there carries
+// conflict markers, so landing it would put them in history.
+func TestIntegration_DeferredCommitFailsWhenReapplyConflicts(t *testing.T) {
+	tc := GetSharedContainer(t)
+	tc.EnableDeferral()
+	campPath, _ := setupDrainCampaign(t, tc, "aw-defer-conflict")
+	configureWriter(t, tc, campPath, "slow")
+
+	// A tracked file both sides will edit differently.
+	tc.Shell(t, fmt.Sprintf(`
+		cd %s
+		printf 'original\n' > contested.md
+		git add -- contested.md
+		git commit -q -m "add the contested file"
+	`, campPath))
+
+	tc.Shell(t, fmt.Sprintf(`
+		cd %s
+		printf 'queued edit\n' > contested.md
+	`, campPath))
+
+	_, stderr, exitCode, err := tc.RunCampSplitInDir(campPath, "commit", "--auto-write")
+	require.NoError(t, err)
+	require.Equal(t, 0, exitCode, "stderr:\n%s", stderr)
+
+	// The interloper edits the same file, through a scratch index so the
+	// queued content stays staged and out of their commit.
+	tc.Shell(t, fmt.Sprintf(`
+		cd %s
+		index=/tmp/camp-autowrite-conflict.index
+		rm -f "$index"
+		GIT_INDEX_FILE="$index" git read-tree HEAD
+		printf 'interloping edit\n' > contested.md
+		GIT_INDEX_FILE="$index" git add -- contested.md
+		GIT_INDEX_FILE="$index" git commit -q -m "committed independently while the job was queued"
+		rm -f "$index"
+	`, campPath))
+
+	beforeDrain := strings.TrimSpace(tc.GitOutput(t, campPath, "rev-parse", "HEAD"))
+
+	_, _, _, err = tc.RunCampSplitInDir(campPath, "jobs", "drain")
+	require.NoError(t, err)
+
+	assert.Equal(t, beforeDrain, strings.TrimSpace(tc.GitOutput(t, campPath, "rev-parse", "HEAD")),
+		"a conflicting job must not touch HEAD")
+	assert.Contains(t, headSubject(t, tc, campPath), "committed independently",
+		"the interloping commit must still be HEAD")
+
+	jobsOut, _, _, err := tc.RunCampSplitInDir(campPath, "jobs", "--json")
+	require.NoError(t, err)
+	assert.Contains(t, jobsOut, "HEAD moved since this commit was queued",
+		"the failure must keep the HEAD-moved contract; camp jobs --json:\n%s", jobsOut)
+	assert.Contains(t, jobsOut, "conflict",
+		"the failure must say the re-application conflicted; camp jobs --json:\n%s", jobsOut)
 
 	_, stderr, _, err = tc.RunCampSplitInDir(campPath, "status", "--short")
 	require.NoError(t, err)
@@ -597,16 +667,18 @@ func TestIntegration_AutoWriteDefersOnUnbornHead(t *testing.T) {
 }
 
 // A deferred --auto-write captured on an unborn HEAD (empty Job.Parent) must
-// fail cleanly, with the same "HEAD moved" contract as a born-HEAD job, when
-// someone else creates the repository's actual first commit while the writer
-// is still running and that commit does not carry the queued paths.
+// re-apply onto the repository's actual first commit when someone else creates
+// it while the writer is still running. An empty Parent measures the captured
+// change from the empty tree, which is the same three-way merge every other
+// re-application does.
 //
 // Regression: FirstParentChainContainsOrSupersedesTreeChanges diffed an empty
 // Parent as a literal empty-string git revision, which git rejects as an
 // ambiguous argument, so the worker surfaced that raw plumbing error instead
 // of the "HEAD is no longer unborn" message every other HEAD-moved failure
-// gets.
-func TestIntegration_DeferredCommitFailsWhenUnbornHeadRaced(t *testing.T) {
+// gets. That message is still the failure's, and the conflicting case below
+// keeps it under test.
+func TestIntegration_DeferredCommitReappliesWhenUnbornHeadRaced(t *testing.T) {
 	tc := GetSharedContainer(t)
 	tc.EnableDeferral()
 
@@ -642,15 +714,69 @@ func TestIntegration_DeferredCommitFailsWhenUnbornHeadRaced(t *testing.T) {
 		rm -f "$index"
 	`, campPath))
 
+	interloper := strings.TrimSpace(tc.GitOutput(t, campPath, "rev-parse", "HEAD"))
+
 	_, _, _, err = tc.RunCampSplitInDir(campPath, "jobs", "drain")
 	require.NoError(t, err)
 
-	head := strings.TrimSpace(tc.GitOutput(t, campPath, "rev-parse", "HEAD"))
-	assert.NotEmpty(t, head, "the interloper's commit must still exist")
+	assert.Equal(t, interloper, strings.TrimSpace(tc.GitOutput(t, campPath, "rev-parse", "HEAD^")),
+		"the deferred commit must sit on top of the repository's real first commit")
 
-	subject := headSubject(t, tc, campPath)
-	assert.Contains(t, subject, "committed independently",
-		"the interloping commit must still be HEAD; camp must never rebase over it")
+	tracked := tc.GitOutput(t, campPath, "ls-tree", "-r", "--name-only", "HEAD")
+	assert.Contains(t, tracked, "queued.md",
+		"the captured change must be in the tree; tree:\n%s", tracked)
+	assert.Contains(t, tracked, "interloper.md",
+		"re-applying must not revert the first commit; tree:\n%s", tracked)
+
+	jobsOut, _, _, err := tc.RunCampSplitInDir(campPath, "jobs", "--json")
+	require.NoError(t, err)
+	assert.NotContains(t, jobsOut, "ambiguous argument",
+		"an empty Parent must not reach git as a literal revision string; camp jobs --json:\n%s", jobsOut)
+}
+
+// The unborn half of the conflict fallback: when the first commit someone else
+// makes disagrees with the captured snapshot, the job fails with the
+// unborn-HEAD contract rather than a raw git error.
+func TestIntegration_DeferredCommitFailsWhenUnbornReapplyConflicts(t *testing.T) {
+	tc := GetSharedContainer(t)
+	tc.EnableDeferral()
+
+	campPath := "/campaigns/aw-defer-unborn-conflict"
+	_, err := tc.RunCamp("init", campPath, "--name", "aw-defer-unborn-conflict",
+		"-d", "Test campaign", "-m", "Test mission", "--type", "product")
+	require.NoError(t, err)
+
+	_, exitCode, err := tc.ExecCommand("git", "-C", campPath, "rev-parse", "--verify", "HEAD")
+	require.NoError(t, err)
+	require.NotEqual(t, 0, exitCode, "fixture is not reproducing an unborn HEAD; HEAD already resolves")
+
+	configureWriter(t, tc, campPath, "slow")
+	tc.Shell(t, fmt.Sprintf(`
+		cd %s
+		printf 'queued\n' > contested.md
+	`, campPath))
+
+	_, stderr, exitCode, err := tc.RunCampSplitInDir(campPath, "commit", "--auto-write")
+	require.NoError(t, err)
+	require.Equal(t, 0, exitCode, "stderr:\n%s", stderr)
+
+	// The real first commit lands with different content at the same path, so
+	// there is no merge from the empty tree that camp can pick on its own.
+	tc.Shell(t, fmt.Sprintf(`
+		cd %s
+		index=/tmp/camp-autowrite-unborn-conflict.index
+		rm -f "$index"
+		printf 'interloping\n' > contested.md
+		GIT_INDEX_FILE="$index" git add -- contested.md
+		GIT_INDEX_FILE="$index" git commit -q -m "committed independently before the queued job landed"
+		rm -f "$index"
+	`, campPath))
+
+	_, _, _, err = tc.RunCampSplitInDir(campPath, "jobs", "drain")
+	require.NoError(t, err)
+
+	assert.Contains(t, headSubject(t, tc, campPath), "committed independently",
+		"the interloping commit must still be HEAD")
 
 	jobsOut, _, _, err := tc.RunCampSplitInDir(campPath, "jobs", "--json")
 	require.NoError(t, err)
@@ -694,15 +820,20 @@ func TestIntegration_EmptyStagedTreeDoesNotDefer(t *testing.T) {
 		"empty snapshot must not leave a failed job; camp jobs:\n%s", jobsOut)
 }
 
-// A failed job that can never be retried must not be advertised as retryable.
+// A job that failed for a reason unrelated to the moved HEAD is still
+// retryable, and the listing must say so.
 //
-// The queue's advice is the only thing standing between a user and a loop with
-// no exit: retrying a job whose parent moved fails identically every time.
-func TestIntegration_SupersededJobIsNotOfferedForRetry(t *testing.T) {
+// The re-application changed what "superseded" means. It used to be enough
+// that HEAD had moved, because the worker refused to replay onto a parent the
+// user did not choose; now a moved HEAD is only terminal when the captured
+// change conflicts with what landed. A listing that still called this one
+// beyond retry would offer `camp jobs drop` for work a retry would commit,
+// which is camp telling a user to throw away a recoverable commit.
+func TestIntegration_JobFailedForAnotherReasonStaysRetryableAfterHeadMoves(t *testing.T) {
 	tc := GetSharedContainer(t)
 	tc.EnableDeferral()
-	campPath, _ := setupDrainCampaign(t, tc, "aw-defer-superseded")
-	configureWriter(t, tc, campPath, "slow")
+	campPath, _ := setupDrainCampaign(t, tc, "aw-defer-retryable")
+	configureWriter(t, tc, campPath, "broken")
 
 	tc.Shell(t, fmt.Sprintf(`
 		cd %s
@@ -713,9 +844,88 @@ func TestIntegration_SupersededJobIsNotOfferedForRetry(t *testing.T) {
 	require.NoError(t, err)
 	require.Equal(t, 0, exitCode, "stderr:\n%s", stderr)
 
+	// HEAD moves, but to something the captured change merges with cleanly.
+	// The job fails on the writer, not on the move.
+	commitWithScratchIndex(t, tc, campPath, "unrelated.md")
+
+	_, _, _, err = tc.RunCampSplitInDir(campPath, "jobs", "drain")
+	require.NoError(t, err)
+
+	stdout, _, _, err := tc.RunCampSplitInDir(campPath, "jobs")
+	require.NoError(t, err)
+	assert.NotContains(t, stdout, "cannot retry",
+		"a writer failure over a cleanly re-appliable change is retryable; camp jobs:\n%s", stdout)
+
+	jsonOut, _, _, err := tc.RunCampSplitInDir(campPath, "jobs", "--json")
+	require.NoError(t, err)
+	assert.Contains(t, jsonOut, `"superseded": false`,
+		"--json must not report a retryable job as superseded; output:\n%s", jsonOut)
+
+	// And the claim is true: with the writer fixed, the retry lands the commit
+	// on top of the interloper. The command is rewritten in place rather than
+	// appended, because a second `hooks:` block would be a duplicate YAML key
+	// and the config would stop describing either writer.
+	tc.Shell(t, fmt.Sprintf(`
+		mkdir -p /writers
+		cat > /writers/retryable-fixed.sh <<'SCRIPT'
+#!/bin/sh
+echo "deferred: the fixed writer finished"
+SCRIPT
+		chmod +x /writers/retryable-fixed.sh
+		cd %s
+		sed -i 's|/writers/broken.sh|/writers/retryable-fixed.sh|' .campaign/campaign.yaml
+	`, campPath))
+	_, _, _, err = tc.RunCampSplitInDir(campPath, "jobs", "retry", "all")
+	require.NoError(t, err)
+	_, _, _, err = tc.RunCampSplitInDir(campPath, "jobs", "drain")
+	require.NoError(t, err)
+
+	assert.Contains(t, headSubject(t, tc, campPath), "the fixed writer finished",
+		"the retried job must land under the writer's message")
+	tracked := tc.GitOutput(t, campPath, "ls-tree", "-r", "--name-only", "HEAD")
+	assert.Contains(t, tracked, "queued.md",
+		"the retried job must land the captured change; tree:\n%s", tracked)
+	assert.Contains(t, tracked, "unrelated.md",
+		"the retry must not revert the interloper; tree:\n%s", tracked)
+}
+
+// A failed job that can never be retried must not be advertised as retryable.
+//
+// The queue's advice is the only thing standing between a user and a loop with
+// no exit: retrying a job whose parent moved fails identically every time.
+func TestIntegration_SupersededJobIsNotOfferedForRetry(t *testing.T) {
+	tc := GetSharedContainer(t)
+	tc.EnableDeferral()
+	campPath, _ := setupDrainCampaign(t, tc, "aw-defer-superseded")
+	configureWriter(t, tc, campPath, "slow")
+
+	// A moved HEAD alone is no longer beyond retry: the worker re-applies the
+	// captured change onto it. What is beyond retry is a conflicting edit to
+	// the same lines, so that is what this fixture builds.
+	tc.Shell(t, fmt.Sprintf(`
+		cd %s
+		printf 'original\n' > contested.md
+		git add -- contested.md
+		git commit -q -m "add the contested file"
+		printf 'queued\n' > contested.md
+	`, campPath))
+
+	_, stderr, exitCode, err := tc.RunCampSplitInDir(campPath, "commit", "--auto-write")
+	require.NoError(t, err)
+	require.Equal(t, 0, exitCode, "stderr:\n%s", stderr)
+
 	// Move HEAD without carrying the queued snapshot, so the job is genuinely
 	// superseded rather than already fulfilled by the later commit.
-	commitWithScratchIndex(t, tc, campPath, "superseding.md")
+	tc.Shell(t, fmt.Sprintf(`
+		cd %s
+		index=/tmp/camp-autowrite-superseded.index
+		rm -f "$index"
+		GIT_INDEX_FILE="$index" git read-tree HEAD
+		printf 'superseding\n' > contested.md
+		GIT_INDEX_FILE="$index" git add -- contested.md
+		GIT_INDEX_FILE="$index" git commit -q -m "committed independently while the job was queued"
+		rm -f "$index"
+	`, campPath))
 
 	_, _, _, err = tc.RunCampSplitInDir(campPath, "jobs", "drain")
 	require.NoError(t, err)

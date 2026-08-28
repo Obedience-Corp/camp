@@ -355,25 +355,26 @@ func renderJobsHuman(cmd *cobra.Command, entries []jobs.Entry, superseded map[st
 	if failed > 0 {
 		_, _ = fmt.Fprintln(out)
 		// Retry is only offered when retrying could actually work. A job
-		// whose parent is no longer HEAD fails identically every time, so
-		// naming the command that does that would send the user around a
-		// loop with no exit.
+		// whose captured changes conflict with what landed fails identically
+		// every time, so naming the command that does that would send the
+		// user around a loop with no exit. A moved parent on its own is not
+		// that case: the worker re-applies onto it.
 		switch stale {
 		case 0:
 			_, _ = fmt.Fprintln(out, ui.Dim(
 				"Retry them with 'camp jobs retry all', or give up with 'camp jobs drop <id>'."))
 		case failed:
 			_, _ = fmt.Fprintln(out, ui.Dim(
-				"Retrying will not help: history moved past the commit these were queued"))
+				"Retrying will not help: what landed since conflicts with what these were"))
 			_, _ = fmt.Fprintln(out, ui.Dim(
-				"against. Drop them with 'camp jobs drop <id>'."))
+				"queued to commit. Drop them with 'camp jobs drop <id>'."))
 		default:
 			_, _ = fmt.Fprintln(out, ui.Dim(
 				"Retry them with 'camp jobs retry all', or give up with 'camp jobs drop <id>'."))
 			_, _ = fmt.Fprintln(out, ui.Dim(fmt.Sprintf(
-				"The %d marked 'cannot retry' will not come back: history moved past the", stale)))
+				"The %d marked 'cannot retry' will not come back: what landed since", stale)))
 			_, _ = fmt.Fprintln(out, ui.Dim(
-				"commit they were queued against. Drop those."))
+				"conflicts with what they were queued to commit. Drop those."))
 		}
 		_, _ = fmt.Fprintln(out, ui.Dim(
 			"Dropping keeps the files on disk; your next commit picks them up."))

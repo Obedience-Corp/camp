@@ -203,18 +203,21 @@ func stateRank(state string) int {
 // Superseded reports whether a failed job can never succeed on a retry because
 // history moved past the commit it was queued against.
 //
-// executeCommitTree refuses to replay a captured tree onto a parent the user
-// did not choose. A moved parent is retryable only when later history already
-// versioned or superseded every captured path; otherwise another attempt is
-// guaranteed to fail again. Telling a user to retry that job sends them around
-// a loop with no exit, which is worse than telling them nothing.
+// A moved parent is not terminal on its own. executeCommitTree re-applies the
+// captured change onto the new HEAD when the two do not conflict, so a job
+// that failed for any other reason still lands on a retry. What is terminal is
+// a content conflict: the same lines changed on both sides, which no further
+// attempt resolves. Telling a user to retry that job sends them around a loop
+// with no exit, which is worse than telling them nothing.
 //
 // A job whose commit already landed is deliberately not superseded. Retry is
 // the right action there: it recognizes its own work and clears the queue.
 //
 // Best effort by design. Anything unreadable answers false, because the cost
 // of a wrong "cannot retry" (a user drops recoverable work) is higher than the
-// cost of a wrong "try it" (they retry once and see it fail).
+// cost of a wrong "try it" (they retry once and see it fail). That is also why
+// only a definite conflict answers true: every other re-application failure is
+// something camp could not determine, not something it determined is hopeless.
 func Superseded(ctx context.Context, campaignRoot string, e Entry) bool {
 	if e.State != stateFailed || e.Kind != KindCommitTree {
 		return false
@@ -241,7 +244,8 @@ func Superseded(ctx context.Context, campaignRoot string, e Entry) bool {
 		ctx, repoPath, e.Parent, e.Tree, head); err == nil && integrated {
 		return false
 	}
-	return true
+	_, err = git.ReapplyTreeOnto(ctx, repoPath, e.Parent, e.Tree, head)
+	return camperrors.Is(err, git.ErrReapplyConflict)
 }
 
 // FailedCount reports how many jobs are parked in failed/.

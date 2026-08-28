@@ -170,3 +170,123 @@ func TestRetryLoop_ContextCancellation(t *testing.T) {
 		t.Fatalf("WithLockRetry() took %s, want prompt cancellation", elapsed)
 	}
 }
+
+// A worker with nobody waiting on it must outlast a burst of concurrent agent
+// sessions committing into one campaign root. The interactive profile gives up
+// after six attempts and a single five-second wait, which is about ten seconds
+// of patience in total; every index.lock failure in this campaign's worker log
+// is a job parked inside that window.
+func TestBackgroundRetryConfigOutlastsInteractive(t *testing.T) {
+	bg := BackgroundRetryConfig()
+	fg := DefaultRetryConfig()
+
+	if bg.MaxCycles <= fg.MaxCycles {
+		t.Errorf("background MaxCycles = %d, want more than the interactive %d",
+			bg.MaxCycles, fg.MaxCycles)
+	}
+	if bg.ActiveLockWait <= fg.ActiveLockWait {
+		t.Errorf("background ActiveLockWait = %v, want longer than the interactive %v",
+			bg.ActiveLockWait, fg.ActiveLockWait)
+	}
+	if bg.MaxActiveLockWaits < 1 {
+		t.Errorf("background MaxActiveLockWaits = %d, want at least one absorbed timeout",
+			bg.MaxActiveLockWaits)
+	}
+	if !bg.WaitForActive {
+		t.Error("background WaitForActive = false; a worker that will not wait for a live lock is the interactive profile")
+	}
+	// The interactive profile must stay impatient. A user in front of a prompt
+	// waits for an answer, not for another process to finish.
+	if fg.MaxActiveLockWaits != 0 {
+		t.Errorf("interactive MaxActiveLockWaits = %d, want 0 so a live lock reports on the first timeout",
+			fg.MaxActiveLockWaits)
+	}
+}
+
+// An active-lock timeout is terminal by default and absorbed up to the
+// caller's budget, which is the whole difference between a background worker
+// that keeps trying and one that parks a commit it was told to make.
+func TestWithLockRetryAbsorbsActiveLockTimeoutsWithinBudget(t *testing.T) {
+	cases := []struct {
+		name         string
+		budget       int
+		wantAttempts int
+	}{
+		{name: "no budget reports on the first timeout", budget: 0, wantAttempts: 1},
+		{name: "one absorbed timeout buys another cycle", budget: 1, wantAttempts: 2},
+		{name: "budget spent, then reports", budget: 3, wantAttempts: 4},
+	}
+
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			tmpDir := initTestRepo(t)
+			lockPath := filepath.Join(tmpDir, ".git", "index.lock")
+			f, err := os.Create(lockPath)
+			if err != nil {
+				t.Fatal(err)
+			}
+			t.Cleanup(func() {
+				_ = f.Close()
+				_ = os.Remove(lockPath)
+			})
+
+			cfg := DefaultRetryConfig()
+			cfg.AttemptsPerCycle = 1
+			cfg.MaxCycles = 20
+			cfg.InitialBackoff = time.Millisecond
+			cfg.MaxBackoff = time.Millisecond
+			cfg.ActiveLockWait = 20 * time.Millisecond
+			cfg.MaxActiveLockWaits = tc.budget
+			cfg.Logger = slog.New(slog.NewTextHandler(io.Discard, nil))
+			cfg.OperationName = "reset-index"
+
+			attempts := 0
+			err = WithLockRetry(context.Background(), tmpDir, cfg, func() error {
+				attempts++
+				return &LockError{Path: lockPath, Err: errors.New("index.lock exists")}
+			})
+			if !errors.Is(err, ErrLockActive) {
+				t.Fatalf("WithLockRetry() error = %v, want ErrLockActive", err)
+			}
+			if attempts != tc.wantAttempts {
+				t.Errorf("attempts = %d, want %d", attempts, tc.wantAttempts)
+			}
+		})
+	}
+}
+
+// Cancellation is not a timeout. A worker told to stop must return the
+// cancellation rather than spending its active-lock budget on it.
+func TestWithLockRetryDoesNotAbsorbCancellation(t *testing.T) {
+	tmpDir := initTestRepo(t)
+	lockPath := filepath.Join(tmpDir, ".git", "index.lock")
+	f, err := os.Create(lockPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() {
+		_ = f.Close()
+		_ = os.Remove(lockPath)
+	})
+
+	cfg := BackgroundRetryConfig()
+	cfg.AttemptsPerCycle = 1
+	cfg.InitialBackoff = time.Millisecond
+	cfg.MaxBackoff = time.Millisecond
+	cfg.ActiveLockWait = time.Minute
+	cfg.Logger = slog.New(slog.NewTextHandler(io.Discard, nil))
+
+	ctx, cancel := context.WithCancel(context.Background())
+	attempts := 0
+	err = WithLockRetry(ctx, tmpDir, cfg, func() error {
+		attempts++
+		cancel()
+		return &LockError{Path: lockPath, Err: errors.New("index.lock exists")}
+	})
+	if !errors.Is(err, context.Canceled) {
+		t.Fatalf("WithLockRetry() error = %v, want context.Canceled", err)
+	}
+	if attempts != 1 {
+		t.Errorf("attempts = %d, want 1; a cancelled wait must not buy another cycle", attempts)
+	}
+}

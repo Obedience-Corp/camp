@@ -2,7 +2,14 @@ package defercommit
 
 import (
 	"context"
+	"errors"
+	"io/fs"
+	"path/filepath"
 	"testing"
+
+	camperrors "github.com/Obedience-Corp/camp/internal/errors"
+	"github.com/Obedience-Corp/camp/internal/git"
+	"github.com/Obedience-Corp/camp/internal/jobs"
 )
 
 // Each refusal below is a correctness rule, not a preference. A copy of this
@@ -168,5 +175,107 @@ func TestRefusalOrderPutsTheUsersOwnSwitchFirst(t *testing.T) {
 	})
 	if why != RefusedDisabled {
 		t.Errorf("refusal = %q; the user's own switch must be reported first", why)
+	}
+}
+
+// queuedJobFiles counts the job documents a campaign's queue holds.
+func queuedJobFiles(t *testing.T, campaignRoot string) int {
+	t.Helper()
+	count := 0
+	err := filepath.WalkDir(jobs.QueueDir(campaignRoot), func(_ string, d fs.DirEntry, err error) error {
+		if err != nil {
+			return nil // the queue directory need not exist
+		}
+		if !d.IsDir() && filepath.Ext(d.Name()) == ".json" {
+			count++
+		}
+		return nil
+	})
+	if err != nil {
+		t.Fatalf("walk queue: %v", err)
+	}
+	return count
+}
+
+// A capture camp cannot complete refuses the job. It must never fall back to a
+// path-only one.
+//
+// A path-only job is not a coarser promise, it is a different one: it commits
+// whatever those paths hold when the worker runs, minutes later, under a
+// message written for what they held at enqueue. Nothing in the resulting
+// commit says the substitution happened, which is why it cannot be the
+// fallback — the caller's fallback is a synchronous commit of exactly the
+// content the user is looking at.
+func TestEnqueuePathsRefusesAnIncompleteCapture(t *testing.T) {
+	original := captureBlobs
+	t.Cleanup(func() { captureBlobs = original })
+
+	cases := []struct {
+		name       string
+		captureErr error
+	}{
+		{
+			name:       "nested repository",
+			captureErr: camperrors.Wrapf(git.ErrNestedRepo, "projects/festival-wails"),
+		},
+		{
+			// The live failure: a symlink git could not hash by name. Anything
+			// camp cannot read is this case.
+			name: "path camp could not read",
+			captureErr: camperrors.New(
+				"capture projects/obey-voice: git hash-object -w -- projects/obey-voice: fatal: Unable to add"),
+		},
+	}
+
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			root := t.TempDir()
+			captureBlobs = func(context.Context, string, []string) ([]git.BlobRef, error) {
+				return nil, tc.captureErr
+			}
+
+			job, err := EnqueuePaths(context.Background(), root, root, "bookkeeping", []string{"note.md"})
+			if !errors.Is(err, tc.captureErr) {
+				t.Fatalf("EnqueuePaths() error = %v, want the capture failure", err)
+			}
+			if job != nil {
+				t.Fatalf("EnqueuePaths() job = %+v, want none; a degraded job commits execution-time content", job)
+			}
+			if n := queuedJobFiles(t, root); n != 0 {
+				t.Fatalf("queue holds %d job(s) after a refused capture, want 0", n)
+			}
+		})
+	}
+}
+
+// The other half of the contract: a capture that succeeds queues a job that
+// carries the captured content, so the commit is a function of enqueue time.
+func TestEnqueuePathsQueuesCapturedContent(t *testing.T) {
+	original := captureBlobs
+	t.Cleanup(func() { captureBlobs = original })
+
+	root := t.TempDir()
+	captureBlobs = func(context.Context, string, []string) ([]git.BlobRef, error) {
+		return []git.BlobRef{{Path: "note.md", Mode: "100644", SHA: "0123456789abcdef0123456789abcdef01234567"}}, nil
+	}
+
+	job, err := EnqueuePaths(context.Background(), root, root, "bookkeeping", []string{"note.md"})
+	if err != nil {
+		t.Fatalf("EnqueuePaths() error = %v", err)
+	}
+	if len(job.Blobs) != 1 || job.Blobs[0].Path != "note.md" {
+		t.Fatalf("job blobs = %+v, want the captured note.md", job.Blobs)
+	}
+	if n := queuedJobFiles(t, root); n != 1 {
+		t.Fatalf("queue holds %d job(s), want 1", n)
+	}
+}
+
+// Cancellation is checked before anything is captured or written.
+func TestEnqueuePathsHonorsContextCancellation(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+	if _, err := EnqueuePaths(ctx, t.TempDir(), t.TempDir(), "m", []string{"note.md"}); !errors.Is(err, context.Canceled) {
+		t.Fatalf("EnqueuePaths() error = %v, want context.Canceled", err)
 	}
 }

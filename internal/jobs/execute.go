@@ -74,15 +74,12 @@ func executeCommitPaths(ctx context.Context, repoPath string, job *Job) error {
 	//
 	// The fallback exists for hand-written queue files and for jobs enqueued
 	// by an older camp, which have paths and no blobs.
+	opts := &git.CommitOptions{Message: job.Message, Retry: WorkerRetry()}
 	var err error
 	if len(job.Blobs) > 0 {
-		err = git.CommitBlobs(ctx, repoPath, toGitBlobs(job.Blobs), &git.CommitOptions{
-			Message: job.Message,
-		})
+		err = commitBlobs(ctx, repoPath, toGitBlobs(job.Blobs), opts)
 	} else {
-		err = git.CommitScoped(ctx, repoPath, job.Paths, &git.CommitOptions{
-			Message: job.Message,
-		})
+		err = commitScoped(ctx, repoPath, job.Paths, opts)
 	}
 	switch {
 	case err == nil:
@@ -94,6 +91,31 @@ func executeCommitPaths(ctx context.Context, repoPath string, job *Job) error {
 	default:
 		return err
 	}
+}
+
+// commitBlobs and commitScoped are how a paths job reaches git. Variables so
+// a test can assert the profile the worker commits under, which is otherwise a
+// claim about code nobody can observe until a lock contention parks a job.
+var (
+	commitBlobs  = git.CommitBlobs
+	commitScoped = git.CommitScoped
+)
+
+// WorkerRetry is the git lock-retry profile every deferred job runs under.
+//
+// The interactive profile gives up after six attempts and one five-second wait
+// for a lock another process is holding, which is the right answer for a person
+// watching a prompt and the wrong one here. A worker has already returned the
+// user's terminal, and an execution failure does not spend the reclaim budget:
+// completionFor parks the job on the first error, so one lost race against a
+// concurrent agent session is a commit in failed/ rather than a retry. Every
+// index.lock failure in this campaign's worker log is that race.
+//
+// A fresh copy per call so no caller can mutate the profile another job runs
+// under.
+func WorkerRetry() *git.RetryConfig {
+	cfg := git.BackgroundRetryConfig()
+	return &cfg
 }
 
 // checkGitlinkCarveOut enforces criterion 37l: only a worker-created follow-up
@@ -142,168 +164,12 @@ func isMissingPathspec(err error) bool {
 	return err != nil && strings.Contains(err.Error(), "did not match any files")
 }
 
-// executeCommitTree builds a commit from the job's captured tree and moves HEAD
-// to it.
-//
-// Nothing here touches the real index or the working tree. While HEAD remains
-// at the captured parent, the immutable tree produces exactly the commit the
-// user staged. A later commit that already versioned every captured path makes
-// the job a no-op; an unrelated HEAD move fails rather than being overwritten.
-func executeCommitTree(ctx context.Context, campaignRoot, repoPath string, job *Job) error {
-	if strings.TrimSpace(job.Tree) == "" {
-		return camperrors.Newf("job %s has no captured tree", job.ID)
-	}
-
-	// A reclaimed job may have died after its commit landed. Recognize that
-	// before generating the message, not after: the writer is an external
-	// process a retry should not pay for again, and a writer failing on the
-	// retry must not fail a job whose commit is sitting in the log. A first
-	// run has Attempts == 0 and skips the check.
-	if job.Attempts > 0 && alreadyApplied(ctx, repoPath, job) {
-		return nil
-	}
-
-	// An empty snapshot is a success, not a failure. The enqueue path refuses
-	// these, but a hand-edited or older queue file can still carry one, and
-	// parking it would leave a failed-job notice for work nobody asked for.
-	// Same contract as executeCommitPaths when git.ErrNoChanges is returned.
-	//
-	// A variable so tests can drive the gating order without a repository.
-	if empty, err := isEmptyCommitTree(ctx, repoPath, job); err != nil {
-		return err
-	} else if empty {
-		return nil
-	}
-
-	// The real index keeps the captured tree staged until this job lands. A
-	// direct commit (or another tool that stages everything) can therefore
-	// sweep the queued content into a later commit while the worker is alive.
-	// If that happened, the promise is fulfilled: requiring the exact queued
-	// tree and parent pair would park a false failure whenever the later commit
-	// also carried unrelated paths. If HEAD moved without carrying the captured
-	// changes, fail before paying for an external message writer that can no
-	// longer lead to a commit.
-	if head := git.HeadSHA(ctx, repoPath); head != "" && head != job.Parent {
-		if alreadyApplied(ctx, repoPath, job) {
-			return nil
-		}
-		integrated, err := git.FirstParentChainContainsOrSupersedesTreeChanges(
-			ctx, repoPath, job.Parent, job.Tree, head)
-		if err != nil {
-			return err
-		}
-		if integrated {
-			return nil
-		}
-		return headMovedError(nil, job.Parent, "")
-	}
-
-	message, err := messageForTree(ctx, campaignRoot, repoPath, job)
-	if err != nil {
-		return err
-	}
-
-	newSHA, err := git.CommitTree(ctx, repoPath, job.Tree, job.Parent, message)
-	if err != nil {
-		return err
-	}
-
-	if err := git.UpdateHeadFrom(ctx, repoPath, newSHA, job.Parent,
-		"camp: deferred commit "+job.ID); err != nil {
-		// The ref move can fail two ways and they need opposite handling.
-		//
-		// If HEAD is already this job's commit, a previous attempt succeeded
-		// and died before the queue file was unlinked. Treating that as a
-		// failure would park a job whose work is done, and the user would be
-		// told a commit failed while looking at it in their log.
-		//
-		// Recognized by content, not by hash. `git commit-tree` puts the
-		// committer timestamp in the object, so a retry over identical inputs
-		// produces a different SHA every time and could never match what the
-		// first attempt wrote. A commit whose tree and parent are this job's
-		// tree and parent is this job's commit, whenever it was made.
-		if alreadyApplied(ctx, repoPath, job) {
-			return nil
-		}
-		// A concurrent commit may have swept or intentionally superseded the
-		// still-staged captured paths while the writer ran. A later version of
-		// every path with no queued staging left fulfills the job; unrelated
-		// additions in that commit do not make it a failure.
-		if head := git.HeadSHA(ctx, repoPath); head != "" {
-			integrated, integratedErr := git.FirstParentChainContainsOrSupersedesTreeChanges(
-				ctx, repoPath, job.Parent, job.Tree, head)
-			if integratedErr == nil && integrated {
-				return nil
-			}
-		}
-		// Otherwise HEAD genuinely moved. Fail, and never rebase: the queued
-		// commit was built against a tree the user staged, and replaying it
-		// onto someone else's commit would produce a result nobody chose.
-		return headMovedError(err, job.Parent, newSHA)
-	}
-	return nil
-}
-
-// alreadyApplied reports whether a commit this job set out to make has landed.
-//
-// It walks HEAD's first-parent chain rather than checking HEAD alone: the user
-// may have kept committing between the crash and the retry, and a landed
-// commit buried under their new work is still landed. A variable so tests can
-// exercise the retry ordering without a repository behind the job.
-var alreadyApplied = func(ctx context.Context, repoPath string, job *Job) bool {
-	return git.FirstParentChainContains(ctx, repoPath, job.Tree, job.Parent)
-}
-
-// isEmptyCommitTree reports whether the job's tree is identical to its
-// parent's tree — an empty commit that must never land.
-//
-// Variable so tests can exercise executeCommitTree's gate order without a
-// repository behind the job; treeUnchangedFromParent is always what runs in
-// production.
-var isEmptyCommitTree = treeUnchangedFromParent
-
-func treeUnchangedFromParent(ctx context.Context, repoPath string, job *Job) (bool, error) {
-	parentTree, err := git.TreeSHA(ctx, repoPath, job.Parent)
-	if err != nil {
-		return false, camperrors.Wrapf(err, "resolve parent tree for job %s", job.ID)
-	}
-	return parentTree == job.Tree, nil
-}
-
 // shortSHA abbreviates a hash for a message a human reads.
 func shortSHA(sha string) string {
 	if len(sha) > 8 {
 		return sha[:8]
 	}
 	return sha
-}
-
-// headMovedError is the user-visible failure when HEAD is no longer the
-// captured parent. Noticing that before the writer and noticing it at
-// update-ref must produce the same text: empty parent is unborn HEAD, not
-// a missing "expected parent".
-func headMovedError(cause error, parent, newSHA string) error {
-	msg := headMovedMessage(parent, newSHA)
-	if cause != nil {
-		return camperrors.Wrap(cause, msg)
-	}
-	return camperrors.New(msg)
-}
-
-func headMovedMessage(parent, newSHA string) string {
-	if strings.TrimSpace(parent) == "" {
-		if newSHA != "" {
-			return "HEAD is no longer unborn; " + shortSHA(newSHA) +
-				" was not applied (queued as the first commit)"
-		}
-		return "HEAD is no longer unborn; captured changes were not applied (queued as the first commit)"
-	}
-	if newSHA != "" {
-		return "HEAD moved since this commit was queued; " + shortSHA(newSHA) +
-			" was not applied (expected parent " + shortSHA(parent) + ")"
-	}
-	return "HEAD moved since this commit was queued; captured changes were not applied (expected parent " +
-		shortSHA(parent) + ")"
 }
 
 // resolveRepoPath turns a campaign-relative repo into an absolute path,

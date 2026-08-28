@@ -1597,3 +1597,192 @@ func TestCaptureBlobs_NestedRepoBoundary(t *testing.T) {
 		t.Fatalf("embedded-clone capture error = %v, want ErrNestedRepo", err)
 	}
 }
+
+// writeRepoFile writes a file inside a test repository, creating parents.
+func writeRepoFile(t *testing.T, repo, rel, content string) {
+	t.Helper()
+	abs := filepath.Join(repo, filepath.FromSlash(rel))
+	if err := os.MkdirAll(filepath.Dir(abs), 0o755); err != nil {
+		t.Fatalf("mkdir for %s: %v", rel, err)
+	}
+	if err := os.WriteFile(abs, []byte(content), 0o644); err != nil {
+		t.Fatalf("write %s: %v", rel, err)
+	}
+}
+
+// reapplyFixture builds the shape every HEAD-moved recovery faces: a parent, a
+// queued snapshot taken against it, and an interloping commit that landed
+// first.
+func reapplyFixture(t *testing.T, sharedAfter string) (repo, parent, queuedTree, onto string) {
+	t.Helper()
+	repo = initTestRepo(t)
+
+	writeRepoFile(t, repo, "shared.md", "original\n")
+	runGit(t, repo, nil, "add", "-A")
+	parentTree := runGit(t, repo, nil, "write-tree")
+	parent = runGit(t, repo, nil, "commit-tree", parentTree, "-m", "parent")
+	runGit(t, repo, nil, "update-ref", "HEAD", parent)
+
+	// The queued snapshot: adds queued.md, leaves shared.md as the parent had it.
+	writeRepoFile(t, repo, "queued.md", "queued\n")
+	runGit(t, repo, nil, "add", "-A")
+	queuedTree = runGit(t, repo, nil, "write-tree")
+
+	// Someone else commits first, through a scratch index so the queued path
+	// stays out of their tree. This is the real case: two agent sessions
+	// committing into one campaign root.
+	runGit(t, repo, nil, "read-tree", parentTree)
+	writeRepoFile(t, repo, "shared.md", sharedAfter)
+	runGit(t, repo, nil, "add", "--", "shared.md")
+	ontoTree := runGit(t, repo, nil, "write-tree")
+	onto = runGit(t, repo, nil, "commit-tree", ontoTree, "-p", parent, "-m", "interloper")
+	runGit(t, repo, nil, "update-ref", "HEAD", onto)
+	return repo, parent, queuedTree, onto
+}
+
+// The captured tree is a whole-repository snapshot, so a recovery that hung it
+// off the new HEAD would publish the snapshot's version of every path and
+// silently revert whatever landed in between. Re-applying carries only what the
+// snapshot changed.
+func TestReapplyTreeOntoCarriesTheChangeNotTheSnapshot(t *testing.T) {
+	repo, parent, queuedTree, onto := reapplyFixture(t, "interloper\n")
+
+	merged, err := ReapplyTreeOnto(context.Background(), repo, parent, queuedTree, onto)
+	if err != nil {
+		t.Fatalf("ReapplyTreeOnto() error = %v, want a clean merge", err)
+	}
+	if merged == queuedTree {
+		t.Fatal("ReapplyTreeOnto returned the captured tree itself; that is a re-parent, and it reverts the intervening commit")
+	}
+
+	if got := runGit(t, repo, nil, "show", merged+":shared.md"); got != "interloper" {
+		t.Errorf("shared.md in the merged tree = %q, want the intervening commit's content", got)
+	}
+	if got := runGit(t, repo, nil, "show", merged+":queued.md"); got != "queued" {
+		t.Errorf("queued.md in the merged tree = %q, want the captured content", got)
+	}
+}
+
+// A content conflict is where camp stops. The merged tree git produces there
+// carries conflict markers, and committing it would put them in history under
+// a message that describes neither side.
+func TestReapplyTreeOntoRefusesAContentConflict(t *testing.T) {
+	repo := initTestRepo(t)
+
+	writeRepoFile(t, repo, "shared.md", "original\n")
+	runGit(t, repo, nil, "add", "-A")
+	parentTree := runGit(t, repo, nil, "write-tree")
+	parent := runGit(t, repo, nil, "commit-tree", parentTree, "-m", "parent")
+	runGit(t, repo, nil, "update-ref", "HEAD", parent)
+
+	writeRepoFile(t, repo, "shared.md", "queued edit\n")
+	runGit(t, repo, nil, "add", "-A")
+	queuedTree := runGit(t, repo, nil, "write-tree")
+
+	runGit(t, repo, nil, "read-tree", parentTree)
+	writeRepoFile(t, repo, "shared.md", "interloping edit\n")
+	runGit(t, repo, nil, "add", "--", "shared.md")
+	ontoTree := runGit(t, repo, nil, "write-tree")
+	onto := runGit(t, repo, nil, "commit-tree", ontoTree, "-p", parent, "-m", "interloper")
+
+	_, err := ReapplyTreeOnto(context.Background(), repo, parent, queuedTree, onto)
+	if !errors.Is(err, ErrReapplyConflict) {
+		t.Fatalf("ReapplyTreeOnto() error = %v, want ErrReapplyConflict", err)
+	}
+	if !strings.Contains(err.Error(), "shared.md") {
+		t.Errorf("conflict error = %v, want it to name the conflicting path", err)
+	}
+}
+
+// An empty base is unborn HEAD: the snapshot was queued as the repository's
+// first commit, so its change is measured from the empty tree.
+func TestReapplyTreeOntoFromAnUnbornBase(t *testing.T) {
+	repo := initTestRepo(t)
+
+	writeRepoFile(t, repo, "queued.md", "queued\n")
+	runGit(t, repo, nil, "add", "-A")
+	queuedTree := runGit(t, repo, nil, "write-tree")
+
+	runGit(t, repo, nil, "read-tree", "--empty")
+	writeRepoFile(t, repo, "first.md", "first\n")
+	runGit(t, repo, nil, "add", "--", "first.md")
+	ontoTree := runGit(t, repo, nil, "write-tree")
+	onto := runGit(t, repo, nil, "commit-tree", ontoTree, "-m", "someone else's first commit")
+	runGit(t, repo, nil, "update-ref", "HEAD", onto)
+
+	merged, err := ReapplyTreeOnto(context.Background(), repo, "", queuedTree, onto)
+	if err != nil {
+		t.Fatalf("ReapplyTreeOnto() error = %v, want a clean merge from the empty tree", err)
+	}
+	if got := runGit(t, repo, nil, "show", merged+":first.md"); got != "first" {
+		t.Errorf("first.md in the merged tree = %q, want the first commit's content", got)
+	}
+	if got := runGit(t, repo, nil, "show", merged+":queued.md"); got != "queued" {
+		t.Errorf("queued.md in the merged tree = %q, want the captured content", got)
+	}
+}
+
+func TestReapplyTreeOntoHonorsContextCancellation(t *testing.T) {
+	repo, parent, queuedTree, onto := reapplyFixture(t, "interloper\n")
+
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+	if _, err := ReapplyTreeOnto(ctx, repo, parent, queuedTree, onto); !errors.Is(err, context.Canceled) {
+		t.Fatalf("ReapplyTreeOnto() error = %v, want context.Canceled", err)
+	}
+}
+
+// A symlink's content is its target string. `git hash-object -w -- <path>`
+// reads through the link instead, so a captured symlink used to record the
+// bytes of whatever it pointed at under mode 120000: a link whose target was
+// the file's entire content. The capture must record what git records.
+func TestCaptureBlobsRecordsASymlinkAsItsTarget(t *testing.T) {
+	repo := initTestRepo(t)
+	writeRepoFile(t, repo, "real/f.txt", "target content\n")
+	if err := os.Symlink(filepath.Join("real", "f.txt"), filepath.Join(repo, "linkfile")); err != nil {
+		t.Skipf("symlinks unavailable: %v", err)
+	}
+
+	refs, err := CaptureBlobs(context.Background(), repo, []string{"linkfile"})
+	if err != nil {
+		t.Fatalf("CaptureBlobs() error = %v", err)
+	}
+	if len(refs) != 1 {
+		t.Fatalf("CaptureBlobs() = %+v, want one ref", refs)
+	}
+	if refs[0].Mode != "120000" {
+		t.Errorf("mode = %q, want 120000", refs[0].Mode)
+	}
+
+	// What git itself would stage, as the reference answer.
+	runGit(t, repo, nil, "add", "--", "linkfile")
+	staged := runGit(t, repo, nil, "ls-files", "-s", "--", "linkfile")
+	if !strings.Contains(staged, refs[0].SHA) {
+		t.Fatalf("captured %s, but git staged %q; the capture read through the link", refs[0].SHA, staged)
+	}
+	if got := runGit(t, repo, nil, "cat-file", "blob", refs[0].SHA); got != filepath.Join("real", "f.txt") {
+		t.Errorf("captured blob = %q, want the link target", got)
+	}
+}
+
+// A symlink to a directory is not a directory to walk into, and it is not a
+// path git can hash by name: it is the case that surfaced this bug, as a
+// capture failure in a live campaign.
+func TestCaptureBlobsCapturesASymlinkToADirectory(t *testing.T) {
+	repo := initTestRepo(t)
+	writeRepoFile(t, repo, "real/f.txt", "target content\n")
+	if err := os.Symlink("real", filepath.Join(repo, "linkdir")); err != nil {
+		t.Skipf("symlinks unavailable: %v", err)
+	}
+
+	refs, err := CaptureBlobs(context.Background(), repo, []string{"linkdir"})
+	if err != nil {
+		t.Fatalf("CaptureBlobs() error = %v, want the link captured rather than followed", err)
+	}
+	if len(refs) != 1 || refs[0].Path != "linkdir" || refs[0].Mode != "120000" {
+		t.Fatalf("CaptureBlobs() = %+v, want one 120000 entry for linkdir", refs)
+	}
+	if got := runGit(t, repo, nil, "cat-file", "blob", refs[0].SHA); got != "real" {
+		t.Errorf("captured blob = %q, want the link target %q", got, "real")
+	}
+}

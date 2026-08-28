@@ -154,6 +154,12 @@ var (
 	// whatever HEAD is at commit time and so cannot be captured in advance.
 	ErrNestedRepo = errors.New("path contains a nested git repository")
 
+	// ErrReapplyConflict indicates a captured snapshot could not be re-applied
+	// onto newer history without a content conflict. The merged tree git
+	// produced carries conflict markers, so the only correct answer is to stop
+	// and let a person resolve it.
+	ErrReapplyConflict = errors.New("captured changes conflict with the current HEAD")
+
 	// ErrRemoteNotReachable indicates the remote host could not be contacted.
 	ErrRemoteNotReachable = camperrors.Wrap(camperrors.ErrGitFailed, "remote not reachable")
 

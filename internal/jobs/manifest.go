@@ -106,6 +106,7 @@ func executeManifest(ctx context.Context, campaignRoot, repoPath string, job *Jo
 	}
 	err = git.CommitScoped(ctx, repoPath, []string{rel}, &git.CommitOptions{
 		Message: "manifest: " + job.ManifestRoot + " at " + shortSHA(describes),
+		Retry:   WorkerRetry(),
 	})
 	if errors.Is(err, git.ErrNoChanges) {
 		return nil // a drain or ordinary commit already carried the file

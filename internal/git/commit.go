@@ -22,6 +22,10 @@ type CommitOptions struct {
 	Author        string // Optional: "Name <email>"
 	TempIndexPath string // When set, passes GIT_INDEX_FILE=<path> to git commit.
 	NoEdit        bool   // When true, passes --no-edit for message-less amends.
+	// Retry overrides the lock-retry profile used by this commit and by the
+	// temp-index staging and index cleanup around it. Nil takes
+	// DefaultRetryConfig, which is tuned for a user waiting on a prompt.
+	Retry *RetryConfig
 	// Deprecated: scoped commit callers must use the temp-index snapshot engine.
 	// This field is retained for source compatibility and is ignored.
 	Only []string
@@ -44,12 +48,25 @@ func Commit(ctx context.Context, repoPath string, opts *CommitOptions) error {
 		return err
 	}
 
-	cfg := DefaultRetryConfig()
-	cfg.OperationName = "commit"
-
-	return WithLockRetry(ctx, repoPath, cfg, func() error {
+	return WithLockRetry(ctx, repoPath, retryProfile(opts.Retry, "commit"), func() error {
 		return executeCommit(ctx, repoPath, opts)
 	})
+}
+
+// retryProfile resolves a caller's optional lock-retry override and labels it
+// with the operation whose log lines and failure message it produces.
+//
+// One resolver rather than a DefaultRetryConfig call per site: the profile is
+// the difference between a commit a person is waiting for and one a detached
+// worker is making, and a site that forgot to thread it through would silently
+// fall back to the impatient one.
+func retryProfile(override *RetryConfig, operation string) RetryConfig {
+	cfg := DefaultRetryConfig()
+	if override != nil {
+		cfg = *override
+	}
+	cfg.OperationName = operation
+	return cfg
 }
 
 // CommitScoped creates a commit from a temporary index populated with only the
@@ -75,7 +92,7 @@ func CommitScoped(ctx context.Context, repoPath string, paths []string, opts *Co
 	if err := ReadTreeIntoTempIndex(ctx, repoPath, tmpPath); err != nil {
 		return err
 	}
-	if err := AddPathsToTempIndex(ctx, repoPath, tmpPath, paths); err != nil {
+	if err := AddPathsToTempIndex(ctx, repoPath, tmpPath, paths, opts.Retry); err != nil {
 		return err
 	}
 
@@ -92,7 +109,7 @@ func CommitScoped(ctx context.Context, repoPath string, paths []string, opts *Co
 	if err := Commit(ctx, repoPath, &scopedOpts); err != nil {
 		return err
 	}
-	return ResetIndexToHead(ctx, repoPath, expandedScope)
+	return ResetIndexToHead(ctx, repoPath, expandedScope, opts.Retry)
 }
 
 // executeCommit runs the actual git commit command.
@@ -233,13 +250,13 @@ func headResolvable(ctx context.Context, repoPath string) bool {
 }
 
 // AddPathsToTempIndex stages paths into the provided temp index.
-func AddPathsToTempIndex(ctx context.Context, repoPath, tmpPath string, paths []string) error {
+//
+// retry is optional: nil takes the interactive profile.
+func AddPathsToTempIndex(ctx context.Context, repoPath, tmpPath string, paths []string, retry *RetryConfig) error {
 	if len(paths) == 0 {
 		return ErrNoFilesSpecified
 	}
-	cfg := DefaultRetryConfig()
-	cfg.OperationName = "add-temp-index"
-	return WithLockRetry(ctx, repoPath, cfg, func() error {
+	return WithLockRetry(ctx, repoPath, retryProfile(retry, "add-temp-index"), func() error {
 		args := []string{"-C", repoPath, "add", "--"}
 		args = append(args, paths...)
 		cmd := exec.CommandContext(ctx, "git", args...)
@@ -301,13 +318,13 @@ func ExpandTrackedPathsFromTempIndex(ctx context.Context, repoPath, tmpPath stri
 }
 
 // ResetIndexToHead updates the real index entries for paths to match HEAD.
-func ResetIndexToHead(ctx context.Context, repoPath string, paths []string) error {
+//
+// retry is optional: nil takes the interactive profile.
+func ResetIndexToHead(ctx context.Context, repoPath string, paths []string, retry *RetryConfig) error {
 	if len(paths) == 0 {
 		return nil
 	}
-	cfg := DefaultRetryConfig()
-	cfg.OperationName = "reset-index"
-	return WithLockRetry(ctx, repoPath, cfg, func() error {
+	return WithLockRetry(ctx, repoPath, retryProfile(retry, "reset-index"), func() error {
 		// Scoped commits may expand a directory pathspec into tens of
 		// thousands of files (a dungeon migration is one example). Passing all
 		// of those paths to one git process can exceed the platform's argument
