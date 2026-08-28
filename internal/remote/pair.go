@@ -58,6 +58,18 @@ type PeerCredentials struct {
 	PublicKey string
 }
 
+// inspectScript builds the read-only probe run on the peer: the account name
+// on one line, then either the peer's existing camp public key or the "-"
+// sentinel on a second line. It uses printf rather than `echo -` for the
+// sentinel because zsh's echo builtin treats a lone "-" as an end-of-options
+// marker and prints an empty line instead of the dash, which collapses the
+// two-line output to one and made InspectPeer fail on every zsh peer with no
+// key yet.
+func inspectScript(keyName string) string {
+	return `id -un; f="$HOME/.obey/keys/` + keyName + `.pub"; ` +
+		`if [ -f "$f" ]; then cat "$f"; else printf '%s\n' -; fi`
+}
+
 // InspectPeer reads what the peer already has: the account name, and the
 // public half of its camp key for reaching us if one exists. Read-only by
 // construction — it creates nothing — so it is safe to run BEFORE consent, and
@@ -67,9 +79,7 @@ func InspectPeer(ctx context.Context, m *machines.Machine, keyName string) (Peer
 	if !safeKeyName.MatchString(keyName) {
 		return PeerCredentials{}, camperrors.New("refusing to probe an unexpected key name: " + keyName)
 	}
-	script := `id -un; f="$HOME/.obey/keys/` + keyName + `.pub"; ` +
-		`if [ -f "$f" ]; then cat "$f"; else echo -; fi`
-	out, err := runPeerScript(ctx, m, script)
+	out, err := runPeerScript(ctx, m, inspectScript(keyName))
 	if err != nil {
 		return PeerCredentials{}, err
 	}
