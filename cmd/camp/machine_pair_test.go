@@ -47,21 +47,26 @@ func pairTestEnv(t *testing.T) (fleet string, authKeys string) {
 	}
 
 	restore := struct {
-		term    func() bool
-		confirm func(context.Context, string) (bool, bool, error)
-		inspect func(context.Context, *machines.Machine, string) (remote.PeerCredentials, error)
-		ensure  func(context.Context, *machines.Machine, string, string) (string, error)
-		install func(context.Context, *machines.Machine, string) (bool, error)
-		keys    func() (string, error)
-		keygen  func(string, string) (string, error)
-		reverse func(context.Context) reverseReport
+		term      func() bool
+		confirm   func(context.Context, string) (bool, bool, error)
+		inspect   func(context.Context, *machines.Machine, string) (remote.PeerCredentials, error)
+		ensure    func(context.Context, *machines.Machine, string, string) (string, error)
+		install   func(context.Context, *machines.Machine, string) (bool, error)
+		keys      func() (string, error)
+		keygen    func(string, string) (string, error)
+		reverse   func(context.Context) reverseReport
+		rowQuery  func(context.Context, *machines.Machine, string) ([]byte, error)
+		heal      func(context.Context, *machines.Machine, string) ([]byte, error)
+		localUser func() (string, error)
 	}{pairIsTerminal, pairConfirm, pairInspectPeer, pairEnsurePeerKey, pairInstallPeerKey,
-		pairAuthorizedKeysPath, pairGenerateKey, pairReverseReachability}
+		pairAuthorizedKeysPath, pairGenerateKey, pairReverseReachability,
+		pairPeerRowQuery, pairHealPeerRow, pairLocalUser}
 	t.Cleanup(func() {
 		pairIsTerminal, pairConfirm = restore.term, restore.confirm
 		pairInspectPeer, pairEnsurePeerKey = restore.inspect, restore.ensure
 		pairInstallPeerKey, pairAuthorizedKeysPath = restore.install, restore.keys
 		pairGenerateKey, pairReverseReachability = restore.keygen, restore.reverse
+		pairPeerRowQuery, pairHealPeerRow, pairLocalUser = restore.rowQuery, restore.heal, restore.localUser
 	})
 
 	pairIsTerminal = func() bool { return true }
@@ -78,6 +83,18 @@ func pairTestEnv(t *testing.T) (fleet string, authKeys string) {
 	pairReverseReachability = func(context.Context) reverseReport {
 		return reverseReport{Capable: true, Hint: "sshd is listening here."}
 	}
+	// The default fleet-heal seams say "the peer has no row for us": an empty
+	// machine list from the probe, and a heal call that fails the test if it
+	// ever runs (since nothing was found, nothing should be healed). Tests
+	// that exercise the heal path override these explicitly.
+	pairPeerRowQuery = func(context.Context, *machines.Machine, string) ([]byte, error) {
+		return []byte(`{"version":1,"machines":[]}`), nil
+	}
+	pairHealPeerRow = func(context.Context, *machines.Machine, string) ([]byte, error) {
+		t.Error("heal must not run when the probe found no row to heal")
+		return nil, nil
+	}
+	pairLocalUser = func() (string, error) { return "lancerogers", nil }
 	return fleet, authKeys
 }
 
@@ -239,6 +256,281 @@ func TestPairReportsReverseListenerCaveat(t *testing.T) {
 	if !strings.Contains(out.String(), "cannot hop here yet") ||
 		!strings.Contains(out.String(), "Remote Login is off") {
 		t.Errorf("missing reverse-listener caveat: %q", out.String())
+	}
+}
+
+// TestPairHealPlan exercises pairHealPlan directly against a fixed selfID, so
+// it needs neither a TTY nor this machine's real hostname to be a valid
+// machine id. It is the single place that pins the probe's tri-state
+// contract: a row found with safe content promises a heal, everything else
+// (no row, a failed query, unsafe content, a broken local-user lookup)
+// degrades to heal=false, with a note only where the operator could
+// otherwise mistake silence for the feature not existing.
+func TestPairHealPlan(t *testing.T) {
+	restore := pairPeerRowQuery
+	t.Cleanup(func() { pairPeerRowQuery = restore })
+
+	target := &machines.Machine{ID: "macstudio", Host: "macstudio.example.ts.net"}
+	const selfID = "archdtop"
+
+	cases := []struct {
+		name      string
+		queryOut  string
+		queryErr  error
+		localUser string
+		localErr  error
+		wantHeal  bool
+		wantNote  string
+	}{
+		{
+			name:      "row found and safe",
+			queryOut:  `{"version":1,"machines":[{"id":"archdtop","host":"archdtop.ts.net","label":"Arch Desktop"}]}`,
+			localUser: "lancerogers",
+			wantHeal:  true,
+		},
+		{
+			name:      "row found with no label",
+			queryOut:  `{"version":1,"machines":[{"id":"archdtop","host":"archdtop.ts.net"}]}`,
+			localUser: "lancerogers",
+			wantHeal:  true,
+		},
+		{
+			name:      "no row for this machine",
+			queryOut:  `{"version":1,"machines":[{"id":"someone-else","host":"x"}]}`,
+			localUser: "lancerogers",
+			wantHeal:  false,
+		},
+		{
+			name:      "query fails",
+			queryErr:  errors.New("remote camp not found on macstudio"),
+			localUser: "lancerogers",
+			wantHeal:  false,
+			wantNote:  "could not check whether macstudio already has a fleet row",
+		},
+		{
+			name:      "query returns malformed json",
+			queryOut:  "not json",
+			localUser: "lancerogers",
+			wantHeal:  false,
+			wantNote:  "could not check whether macstudio already has a fleet row",
+		},
+		{
+			name:      "row has an unsafe host",
+			queryOut:  `{"version":1,"machines":[{"id":"archdtop","host":"h; rm -rf /"}]}`,
+			localUser: "lancerogers",
+			wantHeal:  false,
+			wantNote:  "unexpected shape",
+		},
+		{
+			name:      "row has an unsafe label",
+			queryOut:  `{"version":1,"machines":[{"id":"archdtop","host":"archdtop.ts.net","label":"$(rm -rf /)"}]}`,
+			localUser: "lancerogers",
+			wantHeal:  false,
+			wantNote:  "unexpected shape",
+		},
+		{
+			name:      "local user lookup fails",
+			queryOut:  `{"version":1,"machines":[{"id":"archdtop","host":"archdtop.ts.net"}]}`,
+			localErr:  errors.New("no such user"),
+			localUser: "",
+			wantHeal:  false,
+			wantNote:  "could not determine this machine's account name",
+		},
+	}
+
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			pairPeerRowQuery = func(context.Context, *machines.Machine, string) ([]byte, error) {
+				if tc.queryErr != nil {
+					return nil, tc.queryErr
+				}
+				return []byte(tc.queryOut), nil
+			}
+			heal, _, _, note := pairHealPlan(context.Background(), target, selfID, tc.localUser, tc.localErr)
+			if heal != tc.wantHeal {
+				t.Errorf("heal = %v, want %v (note=%q)", heal, tc.wantHeal, note)
+			}
+			if tc.wantNote == "" && note != "" {
+				t.Errorf("unexpected note for a case that should stay quiet: %q", note)
+			}
+			if tc.wantNote != "" && !strings.Contains(note, tc.wantNote) {
+				t.Errorf("note = %q, want substring %q", note, tc.wantNote)
+			}
+		})
+	}
+}
+
+// TestPairPreviewRendersHealLineOnlyWhenPromised locks in the preview-honesty
+// rule the rest of this file already relies on for the other writes: the
+// heal line (or its soft-note fallback) appears in the "<peer> will:" section
+// if and only if pairPlan actually promises it.
+func TestPairPreviewRendersHealLineOnlyWhenPromised(t *testing.T) {
+	base := pairPlan{
+		Target:        &machines.Machine{ID: "macstudio", Host: "macstudio.example.ts.net"},
+		SelfID:        "archdtop",
+		LocalKeyPath:  "/home/x/.obey/keys/camp_macstudio_ed25519",
+		AuthKeysPath:  "/home/x/.ssh/authorized_keys",
+		RemoteKeyName: "camp_archdtop_ed25519",
+		RemoteUser:    "lance",
+	}
+
+	withHeal := base
+	withHeal.HealPeerRow = true
+	withHeal.LocalUser = "lancerogers"
+	got := pairPreview(withHeal)
+	for _, want := range []string{
+		`update   machines.yaml row "archdtop"`,
+		"auth_method: ssh-agent",
+		"ssh_user: lancerogers",
+		"identity_file",
+	} {
+		if !strings.Contains(got, want) {
+			t.Errorf("preview missing %q when a heal is promised:\n%s", want, got)
+		}
+	}
+
+	withoutHeal := base
+	got = pairPreview(withoutHeal)
+	if strings.Contains(got, `machines.yaml row "archdtop"`) {
+		t.Errorf("preview promised a heal that was never found:\n%s", got)
+	}
+
+	withNote := base
+	withNote.HealSkipNote = "could not check whether macstudio already has a fleet row for this machine"
+	got = pairPreview(withNote)
+	if !strings.Contains(got, withNote.HealSkipNote) {
+		t.Errorf("preview missing the soft note:\n%s", got)
+	}
+	if strings.Contains(got, `machines.yaml row "archdtop"`) {
+		t.Errorf("a soft note must not also promise a heal:\n%s", got)
+	}
+}
+
+// TestPairHealsPeerRowWhenFound is the end-to-end apply path: a probe that
+// finds a row drives a correctly quoted `machine add` on the peer, and both
+// the preview and the success report say so.
+func TestPairHealsPeerRowWhenFound(t *testing.T) {
+	pairTestEnv(t)
+	selfID, err := pairSelfID(context.Background())
+	if err != nil {
+		t.Skipf("cannot derive this machine's id in this environment: %v", err)
+	}
+
+	pairPeerRowQuery = func(context.Context, *machines.Machine, string) ([]byte, error) {
+		return []byte(`{"version":1,"machines":[{"id":"` + selfID +
+			`","host":"self.example.ts.net","label":"My Desktop","auth_method":"tailscale-ssh"}]}`), nil
+	}
+	pairLocalUser = func() (string, error) { return "lancerogers", nil }
+
+	var gotArgs string
+	var gotMachine string
+	pairHealPeerRow = func(_ context.Context, m *machines.Machine, args string) ([]byte, error) {
+		gotMachine = m.ID
+		gotArgs = args
+		return nil, nil
+	}
+
+	cmd, out := newPairCmd()
+	if err := runMachinePair(cmd, []string{"macstudio"}); err != nil {
+		t.Fatalf("pair failed: %v", err)
+	}
+
+	if gotMachine != "macstudio" {
+		t.Errorf("heal ran against %q, want the machine being paired with", gotMachine)
+	}
+	wantParts := []string{
+		"machine add " + remote.ShellQuote(selfID),
+		"--host " + remote.ShellQuote("self.example.ts.net"),
+		"--label " + remote.ShellQuote("My Desktop"),
+		"--auth " + remote.ShellQuote(machines.AuthSSHAgent),
+		"--user " + remote.ShellQuote("lancerogers"),
+		"--identity " + remote.ShellQuote("~/.obey/keys/"+remote.PeerKeyName(selfID)),
+	}
+	for _, want := range wantParts {
+		if !strings.Contains(gotArgs, want) {
+			t.Errorf("heal args = %q, missing %q", gotArgs, want)
+		}
+	}
+	if !strings.Contains(out.String(), `update   machines.yaml row "`+selfID+`"`) {
+		t.Errorf("preview did not promise the heal for %q: %q", selfID, out.String())
+	}
+	if !strings.Contains(out.String(), "macstudio's fleet row for this machine: updated") {
+		t.Errorf("apply did not report the heal succeeding: %q", out.String())
+	}
+}
+
+// TestPairHealFailureDoesNotFailPairing is the "report, don't block" contract
+// for the apply-time heal: an unreachable peer camp binary (or any other
+// failure of the heal command itself) must not fail a pairing whose earlier
+// writes already succeeded, and must leave the operator with the exact
+// command to finish the job by hand.
+func TestPairHealFailureDoesNotFailPairing(t *testing.T) {
+	pairTestEnv(t)
+	selfID, err := pairSelfID(context.Background())
+	if err != nil {
+		t.Skipf("cannot derive this machine's id in this environment: %v", err)
+	}
+
+	pairPeerRowQuery = func(context.Context, *machines.Machine, string) ([]byte, error) {
+		return []byte(`{"version":1,"machines":[{"id":"` + selfID + `","host":"self.example.ts.net"}]}`), nil
+	}
+	pairLocalUser = func() (string, error) { return "lancerogers", nil }
+	pairHealPeerRow = func(context.Context, *machines.Machine, string) ([]byte, error) {
+		return nil, errors.New("remote camp not found on macstudio")
+	}
+
+	cmd, out := newPairCmd()
+	if err := runMachinePair(cmd, []string{"macstudio"}); err != nil {
+		t.Fatalf("a heal failure must not fail the pairing: %v", err)
+	}
+	if !strings.Contains(out.String(), "paired with macstudio") {
+		t.Errorf("pairing must still report success: %q", out.String())
+	}
+	if !strings.Contains(out.String(), "fleet row for this machine was not updated") {
+		t.Errorf("missing the heal-not-updated note: %q", out.String())
+	}
+	wantFallback := "camp machine add " + selfID + " --host self.example.ts.net --auth ssh-agent " +
+		"--user lancerogers --identity ~/.obey/keys/" + remote.PeerKeyName(selfID)
+	if !strings.Contains(out.String(), wantFallback) {
+		t.Errorf("missing the exact fallback command:\ngot:  %q\nwant substring: %q", out.String(), wantFallback)
+	}
+}
+
+// TestPairSkipsHealWhenPeerHasNoRow pins the "report, don't block" contract
+// for the common case: a peer that was never adopted (or has since removed
+// its row for this machine) gets a normal pairing with no mention of a heal
+// at all, since the preview never promised one.
+func TestPairSkipsHealWhenPeerHasNoRow(t *testing.T) {
+	pairTestEnv(t) // default pairPeerRowQuery already reports an empty fleet
+	cmd, out := newPairCmd()
+	if err := runMachinePair(cmd, []string{"macstudio"}); err != nil {
+		t.Fatalf("pair failed: %v", err)
+	}
+	if strings.Contains(out.String(), "fleet row for this machine") {
+		t.Errorf("no row was found to heal, but pairing mentioned one: %q", out.String())
+	}
+}
+
+// TestPairNotesWhenRowQueryFails covers the no-remote-camp / broken-probe
+// path: the probe cannot tell whether the peer has a row, which must degrade
+// to a quiet preview note rather than blocking the pairing or attempting a
+// heal it never confirmed.
+func TestPairNotesWhenRowQueryFails(t *testing.T) {
+	pairTestEnv(t)
+	pairPeerRowQuery = func(context.Context, *machines.Machine, string) ([]byte, error) {
+		return nil, errors.New("remote camp not found on macstudio")
+	}
+	pairHealPeerRow = func(context.Context, *machines.Machine, string) ([]byte, error) {
+		t.Error("heal must not run when the probe could not confirm a row")
+		return nil, nil
+	}
+
+	cmd, out := newPairCmd()
+	if err := runMachinePair(cmd, []string{"macstudio"}); err != nil {
+		t.Fatalf("a probe failure must not fail the pairing: %v", err)
+	}
+	if !strings.Contains(out.String(), "could not check whether macstudio already has a fleet row") {
+		t.Errorf("missing the soft note about the failed row check: %q", out.String())
 	}
 }
 
