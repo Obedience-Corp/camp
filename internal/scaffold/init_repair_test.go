@@ -14,7 +14,7 @@ import (
 	"time"
 
 	"github.com/Obedience-Corp/camp/internal/config"
-
+	"github.com/Obedience-Corp/camp/internal/dungeon/spelling"
 	"github.com/Obedience-Corp/camp/internal/intent"
 
 	"github.com/Obedience-Corp/camp/internal/quest"
@@ -538,4 +538,94 @@ func TestInit_RepairRecordsModifiedCampaignGitignore(t *testing.T) {
 		t.Fatalf("repair edited %s but did not record it in FilesModified, so the repair commit leaves it dirty; got %v",
 			campaignGitignore, result.FilesModified)
 	}
+}
+
+func TestComputeRepairPlan_HiddenCampaignIsIdempotent(t *testing.T) {
+	tmpDir := t.TempDir()
+	tmpDir, _ = filepath.EvalSymlinks(tmpDir)
+	t.Setenv("XDG_CONFIG_HOME", tmpDir)
+
+	campaignDir := filepath.Join(tmpDir, "hidden-repair")
+	if err := os.MkdirAll(campaignDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+
+	ctx := t.Context()
+	if _, err := Init(ctx, campaignDir, InitOptions{Name: "hidden-repair", NoRegister: true}); err != nil {
+		t.Fatalf("Init() error = %v", err)
+	}
+
+	plan, err := ComputeRepairPlan(ctx, campaignDir, InitOptions{
+		Name:       "hidden-repair",
+		Repair:     true,
+		NoRegister: true,
+	})
+	if err != nil {
+		t.Fatalf("ComputeRepairPlan() error = %v", err)
+	}
+
+	if adds := dungeonAddKeys(plan); len(adds) > 0 {
+		t.Fatalf("repair plan reported dungeon files as missing on a freshly inited hidden campaign: %q", adds)
+	}
+}
+
+func TestComputeRepairPlan_ReportsMissingHiddenDungeonFile(t *testing.T) {
+	tmpDir := t.TempDir()
+	tmpDir, _ = filepath.EvalSymlinks(tmpDir)
+	t.Setenv("XDG_CONFIG_HOME", tmpDir)
+
+	campaignDir := filepath.Join(tmpDir, "hidden-missing")
+	if err := os.MkdirAll(campaignDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+
+	ctx := t.Context()
+	if _, err := Init(ctx, campaignDir, InitOptions{Name: "hidden-missing", NoRegister: true}); err != nil {
+		t.Fatalf("Init() error = %v", err)
+	}
+
+	missing := filepath.Join(campaignDir, spelling.Hidden, "OBEY.md")
+	if err := os.Remove(missing); err != nil {
+		t.Fatalf("os.Remove(%q) error = %v", missing, err)
+	}
+
+	plan, err := ComputeRepairPlan(ctx, campaignDir, InitOptions{
+		Name:       "hidden-missing",
+		Repair:     true,
+		NoRegister: true,
+	})
+	if err != nil {
+		t.Fatalf("ComputeRepairPlan() error = %v", err)
+	}
+
+	want := filepath.ToSlash(filepath.Join(spelling.Hidden, "OBEY.md"))
+	foundHidden := false
+	for _, c := range plan.Changes {
+		if c.Type != RepairAdd {
+			continue
+		}
+		key := filepath.ToSlash(c.Key)
+		if key == want {
+			foundHidden = true
+		}
+		if key == filepath.ToSlash(filepath.Join(spelling.Visible, "OBEY.md")) {
+			t.Fatalf("repair plan reported the visible dungeon path on a hidden campaign: %q", c.Key)
+		}
+	}
+	if !foundHidden {
+		t.Fatalf("expected missing hidden dungeon file %q, got %q", want, dungeonAddKeys(plan))
+	}
+}
+
+func dungeonAddKeys(plan *RepairPlan) []string {
+	var keys []string
+	for _, c := range plan.Changes {
+		if c.Type != RepairAdd {
+			continue
+		}
+		if strings.Contains(c.Key, "dungeon") {
+			keys = append(keys, c.Key)
+		}
+	}
+	return keys
 }

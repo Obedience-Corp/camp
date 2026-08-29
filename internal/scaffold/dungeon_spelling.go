@@ -35,16 +35,27 @@ type dungeonScaffoldPlan struct {
 	campaignSpelling string
 }
 
+// campaignDungeonSpelling reports the dungeon directory name this campaign
+// uses. Brand-new campaigns follow dungeon_hidden; existing ones keep the
+// spelling already on disk so repair never invents the twin directory.
+func campaignDungeonSpelling(ctx context.Context, absDir string) (string, error) {
+	globalCfg, err := config.LoadGlobalConfig(ctx)
+	if err != nil {
+		return "", camperrors.Wrap(err, "failed to load global config")
+	}
+	name, err := spelling.CampaignName(ctx, absDir, globalCfg.ResolveDungeonHidden())
+	if err != nil {
+		return "", camperrors.Wrapf(err, "resolving dungeon spelling for %s", absDir)
+	}
+	return name, nil
+}
+
 // planDungeonScaffold snapshots the campaign's dungeon layout at absDir. It
 // must run before the template step.
 func planDungeonScaffold(ctx context.Context, absDir string) (*dungeonScaffoldPlan, error) {
-	globalCfg, err := config.LoadGlobalConfig(ctx)
+	campaignSpelling, err := campaignDungeonSpelling(ctx, absDir)
 	if err != nil {
-		return nil, camperrors.Wrap(err, "failed to load global config")
-	}
-	campaignSpelling, err := spelling.CampaignName(ctx, absDir, globalCfg.ResolveDungeonHidden())
-	if err != nil {
-		return nil, camperrors.Wrapf(err, "resolving dungeon spelling for %s", absDir)
+		return nil, err
 	}
 
 	plan := &dungeonScaffoldPlan{

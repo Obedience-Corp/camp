@@ -9,6 +9,9 @@ import (
 	"time"
 
 	"github.com/Obedience-Corp/camp/internal/config"
+	dungeonscaffold "github.com/Obedience-Corp/camp/internal/dungeon/scaffold"
+	"github.com/Obedience-Corp/camp/internal/dungeon/spelling"
+	"github.com/Obedience-Corp/camp/internal/quest"
 )
 
 func TestRepairPlan_HasChanges(t *testing.T) {
@@ -74,6 +77,76 @@ func TestRepairPlan_HasChanges(t *testing.T) {
 				t.Errorf("HasChanges() = %v, want %v", got, tt.want)
 			}
 		})
+	}
+}
+
+func TestRepairRelPresent_HiddenTwin(t *testing.T) {
+	dir := t.TempDir()
+	hiddenObey := filepath.Join(dir, "workflow", "design", spelling.Hidden, "OBEY.md")
+	if err := os.MkdirAll(filepath.Dir(hiddenObey), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(hiddenObey, []byte("ok\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	if !repairRelPresent(dir, "workflow/design/dungeon/OBEY.md", false) {
+		t.Fatal("hidden nested dungeon file should count as present")
+	}
+	if repairRelPresent(dir, "workflow/design/dungeon/missing.md", false) {
+		t.Fatal("missing nested dungeon file should not count as present")
+	}
+
+	hiddenDir := filepath.Join(dir, spelling.Hidden, "archived")
+	if err := os.MkdirAll(hiddenDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if !repairRelPresent(dir, "dungeon/archived", true) {
+		t.Fatal("hidden dungeon directory should count as present")
+	}
+}
+
+func TestComputeQuestScaffoldChanges_HiddenDungeonPresent(t *testing.T) {
+	dir := t.TempDir()
+	base := filepath.Join(dir, quest.RootDirName, spelling.Hidden)
+	for _, status := range dungeonscaffold.StandardStatuses {
+		statusDir := filepath.Join(base, status)
+		if err := os.MkdirAll(statusDir, 0o755); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(filepath.Join(statusDir, ".gitkeep"), nil, 0o644); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if err := os.WriteFile(filepath.Join(base, "OBEY.md"), []byte("quest dungeon\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	plan := &RepairPlan{}
+	computeQuestScaffoldChanges(dir, plan, spelling.Hidden)
+	if plan.HasChanges() {
+		t.Fatalf("hidden quest dungeon should not be missing, got %+v", plan.Changes)
+	}
+}
+
+func TestComputeQuestScaffoldChanges_ReportsHiddenPathWhenMissing(t *testing.T) {
+	dir := t.TempDir()
+	plan := &RepairPlan{}
+	computeQuestScaffoldChanges(dir, plan, spelling.Hidden)
+
+	want := filepath.ToSlash(filepath.Join(quest.RootDirName, spelling.Hidden, "OBEY.md"))
+	foundHidden := false
+	for _, c := range plan.Changes {
+		if c.Key == want {
+			foundHidden = true
+		}
+		if strings.Contains(filepath.ToSlash(c.Key), "/"+spelling.Visible+"/") ||
+			strings.HasSuffix(filepath.ToSlash(c.Key), "/"+spelling.Visible) {
+			t.Fatalf("reported visible quest dungeon on a hidden campaign: %q", c.Key)
+		}
+	}
+	if !foundHidden {
+		t.Fatalf("expected missing hidden quest OBEY.md %q, got %+v", want, plan.Changes)
 	}
 }
 
