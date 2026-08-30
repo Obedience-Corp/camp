@@ -25,6 +25,7 @@ camp leverage snapshot [flags]
 
 ```
   -h, --help             help for snapshot
+      --no-commit        skip the automatic commit of .campaign/leverage data
   -p, --project string   snapshot a specific project only
 ```
 

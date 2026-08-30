@@ -109,13 +109,17 @@ func TestLeverage_JSONOutput(t *testing.T) {
 	tc := GetSharedContainer(t)
 	root := setupLeverageCampaign(t, tc, "leverage-json")
 
-	output, err := tc.RunCampInDir(root, "leverage", "--json")
-	require.NoError(t, err, "camp leverage --json should succeed: %s", output)
+	// Read stdout on its own: stdout is the machine channel, and stderr
+	// carries the progress and autocommit lines a JSON consumer must not have
+	// to parse around.
+	output, stderr, exitCode, err := tc.RunCampSplitInDir(root, "leverage", "--json")
+	require.NoError(t, err, "camp leverage --json should succeed: %s\n%s", output, stderr)
+	require.Equal(t, 0, exitCode, "camp leverage --json should exit 0: %s\n%s", output, stderr)
 
-	// Output may have a leading `Created leverage config at ...` notice on the
+	// stdout may have a leading `Created leverage config at ...` notice on the
 	// first run before the JSON. Strip everything before the first `{`.
 	jsonStart := strings.Index(output, "{")
-	require.GreaterOrEqual(t, jsonStart, 0, "no JSON object in output: %s", output)
+	require.GreaterOrEqual(t, jsonStart, 0, "no JSON object in stdout: %s", output)
 
 	var result struct {
 		Campaign map[string]any   `json:"campaign"`
@@ -124,6 +128,13 @@ func TestLeverage_JSONOutput(t *testing.T) {
 	require.NoError(t, json.Unmarshal([]byte(output[jsonStart:]), &result), "parse JSON: %s", output)
 	require.NotNil(t, result.Campaign, "campaign score is nil in JSON")
 	assert.NotEmpty(t, result.Projects, "no projects in JSON output")
+
+	// The autocommit report is a human line, so it belongs on stderr where it
+	// cannot land after the document a --json consumer is parsing.
+	assert.NotContains(t, output, "committed leverage data",
+		"the autocommit report must stay off stdout in --json mode")
+	assert.Contains(t, stderr, "committed leverage data",
+		"the autocommit still has to be reported somewhere: %s", stderr)
 }
 
 // TestLeverage_ProjectFilter exercises `--project` valid and invalid filters.
@@ -314,11 +325,12 @@ func TestLeverage_AuthorFilterUnionsActualPM(t *testing.T) {
 	tc := GetSharedContainer(t)
 	root := setupMultiRepoAuthorCampaign(t, tc, "leverage-author-union")
 
-	output, err := tc.RunCampInDir(root, "leverage", "--author", "alice@example.com", "--json")
-	require.NoError(t, err, "camp leverage --author should succeed: %s", output)
+	output, stderr, exitCode, err := tc.RunCampSplitInDir(root, "leverage", "--author", "alice@example.com", "--json")
+	require.NoError(t, err, "camp leverage --author should succeed: %s\n%s", output, stderr)
+	require.Equal(t, 0, exitCode, "camp leverage --author should exit 0: %s\n%s", output, stderr)
 
 	jsonStart := strings.Index(output, "{")
-	require.GreaterOrEqual(t, jsonStart, 0, "no JSON in output: %s", output)
+	require.GreaterOrEqual(t, jsonStart, 0, "no JSON in stdout: %s", output)
 
 	var result struct {
 		Campaign struct {
@@ -358,4 +370,85 @@ func TestLeverage_AuthorAndByAuthorMutuallyExclusive(t *testing.T) {
 	output, err := tc.RunCampInDir(root, "leverage", "--author", "test@test.com", "--by-author")
 	require.Error(t, err, "expected mutual exclusion error: %s", output)
 	assert.Contains(t, output, "mutually exclusive", output)
+}
+
+// TestLeverage_Autocommit covers the automatic commit of .campaign/leverage
+// data: what lands in the commit, what must stay out of it, and both opt-outs.
+//
+// The subtests share one campaign and run in order, because each asserts
+// against the HEAD the previous one left behind.
+func TestLeverage_Autocommit(t *testing.T) {
+	if !sccAvailable {
+		t.Fatal("scc binary failed to build at container init time")
+	}
+
+	tc := GetSharedContainer(t)
+	root := setupLeverageCampaign(t, tc, "leverage-autocommit")
+
+	t.Run("scoring commits only the leverage data", func(t *testing.T) {
+		// A dirty file outside .campaign/leverage proves the commit scope is
+		// the data directory and not "everything that happens to be dirty".
+		tc.Shell(t, "printf 'untouched\n' > "+root+"/README-dirty.md")
+		before := tc.GitOutput(t, root, "rev-parse", "HEAD")
+
+		output, err := tc.RunCampInDir(root, "leverage")
+		require.NoError(t, err, "camp leverage should succeed: %s", output)
+		assert.Contains(t, output, "committed leverage data: update scores",
+			"camp must report the commit it made: %s", output)
+
+		after := tc.GitOutput(t, root, "rev-parse", "HEAD")
+		require.NotEqual(t, before, after, "expected a new commit")
+
+		message := tc.GitOutput(t, root, "log", "-1", "--format=%B")
+		assert.Contains(t, message, "leverage: update scores", "subject: %s", message)
+		assert.Contains(t, message, "Campaign Leverage:", "body should carry the report: %s", message)
+		assert.NotContains(t, message, "\x1b[", "body must not carry terminal escapes: %q", message)
+
+		files := tc.GitOutput(t, root, "show", "--name-only", "--format=", "HEAD")
+		require.NotEmpty(t, strings.TrimSpace(files), "commit touched no files")
+		for _, path := range strings.Fields(files) {
+			assert.True(t, strings.HasPrefix(path, ".campaign/leverage/"),
+				"commit touched %q outside .campaign/leverage/", path)
+		}
+
+		status := tc.GitOutput(t, root, "status", "--porcelain", "--", "README-dirty.md")
+		assert.Contains(t, status, "README-dirty.md", "the unrelated dirty file must stay uncommitted")
+	})
+
+	t.Run("snapshot commits under its own subject", func(t *testing.T) {
+		output, err := tc.RunCampInDir(root, "leverage", "snapshot")
+		require.NoError(t, err, "camp leverage snapshot should succeed: %s", output)
+
+		message := tc.GitOutput(t, root, "log", "-1", "--format=%B")
+		assert.Contains(t, message, "leverage: snapshot", "subject: %s", message)
+	})
+
+	t.Run("--no-commit skips the commit", func(t *testing.T) {
+		before := tc.GitOutput(t, root, "rev-parse", "HEAD")
+
+		output, err := tc.RunCampInDir(root, "leverage", "snapshot", "--no-commit")
+		require.NoError(t, err, "camp leverage snapshot --no-commit should succeed: %s", output)
+		assert.NotContains(t, output, "committed leverage data", output)
+
+		after := tc.GitOutput(t, root, "rev-parse", "HEAD")
+		assert.Equal(t, before, after, "--no-commit must not move HEAD")
+	})
+
+	t.Run("config --autocommit=false records the opt-out and then stops committing", func(t *testing.T) {
+		output, err := tc.RunCampInDir(root, "leverage", "config", "--autocommit=false")
+		require.NoError(t, err, "camp leverage config should succeed: %s", output)
+		assert.Contains(t, output, "committed leverage data: config",
+			"the opt-out itself must be recorded: %s", output)
+
+		message := tc.GitOutput(t, root, "log", "-1", "--format=%B")
+		assert.Contains(t, message, "Autocommit: false", "body should say what changed: %s", message)
+
+		before := tc.GitOutput(t, root, "rev-parse", "HEAD")
+		output, err = tc.RunCampInDir(root, "leverage", "snapshot")
+		require.NoError(t, err, "camp leverage snapshot should succeed: %s", output)
+		assert.NotContains(t, output, "committed leverage data", output)
+
+		after := tc.GitOutput(t, root, "rev-parse", "HEAD")
+		assert.Equal(t, before, after, "a disabled autocommit must not move HEAD")
+	})
 }
