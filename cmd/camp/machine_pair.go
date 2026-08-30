@@ -2,10 +2,13 @@ package main
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"os"
 	"os/exec"
+	"os/user"
 	"path/filepath"
+	"regexp"
 	"strings"
 
 	"github.com/spf13/cobra"
@@ -45,6 +48,30 @@ var (
 	pairReverseReachability = func(ctx context.Context) reverseReport {
 		return checkReverseReachability(ctx, defaultReverseProbes())
 	}
+
+	// Both are remote.RunCampCommand in production; separate seams so tests
+	// can fail the pre-consent probe and the apply-time write independently.
+	pairPeerRowQuery = remote.RunCampCommand
+	pairHealPeerRow  = remote.RunCampCommand
+
+	// The ssh_user the peer's healed row needs: the account the peer logs in
+	// as to reach back here.
+	pairLocalUser = func() (string, error) {
+		u, err := user.Current()
+		if err != nil {
+			return "", camperrors.Wrap(err, "determine this machine's account name")
+		}
+		return u.Username, nil
+	}
+)
+
+// Shape checks on values interpolated into the peer's heal command, on top
+// of ShellQuote — unexpected content fails the heal closed. Labels may
+// contain spaces ("Mac Studio").
+var (
+	safeHealUser  = regexp.MustCompile(`^[A-Za-z0-9._@-]+$`)
+	safeHealHost  = regexp.MustCompile(`^[A-Za-z0-9][A-Za-z0-9.:_-]*$`)
+	safeHealLabel = regexp.MustCompile(`^[A-Za-z0-9][A-Za-z0-9 ._@-]*$`)
 )
 
 var machinePairCmd = &cobra.Command{
@@ -132,6 +159,10 @@ func runMachinePair(cmd *cobra.Command, args []string) error {
 			"reach %s; this hop failed, so pair from %s instead", target.ID, target.ID)
 	}
 
+	// Probed before consent so the preview only promises a heal it can keep.
+	localUser, localUserErr := pairLocalUser()
+	healPeerRow, healHost, healLabel, healNote := pairHealPlan(ctx, target, selfID, localUser, localUserErr)
+
 	plan := pairPlan{
 		Target:        target,
 		SelfID:        selfID,
@@ -143,6 +174,11 @@ func runMachinePair(cmd *cobra.Command, args []string) error {
 		RemoteUser:    creds.User,
 		SetSSHUser:    target.SSHUser == "" && creds.User != "",
 		SetAuthMethod: target.AuthMethod != machines.AuthSSHAgent,
+		HealPeerRow:   healPeerRow,
+		PeerRowHost:   healHost,
+		PeerRowLabel:  healLabel,
+		LocalUser:     localUser,
+		HealSkipNote:  healNote,
 	}
 	if _, err := fmt.Fprint(cmd.OutOrStdout(), pairPreview(plan)); err != nil {
 		return err
@@ -175,6 +211,15 @@ type pairPlan struct {
 	RemoteUser    string
 	SetSSHUser    bool
 	SetAuthMethod bool
+
+	// The peer's own fleet row for this machine (usually from adopt). True
+	// only when the probe found it and it passed the shape checks; otherwise
+	// HealSkipNote may carry a soft note.
+	HealPeerRow  bool
+	PeerRowHost  string
+	PeerRowLabel string
+	LocalUser    string
+	HealSkipNote string
 }
 
 func pairPreview(p pairPlan) string {
@@ -198,6 +243,12 @@ func pairPreview(p pairPlan) string {
 	b.WriteString("\n" + p.Target.ID + " will:\n")
 	fmt.Fprintf(&b, "  %-8s ~/.obey/keys/%s%s\n", verb(p.RemoteKeyNew), p.RemoteKeyName, keyNote(p.RemoteKeyNew))
 	fmt.Fprintf(&b, "  %-8s this machine's public key to ~/.ssh/authorized_keys\n", "append")
+	if p.HealPeerRow {
+		fmt.Fprintf(&b, "  %-8s machines.yaml row %q: auth_method: %s, ssh_user: %s, identity_file\n",
+			"update", p.SelfID, machines.AuthSSHAgent, p.LocalUser)
+	} else if p.HealSkipNote != "" {
+		fmt.Fprintf(&b, "  %s\n", ui.Dim(p.HealSkipNote))
+	}
 
 	b.WriteString("\nCamp will not enable a login service on either machine, and never touches\n" +
 		"~/.ssh/id_*. Keys are per-pair, per-direction, so this pairing can be revoked\n" +
@@ -210,6 +261,96 @@ func verb(isNew bool) string {
 		return "create"
 	}
 	return "reuse"
+}
+
+// pairPeerRow asks the peer's own camp for its fleet row for selfID, so the
+// peer's own machines.yaml resolution applies. found=false/err=nil (nothing
+// to heal) and err!=nil (cannot tell) are distinct on purpose.
+func pairPeerRow(ctx context.Context, target *machines.Machine, selfID string) (host, label string, found bool, err error) {
+	out, err := pairPeerRowQuery(ctx, target, "machine list --json")
+	if err != nil {
+		return "", "", false, err
+	}
+	var payload machineListOutput
+	if jsonErr := json.Unmarshal(out, &payload); jsonErr != nil {
+		return "", "", false, camperrors.Wrapf(jsonErr, "parse %s's machine list", target.ID)
+	}
+	for _, row := range payload.Machines {
+		if row.ID == selfID {
+			return row.Host, row.Label, true, nil
+		}
+	}
+	return "", "", false, nil
+}
+
+// pairHealPlan decides whether to heal the peer's row. Never fails: every
+// branch that cannot promise a heal returns heal=false, with a note only
+// where silence would be misleading.
+func pairHealPlan(ctx context.Context, target *machines.Machine, selfID, localUser string, localUserErr error) (heal bool, host, label, note string) {
+	if localUserErr != nil {
+		return false, "", "", "could not determine this machine's account name, so " +
+			target.ID + "'s fleet row for this machine was not checked"
+	}
+	if !safeHealUser.MatchString(localUser) {
+		return false, "", "", ""
+	}
+
+	rowHost, rowLabel, found, err := pairPeerRow(ctx, target, selfID)
+	if err != nil {
+		return false, "", "", "could not check whether " + target.ID +
+			" already has a fleet row for this machine"
+	}
+	if !found {
+		return false, "", "", ""
+	}
+	if !safeHealHost.MatchString(rowHost) || (rowLabel != "" && !safeHealLabel.MatchString(rowLabel)) {
+		return false, "", "", target.ID + " has a fleet row for this machine, but its contents have " +
+			"an unexpected shape; skipping the automatic update"
+	}
+	return true, rowHost, rowLabel, ""
+}
+
+// healCommandArgs builds the remote `machine add` args. Host and label are
+// carried through from the found row: --host is required, and an omitted
+// --label would erase an existing one.
+func healCommandArgs(p pairPlan) string {
+	var b strings.Builder
+	b.WriteString("machine add ")
+	b.WriteString(remote.ShellQuote(p.SelfID))
+	b.WriteString(" --host ")
+	b.WriteString(remote.ShellQuote(p.PeerRowHost))
+	if p.PeerRowLabel != "" {
+		b.WriteString(" --label ")
+		b.WriteString(remote.ShellQuote(p.PeerRowLabel))
+	}
+	b.WriteString(" --auth ")
+	b.WriteString(remote.ShellQuote(machines.AuthSSHAgent))
+	b.WriteString(" --user ")
+	b.WriteString(remote.ShellQuote(p.LocalUser))
+	b.WriteString(" --identity ")
+	b.WriteString(remote.ShellQuote("~/.obey/keys/" + remote.PeerKeyName(p.SelfID)))
+	return b.String()
+}
+
+// healFallbackCommand is the command an operator runs by hand on the peer
+// when the automatic heal fails. Display text, not shell-interpolated.
+func healFallbackCommand(p pairPlan) string {
+	parts := []string{"camp", "machine", "add", p.SelfID, "--host", p.PeerRowHost}
+	if p.PeerRowLabel != "" {
+		parts = append(parts, "--label", displayQuote(p.PeerRowLabel))
+	}
+	parts = append(parts, "--auth", machines.AuthSSHAgent, "--user", p.LocalUser,
+		"--identity", "~/.obey/keys/"+remote.PeerKeyName(p.SelfID))
+	return strings.Join(parts, " ")
+}
+
+// displayQuote keeps a whitespace value one shell word in copy-paste text.
+// Display formatting only, never a security boundary.
+func displayQuote(s string) string {
+	if strings.ContainsAny(s, " \t") {
+		return `"` + s + `"`
+	}
+	return s
 }
 
 // keyNote says the passphrase part out loud rather than burying it. A hop runs
@@ -265,6 +406,17 @@ func applyPairing(ctx context.Context, cmd *cobra.Command, mf *machines.File, p 
 	_, _ = fmt.Fprintf(out, "%s paired with %s\n", ui.SuccessIcon(), p.Target.ID)
 	_, _ = fmt.Fprintf(out, "  %s -> %s: %s\n", p.SelfID, p.Target.ID, appendResult(addedRemote))
 	_, _ = fmt.Fprintf(out, "  %s -> %s: %s\n", p.Target.ID, p.SelfID, appendResult(addedLocal))
+
+	// Last on purpose: a heal failure must never undo, retry, or fail the
+	// writes above it.
+	if p.HealPeerRow {
+		if _, healErr := pairHealPeerRow(ctx, p.Target, healCommandArgs(p)); healErr != nil {
+			_, _ = fmt.Fprintf(out, "\n  %s's fleet row for this machine was not updated (%v)\n", p.Target.ID, healErr)
+			_, _ = fmt.Fprintf(out, "  run this on %s to finish it by hand:\n    %s\n", p.Target.ID, healFallbackCommand(p))
+		} else {
+			_, _ = fmt.Fprintf(out, "  %s's fleet row for this machine: updated\n", p.Target.ID)
+		}
+	}
 
 	// The reverse direction needs a listener HERE. Camp can observe that half
 	// and must not fix it, so the hint is printed as the operator's next step.
