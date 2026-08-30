@@ -156,6 +156,36 @@ func RewriteRel(rel, dungeonName string) string {
 	return rel
 }
 
+// RewritePath rewrites every visible "dungeon" path segment in rel to
+// dungeonName. Nested scaffold paths such as "workflow/design/dungeon/OBEY.md"
+// need this; RewriteRel only rewrites a leading segment.
+func RewritePath(rel, dungeonName string) string {
+	if dungeonName == Visible || rel == "" {
+		return rel
+	}
+	slash := filepath.ToSlash(rel)
+	var b strings.Builder
+	b.Grow(len(slash) + len(dungeonName))
+	written := 0
+	changed := false
+	for part := range strings.SplitSeq(slash, "/") {
+		if written > 0 {
+			b.WriteByte('/')
+		}
+		written++
+		if part == Visible {
+			b.WriteString(dungeonName)
+			changed = true
+			continue
+		}
+		b.WriteString(part)
+	}
+	if !changed {
+		return rel
+	}
+	return filepath.FromSlash(b.String())
+}
+
 // IsDungeonName reports whether name is either recognized dungeon spelling.
 func IsDungeonName(name string) bool {
 	return name == Visible || name == Hidden

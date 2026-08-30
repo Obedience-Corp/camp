@@ -123,8 +123,13 @@ func ComputeRepairPlan(ctx context.Context, dir string, opts InitOptions) (*Repa
 
 	plan := &RepairPlan{}
 
+	campaignSpelling, err := campaignDungeonSpelling(ctx, absDir)
+	if err != nil {
+		return nil, err
+	}
+
 	// Phase 1: Scaffold dry-run to find missing directories and files.
-	if err := computeScaffoldChanges(ctx, absDir, opts, plan); err != nil {
+	if err := computeScaffoldChanges(ctx, absDir, opts, plan, campaignSpelling); err != nil {
 		return nil, err
 	}
 
@@ -147,11 +152,11 @@ func ComputeRepairPlan(ctx context.Context, dir string, opts InitOptions) (*Repa
 	computeMiscFileChanges(absDir, plan)
 
 	// Phase 5: Account for shared standard-dungeon files created outside scaffold FS.
-	computeStandardDungeonScaffoldChanges(absDir, plan)
+	computeStandardDungeonScaffoldChanges(absDir, plan, campaignSpelling)
 
 	// Phase 6: Account for imperative quest scaffold files created outside scaffold FS.
 	if version.Profile == "dev" {
-		computeQuestScaffoldChanges(absDir, plan)
+		computeQuestScaffoldChanges(absDir, plan, campaignSpelling)
 		if err := computeQuestSentinelDateChange(ctx, absDir, plan); err != nil {
 			return nil, err
 		}
@@ -234,47 +239,26 @@ func applyQuestDateBackfill(ctx context.Context, backfill *QuestDateBackfill) er
 	return nil
 }
 
-func computeStandardDungeonScaffoldChanges(absDir string, plan *RepairPlan) {
+func computeStandardDungeonScaffoldChanges(absDir string, plan *RepairPlan, campaignSpelling string) {
 	standardDungeonObeys := []string{
 		"workflow/reviews/dungeon/OBEY.md",
 		"workflow/design/dungeon/OBEY.md",
 		"workflow/explore/dungeon/OBEY.md",
 	}
 
-	seen := make(map[string]bool, len(plan.Changes))
-	for _, change := range plan.Changes {
-		seen[change.Key] = true
-	}
-
+	seen := repairSeenKeys(plan)
 	for _, relPath := range standardDungeonObeys {
-		absPath := filepath.Join(absDir, relPath)
-		if _, err := os.Stat(absPath); err == nil {
-			continue
-		}
-		hiddenRelPath := spelling.RewriteRel(strings.TrimSuffix(relPath, "/OBEY.md"), spelling.Hidden) + "/OBEY.md"
-		if _, err := os.Stat(filepath.Join(absDir, hiddenRelPath)); err == nil {
-			continue
-		}
-		if seen[relPath] {
-			continue
-		}
-
-		plan.Changes = append(plan.Changes, RepairChange{
-			Type:        RepairAdd,
-			Category:    "file",
-			Key:         relPath,
-			Description: "missing file",
-		})
+		addRepairIfMissing(plan, seen, absDir, relPath, "file", "missing file", campaignSpelling, false)
 	}
 }
 
-func computeQuestScaffoldChanges(absDir string, plan *RepairPlan) {
+func computeQuestScaffoldChanges(absDir string, plan *RepairPlan, campaignSpelling string) {
 	// The quests directory and default/quest.yaml are handled by the scaffold
 	// template system (they live under campaign/templates/.campaign/quests/).
 	// Only the dungeon subdirectories and their files are created imperatively
 	// via dungeonscaffold.Init(), so we derive the expected paths from the
 	// same StandardStatuses slice that dungeonscaffold.Init() uses.
-	dungeonBase := filepath.Join(quest.RootDirName, "dungeon")
+	dungeonBase := filepath.Join(quest.RootDirName, spelling.Visible)
 	requiredDirs := []string{filepath.ToSlash(dungeonBase)}
 	for _, status := range dungeonscaffold.StandardStatuses {
 		requiredDirs = append(requiredDirs, filepath.ToSlash(filepath.Join(dungeonBase, status)))
@@ -284,46 +268,17 @@ func computeQuestScaffoldChanges(absDir string, plan *RepairPlan) {
 		requiredFiles = append(requiredFiles, filepath.ToSlash(filepath.Join(dungeonBase, status, ".gitkeep")))
 	}
 
-	seen := make(map[string]bool, len(plan.Changes))
-	for _, change := range plan.Changes {
-		seen[change.Key] = true
-	}
-
+	seen := repairSeenKeys(plan)
 	for _, relPath := range requiredDirs {
-		absPath := filepath.Join(absDir, filepath.FromSlash(relPath))
-		if info, err := os.Stat(absPath); err == nil && info.IsDir() {
-			continue
-		}
-		if seen[relPath] {
-			continue
-		}
-		plan.Changes = append(plan.Changes, RepairChange{
-			Type:        RepairAdd,
-			Category:    "directory",
-			Key:         relPath,
-			Description: "missing quest directory",
-		})
+		addRepairIfMissing(plan, seen, absDir, relPath, "directory", "missing quest directory", campaignSpelling, true)
 	}
-
 	for _, relPath := range requiredFiles {
-		absPath := filepath.Join(absDir, filepath.FromSlash(relPath))
-		if _, err := os.Stat(absPath); err == nil {
-			continue
-		}
-		if seen[relPath] {
-			continue
-		}
-		plan.Changes = append(plan.Changes, RepairChange{
-			Type:        RepairAdd,
-			Category:    "file",
-			Key:         relPath,
-			Description: "missing quest scaffold file",
-		})
+		addRepairIfMissing(plan, seen, absDir, relPath, "file", "missing quest scaffold file", campaignSpelling, false)
 	}
 }
 
 // computeScaffoldChanges runs the scaffold in dry mode to identify missing directories and files.
-func computeScaffoldChanges(ctx context.Context, absDir string, opts InitOptions, plan *RepairPlan) error {
+func computeScaffoldChanges(ctx context.Context, absDir string, opts InitOptions, plan *RepairPlan, campaignSpelling string) error {
 	name := opts.Name
 	if name == "" {
 		name = filepath.Base(absDir)
@@ -363,25 +318,62 @@ func computeScaffoldChanges(ctx context.Context, absDir string, opts InitOptions
 		stats.SkippedPaths = filterOutQuestScaffoldPaths(stats.SkippedPaths)
 	}
 
+	seen := repairSeenKeys(plan)
 	for _, d := range stats.CreatedDirs {
-		plan.Changes = append(plan.Changes, RepairChange{
-			Type:        RepairAdd,
-			Category:    "directory",
-			Key:         d,
-			Description: "missing directory",
-		})
+		addRepairIfMissing(plan, seen, absDir, d, "directory", "missing directory", campaignSpelling, true)
 	}
-
 	for _, f := range stats.CreatedFiles {
-		plan.Changes = append(plan.Changes, RepairChange{
-			Type:        RepairAdd,
-			Category:    "file",
-			Key:         f,
-			Description: "missing file",
-		})
+		addRepairIfMissing(plan, seen, absDir, f, "file", "missing file", campaignSpelling, false)
 	}
 
 	return nil
+}
+
+func repairSeenKeys(plan *RepairPlan) map[string]bool {
+	seen := make(map[string]bool, len(plan.Changes))
+	for _, change := range plan.Changes {
+		seen[change.Key] = true
+	}
+	return seen
+}
+
+func addRepairIfMissing(plan *RepairPlan, seen map[string]bool, absDir, rel, category, description, campaignSpelling string, requireDir bool) {
+	if repairRelPresent(absDir, rel, requireDir) {
+		return
+	}
+	key := filepath.ToSlash(spelling.RewritePath(rel, campaignSpelling))
+	if seen[key] || seen[filepath.ToSlash(rel)] {
+		return
+	}
+	seen[key] = true
+	plan.Changes = append(plan.Changes, RepairChange{
+		Type:        RepairAdd,
+		Category:    category,
+		Key:         key,
+		Description: description,
+	})
+}
+
+// repairRelPresent reports whether a scaffold-relative path already exists
+// under either dungeon spelling. The template tree always uses the visible
+// name, so a hidden campaign would otherwise look permanently broken.
+func repairRelPresent(absDir, rel string, requireDir bool) bool {
+	if presentAt(absDir, rel, requireDir) {
+		return true
+	}
+	hidden := spelling.RewritePath(rel, spelling.Hidden)
+	return hidden != rel && presentAt(absDir, hidden, requireDir)
+}
+
+func presentAt(absDir, rel string, requireDir bool) bool {
+	info, err := os.Stat(filepath.Join(absDir, filepath.FromSlash(rel)))
+	if err != nil {
+		return false
+	}
+	if requireDir {
+		return info.IsDir()
+	}
+	return true
 }
 
 const conceptWorkflowParent = "workflow"
