@@ -83,10 +83,7 @@ func pairTestEnv(t *testing.T) (fleet string, authKeys string) {
 	pairReverseReachability = func(context.Context) reverseReport {
 		return reverseReport{Capable: true, Hint: "sshd is listening here."}
 	}
-	// The default fleet-heal seams say "the peer has no row for us": an empty
-	// machine list from the probe, and a heal call that fails the test if it
-	// ever runs (since nothing was found, nothing should be healed). Tests
-	// that exercise the heal path override these explicitly.
+	// Default heal seams: no peer row; the heal call fails the test if run.
 	pairPeerRowQuery = func(context.Context, *machines.Machine, string) ([]byte, error) {
 		return []byte(`{"version":1,"machines":[]}`), nil
 	}
@@ -259,13 +256,6 @@ func TestPairReportsReverseListenerCaveat(t *testing.T) {
 	}
 }
 
-// TestPairHealPlan exercises pairHealPlan directly against a fixed selfID, so
-// it needs neither a TTY nor this machine's real hostname to be a valid
-// machine id. It is the single place that pins the probe's tri-state
-// contract: a row found with safe content promises a heal, everything else
-// (no row, a failed query, unsafe content, a broken local-user lookup)
-// degrades to heal=false, with a note only where the operator could
-// otherwise mistake silence for the feature not existing.
 func TestPairHealPlan(t *testing.T) {
 	restore := pairPeerRowQuery
 	t.Cleanup(func() { pairPeerRowQuery = restore })
@@ -360,10 +350,6 @@ func TestPairHealPlan(t *testing.T) {
 	}
 }
 
-// TestPairPreviewRendersHealLineOnlyWhenPromised locks in the preview-honesty
-// rule the rest of this file already relies on for the other writes: the
-// heal line (or its soft-note fallback) appears in the "<peer> will:" section
-// if and only if pairPlan actually promises it.
 func TestPairPreviewRendersHealLineOnlyWhenPromised(t *testing.T) {
 	base := pairPlan{
 		Target:        &machines.Machine{ID: "macstudio", Host: "macstudio.example.ts.net"},
@@ -406,9 +392,6 @@ func TestPairPreviewRendersHealLineOnlyWhenPromised(t *testing.T) {
 	}
 }
 
-// TestPairHealsPeerRowWhenFound is the end-to-end apply path: a probe that
-// finds a row drives a correctly quoted `machine add` on the peer, and both
-// the preview and the success report say so.
 func TestPairHealsPeerRowWhenFound(t *testing.T) {
 	pairTestEnv(t)
 	selfID, err := pairSelfID(context.Background())
@@ -459,11 +442,6 @@ func TestPairHealsPeerRowWhenFound(t *testing.T) {
 	}
 }
 
-// TestPairHealFailureDoesNotFailPairing is the "report, don't block" contract
-// for the apply-time heal: an unreachable peer camp binary (or any other
-// failure of the heal command itself) must not fail a pairing whose earlier
-// writes already succeeded, and must leave the operator with the exact
-// command to finish the job by hand.
 func TestPairHealFailureDoesNotFailPairing(t *testing.T) {
 	pairTestEnv(t)
 	selfID, err := pairSelfID(context.Background())
@@ -496,12 +474,8 @@ func TestPairHealFailureDoesNotFailPairing(t *testing.T) {
 	}
 }
 
-// TestPairSkipsHealWhenPeerHasNoRow pins the "report, don't block" contract
-// for the common case: a peer that was never adopted (or has since removed
-// its row for this machine) gets a normal pairing with no mention of a heal
-// at all, since the preview never promised one.
 func TestPairSkipsHealWhenPeerHasNoRow(t *testing.T) {
-	pairTestEnv(t) // default pairPeerRowQuery already reports an empty fleet
+	pairTestEnv(t)
 	cmd, out := newPairCmd()
 	if err := runMachinePair(cmd, []string{"macstudio"}); err != nil {
 		t.Fatalf("pair failed: %v", err)
@@ -511,10 +485,6 @@ func TestPairSkipsHealWhenPeerHasNoRow(t *testing.T) {
 	}
 }
 
-// TestPairNotesWhenRowQueryFails covers the no-remote-camp / broken-probe
-// path: the probe cannot tell whether the peer has a row, which must degrade
-// to a quiet preview note rather than blocking the pairing or attempting a
-// heal it never confirmed.
 func TestPairNotesWhenRowQueryFails(t *testing.T) {
 	pairTestEnv(t)
 	pairPeerRowQuery = func(context.Context, *machines.Machine, string) ([]byte, error) {

@@ -49,20 +49,13 @@ var (
 		return checkReverseReachability(ctx, defaultReverseProbes())
 	}
 
-	// pairPeerRowQuery and pairHealPeerRow are both, in production, the exact
-	// same function (remote.RunCampCommand) run at two different moments —
-	// the read-only probe, before consent, and the write at the end of
-	// applyPairing. They are kept as separate seams (rather than one) so a
-	// test can make the probe succeed and the apply fail, or the reverse,
-	// which is exactly the distinction the peer-row heal has to get right:
-	// a failure at one moment must not be conflated with the other.
+	// Both are remote.RunCampCommand in production; separate seams so tests
+	// can fail the pre-consent probe and the apply-time write independently.
 	pairPeerRowQuery = remote.RunCampCommand
 	pairHealPeerRow  = remote.RunCampCommand
 
-	// pairLocalUser is this machine's account name — the ssh_user the peer's
-	// healed row needs, since that is the account the peer will log in as to
-	// reach back here. A seam because os/user.Current() has no reason to run
-	// in a unit test.
+	// The ssh_user the peer's healed row needs: the account the peer logs in
+	// as to reach back here.
 	pairLocalUser = func() (string, error) {
 		u, err := user.Current()
 		if err != nil {
@@ -72,15 +65,9 @@ var (
 	}
 )
 
-// safeHealUser, safeHealHost, and safeHealLabel bound the values learned from
-// a peer's own `machine list --json` (or, for safeHealUser, from os/user)
-// before they are interpolated into the `camp machine add` command that
-// heals that peer's fleet row. remote.ShellQuote already neutralizes shell
-// metacharacters, but pair.go's own rule in internal/remote — assert the
-// shape rather than trust the quoting alone — applies here too: a corrupted
-// or unexpected value fails the heal closed instead of reaching a shell on
-// the peer. safeHealLabel is the one that must allow spaces, because labels
-// are free text an operator typed once (e.g. "Mac Studio").
+// Shape checks on values interpolated into the peer's heal command, on top
+// of ShellQuote — unexpected content fails the heal closed. Labels may
+// contain spaces ("Mac Studio").
 var (
 	safeHealUser  = regexp.MustCompile(`^[A-Za-z0-9._@-]+$`)
 	safeHealHost  = regexp.MustCompile(`^[A-Za-z0-9][A-Za-z0-9.:_-]*$`)
@@ -172,13 +159,7 @@ func runMachinePair(cmd *cobra.Command, args []string) error {
 			"reach %s; this hop failed, so pair from %s instead", target.ID, target.ID)
 	}
 
-	// The peer-row heal is probed here too, before consent, for the same
-	// reason InspectPeer runs here: pairPlan drives both the preview and the
-	// apply, so whatever the preview says about healing the peer's own fleet
-	// row has to already be true. localUser is looked up even though it is
-	// only used when a row is found, because pairHealPlan needs to know
-	// whether IT failed too (a bad account name must degrade the same way a
-	// failed probe does, not surface as an unrelated error).
+	// Probed before consent so the preview only promises a heal it can keep.
 	localUser, localUserErr := pairLocalUser()
 	healPeerRow, healHost, healLabel, healNote := pairHealPlan(ctx, target, selfID, localUser, localUserErr)
 
@@ -231,18 +212,9 @@ type pairPlan struct {
 	SetSSHUser    bool
 	SetAuthMethod bool
 
-	// HealPeerRow through HealSkipNote cover the peer's OWN fleet row for
-	// this machine, typically created by 'camp machine adopt' run on the
-	// peer at some earlier, unrelated time and pointed at whatever auth this
-	// machine had then. Pairing installs keys in both directions but, without
-	// this, only ever updated the INITIATING machine's row for the peer —
-	// leaving that peer-side row stale (still tailscale-ssh, no ssh_user or
-	// identity_file) even after a pairing that made key auth work in both
-	// directions. HealPeerRow is true only when the probe both found that row
-	// and its content passed the same shape check every other pairing write
-	// goes through; a probe failure or unexpected content degrades to
-	// HealSkipNote (a soft, non-blocking note) instead of promising a heal
-	// the apply step might not be able to keep.
+	// The peer's own fleet row for this machine (usually from adopt). True
+	// only when the probe found it and it passed the shape checks; otherwise
+	// HealSkipNote may carry a soft note.
 	HealPeerRow  bool
 	PeerRowHost  string
 	PeerRowLabel string
@@ -275,8 +247,6 @@ func pairPreview(p pairPlan) string {
 		fmt.Fprintf(&b, "  %-8s machines.yaml row %q: auth_method: %s, ssh_user: %s, identity_file\n",
 			"update", p.SelfID, machines.AuthSSHAgent, p.LocalUser)
 	} else if p.HealSkipNote != "" {
-		// Not a write, and not promised — just a quiet heads-up for the one
-		// case where camp could not tell whether a heal was even possible.
 		fmt.Fprintf(&b, "  %s\n", ui.Dim(p.HealSkipNote))
 	}
 
@@ -293,17 +263,9 @@ func verb(isNew bool) string {
 	return "reuse"
 }
 
-// pairPeerRow asks the peer's OWN camp binary — never a guess at its
-// machines.yaml path — whether it already has a fleet row for this machine
-// (selfID), and if so what host and label that row uses to reach us. Running
-// the peer's own `machine list --json` (rather than parsing a file over ssh)
-// means this reflects whatever CAMP_MACHINES_PATH / XDG resolution the peer
-// itself honors, the same reason RunCampCommand exists at all.
-//
-// Absence of a row and a failed query are returned distinctly on purpose:
-// found=false, err=nil means nothing to heal, while err!=nil means camp
-// cannot tell. Those are different situations to the caller — one is quiet,
-// the other is worth a note — even though both end with no heal promised.
+// pairPeerRow asks the peer's own camp for its fleet row for selfID, so the
+// peer's own machines.yaml resolution applies. found=false/err=nil (nothing
+// to heal) and err!=nil (cannot tell) are distinct on purpose.
 func pairPeerRow(ctx context.Context, target *machines.Machine, selfID string) (host, label string, found bool, err error) {
 	out, err := pairPeerRowQuery(ctx, target, "machine list --json")
 	if err != nil {
@@ -321,24 +283,15 @@ func pairPeerRow(ctx context.Context, target *machines.Machine, selfID string) (
 	return "", "", false, nil
 }
 
-// pairHealPlan decides whether applyPairing should also heal the peer's own
-// fleet row for this machine, and returns everything the preview needs to
-// describe that honestly. Every branch that cannot promise a heal returns
-// heal=false; only the probe-failure and unexpected-content branches also
-// return a note, because "no row" needs no explanation but "camp could not
-// tell" might otherwise read as camp simply forgetting the feature exists.
-// This function never fails: a probe going wrong here must not turn an
-// otherwise-working pairing into an error.
+// pairHealPlan decides whether to heal the peer's row. Never fails: every
+// branch that cannot promise a heal returns heal=false, with a note only
+// where silence would be misleading.
 func pairHealPlan(ctx context.Context, target *machines.Machine, selfID, localUser string, localUserErr error) (heal bool, host, label, note string) {
 	if localUserErr != nil {
 		return false, "", "", "could not determine this machine's account name, so " +
 			target.ID + "'s fleet row for this machine was not checked"
 	}
 	if !safeHealUser.MatchString(localUser) {
-		// This machine's own account name failed the same shape check camp
-		// uses before interpolating anything into a peer's shell. Not
-		// something re-running pairing would fix, so it stays quiet rather
-		// than alarming an operator about something outside their control.
 		return false, "", "", ""
 	}
 
@@ -357,14 +310,9 @@ func pairHealPlan(ctx context.Context, target *machines.Machine, selfID, localUs
 	return true, rowHost, rowLabel, ""
 }
 
-// healCommandArgs is the args RunCampCommand appends after the peer's own
-// camp binary to heal its fleet row: `machine add` is documented
-// idempotent-replace on id, so host and label are carried through from the
-// row the probe found rather than left to default — an omitted --host would
-// fail outright (machine add requires it) and an omitted --label would
-// silently erase one that was already there. Every interpolated value goes
-// through remote.ShellQuote, the same idiom pushSelfSnapshot uses to build a
-// RunCampCommand args string.
+// healCommandArgs builds the remote `machine add` args. Host and label are
+// carried through from the found row: --host is required, and an omitted
+// --label would erase an existing one.
 func healCommandArgs(p pairPlan) string {
 	var b strings.Builder
 	b.WriteString("machine add ")
@@ -384,12 +332,8 @@ func healCommandArgs(p pairPlan) string {
 	return b.String()
 }
 
-// healFallbackCommand is the exact command an operator can run BY HAND on the
-// peer when the automatic heal could not complete — the same manual
-// workaround this feature exists to replace. Unlike healCommandArgs this is
-// display text a human copies into their own shell, not something camp
-// interpolates into one, so it favors readability over shell-quoting: only
-// the label is quoted, and only if it contains whitespace.
+// healFallbackCommand is the command an operator runs by hand on the peer
+// when the automatic heal fails. Display text, not shell-interpolated.
 func healFallbackCommand(p pairPlan) string {
 	parts := []string{"camp", "machine", "add", p.SelfID, "--host", p.PeerRowHost}
 	if p.PeerRowLabel != "" {
@@ -400,9 +344,8 @@ func healFallbackCommand(p pairPlan) string {
 	return strings.Join(parts, " ")
 }
 
-// displayQuote wraps s in double quotes when it contains whitespace, so a
-// copy-pasted fallback command stays one shell word for a value like a
-// two-word label. It is display formatting only, never a security boundary.
+// displayQuote keeps a whitespace value one shell word in copy-paste text.
+// Display formatting only, never a security boundary.
 func displayQuote(s string) string {
 	if strings.ContainsAny(s, " \t") {
 		return `"` + s + `"`
@@ -464,13 +407,8 @@ func applyPairing(ctx context.Context, cmd *cobra.Command, mf *machines.File, p 
 	_, _ = fmt.Fprintf(out, "  %s -> %s: %s\n", p.SelfID, p.Target.ID, appendResult(addedRemote))
 	_, _ = fmt.Fprintf(out, "  %s -> %s: %s\n", p.Target.ID, p.SelfID, appendResult(addedLocal))
 
-	// Healing the peer's own row for this machine goes last, and is the only
-	// write in this function aimed at a file this process cannot read (the
-	// peer's own machines.yaml, resolved by the peer's own camp). Everything
-	// above it is required for keys to work at all; this is a courtesy for
-	// the direction 'camp machine adopt' already got wrong once. A failure
-	// here — an unreachable peer camp, an old peer binary, anything — must
-	// never undo, retry, or fail the writes already committed above it.
+	// Last on purpose: a heal failure must never undo, retry, or fail the
+	// writes above it.
 	if p.HealPeerRow {
 		if _, healErr := pairHealPeerRow(ctx, p.Target, healCommandArgs(p)); healErr != nil {
 			_, _ = fmt.Fprintf(out, "\n  %s's fleet row for this machine was not updated (%v)\n", p.Target.ID, healErr)
