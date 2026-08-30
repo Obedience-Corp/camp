@@ -231,6 +231,34 @@ func TestRewriteRel(t *testing.T) {
 	}
 }
 
+func TestRewritePath(t *testing.T) {
+	tests := []struct {
+		name       string
+		rel        string
+		dungeonDir string
+		want       string
+	}{
+		{name: "bare dungeon segment", rel: "dungeon", dungeonDir: Hidden, want: Hidden},
+		{name: "leading dungeon segment", rel: "dungeon/OBEY.md", dungeonDir: Hidden, want: filepath.Join(Hidden, "OBEY.md")},
+		{name: "nested dungeon segment", rel: "workflow/design/dungeon/OBEY.md", dungeonDir: Hidden, want: filepath.Join("workflow", "design", Hidden, "OBEY.md")},
+		{name: "campaign-metadata dungeon", rel: ".campaign/intents/dungeon/.crawl.yaml", dungeonDir: Hidden, want: filepath.Join(".campaign", "intents", Hidden, ".crawl.yaml")},
+		{name: "already hidden is a no-op", rel: filepath.Join("workflow", "design", Hidden, "OBEY.md"), dungeonDir: Hidden, want: filepath.Join("workflow", "design", Hidden, "OBEY.md")},
+		{name: "non-dungeon path untouched", rel: "workflow/design/OBEY.md", dungeonDir: Hidden, want: "workflow/design/OBEY.md"},
+		{name: "path merely prefixed with dungeon untouched", rel: "dungeonfall/OBEY.md", dungeonDir: Hidden, want: "dungeonfall/OBEY.md"},
+		{name: "visible requested is a no-op", rel: "workflow/design/dungeon/OBEY.md", dungeonDir: Visible, want: "workflow/design/dungeon/OBEY.md"},
+		{name: "empty rel is a no-op", rel: "", dungeonDir: Hidden, want: ""},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got := RewritePath(tt.rel, tt.dungeonDir)
+			if got != tt.want {
+				t.Errorf("RewritePath(%q, %q) = %q, want %q", tt.rel, tt.dungeonDir, got, tt.want)
+			}
+		})
+	}
+}
+
 func TestIsDungeonName(t *testing.T) {
 	tests := []struct {
 		name string

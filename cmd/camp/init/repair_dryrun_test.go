@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"github.com/Obedience-Corp/camp/internal/config"
+	"github.com/Obedience-Corp/camp/internal/scaffold"
 )
 
 // newPreFixCampaign builds a campaign whose root .gitignore predates the
@@ -68,6 +69,45 @@ func TestRunFlow_RepairDryRunPreviewsRepairPlan(t *testing.T) {
 	}
 	if strings.Contains(got, "Dry run - would create:") {
 		t.Fatalf("repair dry run printed the generic init preview instead of the repair plan:\n%s", got)
+	}
+}
+
+func TestRunFlow_RepairHiddenCampaignIsUpToDate(t *testing.T) {
+	tmpDir := t.TempDir()
+	tmpDir, _ = filepath.EvalSymlinks(tmpDir)
+	t.Setenv("XDG_CONFIG_HOME", tmpDir)
+
+	campaignDir := filepath.Join(tmpDir, "hidden-up-to-date")
+	if err := os.MkdirAll(campaignDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+
+	ctx := t.Context()
+	if _, err := scaffold.Init(ctx, campaignDir, scaffold.InitOptions{
+		Name:        "hidden-up-to-date",
+		NoRegister:  true,
+		SkipGitInit: true,
+	}); err != nil {
+		t.Fatalf("Init() error = %v", err)
+	}
+
+	var out bytes.Buffer
+	if err := RunFlow(ctx, Params{
+		Dir:        campaignDir,
+		Name:       "hidden-up-to-date",
+		TypeStr:    "product",
+		Repair:     true,
+		DryRun:     true,
+		NoRegister: true,
+		NoGit:      true,
+		NoSkills:   true,
+	}, Writers{HumanOut: &out}, false); err != nil {
+		t.Fatalf("RunFlow() error = %v", err)
+	}
+
+	got := out.String()
+	if !strings.Contains(got, "nothing to repair") {
+		t.Fatalf("repair on a freshly inited hidden campaign should be a no-op, got:\n%s", got)
 	}
 }
 
