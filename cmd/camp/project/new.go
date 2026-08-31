@@ -19,14 +19,14 @@ var projectNewCmd = &cobra.Command{
 
 The project is initialized as a git repository with an initial commit,
 then added as a submodule under projects/. No remote repository is required.
+The campaign commit is always created so .gitmodules and the submodule pointer land together.
 
 You can add a remote later:
   cd projects/<name>
   git remote add origin git@github.com:org/<name>.git
 
 Examples:
-  camp project new my-service             # Create new project
-  camp project new my-service --no-commit # Skip auto-commit to campaign`,
+  camp project new my-service             # Create new project`,
 	Args: cobra.ExactArgs(1),
 	RunE: runProjectNew,
 }
@@ -35,7 +35,6 @@ func init() {
 	Cmd.AddCommand(projectNewCmd)
 
 	projectNewCmd.Flags().StringP("path", "p", "", "Override destination path (defaults to projects/<name>)")
-	projectNewCmd.Flags().Bool("no-commit", false, "Skip automatic git commit")
 }
 
 func runProjectNew(cmd *cobra.Command, args []string) error {
@@ -43,7 +42,6 @@ func runProjectNew(cmd *cobra.Command, args []string) error {
 	name := args[0]
 
 	path, _ := cmd.Flags().GetString("path")
-	noCommit, _ := cmd.Flags().GetBool("no-commit")
 
 	root, err := campaign.DetectCached(ctx)
 	if err != nil {
@@ -68,26 +66,24 @@ func runProjectNew(cmd *cobra.Command, args []string) error {
 	fmt.Println(ui.KeyValue("  Path:", result.Path))
 	fmt.Println(ui.KeyValue("  Source:", result.Source))
 
-	if !noCommit {
-		cfg, _ := config.LoadCampaignConfig(ctx, root)
-		campaignID := ""
-		if cfg != nil {
-			campaignID = cfg.ID
-		}
-		files := commit.NormalizeFiles(root, ".gitmodules", result.Path)
-		commitResult := commit.Project(ctx, commit.ProjectOptions{
-			Options: commit.Options{
-				CampaignRoot:  root,
-				CampaignID:    campaignID,
-				Files:         files,
-				SelectiveOnly: true,
-			},
-			Action:      commit.ProjectNew,
-			ProjectName: result.Name,
-		})
-		if commitResult.Message != "" {
-			fmt.Printf("  %s\n", commitResult.Message)
-		}
+	cfg, _ := config.LoadCampaignConfig(ctx, root)
+	campaignID := ""
+	if cfg != nil {
+		campaignID = cfg.ID
+	}
+	files := commit.NormalizeFiles(root, ".gitmodules", result.Path)
+	commitResult := commit.Project(ctx, commit.ProjectOptions{
+		Options: commit.Options{
+			CampaignRoot:  root,
+			CampaignID:    campaignID,
+			Files:         files,
+			SelectiveOnly: true,
+		},
+		Action:      commit.ProjectNew,
+		ProjectName: result.Name,
+	})
+	if commitResult.Message != "" {
+		fmt.Printf("  %s\n", commitResult.Message)
 	}
 
 	return nil

@@ -8,6 +8,7 @@ Create a new local project as a git submodule in the campaign.
 
 The project is initialized as a git repository with an initial commit,
 then added as a submodule under projects/. No remote repository is required.
+The campaign commit is always created so .gitmodules and the submodule pointer land together.
 
 You can add a remote later:
   cd projects/<name>
@@ -15,7 +16,6 @@ You can add a remote later:
 
 Examples:
   camp project new my-service             # Create new project
-  camp project new my-service --no-commit # Skip auto-commit to campaign
 
 ```
 camp project new <name> [flags]
@@ -25,7 +25,6 @@ camp project new <name> [flags]
 
 ```
   -h, --help          help for new
-      --no-commit     Skip automatic git commit
   -p, --path string   Override destination path (defaults to projects/<name>)
 ```
 

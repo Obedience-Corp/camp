@@ -3235,7 +3235,8 @@ normal use: workers start themselves, and every command that touches git
 history waits for the queue before it runs.
 
 Examples:
-  camp jobs                    # what is queued, running, or failed
+  camp jobs                    # interactive browser in a TTY; table otherwise
+  camp jobs --plain            # always print the table
   camp jobs --json             # the same, for scripts and agents
   camp jobs retry all          # requeue everything that failed
   camp jobs drop <id>          # give up on one job, keeping its content
@@ -3248,8 +3249,10 @@ camp jobs [flags]
 ### Options
 
 ```
-  -h, --help   help for jobs
-      --json   Emit a structured JSON result
+  -h, --help          help for jobs
+  -i, --interactive   Open the interactive jobs browser (prints the table when stdout is not a terminal)
+      --json          Emit a structured JSON result
+      --plain         Print the table even when stdout is a terminal
 ```
 
 ### Options inherited from parent commands
@@ -4958,6 +4961,7 @@ Add a git repository as a project in the campaign.
 
 The project is cloned as a git submodule into the projects/ directory.
 A worktree directory is also created for future parallel development.
+The campaign commit is always created so .gitmodules and the submodule pointer land together.
 
 If you're already inside a campaign, that campaign is used by default.
 Outside a campaign, use --campaign <name-or-id> or a bare --campaign to
@@ -4986,7 +4990,6 @@ camp project add [source] [flags]
   -h, --help              help for add
   -l, --local string      Add existing local repository instead of cloning
   -n, --name string       Override project name (defaults to repo name)
-      --no-commit         Skip automatic git commit
   -p, --path string       Override destination path (defaults to projects/<name>)
 ```
 
@@ -5163,6 +5166,7 @@ Create a new local project as a git submodule in the campaign.
 
 The project is initialized as a git repository with an initial commit,
 then added as a submodule under projects/. No remote repository is required.
+The campaign commit is always created so .gitmodules and the submodule pointer land together.
 
 You can add a remote later:
   cd projects/<name>
@@ -5170,7 +5174,6 @@ You can add a remote later:
 
 Examples:
   camp project new my-service             # Create new project
-  camp project new my-service --no-commit # Skip auto-commit to campaign
 
 ```
 camp project new <name> [flags]
@@ -5180,7 +5183,6 @@ camp project new <name> [flags]
 
 ```
   -h, --help          help for new
-      --no-commit     Skip automatic git commit
   -p, --path string   Override destination path (defaults to projects/<name>)
 ```
 
