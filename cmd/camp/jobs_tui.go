@@ -49,13 +49,21 @@ func runJobsTUI(cmd *cobra.Command, campRoot string, entries []jobs.Entry, super
 }
 
 type jobsTUIModel struct {
-	ctx         context.Context
-	campRoot    string
-	entries     []jobs.Entry
-	superseded  map[string]bool
-	cursor      int
-	overlay     jobsOverlay
-	confirmID   string
+	ctx        context.Context
+	campRoot   string
+	entries    []jobs.Entry
+	superseded map[string]bool
+	cursor     int
+	overlay    jobsOverlay
+	confirmID  string
+	// confirmIDs are the retryable job ids captured when opening the bulk
+	// retry confirm. Fixed at open so a refresh cannot change which jobs the
+	// confirmed action will touch.
+	confirmIDs []string
+	// confirmSkip is how many superseded failed jobs the bulk retry will leave
+	// alone. Shown in the confirm copy so "retry all" cannot silently mean
+	// "including the ones marked cannot retry".
+	confirmSkip int
 	status      string
 	statusErr   bool
 	width       int

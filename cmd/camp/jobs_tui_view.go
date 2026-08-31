@@ -354,18 +354,36 @@ func (m jobsTUIModel) footer(cw int) string {
 
 func (m jobsTUIModel) helpText() string {
 	parts := []string{"j/k: move", "u: refresh", "y: copy id", "q: quit"}
+	retryable := len(retryableFailedIDs(m.entries, m.superseded)) > 0
+	failed, _, _, _ := jobsActionCounts(m.entries, m.superseded)
 	e, ok := m.selected()
 	if !ok {
-		if failed, _, _, _ := jobsActionCounts(m.entries, m.superseded); failed > 0 {
-			parts = append([]string{"R: retry all", "D: drop all"}, parts...)
+		bulk := make([]string, 0, 2)
+		if retryable {
+			bulk = append(bulk, "R: retry all")
+		}
+		if failed > 0 {
+			bulk = append(bulk, "D: drop all")
+		}
+		if len(bulk) > 0 {
+			parts = append(bulk, parts...)
 		}
 		return strings.Join(parts, " . ")
 	}
 	switch {
 	case e.State == "failed" && !m.superseded[e.ID]:
-		parts = append([]string{"r: retry", "d: drop", "R: retry all", "D: drop all"}, parts...)
+		row := []string{"r: retry", "d: drop"}
+		if retryable {
+			row = append(row, "R: retry all")
+		}
+		row = append(row, "D: drop all")
+		parts = append(row, parts...)
 	case e.State == "failed":
-		parts = append([]string{"d: drop", "D: drop all"}, parts...)
+		row := []string{"d: drop", "D: drop all"}
+		if retryable {
+			row = append([]string{"R: retry all"}, row...)
+		}
+		parts = append(row, parts...)
 	case e.Stalled && e.Stuck:
 		parts = append([]string{"s: serve", "x: drop running"}, parts...)
 	case e.Stalled:
@@ -409,9 +427,13 @@ func (m jobsTUIModel) overlayView() string {
 		body = "Give up on every failed job?\nFiles stay on disk for your next commit."
 		help = "y: drop all . n/esc: cancel"
 	case jobsOverlayConfirmRetryAll:
-		title = "Retry all failed"
-		body = "Requeue every failed job and start workers?"
-		help = "y: retry all . n/esc: cancel"
+		title = "Retry failed"
+		n := len(m.confirmIDs)
+		body = fmt.Sprintf("Requeue %s and start workers?", jobCountPhrase(n))
+		if m.confirmSkip > 0 {
+			body += fmt.Sprintf("\n%d marked cannot-retry will be left alone.", m.confirmSkip)
+		}
+		help = "y: retry . n/esc: cancel"
 	default:
 		return ""
 	}

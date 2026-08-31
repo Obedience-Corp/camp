@@ -425,6 +425,22 @@ func jobsActionCounts(entries []jobs.Entry, superseded map[string]bool) (failed,
 	return failed, noWorker, overBudget, stale
 }
 
+// retryableFailedIDs returns failed job ids that are safe to requeue.
+//
+// Superseded jobs are excluded: retrying them only parks them again after a
+// conflict the listing already diagnosed. The bulk TUI action must match the
+// single-row refusal so "cannot retry" is not contradicted by R.
+func retryableFailedIDs(entries []jobs.Entry, superseded map[string]bool) []string {
+	var ids []string
+	for _, e := range entries {
+		if e.State != "failed" || superseded[e.ID] {
+			continue
+		}
+		ids = append(ids, e.ID)
+	}
+	return ids
+}
+
 func runJobsRun(cmd *cobra.Command, _ []string) error {
 	ctx := cmd.Context()
 

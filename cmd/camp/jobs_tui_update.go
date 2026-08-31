@@ -92,13 +92,7 @@ func (m jobsTUIModel) updateBrowse(key tea.KeyMsg) (tea.Model, tea.Cmd) {
 	case "r":
 		return m.startRetrySelected()
 	case "R":
-		failed, _, _, _ := jobsActionCounts(m.entries, m.superseded)
-		if failed == 0 {
-			m.setStatus("no failed jobs to retry", true)
-			return m, nil
-		}
-		m.overlay = jobsOverlayConfirmRetryAll
-		return m, nil
+		return m.startRetryAll()
 	case "d":
 		return m.startDropSelected()
 	case "D":
@@ -122,12 +116,18 @@ func (m jobsTUIModel) updateOverlay(key tea.KeyMsg) (tea.Model, tea.Cmd) {
 	case "ctrl+c", "q", "esc", "n":
 		m.overlay = jobsOverlayNone
 		m.confirmID = ""
+		m.confirmIDs = nil
+		m.confirmSkip = 0
 		return m, nil
 	case "y", "enter":
 		overlay := m.overlay
 		id := m.confirmID
+		ids := append([]string(nil), m.confirmIDs...)
+		skip := m.confirmSkip
 		m.overlay = jobsOverlayNone
 		m.confirmID = ""
+		m.confirmIDs = nil
+		m.confirmSkip = 0
 		m.busy = true
 		switch overlay {
 		case jobsOverlayConfirmDrop:
@@ -140,8 +140,8 @@ func (m jobsTUIModel) updateOverlay(key tea.KeyMsg) (tea.Model, tea.Cmd) {
 			m.setStatus("dropping all failed…", false)
 			return m, retryOrDropCmd(m.ctx, m.campRoot, jobs.SelectorAll, false, false)
 		case jobsOverlayConfirmRetryAll:
-			m.setStatus("retrying all failed…", false)
-			return m, retryOrDropCmd(m.ctx, m.campRoot, jobs.SelectorAll, true, false)
+			m.setStatus("retrying failed…", false)
+			return m, retryIDsCmd(m.ctx, m.campRoot, ids, skip)
 		}
 	}
 	return m, nil
@@ -163,6 +163,24 @@ func (m jobsTUIModel) startRetrySelected() (tea.Model, tea.Cmd) {
 	m.busy = true
 	m.setStatus("retrying…", false)
 	return m, retryOrDropCmd(m.ctx, m.campRoot, e.ID, true, false)
+}
+
+func (m jobsTUIModel) startRetryAll() (tea.Model, tea.Cmd) {
+	ids := retryableFailedIDs(m.entries, m.superseded)
+	_, _, _, stale := jobsActionCounts(m.entries, m.superseded)
+	if len(ids) == 0 {
+		if stale > 0 {
+			m.setStatus(fmt.Sprintf(
+				"no retryable failed jobs (%d cannot retry; drop them)", stale), true)
+			return m, nil
+		}
+		m.setStatus("no failed jobs to retry", true)
+		return m, nil
+	}
+	m.overlay = jobsOverlayConfirmRetryAll
+	m.confirmIDs = ids
+	m.confirmSkip = stale
+	return m, nil
 }
 
 func (m jobsTUIModel) startDropSelected() (tea.Model, tea.Cmd) {
@@ -215,17 +233,7 @@ func (m jobsTUIModel) startServe() (tea.Model, tea.Cmd) {
 func retryOrDropCmd(ctx context.Context, campRoot, selector string, retry, running bool) tea.Cmd {
 	return func() tea.Msg {
 		if retry {
-			requeued, err := jobs.Retry(ctx, campRoot, selector)
-			if err != nil {
-				return jobsActionDoneMsg{err: err}
-			}
-			if len(requeued) == 0 {
-				return jobsActionDoneMsg{okStatus: "no failed jobs to retry"}
-			}
-			for _, lane := range distinctRepos(requeued) {
-				jobs.SpawnIfNeeded(ctx, campRoot, lane)
-			}
-			return jobsActionDoneMsg{okStatus: fmt.Sprintf("requeued %s", jobCountPhrase(len(requeued)))}
+			return retrySelectorAction(ctx, campRoot, selector, 0)
 		}
 		if running {
 			return dropRunningAction(ctx, campRoot, selector)
@@ -241,6 +249,55 @@ func retryOrDropCmd(ctx context.Context, campRoot, selector string, retry, runni
 			okStatus: fmt.Sprintf("dropped %s; files remain for your next commit", jobCountPhrase(len(dropped))),
 		}
 	}
+}
+
+// retryIDsCmd requeues each id and reports how many superseded jobs were left
+// alone. Ids are already filtered; skip is only for the status line.
+func retryIDsCmd(ctx context.Context, campRoot string, ids []string, skip int) tea.Cmd {
+	return func() tea.Msg {
+		if len(ids) == 0 {
+			if skip > 0 {
+				return jobsActionDoneMsg{okStatus: fmt.Sprintf(
+					"no retryable failed jobs (%d cannot retry)", skip)}
+			}
+			return jobsActionDoneMsg{okStatus: "no failed jobs to retry"}
+		}
+		var requeued []jobs.Job
+		for _, id := range ids {
+			got, err := jobs.Retry(ctx, campRoot, id)
+			if err != nil {
+				return jobsActionDoneMsg{err: err}
+			}
+			requeued = append(requeued, got...)
+		}
+		return retryDoneStatus(campRoot, ctx, requeued, skip)
+	}
+}
+
+func retrySelectorAction(ctx context.Context, campRoot, selector string, skip int) tea.Msg {
+	requeued, err := jobs.Retry(ctx, campRoot, selector)
+	if err != nil {
+		return jobsActionDoneMsg{err: err}
+	}
+	return retryDoneStatus(campRoot, ctx, requeued, skip)
+}
+
+func retryDoneStatus(campRoot string, ctx context.Context, requeued []jobs.Job, skip int) tea.Msg {
+	if len(requeued) == 0 {
+		if skip > 0 {
+			return jobsActionDoneMsg{okStatus: fmt.Sprintf(
+				"no retryable failed jobs (%d cannot retry)", skip)}
+		}
+		return jobsActionDoneMsg{okStatus: "no failed jobs to retry"}
+	}
+	for _, lane := range distinctRepos(requeued) {
+		jobs.SpawnIfNeeded(ctx, campRoot, lane)
+	}
+	msg := fmt.Sprintf("requeued %s", jobCountPhrase(len(requeued)))
+	if skip > 0 {
+		msg += fmt.Sprintf(" (%d cannot retry; left alone)", skip)
+	}
+	return jobsActionDoneMsg{okStatus: msg}
 }
 
 func dropRunningAction(ctx context.Context, campRoot, selector string) tea.Msg {

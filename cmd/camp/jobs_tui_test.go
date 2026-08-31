@@ -184,3 +184,79 @@ func TestJobsTUIHelpFollowsSelection(t *testing.T) {
 		t.Fatalf("stalled row must not offer retry: %q", help)
 	}
 }
+
+func TestRetryableFailedIDsSkipsSuperseded(t *testing.T) {
+	t.Parallel()
+
+	entries := []jobs.Entry{
+		{Job: jobs.Job{ID: "ok"}, State: "failed"},
+		{Job: jobs.Job{ID: "stale"}, State: "failed"},
+		{Job: jobs.Job{ID: "run"}, State: "running"},
+	}
+	superseded := map[string]bool{"stale": true}
+	got := retryableFailedIDs(entries, superseded)
+	if len(got) != 1 || got[0] != "ok" {
+		t.Fatalf("retryableFailedIDs = %v, want [ok]", got)
+	}
+}
+
+func TestJobsTUIBulkRetrySkipsSuperseded(t *testing.T) {
+	t.Parallel()
+
+	entries := []jobs.Entry{{
+		Job:   jobs.Job{ID: "job-ok", Seq: 1, Kind: jobs.KindCommitTree, CreatedAt: "2026-07-28T11:30:00.000Z"},
+		State: "failed", Lane: ".",
+	}, {
+		Job:   jobs.Job{ID: "job-stale", Seq: 2, Kind: jobs.KindCommitTree, CreatedAt: "2026-07-28T12:00:00.000Z"},
+		State: "failed", Lane: ".",
+	}}
+	m := newJobsTUIModel(t.Context(), "/tmp/camp", entries, map[string]bool{"job-stale": true})
+	m.width, m.height = 100, 24
+
+	// Selected on a superseded row: single retry refuses, bulk still offers
+	// only the retryable ids.
+	m.cursor = 1
+	m = jkey(m, "r")
+	if !m.statusErr || !strings.Contains(m.status, "cannot retry") {
+		t.Fatalf("single retry on superseded = %q (err=%v)", m.status, m.statusErr)
+	}
+	help := m.helpText()
+	if !strings.Contains(help, "R: retry all") {
+		t.Fatalf("help should still offer bulk retry when other jobs are retryable: %q", help)
+	}
+
+	m = jkey(m, "R")
+	if m.overlay != jobsOverlayConfirmRetryAll {
+		t.Fatalf("overlay after R = %v, want confirm retry", m.overlay)
+	}
+	if len(m.confirmIDs) != 1 || m.confirmIDs[0] != "job-ok" {
+		t.Fatalf("confirmIDs = %v, want [job-ok]", m.confirmIDs)
+	}
+	if m.confirmSkip != 1 {
+		t.Fatalf("confirmSkip = %d, want 1", m.confirmSkip)
+	}
+	view := m.View()
+	if !strings.Contains(view, "cannot-retry") || !strings.Contains(view, "1 job") {
+		t.Fatalf("confirm overlay should name the retryable count and skipped jobs:\n%s", view)
+	}
+}
+
+func TestJobsTUIBulkRetryRefusesWhenAllSuperseded(t *testing.T) {
+	t.Parallel()
+
+	entries := []jobs.Entry{{
+		Job:   jobs.Job{ID: "job-stale", Seq: 1, Kind: jobs.KindCommitTree, CreatedAt: "2026-07-28T11:30:00.000Z"},
+		State: "failed", Lane: ".",
+	}}
+	m := newJobsTUIModel(t.Context(), "/tmp/camp", entries, map[string]bool{"job-stale": true})
+	m = jkey(m, "R")
+	if m.overlay != jobsOverlayNone {
+		t.Fatalf("overlay = %v, want none when nothing is retryable", m.overlay)
+	}
+	if !m.statusErr || !strings.Contains(m.status, "cannot retry") {
+		t.Fatalf("status = %q (err=%v), want cannot-retry refusal", m.status, m.statusErr)
+	}
+	if strings.Contains(m.helpText(), "R: retry all") {
+		t.Fatalf("help must not offer R when every failed job is superseded: %q", m.helpText())
+	}
+}
