@@ -28,6 +28,13 @@ camp init "$HOME/campaign" \
   --mission 'Inspect and act on queued jobs without copying ids' \
   --no-register --no-skills >/dev/null
 
+# Force the dark brand palette for the recording (truecolor fire accents).
+camp settings set global.theme dark >/dev/null
+(
+  cd "$HOME/campaign"
+  camp settings set local.theme_override dark >/dev/null
+)
+
 lane="$HOME/campaign/.campaign/cache/jobs/failed/%2E"
 mkdir -p "$lane"
 

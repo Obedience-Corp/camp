@@ -19,7 +19,7 @@ Set Margin 0
 Set BorderRadius 0
 Set Framerate 30
 Set TypingSpeed 55ms
-Set Theme {"name":"termcast","background":"#0d0d11","foreground":"#f8f8f2","cursor":"#F2721C","selection":"#2a2a33","black":"#16161a","red":"#ff5f57","green":"#50fa7b","yellow":"#febc2e","blue":"#57a6ff","magenta":"#bd93f9","cyan":"#8be9fd","white":"#f8f8f2","brightBlack":"#6b7280","brightRed":"#ff6e67","brightGreen":"#69ff94","brightYellow":"#ffd23f","brightBlue":"#7ab8ff","brightMagenta":"#d0a9ff","brightCyan":"#a4f0ff","brightWhite":"#ffffff"}
+Set Theme {"name":"Obedience Corp","background":"#0D0D11","foreground":"#F8F8F2","selection":"#3A2418","cursor":"#F2721C","black":"#0D0D11","red":"#FF5F57","green":"#50FA7B","yellow":"#FEBC2E","blue":"#F2721C","magenta":"#C2410C","cyan":"#FFB347","white":"#F8F8F2","brightBlack":"#A1A1AA","brightRed":"#FF5F57","brightGreen":"#50FA7B","brightYellow":"#FEBC2E","brightBlue":"#FFB347","brightMagenta":"#EA5513","brightCyan":"#FFB347","brightWhite":"#FFFFFF"}
 
 # ── hidden setup: disposable HOME campaign already seeded by the fixture ──
 Hide
@@ -28,6 +28,9 @@ Type "export PATH=$CAMP_VHS_ROOT/bin:$PATH" Enter
 Type "unset NO_COLOR CLICOLOR" Enter
 Type "export TERM=xterm-256color COLORTERM=truecolor COLORFGBG=15\;0 CLICOLOR_FORCE=1 FORCE_COLOR=1" Enter
 Type "export PS1='\033[38;5;208m❯\033[0m '" Enter
+# Pin the dark fire palette so adaptive detection cannot mute the TUI in vhs.
+Type "camp settings set global.theme dark" Enter
+Type "camp settings set local.theme_override dark" Enter
 Type "cd $HOME/campaign" Enter
 Type "clear" Enter
 Show
