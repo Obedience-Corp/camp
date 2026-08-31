@@ -23,4 +23,9 @@ with sign-offs before merge.
 - Changing command help, flags, or adding CLI commands: run `just docs` and commit
   the regenerated `docs/cli-reference/`. `just docs-check` (wired into `gate-fast`
   and `gate`) fails when that generated reference is stale.
+- Changing any user-visible wording (help text, errors, TUI labels, docs prose,
+  scaffold text): follow [docs/terminology.md](docs/terminology.md). It is the
+  binding vocabulary contract and lists the technical names that must not be
+  renamed, including `.campaign/`, `campaign.yaml`, `CAMP_ROOT`, `--campaign`,
+  and every JSON key and schema version.
 - Match the surrounding code's conventions; see the README for project layout.

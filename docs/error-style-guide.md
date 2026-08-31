@@ -2,12 +2,19 @@
 
 Guidelines for writing user-friendly error messages in the camp CLI.
 
+Error text is user-facing copy, so it follows the vocabulary contract in
+[terminology.md](terminology.md). Message strings say "camp"; the Go symbols,
+paths, flags, and JSON keys behind them keep their frozen spellings.
+
 ## Principles
 
 1. **Be helpful, not just accurate** - Tell users how to fix the problem
 2. **Include context** - Show relevant values (paths, names, etc.)
 3. **Suggest actions** - End with "Hint:" or "Try:" suggestions
 4. **Avoid jargon** - Use plain language, not technical terms
+5. **Use the contract vocabulary** - Say "camp", not "campaign", in message
+   text. Name a frozen path or flag only when the user must type or inspect it,
+   and never warn that it is deprecated.
 
 ## Format
 
@@ -20,13 +27,13 @@ Hint: <How to fix it>
 
 **Good:**
 ```
-not inside a campaign directory
-Hint: Run 'camp init' to create a campaign, or navigate to an existing one
+not inside a camp
+Hint: Run 'camp init' to create a camp, or navigate to an existing one
 ```
 
 **Bad:**
 ```
-not inside a campaign directory
+not inside a camp
 ```
 
 ## Error Types
@@ -36,9 +43,12 @@ not inside a campaign directory
 Use for programmatic checking. Include hints in the message:
 
 ```go
-var ErrNotInCampaign = errors.New("not inside a campaign directory\n" +
-    "Hint: Run 'camp init' to create a campaign, or navigate to an existing one")
+var ErrNotInCampaign = errors.New("not inside a camp\n" +
+    "Hint: Run 'camp init' to create a camp, or navigate to an existing one")
 ```
+
+The symbol name stays `ErrNotInCampaign`. Go identifiers are frozen by the
+terminology contract; only the message string uses product vocabulary.
 
 ### Structured Errors
 
@@ -74,7 +84,7 @@ return err
 
 ## Hint Guidelines
 
-1. **Suggest commands** - `Run 'camp list' to see registered campaigns`
+1. **Suggest commands** - `Run 'camp list' to see registered camps`
 2. **Explain alternatives** - `or navigate to an existing one`
 3. **Be specific** - Don't say "check the input", say what to check
 
@@ -90,11 +100,11 @@ return err
 Test that errors are helpful:
 
 ```bash
-# Campaign detection
+# Camp detection
 cd /tmp && camp go p
 # Should show hint about 'camp init'
 
-# Unknown campaign
+# Unknown camp
 camp unregister nonexistent
 # Should suggest 'camp list'
 ```

@@ -1,7 +1,13 @@
 # `.campaign/` Directory Reference
 
-`.campaign/` is camp's hidden campaign metadata directory. It mixes three
-kinds of content:
+`.campaign/` is the hidden metadata directory at the root of a camp, previously
+called a campaign. The directory name is a stable compatibility path: **do not
+rename it**, and do not rename it to `.camp/`, which is a separate attachment
+marker file for linked external directories. See
+[terminology.md](terminology.md) for the full vocabulary and compatibility
+boundary.
+
+It mixes three kinds of content:
 
 - user-editable configuration
 - camp/fest-managed shared state

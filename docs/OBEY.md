@@ -31,6 +31,11 @@ docs/
 Hand-authored references that explain concepts beyond the per-command
 auto-generated CLI reference.
 
+Start with [terminology.md](terminology.md). It is the binding Camp/camp/camps
+vocabulary contract and the frozen technical-name boundary. Read it before
+changing any user-visible wording.
+
+- [terminology.md](terminology.md)
 - [campaign-directory-reference.md](campaign-directory-reference.md)
 - [campaign-settings-files.md](campaign-settings-files.md)
 - [workflow-reference.md](workflow-reference.md) — custom workflow surface
@@ -46,8 +51,7 @@ auto-generated CLI reference.
 
 ## Migrations
 
-Operator-facing rollout notes for behavior changes that affect existing
-campaigns.
+Operator-facing rollout notes for behavior changes that affect existing camps.
 
 - [migrations/dungeon-behavior-upgrade-2026-03.md](migrations/dungeon-behavior-upgrade-2026-03.md)
 - [migrations/intent-path-targeting-upgrade-2026-03.md](migrations/intent-path-targeting-upgrade-2026-03.md)
