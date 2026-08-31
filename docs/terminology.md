@@ -403,6 +403,82 @@ When you are unsure whether to change a string:
 4. Still unsure? Freeze it and note it. A missed presentation string is a
    follow-up commit. A changed contract is a broken install.
 
+## Compatibility gates
+
+The frozen list above is enforced by an automated baseline, pinned before any
+wording changed so a later failure names real drift instead of describing it.
+
+Where it lives:
+
+- `internal/compat/` holds the host-side half: frozen paths and markers,
+  environment variables, selector grammars, schema versions, persisted key
+  sets in both JSON and YAML, historical commit tag forms, the watcher
+  contract paths, the scaffolded skill bundle names, the `campaign_name`
+  template variable, and the `cgo`, `csw`, and `corg` shell helpers. Its
+  fixtures under `internal/compat/testdata/oldstate/` are literal campaign-era
+  files, so a renamed key parses to a zero value and fails there instead of on
+  a user's machine.
+- `cmd/camp/compat_campaign_flag_test.go` walks every registered command and
+  pins `--campaign`, its `-c` shorthand, its no-value interactive default, and
+  the rule that its help text never warns about a frozen contract.
+- `cmd/camp/compat_schema_versions_test.go` and
+  `cmd/camp/quest/compat_schema_versions_test.go` pin the published schema
+  strings that live in command packages `internal/compat` cannot import. The
+  quest one is behind the dev build profile.
+- `tests/integration/compat_oldstate_test.go` is the containerized half:
+  discovery from a campaign-era workspace, a pre-org registry, a v1 `.camp`
+  marker, `camp init --repair` against old state, the `.campaign/` subtree a
+  fresh init writes, `--campaign` routing, and the machine-readable output
+  keys read out of the real binary.
+
+The split follows the repository's existing rule. Anything that creates,
+repairs, or git-initializes a real workspace runs in the container. Host-side
+coverage is limited to parsing and serializing fixture bytes in a temporary
+directory, which is what `internal/config` already does.
+
+### After any presentation change
+
+Run these from the repository root, cheapest first. The first failure is the
+answer, so stop and read it rather than running the rest.
+
+```bash
+go test -count=1 ./internal/compat/...               # frozen names, keys, grammars, historical tag forms
+go test -count=1 -run TestCampaignFlag ./cmd/camp/   # the --campaign flag contract
+just test integration-run TestCompat                 # containerized old-state baseline
+just gate-fast                                       # both profiles: build, vet, lint, CLI docs, dev unit tests
+```
+
+The first two run in seconds and name the broken contract directly, which is
+why they come before the gate that also runs them as part of the unit suite.
+
+`just gate-fast` includes `just docs-check`, which fails when the committed CLI
+reference no longer matches the code. Help text is generated, so a wording
+change that edits `docs/cli-reference/` by hand fails there. Regenerate with
+`just docs` and commit the result.
+
+### Before moving a pull request out of draft
+
+```bash
+just gate                                       # gate-fast plus stable-profile unit tests
+just test integration                           # the full containerized suite
+```
+
+`just test integration-doctor` reports whether this machine can run the
+containerized lane before you spend the time on it.
+
+`just gate-fast` already runs the unit suite in the dev profile, which is the
+only profile that compiles the quest surfaces, and `just gate` adds the stable
+profile on top. Running `BUILD_TAGS=dev just test unit` by hand is worth it
+only when you want the dev-profile signal without the rest of the gate.
+
+### Reading a failure
+
+A failure in `internal/compat` or `compat_oldstate_test.go` means a
+presentation change reached a contract. The fix is to revert the rename and
+change the surrounding description instead. Do not update the expectation:
+these tests are written as the literal strings a shipped install already
+depends on, so an expectation that needs editing is the break.
+
 ## Related references
 
 - [`.campaign/` directory reference](campaign-directory-reference.md) for the
@@ -412,3 +488,5 @@ When you are unsure whether to change a string:
 - [JSON contracts](json-contracts.md) for the machine-readable surfaces and
   their schema versions.
 - [error style guide](error-style-guide.md) for how error text is written.
+- `internal/compat/` for the executable form of the frozen list, and
+  `tests/integration/compat_oldstate_test.go` for its containerized half.

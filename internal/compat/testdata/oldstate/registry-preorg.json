@@ -1,0 +1,15 @@
+{
+  "campaigns": {
+    "8deed8b4-0000-4000-8000-0000000000aa": {
+      "name": "legacy-campaign",
+      "path": "/home/dev/campaigns/legacy-campaign",
+      "type": "product",
+      "last_access": "2024-11-04T09:15:00Z"
+    },
+    "8deed8b4-0000-4000-8000-0000000000bb": {
+      "name": "second-campaign",
+      "path": "/home/dev/campaigns/second-campaign",
+      "type": "research"
+    }
+  }
+}
