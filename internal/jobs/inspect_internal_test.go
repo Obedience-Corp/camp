@@ -262,6 +262,18 @@ func TestEntryAge(t *testing.T) {
 	}
 }
 
+func TestFormatCreated(t *testing.T) {
+	t.Parallel()
+	got := FormatCreated("2026-07-28T11:30:00.000Z")
+	want := time.Date(2026, 7, 28, 11, 30, 0, 0, time.UTC).Local().Format("2006-01-02 15:04")
+	if got != want {
+		t.Errorf("FormatCreated = %q, want %q", got, want)
+	}
+	if got := FormatCreated("not a timestamp"); got != "-" {
+		t.Errorf("FormatCreated on garbage = %q, want -", got)
+	}
+}
+
 // A queue file is plain JSON on disk and nothing stops it being edited, so the
 // invariants enforced at enqueue are only real if they are checked again when
 // the file is read. The one that matters most is the explicit-paths rule: an

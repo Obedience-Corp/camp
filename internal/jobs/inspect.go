@@ -69,7 +69,7 @@ const (
 // Age is how long ago the job was enqueued. Zero when the timestamp is
 // unreadable, which is better than a nonsense duration.
 func (e Entry) Age(now time.Time) time.Duration {
-	t, err := time.Parse("2006-01-02T15:04:05.000Z", e.CreatedAt)
+	t, err := time.Parse(createdAtLayout, e.CreatedAt)
 	if err != nil {
 		return 0
 	}
@@ -187,6 +187,24 @@ func ShortDuration(d time.Duration) string {
 	default:
 		return strconv.Itoa(int(d.Hours()/24)) + "d"
 	}
+}
+
+// createdAtLayout is the RFC3339-with-millis form every job file carries.
+const createdAtLayout = "2006-01-02T15:04:05.000Z"
+
+// FormatCreated renders the enqueue timestamp for a listing column.
+//
+// Age answers "how long ago"; this answers "when". Both matter: a backed-up
+// queue makes Age large with nothing wrong, and without the absolute time a
+// user cannot tell which overnight commit is which. Local wall clock, minute
+// precision, fixed width so the column lines up. Unreadable timestamps become
+// "-" rather than inventing a time.
+func FormatCreated(createdAt string) string {
+	t, err := time.Parse(createdAtLayout, createdAt)
+	if err != nil {
+		return "-"
+	}
+	return t.Local().Format("2006-01-02 15:04")
 }
 
 func stateRank(state string) int {
