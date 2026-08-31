@@ -9,4 +9,10 @@
 //
 // A failure in this package means a presentation change reached a contract. The
 // fix is to revert the rename, not to update the expectation.
+//
+// Nothing here writes to the filesystem it runs on. Fixtures are read in place
+// and parsers are fed bytes, so the baseline costs a developer's machine no
+// mutation at all. The half of the baseline that needs a real workspace on real
+// disk — discovery, load-and-save round trips, and the markers camp writes —
+// runs against the binary in tests/integration/compat_oldstate_test.go.
 package compat

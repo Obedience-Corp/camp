@@ -67,8 +67,10 @@ func TestFrozenAttachmentMarkerPath(t *testing.T) {
 // directory, in the order a shipped install already relies on: the explicit
 // override, then XDG, then the home directory.
 func TestFrozenUserStateLocations(t *testing.T) {
-	home := t.TempDir()
-	xdg := t.TempDir()
+	// Both resolvers join onto whatever the environment names, so the check is
+	// about the joined path and not about the directory existing.
+	home := filepath.Join("/home", "dev")
+	xdg := filepath.Join("/home", "dev", ".config")
 
 	t.Run("home", func(t *testing.T) {
 		t.Setenv("HOME", home)

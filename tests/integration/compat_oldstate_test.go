@@ -64,6 +64,195 @@ func TestCompatOldStateDiscoveryFromCampaignYAMLAlone(t *testing.T) {
 	assert.False(t, isDir, ".camp must stay an attachment marker file, never a workspace directory")
 }
 
+// oldStateRichCampaignYAML is the other end of the campaign-era range: a
+// workspace that had been used, so its metadata carries a project with
+// shortcuts, an explicit nested concept list, and intent tags. Its host-side
+// half (internal/compat) pins how these keys parse; this file pins that the
+// loader still reads them from .campaign/ and that saving them back does not
+// drop them.
+const oldStateRichCampaignYAML = `id: 8deed8b4-0000-4000-8000-0000000000aa
+name: oldstate-rich
+type: product
+description: A used campaign created before the camp vocabulary change
+mission: Prove campaign-era metadata survives a load and save
+created_at: 2024-11-04T09:15:00Z
+projects:
+    - name: guild-core
+      path: projects/guild-core
+      url: git@github.com:Obedience-Corp/guild-core.git
+      branch: main
+      shortcuts:
+        default: .
+        db: db/migrations
+concepts:
+    - name: projects
+      path: projects/
+      description: Active development projects
+      depth: 1
+      ignore:
+        - worktrees/
+    - name: workflow
+      path: workflow/
+      description: Workflows
+      children:
+        - name: festivals
+          path: festivals/
+          description: Multi-step festival plans
+        - name: design
+          path: workflow/design/
+          description: Design documents
+          depth: 1
+    - name: docs
+      path: docs/
+      description: Documentation
+      depth: 0
+intents:
+    tags:
+        - personal
+        - reference
+`
+
+// oldStateJumpsYAML is the navigation state that shipped beside it, including
+// the two legacy collections newer camps no longer scaffold and a shortcut
+// written before shortcuts carried a source.
+const oldStateJumpsYAML = `paths:
+    projects: projects/
+    worktrees: projects/worktrees/
+    docs: docs/
+    festivals: festivals/
+    workflow: workflow/
+    intents: .campaign/intents/
+    code_reviews: workflow/code_reviews/
+    pipelines: workflow/pipelines/
+    design: workflow/design/
+    dungeon: dungeon/
+shortcuts:
+    legacy-note:
+        path: workflow/code_reviews/
+        description: Shortcut written before the source field existed
+`
+
+// TestCompatOldStateRichLayoutSurvivesRoundTrip loads a used campaign-era
+// workspace through the binary, then repairs it, which is the one everyday
+// command that reads camp's metadata and writes it straight back.
+//
+// The round trip is the destructive-mistake guard: a camp that relocated
+// metadata to .camp/ would orphan every existing workspace, and one that
+// dropped the sections it no longer scaffolds would quietly flatten a user's
+// concepts and shortcuts on the next repair.
+func TestCompatOldStateRichLayoutSurvivesRoundTrip(t *testing.T) {
+	tc := GetSharedContainer(t)
+	const root = "/campaigns/oldstate-rich"
+
+	tc.Shell(t, "mkdir -p "+root+"/.campaign/settings "+root+"/workflow/code_reviews")
+	require.NoError(t, tc.WriteFile(root+"/.campaign/campaign.yaml", oldStateRichCampaignYAML))
+	require.NoError(t, tc.WriteFile(root+"/.campaign/settings/jumps.yaml", oldStateJumpsYAML))
+
+	assertOldStateConcepts(t, tc, root, []string{"festivals", "design"})
+
+	resolved, err := tc.RunCampInDir(root, "go", "legacy-note", "--print")
+	require.NoError(t, err, "a shortcut written before the source field must still resolve: %s", resolved)
+	assert.Equal(t, root+"/workflow/code_reviews", strings.TrimSpace(resolved))
+
+	out, err := tc.RunCampInDir(root, "init", "--repair", "--yes", "--no-skills", "--no-register", "-m", "test mission")
+	require.NoError(t, err, "repair against a used campaign-era workspace must succeed: %s", out)
+
+	after, err := tc.ReadFile(root + "/.campaign/campaign.yaml")
+	require.NoError(t, err, "repair must not move .campaign/campaign.yaml")
+	assert.Equal(t, "8deed8b4-0000-4000-8000-0000000000aa", yamlField(t, after, "id"),
+		"repair must not rewrite the camp id")
+
+	// Repair appends the sub-concepts a current camp scaffolds, so the
+	// configured two are asserted as the head of the list rather than the whole
+	// of it: what must not happen is losing them or reordering them.
+	assertOldStateConcepts(t, tc, root, []string{"festivals", "design"})
+	assertFrozenWorkspaceLayout(t, tc, root)
+}
+
+// assertOldStateConcepts reads the concept list back through the binary. Order
+// is user-visible in the picker, and the nesting and depth are what a rename
+// pass would flatten, so all three are asserted rather than membership alone.
+// wantChildren is the prefix the workflow concept's children must still open
+// with.
+func assertOldStateConcepts(t *testing.T, tc *TestContainer, root string, wantChildren []string) {
+	t.Helper()
+
+	out, err := tc.RunCampInDir(root, "concepts", "--json")
+	require.NoError(t, err, "raw=%s", out)
+
+	var doc struct {
+		Concepts []struct {
+			Name     string   `json:"name"`
+			MaxDepth *int     `json:"max_depth"`
+			Ignore   []string `json:"ignore"`
+			Children []struct {
+				Name string `json:"name"`
+			} `json:"children"`
+		} `json:"concepts"`
+	}
+	require.NoError(t, json.Unmarshal([]byte(jsonPayload(t, out)), &doc), "raw=%s", out)
+
+	names := make([]string, 0, len(doc.Concepts))
+	for _, c := range doc.Concepts {
+		names = append(names, c.Name)
+	}
+	require.Equal(t, []string{"projects", "workflow", "docs"}, names,
+		"campaign-era concepts must load in their configured order")
+
+	require.NotNil(t, doc.Concepts[0].MaxDepth, "concept depth dropped")
+	assert.Equal(t, 1, *doc.Concepts[0].MaxDepth)
+	assert.Equal(t, []string{"worktrees/"}, doc.Concepts[0].Ignore)
+
+	childNames := make([]string, 0, len(doc.Concepts[1].Children))
+	for _, c := range doc.Concepts[1].Children {
+		childNames = append(childNames, c.Name)
+	}
+	require.GreaterOrEqual(t, len(childNames), len(wantChildren), "nested concepts dropped: %v", childNames)
+	assert.Equal(t, wantChildren, childNames[:len(wantChildren)],
+		"configured sub-concepts must keep their place: %v", childNames)
+}
+
+// TestCompatLinkMarkerWrittenKeysAreFrozen pins the key set camp writes into a
+// real .camp marker. The Festival app and the obey daemon read that file, so
+// its keys are a wire format; internal/compat can pin the serialization, but
+// only the binary proves the keys survive the writer.
+func TestCompatLinkMarkerWrittenKeysAreFrozen(t *testing.T) {
+	tc := GetSharedContainer(t)
+	const (
+		campaignA = "/campaigns/oldstate-marker-keys-a"
+		campaignB = "/campaigns/oldstate-marker-keys-b"
+		external  = "/test/oldstate-marker-keys-target"
+	)
+
+	_, err := tc.InitCampaign(campaignA, "oldstate-marker-keys-a", "product")
+	require.NoError(t, err)
+	_, err = tc.InitCampaign(campaignB, "oldstate-marker-keys-b", "product")
+	require.NoError(t, err)
+
+	tc.Shell(t, "mkdir -p "+external+" "+campaignA+"/docs "+campaignB+"/docs"+
+		" && ln -s "+external+" "+campaignA+"/docs/shared"+
+		" && ln -s "+external+" "+campaignB+"/docs/shared")
+
+	// Two campaigns, because campaign_ids only appears once a marker is shared.
+	_, err = tc.RunCampInDir(campaignA, "attach", campaignA+"/docs/shared")
+	require.NoError(t, err)
+	_, err = tc.RunCampInDir(campaignB, "attach", campaignB+"/docs/shared")
+	require.NoError(t, err)
+
+	raw, err := tc.ReadFile(external + "/.camp")
+	require.NoError(t, err)
+
+	var marker map[string]json.RawMessage
+	require.NoError(t, json.Unmarshal([]byte(raw), &marker), "raw=%s", raw)
+	for _, key := range []string{"version", "kind", "active_campaign_id", "campaign_ids"} {
+		assert.Contains(t, marker, key, "the .camp marker camp writes lost the %q key: %s", key, raw)
+	}
+
+	var version int
+	require.NoError(t, json.Unmarshal(marker["version"], &version))
+	assert.Equal(t, 4, version, "a wording change never bumps a schema")
+}
+
 // TestCompatOldStateSurfacesCarryCampaignRoot reads the machine-readable
 // surfaces from that same bare workspace. campaign_root and the schema versions
 // are what a script keys on, and neither is allowed to move for a wording pass.
@@ -395,13 +584,23 @@ func TestCompatSettingsJSONKeepsCampaignKeys(t *testing.T) {
 func assertFrozenLayout(t *testing.T, tc *TestContainer, root string) {
 	t.Helper()
 
+	assertFrozenWorkspaceLayout(t, tc, root)
+
+	exists, err := tc.CheckFileExists(compatRegistryPath)
+	require.NoError(t, err)
+	assert.True(t, exists, "the registry must stay at ~/.obey/campaign/registry.json")
+}
+
+// assertFrozenWorkspaceLayout checks the facts that belong to the workspace
+// itself. It is separate from the registry check so a workspace that was never
+// registered — a staged campaign-era one, for instance — can still assert that
+// its own metadata did not move.
+func assertFrozenWorkspaceLayout(t *testing.T, tc *TestContainer, root string) {
+	t.Helper()
+
 	exists, err := tc.CheckFileExists(root + "/.campaign/campaign.yaml")
 	require.NoError(t, err)
 	assert.True(t, exists, "camp metadata must stay at .campaign/campaign.yaml")
-
-	exists, err = tc.CheckFileExists(compatRegistryPath)
-	require.NoError(t, err)
-	assert.True(t, exists, "the registry must stay at ~/.obey/campaign/registry.json")
 
 	isDir, err := tc.CheckDirExists(root + "/.camp")
 	require.NoError(t, err)

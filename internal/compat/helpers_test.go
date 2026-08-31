@@ -6,41 +6,80 @@ import (
 	"os"
 	"path/filepath"
 	"testing"
+
+	"gopkg.in/yaml.v3"
+
+	"github.com/Obedience-Corp/camp/internal/config"
 )
+
+// globalConfigFixture is the campaign-era ~/.obey/campaign/config.json. It sits
+// inside an XDG-shaped tree so the real loader can be aimed at it with
+// XDG_CONFIG_HOME rather than at a home directory the test would have to build.
+var globalConfigFixture = filepath.Join("xdg", "obey", "campaign", "config.json")
+
+// oldStateFixturePath returns the path of one campaign-era artifact. Tests that
+// point camp's own path resolution at a fixture use this: the loader under test
+// opens the file itself, so the fixture has to be addressable rather than
+// staged.
+//
+// The existence check is what keeps this package read-only. A loader aimed at a
+// missing file does not simply fail — LoadGlobalConfig, for one, creates the
+// file it could not find — so a fixture that went missing would turn these
+// tests into writers.
+func oldStateFixturePath(t *testing.T, name string) string {
+	t.Helper()
+	path, err := filepath.Abs(filepath.Join("testdata", "oldstate", name))
+	if err != nil {
+		t.Fatalf("resolving old-state fixture %s: %v", name, err)
+	}
+	if _, err := os.Stat(path); err != nil {
+		t.Fatalf("old-state fixture %s is missing: %v", name, err)
+	}
+	return path
+}
 
 // oldStateFixture returns the bytes of one campaign-era artifact. The fixtures
 // are literal on-disk files rather than structs marshalled at test time: a
 // renamed field would round-trip through a struct and prove nothing.
 func oldStateFixture(t *testing.T, name string) []byte {
 	t.Helper()
-	data, err := os.ReadFile(filepath.Join("testdata", "oldstate", name))
+	data, err := os.ReadFile(oldStateFixturePath(t, name))
 	if err != nil {
 		t.Fatalf("reading old-state fixture %s: %v", name, err)
 	}
 	return data
 }
 
-// stageOldStateCampaign materializes a campaign-era workspace: .campaign/ with
-// campaign.yaml and settings/jumps.yaml, exactly as an older camp wrote them.
-func stageOldStateCampaign(t *testing.T) string {
+// parseOldStateCampaign parses the campaign-era metadata the way
+// config.LoadCampaignConfig parses it off disk: campaign.yaml into the config
+// struct, then jumps.yaml into the navigation block.
+//
+// The fixtures are fed as bytes because these assertions are about the YAML
+// keys, and this package writes nothing to the filesystem it runs on. That the
+// real loader still finds this metadata at .campaign/, and that saving it back
+// leaves it there, is pinned against the real binary in
+// tests/integration/compat_oldstate_test.go.
+func parseOldStateCampaign(t *testing.T) *config.CampaignConfig {
 	t.Helper()
 
-	root := t.TempDir()
-	settings := filepath.Join(root, ".campaign", "settings")
-	if err := os.MkdirAll(settings, 0o755); err != nil {
-		t.Fatalf("creating .campaign/settings: %v", err)
+	var cfg config.CampaignConfig
+	if err := yaml.Unmarshal(oldStateFixture(t, "campaign.yaml"), &cfg); err != nil {
+		t.Fatalf("parsing campaign-era campaign.yaml: %v", err)
 	}
+	cfg.ApplyDefaults()
 
-	writeFile(t, filepath.Join(root, ".campaign", "campaign.yaml"), oldStateFixture(t, "campaign.yaml"))
-	writeFile(t, filepath.Join(settings, "jumps.yaml"), oldStateFixture(t, "jumps.yaml"))
-	return root
-}
-
-func writeFile(t *testing.T, path string, data []byte) {
-	t.Helper()
-	if err := os.WriteFile(path, data, 0o644); err != nil {
-		t.Fatalf("writing %s: %v", path, err)
+	var jumps config.JumpsConfig
+	if err := yaml.Unmarshal(oldStateFixture(t, "jumps.yaml"), &jumps); err != nil {
+		t.Fatalf("parsing campaign-era jumps.yaml: %v", err)
 	}
+	jumps.NormalizeIntentNavigation()
+	jumps.ApplyDefaults()
+	cfg.Jumps = &jumps
+
+	if err := config.ValidateCampaignConfig(&cfg); err != nil {
+		t.Fatalf("campaign-era metadata no longer validates: %v", err)
+	}
+	return &cfg
 }
 
 func decodeJSON(t *testing.T, data []byte, into any) {
@@ -61,20 +100,6 @@ func mustJSON(t *testing.T, v any) map[string]any {
 		t.Fatalf("re-decoding: %v", err)
 	}
 	return out
-}
-
-func assertExists(t *testing.T, path string) {
-	t.Helper()
-	if _, err := os.Stat(path); err != nil {
-		t.Fatalf("%s must exist after a round trip: %v", path, err)
-	}
-}
-
-func assertAbsent(t *testing.T, path string) {
-	t.Helper()
-	if _, err := os.Stat(path); err == nil {
-		t.Fatalf("%s exists; camp metadata must stay at .campaign/campaign.yaml (docs/terminology.md, Things that must never happen)", path)
-	}
 }
 
 func requireContext(t *testing.T) context.Context {

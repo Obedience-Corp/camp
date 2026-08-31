@@ -1,7 +1,6 @@
 package compat
 
 import (
-	"path/filepath"
 	"testing"
 
 	"github.com/Obedience-Corp/camp/internal/config"
@@ -12,12 +11,7 @@ import (
 // The fixture is the contract: a renamed YAML key would parse to a zero value
 // here rather than failing anywhere visible at runtime.
 func TestOldStateCampaignYAMLLoads(t *testing.T) {
-	root := stageOldStateCampaign(t)
-
-	cfg, err := config.LoadCampaignConfig(requireContext(t), root)
-	if err != nil {
-		t.Fatalf("loading campaign-era campaign.yaml: %v", err)
-	}
+	cfg := parseOldStateCampaign(t)
 
 	if cfg.ID != "8deed8b4-0000-4000-8000-0000000000aa" {
 		t.Fatalf("id: got %q", cfg.ID)
@@ -42,10 +36,7 @@ func TestOldStateCampaignYAMLLoads(t *testing.T) {
 // TestOldStateCampaignProjectsSurvive pins the projects list, whose entries
 // carry the shortcut map that `camp go` and `cgo` resolve against.
 func TestOldStateCampaignProjectsSurvive(t *testing.T) {
-	cfg, err := config.LoadCampaignConfig(requireContext(t), stageOldStateCampaign(t))
-	if err != nil {
-		t.Fatalf("loading campaign-era campaign.yaml: %v", err)
-	}
+	cfg := parseOldStateCampaign(t)
 
 	if len(cfg.Projects) != 1 {
 		t.Fatalf("projects: got %d entries, want 1", len(cfg.Projects))
@@ -69,12 +60,7 @@ func TestOldStateCampaignProjectsSurvive(t *testing.T) {
 // nesting. Order is user-visible in the picker, so a reordering parse is a
 // behavior change even when every concept survives.
 func TestOldStateConceptsPreserveOrder(t *testing.T) {
-	cfg, err := config.LoadCampaignConfig(requireContext(t), stageOldStateCampaign(t))
-	if err != nil {
-		t.Fatalf("loading campaign-era campaign.yaml: %v", err)
-	}
-
-	concepts := cfg.Concepts()
+	concepts := parseOldStateCampaign(t).Concepts()
 	want := []string{"projects", "workflow", "docs"}
 	if len(concepts) != len(want) {
 		t.Fatalf("concepts: got %d, want %d", len(concepts), len(want))
@@ -96,10 +82,7 @@ func TestOldStateConceptsPreserveOrder(t *testing.T) {
 // legacy collections (code_reviews, pipelines) that newer camps no longer
 // scaffold but existing camps still contain.
 func TestOldStateJumpsPathsSurvive(t *testing.T) {
-	cfg, err := config.LoadCampaignConfig(requireContext(t), stageOldStateCampaign(t))
-	if err != nil {
-		t.Fatalf("loading campaign-era campaign.yaml: %v", err)
-	}
+	cfg := parseOldStateCampaign(t)
 
 	paths := cfg.Paths()
 	tests := []struct {
@@ -126,22 +109,8 @@ func TestOldStateJumpsPathsSurvive(t *testing.T) {
 	}
 }
 
-// TestOldStateCampaignYAMLStaysAtItsPath is the destructive-mistake guard. A
-// camp that started writing metadata to .camp/ would leave every existing
-// workspace's .campaign/campaign.yaml orphaned.
-func TestOldStateCampaignYAMLStaysAtItsPath(t *testing.T) {
-	root := stageOldStateCampaign(t)
-
-	cfg, err := config.LoadCampaignConfig(requireContext(t), root)
-	if err != nil {
-		t.Fatalf("loading campaign-era campaign.yaml: %v", err)
-	}
-	if err := config.SaveCampaignConfig(requireContext(t), root, cfg); err != nil {
-		t.Fatalf("saving campaign config: %v", err)
-	}
-
-	assertExists(t, filepath.Join(root, ".campaign", "campaign.yaml"))
-	assertAbsent(t, filepath.Join(root, ".camp"))
-	assertAbsent(t, filepath.Join(root, ".camp", "camp.yaml"))
-	assertAbsent(t, filepath.Join(root, ".campaign", "camp.yaml"))
-}
+// The destructive-mistake guard — that loading this metadata and saving it back
+// leaves it at .campaign/campaign.yaml and creates no .camp directory — needs a
+// real workspace on a real filesystem, so it runs against the binary in
+// TestCompatOldStateRichLayoutSurvivesRoundTrip
+// (tests/integration/compat_oldstate_test.go) rather than here.
