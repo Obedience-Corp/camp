@@ -1,0 +1,26 @@
+paths:
+    projects: projects/
+    worktrees: projects/worktrees/
+    docs: docs/
+    festivals: festivals/
+    workflow: workflow/
+    intents: .campaign/intents/
+    reviews: workflow/reviews/
+    code_reviews: workflow/code_reviews/
+    pipelines: workflow/pipelines/
+    design: workflow/design/
+    dungeon: dungeon/
+shortcuts:
+    cfg:
+        path: .campaign/
+        description: Campaign config directory and commands
+        concept: config
+        source: auto
+    p:
+        path: projects/
+        description: Projects directory and commands
+        concept: project
+        source: auto
+    legacy-note:
+        path: workflow/code_reviews/
+        description: Shortcut written before the source field existed

@@ -1,0 +1,16 @@
+{
+  "editor": "nvim",
+  "no_color": true,
+  "verbose": true,
+  "tui": {
+    "theme": "dark",
+    "vim_mode": true
+  },
+  "campaigns_dir": "~/campaigns",
+  "ledger_writer_id": "w919cf43d",
+  "commit": {
+    "sync_project_refs": true,
+    "disable_commit_tags": false
+  },
+  "dungeon_hidden": false
+}
