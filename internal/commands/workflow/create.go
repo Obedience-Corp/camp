@@ -34,7 +34,7 @@ func newCreateCommand() *cobra.Command {
 
 The command creates the workflow directory, terminal dungeon directories,
 .gitkeep files, and an OBEY.md guide, then registers the collection in
-campaign configuration through a concept and navigation shortcut. A shortcut is
+camp configuration through a concept and navigation shortcut. A shortcut is
 required. Use --dry-run to inspect planned writes and --json for
 machine-readable planning or apply results.`,
 		Args: jsoncontract.Args(JSONSchemaVersion, func() bool { return jsonOut }, cobra.ExactArgs(1)),
@@ -131,7 +131,7 @@ func runCreate(ctx context.Context, cmd *cobra.Command, opts createOptions) erro
 
 	cfg, campaignRoot, err := config.LoadCampaignConfigFromCwd(ctx)
 	if err != nil {
-		return camperrors.Wrap(err, "not in a campaign directory")
+		return camperrors.Wrap(err, "not in a camp directory")
 	}
 
 	plan, err := computeCreatePlan(campaignRoot, cfg, opts)

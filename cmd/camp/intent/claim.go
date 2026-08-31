@@ -20,7 +20,7 @@ import (
 var intentClaimCmd = &cobra.Command{
 	Use:   "claim <id>",
 	Short: "Claim an intent for an agent or session",
-	Long: `Assign an intent to an agent so the campaign tracks who is working it.
+	Long: `Assign an intent to an agent so the camp tracks who is working it.
 
 Stamps assigned_to and assigned_at, and merges any --ref values (a PR URL,
 branch, or festival path) into work_ref. Calling claim again on an
@@ -63,7 +63,7 @@ func runIntentClaim(cmd *cobra.Command, args []string) error {
 
 	cfg, campaignRoot, err := config.LoadCampaignConfigFromCwd(ctx)
 	if err != nil {
-		return camperrors.Wrap(err, "not in a campaign directory")
+		return camperrors.Wrap(err, "not in a camp directory")
 	}
 
 	resolver := paths.NewResolverFromConfig(campaignRoot, cfg)

@@ -39,7 +39,7 @@ moves or renames a directory.
 ## Finding codes
 
 `camp workitem validate --json` emits stable finding codes. Each finding carries
-a `severity`, the campaign-relative `target` directory, a `message`, the exact
+a `severity`, the camp-relative `target` directory, a `message`, the exact
 `repair_command`, and a `repairable` boolean.
 
 | Code | Severity | Meaning | Repair |
@@ -51,7 +51,7 @@ a `severity`, the campaign-relative `target` directory, a `message`, the exact
 | `workitem.schema.outdated` | warning | The marker uses an accepted legacy schema version (`v1alpha4` or `v1alpha5`). | Upgrades `version` to the current schema. |
 
 Validate exits `2` when any error-severity finding is present. Warnings alone
-exit `0`. Setup failures (for example running outside a campaign) use the JSON
+exit `0`. Setup failures (for example running outside a camp) use the JSON
 error envelope described in `docs/json-contracts.md`.
 
 ## Repair behavior
@@ -82,7 +82,7 @@ resulting `workitem` identity.
 ## Examples
 
 ```
-# Scan the whole campaign and print repair commands for any problems.
+# Scan the whole camp and print repair commands for any problems.
 camp workitem validate
 
 # Machine-readable findings for an agent harness.

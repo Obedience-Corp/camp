@@ -20,8 +20,8 @@ import (
 
 var doctorCmd = &cobra.Command{
 	Use:   "doctor",
-	Short: "Diagnose and fix campaign health issues",
-	Long: `Check campaign for common issues and optionally fix them.
+	Short: "Diagnose and fix camp health issues",
+	Long: `Check camp for common issues and optionally fix them.
 
 CHECKS PERFORMED:
   orphan      Orphaned gitlinks in index (no .gitmodules entry)
@@ -102,7 +102,7 @@ func runDoctor(cmd *cobra.Command, args []string) error {
 	// Detect campaign root
 	campRoot, err := campaign.DetectCached(ctx)
 	if err != nil {
-		return camperrors.Wrap(err, "not in a campaign")
+		return camperrors.Wrap(err, "not in a camp")
 	}
 
 	// Doctor inspects working-tree and commit alignment, so a queued commit
@@ -264,7 +264,7 @@ func outputDoctorJSON(result *doctor.DoctorResult, drainWaited time.Duration) er
 func outputDoctorText(result *doctor.DoctorResult, _ bool, fixAttempted bool) {
 	// Header
 	fmt.Println()
-	fmt.Println(ui.Header("Campaign Health Report"))
+	fmt.Println(ui.Header("Camp Health Report"))
 	fmt.Println()
 
 	// Summary

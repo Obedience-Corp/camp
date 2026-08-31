@@ -183,7 +183,7 @@ func TestAcceptance3_ValidationNamesFileKeyAndAllowedValues(t *testing.T) {
 			name:     "export path escaping the campaign",
 			body:     "schema_version: triage-profile/v1alpha1\noutputs:\n  priorities_export: ../outside.md\n",
 			wantKey:  "outputs.priorities_export",
-			wantHint: "inside the campaign",
+			wantHint: "inside the camp",
 		},
 	}
 

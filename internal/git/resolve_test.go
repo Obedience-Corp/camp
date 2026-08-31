@@ -27,8 +27,8 @@ func TestResolveTarget_Default(t *testing.T) {
 	if result.IsSubmodule {
 		t.Error("IsSubmodule should be false for campaign root")
 	}
-	if result.Name != "campaign root" {
-		t.Errorf("Name = %q, want %q", result.Name, "campaign root")
+	if result.Name != "camp root" {
+		t.Errorf("Name = %q, want %q", result.Name, "camp root")
 	}
 }
 

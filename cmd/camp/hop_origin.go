@@ -397,7 +397,7 @@ func runHopBack(ctx context.Context, cmd *cobra.Command, printOnly, shellConnect
 	origin, err := ParseHopOrigin(raw)
 	if err != nil {
 		return camperrors.New("camp switch -: " + HopOriginEnvVar + " is malformed (" + err.Error() +
-			"); hop back with 'camp switch <machine>:<campaign>'")
+			"); hop back with 'camp switch <machine>:<camp>'")
 	}
 
 	// The unwind needs no campaign and no reachability: it returns to a shell
@@ -413,8 +413,8 @@ func runHopBack(ctx context.Context, cmd *cobra.Command, printOnly, shellConnect
 	}
 
 	if origin.Campaign == "" {
-		return camperrors.New("camp switch -: origin campaign unknown (the outbound hop did not start " +
-			"inside a campaign); hop back with 'camp switch <machine>:<campaign>'")
+		return camperrors.New("camp switch -: origin camp unknown (the outbound hop did not start " +
+			"inside a camp); hop back with 'camp switch <machine>:<camp>'")
 	}
 
 	// A payload naming this machine is stale or forged; either way the hop it

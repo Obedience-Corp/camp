@@ -43,5 +43,5 @@ camp project prune [project-name] [flags]
 
 ### SEE ALSO
 
-* [camp project](camp_project.md)	 - Manage campaign projects
+* [camp project](camp_project.md)	 - Manage camp projects
 * [camp project prune all](camp_project_prune_all.md)	 - Delete merged branches across all projects

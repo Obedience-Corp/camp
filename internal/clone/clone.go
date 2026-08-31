@@ -45,7 +45,7 @@ func (c *Cloner) Clone(ctx context.Context) (*CloneResult, error) {
 	}
 
 	// Phase 1: Clone repository (without --recurse-submodules to avoid all-or-nothing failure)
-	c.progress.StartPhase("Cloning campaign repository")
+	c.progress.StartPhase("Cloning camp repository")
 	var targetDir string
 	var err error
 	if c.peer != nil {

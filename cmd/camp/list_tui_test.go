@@ -334,7 +334,7 @@ func TestListTUI_ViewSmoke(t *testing.T) {
 	m := newTestListModel(t)
 	m.width, m.height = 100, 30
 	out := m.View()
-	for _, want := range []string{"Campaigns", "alpha", "active", "obey"} {
+	for _, want := range []string{"Camps", "alpha", "active", "obey"} {
 		if !strings.Contains(out, want) {
 			t.Errorf("view missing %q:\n%s", want, out)
 		}

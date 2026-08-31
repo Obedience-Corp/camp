@@ -92,7 +92,7 @@ func packCopyEligible(v RepoVerdict, peerRoot string) (bool, string) {
 		return false, "peer reported no git directory to copy from"
 	}
 	if !withinRoot(peerRoot, v.GitDir) {
-		return false, "peer git directory " + v.GitDir + " is outside the campaign root"
+		return false, "peer git directory " + v.GitDir + " is outside the camp root"
 	}
 	return true, ""
 }
@@ -321,38 +321,38 @@ func (c *Cloner) cloneRootFromPeer(ctx context.Context, result *CloneResult) (st
 
 	v, found := report.Verdict(quiescenceRootRepo)
 	if !found {
-		const reason = "peer reported no verdict for the campaign root"
+		const reason = "peer reported no verdict for the camp root"
 		result.Warnings = append(result.Warnings,
-			fmt.Sprintf("peer %s reported no verdict for the campaign root; cloning from peer", c.peer.ID()))
+			fmt.Sprintf("peer %s reported no verdict for the camp root; cloning from peer", c.peer.ID()))
 		dir, cloneErr := c.gitCloneFromPeer(ctx)
 		return c.recordRootSeed(result, SeedMethodPeerClone, reason, dir, cloneErr)
 	}
 	fallbackReason := ""
 	if ok, reason := packCopyEligible(v, report.Root); ok {
-		c.progress.Message(fmt.Sprintf("Cold-seeding campaign root from %s", c.peer.ID()))
+		c.progress.Message(fmt.Sprintf("Cold-seeding camp root from %s", c.peer.ID()))
 		dir, err := c.packSeedRoot(ctx, v)
 		if err == nil {
 			return c.recordRootSeed(result, SeedMethodPackCopy, "", dir, nil)
 		}
 		fallbackReason = fmt.Sprintf("copy failed: %v", err)
 		result.Warnings = append(result.Warnings,
-			fmt.Sprintf("cold-seed copy of the campaign root failed (%v); bundling from peer instead", err))
+			fmt.Sprintf("cold-seed copy of the camp root failed (%v); bundling from peer instead", err))
 	} else {
 		fallbackReason = reason
 		result.Warnings = append(result.Warnings,
-			fmt.Sprintf("cold-seed copy skipped for the campaign root (%s); bundling from peer instead", reason))
+			fmt.Sprintf("cold-seed copy skipped for the camp root (%s); bundling from peer instead", reason))
 	}
 
 	// The peer is being written to, or the copy did not hold up. A bundle is
 	// written in one pass and verified before it is read, so it is correct
 	// regardless of what the peer is doing.
-	c.progress.Message(fmt.Sprintf("Bundling campaign root from %s", c.peer.ID()))
+	c.progress.Message(fmt.Sprintf("Bundling camp root from %s", c.peer.ID()))
 	dir, err := c.bundleSeedRoot(ctx, report.Root)
 	if err == nil {
 		return c.recordRootSeed(result, SeedMethodBundle, fallbackReason, dir, nil)
 	}
 	result.Warnings = append(result.Warnings,
-		fmt.Sprintf("bundle seed of the campaign root failed (%v); cloning from peer", err))
+		fmt.Sprintf("bundle seed of the camp root failed (%v); cloning from peer", err))
 	cloneDir, cloneErr := c.gitCloneFromPeer(ctx)
 	return c.recordRootSeed(result, SeedMethodPeerClone, fmt.Sprintf("bundle failed: %v", err), cloneDir, cloneErr)
 }

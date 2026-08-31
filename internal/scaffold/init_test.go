@@ -285,7 +285,7 @@ func TestInit(t *testing.T) {
 	if err != nil {
 		t.Fatalf("failed to read README.md: %v", err)
 	}
-	if !strings.Contains(string(readmeContent), ".campaign/          Campaign configuration and system state") {
+	if !strings.Contains(string(readmeContent), ".campaign/          Camp configuration and system state") {
 		t.Error("README.md should describe .campaign as configuration and system state")
 	}
 	if !strings.Contains(string(readmeContent), "├── intents/        System-managed intent state (use camp intent)") {

@@ -1,10 +1,10 @@
 ## camp project list
 
-List projects in campaign
+List projects in camp
 
 ### Synopsis
 
-List all projects in the current campaign.
+List all projects in the current camp.
 
 Projects are discovered from the projects/ directory. They may be regular
 git-backed entries or linked external directories.
@@ -56,4 +56,4 @@ camp project list [flags]
 
 ### SEE ALSO
 
-* [camp project](camp_project.md)	 - Manage campaign projects
+* [camp project](camp_project.md)	 - Manage camp projects

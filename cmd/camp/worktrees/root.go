@@ -8,7 +8,7 @@ var Cmd = &cobra.Command{
 	Short:      "Manage git worktrees for projects",
 	GroupID:    "project",
 	Deprecated: "use 'camp project worktree' instead for project-scoped operations",
-	Long: `Manage git worktrees across campaign projects.
+	Long: `Manage git worktrees across camp projects.
 
 Worktrees allow you to have multiple working directories for the same repository,
 enabling parallel development on different branches without stashing or switching.
@@ -18,7 +18,7 @@ All worktrees are created in a centralized location:
 
 Commands:
   create    Create a new worktree for a project
-  list      List worktrees for the current project or campaign
+  list      List worktrees for the current project or camp
   info      Show information about a worktree
   commit    Commit changes in a worktree
   clean     Remove stale worktrees

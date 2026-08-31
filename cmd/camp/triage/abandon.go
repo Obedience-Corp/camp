@@ -64,7 +64,7 @@ func runAbandon(cmd *cobra.Command, jsonOut bool, reason, runID string) error {
 
 	_, root, err := config.LoadCampaignConfigFromCwd(ctx)
 	if err != nil {
-		return camperrors.Wrap(err, "not in a campaign directory")
+		return camperrors.Wrap(err, "not in a camp directory")
 	}
 	store := triage.NewStore(root, nil)
 

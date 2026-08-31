@@ -35,7 +35,7 @@ type Writer struct {
 // non-empty.
 func NewWriter(campaignRoot, writerID string) (*Writer, error) {
 	if campaignRoot == "" {
-		return nil, camperrors.New("ledgerkit: empty campaign root")
+		return nil, camperrors.New("ledgerkit: empty camp root")
 	}
 	if writerID == "" {
 		return nil, camperrors.New("ledgerkit: empty writer id")

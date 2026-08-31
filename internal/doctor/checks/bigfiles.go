@@ -245,7 +245,7 @@ func (c *BigFilesCheck) unownedLargeFiles(
 		return nil
 	})
 	if walkErr != nil {
-		return nil, camperrors.Wrap(walkErr, "walk campaign for large files")
+		return nil, camperrors.Wrap(walkErr, "walk camp for large files")
 	}
 
 	return filterLFSManaged(ctx, repoRoot, found), nil

@@ -25,7 +25,7 @@ import (
 var statusAllCmd = &cobra.Command{
 	Use:   "all",
 	Short: "Show git status of all submodules",
-	Long: `Show a visual overview of git status for all submodules in the campaign.
+	Long: `Show a visual overview of git status for all submodules in the camp.
 
 Displays a table with each submodule's name, branch, clean/dirty state,
 and push status.
@@ -68,11 +68,11 @@ func runStatusAll(cmd *cobra.Command, _ []string) error {
 
 	campRoot, err := campaign.DetectCached(ctx)
 	if err != nil {
-		return camperrors.Wrap(err, "not in a campaign")
+		return camperrors.Wrap(err, "not in a camp")
 	}
 	campRoot, err = pathutil.ResolveRoot(campRoot)
 	if err != nil {
-		return camperrors.Wrap(err, "resolving campaign root")
+		return camperrors.Wrap(err, "resolving camp root")
 	}
 
 	// Enumerate submodules (including nested monorepo submodules)
@@ -90,14 +90,14 @@ func runStatusAll(cmd *cobra.Command, _ []string) error {
 		if statusAllJSON {
 			return outputStatusJSON("", []statuspkg.RepoStatus{})
 		}
-		fmt.Fprintln(os.Stderr, ui.Info("No submodules found in this campaign"))
+		fmt.Fprintln(os.Stderr, ui.Info("No submodules found in this camp"))
 		return nil
 	}
 
 	statusOpts := statuspkg.Options{ShowRemoteURL: statusAllRemoteURL}
 	statuses := statuspkg.Collect(ctx, campRoot, paths, statusOpts)
 
-	rootStatus := statuspkg.GetRepoStatus(ctx, campRoot, "campaign root", true, statusOpts)
+	rootStatus := statuspkg.GetRepoStatus(ctx, campRoot, "camp root", true, statusOpts)
 	rootStatus.Path = "."
 	allStatuses := append([]statuspkg.RepoStatus{rootStatus}, statuses...)
 

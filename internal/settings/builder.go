@@ -60,8 +60,8 @@ func staticEntries() ([]SettingEntry, error) {
 	return []SettingEntry{
 		{
 			ID:     "campaign_manifest",
-			Title:  "Campaign manifest",
-			Desc:   "Campaign identity, mission, type, and concepts.",
+			Title:  "Camp manifest",
+			Desc:   "Camp identity, mission, type, and concepts.",
 			Scope:  ScopeLocal,
 			Path:   ".campaign/campaign.yaml",
 			Format: FormatYAML,
@@ -81,7 +81,7 @@ func staticEntries() ([]SettingEntry, error) {
 		{
 			ID:    "allowlist",
 			Title: "Daemon command allowlist",
-			Desc: "Agent/daemon tool permissions for this campaign (not camp CLI itself). " +
+			Desc: "Agent/daemon tool permissions for this camp (not camp CLI itself). " +
 				"Consumers: obey-daemon / agent runners that honor .campaign/settings/allowlist.json.",
 			Scope:  ScopeLocal,
 			Path:   ".campaign/settings/allowlist.json",
@@ -91,8 +91,8 @@ func staticEntries() ([]SettingEntry, error) {
 		},
 		{
 			ID:     "registry",
-			Title:  "Campaign registry",
-			Desc:   "Campaigns registered on this machine.",
+			Title:  "Camp registry",
+			Desc:   "Camps registered on this machine.",
 			Scope:  ScopeGlobal,
 			Path:   registryPath,
 			Format: FormatJSON,

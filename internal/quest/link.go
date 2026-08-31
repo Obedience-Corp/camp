@@ -39,7 +39,7 @@ func DetectLinkType(path string) string {
 func ValidateLinkPath(campaignRoot, path string) error {
 	abs := filepath.Join(campaignRoot, path)
 	if err := pathutil.ValidateBoundary(campaignRoot, abs); err != nil {
-		return camperrors.Wrapf(camperrors.ErrInvalidInput, "link path escapes campaign root: %s", path)
+		return camperrors.Wrapf(camperrors.ErrInvalidInput, "link path escapes camp root: %s", path)
 	}
 	if _, err := os.Stat(abs); err != nil {
 		return camperrors.Wrapf(camperrors.ErrNotFound, "link target does not exist: %s", path)

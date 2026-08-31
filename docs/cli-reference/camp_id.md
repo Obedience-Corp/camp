@@ -1,10 +1,10 @@
 ## camp id
 
-Print the current campaign ID
+Print the current camp ID
 
 ### Synopsis
 
-Print the current campaign ID from .campaign/campaign.yaml.
+Print the current camp ID from .campaign/campaign.yaml.
 
 ```
 camp id [flags]
@@ -30,4 +30,4 @@ camp id [flags]
 
 ### SEE ALSO
 
-* [camp](camp.md)	 - Campaign management CLI for multi-project AI workspaces
+* [camp](camp.md)	 - Manage your camps and the projects and festivals inside them

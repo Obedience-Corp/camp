@@ -65,7 +65,7 @@ func newDoctorCommand() *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "doctor",
 		Short: "Report workflow surface inconsistencies",
-		Long: `Report inconsistencies between workflow directories and campaign configuration.
+		Long: `Report inconsistencies between workflow directories and camp configuration.
 
 The command reads campaign.yaml, .campaign/settings/jumps.yaml, workflow/
 directories, and the navigation cache to find missing concepts, stale
@@ -85,7 +85,7 @@ machine-readable findings and stable finding codes.`,
 func runDoctor(ctx context.Context, cmd *cobra.Command, jsonOut bool) error {
 	cfg, campaignRoot, err := config.LoadCampaignConfigFromCwd(ctx)
 	if err != nil {
-		return renderWorkflowDoctorError(cmd, jsonOut, camperrors.Wrap(err, "not in a campaign directory"))
+		return renderWorkflowDoctorError(cmd, jsonOut, camperrors.Wrap(err, "not in a camp directory"))
 	}
 
 	findings, err := collectFindings(ctx, campaignRoot, cfg)

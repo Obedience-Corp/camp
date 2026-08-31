@@ -91,7 +91,7 @@ func newDocsBrowserModel(itemName, campaignRoot string) (docsBrowserModel, error
 	if len(allDirs) == 0 {
 		return docsBrowserModel{}, camperrors.Wrap(
 			ErrInvalidDocsDestination,
-			"no docs subdirectories exist under campaign-root docs/",
+			"no docs subdirectories exist under camp-root docs/",
 		)
 	}
 
@@ -145,7 +145,7 @@ func listDocsBrowserEntries(docsRoot, prefix string) ([]docsBrowserEntry, error)
 		if os.IsNotExist(err) {
 			return nil, camperrors.Wrap(
 				ErrInvalidDocsDestination,
-				"campaign-root docs/ directory does not exist",
+				"camp-root docs/ directory does not exist",
 			)
 		}
 		return nil, camperrors.Wrap(err, "reading docs subdirectories")

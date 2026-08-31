@@ -239,7 +239,7 @@ func (s *Store) MigrateAbsoluteToRelative(root string) bool {
 }
 
 func warnDroppedPin(pin Pin, root string) {
-	fmt.Fprintf(os.Stderr, "warning: dropping pin %q at %q: outside campaign root %q\n", pin.Name, pin.Path, root)
+	fmt.Fprintf(os.Stderr, "warning: dropping pin %q at %q: outside camp root %q\n", pin.Name, pin.Path, root)
 }
 
 // MigrateLegacyStore moves a legacy pins.json into the current store location

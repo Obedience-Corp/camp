@@ -1,7 +1,7 @@
 # `.campaign/` Directory Reference
 
 `.campaign/` is the hidden metadata directory at the root of a camp, previously
-called a campaign. The directory name is a stable compatibility path: **do not
+called a camp. The directory name is a stable compatibility path: **do not
 rename it**, and do not rename it to `.camp/`, which is a separate attachment
 marker file for linked external directories. See
 [terminology.md](terminology.md) for the full vocabulary and compatibility
@@ -89,7 +89,7 @@ rules without replacing user-authored entries.
 
 ### `.campaign/campaign.yaml`
 
-The primary campaign metadata file. It stores campaign identity, human context,
+The primary camp metadata file. It stores camp identity, human context,
 project entries, and concept configuration.
 
 See [campaign-settings-files.md](campaign-settings-files.md) for the field-level
@@ -136,7 +136,7 @@ Files:
 - `links.yaml` is the shared link registry. It stores `lnk_*` entries that
   bind a workitem to its targets (festival, project, custom workflow item).
   This file is intended to be committed.
-- `current.yaml` is no longer used. Older campaigns may still have a leftover
+- `current.yaml` is no longer used. Older camps may still have a leftover
   local file; `camp init` / `camp init --repair` keep `workitems/current.yaml`
   gitignored so it is not shared accidentally.
 
@@ -162,11 +162,11 @@ settings reference.
 
 ### `.campaign/skills/`
 
-The campaign-local source of truth for skill bundles. `camp skills` projects
+The camp-local source of truth for skill bundles. `camp skills` projects
 these bundles into provider/tool-specific locations such as `.claude/skills/`
 or `.agents/skills/`.
 
-This directory is scaffolded so campaigns start with baseline navigation,
+This directory is scaffolded so camps start with baseline navigation,
 workflow, and work-item discovery skills.
 
 ### `.campaign/cache/`
@@ -178,7 +178,7 @@ Known files:
 - `nav-index.json` for cached navigation index data
 - `state.jsonl` for recent navigation history
 
-This directory should be treated as local runtime state, not shared campaign
+This directory should be treated as local runtime state, not shared camp
 configuration.
 
 ### `.campaign/leverage/`

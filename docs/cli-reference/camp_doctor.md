@@ -1,10 +1,10 @@
 ## camp doctor
 
-Diagnose and fix campaign health issues
+Diagnose and fix camp health issues
 
 ### Synopsis
 
-Check campaign for common issues and optionally fix them.
+Check camp for common issues and optionally fix them.
 
 CHECKS PERFORMED:
   orphan      Orphaned gitlinks in index (no .gitmodules entry)
@@ -62,4 +62,4 @@ camp doctor [flags]
 
 ### SEE ALSO
 
-* [camp](camp.md)	 - Campaign management CLI for multi-project AI workspaces
+* [camp](camp.md)	 - Manage your camps and the projects and festivals inside them

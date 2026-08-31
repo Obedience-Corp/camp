@@ -76,7 +76,7 @@ func runReview(cmd *cobra.Command, jsonOut, renderOnly bool, runID string) error
 
 	_, root, err := config.LoadCampaignConfigFromCwd(ctx)
 	if err != nil {
-		return camperrors.Wrap(err, "not in a campaign directory")
+		return camperrors.Wrap(err, "not in a camp directory")
 	}
 	store := triage.NewStore(root, nil)
 
@@ -194,7 +194,7 @@ func runPriorities(cmd *cobra.Command, jsonOut, export bool, runID string) error
 
 	_, root, err := config.LoadCampaignConfigFromCwd(ctx)
 	if err != nil {
-		return camperrors.Wrap(err, "not in a campaign directory")
+		return camperrors.Wrap(err, "not in a camp directory")
 	}
 	store := triage.NewStore(root, nil)
 

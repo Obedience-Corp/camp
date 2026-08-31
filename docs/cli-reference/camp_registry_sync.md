@@ -1,17 +1,17 @@
 ## camp registry sync
 
-Sync current campaign with registry
+Sync current camp with registry
 
 ### Synopsis
 
-Update the registry entry for the current campaign.
+Update the registry entry for the current camp.
 
-Run this after moving a campaign directory to update its path
-in the registry. Reads the campaign ID from .campaign/campaign.yaml
+Run this after moving a camp directory to update its path
+in the registry. Reads the camp ID from .campaign/campaign.yaml
 and updates (or adds) the registry entry.
 
 Examples:
-  camp registry sync   # Run from inside a campaign
+  camp registry sync   # Run from inside a camp
 
 ```
 camp registry sync [flags]
@@ -31,4 +31,4 @@ camp registry sync [flags]
 
 ### SEE ALSO
 
-* [camp registry](camp_registry.md)	 - Manage the campaign registry
+* [camp registry](camp_registry.md)	 - Manage the camp registry

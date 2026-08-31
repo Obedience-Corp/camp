@@ -1,6 +1,6 @@
 ## camp shortcuts add
 
-Add a shortcut (campaign-level or project sub-shortcut)
+Add a shortcut (camp-level or project sub-shortcut)
 
 ### Synopsis
 
@@ -25,7 +25,7 @@ camp shortcuts add <name> <path> | <project> <name> <path> [flags]
 
 ```
   camp shortcuts add                                  Interactive TUI mode
-  camp shortcuts add api projects/api-service/        Campaign shortcut
+  camp shortcuts add api projects/api-service/        Camp shortcut
   camp shortcuts add api projects/api/ -d "API svc"   With description
   camp shortcuts add cfg "" -c config                 Concept-only shortcut
   camp shortcuts add camp default cmd/camp/            Project sub-shortcut

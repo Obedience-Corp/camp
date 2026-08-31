@@ -31,7 +31,7 @@ camp gather [flags]
 
 ### SEE ALSO
 
-* [camp](camp.md)	 - Campaign management CLI for multi-project AI workspaces
+* [camp](camp.md)	 - Manage your camps and the projects and festivals inside them
 * [camp gather design](camp_gather_design.md)	 - Combine selected design workitems into one gathered package
 * [camp gather explore](camp_gather_explore.md)	 - Combine selected explore workitems into one gathered package
 * [camp gather feedback](camp_gather_feedback.md)	 - Gather feedback observations from festivals into intents

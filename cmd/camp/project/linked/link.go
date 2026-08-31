@@ -10,23 +10,23 @@ import (
 func NewLinkCommand(newResolver CampaignResolverFactory) *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "link [path]",
-		Short: "Link an existing local project into a campaign",
-		Long: `Link an existing local directory into a campaign.
+		Short: "Link an existing local project into a camp",
+		Long: `Link an existing local directory into a camp.
 
 If path is omitted, camp links the current working directory.
 
-If you're already inside a campaign, camp uses that campaign automatically.
-If you're outside a campaign in an interactive terminal, camp opens a picker
-so you can choose a registered campaign. Use --campaign <name-or-id> to skip
+If you're already inside a camp, camp uses that camp automatically.
+If you're outside a camp in an interactive terminal, camp opens a picker
+so you can choose a registered camp. Use --campaign <name-or-id> to skip
 the picker or for non-interactive scripts.
 
 This creates a symlink at projects/<name> and writes .camp with the selected
-campaign ID.
+camp ID.
 
 Examples:
   camp project link                          # Link current directory
   camp project link ~/code/my-project        # Link another directory
-  camp project link --campaign platform      # Link current directory to a specific campaign
+  camp project link --campaign platform      # Link current directory to a specific camp
   camp project link ~/code/my-project --campaign platform
   camp project link ~/code/my-project --name backend`,
 		Args: validateLinkArgs,
@@ -67,7 +67,7 @@ Examples:
 
 	flags := cmd.Flags()
 	flags.StringP("name", "n", "", "Override project name (defaults to directory name)")
-	flags.StringP("campaign", "c", "", "Target campaign by name or ID; defaults to current campaign or interactive picker")
+	flags.StringP("campaign", "c", "", "Target camp by name or ID; defaults to current camp or interactive picker")
 	flags.Bool("no-commit", false, "Skip automatic git commit")
 	flags.Lookup("campaign").NoOptDefVal = NoOptCampaign
 

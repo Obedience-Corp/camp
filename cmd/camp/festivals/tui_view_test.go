@@ -32,7 +32,7 @@ func TestView_TopBarCountsVisibleRows(t *testing.T) {
 	m.rebuildVisible()
 
 	got := m.topBar()
-	if !strings.Contains(got, "1 festival across 1 campaign") {
+	if !strings.Contains(got, "1 festival across 1 camp") {
 		t.Fatalf("top bar should count visible rows and campaigns, got %q", got)
 	}
 }

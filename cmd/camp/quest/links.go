@@ -23,7 +23,7 @@ var questLinksJSON bool
 var questLinksCmd = &cobra.Command{
 	Use:   "links <quest>",
 	Short: "List linked artifacts for a quest",
-	Long: `Display all campaign artifacts linked to a quest.
+	Long: `Display all camp artifacts linked to a quest.
 
 Default output is a table. Use --json for machine-readable output.
 

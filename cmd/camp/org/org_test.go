@@ -238,7 +238,7 @@ func TestOrgRename_ReassignsAllMembers(t *testing.T) {
 	if err != nil {
 		t.Fatalf("org rename: %v", err)
 	}
-	if !strings.Contains(out, "2 campaigns reassigned") {
+	if !strings.Contains(out, "2 camps reassigned") {
 		t.Errorf("unexpected rename output: %s", out)
 	}
 	if orgOf(t, "B-2") != "obedience" || orgOf(t, "C-3") != "obedience" {

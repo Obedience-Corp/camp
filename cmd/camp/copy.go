@@ -15,14 +15,14 @@ import (
 
 var copyCmd = &cobra.Command{
 	Use:   "copy <src> <dest>",
-	Short: "Copy a file or directory within the campaign",
-	Long: `Copy a file or directory within the current campaign.
+	Short: "Copy a file or directory within the camp",
+	Long: `Copy a file or directory within the current camp.
 
 Paths are resolved relative to the current directory, matching standard
 'cp' behavior and tab completion.
 
-Use @ prefix for campaign shortcuts (e.g., @p/fest, @f/active/).
-Available shortcuts are defined in campaign config.
+Use @ prefix for camp shortcuts (e.g., @p/fest, @f/active/).
+Available shortcuts are defined in camp config.
 
 If the destination is an existing directory or ends with '/', the source
 is placed inside it with the same basename. Directories are copied

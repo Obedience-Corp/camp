@@ -10,8 +10,8 @@ import (
 
 var projectListCmd = &cobra.Command{
 	Use:   "list",
-	Short: "List projects in campaign",
-	Long: `List all projects in the current campaign.
+	Short: "List projects in camp",
+	Long: `List all projects in the current camp.
 
 Projects are discovered from the projects/ directory. They may be regular
 git-backed entries or linked external directories.

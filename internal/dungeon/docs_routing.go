@@ -28,7 +28,7 @@ func ResolveDocsDestination(campaignRoot, destination string) (string, error) {
 	if err := pathutil.ValidateBoundary(campaignRoot, targetDir); err != nil {
 		return "", camperrors.Wrapf(
 			ErrInvalidDocsDestination,
-			"%q resolves outside campaign root docs/",
+			"%q resolves outside camp root docs/",
 			destination,
 		)
 	}
@@ -77,7 +77,7 @@ func (s *Service) PlanMoveToDocs(ctx context.Context, itemName, parentPath, dest
 		)
 	}
 	if err := pathutil.ValidateBoundary(s.campaignRoot, sourcePath); err != nil {
-		return nil, camperrors.Wrap(ErrNotInDungeon, "source outside campaign root")
+		return nil, camperrors.Wrap(ErrNotInDungeon, "source outside camp root")
 	}
 
 	targetPath, err := s.resolveDocsTargetPath(itemName, destination)
@@ -112,15 +112,15 @@ func (s *Service) resolveDocsTargetPath(itemName, destination string) (string, e
 		if os.IsNotExist(err) {
 			return "", camperrors.Wrap(
 				ErrInvalidDocsDestination,
-				"campaign-root docs/ directory does not exist",
+				"camp-root docs/ directory does not exist",
 			)
 		}
-		return "", camperrors.Wrap(err, "reading campaign docs directory")
+		return "", camperrors.Wrap(err, "reading camp docs directory")
 	}
 	if !docsRootInfo.IsDir() {
 		return "", camperrors.Wrap(
 			ErrInvalidDocsDestination,
-			"campaign-root docs/ path is not a directory",
+			"camp-root docs/ path is not a directory",
 		)
 	}
 
@@ -129,7 +129,7 @@ func (s *Service) resolveDocsTargetPath(itemName, destination string) (string, e
 		if os.IsNotExist(err) {
 			return "", camperrors.Wrapf(
 				ErrInvalidDocsDestination,
-				"%q does not exist under campaign-root docs/; choose an existing docs subdirectory",
+				"%q does not exist under camp-root docs/; choose an existing docs subdirectory",
 				destination,
 			)
 		}
@@ -147,7 +147,7 @@ func (s *Service) resolveDocsTargetPath(itemName, destination string) (string, e
 	if err := pathutil.ValidateBoundary(docsRoot, targetPath); err != nil {
 		return "", camperrors.Wrapf(
 			ErrInvalidDocsDestination,
-			"%q resolves outside campaign root docs/",
+			"%q resolves outside camp root docs/",
 			destination,
 		)
 	}

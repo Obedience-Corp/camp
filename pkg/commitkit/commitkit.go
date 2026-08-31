@@ -174,7 +174,7 @@ func DetectCampaign(ctx context.Context) (string, error) {
 
 	cfg, err := config.LoadCampaignConfig(ctx, root)
 	if err != nil {
-		return "", camperrors.Wrapf(err, "commitkit: load campaign config at %s", root)
+		return "", camperrors.Wrapf(err, "commitkit: load camp config at %s", root)
 	}
 
 	return cfg.ID, nil
@@ -185,7 +185,7 @@ func DetectCampaign(ctx context.Context) (string, error) {
 func LoadCampaignID(ctx context.Context, campaignRoot string) (string, error) {
 	cfg, err := config.LoadCampaignConfig(ctx, campaignRoot)
 	if err != nil {
-		return "", camperrors.Wrapf(err, "commitkit: load campaign config at %s", campaignRoot)
+		return "", camperrors.Wrapf(err, "commitkit: load camp config at %s", campaignRoot)
 	}
 
 	return cfg.ID, nil
@@ -201,7 +201,7 @@ func DetectCampaignName(ctx context.Context) (string, error) {
 
 	cfg, err := config.LoadCampaignConfig(ctx, root)
 	if err != nil {
-		return "", camperrors.Wrapf(err, "commitkit: load campaign config at %s", root)
+		return "", camperrors.Wrapf(err, "commitkit: load camp config at %s", root)
 	}
 
 	return cfg.Name, nil
@@ -212,7 +212,7 @@ func DetectCampaignName(ctx context.Context) (string, error) {
 func LoadCampaignName(ctx context.Context, campaignRoot string) (string, error) {
 	cfg, err := config.LoadCampaignConfig(ctx, campaignRoot)
 	if err != nil {
-		return "", camperrors.Wrapf(err, "commitkit: load campaign config at %s", campaignRoot)
+		return "", camperrors.Wrapf(err, "commitkit: load camp config at %s", campaignRoot)
 	}
 
 	return cfg.Name, nil

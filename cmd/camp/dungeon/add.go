@@ -51,7 +51,7 @@ func runDungeonAdd(cmd *cobra.Command, args []string) error {
 	// Load campaign config
 	cfg, campaignRoot, err := config.LoadCampaignConfigFromCwd(ctx)
 	if err != nil {
-		return camperrors.Wrap(err, "not in a campaign directory")
+		return camperrors.Wrap(err, "not in a camp directory")
 	}
 
 	// Get current working directory for local dungeon
@@ -66,7 +66,7 @@ func runDungeonAdd(cmd *cobra.Command, args []string) error {
 	}
 	campaignName, err := spelling.CampaignName(ctx, campaignRoot, globalCfg.ResolveDungeonHidden())
 	if err != nil {
-		return camperrors.Wrap(err, "resolving campaign dungeon spelling")
+		return camperrors.Wrap(err, "resolving camp dungeon spelling")
 	}
 	dungeonName, err := spelling.NameForNew(ctx, cwd, campaignName)
 	if err != nil {

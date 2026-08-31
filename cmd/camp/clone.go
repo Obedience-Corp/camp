@@ -17,13 +17,13 @@ import (
 
 var cloneCmd = &cobra.Command{
 	Use:   "clone <url> [directory]",
-	Short: "Clone a campaign with full submodule setup",
-	Long: `Clone a campaign repository and initialize all submodules.
+	Short: "Clone a camp with full submodule setup",
+	Long: `Clone a camp repository and initialize all submodules.
 
 This command provides a single-step setup for new devices:
 
   1. CLONE REPOSITORY
-     Clones the campaign repository with recursive submodules.
+     Clones the camp repository with recursive submodules.
 
   2. SYNCHRONIZE URLs
      Copies URLs from .gitmodules to .git/config, ensuring
@@ -36,25 +36,25 @@ This command provides a single-step setup for new devices:
      Verifies all submodules are initialized, at correct commits,
      and have matching URLs.
 
-  5. REGISTER CAMPAIGN
-     If .campaign/campaign.yaml exists, registers the campaign
+  5. REGISTER CAMP
+     If .campaign/campaign.yaml exists, registers the camp
      in the global registry for navigation and discovery.
 
 EXIT CODES:
   0  Success
-  1  Runtime failure (clone failed before usable campaign)
+  1  Runtime failure (clone failed before usable camp)
   2  Usage error (bad flags or args)
   3  Partial success or validation failed
 
 EXAMPLES:
-  # Clone a campaign (default: SSH)
+  # Clone a camp (default: SSH)
   camp clone git@github.com:Obedience-Corp/obey-campaign.git
 
   # Clone with HTTPS
   camp clone https://github.com/Obedience-Corp/obey-campaign.git
 
   # Clone to a specific directory
-  camp clone git@github.com:org/repo.git my-campaign
+  camp clone git@github.com:org/repo.git my-camp
 
   # Clone a specific branch
   camp clone git@github.com:org/repo.git --branch develop
@@ -114,7 +114,7 @@ func init() {
 	cloneCmd.Flags().BoolVar(&cloneOpts.noValidate, "no-validate", false,
 		"Skip post-clone validation")
 	cloneCmd.Flags().BoolVar(&cloneOpts.noRegister, "no-register", false,
-		"Skip auto-registration in global campaign registry")
+		"Skip auto-registration in global camp registry")
 	cloneCmd.Flags().BoolVarP(&cloneOpts.verbose, "verbose", "v", false,
 		"Show detailed output for each operation")
 	cloneCmd.Flags().BoolVar(&cloneOpts.json, "json", false,
@@ -236,7 +236,7 @@ func formatCloneHuman(result *clone.CloneResult, verbose bool) {
 
 	// Header
 	if result.Success {
-		fmt.Println(ui.Success("Campaign cloned successfully"))
+		fmt.Println(ui.Success("Your camp was cloned successfully"))
 	} else {
 		fmt.Fprintln(os.Stderr, ui.Error("Clone completed with issues"))
 	}

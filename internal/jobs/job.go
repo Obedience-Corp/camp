@@ -345,7 +345,7 @@ func (j *Job) Validate() error {
 		}
 		if normalizeRepo(j.Repo) != "." {
 			return camperrors.NewValidation("repo",
-				"manifest records are campaign-root files; the job's lane is \".\"", nil)
+				"manifest records are camp-root files; the job's lane is \".\"", nil)
 		}
 		if j.Then != nil || j.FollowUp || len(j.Paths) != 0 {
 			return camperrors.NewValidation("manifest",
@@ -432,12 +432,12 @@ func validateRepoField(field, repo string) error {
 	}
 	if filepath.IsAbs(trimmed) {
 		return camperrors.NewValidation(field,
-			"repo "+repo+" must be campaign-relative", nil)
+			"repo "+repo+" must be camp-relative", nil)
 	}
 	normalized := strings.Trim(filepath.ToSlash(filepath.Clean(trimmed)), "/")
 	if normalized == ".." || strings.HasPrefix(normalized, "../") {
 		return camperrors.NewValidation(field,
-			"repo "+repo+" escapes the campaign", nil)
+			"repo "+repo+" escapes the camp", nil)
 	}
 	return nil
 }

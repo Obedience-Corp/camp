@@ -24,7 +24,7 @@ camp cache [flags]
 
 ### SEE ALSO
 
-* [camp](camp.md)	 - Campaign management CLI for multi-project AI workspaces
+* [camp](camp.md)	 - Manage your camps and the projects and festivals inside them
 * [camp cache clear](camp_cache_clear.md)	 - Delete the navigation cache
 * [camp cache info](camp_cache_info.md)	 - Show cache status and metadata
 * [camp cache rebuild](camp_cache_rebuild.md)	 - Force rebuild the navigation cache

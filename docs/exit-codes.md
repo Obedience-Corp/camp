@@ -16,7 +16,7 @@ handle failures consistently.
 | --- | --- | --- |
 | `camp doctor` | 3 | `--fix` repaired some issues but not all detected issues. |
 | `camp sync` | 3 | Post-sync validation failed after sync/update work ran. |
-| `camp clone` | 3 | The campaign was partially cloned, or post-clone validation failed. |
+| `camp clone` | 3 | The camp was partially cloned, or post-clone validation failed. |
 
 ## Migration Notes
 

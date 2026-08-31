@@ -4,7 +4,7 @@ Report link-registry health issues
 
 ### Synopsis
 
-Report health issues in the campaign workitem link registry.
+Report health issues in the camp workitem link registry.
 
 The command reads .campaign/workitems/links.yaml, scans .workitem metadata on
 disk, and checks current-workitem and priority stores for stale or inconsistent
@@ -32,4 +32,4 @@ camp workitem doctor [flags]
 
 ### SEE ALSO
 
-* [camp workitem](camp_workitem.md)	 - View active campaign work items
+* [camp workitem](camp_workitem.md)	 - View active camp work items

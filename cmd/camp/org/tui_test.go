@@ -378,7 +378,7 @@ func TestOrgTUI_HelpAdvertisesNewKeys(t *testing.T) {
 	m := newTestOrgModel(t)
 	m.width = 120
 	out := m.View()
-	for _, want := range []string{"n: new org", "N: new campaign", "x: delete"} {
+	for _, want := range []string{"n: new org", "N: new camp", "x: delete"} {
 		if !strings.Contains(out, want) {
 			t.Errorf("help missing %q:\n%s", want, out)
 		}

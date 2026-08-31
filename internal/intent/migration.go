@@ -64,7 +64,7 @@ func (s *IntentService) EnsureDirectories(ctx context.Context) error {
 	}
 	campaignName, err := spelling.CampaignName(ctx, s.campaignRoot, globalCfg.ResolveDungeonHidden())
 	if err != nil {
-		return camperrors.Wrap(err, "resolving campaign dungeon spelling")
+		return camperrors.Wrap(err, "resolving camp dungeon spelling")
 	}
 	dungeonName, err := spelling.NameForNew(ctx, s.intentsDir, campaignName)
 	if err != nil {

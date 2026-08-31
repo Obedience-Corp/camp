@@ -392,7 +392,7 @@ func renderRootRefusal(out io.Writer, r RefusedFile) {
 func refusalExplanation(reason artifacts.RefusalReason) string {
 	switch reason {
 	case artifacts.RefusalCampaignRoot:
-		return "sits at the campaign root; camp will not make the campaign an artifact root."
+		return "sits at the camp root; camp will not make the camp an artifact root."
 	case artifacts.RefusalCampaignState:
 		return "lives under .campaign/; camp will not make its own state tree an artifact root."
 	case artifacts.RefusalRepoRoot:

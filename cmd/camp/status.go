@@ -27,11 +27,11 @@ var (
 
 var statusCmd = &cobra.Command{
 	Use:   "status [flags] [-- <git-flags>]",
-	Short: "Show git status of the campaign",
-	Long: `Show git status of the campaign root directory.
+	Short: "Show git status of the camp",
+	Long: `Show git status of the camp root directory.
 
-Works from anywhere within the campaign - always shows the status
-of the campaign root repository.
+Works from anywhere within the camp - always shows the status
+of the camp root repository.
 
 Use --sub to show status of the submodule detected from your current directory.
 Use --project/-p to show status of a specific project.
@@ -49,7 +49,7 @@ func init() {
 	statusCmd.Flags().BoolVar(&statusSub, "sub", false, "Status of the submodule detected from current directory")
 	statusCmd.Flags().StringVarP(&statusProject, "project", "p", "", "Status of a specific project path")
 	statusCmd.Flags().BoolVarP(&statusShort, "short", "s", false, "Give output in short format")
-	statusCmd.Flags().BoolVar(&statusShowRefs, "show-refs", false, "Show campaign root submodule ref changes")
+	statusCmd.Flags().BoolVar(&statusShowRefs, "show-refs", false, "Show camp root submodule ref changes")
 	statusCmd.Flags().BoolVar(&statusNoDrain, "no-drain", false, "Do not report camp's queued commits first")
 }
 
@@ -58,7 +58,7 @@ func runStatus(cmd *cobra.Command, args []string) error {
 
 	campRoot, err := campaign.DetectCached(ctx)
 	if err != nil {
-		return camperrors.Wrap(err, "not in a campaign")
+		return camperrors.Wrap(err, "not in a camp")
 	}
 
 	notice.Render(os.Stderr, notice.FilterDismissed(campRoot, notice.Detect(ctx, campRoot,

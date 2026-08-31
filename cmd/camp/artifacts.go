@@ -21,12 +21,12 @@ import (
 var artifactsCmd = &cobra.Command{
 	Use:   "artifacts",
 	Short: "Manage declared artifact roots (.campaign/artifacts.yaml)",
-	Long: `Manage the campaign's declared artifact roots: directories of heavy non-git
+	Long: `Manage the camp's declared artifact roots: directories of heavy non-git
 payloads (media, renders, datasets) that 'camp sync --from <machine>' moves
 between your machines with rsync instead of git.
 
 The declaration file (.campaign/artifacts.yaml) is committed, so every
-machine knows what belongs to the campaign. Declared roots should be
+machine knows what belongs to the camp. Declared roots should be
 gitignored: a root that is also git-tracked would make the same bytes both
 git content and artifact content. Manifests and per-peer sync snapshots are
 machine-local derived state under .campaign/cache (gitignored).`,
@@ -47,7 +47,7 @@ var artifactsListCmd = &cobra.Command{
 var artifactsAddCmd = &cobra.Command{
 	Use:   "add <path>",
 	Short: "Declare an artifact root",
-	Long: `Declare a campaign-relative directory as an artifact root.
+	Long: `Declare a camp-relative directory as an artifact root.
 
 Policy 'always' (default) syncs the root on every 'camp sync --from
 <machine>'; 'on-demand' syncs it only when artifacts are requested
@@ -127,7 +127,7 @@ func runArtifactsList(cmd *cobra.Command, _ []string) error {
 	ctx := cmd.Context()
 	campRoot, err := campaign.DetectCached(ctx)
 	if err != nil {
-		return camperrors.Wrap(err, "not in a campaign")
+		return camperrors.Wrap(err, "not in a camp")
 	}
 	cfg, err := artifacts.Load(campRoot)
 	if err != nil {
@@ -187,7 +187,7 @@ func runArtifactsAdd(cmd *cobra.Command, args []string) error {
 	ctx := cmd.Context()
 	campRoot, err := campaign.DetectCached(ctx)
 	if err != nil {
-		return camperrors.Wrap(err, "not in a campaign")
+		return camperrors.Wrap(err, "not in a camp")
 	}
 	// Validate before doing any work. Add validates too, but --dry-run never
 	// reaches Add, and reporting on a declaration that could never succeed
@@ -313,7 +313,7 @@ func runArtifactsRemove(cmd *cobra.Command, args []string) error {
 	ctx := cmd.Context()
 	campRoot, err := campaign.DetectCached(ctx)
 	if err != nil {
-		return camperrors.Wrap(err, "not in a campaign")
+		return camperrors.Wrap(err, "not in a camp")
 	}
 	cfg, err := artifacts.Load(campRoot)
 	if err != nil {
@@ -334,7 +334,7 @@ func runArtifactsManifest(cmd *cobra.Command, args []string) error {
 	ctx := cmd.Context()
 	campRoot, err := campaign.DetectCached(ctx)
 	if err != nil {
-		return camperrors.Wrap(err, "not in a campaign")
+		return camperrors.Wrap(err, "not in a camp")
 	}
 	cfg, err := artifacts.Load(campRoot)
 	if err != nil {
@@ -408,7 +408,7 @@ func runArtifactsResolve(cmd *cobra.Command, args []string) error {
 	ctx := cmd.Context()
 	campRoot, err := campaign.DetectCached(ctx)
 	if err != nil {
-		return camperrors.Wrap(err, "not in a campaign")
+		return camperrors.Wrap(err, "not in a camp")
 	}
 	if resolveOpts.from == "" {
 		return camperrors.New("--from <machine> is required: conflicts are per peer")

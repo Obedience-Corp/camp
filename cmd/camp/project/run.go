@@ -18,10 +18,10 @@ import (
 var projectRunCmd = &cobra.Command{
 	Use:   "run [--project <name>] [--] <command> [args...]",
 	Short: "Run a command inside a project directory, like cr but project-scoped",
-	Long: `Run any shell command inside a project directory from anywhere in the campaign.
+	Long: `Run any shell command inside a project directory from anywhere in the camp.
 
 This is the project-scoped counterpart to 'camp run' (cr): cr runs from the
-campaign root, camp project run (cr -p) runs inside a project.
+camp root, camp project run (cr -p) runs inside a project.
 
 The project is resolved in this order:
   1. --project / -p flag (explicit project name, tab-completes registered projects)
@@ -83,7 +83,7 @@ func runProjectRun(cmd *cobra.Command, args []string) error {
 	// Detect campaign root.
 	campRoot, err := campaign.DetectCached(ctx)
 	if err != nil {
-		return camperrors.Wrap(err, "not in a campaign")
+		return camperrors.Wrap(err, "not in a camp")
 	}
 
 	// Resolve project directory.
@@ -245,7 +245,7 @@ func pickProject(cmd *cobra.Command, campRoot string) (*projectsvc.Project, erro
 		return nil, camperrors.Wrap(err, "failed to list projects")
 	}
 	if len(projects) == 0 {
-		return nil, camperrors.Wrap(camperrors.ErrNotFound, "no projects found in campaign")
+		return nil, camperrors.Wrap(camperrors.ErrNotFound, "no projects found in camp")
 	}
 
 	idx, err := fuzzyfinder.Find(

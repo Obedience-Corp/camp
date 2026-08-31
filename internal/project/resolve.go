@@ -120,7 +120,7 @@ func ResolveFromCwd(ctx context.Context, campRoot string) (*ResolveResult, error
 	resolvedRoot, _ := filepath.EvalSymlinks(projectRoot)
 	resolvedCamp, _ := filepath.EvalSymlinks(campRoot)
 	if resolvedRoot == resolvedCamp || projectRoot == campRoot {
-		return nil, errors.New("you're in the campaign root, not a project\nUse 'camp commit' for campaign-level commits")
+		return nil, errors.New("you're in the camp root, not a project\nUse 'camp commit' for camp-level commits")
 	}
 
 	for _, proj := range projects {
@@ -326,7 +326,7 @@ type ProjectNotFoundError struct {
 }
 
 func (e *ProjectNotFoundError) Error() string {
-	return fmt.Sprintf("project %q not found in campaign (run 'camp project list' to see available projects)", e.Name)
+	return fmt.Sprintf("project %q not found in camp (run 'camp project list' to see available projects)", e.Name)
 }
 
 // Unwrap returns ErrNotFound so errors.Is(err, camperrors.ErrNotFound) works.
@@ -342,7 +342,7 @@ func (e *ProjectNotFoundError) AvailableProjects() []Project {
 // FormatProjectList returns a formatted string listing available projects.
 func FormatProjectList(projects []Project) string {
 	if len(projects) == 0 {
-		return "No projects found in this campaign."
+		return "No projects found in this camp."
 	}
 
 	var b strings.Builder

@@ -116,7 +116,7 @@ func NewFromRoot(ctx context.Context, campaignRoot string, warn func(error)) *Em
 	}
 	cfg, err := config.LoadCampaignConfig(ctx, campaignRoot)
 	if err != nil {
-		warn(camperrors.Wrap(err, "ledger: load campaign id"))
+		warn(camperrors.Wrap(err, "ledger: load camp id"))
 		return &Emitter{disabled: true, warn: warn, actionID: ledgerkit.NewActionID()}
 	}
 	return New(ctx, campaignRoot, cfg.ID, warn)
@@ -193,7 +193,7 @@ func WarnTo(w io.Writer) func(error) {
 		if err == nil {
 			return
 		}
-		_, _ = fmt.Fprintf(w, "warning: campaign ledger not updated: %v\n", err)
+		_, _ = fmt.Fprintf(w, "warning: camp ledger not updated: %v\n", err)
 	}
 }
 

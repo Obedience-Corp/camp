@@ -55,7 +55,7 @@ func TestOrgShow_EmptyAndAbsent(t *testing.T) {
 	if err != nil {
 		t.Fatalf("show empty: %v", err)
 	}
-	if !strings.Contains(out, "0 campaigns") {
+	if !strings.Contains(out, "0 camps") {
 		t.Fatalf("expected 0-member header, got:\n%s", out)
 	}
 

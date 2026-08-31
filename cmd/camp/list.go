@@ -40,16 +40,16 @@ var stderrIsTTY = func() bool { return term.IsTerminal(int(os.Stderr.Fd())) }
 
 var listCmd = &cobra.Command{
 	Use:   "list [org]",
-	Short: "List all registered campaigns",
-	Long: `List all campaigns registered in the global registry.
+	Short: "List all registered camps",
+	Long: `List all camps registered in the global registry.
 
-Campaigns are registered when created with 'camp init' or manually
+Camps are registered when created with 'camp init' or manually
 with 'camp register'. The registry lives at ~/.obey/campaign/registry.json.
 
 In a terminal, 'camp list' (with no flags) opens an interactive browser where you
-can deactivate/reactivate campaigns (cycle lifecycle status), reassign their org,
+can deactivate/reactivate camps (cycle lifecycle status), reassign their org,
 and copy paths. When machines are configured in ~/.obey/machines.yaml, press 'r'
-to load remote campaigns into the browser (not on open). Pass an org as a
+to load remote camps into the browser (not on open). Pass an org as a
 positional argument to open the browser filtered to that org. Piped, with
 --json/--count, or with any filter/sort flag it prints the table instead. Home
 paths display as '~'.
@@ -64,7 +64,7 @@ Bourne shell that is not bash or zsh; the bash script will not parse there.
 
 Output formats:
   table   - Aligned columns with headers (default)
-  simple  - Campaign names only, one per line
+  simple  - camp names only, one per line
   json    - JSON array for scripting
 
 Sorting options:
@@ -74,15 +74,15 @@ Sorting options:
   org      - By org (fallback first, then alphabetical), then by name
 
 Examples:
-  camp list                  List all campaigns
-  camp list obey             Browse campaigns in the obey org
+  camp list                  List all camps
+  camp list obey             Browse camps in the obey org
   camp list --json           Output as JSON
   camp list --format json    Output as JSON
   camp list --sort name      Sort by name
   camp list --sort org       Sort by org, then name
   camp list --format simple  Names only for scripting
-  camp list --count          Print only the total number of campaigns
-  camp list --remote         Also list campaigns on machines in ~/.obey/machines.yaml
+  camp list --count          Print only the total number of camps
+  camp list --remote         Also list camps on machines in ~/.obey/machines.yaml
 
 --remote runs each machine's own 'camp list --json' through that account's
 configured login shell ($SHELL -lc) so its login-profile PATH is picked up; when
@@ -91,7 +91,7 @@ locations (~/.local/bin, $GOBIN, $GOPATH/bin, ~/go/bin, Homebrew) before giving
 up. If camp lives somewhere else on a machine, set CAMP_REMOTE_CAMP_PATH to its
 exact path there. 'camp machine diagnose' shows which binary a hop would run.
 
-For interactive hop to a remote campaign from the picker, use csw after
+For interactive hop to a remote camp from the picker, use csw after
 shell-init (see 'camp switch --help').`,
 	Aliases: []string{"ls"},
 	Args:    cobra.MaximumNArgs(1),
@@ -110,18 +110,18 @@ func init() {
 
 	listCmd.Flags().StringP("format", "f", "table", "Output format (table, simple, json)")
 	listCmd.Flags().BoolVar(&listJSON, "json", false, "Output as JSON (shorthand for --format json)")
-	listCmd.Flags().BoolVar(&listCount, "count", false, "Print only the total number of campaigns")
+	listCmd.Flags().BoolVar(&listCount, "count", false, "Print only the total number of camps")
 	listCmd.Flags().StringP("sort", "s", "accessed", "Sort by (name, accessed, type, org)")
 	listCmd.Flags().Bool("verify-verbose", false, "Show detailed verification output")
-	listCmd.Flags().String("org", "", "Only campaigns in this org")
-	listCmd.Flags().StringSlice("tag", nil, "Only campaigns carrying this tag (repeat for AND)")
-	listCmd.Flags().String("status", "", "Only campaigns in this status (active, inactive, reference)")
+	listCmd.Flags().String("org", "", "Only camps in this org")
+	listCmd.Flags().StringSlice("tag", nil, "Only camps carrying this tag (repeat for AND)")
+	listCmd.Flags().String("status", "", "Only camps in this status (active, inactive, reference)")
 	listCmd.Flags().Bool("all", false, "Show all statuses (default hides inactive/reference)")
 	listCmd.Flags().Bool("group", false, "Force org grouping")
 	listCmd.Flags().Bool("no-group", false, "Suppress org grouping")
-	listCmd.Flags().BoolVar(&listRemote, "remote", false, "Also list campaigns on machines in ~/.obey/machines.yaml (ssh)")
-	listCmd.Flags().BoolP("interactive", "i", false, "Open the interactive campaign browser (prints the table when stdout is not a terminal)")
-	listCmd.Flags().String("path-output", "", "Write the selected campaign path to a file (shell integration)")
+	listCmd.Flags().BoolVar(&listRemote, "remote", false, "Also list camps on machines in ~/.obey/machines.yaml (ssh)")
+	listCmd.Flags().BoolP("interactive", "i", false, "Open the interactive camp browser (prints the table when stdout is not a terminal)")
+	listCmd.Flags().String("path-output", "", "Write the selected camp path to a file (shell integration)")
 	_ = listCmd.Flags().MarkHidden("path-output")
 }
 
@@ -222,7 +222,7 @@ func renderListTable(cmd *cobra.Command, positionalOrg string) error {
 			encoder.SetIndent("", "  ")
 			return encoder.Encode(map[string]int{"count": len(campaigns)})
 		}
-		fmt.Println(ui.CountLabel(len(campaigns), "campaign", "campaigns"))
+		fmt.Println(ui.CountLabel(len(campaigns), "camp", "camps"))
 		return nil
 	}
 
@@ -230,7 +230,7 @@ func renderListTable(cmd *cobra.Command, positionalOrg string) error {
 		if formatStr == "json" {
 			return outputCampaigns(os.Stdout, []campaignEntry{}, formatStr)
 		}
-		fmt.Println(ui.Warning("No campaigns registered."))
+		fmt.Println(ui.Warning("No camps registered."))
 		fmt.Println()
 		fmt.Printf("  Create one with: %s\n", ui.Accent("camp init"))
 		fmt.Printf("  Or register existing: %s\n", ui.Accent("camp register <path>"))
@@ -381,7 +381,7 @@ func outputCampaigns(out io.Writer, campaigns []campaignEntry, format string) er
 		if _, err := fmt.Fprintln(out); err != nil {
 			return err
 		}
-		_, err := fmt.Fprintln(out, ui.Dim(ui.CountLabel(len(campaigns), "campaign", "campaigns")))
+		_, err := fmt.Fprintln(out, ui.Dim(ui.CountLabel(len(campaigns), "camp", "camps")))
 		return err
 	}
 }

@@ -162,7 +162,7 @@ func TestStatusAllNoSubmodulesWritesHumanMessageToStderr(t *testing.T) {
 	if stdout != "" {
 		t.Fatalf("status all wrote stdout %q, want empty", stdout)
 	}
-	if !strings.Contains(stderr, "No submodules found in this campaign") {
+	if !strings.Contains(stderr, "No submodules found in this camp") {
 		t.Fatalf("stderr = %q, want no-submodules message", stderr)
 	}
 }

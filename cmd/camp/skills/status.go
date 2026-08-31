@@ -23,7 +23,7 @@ var skillsStatusJSON bool
 var skillsStatusCmd = &cobra.Command{
 	Use:   "status",
 	Short: "Show the current state of projected skill bundle symlinks",
-	Long: `Show projection status for campaign skill bundles across tool targets.
+	Long: `Show projection status for camp skill bundles across tool targets.
 
 Reports whether each tool's skills directory has projected entries from
 .campaign/skills/, is partially projected, missing, broken, or blocked.

@@ -446,7 +446,7 @@ func RepoForPath(campaignRoot, repoPath string) string {
 // macOS a campaign under /tmp resolves to /private/var/..., so a repo path that
 // does not exist yet would keep its /var/... spelling while the root got the
 // resolved one. filepath.Rel between those two produces "..", and RepoForPath
-// would report "not in this campaign" for a repo that plainly is: the drain
+// would report "not in this camp" for a repo that plainly is: the drain
 // would then be skipped with no error and no output, which is the worst way for
 // an ordering barrier to fail.
 func resolveDir(p string) string {

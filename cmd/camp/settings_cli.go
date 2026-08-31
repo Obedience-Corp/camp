@@ -165,18 +165,18 @@ prints just that value.
 Keys:
   global.theme               Color theme in ~/.obey/campaign/config.json
   global.editor              Preferred editor
-  global.campaigns_dir       Where camp create places new campaigns
+  global.campaigns_dir       Where camp create places new camps
   global.verbose             Verbose output
   global.no_color            Disable colored output
-  global.commit.sync_project_refs   When true, camp p commit updates campaign-root submodule pointer (default false)
+  global.commit.sync_project_refs   When true, camp p commit updates camp-root submodule pointer (default false)
   global.commit.disable_commit_tags When true, skip [campaign:…] tags on camp commits (default false; tags on)
-  local.theme_override       Campaign-local theme override (requires a campaign)
-  local.commit.sync_project_refs    Campaign override for project-ref sync (true/false/inherit)
-  local.commit.disable_commit_tags  Campaign override to skip commit subject tags (true/false/inherit)
-  local.campaign.name        Campaign name in .campaign/campaign.yaml
-  local.campaign.description Campaign description
-  local.campaign.mission     Campaign mission
-  local.campaign.type        Campaign type (product, research, tools, personal)
+  local.theme_override       Campaign-local theme override (requires a camp)
+  local.commit.sync_project_refs    Camp override for project-ref sync (true/false/inherit)
+  local.commit.disable_commit_tags  Camp override to skip commit subject tags (true/false/inherit)
+  local.campaign.name        Camp name in .campaign/campaign.yaml
+  local.campaign.description Camp description
+  local.campaign.mission     Camp mission
+  local.campaign.type        Camp type (product, research, tools, personal)
   local.campaign.commit_hook Commit-message hook command
   effective.commit.*         Resolved commit prefs (get only; local overrides global)
 
@@ -210,7 +210,7 @@ func newSettingsSetCmd() *cobra.Command {
 Accepts the same keys as 'camp settings get'. Theme values are one of
 adaptive, light, dark, or high-contrast. Boolean values accept true/false.
 Setting local.theme_override to 'inherit' clears the override; local.* keys
-require running inside a campaign.`,
+require running inside a camp.`,
 		Example: `  camp settings set global.theme dark
   camp settings set global.verbose true
   camp settings set local.theme_override light
@@ -516,7 +516,7 @@ func applyCampaignScalarKey(cfg *config.CampaignConfig, key, value string) (stri
 		t := config.CampaignType(strings.ToLower(strings.TrimSpace(value)))
 		if !t.Valid() {
 			return "", camperrors.NewValidation(key,
-				fmt.Sprintf("unknown campaign type %q (valid: product, research, tools, personal)", value), nil)
+				fmt.Sprintf("unknown camp type %q (valid: product, research, tools, personal)", value), nil)
 		}
 		cfg.Type = t
 		return string(t), nil
@@ -742,5 +742,5 @@ func errSettingsUnknownKey(key string) error {
 
 func errSettingsLocalOutsideCampaign(key string) error {
 	return camperrors.NewValidation(key,
-		"local settings require a campaign; run this command inside a campaign directory", nil)
+		"local settings require a camp; run this command inside a camp directory", nil)
 }

@@ -5,7 +5,7 @@ import "github.com/spf13/cobra"
 // Cmd is the scaffold root for the leverage command family.
 var Cmd = &cobra.Command{
 	Use:     "leverage [directory]",
-	Short:   "Compute leverage scores for campaign projects",
+	Short:   "Compute leverage scores for the camp's projects",
 	GroupID: "campaign",
 	Long: `Compute productivity leverage scores by comparing scc COCOMO estimates
 against actual development effort.
@@ -19,7 +19,7 @@ traditional estimation models predict for the same team and time.
 Leverage commands commit the data they write under .campaign/leverage so the
 score history stays versioned without extra steps. Nothing outside that
 directory is staged. Pass --no-commit to skip it once, or run
-'camp leverage config --autocommit=false' to turn it off for the campaign.
+'camp leverage config --autocommit=false' to turn it off for the camp.
 
 Examples:
   camp leverage                              Show team leverage (auto-detect authors from git)

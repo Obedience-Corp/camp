@@ -56,7 +56,7 @@ func TestReadmeTemplate(t *testing.T) {
 			},
 			wantContains: []string{
 				"# bare-campaign",
-				"A campaign workspace managed by camp CLI.",
+				"A camp managed by the camp CLI.",
 				"## Directory Structure",
 				"## Getting Started",
 			},
@@ -90,7 +90,7 @@ func TestReadmeTemplate(t *testing.T) {
 			},
 			wantContains: []string{
 				"# mission-campaign",
-				"A campaign workspace managed by camp CLI.",
+				"A camp managed by the camp CLI.",
 				"## Mission",
 				"On a mission",
 				"## Directory Structure",

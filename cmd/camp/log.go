@@ -19,11 +19,11 @@ import (
 
 var logCmd = &cobra.Command{
 	Use:   "log [flags]",
-	Short: "Show git log of the campaign",
-	Long: `Show git log of the campaign root repository.
+	Short: "Show git log of the camp",
+	Long: `Show git log of the camp root repository.
 
-Works from anywhere within the campaign - always shows the log
-of the campaign root repository.
+Works from anywhere within the camp - always shows the log
+of the camp root repository.
 
 Use --sub to show log of the submodule detected from your current directory.
 Use --project/-p to show log of a specific project.
@@ -52,7 +52,7 @@ func runLog(cmd *cobra.Command, args []string) error {
 
 	campRoot, err := campaign.DetectCached(ctx)
 	if err != nil {
-		return camperrors.Wrap(err, "not in a campaign")
+		return camperrors.Wrap(err, "not in a camp")
 	}
 
 	// Extract camp-specific flags, pass rest to git

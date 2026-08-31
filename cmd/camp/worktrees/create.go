@@ -84,13 +84,13 @@ func runWorktreesCreate(cmd *cobra.Command, args []string) error {
 	// Find campaign root
 	campRoot, err := campaign.DetectCached(ctx)
 	if err != nil {
-		return camperrors.Wrap(err, "not in a campaign")
+		return camperrors.Wrap(err, "not in a camp")
 	}
 
 	// Load campaign config
 	cfg, err := config.LoadCampaignConfig(ctx, campRoot)
 	if err != nil {
-		return camperrors.Wrap(err, "failed to load campaign config")
+		return camperrors.Wrap(err, "failed to load camp config")
 	}
 
 	// Create resolver and creator
@@ -194,7 +194,7 @@ func runWorktreesCreate(cmd *cobra.Command, args []string) error {
 		fmt.Println(ui.Warning(fmt.Sprintf("  Skills: could not project into worktree: %v", err)))
 		fmt.Println(ui.Dim("  Fix later with: camp skills link --worktrees-only"))
 	} else if projected {
-		fmt.Println(ui.Dim("  Skills: projected campaign skill bundles into worktree (.agents/.claude/.grok)"))
+		fmt.Println(ui.Dim("  Skills: projected camp skill bundles into worktree (.agents/.claude/.grok)"))
 	}
 
 	fmt.Println()

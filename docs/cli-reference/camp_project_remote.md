@@ -4,7 +4,7 @@ Manage remotes for a project
 
 ### Synopsis
 
-Manage git remotes for a campaign project.
+Manage git remotes for a camp project.
 
 Auto-detects the current project from your working directory, or use --project
 to specify explicitly.
@@ -47,7 +47,7 @@ camp project remote [flags]
 
 ### SEE ALSO
 
-* [camp project](camp_project.md)	 - Manage campaign projects
+* [camp project](camp_project.md)	 - Manage camp projects
 * [camp project remote add](camp_project_remote_add.md)	 - Add a new remote to the project
 * [camp project remote list](camp_project_remote_list.md)	 - List remotes for the project
 * [camp project remote remove](camp_project_remote_remove.md)	 - Remove a remote from the project

@@ -1,14 +1,14 @@
 ## camp project new
 
-Create a new project in campaign
+Create a new project in camp
 
 ### Synopsis
 
-Create a new local project as a git submodule in the campaign.
+Create a new local project as a git submodule in the camp.
 
 The project is initialized as a git repository with an initial commit,
 then added as a submodule under projects/. No remote repository is required.
-The campaign commit is always created so .gitmodules and the submodule pointer land together.
+The camp commit is always created so .gitmodules and the submodule pointer land together.
 
 You can add a remote later:
   cd projects/<name>
@@ -36,4 +36,4 @@ camp project new <name> [flags]
 
 ### SEE ALSO
 
-* [camp project](camp_project.md)	 - Manage campaign projects
+* [camp project](camp_project.md)	 - Manage camp projects

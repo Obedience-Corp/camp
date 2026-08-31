@@ -1,6 +1,6 @@
 ## camp tag list
 
-List all tags in use with campaign counts
+List all tags in use with camp counts
 
 ```
 camp tag list [flags]
@@ -27,4 +27,4 @@ camp tag list [flags]
 
 ### SEE ALSO
 
-* [camp tag](camp_tag.md)	 - Label campaigns with tags
+* [camp tag](camp_tag.md)	 - Label camps with tags

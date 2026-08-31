@@ -52,11 +52,11 @@ func runIntentCount(cmd *cobra.Command, args []string) error {
 
 	cfg, campaignRoot, err := config.LoadCampaignConfigFromCwd(ctx)
 	if err != nil {
-		return camperrors.Wrap(err, "not in a campaign directory")
+		return camperrors.Wrap(err, "not in a camp directory")
 	}
 	campaignRoot, err = pathutil.ResolveRoot(campaignRoot)
 	if err != nil {
-		return camperrors.Wrap(err, "resolving campaign root")
+		return camperrors.Wrap(err, "resolving camp root")
 	}
 
 	resolver := paths.NewResolverFromConfig(campaignRoot, cfg)

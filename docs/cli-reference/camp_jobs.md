@@ -43,7 +43,7 @@ camp jobs [flags]
 
 ### SEE ALSO
 
-* [camp](camp.md)	 - Campaign management CLI for multi-project AI workspaces
+* [camp](camp.md)	 - Manage your camps and the projects and festivals inside them
 * [camp jobs drain](camp_jobs_drain.md)	 - Wait until every lane is empty
 * [camp jobs drop](camp_jobs_drop.md)	 - Give up on failed jobs, keeping their content
 * [camp jobs retry](camp_jobs_retry.md)	 - Requeue failed jobs

@@ -30,7 +30,7 @@ Schema versions in this release:
 | `camp workitem commit --json` | `workitem-commit/v1alpha1` | Emits staging plan and optional commit SHA. |
 | `camp workitem commits --json` | `workitem-commits/v1alpha1` | Emits matching commits and per-repo query errors. |
 | `camp workitem priority --json` | `workitem-priority/v1alpha1` | Emits `cleared: true` when priority is cleared. |
-| `camp concepts --json` | `concepts/v1alpha1` | Emits configured campaign concepts with `generated_at`, `campaign_root`, and concept metadata. |
+| `camp concepts --json` | `concepts/v1alpha1` | Emits configured camp concepts with `generated_at`, `campaign_root`, and concept metadata. |
 | `camp intent list/find/show --json` | `intents/v1alpha1` | `--format json` is a deprecated alias. |
 | `camp intent count --json` | `intents/v1alpha1` | Counts are emitted as status-count objects in `items[]`; `--format json` is a deprecated alias. |
 | `camp intent add --json` | `intents/v1alpha1` | Emits created `id` and `path`. |
@@ -38,11 +38,11 @@ Schema versions in this release:
 | `camp doctor --json` | `doctor/v1alpha1` | Emits `schema_version` plus the snake_case health result on stdout; discovered error findings also emit a JSON error envelope on stderr with the same exit code. |
 | `camp leverage --json` | `leverage/v1alpha1` | Existing leverage result shape; refusals use the JSON error envelope. |
 | `camp leverage history --json` | `leverage-history/v1alpha1` | Existing history result shape; refusals use the JSON error envelope. |
-| `camp quest list --json` | `quest-list/v1alpha1` | Emits `schema_version`, `campaign_root`, and `items` with campaign-relative paths. |
-| `camp quest show --json` | `quest-show/v1alpha1` | Emits `schema_version`, `campaign_root`, and `quest` with campaign-relative paths. |
-| `camp quest links --json` | `quest-links/v1alpha1` | Emits `schema_version`, `campaign_root`, and `links` with campaign-relative paths. |
+| `camp quest list --json` | `quest-list/v1alpha1` | Emits `schema_version`, `campaign_root`, and `items` with camp-relative paths. |
+| `camp quest show --json` | `quest-show/v1alpha1` | Emits `schema_version`, `campaign_root`, and `quest` with camp-relative paths. |
+| `camp quest links --json` | `quest-links/v1alpha1` | Emits `schema_version`, `campaign_root`, and `links` with camp-relative paths. |
 | `camp skills status --json` | `skills-status/v1alpha1` | Existing skill projection status shape; failures use the JSON error envelope. |
-| `camp status all --json` | `status-all/v1alpha1` | Emits `schema_version`, `timestamp`, optional `campaign_root`, and `repos`; an empty campaign emits `repos: []`. |
+| `camp status all --json` | `status-all/v1alpha1` | Emits `schema_version`, `timestamp`, optional `campaign_root`, and `repos`; an empty camp emits `repos: []`. |
 | `camp sync --json` | `sync/v1alpha1` | Existing sync result shape; returned failures use the JSON error envelope. |
 | `camp worktrees info --json` | `worktrees-info/v1alpha1` | Deprecated compatibility surface; failures use the JSON error envelope. |
 | `camp worktrees list --json` | `worktrees-list/v1alpha1` | Deprecated compatibility surface; failures use the JSON error envelope. |
@@ -72,7 +72,7 @@ have JSON output but no formal version guarantee until explicitly promoted.
 
 ## Path Semantics
 
-All JSON path fields are campaign-relative. To resolve a path to an absolute
+All JSON path fields are camp-relative. To resolve a path to an absolute
 filesystem path, use the payload root:
 
 ```go

@@ -1,10 +1,10 @@
 ## camp dungeon
 
-Manage the campaign dungeon
+Manage the camp dungeon
 
 ### Synopsis
 
-Manage the campaign dungeon - a holding area for uncertain work.
+Manage the camp dungeon - a holding area for uncertain work.
 
 The dungeon is where you put work you're unsure about or want out of the way.
 It keeps items visible without them competing for your attention.
@@ -40,9 +40,9 @@ camp dungeon [flags]
 
 ### SEE ALSO
 
-* [camp](camp.md)	 - Campaign management CLI for multi-project AI workspaces
+* [camp](camp.md)	 - Manage your camps and the projects and festivals inside them
 * [camp dungeon add](camp_dungeon_add.md)	 - Initialize dungeon structure
 * [camp dungeon crawl](camp_dungeon_crawl.md)	 - Interactive dungeon review
 * [camp dungeon list](camp_dungeon_list.md)	 - List dungeon items
-* [camp dungeon migrate](camp_dungeon_migrate.md)	 - Convert every campaign dungeon to the hidden .dungeon spelling
+* [camp dungeon migrate](camp_dungeon_migrate.md)	 - Convert every camp dungeon to the hidden .dungeon spelling
 * [camp dungeon move](camp_dungeon_move.md)	 - Move dungeon items between statuses

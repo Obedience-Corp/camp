@@ -16,10 +16,10 @@ import (
 )
 
 // ErrMultipleMatches is returned when an ID prefix matches multiple campaigns.
-var ErrMultipleMatches = errors.New("multiple campaigns match that prefix")
+var ErrMultipleMatches = errors.New("multiple camps match that prefix")
 
 // ErrCampaignNotFound is returned when a campaign cannot be found.
-var ErrCampaignNotFound = errors.New("campaign not found")
+var ErrCampaignNotFound = errors.New("camp not found")
 
 // LoadRegistry loads the campaign registry from ~/.obey/campaign/registry.json.
 // Returns an empty registry if the file doesn't exist.
@@ -188,10 +188,10 @@ func (r *Registry) rebuildPathIndex() {
 }
 
 // ErrPathConflict is returned when a path is already registered to a different campaign.
-var ErrPathConflict = errors.New("path already registered to different campaign")
+var ErrPathConflict = errors.New("path already registered to different camp")
 
 // ErrEmptyID is returned when attempting to register with an empty ID.
-var ErrEmptyID = errors.New("campaign ID cannot be empty")
+var ErrEmptyID = errors.New("camp ID cannot be empty")
 
 // Register adds or updates a campaign in the registry.
 // The campaign is keyed by its ID for uniqueness.
@@ -484,7 +484,7 @@ func (r *Registry) VerifyAndRepair(ctx context.Context) (*VerificationReport, er
 				ID:     id,
 				Name:   entry.Name,
 				Path:   entry.Path,
-				Reason: "no campaign.yaml (not a campaign)",
+				Reason: "no campaign.yaml (not a camp)",
 			})
 			toRemove = append(toRemove, id)
 			continue

@@ -142,7 +142,7 @@ func (m listTUIModel) frame(lines []string, lay listLayout) string {
 func (m listTUIModel) bodyLines(lay listLayout) []string {
 	total := len(m.visible)
 	if total == 0 {
-		return []string{listMutedStyle.Render("no campaigns to show")}
+		return []string{listMutedStyle.Render("no camps to show")}
 	}
 
 	budget := lay.listRows
@@ -238,8 +238,8 @@ func (m listTUIModel) topBar() string {
 	} else if m.remoteLoading {
 		mode += " · loading remotes…"
 	}
-	return listTitleStyle.Render("Campaigns") + "  " +
-		listMutedStyle.Render(fmt.Sprintf("%s  .  showing: %s", ui.CountLabel(len(m.all), "campaign", "campaigns"), mode))
+	return listTitleStyle.Render("Camps") + "  " +
+		listMutedStyle.Render(fmt.Sprintf("%s  .  showing: %s", ui.CountLabel(len(m.all), "camp", "camps"), mode))
 }
 
 func (m listTUIModel) footer(cw int) string {

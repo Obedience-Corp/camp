@@ -1,13 +1,13 @@
 ## camp status
 
-Show git status of the campaign
+Show git status of the camp
 
 ### Synopsis
 
-Show git status of the campaign root directory.
+Show git status of the camp root directory.
 
-Works from anywhere within the campaign - always shows the status
-of the campaign root repository.
+Works from anywhere within the camp - always shows the status
+of the camp root repository.
 
 Use --sub to show status of the submodule detected from your current directory.
 Use --project/-p to show status of a specific project.
@@ -33,7 +33,7 @@ camp status [flags] [-- <git-flags>]
       --no-drain         Do not report camp's queued commits first
   -p, --project string   Status of a specific project path
   -s, --short            Give output in short format
-      --show-refs        Show campaign root submodule ref changes
+      --show-refs        Show camp root submodule ref changes
       --sub              Status of the submodule detected from current directory
 ```
 
@@ -45,5 +45,5 @@ camp status [flags] [-- <git-flags>]
 
 ### SEE ALSO
 
-* [camp](camp.md)	 - Campaign management CLI for multi-project AI workspaces
+* [camp](camp.md)	 - Manage your camps and the projects and festivals inside them
 * [camp status all](camp_status_all.md)	 - Show git status of all submodules

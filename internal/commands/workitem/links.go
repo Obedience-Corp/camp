@@ -22,7 +22,7 @@ func newLinksCommand() *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "links [selector]",
 		Short: "List workitem links",
-		Long: `List workitem links recorded in the campaign link registry.
+		Long: `List workitem links recorded in the camp link registry.
 
 The command reads .campaign/workitems/links.yaml and prints every link, or only
 links for the supplied workitem selector. Use this to audit which projects,
@@ -49,7 +49,7 @@ machine-readable link lists.`,
 func runLinks(ctx context.Context, cmd *cobra.Command, selectorArg string, jsonOut bool) error {
 	_, root, err := config.LoadCampaignConfigFromCwd(ctx)
 	if err != nil {
-		return camperrors.Wrap(err, "not in a campaign directory")
+		return camperrors.Wrap(err, "not in a camp directory")
 	}
 
 	registry, err := links.Load(ctx, root)

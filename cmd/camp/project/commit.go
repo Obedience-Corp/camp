@@ -39,7 +39,7 @@ to an active festival or workitem (via path links, ancestor .workitem
 markers, or festival-scoped links), the commit message carries the same
 FE-<ref> / WI-<ref> tracking components that ` + "`fest commit`" + ` would
 include. Use --workitem to override cwd-based resolution. When no
-festival/workitem context resolves, the tag is the bare campaign tag.
+festival/workitem context resolves, the tag is the bare camp tag.
 
 Examples:
   # From within a project directory
@@ -70,7 +70,7 @@ func init() {
 	projectCommitCmd.Flags().StringArrayVarP(&projectCommitMessages, "message", "m", nil, "Commit message (repeatable; multiple -m are joined git-style into subject + body; required unless --auto-write)")
 	projectCommitCmd.Flags().BoolVarP(&projectCommitAll, "all", "a", true, "Stage all changes")
 	projectCommitCmd.Flags().BoolVar(&projectCommitAmend, "amend", false, "Amend the previous commit")
-	projectCommitCmd.Flags().BoolVar(&projectCommitSync, "sync", false, "Sync submodule ref at campaign root after commit (also enabled by commit.sync_project_refs setting)")
+	projectCommitCmd.Flags().BoolVar(&projectCommitSync, "sync", false, "Sync submodule ref at camp root after commit (also enabled by commit.sync_project_refs setting)")
 	projectCommitCmd.Flags().BoolVar(&projectCommitNoSync, "no-sync", false, "Do not sync submodule ref even if settings enable it")
 	projectCommitCmd.Flags().BoolVar(&projectCommitAutoWrite, "auto-write", false, "Run configured commit message writer")
 	projectCommitCmd.Flags().StringVar(&projectCommitWorkitem, "workitem", "", "explicit workitem selector for the commit tag (overrides cwd-based resolution)")
@@ -95,7 +95,7 @@ func runProjectCommit(cmd *cobra.Command, args []string) error {
 	// Find campaign root
 	campRoot, err := campaign.DetectCached(ctx)
 	if err != nil {
-		return camperrors.Wrap(err, "not in a campaign")
+		return camperrors.Wrap(err, "not in a camp")
 	}
 
 	// Load campaign config once (used for worktree detection, the commit tag,
@@ -291,7 +291,7 @@ func runProjectCommit(cmd *cobra.Command, args []string) error {
 	if doSync && !inWorktree && git.HasPathDiff(ctx, campRoot, resolvedPath) {
 		if err := syncParentRef(ctx, campRoot, relPath, cfg, emitter, commitPrefs); err != nil {
 			fmt.Println()
-			fmt.Println(ui.Warning("Could not auto-sync campaign root: " + err.Error()))
+			fmt.Println(ui.Warning("Could not auto-sync camp root: " + err.Error()))
 			fmt.Println(ui.Dim("Run 'camp commit' to update manually."))
 		}
 	}
@@ -338,7 +338,7 @@ func syncParentRef(ctx context.Context, campRoot, relPath string, cfg *config.Ca
 		}
 	}
 
-	fmt.Println(ui.Success("✓ Campaign root synced (" + relPath + ")"))
+	fmt.Println(ui.Success("✓ Camp root synced (" + relPath + ")"))
 	return nil
 }
 

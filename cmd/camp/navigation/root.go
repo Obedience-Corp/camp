@@ -5,14 +5,14 @@ import "github.com/spf13/cobra"
 // Cmd is the scaffold root for the go/navigation command family.
 var Cmd = &cobra.Command{
 	Use:     "go [shortcut] [query...]",
-	Short:   "Navigate to campaign directories",
+	Short:   "Navigate to camp directories",
 	GroupID: "navigation",
 	Aliases: []string{"g"},
-	Long: `Navigate within the campaign using shortcuts.
+	Long: `Navigate within the camp using shortcuts.
 
 Usage patterns:
-  camp go           Toggle between campaign root and last location
-  camp go --root    Jump to campaign root (ignore toggle)
+  camp go           Toggle between camp root and last location
+  camp go --root    Jump to camp root (ignore toggle)
   camp go t         Jump to last visited location (cd - equivalent)
   camp go p         Jump to projects/
   camp go f         Jump to festivals/
@@ -20,8 +20,8 @@ Usage patterns:
   camp go p api     Fuzzy search projects/ for "api"
 
 Toggle behavior (no args):
-  - From anywhere: jump to campaign root, save current location
-  - From campaign root: jump back to saved location
+  - From anywhere: jump to camp root, save current location
+  - From camp root: jump back to saved location
 
 Toggle keyword (t / toggle):
   - Jump to the last visited location regardless of where you are
@@ -45,7 +45,7 @@ Or use the cgo shell function for instant navigation:
   cgo p             Equivalent to: cd "$(camp go p --print)"
   cgo p -c ls       Run ls in projects/ without changing directory`,
 	Example: `  camp go               # Toggle: root ↔ last location
-  camp go --root        # Force jump to campaign root
+  camp go --root        # Force jump to camp root
   camp go t             # Jump to last visited location (cd -)
   camp go p             # Jump to projects/
   camp go design        # Jump to exact pin "design"

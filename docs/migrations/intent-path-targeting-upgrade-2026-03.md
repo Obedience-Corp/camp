@@ -8,8 +8,8 @@ This note captures the verification evidence and rollout checks for the March
 The rollout covers two behavior changes:
 
 1. `.campaign/intents/` is now the canonical intent root for new and repaired
-   campaigns.
-2. Only `camp intent add` gains first-rollout cross-campaign targeting via
+   camps.
+2. Only `camp intent add` gains first-rollout cross-camp targeting via
    `--campaign`.
 
 Operator note:
@@ -129,12 +129,12 @@ integration flows that still encounter legacy layout on input.
 
 Use this checklist when validating an upgraded branch or release candidate.
 
-1. Brand-new campaign
+1. Brand-new camp
    - Run `camp init <dir> --name <name>`.
    - Confirm `.campaign/intents/{inbox,active,ready}` exists.
    - Confirm `camp go i --print` resolves under `.campaign/intents/`.
    - Confirm `workflow/intents/` is not scaffolded as the canonical notebook.
-2. Legacy campaign migration
+2. Legacy camp migration
    - Start from a copy that still has `workflow/intents/` state and legacy
      jumps config.
    - Run repair or an intent command that initializes the service.
@@ -151,16 +151,16 @@ Use this checklist when validating an upgraded branch or release candidate.
    - Confirm the command fails with a conflict instead of silently merging both
      roots.
 4. Cross-campaign add
-   - From campaign A, run `camp intent add --campaign <campaign-b> "Title"`.
-   - Confirm the new file is written under campaign B's
+   - From camp A, run `camp intent add --campaign <campaign-b> "Title"`.
+   - Confirm the new file is written under camp B's
      `.campaign/intents/inbox/`.
-   - Confirm campaign A does not receive a duplicate inbox item.
+   - Confirm camp A does not receive a duplicate inbox item.
    - In non-interactive mode, confirm bare `--campaign` without a value errors
      clearly.
 
 ## Compatibility Expectations
 
-Existing campaigns remain supported during rollout:
+Existing camps remain supported during rollout:
 
 - legacy jumps data is normalized to canonical intent navigation at load/save
   time
@@ -168,4 +168,4 @@ Existing campaigns remain supported during rollout:
 - legacy `workflow/intents/OBEY.md` migrates into `.campaign/intents/OBEY.md`
   so camp-managed ownership markers survive normalization
 - explicit conflict states fail closed instead of auto-merging ambiguous data
-- first-rollout cross-campaign behavior remains limited to `camp intent add`
+- first-rollout cross-camp behavior remains limited to `camp intent add`

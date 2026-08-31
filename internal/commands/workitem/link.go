@@ -35,7 +35,7 @@ func newLinkCommand() *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "link <selector> [path]",
 		Short: "Create a workitem link",
-		Long: `Attach a workitem to a project, festival, worktree, or campaign path.
+		Long: `Attach a workitem to a project, festival, worktree, or camp path.
 
 Links are stored in .campaign/workitems/links.yaml and connect a .workitem
 identity to an explicit scope for planning, execution, and lookup. Pass a
@@ -109,7 +109,7 @@ type linkOptions struct {
 func runLink(ctx context.Context, cmd *cobra.Command, opts linkOptions) error {
 	_, root, err := config.LoadCampaignConfigFromCwd(ctx)
 	if err != nil {
-		return camperrors.Wrap(err, "not in a campaign directory")
+		return camperrors.Wrap(err, "not in a camp directory")
 	}
 
 	if opts.Role == "" {
@@ -292,7 +292,7 @@ func resolveLinkScope(root string, opts linkOptions) (*links.LinkScope, error) {
 		rel, err := filepath.Rel(root, cwd)
 		if err != nil || strings.HasPrefix(rel, "..") {
 			return nil, camperrors.NewValidation("scope",
-				"current directory is outside the campaign root", nil)
+				"current directory is outside the camp root", nil)
 		}
 		rel = filepath.ToSlash(rel)
 		return &links.LinkScope{Kind: inferScopeKind(rel), Path: rel}, nil

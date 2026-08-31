@@ -152,7 +152,7 @@ per-item error) and stays exit 0 so the structured result is the contract.`,
 func gatherSweepPlan(ctx context.Context) (*config.CampaignConfig, string, wkitem.SweepPlan, error) {
 	cfg, root, err := config.LoadCampaignConfigFromCwd(ctx)
 	if err != nil {
-		return nil, "", wkitem.SweepPlan{}, camperrors.Wrap(err, "not in a campaign directory")
+		return nil, "", wkitem.SweepPlan{}, camperrors.Wrap(err, "not in a camp directory")
 	}
 	resolver := paths.NewResolverFromConfig(root, cfg)
 	items, err := wkitem.Discover(ctx, root, resolver)

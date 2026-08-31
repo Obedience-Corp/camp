@@ -1,7 +1,7 @@
 # Workflow Collections Reference
 
 A **workflow collection** is a user-defined directory tree under `workflow/<type>/`
-in the campaign root. It groups workitems of a single type (`research`, `feature`,
+in the camp root. It groups workitems of a single type (`research`, `feature`,
 `bug`, etc.) and wires them into camp's navigation and completion systems via a
 shortcut key and a concept entry.
 
@@ -264,7 +264,7 @@ Warnings from cache-invalidation failures still go to stderr as plain text.
 
 `obey_written` is `true` only when `OBEY.md` was actually written; `false` when
 it was already present. `no_changes` is `true` when every action was a no-op.
-`applied` is `true` only when the command actually mutated files or campaign
+`applied` is `true` only when the command actually mutated files or camp
 configuration. Dry-runs and idempotent no-op reruns report `applied: false`.
 
 ### `list` schema (as-built)
@@ -409,7 +409,7 @@ even if a directory or concept entry exists for them:
 `intent`, `design`, `explore`, `festival`, `reviews`
 
 The former scaffold names `code_reviews` and `pipelines` also remain reserved
-for compatibility with existing campaigns.
+for compatibility with existing camps.
 
 ---
 
@@ -422,4 +422,4 @@ for compatibility with existing campaigns.
 - [camp workflow shortcut add](cli-reference/camp_workflow_shortcut_add.md) — flag reference
 - [camp workflow doctor](cli-reference/camp_workflow_doctor.md) — flag reference
 - [camp workflow sync](cli-reference/camp_workflow_sync.md) — flag reference
-- [Campaign directory reference](campaign-directory-reference.md) — `.campaign/` layout including `jumps.yaml` and `campaign.yaml`
+- [Camp directory reference](campaign-directory-reference.md): the `.campaign/` layout including `jumps.yaml` and `campaign.yaml`

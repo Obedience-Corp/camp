@@ -4,12 +4,12 @@ Manage declared artifact roots (.campaign/artifacts.yaml)
 
 ### Synopsis
 
-Manage the campaign's declared artifact roots: directories of heavy non-git
+Manage the camp's declared artifact roots: directories of heavy non-git
 payloads (media, renders, datasets) that 'camp sync --from <machine>' moves
 between your machines with rsync instead of git.
 
 The declaration file (.campaign/artifacts.yaml) is committed, so every
-machine knows what belongs to the campaign. Declared roots should be
+machine knows what belongs to the camp. Declared roots should be
 gitignored: a root that is also git-tracked would make the same bytes both
 git content and artifact content. Manifests and per-peer sync snapshots are
 machine-local derived state under .campaign/cache (gitignored).
@@ -38,7 +38,7 @@ machine-local derived state under .campaign/cache (gitignored).
 
 ### SEE ALSO
 
-* [camp](camp.md)	 - Campaign management CLI for multi-project AI workspaces
+* [camp](camp.md)	 - Manage your camps and the projects and festivals inside them
 * [camp artifacts add](camp_artifacts_add.md)	 - Declare an artifact root
 * [camp artifacts list](camp_artifacts_list.md)	 - List declared artifact roots
 * [camp artifacts manifest](camp_artifacts_manifest.md)	 - Print a declared root's manifest as JSON

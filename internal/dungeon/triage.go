@@ -22,7 +22,7 @@ func triageActionOptions() []crawl.Option {
 	return []crawl.Option{
 		{Label: "Keep here - Leave in parent directory", Action: crawl.ActionKeep},
 		{Label: "Move - Move to a dungeon status directory", Action: crawl.ActionMove},
-		{Label: "Route to docs - Move to campaign docs subdirectory", Action: actionDocs},
+		{Label: "Route to docs - Move to camp docs subdirectory", Action: actionDocs},
 		{Label: "Skip - Come back to it another time", Action: crawl.ActionSkip},
 		{Label: "Quit - Stop crawling", Action: crawl.ActionQuit},
 	}
@@ -192,7 +192,7 @@ func listDocsSubdirectories(campaignRoot string) ([]string, error) {
 		if os.IsNotExist(err) {
 			return nil, camperrors.Wrap(
 				ErrInvalidDocsDestination,
-				"campaign-root docs/ directory does not exist",
+				"camp-root docs/ directory does not exist",
 			)
 		}
 		return nil, camperrors.Wrap(err, "reading docs root")
@@ -200,7 +200,7 @@ func listDocsSubdirectories(campaignRoot string) ([]string, error) {
 	if !docsRootInfo.IsDir() {
 		return nil, camperrors.Wrap(
 			ErrInvalidDocsDestination,
-			"campaign-root docs/ path is not a directory",
+			"camp-root docs/ path is not a directory",
 		)
 	}
 

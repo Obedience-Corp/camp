@@ -20,26 +20,26 @@ const cycleSchemaVersion = "camp-org-cycle/v1"
 var orgNextCmd = &cobra.Command{
 	Use:     "next",
 	Aliases: []string{"cycle"},
-	Short:   "Switch to the next campaign in the current campaign's org",
-	Long: `Switch to the next campaign in the current campaign's org.
+	Short:   "Switch to the next camp in the current camp's org",
+	Long: `Switch to the next camp in the current camp's org.
 
 Members are ordered by name, so the cycle is stable and predictable
-(a -> b -> c -> a). By default only active campaigns are cycled; use --all to
-include inactive and reference campaigns.
+(a -> b -> c -> a). By default only active camps are cycled; use --all to
+include inactive and reference camps.
 
 Use with the corg shell function for instant navigation:
-  corg        # cd to the next campaign in this org
+  corg        # cd to the next camp in this org
 
 The --print flag outputs just the target path for shell integration, and --json
-emits the resolved source and target campaigns.`,
-	Example: `  camp org next            # Print cd to the next org campaign
+emits the resolved source and target camps.`,
+	Example: `  camp org next            # Print cd to the next org camp
   camp org next --print    # Print the target path only
-  camp org next --all      # Include inactive/reference campaigns
+  camp org next --all      # Include inactive/reference camps
   camp org next --json`,
 	Args: cobra.NoArgs,
 	Annotations: map[string]string{
 		"agent_allowed": "true",
-		"agent_reason":  "Non-interactive; --print/--json resolve the next org campaign without a TUI",
+		"agent_reason":  "Non-interactive; --print/--json resolve the next org camp without a TUI",
 	},
 	RunE: runOrgNext,
 }
@@ -47,23 +47,23 @@ emits the resolved source and target campaigns.`,
 var orgToggleCmd = &cobra.Command{
 	Use:     "toggle",
 	Aliases: []string{"back", "t"},
-	Short:   "Toggle back to the last-visited campaign in the current org",
-	Long: `Toggle back to the most recently visited other campaign in the current org.
+	Short:   "Toggle back to the last-visited camp in the current org",
+	Long: `Toggle back to the most recently visited other camp in the current org.
 
 "Most recently visited" is tracked by last-access time, which camp updates on
 every 'camp switch' and 'camp org next'/'toggle'. Paired with 'camp org next',
 this gives a natural A <-> B toggle within an org. By default only active
-campaigns are considered; use --all to include inactive and reference campaigns.
+camps are considered; use --all to include inactive and reference camps.
 
 Use with the corg shell function for instant navigation:
-  corg t      # cd back to the last org campaign you were in`,
-	Example: `  camp org toggle          # Print cd to the last-visited org campaign
+  corg t      # cd back to the last org camp you were in`,
+	Example: `  camp org toggle          # Print cd to the last-visited org camp
   camp org toggle --print  # Print the target path only
   camp org toggle --json`,
 	Args: cobra.NoArgs,
 	Annotations: map[string]string{
 		"agent_allowed": "true",
-		"agent_reason":  "Non-interactive; --print/--json resolve the last-visited org campaign without a TUI",
+		"agent_reason":  "Non-interactive; --print/--json resolve the last-visited org camp without a TUI",
 	},
 	RunE: runOrgToggle,
 }
@@ -73,8 +73,8 @@ func init() {
 	Cmd.AddCommand(orgToggleCmd)
 	for _, c := range []*cobra.Command{orgNextCmd, orgToggleCmd} {
 		c.Flags().Bool("print", false, "Print the target path only (for shell integration)")
-		c.Flags().Bool("json", false, "Output the resolved source and target campaigns as JSON")
-		c.Flags().Bool("all", false, "Include inactive and reference campaigns in the cycle")
+		c.Flags().Bool("json", false, "Output the resolved source and target camps as JSON")
+		c.Flags().Bool("all", false, "Include inactive and reference camps in the cycle")
 		c.Flags().Bool("shell-connect", false, "Emit a shell line for the corg wrapper to eval (internal)")
 		_ = c.Flags().MarkHidden("shell-connect")
 	}
@@ -221,9 +221,9 @@ func indexOfID(members []config.RegisteredCampaign, id string) int {
 func noTargetReason(action, org string) string {
 	switch action {
 	case "toggle":
-		return fmt.Sprintf("no other campaign in org %q to toggle to", org)
+		return fmt.Sprintf("no other camp in org %q to toggle to", org)
 	default:
-		return fmt.Sprintf("no other campaign in org %q to cycle to", org)
+		return fmt.Sprintf("no other camp in org %q to cycle to", org)
 	}
 }
 
@@ -233,8 +233,8 @@ func noTargetReason(action, org string) string {
 func currentCampaign(ctx context.Context) (config.RegisteredCampaign, *config.Registry, error) {
 	root, err := campaign.DetectCached(ctx)
 	if err != nil {
-		return config.RegisteredCampaign{}, nil, camperrors.NewValidation("campaign",
-			"not inside a campaign; run 'corg' from within a campaign in the org", err)
+		return config.RegisteredCampaign{}, nil, camperrors.NewValidation("camp",
+			"not inside a camp; run 'corg' from within a camp in the org", err)
 	}
 	cfg, err := config.LoadCampaignConfig(ctx, root)
 	if err != nil {
@@ -246,8 +246,8 @@ func currentCampaign(ctx context.Context) (config.RegisteredCampaign, *config.Re
 	}
 	c, ok := reg.GetByID(cfg.ID)
 	if !ok {
-		return config.RegisteredCampaign{}, nil, camperrors.NewValidation("campaign",
-			"current campaign is not registered; run 'camp register' first", nil)
+		return config.RegisteredCampaign{}, nil, camperrors.NewValidation("camp",
+			"current camp is not registered; run 'camp register' first", nil)
 	}
 	return c, reg, nil
 }

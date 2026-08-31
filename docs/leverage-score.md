@@ -51,12 +51,12 @@ Important details:
   word-wise on display name). A filter of `alice` does **not** match `malice`.
   After a configured match, the raw filter is **not** retained as a git substring.
 - Monorepo subprojects that share a `GitDir` contribute **once** to actual effort.
-- Project table rows may still show per-repo spans; the **campaign footer** uses the
+- Project table rows may still show per-repo spans; the **camp footer** uses the
   union actual above.
 - Standing-tree COCOMO is scaled by **blame ownership**, not by “any commit in repo.”
 - `--author` and `--by-author` are **mutually exclusive** when both are passed on
   the CLI. A configured `author_email` default is **not** applied when
-  `--by-author` is used, so the breakdown still works in personal-default campaigns.
+  `--by-author` is used, so the breakdown still works in personal-default camps.
 - Full display names match exactly (e.g. `Alice Smith`); single-token display
   words also match (`Alice` → `Alice Smith`).
 - Ad-hoc / partial filters (e.g. `alice@co`) use git `--author` substring search
@@ -163,7 +163,7 @@ not double-counted.
 
 | Field | Default | Description |
 |-------|---------|-------------|
-| `ActualPeople` | 1 | Number of developers on the campaign |
+| `ActualPeople` | 1 | Number of developers on the camp |
 | `ProjectStart` | auto-detected | Earliest commit date across all projects |
 | `COCOMOProjectType` | `organic` | COCOMO model variant passed to scc |
 | `AvgWage` | $56,286/yr | Average yearly salary for cost estimation |
@@ -387,7 +387,7 @@ totals. Two granularities are available:
 `camp leverage history --by-author` provides per-contributor leverage breakdown:
 
 - Aggregates author contributions across all projects at each time point
-- Computes each author's share of the total campaign leverage proportional to
+- Computes each author's share of the total camp leverage proportional to
   their LOC ownership (`ownership_percentage × campaign_leverage`)
 - Useful for understanding individual contribution patterns over time
 
@@ -396,7 +396,7 @@ totals. Two granularities are available:
 Projects can be auto-discovered or explicitly configured:
 
 **Auto-discovery** (default): Uses `project.List()` to find projects under
-the campaign root. Earliest commit date is auto-detected. Monorepo subprojects
+the camp root. Earliest commit date is auto-detected. Monorepo subprojects
 are detected automatically — `SCCDir` points to the subproject while `GitDir`
 points to the monorepo root.
 
@@ -405,7 +405,7 @@ supports:
 
 | Field | Purpose |
 |-------|---------|
-| `path` | Project directory relative to campaign root (required) |
+| `path` | Project directory relative to camp root (required) |
 | `include` | Whether to include in scoring (`false` = skip) |
 | `in_monorepo` | Project is a subdirectory of a larger git repo |
 | `monorepo_path` | Parent monorepo directory (used with `in_monorepo`) |

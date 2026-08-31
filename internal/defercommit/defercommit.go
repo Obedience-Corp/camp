@@ -47,7 +47,7 @@ const (
 	RefusedAmend Refusal = "--amend rewrites the current commit"
 	// RefusedNoCampaign is a repository outside any campaign, where there is no
 	// queue to enqueue into.
-	RefusedNoCampaign Refusal = "not in a campaign"
+	RefusedNoCampaign Refusal = "not in a camp"
 	// RefusedNoPaths is a bookkeeping commit with no explicit path list.
 	RefusedNoPaths Refusal = "no explicit paths to commit"
 	// RefusedPreStaged is a bookkeeping commit that depends on content already

@@ -28,9 +28,9 @@ var settingsCmd = &cobra.Command{
 	Long: `Interactive menu for managing camp configuration.
 
 Global settings live in ~/.obey/campaign/config.json and apply to every
-campaign. Local settings live in .campaign/settings/local.json and apply
-only to the current campaign; a local theme override wins over the global
-theme while you are inside that campaign.
+camp. Local settings live in .campaign/settings/local.json and apply
+only to the current camp; a local theme override wins over the global
+theme while you are inside that camp.
 
 For non-interactive access, use 'camp settings get' and
 'camp settings set'. See docs/campaign-settings-files.md in the camp
@@ -70,7 +70,7 @@ func runSettings(cmd *cobra.Command, args []string) error {
 
 	options := []huh.Option[string]{
 		huh.NewOption("Global Settings", "global"),
-		huh.NewOption("Local Settings (this campaign)", "local"),
+		huh.NewOption("Local Settings (this camp)", "local"),
 		huh.NewOption("Exit", "exit"),
 	}
 
@@ -100,7 +100,7 @@ func runSettings(cmd *cobra.Command, args []string) error {
 			}
 		case "local":
 			if !inCampaign {
-				fmt.Println(ui.Warning("Not inside a campaign. Local settings live in .campaign/settings/local.json; run camp settings from a campaign directory to edit them."))
+				fmt.Println(ui.Warning("Not inside a camp. Local settings live in .campaign/settings/local.json; run camp settings from a camp directory to edit them."))
 				continue
 			}
 			if err := runScopeMenu(ctx, cat, settings.ScopeLocal, campaignRoot); err != nil {
@@ -178,7 +178,7 @@ func scopeHeader(scope settings.Scope, campaignRoot string) (title, description 
 		}
 		return "Global Settings", "Files under " + pathutil.AbbreviateHome(dir) + "/"
 	case settings.ScopeLocal:
-		return "Local Settings (this campaign)", "Files under .campaign/"
+		return "Local Settings (this camp)", "Files under .campaign/"
 	default:
 		return "Settings", ""
 	}
@@ -228,7 +228,7 @@ func editGlobalConfig(ctx context.Context, e settings.SettingEntry, campaignRoot
 		options := []huh.Option[string]{
 			huh.NewOption(fmt.Sprintf("Theme          %s", displayStr(cfg.TUI.Theme, config.ThemeNameAdaptive)), "theme"),
 			huh.NewOption(fmt.Sprintf("Editor         %s", displayStr(cfg.Editor, "$EDITOR")), "editor"),
-			huh.NewOption(fmt.Sprintf("Campaigns Dir  %s", displayStr(cfg.CampaignsDir, "~/campaigns")), "campaigns_dir"),
+			huh.NewOption(fmt.Sprintf("Camps Dir  %s", displayStr(cfg.CampaignsDir, "~/campaigns")), "campaigns_dir"),
 			huh.NewOption(fmt.Sprintf("Verbose        %s", boolStr(cfg.Verbose)), "verbose"),
 			huh.NewOption(fmt.Sprintf("No Color       %s", boolStr(cfg.NoColor)), "no_color"),
 			huh.NewOption(fmt.Sprintf("Sync project refs  %s", boolStr(cfg.Commit.SyncProjectRefs)), "commit_sync_refs"),
@@ -440,7 +440,7 @@ func editLocalThemeOverride(ctx context.Context, campaignRoot, current string) e
 	form := huh.NewForm(huh.NewGroup(
 		huh.NewSelect[string]().
 			Title("Theme Override").
-			Description("Campaign-local theme; overrides the global theme in this campaign").
+			Description("Campaign-local theme; overrides the global theme in this camp").
 			Options(
 				huh.NewOption("Inherit global", ""),
 				huh.NewOption("Adaptive - Auto-detect", config.ThemeNameAdaptive),
@@ -511,8 +511,8 @@ func editCampaignsDir(ctx context.Context, cfg *config.GlobalConfig) error {
 	form := huh.NewForm(
 		huh.NewGroup(
 			huh.NewInput().
-				Title("Campaigns Dir").
-				Description("Where 'camp create' places new campaigns. Leave empty for default (~/campaigns).").
+				Title("Camps Dir").
+				Description("Where 'camp create' places new camps. Leave empty for default (~/campaigns).").
 				Value(&value),
 		),
 	)

@@ -9,9 +9,9 @@ import (
 // Cmd is the root quest command exposed for registration by the parent package.
 var Cmd = &cobra.Command{
 	Use:     "quest",
-	Short:   "Manage working contexts within a campaign",
+	Short:   "Manage working contexts within a camp",
 	GroupID: "campaign",
-	Long: `Manage working contexts within a campaign.
+	Long: `Manage working contexts within a camp.
 
 A quest is a long-lived working context: a sub-initiative that may span
 multiple projects, agent sessions, documents, and festivals over days or

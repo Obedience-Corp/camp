@@ -56,7 +56,7 @@ the commit it made, and the command that reverses it. The undo is derived from
 where the workitem actually landed, not from where the plan expected it to.
 
 A failure stops the pass. Rows after it stay pending rather than being applied
-against a campaign that is no longer in the state the plan was compiled for.
+against a camp that is no longer in the state the plan was compiled for.
 Re-running continues from the first row without an applied receipt, so an
 interrupted apply is resumed rather than restarted.
 
@@ -96,7 +96,7 @@ func runApply(cmd *cobra.Command, opts applyOptions) error {
 
 	cfg, root, err := config.LoadCampaignConfigFromCwd(ctx)
 	if err != nil {
-		return camperrors.Wrap(err, "not in a campaign directory")
+		return camperrors.Wrap(err, "not in a camp directory")
 	}
 	store := triage.NewStore(root, nil)
 

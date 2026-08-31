@@ -22,7 +22,7 @@ var ShortcutsCmd = &cobra.Command{
 	Long: `List all navigation and command shortcuts from .campaign/settings/jumps.yaml.
 
 Navigation shortcuts (path-based):
-  These shortcuts jump to directories within the campaign.
+  These shortcuts jump to directories within the camp.
   Usage: camp go <shortcut>
 
 Command shortcuts (command-based):
@@ -41,7 +41,7 @@ You can customize shortcuts by editing .campaign/settings/jumps.yaml.`,
 
 var shortcutsAddCmd = &cobra.Command{
 	Use:   "add <name> <path> | <project> <name> <path>",
-	Short: "Add a shortcut (campaign-level or project sub-shortcut)",
+	Short: "Add a shortcut (camp-level or project sub-shortcut)",
 	Long: `Add a shortcut for quick navigation.
 
 Campaign-level shortcut (2 args):
@@ -55,7 +55,7 @@ Project sub-shortcut (3 args):
 With no arguments, launches an interactive TUI for entering
 shortcut details.`,
 	Example: `  camp shortcuts add                                  Interactive TUI mode
-  camp shortcuts add api projects/api-service/        Campaign shortcut
+  camp shortcuts add api projects/api-service/        Camp shortcut
   camp shortcuts add api projects/api/ -d "API svc"   With description
   camp shortcuts add cfg "" -c config                 Concept-only shortcut
   camp shortcuts add camp default cmd/camp/            Project sub-shortcut`,
@@ -65,7 +65,7 @@ shortcut details.`,
 
 var shortcutsRemoveCmd = &cobra.Command{
 	Use:   "remove <name> or <project> <name>",
-	Short: "Remove a shortcut (campaign-level or project sub-shortcut)",
+	Short: "Remove a shortcut (camp-level or project sub-shortcut)",
 	Long: `Remove a shortcut.
 
 Campaign-level shortcut (1 arg):
@@ -73,7 +73,7 @@ Campaign-level shortcut (1 arg):
 
 Project sub-shortcut (2 args):
   Usage: camp shortcuts remove <project> <name>`,
-	Example: `  camp shortcuts remove api                           Remove campaign shortcut
+	Example: `  camp shortcuts remove api                           Remove camp shortcut
   camp shortcuts remove festival-methodology cli      Remove project sub-shortcut`,
 	Aliases: []string{"rm"},
 	Args:    cobra.RangeArgs(1, 2),
@@ -83,7 +83,7 @@ Project sub-shortcut (2 args):
 var shortcutsDiffCmd = &cobra.Command{
 	Use:   "diff",
 	Short: "Show differences between current and default shortcuts",
-	Long: `Compare your campaign's shortcuts against the current defaults.
+	Long: `Compare your camp's shortcuts against the current defaults.
 
 Shows:
   + Missing    defaults not in your config (available to add)
@@ -125,7 +125,7 @@ var shortcutsListCmd = &cobra.Command{
 	Short: "List shortcuts for a specific project",
 	Long: `List all sub-shortcuts configured for a specific project.
 
-If no project is specified, lists all campaign shortcuts.`,
+If no project is specified, lists all camp shortcuts.`,
 	Example: `  camp shortcuts list festival-methodology
   camp shortcuts list fest  # Fuzzy match`,
 	Args: cobra.MaximumNArgs(1),
@@ -163,9 +163,9 @@ func runShortcuts(cmd *cobra.Command, args []string) error {
 }
 
 func printDefaultShortcuts() error {
-	fmt.Println(ui.Warning("Not in a campaign"))
+	fmt.Println(ui.Warning("Not in a camp"))
 	fmt.Println()
-	fmt.Printf("Run %s to create a new campaign with default shortcuts.\n",
+	fmt.Printf("Run %s to create a new camp with default shortcuts.\n",
 		ui.Accent("camp init"))
 
 	return nil
@@ -306,7 +306,7 @@ func runShortcutsAdd(cmd *cobra.Command, args []string) error {
 		shortcutName = args[1]
 		shortcutPath = args[2]
 	} else {
-		return camperrors.Newf("expected 0, 2, or 3 arguments, got %d\n  2 args: camp shortcuts add <name> <path> (campaign shortcut)\n  3 args: camp shortcuts add <project> <name> <path> (project sub-shortcut)", len(args))
+		return camperrors.Newf("expected 0, 2, or 3 arguments, got %d\n  2 args: camp shortcuts add <name> <path> (camp shortcut)\n  3 args: camp shortcuts add <project> <name> <path> (project sub-shortcut)", len(args))
 	}
 
 	// Find the project (fuzzy match)

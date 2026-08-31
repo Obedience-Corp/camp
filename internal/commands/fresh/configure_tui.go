@@ -130,11 +130,11 @@ func runConfigureTUI(cmd *cobra.Command, _ []string) error {
 
 	campRoot, err := campaign.DetectCached(ctx)
 	if err != nil {
-		return camperrors.Wrap(err, "not in a campaign")
+		return camperrors.Wrap(err, "not in a camp")
 	}
 	projects, err := project.List(ctx, campRoot)
 	if err != nil {
-		return camperrors.Wrap(err, "listing campaign projects")
+		return camperrors.Wrap(err, "listing camp projects")
 	}
 	cfg, err := config.LoadFreshConfig(ctx, campRoot)
 	if err != nil {

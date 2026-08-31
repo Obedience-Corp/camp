@@ -133,7 +133,7 @@ func (m festivalsTUIModel) topBar() string {
 	return festTitleStyle.Render("Festivals") + "  " +
 		festMutedStyle.Render(fmt.Sprintf("%s across %s  .  active only: %s",
 			ui.CountLabel(len(m.visible), "festival", "festivals"),
-			ui.CountLabel(m.distinctCampaigns(), "campaign", "campaigns"), mode))
+			ui.CountLabel(m.distinctCampaigns(), "camp", "camps"), mode))
 }
 
 func (m festivalsTUIModel) footer(cw int) string {

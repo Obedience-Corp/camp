@@ -112,7 +112,7 @@ func (m *machineTUIModel) View() string {
 
 func (m *machineTUIModel) topBar(width int) string {
 	line := machineTitleStyle.Render("Machines") + "  " +
-		machineMuted.Render("computers camp can open campaigns on, over ssh")
+		machineMuted.Render("computers camp can open camps on, over ssh")
 	return ui.ClampWidth(line, width)
 }
 
@@ -223,7 +223,7 @@ func (m *machineTUIModel) renderDetailPane(lay machineLayout) string {
 	lines = append(lines, m.healthSection(machine.ID, inner)...)
 	lines = append(lines, "", machinePrimary.Render("Work on it"))
 	lines = append(lines,
-		machineMuted.Render("  camp switch ")+machineSelected.Render(machine.ID)+machineMuted.Render(":<campaign>"),
+		machineMuted.Render("  camp switch ")+machineSelected.Render(machine.ID)+machineMuted.Render(":<camp>"),
 		machineMuted.Render("  camp list --remote"),
 	)
 
@@ -548,17 +548,17 @@ func (m *machineTUIModel) overlayView() string {
 			machineTitleStyle.Render("What this is"),
 			"",
 			machinePrimary.Render("A machine is another computer camp can reach over ssh."),
-			machinePrimary.Render("Once one is listed here you can work on campaigns that"),
+			machinePrimary.Render("Once one is listed here you can work on camps that"),
 			machinePrimary.Render("live on it, without leaving this terminal:"),
 			"",
-			machineCommand("enter", "pick a campaign and hop there"),
-			machineCommand("camp switch devbox:my-campaign", "the same hop, typed"),
-			machineCommand("camp list --remote", "campaigns everywhere"),
+			machineCommand("enter", "pick a camp and hop there"),
+			machineCommand("camp switch devbox:my-camp", "the same hop, typed"),
+			machineCommand("camp list --remote", "camps everywhere"),
 			"",
 			machineMuted.Render("Nothing runs on a machine until you hop to it."),
 			"",
 			machineTitleStyle.Render("Keys"),
-			machinePrimary.Render("  enter  pick a campaign on the selected machine and hop"),
+			machinePrimary.Render("  enter  pick a camp on the selected machine and hop"),
 			machinePrimary.Render("  t  test whether camp can reach the selected machine"),
 			machinePrimary.Render("  a  add a machine by hand"),
 			machinePrimary.Render("  s  scan your Tailscale network and pick a device"),
@@ -609,7 +609,7 @@ func (m *machineTUIModel) hopBody() []string {
 		return []string{
 			title,
 			"",
-			machineMuted.Render(m.spin.View() + " Asking " + m.hop.machineID + " for its campaigns..."),
+			machineMuted.Render(m.spin.View() + " Asking " + m.hop.machineID + " for its camps..."),
 			"",
 			machineHelpStyle.Render("esc cancel"),
 		}
@@ -643,7 +643,7 @@ func (m *machineTUIModel) hopBody() []string {
 	case len(m.hop.campaigns) == 0:
 		body = append(body,
 			"",
-			machineMuted.Render("No campaigns found on "+m.hop.machineID+"."),
+			machineMuted.Render("No camps found on "+m.hop.machineID+"."),
 			"",
 			machineHelpStyle.Render("r refresh · esc cancel"),
 		)

@@ -158,7 +158,7 @@ func TestDetectFromCwd(t *testing.T) {
 		{
 			name:    "cwd outside campaign root",
 			cwd:     "/somewhere/else",
-			wantErr: "not under campaign root",
+			wantErr: "not under camp root",
 		},
 		{
 			name:    "cwd outside workflow",

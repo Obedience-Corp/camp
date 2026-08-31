@@ -8,7 +8,7 @@ evidence bundles.
 The two GIFs in the top-level README are not in this table. They come from the
 shared [termcast](https://github.com/Obedience-Corp/termcast) festival content
 pack (`camp-cgo-navigation` and `camp-workitems`), so camp, fest, and the
-Festival docs site publish one palette and one fixture campaign. Re-record them
+Festival docs site publish one palette and one fixture camp. Re-record them
 there and copy the results in:
 
 ```sh
@@ -61,7 +61,7 @@ CAMP_VHS_ROOT=/path/to/machine-fixture \
   vhs "$(pwd)/docs/demos/machine-dual-auth.tape"
 ```
 
-`sweep-prompt` needs no `CAMP_VHS_ROOT`: it builds its own throwaway campaign
+`sweep-prompt` needs no `CAMP_VHS_ROOT`: it builds its own throwaway camp
 under a fake `HOME` from the fixture the pty check uses, so the recording and
 `just tui pty-sweep-prompt` assert the same three workitems. Build the binary
 first, then record:
@@ -73,8 +73,8 @@ just vhs record-color docs/demos/sweep-prompt.tape
 
 It drives `camp workitem sweep --prompt` rather than `camp fresh`. Fresh's
 `completed_runs: prompt` calls the same `runSweepPrompt`, but the prompt is
-campaign-root work that runs after a project's git cycle, and the fixture
-campaign has no project submodules to cycle.
+camp-root work that runs after a project's git cycle, and the fixture
+camp has no project submodules to cycle.
 
 `jobs-tui` needs a fixture that seeds failed deferred commits under a fake
 `HOME`, then the truecolor recorder:

@@ -4,7 +4,7 @@ List or browse filtered workitems
 
 ### Synopsis
 
-List campaign workitems with the same filters used by the dashboard.
+List camp workitems with the same filters used by the dashboard.
 
 In a terminal, this opens the TUI with visible, editable prefilters. When
 stdout is not a terminal, it prints a compact grouped list. Use --json for the
@@ -54,4 +54,4 @@ camp workitem list [type|status|category] [flags]
 
 ### SEE ALSO
 
-* [camp workitem](camp_workitem.md)	 - View active campaign work items
+* [camp workitem](camp_workitem.md)	 - View active camp work items

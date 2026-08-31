@@ -38,7 +38,7 @@ func CarriesCommitRef(wi *WorkItem) bool {
 // never appears.
 func WorktreeLinkCommitNote(wi *WorkItem) string {
 	if CarriesCommitRef(wi) {
-		return "camp p commit in this worktree will include WI-* in the campaign tag"
+		return "camp p commit in this worktree will include WI-* in the camp tag"
 	}
 	return "camp p commit in this worktree will resolve to this workitem " +
 		"(no WI-* segment: only adopted workitems carry a ref)"
@@ -59,7 +59,7 @@ func EnsureRefForCommit(ctx context.Context, root string, wi *WorkItem, errw io.
 	}
 	cfg, err := config.LoadCampaignConfig(ctx, root)
 	if err != nil {
-		return "", camperrors.Wrap(err, "load campaign config for ref backfill")
+		return "", camperrors.Wrap(err, "load camp config for ref backfill")
 	}
 	resolver := paths.NewResolverFromConfig(root, cfg)
 	items, err := Discover(ctx, root, resolver)

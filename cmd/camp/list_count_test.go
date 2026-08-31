@@ -29,7 +29,7 @@ func TestOutputCampaigns_TableShowsCount(t *testing.T) {
 		t.Fatalf("outputCampaigns() error = %v", err)
 	}
 
-	if !strings.Contains(buf.String(), "2 campaigns") {
+	if !strings.Contains(buf.String(), "2 camps") {
 		t.Errorf("table output missing count footer; got:\n%s", buf.String())
 	}
 }
@@ -46,7 +46,7 @@ func TestOutputCampaigns_SimpleHasNoCount(t *testing.T) {
 	}
 
 	out := strings.TrimSpace(buf.String())
-	if strings.Contains(out, "campaigns") {
+	if strings.Contains(out, "camps") {
 		t.Errorf("simple output should not include count footer; got:\n%s", out)
 	}
 	if lines := strings.Split(out, "\n"); len(lines) != 2 {
@@ -134,10 +134,10 @@ func TestListCount_TextRespectsFilters(t *testing.T) {
 		cmd  *cobra.Command
 		want string
 	}{
-		{"default hides non-active", listCountCmd("table", "", "", false), "2 campaigns"},
-		{"--all counts every status", listCountCmd("table", "", "", true), "4 campaigns"},
-		{"--org filters the count", listCountCmd("table", "obey", "", false), "1 campaign"},
-		{"--status reference", listCountCmd("table", "", "reference", false), "1 campaign"},
+		{"default hides non-active", listCountCmd("table", "", "", false), "2 camps"},
+		{"--all counts every status", listCountCmd("table", "", "", true), "4 camps"},
+		{"--org filters the count", listCountCmd("table", "obey", "", false), "1 camp"},
+		{"--status reference", listCountCmd("table", "", "reference", false), "1 camp"},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {

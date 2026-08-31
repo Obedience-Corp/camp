@@ -18,9 +18,9 @@ The rollout covers a single metadata schema change:
 
 ## Why
 
-The CW0003 design promotes scoped workitem commits and a campaign-local link
+The CW0003 design promotes scoped workitem commits and a camp-local link
 registry. Commit-message tags must carry a compact, stable workitem reference
-that is unique within a campaign, and adopted workitems should record the
+that is unique within a camp, and adopted workitems should record the
 quest context that produced them.
 
 Design reference: `workflow/design/workitem-linking-commit-tracking/` in
@@ -81,13 +81,13 @@ below.
 
 ## Migration Path
 
-The supported workflow for upgrading an existing campaign:
+The supported workflow for upgrading an existing camp:
 
 1. Run `camp workitem doctor` to enumerate workitems with missing `ref` (and
    any other metadata drift).
 2. Run `camp workitem doctor --fix` to backfill `ref` values into the
    matching `.workitem` files. Backfilled refs are deterministic for the
-   given workitem id and unique within the campaign.
+   given workitem id and unique within the camp.
 3. Re-run `camp workitem doctor` to confirm no missing-ref workitems remain.
 
 After backfill, subsequent commits emit fully-qualified tags including the
@@ -111,7 +111,7 @@ require manual operator work:
   directory-backed legacy workitems before composing the commit tag. If that
   backfill fails, the command warns and proceeds without the `WI-` segment.
 
-For campaign-wide history audits, run `camp workitem doctor --fix` first and
+For camp-wide history audits, run `camp workitem doctor --fix` first and
 then run `camp workitem doctor` again. Treat any remaining missing-ref
 findings as items to repair before relying on tag aggregation.
 

@@ -76,7 +76,7 @@ func TestRefusalExplanation(t *testing.T) {
 		reason artifacts.RefusalReason
 		want   string
 	}{
-		{reason: artifacts.RefusalCampaignRoot, want: "campaign an artifact root"},
+		{reason: artifacts.RefusalCampaignRoot, want: "camp an artifact root"},
 		{reason: artifacts.RefusalCampaignState, want: ".campaign/"},
 		{reason: artifacts.RefusalRepoRoot, want: "repo boundary"},
 		{reason: artifacts.RefusalEscapesCampaign, want: "camp will not create an artifact root"},

@@ -111,7 +111,7 @@ func runListTUI(cmd *cobra.Command, positionalOrg string) error {
 	prog := tea.NewProgram(model, tea.WithContext(ctx), tea.WithAltScreen())
 	final, err := prog.Run()
 	if err != nil {
-		return camperrors.Wrap(err, "running campaign browser")
+		return camperrors.Wrap(err, "running camp browser")
 	}
 	return writeGotoSelection(final, pathOutput)
 }
@@ -255,7 +255,7 @@ func (m *listTUIModel) mutate(id string, apply func(*config.RegisteredCampaign))
 	err := config.UpdateRegistry(m.ctx, func(reg *config.Registry) error {
 		c, ok := reg.Campaigns[id]
 		if !ok {
-			return camperrors.NewNotFound("campaign", id, nil)
+			return camperrors.NewNotFound("camp", id, nil)
 		}
 		apply(&c)
 		reg.Campaigns[id] = c

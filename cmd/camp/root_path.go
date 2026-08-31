@@ -20,8 +20,8 @@ type campaignRootOutput struct {
 
 var campaignRootCmd = &cobra.Command{
 	Use:     "root",
-	Short:   "Print the current campaign root",
-	Long:    "Print the current campaign root relative to the current working directory.",
+	Short:   "Print the current camp root",
+	Long:    "Print the current camp root relative to the current working directory.",
 	Example: "  camp root\n  camp root --json",
 	Args:    cobra.NoArgs,
 	RunE:    runCampaignRoot,

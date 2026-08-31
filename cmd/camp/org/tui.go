@@ -65,7 +65,7 @@ type orgTUIModel struct {
 	quitting bool
 }
 
-// createCampaignInOrg is the seam for TUI "N new campaign". Tests stub it.
+// createCampaignInOrg is the seam for TUI "N new camp". Tests stub it.
 var createCampaignInOrg = defaultCreateCampaignInOrg
 
 func newOrgTUIModel(ctx context.Context, reg *config.Registry) orgTUIModel {
@@ -148,7 +148,7 @@ func (m *orgTUIModel) assignOrg(campaignID, targetOrg string) error {
 	err := config.UpdateRegistry(m.ctx, func(reg *config.Registry) error {
 		entry, ok := reg.Campaigns[campaignID]
 		if !ok {
-			return camperrors.NewNotFound("campaign", campaignID, nil)
+			return camperrors.NewNotFound("camp", campaignID, nil)
 		}
 		entry.Org = targetOrg
 		reg.Campaigns[campaignID] = entry

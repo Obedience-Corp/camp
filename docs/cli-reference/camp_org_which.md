@@ -1,6 +1,6 @@
 ## camp org which
 
-Print the current campaign's org
+Print the current camp's org
 
 ```
 camp org which [flags]
@@ -27,4 +27,4 @@ camp org which [flags]
 
 ### SEE ALSO
 
-* [camp org](camp_org.md)	 - Group campaigns into orgs
+* [camp org](camp_org.md)	 - Group camps into orgs

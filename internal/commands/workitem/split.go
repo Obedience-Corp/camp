@@ -136,7 +136,7 @@ func runSplit(cmd *cobra.Command, opts splitOptions) error {
 
 	cfg, campaignRoot, err := config.LoadCampaignConfigFromCwd(ctx)
 	if err != nil {
-		return camperrors.Wrap(err, "not in a campaign directory")
+		return camperrors.Wrap(err, "not in a camp directory")
 	}
 
 	parent, err := selector.Resolve(ctx, campaignRoot, opts.selectorArg, selector.ResolveOptions{})
@@ -497,7 +497,7 @@ func runSplitUndo(cmd *cobra.Command, opts splitOptions) error {
 
 	cfg, campaignRoot, err := config.LoadCampaignConfigFromCwd(ctx)
 	if err != nil {
-		return camperrors.Wrap(err, "not in a campaign directory")
+		return camperrors.Wrap(err, "not in a camp directory")
 	}
 	parent, err := selector.Resolve(ctx, campaignRoot, opts.selectorArg, selector.ResolveOptions{})
 	if err != nil {
@@ -702,7 +702,7 @@ func existingSuccessorPath(ctx context.Context, campaignRoot, successor string) 
 func SplitWorkitem(ctx context.Context, out io.Writer, parent string, successors []string) error {
 	cfg, campaignRoot, err := config.LoadCampaignConfigFromCwd(ctx)
 	if err != nil {
-		return camperrors.Wrap(err, "not in a campaign directory")
+		return camperrors.Wrap(err, "not in a camp directory")
 	}
 	_ = cfg
 

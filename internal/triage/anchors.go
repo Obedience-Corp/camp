@@ -205,13 +205,13 @@ func (a Anchor) validateKind(path string, fields anchorFields) []Violation {
 		if strings.HasPrefix(a.Path, "/") {
 			out = append(out, Violation{
 				Field:   joinPath(path, "path"),
-				Message: "must be campaign-relative, got an absolute path",
+				Message: "must be camp-relative, got an absolute path",
 			})
 		}
 		if a.Path == ".." || strings.HasPrefix(a.Path, "../") {
 			out = append(out, Violation{
 				Field:   joinPath(path, "path"),
-				Message: "must stay inside the campaign root",
+				Message: "must stay inside the camp root",
 			})
 		}
 	}

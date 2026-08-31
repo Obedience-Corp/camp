@@ -81,10 +81,10 @@ func Autocommit(ctx context.Context, req CommitRequest, commitFn ScopedCommitter
 		return CommitResult{}, err
 	}
 	if req.CampaignRoot == "" {
-		return CommitResult{Reason: "no campaign root"}, nil
+		return CommitResult{Reason: "no camp root"}, nil
 	}
 	if !git.IsRepo(req.CampaignRoot) {
-		return CommitResult{Reason: "campaign root is not a git repository"}, nil
+		return CommitResult{Reason: "camp root is not a git repository"}, nil
 	}
 	if _, err := os.Stat(filepath.Join(req.CampaignRoot, filepath.FromSlash(DataDir))); err != nil {
 		return CommitResult{Reason: DataDir + " does not exist"}, nil

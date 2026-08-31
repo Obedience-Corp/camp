@@ -25,7 +25,7 @@ func newResolveCommand() *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "resolve",
 		Short: "Print the workitem for the current context",
-		Long: `Resolve the active workitem from the current campaign context.
+		Long: `Resolve the active workitem from the current camp context.
 
 Resolution checks explicit selectors, cwd, festival context, linked scopes,
 and the current-workitem file without mutating any files. Use --explain to show
@@ -63,7 +63,7 @@ type resolveOptions struct {
 func runResolve(ctx context.Context, cmd *cobra.Command, opts resolveOptions) error {
 	_, root, err := config.LoadCampaignConfigFromCwd(ctx)
 	if err != nil {
-		return camperrors.Wrap(err, "not in a campaign directory")
+		return camperrors.Wrap(err, "not in a camp directory")
 	}
 	res, err := resolver.Resolve(ctx, root, resolver.Options{
 		Explicit:   opts.Explicit,

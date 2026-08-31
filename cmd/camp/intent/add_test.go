@@ -148,7 +148,7 @@ func TestIntentAddCampaignResolver_BareCampaignNonInteractiveFails(t *testing.T)
 	if err == nil {
 		t.Fatal("resolve() expected error for bare --campaign in non-interactive mode")
 	}
-	if !strings.Contains(err.Error(), "campaign name required in non-interactive mode") {
+	if !strings.Contains(err.Error(), "camp name required in non-interactive mode") {
 		t.Fatalf("unexpected error: %v", err)
 	}
 }

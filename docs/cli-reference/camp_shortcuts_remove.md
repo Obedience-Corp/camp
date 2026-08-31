@@ -1,6 +1,6 @@
 ## camp shortcuts remove
 
-Remove a shortcut (campaign-level or project sub-shortcut)
+Remove a shortcut (camp-level or project sub-shortcut)
 
 ### Synopsis
 
@@ -19,7 +19,7 @@ camp shortcuts remove <name> or <project> <name> [flags]
 ### Examples
 
 ```
-  camp shortcuts remove api                           Remove campaign shortcut
+  camp shortcuts remove api                           Remove camp shortcut
   camp shortcuts remove festival-methodology cli      Remove project sub-shortcut
 ```
 

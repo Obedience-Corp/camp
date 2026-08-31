@@ -17,7 +17,7 @@ type TargetResult struct {
 	// IsWorktree indicates whether the target is a linked worktree of a
 	// campaign project (including a worktree of a submodule).
 	IsWorktree bool
-	// Name is a display name (project name, worktree owner, or "campaign root").
+	// Name is a display name (project name, worktree owner, or "camp root").
 	Name string
 }
 
@@ -65,7 +65,7 @@ func ResolveTarget(ctx context.Context, campaignRoot string, sub bool, project s
 	return &TargetResult{
 		Path:        campaignRoot,
 		IsSubmodule: false,
-		Name:        "campaign root",
+		Name:        "camp root",
 	}, nil
 }
 
@@ -100,7 +100,7 @@ func resolveFromCwd(_ context.Context, campaignRoot string) (*TargetResult, erro
 		return &TargetResult{
 			Path:        campaignRoot,
 			IsSubmodule: false,
-			Name:        "campaign root",
+			Name:        "camp root",
 		}, nil
 	}
 
@@ -109,7 +109,7 @@ func resolveFromCwd(_ context.Context, campaignRoot string) (*TargetResult, erro
 		return result, nil
 	}
 
-	return nil, camperrors.Newf("current directory is in a git repository but not a submodule of the campaign")
+	return nil, camperrors.Newf("current directory is in a git repository but not a submodule of the camp")
 }
 
 func targetFromRoot(campaignRoot, root string, isSubmodule bool) *TargetResult {

@@ -40,14 +40,14 @@ func runAdoptFile(ctx context.Context, cmd *cobra.Command, filePath, typeFlag, t
 
 	cfg, campaignRoot, err := config.LoadCampaignConfigFromCwd(ctx)
 	if err != nil {
-		return camperrors.Wrap(err, "not in a campaign directory")
+		return camperrors.Wrap(err, "not in a camp directory")
 	}
 
 	rel := filePath
 	if filepath.IsAbs(filePath) {
 		rel, err = filepath.Rel(campaignRoot, filePath)
 		if err != nil {
-			return camperrors.Wrap(err, "resolve file relative to campaign root")
+			return camperrors.Wrap(err, "resolve file relative to camp root")
 		}
 	}
 	if err := validateParentPath(rel); err != nil {

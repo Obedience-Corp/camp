@@ -39,7 +39,7 @@ func newProposeCommand() *cobra.Command {
 
 The disposition is a label from the row's type vocabulary; camp resolves it to
 the action it will actually perform and records both. That indirection is what
-lets a campaign rename its labels without triage learning a new mutation.
+lets a camp rename its labels without triage learning a new mutation.
 
 A proposal is not a decision. Terminal actions - dungeon moves and splits -
 always require a human to approve them, and the result says so.
@@ -106,7 +106,7 @@ func runPropose(cmd *cobra.Command, stableID string, opts proposeOptions) error 
 
 	_, root, err := config.LoadCampaignConfigFromCwd(ctx)
 	if err != nil {
-		return camperrors.Wrap(err, "not in a campaign directory")
+		return camperrors.Wrap(err, "not in a camp directory")
 	}
 	store := triage.NewStore(root, nil)
 

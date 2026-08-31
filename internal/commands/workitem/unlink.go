@@ -27,7 +27,7 @@ func newUnlinkCommand() *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "unlink [selector] [path]",
 		Short: "Remove workitem links",
-		Long: `Remove workitem links from the campaign link registry.
+		Long: `Remove workitem links from the camp link registry.
 
 The command updates .campaign/workitems/links.yaml by link id, workitem
 selector, explicit path, or scope filter. Use --all when a selector matches
@@ -83,7 +83,7 @@ type unlinkOptions struct {
 func runUnlink(ctx context.Context, cmd *cobra.Command, opts unlinkOptions) error {
 	_, root, err := config.LoadCampaignConfigFromCwd(ctx)
 	if err != nil {
-		return camperrors.Wrap(err, "not in a campaign directory")
+		return camperrors.Wrap(err, "not in a camp directory")
 	}
 	removed := []links.Link{}
 	err = links.WithLock(ctx, root, func(registry *links.Links) error {

@@ -33,11 +33,11 @@ type questCommandContext struct {
 func loadQuestCommandContext(ctx context.Context, ensureScaffold bool) (*questCommandContext, error) {
 	cfg, campaignRoot, err := config.LoadCampaignConfigFromCwd(ctx)
 	if err != nil {
-		return nil, camperrors.Wrap(err, "not in a campaign directory")
+		return nil, camperrors.Wrap(err, "not in a camp directory")
 	}
 	campaignRoot, err = pathutil.ResolveRoot(campaignRoot)
 	if err != nil {
-		return nil, camperrors.Wrap(err, "resolving campaign root")
+		return nil, camperrors.Wrap(err, "resolving camp root")
 	}
 
 	if ensureScaffold {

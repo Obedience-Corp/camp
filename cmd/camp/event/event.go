@@ -28,10 +28,10 @@ import (
 // Cmd is the `camp event` command group.
 var Cmd = &cobra.Command{
 	Use:   "event",
-	Short: "Record and inspect campaign ledger events",
-	Long: `Record and inspect campaign event-ledger entries.
+	Short: "Record and inspect camp ledger events",
+	Long: `Record and inspect camp event-ledger entries.
 
-The ledger is the append-only trail of high-intent actions across a campaign.
+The ledger is the append-only trail of high-intent actions across a camp.
 Most events are captured automatically by state-changing camp/fest commands;
 'camp event add' is the explicit escape hatch for actions that never touch git.`,
 }
@@ -62,11 +62,11 @@ func newAddCommand() *cobra.Command {
 	opts := &addOptions{}
 	cmd := &cobra.Command{
 		Use:   "add <title>",
-		Short: "Record an explicit campaign ledger event",
-		Long: `Record an explicit campaign ledger event for an out-of-band action.
+		Short: "Record an explicit camp ledger event",
+		Long: `Record an explicit camp ledger event for an out-of-band action.
 
 Scope is inferred from the current directory (the workitem or festival you are
-in); flags override inference. Evidence may be a campaign-relative path, a URL,
+in); flags override inference. Evidence may be a camp-relative path, a URL,
 or a repo@sha commit reference, and may be repeated.
 
 Examples:
@@ -108,7 +108,7 @@ func runAdd(cmd *cobra.Command, title string, opts *addOptions) error {
 
 	cfg, campRoot, err := config.LoadCampaignConfigFromCwd(ctx)
 	if err != nil {
-		return camperrors.Wrap(err, "not in a campaign directory")
+		return camperrors.Wrap(err, "not in a camp directory")
 	}
 
 	evidence, warnings, err := parseEvidence(campRoot, opts.evidence)
@@ -136,7 +136,7 @@ func runAdd(cmd *cobra.Command, title string, opts *addOptions) error {
 		return camperrors.Wrap(err, "event not recorded: ledger write failed")
 	}
 	if eventID == "" {
-		return camperrors.New("event not recorded: the campaign ledger could not be written (see warning above)")
+		return camperrors.New("event not recorded: the camp ledger could not be written (see warning above)")
 	}
 
 	actionID := opts.action

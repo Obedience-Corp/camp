@@ -114,7 +114,7 @@ func TestWarnToWritesLoudly(t *testing.T) {
 	var buf testWriter
 	warn := WarnTo(&buf)
 	warn(errors.New("boom"))
-	assert.Contains(t, buf.String(), "campaign ledger not updated")
+	assert.Contains(t, buf.String(), "camp ledger not updated")
 	assert.Contains(t, buf.String(), "boom")
 	warn(nil) // nil is ignored
 }

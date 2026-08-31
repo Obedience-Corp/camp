@@ -19,7 +19,7 @@ var (
 var questListCmd = &cobra.Command{
 	Use:   "list",
 	Short: "List quests",
-	Long: `List quests in the current campaign.
+	Long: `List quests in the current camp.
 
 In a terminal, 'camp quest list' (with no flags) opens an interactive
 browser that uses the same TUI components as 'camp list' (boxed frame,

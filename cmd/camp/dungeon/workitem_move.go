@@ -39,7 +39,7 @@ type resolvedWorkitemDungeonTarget struct {
 func moveWorkitemToDungeon(ctx context.Context, cmd *cobra.Command, target, status string) (*DungeonMoveCommit, error) {
 	cfg, campaignRoot, err := config.LoadCampaignConfigFromCwd(ctx)
 	if err != nil {
-		return nil, camperrors.Wrap(err, "not in a campaign directory")
+		return nil, camperrors.Wrap(err, "not in a camp directory")
 	}
 
 	resolver := paths.NewResolverFromConfig(campaignRoot, cfg)
@@ -235,7 +235,7 @@ func resolveWorkitemTypeDungeonPath(ctx context.Context, campaignRoot, parentPat
 	}
 	campaignName, err := spelling.CampaignName(ctx, campaignRoot, globalCfg.ResolveDungeonHidden())
 	if err != nil {
-		return "", camperrors.Wrap(err, "resolving campaign dungeon spelling")
+		return "", camperrors.Wrap(err, "resolving camp dungeon spelling")
 	}
 	name, err := spelling.NameForNew(ctx, parentPath, campaignName)
 	if err != nil {

@@ -14,10 +14,10 @@ setting one up. Every example below uses a machine id from `camp machine list`.
 ## Seeding a new machine
 
 ```
-camp clone git@github.com:you/campaign.git ~/campaigns/campaign --from studio-mac
+camp clone git@github.com:you/mycamp.git ~/campaigns/mycamp --from studio-mac
 ```
 
-Camp asks `studio-mac` for the campaign, copies what it can from that machine, then
+Camp asks `studio-mac` for the camp, copies what it can from that machine, then
 points `origin` at the URL you gave and fetches whatever the peer did not have. The
 result is an ordinary clone of origin: same commit, same tree, same branch, same
 `origin` remote. How the bytes arrived is a transport detail that does not survive into
@@ -27,12 +27,12 @@ Without `--from`, `camp clone` behaves exactly as it always has.
 
 ### How camp decides what to copy
 
-For each repository — the campaign root and every submodule — camp asks the peer three
+For each repository, the camp root and every submodule, camp asks the peer three
 questions in one ssh round-trip: is the working tree clean, is a git operation in
 flight, and is `HEAD` readable. A repository that answers cleanly is **quiescent**, and
 camp byte-copies its object store directly. Anything else falls back.
 
-The check is per repository, not per campaign. One dirty submodule does not stop the
+The check is per repository, not per camp. One dirty submodule does not stop the
 other twenty from taking the fast path.
 
 Only immutable content is ever copied: objects and refs. Never an index, never config or
@@ -57,7 +57,7 @@ from origin. Each step says why it stepped down.
 ### What actually happened
 
 ```
-camp clone git@github.com:you/campaign.git ~/campaigns/campaign --from studio-mac --json
+camp clone git@github.com:you/mycamp.git ~/campaigns/mycamp --from studio-mac --json
 ```
 
 ```json
@@ -79,7 +79,7 @@ only when camp used something slower than it wanted, and says why.
 A clone with no `--from` emits **no `seed` key at all**, so existing scripts see exactly
 the JSON they saw before.
 
-## Syncing an existing campaign
+## Syncing an existing camp
 
 ```
 camp sync --from studio-mac

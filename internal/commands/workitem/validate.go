@@ -93,7 +93,7 @@ codes. The command exits non-zero when any error-severity finding is present.`,
 func runValidate(ctx context.Context, cmd *cobra.Command, jsonOut bool, target string) error {
 	cfg, root, err := config.LoadCampaignConfigFromCwd(ctx)
 	if err != nil {
-		return renderValidateError(cmd, jsonOut, camperrors.Wrap(err, "not in a campaign directory"))
+		return renderValidateError(cmd, jsonOut, camperrors.Wrap(err, "not in a camp directory"))
 	}
 	resolver := paths.NewResolverFromConfig(root, cfg)
 

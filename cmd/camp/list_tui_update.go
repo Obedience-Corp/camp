@@ -54,7 +54,7 @@ func (m listTUIModel) applyRemoteLoaded(msg remoteLoadedMsg) (tea.Model, tea.Cmd
 	if len(unreach) > 0 {
 		m.setStatus(fmt.Sprintf("loaded remotes (%d unreachable: %s)", len(unreach), strings.Join(unreach, ", ")), false)
 	} else {
-		m.setStatus(fmt.Sprintf("loaded %d remote campaign(s)", len(msg.rows)), false)
+		m.setStatus(fmt.Sprintf("loaded %d remote camp(s)", len(msg.rows)), false)
 	}
 	return m, nil
 }
@@ -89,7 +89,7 @@ func (m listTUIModel) updateBrowse(key tea.KeyMsg) (tea.Model, tea.Cmd) {
 	case "s":
 		if len(m.visible) > 0 {
 			if isRemoteListEntry(m.visible[m.cursor]) {
-				m.setStatus("remote campaigns are read-only here", true)
+				m.setStatus("remote camps are read-only here", true)
 				return m, nil
 			}
 			if err := m.cycleStatus(); err != nil {
@@ -100,7 +100,7 @@ func (m listTUIModel) updateBrowse(key tea.KeyMsg) (tea.Model, tea.Cmd) {
 	case "m":
 		if len(m.visible) > 0 {
 			if isRemoteListEntry(m.visible[m.cursor]) {
-				m.setStatus("remote campaigns are read-only here", true)
+				m.setStatus("remote camps are read-only here", true)
 				return m, nil
 			}
 			m.overlay = listOverlayMove
@@ -141,7 +141,7 @@ func (m listTUIModel) updateBrowse(key tea.KeyMsg) (tea.Model, tea.Cmd) {
 			m.all = locals
 			m.remoteOn = false
 			m.rebuildVisible()
-			m.setStatus("showing local campaigns", false)
+			m.setStatus("showing local camps", false)
 			return m, nil
 		}
 		m.remoteLoading = true
@@ -174,7 +174,7 @@ func (m listTUIModel) updateOverlay(key tea.KeyMsg) (tea.Model, tea.Cmd) {
 		if value != "" && len(m.visible) > 0 {
 			e := m.visible[m.cursor]
 			if isRemoteListEntry(e) {
-				m.setStatus("remote campaigns are read-only here", true)
+				m.setStatus("remote camps are read-only here", true)
 			} else if err := m.assignOrg(e.ID, e.Name, value); err != nil {
 				m.setError(err)
 			}

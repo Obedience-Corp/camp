@@ -247,7 +247,7 @@ func ValidateResolvedProfile(profile ResolvedProfile, source string) error {
 		if filepath.IsAbs(export) || export == ".." || strings.HasPrefix(export, "../") {
 			violations = append(violations, Violation{
 				Field:   source + ": outputs.priorities_export",
-				Message: "must be a campaign-relative path inside the campaign, got " + quote(export),
+				Message: "must be a camp-relative path inside the camp, got " + quote(export),
 			})
 		}
 	}

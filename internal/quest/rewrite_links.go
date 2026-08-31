@@ -100,7 +100,7 @@ func toCampaignRel(campaignRoot, path string) (string, error) {
 		return cleanCampaignRelPath(path), nil
 	}
 	if campaignRoot == "" {
-		return "", camperrors.Wrap(camperrors.ErrInvalidInput, "campaign root is required to rewrite quest links")
+		return "", camperrors.Wrap(camperrors.ErrInvalidInput, "camp root is required to rewrite quest links")
 	}
 	rel, err := filepath.Rel(campaignRoot, cleaned)
 	if err != nil {
@@ -108,10 +108,10 @@ func toCampaignRel(campaignRoot, path string) (string, error) {
 	}
 	rel = filepath.ToSlash(rel)
 	if rel == "." {
-		return "", camperrors.Wrapf(camperrors.ErrInvalidInput, "move path is the campaign root: %s", path)
+		return "", camperrors.Wrapf(camperrors.ErrInvalidInput, "move path is the camp root: %s", path)
 	}
 	if rel == ".." || strings.HasPrefix(rel, "../") {
-		return "", camperrors.Wrapf(camperrors.ErrInvalidInput, "move path escapes campaign root: %s", path)
+		return "", camperrors.Wrapf(camperrors.ErrInvalidInput, "move path escapes camp root: %s", path)
 	}
 	return strings.TrimSuffix(rel, "/"), nil
 }

@@ -22,39 +22,39 @@ import (
 )
 
 var switchCmd = &cobra.Command{
-	Use:   "switch [campaign]",
-	Short: "Switch to a different campaign",
-	Long: `Switch to a registered campaign by name or ID.
+	Use:   "switch [camp]",
+	Short: "Switch to a different camp",
+	Long: `Switch to a registered camp by name or ID.
 
-Without arguments, opens an interactive picker to select a campaign.
-With an argument, looks up the campaign by name or ID prefix.
+Without arguments, opens an interactive picker to select a camp.
+With an argument, looks up the camp by name or ID prefix.
 Use --org or org/campaign to resolve inside one organization.
 
 Use with the shell-init wrappers for instant navigation (recommended):
   eval "$(camp shell-init zsh)"   # or bash / sh, once per shell
   camp shell-init fish | source   # fish
   csw                            # Interactive picker (local + remote machines)
-  csw my-campaign                # Switch by name
+  csw my-camp                # Switch by name
   csw a1b2                       # Switch by ID prefix
   csw obey/platform              # Switch by org-scoped selector
-  csw archdtop:lance-arch        # Hop to a remote campaign over ssh
+  csw archdtop:lance-arch        # Hop to a remote camp over ssh
   csw -                          # Hop back to the machine/campaign this session came from
 
 'camp switch -' (csw -) is the hop-back gesture: it returns to the origin
 encoded in CAMP_HOP_ORIGIN by the outbound hop. It is registration-independent:
 the origin need not be in this machine's machines.yaml. Like other remote
 targets it refuses --print/--json. '-' is reserved and is no longer a fuzzy
-campaign query.
+camp query.
 
 The --print flag outputs just the path for shell integration (local only):
   cd "$(camp switch --print)"
 
-Use campaign@tab to navigate to a specific location in the target campaign:
+Use camp@tab to navigate to a specific location in the target campaign:
   camp switch obey-campaign@p    # Switch and navigate to projects/
   camp switch obey/platform@f    # Switch inside org and navigate to festivals/
 
-Use machine:campaign to resolve a campaign on a machine registered in
-~/.obey/machines.yaml. The interactive picker also lists remote campaigns when
+Use machine:campaign to resolve a camp on a machine registered in
+~/.obey/machines.yaml. The interactive picker also lists remote camps when
 machines are configured (locals open instantly; remotes append as they load).
 Bare 'command camp switch machine:…' resolves without hopping: use the csw
 shell wrapper (or --shell-connect under shell-init) to hop.
@@ -68,14 +68,14 @@ path on that machine. 'camp machine diagnose' shows which binary a hop would run
 	Example: `  eval "$(camp shell-init zsh)"
   csw                                # Interactive picker (local + remotes)
   csw obey-campaign                  # Switch by name
-  csw archdtop:lance-arch            # Hop to remote campaign
+  csw archdtop:lance-arch            # Hop to remote camp
   csw -                              # Hop back via CAMP_HOP_ORIGIN
   camp switch --org obey platform    # Switch by name within an org
   camp switch obey/platform          # Switch by scoped selector
   camp switch a1b2                   # Switch by ID prefix
   camp switch --print                # Picker, output path only (local)
   camp switch obey-campaign@p        # Switch and navigate to projects/
-  camp switch --all old-reference    # Include inactive/reference campaigns
+  camp switch --all old-reference    # Include inactive/reference camps
   camp switch --org obey platform --json`,
 	Aliases: []string{"sw"},
 	Args:    cobra.MaximumNArgs(1),
@@ -134,10 +134,10 @@ func init() {
 	rootCmd.AddCommand(switchCmd)
 	switchCmd.GroupID = "global"
 	switchCmd.Flags().Bool("print", false, "Print path only (for shell integration)")
-	switchCmd.Flags().String("org", "", "Only switch among campaigns in this org")
-	switchCmd.Flags().String("status", "", "Only switch among campaigns with this lifecycle status")
-	switchCmd.Flags().Bool("all", false, "Include inactive and reference campaigns")
-	switchCmd.Flags().Bool("json", false, "Output selected campaign and target path as JSON")
+	switchCmd.Flags().String("org", "", "Only switch among camps in this org")
+	switchCmd.Flags().String("status", "", "Only switch among camps with this lifecycle status")
+	switchCmd.Flags().Bool("all", false, "Include inactive and reference camps")
+	switchCmd.Flags().Bool("json", false, "Output selected camp and target path as JSON")
 	switchCmd.Flags().Bool("shell-connect", false, "Emit a shell line for the camp() wrapper to eval (internal)")
 	_ = switchCmd.Flags().MarkHidden("shell-connect")
 	_ = switchCmd.RegisterFlagCompletionFunc("org", completeSwitchOrgFlag)
@@ -147,18 +147,18 @@ func init() {
 func resolveTabInCampaign(ctx context.Context, c config.RegisteredCampaign, tabKey string) (string, error) {
 	cfg, err := config.LoadCampaignConfig(ctx, c.Path)
 	if err != nil {
-		return "", camperrors.Wrapf(err, "loading campaign config for %s", c.Name)
+		return "", camperrors.Wrapf(err, "loading camp config for %s", c.Name)
 	}
 	resolved := nav.ResolveConfiguredTarget(cfg, []string{tabKey})
 	if !resolved.Matched {
-		return "", camperrors.New(fmt.Sprintf("tab %q not found in campaign %s", tabKey, c.Name))
+		return "", camperrors.New(fmt.Sprintf("tab %q not found in camp %s", tabKey, c.Name))
 	}
 	relativePath := resolved.RelativePath
 	if relativePath == "" && resolved.Category != nav.CategoryAll {
 		relativePath = resolved.Category.Dir()
 	}
 	if relativePath == "" {
-		return "", camperrors.New(fmt.Sprintf("tab %q resolved to campaign root in %s", tabKey, c.Name))
+		return "", camperrors.New(fmt.Sprintf("tab %q resolved to camp root in %s", tabKey, c.Name))
 	}
 	return filepath.Join(c.Path, relativePath), nil
 }
@@ -304,7 +304,7 @@ func runSwitch(cmd *cobra.Command, args []string) error {
 	// two reasons. It is checked before selector parsing because "-" is
 	// otherwise a legal campaign query that reaches the fuzzy tier and matches
 	// an arbitrary hyphenated campaign, differently on every invocation. And it
-	// is checked before the "no campaigns registered" guard because hop-back
+	// is checked before the "no camps registered" guard because hop-back
 	// resolves against the ORIGIN machine's registry, so a local registry is not
 	// a precondition and pointing the operator at `camp init` would be wrong.
 	if len(args) == 1 && args[0] == hopBackSelector {
@@ -320,7 +320,7 @@ func runSwitch(cmd *cobra.Command, args []string) error {
 		hasMachines = true
 	}
 	if reg.Len() == 0 && !hasMachines {
-		return camperrors.Newf("no campaigns registered (use 'camp init' to create one)")
+		return camperrors.Newf("no camps registered (use 'camp init' to create one)")
 	}
 
 	var selected config.RegisteredCampaign
@@ -352,7 +352,7 @@ func runSwitch(cmd *cobra.Command, args []string) error {
 			return runRemoteSwitch(ctx, cmd, msel, printOnly, shellConnect, jsonOut)
 		}
 		if reg.Len() == 0 {
-			return camperrors.Newf("no campaigns registered (use 'camp init' to create one)")
+			return camperrors.Newf("no camps registered (use 'camp init' to create one)")
 		}
 		// Local (no "machine:" prefix, or "local:"): Remainder equals args[0]
 		// verbatim for the no-colon case, so local resolution stays byte-identical.
@@ -377,7 +377,7 @@ func runSwitch(cmd *cobra.Command, args []string) error {
 		}
 	} else {
 		if !tui.IsTerminal() {
-			return camperrors.New("campaign name required in non-interactive mode (use 'camp switch <name>' or run interactively)")
+			return camperrors.New("camp name required in non-interactive mode (use 'camp switch <name>' or run interactively)")
 		}
 		pick, err := pickSwitchTarget(ctx, reg, pickSwitchTargetOptions{Scope: scope})
 		if err != nil {

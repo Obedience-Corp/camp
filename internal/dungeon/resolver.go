@@ -30,7 +30,7 @@ func ResolveContext(ctx context.Context, campaignRoot, cwd string) (Context, err
 	}
 
 	if campaignRoot == "" {
-		return Context{}, camperrors.Wrap(ErrInvalidDungeonContext, "empty campaign root")
+		return Context{}, camperrors.Wrap(ErrInvalidDungeonContext, "empty camp root")
 	}
 	if cwd == "" {
 		return Context{}, camperrors.Wrap(ErrInvalidDungeonContext, "empty working directory")
@@ -38,7 +38,7 @@ func ResolveContext(ctx context.Context, campaignRoot, cwd string) (Context, err
 
 	absRoot, err := filepath.Abs(campaignRoot)
 	if err != nil {
-		return Context{}, camperrors.Wrap(err, "resolving campaign root")
+		return Context{}, camperrors.Wrap(err, "resolving camp root")
 	}
 	absCwd, err := filepath.Abs(cwd)
 	if err != nil {
@@ -48,13 +48,13 @@ func ResolveContext(ctx context.Context, campaignRoot, cwd string) (Context, err
 	if err := pathutil.ValidateBoundary(absRoot, absCwd); err != nil {
 		return Context{}, camperrors.Wrap(
 			camperrors.NewBoundary("resolve_dungeon_context", absCwd, absRoot, err),
-			"working directory outside campaign root",
+			"working directory outside camp root",
 		)
 	}
 
 	root, err := filepath.EvalSymlinks(absRoot)
 	if err != nil {
-		return Context{}, camperrors.Wrap(err, "resolving campaign root symlinks")
+		return Context{}, camperrors.Wrap(err, "resolving camp root symlinks")
 	}
 	dir, err := filepath.EvalSymlinks(absCwd)
 	if err != nil {

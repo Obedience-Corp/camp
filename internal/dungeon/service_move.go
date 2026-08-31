@@ -49,7 +49,7 @@ func (s *Service) validateParentMoveCandidate(ctx context.Context, parentPath, i
 
 	sourcePath := filepath.Join(parentPath, itemName)
 	if err := pathutil.ValidateBoundary(s.campaignRoot, sourcePath); err != nil {
-		return camperrors.Wrap(ErrNotInDungeon, "source outside campaign root")
+		return camperrors.Wrap(ErrNotInDungeon, "source outside camp root")
 	}
 
 	info, err := os.Stat(sourcePath)

@@ -93,7 +93,7 @@ func runLeverageConfig(cmd *cobra.Command, args []string) error {
 
 	root, err := campaign.DetectCached(ctx)
 	if err != nil {
-		return camperrors.Wrap(err, "not in a campaign")
+		return camperrors.Wrap(err, "not in a camp")
 	}
 
 	configPath := intleverage.DefaultConfigPath(root)

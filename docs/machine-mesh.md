@@ -1,7 +1,7 @@
 # The Machine Mesh
 
 Camp can move you between machines the same way it moves you between campaigns:
-`csw devbox:notes` opens a shell in the `notes` campaign on `devbox`. This document
+`csw devbox:notes` opens a shell in the `notes` camp on `devbox`. This document
 describes the model that makes that safe, and what each piece degrades to when the
 network or the far machine does not cooperate.
 
@@ -49,16 +49,16 @@ Fields:
 | --- | --- | --- |
 | `host` | the origin's reachable name | never |
 | `user` | ssh user on the origin | never |
-| `campaign` | campaign the hop started in | the hop did not start inside a campaign |
+| `campaign` | camp the hop started in | the hop did not start inside a camp |
 | `id` | the id derived from the origin's own reachable name | the name is empty, or the field was dropped for size |
 
-`campaign` is genuinely optional, and its absence is meaningful. Hop from your home
-directory and `csw -` will refuse, because there is no campaign to return to:
+The `campaign` field is genuinely optional, and its absence is meaningful. Hop from your home
+directory and `csw -` will refuse, because there is no camp to return to:
 
 ```
 $ csw -
-Error: camp switch -: origin campaign unknown (the outbound hop did not start inside a
-campaign); hop back with 'camp switch <machine>:<campaign>'
+Error: camp switch -: origin camp unknown (the outbound hop did not start inside a
+camp); hop back with 'camp switch <machine>:<camp>'
 ```
 
 That is the payload being honest rather than guessing.
@@ -94,12 +94,12 @@ devbox.example.ts.net is already in your fleet as "devbox"; nothing to adopt
 
 ## Hopping from the fleet screen
 
-`camp machine` lists the fleet; `enter` on a row picks a campaign on that machine
-and hops there. The campaign list comes from the same snapshot completion reads, so
+`camp machine` lists the fleet; `enter` on a row picks a camp on that machine
+and hops there. The camp list comes from the same snapshot completion reads, so
 the picker opens without dialing; `r` refreshes it live when the snapshot is stale.
 
-The hop itself still goes through `camp switch <id>:<campaign>`. The screen writes
-`ssh-hop:<id>:<campaign>` and the shell wrapper turns that into the hop, which is
+The hop itself still goes through `camp switch <id>:<camp>`. The screen writes
+`ssh-hop:<id>:<camp>` and the shell wrapper turns that into the hop, which is
 the identical path `camp list`'s picker takes. Nothing about the remote resolution
 is duplicated: the far machine's own registry decides the path, exactly as it does
 for a typed `csw devbox:notes`.
@@ -122,7 +122,7 @@ reach this?" is a question worth asking about a machine you are not about to ent
 
 ## The hop-back gesture
 
-`csw -` returns to the machine and campaign you hopped from. There is no history file
+`csw -` returns to the machine and camp you hopped from. There is no history file
 and no daemon: the gesture is stateless by construction, which is why it survives a
 machine reboot on either end and why it cannot drift.
 
@@ -132,7 +132,7 @@ the origin shell resumes exactly where it was. That is why hopping back and fort
 grow a chain of nested connections: each return pops one real level of the shell stack
 rather than opening a second ssh into the machine that already has an inbound session to
 you. A selector naming that origin behaves the same way — `csw devbox:notes`, typed in a
-shell hopped from `devbox`, unwinds instead of dialing, and naming a *different* campaign
+shell hopped from `devbox`, unwinds instead of dialing, and naming a *different* camp
 on the origin tells you to `csw -` first rather than nesting.
 
 The dial-back below remains for the case where the payload is present but the shell has
@@ -198,7 +198,7 @@ it can be refreshed on demand and a pushed one cannot.
 ## Reachability matrix
 
 Rows are the transport on the *target* machine. "Forward hop" is you dialing it;
-"reverse hop" is it dialing you; "visibility" is whether its campaign names appear in
+"reverse hop" is it dialing you; "visibility" is whether its camp names appear in
 your completion.
 
 | Target transport | Target platform | Forward hop | Reverse hop | Visibility |
@@ -224,7 +224,7 @@ use `auth_method: ssh-agent`. `camp machine pair` does the second one for you, w
 consent — see below.
 
 Until you do, the mesh still works in the direction that is available, and the mac's
-campaign names still reach the other machine by push.
+camp names still reach the other machine by push.
 
 ## Pairing
 

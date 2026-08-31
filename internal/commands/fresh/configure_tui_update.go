@@ -115,7 +115,7 @@ func (m *followUpTUIModel) activateSelectedStep() (tea.Model, tea.Cmd) {
 		// Writing the key under this project would produce a fresh.yaml that
 		// looks configured and changes nothing, because ResolveFreshPrune never
 		// consults a project. Send the user where the key actually lives.
-		m.setNotice(fmt.Sprintf("%s is a campaign-wide setting · select Global defaults to change it",
+		m.setNotice(fmt.Sprintf("%s is a camp-wide setting · select Global defaults to change it",
 			settingTitle(step.Setting)))
 		return m, nil
 	case step.Kind == freshStepSetting:

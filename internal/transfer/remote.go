@@ -182,11 +182,11 @@ func joinWithinRemoteRoot(root, rel string) (string, error) {
 		return "", camperrors.New("remote path is empty")
 	}
 	if path.IsAbs(rel) || strings.HasPrefix(rel, "/") {
-		return "", camperrors.New("remote path must stay within the campaign (absolute path rejected)")
+		return "", camperrors.New("remote path must stay within the camp (absolute path rejected)")
 	}
 	cleaned := path.Clean(rel)
 	if cleaned == ".." || strings.HasPrefix(cleaned, "../") {
-		return "", camperrors.New("remote path escapes the campaign root")
+		return "", camperrors.New("remote path escapes the camp root")
 	}
 	// Clean can also yield "." for empty-ish input; path.Join(root, ".") is fine
 	// but still not a file transfer target we want to allow as Endpoint.Path.

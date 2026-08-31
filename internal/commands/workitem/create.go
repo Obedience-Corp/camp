@@ -106,14 +106,14 @@ func runCreateFile(ctx context.Context, cmd *cobra.Command, filePath, typeFlag, 
 
 	cfg, campaignRoot, err := config.LoadCampaignConfigFromCwd(ctx)
 	if err != nil {
-		return camperrors.Wrap(err, "not in a campaign directory")
+		return camperrors.Wrap(err, "not in a camp directory")
 	}
 
 	rel := filePath
 	if filepath.IsAbs(filePath) {
 		rel, err = filepath.Rel(campaignRoot, filePath)
 		if err != nil {
-			return camperrors.Wrap(err, "resolve file relative to campaign root")
+			return camperrors.Wrap(err, "resolve file relative to camp root")
 		}
 	}
 	if err := validateParentPath(rel); err != nil {
@@ -224,7 +224,7 @@ func runCreateFile(ctx context.Context, cmd *cobra.Command, filePath, typeFlag, 
 func runCreate(ctx context.Context, cmd *cobra.Command, slug, typeFlag, title, idOverride, dirOverride, questSelector string, tags, projects []string, jsonOut bool) error {
 	cfg, campaignRoot, err := config.LoadCampaignConfigFromCwd(ctx)
 	if err != nil {
-		return camperrors.Wrap(err, "not in a campaign directory")
+		return camperrors.Wrap(err, "not in a camp directory")
 	}
 	questID := resolveQuestIDForCreate(ctx, cmd, campaignRoot, questSelector)
 
@@ -338,10 +338,10 @@ func validateSlug(slug string) error {
 func validateParentPath(parent string) error {
 	clean := filepath.Clean(parent)
 	if filepath.IsAbs(clean) {
-		return camperrors.NewValidation("dir", "parent dir must be relative to campaign root", nil)
+		return camperrors.NewValidation("dir", "parent dir must be relative to camp root", nil)
 	}
 	if strings.HasPrefix(clean, "..") {
-		return camperrors.NewValidation("dir", "parent dir must not escape campaign root", nil)
+		return camperrors.NewValidation("dir", "parent dir must not escape camp root", nil)
 	}
 	return nil
 }

@@ -14,7 +14,7 @@ The rollout includes three behavior groups:
 
 ### 1. Nearest Dungeon Resolution
 
-`camp dungeon list`, `camp dungeon move`, and `camp dungeon crawl` now resolve context by walking from the current working directory up to campaign root and selecting the nearest `dungeon/`.
+`camp dungeon list`, `camp dungeon move`, and `camp dungeon crawl` now resolve context by walking from the current working directory up to camp root and selecting the nearest `dungeon/`.
 
 Operational impact:
 - Running from nested paths now targets the nearest local dungeon context instead of assuming root dungeon.
@@ -22,13 +22,13 @@ Operational impact:
 
 ### 2. Docs Routing in Triage
 
-Triage now supports routing items into campaign-root docs destinations.
+Triage now supports routing items into camp-root docs destinations.
 
 CLI contract:
 - `camp dungeon move <item> --triage --to-docs <subdir>`
 
 Rules:
-- Destination is validated and resolved under campaign-root `docs/`.
+- Destination is validated and resolved under camp-root `docs/`.
 - Destination must be an existing docs subdirectory (the flow does not create new docs paths).
 - Traversal/escape destinations are rejected.
 - `--to-docs` requires `--triage` and cannot be combined with status argument.
@@ -48,14 +48,14 @@ Changes:
 
 ## Compatibility Expectations
 
-Existing campaigns are preserved:
+Existing camps are preserved:
 - Explicit legacy concept lists (including `dungeon`) continue to load and are not overwritten.
 - Legacy shortcut sets in `jumps.yaml` are preserved; new defaults are not force-written into existing custom shortcut maps.
 - Repair flow preserves existing explicit concept lists.
 
 ## Operator Rollout Checklist
 
-Use this checklist when upgrading active campaign workspaces.
+Use this checklist when upgrading active camp workspaces.
 
 1. Validate nearest-context command behavior.
    - From nested directory with local dungeon, run:
@@ -66,15 +66,15 @@ Use this checklist when upgrading active campaign workspaces.
      those commits.
 2. Validate docs routing behavior.
    - Run `camp dungeon move <item> --triage --to-docs <subdir>`.
-   - Confirm destination path is under campaign-root `docs/`.
+   - Confirm destination path is under camp-root `docs/`.
    - Confirm traversal attempts fail with clear errors.
    - Confirm successful docs routing auto-commits.
-3. Validate scaffold defaults on a scratch campaign.
-   - Initialize new campaign.
+3. Validate scaffold defaults on a scratch camp.
+   - Initialize new camp.
    - Confirm `workflow/explore/` and `workflow/explore/OBEY.md` exist.
    - Confirm `camp go ex --print` resolves to `workflow/explore`.
-4. Validate compatibility on an existing campaign copy.
-   - Load campaign with legacy explicit `dungeon` concept entry.
+4. Validate compatibility on an existing camp copy.
+   - Load camp with legacy explicit `dungeon` concept entry.
    - Confirm concept list persists unchanged.
    - Confirm existing `jumps.yaml` shortcuts remain intact.
 
@@ -82,10 +82,10 @@ Use this checklist when upgrading active campaign workspaces.
 
 If rollout issues are detected:
 
-1. Keep explicit concept configuration in campaign config for legacy workflows.
+1. Keep explicit concept configuration in camp config for legacy workflows.
    - Existing explicit concept lists (including `dungeon`) remain supported.
 2. Keep or restore prior shortcut mappings in `.campaign/settings/jumps.yaml`.
-   - New `ex` shortcut can be removed in campaign-local config if not desired.
+   - New `ex` shortcut can be removed in camp-local config if not desired.
 3. Use standard status-based triage moves if docs routing is temporarily deferred.
    - `camp dungeon move <item> <status> --triage`
 

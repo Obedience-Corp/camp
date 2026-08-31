@@ -53,7 +53,7 @@ func runProjectStage(cmd *cobra.Command, args []string) error {
 
 	campRoot, err := campaign.DetectCached(ctx)
 	if err != nil {
-		return camperrors.Wrap(err, "not in a campaign")
+		return camperrors.Wrap(err, "not in a camp")
 	}
 
 	result, err := projectsvc.Resolve(ctx, campRoot, projectStageProject)

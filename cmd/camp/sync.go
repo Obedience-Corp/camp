@@ -143,7 +143,7 @@ func runSync(cmd *cobra.Command, args []string) error {
 	// Detect campaign root
 	campRoot, err := campaign.DetectCached(ctx)
 	if err != nil {
-		return camperrors.Wrap(err, "not in a campaign")
+		return camperrors.Wrap(err, "not in a camp")
 	}
 
 	// Build syncer with options
@@ -283,7 +283,7 @@ func resolveSyncPeer(ctx context.Context, campRoot, machineID string) (*peer.Sou
 		// A setup error, not a reachability one: --from cannot proceed until
 		// the campaign is registered, so mark it ErrPeerConfig to fail fast.
 		return nil, camperrors.WrapJoinf(peer.ErrPeerConfig, nil,
-			"campaign at %s is not in the registry; --from needs the campaign's registered name to resolve it on %q",
+			"camp at %s is not in the registry; --from needs the camp's registered name to resolve it on %q",
 			campRoot, machineID)
 	}
 	return peer.FromMachine(ctx, machineID, c.Name)

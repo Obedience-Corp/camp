@@ -48,8 +48,8 @@ func NewWorkitemCommand() *cobra.Command {
 	cmd := &cobra.Command{
 		Use:     "workitem",
 		Aliases: []string{"wi", "workitems"},
-		Short:   "View active campaign work items",
-		Long: `View active campaign work items.
+		Short:   "View active camp work items",
+		Long: `View active camp work items.
 
 Launches an interactive dashboard on a TTY. Non-interactive callers must pass
 --json, --list, or --print.
@@ -189,11 +189,11 @@ type discoveredWorkitems struct {
 func discoverWorkitems(ctx context.Context) (*discoveredWorkitems, error) {
 	cfg, campaignRoot, err := config.LoadCampaignConfigFromCwd(ctx)
 	if err != nil {
-		return nil, camperrors.Wrap(err, "not in a campaign directory")
+		return nil, camperrors.Wrap(err, "not in a camp directory")
 	}
 	campaignRoot, err = pathutil.ResolveRoot(campaignRoot)
 	if err != nil {
-		return nil, camperrors.Wrap(err, "resolving campaign root")
+		return nil, camperrors.Wrap(err, "resolving camp root")
 	}
 	resolver := paths.NewResolverFromConfig(campaignRoot, cfg)
 	items, err := wkitem.Discover(ctx, campaignRoot, resolver)

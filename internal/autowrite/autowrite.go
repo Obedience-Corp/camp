@@ -159,7 +159,7 @@ func LoadCommitMessageHook(ctx context.Context, campaignRoot string) (*CommitMes
 
 	cfg, err := config.LoadCampaignConfig(ctx, campaignRoot)
 	if err != nil {
-		return nil, camperrors.Wrapf(err, "commitkit: load campaign config at %s", campaignRoot)
+		return nil, camperrors.Wrapf(err, "commitkit: load camp config at %s", campaignRoot)
 	}
 
 	command := strings.TrimSpace(cfg.Hooks.CommitMessage.Command)

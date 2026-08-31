@@ -96,7 +96,7 @@ func editRegistryEntry(ctx context.Context, c config.RegisteredCampaign, uuid st
 		huh.NewInput().Title("Org").Value(&org),
 		huh.NewInput().
 			Title("Path (repair)").
-			Description("Absolute path to the campaign directory").
+			Description("Absolute path to the camp directory").
 			Value(&path),
 	).Title(c.Name).Description("File: " + settings.CatalogPath(e, campaignRoot)))
 
@@ -139,7 +139,7 @@ func editRegistryEntry(ctx context.Context, c config.RegisteredCampaign, uuid st
 func normalizeRegistryPath(path string) (string, error) {
 	path = filepath.Clean(path)
 	if path == "" || path == "." {
-		return "", camperrors.NewValidation("path", "campaign path is required", nil)
+		return "", camperrors.NewValidation("path", "camp path is required", nil)
 	}
 	abs, err := filepath.Abs(path)
 	if err != nil {
@@ -147,7 +147,7 @@ func normalizeRegistryPath(path string) (string, error) {
 	}
 	abs = filepath.Clean(abs)
 	if !filepath.IsAbs(abs) {
-		return "", camperrors.NewValidation("path", "campaign path must be absolute", nil)
+		return "", camperrors.NewValidation("path", "camp path must be absolute", nil)
 	}
 	return abs, nil
 }
@@ -218,7 +218,7 @@ func saveRegistryEntry(ctx context.Context, uuid string, entry config.Registered
 	entry.Path = absPath
 	return camperrors.Wrap(config.UpdateRegistry(ctx, func(r *config.Registry) error {
 		if _, ok := r.Campaigns[uuid]; !ok {
-			return camperrors.Wrap(camperrors.ErrNotFound, "campaign not in registry")
+			return camperrors.Wrap(camperrors.ErrNotFound, "camp not in registry")
 		}
 		for id, other := range r.Campaigns {
 			if id != uuid && other.Path == entry.Path {

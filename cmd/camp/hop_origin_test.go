@@ -417,7 +417,7 @@ func TestRunHopBackDecisionTable(t *testing.T) {
 			name:       "malformed payload names the reason",
 			payload:    "v1;host=a;host=b;user=c",
 			setPayload: true,
-			wantErr:    `camp switch -: CAMP_HOP_ORIGIN is malformed (duplicate key "host"); hop back with 'camp switch <machine>:<campaign>'`,
+			wantErr:    `camp switch -: CAMP_HOP_ORIGIN is malformed (duplicate key "host"); hop back with 'camp switch <machine>:<camp>'`,
 		},
 		{
 			name:       "unknown version is malformed, never half-parsed",
@@ -429,7 +429,7 @@ func TestRunHopBackDecisionTable(t *testing.T) {
 			name:       "origin campaign unknown",
 			payload:    "v1;host=mac.ts.net;user=lance",
 			setPayload: true,
-			wantErr:    "camp switch -: origin campaign unknown (the outbound hop did not start inside a campaign); hop back with 'camp switch <machine>:<campaign>'",
+			wantErr:    "camp switch -: origin camp unknown (the outbound hop did not start inside a camp); hop back with 'camp switch <machine>:<camp>'",
 		},
 		{
 			name:       "--print is refused like any remote target",

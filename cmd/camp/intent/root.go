@@ -9,7 +9,7 @@ import "github.com/spf13/cobra"
 var Cmd = &cobra.Command{
 	Use:     "idea",
 	Aliases: []string{"intent", "ideas"},
-	Short:   "Manage campaign ideas",
+	Short:   "Manage camp ideas",
 	GroupID: "planning",
 	Long: `Manage ideas for features and improvements not yet ready for full planning.
 

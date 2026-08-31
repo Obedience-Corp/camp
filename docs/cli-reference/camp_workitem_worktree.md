@@ -55,4 +55,4 @@ camp workitem worktree <selector> [flags]
 
 ### SEE ALSO
 
-* [camp workitem](camp_workitem.md)	 - View active campaign work items
+* [camp workitem](camp_workitem.md)	 - View active camp work items

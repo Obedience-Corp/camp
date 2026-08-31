@@ -53,7 +53,7 @@ func runIntentSync(cmd *cobra.Command, args []string) error {
 
 	cfg, campaignRoot, err := config.LoadCampaignConfigFromCwd(ctx)
 	if err != nil {
-		return camperrors.Wrap(err, "not in a campaign directory")
+		return camperrors.Wrap(err, "not in a camp directory")
 	}
 
 	resolver := paths.NewResolverFromConfig(campaignRoot, cfg)

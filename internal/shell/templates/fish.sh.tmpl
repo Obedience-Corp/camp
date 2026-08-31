@@ -443,11 +443,11 @@ end
 
 # Shorthand for camp go
 # Usage:
-#   cgo                 Interactive picker or jump to campaign root
+#   cgo                 Interactive picker or jump to camp root
 #   cgo p               Jump to projects/
 #   cgo p api           Fuzzy find "api" in projects/
 #   cgo -c p ls         Run "ls" in projects/ without changing directory
-function cgo --description "Navigate campaign directories (shorthand for camp go)"
+function cgo --description "Navigate camp directories (shorthand for camp go)"
     camp go $argv
 end
 
@@ -462,10 +462,10 @@ complete -c cgo -f  # no file completion
 complete -c cgo -n "__camp_is_first_arg_drill" -a "(NO_COLOR=1 command camp complete --described (commandline -ct) 2>/dev/null)"
 complete -c cgo -n "not __camp_is_first_arg; and not __camp_is_first_arg_drill" -a "(NO_COLOR=1 command camp complete --described (commandline -opc)[2..-1] 2>/dev/null)"
 
-# Run command from campaign root, or in a project with -p
+# Run command from camp root, or in a project with -p
 # Usage: cr <command> [args...]
 #        cr -p <project> [--] <command> [args...]
-function cr --description "Run command from campaign root, or in a project with -p"
+function cr --description "Run command from camp root, or in a project with -p"
     set -l cr_project
     set -l rest
     if test "$argv[1]" = "-p" -o "$argv[1]" = "--project"
@@ -497,9 +497,9 @@ function cr --description "Run command from campaign root, or in a project with 
     end
 end
 
-# Switch campaigns
+# Switch camps
 # Usage: csw [name]
-function csw --description "Switch campaigns (shorthand for camp switch)"
+function csw --description "Switch camps (shorthand for camp switch)"
     camp switch $argv
 end
 
@@ -510,12 +510,12 @@ function cwi --description "Camp workitem shorthand (cd's to the selected item)"
     camp workitem $argv
 end
 
-# Cycle through campaigns in the current campaign's org.
+# Cycle through camps in the current camp's org.
 # Usage:
-#   corg        cd to the next campaign in this org (stable, name-ordered)
-#   corg t      cd back to the last-visited campaign in this org
-#   corg --all  include inactive/reference campaigns in the cycle
-function corg --description "Cycle through campaigns in the current org"
+#   corg        cd to the next camp in this org (stable, name-ordered)
+#   corg t      cd back to the last-visited camp in this org
+#   corg --all  include inactive/reference camps in the cycle
+function corg --description "Cycle through camps in the current org"
     set -l action next
     set -l rest $argv
     if test (count $rest) -gt 0
@@ -565,13 +565,13 @@ end
 complete -c camp -f  # no file completion by default
 
 # Main commands
-complete -c camp -n __fish_use_subcommand -a "init" -d "Initialize a new campaign"
-complete -c camp -n __fish_use_subcommand -a "go" -d "Navigate to campaign directory"
-complete -c camp -n __fish_use_subcommand -a "switch" -d "Switch to a different campaign"
+complete -c camp -n __fish_use_subcommand -a "init" -d "Initialize a new camp"
+complete -c camp -n __fish_use_subcommand -a "go" -d "Navigate to camp directory"
+complete -c camp -n __fish_use_subcommand -a "switch" -d "Switch to a different camp"
 complete -c camp -n __fish_use_subcommand -a "project" -d "Manage projects"
-complete -c camp -n __fish_use_subcommand -a "list" -d "List registered campaigns"
-complete -c camp -n __fish_use_subcommand -a "register" -d "Register campaign in registry"
-complete -c camp -n __fish_use_subcommand -a "unregister" -d "Remove campaign from registry"
+complete -c camp -n __fish_use_subcommand -a "list" -d "List registered camps"
+complete -c camp -n __fish_use_subcommand -a "register" -d "Register camp in registry"
+complete -c camp -n __fish_use_subcommand -a "unregister" -d "Remove camp from registry"
 complete -c camp -n __fish_use_subcommand -a "shell-init" -d "Output shell initialization"
 complete -c camp -n __fish_use_subcommand -a "complete" -d "Generate completion candidates"
 complete -c camp -n __fish_use_subcommand -a "version" -d "Show version information"
@@ -583,15 +583,15 @@ complete -c camp -n "__fish_seen_subcommand_from go" -a "(NO_COLOR=1 command cam
 # Project subcommands
 complete -c camp -n "__fish_seen_subcommand_from project" -a "add" -d "Add a project (submodule)"
 complete -c camp -n "__fish_seen_subcommand_from project" -a "commit" -d "Commit changes in a project submodule"
-complete -c camp -n "__fish_seen_subcommand_from project" -a "link" -d "Link an existing local project into the campaign"
-complete -c camp -n "__fish_seen_subcommand_from project" -a "list" -d "List projects in campaign"
-complete -c camp -n "__fish_seen_subcommand_from project" -a "new" -d "Create a new project in campaign"
+complete -c camp -n "__fish_seen_subcommand_from project" -a "link" -d "Link an existing local project into the camp"
+complete -c camp -n "__fish_seen_subcommand_from project" -a "list" -d "List projects in the camp"
+complete -c camp -n "__fish_seen_subcommand_from project" -a "new" -d "Create a new project in the camp"
 complete -c camp -n "__fish_seen_subcommand_from project" -a "prune" -d "Delete merged branches in a project"
 complete -c camp -n "__fish_seen_subcommand_from project" -a "remote" -d "Manage remotes for a project"
-complete -c camp -n "__fish_seen_subcommand_from project" -a "remove" -d "Remove a project from campaign"
+complete -c camp -n "__fish_seen_subcommand_from project" -a "remove" -d "Remove a project from the camp"
 complete -c camp -n "__fish_seen_subcommand_from project" -a "run" -d "Run a command inside a project directory"
 complete -c camp -n "__fish_seen_subcommand_from project" -a "stage" -d "Stage changes in a project submodule"
-complete -c camp -n "__fish_seen_subcommand_from project" -a "unlink" -d "Unlink a linked project from the campaign"
+complete -c camp -n "__fish_seen_subcommand_from project" -a "unlink" -d "Unlink a linked project from the camp"
 complete -c camp -n "__fish_seen_subcommand_from project" -a "worktree" -d "Manage worktrees for a project"
 
 # Global flags

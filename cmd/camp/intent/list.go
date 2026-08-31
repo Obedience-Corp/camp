@@ -24,7 +24,7 @@ func newIntentListCommand() *cobra.Command {
 	cmd := &cobra.Command{
 		Use:     "list",
 		Aliases: []string{"ls"},
-		Short:   "List ideas in the campaign",
+		Short:   "List ideas in the camp",
 		Long: `List ideas with filtering, sorting, and output format options.
 
 By default, lists ideas in inbox, active, and ready status.
@@ -91,11 +91,11 @@ func runIntentList(cmd *cobra.Command, args []string) error {
 	// Find campaign root
 	cfg, campaignRoot, err := config.LoadCampaignConfigFromCwd(ctx)
 	if err != nil {
-		return camperrors.Wrap(err, "not in a campaign directory")
+		return camperrors.Wrap(err, "not in a camp directory")
 	}
 	campaignRoot, err = pathutil.ResolveRoot(campaignRoot)
 	if err != nil {
-		return camperrors.Wrap(err, "resolving campaign root")
+		return camperrors.Wrap(err, "resolving camp root")
 	}
 
 	// Create path resolver and service

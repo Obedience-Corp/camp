@@ -9,10 +9,10 @@ import (
 
 // Validation errors
 var (
-	ErrNameRequired = errors.New("campaign name is required")
-	ErrInvalidType  = errors.New("invalid campaign type")
-	ErrNameTooLong  = errors.New("campaign name too long (max 100 characters)")
-	ErrInvalidName  = errors.New("campaign name contains invalid characters")
+	ErrNameRequired = errors.New("camp name is required")
+	ErrInvalidType  = errors.New("invalid camp type")
+	ErrNameTooLong  = errors.New("camp name too long (max 100 characters)")
+	ErrInvalidName  = errors.New("camp name contains invalid characters")
 )
 
 // ValidateCampaignConfig validates a campaign configuration.
@@ -74,7 +74,7 @@ func ValidateGlobalConfig(cfg *GlobalConfig) error {
 // ValidateRegisteredCampaign validates a registered campaign entry.
 func ValidateRegisteredCampaign(c *RegisteredCampaign) error {
 	if c.Path == "" {
-		return errors.New("campaign path is required")
+		return errors.New("camp path is required")
 	}
 	if c.Type != "" && !c.Type.Valid() {
 		return camperrors.Wrapf(ErrInvalidType, "%q", c.Type)

@@ -42,7 +42,7 @@ func init() {
 
 	Cmd.Flags().Bool("print", false, "Print path only (for shell integration)")
 	Cmd.Flags().StringArrayP("command", "c", nil, "Run command from directory (can be repeated for args)")
-	Cmd.Flags().Bool("root", false, "Jump to campaign root (ignore last location)")
+	Cmd.Flags().Bool("root", false, "Jump to camp root (ignore last location)")
 	Cmd.Flags().BoolP("list", "l", false, "List available sub-shortcuts for a project")
 }
 
@@ -421,7 +421,7 @@ func formatShortcutsHelp() string {
 
 // formatNotInCampaignMessage returns message when not in a campaign.
 func formatNotInCampaignMessage() string {
-	return "Shortcuts: Not in a campaign. Run 'camp init' to create one.\n"
+	return "Shortcuts: Not in a camp. Run 'camp init' to create one.\n"
 }
 
 // formatNoShortcutsMessage returns message when campaign has no shortcuts.

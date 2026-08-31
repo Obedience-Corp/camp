@@ -36,13 +36,13 @@ func outputGrouped(entries []campaignEntry, format, fallbackOrg string) error {
 		if i > 0 {
 			fmt.Println()
 		}
-		fmt.Printf("%s %s\n", ui.Accent(org), ui.Dim(fmt.Sprintf("(%s)", ui.CountLabel(len(byOrg[org]), "campaign", "campaigns"))))
+		fmt.Printf("%s %s\n", ui.Accent(org), ui.Dim(fmt.Sprintf("(%s)", ui.CountLabel(len(byOrg[org]), "camp", "camps"))))
 		if err := writeGroupSection(byOrg[org], format); err != nil {
 			return err
 		}
 	}
 	fmt.Println()
-	fmt.Println(ui.Dim(ui.CountLabel(len(entries), "campaign", "campaigns")))
+	fmt.Println(ui.Dim(ui.CountLabel(len(entries), "camp", "camps")))
 	return nil
 }
 

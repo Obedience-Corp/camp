@@ -1,8 +1,8 @@
-# Campaign audit trail: rollout for existing campaigns
+# Camp audit trail: rollout for existing camps
 
-The campaign event ledger (`.campaign/events/<YYYY-MM>/<writer>.jsonl`) is
-additive and optional. New campaigns capture events automatically as you run
-state-changing camp commands. Existing campaigns with history predating the
+The camp event ledger (`.campaign/events/<YYYY-MM>/<writer>.jsonl`) is
+additive and optional. New camps capture events automatically as you run
+state-changing camp commands. Existing camps with history predating the
 ledger can derive a trail on demand. Nothing here is required, and none of it
 touches git history.
 

@@ -1,18 +1,18 @@
 ## camp tag
 
-Label campaigns with tags
+Label camps with tags
 
 ### Synopsis
 
-Label campaigns with tags from a single global pool.
+Label camps with tags from a single global pool.
 
-Tags are orthogonal to orgs: any campaign can carry any tag regardless of its
-org, and the same tag can appear across orgs. Tags are a set per campaign
+Tags are orthogonal to orgs: any camp can carry any tag regardless of its
+org, and the same tag can appear across orgs. Tags are a set per camp
 (re-adding is a no-op).
 
 Commands:
-  add   Add tags to a campaign
-  rm    Remove tags from a campaign
+  add   Add tags to a camp
+  rm    Remove tags from a camp
   list  List all tags in use with counts
 
 ```
@@ -41,7 +41,7 @@ camp tag [flags]
 
 ### SEE ALSO
 
-* [camp](camp.md)	 - Campaign management CLI for multi-project AI workspaces
-* [camp tag add](camp_tag_add.md)	 - Add tags to a campaign
-* [camp tag list](camp_tag_list.md)	 - List all tags in use with campaign counts
-* [camp tag rm](camp_tag_rm.md)	 - Remove tags from a campaign
+* [camp](camp.md)	 - Manage your camps and the projects and festivals inside them
+* [camp tag add](camp_tag_add.md)	 - Add tags to a camp
+* [camp tag list](camp_tag_list.md)	 - List all tags in use with camp counts
+* [camp tag rm](camp_tag_rm.md)	 - Remove tags from a camp

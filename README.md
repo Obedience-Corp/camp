@@ -6,19 +6,19 @@
 
 <p align="center"><a href="https://github.com/Obedience-Corp/camp/stargazers"><img src="https://img.shields.io/github/stars/Obedience-Corp/camp?style=social" alt="Star camp on GitHub"></a></p>
 
-> **Easily manage hundreds of projects and millions of planning documents.** Part of [Festival](https://github.com/Obedience-Corp/festival). Camp handles the workspace — your projects, tools, intents, and context. [fest](https://github.com/Obedience-Corp/fest) handles the planning and execution inside it.
+> **Easily manage hundreds of projects and millions of planning documents.** Part of [Festival](https://github.com/Obedience-Corp/festival). Camp handles the workspace: your projects, tools, intents, and context. [fest](https://github.com/Obedience-Corp/fest) handles the planning and execution inside it.
 
-Campaign workspace manager — create multi-project context workspaces instantly and easily navigate between workspaces, projects and workstations.
+Camp manages your camps. A camp is one context in your life: your job, a side project, your taxes. Each camp holds the projects you work on and hosts the festivals you run in them. A camp, previously called a campaign, is one such workspace: create them instantly, then move between camps, projects, and workstations without losing your place.
 
 <p align="center">
-  <img src="docs/images/demos/cgo-navigation.gif" alt="cgo jumping between projects, festivals, and design directories, plus csw to switch campaigns" width="700">
+  <img src="docs/images/demos/cgo-navigation.gif" alt="cgo jumping between projects, festivals, and design directories, plus csw to switch camps" width="700">
 </p>
 <p align="center"><em><code>cgo</code>: jump anywhere in the workspace with fuzzy matching, from any shell.</em></p>
 
 <p align="center">
   <img src="docs/images/demos/tui-workitems.gif" alt="The camp wi dashboard: intents, designs, explores, and festivals in one unified list, narrowed by search" width="700">
 </p>
-<p align="center"><em><code>camp wi</code>: one queue for every kind of work in the campaign.</em></p>
+<p align="center"><em><code>camp wi</code>: one queue for every kind of work in the camp.</em></p>
 
 ## Installation
 
@@ -69,7 +69,7 @@ Shell integration defines `camp` as a **shell function** (so `camp go` / `cgo` c
 Use these instead:
 
 ```bash
-# zsh — path of the external binary (skips shell functions)
+# zsh: path of the external binary (skips shell functions)
 whence -p camp
 # or: which -p camp
 
@@ -89,8 +89,8 @@ To run the binary without the wrapper (scripts, debugging): `command camp versio
 ## Quick Start
 
 ```bash
-# 1. Initialize a campaign
-mkdir my-campaign && cd my-campaign
+# 1. Create a camp
+mkdir my-camp && cd my-camp
 camp init
 
 # 2. Add shell integration (restart shell after)
@@ -104,15 +104,15 @@ cgo p api      # Fuzzy find "api" in projects/
 
 ## Features
 
-- **Navigation** — Category shortcuts, fuzzy finding, pins, and a cached index for instant project lookups (`go`, `pin`, `shortcuts`, `cache`)
-- **Project Management** — Git submodules, linked local workspaces, campaign-owned directories, worktrees, and scaffolding (`project add/link/list/new/rename/remote/remove/run/unlink/worktree/prune`)
-- **Planning** — Intents, promotion, dungeon for deprioritized work, and a unified work-item dashboard (`intent`, `promote`, `dungeon`, `gather`, `workitem`)
-- **Productivity** — Leverage scoring to identify high-impact work (`leverage`)
-- **Git Integration** — Campaign-level git operations with submodule fan-out (`stage`, `commit`, `log`, `push [all]`, `pull [all]`, `status [all]`, `fresh [all]`, `refs-sync`)
-- **Campaign Ops** — Health checks, file operations, cross-campaign tools (`doctor`, `copy`, `move`, `sync`, `transfer`)
-- **Shell Integration** — Native `cd` behavior with zsh, bash, and fish (`shell-init`)
-- **Tab Completion** — Smart completion for categories, projects, and paths
-- **Plugins** — Discover camp plugins on `PATH` (`plugins`)
+- **Navigation**: Category shortcuts, fuzzy finding, pins, and a cached index for instant project lookups (`go`, `pin`, `shortcuts`, `cache`)
+- **Project Management**: Git submodules, linked local workspaces, camp-owned directories, worktrees, and scaffolding (`project add/link/list/new/rename/remote/remove/run/unlink/worktree/prune`)
+- **Planning**: Intents, promotion, dungeon for deprioritized work, and a unified work-item dashboard (`intent`, `promote`, `dungeon`, `gather`, `workitem`)
+- **Productivity**: Leverage scoring to identify high-impact work (`leverage`)
+- **Git Integration**: camp-level git operations with submodule fan-out (`stage`, `commit`, `log`, `push [all]`, `pull [all]`, `status [all]`, `fresh [all]`, `refs-sync`)
+- **Camp Ops**: Health checks, file operations, cross-camp tools (`doctor`, `copy`, `move`, `sync`, `transfer`)
+- **Shell Integration**: Native `cd` behavior with zsh, bash, and fish (`shell-init`)
+- **Tab Completion**: Smart completion for categories, projects, and paths
+- **Plugins**: Discover camp plugins on `PATH` (`plugins`)
 
 Note: `flow` is a hidden low-level status engine. Use `camp promote` for lifecycle promotion.
 
@@ -127,7 +127,7 @@ Navigate instantly with single-letter shortcuts:
 | `w`      | workflow/              | Workflow directory     |
 | `d`      | docs/                  | Human documentation    |
 | `i`      | .campaign/intents/     | Intents via `camp intent` |
-| `settings` | .campaign/          | Campaign settings directory |
+| `settings` | .campaign/          | Camp settings directory |
 | `wt`     | projects/worktrees/    | Git worktrees          |
 | `du`     | dungeon/               | Archived work          |
 | `r`      | workflow/reviews/      | Review materials       |
@@ -144,7 +144,7 @@ but the normal human interface is `camp intent`.
 The `cgo` shell function is your primary interface:
 
 ```bash
-# Jump to campaign root
+# Jump to camp root
 cgo
 
 # Jump to category
@@ -181,27 +181,27 @@ camp shortcuts       # List all available shortcuts
 ### Setup
 
 ```bash
-camp create <name>         # Create a new campaign at the default campaigns directory
-camp create <name> --path ~/Dev/sandbox  # Create under a specific campaigns directory
+camp create <name>         # Create a new camp in the default camps directory
+camp create <name> --path ~/Dev/sandbox  # Create under a specific camps directory
 camp init                  # Initialize current directory
-camp init my-campaign      # Create and initialize new directory
-camp clone <url>           # Clone a campaign with full submodule setup
+camp init my-camp          # Create and initialize new directory
+camp clone <url>           # Clone a camp with full submodule setup
 ```
 
 ### Project Management
 
-Projects can be added inside the campaign as a git submodule, or linked to
-the campaign if they're already on your machine.
+Projects can be added inside the camp as a git submodule, or linked to the
+camp if they're already on your machine.
 
 ```bash
 camp project add <url>      # Add as a git submodule
 camp project link <path>    # Link an existing local directory as a project
-camp project rename old new # Rename a managed project and its Camp references
+camp project rename old new # Rename a managed project and its camp references
 ```
 
 Use submodules via `camp project add` (or `camp p add`) if you plan to use
-your campaign on multiple devices — linked projects must exist in the same
-location on each device in order to work.
+your camp on multiple devices. Linked projects must exist in the same location
+on each device in order to work.
 
 When an upstream repository was renamed too, pass the new URL explicitly:
 
@@ -219,20 +219,21 @@ For the rest of the project surface (`list`, `remove`, `unlink`, `stage`,
 
 ### Attaching Non-Project Directories
 
-Some directories belong to a campaign for context but aren't full projects
+Some directories belong to a camp for context but aren't full projects
 (notes, reference repos, scratch dirs). After creating a symlink to one
-inside the campaign tree, run `camp attach` on the symlink to bind its
+inside the camp tree, run `camp attach` on the symlink to bind its
 target so detection works from inside it. The same attachment can be bound
-to multiple campaigns; each campaign-local symlink selects its own context:
+to multiple camps; each camp-local symlink selects its own context:
 
 ```bash
 ln -s ~/Dev/external-repo docs/examples/external-repo
 camp attach docs/examples/external-repo
 
-# From another campaign, attach the same resolved target again:
-camp attach /path/to/external-repo --campaign other-campaign
+# From another camp, attach the same resolved target again. The flag keeps its
+# spelling, --campaign, and takes the target camp:
+camp attach /path/to/external-repo --campaign other-camp
 
-# Force the campaign picker instead of using the current campaign:
+# Force the camp picker instead of using the current camp:
 camp attach docs/examples/external-repo --campaign
 
 # now you can pin and navigate to it:
@@ -245,9 +246,9 @@ cgo external-repo
 `camp project link` / `camp project unlink`.
 
 When a shared attachment is accessed directly rather than through a
-campaign-local symlink, camp resolves it to the first bound campaign
-(`active_campaign_id`). Detaching that fallback campaign makes the next bound
-campaign active.
+camp-local symlink, camp resolves it to the first bound camp, recorded under
+the compatibility key `active_campaign_id`. Detaching that fallback camp makes
+the next bound camp active.
 
 ### Planning
 
@@ -255,8 +256,8 @@ Intents, promotion, and the dungeon provide lightweight planning tools:
 
 ```bash
 # Intents - capture ideas, goals, and work items
-camp intent                # Manage campaign intents
-camp intent add --campaign other-campaign "Capture idea"  # Cross-campaign capture (add only)
+camp intent                # Manage camp intents
+camp intent add --campaign other-camp "Capture idea"  # Cross-camp capture (add only)
 camp gather                # Import external data into the intent system
 
 # Promotion - move intents, workitems, and festivals through lifecycle stages
@@ -271,91 +272,92 @@ camp workitem --json       # Machine-readable output
 ```
 
 The dungeon triage crawl honors a `.crawlignore` file alongside the dungeon
-directory — see [docs/crawlignore.md](docs/crawlignore.md) for syntax and
+directory. See [docs/crawlignore.md](docs/crawlignore.md) for syntax and
 placement.
 
 ### Productivity
 
 ```bash
 # Leverage scoring - identify high-impact work
-camp leverage              # Compute leverage scores for campaign projects
+camp leverage              # Compute leverage scores for the camp's projects
 ```
 
 See [docs/leverage-score.md](docs/leverage-score.md) for details on the scoring algorithm.
 
 ### Git Integration
 
-Campaign-level git operations:
+Git operations across the camp:
 
 ```bash
 camp stage                 # Stage changes (same scope as commit) without committing
-camp stage --include-refs  # Also stage submodule ref updates at campaign root
-camp commit                # Commit changes in the campaign root
-camp log                   # Show git log of the campaign
-camp push                  # Push campaign changes to remote
+camp stage --include-refs  # Also stage submodule ref updates at the camp root
+camp commit                # Commit changes in the camp root
+camp log                   # Show git log of the camp
+camp push                  # Push camp changes to remote
 camp push all              # Push all submodules with unpushed changes
 camp pull                  # Pull latest changes
 camp pull all              # Pull all submodules
-camp status                # Show git status of the campaign
+camp status                # Show git status of the camp
 camp status all            # Dashboard of all submodules (branch, dirty/clean, push status, unmerged branches)
 camp status all --view     # Interactive TUI viewer with per-repo detail
 camp fresh                 # Post-merge branch cycling: fetch, safely sync default, prune, optional new branch
-camp fresh all             # Same cycle across every project in the campaign
+camp fresh all             # Same cycle across every project in the camp
 ```
 
-### Campaign Operations
+### Camp Operations
 
 ```bash
-camp doctor                # Diagnose and fix campaign health issues
+camp doctor                # Diagnose and fix camp health issues
 camp sync                  # Safely synchronize submodules
-camp refs-sync             # Update campaign's recorded submodule pointers to each submodule's HEAD
-camp copy                  # Copy a file or directory within the campaign
-camp move                  # Move a file or directory within the campaign
-camp run                   # Execute command from campaign root, or just recipe in a project
-camp root                  # Print the current campaign root
-camp id                    # Print the current campaign ID
+camp refs-sync             # Update the camp's recorded submodule pointers to each submodule's HEAD
+camp copy                  # Copy a file or directory within the camp
+camp move                  # Move a file or directory within the camp
+camp run                   # Execute command from the camp root, or just recipe in a project
+camp root                  # Print the current camp root
+camp id                    # Print the current camp ID
 camp concepts              # List configured concepts (picker/completion concepts)
 camp cache info            # Show navigation cache status and metadata
 camp cache rebuild         # Force rebuild the navigation cache
 camp cache clear           # Delete the navigation cache
 ```
 
-### Cross-Campaign
+### Working Across Camps
 
 ```bash
-camp list                  # List campaigns (active only by default; grouped by org)
+camp list                  # List camps (active only by default; grouped by org)
 camp list --org obey       # Filter by org; also --tag (AND), --status, --all, --group/--no-group
-camp switch                # Switch to a different campaign
-camp transfer              # Copy files between campaigns
-camp register              # Register campaign in global registry
-camp unregister            # Remove campaign from registry
+camp switch                # Switch to a different camp
+camp transfer              # Copy files between camps
+camp register              # Register a camp in the global registry
+camp unregister            # Remove a camp from the registry
 camp registry              # Maintain ~/.obey/campaign/registry.json (prune, sync, check)
 ```
 
-### Organizing Campaigns (org / tags / lifecycle)
+### Organizing Camps (org / tags / lifecycle)
 
-Campaigns carry three orthogonal organizational axes in the registry
-(`~/.obey/campaign/registry.json`), filesystem + git only, no database:
+Camps carry three orthogonal organizational axes in the registry, kept in Camp
+user configuration at `~/.obey/campaign/registry.json`, filesystem + git only,
+no database:
 
-- **org**: single membership; every campaign is in exactly one org (default
-  `default`). Group related campaigns; reassign by adding to a new org.
-- **tags**: a single global pool of labels; a campaign can carry any number,
+- **org**: single membership; every camp is in exactly one org (default
+  `default`). Group related camps; reassign by adding to a new org.
+- **tags**: a single global pool of labels; a camp can carry any number,
   and the same tag crosses orgs freely.
 - **status**: lifecycle, one of `active` / `inactive` / `reference`. The default
   `camp list` and `camp switch` surfaces show only `active`; use `--all` or
-  `--status` to include inactive/reference campaigns. The lifecycle command is
+  `--status` to include inactive/reference camps. The lifecycle command is
   `camp lifecycle`, not `camp status` (which stays the git-status wrapper).
 
-A campaign at its defaults (org `default`, no tags, `active`) stores no extra
+A camp at its defaults (org `default`, no tags, `active`) stores no extra
 keys, so existing registries are untouched until you organize something.
 
 ```bash
-camp org add obey c1 c2       # Assign campaigns to an org (also reassigns)
-camp org remove c1            # Return campaigns to the default org
+camp org add obey c1 c2       # Assign camps to an org (also reassigns)
+camp org remove c1            # Return camps to the default org
 camp org rename obey obedience# Rename an org, reassigning all members atomically
 camp org list                 # Orgs with member + active counts
-camp org show obey            # Member campaigns of an org
-camp org                      # Print the current campaign's org
+camp org show obey            # Member camps of an org
+camp org                      # Print the current camp's org
 
 camp tag add c1 paid-work q3  # Add tags (set semantics; re-adding is a no-op)
 camp tag rm c1 q3             # Remove tags
@@ -364,21 +366,21 @@ camp tag list                 # Global tag pool with counts
 camp lifecycle set c1 reference  # Set status: active | inactive | reference
 camp lifecycle list              # Status counts
 
-camp festivals --org obey     # Festivals across an org's campaigns (composes 'fest list')
+camp festivals --org obey     # Festivals across an org's camps (composes 'fest list')
 ```
 
-All of these accept `--json`. `camp festivals` filters campaigns by org/tag and
-composes `fest list --json` per campaign; it does not modify `fest list`.
+All of these accept `--json`. `camp festivals` filters camps by org/tag and
+composes `fest list --json` per camp; it does not modify `fest list`.
 
 ### Skills
 
 Camp centralizes skill bundles in `.campaign/skills/` and projects them into
 tool ecosystems (Claude, agents, etc.) as per-bundle symlinks so a single
-source of truth stays in the campaign while provider-native skills
+source of truth stays in the camp while provider-native skills
 directories keep working.
 
 ```bash
-camp skills                # Manage campaign skill bundle projection (link/unlink/status)
+camp skills                # Manage camp skill bundle projection (link/unlink/status)
 ```
 
 ### System
@@ -443,8 +445,8 @@ camp project <TAB>       # Completes: add commit link list new prune remote remo
 #### Troubleshooting
 
 ```bash
-# Verify the camp binary is on PATH (do not use plain `which camp` —
-# after shell-init it prints the wrapper function, not the binary path)
+# Verify the camp binary is on PATH. Do not use plain `which camp`:
+# after shell-init it prints the wrapper function, not the binary path.
 whence -p camp            # zsh: external binary only
 type -P camp              # bash: external binary only
 type -a camp              # function + every binary on PATH
@@ -460,13 +462,13 @@ source ~/.zshrc
 type cgo
 ```
 
-## Campaign Directory Structure
+## Camp Directory Structure
 
-A campaign provides a standardized layout for AI development:
+A camp provides a standardized layout for AI development:
 
 ```
-my-campaign/
-├── .campaign/           # Campaign configuration and system state
+my-camp/
+├── .campaign/           # Camp configuration and system state
 │   ├── campaign.yaml
 │   ├── watchers.yaml
 │   ├── intents/         # System-managed intents (camp intent, cgo i)
@@ -474,8 +476,8 @@ my-campaign/
 │   │   ├── active/
 │   │   ├── ready/
 │   │   └── dungeon/
-│   ├── settings/        # Campaign-local settings and defaults
-│   ├── skills/          # Campaign skill bundles (camp skills)
+│   ├── settings/        # Camp-local settings and defaults
+│   ├── skills/          # Camp skill bundles (camp skills)
 │   ├── leverage/        # Leverage snapshots and cache (camp leverage)
 │   └── cache/           # Navigation index cache
 ├── projects/            # Git submodules and linked workspaces
@@ -499,6 +501,23 @@ my-campaign/
 ├── docs/                # Human documentation (cgo d)
 └── dungeon/             # Archived work (cgo du)
 ```
+
+### Names That Stay the Same
+
+Camps used to be called campaigns, and the earlier name is still what the
+files, flags, and machine-readable output are spelled with. Both words mean the
+same thing to Camp, in commands and in agent prompts alike.
+
+- **Should I rename `.campaign/`?** No. It is the stable metadata directory and
+  Camp expects it.
+- **Is `.camp` the new metadata directory?** No. `.camp` is an attachment marker
+  written into linked external directories, not a workspace directory.
+- **Do my scripts using `--campaign` or `campaign_root` still work?** Yes.
+  Nothing about flags, selectors, or machine-readable output changed.
+- **Why do internal files still say campaign?** They are stable compatibility
+  contracts that protect your existing data and integrations.
+
+See [docs/terminology.md](docs/terminology.md) for the full vocabulary contract.
 
 ## Worktree Navigation
 
@@ -528,12 +547,13 @@ camp project worktree add -p <TAB>     # Same project name completion
 
 ## Configuration
 
-### Campaign Config
+### Camp Config
 
-Located at `.campaign/campaign.yaml`:
+Camp configuration lives in the compatibility filename `campaign.yaml`, inside
+the camp metadata directory, `.campaign/`:
 
 ```yaml
-name: my-campaign
+name: my-camp
 type: product
 description: My awesome project
 ```
@@ -572,11 +592,12 @@ Without a `default` shortcut, navigation jumps to the project root.
 
 Camp uses a small set of configuration and state files:
 
-- `~/.obey/campaign/config.json` for global user preferences such as editor,
+- `~/.obey/campaign/config.json`, Camp user configuration, for global
+  preferences such as editor,
   theme, `no_color`, and `verbose`
-- `.campaign/campaign.yaml` for campaign metadata, project entries, and picker
+- `.campaign/campaign.yaml` for camp metadata, project entries, and picker
   concepts
-- `.campaign/settings/jumps.yaml` for campaign-local navigation paths and
+- `.campaign/settings/jumps.yaml` for camp-local navigation paths and
   shortcuts
 - `.campaign/settings/fresh.yaml` for optional `camp fresh` defaults
 - `.campaign/watchers.yaml` for the camp/fest watcher contract
@@ -587,13 +608,14 @@ full file-by-file reference, including which files are scaffolded by
 
 ## Documentation
 
-- [CLI Reference](docs/cli-reference/camp-reference.md) — Complete reference for every command and flag
-- [`.campaign/` Directory Reference](docs/campaign-directory-reference.md) — Hidden campaign metadata layout and ownership
-- [Campaign Settings Files](docs/campaign-settings-files.md) — Global and local config/state files explained
-- [Leverage Scoring](docs/leverage-score.md) — How leverage scores are computed
-- [Shortcuts](docs/SHORTCUTS.md) — Category shortcuts reference
-- [Shell Integration](docs/shell-integration.md) — Detailed shell setup guide
-- [`.crawlignore` Syntax](docs/crawlignore.md) — Excluding paths from dungeon triage
+- [CLI Reference](docs/cli-reference/camp-reference.md): complete reference for every command and flag
+- [Terminology](docs/terminology.md): the vocabulary contract for Camp and everything built on it
+- [`.campaign/` Directory Reference](docs/campaign-directory-reference.md): the hidden camp metadata layout and ownership
+- [Camp Settings Files](docs/campaign-settings-files.md): global and local config/state files explained
+- [Leverage Scoring](docs/leverage-score.md): how leverage scores are computed
+- [Shortcuts](docs/SHORTCUTS.md): category shortcuts reference
+- [Shell Integration](docs/shell-integration.md): detailed shell setup guide
+- [`.crawlignore` Syntax](docs/crawlignore.md): excluding paths from dungeon triage
 
 Migration guides for behavior changes live under [docs/migrations/](docs/migrations/).
 
@@ -638,9 +660,9 @@ once to fully revert that local setting, it now points at a removed directory.
 
 Camp is one half of [Festival](https://github.com/Obedience-Corp/festival), the current product from [Obedience Corp](https://github.com/Obedience-Corp).
 
-- **camp** — workspace and context. One place for all your projects, tools, intents, agents, and work.
-- **[fest](https://github.com/Obedience-Corp/fest)** — planning and execution. Hierarchical: festival → phase → sequence → task.
-- **[Festival](https://github.com/Obedience-Corp/festival)** — combined distribution of camp + fest. Full docs at [fest.build](https://fest.build).
+- **camp**: workspace and context. One place for all your projects, tools, intents, agents, and work.
+- **[fest](https://github.com/Obedience-Corp/fest)**: planning and execution. Hierarchical: festival → phase → sequence → task.
+- **[Festival](https://github.com/Obedience-Corp/festival)**: combined distribution of camp + fest. Full docs at [fest.build](https://fest.build).
 
 <p align="center"><strong>Find camp useful?</strong> <a href="https://github.com/Obedience-Corp/camp">Star the repo</a> so others can find it.</p>
 

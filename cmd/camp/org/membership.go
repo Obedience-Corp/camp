@@ -26,13 +26,13 @@ type orgMoveResult struct {
 }
 
 var orgAddCmd = &cobra.Command{
-	Use:   "add <org> <campaign>...",
-	Short: "Assign campaigns to an org (reassigns; single-membership)",
-	Long: `Assign one or more campaigns to <org>.
+	Use:   "add <org> <camp>...",
+	Short: "Assign camps to an org (reassigns; single-membership)",
+	Long: `Assign one or more camps to <org>.
 
-Membership is single, so this is also the reassign verb: a campaign added to a
+Membership is single, so this is also the reassign verb: a camp added to a
 new org leaves its previous org in the same step. The org is created implicitly.
-Adding a campaign already in <org> is a no-op for that campaign.`,
+Adding a camp already in <org> is a no-op for that camp.`,
 	Example: `  camp org add obey obey-campaign obey-content
   camp org add client-acme acme-site --json`,
 	Args: cobra.MinimumNArgs(2),
@@ -40,13 +40,13 @@ Adding a campaign already in <org> is a no-op for that campaign.`,
 }
 
 var orgRemoveCmd = &cobra.Command{
-	Use:     "remove <campaign>...",
+	Use:     "remove <camp>...",
 	Aliases: []string{"rm"},
-	Short:   "Return campaigns to the default org",
-	Long: `Return one or more campaigns to the "default" org.
+	Short:   "Return camps to the default org",
+	Long: `Return one or more camps to the "default" org.
 
-Since a campaign is always in exactly one org, you do not name the org.
-Removing a campaign already in "default" is a no-op.`,
+Since a camp is always in exactly one org, you do not name the org.
+Removing a camp already in "default" is a no-op.`,
 	Example: `  camp org remove obey-content
   camp org remove acme-site other-site --json`,
 	Args: cobra.MinimumNArgs(1),
@@ -166,7 +166,7 @@ func resolveUnique(reg *config.Registry, queries []string) ([]config.RegisteredC
 	for _, q := range queries {
 		c, ok := reg.Get(q)
 		if !ok {
-			return nil, camperrors.NewNotFound("campaign", q, nil)
+			return nil, camperrors.NewNotFound("camp", q, nil)
 		}
 		if seen[c.ID] {
 			continue
@@ -191,12 +191,12 @@ func formatOrgMoveResult(r orgMoveResult) string {
 	var lines []string
 	switch len(r.Moved) {
 	case 0:
-		lines = append(lines, fmt.Sprintf("no changes: all campaigns already in org %q", r.Org))
+		lines = append(lines, fmt.Sprintf("no changes: all camps already in org %q", r.Org))
 	case 1:
 		m := r.Moved[0]
 		lines = append(lines, fmt.Sprintf("moved %q to org %q (was %q)", m.Campaign, m.To, m.From))
 	default:
-		lines = append(lines, fmt.Sprintf("moved %d campaigns to org %q", len(r.Moved), r.Org))
+		lines = append(lines, fmt.Sprintf("moved %d camps to org %q", len(r.Moved), r.Org))
 		for _, m := range r.Moved {
 			lines = append(lines, fmt.Sprintf("  %s (was %q)", m.Campaign, m.From))
 		}

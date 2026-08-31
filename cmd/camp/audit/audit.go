@@ -25,8 +25,8 @@ import (
 // Cmd is the `camp audit` command group.
 var Cmd = &cobra.Command{
 	Use:   "audit",
-	Short: "Inspect the campaign audit trail",
-	Long: `Inspect the campaign audit trail.
+	Short: "Inspect the camp audit trail",
+	Long: `Inspect the camp audit trail.
 
 'camp audit doctor' scans linked repos for commits with no captured intent
 linkage and reports them informationally. Untagged commits are a normal mode
@@ -45,7 +45,7 @@ func newDoctorCommand() *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "doctor",
 		Short: "Scan linked repos for unattributed commits (informational)",
-		Long: `Scan the campaign root and every linked project repo, classifying each
+		Long: `Scan the camp root and every linked project repo, classifying each
 commit as tagged, degraded, or untagged (no captured intent linkage).
 
 Output is informational: untagged commits are surfaced, never scolded, and the
@@ -69,7 +69,7 @@ func runDoctor(cmd *cobra.Command, window int, jsonOut bool) error {
 	ctx := cmd.Context()
 	cfg, campRoot, err := config.LoadCampaignConfigFromCwd(ctx)
 	if err != nil {
-		return camperrors.Wrap(err, "not in a campaign")
+		return camperrors.Wrap(err, "not in a camp")
 	}
 
 	repos, err := scanTargets(ctx, campRoot)
@@ -115,7 +115,7 @@ func runDoctor(cmd *cobra.Command, window int, jsonOut bool) error {
 
 func printReport(cmd *cobra.Command, scans []audit.RepoScan, totalCommits, totalUntagged, reconcileGaps int) error {
 	w := cmd.OutOrStdout()
-	if _, err := fmt.Fprintln(w, ui.Subheader("Campaign audit trail: commit attribution")); err != nil {
+	if _, err := fmt.Fprintln(w, ui.Subheader("Camp audit trail: commit attribution")); err != nil {
 		return err
 	}
 	for _, s := range scans {

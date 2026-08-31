@@ -1,7 +1,7 @@
 # camp promote is the promotion front door
 
 Promotion is the same verb across the three things that move through lifecycles
-in a campaign, and `camp promote` is the single discoverable entrypoint over all
+in a camp, and `camp promote` is the single discoverable entrypoint over all
 of them:
 
 | Kind | Type-specific command | Targets |

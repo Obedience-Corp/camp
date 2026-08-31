@@ -18,7 +18,7 @@ The command also adds:
 
 - `--org <org>` to filter direct resolution, picker candidates, and completion.
 - `--status <active|inactive|reference>` to switch within one lifecycle status.
-- `--all` to include inactive and reference campaigns.
+- `--all` to include inactive and reference camps.
 - `--json` for a structured selected-campaign payload.
 
 Fuzzy matching is preserved. Org and lifecycle filters reduce the candidate set
@@ -26,8 +26,8 @@ before the existing fuzzy matching behavior runs.
 
 ## User-Visible Default
 
-`camp switch <name>` now resolves active campaigns by default. Inactive and
-reference campaigns remain reachable, but they must be requested explicitly:
+`camp switch <name>` now resolves active camps by default. Inactive and
+reference camps remain reachable, but they must be requested explicitly:
 
 ```bash
 camp switch --all old-reference
@@ -36,19 +36,19 @@ camp switch --org obey --all archive
 ```
 
 This matches the existing `camp list` default and keeps parked/reference
-campaigns out of high-frequency switch completion and picker flows.
+camps out of high-frequency switch completion and picker flows.
 
 ## Compatibility Expectations
 
-Existing unscoped active-campaign workflows continue to work:
+Existing unscoped active-camp workflows continue to work:
 
 ```bash
-camp switch campaign
-camp switch campaign@p
-camp switch campaign --print
+camp switch camp
+camp switch camp@p
+camp switch camp --print
 ```
 
-For inactive/reference campaigns, update scripts and shell habits to include
+For inactive/reference camps, update scripts and shell habits to include
 `--all` or explicit `--status`.
 
 ## Reference Links

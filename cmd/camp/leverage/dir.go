@@ -175,9 +175,9 @@ func runLeverageDir(cmd *cobra.Command, targetDir string) error {
 	if verbose {
 		fmt.Fprintf(cmd.ErrOrStderr(), "[verbose] Directory mode: %s\n", targetDir)
 		if setup.Root != "" {
-			fmt.Fprintf(cmd.ErrOrStderr(), "[verbose] Campaign detected: %s\n", setup.Root)
+			_, _ = fmt.Fprintf(cmd.ErrOrStderr(), "[verbose] Camp detected: %s\n", setup.Root)
 		} else {
-			fmt.Fprintf(cmd.ErrOrStderr(), "[verbose] No campaign detected\n")
+			_, _ = fmt.Fprintf(cmd.ErrOrStderr(), "[verbose] No camp detected\n")
 		}
 		fmt.Fprintf(cmd.ErrOrStderr(), "[verbose] Git root: %s\n", proj.GitDir)
 		fmt.Fprintf(cmd.ErrOrStderr(), "[verbose] InMonorepo: %v\n", proj.InMonorepo)

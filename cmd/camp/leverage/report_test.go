@@ -39,7 +39,7 @@ func TestRenderScoreReport_IsPlainTextAndCarriesTheNumbers(t *testing.T) {
 		t.Fatalf("report must not carry terminal escapes:\n%q", report)
 	}
 	for _, want := range []string{
-		"Campaign Leverage: 38.7x (3 authors detected)",
+		"Camp Leverage: 38.7x (3 authors detected)",
 		"PROJECT",
 		"camp",
 		"fest",

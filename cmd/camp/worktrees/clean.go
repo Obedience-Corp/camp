@@ -95,12 +95,12 @@ func runWorktreesClean(cmd *cobra.Command, args []string) error {
 
 	campRoot, err := campaign.DetectCached(ctx)
 	if err != nil {
-		return camperrors.Wrap(err, "not in a campaign")
+		return camperrors.Wrap(err, "not in a camp")
 	}
 
 	cfg, err := config.LoadCampaignConfig(ctx, campRoot)
 	if err != nil {
-		return camperrors.Wrap(err, "failed to load campaign config")
+		return camperrors.Wrap(err, "failed to load camp config")
 	}
 
 	resolver := paths.NewResolver(campRoot, cfg.Paths())
@@ -181,7 +181,7 @@ func runWorktreesClean(cmd *cobra.Command, args []string) error {
 		err := cleanWorktree(ctx, cfg, resolver, &toRemove[i], cleanForce, cleanDiscardDirty)
 		if err != nil {
 			toRemove[i].removeErr = err
-			if strings.Contains(err.Error(), "not found in campaign config") {
+			if strings.Contains(err.Error(), "not found in camp config") {
 				// Non-fatal for skip cases (e.g. non-removable stale with unregistered project in test setups)
 				fmt.Printf("  %s/%s: %s\n",
 					toRemove[i].project, toRemove[i].worktree,
@@ -359,7 +359,7 @@ func cleanWorktree(ctx context.Context, cfg *config.CampaignConfig, resolver *pa
 
 	if projectPath == "" {
 		return camperrors.Wrapf(camperrors.ErrNotFound,
-			"project %q not found in campaign config; cannot remove worktree safely without a project path",
+			"project %q not found in camp config; cannot remove worktree safely without a project path",
 			result.project)
 	}
 

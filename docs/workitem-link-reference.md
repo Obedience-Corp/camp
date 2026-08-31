@@ -1,6 +1,6 @@
 # Workitem Link Registry Reference
 
-The workitem link registry connects a workitem to one or more scopes in the campaign, such as a project directory, festival, or worktree. Once a link exists, commit wrappers (`camp workitem commit`, `fest commit`, `camp p commit`) can automatically tag commits with the workitem reference without requiring the `--workitem` flag on every invocation.
+The workitem link registry connects a workitem to one or more scopes in the camp, such as a project directory, festival, or worktree. Once a link exists, commit wrappers (`camp workitem commit`, `fest commit`, `camp p commit`) can automatically tag commits with the workitem reference without requiring the `--workitem` flag on every invocation.
 
 Without a link, a workitem is passive state: it exists in `.campaign/workitems/` and tracks work, but it has no connection to the places where that work happens. A link is what makes the registry actionable.
 
@@ -38,10 +38,10 @@ times if the random suffix collides with an existing entry.
 The durable link registry lives at:
 
 ```
-<campaign-root>/.campaign/workitems/links.yaml
+<camp-root>/.campaign/workitems/links.yaml
 ```
 
-This file should be committed to the campaign repository. It records all workitem-to-scope relationships and is the shared source of truth for all users of the campaign.
+This file should be committed to the camp repository. It records all workitem-to-scope relationships and is the shared source of truth for all users of the camp.
 
 Schema version: `workitem-links/v1alpha1`. The loader rejects unknown versions
 with a validation error. Field-level schema rules are enforced by the
@@ -59,17 +59,17 @@ overwrite each other's registry updates.
 
 ## Scope Kinds
 
-A link's `scope` specifies what area of the campaign the workitem is attached to.
+A link's `scope` specifies what area of the camp the workitem is attached to.
 
 | Kind | Path resolves to | Example path |
 |---|---|---|
 | `project` | A project or submodule under `projects/` | `projects/myrepo` |
 | `repo` | A git repository root not registered as a project | `vendor/external` |
-| `campaign_path` | Any campaign-relative path (catch-all) | `workflow/design/spike` |
+| `campaign_path` | Any camp-relative path (catch-all) | `workflow/design/spike` |
 | `festival` | A festival path under `festivals/` | `festivals/active/myrepo-MR0001` |
 | `worktree` | A project worktree under `projects/worktrees/` | `projects/worktrees/myrepo@feat-x` |
 
-Paths are campaign-relative, forward-slash-normalized, and validated to be contained within the campaign root.
+Paths are camp-relative, forward-slash-normalized, and validated to be contained within the camp root.
 
 ---
 
@@ -92,7 +92,7 @@ When a commit wrapper or `camp workitem resolve` needs to determine the active w
 
 1. Explicit `--workitem <selector>` flag.
 2. Nearest ancestor directory containing a `.workitem` marker file.
-3. Primary link in `links.yaml` whose `scope.path` is the longest prefix of the current working directory (campaign-relative).
+3. Primary link in `links.yaml` whose `scope.path` is the longest prefix of the current working directory (camp-relative).
 4. Primary link whose `scope.kind` is `festival` and whose path matches the supplied festival ID.
 5. No workitem context. Commit wrappers proceed without a `WI-` tag.
 
@@ -124,7 +124,7 @@ Scope is specified via exactly one of:
 | `--project <name>` | `projects/<name>` |
 | `--festival <id>` | Festival path under `festivals/` |
 | `--worktree <path>` | Path under `projects/worktrees/` |
-| `--cwd` | Current working directory (campaign-relative) |
+| `--cwd` | Current working directory (camp-relative) |
 
 Note: `--project` takes a project name, not an absolute path. `--project myrepo` resolves to `projects/myrepo`.
 

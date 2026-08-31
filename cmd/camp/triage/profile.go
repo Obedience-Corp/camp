@@ -36,7 +36,7 @@ func newProfileCommand() *cobra.Command {
 		Short: "Show the resolved triage profile",
 		Long: `Print the profile a run would use, fully merged.
 
-Resolution is: the campaign's .campaign/triage/profile.yaml when it exists,
+Resolution is: the camp's .campaign/triage/profile.yaml when it exists,
 otherwise the named built-in. Keys the file omits inherit the built-in default.
 A type's policy is types/<type>.yaml, else types/_default.yaml, else camp's
 built-in, and a type policy that declares dispositions replaces the inherited
@@ -61,7 +61,7 @@ verdict explainable after the profile moves on.`,
 	cmd.Flags().BoolVar(&resolved, "resolved", false,
 		"Print the fully merged profile (the default and only mode today)")
 	cmd.Flags().StringVar(&name, "profile", "",
-		"Resolve a named built-in instead of the campaign's: default, sweep, or deep")
+		"Resolve a named built-in instead of the camp's: default, sweep, or deep")
 	return cmd
 }
 
@@ -71,7 +71,7 @@ func runProfile(cmd *cobra.Command, jsonOut, resolved bool, name string) error {
 
 	_, root, err := config.LoadCampaignConfigFromCwd(ctx)
 	if err != nil {
-		return camperrors.Wrap(err, "not in a campaign directory")
+		return camperrors.Wrap(err, "not in a camp directory")
 	}
 
 	resolution, err := triage.ResolveProfileNamed(ctx, root, name)

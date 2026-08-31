@@ -12,22 +12,22 @@ import (
 )
 
 var orgCreateCmd = &cobra.Command{
-	Use:   "create <org> [campaign...]",
-	Short: "Create an org (optionally empty) and join campaigns",
-	Long: `Create a first-class org, optionally joining campaigns to it.
+	Use:   "create <org> [camp...]",
+	Short: "Create an org (optionally empty) and join camps",
+	Long: `Create a first-class org, optionally joining camps to it.
 
-Run inside a campaign with no campaign arguments to add the current campaign:
+Run inside a camp with no camp arguments to add the current campaign:
   camp org create obey
 
-Or name the campaigns explicitly:
+Or name the camps explicitly:
   camp org create obey obey-campaign obey-content
 
-Create an empty org with no members (works outside a campaign):
+Create an empty org with no members (works outside a camp):
   camp org create obey --empty
 
 Orgs are first-class: they persist in the registry even with zero members.
 Joining an org that already has members is allowed; there is no "already exists"
-error, and a campaign already in the org is reported as unchanged.`,
+error, and a camp already in the org is reported as unchanged.`,
 	Example: `  camp org create obey
   camp org create obey --empty
   camp org create client-acme acme-site other-site`,
@@ -38,7 +38,7 @@ error, and a campaign already in the org is reported as unchanged.`,
 func init() {
 	Cmd.AddCommand(orgCreateCmd)
 	orgCreateCmd.Flags().Bool("json", false, "Output as JSON")
-	orgCreateCmd.Flags().Bool("empty", false, "Create the org with no members (do not join any campaign)")
+	orgCreateCmd.Flags().Bool("empty", false, "Create the org with no members (do not join any camp)")
 }
 
 func runOrgCreate(cmd *cobra.Command, args []string) error {
@@ -50,7 +50,7 @@ func runOrgCreate(cmd *cobra.Command, args []string) error {
 	empty, _ := cmd.Flags().GetBool("empty")
 	if empty {
 		if len(args) > 1 {
-			return camperrors.NewValidation("empty", "--empty takes no campaign arguments", nil)
+			return camperrors.NewValidation("empty", "--empty takes no camp arguments", nil)
 		}
 		return createEmptyOrg(cmd, org, asJSON)
 	}
@@ -103,8 +103,8 @@ func createEmptyOrg(cmd *cobra.Command, org string, asJSON bool) error {
 func currentCampaignID(ctx context.Context) (string, error) {
 	root, err := campaign.DetectCached(ctx)
 	if err != nil {
-		return "", camperrors.NewValidation("campaign",
-			"not inside a campaign; name a campaign: camp org create <org> <campaign>", err)
+		return "", camperrors.NewValidation("camp",
+			"not inside a camp; name a campaign: camp org create <org> <camp>", err)
 	}
 	cfg, err := config.LoadCampaignConfig(ctx, root)
 	if err != nil {
@@ -116,8 +116,8 @@ func currentCampaignID(ctx context.Context) (string, error) {
 	}
 	c, ok := reg.GetByID(cfg.ID)
 	if !ok {
-		return "", camperrors.NewValidation("campaign",
-			"current campaign is not registered; name a campaign: camp org create <org> <campaign>", nil)
+		return "", camperrors.NewValidation("camp",
+			"current camp is not registered; name a campaign: camp org create <org> <camp>", nil)
 	}
 	return c.ID, nil
 }

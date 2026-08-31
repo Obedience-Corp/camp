@@ -6,7 +6,7 @@ Manage workflow collections
 
 Manage workflow collections.
 
-A workflow collection is a campaign directory under workflow/<type>/ with
+A workflow collection is a camp directory under workflow/<type>/ with
 navigation config and workitem type support.
 
 ### Options
@@ -23,7 +23,7 @@ navigation config and workitem type support.
 
 ### SEE ALSO
 
-* [camp](camp.md)	 - Campaign management CLI for multi-project AI workspaces
+* [camp](camp.md)	 - Manage your camps and the projects and festivals inside them
 * [camp workflow create](camp_workflow_create.md)	 - Create a custom workflow collection
 * [camp workflow doctor](camp_workflow_doctor.md)	 - Report workflow surface inconsistencies
 * [camp workflow list](camp_workflow_list.md)	 - List user-created workflow collections

@@ -26,8 +26,8 @@ By default, moves an item already in the dungeon root to a status directory.
 When the item exists in the parent directory and not in the dungeon root, the
 command automatically treats it as triage work and moves it into the dungeon.
 Use --triage to force a parent-directory move.
-With --triage and --to-docs, routes items to an existing campaign-root docs/<subdirectory>.
-With --workitem, resolves a campaign workitem from anywhere and moves its directory
+With --triage and --to-docs, routes items to an existing camp-root docs/<subdirectory>.
+With --workitem, resolves a camp workitem from anywhere and moves its directory
 into the workitem type's local dungeon.
 Moves are always auto-committed so dungeon history remains auditable.
 
@@ -64,8 +64,8 @@ func init() {
 
 	flags := dungeonMoveCmd.Flags()
 	flags.Bool("triage", false, "Move from parent directory (not from dungeon root)")
-	flags.String("to-docs", "", "Route triage item into an existing campaign-root docs/<subdir> (requires --triage)")
-	flags.Bool("workitem", false, "Resolve item as a campaign workitem and move its directory to the local dungeon")
+	flags.String("to-docs", "", "Route triage item into an existing camp-root docs/<subdir> (requires --triage)")
+	flags.Bool("workitem", false, "Resolve item as a camp workitem and move its directory to the local dungeon")
 	flags.Bool("dry-run", false, "Preview the move(s) without touching the filesystem or creating a commit")
 	flags.Bool("json", false, "Emit the dry-run plan as JSON (requires --dry-run)")
 }
@@ -284,7 +284,7 @@ func wrapDungeonDocsRouteError(err error, itemName, destination string) error {
 		)
 	case errors.Is(err, intdungeon.ErrInvalidDocsDestination):
 		return camperrors.Newf(
-			"invalid docs destination %q; use an existing subdirectory under campaign-root docs/ (for example: --to-docs architecture/api): %w",
+			"invalid docs destination %q; use an existing subdirectory under camp-root docs/ (for example: --to-docs architecture/api): %w",
 			destination,
 			err,
 		)

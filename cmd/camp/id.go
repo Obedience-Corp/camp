@@ -10,8 +10,8 @@ import (
 
 var idCmd = &cobra.Command{
 	Use:     "id",
-	Short:   "Print the current campaign ID",
-	Long:    "Print the current campaign ID from .campaign/campaign.yaml.",
+	Short:   "Print the current camp ID",
+	Long:    "Print the current camp ID from .campaign/campaign.yaml.",
 	Example: "  camp id",
 	Args:    cobra.NoArgs,
 	RunE:    runID,

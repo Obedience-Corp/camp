@@ -31,14 +31,14 @@ func LoadCampaignConfig(ctx context.Context, campaignRoot string) (*CampaignConf
 	data, err := os.ReadFile(configPath)
 	if err != nil {
 		if os.IsNotExist(err) {
-			return nil, camperrors.NewNotFound("campaign config", configPath, nil)
+			return nil, camperrors.NewNotFound("camp config", configPath, nil)
 		}
-		return nil, camperrors.Wrapf(err, "failed to read campaign config %s", configPath)
+		return nil, camperrors.Wrapf(err, "failed to read camp config %s", configPath)
 	}
 
 	var cfg CampaignConfig
 	if err := yaml.Unmarshal(data, &cfg); err != nil {
-		return nil, camperrors.Wrapf(err, "failed to parse campaign config %s", configPath)
+		return nil, camperrors.Wrapf(err, "failed to parse camp config %s", configPath)
 	}
 
 	// Apply defaults for missing optional fields
@@ -58,7 +58,7 @@ func LoadCampaignConfig(ctx context.Context, campaignRoot string) (*CampaignConf
 
 	// Validate required fields
 	if err := ValidateCampaignConfig(&cfg); err != nil {
-		return nil, camperrors.Wrapf(err, "invalid campaign config %s", configPath)
+		return nil, camperrors.Wrapf(err, "invalid camp config %s", configPath)
 	}
 
 	return &cfg, nil
@@ -131,12 +131,12 @@ func SaveCampaignConfig(ctx context.Context, campaignRoot string, cfg *CampaignC
 	// Ensure the .campaign directory exists
 	campaignDir := filepath.Join(campaignRoot, CampaignDir)
 	if err := os.MkdirAll(campaignDir, 0755); err != nil {
-		return camperrors.Wrap(err, "failed to create campaign directory")
+		return camperrors.Wrap(err, "failed to create camp directory")
 	}
 
 	data, err := yaml.Marshal(cfg)
 	if err != nil {
-		return camperrors.Wrap(err, "failed to marshal campaign config")
+		return camperrors.Wrap(err, "failed to marshal camp config")
 	}
 
 	if (cfg.Hooks == HooksConfig{}) {
@@ -144,7 +144,7 @@ func SaveCampaignConfig(ctx context.Context, campaignRoot string, cfg *CampaignC
 	}
 
 	if err := fsutil.WriteFileAtomically(configPath, data, 0o644); err != nil {
-		return camperrors.Wrap(err, "failed to write campaign config")
+		return camperrors.Wrap(err, "failed to write camp config")
 	}
 
 	return nil

@@ -1,16 +1,16 @@
 ## camp move
 
-Move a file or directory within the campaign
+Move a file or directory within the camp
 
 ### Synopsis
 
-Move a file or directory within the current campaign.
+Move a file or directory within the current camp.
 
 Paths are resolved relative to the current directory, matching standard
 'mv' behavior and tab completion.
 
-Use @ prefix for campaign shortcuts (e.g., @p/fest, @f/active/).
-Available shortcuts are defined in campaign config.
+Use @ prefix for camp shortcuts (e.g., @p/fest, @f/active/).
+Available shortcuts are defined in camp config.
 
 If the destination is an existing directory or ends with '/', the source
 is placed inside it with the same basename.
@@ -42,4 +42,4 @@ camp move <src> <dest> [flags]
 
 ### SEE ALSO
 
-* [camp](camp.md)	 - Campaign management CLI for multi-project AI workspaces
+* [camp](camp.md)	 - Manage your camps and the projects and festivals inside them

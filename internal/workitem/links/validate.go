@@ -198,7 +198,7 @@ func validateOneLink(link Link, opts ValidateOptions, now time.Time,
 	} else if len(link.Scope.Path) > maxScopePathLen {
 		addErr("scope.path", fmt.Sprintf("must be at most %d chars", maxScopePathLen))
 	} else if strings.HasPrefix(link.Scope.Path, "/") {
-		addErr("scope.path", "must be campaign-relative (no leading /)")
+		addErr("scope.path", "must be camp-relative (no leading /)")
 	} else if strings.Contains(link.Scope.Path, "..") {
 		addErr("scope.path", "must not contain ..")
 	} else if opts.CampaignRoot != "" && !opts.AllowMissing {

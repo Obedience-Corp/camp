@@ -16,15 +16,15 @@ import (
 
 var stageCmd = &cobra.Command{
 	Use:   "stage",
-	Short: "Stage changes in the campaign root",
-	Long: `Stage changes in the campaign root directory without committing.
+	Short: "Stage changes in the camp root",
+	Long: `Stage changes in the camp root directory without committing.
 
 Runs the same auto-staging logic as 'camp commit' (including stale lock
 file cleanup) but stops before creating a commit, so you can use a
 different commit strategy (interactive 'git commit --patch', a GUI
 client, signing flow, etc.).
 
-At the campaign root, submodule ref changes (projects/*) are excluded
+At the camp root, submodule ref changes (projects/*) are excluded
 from staging by default to prevent accidental ref conflicts across
 machines. Use --include-refs to stage them explicitly.
 
@@ -49,7 +49,7 @@ var (
 func init() {
 	stageCmd.Flags().BoolVar(&stageSub, "sub", false, "Operate on the submodule detected from current directory")
 	stageCmd.Flags().StringVarP(&stageProject, "project", "p", "", "Operate on a specific project/submodule path")
-	stageCmd.Flags().BoolVar(&stageIncludeRefs, "include-refs", false, "Include submodule ref changes when staging at campaign root")
+	stageCmd.Flags().BoolVar(&stageIncludeRefs, "include-refs", false, "Include submodule ref changes when staging at camp root")
 	stageCmd.Flags().BoolVar(&stageNoDrain, "no-drain", false, "Do not wait for camp's queued commits first")
 
 	rootCmd.AddCommand(stageCmd)

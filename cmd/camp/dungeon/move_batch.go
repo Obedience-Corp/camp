@@ -333,7 +333,7 @@ func runWorkitemMove(ctx context.Context, cmd *cobra.Command, target, status str
 func planWorkitemMove(ctx context.Context, target, status string) (movePreview, error) {
 	cfg, campaignRoot, err := config.LoadCampaignConfigFromCwd(ctx)
 	if err != nil {
-		return movePreview{}, camperrors.Wrap(err, "not in a campaign directory")
+		return movePreview{}, camperrors.Wrap(err, "not in a camp directory")
 	}
 
 	resolver := paths.NewResolverFromConfig(campaignRoot, cfg)

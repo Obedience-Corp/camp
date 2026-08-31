@@ -27,4 +27,4 @@ camp org list [flags]
 
 ### SEE ALSO
 
-* [camp org](camp_org.md)	 - Group campaigns into orgs
+* [camp org](camp_org.md)	 - Group camps into orgs

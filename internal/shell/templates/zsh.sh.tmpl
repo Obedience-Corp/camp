@@ -385,7 +385,7 @@ camp() {
 
 # Shorthand for camp go
 # Usage:
-#   cgo                 Interactive picker or jump to campaign root
+#   cgo                 Interactive picker or jump to camp root
 #   cgo p               Jump to projects/
 #   cgo p api           Fuzzy find "api" in projects/
 #   cgo -c p ls         Run "ls" in projects/ without changing directory
@@ -452,7 +452,7 @@ _cgo() {
     fi
   fi
 }
-# Run command from campaign root, or in a project with -p
+# Run command from camp root, or in a project with -p
 # Usage: cr <command> [args...]
 #        cr -p <project> [--] <command> [args...]
 cr() {
@@ -530,13 +530,13 @@ _camp_project_run() {
   fi
 }
 
-# Switch campaigns
+# Switch camps
 # Usage: csw [name]
 csw() {
   camp switch "$@"
 }
 
-# Tab completion for csw (campaign switch)
+# Tab completion for csw (camp switch)
 _csw() {
   local -a campaigns
   local output line
@@ -558,11 +558,11 @@ cwi() {
   camp workitem "$@"
 }
 
-# Cycle through campaigns in the current campaign's org.
+# Cycle through camps in the current camp's org.
 # Usage:
-#   corg        cd to the next campaign in this org (stable, name-ordered)
-#   corg t      cd back to the last-visited campaign in this org
-#   corg --all  include inactive/reference campaigns in the cycle
+#   corg        cd to the next camp in this org (stable, name-ordered)
+#   corg t      cd back to the last-visited camp in this org
+#   corg --all  include inactive/reference camps in the cycle
 # Inspection flags (--print/--json/--help) print without changing directory.
 corg() {
   local action=next line arg
@@ -627,13 +627,13 @@ _camp() {
     command)
       local -a commands
       commands=(
-        'init:Initialize a new campaign'
-        'go:Navigate to campaign directory'
-        'switch:Switch to a different campaign'
+        'init:Initialize a new camp'
+        'go:Navigate to camp directory'
+        'switch:Switch to a different camp'
         'project:Manage projects'
-        'list:List registered campaigns'
-        'register:Register campaign in registry'
-        'unregister:Remove campaign from registry'
+        'list:List registered camps'
+        'register:Register camp in registry'
+        'unregister:Remove camp from registry'
         'shell-init:Output shell initialization'
         'complete:Generate completion candidates'
         'version:Show version information'
@@ -647,7 +647,7 @@ _camp() {
           ;;
         init)
           _arguments \
-            '--name[Campaign name]:name' \
+            '--name[Camp name]:name' \
             '--force[Overwrite existing]' \
             '1:directory:_directories'
           ;;
@@ -657,15 +657,15 @@ _camp() {
             project_cmds=(
               'add:Add a project (submodule)'
               'commit:Commit changes in a project submodule'
-              'link:Link an existing local project into the campaign'
-              'list:List projects in campaign'
-              'new:Create a new project in campaign'
+              'link:Link an existing local project into the camp'
+              'list:List projects in the camp'
+              'new:Create a new project in the camp'
               'prune:Delete merged branches in a project'
               'remote:Manage remotes for a project'
-              'remove:Remove a project from campaign'
+              'remove:Remove a project from the camp'
               'run:Run a command inside a project directory'
               'stage:Stage changes in a project submodule'
-              'unlink:Unlink a linked project from the campaign'
+              'unlink:Unlink a linked project from the camp'
               'worktree:Manage worktrees for a project'
             )
             _describe 'project command' project_cmds

@@ -73,7 +73,7 @@ func runWorkitemDemote(cmd *cobra.Command, opts runWorkitemDemoteOptions) error 
 
 	cfg, root, err := config.LoadCampaignConfigFromCwd(ctx)
 	if err != nil {
-		return camperrors.Wrap(err, "not in a campaign directory")
+		return camperrors.Wrap(err, "not in a camp directory")
 	}
 
 	loc, err := resolveWorkitem(ctx, root, opts.ID)

@@ -37,12 +37,12 @@ func ResolveCrossCampaignPath(ctx context.Context, currentCampRoot, spec string)
 	// Look up campaign in registry
 	reg, err := config.LoadRegistry(ctx)
 	if err != nil {
-		return "", camperrors.Newf("load campaign registry: %w", err)
+		return "", camperrors.Newf("load camp registry: %w", err)
 	}
 
 	entry, ok := reg.Get(campaign)
 	if !ok {
-		return "", camperrors.Newf("campaign %q not found in registry", campaign)
+		return "", camperrors.Newf("camp %q not found in registry", campaign)
 	}
 
 	resolved := filepath.Join(entry.Path, relPath)

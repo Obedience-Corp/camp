@@ -14,9 +14,9 @@ import (
 var questUnlinkCmd = &cobra.Command{
 	Use:   "unlink <quest> <path>",
 	Short: "Remove a linked artifact from a quest",
-	Long: `Remove the association between a campaign artifact and a quest.
+	Long: `Remove the association between a camp artifact and a quest.
 
-The path must match exactly as it was linked (campaign-root-relative).
+The path must match exactly as it was linked (camp-root-relative).
 
 Examples:
   camp quest unlink myquest .campaign/intents/inbox/some-intent.md

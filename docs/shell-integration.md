@@ -1,6 +1,6 @@
 # Shell Integration
 
-Camp provides shell integration through the `cgo` function, which allows instant navigation to campaign directories without needing to type `cd` or wait for a subprocess to complete.
+Camp provides shell integration through the `cgo` function, which allows instant navigation to camp directories without needing to type `cd` or wait for a subprocess to complete.
 
 ## Quick Setup
 
@@ -48,7 +48,7 @@ The `cgo` (camp-go) function is the primary interface for navigation. It's a she
 ### Basic Usage
 
 ```bash
-# Jump to campaign root
+# Jump to camp root
 cgo
 
 # Jump to a category
@@ -74,7 +74,7 @@ cgo f fest    # festivals/*fest* (fuzzy match)
 | p        | projects/      | Project directories     |
 | f        | festivals/     | Festival planning       |
 | i        | .campaign/intents/ | Intents via `camp intent` |
-| settings | .campaign/ | Campaign settings directory |
+| settings | .campaign/ | Camp settings directory |
 | d        | docs/          | Documentation           |
 | w        | workflow/      | Workflow resources      |
 | wt       | projects/worktrees/ | Git worktrees     |
@@ -113,7 +113,7 @@ cgo p <TAB>     # Shows projects in projects/
 cgo p ap<TAB>   # Completes to matching project names
 ```
 
-The completion system queries camp for real-time suggestions based on your campaign structure.
+The completion system queries camp for real-time suggestions based on your camp structure.
 
 ## Helper Functions
 
@@ -145,13 +145,13 @@ cie
 
 Equivalent to `camp intent explore`. Opens the interactive TUI for browsing, filtering, and managing intents.
 
-### `cr` - Run from Campaign Root
+### `cr` - Run from Camp Root
 
 ```bash
 cr make test
 ```
 
-Equivalent to `camp run make test`. Runs a command from the campaign root directory.
+Equivalent to `camp run make test`. Runs a command from the camp root directory.
 
 ## Technical Details
 
@@ -178,10 +178,10 @@ cgo p api
 ### Error Handling
 
 ```bash
-# Not in a campaign
+# Not in a camp
 $ cgo
-Error: not in a campaign
-Hint: Initialize with 'camp init' or navigate to a campaign
+Error: not in a camp
+Hint: Initialize with 'camp init' or navigate to a camp
 
 # Target not found
 $ cgo p nonexistent

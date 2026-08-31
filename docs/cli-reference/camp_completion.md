@@ -22,7 +22,7 @@ See each sub-command's help for details on how to use the generated script.
 
 ### SEE ALSO
 
-* [camp](camp.md)	 - Campaign management CLI for multi-project AI workspaces
+* [camp](camp.md)	 - Manage your camps and the projects and festivals inside them
 * [camp completion bash](camp_completion_bash.md)	 - Generate the autocompletion script for bash
 * [camp completion fish](camp_completion_fish.md)	 - Generate the autocompletion script for fish
 * [camp completion powershell](camp_completion_powershell.md)	 - Generate the autocompletion script for powershell

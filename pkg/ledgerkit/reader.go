@@ -36,7 +36,7 @@ type Reader struct {
 // NewReader returns a Reader for the campaign at campaignRoot.
 func NewReader(campaignRoot string) (*Reader, error) {
 	if campaignRoot == "" {
-		return nil, camperrors.New("ledgerkit: empty campaign root")
+		return nil, camperrors.New("ledgerkit: empty camp root")
 	}
 	return &Reader{store: osShardStore{campaignRoot: campaignRoot}}, nil
 }

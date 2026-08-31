@@ -20,17 +20,17 @@ import (
 
 var transferCmd = &cobra.Command{
 	Use:   "transfer <src> <dest>",
-	Short: "Copy files between campaigns (and machines)",
-	Long: `Copy files between campaigns, and between this machine and a registered
+	Short: "Copy files between camps (and machines)",
+	Long: `Copy files between camps, and between this machine and a registered
 fleet machine.
 
 Transfer always copies; it never moves or deletes the source.
 
 Local forms:
-  campaign:path     another registered campaign on this machine
-  path              relative to the current campaign root
+  campaign:path     another registered camp on this machine
+  path              relative to the current camp root
   local:campaign:path
-                    force the campaign reading when campaign name collides
+                    force the camp reading when camp name collides
                     with a registered machine id
 
 Machine forms (one side only; both-remote is refused):
@@ -39,8 +39,8 @@ Machine forms (one side only; both-remote is refused):
 
 See docs/transfer.md for the full grammar, transport, and skew guidance.
 
-At least one side must reference a different campaign or machine. For copies
-within the same campaign on this machine, use 'camp copy' instead.`,
+At least one side must reference a different camp or machine. For copies
+within the same camp on this machine, use 'camp copy' instead.`,
 	Example: `  camp transfer docs/my-doc.md other-campaign:docs/my-doc.md     # local push
   camp transfer other-campaign:docs/my-doc.md docs/              # local pull
   camp transfer other:festivals/plan.md festivals/planned/       # pull into dir

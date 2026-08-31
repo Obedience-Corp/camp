@@ -202,7 +202,7 @@ func adoptPreview(origin HopOrigin, entry machines.Machine) string {
 	fmt.Fprintf(&b, "  host      %s\n", origin.Host)
 	fmt.Fprintf(&b, "  user      %s\n", origin.User)
 	if origin.Campaign != "" {
-		fmt.Fprintf(&b, "  campaign  %s\n", origin.Campaign)
+		fmt.Fprintf(&b, "  camp  %s\n", origin.Campaign)
 	}
 	b.WriteString("\nThis entry will be appended to " + machines.DisplayPath() + ":\n\n")
 	// Marshal the row the same way Save does so quoting/escaping match disk.

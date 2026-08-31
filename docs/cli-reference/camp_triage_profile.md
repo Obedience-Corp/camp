@@ -6,7 +6,7 @@ Show the resolved triage profile
 
 Print the profile a run would use, fully merged.
 
-Resolution is: the campaign's .campaign/triage/profile.yaml when it exists,
+Resolution is: the camp's .campaign/triage/profile.yaml when it exists,
 otherwise the named built-in. Keys the file omits inherit the built-in default.
 A type's policy is types/<type>.yaml, else types/_default.yaml, else camp's
 built-in, and a type policy that declares dispositions replaces the inherited
@@ -25,7 +25,7 @@ camp triage profile [flags]
 ```
   -h, --help             help for profile
       --json             Output result as a single JSON object
-      --profile string   Resolve a named built-in instead of the campaign's: default, sweep, or deep
+      --profile string   Resolve a named built-in instead of the camp's: default, sweep, or deep
       --resolved         Print the fully merged profile (the default and only mode today)
 ```
 
@@ -37,4 +37,4 @@ camp triage profile [flags]
 
 ### SEE ALSO
 
-* [camp triage](camp_triage.md)	 - Review the campaign's workitems in a recorded session
+* [camp triage](camp_triage.md)	 - Review the camp's workitems in a recorded session

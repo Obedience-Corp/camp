@@ -83,7 +83,7 @@ func runProjectPrune(cmd *cobra.Command, args []string) error {
 
 	campRoot, err := campaign.DetectCached(ctx)
 	if err != nil {
-		return camperrors.Wrap(err, "not in a campaign")
+		return camperrors.Wrap(err, "not in a camp")
 	}
 
 	// Resolve project: positional arg > flag > cwd

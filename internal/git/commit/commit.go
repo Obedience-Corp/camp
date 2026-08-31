@@ -97,7 +97,7 @@ func doCommit(ctx context.Context, opts Options, action, subject, description st
 		return Result{
 			Committed:  false,
 			Skipped:    true,
-			SkipReason: fmt.Sprintf("%s: missing campaign context (CampaignRoot or CampaignID is empty)", action),
+			SkipReason: fmt.Sprintf("%s: missing camp context (CampaignRoot or CampaignID is empty)", action),
 		}
 	}
 

@@ -82,5 +82,5 @@ func showFestInitFailure(err error, w Writers) {
 	writeLine(w.HumanOut)
 	writeLine(w.HumanOut, ui.Dim("You may need to run 'fest init' manually."))
 	writeLine(w.HumanOut, ui.Dim("Use 'fest init --help' for options."))
-	writeLine(w.HumanOut, ui.Dim("Continuing with campaign creation..."))
+	writeLine(w.HumanOut, ui.Dim("Continuing with camp creation..."))
 }

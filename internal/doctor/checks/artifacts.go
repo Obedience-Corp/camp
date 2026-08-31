@@ -151,7 +151,7 @@ func (c *ArtifactsCheck) inspectRoot(
 	if _, err := artifacts.EnsureRootWithin(repoRoot, root.Path); err != nil {
 		return append(issues, artifactIssue(c.ID(), normalized, reasonEscapesCampaign,
 			doctor.SeverityError,
-			fmt.Sprintf("%s escapes the campaign root: %v", normalized, err),
+			fmt.Sprintf("%s escapes the camp root: %v", normalized, err),
 			"camp artifacts remove "+normalized))
 	}
 
@@ -165,7 +165,7 @@ func (c *ArtifactsCheck) inspectRoot(
 	if sub, ok := crossesSubmodule(normalized, submodules); ok {
 		issues = append(issues, artifactIssue(c.ID(), normalized, reasonCrossesSubmodule,
 			doctor.SeverityError,
-			fmt.Sprintf("%s crosses into submodule %s; artifact roots are campaign-relative, so its bytes "+
+			fmt.Sprintf("%s crosses into submodule %s; artifact roots are camp-relative, so its bytes "+
 				"would never reach the submodule's remote. Camp never creates this state, so it was "+
 				"hand-written into artifacts.yaml", normalized, sub),
 			"camp artifacts remove "+normalized))

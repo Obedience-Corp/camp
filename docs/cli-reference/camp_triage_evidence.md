@@ -32,6 +32,6 @@ camp triage evidence [flags]
 
 ### SEE ALSO
 
-* [camp triage](camp_triage.md)	 - Review the campaign's workitems in a recorded session
+* [camp triage](camp_triage.md)	 - Review the camp's workitems in a recorded session
 * [camp triage evidence set](camp_triage_evidence_set.md)	 - Store an evidence record for a row
 * [camp triage evidence template](camp_triage_evidence_template.md)	 - Print an evidence record with the known facts filled in

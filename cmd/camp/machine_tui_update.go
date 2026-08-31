@@ -194,7 +194,7 @@ func (m *machineTUIModel) updateBrowse(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 func (m *machineTUIModel) openHopPicker() (tea.Model, tea.Cmd) {
 	row := m.selectedRow()
 	if row.Local {
-		m.setError(camperrors.New("local is this computer; use 'camp list' to open a campaign here"))
+		m.setError(camperrors.New("local is this computer; use 'camp list' to open a camp here"))
 		return m, nil
 	}
 	if !m.hopEnabled {

@@ -70,10 +70,10 @@ func newCommitsCommand() *cobra.Command {
 		Short: "List commits referencing a workitem",
 		Long: `List commits referencing this workitem, newest first.
 
-When the campaign event ledger already holds the workitem's commit evidence,
+When the camp event ledger already holds the workitem's commit evidence,
 the answer comes from a single merged ledger read (fast path). Otherwise it
-falls back to scanning the campaign root and every linked
-project/repo/worktree/festival repo for commits whose campaign tag references
+falls back to scanning the camp root and every linked
+project/repo/worktree/festival repo for commits whose camp tag references
 the workitem's ref (pre-ledger history).
 
 Use --json for structured output; the "source" field reports which path
@@ -132,7 +132,7 @@ type commitsFlags struct {
 func runCommitsQuery(ctx context.Context, cmd *cobra.Command, flags commitsFlags) error {
 	_, campaignRoot, err := config.LoadCampaignConfigFromCwd(ctx)
 	if err != nil {
-		return camperrors.Wrap(err, "not in a campaign directory")
+		return camperrors.Wrap(err, "not in a camp directory")
 	}
 
 	ref := flags.Ref
@@ -185,14 +185,14 @@ func runCommitsQuery(ctx context.Context, cmd *cobra.Command, flags commitsFlags
 		ledgerRecs, lerr := ledgerCommits(ctx, campaignRoot, aliases)
 		if requested == commitsSourceLedger {
 			if lerr != nil {
-				return camperrors.Wrap(lerr, "read campaign ledger")
+				return camperrors.Wrap(lerr, "read camp ledger")
 			}
 			records, answered = ledgerRecs, commitsSourceLedger
 		} else if lerr == nil && len(ledgerRecs) > 0 {
 			records, answered = ledgerRecs, commitsSourceLedger
 		} else if lerr != nil {
 			// Empty ledger → silent scan is fine; unreadable/corrupt is loud.
-			_, _ = fmt.Fprintf(cmd.ErrOrStderr(), "warning: campaign ledger unreadable (%v); falling back to scan\n", lerr)
+			_, _ = fmt.Fprintf(cmd.ErrOrStderr(), "warning: camp ledger unreadable (%v); falling back to scan\n", lerr)
 		}
 	}
 	if answered == commitsSourceScan && requested != commitsSourceLedger {

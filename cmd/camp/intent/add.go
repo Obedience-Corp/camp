@@ -69,7 +69,7 @@ Examples:
   camp idea add "Add dark mode"        Ultra-fast capture
   camp idea add -c obey-campaign "Add dark mode"
   camp idea add                        Fast TUI (3-step form)
-  camp idea add --campaign             Pick a target campaign interactively
+  camp idea add --campaign             Pick a target camp interactively
   camp idea add --full                 Full TUI (includes body)
   camp idea add --note                 Note TUI (title + body, no type/concept)
   camp idea add --note "Meeting note" --body "Follow up next week"
@@ -88,7 +88,7 @@ Examples:
 	flags.StringP("type", "t", "idea", "Type (idea, feature, bug, research, chore)")
 	flags.BoolP("edit", "e", false, "Open in $EDITOR for deep capture")
 	flags.Bool("full", false, "Full TUI mode with body textarea")
-	flags.StringP("campaign", "c", "", "Target campaign by name or ID; omit value to pick interactively")
+	flags.StringP("campaign", "c", "", "Target camp by name or ID; omit value to pick interactively")
 	flags.Bool("no-commit", false, "Don't create a git commit")
 	flags.Lookup("campaign").NoOptDefVal = noOptCampaign
 	flags.BoolVar(&jsonOut, "json", false, "emit a structured JSON result")
@@ -155,7 +155,7 @@ func runIntentAdd(cmd *cobra.Command, args []string) error {
 	}
 	campaignRoot, err = pathutil.ResolveRoot(campaignRoot)
 	if err != nil {
-		return camperrors.Wrap(err, "resolving campaign root")
+		return camperrors.Wrap(err, "resolving camp root")
 	}
 
 	// Create path resolver
@@ -372,7 +372,7 @@ func (r intentAddCampaignResolver) resolve(ctx context.Context, targetCampaign s
 	if !targetChanged {
 		cfg, campaignRoot, err := r.loadCurrent(ctx)
 		if err != nil {
-			return nil, "", camperrors.Wrap(err, "not in a campaign directory")
+			return nil, "", camperrors.Wrap(err, "not in a camp directory")
 		}
 		return cfg, campaignRoot, nil
 	}
@@ -382,13 +382,13 @@ func (r intentAddCampaignResolver) resolve(ctx context.Context, targetCampaign s
 		return nil, "", camperrors.Wrap(err, "load registry")
 	}
 	if reg.Len() == 0 {
-		return nil, "", camperrors.Wrap(camperrors.ErrNotInitialized, "no campaigns registered (use 'camp init' to create one)")
+		return nil, "", camperrors.Wrap(camperrors.ErrNotInitialized, "no camps registered (use 'camp init' to create one)")
 	}
 
 	var selected config.RegisteredCampaign
 	if targetCampaign == "" {
 		if !r.isInteractive() {
-			return nil, "", camperrors.Wrap(camperrors.ErrInvalidInput, "campaign name required in non-interactive mode (use 'camp idea add --campaign <name> [title]')")
+			return nil, "", camperrors.Wrap(camperrors.ErrInvalidInput, "camp name required in non-interactive mode (use 'camp idea add --campaign <name> [title]')")
 		}
 		selected, err = r.pickCampaign(ctx, reg)
 		if err != nil {
@@ -407,7 +407,7 @@ func (r intentAddCampaignResolver) resolve(ctx context.Context, targetCampaign s
 
 	cfg, err := r.loadCampaign(ctx, selected.Path)
 	if err != nil {
-		return nil, "", camperrors.Wrapf(err, "load target campaign %s", selected.Path)
+		return nil, "", camperrors.Wrapf(err, "load target camp %s", selected.Path)
 	}
 
 	return cfg, selected.Path, nil

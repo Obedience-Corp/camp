@@ -31,7 +31,7 @@ func DefaultWorkflowCategories() map[string]WorkflowCategoryConfig {
 	return map[string]WorkflowCategoryConfig{
 		WorkflowCategoryPlan:     {Label: "Plan", Description: "Planning, design, intents, festivals, and structured execution work"},
 		WorkflowCategoryResearch: {Label: "Research", Description: "Exploration, comparison, discovery, and investigation"},
-		WorkflowCategoryPipeline: {Label: "Pipeline", Description: "Structured campaign data movement, compilation, ingestion, or export"},
+		WorkflowCategoryPipeline: {Label: "Pipeline", Description: "Structured camp data movement, compilation, ingestion, or export"},
 		WorkflowCategoryReview:   {Label: "Review", Description: "Review-style work such as code reviews and quality passes"},
 	}
 }
