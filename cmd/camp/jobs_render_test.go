@@ -45,8 +45,22 @@ func TestRenderJobsHuman(t *testing.T) {
 			entries: []jobs.Entry{{
 				Job: running, State: "running", Lane: ".", RunningFor: 3 * time.Second,
 			}},
-			wantContains: []string{"running", "running 3s"},
+			wantContains: []string{"running", "running 3s", "CREATED", "AGE"},
 			wantOmits:    []string{"stalled"},
+		},
+		{
+			name: "created column shows the absolute enqueue time",
+			entries: []jobs.Entry{{
+				Job: jobs.Job{
+					ID: "job-created", Seq: 1, Kind: jobs.KindCommitTree,
+					CreatedAt: "2026-07-28T11:30:00.000Z",
+				},
+				State: "pending", Lane: ".",
+			}},
+			wantContains: []string{
+				"CREATED",
+				jobs.FormatCreated("2026-07-28T11:30:00.000Z"),
+			},
 		},
 		{
 			name: "a job past the writer budget is stalled, and says by how much",

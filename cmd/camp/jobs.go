@@ -36,7 +36,8 @@ normal use: workers start themselves, and every command that touches git
 history waits for the queue before it runs.
 
 Examples:
-  camp jobs                    # what is queued, running, or failed
+  camp jobs                    # interactive browser in a TTY; table otherwise
+  camp jobs --plain            # always print the table
   camp jobs --json             # the same, for scripts and agents
   camp jobs retry all          # requeue everything that failed
   camp jobs drop <id>          # give up on one job, keeping its content
@@ -117,9 +118,11 @@ they describe, so they are correct whenever they land.`,
 }
 
 var jobsOpts struct {
-	campaign string
-	json     bool
-	running  bool
+	campaign    string
+	json        bool
+	running     bool
+	plain       bool
+	interactive bool
 }
 
 func init() {
@@ -129,6 +132,10 @@ func init() {
 		"Campaign root to serve (defaults to the detected campaign)")
 	jobsCmd.Flags().BoolVar(&jobsOpts.json, "json", false,
 		"Emit a structured JSON result")
+	jobsCmd.Flags().BoolVar(&jobsOpts.plain, "plain", false,
+		"Print the table even when stdout is a terminal")
+	jobsCmd.Flags().BoolVarP(&jobsOpts.interactive, "interactive", "i", false,
+		"Open the interactive jobs browser (prints the table when stdout is not a terminal)")
 	jobsDropCmd.Flags().BoolVar(&jobsOpts.running, "running", false,
 		"Also drop running jobs, stopping the worker on each one's lane")
 
@@ -159,9 +166,13 @@ type jobJSON struct {
 	Lane     string `json:"lane"`
 	Kind     string `json:"kind"`
 	Class    string `json:"class"`
-	AgeMs    int64  `json:"age_ms"`
-	Attempts int    `json:"attempts"`
-	Stuck    bool   `json:"stuck"`
+	// CreatedAt is the enqueue timestamp from the job file (UTC, RFC3339 with
+	// millis). AgeMs is derived from it; keeping both means a consumer can
+	// show "when" without re-deriving from age_ms and wall clock.
+	CreatedAt string `json:"created_at"`
+	AgeMs     int64  `json:"age_ms"`
+	Attempts  int    `json:"attempts"`
+	Stuck     bool   `json:"stuck"`
 	// RunningMs is how long the current attempt has been running, zero when
 	// the job is not running. Age answers "how long ago was this asked for",
 	// which a backed-up queue can make large with nothing wrong; this answers
@@ -202,6 +213,9 @@ func runJobsList(cmd *cobra.Command, _ []string) error {
 	superseded := supersededIDs(ctx, campRoot, entries)
 	if jobsOpts.json {
 		return emitJobsJSON(cmd, campRoot, entries, superseded)
+	}
+	if jobsTUIRequested(cmd, stdoutIsTTY()) {
+		return runJobsTUI(cmd, campRoot, entries, superseded)
 	}
 	renderJobsHuman(cmd, entries, superseded)
 	return nil
@@ -249,6 +263,7 @@ func emitJobsJSON(cmd *cobra.Command, campRoot string, entries []jobs.Entry, sup
 			Lane:          e.Lane,
 			Kind:          string(e.Kind),
 			Class:         class,
+			CreatedAt:     e.CreatedAt,
 			AgeMs:         e.Age(now).Milliseconds(),
 			Attempts:      e.Attempts,
 			Stuck:         e.Stuck,
@@ -308,9 +323,10 @@ func renderJobsHuman(cmd *cobra.Command, entries []jobs.Entry, superseded map[st
 	var b strings.Builder
 	// The id column fits a real job id exactly ("job-" + a 16-char UTC stamp +
 	// "-" + 4 hex = 25), plus one space. A narrower column does not truncate,
-	// it just runs into the next one.
-	fmt.Fprintf(&b, "%-9s %-25s %-22s %-14s %6s  %s\n",
-		"STATE", "ID", "LANE", "KIND", "AGE", "WHAT")
+	// it just runs into the next one. CREATED is the absolute enqueue time
+	// (local, minute precision); AGE is how long ago that was.
+	fmt.Fprintf(&b, "%-9s %-25s %-22s %-14s %-16s %6s  %s\n",
+		"STATE", "ID", "LANE", "KIND", "CREATED", "AGE", "WHAT")
 	for _, e := range entries {
 		// One word for "this row is trouble". A running job whose lane has no
 		// worker and one whose writer stopped answering are different
@@ -320,9 +336,9 @@ func renderJobsHuman(cmd *cobra.Command, entries []jobs.Entry, superseded map[st
 		if e.Stalled {
 			state = "stalled"
 		}
-		fmt.Fprintf(&b, "%-9s %-25s %-22s %-14s %6s  %s\n",
-			state, e.ID, e.Lane, e.Kind, jobs.ShortDuration(e.Age(now)),
-			jobsWhat(e, superseded[e.ID]))
+		fmt.Fprintf(&b, "%-9s %-25s %-22s %-14s %-16s %6s  %s\n",
+			state, e.ID, e.Lane, e.Kind, jobs.FormatCreated(e.CreatedAt),
+			jobs.ShortDuration(e.Age(now)), jobsWhat(e, superseded[e.ID]))
 		// The failure reason gets a line of its own rather than a longer WHAT.
 		// The columns already reach past sixty characters, so a sentence
 		// appended to the last one wraps in the middle of itself; indented
@@ -333,23 +349,16 @@ func renderJobsHuman(cmd *cobra.Command, entries []jobs.Entry, superseded map[st
 		}
 	}
 	_, _ = fmt.Fprint(out, b.String())
+	writeJobsFooter(out, entries, superseded)
+}
 
-	// Every state that needs a decision names the command that makes it, so
-	// the listing is actionable rather than merely informative.
-	failed, noWorker, overBudget, stale := 0, 0, 0, 0
-	for _, e := range entries {
-		switch {
-		case e.State == "failed":
-			failed++
-			if superseded[e.ID] {
-				stale++
-			}
-		case e.Stuck:
-			noWorker++
-		case e.Stalled:
-			overBudget++
-		}
-	}
+// writeJobsFooter prints the actionable hints that follow a jobs listing.
+//
+// Every state that needs a decision names the command that makes it, so the
+// listing is actionable rather than merely informative. Shared by the plain
+// table and the TUI status hints so the wording cannot drift.
+func writeJobsFooter(out io.Writer, entries []jobs.Entry, superseded map[string]bool) {
+	failed, noWorker, overBudget, stale := jobsActionCounts(entries, superseded)
 	// The blank separator is its own Fprintln rather than a "\n" inside Dim,
 	// which would style the newline and emit a line of trailing spaces.
 	if failed > 0 {
@@ -397,6 +406,23 @@ func renderJobsHuman(cmd *cobra.Command, entries []jobs.Entry, superseded map[st
 		_, _ = fmt.Fprintln(out, ui.Dim(
 			"Dropping keeps the files on disk; your next commit picks them up."))
 	}
+}
+
+func jobsActionCounts(entries []jobs.Entry, superseded map[string]bool) (failed, noWorker, overBudget, stale int) {
+	for _, e := range entries {
+		switch {
+		case e.State == "failed":
+			failed++
+			if superseded[e.ID] {
+				stale++
+			}
+		case e.Stuck:
+			noWorker++
+		case e.Stalled:
+			overBudget++
+		}
+	}
+	return failed, noWorker, overBudget, stale
 }
 
 func runJobsRun(cmd *cobra.Command, _ []string) error {

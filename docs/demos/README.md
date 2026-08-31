@@ -31,6 +31,7 @@ recording is the stable command surface a reader can install. Pass
 | Machine dual-auth CLI | [machine-dual-auth.tape](machine-dual-auth.tape) | [machine-dual-auth.gif](machine-dual-auth.gif) | (WI-ca06e1 record-time proof; private gist optional) |
 | Project-aware worktree list | [worktree-list.tape](worktree-list.tape) | [worktree-list.gif](worktree-list.gif) | — |
 | Project list browser | [project-list.tape](project-list.tape) | [project-list.gif](project-list.gif) | — |
+| Deferred jobs browser | [jobs-tui.tape](jobs-tui.tape) | private gist | (PR evidence; fixture: `fixtures/jobs-tui-fixture.sh`) |
 | Tailscale SSH approval | [machine-tailscale-check.tape](machine-tailscale-check.tape) | private gist | (PR evidence bundle) |
 | Diagnose an unresolvable host | [machine-diagnose-dns.tape](machine-diagnose-dns.tape) | private gist | (PR evidence bundle) |
 | Hop survives a MagicDNS outage | [machine-hop-dns-fallback.tape](machine-hop-dns-fallback.tape) | private gist | (PR evidence bundle) |
@@ -74,6 +75,16 @@ It drives `camp workitem sweep --prompt` rather than `camp fresh`. Fresh's
 `completed_runs: prompt` calls the same `runSweepPrompt`, but the prompt is
 campaign-root work that runs after a project's git cycle, and the fixture
 campaign has no project submodules to cycle.
+
+`jobs-tui` needs a fixture that seeds failed deferred commits under a fake
+`HOME`, then the truecolor recorder:
+
+```sh
+just build-camp
+FIXTURE=$(mktemp -d)
+docs/demos/fixtures/jobs-tui-fixture.sh "$FIXTURE" ./bin/camp
+CAMP_VHS_ROOT=$FIXTURE just vhs record-color docs/demos/jobs-tui.tape
+```
 
 Machine fixture layout (disposable, no live tailnet):
 
