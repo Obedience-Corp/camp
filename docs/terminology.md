@@ -217,6 +217,13 @@ Historical parsing is permanent. Do not rewrite fixtures to new vocabulary.
   `cross-campaign`. These are addresses that agents and existing camps resolve
   by name; their prose and descriptions are presentation and do change.
 
+  One skill set, never two. Do not ship parallel camp-named copies or aliases
+  of campaign-named skill bundles. Every scaffolded or installed skill loads
+  into the user's agent context, so a duplicate set doubles the context cost
+  of the same knowledge. The single existing bundle keeps its frozen
+  directory name while its prose, descriptions, and trigger text adopt camp
+  vocabulary and note that "campaign" means the same thing.
+
 ### Things that must never happen
 
 - Do not rename or move `.campaign/`.
