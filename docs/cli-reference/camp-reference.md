@@ -3415,6 +3415,11 @@ traditional estimation models predict for the same team and time.
   FullLeverage   = (EstimatedPeople x EstimatedMonths) / (ActualPeople x ElapsedMonths)
   SimpleLeverage = EstimatedPeople / ActualPeople
 
+Leverage commands commit the data they write under .campaign/leverage so the
+score history stays versioned without extra steps. Nothing outside that
+directory is staged. Pass --no-commit to skip it once, or run
+'camp leverage config --autocommit=false' to turn it off for the campaign.
+
 Examples:
   camp leverage                              Show team leverage (auto-detect authors from git)
   camp leverage --author lance@example.com   Show personal leverage
@@ -3437,6 +3442,7 @@ camp leverage [directory] [flags]
       --dir string       score a specific directory (skips campaign project resolution)
   -h, --help             help for leverage
       --json             output as JSON
+      --no-commit        skip the automatic commit of .campaign/leverage data
       --no-legend        hide the leverage formula legend
       --people int       override team size (0 = auto-detect from git)
   -p, --project string   filter by project name
@@ -3479,6 +3485,7 @@ camp leverage backfill [flags]
 
 ```
   -h, --help             help for backfill
+      --no-commit        skip the automatic commit of .campaign/leverage data
   -p, --project string   backfill a single project
       --since string     start date (YYYY-MM-DD), overrides config project_start
   -w, --workers int      number of parallel workers (default 4)
@@ -3508,6 +3515,7 @@ Configuration parameters:
   --cocomo-type  COCOMO project type (organic, semi-detached, embedded)
   --exclude      Exclude a project from leverage scoring
   --include      Include a previously excluded project
+  --autocommit   Commit .campaign/leverage data automatically (default true)
 
 Examples:
   camp leverage config                         Show current config
@@ -3515,6 +3523,7 @@ Examples:
   camp leverage config --start 2025-01-01      Set project start date
   camp leverage config --exclude obey-daemon   Exclude a project
   camp leverage config --include obey-daemon   Re-include a project
+  camp leverage config --autocommit=false      Stop auto-committing leverage data
 
 ```
 camp leverage config [flags]
@@ -3524,10 +3533,12 @@ camp leverage config [flags]
 
 ```
       --author-email string   default author email for personal leverage (empty = team view)
+      --autocommit            commit .campaign/leverage data automatically after leverage commands (default true)
       --cocomo-type string    COCOMO project type (organic, semi-detached, embedded)
       --exclude string        exclude a project from leverage scoring
   -h, --help                  help for config
       --include string        include a previously excluded project
+      --no-commit             skip the automatic commit of .campaign/leverage data
       --people int            number of developers on the team (0 = auto-detect from git)
       --start string          project start date (YYYY-MM-DD)
 ```
@@ -3606,6 +3617,7 @@ camp leverage reset [flags]
 
 ```
   -h, --help             help for reset
+      --no-commit        skip the automatic commit of .campaign/leverage data
   -p, --project string   clear snapshots for a single project
 ```
 
@@ -3643,6 +3655,7 @@ camp leverage snapshot [flags]
 
 ```
   -h, --help             help for snapshot
+      --no-commit        skip the automatic commit of .campaign/leverage data
   -p, --project string   snapshot a specific project only
 ```
 

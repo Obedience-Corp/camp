@@ -29,6 +29,7 @@ Examples:
 
 func init() {
 	leverageResetCmd.Flags().StringP("project", "p", "", "clear snapshots for a single project")
+	addNoCommitFlag(leverageResetCmd)
 	Cmd.AddCommand(leverageResetCmd)
 }
 
@@ -80,19 +81,46 @@ func runLeverageReset(cmd *cobra.Command, args []string) error {
 		cleared = true
 	}
 
-	if !cleared {
-		fmt.Fprintln(cmd.OutOrStdout(), "No cached data to clear.")
-		return nil
-	}
-
-	if projectFilter != "" {
-		fmt.Fprintf(cmd.OutOrStdout(), "Cleared cached data for project %q.\n", projectFilter)
+	if cleared {
+		if projectFilter != "" {
+			_, _ = fmt.Fprintf(cmd.OutOrStdout(), "Cleared cached data for project %q.\n", projectFilter)
+		} else {
+			_, _ = fmt.Fprintln(cmd.OutOrStdout(), "Cleared all cached leverage data.")
+		}
+		_, _ = fmt.Fprintln(cmd.OutOrStdout(), "Run 'camp leverage backfill' to regenerate snapshots.")
 	} else {
-		fmt.Fprintln(cmd.OutOrStdout(), "Cleared all cached leverage data.")
+		_, _ = fmt.Fprintln(cmd.OutOrStdout(), "No cached data to clear.")
 	}
-	fmt.Fprintln(cmd.OutOrStdout(), "Run 'camp leverage backfill' to regenerate snapshots.")
 
+	// Committed even when nothing was cleared: setup writes config.json and
+	// authors.json on first run, and a file camp created is a file camp says
+	// something about. With nothing to record this is a silent no-op.
+	autocommitLeverageData(ctx, cmd, cmd.OutOrStdout(), autocommitInput{
+		root:    setup.Root,
+		cfg:     setup.Cfg,
+		subject: resetSubject(projectFilter),
+		report:  renderResetReport(projectFilter, cleared),
+	})
 	return nil
+}
+
+func resetSubject(projectFilter string) string {
+	if projectFilter != "" {
+		return "reset " + projectFilter
+	}
+	return "reset"
+}
+
+func renderResetReport(projectFilter string, cleared bool) string {
+	scope := "all projects"
+	if projectFilter != "" {
+		scope = "project " + projectFilter
+	}
+	if !cleared {
+		return "No cached leverage data to clear for " + scope + "."
+	}
+	return "Cleared cached leverage snapshots and blame data for " + scope + ".\n\n" +
+		"Run 'camp leverage backfill' to regenerate snapshots."
 }
 
 func dirExists(dir string) bool {

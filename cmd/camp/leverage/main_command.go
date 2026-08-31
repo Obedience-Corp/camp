@@ -29,6 +29,7 @@ func init() {
 	Cmd.Flags().String("author", "", "filter by author email (git substring match: 'alice@co' matches 'alice@co.com')")
 	Cmd.Flags().Bool("by-author", false, "show per-author leverage breakdown")
 	Cmd.Flags().String("dir", "", "score a specific directory (skips campaign project resolution)")
+	addNoCommitFlag(Cmd)
 	Cmd.SetFlagErrorFunc(jsoncontract.FlagErrorFunc(LeverageJSONVersion, func() bool { return leverageJSON }))
 }
 
@@ -187,10 +188,6 @@ func runLeverage(cmd *cobra.Command, args []string) error {
 	week7, has7 := intleverage.RecentLeverage(ctx, store, scores, effectivePeople, now.AddDate(0, 0, -7))
 	month30, has30 := intleverage.RecentLeverage(ctx, store, scores, effectivePeople, now.AddDate(0, 0, -30))
 
-	if leverageJSON {
-		return leverageOutputJSON(cmd, agg, scores)
-	}
-
 	recent := recentLeverage{
 		week7:         week7,
 		has7:          has7,
@@ -203,9 +200,23 @@ func runLeverage(cmd *cobra.Command, args []string) error {
 		authorExcluded: authorExcluded,
 	}
 
-	if byAuthor {
-		return leverageOutputByAuthor(cmd, ctx, agg, scores, scoredProjects, setup.Resolver, opts)
+	switch {
+	case leverageJSON:
+		err = leverageOutputJSON(cmd, agg, scores)
+	case byAuthor:
+		err = leverageOutputByAuthor(cmd, ctx, agg, scores, scoredProjects, setup.Resolver, opts)
+	default:
+		err = leverageOutputTable(cmd, agg, scores, cfg, setup.AutoDetected, recent, opts)
+	}
+	if err != nil {
+		return err
 	}
 
-	return leverageOutputTable(cmd, agg, scores, cfg, setup.AutoDetected, recent, opts)
+	autocommitLeverageData(ctx, cmd, autocommitWriter(cmd), autocommitInput{
+		root:    setup.Root,
+		cfg:     cfg,
+		subject: "update scores",
+		report:  renderScoreReport(agg, scores, cfg, opts),
+	})
+	return nil
 }

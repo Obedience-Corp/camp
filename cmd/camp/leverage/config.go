@@ -3,8 +3,10 @@ package leverage
 import (
 	"context"
 	"fmt"
+	"io"
 	"os"
 	"sort"
+	"strings"
 	"time"
 
 	"github.com/Obedience-Corp/camp/internal/campaign"
@@ -27,13 +29,15 @@ Configuration parameters:
   --cocomo-type  COCOMO project type (organic, semi-detached, embedded)
   --exclude      Exclude a project from leverage scoring
   --include      Include a previously excluded project
+  --autocommit   Commit .campaign/leverage data automatically (default true)
 
 Examples:
   camp leverage config                         Show current config
   camp leverage config --people 3              Set team size to 3
   camp leverage config --start 2025-01-01      Set project start date
   camp leverage config --exclude obey-daemon   Exclude a project
-  camp leverage config --include obey-daemon   Re-include a project`,
+  camp leverage config --include obey-daemon   Re-include a project
+  camp leverage config --autocommit=false      Stop auto-committing leverage data`,
 	RunE: runLeverageConfig,
 }
 
@@ -44,7 +48,44 @@ func init() {
 	leverageConfigCmd.Flags().String("exclude", "", "exclude a project from leverage scoring")
 	leverageConfigCmd.Flags().String("include", "", "include a previously excluded project")
 	leverageConfigCmd.Flags().String("author-email", "", "default author email for personal leverage (empty = team view)")
+	leverageConfigCmd.Flags().Bool("autocommit", true, "commit "+intleverage.DataDir+" data automatically after leverage commands")
+	addNoCommitFlag(leverageConfigCmd)
 	Cmd.AddCommand(leverageConfigCmd)
+}
+
+// configFlagChanges records which settings this invocation asked to change.
+type configFlagChanges struct {
+	people      bool
+	start       bool
+	cocomo      bool
+	authorEmail bool
+	autocommit  bool
+	exclude     bool
+	include     bool
+}
+
+func (c configFlagChanges) anySetting() bool {
+	return c.people || c.start || c.cocomo || c.authorEmail || c.autocommit
+}
+
+func (c configFlagChanges) anyInclusion() bool {
+	return c.exclude || c.include
+}
+
+func changedConfigFlags(cmd *cobra.Command) configFlagChanges {
+	changed := func(name string) bool {
+		flag := cmd.Flags().Lookup(name)
+		return flag != nil && flag.Changed
+	}
+	return configFlagChanges{
+		people:      changed("people"),
+		start:       changed("start"),
+		cocomo:      changed("cocomo-type"),
+		authorEmail: changed("author-email"),
+		autocommit:  changed("autocommit"),
+		exclude:     changed("exclude"),
+		include:     changed("include"),
+	}
 }
 
 func runLeverageConfig(cmd *cobra.Command, args []string) error {
@@ -56,24 +97,16 @@ func runLeverageConfig(cmd *cobra.Command, args []string) error {
 	}
 
 	configPath := intleverage.DefaultConfigPath(root)
+	changes := changedConfigFlags(cmd)
 
-	peopleFlag := cmd.Flags().Lookup("people")
-	startFlag := cmd.Flags().Lookup("start")
-	cocomoFlag := cmd.Flags().Lookup("cocomo-type")
-	excludeFlag := cmd.Flags().Lookup("exclude")
-	includeFlag := cmd.Flags().Lookup("include")
-	authorEmailFlag := cmd.Flags().Lookup("author-email")
-
-	hasUpdates := peopleFlag.Changed || startFlag.Changed || cocomoFlag.Changed || authorEmailFlag.Changed
-	hasProjectUpdate := excludeFlag.Changed || includeFlag.Changed
-
-	if hasProjectUpdate {
-		return updateProjectInclusion(cmd, ctx, root, configPath, excludeFlag.Changed, includeFlag.Changed)
-	}
-	if !hasUpdates {
+	switch {
+	case changes.anyInclusion():
+		return updateProjectInclusion(cmd, ctx, root, configPath, changes)
+	case changes.anySetting():
+		return updateLeverageConfig(cmd, ctx, root, configPath, changes)
+	default:
 		return displayLeverageConfig(cmd, ctx, root, configPath)
 	}
-	return updateLeverageConfig(cmd, configPath, peopleFlag.Changed, startFlag.Changed, cocomoFlag.Changed, authorEmailFlag.Changed)
 }
 
 func displayLeverageConfig(cmd *cobra.Command, ctx context.Context, root, configPath string) error {
@@ -106,6 +139,7 @@ func displayLeverageConfig(cmd *cobra.Command, ctx context.Context, root, config
 		if cfg.AuthorEmail != "" {
 			fmt.Fprintf(out, "Author Email:  %s (default --author)\n", cfg.AuthorEmail)
 		}
+		_, _ = fmt.Fprintf(out, "Autocommit:    %t\n", cfg.AutocommitEnabled())
 	} else {
 		var err error
 		cfg, err = intleverage.AutoDetectConfig(ctx, root)
@@ -166,7 +200,7 @@ func displayLeverageConfig(cmd *cobra.Command, ctx context.Context, root, config
 	return nil
 }
 
-func updateProjectInclusion(cmd *cobra.Command, ctx context.Context, root, configPath string, excludeChanged, includeChanged bool) error {
+func updateProjectInclusion(cmd *cobra.Command, ctx context.Context, root, configPath string, changes configFlagChanges) error {
 	out := cmd.OutOrStdout()
 
 	cfg, err := intleverage.LoadConfig(configPath)
@@ -180,37 +214,52 @@ func updateProjectInclusion(cmd *cobra.Command, ctx context.Context, root, confi
 		}
 	}
 
-	if excludeChanged {
+	var applied []string
+	if changes.exclude {
 		name, _ := cmd.Flags().GetString("exclude")
-		entry, exists := cfg.Projects[name]
-		if !exists {
-			return camperrors.Newf("project %q not found in config", name)
+		if err := setProjectInclusion(cfg, name, false); err != nil {
+			return err
 		}
-		entry.Include = false
-		cfg.Projects[name] = entry
-		fmt.Fprintf(out, "Excluded project: %s\n", name)
+		applied = append(applied, "Excluded project: "+name)
 	}
 
-	if includeChanged {
+	if changes.include {
 		name, _ := cmd.Flags().GetString("include")
-		entry, exists := cfg.Projects[name]
-		if !exists {
-			return camperrors.Newf("project %q not found in config", name)
+		if err := setProjectInclusion(cfg, name, true); err != nil {
+			return err
 		}
-		entry.Include = true
-		cfg.Projects[name] = entry
-		fmt.Fprintf(out, "Included project: %s\n", name)
+		applied = append(applied, "Included project: "+name)
 	}
 
 	if err := intleverage.SaveConfig(configPath, cfg); err != nil {
 		return camperrors.Wrap(err, "saving config")
 	}
 
+	for _, line := range applied {
+		_, _ = fmt.Fprintln(out, line)
+	}
 	fmt.Fprintf(out, "Saved to: %s\n", configPath)
+
+	autocommitLeverageData(ctx, cmd, out, autocommitInput{
+		root:    root,
+		cfg:     cfg,
+		subject: "config",
+		report:  renderConfigReport(applied),
+	})
 	return nil
 }
 
-func updateLeverageConfig(cmd *cobra.Command, configPath string, peopleChanged, startChanged, cocomoChanged, authorEmailChanged bool) error {
+func setProjectInclusion(cfg *intleverage.LeverageConfig, name string, include bool) error {
+	entry, exists := cfg.Projects[name]
+	if !exists {
+		return camperrors.Newf("project %q not found in config", name)
+	}
+	entry.Include = include
+	cfg.Projects[name] = entry
+	return nil
+}
+
+func updateLeverageConfig(cmd *cobra.Command, ctx context.Context, root, configPath string, changes configFlagChanges) error {
 	out := cmd.OutOrStdout()
 
 	cfg, err := intleverage.LoadConfig(configPath)
@@ -218,44 +267,78 @@ func updateLeverageConfig(cmd *cobra.Command, configPath string, peopleChanged, 
 		return camperrors.Wrap(err, "loading config")
 	}
 
-	if peopleChanged {
-		people, _ := cmd.Flags().GetInt("people")
-		if people < 0 {
-			return camperrors.Newf("people must be >= 0 (0 = auto-detect from git)")
-		}
-		cfg.ActualPeople = people
-	}
-
-	if authorEmailChanged {
-		email, _ := cmd.Flags().GetString("author-email")
-		cfg.AuthorEmail = email
-	}
-
-	if startChanged {
-		startStr, _ := cmd.Flags().GetString("start")
-		startDate, err := time.Parse("2006-01-02", startStr)
-		if err != nil {
-			return camperrors.Wrap(err, "invalid date format, use YYYY-MM-DD")
-		}
-		cfg.ProjectStart = startDate
-	}
-
-	if cocomoChanged {
-		cocomoType, _ := cmd.Flags().GetString("cocomo-type")
-		valid := map[string]bool{"organic": true, "semi-detached": true, "embedded": true}
-		if !valid[cocomoType] {
-			return camperrors.Newf("invalid COCOMO type %q: must be organic, semi-detached, or embedded", cocomoType)
-		}
-		cfg.COCOMOProjectType = cocomoType
+	applied, err := applyConfigChanges(cmd, cfg, changes)
+	if err != nil {
+		return err
 	}
 
 	if err := intleverage.SaveConfig(configPath, cfg); err != nil {
 		return camperrors.Wrap(err, "saving config")
 	}
 
-	fmt.Fprintln(out, "Configuration updated successfully")
-	fmt.Fprintf(out, "Saved to: %s\n", configPath)
-	fmt.Fprintln(out)
+	_, _ = fmt.Fprintln(out, "Configuration updated successfully")
+	_, _ = fmt.Fprintf(out, "Saved to: %s\n", configPath)
+	_, _ = fmt.Fprintln(out)
+	printConfigSummary(out, cfg)
+
+	autocommitLeverageData(ctx, cmd, out, autocommitInput{
+		root:               root,
+		cfg:                cfg,
+		subject:            "config",
+		report:             renderConfigReport(applied),
+		ignoreConfigOptOut: changes.autocommit,
+	})
+	return nil
+}
+
+func applyConfigChanges(cmd *cobra.Command, cfg *intleverage.LeverageConfig, changes configFlagChanges) ([]string, error) {
+	var applied []string
+
+	if changes.people {
+		people, _ := cmd.Flags().GetInt("people")
+		if people < 0 {
+			return nil, camperrors.Newf("people must be >= 0 (0 = auto-detect from git)")
+		}
+		cfg.ActualPeople = people
+		applied = append(applied, fmt.Sprintf("Team size: %d", people))
+	}
+
+	if changes.authorEmail {
+		email, _ := cmd.Flags().GetString("author-email")
+		cfg.AuthorEmail = email
+		applied = append(applied, "Author email: "+orNone(email))
+	}
+
+	if changes.start {
+		startStr, _ := cmd.Flags().GetString("start")
+		startDate, err := time.Parse("2006-01-02", startStr)
+		if err != nil {
+			return nil, camperrors.Wrap(err, "invalid date format, use YYYY-MM-DD")
+		}
+		cfg.ProjectStart = startDate
+		applied = append(applied, "Project start: "+startDate.Format("2006-01-02"))
+	}
+
+	if changes.cocomo {
+		cocomoType, _ := cmd.Flags().GetString("cocomo-type")
+		valid := map[string]bool{"organic": true, "semi-detached": true, "embedded": true}
+		if !valid[cocomoType] {
+			return nil, camperrors.Newf("invalid COCOMO type %q: must be organic, semi-detached, or embedded", cocomoType)
+		}
+		cfg.COCOMOProjectType = cocomoType
+		applied = append(applied, "COCOMO type: "+cocomoType)
+	}
+
+	if changes.autocommit {
+		enabled, _ := cmd.Flags().GetBool("autocommit")
+		cfg.Autocommit = &enabled
+		applied = append(applied, fmt.Sprintf("Autocommit: %t", enabled))
+	}
+
+	return applied, nil
+}
+
+func printConfigSummary(out io.Writer, cfg *intleverage.LeverageConfig) {
 	if cfg.ActualPeople == 0 {
 		fmt.Fprintln(out, "Team Size:     auto-detect from git")
 	} else {
@@ -266,6 +349,19 @@ func updateLeverageConfig(cmd *cobra.Command, configPath string, peopleChanged, 
 	if cfg.AuthorEmail != "" {
 		fmt.Fprintf(out, "Author Email:  %s\n", cfg.AuthorEmail)
 	}
+	_, _ = fmt.Fprintf(out, "Autocommit:    %t\n", cfg.AutocommitEnabled())
+}
 
-	return nil
+func renderConfigReport(applied []string) string {
+	if len(applied) == 0 {
+		return "Updated leverage configuration."
+	}
+	return "Updated leverage configuration:\n\n" + strings.Join(applied, "\n")
+}
+
+func orNone(s string) string {
+	if s == "" {
+		return "(none)"
+	}
+	return s
 }

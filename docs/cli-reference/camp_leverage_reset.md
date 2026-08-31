@@ -22,6 +22,7 @@ camp leverage reset [flags]
 
 ```
   -h, --help             help for reset
+      --no-commit        skip the automatic commit of .campaign/leverage data
   -p, --project string   clear snapshots for a single project
 ```
 

@@ -16,6 +16,11 @@ traditional estimation models predict for the same team and time.
   FullLeverage   = (EstimatedPeople x EstimatedMonths) / (ActualPeople x ElapsedMonths)
   SimpleLeverage = EstimatedPeople / ActualPeople
 
+Leverage commands commit the data they write under .campaign/leverage so the
+score history stays versioned without extra steps. Nothing outside that
+directory is staged. Pass --no-commit to skip it once, or run
+'camp leverage config --autocommit=false' to turn it off for the campaign.
+
 Examples:
   camp leverage                              Show team leverage (auto-detect authors from git)
   camp leverage --author lance@example.com   Show personal leverage

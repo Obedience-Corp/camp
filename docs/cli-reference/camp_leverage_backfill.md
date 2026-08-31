@@ -27,6 +27,7 @@ camp leverage backfill [flags]
 
 ```
   -h, --help             help for backfill
+      --no-commit        skip the automatic commit of .campaign/leverage data
   -p, --project string   backfill a single project
       --since string     start date (YYYY-MM-DD), overrides config project_start
   -w, --workers int      number of parallel workers (default 4)

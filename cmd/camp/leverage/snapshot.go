@@ -2,6 +2,7 @@ package leverage
 
 import (
 	"fmt"
+	"strings"
 	"time"
 
 	camperrors "github.com/Obedience-Corp/camp/internal/errors"
@@ -29,6 +30,7 @@ Examples:
 
 func init() {
 	leverageSnapshotCmd.Flags().StringP("project", "p", "", "snapshot a specific project only")
+	addNoCommitFlag(leverageSnapshotCmd)
 	Cmd.AddCommand(leverageSnapshotCmd)
 }
 
@@ -58,6 +60,7 @@ func runLeverageSnapshot(cmd *cobra.Command, args []string) error {
 	runPopulateMetrics(ctx, setup.Root, resolved, setup.Resolver, false)
 
 	var count int
+	var saved []*intleverage.LeverageScore
 	for _, proj := range resolved {
 		if err := ctx.Err(); err != nil {
 			return err
@@ -103,6 +106,7 @@ func runLeverageSnapshot(cmd *cobra.Command, args []string) error {
 			return camperrors.Wrapf(err, "saving snapshot for %s", proj.Name)
 		}
 		count++
+		saved = append(saved, score)
 	}
 
 	if projectFilter != "" && count == 0 {
@@ -110,5 +114,29 @@ func runLeverageSnapshot(cmd *cobra.Command, args []string) error {
 	}
 
 	fmt.Fprintf(cmd.OutOrStdout(), "Saved %d snapshots to .campaign/leverage/snapshots/\n", count)
+
+	autocommitLeverageData(ctx, cmd, cmd.OutOrStdout(), autocommitInput{
+		root:    setup.Root,
+		cfg:     cfg,
+		subject: snapshotSubject(projectFilter),
+		report:  renderSnapshotReport(count, saved),
+	})
 	return nil
+}
+
+func snapshotSubject(projectFilter string) string {
+	if projectFilter != "" {
+		return "snapshot " + projectFilter
+	}
+	return "snapshot"
+}
+
+func renderSnapshotReport(count int, scores []*intleverage.LeverageScore) string {
+	header := fmt.Sprintf("Saved %d %s to %s/snapshots/",
+		count, pluralize(count, "snapshot", "snapshots"), intleverage.DataDir)
+	table := strings.TrimRight(renderPlainTable(scoreTableHeaders, buildScoreRows(scores)), "\n")
+	if table == "" {
+		return header
+	}
+	return header + "\n\n" + table
 }

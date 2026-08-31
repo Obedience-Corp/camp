@@ -167,6 +167,11 @@ type LeverageConfig struct {
 	// When set, `camp leverage` defaults to personal leverage view.
 	AuthorEmail string `json:"author_email,omitempty"`
 
+	// Autocommit controls whether leverage commands commit the files they
+	// write under .campaign/leverage. Unset means enabled; see
+	// LeverageConfig.AutocommitEnabled.
+	Autocommit *bool `json:"autocommit,omitempty"`
+
 	// Projects maps project names to their configuration entries.
 	// When non-empty, replaces the default project.List() discovery.
 	// When empty or nil, falls back to project.List() for backward compatibility.

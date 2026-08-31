@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"os"
 	"os/signal"
+	"strings"
 	"time"
 
 	camperrors "github.com/Obedience-Corp/camp/internal/errors"
@@ -35,6 +36,7 @@ func init() {
 	leverageBackfillCmd.Flags().StringP("project", "p", "", "backfill a single project")
 	leverageBackfillCmd.Flags().IntP("workers", "w", 4, "number of parallel workers")
 	leverageBackfillCmd.Flags().String("since", "", "start date (YYYY-MM-DD), overrides config project_start")
+	addNoCommitFlag(leverageBackfillCmd)
 	Cmd.AddCommand(leverageBackfillCmd)
 }
 
@@ -98,5 +100,34 @@ func runLeverageBackfill(cmd *cobra.Command, args []string) error {
 
 	elapsed := time.Since(start)
 	fmt.Fprintf(cmd.OutOrStdout(), "Done. Backfill completed in %s.\n", elapsed.Round(time.Second))
+
+	autocommitLeverageData(ctx, cmd, cmd.OutOrStdout(), autocommitInput{
+		root:    setup.Root,
+		cfg:     cfg,
+		subject: backfillSubject(projectFilter),
+		report:  renderBackfillReport(resolved, cfg),
+	})
 	return nil
+}
+
+func backfillSubject(projectFilter string) string {
+	if projectFilter != "" {
+		return "backfill " + projectFilter
+	}
+	return "backfill"
+}
+
+func renderBackfillReport(resolved []intleverage.ResolvedProject, cfg *intleverage.LeverageConfig) string {
+	lines := []string{
+		"Reconstructed historical leverage snapshots from git history.",
+		"",
+	}
+	if !cfg.ProjectStart.IsZero() {
+		lines = append(lines, "Since: "+cfg.ProjectStart.Format("2006-01-02"))
+	}
+	lines = append(lines, fmt.Sprintf("Projects (%d):", len(resolved)))
+	for _, proj := range resolved {
+		lines = append(lines, "  "+proj.Name)
+	}
+	return strings.Join(lines, "\n")
 }

@@ -54,7 +54,7 @@ func leverageOutputTable(cmd *cobra.Command, agg *intleverage.LeverageScore, sco
 	}
 
 	headerStyle := lipgloss.NewStyle().Bold(true).Foreground(ui.CategoryColor)
-	headers := []string{"PROJECT", "FILES", "CODE", "AUTHORS", "EST COST", "EST PM", "ACTUAL PM", "LEVERAGE"}
+	headers := scoreTableHeaders
 	rows := buildScoreRows(scores)
 
 	t := table.New().
