@@ -80,7 +80,7 @@ camp refs-sync projects/camp
 
 ```bash
 camp project list [--format table|simple|json]
-camp project new <name> [--no-commit]          # scaffold new submodule
+camp project new <name>                        # scaffold new submodule (always auto-commits)
 camp project rename <current> <new> [--remote-url <url>]
 camp project run -p <name> -- <command>        # run command inside a project
 camp project prune [<name>] [--dry-run] [--remote] [--remote-delete]

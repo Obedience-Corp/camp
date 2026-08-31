@@ -8,6 +8,7 @@ Add a git repository as a project in the campaign.
 
 The project is cloned as a git submodule into the projects/ directory.
 A worktree directory is also created for future parallel development.
+The campaign commit is always created so .gitmodules and the submodule pointer land together.
 
 If you're already inside a campaign, that campaign is used by default.
 Outside a campaign, use --campaign <name-or-id> or a bare --campaign to
@@ -36,7 +37,6 @@ camp project add [source] [flags]
   -h, --help              help for add
   -l, --local string      Add existing local repository instead of cloning
   -n, --name string       Override project name (defaults to repo name)
-      --no-commit         Skip automatic git commit
   -p, --path string       Override destination path (defaults to projects/<name>)
 ```
 
