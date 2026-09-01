@@ -38,7 +38,7 @@ func TestAttachmentPin_HappyPath(t *testing.T) {
 
 	output, err := tc.RunCampInDir(campaignPath, "attach", symlinkPath)
 	require.NoError(t, err, "camp attach should succeed: %s", output)
-	assert.Contains(t, output, "Attached to campaign:")
+	assert.Contains(t, output, "Attached to camp:")
 	assert.Contains(t, output, "followed symlink")
 	assert.Contains(t, output, "added .camp to .git/info/exclude")
 

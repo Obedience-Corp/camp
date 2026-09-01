@@ -339,7 +339,7 @@ func (c *Cloner) Clone(ctx context.Context) (*CloneResult, error) {
 		regResult := c.registerCampaign(ctx, targetDir)
 		result.Registration = regResult
 		if regResult != nil && regResult.Registered {
-			c.progress.Message(fmt.Sprintf("Registered campaign: %s", regResult.CampaignName))
+			c.progress.Message(fmt.Sprintf("Registered camp: %s", regResult.CampaignName))
 		} else if regResult != nil && regResult.Error != nil {
 			result.Warnings = append(result.Warnings,
 				fmt.Sprintf("auto-registration: %v", regResult.Error))

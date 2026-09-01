@@ -139,7 +139,7 @@ Examples:
 }
 
 func printAttachResult(r *attach.Result, campaignName string) {
-	fmt.Printf("%s %s\n", ui.SuccessIcon(), ui.Success("Attached to campaign: "+campaignName))
+	fmt.Printf("%s %s\n", ui.SuccessIcon(), ui.Success("Attached to camp: "+campaignName))
 	fmt.Println()
 	fmt.Println(ui.KeyValue("  Target:", r.Target))
 	if r.FollowedSymlink {

@@ -71,7 +71,7 @@ func staticEntries() ([]SettingEntry, error) {
 		{
 			ID:     "local_settings",
 			Title:  "Local settings",
-			Desc:   "Per-campaign preferences for this workspace.",
+			Desc:   "Per-camp preferences for this workspace.",
 			Scope:  ScopeLocal,
 			Path:   ".campaign/settings/local.json",
 			Format: FormatJSON,

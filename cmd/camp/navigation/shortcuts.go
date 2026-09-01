@@ -558,7 +558,7 @@ func runShortcutsDiff(cmd *cobra.Command, _ []string) error {
 
 	cfg, _, err := config.LoadCampaignConfigFromCwd(ctx)
 	if err != nil {
-		return camperrors.Newf("not in a campaign: %w", err)
+		return camperrors.Newf("not in a camp: %w", err)
 	}
 
 	current := cfg.Shortcuts()
@@ -634,7 +634,7 @@ func runShortcutsReset(cmd *cobra.Command, _ []string) error {
 
 	_, root, err := config.LoadCampaignConfigFromCwd(ctx)
 	if err != nil {
-		return camperrors.Newf("not in a campaign: %w", err)
+		return camperrors.Newf("not in a camp: %w", err)
 	}
 
 	plan, err := shortcuts.PrepareReset(ctx, root)

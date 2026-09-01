@@ -104,7 +104,7 @@ func currentCampaignID(ctx context.Context) (string, error) {
 	root, err := campaign.DetectCached(ctx)
 	if err != nil {
 		return "", camperrors.NewValidation("camp",
-			"not inside a camp; name a campaign: camp org create <org> <camp>", err)
+			"not inside a camp; name a camp: camp org create <org> <camp>", err)
 	}
 	cfg, err := config.LoadCampaignConfig(ctx, root)
 	if err != nil {
@@ -117,7 +117,7 @@ func currentCampaignID(ctx context.Context) (string, error) {
 	c, ok := reg.GetByID(cfg.ID)
 	if !ok {
 		return "", camperrors.NewValidation("camp",
-			"current camp is not registered; name a campaign: camp org create <org> <camp>", nil)
+			"current camp is not registered; name a camp: camp org create <org> <camp>", nil)
 	}
 	return c.ID, nil
 }
