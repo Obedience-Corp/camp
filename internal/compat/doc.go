@@ -9,4 +9,8 @@
 //
 // A failure in this package means a presentation change reached a contract. The
 // fix is to revert the rename, not to update the expectation.
+//
+// Nothing here writes to the filesystem it runs on. The half of the baseline
+// that needs a real workspace runs against the binary in
+// tests/integration/compat_oldstate_test.go.
 package compat

@@ -1,8 +1,6 @@
 package compat
 
 import (
-	"os"
-	"path/filepath"
 	"testing"
 
 	"github.com/Obedience-Corp/camp/internal/campaign"
@@ -49,10 +47,7 @@ func TestOldStateLinkMarkersResolve(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			dir := t.TempDir()
-			writeFile(t, filepath.Join(dir, ".camp"), oldStateFixture(t, tt.fixture))
-
-			marker, err := campaign.ReadMarker(dir)
+			marker, err := campaign.ReadMarkerFile(oldStateFixturePath(t, tt.fixture))
 			if err != nil {
 				t.Fatalf("reading %s: %v", tt.fixture, err)
 			}
@@ -79,10 +74,7 @@ func TestOldStateLinkMarkersResolve(t *testing.T) {
 // specifically, because they are the ones a rename pass would treat as dead
 // weight. They are the only binding a v1 marker carries.
 func TestOldStateLinkMarkerLegacyFieldsSurviveRead(t *testing.T) {
-	dir := t.TempDir()
-	writeFile(t, filepath.Join(dir, ".camp"), oldStateFixture(t, "camp-marker-v1.json"))
-
-	marker, err := campaign.ReadMarker(dir)
+	marker, err := campaign.ReadMarkerFile(oldStateFixturePath(t, "camp-marker-v1.json"))
 	if err != nil {
 		t.Fatalf("reading v1 marker: %v", err)
 	}
@@ -100,25 +92,18 @@ func TestOldStateLinkMarkerLegacyFieldsSurviveRead(t *testing.T) {
 // TestLinkMarkerWrittenKeysAreFrozen pins the keys camp writes today. The
 // Festival app and the obey daemon read this file, so its key names are a wire
 // format even though it lives on local disk.
+//
+// No command writes project_name any more, so serialization is the only place
+// left that can pin it.
 func TestLinkMarkerWrittenKeysAreFrozen(t *testing.T) {
-	dir := t.TempDir()
-	err := campaign.WriteMarker(dir, campaign.LinkMarker{
+	got := mustJSON(t, campaign.LinkMarker{
+		Version:          campaign.LinkMarkerVersion,
 		Kind:             campaign.KindAttachment,
 		ActiveCampaignID: legacyCampaignID,
 		CampaignIDs:      []string{secondCampaignID},
 		ProjectName:      "guild-core",
 	})
-	if err != nil {
-		t.Fatalf("writing marker: %v", err)
-	}
 
-	data, err := os.ReadFile(filepath.Join(dir, ".camp"))
-	if err != nil {
-		t.Fatalf("reading written marker: %v", err)
-	}
-
-	var got map[string]any
-	decodeJSON(t, data, &got)
 	for _, key := range []string{"version", "kind", "active_campaign_id", "campaign_ids", "project_name"} {
 		if _, ok := got[key]; !ok {
 			t.Errorf(".camp marker lost the %q key", key)

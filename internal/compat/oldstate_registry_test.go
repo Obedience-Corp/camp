@@ -1,8 +1,6 @@
 package compat
 
 import (
-	"os"
-	"path/filepath"
 	"sort"
 	"strings"
 	"testing"
@@ -17,12 +15,11 @@ const (
 	secondCampaignID = "8deed8b4-0000-4000-8000-0000000000bb"
 )
 
-// stageRegistry points camp's registry resolution at a fixture copy and returns
-// its path. It uses CAMP_REGISTRY_PATH, itself a frozen name.
-func stageRegistry(t *testing.T, fixture string) string {
+// useRegistryFixture points CAMP_REGISTRY_PATH, itself a frozen name, at a
+// fixture in place. Loading never writes, so it needs no copy.
+func useRegistryFixture(t *testing.T, fixture string) string {
 	t.Helper()
-	path := filepath.Join(t.TempDir(), "registry.json")
-	writeFile(t, path, oldStateFixture(t, fixture))
+	path := oldStateFixturePath(t, fixture)
 	t.Setenv("CAMP_REGISTRY_PATH", path)
 	return path
 }
@@ -31,7 +28,7 @@ func stageRegistry(t *testing.T, fixture string) string {
 // and status existed. Those campaigns must come back usable, with the defaults
 // synthesized rather than the entries dropped.
 func TestOldStateRegistryPreOrgLoads(t *testing.T) {
-	stageRegistry(t, "registry-preorg.json")
+	useRegistryFixture(t, "registry-preorg.json")
 
 	reg, err := config.LoadRegistry(requireContext(t))
 	if err != nil {
@@ -62,7 +59,7 @@ func TestOldStateRegistryPreOrgLoads(t *testing.T) {
 // TestOldStateRegistryV3Loads pins the shipped registry format, including the
 // fields a lookup by name, org, or path depends on.
 func TestOldStateRegistryV3Loads(t *testing.T) {
-	stageRegistry(t, "registry-v3.json")
+	useRegistryFixture(t, "registry-v3.json")
 
 	reg, err := config.LoadRegistry(requireContext(t))
 	if err != nil {
@@ -133,15 +130,7 @@ func TestRegistryJSONKeysAreFrozen(t *testing.T) {
 // TestOldStateGlobalConfigLoads pins ~/.obey/campaign/config.json, whose
 // campaigns_dir key decides where `camp create` puts a new workspace.
 func TestOldStateGlobalConfigLoads(t *testing.T) {
-	home := t.TempDir()
-	t.Setenv("HOME", home)
-	t.Setenv("XDG_CONFIG_HOME", "")
-
-	dir := filepath.Join(home, ".obey", "campaign")
-	if err := os.MkdirAll(dir, 0o755); err != nil {
-		t.Fatalf("creating config dir: %v", err)
-	}
-	writeFile(t, filepath.Join(dir, "config.json"), oldStateFixture(t, "config.json"))
+	t.Setenv("XDG_CONFIG_HOME", oldStateFixturePath(t, "xdg"))
 
 	cfg, err := config.LoadGlobalConfig(requireContext(t))
 	if err != nil {
@@ -172,7 +161,7 @@ func TestOldStateGlobalConfigLoads(t *testing.T) {
 // rename cannot quietly orphan a user's existing preferences.
 func TestGlobalConfigJSONKeysAreFrozen(t *testing.T) {
 	var cfg config.GlobalConfig
-	decodeJSON(t, oldStateFixture(t, "config.json"), &cfg)
+	decodeJSON(t, oldStateFixture(t, globalConfigFixture), &cfg)
 
 	got := mustJSON(t, cfg)
 	for _, key := range []string{
