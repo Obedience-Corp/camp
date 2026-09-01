@@ -1,16 +1,16 @@
 ## camp copy
 
-Copy a file or directory within the campaign
+Copy a file or directory within the camp
 
 ### Synopsis
 
-Copy a file or directory within the current campaign.
+Copy a file or directory within the current camp.
 
 Paths are resolved relative to the current directory, matching standard
 'cp' behavior and tab completion.
 
-Use @ prefix for campaign shortcuts (e.g., @p/fest, @f/active/).
-Available shortcuts are defined in campaign config.
+Use @ prefix for camp shortcuts (e.g., @p/fest, @f/active/).
+Available shortcuts are defined in camp config.
 
 If the destination is an existing directory or ends with '/', the source
 is placed inside it with the same basename. Directories are copied
@@ -43,4 +43,4 @@ camp copy <src> <dest> [flags]
 
 ### SEE ALSO
 
-* [camp](camp.md)	 - Campaign management CLI for multi-project AI workspaces
+* [camp](camp.md)	 - Manage your camps and the projects and festivals inside them

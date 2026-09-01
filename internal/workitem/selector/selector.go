@@ -114,7 +114,7 @@ func Resolve(ctx context.Context, root string, query string, opts ResolveOptions
 func discover(ctx context.Context, root string) ([]workitem.WorkItem, error) {
 	cfg, err := config.LoadCampaignConfig(ctx, root)
 	if err != nil {
-		return nil, camperrors.Wrap(err, "load campaign config")
+		return nil, camperrors.Wrap(err, "load camp config")
 	}
 	resolver := paths.NewResolverFromConfig(root, cfg)
 	return workitem.Discover(ctx, root, resolver)

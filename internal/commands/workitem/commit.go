@@ -50,7 +50,7 @@ func newCommitCommand() *cobra.Command {
 The staging plan is computed from the resolver context (cwd-aware, with
 explicit positional <selector> or --project overrides) and printed to stderr
 before the commit runs. The plan never silently widens to "git add ." at the
-campaign root.
+camp root.
 
 See docs/workitem-commit-reference.md for the staging matrix and flag
 precedence.`,
@@ -113,7 +113,7 @@ func runCommit(ctx context.Context, cmd *cobra.Command, flags commitFlags) error
 
 	cfg, campaignRoot, err := config.LoadCampaignConfigFromCwd(ctx)
 	if err != nil {
-		return camperrors.Wrap(err, "not in a campaign directory")
+		return camperrors.Wrap(err, "not in a camp directory")
 	}
 
 	plan, err := ComputePlan(ctx, campaignRoot, PlanOptions{

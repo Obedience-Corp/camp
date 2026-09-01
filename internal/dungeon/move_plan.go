@@ -111,7 +111,7 @@ func (s *Service) PlanMoveToDungeon(ctx context.Context, itemName, parentPath st
 
 	targetPath := filepath.Join(s.dungeonPath, itemName)
 	if err := pathutil.ValidateBoundary(s.campaignRoot, targetPath); err != nil {
-		return nil, camperrors.Wrap(ErrNotInDungeon, "target outside campaign root")
+		return nil, camperrors.Wrap(ErrNotInDungeon, "target outside camp root")
 	}
 	if _, err := os.Stat(s.dungeonPath); err != nil {
 		return nil, camperrors.Wrap(err, "dungeon directory does not exist")
@@ -149,7 +149,7 @@ func (s *Service) PlanMoveToDungeonStatus(ctx context.Context, itemName, parentP
 
 	sourcePath := filepath.Join(parentPath, itemName)
 	if err := pathutil.ValidateBoundary(s.campaignRoot, sourcePath); err != nil {
-		return nil, camperrors.Wrap(ErrNotInDungeon, "source outside campaign root")
+		return nil, camperrors.Wrap(ErrNotInDungeon, "source outside camp root")
 	}
 
 	mp := &MovePlan{

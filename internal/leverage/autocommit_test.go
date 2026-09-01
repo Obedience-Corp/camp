@@ -41,7 +41,7 @@ func TestAutocommit_SkipsAndFailures(t *testing.T) {
 			name:       "no campaign root",
 			root:       func(*testing.T) string { return "" },
 			wantStatus: CommitSkipped,
-			wantReason: "no campaign root",
+			wantReason: "no camp root",
 		},
 		{
 			name:       "campaign root is not a git repo",

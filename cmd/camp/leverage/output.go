@@ -100,7 +100,7 @@ func leverageOutputTable(cmd *cobra.Command, agg *intleverage.LeverageScore, sco
 			authorInfo = fmt.Sprintf("  %s", ui.Dim(fmt.Sprintf("(%d %s detected)",
 				agg.AuthorCount, pluralize(agg.AuthorCount, "author", "authors"))))
 		}
-		label := "Campaign Leverage:"
+		label := "Camp Leverage:"
 		if opts.directoryMode {
 			label = fmt.Sprintf("Directory Leverage (%s):", opts.directoryName)
 		}
@@ -251,7 +251,7 @@ func leverageOutputByAuthor(cmd *cobra.Command, ctx context.Context, agg *intlev
 		})
 	}
 
-	label := "Campaign Leverage:"
+	label := "Camp Leverage:"
 	if opts.directoryMode {
 		label = fmt.Sprintf("Directory Leverage (%s):", opts.directoryName)
 	}

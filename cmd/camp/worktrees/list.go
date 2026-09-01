@@ -37,8 +37,8 @@ var (
 
 var worktreesListCmd = &cobra.Command{
 	Use:   "list",
-	Short: "List worktrees for the current project or campaign",
-	Long: `List worktrees in the campaign, organized by project.
+	Short: "List worktrees for the current project or camp",
+	Long: `List worktrees in the camp, organized by project.
 
 When run from a project checkout or one of its git worktrees, only that
 project's worktrees are shown. Outside a project context, all worktrees are
@@ -48,7 +48,7 @@ Examples:
   # List worktrees for the current project
   camp worktrees list
 
-  # List all worktrees from the campaign root
+  # List all worktrees from the camp root
   cd /path/to/campaign && camp worktrees list
 
   # Filter from outside a project
@@ -102,7 +102,7 @@ func runWorktreesList(cmd *cobra.Command, args []string) error {
 
 	campRoot, err := campaign.DetectCached(ctx)
 	if err != nil {
-		return camperrors.Wrap(err, "not in a campaign")
+		return camperrors.Wrap(err, "not in a camp")
 	}
 
 	// In a terminal, a bare `camp worktrees list` opens the interactive browser

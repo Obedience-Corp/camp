@@ -20,4 +20,4 @@ camp notify list [flags]
 
 ### SEE ALSO
 
-* [camp notify](camp_notify.md)	 - Manage campaign state notices
+* [camp notify](camp_notify.md)	 - Manage camp state notices

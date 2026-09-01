@@ -23,7 +23,7 @@ func newAllCommand(freshCmd *cobra.Command) *cobra.Command {
 		Use:   "all",
 		Short: "Run fresh across all project submodules",
 		Long: `Run the fresh cycle (fetch and safely sync default, prune, optional branch)
-across every project submodule in the campaign.
+across every project submodule in the camp.
 
 Examples:
   camp fresh all                     # Sync all projects
@@ -35,7 +35,7 @@ Examples:
 
 			campRoot, err := campaign.DetectCached(ctx)
 			if err != nil {
-				return camperrors.Wrap(err, "not in a campaign")
+				return camperrors.Wrap(err, "not in a camp")
 			}
 
 			paths, err := git.ListSubmodulePathsRecursive(ctx, campRoot, "projects/")
@@ -44,7 +44,7 @@ Examples:
 			}
 
 			if len(paths) == 0 {
-				fmt.Println(ui.Info("No submodules found in this campaign"))
+				fmt.Println(ui.Info("No submodules found in this camp"))
 				return nil
 			}
 

@@ -161,7 +161,7 @@ func runWorkitemPromote(cmd *cobra.Command, opts runWorkitemPromoteOptions) (*wo
 
 	cfg, root, err := config.LoadCampaignConfigFromCwd(ctx)
 	if err != nil {
-		return nil, camperrors.Wrap(err, "not in a campaign directory")
+		return nil, camperrors.Wrap(err, "not in a camp directory")
 	}
 
 	loc, err := resolveWorkitem(ctx, root, opts.ID)

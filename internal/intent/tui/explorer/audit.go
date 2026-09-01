@@ -187,7 +187,7 @@ func (m *Model) autoCommitIntent(action commit.IntentAction, title, description 
 		slog.WarnContext(ctx, "intent auto-commit skipped",
 			"action", action,
 			"intent", title,
-			"reason", "missing campaign context: campaignRoot or campaignID is empty",
+			"reason", "missing camp context: campaignRoot or campaignID is empty",
 		)
 		return
 	}

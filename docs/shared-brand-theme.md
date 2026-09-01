@@ -13,7 +13,7 @@ adaptive background when it is explicitly available; an unknown background
 keeps the shared dark default so startup never performs a blocking terminal
 query. Reduced-motion policy remains owned by the shared capabilities API.
 
-Campaign, intent, and workflow categories are intentional local composition of
+Camp, intent, and workflow categories are intentional local composition of
 shared roles (`Accent`, `AccentHighlight`, `StatusWarning`, `StatusSuccess`,
 `AccentSubtle`, and `TextMuted`); they do not define another color table. The
 few black foregrounds used on highlighted accent backgrounds are deliberate

@@ -78,7 +78,7 @@ machine-readable result.`,
 func runRepair(ctx context.Context, cmd *cobra.Command, target, typeOverride string, dryRun, jsonOut bool) error {
 	cfg, root, err := config.LoadCampaignConfigFromCwd(ctx)
 	if err != nil {
-		return camperrors.Wrap(err, "not in a campaign directory")
+		return camperrors.Wrap(err, "not in a camp directory")
 	}
 	resolver := paths.NewResolverFromConfig(root, cfg)
 

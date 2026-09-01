@@ -1,4 +1,4 @@
-# Campaign Settings Files
+# Camp Settings Files
 
 Camp uses two scopes of configuration:
 
@@ -18,13 +18,13 @@ For the full `.campaign/` directory layout, including `quests/`, `skills/`,
 | --- | --- | --- | --- | --- |
 | `~/.obey/campaign/config.json` | Global | JSON | Auto-created on first load or via `camp settings` | Yes, or via `camp settings` |
 | `~/.obey/campaign/registry.json` | Global | JSON | `camp register`, `camp list`, `camp switch` flows | Safe edits via `camp settings` |
-| `.campaign/campaign.yaml` | Campaign | YAML | `camp init` / `camp init --repair` | Yes, or via `camp settings` |
-| `.campaign/settings/jumps.yaml` | Campaign | YAML | `camp init`, `camp init --repair`, or auto-created on load if missing | Yes |
-| `.campaign/settings/fresh.yaml` | Campaign | YAML | `camp init` / `camp init --repair` | Yes |
-| `.campaign/settings/pins.json` | Campaign | JSON | `camp pin` / `camp unpin` | Usually no |
-| `.campaign/settings/allowlist.json` | Campaign | JSON | `camp init`, `camp init --repair`, or `camp settings` | Yes, or via `camp settings` |
-| `.campaign/settings/local.json` | Campaign | JSON | `camp settings` (Local Settings) or `camp settings set local.*` | Usually no |
-| `.campaign/watchers.yaml` | Campaign | YAML | `camp init`, `camp init --repair`, `fest`, contract writers | No |
+| `.campaign/campaign.yaml` | Camp | YAML | `camp init` / `camp init --repair` | Yes, or via `camp settings` |
+| `.campaign/settings/jumps.yaml` | Camp | YAML | `camp init`, `camp init --repair`, or auto-created on load if missing | Yes |
+| `.campaign/settings/fresh.yaml` | Camp | YAML | `camp init` / `camp init --repair` | Yes |
+| `.campaign/settings/pins.json` | Camp | JSON | `camp pin` / `camp unpin` | Usually no |
+| `.campaign/settings/allowlist.json` | Camp | JSON | `camp init`, `camp init --repair`, or `camp settings` | Yes, or via `camp settings` |
+| `.campaign/settings/local.json` | Camp | JSON | `camp settings` (Local Settings) or `camp settings set local.*` | Usually no |
+| `.campaign/watchers.yaml` | Camp | YAML | `camp init`, `camp init --repair`, `fest`, contract writers | No |
 
 ## What `camp init` And `camp init --repair` Create
 
@@ -51,7 +51,7 @@ used.
 
 ## Typical `.campaign/` Layout
 
-After `camp init`, the hidden campaign directory typically looks like this:
+After `camp init`, the hidden camp directory typically looks like this:
 
 ```text
 .campaign/
@@ -73,7 +73,7 @@ Not everything under `.campaign/` is the same kind of file:
   user-editable configuration
 - `watchers.yaml`, `pins.json`, `settings/local.json`, and most quest/runtime
   state are tool-managed
-- `skills/` is campaign content that camp scaffolds and skill-related commands
+- `skills/` is camp content that camp scaffolds and skill-related commands
   consume
 - `leverage/` appears later when leverage commands write config or snapshots
 
@@ -108,42 +108,42 @@ Notes:
 - If the file does not exist, camp loads defaults and tries to create it.
 - `editor` is only used if `$EDITOR` and `$VISUAL` are not set.
 - `commit.sync_project_refs` / `commit.disable_commit_tags` are machine-wide
-  defaults for project-ref linking after `camp p commit` and for campaign
-  subject-tag tracing. Per-campaign overrides live in
+  defaults for project-ref linking after `camp p commit` and for camp
+  subject-tag tracing. Per-camp overrides live in
   `.campaign/settings/local.json` under the same `commit` object.
 - `camp settings` currently supports the global settings in this file.
 
 #### `campaigns_dir`
 
-The directory where `camp create` places new campaigns.
+The directory where `camp create` places new camps.
 
 - **Default**: `~/campaigns/` (used when the field is absent or empty).
 - **Accepted formats**: absolute path (e.g. `/home/you/work/campaigns`), tilde-prefixed path (e.g. `~/work/campaigns`), or a path relative to `$HOME` (discouraged but allowed).
 - **Resolution**: tilde and relative paths are expanded to an absolute path at runtime. The config file always stores the portable, unexpanded form.
 - The directory does not need to exist in advance. `camp create` creates it on the first run.
-- To discover or change this setting interactively, run `camp settings` and choose Global Settings. The "Campaigns Dir" row edits this field. Leaving it blank resets to the default `~/campaigns/`.
+- To discover or change this setting interactively, run `camp settings` and choose Global Settings. The "Camps Dir" row edits this field. Leaving it blank resets to the default `~/campaigns/`.
 
 ### `~/.obey/campaign/registry.json`
 
-The registry tracks known campaigns for commands like `camp list` and
+The registry tracks known camps for commands like `camp list` and
 `camp switch`. It is camp-managed state rather than a normal hand-authored
 settings file.
 
 You usually should not edit it manually. For the common repair cases,
-`camp settings` (Global Settings, then Campaign registry) offers safe
-per-campaign edits - org assignment, display rename, and path repair - written
+`camp settings` (Global Settings, then Camp registry) offers safe
+per-camp edits - org assignment, display rename, and path repair - written
 through the registry API so the format and other entries stay intact. Lifecycle
 operations (register, unregister, switch, transfer) remain dedicated commands.
 
-## Campaign Files
+## Camp Files
 
 ### `.campaign/campaign.yaml`
 
-The main campaign metadata file.
+The main camp metadata file.
 
 It stores:
 
-- Campaign identity: `id`, `name`, `type`
+- Camp identity: `id`, `name`, `type`
 - Human context: `description`, `mission`
 - Project entries under `projects`
 - Picker concepts under `concepts`
@@ -197,7 +197,7 @@ workflows:
 
 ### `.campaign/settings/jumps.yaml`
 
-Campaign-local navigation settings.
+Camp-local navigation settings.
 
 It contains:
 
@@ -226,7 +226,7 @@ shortcuts:
 Notes:
 
 - `camp init` writes the default file.
-- If `jumps.yaml` is missing, loading campaign config will recreate default
+- If `jumps.yaml` is missing, loading camp config will recreate default
   jumps in memory and try to save the file back to disk.
 - `camp init --repair` preserves user-defined shortcuts and adds missing
   built-in shortcuts.
@@ -275,7 +275,7 @@ completed_runs: prompt      # prompt | report | sweep | off
 merged_workitems: prompt    # prompt | report | off
 ```
 
-Both are campaign-root scoped, with no per-project override.
+Both are camp-root scoped, with no per-project override.
 
 `completed_runs` decides what `camp fresh` does about workitems whose workflow
 run has completed. It defaults to `prompt`, which asks per workitem on a
@@ -345,14 +345,14 @@ Notes:
 
 - This file is created on first save, usually by `camp pin`.
 - Camp migrates legacy `.campaign/pins.json` data into this location.
-- Relative paths inside the campaign are preferred and may be normalized on
+- Relative paths inside the camp are preferred and may be normalized on
   load/save flows.
 
 ### `.campaign/settings/allowlist.json`
 
-Optional **daemon/agent** command allowlist overrides for a specific campaign.
+Optional **daemon/agent** command allowlist overrides for a specific camp.
 This is not a camp CLI gate — `camp` itself never consults this file. It is for
-obey-daemon / agent runners that honor campaign tool permissions.
+obey-daemon / agent runners that honor camp tool permissions.
 
 Example:
 
@@ -363,7 +363,7 @@ Example:
   "commands": {
     "camp": {
       "allowed": true,
-      "description": "Campaign CLI"
+      "description": "Camp CLI"
     },
     "just": {
       "allowed": true,
@@ -379,7 +379,7 @@ Notes:
   command set.
 - If the file is missing, callers are expected to use default allowlist
   behavior.
-- `inherit_defaults: true` means the campaign file extends the daemon defaults.
+- `inherit_defaults: true` means the camp file extends the daemon defaults.
 - `inherit_defaults: false` means only commands listed in this file are
   explicitly allowed.
 - `camp settings` (Local Settings, then Daemon command allowlist) edits this
@@ -388,7 +388,7 @@ Notes:
 
 ### `.campaign/settings/local.json`
 
-Campaign-local settings managed by `camp settings`.
+Camp-local settings managed by `camp settings`.
 
 Example:
 
@@ -404,19 +404,19 @@ Example:
 
 Notes:
 
-- `theme_override` forces a color theme for this campaign: one of `adaptive`,
-  `light`, `dark`, or `high-contrast`. When absent or empty, the campaign
+- `theme_override` forces a color theme for this camp: one of `adaptive`,
+  `light`, `dark`, or `high-contrast`. When absent or empty, the camp
   inherits the global theme from `~/.obey/campaign/config.json`.
 - `commit` (optional) fully overrides machine-global commit prefs for this
-  campaign when present (pointer full-replace: both fields are taken from the
+  camp when present (pointer full-replace: both fields are taken from the
   local block; global is ignored while the block exists):
   - `sync_project_refs` — when true, `camp project commit` updates the
-    campaign-root submodule pointer after a project commit (same as `--sync`).
+    camp-root submodule pointer after a project commit (same as `--sync`).
     Default is false. Use `--no-sync` on a single invocation to force off.
   - `disable_commit_tags` — when true, skips `[campaign:id-…]` subject prefixes
     on camp-managed commits. Default is false (tags enabled).
   - An empty `"commit": {}` still counts as an explicit override that pins both
-    defaults for this campaign.
+    defaults for this camp.
   - Unset local commit (no `commit` key) is reported by `camp settings get
     local.commit.*` as `inherit`, not `false`. Clear with
     `camp settings set local.commit.sync_project_refs inherit` (or
@@ -429,7 +429,7 @@ Notes:
 
 ### `.campaign/watchers.yaml`
 
-The campaign watcher contract. This is camp/fest-owned machine-readable state
+The camp watcher contract. This is camp/fest-owned machine-readable state
 used by the daemon to know which files and directories to watch.
 
 It contains entries such as:
@@ -451,7 +451,7 @@ Important:
 
 `camp settings` is a catalog-driven, path-transparent editor for both
 configuration scopes. It presents one row per settings file and, on every
-screen, shows the exact file it edits: campaign-root-relative for local files
+screen, shows the exact file it edits: camp-root-relative for local files
 (for example `.campaign/campaign.yaml`) and tilde-based for global files (for
 example `~/.obey/campaign/registry.json`). Editing through the TUI is a guided,
 safer version of hand-editing the same files.
@@ -464,7 +464,7 @@ Local (under `.campaign/`):
   `intents.tags` list via a one-per-line editor; and the nested `concepts`
   taxonomy via an in-TUI YAML editor (validated all-or-nothing so an invalid
   edit never touches the file).
-- `settings/local.json` - the campaign theme override and optional commit
+- `settings/local.json` - the camp theme override and optional commit
   behavior overrides (project-ref sync, disable commit tags).
 - `settings/allowlist.json` - daemon/agent tool allowlist (not camp CLI):
   toggle `allowed` per command, add, and remove commands. `inherit_defaults` is
@@ -472,9 +472,9 @@ Local (under `.campaign/`):
 
 Global (under `~/.obey/campaign/`):
 
-- `config.json` - theme, editor, campaigns dir, verbose, no-color, and commit
+- `config.json` - theme, editor, camps dir, verbose, no-color, and commit
   defaults (project-ref sync, disable commit tags).
-- `registry.json` - view registered campaigns and make safe per-campaign edits
+- `registry.json` - view registered camps and make safe per-camp edits
   (org, display name, and path repair). Path repair only points at an existing
   directory and asks for confirmation. Lifecycle operations (register,
   unregister, switch, transfer) stay in `camp registry` / `camp org`.
@@ -509,11 +509,11 @@ Keys: `global.theme`, `global.editor`, `global.campaigns_dir`,
 `local.commit.sync_project_refs`, `local.commit.disable_commit_tags`,
 `local.campaign.name`, `local.campaign.description`, `local.campaign.mission`,
 `local.campaign.type`, and `local.campaign.commit_hook`. The `local.*` keys
-require running inside a campaign. The campaign.yaml list and tree fields
-(`intents.tags`, `concepts`) and the registry per-campaign edits have no flat
+require running inside a camp. The campaign.yaml list and tree fields
+(`intents.tags`, `concepts`) and the registry per-camp edits have no flat
 key and are edited only through the interactive TUI.
 
-Other campaign-local files (`jumps.yaml`, `fresh.yaml`) remain file-based; edit
+Other camp-local files (`jumps.yaml`, `fresh.yaml`) remain file-based; edit
 the relevant file directly when you need to customize them.
 
 ### Extending the settings surface

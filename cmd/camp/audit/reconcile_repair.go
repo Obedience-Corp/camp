@@ -29,7 +29,7 @@ func newReconcileCommand() *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "reconcile",
 		Short: "Fill ledger gaps from state files (opt-in write)",
-		Long: `Derive the events implied by campaign state files (intent statuses and
+		Long: `Derive the events implied by camp state files (intent statuses and
 festival status histories), diff them against the ledger, and report the gaps -
 facts the ledger does not yet capture. This covers users who never commit at all.
 
@@ -44,7 +44,7 @@ does not duplicate).`,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			cfg, campRoot, err := config.LoadCampaignConfigFromCwd(cmd.Context())
 			if err != nil {
-				return camperrors.Wrap(err, "not in a campaign directory")
+				return camperrors.Wrap(err, "not in a camp directory")
 			}
 			gaps, err := audit.Reconcile(cmd.Context(), campRoot, cfg.ID)
 			if err != nil {
@@ -99,7 +99,7 @@ in the ledger (D004). Use it to claim an untagged commit surfaced by
 		RunE: func(cmd *cobra.Command, args []string) error {
 			cfg, campRoot, err := config.LoadCampaignConfigFromCwd(cmd.Context())
 			if err != nil {
-				return camperrors.Wrap(err, "not in a campaign directory")
+				return camperrors.Wrap(err, "not in a camp directory")
 			}
 			in.CampaignID = cfg.ID
 			if in.Repo == "" {

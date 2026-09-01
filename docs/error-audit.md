@@ -30,17 +30,17 @@ These errors follow best practices: descriptive, include context, and suggest va
 |----------|---------|---------|
 | `internal/shell/shell.go:19` | "unsupported shell: %s (supported: zsh, bash, fish)" | ✓ Lists valid options |
 | `cmd/camp/shell_init.go:52` | "unsupported shell: %s\nSupported: %s" | ✓ Lists valid options |
-| `cmd/camp/register.go:110` | "invalid campaign type: %s (must be product, research, tools, personal)" | ✓ Lists valid types |
+| `cmd/camp/register.go:110` | "invalid camp type: %s (must be product, research, tools, personal)" | ✓ Lists valid types |
 | `internal/config/validate.go:34` | "%w: %q (valid: product, research, tools, personal)" | ✓ Lists valid types |
-| `internal/scaffold/init.go:195` | "invalid campaign type: %s" | Acceptable (validation layer) |
+| `internal/scaffold/init.go:195` | "invalid camp type: %s" | Acceptable (validation layer) |
 
 ### 2. Path & Location Errors
 
 | Location | Message | Quality |
 |----------|---------|---------|
-| `internal/config/campaign.go:30` | "campaign config not found: %s" | ✓ Includes path |
-| `internal/scaffold/init.go:56` | "already inside a campaign at %s" | ✓ Shows location |
-| `internal/scaffold/init.go:62` | "campaign already exists at %s" | ✓ Shows location |
+| `internal/config/campaign.go:30` | "camp config not found: %s" | ✓ Includes path |
+| `internal/scaffold/init.go:56` | "already inside a camp at %s" | ✓ Shows location |
+| `internal/scaffold/init.go:62` | "camp already exists at %s" | ✓ Shows location |
 | `internal/project/add.go:156` | "local path is not a git repository: %s" | ✓ Includes path |
 
 ### 3. Navigation Errors
@@ -59,7 +59,7 @@ These properly wrap underlying errors with context:
 - `internal/config/global.go:26` - "failed to read global config %s: %w"
 - `internal/config/global.go:31` - "failed to parse global config %s: %w"
 - `internal/config/registry.go:25` - "failed to read registry %s: %w"
-- `internal/config/campaign.go:32` - "failed to read campaign config %s: %w"
+- `internal/config/campaign.go:32` - "failed to read camp config %s: %w"
 - `internal/nav/index/cache.go:*` - All cache errors wrap underlying errors
 - `internal/project/add.go:131` - "failed to add submodule: %w\n%s" (includes git output)
 
@@ -80,18 +80,18 @@ Well-defined sentinel errors for programmatic checking:
 
 ### Priority 1: High (Common Operations)
 
-#### 1. "not inside a campaign directory"
+#### 1. "not inside a camp directory"
 - **Location**: `internal/config/campaign.go:105`, `internal/campaign/errors.go:8`
 - **Problem**: No actionable guidance
 - **Suggestion**: Add hint about what to look for
-- **Improved**: "not inside a campaign directory (looking for .campaign/)"
+- **Improved**: "not inside a camp directory (looking for .campaign/)"
 - **User impact**: High - common error when running from wrong directory
 
-#### 2. "campaign not found in registry: %s"
+#### 2. "camp not found in registry: %s"
 - **Location**: `cmd/camp/unregister.go:54`
 - **Problem**: User doesn't know what's registered
 - **Suggestion**: Suggest `camp list`
-- **Improved**: "campaign not found in registry: %s\nRun 'camp list' to see registered campaigns"
+- **Improved**: "camp not found in registry: %s\nRun 'camp list' to see registered camps"
 - **User impact**: Medium - occurs when unregistering
 
 #### 3. "category directory not found"
@@ -112,12 +112,12 @@ Well-defined sentinel errors for programmatic checking:
 - **Problem**: Could show example format
 - **User impact**: Low - config validation
 
-#### 6. "campaign path is required"
+#### 6. "camp path is required"
 - **Location**: `internal/config/validate.go:69`
 - **Problem**: Context not clear
 - **User impact**: Low - registry validation
 
-#### 7. "campaign root is required"
+#### 7. "camp root is required"
 - **Location**: `internal/nav/index/resolve.go:48`
 - **Problem**: Internal error leaking to user
 - **Note**: Should never reach user; indicates programming error
@@ -142,7 +142,7 @@ Well-defined sentinel errors for programmatic checking:
 
 ### Immediate (Before v1.0)
 
-1. **Campaign detection error** - Most common user error
+1. **Camp detection error** - Most common user error
    ```go
    // Before
    errors.New("not inside a campaign directory")
@@ -165,7 +165,7 @@ Well-defined sentinel errors for programmatic checking:
 ### Near-term
 
 3. Add `--verbose` flag to show full error context
-4. Consider error codes for scripting (e.g., exit code 2 = not in campaign)
+4. Consider error codes for scripting (e.g., exit code 2 = not in camp)
 
 ### Long-term
 
@@ -196,13 +196,13 @@ Well-defined sentinel errors for programmatic checking:
 Verify error messages with:
 
 ```bash
-# Campaign detection
+# Camp detection
 cd /tmp && camp go p
-# Expected: "not inside a campaign directory..."
+# Expected: "not inside a camp directory..."
 
 # Invalid registration
 camp unregister nonexistent
-# Expected: "campaign not found in registry: nonexistent..."
+# Expected: "camp not found in registry: nonexistent..."
 
 # Invalid shell
 camp shell-init powershell

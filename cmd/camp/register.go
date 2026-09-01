@@ -19,23 +19,23 @@ import (
 
 var registerCmd = &cobra.Command{
 	Use:   "register [path]",
-	Short: "Register campaign in global registry",
-	Long: `Register an existing campaign in the global registry.
+	Short: "Register a camp in the global registry",
+	Long: `Register an existing camp in the global registry.
 
-This adds the campaign to the registry at ~/.obey/campaign/registry.json,
+This adds the camp to the registry at ~/.obey/campaign/registry.json,
 enabling it to appear in 'camp list' and be accessible via navigation commands.
 
-Note: 'camp init' automatically registers new campaigns. This command is for
-registering existing campaigns that weren't created with camp or were unregistered.
+Note: 'camp init' automatically registers new camps. This command is for
+registering existing camps that weren't created with camp or were unregistered.
 
-If the specified path is not a campaign (has no .campaign/ directory),
+If the specified path is not a camp (has no .campaign/ directory),
 you'll be offered the option to initialize it.
 
 Examples:
   camp register                          # Register current directory
   camp register ~/Dev/my-project         # Register specified path
-  camp register . --name custom-name     # Override the campaign name
-  camp register . --type research        # Override the campaign type`,
+  camp register . --name custom-name     # Override the camp name
+  camp register . --type research        # Override the camp type`,
 	Args: cobra.MaximumNArgs(1),
 	Annotations: map[string]string{
 		"agent_allowed": "false",
@@ -48,8 +48,8 @@ func init() {
 	rootCmd.AddCommand(registerCmd)
 	registerCmd.GroupID = "setup"
 
-	registerCmd.Flags().StringP("name", "n", "", "Override campaign name")
-	registerCmd.Flags().StringP("type", "t", "", "Override campaign type (product, research, tools, personal)")
+	registerCmd.Flags().StringP("name", "n", "", "Override camp name")
+	registerCmd.Flags().StringP("type", "t", "", "Override camp type (product, research, tools, personal)")
 }
 
 func runRegister(cmd *cobra.Command, args []string) error {
@@ -69,7 +69,7 @@ func runRegister(cmd *cobra.Command, args []string) error {
 	// Check .campaign/ exists
 	campaignDir := filepath.Join(absPath, config.CampaignDir)
 	if _, err := os.Stat(campaignDir); os.IsNotExist(err) {
-		fmt.Printf("%s No campaign found at %s\n", ui.WarningIcon(), ui.Dim(absPath))
+		fmt.Printf("%s No camp found at %s\n", ui.WarningIcon(), ui.Dim(absPath))
 		fmt.Print("Would you like to initialize one? [y/N] ")
 		reader := bufio.NewReader(os.Stdin)
 		response, _ := reader.ReadString('\n')
@@ -97,7 +97,7 @@ func runRegister(cmd *cobra.Command, args []string) error {
 					return festErr
 				}
 			}
-			fmt.Printf("%s Initialized and registered campaign at %s\n", ui.SuccessIcon(), ui.Value(result.CampaignRoot))
+			fmt.Printf("%s Initialized and registered camp at %s\n", ui.SuccessIcon(), ui.Value(result.CampaignRoot))
 			return nil
 		}
 		fmt.Println(ui.Dim("Aborted."))
@@ -107,7 +107,7 @@ func runRegister(cmd *cobra.Command, args []string) error {
 	// Load campaign config for name/type
 	cfg, err := config.LoadCampaignConfig(ctx, absPath)
 	if err != nil {
-		return camperrors.Wrap(err, "failed to load campaign config")
+		return camperrors.Wrap(err, "failed to load camp config")
 	}
 
 	// Allow overrides from flags
@@ -125,7 +125,7 @@ func runRegister(cmd *cobra.Command, args []string) error {
 
 	// Validate type if specified
 	if typeFlag != "" && !ctype.Valid() {
-		return camperrors.Wrapf(camperrors.ErrInvalidInput, "invalid campaign type: %s (must be product, research, tools, or personal)", typeFlag)
+		return camperrors.Wrapf(camperrors.ErrInvalidInput, "invalid camp type: %s (must be product, research, tools, or personal)", typeFlag)
 	}
 
 	// Load registry
@@ -137,7 +137,7 @@ func runRegister(cmd *cobra.Command, args []string) error {
 
 	// Check for existing registration with same name but different path.
 	if existing, exists := reg.GetByName(name); exists && existing.Path != absPath {
-		fmt.Printf("%s Campaign '%s' already registered at %s\n", ui.WarningIcon(), ui.Value(name), ui.Dim(existing.Path))
+		fmt.Printf("%s A camp named '%s' is already registered at %s\n", ui.WarningIcon(), ui.Value(name), ui.Dim(existing.Path))
 		fmt.Print("Replace with new path? [y/N] ")
 		reader := bufio.NewReader(os.Stdin)
 		response, _ := reader.ReadString('\n')
@@ -151,7 +151,7 @@ func runRegister(cmd *cobra.Command, args []string) error {
 
 	// Check for path conflict (different campaign ID at same path).
 	if existing, exists := reg.FindByPath(absPath); exists && existing.ID != cfg.ID {
-		fmt.Printf("%s Path already registered to different campaign\n", ui.WarningIcon())
+		fmt.Printf("%s Path already registered to different camp\n", ui.WarningIcon())
 		fmt.Println(ui.KeyValue("Existing:", existing.Name+" ("+existing.ID[:8]+"...)"))
 		fmt.Println(ui.KeyValue("New:", name+" ("+cfg.ID[:8]+"...)"))
 		fmt.Print("Replace existing registration? [y/N] ")
@@ -173,7 +173,7 @@ func runRegister(cmd *cobra.Command, args []string) error {
 
 	fmt.Printf("%s %s\n", ui.SuccessIcon(), ui.Success("Registered: "+name))
 	fmt.Println(ui.KeyValue("Path:", absPath))
-	fmt.Println(ui.KeyValue("Campaign ID:", cfg.ID))
+	fmt.Println(ui.KeyValue("Camp ID:", cfg.ID))
 	return nil
 }
 
@@ -185,16 +185,16 @@ type registerConflictConfirmations struct {
 func registerCampaignWithConfirmedConflicts(reg *config.Registry, id, name, absPath string, ctype config.CampaignType, confirmed registerConflictConfirmations) error {
 	if existing, exists := reg.GetByName(name); exists && existing.Path != absPath {
 		if confirmed.nameConflictID == "" {
-			return camperrors.Wrapf(camperrors.ErrConflict, "campaign %q is now registered at %s; re-run camp register to confirm replacement", name, existing.Path)
+			return camperrors.Wrapf(camperrors.ErrConflict, "camp %q is now registered at %s; re-run camp register to confirm replacement", name, existing.Path)
 		}
 		if existing.ID != confirmed.nameConflictID {
-			return camperrors.Wrapf(camperrors.ErrConflict, "campaign %q registration changed from %s to %s; re-run camp register to confirm replacement", name, confirmed.nameConflictID, existing.ID)
+			return camperrors.Wrapf(camperrors.ErrConflict, "camp %q registration changed from %s to %s; re-run camp register to confirm replacement", name, confirmed.nameConflictID, existing.ID)
 		}
 		reg.UnregisterByID(existing.ID)
 	}
 	if existing, exists := reg.FindByPath(absPath); exists && existing.ID != id {
 		if confirmed.pathConflictID == "" {
-			return camperrors.Wrapf(camperrors.ErrConflict, "path %s is now registered to campaign %s (%s); re-run camp register to confirm replacement", absPath, existing.Name, existing.ID)
+			return camperrors.Wrapf(camperrors.ErrConflict, "path %s is now registered to camp %s (%s); re-run camp register to confirm replacement", absPath, existing.Name, existing.ID)
 		}
 		if existing.ID != confirmed.pathConflictID {
 			return camperrors.Wrapf(camperrors.ErrConflict, "path %s registration changed from %s to %s; re-run camp register to confirm replacement", absPath, confirmed.pathConflictID, existing.ID)
@@ -202,7 +202,7 @@ func registerCampaignWithConfirmedConflicts(reg *config.Registry, id, name, absP
 		reg.UnregisterByID(existing.ID)
 	}
 	if err := reg.Register(id, name, absPath, ctype); err != nil {
-		return camperrors.Wrap(err, "failed to register campaign")
+		return camperrors.Wrap(err, "failed to register camp")
 	}
 	return nil
 }

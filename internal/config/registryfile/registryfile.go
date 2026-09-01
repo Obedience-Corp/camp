@@ -50,7 +50,7 @@ func Path() (string, error) {
 	}
 	home, err := pathutil.Home()
 	if err != nil {
-		return "", camperrors.Wrap(err, "resolving campaign registry path (set HOME, XDG_CONFIG_HOME, or CAMP_REGISTRY_PATH)")
+		return "", camperrors.Wrap(err, "resolving camp registry path (set HOME, XDG_CONFIG_HOME, or CAMP_REGISTRY_PATH)")
 	}
 	return filepath.Join(home, ".obey", "campaign", "registry.json"), nil
 }

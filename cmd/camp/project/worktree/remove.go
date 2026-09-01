@@ -58,12 +58,12 @@ func runProjectWorktreeRemove(cmd *cobra.Command, args []string) error {
 
 	campRoot, err := campaign.DetectCached(ctx)
 	if err != nil {
-		return camperrors.Wrap(err, "not in a campaign")
+		return camperrors.Wrap(err, "not in a camp")
 	}
 
 	cfg, err := config.LoadCampaignConfig(ctx, campRoot)
 	if err != nil {
-		return camperrors.Wrap(err, "failed to load campaign config")
+		return camperrors.Wrap(err, "failed to load camp config")
 	}
 
 	resolved, err := project.Resolve(ctx, campRoot, wtRemoveProject)

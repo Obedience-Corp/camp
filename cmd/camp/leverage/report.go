@@ -37,7 +37,7 @@ func scoreHeadline(agg *intleverage.LeverageScore, opts leverageOutputOpts) stri
 	if opts.authorFilter != "" {
 		return fmt.Sprintf("Your Leverage: %sx (%s)", fmtScore(agg.FullLeverage), opts.authorFilter)
 	}
-	headline := fmt.Sprintf("Campaign Leverage: %sx", fmtScore(agg.FullLeverage))
+	headline := fmt.Sprintf("Camp Leverage: %sx", fmtScore(agg.FullLeverage))
 	if agg.AuthorCount > 0 {
 		headline += fmt.Sprintf(" (%d %s detected)",
 			agg.AuthorCount, pluralize(agg.AuthorCount, "author", "authors"))

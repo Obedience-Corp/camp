@@ -8,7 +8,7 @@ Propose what should happen to one row.
 
 The disposition is a label from the row's type vocabulary; camp resolves it to
 the action it will actually perform and records both. That indirection is what
-lets a campaign rename its labels without triage learning a new mutation.
+lets a camp rename its labels without triage learning a new mutation.
 
 A proposal is not a decision. Terminal actions - dungeon moves and splits -
 always require a human to approve them, and the result says so.
@@ -45,4 +45,4 @@ camp triage propose <stable-id> [flags]
 
 ### SEE ALSO
 
-* [camp triage](camp_triage.md)	 - Review the campaign's workitems in a recorded session
+* [camp triage](camp_triage.md)	 - Review the camp's workitems in a recorded session

@@ -26,11 +26,11 @@ import (
 func resolveWorkitemPath(ctx context.Context, sel string) (string, error) {
 	_, root, err := config.LoadCampaignConfigFromCwd(ctx)
 	if err != nil {
-		return "", camperrors.Wrap(err, "not in a campaign directory")
+		return "", camperrors.Wrap(err, "not in a camp directory")
 	}
 	root, err = pathutil.ResolveRoot(root)
 	if err != nil {
-		return "", camperrors.Wrap(err, "resolving campaign root")
+		return "", camperrors.Wrap(err, "resolving camp root")
 	}
 	item, err := selector.Resolve(ctx, root, sel, selector.ResolveOptions{})
 	if err != nil {
@@ -45,11 +45,11 @@ func resolveWorkitemPath(ctx context.Context, sel string) (string, error) {
 func gatherWorkitemChoices(ctx context.Context) ([]questtui.WorkitemChoice, error) {
 	cfg, root, err := config.LoadCampaignConfigFromCwd(ctx)
 	if err != nil {
-		return nil, camperrors.Wrap(err, "not in a campaign directory")
+		return nil, camperrors.Wrap(err, "not in a camp directory")
 	}
 	root, err = pathutil.ResolveRoot(root)
 	if err != nil {
-		return nil, camperrors.Wrap(err, "resolving campaign root")
+		return nil, camperrors.Wrap(err, "resolving camp root")
 	}
 
 	resolver := paths.NewResolverFromConfig(root, cfg)

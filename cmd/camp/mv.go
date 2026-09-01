@@ -16,14 +16,14 @@ import (
 
 var moveCmd = &cobra.Command{
 	Use:   "move <src> <dest>",
-	Short: "Move a file or directory within the campaign",
-	Long: `Move a file or directory within the current campaign.
+	Short: "Move a file or directory within the camp",
+	Long: `Move a file or directory within the current camp.
 
 Paths are resolved relative to the current directory, matching standard
 'mv' behavior and tab completion.
 
-Use @ prefix for campaign shortcuts (e.g., @p/fest, @f/active/).
-Available shortcuts are defined in campaign config.
+Use @ prefix for camp shortcuts (e.g., @p/fest, @f/active/).
+Available shortcuts are defined in camp config.
 
 If the destination is an existing directory or ends with '/', the source
 is placed inside it with the same basename.`,

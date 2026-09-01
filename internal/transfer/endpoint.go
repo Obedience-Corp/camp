@@ -84,7 +84,7 @@ func ParseEndpoint(spec string, isMachine machineLookupFunc, isCampaign campaign
 // reading of the second invocation is exactly what it exists to prevent.
 func ShadowNote(machine string) string {
 	return "camp: " + machine + " is a registered machine; reading it as machine:campaign:path " +
-		"(use " + LocalPrefix + ":" + machine + ":... for the campaign)"
+		"(use " + LocalPrefix + ":" + machine + ":... for the camp)"
 }
 
 func errMachineNeedsCampaign(machine, campaign string) error {

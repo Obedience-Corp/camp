@@ -46,10 +46,10 @@ type ConflictError struct {
 // Error implements the error interface.
 func (e *ConflictError) Error() string {
 	return fmt.Sprintf(
-		"both %s/ and %s/ exist under %s: a campaign uses exactly one dungeon spelling, "+
+		"both %s/ and %s/ exist under %s: a camp uses exactly one dungeon spelling, "+
 			"so camp cannot tell which one holds your work and resolving either would hide the other. "+
 			"Move the contents of one into the other and delete the empty directory, then run %q "+
-			"to convert the campaign to %s/.",
+			"to convert the camp to %s/.",
 		Visible, Hidden, e.Parent, MigrateCommand, Hidden,
 	)
 }
@@ -131,7 +131,7 @@ func Resolve(ctx context.Context, parent string) (Resolved, error) {
 func NameForNew(ctx context.Context, parent, campaignName string) (string, error) {
 	if !IsDungeonName(campaignName) {
 		return "", camperrors.Wrapf(camperrors.ErrInvalidInput,
-			"campaign dungeon spelling %q must be %q or %q", campaignName, Visible, Hidden)
+			"camp dungeon spelling %q must be %q or %q", campaignName, Visible, Hidden)
 	}
 	resolved, err := Resolve(ctx, parent)
 	if err != nil {

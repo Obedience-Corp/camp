@@ -56,7 +56,7 @@ func checkDirectoryEmpty(dir string, force, isInteractive bool, w Writers) error
 	if isInteractive {
 		// Prompt for confirmation through the caller's human-facing output stream.
 		writeLine(w.HumanOut, ui.Warning(fmt.Sprintf("Directory '%s' is not empty.", filepath.Base(absDir))))
-		write(w.HumanOut, "Continue and initialize campaign here? [y/N]: ")
+		write(w.HumanOut, "Continue and initialize camp here? [y/N]: ")
 
 		reader := bufio.NewReader(os.Stdin)
 		response, err := reader.ReadString('\n')
@@ -101,13 +101,13 @@ func collectCampaignInfo(ctx context.Context, description, mission string, isInt
 	form := huh.NewForm(
 		huh.NewGroup(
 			huh.NewInput().
-				Title("Campaign Description").
-				Description("A brief description of this campaign").
+				Title("Camp Description").
+				Description("A brief description of this camp").
 				Placeholder("e.g., AI agent orchestration framework").
 				Value(&description),
 			huh.NewText().
 				Title("Mission Statement").
-				Description("What is the goal of this campaign?").
+				Description("What is the goal of this camp?").
 				Placeholder("Describe the mission in detail...").
 				CharLimit(1000).
 				Value(&mission),
@@ -118,7 +118,7 @@ func collectCampaignInfo(ctx context.Context, description, mission string, isInt
 		if theme.IsCancelled(err) {
 			return "", "", camperrors.New("initialization cancelled")
 		}
-		return "", "", camperrors.Wrap(err, "failed to collect campaign info")
+		return "", "", camperrors.Wrap(err, "failed to collect camp info")
 	}
 
 	// Validate that user provided values
@@ -157,14 +157,14 @@ func handleRepairMission(ctx context.Context, dir string, mission string, isInte
 
 	// Campaign is missing mission
 	if isInteractive {
-		writeLine(w.HumanOut, ui.Warning(fmt.Sprintf("Campaign '%s' is missing a mission statement.", cfg.Name)))
+		writeLine(w.HumanOut, ui.Warning(fmt.Sprintf("Your camp '%s' is missing a mission statement.", cfg.Name)))
 		writeLine(w.HumanOut)
 
 		form := huh.NewForm(
 			huh.NewGroup(
 				huh.NewText().
 					Title("Mission Statement").
-					Description("What is the goal of this campaign?").
+					Description("What is the goal of this camp?").
 					Placeholder("Describe the mission in detail...").
 					CharLimit(1000).
 					Value(&mission),
@@ -184,7 +184,7 @@ func handleRepairMission(ctx context.Context, dir string, mission string, isInte
 	}
 
 	// Non-interactive mode - just warn
-	writeLine(w.HumanOut, ui.Warning(fmt.Sprintf("Campaign '%s' is missing a mission statement", cfg.Name)))
+	writeLine(w.HumanOut, ui.Warning(fmt.Sprintf("Your camp '%s' is missing a mission statement", cfg.Name)))
 	writeLine(w.HumanOut, ui.Dim("         Run 'camp init --repair' in an interactive terminal to add one"))
 	writeLine(w.HumanOut)
 	return "", nil

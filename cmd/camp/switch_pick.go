@@ -198,7 +198,7 @@ func pickSwitchTarget(ctx context.Context, reg *config.Registry, opts pickSwitch
 	hasMachines := mfErr == nil && len(mf.Machines) > 0
 
 	if len(picks) == 0 && !hasMachines {
-		return switchPick{}, camperrors.New(fmt.Sprintf("no campaigns found%s", scopeDesc(opts.Scope)))
+		return switchPick{}, camperrors.New(fmt.Sprintf("no camps found%s", scopeDesc(opts.Scope)))
 	}
 
 	// Slice must be addressable for WithHotReloadLock.
@@ -254,11 +254,11 @@ func pickSwitchTarget(ctx context.Context, reg *config.Registry, opts pickSwitch
 		mu.RLock()
 		defer mu.RUnlock()
 		if loadErr != nil {
-			fmt.Fprintf(os.Stderr, "warning: remote campaigns unavailable: %v\n", loadErr)
+			fmt.Fprintf(os.Stderr, "warning: remote camps unavailable: %v\n", loadErr)
 			return
 		}
 		for _, id := range loadUnreachable {
-			fmt.Fprintf(os.Stderr, "warning: machine %s unreachable; its campaigns were not listed\n", id)
+			fmt.Fprintf(os.Stderr, "warning: machine %s unreachable; its camps were not listed\n", id)
 		}
 	}
 

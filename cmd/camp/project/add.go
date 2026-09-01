@@ -21,16 +21,16 @@ import (
 
 var projectAddCmd = &cobra.Command{
 	Use:   "add [source]",
-	Short: "Add a project to campaign",
-	Long: `Add a git repository as a project in the campaign.
+	Short: "Add a project to camp",
+	Long: `Add a git repository as a project in the camp.
 
 The project is cloned as a git submodule into the projects/ directory.
 A worktree directory is also created for future parallel development.
-The campaign commit is always created so .gitmodules and the submodule pointer land together.
+The camp commit is always created so .gitmodules and the submodule pointer land together.
 
-If you're already inside a campaign, that campaign is used by default.
-Outside a campaign, use --campaign <name-or-id> or a bare --campaign to
-select a registered target campaign.
+If you're already inside a camp, that camp is used by default.
+Outside a camp, use --campaign <name-or-id> or a bare --campaign to
+select a registered target camp.
 
 Source can be:
   - SSH URL:   git@github.com:org/repo.git
@@ -41,7 +41,7 @@ Examples:
   camp project add git@github.com:org/api.git           # Add remote repo
   camp project add https://github.com/org/web.git       # Add via HTTPS
   camp project add --local ./my-repo --name my-project  # Add existing local repo
-  camp project add --campaign platform --local ./my-repo # Add outside current campaign
+  camp project add --campaign platform --local ./my-repo # Add outside current camp
   camp project add git@github.com:org/api.git --name backend  # Custom name`,
 	Args: validateProjectAddArgs,
 	RunE: runProjectAdd,
@@ -54,7 +54,7 @@ func init() {
 	flags.StringP("name", "n", "", "Override project name (defaults to repo name)")
 	flags.StringP("path", "p", "", "Override destination path (defaults to projects/<name>)")
 	flags.StringP("local", "l", "", "Add existing local repository instead of cloning")
-	flags.StringP("campaign", "c", "", "Target campaign by name or ID; omit value to pick interactively")
+	flags.StringP("campaign", "c", "", "Target camp by name or ID; omit value to pick interactively")
 	flags.Lookup("campaign").NoOptDefVal = projectlinked.NoOptCampaign
 }
 
@@ -212,14 +212,14 @@ func (r projectCampaignResolver) Resolve(ctx context.Context, targetCampaign str
 		return nil, "", camperrors.Wrap(err, "load registry")
 	}
 	if reg.Len() == 0 {
-		return nil, "", camperrors.Wrap(camperrors.ErrNotInitialized, "no campaigns registered (use 'camp init' to create one)")
+		return nil, "", camperrors.Wrap(camperrors.ErrNotInitialized, "no camps registered (use 'camp init' to create one)")
 	}
 
 	var selected config.RegisteredCampaign
 	switch {
 	case targetCampaign == "":
 		if !r.isInteractive() {
-			return nil, "", camperrors.Wrapf(camperrors.ErrInvalidInput, "campaign name required in non-interactive mode (use '%s')", r.usage())
+			return nil, "", camperrors.Wrapf(camperrors.ErrInvalidInput, "camp name required in non-interactive mode (use '%s')", r.usage())
 		}
 		selected, err = r.pickCampaign(ctx, reg)
 		if err != nil {
@@ -234,7 +234,7 @@ func (r projectCampaignResolver) Resolve(ctx context.Context, targetCampaign str
 
 	cfg, err := r.loadCampaign(ctx, selected.Path)
 	if err != nil {
-		return nil, "", camperrors.Wrapf(err, "load target campaign %s", selected.Path)
+		return nil, "", camperrors.Wrapf(err, "load target camp %s", selected.Path)
 	}
 	if err := ensureProjectCampaignRegistered(reg, cfg, selected.Path); err != nil {
 		return nil, "", err
@@ -263,12 +263,12 @@ func (r projectCampaignResolver) usage() string {
 
 func ensureProjectCampaignRegistered(reg *config.Registry, cfg *config.CampaignConfig, campaignRoot string) error {
 	if cfg == nil {
-		return camperrors.Wrap(camperrors.ErrNotFound, "target campaign config could not be loaded")
+		return camperrors.Wrap(camperrors.ErrNotFound, "target camp config could not be loaded")
 	}
 
 	normalizedRoot, err := normalizeProjectCampaignRoot(campaignRoot)
 	if err != nil {
-		return camperrors.Wrap(err, "resolve target campaign root")
+		return camperrors.Wrap(err, "resolve target camp root")
 	}
 
 	for _, entry := range reg.ListAll() {
@@ -289,7 +289,7 @@ func ensureProjectCampaignRegistered(reg *config.Registry, cfg *config.CampaignC
 	if strings.TrimSpace(name) == "" {
 		name = normalizedRoot
 	}
-	return camperrors.Wrapf(camperrors.ErrNotFound, "target campaign %q is not registered (run 'camp register %s' before adding projects)", name, normalizedRoot)
+	return camperrors.Wrapf(camperrors.ErrNotFound, "target camp %q is not registered (run 'camp register %s' before adding projects)", name, normalizedRoot)
 }
 
 func normalizeProjectCampaignRoot(root string) (string, error) {

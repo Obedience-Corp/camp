@@ -59,8 +59,8 @@ func runConcepts(cmd *cobra.Command, _ []string) error {
 	cfg, campaignRoot, err := config.LoadCampaignConfigFromCwd(ctx)
 	if err != nil {
 		return jsoncontract.WithHint(
-			camperrors.Wrap(err, "not in a campaign directory"),
-			"run 'camp init' to create a new campaign",
+			camperrors.Wrap(err, "not in a camp directory"),
+			"run 'camp init' to create a new camp",
 		)
 	}
 
@@ -82,11 +82,11 @@ func runConcepts(cmd *cobra.Command, _ []string) error {
 func printConceptsJSON(cmd *cobra.Command, campaignRoot string, concepts []concept.Concept) error {
 	resolvedRoot, err := filepath.EvalSymlinks(campaignRoot)
 	if err != nil {
-		return camperrors.Wrap(err, "resolve campaign root")
+		return camperrors.Wrap(err, "resolve camp root")
 	}
 	resolvedRoot, err = filepath.Abs(resolvedRoot)
 	if err != nil {
-		return camperrors.Wrap(err, "resolve campaign root")
+		return camperrors.Wrap(err, "resolve camp root")
 	}
 
 	items := make([]conceptItem, 0, len(concepts))

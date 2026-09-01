@@ -86,7 +86,7 @@ func DefaultQuest(now time.Time) *Quest {
 	return &Quest{
 		ID:          DefaultQuestID,
 		Name:        DefaultQuestName,
-		Purpose:     "Default working context for this campaign",
+		Purpose:     "Default working context for this camp",
 		Description: "Fallback quest for work that doesn't belong to a specific quest.",
 		Status:      StatusOpen,
 		CreatedAt:   now.UTC(),

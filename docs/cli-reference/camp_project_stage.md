@@ -40,4 +40,4 @@ camp project stage [flags]
 
 ### SEE ALSO
 
-* [camp project](camp_project.md)	 - Manage campaign projects
+* [camp project](camp_project.md)	 - Manage camp projects

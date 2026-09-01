@@ -24,7 +24,7 @@ type leverageSetup struct {
 func initLeverageSetup(ctx context.Context) (*leverageSetup, error) {
 	root, err := campaign.DetectCached(ctx)
 	if err != nil {
-		return nil, camperrors.Wrap(err, "not in a campaign")
+		return nil, camperrors.Wrap(err, "not in a camp")
 	}
 
 	configPath := intleverage.DefaultConfigPath(root)

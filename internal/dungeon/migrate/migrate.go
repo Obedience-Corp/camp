@@ -61,12 +61,12 @@ func BuildPlan(ctx context.Context, campaignRoot string) (*Plan, error) {
 
 	absRoot, err := filepath.Abs(campaignRoot)
 	if err != nil {
-		return nil, camperrors.Wrapf(err, "resolving campaign root %s", campaignRoot)
+		return nil, camperrors.Wrapf(err, "resolving camp root %s", campaignRoot)
 	}
 
 	found, err := spelling.Discover(ctx, absRoot)
 	if err != nil {
-		return nil, camperrors.Wrap(err, "discovering campaign dungeons")
+		return nil, camperrors.Wrap(err, "discovering camp dungeons")
 	}
 
 	if err := checkConflicts(absRoot, found); err != nil {

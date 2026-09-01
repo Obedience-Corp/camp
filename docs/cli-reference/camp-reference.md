@@ -9,30 +9,35 @@ weight: 1
 
 ## camp
 
-Campaign management CLI for multi-project AI workspaces
+Manage your camps and the projects and festivals inside them
 
 ### Synopsis
 
-Camp manages multi-project AI workspaces with fast navigation.
+Camp manages your camps.
 
-Camp provides structure and navigation for AI-powered development workflows.
-It creates standardized campaign directories, manages git submodules as projects,
-and enables lightning-fast navigation through category shortcuts and TUI fuzzy finding.
+A camp is one context in your life: your job, a side project, your taxes. Each
+camp holds the projects you work on and hosts the festivals you run in them.
+Camp creates camps, manages git submodules as projects, and gives you
+lightning-fast navigation through category shortcuts and TUI fuzzy finding.
+
+Camp stores each camp's state in the .campaign/ directory. That name is
+stable, so do not rename it. The separate .camp file is an attachment marker
+for linked external directories, not a replacement for .campaign/.
 
 GETTING STARTED:
-  camp init               Initialize a new campaign in the current directory
-  camp project list       List all projects in the campaign
-  camp list               Show all registered campaigns
+  camp init               Initialize a new camp in the current directory
+  camp project list       List all projects in the camp
+  camp list               Show all registered camps
 
 NAVIGATION (using cgo shell function):
-  cgo                     Navigate to campaign root
+  cgo                     Navigate to camp root
   cgo p                   Navigate to projects directory
   cgo f                   Navigate to festivals directory
   cgo <name>              Fuzzy find and navigate to any target
 
 COMMON WORKFLOWS:
   camp project add <url>  Add a git repo as a project submodule
-  camp run <command>      Run command from campaign root directory
+  camp run <command>      Run command from camp root directory
   camp shortcuts          View all available navigation shortcuts
 
 Run 'camp shell-init' to enable the cgo navigation function.
@@ -55,12 +60,12 @@ Manage declared artifact roots (.campaign/artifacts.yaml)
 
 ### Synopsis
 
-Manage the campaign's declared artifact roots: directories of heavy non-git
+Manage the camp's declared artifact roots: directories of heavy non-git
 payloads (media, renders, datasets) that 'camp sync --from <machine>' moves
 between your machines with rsync instead of git.
 
 The declaration file (.campaign/artifacts.yaml) is committed, so every
-machine knows what belongs to the campaign. Declared roots should be
+machine knows what belongs to the camp. Declared roots should be
 gitignored: a root that is also git-tracked would make the same bytes both
 git content and artifact content. Manifests and per-peer sync snapshots are
 machine-local derived state under .campaign/cache (gitignored).
@@ -94,7 +99,7 @@ Declare an artifact root
 
 ### Synopsis
 
-Declare a campaign-relative directory as an artifact root.
+Declare a camp-relative directory as an artifact root.
 
 Policy 'always' (default) syncs the root on every 'camp sync --from
 <machine>'; 'on-demand' syncs it only when artifacts are requested
@@ -241,29 +246,29 @@ camp artifacts resolve [path] [flags]
 
 ## camp attach
 
-Attach an external directory to a campaign
+Attach an external directory to a camp
 
 ### Synopsis
 
-Attach a non-project directory to a campaign by writing a .camp marker.
+Attach a non-project directory to a camp by writing a .camp marker.
 
 The user manages the symlink (if any). camp attach only writes the marker at
 the resolved target so commands run from inside that directory can recover
-campaign context. Attachment markers may be shared by multiple campaigns;
-running attach again from another campaign adds that campaign to the marker.
+camp context. Attachment markers may be shared by multiple camps;
+running attach again from another camp adds that camp to the marker.
 
 If the target is reached through a symlink, camp follows it once and writes
 the marker at the final directory.
 
-When several campaigns share one attachment, which campaign a command resolves
-depends on how the directory is reached: entering through a campaign-local
-symlink resolves that campaign, while a bare cd into the shared target itself
-resolves to the first campaign it was attached to.
+When several camps share one attachment, which camp a command resolves
+depends on how the directory is reached: entering through a camp-local
+symlink resolves that camp, while a bare cd into the shared target itself
+resolves to the first camp it was attached to.
 
-Campaign selection:
-  - inside a campaign, omit --campaign to attach to the current campaign
-  - outside a campaign in an interactive terminal, omit --campaign to pick
-  - use a bare --campaign to force the picker even inside a campaign
+Camp selection:
+  - inside a camp, omit --campaign to attach to the current camp
+  - outside a camp in an interactive terminal, omit --campaign to pick
+  - use a bare --campaign to force the picker even inside a camp
   - use --campaign <name-or-id> for scripts or to skip the picker
 
 Examples:
@@ -279,7 +284,7 @@ camp attach <path> [flags]
 ### Options
 
 ```
-  -c, --campaign string   Target campaign by name or ID; omit value to pick interactively
+  -c, --campaign string   Target camp by name or ID; omit value to pick interactively
       --force             Rewrite an existing attachment marker
   -h, --help              help for attach
 ```
@@ -393,16 +398,16 @@ camp cache rebuild [flags]
 
 ## camp clone
 
-Clone a campaign with full submodule setup
+Clone a camp with full submodule setup
 
 ### Synopsis
 
-Clone a campaign repository and initialize all submodules.
+Clone a camp repository and initialize all submodules.
 
 This command provides a single-step setup for new devices:
 
   1. CLONE REPOSITORY
-     Clones the campaign repository with recursive submodules.
+     Clones the camp repository with recursive submodules.
 
   2. SYNCHRONIZE URLs
      Copies URLs from .gitmodules to .git/config, ensuring
@@ -415,25 +420,25 @@ This command provides a single-step setup for new devices:
      Verifies all submodules are initialized, at correct commits,
      and have matching URLs.
 
-  5. REGISTER CAMPAIGN
-     If .campaign/campaign.yaml exists, registers the campaign
+  5. REGISTER CAMP
+     If .campaign/campaign.yaml exists, registers the camp
      in the global registry for navigation and discovery.
 
 EXIT CODES:
   0  Success
-  1  Runtime failure (clone failed before usable campaign)
+  1  Runtime failure (clone failed before usable camp)
   2  Usage error (bad flags or args)
   3  Partial success or validation failed
 
 EXAMPLES:
-  # Clone a campaign (default: SSH)
+  # Clone a camp (default: SSH)
   camp clone git@github.com:Obedience-Corp/obey-campaign.git
 
   # Clone with HTTPS
   camp clone https://github.com/Obedience-Corp/obey-campaign.git
 
   # Clone to a specific directory
-  camp clone git@github.com:org/repo.git my-campaign
+  camp clone git@github.com:org/repo.git my-camp
 
   # Clone a specific branch
   camp clone git@github.com:org/repo.git --branch develop
@@ -472,7 +477,7 @@ camp clone <url> [directory] [flags]
       --from string     Seed git objects from this machine (id from ~/.obey/machines.yaml), then fetch the delta from origin
   -h, --help            help for clone
       --json            Output results as JSON for scripting
-      --no-register     Skip auto-registration in global campaign registry
+      --no-register     Skip auto-registration in global camp registry
       --no-submodules   Skip submodule initialization
       --no-validate     Skip post-clone validation
   -p, --parallel int    Number of parallel submodule initializations (default 4)
@@ -488,16 +493,16 @@ camp clone <url> [directory] [flags]
 
 ## camp commit
 
-Commit changes in the campaign root
+Commit changes in the camp root
 
 ### Synopsis
 
-Commit changes in the campaign root directory.
+Commit changes in the camp root directory.
 
 Automatically stages all changes and creates a commit. Handles
 stale lock files from crashed processes.
 
-At the campaign root, submodule ref changes (projects/*) are excluded
+At the camp root, submodule ref changes (projects/*) are excluded
 from staging by default to prevent accidental ref conflicts across
 machines. Use --include-refs to stage them explicitly.
 
@@ -528,7 +533,7 @@ camp commit [flags]
       --commit-large          Commit over-threshold files instead of keeping them out of git
       --commit-nested         Commit undeclared nested git repositories as gitlinks instead of keeping them out of git
   -h, --help                  help for commit
-      --include-refs          Include submodule ref changes when staging at campaign root
+      --include-refs          Include submodule ref changes when staging at camp root
       --json                  Emit a JSON result on stdout; human output goes to stderr
   -m, --message stringArray   Commit message (repeatable; multiple -m are joined git-style into subject + body; required unless --auto-write)
       --no-drain              Do not wait for camp's queued commits first
@@ -757,17 +762,17 @@ camp concepts [flags]
 
 ## camp copy
 
-Copy a file or directory within the campaign
+Copy a file or directory within the camp
 
 ### Synopsis
 
-Copy a file or directory within the current campaign.
+Copy a file or directory within the current camp.
 
 Paths are resolved relative to the current directory, matching standard
 'cp' behavior and tab completion.
 
-Use @ prefix for campaign shortcuts (e.g., @p/fest, @f/active/).
-Available shortcuts are defined in campaign config.
+Use @ prefix for camp shortcuts (e.g., @p/fest, @f/active/).
+Available shortcuts are defined in camp config.
 
 If the destination is an existing directory or ends with '/', the source
 is placed inside it with the same basename. Directories are copied
@@ -801,11 +806,11 @@ camp copy <src> <dest> [flags]
 
 ## camp create
 
-Create a new campaign at the default campaigns directory
+Create a new camp at the default camps directory
 
 ### Synopsis
 
-Create a new campaign at <campaigns_dir>/<name>/, using the same scaffolding as 'camp init'. The default campaigns directory is ~/campaigns/ and can be configured via 'camp settings' or by editing the campaigns_dir field in ~/.obey/campaign/config.json.
+Create a new camp at <campaigns_dir>/<name>/, using the same scaffolding as 'camp init'. The default camps directory is ~/campaigns/ and can be configured via 'camp settings' or by editing the campaigns_dir field in ~/.obey/campaign/config.json.
 
 ```
 camp create <name> [flags]
@@ -823,16 +828,16 @@ camp create <name> [flags]
 ### Options
 
 ```
-  -d, --description string   Campaign description
+  -d, --description string   Camp description
       --dry-run              Show what would be done without creating anything
   -h, --help                 help for create
-  -m, --mission string       Campaign mission statement
-  -n, --name string          Campaign display name (defaults to <name> positional)
+  -m, --mission string       Camp mission statement
+  -n, --name string          Camp display name (defaults to <name> positional)
       --no-git               Skip git repository initialization
-      --no-skills            Skip linking campaign skills into .claude/skills and .agents/skills
-      --org string           Assign the new campaign to this org (created if new; defaults to the fallback org)
-      --path string          Override the base campaigns directory (campaign created at <path>/<name>/)
-  -t, --type string          Campaign type (product, research, tools, personal) (default "product")
+      --no-skills            Skip linking camp skills into .claude/skills and .agents/skills
+      --org string           Assign the new camp to this org (created if new; defaults to the fallback org)
+      --path string          Override the base camps directory (camp created at <path>/<name>/)
+  -t, --type string          Camp type (product, research, tools, personal) (default "product")
 ```
 
 ### Options inherited from parent commands
@@ -890,20 +895,20 @@ camp date <path> [flags]
 
 ## camp detach
 
-Remove the current campaign's attachment binding
+Remove the current camp's attachment binding
 
 ### Synopsis
 
-Remove the current campaign's binding from the .camp attachment marker.
+Remove the current camp's binding from the .camp attachment marker.
 
 Refuses on linked-project markers; use 'camp project unlink' for those.
-The user-managed symlink (if any) is not modified. If run outside any campaign,
+The user-managed symlink (if any) is not modified. If run outside any camp,
 the entire attachment marker is removed.
 
-On an attachment shared by several campaigns this removes only the current
-campaign's binding; the others keep resolving. Detaching the campaign that a
+On an attachment shared by several camps this removes only the current
+camp's binding; the others keep resolving. Detaching the camp that a
 bare cd into the shared target resolved to shifts that fallback to the next
-remaining campaign.
+remaining camp.
 
 Examples:
   camp detach docs/examples/external-repo
@@ -928,11 +933,11 @@ camp detach <path> [flags]
 
 ## camp doctor
 
-Diagnose and fix campaign health issues
+Diagnose and fix camp health issues
 
 ### Synopsis
 
-Check campaign for common issues and optionally fix them.
+Check camp for common issues and optionally fix them.
 
 CHECKS PERFORMED:
   orphan      Orphaned gitlinks in index (no .gitmodules entry)
@@ -991,11 +996,11 @@ camp doctor [flags]
 
 ## camp dungeon
 
-Manage the campaign dungeon
+Manage the camp dungeon
 
 ### Synopsis
 
-Manage the campaign dungeon - a holding area for uncertain work.
+Manage the camp dungeon - a holding area for uncertain work.
 
 The dungeon is where you put work you're unsure about or want out of the way.
 It keeps items visible without them competing for your attention.
@@ -1092,7 +1097,7 @@ Without flags, auto-detects what to crawl:
 Use --triage or --inner to force a specific mode.
 
 For each item, you'll be prompted to decide its fate.
-Triage mode includes a route-to-docs action for existing campaign-root docs/<subdirectory>.
+Triage mode includes a route-to-docs action for existing camp-root docs/<subdirectory>.
 Statistics are gathered when available (requires scc or fest).
 All decisions are logged to crawl.jsonl for history.
 
@@ -1131,7 +1136,7 @@ List items in the dungeon or parent items eligible for triage.
 By default, lists items at the dungeon root (items already in the dungeon).
 Use --triage to list parent directory items that could be moved into the dungeon.
 The command resolves dungeon context by walking from the current directory up to
-campaign root and using the nearest available dungeon.
+camp root and using the nearest available dungeon.
 
 OUTPUT FORMATS:
   table (default)   Human-readable table with columns
@@ -1168,15 +1173,15 @@ camp dungeon list [flags]
 
 ## camp dungeon migrate
 
-Convert every campaign dungeon to the hidden .dungeon spelling
+Convert every camp dungeon to the hidden .dungeon spelling
 
 ### Synopsis
 
-Convert every dungeon in this campaign from "dungeon" to ".dungeon".
+Convert every dungeon in this camp from "dungeon" to ".dungeon".
 
-New campaigns hide the dungeon so it stops being the first thing newcomers ask
-about. This converts a campaign made before that change. A campaign uses one
-spelling throughout, so the sweep covers every dungeon at once: the campaign
+New camps hide the dungeon so it stops being the first thing newcomers ask
+about. This converts a camp made before that change. A camp uses one
+spelling throughout, so the sweep covers every dungeon at once: the camp
 root, festivals/, .campaign/intents/, .campaign/quests/, and each workflow
 type. Dungeons are discovered on disk, so locations added since this command
 was written are included too.
@@ -1185,10 +1190,10 @@ The move goes through git, so history and rename detection survive, and lands
 as a single commit you can revert.
 
 projects/ is never touched. Projects own their own trees, and a source
-directory named "dungeon" inside one is not a campaign dungeon.
+directory named "dungeon" inside one is not a camp dungeon.
 
-Release ordering matters when a campaign contains festivals/: this command
-also renames festivals/dungeon. Do not run it against a campaign used by a
+Release ordering matters when a camp contains festivals/: this command
+also renames festivals/dungeon. Do not run it against a camp used by a
 fest build that does not understand .dungeon. Land fest#274 and ship a fest
 release with the matching support before making this migration available to
 users.
@@ -1236,8 +1241,8 @@ By default, moves an item already in the dungeon root to a status directory.
 When the item exists in the parent directory and not in the dungeon root, the
 command automatically treats it as triage work and moves it into the dungeon.
 Use --triage to force a parent-directory move.
-With --triage and --to-docs, routes items to an existing campaign-root docs/<subdirectory>.
-With --workitem, resolves a campaign workitem from anywhere and moves its directory
+With --triage and --to-docs, routes items to an existing camp-root docs/<subdirectory>.
+With --workitem, resolves a camp workitem from anywhere and moves its directory
 into the workitem type's local dungeon.
 Moves are always auto-committed so dungeon history remains auditable.
 
@@ -1272,9 +1277,9 @@ camp dungeon move <item>... [status] [flags]
       --dry-run          Preview the move(s) without touching the filesystem or creating a commit
   -h, --help             help for move
       --json             Emit the dry-run plan as JSON (requires --dry-run)
-      --to-docs string   Route triage item into an existing campaign-root docs/<subdir> (requires --triage)
+      --to-docs string   Route triage item into an existing camp-root docs/<subdir> (requires --triage)
       --triage           Move from parent directory (not from dungeon root)
-      --workitem         Resolve item as a campaign workitem and move its directory to the local dungeon
+      --workitem         Resolve item as a camp workitem and move its directory to the local dungeon
 ```
 
 ### Options inherited from parent commands
@@ -1286,19 +1291,19 @@ camp dungeon move <item>... [status] [flags]
 
 ## camp festivals
 
-List festivals across campaigns, filtered by org/tag
+List festivals across camps, filtered by org/tag
 
 ### Synopsis
 
-Aggregate festivals across campaigns, filtered by campaign org/tag.
+Aggregate festivals across camps, filtered by camp org/tag.
 
-Selects campaigns from the registry by --org and --tag (AND), then composes
-'fest list --json' in each matching campaign and aggregates the result. The
-campaign set defaults to active campaigns; --all-campaigns includes inactive and
-reference campaigns. Festival-level flags (--status, --all, --since, --until,
+Selects camps from the registry by --org and --tag (AND), then composes
+'fest list --json' in each matching camp and aggregates the result. The
+camp set defaults to active camps; --all-campaigns includes inactive and
+reference camps. Festival-level flags (--status, --all, --since, --until,
 --sort) are passed through to each underlying 'fest list'.
 
-Runs one 'fest list' per matching campaign (sequentially); campaigns without a
+Runs one 'fest list' per matching camp (sequentially); camps without a
 festivals/ workspace contribute nothing. Read-only.
 
 ```
@@ -1317,15 +1322,15 @@ camp festivals [flags]
 
 ```
       --all             Include completed/dungeon festivals, passed to fest list
-      --all-campaigns   Include inactive/reference campaigns (default: active only)
+      --all-campaigns   Include inactive/reference camps (default: active only)
   -h, --help            help for festivals
   -i, --interactive     Open the interactive festivals browser
       --json            Output as JSON
-      --org string      Only campaigns in this org
+      --org string      Only camps in this org
       --since string    Festivals created on or after this date, passed to fest list
       --sort string     Festival sort, passed to fest list
       --status string   Festival status filter, passed to fest list
-      --tag strings     Only campaigns carrying this tag (repeat for AND)
+      --tag strings     Only camps carrying this tag (repeat for AND)
       --until string    Festivals created on or before this date, passed to fest list
 ```
 
@@ -1350,7 +1355,7 @@ branches, and optionally create a new working branch.
 
 Auto-detects the current project from your working directory, or accepts a
 single project name. Use --list to cycle a specific set of projects in one
-run, or 'camp fresh all' to cycle every project submodule in the campaign.
+run, or 'camp fresh all' to cycle every project submodule in the camp.
 
 Without configuration, syncs to the default branch and prunes.
 Configure .campaign/settings/fresh.yaml to set a default working branch, or
@@ -1362,7 +1367,7 @@ WORKITEM COMPLETION
 
 Two fresh.yaml settings decide what happens to workitems whose work looks done:
 
-  completed_runs     Tier 1, once per run, campaign-root scoped. "prompt"
+  completed_runs     Tier 1, once per run, camp-root scoped. "prompt"
                      (default) asks per workitem on a TTY and reports otherwise,
                      "report" prints a read-only banner and the reason for every
                      non-move, "sweep" promotes automatically (the pre-2026-08
@@ -1439,7 +1444,7 @@ Run fresh across all project submodules
 ### Synopsis
 
 Run the fresh cycle (fetch and safely sync default, prune, optional branch)
-across every project submodule in the campaign.
+across every project submodule in the camp.
 
 Examples:
   camp fresh all                     # Sync all projects
@@ -1480,7 +1485,7 @@ Configure the camp fresh workflow
 ### Synopsis
 
 Configure what camp fresh does after a merge. Configuration lives in
-.campaign/settings/fresh.yaml, as campaign-wide defaults plus optional
+.campaign/settings/fresh.yaml, as camp-wide defaults plus optional
 per-project overrides.
 
 Run without a subcommand to open the interactive setup for humans, which
@@ -1491,7 +1496,7 @@ groups the fresh sequence by what you can change about each step:
   Follow-ups  your own commands, run after a successful cycle
 
 Press enter on a settings step to change it, and a/e/d/K/J on a follow-up to
-add, edit, delete, or reorder it. prune and prune_remote are campaign-wide,
+add, edit, delete, or reorder it. prune and prune_remote are camp-wide,
 so they are changed under Global defaults rather than under a project.
 
 The subcommands below cover follow-ups only, for scripts and agents; edit the
@@ -1751,7 +1756,7 @@ The gather process:
      the rename)
   3. Stamp gathered_into/gathered_at on each source .workitem
   4. Migrate manual priority state and re-home workitem links
-  5. Rewrite campaign markdown and quest links that pointed at the sources
+  5. Rewrite camp markdown and quest links that pointed at the sources
   6. Commit the move (unless --no-commit)
 
 Moved sources stop appearing as separate workitems because discovery only
@@ -1805,7 +1810,7 @@ The gather process:
      the rename)
   3. Stamp gathered_into/gathered_at on each source .workitem
   4. Migrate manual priority state and re-home workitem links
-  5. Rewrite campaign markdown and quest links that pointed at the sources
+  5. Rewrite camp markdown and quest links that pointed at the sources
   6. Commit the move (unless --no-commit)
 
 Moved sources stop appearing as separate workitems because discovery only
@@ -1901,15 +1906,15 @@ camp gather feedback [flags]
 
 ## camp go
 
-Navigate to campaign directories
+Navigate to camp directories
 
 ### Synopsis
 
-Navigate within the campaign using shortcuts.
+Navigate within the camp using shortcuts.
 
 Usage patterns:
-  camp go           Toggle between campaign root and last location
-  camp go --root    Jump to campaign root (ignore toggle)
+  camp go           Toggle between camp root and last location
+  camp go --root    Jump to camp root (ignore toggle)
   camp go t         Jump to last visited location (cd - equivalent)
   camp go p         Jump to projects/
   camp go f         Jump to festivals/
@@ -1917,8 +1922,8 @@ Usage patterns:
   camp go p api     Fuzzy search projects/ for "api"
 
 Toggle behavior (no args):
-  - From anywhere: jump to campaign root, save current location
-  - From campaign root: jump back to saved location
+  - From anywhere: jump to camp root, save current location
+  - From camp root: jump back to saved location
 
 Toggle keyword (t / toggle):
   - Jump to the last visited location regardless of where you are
@@ -1950,7 +1955,7 @@ camp go [shortcut] [query...] [flags]
 
 ```
   camp go               # Toggle: root ↔ last location
-  camp go --root        # Force jump to campaign root
+  camp go --root        # Force jump to camp root
   camp go t             # Jump to last visited location (cd -)
   camp go p             # Jump to projects/
   camp go design        # Jump to exact pin "design"
@@ -1968,7 +1973,7 @@ camp go [shortcut] [query...] [flags]
   -h, --help                  help for go
   -l, --list                  List available sub-shortcuts for a project
       --print                 Print path only (for shell integration)
-      --root                  Jump to campaign root (ignore last location)
+      --root                  Jump to camp root (ignore last location)
 ```
 
 ### Options inherited from parent commands
@@ -1980,11 +1985,11 @@ camp go [shortcut] [query...] [flags]
 
 ## camp id
 
-Print the current campaign ID
+Print the current camp ID
 
 ### Synopsis
 
-Print the current campaign ID from .campaign/campaign.yaml.
+Print the current camp ID from .campaign/campaign.yaml.
 
 ```
 camp id [flags]
@@ -2011,7 +2016,7 @@ camp id [flags]
 
 ## camp idea
 
-Manage campaign ideas
+Manage camp ideas
 
 ### Synopsis
 
@@ -2095,7 +2100,7 @@ Examples:
   camp idea add "Add dark mode"        Ultra-fast capture
   camp idea add -c obey-campaign "Add dark mode"
   camp idea add                        Fast TUI (3-step form)
-  camp idea add --campaign             Pick a target campaign interactively
+  camp idea add --campaign             Pick a target camp interactively
   camp idea add --full                 Full TUI (includes body)
   camp idea add --note                 Note TUI (title + body, no type/concept)
   camp idea add --note "Meeting note" --body "Follow up next week"
@@ -2115,7 +2120,7 @@ camp idea add [title] [flags]
       --author string      Override the default author attribution
       --body string        Set idea body as a literal string
       --body-file string   Read idea body from file (- for stdin, 10 MiB cap)
-  -c, --campaign string    Target campaign by name or ID; omit value to pick interactively
+  -c, --campaign string    Target camp by name or ID; omit value to pick interactively
       --concept string     Set the concept field (e.g., projects/camp)
   -e, --edit               Open in $EDITOR for deep capture
       --full               Full TUI mode with body textarea
@@ -2177,7 +2182,7 @@ Claim an intent for an agent or session
 
 ### Synopsis
 
-Assign an intent to an agent so the campaign tracks who is working it.
+Assign an intent to an agent so the camp tracks who is working it.
 
 Stamps assigned_to and assigned_at, and merges any --ref values (a PR URL,
 branch, or festival path) into work_ref. Calling claim again on an
@@ -2588,7 +2593,7 @@ camp idea gather [ids...] [flags]
 
 ## camp idea list
 
-List ideas in the campaign
+List ideas in the camp
 
 ### Synopsis
 
@@ -2737,7 +2742,7 @@ Manage the note store (folders, moves, meetings)
 
 ### Synopsis
 
-Manage the campaign note store under .campaign/intents/notes/.
+Manage the camp note store under .campaign/intents/notes/.
 
 Use "camp idea note" to capture a note. This command group manages folders
 and placement of notes already in the store.
@@ -3152,14 +3157,14 @@ camp idea sync [flags]
 
 ## camp init
 
-Initialize a new campaign
+Initialize a new camp
 
 ### Synopsis
 
-Initialize a new campaign directory structure.
+Initialize a new camp directory structure.
 
-Creates the standard campaign directories:
-  .campaign/              - Campaign configuration and metadata
+Creates the standard camp directories:
+  .campaign/              - Camp configuration and metadata
   .campaign/intents/      - System-managed intent state
   projects/               - Project repositories (submodules or worktrees)
   projects/worktrees/     - Git worktrees for parallel development
@@ -3176,6 +3181,10 @@ Also creates:
 
 Initializes a git repository if not already inside one.
 
+Camp metadata lives in the directory named .campaign/. That name is stable and
+Camp expects it, so do not rename it. The separate .camp file is an attachment
+marker for linked external directories, not a replacement for .campaign/.
+
 Use --no-git to skip git initialization.
 
 ```
@@ -3186,8 +3195,8 @@ camp init [path] [flags]
 
 ```
   camp init                      Initialize current directory
-  camp init my-campaign          Create and initialize new directory
-  camp init --name "My Project"  Set custom campaign name
+  camp init my-camp          Create and initialize new directory
+  camp init --name "My Project"  Set custom camp name
   camp init --no-git             Skip git initialization
   camp init --dry-run            Preview without creating anything
 ```
@@ -3195,18 +3204,18 @@ camp init [path] [flags]
 ### Options
 
 ```
-  -d, --description string   Campaign description
+  -d, --description string   Camp description
       --dry-run              Show what would be done without creating anything
   -f, --force                Initialize in non-empty directory without prompting
   -h, --help                 help for init
-  -m, --mission string       Campaign mission statement
-  -n, --name string          Campaign name (defaults to directory name)
+  -m, --mission string       Camp mission statement
+  -n, --name string          Camp name (defaults to directory name)
       --no-git               Skip git repository initialization
       --no-register          Don't add to global registry
-      --no-skills            Skip linking campaign skills into .claude/skills and .agents/skills
-      --org string           Assign the new campaign to this org (created if new; defaults to the fallback org)
-      --repair               Add missing files to existing campaign
-  -t, --type string          Campaign type (product, research, tools, personal) (default "product")
+      --no-skills            Skip linking camp skills into .claude/skills and .agents/skills
+      --org string           Assign the new camp to this org (created if new; defaults to the fallback org)
+      --repair               Add missing files to existing camp
+  -t, --type string          Camp type (product, research, tools, personal) (default "product")
   -v, --verbose              Show skipped optional setup details
       --yes                  Skip repair confirmation prompt (for scripting)
 ```
@@ -3268,7 +3277,7 @@ Wait until every lane is empty
 
 ### Synopsis
 
-Block until no queued commit is outstanding anywhere in the campaign.
+Block until no queued commit is outstanding anywhere in the camp.
 
 Commands that touch git history already do this for the repo they act on, so
 this is for the cases that are not one command: before archiving a machine,
@@ -3392,7 +3401,7 @@ camp jobs run [flags]
 ### Options
 
 ```
-      --campaign string   Campaign root to serve (defaults to the detected campaign)
+      --campaign string   Camp root to serve (defaults to the detected camp)
   -h, --help              help for run
 ```
 
@@ -3405,7 +3414,7 @@ camp jobs run [flags]
 
 ## camp leverage
 
-Compute leverage scores for campaign projects
+Compute leverage scores for the camp's projects
 
 ### Synopsis
 
@@ -3421,7 +3430,7 @@ traditional estimation models predict for the same team and time.
 Leverage commands commit the data they write under .campaign/leverage so the
 score history stays versioned without extra steps. Nothing outside that
 directory is staged. Pass --no-commit to skip it once, or run
-'camp leverage config --autocommit=false' to turn it off for the campaign.
+'camp leverage config --autocommit=false' to turn it off for the camp.
 
 Examples:
   camp leverage                              Show team leverage (auto-detect authors from git)
@@ -3442,7 +3451,7 @@ camp leverage [directory] [flags]
 ```
       --author string    filter by author email (git substring match: 'alice@co' matches 'alice@co.com')
       --by-author        show per-author leverage breakdown
-      --dir string       score a specific directory (skips campaign project resolution)
+      --dir string       score a specific directory (skips camp project resolution)
   -h, --help             help for leverage
       --json             output as JSON
       --no-commit        skip the automatic commit of .campaign/leverage data
@@ -3671,18 +3680,18 @@ camp leverage snapshot [flags]
 
 ## camp lifecycle
 
-Manage campaign lifecycle status
+Manage camp lifecycle status
 
 ### Synopsis
 
-Manage a campaign's lifecycle status.
+Manage a camp's lifecycle status.
 
 The status is one of a fixed set:
   active      in current use (default); shown in 'camp list'
   inactive    paused or shelved; hidden from default 'camp list'
   reference   preserved read-only context; hidden from default views
 
-Setting inactive or reference does not unregister the campaign; use
+Setting inactive or reference does not unregister the camp; use
 'camp unregister' to remove it from the registry entirely.
 
 This group is 'camp lifecycle', not 'camp status' ('camp status' is the git
@@ -3742,17 +3751,17 @@ camp lifecycle list [flags]
 
 ## camp lifecycle set
 
-Set a campaign's lifecycle status
+Set a camp's lifecycle status
 
 ### Synopsis
 
-Transition a campaign to one of: active, inactive, reference.
+Transition a camp to one of: active, inactive, reference.
 
 Any other value is rejected. Setting inactive or reference does not unregister
-the campaign.
+the camp.
 
 ```
-camp lifecycle set <campaign> <status> [flags]
+camp lifecycle set <camp> <status> [flags]
 ```
 
 ### Examples
@@ -3777,19 +3786,19 @@ camp lifecycle set <campaign> <status> [flags]
 
 ## camp list
 
-List all registered campaigns
+List all registered camps
 
 ### Synopsis
 
-List all campaigns registered in the global registry.
+List all camps registered in the global registry.
 
-Campaigns are registered when created with 'camp init' or manually
+Camps are registered when created with 'camp init' or manually
 with 'camp register'. The registry lives at ~/.obey/campaign/registry.json.
 
 In a terminal, 'camp list' (with no flags) opens an interactive browser where you
-can deactivate/reactivate campaigns (cycle lifecycle status), reassign their org,
+can deactivate/reactivate camps (cycle lifecycle status), reassign their org,
 and copy paths. When machines are configured in ~/.obey/machines.yaml, press 'r'
-to load remote campaigns into the browser (not on open). Pass an org as a
+to load remote camps into the browser (not on open). Pass an org as a
 positional argument to open the browser filtered to that org. Piped, with
 --json/--count, or with any filter/sort flag it prints the table instead. Home
 paths display as '~'.
@@ -3804,7 +3813,7 @@ Bourne shell that is not bash or zsh; the bash script will not parse there.
 
 Output formats:
   table   - Aligned columns with headers (default)
-  simple  - Campaign names only, one per line
+  simple  - camp names only, one per line
   json    - JSON array for scripting
 
 Sorting options:
@@ -3814,15 +3823,15 @@ Sorting options:
   org      - By org (fallback first, then alphabetical), then by name
 
 Examples:
-  camp list                  List all campaigns
-  camp list obey             Browse campaigns in the obey org
+  camp list                  List all camps
+  camp list obey             Browse camps in the obey org
   camp list --json           Output as JSON
   camp list --format json    Output as JSON
   camp list --sort name      Sort by name
   camp list --sort org       Sort by org, then name
   camp list --format simple  Names only for scripting
-  camp list --count          Print only the total number of campaigns
-  camp list --remote         Also list campaigns on machines in ~/.obey/machines.yaml
+  camp list --count          Print only the total number of camps
+  camp list --remote         Also list camps on machines in ~/.obey/machines.yaml
 
 --remote runs each machine's own 'camp list --json' through that account's
 configured login shell ($SHELL -lc) so its login-profile PATH is picked up; when
@@ -3831,7 +3840,7 @@ locations (~/.local/bin, $GOBIN, $GOPATH/bin, ~/go/bin, Homebrew) before giving
 up. If camp lives somewhere else on a machine, set CAMP_REMOTE_CAMP_PATH to its
 exact path there. 'camp machine diagnose' shows which binary a hop would run.
 
-For interactive hop to a remote campaign from the picker, use csw after
+For interactive hop to a remote camp from the picker, use csw after
 shell-init (see 'camp switch --help').
 
 ```
@@ -3842,18 +3851,18 @@ camp list [org] [flags]
 
 ```
       --all              Show all statuses (default hides inactive/reference)
-      --count            Print only the total number of campaigns
+      --count            Print only the total number of camps
   -f, --format string    Output format (table, simple, json) (default "table")
       --group            Force org grouping
   -h, --help             help for list
-  -i, --interactive      Open the interactive campaign browser (prints the table when stdout is not a terminal)
+  -i, --interactive      Open the interactive camp browser (prints the table when stdout is not a terminal)
       --json             Output as JSON (shorthand for --format json)
       --no-group         Suppress org grouping
-      --org string       Only campaigns in this org
-      --remote           Also list campaigns on machines in ~/.obey/machines.yaml (ssh)
+      --org string       Only camps in this org
+      --remote           Also list camps on machines in ~/.obey/machines.yaml (ssh)
   -s, --sort string      Sort by (name, accessed, type, org) (default "accessed")
-      --status string    Only campaigns in this status (active, inactive, reference)
-      --tag strings      Only campaigns carrying this tag (repeat for AND)
+      --status string    Only camps in this status (active, inactive, reference)
+      --tag strings      Only camps carrying this tag (repeat for AND)
       --verify-verbose   Show detailed verification output
 ```
 
@@ -3866,14 +3875,14 @@ camp list [org] [flags]
 
 ## camp log
 
-Show git log of the campaign
+Show git log of the camp
 
 ### Synopsis
 
-Show git log of the campaign root repository.
+Show git log of the camp root repository.
 
-Works from anywhere within the campaign - always shows the log
-of the campaign root repository.
+Works from anywhere within the camp - always shows the log
+of the camp root repository.
 
 Use --sub to show log of the submodule detected from your current directory.
 Use --project/-p to show log of a specific project.
@@ -3940,7 +3949,7 @@ instead) and docs/transfer.md for the machine-first transfer grammar.
 
 Run without a subcommand in a terminal to manage the fleet interactively: add,
 discover, edit, and remove machines, see each one's socket state, and press
-enter to pick a campaign on the selected machine and hop to it. Hopping needs
+enter to pick a camp on the selected machine and hop to it. Hopping needs
 the shell wrapper ('eval "$(camp shell-init zsh)"'), because no subprocess can
 replace the shell it was run from; without it the screen says so rather than
 appearing to work. The subcommands stay the interface for scripts and agents,
@@ -4226,17 +4235,17 @@ camp machine remove <id> [flags]
 
 ## camp move
 
-Move a file or directory within the campaign
+Move a file or directory within the camp
 
 ### Synopsis
 
-Move a file or directory within the current campaign.
+Move a file or directory within the current camp.
 
 Paths are resolved relative to the current directory, matching standard
 'mv' behavior and tab completion.
 
-Use @ prefix for campaign shortcuts (e.g., @p/fest, @f/active/).
-Available shortcuts are defined in campaign config.
+Use @ prefix for camp shortcuts (e.g., @p/fest, @f/active/).
+Available shortcuts are defined in camp config.
 
 If the destination is an existing directory or ends with '/', the source
 is placed inside it with the same basename.
@@ -4269,13 +4278,13 @@ camp move <src> <dest> [flags]
 
 ## camp notify
 
-Manage campaign state notices
+Manage camp state notices
 
 ### Synopsis
 
 Manage the advisory notices camp surfaces on commands you already run.
 
-Notices describe campaign state you may not know is true, such as a declared
+Notices describe camp state you may not know is true, such as a declared
 artifact root that has never synced. Each one carries its own dismiss command.
 
 Dismissals are stored in .campaign/notices.yaml, which is committed: a
@@ -4368,26 +4377,26 @@ camp notify restore <notice-id> [flags]
 
 ## camp org
 
-Group campaigns into orgs
+Group camps into orgs
 
 ### Synopsis
 
-Group related campaigns into first-class orgs.
+Group related camps into first-class orgs.
 
-Every campaign belongs to exactly one org (default "default"). Orgs are first-class:
+Every camp belongs to exactly one org (default "default"). Orgs are first-class:
 they persist in the machine-wide registry, can hold zero members, and are deleted
 explicitly with 'camp org delete'.
 
 In a terminal, 'camp org' (no arguments) opens an interactive browser of orgs
-and their members where you can move, create, rename, and return campaigns. When
-piped or with --json it prints the current campaign's org instead; use
+and their members where you can move, create, rename, and return camps. When
+piped or with --json it prints the current camp's org instead; use
 'camp org which' to print the org unconditionally.
 
 Commands:
-  which   Print the current campaign's org
-  create  Create an org (optionally --empty) and optionally join campaigns
-  add     Assign campaigns to an org (also reassigns; single-membership)
-  remove  Return campaigns to the default org
+  which   Print the current camp's org
+  create  Create an org (optionally --empty) and optionally join camps
+  add     Assign camps to an org (also reassigns; single-membership)
+  remove  Return camps to the default org
   delete  Delete an org (empty only unless --force)
 
 ```
@@ -4398,11 +4407,11 @@ camp org [flags]
 
 ```
   camp org                                       Browse and manage orgs interactively (TTY)
-  camp org which                                 Print the current campaign's org
-  camp org create obey                           Add the current campaign to "obey"
+  camp org which                                 Print the current camp's org
+  camp org create obey                           Add the current camp to "obey"
   camp org create empty-org --empty              Create an org with no members
-  camp org add obey obey-campaign obey-content   Move campaigns into "obey"
-  camp org remove obey-content                   Return a campaign to "default"
+  camp org add obey obey-campaign obey-content   Move camps into "obey"
+  camp org remove obey-content                   Return a camp to "default"
   camp org delete empty-org                      Delete an empty org
 ```
 
@@ -4423,18 +4432,18 @@ camp org [flags]
 
 ## camp org add
 
-Assign campaigns to an org (reassigns; single-membership)
+Assign camps to an org (reassigns; single-membership)
 
 ### Synopsis
 
-Assign one or more campaigns to <org>.
+Assign one or more camps to <org>.
 
-Membership is single, so this is also the reassign verb: a campaign added to a
+Membership is single, so this is also the reassign verb: a camp added to a
 new org leaves its previous org in the same step. The org is created implicitly.
-Adding a campaign already in <org> is a no-op for that campaign.
+Adding a camp already in <org> is a no-op for that camp.
 
 ```
-camp org add <org> <campaign>... [flags]
+camp org add <org> <camp>... [flags]
 ```
 
 ### Examples
@@ -4460,27 +4469,27 @@ camp org add <org> <campaign>... [flags]
 
 ## camp org create
 
-Create an org (optionally empty) and join campaigns
+Create an org (optionally empty) and join camps
 
 ### Synopsis
 
-Create a first-class org, optionally joining campaigns to it.
+Create a first-class org, optionally joining camps to it.
 
-Run inside a campaign with no campaign arguments to add the current campaign:
+Run inside a camp with no camp arguments to add the current camp:
   camp org create obey
 
-Or name the campaigns explicitly:
+Or name the camps explicitly:
   camp org create obey obey-campaign obey-content
 
-Create an empty org with no members (works outside a campaign):
+Create an empty org with no members (works outside a camp):
   camp org create obey --empty
 
 Orgs are first-class: they persist in the registry even with zero members.
 Joining an org that already has members is allowed; there is no "already exists"
-error, and a campaign already in the org is reported as unchanged.
+error, and a camp already in the org is reported as unchanged.
 
 ```
-camp org create <org> [campaign...] [flags]
+camp org create <org> [camp...] [flags]
 ```
 
 ### Examples
@@ -4494,7 +4503,7 @@ camp org create <org> [campaign...] [flags]
 ### Options
 
 ```
-      --empty   Create the org with no members (do not join any campaign)
+      --empty   Create the org with no members (do not join any camp)
   -h, --help    help for create
       --json    Output as JSON
 ```
@@ -4576,21 +4585,21 @@ camp org list [flags]
 
 ## camp org next
 
-Switch to the next campaign in the current campaign's org
+Switch to the next camp in the current camp's org
 
 ### Synopsis
 
-Switch to the next campaign in the current campaign's org.
+Switch to the next camp in the current camp's org.
 
 Members are ordered by name, so the cycle is stable and predictable
-(a -> b -> c -> a). By default only active campaigns are cycled; use --all to
-include inactive and reference campaigns.
+(a -> b -> c -> a). By default only active camps are cycled; use --all to
+include inactive and reference camps.
 
 Use with the corg shell function for instant navigation:
-  corg        # cd to the next campaign in this org
+  corg        # cd to the next camp in this org
 
 The --print flag outputs just the target path for shell integration, and --json
-emits the resolved source and target campaigns.
+emits the resolved source and target camps.
 
 ```
 camp org next [flags]
@@ -4599,18 +4608,18 @@ camp org next [flags]
 ### Examples
 
 ```
-  camp org next            # Print cd to the next org campaign
+  camp org next            # Print cd to the next org camp
   camp org next --print    # Print the target path only
-  camp org next --all      # Include inactive/reference campaigns
+  camp org next --all      # Include inactive/reference camps
   camp org next --json
 ```
 
 ### Options
 
 ```
-      --all     Include inactive and reference campaigns in the cycle
+      --all     Include inactive and reference camps in the cycle
   -h, --help    help for next
-      --json    Output the resolved source and target campaigns as JSON
+      --json    Output the resolved source and target camps as JSON
       --print   Print the target path only (for shell integration)
 ```
 
@@ -4623,17 +4632,17 @@ camp org next [flags]
 
 ## camp org remove
 
-Return campaigns to the default org
+Return camps to the default org
 
 ### Synopsis
 
-Return one or more campaigns to the "default" org.
+Return one or more camps to the "default" org.
 
-Since a campaign is always in exactly one org, you do not name the org.
-Removing a campaign already in "default" is a no-op.
+Since a camp is always in exactly one org, you do not name the org.
+Removing a camp already in "default" is a no-op.
 
 ```
-camp org remove <campaign>... [flags]
+camp org remove <camp>... [flags]
 ```
 
 ### Examples
@@ -4694,7 +4703,7 @@ camp org rename <old> <new> [flags]
 
 ## camp org show
 
-Show an org's member campaigns
+Show an org's member camps
 
 ```
 camp org show <org> [flags]
@@ -4722,19 +4731,19 @@ camp org show <org> [flags]
 
 ## camp org toggle
 
-Toggle back to the last-visited campaign in the current org
+Toggle back to the last-visited camp in the current org
 
 ### Synopsis
 
-Toggle back to the most recently visited other campaign in the current org.
+Toggle back to the most recently visited other camp in the current org.
 
 "Most recently visited" is tracked by last-access time, which camp updates on
 every 'camp switch' and 'camp org next'/'toggle'. Paired with 'camp org next',
 this gives a natural A <-> B toggle within an org. By default only active
-campaigns are considered; use --all to include inactive and reference campaigns.
+camps are considered; use --all to include inactive and reference camps.
 
 Use with the corg shell function for instant navigation:
-  corg t      # cd back to the last org campaign you were in
+  corg t      # cd back to the last org camp you were in
 
 ```
 camp org toggle [flags]
@@ -4743,7 +4752,7 @@ camp org toggle [flags]
 ### Examples
 
 ```
-  camp org toggle          # Print cd to the last-visited org campaign
+  camp org toggle          # Print cd to the last-visited org camp
   camp org toggle --print  # Print the target path only
   camp org toggle --json
 ```
@@ -4751,9 +4760,9 @@ camp org toggle [flags]
 ### Options
 
 ```
-      --all     Include inactive and reference campaigns in the cycle
+      --all     Include inactive and reference camps in the cycle
   -h, --help    help for toggle
-      --json    Output the resolved source and target campaigns as JSON
+      --json    Output the resolved source and target camps as JSON
       --print   Print the target path only (for shell integration)
 ```
 
@@ -4766,7 +4775,7 @@ camp org toggle [flags]
 
 ## camp org which
 
-Print the current campaign's org
+Print the current camp's org
 
 ```
 camp org which [flags]
@@ -4908,20 +4917,20 @@ camp plugins [flags]
 
 ## camp project
 
-Manage campaign projects
+Manage camp projects
 
 ### Synopsis
 
-Manage git submodules and project repositories in the campaign.
+Manage git submodules and project repositories in the camp.
 
 A project can be:
   - a git repository tracked as a submodule under projects/
   - a machine-local linked workspace attached via symlink under projects/
-  - an ordinary campaign-owned directory tracked by the campaign repository
+  - an ordinary camp-owned directory tracked by the camp repository
 
 Use 'camp project add' for submodules and 'camp project link' / 'camp project unlink'
 for linked workspaces. Use 'camp project run' (or the 'cr -p' shell shorthand)
-to run a command inside a project from anywhere in the campaign.
+to run a command inside a project from anywhere in the camp.
 
 Examples:
   camp project list                    List all projects
@@ -4953,19 +4962,19 @@ camp project [flags]
 
 ## camp project add
 
-Add a project to campaign
+Add a project to camp
 
 ### Synopsis
 
-Add a git repository as a project in the campaign.
+Add a git repository as a project in the camp.
 
 The project is cloned as a git submodule into the projects/ directory.
 A worktree directory is also created for future parallel development.
-The campaign commit is always created so .gitmodules and the submodule pointer land together.
+The camp commit is always created so .gitmodules and the submodule pointer land together.
 
-If you're already inside a campaign, that campaign is used by default.
-Outside a campaign, use --campaign <name-or-id> or a bare --campaign to
-select a registered target campaign.
+If you're already inside a camp, that camp is used by default.
+Outside a camp, use --campaign <name-or-id> or a bare --campaign to
+select a registered target camp.
 
 Source can be:
   - SSH URL:   git@github.com:org/repo.git
@@ -4976,7 +4985,7 @@ Examples:
   camp project add git@github.com:org/api.git           # Add remote repo
   camp project add https://github.com/org/web.git       # Add via HTTPS
   camp project add --local ./my-repo --name my-project  # Add existing local repo
-  camp project add --campaign platform --local ./my-repo # Add outside current campaign
+  camp project add --campaign platform --local ./my-repo # Add outside current camp
   camp project add git@github.com:org/api.git --name backend  # Custom name
 
 ```
@@ -4986,7 +4995,7 @@ camp project add [source] [flags]
 ### Options
 
 ```
-  -c, --campaign string   Target campaign by name or ID; omit value to pick interactively
+  -c, --campaign string   Target camp by name or ID; omit value to pick interactively
   -h, --help              help for add
   -l, --local string      Add existing local repository instead of cloning
   -n, --name string       Override project name (defaults to repo name)
@@ -5016,7 +5025,7 @@ to an active festival or workitem (via path links, ancestor .workitem
 markers, or festival-scoped links), the commit message carries the same
 FE-<ref> / WI-<ref> tracking components that `fest commit` would
 include. Use --workitem to override cwd-based resolution. When no
-festival/workitem context resolves, the tag is the bare campaign tag.
+festival/workitem context resolves, the tag is the bare camp tag.
 
 Examples:
   # From within a project directory
@@ -5043,7 +5052,7 @@ camp project commit [flags]
       --no-drain              Do not wait for camp's queued commits first
       --no-sync               Do not sync submodule ref even if settings enable it
   -p, --project string        Project name (auto-detected from cwd if not specified)
-      --sync                  Sync submodule ref at campaign root after commit (also enabled by commit.sync_project_refs setting)
+      --sync                  Sync submodule ref at camp root after commit (also enabled by commit.sync_project_refs setting)
       --workitem string       explicit workitem selector for the commit tag (overrides cwd-based resolution)
 ```
 
@@ -5056,26 +5065,26 @@ camp project commit [flags]
 
 ## camp project link
 
-Link an existing local project into a campaign
+Link an existing local project into a camp
 
 ### Synopsis
 
-Link an existing local directory into a campaign.
+Link an existing local directory into a camp.
 
 If path is omitted, camp links the current working directory.
 
-If you're already inside a campaign, camp uses that campaign automatically.
-If you're outside a campaign in an interactive terminal, camp opens a picker
-so you can choose a registered campaign. Use --campaign <name-or-id> to skip
+If you're already inside a camp, camp uses that camp automatically.
+If you're outside a camp in an interactive terminal, camp opens a picker
+so you can choose a registered camp. Use --campaign <name-or-id> to skip
 the picker or for non-interactive scripts.
 
 This creates a symlink at projects/<name> and writes .camp with the selected
-campaign ID.
+camp ID.
 
 Examples:
   camp project link                          # Link current directory
   camp project link ~/code/my-project        # Link another directory
-  camp project link --campaign platform      # Link current directory to a specific campaign
+  camp project link --campaign platform      # Link current directory to a specific camp
   camp project link ~/code/my-project --campaign platform
   camp project link ~/code/my-project --name backend
 
@@ -5086,7 +5095,7 @@ camp project link [path] [flags]
 ### Options
 
 ```
-  -c, --campaign string   Target campaign by name or ID; defaults to current campaign or interactive picker
+  -c, --campaign string   Target camp by name or ID; defaults to current camp or interactive picker
   -h, --help              help for link
   -n, --name string       Override project name (defaults to directory name)
       --no-commit         Skip automatic git commit
@@ -5101,11 +5110,11 @@ camp project link [path] [flags]
 
 ## camp project list
 
-List projects in campaign
+List projects in camp
 
 ### Synopsis
 
-List all projects in the current campaign.
+List all projects in the current camp.
 
 Projects are discovered from the projects/ directory. They may be regular
 git-backed entries or linked external directories.
@@ -5158,15 +5167,15 @@ camp project list [flags]
 
 ## camp project new
 
-Create a new project in campaign
+Create a new project in camp
 
 ### Synopsis
 
-Create a new local project as a git submodule in the campaign.
+Create a new local project as a git submodule in the camp.
 
 The project is initialized as a git repository with an initial commit,
 then added as a submodule under projects/. No remote repository is required.
-The campaign commit is always created so .gitmodules and the submodule pointer land together.
+The camp commit is always created so .gitmodules and the submodule pointer land together.
 
 You can add a remote later:
   cd projects/<name>
@@ -5244,7 +5253,7 @@ Delete merged branches across all projects
 ### Synopsis
 
 Delete local branches that have been merged into the default branch,
-across every project submodule in the campaign.
+across every project submodule in the camp.
 
 Produces a per-project summary showing what was (or would be) pruned.
 
@@ -5277,7 +5286,7 @@ Manage remotes for a project
 
 ### Synopsis
 
-Manage git remotes for a campaign project.
+Manage git remotes for a camp project.
 
 Auto-detects the current project from your working directory, or use --project
 to specify explicitly.
@@ -5401,7 +5410,7 @@ Removing the "origin" remote is blocked by default because it is the
 canonical remote for submodule tracking. Use --force to override.
 
 When --force is used to remove origin from a submodule project, the
-.gitmodules entry is also cleaned up to keep the campaign consistent.
+.gitmodules entry is also cleaned up to keep the camp consistent.
 
 Note: if you want to change the canonical URL instead of removing it,
 use "camp project remote set-url".
@@ -5481,7 +5490,7 @@ Update a remote URL across all tracked locations with automatic rollback.
 
 For submodule projects, updates three locations in order:
   1. .gitmodules  (canonical, tracked in git)
-  2. local git submodule config (.git/config of the campaign root)
+  2. local git submodule config (.git/config of the camp root)
   3. remote config inside the project repo
 
 If any step fails, previous steps are automatically rolled back to keep
@@ -5523,11 +5532,11 @@ camp project remote set-url <url> [flags]
 
 ## camp project remove
 
-Remove a project from campaign
+Remove a project from camp
 
 ### Synopsis
 
-Remove a project from the campaign.
+Remove a project from the camp.
 
 By default, this only removes the project from git submodule tracking.
 The project directory is removed from the working tree by git rm. Pass --delete
@@ -5575,7 +5584,7 @@ Rename a managed project
 Rename a managed project and migrate its active Camp references.
 
 Supported projects are declared Git submodules, linked workspace symlinks,
-and ordinary campaign-owned directories tracked by the campaign repository.
+and ordinary camp-owned directories tracked by the camp repository.
 Dirty project checkouts and linked worktrees are preserved. Destination
 collisions and unmanaged directories are rejected before mutation.
 
@@ -5596,11 +5605,11 @@ camp project rename <current> <new> [flags]
 ### Options
 
 ```
-  -c, --campaign string     Target campaign by name or ID; omit value to pick interactively
+  -c, --campaign string     Target camp by name or ID; omit value to pick interactively
       --dry-run             Print the complete plan without writing
   -h, --help                help for rename
       --json                Output a versioned JSON plan or result
-      --no-commit           Apply the rename without a campaign commit
+      --no-commit           Apply the rename without a camp commit
       --no-verify           Skip remote connectivity verification
       --remote-url string   Explicitly update the project's origin URL
 ```
@@ -5618,10 +5627,10 @@ Run a command inside a project directory, like cr but project-scoped
 
 ### Synopsis
 
-Run any shell command inside a project directory from anywhere in the campaign.
+Run any shell command inside a project directory from anywhere in the camp.
 
 This is the project-scoped counterpart to 'camp run' (cr): cr runs from the
-campaign root, camp project run (cr -p) runs inside a project.
+camp root, camp project run (cr -p) runs inside a project.
 
 The project is resolved in this order:
   1. --project / -p flag (explicit project name, tab-completes registered projects)
@@ -5709,11 +5718,11 @@ camp project stage [flags]
 
 ## camp project unlink
 
-Unlink a linked project from a campaign
+Unlink a linked project from a camp
 
 ### Synopsis
 
-Remove a linked project symlink from a campaign without touching the
+Remove a linked project symlink from a camp without touching the
 external workspace contents.
 
 If name is omitted, the current linked project is inferred from the working
@@ -5721,11 +5730,11 @@ directory.
 
 Use this for linked workspaces added with 'camp project link'. This command
 removes the symlink entry from projects/ and cleans up the linked repo's local
-.camp marker when it belongs to the selected campaign.
+.camp marker when it belongs to the selected camp.
 
-If you're already inside a campaign, that campaign is used by default.
-Outside a campaign, use --campaign <name-or-id> or a bare --campaign to
-pick a registered target campaign interactively.
+If you're already inside a camp, that camp is used by default.
+Outside a camp, use --campaign <name-or-id> or a bare --campaign to
+pick a registered target camp interactively.
 
 Examples:
   camp project unlink
@@ -5742,7 +5751,7 @@ camp project unlink [name] [flags]
 ### Options
 
 ```
-  -c, --campaign string   Target campaign by name or ID; omit value to pick interactively
+  -c, --campaign string   Target camp by name or ID; omit value to pick interactively
       --dry-run           Show what would be done without making changes
   -h, --help              help for unlink
       --no-commit         Skip automatic git commit
@@ -5981,8 +5990,8 @@ Pull latest changes from remote
 
 Pull latest changes from the remote repository.
 
-Works from anywhere within the campaign - always pulls to
-the campaign root repository.
+Works from anywhere within the camp - always pulls to
+the camp root repository.
 
 Use --sub to pull the submodule detected from your current directory.
 Use --project to pull a specific project.
@@ -6022,9 +6031,9 @@ Pull latest changes for all repos
 
 ### Synopsis
 
-Pull latest changes for all repositories in the campaign.
+Pull latest changes for all repositories in the camp.
 
-Scans the campaign root and all submodules, checks which have a tracking
+Scans the camp root and all submodules, checks which have a tracking
 branch with upstream, and pulls them. Any extra flags are passed through
 to git pull for each repo.
 
@@ -6062,14 +6071,14 @@ camp pull all [git pull flags] [flags]
 
 ## camp push
 
-Push campaign changes to remote
+Push camp changes to remote
 
 ### Synopsis
 
-Push campaign changes to the remote repository.
+Push camp changes to the remote repository.
 
-Works from anywhere within the campaign - always pushes from
-the campaign root repository.
+Works from anywhere within the camp - always pushes from
+the camp root repository.
 
 Use --sub to push from the submodule detected from your current directory.
 Use --project to push from a specific project.
@@ -6108,9 +6117,9 @@ Push all repos with unpushed commits
 
 ### Synopsis
 
-Push all repositories in the campaign that have unpushed commits.
+Push all repositories in the camp that have unpushed commits.
 
-Scans all submodules and the campaign root, checks which have commits
+Scans all submodules and the camp root, checks which have commits
 ahead of their upstream, and pushes them. Any extra flags are passed
 through to git push for each repo.
 
@@ -6142,11 +6151,11 @@ camp push all [git push flags] [flags]
 
 ## camp refs-sync
 
-Sync submodule ref pointers in campaign root
+Sync submodule ref pointers in camp root
 
 ### Synopsis
 
-Update the campaign root's recorded submodule pointers to match
+Update the camp root's recorded submodule pointers to match
 each submodule's current HEAD. Creates a single atomic commit.
 
 Without arguments, syncs all submodules. Specify paths to sync specific ones.
@@ -6177,26 +6186,26 @@ camp refs-sync [submodule...] [flags]
 
 ## camp register
 
-Register campaign in global registry
+Register a camp in the global registry
 
 ### Synopsis
 
-Register an existing campaign in the global registry.
+Register an existing camp in the global registry.
 
-This adds the campaign to the registry at ~/.obey/campaign/registry.json,
+This adds the camp to the registry at ~/.obey/campaign/registry.json,
 enabling it to appear in 'camp list' and be accessible via navigation commands.
 
-Note: 'camp init' automatically registers new campaigns. This command is for
-registering existing campaigns that weren't created with camp or were unregistered.
+Note: 'camp init' automatically registers new camps. This command is for
+registering existing camps that weren't created with camp or were unregistered.
 
-If the specified path is not a campaign (has no .campaign/ directory),
+If the specified path is not a camp (has no .campaign/ directory),
 you'll be offered the option to initialize it.
 
 Examples:
   camp register                          # Register current directory
   camp register ~/Dev/my-project         # Register specified path
-  camp register . --name custom-name     # Override the campaign name
-  camp register . --type research        # Override the campaign type
+  camp register . --name custom-name     # Override the camp name
+  camp register . --type research        # Override the camp type
 
 ```
 camp register [path] [flags]
@@ -6206,8 +6215,8 @@ camp register [path] [flags]
 
 ```
   -h, --help          help for register
-  -n, --name string   Override campaign name
-  -t, --type string   Override campaign type (product, research, tools, personal)
+  -n, --name string   Override camp name
+  -t, --type string   Override camp type (product, research, tools, personal)
 ```
 
 ### Options inherited from parent commands
@@ -6219,18 +6228,18 @@ camp register [path] [flags]
 
 ## camp registry
 
-Manage the campaign registry
+Manage the camp registry
 
 ### Synopsis
 
-Manage the campaign registry at ~/.obey/campaign/registry.json.
+Manage the camp registry at ~/.obey/campaign/registry.json.
 
-The registry tracks all known campaigns for quick navigation and lookup.
+The registry tracks all known camps for quick navigation and lookup.
 Use these commands to maintain registry health and resolve issues.
 
 Commands:
-  prune   Remove stale entries (campaigns that no longer exist)
-  sync    Update registry entry for current campaign
+  prune   Remove stale entries (camps that no longer exist)
+  sync    Update registry entry for current camp
   check   Validate registry integrity
 
 ```
@@ -6240,9 +6249,9 @@ camp registry [flags]
 ### Examples
 
 ```
-  camp registry prune             Remove entries for non-existent campaigns
+  camp registry prune             Remove entries for non-existent camps
   camp registry prune --dry-run   Show what would be removed
-  camp registry sync              Update path for current campaign
+  camp registry sync              Update path for current camp
   camp registry check             Check for issues
 ```
 
@@ -6270,7 +6279,7 @@ Validate the registry and report any issues found.
 Checks for:
 - Stale entries (paths that don't exist)
 - Missing .campaign/ directories
-- Campaigns in /tmp/ directories
+- Camps in /tmp/ directories
 - Duplicate entries (multiple IDs pointing to the same path)
 
 Examples:
@@ -6299,7 +6308,7 @@ Remove stale registry entries
 
 ### Synopsis
 
-Remove registry entries where the campaign no longer exists.
+Remove registry entries where the camp no longer exists.
 
 Checks each registered path and removes entries where:
 - The path no longer exists
@@ -6312,7 +6321,7 @@ Options:
 Examples:
   camp registry prune             Remove stale entries
   camp registry prune --dry-run   Preview what would be removed
-  camp registry prune --include-temp  Also clean up test campaigns
+  camp registry prune --include-temp  Also clean up test camps
 
 ```
 camp registry prune [flags]
@@ -6335,18 +6344,18 @@ camp registry prune [flags]
 
 ## camp registry sync
 
-Sync current campaign with registry
+Sync current camp with registry
 
 ### Synopsis
 
-Update the registry entry for the current campaign.
+Update the registry entry for the current camp.
 
-Run this after moving a campaign directory to update its path
-in the registry. Reads the campaign ID from .campaign/campaign.yaml
+Run this after moving a camp directory to update its path
+in the registry. Reads the camp ID from .campaign/campaign.yaml
 and updates (or adds) the registry entry.
 
 Examples:
-  camp registry sync   # Run from inside a campaign
+  camp registry sync   # Run from inside a camp
 
 ```
 camp registry sync [flags]
@@ -6367,11 +6376,11 @@ camp registry sync [flags]
 
 ## camp root
 
-Print the current campaign root
+Print the current camp root
 
 ### Synopsis
 
-Print the current campaign root relative to the current working directory.
+Print the current camp root relative to the current working directory.
 
 ```
 camp root [flags]
@@ -6400,11 +6409,11 @@ camp root [flags]
 
 ## camp run
 
-Execute command from campaign root, or just recipe in a project
+Execute command from camp root, or just recipe in a project
 
 ### Synopsis
 
-Execute any command from the campaign root directory, or run just recipes
+Execute any command from the camp root directory, or run just recipes
 in a project directory.
 
 If the first argument exactly matches a project name (a directory in projects/
@@ -6412,7 +6421,7 @@ with a git repo), camp dispatches to 'just' in that project's directory.
 Any remaining arguments are passed as the recipe and arguments to just.
 
 If the first argument does not match a project, it is treated as a shell command
-and executed from the campaign root directory.
+and executed from the camp root directory.
 
 Use @shortcut prefix to run from a shortcut's directory instead of root.
 Only navigation shortcuts (those with paths) can be used.
@@ -6432,10 +6441,10 @@ camp run [project | @shortcut] [command | recipe] [args...] [flags]
   camp run camp test all     # Run 'just test all' in projects/camp/
   camp run festival build    # Run 'just build' in projects/festival/
 
-  # Raw command from campaign root (first arg is not a project):
+  # Raw command from camp root (first arg is not a project):
   camp run just --list       # Show just recipes from root
-  camp run git status        # Run git status from campaign root
-  camp run ls -la            # List campaign root contents
+  camp run git status        # Run git status from camp root
+  camp run ls -la            # List camp root contents
 
   # Shortcut-based execution:
   camp run @p ls             # List projects/ directory
@@ -6464,9 +6473,9 @@ Manage camp configuration
 Interactive menu for managing camp configuration.
 
 Global settings live in ~/.obey/campaign/config.json and apply to every
-campaign. Local settings live in .campaign/settings/local.json and apply
-only to the current campaign; a local theme override wins over the global
-theme while you are inside that campaign.
+camp. Local settings live in .campaign/settings/local.json and apply
+only to the current camp; a local theme override wins over the global
+theme while you are inside that camp.
 
 For non-interactive access, use 'camp settings get' and
 'camp settings set'. See docs/campaign-settings-files.md in the camp
@@ -6512,18 +6521,18 @@ prints just that value.
 Keys:
   global.theme               Color theme in ~/.obey/campaign/config.json
   global.editor              Preferred editor
-  global.campaigns_dir       Where camp create places new campaigns
+  global.campaigns_dir       Where camp create places new camps
   global.verbose             Verbose output
   global.no_color            Disable colored output
-  global.commit.sync_project_refs   When true, camp p commit updates campaign-root submodule pointer (default false)
+  global.commit.sync_project_refs   When true, camp p commit updates camp-root submodule pointer (default false)
   global.commit.disable_commit_tags When true, skip [campaign:…] tags on camp commits (default false; tags on)
-  local.theme_override       Campaign-local theme override (requires a campaign)
-  local.commit.sync_project_refs    Campaign override for project-ref sync (true/false/inherit)
-  local.commit.disable_commit_tags  Campaign override to skip commit subject tags (true/false/inherit)
-  local.campaign.name        Campaign name in .campaign/campaign.yaml
-  local.campaign.description Campaign description
-  local.campaign.mission     Campaign mission
-  local.campaign.type        Campaign type (product, research, tools, personal)
+  local.theme_override       Camp-local theme override (requires a camp)
+  local.commit.sync_project_refs    Camp override for project-ref sync (true/false/inherit)
+  local.commit.disable_commit_tags  Camp override to skip commit subject tags (true/false/inherit)
+  local.campaign.name        Camp name in .campaign/campaign.yaml
+  local.campaign.description Camp description
+  local.campaign.mission     Camp mission
+  local.campaign.type        Camp type (product, research, tools, personal)
   local.campaign.commit_hook Commit-message hook command
   effective.commit.*         Resolved commit prefs (get only; local overrides global)
 
@@ -6568,7 +6577,7 @@ Set a camp setting non-interactively.
 Accepts the same keys as 'camp settings get'. Theme values are one of
 adaptive, light, dark, or high-contrast. Boolean values accept true/false.
 Setting local.theme_override to 'inherit' clears the override; local.* keys
-require running inside a campaign.
+require running inside a camp.
 
 ```
 camp settings set <key> <value> [flags]
@@ -6635,7 +6644,7 @@ The following shell aliases and functions are also installed:
   cie    camp intent explore (interactive intent browser)
 
 The cgo function enables quick navigation:
-  cgo                 Interactive picker or jump to campaign root
+  cgo                 Interactive picker or jump to camp root
   cgo p               Jump to projects/
   cgo p api           Fuzzy find "api" in projects/
   cgo -c p ls         Run "ls" in projects/ directory
@@ -6682,7 +6691,7 @@ List all available shortcuts
 List all navigation and command shortcuts from .campaign/settings/jumps.yaml.
 
 Navigation shortcuts (path-based):
-  These shortcuts jump to directories within the campaign.
+  These shortcuts jump to directories within the camp.
   Usage: camp go <shortcut>
 
 Command shortcuts (command-based):
@@ -6719,13 +6728,13 @@ camp shortcuts [flags]
 
 ## camp shortcuts add
 
-Add a shortcut (campaign-level or project sub-shortcut)
+Add a shortcut (camp-level or project sub-shortcut)
 
 ### Synopsis
 
 Add a shortcut for quick navigation.
 
-Campaign-level shortcut (2 args):
+Camp-level shortcut (2 args):
   Adds a navigation shortcut to .campaign/settings/jumps.yaml.
   Usage: camp shortcuts add <name> <path>
 
@@ -6744,7 +6753,7 @@ camp shortcuts add <name> <path> | <project> <name> <path> [flags]
 
 ```
   camp shortcuts add                                  Interactive TUI mode
-  camp shortcuts add api projects/api-service/        Campaign shortcut
+  camp shortcuts add api projects/api-service/        Camp shortcut
   camp shortcuts add api projects/api/ -d "API svc"   With description
   camp shortcuts add cfg "" -c config                 Concept-only shortcut
   camp shortcuts add camp default cmd/camp/            Project sub-shortcut
@@ -6771,7 +6780,7 @@ Show differences between current and default shortcuts
 
 ### Synopsis
 
-Compare your campaign's shortcuts against the current defaults.
+Compare your camp's shortcuts against the current defaults.
 
 Shows:
   + Missing    defaults not in your config (available to add)
@@ -6813,7 +6822,7 @@ List shortcuts for a specific project
 
 List all sub-shortcuts configured for a specific project.
 
-If no project is specified, lists all campaign shortcuts.
+If no project is specified, lists all camp shortcuts.
 
 ```
 camp shortcuts list [project] [flags]
@@ -6841,13 +6850,13 @@ camp shortcuts list [project] [flags]
 
 ## camp shortcuts remove
 
-Remove a shortcut (campaign-level or project sub-shortcut)
+Remove a shortcut (camp-level or project sub-shortcut)
 
 ### Synopsis
 
 Remove a shortcut.
 
-Campaign-level shortcut (1 arg):
+Camp-level shortcut (1 arg):
   Usage: camp shortcuts remove <name>
 
 Project sub-shortcut (2 args):
@@ -6860,7 +6869,7 @@ camp shortcuts remove <name> or <project> <name> [flags]
 ### Examples
 
 ```
-  camp shortcuts remove api                           Remove campaign shortcut
+  camp shortcuts remove api                           Remove camp shortcut
   camp shortcuts remove festival-methodology cli      Remove project sub-shortcut
 ```
 
@@ -6927,11 +6936,11 @@ camp shortcuts reset [flags]
 
 ## camp skills
 
-Manage campaign skill directory links
+Manage camp skill directory links
 
 ### Synopsis
 
-Manage campaign skill bundle projection for tool interoperability.
+Manage camp skill bundle projection for tool interoperability.
 
 Skills are centralized in .campaign/skills/ and projected into tool ecosystems
 (Claude, agents, Grok, etc.) as per-bundle symlinks. This keeps a single source
@@ -6940,7 +6949,7 @@ of truth while preserving existing provider-native skills directories.
 Project worktrees under projects/worktrees/<project>/<name>/ are also supported:
 'camp project worktree add' projects skills into each new worktree automatically,
 and 'camp skills link --worktrees' repairs all of them. That way harnesses whose
-git root is the worktree (not the campaign root) still discover campaign skills.
+git root is the worktree (not the camp root) still discover camp skills.
 Only git checkouts are projected (directory must contain .git). A loose git root
 at projects/worktrees/<name>/ is accepted; package subdirs under it are not.
 
@@ -6976,11 +6985,11 @@ camp skills [flags]
 
 ## camp skills link
 
-Project campaign skill bundles into tool-specific skills directories
+Project camp skill bundles into tool-specific skills directories
 
 ### Synopsis
 
-Project campaign skill bundles from .campaign/skills/ into tool-specific
+Project camp skill bundles from .campaign/skills/ into tool-specific
 skills directories.
 
 This command creates one symlink per skill bundle. It does not replace entire
@@ -6989,8 +6998,8 @@ provider skills directories, so existing user skills remain intact.
 With neither --tool nor --path, skills are projected into every registered tool.
 Pass --worktrees with no --tool/--path to also project into every
 projects/worktrees/<project>/<name> git checkout (so Grok/Claude sessions
-opened inside a worktree still see campaign skills). Use --worktrees-only to
-project into worktrees without touching campaign-root tool directories.
+opened inside a worktree still see camp skills). Use --worktrees-only to
+project into worktrees without touching camp-root tool directories.
 
 Worktree discovery only includes directories with a .git file/dir. The normal
 layout is projects/worktrees/<project>/<name>/. A loose git root at
@@ -7020,7 +7029,7 @@ camp skills link [flags]
   -p, --path string      Custom destination directory
   -t, --tool string      Tool to link: claude, agents
       --worktrees        Also project into every projects/worktrees/*/* worktree
-      --worktrees-only   Project only into project worktrees (skip campaign tool dirs)
+      --worktrees-only   Project only into project worktrees (skip camp tool dirs)
 ```
 
 ### Options inherited from parent commands
@@ -7036,7 +7045,7 @@ Show the current state of projected skill bundle symlinks
 
 ### Synopsis
 
-Show projection status for campaign skill bundles across tool targets.
+Show projection status for camp skill bundles across tool targets.
 
 Reports whether each tool's skills directory has projected entries from
 .campaign/skills/, is partially projected, missing, broken, or blocked.
@@ -7103,18 +7112,18 @@ camp skills unlink [flags]
 
 ## camp stage
 
-Stage changes in the campaign root
+Stage changes in the camp root
 
 ### Synopsis
 
-Stage changes in the campaign root directory without committing.
+Stage changes in the camp root directory without committing.
 
 Runs the same auto-staging logic as 'camp commit' (including stale lock
 file cleanup) but stops before creating a commit, so you can use a
 different commit strategy (interactive 'git commit --patch', a GUI
 client, signing flow, etc.).
 
-At the campaign root, submodule ref changes (projects/*) are excluded
+At the camp root, submodule ref changes (projects/*) are excluded
 from staging by default to prevent accidental ref conflicts across
 machines. Use --include-refs to stage them explicitly.
 
@@ -7135,7 +7144,7 @@ camp stage [flags]
 
 ```
   -h, --help             help for stage
-      --include-refs     Include submodule ref changes when staging at campaign root
+      --include-refs     Include submodule ref changes when staging at camp root
       --no-drain         Do not wait for camp's queued commits first
   -p, --project string   Operate on a specific project/submodule path
       --sub              Operate on the submodule detected from current directory
@@ -7150,14 +7159,14 @@ camp stage [flags]
 
 ## camp status
 
-Show git status of the campaign
+Show git status of the camp
 
 ### Synopsis
 
-Show git status of the campaign root directory.
+Show git status of the camp root directory.
 
-Works from anywhere within the campaign - always shows the status
-of the campaign root repository.
+Works from anywhere within the camp - always shows the status
+of the camp root repository.
 
 Use --sub to show status of the submodule detected from your current directory.
 Use --project/-p to show status of a specific project.
@@ -7183,7 +7192,7 @@ camp status [flags] [-- <git-flags>]
       --no-drain         Do not report camp's queued commits first
   -p, --project string   Status of a specific project path
   -s, --short            Give output in short format
-      --show-refs        Show campaign root submodule ref changes
+      --show-refs        Show camp root submodule ref changes
       --sub              Status of the submodule detected from current directory
 ```
 
@@ -7200,7 +7209,7 @@ Show git status of all submodules
 
 ### Synopsis
 
-Show a visual overview of git status for all submodules in the campaign.
+Show a visual overview of git status for all submodules in the camp.
 
 Displays a table with each submodule's name, branch, clean/dirty state,
 and push status.
@@ -7233,41 +7242,41 @@ camp status all [flags]
 
 ## camp switch
 
-Switch to a different campaign
+Switch to a different camp
 
 ### Synopsis
 
-Switch to a registered campaign by name or ID.
+Switch to a registered camp by name or ID.
 
-Without arguments, opens an interactive picker to select a campaign.
-With an argument, looks up the campaign by name or ID prefix.
+Without arguments, opens an interactive picker to select a camp.
+With an argument, looks up the camp by name or ID prefix.
 Use --org or org/campaign to resolve inside one organization.
 
 Use with the shell-init wrappers for instant navigation (recommended):
   eval "$(camp shell-init zsh)"   # or bash / sh, once per shell
   camp shell-init fish | source   # fish
   csw                            # Interactive picker (local + remote machines)
-  csw my-campaign                # Switch by name
+  csw my-camp                    # Switch by name
   csw a1b2                       # Switch by ID prefix
   csw obey/platform              # Switch by org-scoped selector
-  csw archdtop:lance-arch        # Hop to a remote campaign over ssh
+  csw archdtop:lance-arch        # Hop to a remote camp over ssh
   csw -                          # Hop back to the machine/campaign this session came from
 
 'camp switch -' (csw -) is the hop-back gesture: it returns to the origin
 encoded in CAMP_HOP_ORIGIN by the outbound hop. It is registration-independent:
 the origin need not be in this machine's machines.yaml. Like other remote
 targets it refuses --print/--json. '-' is reserved and is no longer a fuzzy
-campaign query.
+camp query.
 
 The --print flag outputs just the path for shell integration (local only):
   cd "$(camp switch --print)"
 
-Use campaign@tab to navigate to a specific location in the target campaign:
+Use camp@tab to navigate to a specific location in the target camp:
   camp switch obey-campaign@p    # Switch and navigate to projects/
   camp switch obey/platform@f    # Switch inside org and navigate to festivals/
 
-Use machine:campaign to resolve a campaign on a machine registered in
-~/.obey/machines.yaml. The interactive picker also lists remote campaigns when
+Use machine:campaign to resolve a camp on a machine registered in
+~/.obey/machines.yaml. The interactive picker also lists remote camps when
 machines are configured (locals open instantly; remotes append as they load).
 Bare 'command camp switch machine:…' resolves without hopping: use the csw
 shell wrapper (or --shell-connect under shell-init) to hop.
@@ -7280,7 +7289,7 @@ giving up. If camp lives somewhere else, set CAMP_REMOTE_CAMP_PATH to its exact
 path on that machine. 'camp machine diagnose' shows which binary a hop would run.
 
 ```
-camp switch [campaign] [flags]
+camp switch [camp] [flags]
 ```
 
 ### Examples
@@ -7289,26 +7298,26 @@ camp switch [campaign] [flags]
   eval "$(camp shell-init zsh)"
   csw                                # Interactive picker (local + remotes)
   csw obey-campaign                  # Switch by name
-  csw archdtop:lance-arch            # Hop to remote campaign
+  csw archdtop:lance-arch            # Hop to remote camp
   csw -                              # Hop back via CAMP_HOP_ORIGIN
   camp switch --org obey platform    # Switch by name within an org
   camp switch obey/platform          # Switch by scoped selector
   camp switch a1b2                   # Switch by ID prefix
   camp switch --print                # Picker, output path only (local)
   camp switch obey-campaign@p        # Switch and navigate to projects/
-  camp switch --all old-reference    # Include inactive/reference campaigns
+  camp switch --all old-reference    # Include inactive/reference camps
   camp switch --org obey platform --json
 ```
 
 ### Options
 
 ```
-      --all             Include inactive and reference campaigns
+      --all             Include inactive and reference camps
   -h, --help            help for switch
-      --json            Output selected campaign and target path as JSON
-      --org string      Only switch among campaigns in this org
+      --json            Output selected camp and target path as JSON
+      --org string      Only switch among camps in this org
       --print           Print path only (for shell integration)
-      --status string   Only switch among campaigns with this lifecycle status
+      --status string   Only switch among camps with this lifecycle status
 ```
 
 ### Options inherited from parent commands
@@ -7415,19 +7424,19 @@ camp sync [submodule...] [flags]
 
 ## camp tag
 
-Label campaigns with tags
+Label camps with tags
 
 ### Synopsis
 
-Label campaigns with tags from a single global pool.
+Label camps with tags from a single global pool.
 
-Tags are orthogonal to orgs: any campaign can carry any tag regardless of its
-org, and the same tag can appear across orgs. Tags are a set per campaign
+Tags are orthogonal to orgs: any camp can carry any tag regardless of its
+org, and the same tag can appear across orgs. Tags are a set per camp
 (re-adding is a no-op).
 
 Commands:
-  add   Add tags to a campaign
-  rm    Remove tags from a campaign
+  add   Add tags to a camp
+  rm    Remove tags from a camp
   list  List all tags in use with counts
 
 ```
@@ -7457,17 +7466,17 @@ camp tag [flags]
 
 ## camp tag add
 
-Add tags to a campaign
+Add tags to a camp
 
 ### Synopsis
 
-Add one or more tags to a campaign (set semantics).
+Add one or more tags to a camp (set semantics).
 
-Re-adding a tag the campaign already carries is a no-op for that tag. Each tag
+Re-adding a tag the camp already carries is a no-op for that tag. Each tag
 name must be lowercase letters, digits, and hyphens with no leading digit.
 
 ```
-camp tag add <campaign> <tag>... [flags]
+camp tag add <camp> <tag>... [flags]
 ```
 
 ### Examples
@@ -7492,7 +7501,7 @@ camp tag add <campaign> <tag>... [flags]
 
 ## camp tag list
 
-List all tags in use with campaign counts
+List all tags in use with camp counts
 
 ```
 camp tag list [flags]
@@ -7520,16 +7529,16 @@ camp tag list [flags]
 
 ## camp tag rm
 
-Remove tags from a campaign
+Remove tags from a camp
 
 ### Synopsis
 
-Remove one or more tags from a campaign.
+Remove one or more tags from a camp.
 
-Removing a tag the campaign does not carry is a no-op for that tag.
+Removing a tag the camp does not carry is a no-op for that tag.
 
 ```
-camp tag rm <campaign> <tag>... [flags]
+camp tag rm <camp> <tag>... [flags]
 ```
 
 ### Examples
@@ -7554,20 +7563,20 @@ camp tag rm <campaign> <tag>... [flags]
 
 ## camp transfer
 
-Copy files between campaigns (and machines)
+Copy files between camps (and machines)
 
 ### Synopsis
 
-Copy files between campaigns, and between this machine and a registered
+Copy files between camps, and between this machine and a registered
 fleet machine.
 
 Transfer always copies; it never moves or deletes the source.
 
 Local forms:
-  campaign:path     another registered campaign on this machine
-  path              relative to the current campaign root
+  campaign:path     another registered camp on this machine
+  path              relative to the current camp root
   local:campaign:path
-                    force the campaign reading when campaign name collides
+                    force the camp reading when camp name collides
                     with a registered machine id
 
 Machine forms (one side only; both-remote is refused):
@@ -7576,8 +7585,8 @@ Machine forms (one side only; both-remote is refused):
 
 See docs/transfer.md for the full grammar, transport, and skew guidance.
 
-At least one side must reference a different campaign or machine. For copies
-within the same campaign on this machine, use 'camp copy' instead.
+At least one side must reference a different camp or machine. For copies
+within the same camp on this machine, use 'camp copy' instead.
 
 ```
 camp transfer <src> <dest> [flags]
@@ -7610,13 +7619,13 @@ camp transfer <src> <dest> [flags]
 
 ## camp triage
 
-Review the campaign's workitems in a recorded session
+Review the camp's workitems in a recorded session
 
 ### Synopsis
 
-Review the campaign's workitems in a recorded, resumable session.
+Review the camp's workitems in a recorded, resumable session.
 
-A triage run freezes what the campaign contains, collects evidence about each
+A triage run freezes what the camp contains, collects evidence about each
 item, records your verdicts, and applies them through camp's normal workitem
 machinery. Every step is written to .campaign/triage/runs/<run-id>/, so a run
 survives being interrupted and the decisions stay auditable afterwards.
@@ -7625,7 +7634,7 @@ Camp never calls a model. Agents read the queue and submit evidence and
 proposals; you approve them; camp applies what you approved.
 
 Session:
-  start     Snapshot the campaign and open a run
+  start     Snapshot the camp and open a run
   status    Show where the active run stands
   abandon   Close the active run without applying it
 
@@ -7727,7 +7736,7 @@ the commit it made, and the command that reverses it. The undo is derived from
 where the workitem actually landed, not from where the plan expected it to.
 
 A failure stops the pass. Rows after it stay pending rather than being applied
-against a campaign that is no longer in the state the plan was compiled for.
+against a camp that is no longer in the state the plan was compiled for.
 Re-running continues from the first row without an applied receipt, so an
 interrupted apply is resumed rather than restarted.
 
@@ -8007,7 +8016,7 @@ Show the resolved triage profile
 
 Print the profile a run would use, fully merged.
 
-Resolution is: the campaign's .campaign/triage/profile.yaml when it exists,
+Resolution is: the camp's .campaign/triage/profile.yaml when it exists,
 otherwise the named built-in. Keys the file omits inherit the built-in default.
 A type's policy is types/<type>.yaml, else types/_default.yaml, else camp's
 built-in, and a type policy that declares dispositions replaces the inherited
@@ -8026,7 +8035,7 @@ camp triage profile [flags]
 ```
   -h, --help             help for profile
       --json             Output result as a single JSON object
-      --profile string   Resolve a named built-in instead of the campaign's: default, sweep, or deep
+      --profile string   Resolve a named built-in instead of the camp's: default, sweep, or deep
       --resolved         Print the fully merged profile (the default and only mode today)
 ```
 
@@ -8047,7 +8056,7 @@ Propose what should happen to one row.
 
 The disposition is a label from the row's type vocabulary; camp resolves it to
 the action it will actually perform and records both. That indirection is what
-lets a campaign rename its labels without triage learning a new mutation.
+lets a camp rename its labels without triage learning a new mutation.
 
 A proposal is not a decision. Terminal actions - dungeon moves and splits -
 always require a human to approve them, and the result says so.
@@ -8225,15 +8234,15 @@ camp triage review [flags]
 
 ## camp triage start
 
-Snapshot the campaign and open a triage run
+Snapshot the camp and open a triage run
 
 ### Synopsis
 
-Snapshot the campaign's workitems and open a triage run.
+Snapshot the camp's workitems and open a triage run.
 
-The snapshot is frozen: the run records what the campaign contained when it
+The snapshot is frozen: the run records what the camp contained when it
 started, along with the resolved profile it will be judged under, so a verdict
-stays explainable even after the campaign and the profile move on.
+stays explainable even after the camp and the profile move on.
 
 Scope expressions use the same filters as camp workitem, one per --scope flag:
 
@@ -8259,7 +8268,7 @@ camp triage start [flags]
       --identity string     Override the profile's identity policy: repair (adopt and report) or strict (refuse and list)
       --json                Output result as a single JSON object
       --no-workflow-doc     Skip the companion WORKFLOW.md scaffold
-      --profile string      Use a named built-in profile instead of the campaign's: default, sweep, or deep
+      --profile string      Use a named built-in profile instead of the camp's: default, sweep, or deep
       --scope stringArray   Limit the run with a key:value filter (repeat for more)
 ```
 
@@ -8278,17 +8287,17 @@ Show where the active triage run stands
 
 Show where the active triage run stands.
 
-Status reports the session, not the campaign. It reads the run's own recorded
+Status reports the session, not the camp. It reads the run's own recorded
 data and never walks the filesystem, so it is instant and keeps meaning even
-after the campaign moves underneath the run. Comparing a run against the
-current state of the campaign is what camp triage refresh does.
+after the camp moves underneath the run. Comparing a run against the
+current state of the camp is what camp triage refresh does.
 
-When the last refresh is older than the campaign's runs.stale_after_days
+When the last refresh is older than the camp's runs.stale_after_days
 threshold, or workitems have changed since, it also prints the same one-line
 notice high-traffic commands share (from the cached verdict, not a discovery
 walk).
 
-Exits 0 when there is no run: a campaign that has not triaged yet is a state,
+Exits 0 when there is no run: a camp that has not triaged yet is a state,
 not an error.
 
 ```
@@ -8312,13 +8321,13 @@ camp triage status [flags]
 
 ## camp triage verify
 
-Prove the campaign matches the approved decisions
+Prove the camp matches the approved decisions
 
 ### Synopsis
 
 Check every applied row against a fresh discovery pass.
 
-Apply without proof is just hope. Verify re-walks the campaign and compares
+Apply without proof is just hope. Verify re-walks the camp and compares
 what it finds against what each receipt says happened: a parked workitem should
 carry that stage, a retired one should no longer be discoverable outside the
 dungeon, a split's successors should all exist.
@@ -8326,7 +8335,7 @@ dungeon, a split's successors should all exist.
 It reads receipts, not the plan. The plan is what was intended; the receipts
 are what actually ran, and only the second one can be checked against reality.
 
-An unexplained mismatch exits 1. That is the whole signal: the campaign is not
+An unexplained mismatch exits 1. That is the whole signal: the camp is not
 in the state the approved decisions said it would be. A mismatch someone has
 already accounted for carries an explanation and does not fail the run.
 
@@ -8411,21 +8420,21 @@ camp unpin [name] [flags]
 
 ## camp unregister
 
-Remove campaign from registry
+Remove a camp from the registry
 
 ### Synopsis
 
-Remove a campaign from the global registry.
+Remove a camp from the global registry.
 
-This does NOT delete any files - it only removes the campaign from
+This does NOT delete any files - it only removes the camp from
 tracking in the global registry. Use this when:
-  - A campaign directory was deleted manually
-  - A campaign was moved to a different location
-  - You no longer want to track a campaign
+  - A camp directory was deleted manually
+  - A camp was moved to a different location
+  - You no longer want to track a camp
 
-The campaign files remain untouched on disk.
+The camp files remain untouched on disk.
 
-You can specify the campaign by name or ID (or ID prefix).
+You can specify the camp by name or ID (or ID prefix).
 
 Examples:
   camp unregister old-project            # Remove by name
@@ -8492,7 +8501,7 @@ Manage workflow collections
 
 Manage workflow collections.
 
-A workflow collection is a campaign directory under workflow/<type>/ with
+A workflow collection is a camp directory under workflow/<type>/ with
 navigation config and workitem type support.
 
 ### Options
@@ -8518,7 +8527,7 @@ Create a custom workflow collection under workflow/<type>/.
 
 The command creates the workflow directory, terminal dungeon directories,
 .gitkeep files, and an OBEY.md guide, then registers the collection in
-campaign configuration through a concept and navigation shortcut. A shortcut is
+camp configuration through a concept and navigation shortcut. A shortcut is
 required. Use --dry-run to inspect planned writes and --json for
 machine-readable planning or apply results.
 
@@ -8551,7 +8560,7 @@ Report workflow surface inconsistencies
 
 ### Synopsis
 
-Report inconsistencies between workflow directories and campaign configuration.
+Report inconsistencies between workflow directories and camp configuration.
 
 The command reads campaign.yaml, .campaign/settings/jumps.yaml, workflow/
 directories, and the navigation cache to find missing concepts, stale
@@ -8582,9 +8591,9 @@ List user-created workflow collections
 
 ### Synopsis
 
-List user-created workflow collections registered in the campaign.
+List user-created workflow collections registered in the camp.
 
-The command reads campaign configuration and workflow/ directories, then shows
+The command reads camp configuration and workflow/ directories, then shows
 each collection's shortcut, item count, and latest workitem update. Built-in
 workflow types are omitted so the output focuses on custom collections. Use
 --json for machine-readable workflow inventory output.
@@ -8615,7 +8624,7 @@ Manage navigation shortcuts for workflow collections
 
 Manage navigation shortcuts for custom workflow collections.
 
-Workflow shortcuts are stored in campaign configuration and point to
+Workflow shortcuts are stored in camp configuration and point to
 workflow/<type>/ directories. Use subcommands to attach or repair shortcut
 entries after creating or moving workflow collections.
 
@@ -8672,7 +8681,7 @@ Show a workflow collection's config and recent workitems
 
 Show configuration and recent workitems for a workflow collection.
 
-The command reads campaign configuration plus the workflow/<type>/ directory,
+The command reads camp configuration plus the workflow/<type>/ directory,
 then prints the collection path, shortcut state, concept state, and recent
 .workitem-backed items. Use --json for machine-readable collection details and
 recent workitem data.
@@ -8730,11 +8739,11 @@ camp workflow sync [flags]
 
 ## camp workitem
 
-View active campaign work items
+View active camp work items
 
 ### Synopsis
 
-View active campaign work items.
+View active camp work items.
 
 Launches an interactive dashboard on a TTY. Non-interactive callers must pass
 --json, --list, or --print.
@@ -8783,7 +8792,7 @@ Adopt an existing directory or file as a workitem
 
 ### Synopsis
 
-Attach workitem metadata to an existing campaign directory or markdown file.
+Attach workitem metadata to an existing camp directory or markdown file.
 
 With a directory argument, writes a .workitem marker (the directory must exist
 and must not already contain a .workitem). With --file <path.md>, stamps a
@@ -8830,7 +8839,7 @@ Stage and commit changes belonging to a resolved workitem.
 The staging plan is computed from the resolver context (cwd-aware, with
 explicit positional <selector> or --project overrides) and printed to stderr
 before the commit runs. The plan never silently widens to "git add ." at the
-campaign root.
+camp root.
 
 See docs/workitem-commit-reference.md for the staging matrix and flag
 precedence.
@@ -8870,10 +8879,10 @@ List commits referencing a workitem
 
 List commits referencing this workitem, newest first.
 
-When the campaign event ledger already holds the workitem's commit evidence,
+When the camp event ledger already holds the workitem's commit evidence,
 the answer comes from a single merged ledger read (fast path). Otherwise it
-falls back to scanning the campaign root and every linked
-project/repo/worktree/festival repo for commits whose campaign tag references
+falls back to scanning the camp root and every linked
+project/repo/worktree/festival repo for commits whose camp tag references
 the workitem's ref (pre-ledger history).
 
 Use --json for structured output; the "source" field reports which path
@@ -9010,7 +9019,7 @@ types, the recommended structured-workflow scaffold is:
   cd workflow/<type>/<slug> && fest create workflow <slug>
 
 For other types (feature, bug, chore, …), no festival scaffold is implied;
-populate campaign-governed content under the new directory as needed.
+populate camp-governed content under the new directory as needed.
 
 Use "camp workitem adopt" to attach a marker to an existing directory.
 Use --json for machine-readable identity. next.command is set only for
@@ -9085,7 +9094,7 @@ Report link-registry health issues
 
 ### Synopsis
 
-Report health issues in the campaign workitem link registry.
+Report health issues in the camp workitem link registry.
 
 The command reads .campaign/workitems/links.yaml, scans .workitem metadata on
 disk, and checks current-workitem and priority stores for stale or inconsistent
@@ -9146,9 +9155,9 @@ With no argument, the workitem is detected from the current context using the
 same tiered resolution as `camp workitem resolve` (explicit selector, cwd
 ancestor, linked scope, festival, current-workitem pointer). With an argument,
 the workitem is resolved through the shared selector family: workitem ref,
-stable id, key, campaign-relative path, directory slug, festival id, or intent
+stable id, key, camp-relative path, directory slug, festival id, or intent
 frontmatter id. A filesystem path (absolute or relative to the current directory)
-is accepted and translated to the campaign-relative form the selector expects.
+is accepted and translated to the camp-relative form the selector expects.
 
 Stdout is the bare durable id for shell scripting: stable .workitem id when
 present, otherwise a source-declared id (festival fest.yaml id or intent
@@ -9189,7 +9198,7 @@ Create a workitem link
 
 ### Synopsis
 
-Attach a workitem to a project, festival, worktree, or campaign path.
+Attach a workitem to a project, festival, worktree, or camp path.
 
 Links are stored in .campaign/workitems/links.yaml and connect a .workitem
 identity to an explicit scope for planning, execution, and lookup. Pass a
@@ -9243,7 +9252,7 @@ List workitem links
 
 ### Synopsis
 
-List workitem links recorded in the campaign link registry.
+List workitem links recorded in the camp link registry.
 
 The command reads .campaign/workitems/links.yaml and prints every link, or only
 links for the supplied workitem selector. Use this to audit which projects,
@@ -9274,7 +9283,7 @@ List or browse filtered workitems
 
 ### Synopsis
 
-List campaign workitems with the same filters used by the dashboard.
+List camp workitems with the same filters used by the dashboard.
 
 In a terminal, this opens the TUI with visible, editable prefilters. When
 stdout is not a terminal, it prints a compact grouped list. Use --json for the
@@ -9494,7 +9503,7 @@ Print the workitem for the current context
 
 ### Synopsis
 
-Resolve the active workitem from the current campaign context.
+Resolve the active workitem from the current camp context.
 
 Resolution checks explicit selectors, cwd, festival context, linked scopes,
 and the current-workitem file without mutating any files. Use --explain to show
@@ -9662,7 +9671,7 @@ Remove workitem links
 
 ### Synopsis
 
-Remove workitem links from the campaign link registry.
+Remove workitem links from the camp link registry.
 
 The command updates .campaign/workitems/links.yaml by link id, workitem
 selector, explicit path, or scope filter. Use --all when a selector matches

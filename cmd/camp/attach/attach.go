@@ -31,27 +31,27 @@ const NoOptCampaign = "\x00pick"
 func NewAttachCommand(newResolver CampaignResolverFactory) *cobra.Command {
 	cmd := &cobra.Command{
 		Use:     "attach <path>",
-		Short:   "Attach an external directory to a campaign",
+		Short:   "Attach an external directory to a camp",
 		GroupID: "campaign",
-		Long: `Attach a non-project directory to a campaign by writing a .camp marker.
+		Long: `Attach a non-project directory to a camp by writing a .camp marker.
 
 The user manages the symlink (if any). camp attach only writes the marker at
 the resolved target so commands run from inside that directory can recover
-campaign context. Attachment markers may be shared by multiple campaigns;
-running attach again from another campaign adds that campaign to the marker.
+camp context. Attachment markers may be shared by multiple camps;
+running attach again from another camp adds that camp to the marker.
 
 If the target is reached through a symlink, camp follows it once and writes
 the marker at the final directory.
 
-When several campaigns share one attachment, which campaign a command resolves
-depends on how the directory is reached: entering through a campaign-local
-symlink resolves that campaign, while a bare cd into the shared target itself
-resolves to the first campaign it was attached to.
+When several camps share one attachment, which camp a command resolves
+depends on how the directory is reached: entering through a camp-local
+symlink resolves that camp, while a bare cd into the shared target itself
+resolves to the first camp it was attached to.
 
-Campaign selection:
-  - inside a campaign, omit --campaign to attach to the current campaign
-  - outside a campaign in an interactive terminal, omit --campaign to pick
-  - use a bare --campaign to force the picker even inside a campaign
+Camp selection:
+  - inside a camp, omit --campaign to attach to the current camp
+  - outside a camp in an interactive terminal, omit --campaign to pick
+  - use a bare --campaign to force the picker even inside a camp
   - use --campaign <name-or-id> for scripts or to skip the picker
 
 Examples:
@@ -73,7 +73,7 @@ Examples:
 				return err
 			}
 			if cfg == nil {
-				return camperrors.Wrap(camperrors.ErrNotFound, "could not resolve target campaign")
+				return camperrors.Wrap(camperrors.ErrNotFound, "could not resolve target camp")
 			}
 
 			result, err := attach.Attach(ctx, root, cfg.ID, input, attach.Options{Force: force})
@@ -87,7 +87,7 @@ Examples:
 	}
 
 	flags := cmd.Flags()
-	flags.StringP("campaign", "c", "", "Target campaign by name or ID; omit value to pick interactively")
+	flags.StringP("campaign", "c", "", "Target camp by name or ID; omit value to pick interactively")
 	flags.Bool("force", false, "Rewrite an existing attachment marker")
 	flags.Lookup("campaign").NoOptDefVal = NoOptCampaign
 
@@ -98,18 +98,18 @@ Examples:
 func NewDetachCommand() *cobra.Command {
 	cmd := &cobra.Command{
 		Use:     "detach <path>",
-		Short:   "Remove the current campaign's attachment binding",
+		Short:   "Remove the current camp's attachment binding",
 		GroupID: "campaign",
-		Long: `Remove the current campaign's binding from the .camp attachment marker.
+		Long: `Remove the current camp's binding from the .camp attachment marker.
 
 Refuses on linked-project markers; use 'camp project unlink' for those.
-The user-managed symlink (if any) is not modified. If run outside any campaign,
+The user-managed symlink (if any) is not modified. If run outside any camp,
 the entire attachment marker is removed.
 
-On an attachment shared by several campaigns this removes only the current
-campaign's binding; the others keep resolving. Detaching the campaign that a
+On an attachment shared by several camps this removes only the current
+camp's binding; the others keep resolving. Detaching the camp that a
 bare cd into the shared target resolved to shifts that fallback to the next
-remaining campaign.
+remaining camp.
 
 Examples:
   camp detach docs/examples/external-repo
@@ -139,13 +139,13 @@ Examples:
 }
 
 func printAttachResult(r *attach.Result, campaignName string) {
-	fmt.Printf("%s %s\n", ui.SuccessIcon(), ui.Success("Attached to campaign: "+campaignName))
+	fmt.Printf("%s %s\n", ui.SuccessIcon(), ui.Success("Attached to camp: "+campaignName))
 	fmt.Println()
 	fmt.Println(ui.KeyValue("  Target:", r.Target))
 	if r.FollowedSymlink {
 		fmt.Println(ui.KeyValue("  Input:", r.Input+" (followed symlink)"))
 	}
-	fmt.Println(ui.KeyValue("  Campaign ID:", r.CampaignID))
+	fmt.Println(ui.KeyValue("  Camp ID:", r.CampaignID))
 	if r.GitExcludeUpdated {
 		fmt.Println(ui.KeyValue("  Git exclude:", "added .camp to .git/info/exclude"))
 	}
@@ -153,7 +153,7 @@ func printAttachResult(r *attach.Result, campaignName string) {
 		fmt.Printf("%s %s\n", ui.WarningIcon(), ui.Warning("could not update .git/info/exclude: "+r.GitExcludeWarning))
 	}
 	fmt.Println()
-	fmt.Println(ui.Dim("  Commands from this campaign's symlink now resolve to this campaign."))
+	fmt.Println(ui.Dim("  Commands from this camp's symlink now resolve to this camp."))
 }
 
 func printDetachResult(r *attach.Result) {

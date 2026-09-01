@@ -208,7 +208,7 @@ func buildPinForPath(ctx context.Context, absPath, campaignRoot string) (pins.Pi
 	// campaign root.
 	if !markerResolvesToCampaign(ctx, absPath, campaignRoot) {
 		return pins.Pin{}, "", camperrors.New(fmt.Sprintf(
-			"pin path %q is outside the campaign root (run 'camp attach %s' first to bind this directory to the campaign)",
+			"pin path %q is outside the camp root (run 'camp attach %s' first to bind this directory to the camp)",
 			absPath, absPath))
 	}
 	return pins.Pin{AbsPath: absPath}, absPath + " (attachment)", nil

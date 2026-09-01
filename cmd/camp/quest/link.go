@@ -15,8 +15,8 @@ import (
 
 var questLinkCmd = &cobra.Command{
 	Use:   "link <quest> <path>",
-	Short: "Link a campaign artifact to a quest",
-	Long: `Associate a campaign artifact (intent, design, festival, project, document)
+	Short: "Link a camp artifact to a quest",
+	Long: `Associate a camp artifact (intent, design, festival, project, document)
 with a quest for traceability.
 
 The link type is auto-detected from the path:
@@ -98,7 +98,7 @@ func normalizeLinkPath(campaignRoot, rawPath string) (string, error) {
 	if filepath.IsAbs(rawPath) {
 		rel, err := filepath.Rel(campaignRoot, rawPath)
 		if err != nil {
-			return "", camperrors.Wrapf(err, "path %s is not within campaign", rawPath)
+			return "", camperrors.Wrapf(err, "path %s is not within camp", rawPath)
 		}
 		return rel, nil
 	}

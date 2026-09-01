@@ -138,7 +138,7 @@ type BoundaryError struct {
 
 // Error implements the error interface.
 func (e *BoundaryError) Error() string {
-	msg := fmt.Sprintf("boundary violation: %s: path %q is outside campaign root %q", e.Op, e.Path, e.Root)
+	msg := fmt.Sprintf("boundary violation: %s: path %q is outside camp root %q", e.Op, e.Path, e.Root)
 	if e.Err != nil {
 		msg += ": " + e.Err.Error()
 	}

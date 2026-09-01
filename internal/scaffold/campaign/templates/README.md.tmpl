@@ -1,6 +1,6 @@
 # {{ .vars.campaign_name }}
 
-{{ if .vars.campaign_description }}{{ .vars.campaign_description }}{{ else }}A campaign workspace managed by camp CLI.{{ end }}
+{{ if .vars.campaign_description }}{{ .vars.campaign_description }}{{ else }}A camp managed by the camp CLI.{{ end }}
 {{ if .vars.campaign_mission }}
 ## Mission
 
@@ -10,9 +10,9 @@
 
 ```text
 .
-├── .campaign/          Campaign configuration and system state
+├── .campaign/          Camp configuration and system state
 │   ├── intents/        System-managed intent state (use camp intent)
-│   └── settings/       Campaign settings and shortcuts
+│   └── settings/       Camp settings and shortcuts
 ├── projects/           Project repositories (submodules or worktrees)
 ├── festivals/          Festival methodology planning workspace
 ├── docs/               Human-authored documentation
@@ -27,7 +27,7 @@
 
 ## Getting Started
 
-This campaign is managed with the **camp** CLI.
+This camp is managed with the **camp** CLI.
 
 ```bash
 # Navigation
@@ -44,8 +44,8 @@ camp shortcuts           # List all shortcuts
 camp shortcuts add       # Add a new shortcut (interactive)
 
 # Workflow
-camp log                 # Show campaign git log
-camp intent              # Manage campaign intents in .campaign/intents/
+camp log                 # Show camp git log
+camp intent              # Manage camp intents in .campaign/intents/
 
 # Help
 camp --help              # Full command reference

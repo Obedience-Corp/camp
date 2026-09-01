@@ -5,9 +5,9 @@ import "github.com/spf13/cobra"
 // Cmd is the scaffold root for the skills command family.
 var Cmd = &cobra.Command{
 	Use:     "skills",
-	Short:   "Manage campaign skill directory links",
+	Short:   "Manage camp skill directory links",
 	GroupID: "campaign",
-	Long: `Manage campaign skill bundle projection for tool interoperability.
+	Long: `Manage camp skill bundle projection for tool interoperability.
 
 Skills are centralized in .campaign/skills/ and projected into tool ecosystems
 (Claude, agents, Grok, etc.) as per-bundle symlinks. This keeps a single source
@@ -16,7 +16,7 @@ of truth while preserving existing provider-native skills directories.
 Project worktrees under projects/worktrees/<project>/<name>/ are also supported:
 'camp project worktree add' projects skills into each new worktree automatically,
 and 'camp skills link --worktrees' repairs all of them. That way harnesses whose
-git root is the worktree (not the campaign root) still discover campaign skills.
+git root is the worktree (not the camp root) still discover camp skills.
 Only git checkouts are projected (directory must contain .git). A loose git root
 at projects/worktrees/<name>/ is accepted; package subdirs under it are not.
 

@@ -376,7 +376,7 @@ func TestOnboardingScreenExplainsAndOffersAStart(t *testing.T) {
 
 	view := m.onboardingView()
 	for _, want := range []string{
-		"Work on campaigns that live on your other computers",
+		"Work on camps that live on your other computers",
 		"camp switch",
 		"camp list --remote",
 		"No machines yet",

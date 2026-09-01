@@ -13,8 +13,8 @@ import (
 
 var skillsLinkCmd = &cobra.Command{
 	Use:   "link",
-	Short: "Project campaign skill bundles into tool-specific skills directories",
-	Long: `Project campaign skill bundles from .campaign/skills/ into tool-specific
+	Short: "Project camp skill bundles into tool-specific skills directories",
+	Long: `Project camp skill bundles from .campaign/skills/ into tool-specific
 skills directories.
 
 This command creates one symlink per skill bundle. It does not replace entire
@@ -23,8 +23,8 @@ provider skills directories, so existing user skills remain intact.
 With neither --tool nor --path, skills are projected into every registered tool.
 Pass --worktrees with no --tool/--path to also project into every
 projects/worktrees/<project>/<name> git checkout (so Grok/Claude sessions
-opened inside a worktree still see campaign skills). Use --worktrees-only to
-project into worktrees without touching campaign-root tool directories.
+opened inside a worktree still see camp skills). Use --worktrees-only to
+project into worktrees without touching camp-root tool directories.
 
 Worktree discovery only includes directories with a .git file/dir. The normal
 layout is projects/worktrees/<project>/<name>/. A loose git root at
@@ -57,7 +57,7 @@ func init() {
 	flags.BoolP("force", "f", false, "Replace conflicting symlink entries (never files/directories)")
 	flags.BoolP("dry-run", "n", false, "Show what would happen without making changes")
 	flags.Bool("worktrees", false, "Also project into every projects/worktrees/*/* worktree")
-	flags.Bool("worktrees-only", false, "Project only into project worktrees (skip campaign tool dirs)")
+	flags.Bool("worktrees-only", false, "Project only into project worktrees (skip camp tool dirs)")
 }
 
 func runSkillsLink(cmd *cobra.Command, _ []string) error {
@@ -158,7 +158,7 @@ func runSkillsLink(cmd *cobra.Command, _ []string) error {
 	}
 
 	if summary.Created == 0 && summary.Replaced == 0 && summary.AlreadyLinked == len(slugs) {
-		if _, err := fmt.Fprintf(out, "already linked: all campaign skill bundles are projected into %s\n", dest); err != nil {
+		if _, err := fmt.Fprintf(out, "already linked: all camp skill bundles are projected into %s\n", dest); err != nil {
 			return err
 		}
 	}

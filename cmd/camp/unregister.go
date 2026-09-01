@@ -15,18 +15,18 @@ import (
 
 var unregisterCmd = &cobra.Command{
 	Use:   "unregister <name-or-id>",
-	Short: "Remove campaign from registry",
-	Long: `Remove a campaign from the global registry.
+	Short: "Remove a camp from the registry",
+	Long: `Remove a camp from the global registry.
 
-This does NOT delete any files - it only removes the campaign from
+This does NOT delete any files - it only removes the camp from
 tracking in the global registry. Use this when:
-  - A campaign directory was deleted manually
-  - A campaign was moved to a different location
-  - You no longer want to track a campaign
+  - A camp directory was deleted manually
+  - A camp was moved to a different location
+  - You no longer want to track a camp
 
-The campaign files remain untouched on disk.
+The camp files remain untouched on disk.
 
-You can specify the campaign by name or ID (or ID prefix).
+You can specify the camp by name or ID (or ID prefix).
 
 Examples:
   camp unregister old-project            # Remove by name
@@ -62,13 +62,13 @@ func runUnregister(cmd *cobra.Command, args []string) error {
 	// Find campaign by ID, ID prefix, or name
 	campaign, exists := reg.Get(query)
 	if !exists {
-		return camperrors.Newf("campaign %q not found in registry\n"+
-			"Hint: Run '%s' to see registered campaigns", query, ui.Accent("camp list"))
+		return camperrors.Newf("camp %q not found in registry\n"+
+			"Hint: Run '%s' to see registered camps", query, ui.Accent("camp list"))
 	}
 
 	// Confirm unless forced
 	if !force {
-		fmt.Printf("Unregister campaign %s (ID: %s) at %s? [y/N] ",
+		fmt.Printf("Unregister camp %s (ID: %s) at %s? [y/N] ",
 			ui.Value(campaign.Name), ui.Dim(campaign.ID[:8]), ui.Dim(campaign.Path))
 		reader := bufio.NewReader(os.Stdin)
 		response, _ := reader.ReadString('\n')

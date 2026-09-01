@@ -59,7 +59,7 @@ func runGroup(ctx context.Context, cmd *cobra.Command, selectorArg, groupArg str
 	}
 	cfg, root, err := config.LoadCampaignConfigFromCwd(ctx)
 	if err != nil {
-		return camperrors.Wrap(err, "not in a campaign directory")
+		return camperrors.Wrap(err, "not in a camp directory")
 	}
 	wi, err := selector.Resolve(ctx, root, selectorArg, selector.ResolveOptions{})
 	if err != nil {

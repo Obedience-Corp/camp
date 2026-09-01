@@ -245,7 +245,7 @@ func renderRemoteTable(stdout io.Writer, campaigns []campaignEntry, results []re
 	if _, err := fmt.Fprintln(stdout); err != nil {
 		return err
 	}
-	_, err := fmt.Fprintln(stdout, ui.Dim(ui.CountLabel(len(campaigns), "campaign", "campaigns")))
+	_, err := fmt.Fprintln(stdout, ui.Dim(ui.CountLabel(len(campaigns), "camp", "camps")))
 	return err
 }
 

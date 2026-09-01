@@ -62,7 +62,7 @@ func newListCommand() *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "list [type|status|category]",
 		Short: "List or browse filtered workitems",
-		Long: `List campaign workitems with the same filters used by the dashboard.
+		Long: `List camp workitems with the same filters used by the dashboard.
 
 In a terminal, this opens the TUI with visible, editable prefilters. When
 stdout is not a terminal, it prints a compact grouped list. Use --json for the

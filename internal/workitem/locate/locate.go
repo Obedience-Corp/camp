@@ -47,14 +47,14 @@ func DetectFromCwd(campaignRoot, cwd string) (*Location, error) {
 	}
 	rel, err := filepath.Rel(campaignRoot, cwd)
 	if err != nil {
-		return nil, camperrors.Wrap(err, "resolving cwd relative to campaign root")
+		return nil, camperrors.Wrap(err, "resolving cwd relative to camp root")
 	}
 	rel = filepath.ToSlash(filepath.Clean(rel))
 	if rel == ".." || strings.HasPrefix(rel, "../") {
-		return nil, camperrors.New(fmt.Sprintf("cwd %q is not under campaign root %q", cwd, campaignRoot))
+		return nil, camperrors.New(fmt.Sprintf("cwd %q is not under camp root %q", cwd, campaignRoot))
 	}
 	if rel == "." {
-		return nil, camperrors.New("not inside a workitem; cwd is at the campaign root")
+		return nil, camperrors.New("not inside a workitem; cwd is at the camp root")
 	}
 
 	parts := strings.Split(rel, "/")

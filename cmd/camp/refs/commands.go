@@ -45,7 +45,7 @@ func runRefsSync(cmd *cobra.Command, args []string) error {
 
 	campRoot, err := campaign.DetectCached(ctx)
 	if err != nil {
-		return camperrors.Wrap(err, "not in a campaign")
+		return camperrors.Wrap(err, "not in a camp")
 	}
 
 	// This command commits gitlinks, which is exactly what the queue's own
@@ -70,7 +70,7 @@ func runRefsSync(cmd *cobra.Command, args []string) error {
 	if !refsSyncOpts.force {
 		stagedCmd := exec.CommandContext(ctx, "git", "-C", campRoot, "diff", "--cached", "--quiet")
 		if err := stagedCmd.Run(); err != nil {
-			return camperrors.Newf("campaign root has staged changes; use --force to override")
+			return camperrors.Newf("camp root has staged changes; use --force to override")
 		}
 	}
 
@@ -236,6 +236,6 @@ func warnUnpushedSubmodules(ctx context.Context, campRoot string, paths []string
 	for _, w := range warnings {
 		fmt.Println(ui.Warning(w))
 	}
-	fmt.Println(ui.Dim("  Push these submodules before pushing the campaign root."))
+	fmt.Println(ui.Dim("  Push these submodules before pushing the camp root."))
 	fmt.Println()
 }

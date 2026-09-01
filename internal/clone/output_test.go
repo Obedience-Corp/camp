@@ -193,7 +193,7 @@ func TestCloneResult_Format_Success(t *testing.T) {
 	if !strings.Contains(output, "✓") {
 		t.Error("Format should contain success checkmark")
 	}
-	if !strings.Contains(output, "Campaign cloned successfully") {
+	if !strings.Contains(output, "Your camp was cloned successfully") {
 		t.Error("Format should contain success message")
 	}
 	if !strings.Contains(output, "/tmp/test-repo") {

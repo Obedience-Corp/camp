@@ -15,8 +15,8 @@ import (
 
 var runCmd = &cobra.Command{
 	Use:   "run [project | @shortcut] [command | recipe] [args...]",
-	Short: "Execute command from campaign root, or just recipe in a project",
-	Long: `Execute any command from the campaign root directory, or run just recipes
+	Short: "Execute command from camp root, or just recipe in a project",
+	Long: `Execute any command from the camp root directory, or run just recipes
 in a project directory.
 
 If the first argument exactly matches a project name (a directory in projects/
@@ -24,7 +24,7 @@ with a git repo), camp dispatches to 'just' in that project's directory.
 Any remaining arguments are passed as the recipe and arguments to just.
 
 If the first argument does not match a project, it is treated as a shell command
-and executed from the campaign root directory.
+and executed from the camp root directory.
 
 Use @shortcut prefix to run from a shortcut's directory instead of root.
 Only navigation shortcuts (those with paths) can be used.
@@ -36,10 +36,10 @@ shell. Project just-dispatch passes recipe arguments directly to just.`,
   camp run camp test all     # Run 'just test all' in projects/camp/
   camp run festival build    # Run 'just build' in projects/festival/
 
-  # Raw command from campaign root (first arg is not a project):
+  # Raw command from camp root (first arg is not a project):
   camp run just --list       # Show just recipes from root
-  camp run git status        # Run git status from campaign root
-  camp run ls -la            # List campaign root contents
+  camp run git status        # Run git status from camp root
+  camp run ls -la            # List camp root contents
 
   # Shortcut-based execution:
   camp run @p ls             # List projects/ directory
@@ -75,7 +75,7 @@ func runRun(cmd *cobra.Command, args []string) error {
 		// Load campaign config to get shortcuts
 		cfg, _, err := config.LoadCampaignConfigFromCwd(ctx)
 		if err != nil {
-			return camperrors.Wrap(err, "failed to load campaign config")
+			return camperrors.Wrap(err, "failed to load camp config")
 		}
 
 		resolution, err := index.ResolveRunShortcut(ctx, root, cfg, shortcutName, args[1:])

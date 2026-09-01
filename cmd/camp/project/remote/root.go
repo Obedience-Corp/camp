@@ -13,7 +13,7 @@ var Cmd = &cobra.Command{
 	Use:     "remote",
 	Short:   "Manage remotes for a project",
 	Aliases: []string{"rem"},
-	Long: `Manage git remotes for a campaign project.
+	Long: `Manage git remotes for a camp project.
 
 Auto-detects the current project from your working directory, or use --project
 to specify explicitly.

@@ -26,11 +26,11 @@ type tagCount struct {
 }
 
 var tagAddCmd = &cobra.Command{
-	Use:   "add <campaign> <tag>...",
-	Short: "Add tags to a campaign",
-	Long: `Add one or more tags to a campaign (set semantics).
+	Use:   "add <camp> <tag>...",
+	Short: "Add tags to a camp",
+	Long: `Add one or more tags to a camp (set semantics).
 
-Re-adding a tag the campaign already carries is a no-op for that tag. Each tag
+Re-adding a tag the camp already carries is a no-op for that tag. Each tag
 name must be lowercase letters, digits, and hyphens with no leading digit.`,
 	Example: `  camp tag add obey-campaign paid-work q3-2026`,
 	Args:    cobra.MinimumNArgs(2),
@@ -38,12 +38,12 @@ name must be lowercase letters, digits, and hyphens with no leading digit.`,
 }
 
 var tagRmCmd = &cobra.Command{
-	Use:     "rm <campaign> <tag>...",
+	Use:     "rm <camp> <tag>...",
 	Aliases: []string{"remove"},
-	Short:   "Remove tags from a campaign",
-	Long: `Remove one or more tags from a campaign.
+	Short:   "Remove tags from a camp",
+	Long: `Remove one or more tags from a camp.
 
-Removing a tag the campaign does not carry is a no-op for that tag.`,
+Removing a tag the camp does not carry is a no-op for that tag.`,
 	Example: `  camp tag rm obey-campaign q3-2026`,
 	Args:    cobra.MinimumNArgs(2),
 	RunE:    runTagRm,
@@ -51,7 +51,7 @@ Removing a tag the campaign does not carry is a no-op for that tag.`,
 
 var tagListCmd = &cobra.Command{
 	Use:     "list",
-	Short:   "List all tags in use with campaign counts",
+	Short:   "List all tags in use with camp counts",
 	Example: `  camp tag list`,
 	Args:    cobra.NoArgs,
 	RunE:    runTagList,
@@ -79,7 +79,7 @@ func runTagAdd(cmd *cobra.Command, args []string) error {
 	err := config.UpdateRegistry(cmd.Context(), func(reg *config.Registry) error {
 		c, ok := reg.Get(campaignQuery)
 		if !ok {
-			return camperrors.NewNotFound("campaign", campaignQuery, nil)
+			return camperrors.NewNotFound("camp", campaignQuery, nil)
 		}
 		next, added := mergeTags(c.Tags, tags)
 		entry := reg.Campaigns[c.ID]
@@ -109,7 +109,7 @@ func runTagRm(cmd *cobra.Command, args []string) error {
 	err := config.UpdateRegistry(cmd.Context(), func(reg *config.Registry) error {
 		c, ok := reg.Get(campaignQuery)
 		if !ok {
-			return camperrors.NewNotFound("campaign", campaignQuery, nil)
+			return camperrors.NewNotFound("camp", campaignQuery, nil)
 		}
 		next, removed := removeTags(c.Tags, tags)
 		entry := reg.Campaigns[c.ID]
@@ -236,7 +236,7 @@ func writeTagCounts(w io.Writer, counts []tagCount) error {
 		return err
 	}
 	tw := tabwriter.NewWriter(w, 0, 0, 2, ' ', 0)
-	if _, err := fmt.Fprintln(tw, "TAG\tCAMPAIGNS"); err != nil {
+	if _, err := fmt.Fprintln(tw, "TAG\tCAMPS"); err != nil {
 		return err
 	}
 	for _, c := range counts {

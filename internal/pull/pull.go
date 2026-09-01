@@ -327,7 +327,7 @@ func buildTargets(ctx context.Context, campRoot string, paths []string) []Target
 	targets := make([]Target, 0, len(paths)+1)
 	rootBranch, _ := git.Output(ctx, campRoot, "rev-parse", "--abbrev-ref", "HEAD")
 	targets = append(targets, Target{
-		Name:   "campaign root",
+		Name:   "camp root",
 		Path:   campRoot,
 		Branch: rootBranch,
 		IsRoot: true,

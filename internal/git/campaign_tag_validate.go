@@ -125,7 +125,7 @@ func ValidateTagComponents(tc TagComponents) error {
 	case strings.Contains(shortID, "-"):
 		problems = append(problems, camperrors.NewValidation("campaign_id",
 			"truncated on reparse: "+strconv.Quote(shortID)+
-				" contains a dash, and the parser ends the campaign id at the first one", nil))
+				" contains a dash, and the parser ends the camp id at the first one", nil))
 	}
 
 	malformed := make(map[string]bool, len(tagSegments))

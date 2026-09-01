@@ -10,9 +10,9 @@ import (
 var pullAllCmd = &cobra.Command{
 	Use:   "all [git pull flags]",
 	Short: "Pull latest changes for all repos",
-	Long: `Pull latest changes for all repositories in the campaign.
+	Long: `Pull latest changes for all repositories in the camp.
 
-Scans the campaign root and all submodules, checks which have a tracking
+Scans the camp root and all submodules, checks which have a tracking
 branch with upstream, and pulls them. Any extra flags are passed through
 to git pull for each repo.
 

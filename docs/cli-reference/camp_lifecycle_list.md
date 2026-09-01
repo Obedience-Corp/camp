@@ -27,4 +27,4 @@ camp lifecycle list [flags]
 
 ### SEE ALSO
 
-* [camp lifecycle](camp_lifecycle.md)	 - Manage campaign lifecycle status
+* [camp lifecycle](camp_lifecycle.md)	 - Manage camp lifecycle status

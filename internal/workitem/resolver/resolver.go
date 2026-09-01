@@ -63,7 +63,7 @@ func Resolve(ctx context.Context, root string, opts Options) (*Resolution, error
 	var err error
 	root, err = canonicalPath(root)
 	if err != nil {
-		return nil, camperrors.Wrap(err, "resolve campaign root")
+		return nil, camperrors.Wrap(err, "resolve camp root")
 	}
 
 	cwd := opts.Cwd
@@ -194,7 +194,7 @@ func resolveAncestor(ctx context.Context, root, cwd string) (*workitem.WorkItem,
 			break
 		}
 	}
-	return nil, TraceStep{Tier: SourceAncestor, Result: "miss", Detail: "no .workitem found between cwd and campaign root"}, nil
+	return nil, TraceStep{Tier: SourceAncestor, Result: "miss", Detail: "no .workitem found between cwd and camp root"}, nil
 }
 
 func resolveLink(ctx context.Context, root, cwd string) (*workitem.WorkItem, TraceStep, error) {
@@ -205,7 +205,7 @@ func resolveLink(ctx context.Context, root, cwd string) (*workitem.WorkItem, Tra
 	}
 	rel, err := filepath.Rel(root, cwd)
 	if err != nil || relOutsideRoot(rel) {
-		return nil, TraceStep{Tier: SourceLink, Result: "skip", Detail: "cwd outside campaign root"}, nil
+		return nil, TraceStep{Tier: SourceLink, Result: "skip", Detail: "cwd outside camp root"}, nil
 	}
 	relSlash := filepath.ToSlash(rel)
 

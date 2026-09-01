@@ -62,7 +62,7 @@ func Resolve(ctx context.Context, opts ResolveOptions) (*ResolveResult, error) {
 	}
 
 	if opts.CampaignRoot == "" {
-		return nil, camperrors.Newf("campaign root is required")
+		return nil, camperrors.Newf("camp root is required")
 	}
 
 	// No query - direct category path

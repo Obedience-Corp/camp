@@ -20,9 +20,9 @@ func newListCommand() *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "list",
 		Short: "List user-created workflow collections",
-		Long: `List user-created workflow collections registered in the campaign.
+		Long: `List user-created workflow collections registered in the camp.
 
-The command reads campaign configuration and workflow/ directories, then shows
+The command reads camp configuration and workflow/ directories, then shows
 each collection's shortcut, item count, and latest workitem update. Built-in
 workflow types are omitted so the output focuses on custom collections. Use
 --json for machine-readable workflow inventory output.`,
@@ -39,7 +39,7 @@ workflow types are omitted so the output focuses on custom collections. Use
 func runList(ctx context.Context, cmd *cobra.Command, jsonOut bool) error {
 	cfg, campaignRoot, err := config.LoadCampaignConfigFromCwd(ctx)
 	if err != nil {
-		return camperrors.Wrap(err, "not in a campaign directory")
+		return camperrors.Wrap(err, "not in a camp directory")
 	}
 
 	entries, err := enumerateWorkflowEntries(campaignRoot, cfg)

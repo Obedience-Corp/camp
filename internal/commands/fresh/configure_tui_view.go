@@ -226,7 +226,7 @@ func (m *followUpTUIModel) sectionHeader(kind freshStepKind, followUps int) (str
 		return "Sync", "always runs · not configurable"
 	case freshStepSetting:
 		if m.inProjectScope() {
-			return "Settings", "enter: change · some keys are campaign-wide"
+			return "Settings", "enter: change · some keys are camp-wide"
 		}
 		return "Settings", "enter: change"
 	case freshStepFollowUp:
@@ -428,7 +428,7 @@ func (m *followUpTUIModel) overlayView() string {
 			freshPrimary.Render("r  reload fresh.yaml from disk"),
 			freshPrimary.Render("h/l or tab  move between scopes and workflow"),
 			"",
-			freshMuted.Render("prune and prune_remote are campaign-wide: change"),
+			freshMuted.Render("prune and prune_remote are camp-wide: change"),
 			freshMuted.Render("them under Global defaults, not under a project."),
 			"",
 			freshTUIHelpStyle.Render("esc or ?  close help"),
@@ -499,7 +499,7 @@ func (m *followUpTUIModel) settingOverlayBody() []string {
 		freshMuted.Render("fresh.yaml key: " + settingTitle(step.Setting)),
 	}
 	if step.GlobalOnly {
-		body = append(body, freshMuted.Render("This key applies to every project in the campaign."))
+		body = append(body, freshMuted.Render("This key applies to every project in the camp."))
 	}
 	body = append(body, "")
 

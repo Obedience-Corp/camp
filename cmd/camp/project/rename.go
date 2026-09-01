@@ -50,7 +50,7 @@ func newProjectRenameCommand() *cobra.Command {
 		Long: `Rename a managed project and migrate its active Camp references.
 
 Supported projects are declared Git submodules, linked workspace symlinks,
-and ordinary campaign-owned directories tracked by the campaign repository.
+and ordinary camp-owned directories tracked by the camp repository.
 Dirty project checkouts and linked worktrees are preserved. Destination
 collisions and unmanaged directories are rejected before mutation.
 
@@ -73,8 +73,8 @@ Examples:
 	cmd.Flags().StringVar(&flags.remoteURL, "remote-url", "", "Explicitly update the project's origin URL")
 	cmd.Flags().BoolVar(&flags.noVerify, "no-verify", false, "Skip remote connectivity verification")
 	cmd.Flags().BoolVar(&flags.dryRun, "dry-run", false, "Print the complete plan without writing")
-	cmd.Flags().BoolVar(&flags.noCommit, "no-commit", false, "Apply the rename without a campaign commit")
-	cmd.Flags().StringVarP(&flags.campaign, "campaign", "c", "", "Target campaign by name or ID; omit value to pick interactively")
+	cmd.Flags().BoolVar(&flags.noCommit, "no-commit", false, "Apply the rename without a camp commit")
+	cmd.Flags().StringVarP(&flags.campaign, "campaign", "c", "", "Target camp by name or ID; omit value to pick interactively")
 	cmd.Flags().BoolVar(&flags.json, "json", false, "Output a versioned JSON plan or result")
 	cmd.Flags().Lookup("campaign").NoOptDefVal = projectlinked.NoOptCampaign
 	return cmd

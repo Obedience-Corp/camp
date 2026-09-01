@@ -44,7 +44,7 @@ func parseSwitchArg(raw string, scope cmdutil.CampaignScope) (cmdutil.ParsedSwit
 			return parsed, camperrors.New("switch selector may contain at most one org separator")
 		}
 		if parsed.Campaign == "" {
-			return parsed, camperrors.New("campaign name required after org selector")
+			return parsed, camperrors.New("camp name required after org selector")
 		}
 		if scope.Org != "" && scope.Org != parsed.Org {
 			return parsed, camperrors.New(fmt.Sprintf("selector org %q conflicts with --org %q", parsed.Org, scope.Org))

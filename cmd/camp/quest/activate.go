@@ -27,7 +27,7 @@ var questUseCmd = &cobra.Command{
 
 This prints shell code that sets ` + quest.QuestEnvVar + ` for the current shell, so
 child processes (including camp itself) inherit the quest. It is terminal-local:
-other terminals in the same campaign keep their own context.
+other terminals in the same camp keep their own context.
 
 The shell wrapper installed by 'camp shell-init' evaluates this automatically.
 To activate without the wrapper:

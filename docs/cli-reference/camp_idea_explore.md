@@ -66,4 +66,4 @@ camp idea explore [flags]
 
 ### SEE ALSO
 
-* [camp idea](camp_idea.md)	 - Manage campaign ideas
+* [camp idea](camp_idea.md)	 - Manage camp ideas

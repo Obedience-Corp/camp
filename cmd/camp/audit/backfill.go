@@ -26,9 +26,9 @@ func newBackfillCommand() *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "backfill",
 		Short: "Derive a source:backfill event stream from history (opt-in write)",
-		Long: `Derive ledger events from a campaign's existing history - tagged commits across
+		Long: `Derive ledger events from a camp's existing history - tagged commits across
 linked repos (git log --all, including merges), intent frontmatter, and festival
-status histories - so a pre-ledger campaign (or the pre-ledger history of this
+status histories - so a pre-ledger camp (or the pre-ledger history of this
 one) renders on the same timeline as new activity. Historical doubled WI-WI-
 workitem tags are stored as the normalized WI-<hex> ref.
 
@@ -45,7 +45,7 @@ events into the standard shard layout.`,
 			ctx := cmd.Context()
 			cfg, campRoot, err := config.LoadCampaignConfigFromCwd(ctx)
 			if err != nil {
-				return camperrors.Wrap(err, "not in a campaign directory")
+				return camperrors.Wrap(err, "not in a camp directory")
 			}
 			targets, err := scanTargets(ctx, campRoot)
 			if err != nil {

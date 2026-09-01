@@ -40,4 +40,4 @@ camp workitem rename <selector> <new-name> [flags]
 
 ### SEE ALSO
 
-* [camp workitem](camp_workitem.md)	 - View active campaign work items
+* [camp workitem](camp_workitem.md)	 - View active camp work items

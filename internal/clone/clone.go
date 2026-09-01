@@ -45,7 +45,7 @@ func (c *Cloner) Clone(ctx context.Context) (*CloneResult, error) {
 	}
 
 	// Phase 1: Clone repository (without --recurse-submodules to avoid all-or-nothing failure)
-	c.progress.StartPhase("Cloning campaign repository")
+	c.progress.StartPhase("Cloning camp repository")
 	var targetDir string
 	var err error
 	if c.peer != nil {
@@ -339,7 +339,7 @@ func (c *Cloner) Clone(ctx context.Context) (*CloneResult, error) {
 		regResult := c.registerCampaign(ctx, targetDir)
 		result.Registration = regResult
 		if regResult != nil && regResult.Registered {
-			c.progress.Message(fmt.Sprintf("Registered campaign: %s", regResult.CampaignName))
+			c.progress.Message(fmt.Sprintf("Registered camp: %s", regResult.CampaignName))
 		} else if regResult != nil && regResult.Error != nil {
 			result.Warnings = append(result.Warnings,
 				fmt.Sprintf("auto-registration: %v", regResult.Error))

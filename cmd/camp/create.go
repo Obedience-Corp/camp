@@ -18,8 +18,8 @@ import (
 
 var createCmd = &cobra.Command{
 	Use:   "create <name>",
-	Short: "Create a new campaign at the default campaigns directory",
-	Long:  `Create a new campaign at <campaigns_dir>/<name>/, using the same scaffolding as 'camp init'. The default campaigns directory is ~/campaigns/ and can be configured via 'camp settings' or by editing the campaigns_dir field in ~/.obey/campaign/config.json.`,
+	Short: "Create a new camp at the default camps directory",
+	Long:  `Create a new camp at <campaigns_dir>/<name>/, using the same scaffolding as 'camp init'. The default camps directory is ~/campaigns/ and can be configured via 'camp settings' or by editing the campaigns_dir field in ~/.obey/campaign/config.json.`,
 	Example: `  camp create my-project
   camp create my-project -d "Description" -m "Mission"
   camp create my-project --path ~/Dev/sandbox
@@ -36,15 +36,15 @@ var createCmd = &cobra.Command{
 
 func init() {
 	rootCmd.AddCommand(createCmd)
-	createCmd.Flags().StringP("name", "n", "", "Campaign display name (defaults to <name> positional)")
-	createCmd.Flags().StringP("type", "t", "product", "Campaign type (product, research, tools, personal)")
-	createCmd.Flags().StringP("description", "d", "", "Campaign description")
-	createCmd.Flags().StringP("mission", "m", "", "Campaign mission statement")
+	createCmd.Flags().StringP("name", "n", "", "Camp display name (defaults to <name> positional)")
+	createCmd.Flags().StringP("type", "t", "product", "Camp type (product, research, tools, personal)")
+	createCmd.Flags().StringP("description", "d", "", "Camp description")
+	createCmd.Flags().StringP("mission", "m", "", "Camp mission statement")
 	createCmd.Flags().Bool("no-git", false, "Skip git repository initialization")
-	createCmd.Flags().Bool("no-skills", false, "Skip linking campaign skills into .claude/skills and .agents/skills")
+	createCmd.Flags().Bool("no-skills", false, "Skip linking camp skills into .claude/skills and .agents/skills")
 	createCmd.Flags().Bool("dry-run", false, "Show what would be done without creating anything")
-	createCmd.Flags().String("path", "", "Override the base campaigns directory (campaign created at <path>/<name>/)")
-	createCmd.Flags().String("org", "", "Assign the new campaign to this org (created if new; defaults to the fallback org)")
+	createCmd.Flags().String("path", "", "Override the base camps directory (camp created at <path>/<name>/)")
+	createCmd.Flags().String("org", "", "Assign the new camp to this org (created if new; defaults to the fallback org)")
 }
 
 func runCreate(cmd *cobra.Command, args []string) error {
@@ -73,7 +73,7 @@ func runCreate(cmd *cobra.Command, args []string) error {
 			_, _ = fmt.Fprintf(w.HumanOut, "would create base directory: %s\n", base)
 		} else {
 			if err := os.MkdirAll(base, 0o755); err != nil {
-				return camperrors.Wrapf(err, "failed to ensure campaigns directory %s", base)
+				return camperrors.Wrapf(err, "failed to ensure camps directory %s", base)
 			}
 		}
 	}
@@ -108,16 +108,16 @@ func runCreate(cmd *cobra.Command, args []string) error {
 func validateCampaignName(name string) error {
 	trimmed := strings.TrimSpace(name)
 	if trimmed == "" {
-		return camperrors.New("campaign name is empty")
+		return camperrors.New("camp name is empty")
 	}
 	if trimmed == "." || trimmed == ".." {
-		return camperrors.New(fmt.Sprintf("invalid campaign name: %q", trimmed))
+		return camperrors.New(fmt.Sprintf("invalid camp name: %q", trimmed))
 	}
 	if strings.HasPrefix(trimmed, ".") {
-		return camperrors.New(fmt.Sprintf("campaign name cannot start with '.': %q", trimmed))
+		return camperrors.New(fmt.Sprintf("camp name cannot start with '.': %q", trimmed))
 	}
 	if strings.ContainsAny(trimmed, "/\\") {
-		return camperrors.New(fmt.Sprintf("campaign name cannot contain path separators: %q", trimmed))
+		return camperrors.New(fmt.Sprintf("camp name cannot contain path separators: %q", trimmed))
 	}
 	return nil
 }
@@ -165,7 +165,7 @@ func checkCreateTarget(target string) error {
 	}
 	campaignMarker := filepath.Join(target, ".campaign")
 	if _, err := os.Stat(campaignMarker); err == nil {
-		return camperrors.New(fmt.Sprintf("target %s already contains a campaign; use 'camp init --repair %s' to repair it", target, target))
+		return camperrors.New(fmt.Sprintf("target %s already contains a camp; use 'camp init --repair %s' to repair it", target, target))
 	}
 	return camperrors.New(fmt.Sprintf("target %s exists and is not empty; choose a different name or remove the directory", target))
 }

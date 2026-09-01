@@ -56,7 +56,7 @@ func (r attachResolver) Resolve(ctx context.Context, targetCampaign string, targ
 	}
 	if reg.Len() == 0 {
 		return nil, "", camperrors.Wrap(camperrors.ErrNotInitialized,
-			"no campaigns registered (use 'camp init' to create one)")
+			"no camps registered (use 'camp init' to create one)")
 	}
 
 	var selected config.RegisteredCampaign
@@ -64,7 +64,7 @@ func (r attachResolver) Resolve(ctx context.Context, targetCampaign string, targ
 	case "":
 		if !r.isInteractive() {
 			return nil, "", camperrors.Wrapf(camperrors.ErrInvalidInput,
-				"campaign name required in non-interactive mode (use '%s')", r.usageLine)
+				"camp name required in non-interactive mode (use '%s')", r.usageLine)
 		}
 		selected, err = r.pickCampaign(ctx, reg)
 		if err != nil {
@@ -79,7 +79,7 @@ func (r attachResolver) Resolve(ctx context.Context, targetCampaign string, targ
 
 	cfg, err := r.loadCampaign(ctx, selected.Path)
 	if err != nil {
-		return nil, "", camperrors.Wrapf(err, "load target campaign %s", selected.Path)
+		return nil, "", camperrors.Wrapf(err, "load target camp %s", selected.Path)
 	}
 
 	if r.updateAccess != nil {

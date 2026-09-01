@@ -25,7 +25,7 @@ func newConfigureCommand() *cobra.Command {
 		Use:   "configure",
 		Short: "Configure the camp fresh workflow",
 		Long: `Configure what camp fresh does after a merge. Configuration lives in
-.campaign/settings/fresh.yaml, as campaign-wide defaults plus optional
+.campaign/settings/fresh.yaml, as camp-wide defaults plus optional
 per-project overrides.
 
 Run without a subcommand to open the interactive setup for humans, which
@@ -36,7 +36,7 @@ groups the fresh sequence by what you can change about each step:
   Follow-ups  your own commands, run after a successful cycle
 
 Press enter on a settings step to change it, and a/e/d/K/J on a follow-up to
-add, edit, delete, or reorder it. prune and prune_remote are campaign-wide,
+add, edit, delete, or reorder it. prune and prune_remote are camp-wide,
 so they are changed under Global defaults rather than under a project.
 
 The subcommands below cover follow-ups only, for scripts and agents; edit the
@@ -87,7 +87,7 @@ include its branch, pruning, and follow-up overrides.`,
 			ctx := cmd.Context()
 			campRoot, err := campaign.DetectCached(ctx)
 			if err != nil {
-				return camperrors.Wrap(err, "not in a campaign")
+				return camperrors.Wrap(err, "not in a camp")
 			}
 			cfg, err := config.LoadFreshConfig(ctx, campRoot)
 			if err != nil {
@@ -116,7 +116,7 @@ func newConfigureShowCommand() *cobra.Command {
 
 			campRoot, err := campaign.DetectCached(ctx)
 			if err != nil {
-				return camperrors.Wrap(err, "not in a campaign")
+				return camperrors.Wrap(err, "not in a camp")
 			}
 
 			cfg, err := config.LoadFreshConfig(ctx, campRoot)
@@ -180,7 +180,7 @@ func newConfigureAddCommand() *cobra.Command {
 
 			campRoot, err := campaign.DetectCached(ctx)
 			if err != nil {
-				return camperrors.Wrap(err, "not in a campaign")
+				return camperrors.Wrap(err, "not in a camp")
 			}
 
 			entry := config.FollowUpConfig{
@@ -221,7 +221,7 @@ func newConfigureRemoveCommand() *cobra.Command {
 
 			campRoot, err := campaign.DetectCached(ctx)
 			if err != nil {
-				return camperrors.Wrap(err, "not in a campaign")
+				return camperrors.Wrap(err, "not in a camp")
 			}
 
 			if err := config.RemoveFreshFollowUp(ctx, campRoot, project, name); err != nil {
@@ -257,7 +257,7 @@ func newConfigureMoveCommand() *cobra.Command {
 			ctx := cmd.Context()
 			campRoot, err := campaign.DetectCached(ctx)
 			if err != nil {
-				return camperrors.Wrap(err, "not in a campaign")
+				return camperrors.Wrap(err, "not in a camp")
 			}
 
 			cfg, err := config.LoadFreshConfig(ctx, campRoot)

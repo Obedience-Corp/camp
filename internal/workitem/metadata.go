@@ -228,12 +228,12 @@ func validateProjects(paths []string) error {
 		}
 		if filepath.IsAbs(p) {
 			return camperrors.NewValidation("projects",
-				"project path must be campaign-relative, got absolute path "+p, nil)
+				"project path must be camp-relative, got absolute path "+p, nil)
 		}
 		clean := filepath.ToSlash(filepath.Clean(p))
 		if clean == ".." || strings.HasPrefix(clean, "../") {
 			return camperrors.NewValidation("projects",
-				"project path must not escape the campaign root, got "+p, nil)
+				"project path must not escape the camp root, got "+p, nil)
 		}
 		if !strings.HasPrefix(clean, "projects/") {
 			return camperrors.NewValidation("projects",

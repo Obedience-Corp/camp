@@ -36,4 +36,4 @@ camp skills unlink [flags]
 
 ### SEE ALSO
 
-* [camp skills](camp_skills.md)	 - Manage campaign skill directory links
+* [camp skills](camp_skills.md)	 - Manage camp skill directory links

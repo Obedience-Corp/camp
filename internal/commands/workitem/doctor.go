@@ -87,7 +87,7 @@ func newDoctorCommand() *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "doctor",
 		Short: "Report link-registry health issues",
-		Long: `Report health issues in the campaign workitem link registry.
+		Long: `Report health issues in the camp workitem link registry.
 
 The command reads .campaign/workitems/links.yaml, scans .workitem metadata on
 disk, and checks current-workitem and priority stores for stale or inconsistent
@@ -109,7 +109,7 @@ rewriting projects: entries whose path git recorded as a project rename. Use
 func runDoctor(ctx context.Context, cmd *cobra.Command, jsonOut, fix bool) error {
 	_, root, err := config.LoadCampaignConfigFromCwd(ctx)
 	if err != nil {
-		return renderWorkitemDoctorError(cmd, jsonOut, camperrors.Wrap(err, "not in a campaign directory"))
+		return renderWorkitemDoctorError(cmd, jsonOut, camperrors.Wrap(err, "not in a camp directory"))
 	}
 	knownIDs, items, err := workitemIDsOnDisk(ctx, root)
 	if err != nil {
@@ -325,7 +325,7 @@ func collectWorkitemFindings(ctx context.Context, root string, registry *links.L
 					Code:     codeOutOfBounds,
 					Severity: docSeverityError,
 					Target:   "link:" + link.ID,
-					Message:  "scope path " + link.Scope.Path + " escapes the campaign root",
+					Message:  "scope path " + link.Scope.Path + " escapes the camp root",
 				})
 			case !scopeMissing:
 				findings = append(findings, docFinding{
@@ -519,7 +519,7 @@ func scopeTargetExists(root, scopePath string) bool {
 func workitemIDsOnDisk(ctx context.Context, root string) (map[string]struct{}, []wkitem.WorkItem, error) {
 	cfg, err := config.LoadCampaignConfig(ctx, root)
 	if err != nil {
-		return nil, nil, camperrors.Wrap(err, "load campaign config")
+		return nil, nil, camperrors.Wrap(err, "load camp config")
 	}
 	resolver := paths.NewResolverFromConfig(root, cfg)
 	items, err := wkitem.Discover(ctx, root, resolver)

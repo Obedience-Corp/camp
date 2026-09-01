@@ -237,7 +237,7 @@ func (r *CloneResult) Format() string {
 
 	// Header
 	if r.Success {
-		sb.WriteString("✓ Campaign cloned successfully\n")
+		sb.WriteString("✓ Your camp was cloned successfully\n")
 	} else {
 		sb.WriteString("✗ Clone completed with issues\n")
 	}

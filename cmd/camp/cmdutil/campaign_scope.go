@@ -85,7 +85,7 @@ func ResolveCampaignSelectionScoped(query string, reg *config.Registry, scope Ca
 
 func resolveCampaignFromCandidates(query string, candidates []config.RegisteredCampaign, scope CampaignScope, matchWriter io.Writer) (config.RegisteredCampaign, error) {
 	if query == "" {
-		return config.RegisteredCampaign{}, camperrors.New("campaign name required" + scopeDescription(scope))
+		return config.RegisteredCampaign{}, camperrors.New("camp name required" + scopeDescription(scope))
 	}
 
 	for _, c := range candidates {
@@ -105,7 +105,7 @@ func resolveCampaignFromCandidates(query string, candidates []config.RegisteredC
 		return idPrefixMatches[0], nil
 	case 0:
 	default:
-		return config.RegisteredCampaign{}, camperrors.New(fmt.Sprintf("campaign ID prefix %q is ambiguous%s: %s",
+		return config.RegisteredCampaign{}, camperrors.New(fmt.Sprintf("camp ID prefix %q is ambiguous%s: %s",
 			query, scopeDescription(scope), campaignIDs(idPrefixMatches)))
 	}
 
@@ -120,14 +120,14 @@ func resolveCampaignFromCandidates(query string, candidates []config.RegisteredC
 		return exactNameMatches[0], nil
 	case 0:
 	default:
-		return config.RegisteredCampaign{}, camperrors.New(fmt.Sprintf("campaign name %q is ambiguous%s: %s",
+		return config.RegisteredCampaign{}, camperrors.New(fmt.Sprintf("camp name %q is ambiguous%s: %s",
 			query, scopeDescription(scope), campaignIDs(exactNameMatches)))
 	}
 
 	names := campaignNames(candidates)
 	matches := fuzzy.Filter(names, query)
 	if len(matches) == 0 {
-		return config.RegisteredCampaign{}, camperrors.New(fmt.Sprintf("campaign %q not found%s", query, scopeDescription(scope)))
+		return config.RegisteredCampaign{}, camperrors.New(fmt.Sprintf("camp %q not found%s", query, scopeDescription(scope)))
 	}
 
 	bestName := matches[0].Target
@@ -138,7 +138,7 @@ func resolveCampaignFromCandidates(query string, candidates []config.RegisteredC
 		}
 	}
 	if len(fuzzyMatches) != 1 {
-		return config.RegisteredCampaign{}, camperrors.New(fmt.Sprintf("campaign name %q is ambiguous%s: %s",
+		return config.RegisteredCampaign{}, camperrors.New(fmt.Sprintf("camp name %q is ambiguous%s: %s",
 			bestName, scopeDescription(scope), campaignIDs(fuzzyMatches)))
 	}
 

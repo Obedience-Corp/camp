@@ -273,7 +273,7 @@ func TestAutoCommitIntent_SkipsMissingCampaignContext(t *testing.T) {
 	if !strings.Contains(logged, "intent auto-commit skipped") {
 		t.Fatalf("expected skip warning logged, got: %s", logged)
 	}
-	if !strings.Contains(logged, "missing campaign context") {
+	if !strings.Contains(logged, "missing camp context") {
 		t.Fatalf("expected missing-campaign-context reason logged, got: %s", logged)
 	}
 }

@@ -847,8 +847,8 @@ func TestRegistry_VerifyAndRepair_RemoveNoCampaignYaml(t *testing.T) {
 	if len(report.Removed) != 1 {
 		t.Errorf("len(Removed) = %d, want 1", len(report.Removed))
 	}
-	if report.Removed[0].Reason != "no campaign.yaml (not a campaign)" {
-		t.Errorf("Reason = %q, want 'no campaign.yaml (not a campaign)'", report.Removed[0].Reason)
+	if report.Removed[0].Reason != "no campaign.yaml (not a camp)" {
+		t.Errorf("Reason = %q, want 'no campaign.yaml (not a camp)'", report.Removed[0].Reason)
 	}
 }
 

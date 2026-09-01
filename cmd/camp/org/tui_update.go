@@ -80,7 +80,7 @@ func (m orgTUIModel) updateBrowse(key tea.KeyMsg) (tea.Model, tea.Cmd) {
 	case "N":
 		if m.pane == paneOrgs && len(m.orgs) > 0 {
 			m.pendingOrg = m.orgs[m.orgCursor].Org
-			m.openOverlay(overlayNewCampaign, "new campaign name")
+			m.openOverlay(overlayNewCampaign, "new camp name")
 			return m, textinput.Blink
 		}
 		return m, nil
@@ -271,7 +271,7 @@ func (m orgTUIModel) commitOverlay() (tea.Model, tea.Cmd) {
 		}
 	case overlayNewCampaign:
 		if value == "" {
-			m.setError(camperrors.NewValidation("campaign", "campaign name is required", nil))
+			m.setError(camperrors.NewValidation("campaign", "camp name is required", nil))
 			return m, nil
 		}
 		org := m.pendingOrg

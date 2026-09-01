@@ -41,7 +41,7 @@ func ResolveLimits(ctx context.Context, repoPath string) (GuardLimits, error) {
 		if camperrors.Is(err, config.ErrNotInCampaign) {
 			return defaultLimits(true), nil
 		}
-		return GuardLimits{}, camperrors.Wrapf(err, "resolve campaign root for %s", repoPath)
+		return GuardLimits{}, camperrors.Wrapf(err, "resolve camp root for %s", repoPath)
 	}
 
 	cfg, err := config.LoadCampaignConfig(ctx, campaignRoot)
@@ -60,7 +60,7 @@ func ResolveLimits(ctx context.Context, repoPath string) (GuardLimits, error) {
 			scopeProject, _ := resolveScope(campaignRoot, repoPath, config.DefaultCampaignPaths())
 			return defaultLimits(scopeProject), nil
 		}
-		return GuardLimits{}, camperrors.Wrapf(err, "load campaign config at %s", campaignRoot)
+		return GuardLimits{}, camperrors.Wrapf(err, "load camp config at %s", campaignRoot)
 	}
 
 	paths := config.DefaultCampaignPaths()

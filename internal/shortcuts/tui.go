@@ -49,7 +49,7 @@ func RunAddSubShortcutTUI(ctx context.Context, root string) (*AddSubShortcutResu
 	}
 
 	if len(projects) == 0 {
-		return nil, errors.New("no projects found in campaign")
+		return nil, errors.New("no projects found in camp")
 	}
 
 	// Step 1: Pick project using fuzzy finder
@@ -143,7 +143,7 @@ func RunAddJumpTUI(ctx context.Context, root string) (*AddJumpResult, error) {
 				}),
 			huh.NewInput().
 				Title("Path").
-				Description("Relative path from campaign root (leave empty for concept-only)").
+				Description("Relative path from camp root (leave empty for concept-only)").
 				Placeholder("projects/api-service/").
 				Suggestions(dirs).
 				Value(&path).

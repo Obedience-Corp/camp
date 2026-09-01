@@ -9,7 +9,7 @@ func NewWorkflowCommand() *cobra.Command {
 		Short: "Manage workflow collections",
 		Long: `Manage workflow collections.
 
-A workflow collection is a campaign directory under workflow/<type>/ with
+A workflow collection is a camp directory under workflow/<type>/ with
 navigation config and workitem type support.`,
 	}
 

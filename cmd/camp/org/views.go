@@ -70,7 +70,7 @@ var orgListCmd = &cobra.Command{
 
 var orgShowCmd = &cobra.Command{
 	Use:     "show <org>",
-	Short:   "Show an org's member campaigns",
+	Short:   "Show an org's member camps",
 	Example: `  camp org show obey`,
 	Args:    cobra.ExactArgs(1),
 	RunE:    runOrgShow,
@@ -79,7 +79,7 @@ var orgShowCmd = &cobra.Command{
 var orgWhichCmd = &cobra.Command{
 	Use:     "which",
 	Aliases: []string{"current"},
-	Short:   "Print the current campaign's org",
+	Short:   "Print the current camp's org",
 	Example: `  camp org which`,
 	Args:    cobra.NoArgs,
 	RunE:    runOrgWhich,
@@ -120,7 +120,7 @@ func runOrgRename(cmd *cobra.Command, args []string) error {
 	if asJSON {
 		return encodeJSON(cmd.OutOrStdout(), result)
 	}
-	_, err = fmt.Fprintf(cmd.OutOrStdout(), "renamed org %q -> %q (%d campaigns reassigned)\n",
+	_, err = fmt.Fprintf(cmd.OutOrStdout(), "renamed org %q -> %q (%d camps reassigned)\n",
 		result.Old, result.New, result.Reassigned)
 	return err
 }
@@ -206,7 +206,7 @@ func computeOrgCounts(reg *config.Registry) []orgCount {
 
 func writeOrgCounts(w io.Writer, counts []orgCount) error {
 	tw := tabwriter.NewWriter(w, 0, 0, 2, ' ', 0)
-	if _, err := fmt.Fprintf(tw, "%s\t%s\t%s\n", ui.Label("ORG"), ui.Label("CAMPAIGNS"), ui.Label("ACTIVE")); err != nil {
+	if _, err := fmt.Fprintf(tw, "%s\t%s\t%s\n", ui.Label("ORG"), ui.Label("CAMPS"), ui.Label("ACTIVE")); err != nil {
 		return err
 	}
 	for _, c := range counts {
@@ -273,7 +273,7 @@ func buildOrgShow(reg *config.Registry, org string) orgShowResult {
 func writeOrgShow(w io.Writer, r orgShowResult) error {
 	if _, err := fmt.Fprintf(w, "%s %s   %s\n\n",
 		ui.Label("org:"), ui.Accent(r.Org),
-		ui.Dim(fmt.Sprintf("(%d campaigns, %d active)", r.Campaigns, r.Active))); err != nil {
+		ui.Dim(fmt.Sprintf("(%d camps, %d active)", r.Campaigns, r.Active))); err != nil {
 		return err
 	}
 	tw := tabwriter.NewWriter(w, 0, 0, 2, ' ', 0)

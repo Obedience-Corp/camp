@@ -48,7 +48,7 @@ const (
 type SettingEntry struct {
 	// ID is a stable identifier, e.g. "campaign_manifest".
 	ID string
-	// Title is the menu label, e.g. "Campaign manifest".
+	// Title is the menu label, e.g. "Camp manifest".
 	Title string
 	// Desc is a one-line description shown under the row.
 	Desc string

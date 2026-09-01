@@ -30,10 +30,10 @@ func initLongDescription() string {
 	if version.Profile == "dev" {
 		questLine = "  .campaign/quests/       - Quest execution contexts\n"
 	}
-	return `Initialize a new campaign directory structure.
+	return `Initialize a new camp directory structure.
 
-Creates the standard campaign directories:
-  .campaign/              - Campaign configuration and metadata
+Creates the standard camp directories:
+  .campaign/              - Camp configuration and metadata
 ` + questLine + `  .campaign/intents/      - System-managed intent state
   projects/               - Project repositories (submodules or worktrees)
   projects/worktrees/     - Git worktrees for parallel development
@@ -50,6 +50,10 @@ Also creates:
 
 Initializes a git repository if not already inside one.
 
+Camp metadata lives in the directory named .campaign/. That name is stable and
+Camp expects it, so do not rename it. The separate .camp file is an attachment
+marker for linked external directories, not a replacement for .campaign/.
+
 Use --no-git to skip git initialization.`
 }
 
@@ -57,36 +61,36 @@ Use --no-git to skip git initialization.`
 func New() *cobra.Command {
 	cmd := &cobra.Command{
 		Use:     "init [path]",
-		Short:   "Initialize a new campaign",
+		Short:   "Initialize a new camp",
 		GroupID: "setup",
 		Long:    initLongDescription(),
 		Example: `  camp init                      Initialize current directory
-  camp init my-campaign          Create and initialize new directory
-  camp init --name "My Project"  Set custom campaign name
+  camp init my-camp          Create and initialize new directory
+  camp init --name "My Project"  Set custom camp name
   camp init --no-git             Skip git initialization
   camp init --dry-run            Preview without creating anything`,
 		Args: cobra.MaximumNArgs(1),
 		Annotations: map[string]string{
 			"agent_allowed": "false",
-			"agent_reason":  "Interactive campaign creation with huh forms",
+			"agent_reason":  "Interactive camp creation with huh forms",
 			"interactive":   "true",
 		},
 		RunE: runInit,
 	}
 
-	cmd.Flags().StringP("name", "n", "", "Campaign name (defaults to directory name)")
-	cmd.Flags().StringP("type", "t", "product", "Campaign type (product, research, tools, personal)")
-	cmd.Flags().StringP("description", "d", "", "Campaign description")
-	cmd.Flags().StringP("mission", "m", "", "Campaign mission statement")
+	cmd.Flags().StringP("name", "n", "", "Camp name (defaults to directory name)")
+	cmd.Flags().StringP("type", "t", "product", "Camp type (product, research, tools, personal)")
+	cmd.Flags().StringP("description", "d", "", "Camp description")
+	cmd.Flags().StringP("mission", "m", "", "Camp mission statement")
 	cmd.Flags().BoolP("force", "f", false, "Initialize in non-empty directory without prompting")
 	cmd.Flags().Bool("no-register", false, "Don't add to global registry")
 	cmd.Flags().Bool("no-git", false, "Skip git repository initialization")
-	cmd.Flags().Bool("no-skills", false, "Skip linking campaign skills into .claude/skills and .agents/skills")
+	cmd.Flags().Bool("no-skills", false, "Skip linking camp skills into .claude/skills and .agents/skills")
 	cmd.Flags().Bool("dry-run", false, "Show what would be done without creating anything")
-	cmd.Flags().Bool("repair", false, "Add missing files to existing campaign")
+	cmd.Flags().Bool("repair", false, "Add missing files to existing camp")
 	cmd.Flags().Bool("yes", false, "Skip repair confirmation prompt (for scripting)")
 	cmd.Flags().BoolP("verbose", "v", false, "Show skipped optional setup details")
-	cmd.Flags().String("org", "", "Assign the new campaign to this org (created if new; defaults to the fallback org)")
+	cmd.Flags().String("org", "", "Assign the new camp to this org (created if new; defaults to the fallback org)")
 
 	return cmd
 }
@@ -186,7 +190,7 @@ func RunFlow(ctx context.Context, p Params, w Writers, isInteractive bool) error
 			if cfg != nil && cfg.Name != "" {
 				name = cfg.Name
 			}
-			return camperrors.New(fmt.Sprintf("already inside campaign %q at %s (use 'camp init --repair' to add missing files)", name, existingRoot))
+			return camperrors.New(fmt.Sprintf("already inside camp %q at %s (use 'camp init --repair' to add missing files)", name, existingRoot))
 		}
 	}
 
@@ -248,7 +252,7 @@ func RunFlow(ctx context.Context, p Params, w Writers, isInteractive bool) error
 		skillsPending := !p.NoSkills && skillsNeedProjection(dir)
 
 		if !plan.HasChanges() && !skillsPending {
-			writeLine(w.HumanOut, ui.Success("Campaign is up to date — nothing to repair."))
+			writeLine(w.HumanOut, ui.Success("Your camp is up to date, nothing to repair."))
 			emitHermesContextWarning(ctx, dir, w)
 			return nil
 		}
@@ -350,9 +354,9 @@ func RunFlow(ctx context.Context, p Params, w Writers, isInteractive bool) error
 			writef(w.HumanOut, "  would assign org: %s\n", p.Org)
 		}
 	} else if p.Repair {
-		writeLine(w.HumanOut, ui.Success("✓ Campaign Repaired"))
+		writeLine(w.HumanOut, ui.Success("✓ Camp repaired"))
 	} else {
-		writeLine(w.HumanOut, ui.Success("✓ Campaign Initialized"))
+		writeLine(w.HumanOut, ui.Success("✓ Camp created"))
 	}
 
 	if len(result.DirsCreated) > 0 {
@@ -390,7 +394,7 @@ func RunFlow(ctx context.Context, p Params, w Writers, isInteractive bool) error
 	if !p.DryRun {
 		writeLine(w.HumanOut)
 		typeColor := ui.GetCampaignTypeColor(string(opts.Type))
-		writeLine(w.HumanOut, ui.KeyValue("Campaign:", result.Name))
+		writeLine(w.HumanOut, ui.KeyValue("Camp:", result.Name))
 		writeLine(w.HumanOut, ui.KeyValueColored("Type:", string(opts.Type), typeColor))
 		writeLine(w.HumanOut, ui.KeyValue("ID:", result.ID))
 		writeLine(w.HumanOut, ui.KeyValue("Root:", result.CampaignRoot))

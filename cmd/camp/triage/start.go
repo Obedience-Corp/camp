@@ -67,12 +67,12 @@ func newStartCommand() *cobra.Command {
 
 	cmd := &cobra.Command{
 		Use:   "start",
-		Short: "Snapshot the campaign and open a triage run",
-		Long: `Snapshot the campaign's workitems and open a triage run.
+		Short: "Snapshot the camp and open a triage run",
+		Long: `Snapshot the camp's workitems and open a triage run.
 
-The snapshot is frozen: the run records what the campaign contained when it
+The snapshot is frozen: the run records what the camp contained when it
 started, along with the resolved profile it will be judged under, so a verdict
-stays explainable even after the campaign and the profile move on.
+stays explainable even after the camp and the profile move on.
 
 Scope expressions use the same filters as camp workitem, one per --scope flag:
 
@@ -105,7 +105,7 @@ camp triage abandon first.`,
 	f.StringVar(&opts.identity, "identity", "",
 		"Override the profile's identity policy: repair (adopt and report) or strict (refuse and list)")
 	cmd.Flags().StringVar(&opts.profile, "profile", "",
-		"Use a named built-in profile instead of the campaign's: default, sweep, or deep")
+		"Use a named built-in profile instead of the camp's: default, sweep, or deep")
 	return cmd
 }
 
@@ -114,7 +114,7 @@ func runStart(cmd *cobra.Command, opts *startOptions) error {
 
 	cfg, root, err := config.LoadCampaignConfigFromCwd(ctx)
 	if err != nil {
-		return camperrors.Wrap(err, "not in a campaign directory")
+		return camperrors.Wrap(err, "not in a camp directory")
 	}
 
 	// Scaffold BEFORE resolving. A first run must resolve against the files it
@@ -151,7 +151,7 @@ func runStart(cmd *cobra.Command, opts *startOptions) error {
 		// occupy the single active slot and have to be abandoned before the
 		// operator could correct the scope.
 		return preconditionError(cmd, opts.jsonOut, jsoncontract.WithHint(triage.ErrNoRowsInScope,
-			"widen or drop --scope, or check `camp workitem` for what this campaign contains"))
+			"widen or drop --scope, or check `camp workitem` for what this camp contains"))
 	}
 
 	// Preflight before the snapshot freezes: a row identified only by its path

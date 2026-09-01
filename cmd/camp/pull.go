@@ -20,8 +20,8 @@ var pullCmd = &cobra.Command{
 	Short: "Pull latest changes from remote",
 	Long: `Pull latest changes from the remote repository.
 
-Works from anywhere within the campaign - always pulls to
-the campaign root repository.
+Works from anywhere within the camp - always pulls to
+the camp root repository.
 
 Use --sub to pull the submodule detected from your current directory.
 Use --project to pull a specific project.

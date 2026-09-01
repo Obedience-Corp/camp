@@ -120,9 +120,9 @@ func DiagnoseGitError(command, output string, exitCode int) *GitError {
 			RawOutput: output,
 			Diagnosis: "Current directory is not a git repository",
 			Fix: `To fix this:
-1. Ensure you're in a campaign directory (created with 'camp init')
-2. Or navigate to an existing campaign
-3. If this is a new campaign, run: camp init
+1. Ensure you're in a camp directory (created with 'camp init')
+2. Or navigate to an existing camp
+3. If this is a new camp, run: camp init
 4. Verify git is initialized: git status`,
 			DocLink: "",
 		}

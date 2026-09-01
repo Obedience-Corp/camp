@@ -14,12 +14,12 @@ import (
 
 var projectNewCmd = &cobra.Command{
 	Use:   "new <name>",
-	Short: "Create a new project in campaign",
-	Long: `Create a new local project as a git submodule in the campaign.
+	Short: "Create a new project in camp",
+	Long: `Create a new local project as a git submodule in the camp.
 
 The project is initialized as a git repository with an initial commit,
 then added as a submodule under projects/. No remote repository is required.
-The campaign commit is always created so .gitmodules and the submodule pointer land together.
+The camp commit is always created so .gitmodules and the submodule pointer land together.
 
 You can add a remote later:
   cd projects/<name>

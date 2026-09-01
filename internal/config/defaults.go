@@ -85,10 +85,10 @@ func DefaultNavigationShortcuts() map[string]ShortcutConfig {
 		"r":        {Path: "workflow/reviews/", Description: "Jump to reviews", Source: ShortcutSourceAuto},
 		"de":       {Path: "workflow/design/", Description: "Jump to design", Source: ShortcutSourceAuto},
 		"ex":       {Path: "workflow/explore/", Description: "Jump to explore", Source: ShortcutSourceAuto},
-		"settings": {Path: ".campaign/", Description: "Jump to campaign settings directory", Source: ShortcutSourceAuto},
+		"settings": {Path: ".campaign/", Description: "Jump to camp settings directory", Source: ShortcutSourceAuto},
 
 		// Navigation + command expansion
-		"cfg": {Path: ".campaign/", Concept: "config", Description: "Campaign config directory and commands", Source: ShortcutSourceAuto},
+		"cfg": {Path: ".campaign/", Concept: "config", Description: "Camp config directory and commands", Source: ShortcutSourceAuto},
 	}
 }
 

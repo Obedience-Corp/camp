@@ -43,4 +43,4 @@ camp triage review [flags]
 
 ### SEE ALSO
 
-* [camp triage](camp_triage.md)	 - Review the campaign's workitems in a recorded session
+* [camp triage](camp_triage.md)	 - Review the camp's workitems in a recorded session

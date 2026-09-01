@@ -526,7 +526,7 @@ func RewriteExternalLinksForMoves(ctx context.Context, campaignRoot string, move
 
 	allMD, err := collectMDFiles(campaignRoot)
 	if err != nil {
-		return nil, camperrors.Wrap(err, "collecting campaign md files")
+		return nil, camperrors.Wrap(err, "collecting camp md files")
 	}
 
 	// Rewrite files concurrently. Chunks are disjoint, so each worker writes

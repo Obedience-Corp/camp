@@ -42,7 +42,7 @@ func Plan(ctx context.Context, campaignRoot, current, newName string, opts Optio
 
 	campaignRoot, err := filepath.Abs(campaignRoot)
 	if err != nil {
-		return nil, camperrors.Wrap(err, "resolve campaign root")
+		return nil, camperrors.Wrap(err, "resolve camp root")
 	}
 	projectsRel, err := configuredProjectsRoot(ctx, campaignRoot)
 	if err != nil {
@@ -129,13 +129,13 @@ func Plan(ctx context.Context, campaignRoot, current, newName string, opts Optio
 			return nil, err
 		}
 		if !tracked {
-			return nil, camperrors.NewValidation("current", "directory is not owned by the campaign Git index; use camp project add or camp project link first", nil)
+			return nil, camperrors.NewValidation("current", "directory is not owned by the camp Git index; use camp project add or camp project link first", nil)
 		}
 		if _, err := os.Lstat(filepath.Join(oldAbs, ".git")); err == nil {
 			return nil, camperrors.NewValidation("current", "undeclared nested Git repositories cannot be renamed; use camp project add or camp project link first", nil)
 		}
 		if opts.RemoteURL != "" {
-			return nil, camperrors.NewValidation("remote-url", "campaign-owned directories have no separate remote", nil)
+			return nil, camperrors.NewValidation("remote-url", "camp-owned directories have no separate remote", nil)
 		}
 		plan.Kind = KindCampaignDir
 	default:
@@ -175,7 +175,7 @@ func configuredProjectsRoot(ctx context.Context, root string) (string, error) {
 	}
 	rel = filepath.ToSlash(filepath.Clean(filepath.FromSlash(rel)))
 	if filepath.IsAbs(rel) || rel == "." || rel == ".." || strings.HasPrefix(rel, "../") {
-		return "", camperrors.NewValidation("projects path", "must be a campaign-relative directory", nil)
+		return "", camperrors.NewValidation("projects path", "must be a camp-relative directory", nil)
 	}
 	return strings.TrimSuffix(rel, "/"), nil
 }

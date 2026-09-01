@@ -29,7 +29,7 @@ type PlanContext string
 
 const (
 	PlanContextWorkitemDir   PlanContext = "workitem directory"
-	PlanContextCampaignRoot  PlanContext = "campaign root"
+	PlanContextCampaignRoot  PlanContext = "camp root"
 	PlanContextLinkedProject PlanContext = "linked project"
 	PlanContextFestival      PlanContext = "festival"
 	PlanContextStagedOnly    PlanContext = "staged-only"
@@ -115,7 +115,7 @@ func FestivalRefForResolved(ctx context.Context, campaignRoot string, res *resol
 
 func ComputePlan(ctx context.Context, campaignRoot string, opts PlanOptions) (*StagingPlan, error) {
 	if campaignRoot == "" {
-		return nil, camperrors.NewValidation("root", "campaign root required", nil)
+		return nil, camperrors.NewValidation("root", "camp root required", nil)
 	}
 
 	festivalID := opts.FestivalID

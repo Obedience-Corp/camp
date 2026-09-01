@@ -26,7 +26,7 @@ func DungeonLegacy(ctx context.Context, campaignRoot string) (*Notice, error) {
 	}
 	return &Notice{
 		ID:      DungeonLegacyID,
-		Message: "this campaign uses the visible " + spelling.Visible + "/ layout; new campaigns hide it as " + spelling.Hidden + "/",
+		Message: "this camp uses the visible " + spelling.Visible + "/ layout; new camps hide it as " + spelling.Hidden + "/",
 		Command: spelling.MigrateCommand,
 	}, nil
 }

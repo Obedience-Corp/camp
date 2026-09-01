@@ -17,7 +17,7 @@ var projectPruneAllCmd = &cobra.Command{
 	Use:   "all",
 	Short: "Delete merged branches across all projects",
 	Long: `Delete local branches that have been merged into the default branch,
-across every project submodule in the campaign.
+across every project submodule in the camp.
 
 Produces a per-project summary showing what was (or would be) pruned.
 
@@ -38,7 +38,7 @@ func runProjectPruneAll(cmd *cobra.Command, _ []string) error {
 
 	campRoot, err := campaign.DetectCached(ctx)
 	if err != nil {
-		return camperrors.Wrap(err, "not in a campaign")
+		return camperrors.Wrap(err, "not in a camp")
 	}
 
 	paths, err := git.ListSubmodulePathsRecursive(ctx, campRoot, "projects/")
@@ -47,7 +47,7 @@ func runProjectPruneAll(cmd *cobra.Command, _ []string) error {
 	}
 
 	if len(paths) == 0 {
-		fmt.Println(ui.Info("No submodules found in this campaign"))
+		fmt.Println(ui.Info("No submodules found in this camp"))
 		return nil
 	}
 

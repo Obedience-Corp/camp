@@ -45,7 +45,7 @@ var (
 
 var rootCmd = &cobra.Command{
 	Use:           "camp",
-	Short:         "Campaign management CLI for multi-project AI workspaces",
+	Short:         "Manage your camps and the projects and festivals inside them",
 	Version:       fmt.Sprintf("%s (built %s, commit %s)", version.Version, version.BuildDate, version.Commit),
 	SilenceErrors: true,
 	SilenceUsage:  true,
@@ -217,7 +217,7 @@ func init() {
 	// Define command groups for organized help output
 	rootCmd.AddGroup(
 		&cobra.Group{ID: "setup", Title: ui.Category("Setup Commands:")},
-		&cobra.Group{ID: "campaign", Title: ui.Category("Campaign Commands:")},
+		&cobra.Group{ID: "campaign", Title: ui.Category("Camp Commands:")},
 		&cobra.Group{ID: "git", Title: ui.Category("Git Commands:")},
 		&cobra.Group{ID: "navigation", Title: ui.Category("Navigation Commands:")},
 		&cobra.Group{ID: "registry", Title: ui.Category("Registry Commands:")},
@@ -278,26 +278,31 @@ func init() {
 
 // styledLongDescription returns the styled long description for the root command.
 func styledLongDescription() string {
-	return `Camp manages multi-project AI workspaces with fast navigation.
+	return `Camp manages your camps.
 
-Camp provides structure and navigation for AI-powered development workflows.
-It creates standardized campaign directories, manages git submodules as projects,
-and enables lightning-fast navigation through category shortcuts and TUI fuzzy finding.
+A camp is one context in your life: your job, a side project, your taxes. Each
+camp holds the projects you work on and hosts the festivals you run in them.
+Camp creates camps, manages git submodules as projects, and gives you
+lightning-fast navigation through category shortcuts and TUI fuzzy finding.
+
+Camp stores each camp's state in the .campaign/ directory. That name is
+stable, so do not rename it. The separate .camp file is an attachment marker
+for linked external directories, not a replacement for .campaign/.
 
 ` + ui.Category("GETTING STARTED:") + `
-  ` + ui.Accent("camp init") + `               Initialize a new campaign in the current directory
-  ` + ui.Accent("camp project list") + `       List all projects in the campaign
-  ` + ui.Accent("camp list") + `               Show all registered campaigns
+  ` + ui.Accent("camp init") + `               Initialize a new camp in the current directory
+  ` + ui.Accent("camp project list") + `       List all projects in the camp
+  ` + ui.Accent("camp list") + `               Show all registered camps
 
 ` + ui.Category("NAVIGATION (using cgo shell function):") + `
-  ` + ui.Accent("cgo") + `                     Navigate to campaign root
+  ` + ui.Accent("cgo") + `                     Navigate to camp root
   ` + ui.Accent("cgo p") + `                   Navigate to projects directory
   ` + ui.Accent("cgo f") + `                   Navigate to festivals directory
   ` + ui.Accent("cgo <name>") + `              Fuzzy find and navigate to any target
 
 ` + ui.Category("COMMON WORKFLOWS:") + `
   ` + ui.Accent("camp project add <url>") + `  Add a git repo as a project submodule
-  ` + ui.Accent("camp run <command>") + `      Run command from campaign root directory
+  ` + ui.Accent("camp run <command>") + `      Run command from camp root directory
   ` + ui.Accent("camp shortcuts") + `          View all available navigation shortcuts
 
 Run '` + ui.Accent("camp shell-init") + `' to enable the cgo navigation function.`

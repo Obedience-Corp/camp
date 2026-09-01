@@ -46,7 +46,7 @@ func Discover(ctx context.Context, campaignRoot string) ([]Dungeon, error) {
 
 	absRoot, err := filepath.Abs(campaignRoot)
 	if err != nil {
-		return nil, camperrors.Wrapf(err, "resolving campaign root %s", campaignRoot)
+		return nil, camperrors.Wrapf(err, "resolving camp root %s", campaignRoot)
 	}
 
 	// A directory that does not exist yet holds no dungeons. camp init resolves
@@ -85,7 +85,7 @@ func Discover(ctx context.Context, campaignRoot string) ([]Dungeon, error) {
 		return nil
 	})
 	if walkErr != nil {
-		return nil, camperrors.Wrapf(walkErr, "walking campaign %s", absRoot)
+		return nil, camperrors.Wrapf(walkErr, "walking camp %s", absRoot)
 	}
 
 	sort.Slice(found, func(i, j int) bool { return found[i].Path < found[j].Path })

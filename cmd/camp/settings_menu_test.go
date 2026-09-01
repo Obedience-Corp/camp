@@ -84,7 +84,7 @@ func TestScopeHeader(t *testing.T) {
 	}
 
 	lTitle, lDesc := scopeHeader(settings.ScopeLocal, "/campaign/root")
-	if lTitle != "Local Settings (this campaign)" {
+	if lTitle != "Local Settings (this camp)" {
 		t.Errorf("local title = %q", lTitle)
 	}
 	if lDesc != "Files under .campaign/" {

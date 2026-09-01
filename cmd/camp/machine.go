@@ -92,7 +92,7 @@ instead) and docs/transfer.md for the machine-first transfer grammar.
 
 Run without a subcommand in a terminal to manage the fleet interactively: add,
 discover, edit, and remove machines, see each one's socket state, and press
-enter to pick a campaign on the selected machine and hop to it. Hopping needs
+enter to pick a camp on the selected machine and hop to it. Hopping needs
 the shell wrapper ('eval "$(camp shell-init zsh)"'), because no subprocess can
 replace the shell it was run from; without it the screen says so rather than
 appearing to work. The subcommands stay the interface for scripts and agents,
@@ -211,7 +211,7 @@ func init() {
 	// StringArray (not StringSlice): each --campaigns is one name intact, so
 	// names may contain commas. The push path emits repeated flags to match.
 	machineCachePutCmd.Flags().StringArrayVar(&cachePutCampaigns, "campaigns", nil,
-		"Campaign name on the calling machine (repeatable; names may contain commas)")
+		"Camp name on the calling machine (repeatable; names may contain commas)")
 	machineAdoptCmd.Flags().BoolVar(&machineAdoptForce, "force", false,
 		"Skip the reminder that you declined this origin before (never skips the confirmation)")
 

@@ -17,10 +17,10 @@ import (
 // they have not met yet.
 var notifyCmd = &cobra.Command{
 	Use:   "notify",
-	Short: "Manage campaign state notices",
+	Short: "Manage camp state notices",
 	Long: `Manage the advisory notices camp surfaces on commands you already run.
 
-Notices describe campaign state you may not know is true, such as a declared
+Notices describe camp state you may not know is true, such as a declared
 artifact root that has never synced. Each one carries its own dismiss command.
 
 Dismissals are stored in .campaign/notices.yaml, which is committed: a
@@ -58,7 +58,7 @@ func runNotifyDismiss(cmd *cobra.Command, args []string) error {
 	ctx := cmd.Context()
 	campRoot, err := campaign.DetectCached(ctx)
 	if err != nil {
-		return camperrors.Wrap(err, "not in a campaign")
+		return camperrors.Wrap(err, "not in a camp")
 	}
 
 	id := args[0]
@@ -95,7 +95,7 @@ func runNotifyRestore(cmd *cobra.Command, args []string) error {
 	ctx := cmd.Context()
 	campRoot, err := campaign.DetectCached(ctx)
 	if err != nil {
-		return camperrors.Wrap(err, "not in a campaign")
+		return camperrors.Wrap(err, "not in a camp")
 	}
 
 	id := args[0]
@@ -119,7 +119,7 @@ func runNotifyList(cmd *cobra.Command, args []string) error {
 	ctx := cmd.Context()
 	campRoot, err := campaign.DetectCached(ctx)
 	if err != nil {
-		return camperrors.Wrap(err, "not in a campaign")
+		return camperrors.Wrap(err, "not in a camp")
 	}
 
 	dismissals, err := notice.LoadDismissals(campRoot)

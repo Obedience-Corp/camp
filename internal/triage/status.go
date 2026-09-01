@@ -148,7 +148,7 @@ func BuildStatus(ctx context.Context, store *Store, runID string) (*Status, erro
 func (s *Store) discoveredIDsForStatus(ctx context.Context, wanted map[string]bool) (map[string]bool, error) {
 	cfg, err := config.LoadCampaignConfig(ctx, s.campaignRoot)
 	if err != nil {
-		return nil, camperrors.Wrap(err, "loading the campaign config")
+		return nil, camperrors.Wrap(err, "loading the camp config")
 	}
 	items, err := workitem.Discover(ctx, s.campaignRoot, paths.NewResolverFromConfig(s.campaignRoot, cfg))
 	if err != nil {

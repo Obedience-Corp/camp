@@ -22,7 +22,7 @@ type dungeonCommandContext struct {
 func resolveDungeonCommandContext(ctx context.Context) (*dungeonCommandContext, error) {
 	cfg, campaignRoot, err := config.LoadCampaignConfigFromCwd(ctx)
 	if err != nil {
-		return nil, camperrors.Wrap(err, "not in a campaign directory")
+		return nil, camperrors.Wrap(err, "not in a camp directory")
 	}
 
 	cwd, err := os.Getwd()
@@ -34,7 +34,7 @@ func resolveDungeonCommandContext(ctx context.Context) (*dungeonCommandContext, 
 	if err != nil {
 		if errors.Is(err, intdungeon.ErrDungeonContextNotFound) {
 			return nil, camperrors.Newf(
-				"no dungeon context found from %s to campaign root; run 'camp dungeon add' in the target directory",
+				"no dungeon context found from %s to camp root; run 'camp dungeon add' in the target directory",
 				cwd,
 			)
 		}

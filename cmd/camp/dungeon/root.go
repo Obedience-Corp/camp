@@ -5,9 +5,9 @@ import "github.com/spf13/cobra"
 // Cmd is the scaffold root for the dungeon command family.
 var Cmd = &cobra.Command{
 	Use:     "dungeon",
-	Short:   "Manage the campaign dungeon",
+	Short:   "Manage the camp dungeon",
 	GroupID: "planning",
-	Long: `Manage the campaign dungeon - a holding area for uncertain work.
+	Long: `Manage the camp dungeon - a holding area for uncertain work.
 
 The dungeon is where you put work you're unsure about or want out of the way.
 It keeps items visible without them competing for your attention.

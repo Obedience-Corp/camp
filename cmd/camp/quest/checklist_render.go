@@ -78,7 +78,7 @@ type checklistWorkitemIndex map[string]workitem.WorkItem
 func loadChecklistWorkitemIndex(ctx context.Context, root string) (checklistWorkitemIndex, error) {
 	cfg, err := config.LoadCampaignConfig(ctx, root)
 	if err != nil {
-		return nil, camperrors.Wrap(err, "load campaign config for checklist workitems")
+		return nil, camperrors.Wrap(err, "load camp config for checklist workitems")
 	}
 	items, err := workitem.Discover(ctx, root, paths.NewResolverFromConfig(root, cfg))
 	if err != nil {

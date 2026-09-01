@@ -1,10 +1,10 @@
 ## camp workitem
 
-View active campaign work items
+View active camp work items
 
 ### Synopsis
 
-View active campaign work items.
+View active camp work items.
 
 Launches an interactive dashboard on a TTY. Non-interactive callers must pass
 --json, --list, or --print.
@@ -48,7 +48,7 @@ camp workitem [flags]
 
 ### SEE ALSO
 
-* [camp](camp.md)	 - Campaign management CLI for multi-project AI workspaces
+* [camp](camp.md)	 - Manage your camps and the projects and festivals inside them
 * [camp workitem adopt](camp_workitem_adopt.md)	 - Adopt an existing directory or file as a workitem
 * [camp workitem commit](camp_workitem_commit.md)	 - Commit changes scoped to a workitem
 * [camp workitem commits](camp_workitem_commits.md)	 - List commits referencing a workitem

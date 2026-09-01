@@ -216,7 +216,7 @@ func TestList_GoldenSingleOrgActive(t *testing.T) {
 		"AAAAAAAA  alpha  default  campaign  /tmp/alpha\n" +
 		"BBBBBBBB  beta   default  product   /tmp/beta\n" +
 		"\n" +
-		"2 campaigns\n"
+		"2 camps\n"
 	if out != golden {
 		t.Errorf("flat table output drifted:\n--- got ---\n%q\n--- want ---\n%q", out, golden)
 	}
@@ -229,15 +229,15 @@ func TestList_GroupedOutput(t *testing.T) {
 		ent("BBBBBBBB2222", "beta", "campaign", "obey", "active"),
 	}
 	out := captureListStdout(t, func() error { return outputGrouped(entries, "table", "default") })
-	const golden = "default (1 campaign)\n" +
+	const golden = "default (1 camp)\n" +
 		"  ID        NAME   TYPE      PATH\n" +
 		"  AAAAAAAA  alpha  campaign  /tmp/alpha\n" +
 		"\n" +
-		"obey (1 campaign)\n" +
+		"obey (1 camp)\n" +
 		"  ID        NAME  TYPE      PATH\n" +
 		"  BBBBBBBB  beta  campaign  /tmp/beta\n" +
 		"\n" +
-		"2 campaigns\n"
+		"2 camps\n"
 	if out != golden {
 		t.Errorf("grouped output drifted:\n--- got ---\n%q\n--- want ---\n%q", out, golden)
 	}

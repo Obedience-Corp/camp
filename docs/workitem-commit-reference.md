@@ -11,13 +11,13 @@ the auto-generated CLI reference:
 
 ## Why scoped workitem commits exist
 
-`camp commit` and `camp p commit` stamp every commit with a campaign tag but
+`camp commit` and `camp p commit` stamp every commit with a camp tag but
 do not restrict which files they stage. Either command can accidentally widen
 scope to unrelated paths.
 
 `camp workitem commit` adds a second constraint: the staging plan is derived
 from the resolved workitem context and never silently falls back to
-`git add .`. The commit carries a `WI-<ref>` segment in its campaign tag so
+`git add .`. The commit carries a `WI-<ref>` segment in its camp tag so
 history queries can later retrieve all commits that belong to a specific
 workitem across every linked repo.
 
@@ -30,7 +30,7 @@ based on the resolved context. Flag evaluation runs in this order before the
 matrix:
 
 1. `--staged` — short-circuits; commits the current git index for the
-   campaign root or the sub-git-repo containing the current working directory.
+   camp root or the sub-git-repo containing the current working directory.
 2. `--project <name>` — overrides the resolver; treats the command as if
    invoked from inside `projects/<name>/`.
 3. Matrix routing by resolved source (see table below).
@@ -40,16 +40,16 @@ matrix:
 | Context label | When it applies | Default staged paths |
 |---|---|---|
 | `workitem directory` | cwd is inside `workflow/<type>/<slug>/` (ancestor match) | Changed files under `<workitem-dir>/` plus `.campaign/workitems/links.yaml` when dirty |
-| `campaign root` | cwd at campaign root with explicit `--workitem` | Same as above — never `git add .` |
-| `linked project` | cwd is inside a sub-git-repo under the campaign tree (cwd-first detection), or resolver source is `SourceLink` | All changed files in that project's git repo |
+| `camp root` | cwd at camp root with explicit `--workitem` | Same as above, never `git add .` |
+| `linked project` | cwd is inside a sub-git-repo under the camp tree (cwd-first detection), or resolver source is `SourceLink` | All changed files in that project's git repo |
 | `festival` | resolver source is `SourceFestival` via `--festival` or cwd under a festival directory | Changed files under the festival scope path plus `.campaign/workitems/links.yaml` when dirty |
-| `staged-only` | `--staged` flag is set | Whatever is already in the git index of the campaign root, or the containing sub-git-repo when cwd is inside one |
+| `staged-only` | `--staged` flag is set | Whatever is already in the git index of the camp root, or the containing sub-git-repo when cwd is inside one |
 
 The link registry (`.campaign/workitems/links.yaml`) is auto-included in the
 `workitem directory` and `festival` rows when it is dirty. This keeps a link
 registration and the work it scoped in a single atomic commit.
 
-Submodule pointer changes in the parent campaign repo are excluded by default
+Submodule pointer changes in the parent camp repo are excluded by default
 from every row. Pass `--include-submodule-pointer` to include them, or use
 `camp refs-sync` afterward.
 
@@ -57,7 +57,7 @@ from every row. Pass `--include-submodule-pointer` to include them, or use
 
 Before consulting the resolver source, `ComputePlan` calls `cwdSubGitRepo`
 to check whether the current working directory is inside a sub-git-repo (a
-nested `.git` marker under the campaign root). When detection succeeds, that
+nested `.git` marker under the camp root). When detection succeeds, that
 project repo is used as the staging root regardless of how the resolver found
 the workitem. This is the mechanism behind "I'm in the project, commit my
 workitem changes here."
@@ -154,15 +154,15 @@ camp workitem commits [selector] [flags]
 ```
 
 A read-only query that retrieves all commits attributed to a workitem ref
-across the campaign root and every linked project, worktree, and repo
+across the camp root and every linked project, worktree, and repo
 registered in the link registry.
 
 ### Repo enumeration
 
-`enumerateQueryRepos` always includes the campaign root. It then loads the
+`enumerateQueryRepos` always includes the camp root. It then loads the
 link registry and adds every entry whose scope kind is `project`, `repo`, or
 `worktree`. Festival-scoped entries are intentionally excluded because
-festival paths live under the campaign root, which is already included. The
+festival paths live under the camp root, which is already included. The
 help text's mention of "festival repo" refers to this coverage, not a
 separate enumeration.
 
@@ -216,15 +216,15 @@ commit` when run in a workitem context) carries a tag with this structure:
 
 Segment rules:
 
-- The leading token is the slugified campaign name followed by `:` and the
-  short campaign id. The colon separates the name (which may itself contain
+- The leading token is the slugified camp name followed by `:` and the
+  short camp id. The colon separates the name (which may itself contain
   hyphens) from the rest of the tag, which uses `-` between components.
-- `<campaign-name>` is the campaign's name, lowercased and slugified (spaces
+- `<campaign-name>` is the camp's name, lowercased and slugified (spaces
   and other separators become hyphens) via the shared `internal/slug`
   generator.
 - All remaining components appear in fixed order inside the bracket. Absent
   components are omitted entirely; their separators do not appear.
-- `<campaign-id>` is the first 8 hex characters of the campaign UUID.
+- `<campaign-id>` is the first 8 hex characters of the camp UUID.
 - `<quest-id>` matches `qst_<digits>_<alphanum>` when a quest is active.
 - `<festival-ref>` is the festival id when the commit is scoped to a
   festival. Ordinary ids are `PREFIX` plus digits (`CW0003`). Ritual
@@ -256,7 +256,7 @@ Segment rules:
   ids lead with `qst_`. The parser also accepts the historical doubled
   `WI-WI-<6 hex>` form for commits written before this was simplified.
 
-When the campaign name cannot be resolved or slugifies to nothing, the tag
+When the camp name cannot be resolved or slugifies to nothing, the tag
 falls back to the legacy `[OBEY-CAMPAIGN-<campaign-id>...]` form. The parser
 recognizes both forms, so the entire pre-existing commit history still
 resolves correctly.
@@ -285,12 +285,12 @@ is that signal.
 
 It returns nil when `FormatTag`'s output reparses with zero warnings and gives
 back components equal to `tc` after the normalization the emitter applies: the
-campaign id truncated to 8 characters, the campaign name slugified into the
+camp id truncated to 8 characters, the camp name slugified into the
 head or dropped for the legacy marker, and the `WI-` / `NT-` prefixes added to
 bare refs. Nil is not a promise that `tc` is emitted verbatim. A 16-character
-campaign id validates clean and is still truncated.
+camp id validates clean and is still truncated.
 
-Otherwise it returns a joined error naming every problem: a missing campaign
+Otherwise it returns a joined error naming every problem: a missing camp
 id (which suppresses the tag entirely) or one containing a dash (which the
 parser truncates), any value that fails its segment's shape check, and any
 phase or sequence whose parent segment is missing or itself dropped. A
@@ -349,7 +349,7 @@ Emitted on stdout. Pretty-printed with two-space indent.
 | `workitem_ref` | string | `WI-<6 hex>`, omitted when empty |
 | `quest_id` | string | omitted when empty |
 | `festival_ref` | string | Festival ref used in the `FE-` tag segment, omitted when empty |
-| `tag` | string | Full campaign tag as it appears in the commit subject |
+| `tag` | string | Full camp tag as it appears in the commit subject |
 | `context` | string | Matrix row label (e.g. `"linked project"`) |
 | `context_note` | string | Detail within the row (e.g. `"project camp"`), omitted when empty |
 | `repo_root` | string | Absolute path of the git repo the commit targeted |
@@ -382,7 +382,7 @@ Each `CommitRecord`:
 | `author` | string | Author name |
 | `date` | string | RFC 3339 timestamp |
 | `subject` | string | Full commit subject line |
-| `repo` | string | Campaign-relative path of the repo (`"."` for campaign root) |
+| `repo` | string | Campaign-relative path of the repo (`"."` for camp root) |
 | `tag` | object | Parsed `TagComponents` (fields: `CampaignID`, `QuestID`, `FestRef`, `Phase`, `Sequence`, `WorkitemRef`) |
 
 ---
@@ -396,7 +396,7 @@ Each `CommitRecord`:
 | `empty staging plan` | The plan has no files to commit | Check that the workitem directory has uncommitted changes, or pass `--include <path>` |
 | `no workitem context resolved; pass <selector> or --ref WI-...` | `commits` command received no selector and no workitem is resolved | Pass a selector or `--ref WI-<hex>` directly |
 | `workitem has no ref; run camp workitem doctor --fix` | The resolved workitem pre-dates v1alpha6 and has no `ref` field | Run `camp workitem doctor --fix` to backfill |
-| `not in a campaign directory` | Command run outside any campaign root | Navigate to the campaign root or a subdirectory |
+| `not in a camp directory` | Command run outside any camp root | Navigate to the camp root or a subdirectory |
 | Per-repo query failure (table: stderr warning; JSON: `errors[]`) | `git log` in a linked repo timed out or failed | Check that the repo is accessible; re-run with `--json` for the error detail |
 
 ---
@@ -405,7 +405,7 @@ Each `CommitRecord`:
 
 - `runCommit` wraps commit execution failures with `commit workitem` context
   and prints a warning if the post-commit SHA lookup fails.
-- Sub-git-repo detection canonicalizes symlinked cwd and campaign-root paths
+- Sub-git-repo detection canonicalizes symlinked cwd and camp-root paths
   before choosing the repo to stage from.
 - `ref` values must match `WI-<6 lowercase hex>` and `quest_id` values must
   match the supported quest-id shape when `.workitem` metadata is loaded.

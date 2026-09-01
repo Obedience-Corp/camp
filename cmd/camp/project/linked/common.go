@@ -52,7 +52,7 @@ func PrintResult(result *projectsvc.LinkResult) {
 	}
 	printWarnings(result.Warnings)
 	fmt.Println()
-	fmt.Println(ui.Dim("  Linked projects are tracked in campaign git history. Linked git repos can still be committed with camp project commit."))
+	fmt.Println(ui.Dim("  Linked projects are tracked in camp git history. Linked git repos can still be committed with camp project commit."))
 }
 
 func printWarnings(warnings []string) {
@@ -155,7 +155,7 @@ func resolveLinkSourcePath(campaignRoot string, args []string) (string, error) {
 		return "", err
 	}
 	if isWithinTargetCampaign(cwd, campaignRoot) {
-		return "", camperrors.Wrap(camperrors.ErrInvalidInput, "link path required when current directory is already inside the target campaign")
+		return "", camperrors.Wrap(camperrors.ErrInvalidInput, "link path required when current directory is already inside the target camp")
 	}
 	return cwd, nil
 }

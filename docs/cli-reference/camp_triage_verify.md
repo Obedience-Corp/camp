@@ -1,12 +1,12 @@
 ## camp triage verify
 
-Prove the campaign matches the approved decisions
+Prove the camp matches the approved decisions
 
 ### Synopsis
 
 Check every applied row against a fresh discovery pass.
 
-Apply without proof is just hope. Verify re-walks the campaign and compares
+Apply without proof is just hope. Verify re-walks the camp and compares
 what it finds against what each receipt says happened: a parked workitem should
 carry that stage, a retired one should no longer be discoverable outside the
 dungeon, a split's successors should all exist.
@@ -14,7 +14,7 @@ dungeon, a split's successors should all exist.
 It reads receipts, not the plan. The plan is what was intended; the receipts
 are what actually ran, and only the second one can be checked against reality.
 
-An unexplained mismatch exits 1. That is the whole signal: the campaign is not
+An unexplained mismatch exits 1. That is the whole signal: the camp is not
 in the state the approved decisions said it would be. A mismatch someone has
 already accounted for carries an explanation and does not fail the run.
 
@@ -41,4 +41,4 @@ camp triage verify [flags]
 
 ### SEE ALSO
 
-* [camp triage](camp_triage.md)	 - Review the campaign's workitems in a recorded session
+* [camp triage](camp_triage.md)	 - Review the camp's workitems in a recorded session

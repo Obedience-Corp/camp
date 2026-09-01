@@ -32,12 +32,12 @@ var cachePutCampaigns []string
 // not advertised it.
 var machineCachePutCmd = &cobra.Command{
 	Use:    "cache-put <machine-id>",
-	Short:  "Record another machine's campaign names in this machine's completion cache (internal)",
+	Short:  "Record another machine's camp names in this machine's completion cache (internal)",
 	Hidden: true,
-	Long: `Record another machine's campaign names in this machine's completion cache.
+	Long: `Record another machine's camp names in this machine's completion cache.
 
 Hosts call this over ssh after hopping here, so this machine can complete
-'<id>:<campaign>' for them without ever connecting back. Names only: no paths, no
+'<id>:<camp>' for them without ever connecting back. Names only: no paths, no
 ids, no auth material. The receiver validates everything it is handed.`,
 	Args: cobra.ExactArgs(1),
 	RunE: runMachineCachePut,
@@ -58,7 +58,7 @@ func runMachineCachePut(cmd *cobra.Command, args []string) error {
 	writeMachineSnapshotCampaigns(id, names)
 	// Stdout stays empty on every path so a caller can distinguish "wrote" from
 	// "said something" without parsing.
-	_, _ = fmt.Fprintf(cmd.ErrOrStderr(), "cached %d campaign names for %s\n", len(names), id)
+	_, _ = fmt.Fprintf(cmd.ErrOrStderr(), "cached %d camp names for %s\n", len(names), id)
 	return nil
 }
 
@@ -89,7 +89,7 @@ func sanitizeSnapshotNames(raw []string) ([]string, error) {
 			continue
 		}
 		if invalidSnapshotName(name) {
-			return nil, camperrors.New("invalid campaign name in snapshot: " + name)
+			return nil, camperrors.New("invalid camp name in snapshot: " + name)
 		}
 		if len(out) >= snapshotMaxNames || total+len(name) > snapshotMaxBytes {
 			return out, nil
@@ -98,7 +98,7 @@ func sanitizeSnapshotNames(raw []string) ([]string, error) {
 		total += len(name)
 	}
 	if len(out) == 0 {
-		return nil, camperrors.New("no campaign names given (use --campaigns name, repeatable)")
+		return nil, camperrors.New("no camp names given (use --campaigns name, repeatable)")
 	}
 	return out, nil
 }

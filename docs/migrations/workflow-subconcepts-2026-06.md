@@ -42,9 +42,9 @@ the picker submenu automatically, and `camp workflow list`, `show`, `doctor`, an
 `ConceptEntry` now has an optional `children` list. A concept without `children`
 behaves exactly as before, so configs that never nest are unaffected.
 
-## Upgrading an Existing Campaign
+## Upgrading an Existing Camp
 
-Run the repair command from the campaign root:
+Run the repair command from the camp root:
 
 ```
 camp init --repair
@@ -80,4 +80,4 @@ concepts:
 ```
 
 `camp concepts` prints the current tree and a customization hint. See the
-campaign config reference for the full schema.
+camp config reference for the full schema.

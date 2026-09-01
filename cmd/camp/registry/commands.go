@@ -17,7 +17,7 @@ import (
 var registryPruneCmd = &cobra.Command{
 	Use:   "prune",
 	Short: "Remove stale registry entries",
-	Long: `Remove registry entries where the campaign no longer exists.
+	Long: `Remove registry entries where the camp no longer exists.
 
 Checks each registered path and removes entries where:
 - The path no longer exists
@@ -30,21 +30,21 @@ Options:
 Examples:
   camp registry prune             Remove stale entries
   camp registry prune --dry-run   Preview what would be removed
-  camp registry prune --include-temp  Also clean up test campaigns`,
+  camp registry prune --include-temp  Also clean up test camps`,
 	RunE: runRegistryPrune,
 }
 
 var registrySyncCmd = &cobra.Command{
 	Use:   "sync",
-	Short: "Sync current campaign with registry",
-	Long: `Update the registry entry for the current campaign.
+	Short: "Sync current camp with registry",
+	Long: `Update the registry entry for the current camp.
 
-Run this after moving a campaign directory to update its path
-in the registry. Reads the campaign ID from .campaign/campaign.yaml
+Run this after moving a camp directory to update its path
+in the registry. Reads the camp ID from .campaign/campaign.yaml
 and updates (or adds) the registry entry.
 
 Examples:
-  camp registry sync   # Run from inside a campaign`,
+  camp registry sync   # Run from inside a camp`,
 	RunE: runRegistrySync,
 }
 
@@ -56,7 +56,7 @@ var registryCheckCmd = &cobra.Command{
 Checks for:
 - Stale entries (paths that don't exist)
 - Missing .campaign/ directories
-- Campaigns in /tmp/ directories
+- Camps in /tmp/ directories
 - Duplicate entries (multiple IDs pointing to the same path)
 
 Examples:
@@ -150,7 +150,7 @@ func runRegistryPrune(cmd *cobra.Command, args []string) error {
 	toRemove := append(duplicates, stale...)
 
 	if len(toRemove) == 0 {
-		fmt.Printf("%s Registry is clean (%d campaigns)\n", ui.SuccessIcon(), reg.Len())
+		fmt.Printf("%s Registry is clean (%d camps)\n", ui.SuccessIcon(), reg.Len())
 		return nil
 	}
 
@@ -192,7 +192,7 @@ func runRegistrySync(cmd *cobra.Command, args []string) error {
 
 	cfg, campaignRoot, err := config.LoadCampaignConfigFromCwd(ctx)
 	if err != nil {
-		return camperrors.Wrap(err, "not inside a campaign")
+		return camperrors.Wrap(err, "not inside a camp")
 	}
 
 	reg, err := config.LoadRegistry(ctx)
@@ -203,7 +203,7 @@ func runRegistrySync(cmd *cobra.Command, args []string) error {
 	existing, existsByID := reg.GetByID(cfg.ID)
 	if existsByID && existing.Path == campaignRoot {
 		fmt.Printf("%s Registry already up to date\n", ui.SuccessIcon())
-		fmt.Println(ui.KeyValue("Campaign:", cfg.Name))
+		fmt.Println(ui.KeyValue("Camp:", cfg.Name))
 		fmt.Println(ui.KeyValue("Path:", campaignRoot))
 		return nil
 	}
@@ -211,12 +211,12 @@ func runRegistrySync(cmd *cobra.Command, args []string) error {
 	conflicting, conflictExists := reg.FindByPath(campaignRoot)
 	confirmedConflictID := ""
 	if conflictExists && conflicting.ID != cfg.ID {
-		fmt.Printf("%s Path is registered to a different campaign\n", ui.WarningIcon())
+		fmt.Printf("%s Path is registered to a different camp\n", ui.WarningIcon())
 		fmt.Println(ui.KeyValue("Current registration:", conflicting.Name+" ("+conflicting.ID[:8]+"...)"))
-		fmt.Println(ui.KeyValue("Campaign.yaml ID:", cfg.ID[:8]+"..."))
+		fmt.Println(ui.KeyValue("ID in campaign.yaml:", cfg.ID[:8]+"..."))
 		fmt.Println()
 		fmt.Println("This can happen when:")
-		fmt.Println("  • Campaign was re-initialized with a new ID")
+		fmt.Println("  • The camp was re-initialized with a new ID")
 		fmt.Println("  • Registry has stale duplicate entries")
 		fmt.Println()
 		fmt.Print("Update registry to use the campaign.yaml ID? [y/N] ")
@@ -239,17 +239,17 @@ func runRegistrySync(cmd *cobra.Command, args []string) error {
 
 	if conflictExists {
 		fmt.Printf("%s Updated registry (replaced conflicting entry)\n", ui.SuccessIcon())
-		fmt.Println(ui.KeyValue("Campaign:", cfg.Name))
+		fmt.Println(ui.KeyValue("Camp:", cfg.Name))
 		fmt.Println(ui.KeyValue("Path:", campaignRoot))
 		fmt.Println(ui.KeyValue("New ID:", cfg.ID[:8]+"..."))
 	} else if existsByID {
 		fmt.Printf("%s Updated registry path\n", ui.SuccessIcon())
-		fmt.Println(ui.KeyValue("Campaign:", cfg.Name))
+		fmt.Println(ui.KeyValue("Camp:", cfg.Name))
 		fmt.Println(ui.KeyValue("Old path:", existing.Path))
 		fmt.Println(ui.KeyValue("New path:", campaignRoot))
 	} else {
-		fmt.Printf("%s Added campaign to registry\n", ui.SuccessIcon())
-		fmt.Println(ui.KeyValue("Campaign:", cfg.Name))
+		fmt.Printf("%s Added camp to registry\n", ui.SuccessIcon())
+		fmt.Println(ui.KeyValue("Camp:", cfg.Name))
 		fmt.Println(ui.KeyValue("Path:", campaignRoot))
 	}
 
@@ -259,7 +259,7 @@ func runRegistrySync(cmd *cobra.Command, args []string) error {
 func syncRegistryCampaignWithConfirmedConflict(reg *config.Registry, cfg *config.CampaignConfig, campaignRoot, confirmedConflictID string) error {
 	if existing, exists := reg.FindByPath(campaignRoot); exists && existing.ID != cfg.ID {
 		if confirmedConflictID == "" {
-			return camperrors.Wrapf(camperrors.ErrConflict, "path %s is now registered to campaign %s (%s); re-run camp registry sync to confirm replacement", campaignRoot, existing.Name, existing.ID)
+			return camperrors.Wrapf(camperrors.ErrConflict, "path %s is now registered to camp %s (%s); re-run camp registry sync to confirm replacement", campaignRoot, existing.Name, existing.ID)
 		}
 		if existing.ID != confirmedConflictID {
 			return camperrors.Wrapf(camperrors.ErrConflict, "path %s registration changed from %s to %s; re-run camp registry sync to confirm replacement", campaignRoot, confirmedConflictID, existing.ID)
@@ -304,7 +304,7 @@ func runRegistryCheck(cmd *cobra.Command, args []string) error {
 		}
 
 		if strings.HasPrefix(c.Path, "/tmp/") {
-			issues = append(issues, fmt.Sprintf("Temp: %s (%s) - test campaign in /tmp/", c.Name, c.Path))
+			issues = append(issues, fmt.Sprintf("Temp: %s (%s) - test camp in /tmp/", c.Name, c.Path))
 			tempCount++
 		}
 	}
@@ -322,7 +322,7 @@ func runRegistryCheck(cmd *cobra.Command, args []string) error {
 	}
 
 	if len(issues) == 0 {
-		fmt.Printf("%s Registry is healthy (%d campaigns)\n", ui.SuccessIcon(), reg.Len())
+		fmt.Printf("%s Registry is healthy (%d camps)\n", ui.SuccessIcon(), reg.Len())
 		return nil
 	}
 

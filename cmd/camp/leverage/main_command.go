@@ -28,7 +28,7 @@ func init() {
 	Cmd.Flags().BoolP("verbose", "v", false, "show diagnostic details (config, project resolution, exclusions)")
 	Cmd.Flags().String("author", "", "filter by author email (git substring match: 'alice@co' matches 'alice@co.com')")
 	Cmd.Flags().Bool("by-author", false, "show per-author leverage breakdown")
-	Cmd.Flags().String("dir", "", "score a specific directory (skips campaign project resolution)")
+	Cmd.Flags().String("dir", "", "score a specific directory (skips camp project resolution)")
 	addNoCommitFlag(Cmd)
 	Cmd.SetFlagErrorFunc(jsoncontract.FlagErrorFunc(LeverageJSONVersion, func() bool { return leverageJSON }))
 }

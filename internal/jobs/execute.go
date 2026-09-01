@@ -184,7 +184,7 @@ func resolveRepoPath(campaignRoot, repo string) (string, error) {
 		return campaignRoot, nil
 	}
 	if !filepath.IsLocal(filepath.FromSlash(normalized)) {
-		return "", camperrors.Newf("repo %q escapes the campaign", repo)
+		return "", camperrors.Newf("repo %q escapes the camp", repo)
 	}
 	path := filepath.Join(campaignRoot, filepath.FromSlash(normalized))
 	if _, err := os.Stat(path); err != nil {

@@ -62,17 +62,17 @@ type festivalsOutput struct {
 
 var Cmd = &cobra.Command{
 	Use:     "festivals",
-	Short:   "List festivals across campaigns, filtered by org/tag",
+	Short:   "List festivals across camps, filtered by org/tag",
 	GroupID: "registry",
-	Long: `Aggregate festivals across campaigns, filtered by campaign org/tag.
+	Long: `Aggregate festivals across camps, filtered by camp org/tag.
 
-Selects campaigns from the registry by --org and --tag (AND), then composes
-'fest list --json' in each matching campaign and aggregates the result. The
-campaign set defaults to active campaigns; --all-campaigns includes inactive and
-reference campaigns. Festival-level flags (--status, --all, --since, --until,
+Selects camps from the registry by --org and --tag (AND), then composes
+'fest list --json' in each matching camp and aggregates the result. The
+camp set defaults to active camps; --all-campaigns includes inactive and
+reference camps. Festival-level flags (--status, --all, --since, --until,
 --sort) are passed through to each underlying 'fest list'.
 
-Runs one 'fest list' per matching campaign (sequentially); campaigns without a
+Runs one 'fest list' per matching camp (sequentially); camps without a
 festivals/ workspace contribute nothing. Read-only.`,
 	Example: `  camp festivals --org obey
   camp festivals --org obey --status active
@@ -82,9 +82,9 @@ festivals/ workspace contribute nothing. Read-only.`,
 }
 
 func init() {
-	Cmd.Flags().String("org", "", "Only campaigns in this org")
-	Cmd.Flags().StringSlice("tag", nil, "Only campaigns carrying this tag (repeat for AND)")
-	Cmd.Flags().Bool("all-campaigns", false, "Include inactive/reference campaigns (default: active only)")
+	Cmd.Flags().String("org", "", "Only camps in this org")
+	Cmd.Flags().StringSlice("tag", nil, "Only camps carrying this tag (repeat for AND)")
+	Cmd.Flags().Bool("all-campaigns", false, "Include inactive/reference camps (default: active only)")
 	Cmd.Flags().Bool("json", false, "Output as JSON")
 	Cmd.Flags().String("status", "", "Festival status filter, passed to fest list")
 	Cmd.Flags().Bool("all", false, "Include completed/dungeon festivals, passed to fest list")
@@ -196,7 +196,7 @@ func aggregate(ctx context.Context, festPath string, campaigns []config.Register
 	for _, c := range campaigns {
 		entries, err := runFestList(ctx, festPath, c.Path, passthrough)
 		if err != nil {
-			return nil, camperrors.Wrapf(err, "fest list failed for campaign %q (%s)", c.Name, c.Path)
+			return nil, camperrors.Wrapf(err, "fest list failed for camp %q (%s)", c.Name, c.Path)
 		}
 		for _, e := range entries {
 			items = append(items, festivalItem{

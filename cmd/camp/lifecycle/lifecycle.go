@@ -23,12 +23,12 @@ type statusCount struct {
 }
 
 var lifecycleSetCmd = &cobra.Command{
-	Use:   "set <campaign> <status>",
-	Short: "Set a campaign's lifecycle status",
-	Long: `Transition a campaign to one of: active, inactive, reference.
+	Use:   "set <camp> <status>",
+	Short: "Set a camp's lifecycle status",
+	Long: `Transition a camp to one of: active, inactive, reference.
 
 Any other value is rejected. Setting inactive or reference does not unregister
-the campaign.`,
+the camp.`,
 	Example: `  camp lifecycle set old-project reference`,
 	Args:    cobra.ExactArgs(2),
 	RunE:    runLifecycleSet,
@@ -60,7 +60,7 @@ func runLifecycleSet(cmd *cobra.Command, args []string) error {
 	err := config.UpdateRegistry(cmd.Context(), func(reg *config.Registry) error {
 		c, ok := reg.Get(campaignQuery)
 		if !ok {
-			return camperrors.NewNotFound("campaign", campaignQuery, nil)
+			return camperrors.NewNotFound("camp", campaignQuery, nil)
 		}
 		result = statusSetResult{Campaign: c.Name, From: c.Status, To: status}
 		entry := reg.Campaigns[c.ID]
@@ -109,7 +109,7 @@ func computeStatusCounts(reg *config.Registry) []statusCount {
 
 func writeStatusCounts(w io.Writer, counts []statusCount) error {
 	tw := tabwriter.NewWriter(w, 0, 0, 2, ' ', 0)
-	if _, err := fmt.Fprintln(tw, "STATUS\tCAMPAIGNS"); err != nil {
+	if _, err := fmt.Fprintln(tw, "STATUS\tCAMPS"); err != nil {
 		return err
 	}
 	for _, c := range counts {

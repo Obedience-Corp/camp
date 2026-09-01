@@ -235,7 +235,7 @@ func displayGroup(groupBy projGroupBy, key string) string {
 		case "linked":
 			return "Linked"
 		case "campaign":
-			return "Campaign"
+			return "Camp"
 		default:
 			return "Submodule"
 		}

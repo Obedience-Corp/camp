@@ -36,11 +36,11 @@ func parseWorkflowTarget(root string, resolver *paths.Resolver, target string) (
 	}
 	rel, rerr := filepath.Rel(root, abs)
 	if rerr != nil {
-		return "", "", camperrors.Wrap(rerr, "resolve target relative to campaign root")
+		return "", "", camperrors.Wrap(rerr, "resolve target relative to camp root")
 	}
 	rel = filepath.ToSlash(filepath.Clean(rel))
 	if rel == "." || rel == ".." || strings.HasPrefix(rel, "../") {
-		return "", "", camperrors.NewValidation("path", "target must be inside the campaign root: "+target, nil)
+		return "", "", camperrors.NewValidation("path", "target must be inside the camp root: "+target, nil)
 	}
 
 	prefix := filepath.ToSlash(filepath.Clean(resolver.RelativeWorkflow())) + "/"

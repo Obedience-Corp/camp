@@ -35,7 +35,7 @@ instead) and docs/transfer.md for the machine-first transfer grammar.
 
 Run without a subcommand in a terminal to manage the fleet interactively: add,
 discover, edit, and remove machines, see each one's socket state, and press
-enter to pick a campaign on the selected machine and hop to it. Hopping needs
+enter to pick a camp on the selected machine and hop to it. Hopping needs
 the shell wrapper ('eval "$(camp shell-init zsh)"'), because no subprocess can
 replace the shell it was run from; without it the screen says so rather than
 appearing to work. The subcommands stay the interface for scripts and agents,
@@ -73,7 +73,7 @@ camp machine [flags]
 
 ### SEE ALSO
 
-* [camp](camp.md)	 - Campaign management CLI for multi-project AI workspaces
+* [camp](camp.md)	 - Manage your camps and the projects and festivals inside them
 * [camp machine add](camp_machine_add.md)	 - Add or update a machine
 * [camp machine adopt](camp_machine_adopt.md)	 - Register the machine this session was hopped from
 * [camp machine diagnose](camp_machine_diagnose.md)	 - Inspect machine auth, probe line, and ssh ControlMaster sockets

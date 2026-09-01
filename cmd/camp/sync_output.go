@@ -64,7 +64,7 @@ func formatSyncHuman(result *sync.SyncResult, opts syncOptions, preflight *sync.
 	case result.Success && opts.artifactsOnly:
 		fmt.Println(ui.Success("Artifacts synchronized successfully."))
 	case result.Success:
-		fmt.Println(ui.Success("Campaign synchronized successfully."))
+		fmt.Println(ui.Success("Your camp is synchronized."))
 	case opts.verifyArtifacts:
 		fmt.Fprintln(os.Stderr, ui.Error("Artifact verification found discrepancies. See details above."))
 	default:

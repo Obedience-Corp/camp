@@ -30,7 +30,7 @@ func newShowCommand() *cobra.Command {
 		Short: "Show a workflow collection's config and recent workitems",
 		Long: `Show configuration and recent workitems for a workflow collection.
 
-The command reads campaign configuration plus the workflow/<type>/ directory,
+The command reads camp configuration plus the workflow/<type>/ directory,
 then prints the collection path, shortcut state, concept state, and recent
 .workitem-backed items. Use --json for machine-readable collection details and
 recent workitem data.`,
@@ -51,7 +51,7 @@ func runShow(ctx context.Context, cmd *cobra.Command, typeName string, jsonOut b
 
 	cfg, campaignRoot, err := config.LoadCampaignConfigFromCwd(ctx)
 	if err != nil {
-		return camperrors.Wrap(err, "not in a campaign directory")
+		return camperrors.Wrap(err, "not in a camp directory")
 	}
 
 	entries, err := enumerateWorkflowEntries(campaignRoot, cfg)

@@ -1,13 +1,13 @@
 ---
 name: camp-projects
-description: Manage campaign projects with `camp project`. Use when the user wants to add, link, or remove a project; when deciding between `camp project add` and `camp project link`; or when committing inside `projects/*`.
+description: Manage a camp's projects with `camp project`. Use when the user wants to add, link, or remove a project; when deciding between `camp project add` and `camp project link`; or when committing inside `projects/*`.
 ---
 
-# Campaign Projects
+# Camp Projects
 
-A project in a campaign may be a git submodule under `projects/`, a linked
+A project in a camp may be a git submodule under `projects/`, a linked
 project (a symlink at `projects/<name>`), or an ordinary directory owned by
-the campaign repository. Most external repositories prefer linking. Default
+the camp repository. Most external repositories prefer linking. Default
 toward link unless the user has stated a reason for a submodule.
 
 ## Decide: `add` or `link` — ASK the User
@@ -17,10 +17,10 @@ toward link unless the user has stated a reason for a submodule.
 - **Already cloned on the user's machine** → `camp project link <path>`.
   Creates a symlink at `projects/<name>` pointing back to the user's
   existing directory; the directory stays where it is on disk.
-- **User wants multi-device campaign** → submodules are required. Linked
+- **User wants a multi-device camp** → submodules are required. Linked
   projects only resolve on a device where the linked path exists at the
   same filesystem location. If the user has an already-local repo and
-  wants it to travel with the campaign, tell them so and let them decide.
+  wants it to travel with the camp, tell them so and let them decide.
 
 See `docs/cli-reference/` for niche flags like `add --local`.
 
@@ -50,7 +50,7 @@ camp project rename <current> <new> --dry-run --json
 ```
 
 It supports declared submodules, linked workspace symlinks, and ordinary
-campaign-owned directories. It preserves dirty project/worktree content and
+camp-owned directories. It preserves dirty project/worktree content and
 migrates typed Camp references. Camp never infers a provider-side repository
 rename; pass `--remote-url` when origin changed too.
 
@@ -88,7 +88,7 @@ camp project remote {list|add|set-url|remove|rename} [args] [-p <name>]
 camp project worktree {add|list|remove} <name> [-p <name>]
 ```
 
-`camp fresh` is project-scoped (not a campaign-root command) — it
+`camp fresh` is project-scoped (not a camp-root command); it
 resets a project's working state after a merge:
 
 ```bash
@@ -101,7 +101,7 @@ camp fresh all                              # run across every submodule
 
 - Using `camp project add` paths on a repo that already lives on the
   user's machine. Default to `camp project link` instead.
-- Assuming submodule commits auto-update campaign-root pointers — they
+- Assuming submodule commits auto-update camp-root pointers — they
   don't. Use `camp refs-sync` intentionally.
 - Expecting `--sub` or `all` to cover linked projects. They don't today.
 - Using `remove --delete` when `remove` alone would do the right thing.

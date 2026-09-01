@@ -21,11 +21,11 @@ import (
 
 var pushCmd = &cobra.Command{
 	Use:   "push [flags] [remote] [branch]",
-	Short: "Push campaign changes to remote",
-	Long: `Push campaign changes to the remote repository.
+	Short: "Push camp changes to remote",
+	Long: `Push camp changes to the remote repository.
 
-Works from anywhere within the campaign - always pushes from
-the campaign root repository.
+Works from anywhere within the camp - always pushes from
+the camp root repository.
 
 Use --sub to push from the submodule detected from your current directory.
 Use --project to push from a specific project.
@@ -277,7 +277,7 @@ func runPushAll(ctx context.Context, campRoot string, gitArgs []string, noRecurs
 		})
 	}
 	targets = append(targets, pushTarget{
-		name: "campaign root",
+		name: "camp root",
 		path: campRoot,
 	})
 

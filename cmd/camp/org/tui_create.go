@@ -30,7 +30,7 @@ func defaultCreateCampaignInOrg(ctx context.Context, name, org string) error {
 		return err
 	}
 	if err := os.MkdirAll(base, 0o755); err != nil {
-		return camperrors.Wrapf(err, "ensure campaigns dir %s", base)
+		return camperrors.Wrapf(err, "ensure camps dir %s", base)
 	}
 	target := filepath.Join(base, name)
 	// Prefer empty-or-missing target; refuse non-empty without repair.
@@ -68,16 +68,16 @@ func defaultCreateCampaignInOrg(ctx context.Context, name, org string) error {
 func validateTUICampaignName(name string) error {
 	trimmed := strings.TrimSpace(name)
 	if trimmed == "" {
-		return camperrors.New("campaign name is empty")
+		return camperrors.New("camp name is empty")
 	}
 	if trimmed == "." || trimmed == ".." {
-		return camperrors.New(fmt.Sprintf("invalid campaign name: %q", trimmed))
+		return camperrors.New(fmt.Sprintf("invalid camp name: %q", trimmed))
 	}
 	if strings.HasPrefix(trimmed, ".") {
-		return camperrors.New(fmt.Sprintf("campaign name cannot start with '.': %q", trimmed))
+		return camperrors.New(fmt.Sprintf("camp name cannot start with '.': %q", trimmed))
 	}
 	if strings.ContainsAny(trimmed, "/\\") {
-		return camperrors.New(fmt.Sprintf("campaign name cannot contain path separators: %q", trimmed))
+		return camperrors.New(fmt.Sprintf("camp name cannot contain path separators: %q", trimmed))
 	}
 	return nil
 }

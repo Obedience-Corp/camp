@@ -44,7 +44,7 @@ func NewLedgerCheck() *LedgerCheck {
 func (c *LedgerCheck) ID() string   { return "ledger" }
 func (c *LedgerCheck) Name() string { return "Ledger Integrity" }
 func (c *LedgerCheck) Description() string {
-	return "Reports campaign event-ledger integrity issues (malformed lines, unknown versions, duplicate ids, shard naming, dangling evidence)"
+	return "Reports camp event-ledger integrity issues (malformed lines, unknown versions, duplicate ids, shard naming, dangling evidence)"
 }
 
 // Run reads the ledger tolerantly and maps its diagnostics to doctor issues.

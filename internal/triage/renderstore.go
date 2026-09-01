@@ -161,18 +161,18 @@ func ResolveExportPath(campaignRoot, rel string) (string, error) {
 	}
 	if filepath.IsAbs(rel) || strings.HasPrefix(rel, "/") {
 		return "", camperrors.NewValidation("outputs.priorities_export",
-			"must be campaign-relative, got the absolute path "+rel, camperrors.ErrInvalidInput)
+			"must be camp-relative, got the absolute path "+rel, camperrors.ErrInvalidInput)
 	}
 	clean := path.Clean(filepath.ToSlash(rel))
 	if clean == ".." || strings.HasPrefix(clean, "../") {
 		return "", camperrors.NewValidation("outputs.priorities_export",
-			"must stay inside the campaign, got "+rel, camperrors.ErrInvalidInput)
+			"must stay inside the camp, got "+rel, camperrors.ErrInvalidInput)
 	}
 
 	abs := filepath.Join(campaignRoot, filepath.FromSlash(clean))
 	if err := pathutil.ValidateBoundary(campaignRoot, abs); err != nil {
 		return "", camperrors.NewValidation("outputs.priorities_export",
-			rel+" resolves outside the campaign root", err)
+			rel+" resolves outside the camp root", err)
 	}
 	return abs, nil
 }

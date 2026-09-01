@@ -105,7 +105,7 @@ Examples:
 var jobsDrainCmd = &cobra.Command{
 	Use:   "drain",
 	Short: "Wait until every lane is empty",
-	Long: `Block until no queued commit is outstanding anywhere in the campaign.
+	Long: `Block until no queued commit is outstanding anywhere in the camp.
 
 Commands that touch git history already do this for the repo they act on, so
 this is for the cases that are not one command: before archiving a machine,
@@ -129,7 +129,7 @@ func init() {
 	// The detached child inherits no useful working directory, so it is told
 	// which campaign to serve rather than detecting one.
 	jobsRunCmd.Flags().StringVar(&jobsOpts.campaign, "campaign", "",
-		"Campaign root to serve (defaults to the detected campaign)")
+		"Camp root to serve (defaults to the detected camp)")
 	jobsCmd.Flags().BoolVar(&jobsOpts.json, "json", false,
 		"Emit a structured JSON result")
 	jobsCmd.Flags().BoolVar(&jobsOpts.plain, "plain", false,
@@ -202,7 +202,7 @@ func runJobsList(cmd *cobra.Command, _ []string) error {
 	ctx := cmd.Context()
 	campRoot, err := campaign.DetectCached(ctx)
 	if err != nil {
-		return camperrors.Wrap(err, "not in a campaign")
+		return camperrors.Wrap(err, "not in a camp")
 	}
 
 	entries, err := jobs.Snapshot(ctx, campRoot)
@@ -448,7 +448,7 @@ func runJobsRun(cmd *cobra.Command, _ []string) error {
 	if campRoot == "" {
 		detected, err := campaign.DetectCached(ctx)
 		if err != nil {
-			return camperrors.Wrap(err, "not in a campaign")
+			return camperrors.Wrap(err, "not in a camp")
 		}
 		campRoot = detected
 	}
@@ -465,7 +465,7 @@ func runJobsRetry(cmd *cobra.Command, args []string) error {
 	ctx := cmd.Context()
 	campRoot, err := campaign.DetectCached(ctx)
 	if err != nil {
-		return camperrors.Wrap(err, "not in a campaign")
+		return camperrors.Wrap(err, "not in a camp")
 	}
 
 	requeued, err := jobs.Retry(ctx, campRoot, args[0])
@@ -492,7 +492,7 @@ func runJobsDrop(cmd *cobra.Command, args []string) error {
 	ctx := cmd.Context()
 	campRoot, err := campaign.DetectCached(ctx)
 	if err != nil {
-		return camperrors.Wrap(err, "not in a campaign")
+		return camperrors.Wrap(err, "not in a camp")
 	}
 	selector := args[0]
 	out := cmd.OutOrStdout()
@@ -615,7 +615,7 @@ func runJobsDrain(cmd *cobra.Command, _ []string) error {
 	ctx := cmd.Context()
 	campRoot, err := campaign.DetectCached(ctx)
 	if err != nil {
-		return camperrors.Wrap(err, "not in a campaign")
+		return camperrors.Wrap(err, "not in a camp")
 	}
 
 	waited, err := drain.AllLanes(ctx, campRoot, drain.Wait)

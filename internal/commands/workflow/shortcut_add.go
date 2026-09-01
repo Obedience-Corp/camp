@@ -22,7 +22,7 @@ func newShortcutCommand() *cobra.Command {
 		Short: "Manage navigation shortcuts for workflow collections",
 		Long: `Manage navigation shortcuts for custom workflow collections.
 
-Workflow shortcuts are stored in campaign configuration and point to
+Workflow shortcuts are stored in camp configuration and point to
 workflow/<type>/ directories. Use subcommands to attach or repair shortcut
 entries after creating or moving workflow collections.`,
 	}
@@ -62,7 +62,7 @@ func runShortcutAdd(ctx context.Context, cmd *cobra.Command, typeName, key strin
 
 	cfg, campaignRoot, err := config.LoadCampaignConfigFromCwd(ctx)
 	if err != nil {
-		return camperrors.Wrap(err, "not in a campaign directory")
+		return camperrors.Wrap(err, "not in a camp directory")
 	}
 
 	entries, err := enumerateWorkflowEntries(campaignRoot, cfg)

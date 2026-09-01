@@ -4,7 +4,7 @@ Adopt an existing directory or file as a workitem
 
 ### Synopsis
 
-Attach workitem metadata to an existing campaign directory or markdown file.
+Attach workitem metadata to an existing camp directory or markdown file.
 
 With a directory argument, writes a .workitem marker (the directory must exist
 and must not already contain a .workitem). With --file <path.md>, stamps a
@@ -41,4 +41,4 @@ camp workitem adopt [dir] [flags]
 
 ### SEE ALSO
 
-* [camp workitem](camp_workitem.md)	 - View active campaign work items
+* [camp workitem](camp_workitem.md)	 - View active camp work items

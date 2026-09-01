@@ -59,7 +59,7 @@ actions.`,
 func runSync(ctx context.Context, cmd *cobra.Command, apply, jsonOut bool) error {
 	cfg, campaignRoot, err := config.LoadCampaignConfigFromCwd(ctx)
 	if err != nil {
-		return camperrors.Wrap(err, "not in a campaign directory")
+		return camperrors.Wrap(err, "not in a camp directory")
 	}
 
 	findings, err := collectFindings(ctx, campaignRoot, cfg)

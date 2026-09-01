@@ -198,14 +198,14 @@ func NormalizeRootPath(path string) string {
 // the normalized form so ./-prefixed spellings cannot dodge them.
 func ValidateRootPath(path string) error {
 	if filepath.IsAbs(path) {
-		return camperrors.Newf("artifact root %q must be relative to the campaign root", path)
+		return camperrors.Newf("artifact root %q must be relative to the camp root", path)
 	}
 	normalized := NormalizeRootPath(path)
 	if normalized == "" || normalized == "." {
 		return camperrors.New("artifact root path must not be empty")
 	}
 	if !filepath.IsLocal(filepath.FromSlash(normalized)) {
-		return camperrors.Newf("artifact root %q escapes the campaign root", path)
+		return camperrors.Newf("artifact root %q escapes the camp root", path)
 	}
 	if strings.EqualFold(normalized, ".campaign") || hasCaseInsensitivePrefix(normalized, ".campaign/") {
 		return camperrors.Newf("artifact root %q may not live under .campaign", path)
@@ -247,7 +247,7 @@ func EnsureRootWithin(campaignRoot, rootPath string) (string, error) {
 	}
 	rel, err := filepath.Rel(campReal, real)
 	if err != nil || rel == ".." || strings.HasPrefix(rel, ".."+string(filepath.Separator)) {
-		return "", camperrors.Newf("artifact root %q resolves outside the campaign root", rootPath)
+		return "", camperrors.Newf("artifact root %q resolves outside the camp root", rootPath)
 	}
 	return normalized, nil
 }

@@ -95,9 +95,9 @@ func TestNavigationRootUsesMainHandler(t *testing.T) {
 	navigationpkg.Cmd.SetContext(context.Background())
 	err = navigationpkg.Cmd.RunE(navigationpkg.Cmd, nil)
 	if err == nil {
-		t.Fatal("expected navigation root to execute main handler and fail outside a campaign")
+		t.Fatal("expected navigation root to execute main handler and fail outside a camp")
 	}
-	if !strings.Contains(strings.ToLower(err.Error()), "campaign") {
+	if !strings.Contains(strings.ToLower(err.Error()), "not inside a camp") {
 		t.Fatalf("navigation root returned unexpected error: %v", err)
 	}
 }
@@ -118,9 +118,9 @@ func TestRefsSyncRootUsesMainHandler(t *testing.T) {
 	refspkg.Cmd.SetContext(context.Background())
 	err = refspkg.Cmd.RunE(refspkg.Cmd, nil)
 	if err == nil {
-		t.Fatal("expected refs-sync root to execute main handler and fail outside a campaign")
+		t.Fatal("expected refs-sync root to execute main handler and fail outside a camp")
 	}
-	if !strings.Contains(strings.ToLower(err.Error()), "campaign") {
+	if !strings.Contains(strings.ToLower(err.Error()), "not inside a camp") {
 		t.Fatalf("refs-sync root returned unexpected error: %v", err)
 	}
 }

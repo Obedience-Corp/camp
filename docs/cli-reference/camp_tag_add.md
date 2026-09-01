@@ -1,16 +1,16 @@
 ## camp tag add
 
-Add tags to a campaign
+Add tags to a camp
 
 ### Synopsis
 
-Add one or more tags to a campaign (set semantics).
+Add one or more tags to a camp (set semantics).
 
-Re-adding a tag the campaign already carries is a no-op for that tag. Each tag
+Re-adding a tag the camp already carries is a no-op for that tag. Each tag
 name must be lowercase letters, digits, and hyphens with no leading digit.
 
 ```
-camp tag add <campaign> <tag>... [flags]
+camp tag add <camp> <tag>... [flags]
 ```
 
 ### Examples
@@ -34,4 +34,4 @@ camp tag add <campaign> <tag>... [flags]
 
 ### SEE ALSO
 
-* [camp tag](camp_tag.md)	 - Label campaigns with tags
+* [camp tag](camp_tag.md)	 - Label camps with tags

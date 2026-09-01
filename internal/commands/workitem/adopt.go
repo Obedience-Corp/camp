@@ -24,7 +24,7 @@ func newAdoptCommand() *cobra.Command {
 		Use:     "adopt [dir]",
 		Aliases: []string{"init"},
 		Short:   "Adopt an existing directory or file as a workitem",
-		Long: `Attach workitem metadata to an existing campaign directory or markdown file.
+		Long: `Attach workitem metadata to an existing camp directory or markdown file.
 
 With a directory argument, writes a .workitem marker (the directory must exist
 and must not already contain a .workitem). With --file <path.md>, stamps a
@@ -82,7 +82,7 @@ func runAdopt(ctx context.Context, cmd *cobra.Command, dir, typeFlag, title, idO
 
 	cfg, campaignRoot, err := config.LoadCampaignConfigFromCwd(ctx)
 	if err != nil {
-		return camperrors.Wrap(err, "not in a campaign directory")
+		return camperrors.Wrap(err, "not in a camp directory")
 	}
 
 	rel := dir
@@ -90,7 +90,7 @@ func runAdopt(ctx context.Context, cmd *cobra.Command, dir, typeFlag, title, idO
 		var relErr error
 		rel, relErr = filepath.Rel(campaignRoot, dir)
 		if relErr != nil {
-			return camperrors.Wrap(relErr, "resolve dir relative to campaign root")
+			return camperrors.Wrap(relErr, "resolve dir relative to camp root")
 		}
 	}
 	if err := validateParentPath(rel); err != nil {

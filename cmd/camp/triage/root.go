@@ -11,11 +11,11 @@ import "github.com/spf13/cobra"
 // Cmd is the root of the triage command family.
 var Cmd = &cobra.Command{
 	Use:     "triage",
-	Short:   "Review the campaign's workitems in a recorded session",
+	Short:   "Review the camp's workitems in a recorded session",
 	GroupID: "planning",
-	Long: `Review the campaign's workitems in a recorded, resumable session.
+	Long: `Review the camp's workitems in a recorded, resumable session.
 
-A triage run freezes what the campaign contains, collects evidence about each
+A triage run freezes what the camp contains, collects evidence about each
 item, records your verdicts, and applies them through camp's normal workitem
 machinery. Every step is written to .campaign/triage/runs/<run-id>/, so a run
 survives being interrupted and the decisions stay auditable afterwards.
@@ -24,7 +24,7 @@ Camp never calls a model. Agents read the queue and submit evidence and
 proposals; you approve them; camp applies what you approved.
 
 Session:
-  start     Snapshot the campaign and open a run
+  start     Snapshot the camp and open a run
   status    Show where the active run stands
   abandon   Close the active run without applying it
 

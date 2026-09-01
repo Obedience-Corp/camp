@@ -332,8 +332,8 @@ func checkGitInstalled(ctx context.Context) error {
 func checkIsGitRepo(ctx context.Context, campaignRoot string) error {
 	cmd := exec.CommandContext(ctx, "git", "-C", campaignRoot, "rev-parse", "--git-dir")
 	if err := cmd.Run(); err != nil {
-		return camperrors.Wrap(camperrors.ErrNotInitialized, "campaign directory is not a git repository\n"+
-			"Hint: Run 'git init' in the campaign root, or use 'camp init' to create a new campaign")
+		return camperrors.Wrap(camperrors.ErrNotInitialized, "camp directory is not a git repository\n"+
+			"Hint: Run 'git init' in the camp root, or use 'camp init' to create a new camp")
 	}
 	return nil
 }
@@ -353,7 +353,7 @@ func checkRepoNotEmpty(ctx context.Context, url string) error {
 	}
 	if len(strings.TrimSpace(string(output))) == 0 {
 		return camperrors.Wrapf(camperrors.ErrInvalidInput, "cannot add empty repository %q — push at least one commit first\n"+
-			"Hint: Initialize the repo locally, make a commit, and push before adding it to a campaign", url)
+			"Hint: Initialize the repo locally, make a commit, and push before adding it to a camp", url)
 	}
 	return nil
 }

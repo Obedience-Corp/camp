@@ -37,4 +37,4 @@ camp leverage snapshot [flags]
 
 ### SEE ALSO
 
-* [camp leverage](camp_leverage.md)	 - Compute leverage scores for campaign projects
+* [camp leverage](camp_leverage.md)	 - Compute leverage scores for the camp's projects

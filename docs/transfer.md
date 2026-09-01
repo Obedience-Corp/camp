@@ -1,6 +1,6 @@
 # Transfer
 
-`camp transfer` copies a file between campaigns, including campaigns on another machine.
+`camp transfer` copies a file between camps, including camps on another machine.
 
 ```
 camp transfer <source> <destination> [--force]
@@ -13,34 +13,34 @@ Both endpoints use the same grammar, and either one may be remote — but not bo
 An endpoint is up to three colon-separated parts:
 
 ```
-                    notes.md              # a path in the current campaign
-           mycampaign:notes.md            # a path in another local campaign
-   devbox:mycampaign:notes.md             # a path in a campaign on another machine
+                 notes.md      # a path in the current camp
+          mycamp:notes.md      # a path in another local camp
+   devbox:mycamp:notes.md      # a path in a camp on another machine
 ```
 
 Camp reads the leading segment as a **machine id first**, and only if that id is in your
 `~/.obey/machines.yaml`. On a machine with no fleet configured the machine reading is
 unreachable, so every pre-existing form keeps its old meaning exactly.
 
-A machine endpoint requires all three parts. Naming a machine without a campaign is an
+A machine endpoint requires all three parts. Naming a machine without a camp is an
 error rather than a guess:
 
 ```
 $ camp transfer devbox:notes.md .
-Error: "devbox" is a machine; use machine:campaign:path (for example devbox:<campaign>:notes.md)
+Error: "devbox" is a machine; use machine:campaign:path (for example devbox:<camp>:notes.md)
 ```
 
 ### Shadowing, and the `local:` escape
 
-If a campaign happens to share a name with a registered machine, the machine wins — and
+If a camp happens to share a name with a registered machine, the machine wins, and
 camp tells you, every time, because the ambiguity is in the command you just typed:
 
 ```
 $ camp transfer devbox:notes:file.md .
-camp: devbox is a registered machine; reading it as machine:campaign:path (use local:devbox:... for the campaign)
+camp: devbox is a registered machine; reading it as machine:campaign:path (use local:devbox:... for the camp)
 ```
 
-`local:` forces the campaign reading:
+`local:` forces the camp reading:
 
 ```
 $ camp transfer local:devbox:file.md .
@@ -57,14 +57,14 @@ Transfer is a **copy**. The source is never modified, moved, or removed.
 including the scp fallback described below:
 
 ```
-$ camp transfer notes.md devbox:mycampaign:notes.md
-Transferred notes.md -> devbox:mycampaign:notes.md
+$ camp transfer notes.md devbox:mycamp:notes.md
+Transferred notes.md -> devbox:mycamp:notes.md
 
-$ camp transfer notes.md devbox:mycampaign:notes.md
+$ camp transfer notes.md devbox:mycamp:notes.md
 Error: destination exists on devbox, not overwritten (use --force)
 
-$ camp transfer notes.md devbox:mycampaign:notes.md --force
-Transferred notes.md -> devbox:mycampaign:notes.md
+$ camp transfer notes.md devbox:mycamp:notes.md --force
+Transferred notes.md -> devbox:mycamp:notes.md
 ```
 
 Camp reports "Transferred" only when bytes actually moved. A skipped copy is never

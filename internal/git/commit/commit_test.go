@@ -60,7 +60,7 @@ func TestDoCommit_SkippedReasons(t *testing.T) {
 			wantSkipped:    true,
 			wantNoChanges:  false,
 			wantMessage:    "",
-			wantReasonPart: "missing campaign context",
+			wantReasonPart: "missing camp context",
 		},
 		{
 			name:           "missing campaign id",
@@ -68,7 +68,7 @@ func TestDoCommit_SkippedReasons(t *testing.T) {
 			wantSkipped:    true,
 			wantNoChanges:  false,
 			wantMessage:    "",
-			wantReasonPart: "missing campaign context",
+			wantReasonPart: "missing camp context",
 		},
 		{
 			name:           "selective commit with zero resolved files",
@@ -129,8 +129,8 @@ func TestWarnIfSkipped(t *testing.T) {
 	}{
 		{
 			name: "skipped writes a warning",
-			res:  Result{Skipped: true, SkipReason: "missing campaign context"},
-			want: "warning: missing campaign context\n",
+			res:  Result{Skipped: true, SkipReason: "missing camp context"},
+			want: "warning: missing camp context\n",
 		},
 		{
 			name: "not skipped writes nothing",
@@ -1251,7 +1251,7 @@ func TestRepair(t *testing.T) {
 	}
 
 	commitMsg := string(out)
-	if !strings.Contains(commitMsg, "Repair: campaign repair") {
+	if !strings.Contains(commitMsg, "Repair: camp repair") {
 		t.Errorf("commit message should contain repair subject, got: %s", commitMsg)
 	}
 }

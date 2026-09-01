@@ -12,18 +12,18 @@ import (
 // Cmd is the scaffold root for the project command family.
 var Cmd = &cobra.Command{
 	Use:     "project",
-	Short:   "Manage campaign projects",
+	Short:   "Manage camp projects",
 	GroupID: "project",
-	Long: `Manage git submodules and project repositories in the campaign.
+	Long: `Manage git submodules and project repositories in the camp.
 
 A project can be:
   - a git repository tracked as a submodule under projects/
   - a machine-local linked workspace attached via symlink under projects/
-  - an ordinary campaign-owned directory tracked by the campaign repository
+  - an ordinary camp-owned directory tracked by the camp repository
 
 Use 'camp project add' for submodules and 'camp project link' / 'camp project unlink'
 for linked workspaces. Use 'camp project run' (or the 'cr -p' shell shorthand)
-to run a command inside a project from anywhere in the campaign.
+to run a command inside a project from anywhere in the camp.
 
 Examples:
   camp project list                    List all projects

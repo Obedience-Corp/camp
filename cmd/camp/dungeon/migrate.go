@@ -22,12 +22,12 @@ var (
 
 var dungeonMigrateCmd = &cobra.Command{
 	Use:   "migrate",
-	Short: "Convert every campaign dungeon to the hidden .dungeon spelling",
-	Long: `Convert every dungeon in this campaign from "dungeon" to ".dungeon".
+	Short: "Convert every camp dungeon to the hidden .dungeon spelling",
+	Long: `Convert every dungeon in this camp from "dungeon" to ".dungeon".
 
-New campaigns hide the dungeon so it stops being the first thing newcomers ask
-about. This converts a campaign made before that change. A campaign uses one
-spelling throughout, so the sweep covers every dungeon at once: the campaign
+New camps hide the dungeon so it stops being the first thing newcomers ask
+about. This converts a camp made before that change. A camp uses one
+spelling throughout, so the sweep covers every dungeon at once: the camp
 root, festivals/, .campaign/intents/, .campaign/quests/, and each workflow
 type. Dungeons are discovered on disk, so locations added since this command
 was written are included too.
@@ -36,10 +36,10 @@ The move goes through git, so history and rename detection survive, and lands
 as a single commit you can revert.
 
 projects/ is never touched. Projects own their own trees, and a source
-directory named "dungeon" inside one is not a campaign dungeon.
+directory named "dungeon" inside one is not a camp dungeon.
 
-Release ordering matters when a campaign contains festivals/: this command
-also renames festivals/dungeon. Do not run it against a campaign used by a
+Release ordering matters when a camp contains festivals/: this command
+also renames festivals/dungeon. Do not run it against a camp used by a
 fest build that does not understand .dungeon. Land fest#274 and ship a fest
 release with the matching support before making this migration available to
 users.
@@ -67,7 +67,7 @@ func runDungeonMigrate(cmd *cobra.Command, args []string) error {
 
 	cfg, campaignRoot, err := config.LoadCampaignConfigFromCwd(ctx)
 	if err != nil {
-		return camperrors.Wrap(err, "not in a campaign directory")
+		return camperrors.Wrap(err, "not in a camp directory")
 	}
 
 	plan, err := migrate.BuildPlan(ctx, campaignRoot)
@@ -76,7 +76,7 @@ func runDungeonMigrate(cmd *cobra.Command, args []string) error {
 	}
 
 	if plan.Empty() {
-		fmt.Printf("%s Nothing to migrate: this campaign already uses %s\n",
+		fmt.Printf("%s Nothing to migrate: this camp already uses %s\n",
 			ui.SuccessIcon(), ui.Value(spelling.Hidden+"/"))
 		return nil
 	}
@@ -106,7 +106,7 @@ func runDungeonMigrate(cmd *cobra.Command, args []string) error {
 		return nil
 	}
 	if !plan.Committable {
-		fmt.Printf("%s This campaign has no commits yet, so there is nothing to commit against\n", ui.InfoIcon())
+		fmt.Printf("%s This camp has no commits yet, so there is nothing to commit against\n", ui.InfoIcon())
 		return nil
 	}
 
@@ -132,7 +132,7 @@ func runDungeonMigrate(cmd *cobra.Command, args []string) error {
 
 func migrationDescription(campaignRoot string, plan *migrate.Plan) string {
 	lines := make([]string, 0, len(plan.Moves)+1)
-	lines = append(lines, "Converted the campaign to a single hidden dungeon spelling:")
+	lines = append(lines, "Converted the camp to a single hidden dungeon spelling:")
 	for _, m := range plan.Moves {
 		lines = append(lines, fmt.Sprintf("- %s -> %s",
 			relToRoot(campaignRoot, m.From), relToRoot(campaignRoot, m.To)))

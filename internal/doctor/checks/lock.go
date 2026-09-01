@@ -32,7 +32,7 @@ func (c *LockCheck) Name() string {
 
 // Description returns a brief explanation of what this check does.
 func (c *LockCheck) Description() string {
-	return "Detects stale index.lock files in the campaign and submodules"
+	return "Detects stale index.lock files in the camp and submodules"
 }
 
 // Run performs the lock file check.

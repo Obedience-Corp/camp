@@ -60,7 +60,7 @@ func Attach(ctx context.Context, campaignRoot, campaignID, input string, opts Op
 		return nil, ctx.Err()
 	}
 	if campaignID == "" {
-		return nil, camperrors.Wrap(camperrors.ErrInvalidInput, "campaign ID required")
+		return nil, camperrors.Wrap(camperrors.ErrInvalidInput, "camp ID required")
 	}
 
 	abs, err := filepath.Abs(input)
@@ -102,7 +102,7 @@ func Attach(ctx context.Context, campaignRoot, campaignID, input string, opts Op
 		}
 		if existing.HasCampaign(campaignID) && !opts.Force {
 			return nil, camperrors.Wrapf(camperrors.ErrAlreadyExists,
-				"marker already binds %q to campaign %q; use --force to rewrite it", markerPath, campaignID)
+				"marker already binds %q to camp %q; use --force to rewrite it", markerPath, campaignID)
 		}
 		marker = *existing
 		marker.AddCampaign(campaignID)
@@ -118,11 +118,11 @@ func Attach(ctx context.Context, campaignRoot, campaignID, input string, opts Op
 		switch {
 		case sameCampaignRoot(existingRoot, campaignRoot):
 			return nil, camperrors.Wrapf(camperrors.ErrInvalidInput,
-				"target %q is already inside campaign root %q; attach is for external directories",
+				"target %q is already inside camp root %q; attach is for external directories",
 				target, existingRoot)
 		default:
 			return nil, camperrors.Wrapf(camperrors.ErrInvalidInput,
-				"target %q is already inside a different campaign at %q; refusing to write a shadowing .camp marker",
+				"target %q is already inside a different camp at %q; refusing to write a shadowing .camp marker",
 				target, existingRoot)
 		}
 	}
@@ -193,7 +193,7 @@ func DetachForCampaign(ctx context.Context, input, campaignID string) (*Result, 
 
 	if campaignID != "" && !marker.HasCampaign(campaignID) {
 		return nil, camperrors.Wrapf(camperrors.ErrConflict,
-			"attachment at %q is not bound to campaign %q", target, campaignID)
+			"attachment at %q is not bound to camp %q", target, campaignID)
 	}
 
 	res := &Result{

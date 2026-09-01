@@ -414,7 +414,7 @@ camp() {
 
 # Shorthand for camp go
 # Usage:
-#   cgo                 Interactive picker or jump to campaign root
+#   cgo                 Interactive picker or jump to camp root
 #   cgo p               Jump to projects/
 #   cgo p api           Fuzzy find "api" in projects/
 #   cgo -c p ls         Run "ls" in projects/ without changing directory
@@ -422,7 +422,7 @@ cgo() {
   camp go "$@"
 }
 {{end}}
-{{define "posix_helpers"}}# Run command from campaign root, or in a project with -p
+{{define "posix_helpers"}}# Run command from camp root, or in a project with -p
 # Usage: cr <command> [args...]
 #        cr -p <project> [--] <command> [args...]
 cr() {
@@ -453,7 +453,7 @@ cr() {
   fi
 }
 
-# Switch campaigns
+# Switch camps
 # Usage: csw [name]
 csw() {
   camp switch "$@"
@@ -466,11 +466,11 @@ cwi() {
   camp workitem "$@"
 }
 
-# Cycle through campaigns in the current campaign's org.
+# Cycle through camps in the current camp's org.
 # Usage:
-#   corg        cd to the next campaign in this org (stable, name-ordered)
-#   corg t      cd back to the last-visited campaign in this org
-#   corg --all  include inactive/reference campaigns in the cycle
+#   corg        cd to the next camp in this org (stable, name-ordered)
+#   corg t      cd back to the last-visited camp in this org
+#   corg --all  include inactive/reference camps in the cycle
 # Inspection flags (--print/--json/--help) print without changing directory.
 corg() {
   local action=next line arg

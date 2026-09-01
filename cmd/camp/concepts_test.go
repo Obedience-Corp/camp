@@ -93,7 +93,7 @@ func TestConceptsJSONOutsideCampaignErrorEnvelope(t *testing.T) {
 	if envelope.Error.ExitCode == 0 {
 		t.Fatal("error.exit_code = 0, want non-zero")
 	}
-	if envelope.Error.Hint != "run 'camp init' to create a new campaign" {
+	if envelope.Error.Hint != "run 'camp init' to create a new camp" {
 		t.Fatalf("error.hint = %q", envelope.Error.Hint)
 	}
 }

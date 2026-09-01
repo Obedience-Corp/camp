@@ -54,7 +54,7 @@ branches, and optionally create a new working branch.
 
 Auto-detects the current project from your working directory, or accepts a
 single project name. Use --list to cycle a specific set of projects in one
-run, or 'camp fresh all' to cycle every project submodule in the campaign.
+run, or 'camp fresh all' to cycle every project submodule in the camp.
 
 Without configuration, syncs to the default branch and prunes.
 Configure .campaign/settings/fresh.yaml to set a default working branch, or
@@ -66,7 +66,7 @@ WORKITEM COMPLETION
 
 Two fresh.yaml settings decide what happens to workitems whose work looks done:
 
-  completed_runs     Tier 1, once per run, campaign-root scoped. "prompt"
+  completed_runs     Tier 1, once per run, camp-root scoped. "prompt"
                      (default) asks per workitem on a TTY and reports otherwise,
                      "report" prints a read-only banner and the reason for every
                      non-move, "sweep" promotes automatically (the pre-2026-08
@@ -114,7 +114,7 @@ Examples:
 
 			campRoot, err := campaign.DetectCached(ctx)
 			if err != nil {
-				return camperrors.Wrap(err, "not in a campaign")
+				return camperrors.Wrap(err, "not in a camp")
 			}
 
 			// Load fresh config

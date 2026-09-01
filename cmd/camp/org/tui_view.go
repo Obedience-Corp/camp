@@ -149,7 +149,7 @@ func (m orgTUIModel) emptyView() string {
 	lines := []string{
 		orgTitleStyle.Render("Orgs"),
 		"",
-		orgMutedStyle.Render("No campaigns registered yet. Run camp init or camp register."),
+		orgMutedStyle.Render("No camps registered yet. Run camp init or camp register."),
 	}
 	if lay.showFooter {
 		lines = append(lines, "", orgHelpStyle.Render("q: quit"))
@@ -185,10 +185,10 @@ func (m orgTUIModel) bodyLines(lay orgLayout) []string {
 }
 
 func (m orgTUIModel) topBar(cw int) string {
-	title := orgTitleStyle.Render("Campaign Orgs")
+	title := orgTitleStyle.Render("Camp Orgs")
 	meta := orgHeaderBar.Render(fmt.Sprintf("%s . %s",
 		ui.CountLabel(len(m.orgs), "org", "orgs"),
-		ui.CountLabel(m.totalCampaigns(), "campaign", "campaigns")))
+		ui.CountLabel(m.totalCampaigns(), "camp", "camps")))
 	line := title + "  " + meta
 	if cw > 0 {
 		return ui.ClampWidth(line, cw)
@@ -265,7 +265,7 @@ func (m orgTUIModel) orgListLines(lay orgLayout) []string {
 func (m orgTUIModel) memberListLines(lay orgLayout) []string {
 	total := len(m.members)
 	if total == 0 {
-		return []string{orgMutedStyle.Render("no campaigns in this org")}
+		return []string{orgMutedStyle.Render("no camps in this org")}
 	}
 	budget := lay.listRows
 	if budget <= 0 {
@@ -399,7 +399,7 @@ func (m orgTUIModel) paneStyle(p orgPane) lipgloss.Style {
 func (m orgTUIModel) footer(cw int) string {
 	var full, mid, short string
 	if m.pane == paneOrgs {
-		full = "j/k: orgs . l: members . n: new org . N: new campaign . x: delete (empty) . r: rename . q: quit"
+		full = "j/k: orgs . l: members . n: new org . N: new camp . x: delete (empty) . r: rename . q: quit"
 		mid = "j/k orgs . l members . n/N new . x del . r ren . q"
 		short = "j/k . l . q"
 	} else {
@@ -448,7 +448,7 @@ func (m orgTUIModel) overlayView() string {
 		prompt = "New org name:"
 		help = "enter: create . esc: cancel"
 	case overlayNewCampaign:
-		prompt = fmt.Sprintf("New campaign in org %q:", m.pendingOrg)
+		prompt = fmt.Sprintf("New camp in org %q:", m.pendingOrg)
 		help = "enter: create . esc: cancel"
 	}
 	lines = []string{

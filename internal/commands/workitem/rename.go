@@ -108,7 +108,7 @@ func runWorkitemRename(cmd *cobra.Command, opts runWorkitemRenameOptions) error 
 
 	cfg, root, err := config.LoadCampaignConfigFromCwd(ctx)
 	if err != nil {
-		return camperrors.Wrap(err, "not in a campaign directory")
+		return camperrors.Wrap(err, "not in a camp directory")
 	}
 
 	plan, err := planRename(ctx, root, opts)

@@ -24,13 +24,13 @@ import (
 
 var commitCmd = &cobra.Command{
 	Use:   "commit",
-	Short: "Commit changes in the campaign root",
-	Long: `Commit changes in the campaign root directory.
+	Short: "Commit changes in the camp root",
+	Long: `Commit changes in the camp root directory.
 
 Automatically stages all changes and creates a commit. Handles
 stale lock files from crashed processes.
 
-At the campaign root, submodule ref changes (projects/*) are excluded
+At the camp root, submodule ref changes (projects/*) are excluded
 from staging by default to prevent accidental ref conflicts across
 machines. Use --include-refs to stage them explicitly.
 
@@ -73,7 +73,7 @@ func init() {
 	commitCmd.Flags().BoolVar(&commitNoEdit, "no-edit", false, "Amend without editing the commit message (requires --amend)")
 	commitCmd.Flags().BoolVar(&commitSub, "sub", false, "Operate on the submodule detected from current directory")
 	commitCmd.Flags().StringVarP(&commitProject, "project", "p", "", "Operate on a specific project/submodule path")
-	commitCmd.Flags().BoolVar(&commitIncludeRefs, "include-refs", false, "Include submodule ref changes when staging at campaign root")
+	commitCmd.Flags().BoolVar(&commitIncludeRefs, "include-refs", false, "Include submodule ref changes when staging at camp root")
 	commitCmd.Flags().BoolVar(&commitAutoWrite, "auto-write", false, "Run configured commit message writer")
 	commitCmd.Flags().StringVar(&commitWorkitem, "workitem", "", "explicit workitem selector for the commit tag (overrides cwd-based resolution)")
 	commitCmd.Flags().BoolVar(&commitLarge, "commit-large", false, "Commit over-threshold files instead of keeping them out of git")

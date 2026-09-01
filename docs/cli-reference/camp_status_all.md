@@ -4,7 +4,7 @@ Show git status of all submodules
 
 ### Synopsis
 
-Show a visual overview of git status for all submodules in the campaign.
+Show a visual overview of git status for all submodules in the camp.
 
 Displays a table with each submodule's name, branch, clean/dirty state,
 and push status.
@@ -36,4 +36,4 @@ camp status all [flags]
 
 ### SEE ALSO
 
-* [camp status](camp_status.md)	 - Show git status of the campaign
+* [camp status](camp_status.md)	 - Show git status of the camp

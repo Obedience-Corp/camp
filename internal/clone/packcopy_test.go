@@ -50,7 +50,7 @@ func TestPackCopyEligible(t *testing.T) {
 			},
 			root:       root,
 			want:       false,
-			wantReason: "outside the campaign root",
+			wantReason: "outside the camp root",
 		},
 		{
 			name: "git dir escaping via traversal is refused",
@@ -60,7 +60,7 @@ func TestPackCopyEligible(t *testing.T) {
 			},
 			root:       root,
 			want:       false,
-			wantReason: "outside the campaign root",
+			wantReason: "outside the camp root",
 		},
 		{
 			name: "relative git dir is refused",
@@ -69,7 +69,7 @@ func TestPackCopyEligible(t *testing.T) {
 			},
 			root:       root,
 			want:       false,
-			wantReason: "outside the campaign root",
+			wantReason: "outside the camp root",
 		},
 		{
 			name: "quiescent root repo",

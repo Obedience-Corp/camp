@@ -95,10 +95,10 @@ func validateAdoptTarget(relPath string) error {
 	}
 	clean := filepath.Clean(relPath)
 	if filepath.IsAbs(clean) {
-		return camperrors.NewValidation("dir", "parent dir must be relative to campaign root", nil)
+		return camperrors.NewValidation("dir", "parent dir must be relative to camp root", nil)
 	}
 	if strings.HasPrefix(clean, "..") {
-		return camperrors.NewValidation("dir", "parent dir must not escape campaign root", nil)
+		return camperrors.NewValidation("dir", "parent dir must not escape camp root", nil)
 	}
 	return nil
 }

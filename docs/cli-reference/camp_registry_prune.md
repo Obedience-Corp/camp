@@ -4,7 +4,7 @@ Remove stale registry entries
 
 ### Synopsis
 
-Remove registry entries where the campaign no longer exists.
+Remove registry entries where the camp no longer exists.
 
 Checks each registered path and removes entries where:
 - The path no longer exists
@@ -17,7 +17,7 @@ Options:
 Examples:
   camp registry prune             Remove stale entries
   camp registry prune --dry-run   Preview what would be removed
-  camp registry prune --include-temp  Also clean up test campaigns
+  camp registry prune --include-temp  Also clean up test camps
 
 ```
 camp registry prune [flags]
@@ -39,4 +39,4 @@ camp registry prune [flags]
 
 ### SEE ALSO
 
-* [camp registry](camp_registry.md)	 - Manage the campaign registry
+* [camp registry](camp_registry.md)	 - Manage the camp registry

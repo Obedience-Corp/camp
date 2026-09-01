@@ -6,7 +6,7 @@ For the broader `.campaign/settings/` layout, including `fresh.yaml`,
 `pins.json`, `allowlist.json`, and `.campaign/watchers.yaml`, see
 [campaign-settings-files.md](campaign-settings-files.md).
 
-`camp init` creates that file with the current default paths and built-in shortcuts. If you want to add or override shortcuts for a specific campaign, edit `jumps.yaml`.
+`camp init` creates that file with the current default paths and built-in shortcuts. If you want to add or override shortcuts for a specific camp, edit `jumps.yaml`.
 
 ## Configuration
 
@@ -28,13 +28,13 @@ shortcuts:
     description: "Deploy the API service"
 ```
 
-For the full scaffolded file shape, initialize a fresh campaign with `camp init` and inspect `.campaign/settings/jumps.yaml` directly.
+For the full scaffolded file shape, initialize a fresh camp with `camp init` and inspect `.campaign/settings/jumps.yaml` directly.
 
 ## Shortcut Types
 
 ### Navigation shortcuts
 
-Navigation shortcuts define a relative path from the campaign root:
+Navigation shortcuts define a relative path from the camp root:
 
 ```yaml
 shortcuts:
@@ -87,7 +87,7 @@ camp run deploy
 
 ## Built-in shortcuts
 
-These defaults are written by `camp init` and can be overridden per campaign:
+These defaults are written by `camp init` and can be overridden per camp:
 
 | Shortcut | Path | Notes |
 |----------|------|-------|
@@ -131,7 +131,7 @@ camp run deploy -- production
 |-------|------|-------------|
 | `path` | string | Relative path used by `camp go` / `cgo` |
 | `command` | string | Shell command used by `camp run` |
-| `workdir` | string | Optional working directory relative to campaign root |
+| `workdir` | string | Optional working directory relative to camp root |
 | `description` | string | Optional help text shown in shortcut listings |
 | `concept` | string | Optional command-group expansion target |
 

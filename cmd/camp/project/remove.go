@@ -16,8 +16,8 @@ import (
 
 var projectRemoveCmd = &cobra.Command{
 	Use:   "remove <name>",
-	Short: "Remove a project from campaign",
-	Long: `Remove a project from the campaign.
+	Short: "Remove a project from camp",
+	Long: `Remove a project from the camp.
 
 By default, this only removes the project from git submodule tracking.
 The project directory is removed from the working tree by git rm. Pass --delete
