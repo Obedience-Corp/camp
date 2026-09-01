@@ -108,9 +108,3 @@ func TestOldStateJumpsPathsSurvive(t *testing.T) {
 		t.Fatalf("a shortcut written before the source field existed must load with an empty source: got %+v (present=%v)", got, ok)
 	}
 }
-
-// The destructive-mistake guard — that loading this metadata and saving it back
-// leaves it at .campaign/campaign.yaml and creates no .camp directory — needs a
-// real workspace on a real filesystem, so it runs against the binary in
-// TestCompatOldStateRichLayoutSurvivesRoundTrip
-// (tests/integration/compat_oldstate_test.go) rather than here.

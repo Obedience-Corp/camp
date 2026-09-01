@@ -15,10 +15,8 @@ const (
 	secondCampaignID = "8deed8b4-0000-4000-8000-0000000000bb"
 )
 
-// useRegistryFixture points camp's registry resolution at a fixture in place
-// and returns its path. It uses CAMP_REGISTRY_PATH, itself a frozen name, so
-// the real loader opens the real file: loading never writes, so the fixture
-// needs no copy.
+// useRegistryFixture points CAMP_REGISTRY_PATH, itself a frozen name, at a
+// fixture in place. Loading never writes, so it needs no copy.
 func useRegistryFixture(t *testing.T, fixture string) string {
 	t.Helper()
 	path := oldStateFixturePath(t, fixture)
@@ -131,11 +129,6 @@ func TestRegistryJSONKeysAreFrozen(t *testing.T) {
 
 // TestOldStateGlobalConfigLoads pins ~/.obey/campaign/config.json, whose
 // campaigns_dir key decides where `camp create` puts a new workspace.
-//
-// XDG_CONFIG_HOME aims the real loader at the fixture tree. That override
-// resolves to <root>/obey/campaign, so the committed fixture already sits at
-// the shape a user's config directory has, and no directory has to be built to
-// read it. The loader only writes when the file is missing.
 func TestOldStateGlobalConfigLoads(t *testing.T) {
 	t.Setenv("XDG_CONFIG_HOME", oldStateFixturePath(t, "xdg"))
 

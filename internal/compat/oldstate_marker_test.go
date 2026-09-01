@@ -93,12 +93,8 @@ func TestOldStateLinkMarkerLegacyFieldsSurviveRead(t *testing.T) {
 // Festival app and the obey daemon read this file, so its key names are a wire
 // format even though it lives on local disk.
 //
-// The marker is serialized rather than written, because this package touches no
-// filesystem. project_name is only produced by this path now — no command still
-// writes it — so serialization is the only place left that can pin it. That the
-// real writer emits the rest of the set onto a real marker is pinned in
-// TestCompatLinkMarkerWrittenKeysAreFrozen
-// (tests/integration/compat_oldstate_test.go).
+// No command writes project_name any more, so serialization is the only place
+// left that can pin it.
 func TestLinkMarkerWrittenKeysAreFrozen(t *testing.T) {
 	got := mustJSON(t, campaign.LinkMarker{
 		Version:          campaign.LinkMarkerVersion,

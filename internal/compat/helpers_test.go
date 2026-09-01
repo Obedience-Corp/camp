@@ -12,20 +12,12 @@ import (
 	"github.com/Obedience-Corp/camp/internal/config"
 )
 
-// globalConfigFixture is the campaign-era ~/.obey/campaign/config.json. It sits
-// inside an XDG-shaped tree so the real loader can be aimed at it with
-// XDG_CONFIG_HOME rather than at a home directory the test would have to build.
+// XDG_CONFIG_HOME resolves to <root>/obey/campaign, so the fixture sits at that
+// depth for the real loader to find it.
 var globalConfigFixture = filepath.Join("xdg", "obey", "campaign", "config.json")
 
-// oldStateFixturePath returns the path of one campaign-era artifact. Tests that
-// point camp's own path resolution at a fixture use this: the loader under test
-// opens the file itself, so the fixture has to be addressable rather than
-// staged.
-//
-// The existence check is what keeps this package read-only. A loader aimed at a
-// missing file does not simply fail — LoadGlobalConfig, for one, creates the
-// file it could not find — so a fixture that went missing would turn these
-// tests into writers.
+// The existence check keeps this package read-only: LoadGlobalConfig creates the
+// file it cannot find, so a missing fixture would turn these tests into writers.
 func oldStateFixturePath(t *testing.T, name string) string {
 	t.Helper()
 	path, err := filepath.Abs(filepath.Join("testdata", "oldstate", name))
@@ -50,15 +42,6 @@ func oldStateFixture(t *testing.T, name string) []byte {
 	return data
 }
 
-// parseOldStateCampaign parses the campaign-era metadata the way
-// config.LoadCampaignConfig parses it off disk: campaign.yaml into the config
-// struct, then jumps.yaml into the navigation block.
-//
-// The fixtures are fed as bytes because these assertions are about the YAML
-// keys, and this package writes nothing to the filesystem it runs on. That the
-// real loader still finds this metadata at .campaign/, and that saving it back
-// leaves it there, is pinned against the real binary in
-// tests/integration/compat_oldstate_test.go.
 func parseOldStateCampaign(t *testing.T) *config.CampaignConfig {
 	t.Helper()
 

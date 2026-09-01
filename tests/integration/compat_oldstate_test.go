@@ -64,12 +64,8 @@ func TestCompatOldStateDiscoveryFromCampaignYAMLAlone(t *testing.T) {
 	assert.False(t, isDir, ".camp must stay an attachment marker file, never a workspace directory")
 }
 
-// oldStateRichCampaignYAML is the other end of the campaign-era range: a
-// workspace that had been used, so its metadata carries a project with
-// shortcuts, an explicit nested concept list, and intent tags. Its host-side
-// half (internal/compat) pins how these keys parse; this file pins that the
-// loader still reads them from .campaign/ and that saving them back does not
-// drop them.
+// oldStateRichCampaignYAML is a campaign-era workspace that had been used: a
+// project with shortcuts, an explicit nested concept list, and intent tags.
 const oldStateRichCampaignYAML = `id: 8deed8b4-0000-4000-8000-0000000000aa
 name: oldstate-rich
 type: product
@@ -112,9 +108,8 @@ intents:
         - reference
 `
 
-// oldStateJumpsYAML is the navigation state that shipped beside it, including
-// the two legacy collections newer camps no longer scaffold and a shortcut
-// written before shortcuts carried a source.
+// oldStateJumpsYAML carries the legacy collections newer camps no longer
+// scaffold and a shortcut written before shortcuts had a source field.
 const oldStateJumpsYAML = `paths:
     projects: projects/
     worktrees: projects/worktrees/
@@ -132,14 +127,9 @@ shortcuts:
         description: Shortcut written before the source field existed
 `
 
-// TestCompatOldStateRichLayoutSurvivesRoundTrip loads a used campaign-era
-// workspace through the binary, then repairs it, which is the one everyday
-// command that reads camp's metadata and writes it straight back.
-//
-// The round trip is the destructive-mistake guard: a camp that relocated
-// metadata to .camp/ would orphan every existing workspace, and one that
-// dropped the sections it no longer scaffolds would quietly flatten a user's
-// concepts and shortcuts on the next repair.
+// TestCompatOldStateRichLayoutSurvivesRoundTrip reads a used campaign-era
+// workspace, then repairs it: repair is the everyday command that reads camp's
+// metadata and writes it straight back.
 func TestCompatOldStateRichLayoutSurvivesRoundTrip(t *testing.T) {
 	tc := GetSharedContainer(t)
 	const root = "/campaigns/oldstate-rich"
@@ -163,17 +153,13 @@ func TestCompatOldStateRichLayoutSurvivesRoundTrip(t *testing.T) {
 		"repair must not rewrite the camp id")
 
 	// Repair appends the sub-concepts a current camp scaffolds, so the
-	// configured two are asserted as the head of the list rather than the whole
-	// of it: what must not happen is losing them or reordering them.
+	// configured two are the head of the list, not the whole of it.
 	assertOldStateConcepts(t, tc, root, []string{"festivals", "design"})
 	assertFrozenWorkspaceLayout(t, tc, root)
 }
 
-// assertOldStateConcepts reads the concept list back through the binary. Order
-// is user-visible in the picker, and the nesting and depth are what a rename
-// pass would flatten, so all three are asserted rather than membership alone.
-// wantChildren is the prefix the workflow concept's children must still open
-// with.
+// assertOldStateConcepts reads the concept list back through the binary.
+// wantChildren is the prefix the workflow concept's children must open with.
 func assertOldStateConcepts(t *testing.T, tc *TestContainer, root string, wantChildren []string) {
 	t.Helper()
 
@@ -213,9 +199,7 @@ func assertOldStateConcepts(t *testing.T, tc *TestContainer, root string, wantCh
 }
 
 // TestCompatLinkMarkerWrittenKeysAreFrozen pins the key set camp writes into a
-// real .camp marker. The Festival app and the obey daemon read that file, so
-// its keys are a wire format; internal/compat can pin the serialization, but
-// only the binary proves the keys survive the writer.
+// real .camp marker, which the Festival app and the obey daemon both read.
 func TestCompatLinkMarkerWrittenKeysAreFrozen(t *testing.T) {
 	tc := GetSharedContainer(t)
 	const (
@@ -591,10 +575,8 @@ func assertFrozenLayout(t *testing.T, tc *TestContainer, root string) {
 	assert.True(t, exists, "the registry must stay at ~/.obey/campaign/registry.json")
 }
 
-// assertFrozenWorkspaceLayout checks the facts that belong to the workspace
-// itself. It is separate from the registry check so a workspace that was never
-// registered — a staged campaign-era one, for instance — can still assert that
-// its own metadata did not move.
+// assertFrozenWorkspaceLayout is split from the registry check so a workspace
+// that was never registered can still assert its own metadata did not move.
 func assertFrozenWorkspaceLayout(t *testing.T, tc *TestContainer, root string) {
 	t.Helper()
 
