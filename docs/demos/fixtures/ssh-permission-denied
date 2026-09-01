@@ -1,0 +1,3 @@
+#!/bin/sh
+printf '%s\n' 'builder@mac-studio.example-net.ts.net: Permission denied (publickey,password,keyboard-interactive).' >&2
+exit 255

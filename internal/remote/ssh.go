@@ -443,6 +443,13 @@ func HopFailureDetail(err error) string {
 	return classifySSHFailure(errText(err))
 }
 
+// IsPermissionDenied reports whether ssh reached a server but that server
+// rejected the attempted login. Callers use this to keep authentication
+// failures distinct from network reachability failures.
+func IsPermissionDenied(err error) bool {
+	return err != nil && isPermissionDenied(errText(err))
+}
+
 func errText(err error) string {
 	var cmdErr *camperrors.CommandError
 	if errors.As(err, &cmdErr) && cmdErr.Stderr != "" {

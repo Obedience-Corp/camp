@@ -184,6 +184,8 @@ func healthBadge(state healthState) (string, string, lipgloss.Style) {
 		return "●", "reachable", machineOKStyle
 	case healthUnreachable:
 		return "✗", "unreachable", machineErrorStyle
+	case healthAuthDenied:
+		return "✗", "login denied", machineErrorStyle
 	case healthCampMissing:
 		return "✗", "camp not found", machineErrorStyle
 	case healthUnsupported:
@@ -272,6 +274,19 @@ func (m *machineTUIModel) healthSection(id string, width int) []string {
 			lines = append(lines, machineMuted.Render("  "+line))
 		}
 		return append(lines, machineMuted.Render("  e edits it · t tries again"))
+	case healthAuthDenied:
+		lines := []string{style.Render(glyph + " SSH login denied")}
+		for _, line := range healthDetailLines(health.Detail, max(width-4, 20), false) {
+			lines = append(lines, machineMuted.Render("  "+line))
+		}
+		lines = append(lines, machineMuted.Render("  p pair · e edit login/key · t retry"))
+		for _, line := range wrapDisplayWidth(
+			"Pairing must start from a machine that can already reach the other.",
+			max(width-4, 20),
+		) {
+			lines = append(lines, machineMuted.Render("  "+line))
+		}
+		return lines
 	case healthCampMissing:
 		// ssh got in; the machine simply has no camp where camp looks. Say
 		// that, not "unreachable", or the operator debugs the network.
@@ -519,9 +534,9 @@ func (m *machineTUIModel) footer(width int) string {
 		short := "o open link · c copy · t retry · q quit"
 		return machineHelpStyle.Render(ui.CollapseHelp(width, full, mid, short, "o: open link"))
 	}
-	full := "enter hop  ·  t test connection  ·  e edit · d remove  ·  a add · s scan tailnet  ·  ? help · q quit"
-	mid := "enter hop · t test · e edit · d remove · a add · s scan · ? help · q quit"
-	short := "enter hop · t test · a add · ? help · q quit"
+	full := "enter hop  ·  t test connection  ·  p pair · e edit · d remove  ·  a add · s scan tailnet  ·  ? help · q quit"
+	mid := "enter hop · t test · p pair · e edit · d remove · a add · ? help · q quit"
+	short := "enter hop · t test · p pair · ? help · q quit"
 	return machineHelpStyle.Render(ui.CollapseHelp(width, full, mid, short, "q: quit"))
 }
 
@@ -560,6 +575,7 @@ func (m *machineTUIModel) overlayView() string {
 			machineTitleStyle.Render("Keys"),
 			machinePrimary.Render("  enter  pick a campaign on the selected machine and hop"),
 			machinePrimary.Render("  t  test whether camp can reach the selected machine"),
+			machinePrimary.Render("  p  pair by exchanging dedicated ssh keys (one direction must work)"),
 			machinePrimary.Render("  a  add a machine by hand"),
 			machinePrimary.Render("  s  scan your Tailscale network and pick a device"),
 			machinePrimary.Render("  e  edit      d  remove      j/k  move"),

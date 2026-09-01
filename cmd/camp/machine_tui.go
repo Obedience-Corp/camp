@@ -71,6 +71,9 @@ const (
 	healthTesting
 	healthReachable
 	healthUnreachable
+	// healthAuthDenied means ssh reached the configured host, but the server
+	// rejected the attempted account/key. It is not a network failure.
+	healthAuthDenied
 	// healthCampMissing is a machine ssh reached and logged into, where the
 	// far side then found no camp to run: not on the login-shell PATH and not
 	// in any of camp's usual install locations. It is kept apart from
@@ -157,7 +160,10 @@ type machineTUIModel struct {
 	// hopSelection is the ssh-hop payload the wrapper acts on, set exactly once
 	// immediately before the final Quit.
 	hopSelection string
-	hop          machineHopState
+	// pairSelection asks runMachineTUI to leave the alternate screen and hand
+	// the selected machine to the existing interactive pair consent flow.
+	pairSelection string
+	hop           machineHopState
 
 	// spin animates while a connection test or tailnet scan is out. An ssh
 	// connect can take the full ConnectTimeout before it fails, and a
@@ -256,7 +262,18 @@ func runMachineTUI(cmd *cobra.Command, _ []string) error {
 	if err != nil {
 		return camperrors.Wrap(err, "running machine TUI")
 	}
+	if pairID := machinePairSelection(final); pairID != "" {
+		return runMachinePair(cmd, []string{pairID})
+	}
 	return writeMachineHopSelection(final, pathOutput)
+}
+
+func machinePairSelection(final tea.Model) string {
+	m, ok := final.(*machineTUIModel)
+	if !ok {
+		return ""
+	}
+	return m.pairSelection
 }
 
 // writeMachineHopSelection persists the hop the operator chose, in the same
@@ -524,7 +541,9 @@ func (m *machineTUIModel) testMachine(target machines.Machine) tea.Cmd {
 		out, err := remote.RunCampCommandReuseOnly(ctx, &target, "--version")
 		if err != nil {
 			state := healthUnreachable
-			if remote.IsCampNotFound(err) {
+			if remote.IsPermissionDenied(err) {
+				state = healthAuthDenied
+			} else if remote.IsCampNotFound(err) {
 				state = healthCampMissing
 			}
 			return healthMsg{id: target.ID, health: machineHealth{

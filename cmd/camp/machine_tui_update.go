@@ -64,6 +64,8 @@ func healthStatusLine(id string, health machineHealth) string {
 		return health.Detail
 	case healthCampMissing:
 		return "reached " + id + ", but camp is not installed there: " + health.Detail
+	case healthAuthDenied:
+		return "SSH login denied by " + id + ": " + health.Detail
 	default:
 		return "could not reach " + id + ": " + health.Detail
 	}
@@ -169,6 +171,8 @@ func (m *machineTUIModel) updateBrowse(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		return m.openHopPicker()
 	case "t":
 		return m, m.testSelected()
+	case "p":
+		return m, m.pairSelected()
 	case "e":
 		return m, m.openEditForm()
 	case "d":
@@ -186,6 +190,17 @@ func (m *machineTUIModel) updateBrowse(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		m.overlay = machineHelpOverlay
 	}
 	return m, nil
+}
+
+func (m *machineTUIModel) pairSelected() tea.Cmd {
+	row := m.selectedRow()
+	if row.Local {
+		m.setError(camperrors.New(`"local" is this machine; select the other machine to pair`))
+		return nil
+	}
+	m.pairSelection = row.id()
+	m.quitting = true
+	return tea.Quit
 }
 
 // openHopPicker turns the highlighted machine into a hop by asking which

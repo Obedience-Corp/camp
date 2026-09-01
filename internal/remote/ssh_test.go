@@ -436,6 +436,16 @@ func TestSSHExitErrorClassifiesPermissionDenied(t *testing.T) {
 	}
 }
 
+func TestIsPermissionDenied(t *testing.T) {
+	denied := camperrors.NewCommand("ssh host", 255, "user@host: Permission denied (publickey).", errors.New("exit status 255"))
+	if !IsPermissionDenied(denied) {
+		t.Fatal("permission denial was not recognized")
+	}
+	if IsPermissionDenied(errors.New("dial tcp: operation timed out")) {
+		t.Fatal("network timeout was classified as permission denial")
+	}
+}
+
 // The auth-continuation list identifies what answered: password or
 // keyboard-interactive in the denial proves classic sshd, and the message must
 // not recommend auth_method=tailscale-ssh there — the fleet row the live
