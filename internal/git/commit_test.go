@@ -8,6 +8,7 @@ import (
 	"os/exec"
 	"path/filepath"
 	"runtime"
+	"slices"
 	"strings"
 	"testing"
 	"time"
@@ -1329,6 +1330,17 @@ func TestCommitScoped_UnbornHead(t *testing.T) {
 	count := runGit(t, "", nil, "-C", tmpDir, "rev-list", "--count", "HEAD")
 	if count != "1" {
 		t.Fatalf("rev-list --count HEAD = %q, want 1 (exactly one commit)", count)
+	}
+}
+
+func TestExpandTrackedPathsDiffArgsIncludesGitlinks(t *testing.T) {
+	got := expandTrackedPathsDiffArgs("/campaign", []string{"projects/camp"})
+	want := []string{
+		"-C", "/campaign", "diff", "--ignore-submodules=none", "--cached",
+		"--name-status", "-z", "--", "projects/camp",
+	}
+	if !slices.Equal(got, want) {
+		t.Fatalf("expand tracked paths args = %q, want %q", got, want)
 	}
 }
 
