@@ -1,8 +1,8 @@
 # camp machine — OpenSSH answered but rejected the configured login/key.
 #
 # The ssh command is a fixture stub. The real branch binary classifies the
-# failure, renders the machine TUI, exits the alternate screen for `p pair`,
-# and hands control to the existing interactive pairing command.
+# failure, renders the machine TUI, and keeps `p` in the TUI on a denied login
+# so it can name the pair command to run on the peer.
 #
 # Record (repo root, truecolor):
 #   CAMP_VHS_ROOT=$FIXTURE just vhs record-color docs/demos/machine-auth-denied.tape

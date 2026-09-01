@@ -1344,6 +1344,32 @@ func TestExpandTrackedPathsDiffArgsIncludesGitlinks(t *testing.T) {
 	}
 }
 
+func TestCommitScopedGitlinkWithIgnoreSubmodulesAll(t *testing.T) {
+	parent, sub := setupRepoWithNestedSubmodule(t)
+	if err := os.WriteFile(filepath.Join(sub, "next.txt"), []byte("next\n"), 0o644); err != nil {
+		t.Fatalf("advance submodule: %v", err)
+	}
+	runGit(t, sub, nil, "add", ".")
+	runGit(t, sub, nil, "commit", "-m", "advance gitlink")
+	runGit(t, parent, nil, "add", "vendor/tool")
+	runGit(t, parent, nil, "config", "diff.ignoreSubmodules", "all")
+
+	before := runGit(t, "", nil, "-C", parent, "rev-parse", "HEAD")
+	if err := CommitScoped(t.Context(), parent, []string{"vendor/tool"}, &CommitOptions{
+		Message: "sync: vendor/tool",
+	}); err != nil {
+		t.Fatalf("CommitScoped gitlink with ignoreSubmodules=all: %v", err)
+	}
+	after := runGit(t, "", nil, "-C", parent, "rev-parse", "HEAD")
+	if after == before {
+		t.Fatal("CommitScoped did not create a commit")
+	}
+	committed := runGit(t, "", nil, "-C", parent, "diff-tree", "--no-commit-id", "--name-only", "-r", "HEAD")
+	if committed != "vendor/tool" {
+		t.Fatalf("scoped commit paths = %q, want vendor/tool", committed)
+	}
+}
+
 // CommitBlobs is the path a bookkeeping job with captured content takes (the
 // worker's real production path for something like `camp intent add`). Content
 // is captured up front and committed without reading the working tree or the

@@ -93,18 +93,21 @@ def main():
     denied = session.snapshot("auth-denied")
     if "SSH login denied" not in denied:
         failures.append("detail pane does not distinguish SSH login denial")
-    if "p pair" not in denied:
-        failures.append("detail pane does not expose pairing")
-    if ("Pairing must start from a machine that can already reach the" not in denied
-            or "other." not in denied):
-        failures.append("detail pane omits the one-working-direction constraint")
+    if "camp machine pair <this-machine>" not in denied:
+        failures.append("detail pane does not name the pair command to run on the peer")
+    if "p pair · e edit login/key" in denied:
+        failures.append("denied-login pane advertised a pair start that cannot succeed")
     if "Could not reach it" in denied:
         failures.append("authentication failure is still presented as unreachable")
 
     session.press(b"p", 4.0)
-    pair = session.snapshot("pair-handoff")
-    if "pair must run from a machine that can already reach mac-studio" not in pair:
-        failures.append("p did not hand off to the existing pair command")
+    stayed = session.snapshot("pair-stays-in-tui")
+    if "SSH login denied" not in stayed:
+        failures.append("p left the TUI instead of keeping the denied-login pane")
+    if "On mac-studio, run: camp machine pair <this-machine>" not in stayed:
+        failures.append("p did not name the pair command to run on the peer")
+    if "pair must run from a machine that can already reach mac-studio" in stayed:
+        failures.append("p handed off to a doomed pair hop")
 
     terminal = {
         "columns": COLS,
@@ -132,7 +135,7 @@ def main():
         print("FAIL: %s" % failure, file=sys.stderr)
     if failures:
         return 1
-    print("machine-auth-denied: login state and pair handoff verified")
+    print("machine-auth-denied: login state and in-TUI pair guidance verified")
     return 0
 
 

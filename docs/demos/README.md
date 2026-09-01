@@ -115,8 +115,8 @@ CAMP_VHS_ROOT=$FIXTURE just vhs record-color docs/demos/machine-tailscale-check.
 ```
 
 `machine-auth-denied` shows a reachable OpenSSH server rejecting the configured
-login, then verifies that `p pair` leaves the TUI and reuses the existing pairing
-consent flow. The fixture never contacts a real machine.
+login, then verifies that `p` stays in the TUI and names the pair command to run
+on the peer. The fixture never contacts a real machine.
 
 ```bash
 just tui pty-machine-auth-denied

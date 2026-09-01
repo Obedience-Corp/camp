@@ -279,11 +279,8 @@ func (m *machineTUIModel) healthSection(id string, width int) []string {
 		for _, line := range healthDetailLines(health.Detail, max(width-4, 20), false) {
 			lines = append(lines, machineMuted.Render("  "+line))
 		}
-		lines = append(lines, machineMuted.Render("  p pair · e edit login/key · t retry"))
-		for _, line := range wrapDisplayWidth(
-			"Pairing must start from a machine that can already reach the other.",
-			max(width-4, 20),
-		) {
+		lines = append(lines, machineMuted.Render("  e edit login/key · t retry"))
+		for _, line := range wrapDisplayWidth(pairFromPeerHint(id), max(width-4, 20)) {
 			lines = append(lines, machineMuted.Render("  "+line))
 		}
 		return lines

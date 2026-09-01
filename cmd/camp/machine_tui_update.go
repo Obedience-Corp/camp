@@ -198,9 +198,23 @@ func (m *machineTUIModel) pairSelected() tea.Cmd {
 		m.setError(camperrors.New(`"local" is this machine; select the other machine to pair`))
 		return nil
 	}
+	if m.health[row.id()].State == healthAuthDenied {
+		// This hop just failed login. Pairing rides that same hop, so leaving
+		// the TUI would only reprint the constraint. Stay here and name the
+		// command that has to run on the peer.
+		m.setAdvice(pairFromPeerHint(row.id()))
+		return nil
+	}
 	m.pairSelection = row.id()
 	m.quitting = true
 	return tea.Quit
+}
+
+// pairFromPeerHint is the command an operator runs on the machine that can
+// already get in, targeting this machine. The placeholder stays literal: this
+// screen must not pay for a Tailscale self-id lookup just to render advice.
+func pairFromPeerHint(peerID string) string {
+	return "On " + peerID + ", run: camp machine pair <this-machine>"
 }
 
 // openHopPicker turns the highlighted machine into a hop by asking which
