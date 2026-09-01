@@ -16,7 +16,7 @@ var orgCreateCmd = &cobra.Command{
 	Short: "Create an org (optionally empty) and join camps",
 	Long: `Create a first-class org, optionally joining camps to it.
 
-Run inside a camp with no camp arguments to add the current campaign:
+Run inside a camp with no camp arguments to add the current camp:
   camp org create obey
 
 Or name the camps explicitly:

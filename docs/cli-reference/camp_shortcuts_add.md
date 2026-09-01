@@ -6,7 +6,7 @@ Add a shortcut (camp-level or project sub-shortcut)
 
 Add a shortcut for quick navigation.
 
-Campaign-level shortcut (2 args):
+Camp-level shortcut (2 args):
   Adds a navigation shortcut to .campaign/settings/jumps.yaml.
   Usage: camp shortcuts add <name> <path>
 

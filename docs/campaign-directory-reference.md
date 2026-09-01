@@ -145,7 +145,7 @@ registry concept, resolver tiers, and recovery paths.
 
 ### `.campaign/settings/`
 
-Campaign-local settings and small JSON/YAML state files live here.
+Camp-local settings and small JSON/YAML state files live here.
 
 Scaffolded by `camp init`:
 

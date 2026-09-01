@@ -440,7 +440,7 @@ func editLocalThemeOverride(ctx context.Context, campaignRoot, current string) e
 	form := huh.NewForm(huh.NewGroup(
 		huh.NewSelect[string]().
 			Title("Theme Override").
-			Description("Campaign-local theme; overrides the global theme in this camp").
+			Description("Camp-local theme; overrides the global theme in this camp").
 			Options(
 				huh.NewOption("Inherit global", ""),
 				huh.NewOption("Adaptive - Auto-detect", config.ThemeNameAdaptive),

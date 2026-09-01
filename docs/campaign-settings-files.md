@@ -109,7 +109,7 @@ Notes:
 - `editor` is only used if `$EDITOR` and `$VISUAL` are not set.
 - `commit.sync_project_refs` / `commit.disable_commit_tags` are machine-wide
   defaults for project-ref linking after `camp p commit` and for camp
-  subject-tag tracing. Per-campaign overrides live in
+  subject-tag tracing. Per-camp overrides live in
   `.campaign/settings/local.json` under the same `commit` object.
 - `camp settings` currently supports the global settings in this file.
 
@@ -197,7 +197,7 @@ workflows:
 
 ### `.campaign/settings/jumps.yaml`
 
-Campaign-local navigation settings.
+Camp-local navigation settings.
 
 It contains:
 
@@ -363,7 +363,7 @@ Example:
   "commands": {
     "camp": {
       "allowed": true,
-      "description": "Campaign CLI"
+      "description": "Camp CLI"
     },
     "just": {
       "allowed": true,
@@ -388,7 +388,7 @@ Notes:
 
 ### `.campaign/settings/local.json`
 
-Campaign-local settings managed by `camp settings`.
+Camp-local settings managed by `camp settings`.
 
 Example:
 

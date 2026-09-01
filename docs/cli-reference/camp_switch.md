@@ -14,7 +14,7 @@ Use with the shell-init wrappers for instant navigation (recommended):
   eval "$(camp shell-init zsh)"   # or bash / sh, once per shell
   camp shell-init fish | source   # fish
   csw                            # Interactive picker (local + remote machines)
-  csw my-camp                # Switch by name
+  csw my-camp                    # Switch by name
   csw a1b2                       # Switch by ID prefix
   csw obey/platform              # Switch by org-scoped selector
   csw archdtop:lance-arch        # Hop to a remote camp over ssh
@@ -29,7 +29,7 @@ camp query.
 The --print flag outputs just the path for shell integration (local only):
   cd "$(camp switch --print)"
 
-Use camp@tab to navigate to a specific location in the target campaign:
+Use camp@tab to navigate to a specific location in the target camp:
   camp switch obey-campaign@p    # Switch and navigate to projects/
   camp switch obey/platform@f    # Switch inside org and navigate to festivals/
 

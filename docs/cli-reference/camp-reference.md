@@ -4471,7 +4471,7 @@ Create an org (optionally empty) and join camps
 
 Create a first-class org, optionally joining camps to it.
 
-Run inside a camp with no camp arguments to add the current campaign:
+Run inside a camp with no camp arguments to add the current camp:
   camp org create obey
 
 Or name the camps explicitly:
@@ -6522,7 +6522,7 @@ Keys:
   global.no_color            Disable colored output
   global.commit.sync_project_refs   When true, camp p commit updates camp-root submodule pointer (default false)
   global.commit.disable_commit_tags When true, skip [campaign:…] tags on camp commits (default false; tags on)
-  local.theme_override       Campaign-local theme override (requires a camp)
+  local.theme_override       Camp-local theme override (requires a camp)
   local.commit.sync_project_refs    Camp override for project-ref sync (true/false/inherit)
   local.commit.disable_commit_tags  Camp override to skip commit subject tags (true/false/inherit)
   local.campaign.name        Camp name in .campaign/campaign.yaml
@@ -6730,7 +6730,7 @@ Add a shortcut (camp-level or project sub-shortcut)
 
 Add a shortcut for quick navigation.
 
-Campaign-level shortcut (2 args):
+Camp-level shortcut (2 args):
   Adds a navigation shortcut to .campaign/settings/jumps.yaml.
   Usage: camp shortcuts add <name> <path>
 
@@ -6852,7 +6852,7 @@ Remove a shortcut (camp-level or project sub-shortcut)
 
 Remove a shortcut.
 
-Campaign-level shortcut (1 arg):
+Camp-level shortcut (1 arg):
   Usage: camp shortcuts remove <name>
 
 Project sub-shortcut (2 args):
@@ -7252,7 +7252,7 @@ Use with the shell-init wrappers for instant navigation (recommended):
   eval "$(camp shell-init zsh)"   # or bash / sh, once per shell
   camp shell-init fish | source   # fish
   csw                            # Interactive picker (local + remote machines)
-  csw my-camp                # Switch by name
+  csw my-camp                    # Switch by name
   csw a1b2                       # Switch by ID prefix
   csw obey/platform              # Switch by org-scoped selector
   csw archdtop:lance-arch        # Hop to a remote camp over ssh
@@ -7267,7 +7267,7 @@ camp query.
 The --print flag outputs just the path for shell integration (local only):
   cd "$(camp switch --print)"
 
-Use camp@tab to navigate to a specific location in the target campaign:
+Use camp@tab to navigate to a specific location in the target camp:
   camp switch obey-campaign@p    # Switch and navigate to projects/
   camp switch obey/platform@f    # Switch inside org and navigate to festivals/
 
@@ -9015,7 +9015,7 @@ types, the recommended structured-workflow scaffold is:
   cd workflow/<type>/<slug> && fest create workflow <slug>
 
 For other types (feature, bug, chore, …), no festival scaffold is implied;
-populate campaign-governed content under the new directory as needed.
+populate camp-governed content under the new directory as needed.
 
 Use "camp workitem adopt" to attach a marker to an existing directory.
 Use --json for machine-readable identity. next.command is set only for

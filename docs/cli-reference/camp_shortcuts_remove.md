@@ -6,7 +6,7 @@ Remove a shortcut (camp-level or project sub-shortcut)
 
 Remove a shortcut.
 
-Campaign-level shortcut (1 arg):
+Camp-level shortcut (1 arg):
   Usage: camp shortcuts remove <name>
 
 Project sub-shortcut (2 args):

@@ -1,6 +1,6 @@
 # The Machine Mesh
 
-Camp can move you between machines the same way it moves you between campaigns:
+Camp can move you between machines the same way it moves you between camps:
 `csw devbox:notes` opens a shell in the `notes` camp on `devbox`. This document
 describes the model that makes that safe, and what each piece degrades to when the
 network or the far machine does not cooperate.

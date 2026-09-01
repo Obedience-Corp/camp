@@ -17,7 +17,7 @@ Keys:
   global.no_color            Disable colored output
   global.commit.sync_project_refs   When true, camp p commit updates camp-root submodule pointer (default false)
   global.commit.disable_commit_tags When true, skip [campaign:…] tags on camp commits (default false; tags on)
-  local.theme_override       Campaign-local theme override (requires a camp)
+  local.theme_override       Camp-local theme override (requires a camp)
   local.commit.sync_project_refs    Camp override for project-ref sync (true/false/inherit)
   local.commit.disable_commit_tags  Camp override to skip commit subject tags (true/false/inherit)
   local.campaign.name        Camp name in .campaign/campaign.yaml

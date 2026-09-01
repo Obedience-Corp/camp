@@ -174,7 +174,7 @@ by finding the earliest root commit (`git log --all --max-parents=0`).
 
 ## Multi-Project Aggregation
 
-Campaign-wide scores aggregate across all tracked projects:
+Camp-wide scores aggregate across all tracked projects:
 
 ```
 TotalEstPersonMonths = Σ (EstPeople_i × EstMonths_i)   for each project i

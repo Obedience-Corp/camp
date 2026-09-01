@@ -44,7 +44,7 @@ var shortcutsAddCmd = &cobra.Command{
 	Short: "Add a shortcut (camp-level or project sub-shortcut)",
 	Long: `Add a shortcut for quick navigation.
 
-Campaign-level shortcut (2 args):
+Camp-level shortcut (2 args):
   Adds a navigation shortcut to .campaign/settings/jumps.yaml.
   Usage: camp shortcuts add <name> <path>
 
@@ -68,7 +68,7 @@ var shortcutsRemoveCmd = &cobra.Command{
 	Short: "Remove a shortcut (camp-level or project sub-shortcut)",
 	Long: `Remove a shortcut.
 
-Campaign-level shortcut (1 arg):
+Camp-level shortcut (1 arg):
   Usage: camp shortcuts remove <name>
 
 Project sub-shortcut (2 args):
@@ -274,7 +274,7 @@ func printAllShortcuts(cfg *config.CampaignConfig, _ string) error {
 
 // runShortcutsAdd adds a campaign-level shortcut (2 args) or a project sub-shortcut (3 args).
 func runShortcutsAdd(cmd *cobra.Command, args []string) error {
-	// Campaign-level shortcut: 2 args
+	// Camp-level shortcut: 2 args
 	if len(args) == 2 {
 		return runShortcutsAddJump(cmd, args)
 	}
@@ -358,7 +358,7 @@ func runShortcutsAdd(cmd *cobra.Command, args []string) error {
 
 // runShortcutsRemove removes a campaign-level shortcut (1 arg) or a project sub-shortcut (2 args).
 func runShortcutsRemove(cmd *cobra.Command, args []string) error {
-	// Campaign-level shortcut: 1 arg
+	// Camp-level shortcut: 1 arg
 	if len(args) == 1 {
 		return runShortcutsRemoveJump(cmd, args)
 	}

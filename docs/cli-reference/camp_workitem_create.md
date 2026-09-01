@@ -19,7 +19,7 @@ types, the recommended structured-workflow scaffold is:
   cd workflow/<type>/<slug> && fest create workflow <slug>
 
 For other types (feature, bug, chore, …), no festival scaffold is implied;
-populate campaign-governed content under the new directory as needed.
+populate camp-governed content under the new directory as needed.
 
 Use "camp workitem adopt" to attach a marker to an existing directory.
 Use --json for machine-readable identity. next.command is set only for
