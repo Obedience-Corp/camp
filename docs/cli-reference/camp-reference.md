@@ -20,6 +20,10 @@ camp holds the projects you work on and hosts the festivals you run in them.
 Camp creates camps, manages git submodules as projects, and gives you
 lightning-fast navigation through category shortcuts and TUI fuzzy finding.
 
+Camp stores each camp's state in the .campaign/ directory. That name is
+stable, so do not rename it. The separate .camp file is an attachment marker
+for linked external directories, not a replacement for .campaign/.
+
 GETTING STARTED:
   camp init               Initialize a new camp in the current directory
   camp project list       List all projects in the camp

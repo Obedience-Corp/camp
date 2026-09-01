@@ -89,9 +89,13 @@ To run the binary without the wrapper (scripts, debugging): `command camp versio
 ## Quick Start
 
 ```bash
-# 1. Create a camp
+# 1. Create a camp (prompts for description and mission in a terminal;
+#    in scripts pass them with -d and -m)
 mkdir my-camp && cd my-camp
-camp init
+camp init -d "My first camp" -m "Learn the Festival stack"
+
+# Camp stores its state in the .campaign/ directory. That name is stable:
+# do not rename it to .camp/ (see "Names That Stay the Same" below).
 
 # 2. Add shell integration (restart shell after)
 echo 'eval "$(camp shell-init zsh)"' >> ~/.zshrc
