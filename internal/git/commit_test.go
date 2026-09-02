@@ -8,6 +8,7 @@ import (
 	"os/exec"
 	"path/filepath"
 	"runtime"
+	"slices"
 	"strings"
 	"testing"
 	"time"
@@ -1329,6 +1330,43 @@ func TestCommitScoped_UnbornHead(t *testing.T) {
 	count := runGit(t, "", nil, "-C", tmpDir, "rev-list", "--count", "HEAD")
 	if count != "1" {
 		t.Fatalf("rev-list --count HEAD = %q, want 1 (exactly one commit)", count)
+	}
+}
+
+func TestExpandTrackedPathsDiffArgsIncludesGitlinks(t *testing.T) {
+	got := expandTrackedPathsDiffArgs("/campaign", []string{"projects/camp"})
+	want := []string{
+		"-C", "/campaign", "diff", "--ignore-submodules=none", "--cached",
+		"--name-status", "-z", "--", "projects/camp",
+	}
+	if !slices.Equal(got, want) {
+		t.Fatalf("expand tracked paths args = %q, want %q", got, want)
+	}
+}
+
+func TestCommitScopedGitlinkWithIgnoreSubmodulesAll(t *testing.T) {
+	parent, sub := setupRepoWithNestedSubmodule(t)
+	if err := os.WriteFile(filepath.Join(sub, "next.txt"), []byte("next\n"), 0o644); err != nil {
+		t.Fatalf("advance submodule: %v", err)
+	}
+	runGit(t, sub, nil, "add", ".")
+	runGit(t, sub, nil, "commit", "-m", "advance gitlink")
+	runGit(t, parent, nil, "add", "vendor/tool")
+	runGit(t, parent, nil, "config", "diff.ignoreSubmodules", "all")
+
+	before := runGit(t, "", nil, "-C", parent, "rev-parse", "HEAD")
+	if err := CommitScoped(t.Context(), parent, []string{"vendor/tool"}, &CommitOptions{
+		Message: "sync: vendor/tool",
+	}); err != nil {
+		t.Fatalf("CommitScoped gitlink with ignoreSubmodules=all: %v", err)
+	}
+	after := runGit(t, "", nil, "-C", parent, "rev-parse", "HEAD")
+	if after == before {
+		t.Fatal("CommitScoped did not create a commit")
+	}
+	committed := runGit(t, "", nil, "-C", parent, "diff-tree", "--no-commit-id", "--name-only", "-r", "HEAD")
+	if committed != "vendor/tool" {
+		t.Fatalf("scoped commit paths = %q, want vendor/tool", committed)
 	}
 }
 

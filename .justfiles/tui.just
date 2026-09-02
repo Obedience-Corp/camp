@@ -100,6 +100,32 @@ machine-check-fixture:
         --host devbox.example-net.ts.net --auth tailscale-ssh --user builder >/dev/null
     echo "$fixture"
 
+[private]
+machine-auth-denied-fixture:
+    #!/usr/bin/env bash
+    set -euo pipefail
+    cd "{{root}}"
+    fixture="${CAMP_VHS_ROOT:-$(mktemp -d)}"
+    mkdir -p "$fixture/bin" "$fixture/home"
+    cp bin/camp "$fixture/bin/camp"
+    cp docs/demos/fixtures/ssh-permission-denied "$fixture/bin/ssh"
+    chmod +x "$fixture/bin"/*
+    : > "$fixture/machines.yaml"
+    HOME="$fixture/home" CAMP_MACHINES_PATH="$fixture/machines.yaml" \
+        "$fixture/bin/camp" machine add mac-studio \
+        --host mac-studio.example-net.ts.net --auth ssh-agent --user builder >/dev/null
+    echo "$fixture"
+
+pty-machine-auth-denied:
+    #!/usr/bin/env bash
+    set -euo pipefail
+    cd "{{root}}"
+    just build-camp >/dev/null
+    venv_dir="$(just tui venv)"
+    fixture="$(CAMP_VHS_ROOT="${CAMP_VHS_ROOT:-}" just tui machine-auth-denied-fixture)"
+    evidence="${CAMP_TUI_EVIDENCE_DIR:-out/evidence/machine-auth-denied}"
+    "$venv_dir/bin/python" tests/tui/machine_auth_denied_pty.py "$fixture" "$evidence"
+
 # Assert what the Tailscale-check recording cannot: the approval URL is intact
 # on ONE line in both the detail pane and the hop overlay (a link split across
 # a wrap is a link nobody can copy), and o/c hand the exact URL to the platform
@@ -116,7 +142,7 @@ pty-machine-tailscale-check:
         "$venv_dir/bin/python" tests/tui/machine_tailscale_check_pty.py "$fixture" "$evidence"
 
 # Run every pty check.
-pty: pty-triage-review pty-machine-tailscale-check pty-sweep-prompt
+pty: pty-triage-review pty-machine-tailscale-check pty-machine-auth-denied pty-sweep-prompt
 
 # Record one tape. The tape owns its output path and its fixture bootstrap.
 tape tape_path:

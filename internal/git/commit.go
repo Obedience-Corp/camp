@@ -306,8 +306,7 @@ func ExpandTrackedPathsFromTempIndex(ctx context.Context, repoPath, tmpPath stri
 	if len(paths) == 0 {
 		return nil, nil
 	}
-	args := []string{"-C", repoPath, "diff", "--cached", "--name-status", "-z", "--"}
-	args = append(args, paths...)
+	args := expandTrackedPathsDiffArgs(repoPath, paths)
 	cmd := exec.CommandContext(ctx, "git", args...)
 	cmd.Env = append(os.Environ(), "GIT_INDEX_FILE="+tmpPath)
 	output, err := cmd.CombinedOutput()
@@ -315,6 +314,15 @@ func ExpandTrackedPathsFromTempIndex(ctx context.Context, repoPath, tmpPath stri
 		return nil, camperrors.NewGit("diff --cached (temp index)", "", "", strings.TrimSpace(string(output)), err)
 	}
 	return parseNameStatusZ("diff --cached (temp index)", output)
+}
+
+func expandTrackedPathsDiffArgs(repoPath string, paths []string) []string {
+	// refs-sync intentionally scopes a commit to gitlinks. A repository-level
+	// diff.ignoreSubmodules=all setting is useful for ordinary status output,
+	// but must not make an explicitly scoped gitlink disappear from the
+	// temporary index snapshot.
+	args := []string{"-C", repoPath, "diff", "--ignore-submodules=none", "--cached", "--name-status", "-z", "--"}
+	return append(args, paths...)
 }
 
 // ResetIndexToHead updates the real index entries for paths to match HEAD.

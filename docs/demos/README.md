@@ -33,6 +33,7 @@ recording is the stable command surface a reader can install. Pass
 | Project list browser | [project-list.tape](project-list.tape) | [project-list.gif](project-list.gif) | — |
 | Deferred jobs browser | [jobs-tui.tape](jobs-tui.tape) | [jobs-tui.gif](jobs-tui.gif) | (fixture: `fixtures/jobs-tui-fixture.sh`) |
 | Tailscale SSH approval | [machine-tailscale-check.tape](machine-tailscale-check.tape) | private gist | (PR evidence bundle) |
+| OpenSSH login denied | [machine-auth-denied.tape](machine-auth-denied.tape) | private gist | (PR evidence bundle) |
 | Diagnose an unresolvable host | [machine-diagnose-dns.tape](machine-diagnose-dns.tape) | private gist | (PR evidence bundle) |
 | Hop survives a MagicDNS outage | [machine-hop-dns-fallback.tape](machine-hop-dns-fallback.tape) | private gist | (PR evidence bundle) |
 
@@ -111,6 +112,15 @@ approval URL is published. Build the fixture and assert the journey with:
 ```sh
 just tui pty-machine-tailscale-check          # asserts; builds its own fixture
 CAMP_VHS_ROOT=$FIXTURE just vhs record-color docs/demos/machine-tailscale-check.tape
+```
+
+`machine-auth-denied` shows a reachable OpenSSH server rejecting the configured
+login, then verifies that `p` stays in the TUI and names the pair command to run
+on the peer. The fixture never contacts a real machine.
+
+```bash
+just tui pty-machine-auth-denied
+CAMP_VHS_ROOT=$FIXTURE just vhs record-color docs/demos/machine-auth-denied.tape
 ```
 
 The pty check is the one that can claim the link is on a single line and that

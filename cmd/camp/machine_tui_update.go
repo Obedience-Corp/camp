@@ -64,6 +64,8 @@ func healthStatusLine(id string, health machineHealth) string {
 		return health.Detail
 	case healthCampMissing:
 		return "reached " + id + ", but camp is not installed there: " + health.Detail
+	case healthAuthDenied:
+		return "SSH login denied by " + id + ": " + health.Detail
 	default:
 		return "could not reach " + id + ": " + health.Detail
 	}
@@ -169,6 +171,8 @@ func (m *machineTUIModel) updateBrowse(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		return m.openHopPicker()
 	case "t":
 		return m, m.testSelected()
+	case "p":
+		return m, m.pairSelected()
 	case "e":
 		return m, m.openEditForm()
 	case "d":
@@ -186,6 +190,31 @@ func (m *machineTUIModel) updateBrowse(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		m.overlay = machineHelpOverlay
 	}
 	return m, nil
+}
+
+func (m *machineTUIModel) pairSelected() tea.Cmd {
+	row := m.selectedRow()
+	if row.Local {
+		m.setError(camperrors.New(`"local" is this machine; select the other machine to pair`))
+		return nil
+	}
+	if m.health[row.id()].State == healthAuthDenied {
+		// This hop just failed login. Pairing rides that same hop, so leaving
+		// the TUI would only reprint the constraint. Stay here and name the
+		// command that has to run on the peer.
+		m.setAdvice(pairFromPeerHint(row.id()))
+		return nil
+	}
+	m.pairSelection = row.id()
+	m.quitting = true
+	return tea.Quit
+}
+
+// pairFromPeerHint is the command an operator runs on the machine that can
+// already get in, targeting this machine. The placeholder stays literal: this
+// screen must not pay for a Tailscale self-id lookup just to render advice.
+func pairFromPeerHint(peerID string) string {
+	return "On " + peerID + ", run: camp machine pair <this-machine>"
 }
 
 // openHopPicker turns the highlighted machine into a hop by asking which

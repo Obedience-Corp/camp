@@ -443,6 +443,25 @@ func HopFailureDetail(err error) string {
 	return classifySSHFailure(errText(err))
 }
 
+// IsPermissionDenied reports whether ssh reached a server but that server
+// rejected the attempted login. Callers use this to keep authentication
+// failures distinct from network reachability failures.
+//
+// A far-side command can also print "permission denied" after ssh has already
+// authenticated (exit 126: present but not executable). Those are not login
+// denials — IsCampNotFound already treats 127 the same way — so a CommandError
+// must be OpenSSH's client-failure code (255) before the text is consulted.
+func IsPermissionDenied(err error) bool {
+	if err == nil {
+		return false
+	}
+	var cmdErr *camperrors.CommandError
+	if errors.As(err, &cmdErr) && cmdErr.ExitCode != 255 {
+		return false
+	}
+	return isPermissionDenied(errText(err))
+}
+
 func errText(err error) string {
 	var cmdErr *camperrors.CommandError
 	if errors.As(err, &cmdErr) && cmdErr.Stderr != "" {

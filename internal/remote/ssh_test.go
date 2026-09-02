@@ -436,6 +436,47 @@ func TestSSHExitErrorClassifiesPermissionDenied(t *testing.T) {
 	}
 }
 
+func TestIsPermissionDenied(t *testing.T) {
+	tests := []struct {
+		name string
+		err  error
+		want bool
+	}{
+		{
+			name: "openssh publickey denial",
+			err:  camperrors.NewCommand("ssh host", 255, "user@host: Permission denied (publickey).", errors.New("exit status 255")),
+			want: true,
+		},
+		{
+			name: "network timeout",
+			err:  errors.New("dial tcp: operation timed out"),
+			want: false,
+		},
+		{
+			name: "remote camp not executable",
+			err:  camperrors.NewCommand("ssh devbox", 126, "sh: camp: Permission denied", nil),
+			want: false,
+		},
+		{
+			name: "remote camp not found",
+			err:  camperrors.NewCommand("ssh devbox", 127, "camp: not found", nil),
+			want: false,
+		},
+		{
+			name: "wrapped 126 still not a login denial",
+			err:  camperrors.Wrap(camperrors.NewCommand("ssh devbox", 126, "sh: camp: Permission denied", nil), "could not resolve"),
+			want: false,
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if got := IsPermissionDenied(tt.err); got != tt.want {
+				t.Fatalf("IsPermissionDenied() = %v, want %v", got, tt.want)
+			}
+		})
+	}
+}
+
 // The auth-continuation list identifies what answered: password or
 // keyboard-interactive in the denial proves classic sshd, and the message must
 // not recommend auth_method=tailscale-ssh there — the fleet row the live
