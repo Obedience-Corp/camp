@@ -229,8 +229,8 @@ func pairPreview(p pairPlan) string {
 	fmt.Fprintf(&b, "  account   %s@%s\n", p.RemoteUser, p.Target.Host)
 
 	b.WriteString("\nThis machine (" + p.SelfID + ") will:\n")
-	fmt.Fprintf(&b, "  %-8s %s%s\n", verb(p.LocalKeyNew), p.LocalKeyPath, keyNote(p.LocalKeyNew))
-	fmt.Fprintf(&b, "  %-8s %s's public key to %s\n", "append", p.Target.ID, p.AuthKeysPath)
+	fmt.Fprintf(&b, "  %-8s %s%s\n", verb(p.LocalKeyNew), pathutil.AbbreviateHome(p.LocalKeyPath), keyNote(p.LocalKeyNew))
+	fmt.Fprintf(&b, "  %-8s %s's public key to %s\n", "append", p.Target.ID, pathutil.AbbreviateHome(p.AuthKeysPath))
 	fmt.Fprintf(&b, "  %-8s machines.yaml row %q: identity_file", "update", p.Target.ID)
 	if p.SetSSHUser {
 		b.WriteString(", ssh_user: " + p.RemoteUser)

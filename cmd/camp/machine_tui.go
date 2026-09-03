@@ -28,6 +28,7 @@ const (
 	machineDiscoverOverlay
 	machineHelpOverlay
 	machineHopOverlay
+	machinePairOverlay
 )
 
 // machineFormField indexes the fields of the add/edit form in the order they
@@ -98,6 +99,14 @@ type machineHealth struct {
 	CheckURL string
 }
 
+type machinePairState struct {
+	machineID string
+	bootstrap bool
+	busy      bool
+	err       string
+	keyPath   string
+}
+
 // machineRow is one row of the fleet list. Machine is nil for the synthetic
 // "local" row, which is the current machine and is never persisted to
 // machines.yaml, so it can be neither edited nor removed.
@@ -160,10 +169,8 @@ type machineTUIModel struct {
 	// hopSelection is the ssh-hop payload the wrapper acts on, set exactly once
 	// immediately before the final Quit.
 	hopSelection string
-	// pairSelection asks runMachineTUI to leave the alternate screen and hand
-	// the selected machine to the existing interactive pair consent flow.
-	pairSelection string
-	hop           machineHopState
+	pair         machinePairState
+	hop          machineHopState
 
 	// spin animates while a connection test or tailnet scan is out. An ssh
 	// connect can take the full ConnectTimeout before it fails, and a
@@ -236,6 +243,23 @@ type healthMsg struct {
 	health machineHealth
 }
 
+type pairBootstrapPreparedMsg struct {
+	machine machines.Machine
+	keyPath string
+	err     error
+}
+
+type pairBootstrapFinishedMsg struct {
+	machineID string
+	keyPath   string
+	err       error
+}
+
+type pairFlowFinishedMsg struct {
+	machineID string
+	err       error
+}
+
 // runMachineTUI is the human-facing entry point for a bare `camp machine`. The
 // subcommands stay the interface for scripts and agents, so a non-terminal
 // invocation keeps printing help exactly as it did before this TUI existed.
@@ -262,18 +286,7 @@ func runMachineTUI(cmd *cobra.Command, _ []string) error {
 	if err != nil {
 		return camperrors.Wrap(err, "running machine TUI")
 	}
-	if pairID := machinePairSelection(final); pairID != "" {
-		return runMachinePair(cmd, []string{pairID})
-	}
 	return writeMachineHopSelection(final, pathOutput)
-}
-
-func machinePairSelection(final tea.Model) string {
-	m, ok := final.(*machineTUIModel)
-	if !ok {
-		return ""
-	}
-	return m.pairSelection
 }
 
 // writeMachineHopSelection persists the hop the operator chose, in the same
@@ -335,7 +348,7 @@ func (m *machineTUIModel) testing() bool {
 // busy reports whether the spinner should keep ticking: a connection test, a
 // tailnet scan, or a live campaign fetch is in flight.
 func (m *machineTUIModel) busy() bool {
-	return m.testing() || m.scanning || m.hop.loading
+	return m.testing() || m.scanning || m.hop.loading || m.pair.busy
 }
 
 // listRemoteCampaignsFor is the seam a live campaign fetch resolves through, so
@@ -355,6 +368,14 @@ var listRemoteCampaignsFor = func(ctx context.Context, m *machines.Machine) ([]s
 	}
 	return names, nil
 }
+
+var (
+	machinePairGenerateKey = generateLocalKey
+	machinePairExecutable  = os.Executable
+	machinePairCopyID      = func(ctx context.Context, target machines.Machine, keyPath string) *exec.Cmd {
+		return exec.CommandContext(ctx, "ssh-copy-id", "-i", keyPath+".pub", remote.Target(&target))
+	}
+)
 
 // fetchHopCampaigns asks a machine for its campaigns in the background, stamped
 // with gen so a late finish against a closed or re-pointed overlay is dropped.

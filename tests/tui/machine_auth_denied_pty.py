@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""PTY assertions for machine login denial and TUI-to-pair handoff."""
+"""PTY assertions for zero-trust setup inside the machine TUI."""
 import fcntl
 import importlib.metadata
 import json
@@ -33,7 +33,8 @@ class Session:
                 "LINES": str(ROWS),
                 "COLUMNS": str(COLS),
                 "NO_COLOR": "1",
-                "CAMP_MACHINES_PATH": os.path.join(fixture, "machines.yaml"),
+                "CAMP_VHS_ROOT": fixture,
+                "CAMP_MACHINES_PATH": os.path.join(fixture, "home", ".obey", "machines.yaml"),
             })
         fcntl.ioctl(self.fd, termios.TIOCSWINSZ, struct.pack("HHHH", ROWS, COLS, 0, 0))
         self.drain(8.0)
@@ -93,21 +94,39 @@ def main():
     denied = session.snapshot("auth-denied")
     if "SSH login denied" not in denied:
         failures.append("detail pane does not distinguish SSH login denial")
-    if "camp machine pair <this-machine>" not in denied:
-        failures.append("detail pane does not name the pair command to run on the peer")
-    if "p pair · e edit login/key" in denied:
-        failures.append("denied-login pane advertised a pair start that cannot succeed")
+    if "p set up access" not in denied:
+        failures.append("detail pane does not offer in-TUI access setup")
     if "Could not reach it" in denied:
         failures.append("authentication failure is still presented as unreachable")
 
     session.press(b"p", 4.0)
-    stayed = session.snapshot("pair-stays-in-tui")
-    if "SSH login denied" not in stayed:
-        failures.append("p left the TUI instead of keeping the denied-login pane")
-    if "On mac-studio, run: camp machine pair <this-machine>" not in stayed:
-        failures.append("p did not name the pair command to run on the peer")
-    if "pair must run from a machine that can already reach mac-studio" in stayed:
-        failures.append("p handed off to a doomed pair hop")
+    wizard = session.snapshot("zero-trust-wizard")
+    for want in ["Set up secure access", "remote account password once", "never stores the password"]:
+        if want not in wizard:
+            failures.append("setup wizard missing %r" % want)
+
+    session.press(b"\r", 3.0)
+    password = session.snapshot("password-prompt")
+    if "password:" not in password:
+        failures.append("setup did not release the terminal for the password prompt")
+    session.press(b"camp-demo-password\r", 4.0)
+    preview = session.snapshot("pair-preview")
+    if "Exchange keys with" not in preview or "Camp will not enable a login service" not in preview:
+        failures.append("existing pair consent preview did not open after bootstrap")
+    session.press(b"y", 1.0)
+    session.press(b"\r", 6.0)
+    paired = session.snapshot("paired-and-retested")
+    if "reachable" not in paired:
+        failures.append("machine TUI did not return and retest after pairing")
+
+    with open(os.path.join(fixture, "home", ".obey", "machines.yaml")) as fh:
+        machine_config = fh.read()
+    if "identity_file:" not in machine_config or "camp_mac-studio_ed25519" not in machine_config:
+        failures.append("dedicated identity was not persisted to machines.yaml")
+    if not os.path.exists(os.path.join(fixture, "access-installed")):
+        failures.append("password bootstrap did not install access")
+    if not os.path.exists(os.path.join(fixture, "home", ".ssh", "authorized_keys")):
+        failures.append("pair flow did not install the reverse key locally")
 
     terminal = {
         "columns": COLS,
@@ -126,7 +145,7 @@ def main():
             "renderer": "pyte",
             "pyte_version": importlib.metadata.version("pyte"),
             "fake_home": True,
-            "fixture_id": "camp-machine-auth-denied-v1",
+            "fixture_id": "camp-machine-zero-trust-bootstrap-v2",
             "terminal": terminal,
         }, fh, indent=2)
     session.close()
@@ -135,7 +154,7 @@ def main():
         print("FAIL: %s" % failure, file=sys.stderr)
     if failures:
         return 1
-    print("machine-auth-denied: login state and in-TUI pair guidance verified")
+    print("machine-auth-denied: in-TUI zero-trust bootstrap and pairing verified")
     return 0
 
 

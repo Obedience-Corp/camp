@@ -1,3 +1,26 @@
-#!/bin/sh
-printf '%s\n' 'builder@mac-studio.example-net.ts.net: Permission denied (publickey,password,keyboard-interactive).' >&2
-exit 255
+#!/usr/bin/env bash
+set -euo pipefail
+
+if [ ! -f "${CAMP_VHS_ROOT:?}/access-installed" ]; then
+    printf '%s\n' 'builder@mac-studio.example-net.ts.net: Permission denied (publickey,password,keyboard-interactive).' >&2
+    exit 255
+fi
+
+command_line="${*: -1}"
+case "$command_line" in
+    *'id -un;'*)
+        printf 'builder\n-\n'
+        ;;
+    *'ssh-keygen -t ed25519'*)
+        printf '%s\n' 'ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIDemonstrationOnlyKeyMaterial camp-mac-studio-to-thinkpad'
+        ;;
+    *'authorized_keys'*)
+        printf 'added\n'
+        ;;
+    *'machine list --json'*)
+        printf '%s\n' '{"machines":[]}'
+        ;;
+    *'--version'*)
+        printf 'camp version v0.7.0 (demo)\n'
+        ;;
+esac

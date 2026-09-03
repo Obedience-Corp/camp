@@ -114,9 +114,11 @@ just tui pty-machine-tailscale-check          # asserts; builds its own fixture
 CAMP_VHS_ROOT=$FIXTURE just vhs record-color docs/demos/machine-tailscale-check.tape
 ```
 
-`machine-auth-denied` shows a reachable OpenSSH server rejecting the configured
-login, then verifies that `p` stays in the TUI and names the pair command to run
-on the peer. The fixture never contacts a real machine.
+`machine-auth-denied` shows a reachable OpenSSH server rejecting every key in
+both directions. From `p`, the TUI creates a dedicated Camp key, releases the
+terminal for one fixture password prompt, continues through the existing pair
+preview and confirmation, then returns and retests the machine. The fixture
+never contacts a real machine and the password is never stored.
 
 ```bash
 just tui pty-machine-auth-denied

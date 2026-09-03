@@ -443,18 +443,18 @@ func TestTestSelectedRefusesLocal(t *testing.T) {
 	}
 }
 
-func TestPairSelectedHandsRemoteToPairFlow(t *testing.T) {
+func TestPairSelectedOpensPairFlowInTUI(t *testing.T) {
 	m := newMachineTUIModel(t.Context(), fleetFile())
 	m.cursor = machineRowIndex(m, "devbox")
 
-	if cmd := m.pairSelected(); cmd == nil {
-		t.Fatal("pairing a remote machine should quit into the pair flow")
+	if cmd := m.pairSelected(); cmd != nil {
+		t.Fatal("opening the pair overlay should not start work")
 	}
-	if got := machinePairSelection(m); got != "devbox" {
-		t.Fatalf("pair selection = %q, want devbox", got)
+	if m.overlay != machinePairOverlay || m.pair.machineID != "devbox" {
+		t.Fatalf("pair state = overlay %v, id %q", m.overlay, m.pair.machineID)
 	}
-	if !m.quitting {
-		t.Fatal("pair selection must leave the alternate screen before prompting")
+	if m.quitting || m.pair.bootstrap {
+		t.Fatal("reachable pairing should stay in the TUI and skip password bootstrap")
 	}
 }
 
@@ -470,19 +470,22 @@ func TestPairSelectedRefusesLocal(t *testing.T) {
 	}
 }
 
-func TestPairSelectedKeepsDeniedLoginInTUI(t *testing.T) {
+func TestPairSelectedOffersDeniedLoginBootstrap(t *testing.T) {
 	m := newMachineTUIModel(t.Context(), fleetFile())
 	m.cursor = machineRowIndex(m, "devbox")
-	m.health["devbox"] = machineHealth{State: healthAuthDenied, Detail: "SSH permission denied (publickey)"}
+	m.health["devbox"] = machineHealth{State: healthAuthDenied, Detail: "SSH permission denied (publickey,password)"}
 
 	if cmd := m.pairSelected(); cmd != nil {
-		t.Fatal("denied login must not quit into a doomed pair hop")
+		t.Fatal("denied login should open the setup overlay before running anything")
 	}
-	if m.quitting || machinePairSelection(m) != "" {
-		t.Fatal("denied login must stay in the TUI")
+	if m.quitting || m.overlay != machinePairOverlay || !m.pair.bootstrap {
+		t.Fatal("denied login must offer bootstrap inside the TUI")
 	}
-	if m.statusKind != statusAdvice || !strings.Contains(m.status, pairFromPeerHint("devbox")) {
-		t.Fatalf("status = %q, want peer pair command", m.status)
+	joined := strings.Join(m.pairBody(), "\n")
+	for _, want := range []string{"Set up secure access", "remote account password once", "never stores the password"} {
+		if !strings.Contains(joined, want) {
+			t.Errorf("pair bootstrap missing %q:\n%s", want, joined)
+		}
 	}
 }
 
@@ -508,18 +511,15 @@ func TestHealthBadgeAndStatusWording(t *testing.T) {
 	}
 }
 
-func TestHealthSectionExplainsDeniedLoginAndPairConstraint(t *testing.T) {
+func TestHealthSectionOffersDeniedLoginSetup(t *testing.T) {
 	m := newMachineTUIModel(t.Context(), fleetFile())
 	m.health["devbox"] = machineHealth{State: healthAuthDenied, Detail: "SSH permission denied (publickey)"}
 
 	joined := strings.Join(m.healthSection("devbox", 72), "\n")
-	for _, want := range []string{"SSH login denied", "e edit login/key", pairFromPeerHint("devbox")} {
+	for _, want := range []string{"SSH login denied", "p set up access", "e edit login/key"} {
 		if !strings.Contains(joined, want) {
 			t.Errorf("denied-login pane missing %q:\n%s", want, joined)
 		}
-	}
-	if strings.Contains(joined, "p pair") {
-		t.Errorf("denied-login pane advertised a pair start that cannot succeed:\n%s", joined)
 	}
 	if strings.Contains(joined, "Could not reach it") {
 		t.Errorf("denied login still presented as network failure:\n%s", joined)
