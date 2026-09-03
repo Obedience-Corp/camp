@@ -101,7 +101,7 @@ func TestIntegration_GuardRefusesCampaignRootFilePerFile(t *testing.T) {
 	require.NoError(t, err, "the commit must still succeed; output:\n%s", output)
 
 	assert.Contains(t, output, "render.mov")
-	assert.Contains(t, output, "sits at the campaign root; camp will not make the campaign an artifact root")
+	assert.Contains(t, output, "sits at the camp root; camp will not make the camp an artifact root")
 	assert.Contains(t, output, "camp artifacts add")
 
 	committed := tc.GitOutput(t, campPath, "show", "--name-only", "--format=", latestUserCommit(t, tc, campPath))

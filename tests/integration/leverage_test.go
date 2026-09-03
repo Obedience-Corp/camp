@@ -76,7 +76,7 @@ func TestLeverage_TableOutput(t *testing.T) {
 	require.NoError(t, err, "camp leverage should succeed: %s", output)
 
 	for _, want := range []string{
-		"Campaign Leverage:",
+		"Camp Leverage:",
 		"COCOMO Estimate:",
 		"person-months",
 		"Actual Effort:",
@@ -401,7 +401,7 @@ func TestLeverage_Autocommit(t *testing.T) {
 
 		message := tc.GitOutput(t, root, "log", "-1", "--format=%B")
 		assert.Contains(t, message, "leverage: update scores", "subject: %s", message)
-		assert.Contains(t, message, "Campaign Leverage:", "body should carry the report: %s", message)
+		assert.Contains(t, message, "Camp Leverage:", "body should carry the report: %s", message)
 		assert.NotContains(t, message, "\x1b[", "body must not carry terminal escapes: %q", message)
 
 		files := tc.GitOutput(t, root, "show", "--name-only", "--format=", "HEAD")

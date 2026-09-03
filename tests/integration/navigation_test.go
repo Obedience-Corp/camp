@@ -27,7 +27,7 @@ func TestGo_NotInCampaign_NoArgs(t *testing.T) {
 	// Try to use go command without args outside campaign
 	output, err := tc.RunCampInDir("/test", "go")
 	require.Error(t, err, "camp go should fail outside campaign without args")
-	assert.Contains(t, strings.ToLower(output), "not inside a campaign", "error should mention not in campaign")
+	assert.Contains(t, strings.ToLower(output), "not inside a camp", "error should mention not in camp")
 }
 
 func TestGo_DirectJumpToProject(t *testing.T) {
@@ -371,7 +371,7 @@ func TestShortcuts_NotInCampaign(t *testing.T) {
 	output, err := tc.RunCampInDir("/test", "go", "p", "--print")
 	// Should fail because we're not in a campaign
 	require.Error(t, err, "shortcut 'p' should fail outside a campaign")
-	assert.Contains(t, strings.ToLower(output), "not inside a campaign", "error should mention not in campaign")
+	assert.Contains(t, strings.ToLower(output), "not inside a camp", "error should mention not in camp")
 }
 
 // TestShortcuts_HelpNotInCampaign verifies help shows appropriate message when not in campaign
@@ -381,7 +381,7 @@ func TestShortcuts_HelpNotInCampaign(t *testing.T) {
 	// Get help outside a campaign
 	output, err := tc.RunCampInDir("/test", "go", "--help")
 	require.NoError(t, err, "help should work outside campaign")
-	assert.Contains(t, output, "Not in a campaign", "help should show not in campaign message")
+	assert.Contains(t, output, "Not in a camp", "help should show not in camp message")
 	assert.Contains(t, output, "camp init", "help should suggest camp init")
 }
 
@@ -460,6 +460,6 @@ func TestShortcuts_CommandNotInCampaign(t *testing.T) {
 	// Run shortcuts command outside a campaign
 	output, err := tc.RunCampInDir("/test", "shortcuts")
 	require.NoError(t, err, "shortcuts command should succeed but show not in campaign message")
-	assert.Contains(t, output, "Not in a campaign", "output should indicate not in campaign")
+	assert.Contains(t, output, "Not in a camp", "output should indicate not in camp")
 	assert.Contains(t, output, "camp init", "output should suggest camp init")
 }

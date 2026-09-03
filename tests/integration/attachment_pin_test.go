@@ -99,8 +99,8 @@ func TestAttachmentPin_RejectsExternalWithoutMarker(t *testing.T) {
 
 	output, err := tc.RunCampInDir(campaignPath, "pin", "should-fail", externalPath)
 	require.Error(t, err, "pin of unattached external path should fail; got output: %s", output)
-	assert.Contains(t, output, "outside the campaign root",
-		"error should mention outside-campaign-root")
+	assert.Contains(t, output, "outside the camp root",
+		"error should mention outside-camp-root")
 	assert.Contains(t, output, "camp attach",
 		"error hint should point user at camp attach")
 }
@@ -119,7 +119,7 @@ func TestAttachmentPin_RejectsAttachInsideCampaign(t *testing.T) {
 		"cd "+campaignPath+" && /camp attach "+campaignPath+"/docs 2>&1")
 	require.NoError(t, err)
 	require.NotEqual(t, 0, exitCode, "attach inside campaign tree should fail")
-	assert.Contains(t, output, "already inside campaign root",
+	assert.Contains(t, output, "already inside camp root",
 		"error should explain why the path was rejected")
 }
 
@@ -146,9 +146,9 @@ func TestAttachmentPin_RejectsAttachInsideOtherCampaign(t *testing.T) {
 	require.NoError(t, err)
 	require.NotEqual(t, 0, exitCode, "attach into another campaign should fail")
 	assert.True(t,
-		strings.Contains(output, "already inside a different campaign") ||
-			strings.Contains(output, "already inside campaign root"),
-		"error should refuse the cross-campaign attach; got: %s", output)
+		strings.Contains(output, "already inside a different camp") ||
+			strings.Contains(output, "already inside camp root"),
+		"error should refuse the cross-camp attach; got: %s", output)
 
 	exists, err := tc.CheckFileExists(insideB + "/.camp")
 	require.NoError(t, err)

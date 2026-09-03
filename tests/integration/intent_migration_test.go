@@ -113,7 +113,7 @@ func TestInitRepair_RemovesLegacyIntentScaffoldResidue(t *testing.T) {
 
 	output, err := tc.RunCampInDir(path, "init", "--repair", "--yes")
 	require.NoError(t, err, "camp init --repair should clean duplicate legacy scaffold:\n%s", output)
-	assert.Contains(t, output, "Campaign Repaired")
+	assert.Contains(t, output, "Camp repaired")
 
 	canonicalDirExists, err := tc.CheckDirExists(path + "/.campaign/intents")
 	require.NoError(t, err)

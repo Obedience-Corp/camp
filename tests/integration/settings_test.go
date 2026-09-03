@@ -27,7 +27,7 @@ func skipUnlessSettingsTTYTests(t *testing.T) {
 
 // Navigation for the catalog-driven settings menus. The global config.json
 // fields live under the "Global config" entry (one row per file), so reaching
-// Campaigns Dir is: top -> Global -> Global config -> Campaigns Dir. huh aborts
+// Camps Dir is: top -> Global -> Global config -> Camps Dir. huh aborts
 // a form on Ctrl+C (\x03), which backs out one menu level at a time.
 const (
 	enterGlobal       = "\r"             // top menu: Global is the first row
@@ -46,8 +46,8 @@ func TestCampSettings_CampaignsDirEditAndClear(t *testing.T) {
 		[]InteractiveStep{
 			{WaitFor: "Select configuration scope", Input: enterGlobal},
 			{WaitFor: "Files under", Input: openGlobalConfig},
-			{WaitFor: "Campaigns Dir", Input: openCampaignsDir},
-			{WaitFor: "Where 'camp create' places new campaigns", Input: "/tmp/settings-campaigns\r"},
+			{WaitFor: "Camps Dir", Input: openCampaignsDir},
+			{WaitFor: "Where 'camp create' places new camps", Input: "/tmp/settings-campaigns\r"},
 			{WaitFor: "/tmp/settings-campaigns", Input: abortForm},    // config sub-menu shows new value; back out
 			{WaitFor: "Files under", Input: abortForm},                // global menu; back out
 			{WaitFor: "Select configuration scope", Input: abortForm}, // top menu; exit
@@ -55,7 +55,7 @@ func TestCampSettings_CampaignsDirEditAndClear(t *testing.T) {
 		"--no-color", "settings",
 	)
 	require.NoError(t, err, "camp settings should save Campaigns Dir; output:\n%s", output)
-	assert.Contains(t, output, "Campaigns Dir")
+	assert.Contains(t, output, "Camps Dir")
 
 	configJSON, err := tc.ReadFile("/root/.obey/campaign/config.json")
 	require.NoError(t, err)
@@ -67,7 +67,7 @@ func TestCampSettings_CampaignsDirEditAndClear(t *testing.T) {
 			{WaitFor: "Select configuration scope", Input: enterGlobal},
 			{WaitFor: "Files under", Input: openGlobalConfig},
 			{WaitFor: "/tmp/settings-campaigns", Input: openCampaignsDir},
-			{WaitFor: "Where 'camp create' places new campaigns", Input: clearInputAndSave},
+			{WaitFor: "Where 'camp create' places new camps", Input: clearInputAndSave},
 			{WaitFor: "~/campaigns", Input: abortForm},
 			{WaitFor: "Files under", Input: abortForm},
 			{WaitFor: "Select configuration scope", Input: abortForm},

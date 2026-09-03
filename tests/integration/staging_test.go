@@ -120,7 +120,7 @@ func TestIntegration_ComputePlan_ExplicitWorkitem(t *testing.T) {
 
 	plan := runStagingPlan(t, tc, dir,
 		"--workitem", "design-example-2026-05-24")
-	assert.Equal(t, "campaign root", plan.Context, "context: %+v", plan)
+	assert.Equal(t, "camp root", plan.Context, "context: %+v", plan)
 	assert.Contains(t, plan.Stage, "workflow/design/example/spec.md", "stage: %+v", plan)
 }
 

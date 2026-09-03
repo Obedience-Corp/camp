@@ -218,7 +218,7 @@ func TestIntegration_ArtifactsAddDryRunStillValidates(t *testing.T) {
 		{
 			name: "escaping path",
 			args: []string{"artifacts", "add", "../outside", "--dry-run"},
-			want: "escapes the campaign root",
+			want: "escapes the camp root",
 		},
 		{
 			name: "path under .campaign",

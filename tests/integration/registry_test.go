@@ -161,9 +161,10 @@ func TestRegister_NotACampaign(t *testing.T) {
 	// May succeed if it prompts to init, or fail - check output for appropriate message
 	if err != nil {
 		assert.True(t,
-			strings.Contains(strings.ToLower(output), "not a campaign") ||
+			strings.Contains(strings.ToLower(output), "not a camp") ||
+				strings.Contains(strings.ToLower(output), "no camp found") ||
 				strings.Contains(strings.ToLower(output), "initialize"),
-			"error should mention not a campaign or offer to initialize")
+			"error should mention not a camp or offer to initialize")
 	}
 }
 

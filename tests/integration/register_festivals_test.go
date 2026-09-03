@@ -37,7 +37,7 @@ func TestRegister_InitializesFestivals(t *testing.T) {
 	// register prompts before initializing, so the confirmation is piped in.
 	output := tc.Shell(t, fmt.Sprintf("printf 'y\\n' | /camp register %s --name register-bare-dir 2>&1", path))
 
-	require.Contains(t, output, "Initialized and registered campaign",
+	require.Contains(t, output, "Initialized and registered camp",
 		"register should report initializing the campaign; output: %s", output)
 
 	exists, err := tc.CheckDirExists(path + "/festivals")

@@ -34,7 +34,7 @@ func TestCampCreate_HappyPath(t *testing.T) {
 		"--path", base,
 	)
 	require.NoError(t, err, "camp create should succeed; output: %s", output)
-	assert.Contains(t, output, "Campaign Initialized", "output should confirm initialization")
+	assert.Contains(t, output, "Camp created", "output should confirm initialization")
 
 	// Target directory should exist.
 	exists, err := tc.CheckDirExists(base + "/my-campaign")
@@ -145,7 +145,7 @@ func TestCampCreate_CollisionEmpty(t *testing.T) {
 		"--path", base,
 	)
 	require.NoError(t, err, "camp create into empty dir should succeed; output: %s", output)
-	assert.Contains(t, output, "Campaign Initialized")
+	assert.Contains(t, output, "Camp created")
 }
 
 // TestCampCreate_CollisionNonEmpty pre-creates a non-empty target without a
