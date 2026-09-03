@@ -109,9 +109,12 @@ machine-auth-denied-fixture:
     mkdir -p "$fixture/bin" "$fixture/home"
     cp bin/camp "$fixture/bin/camp"
     cp docs/demos/fixtures/ssh-permission-denied "$fixture/bin/ssh"
+    cp docs/demos/fixtures/ssh-copy-id-password "$fixture/bin/ssh-copy-id"
+    cp docs/demos/fixtures/tailscale "$fixture/bin/tailscale"
     chmod +x "$fixture/bin"/*
-    : > "$fixture/machines.yaml"
-    HOME="$fixture/home" CAMP_MACHINES_PATH="$fixture/machines.yaml" \
+    mkdir -p "$fixture/home/.obey"
+    : > "$fixture/home/.obey/machines.yaml"
+    HOME="$fixture/home" CAMP_MACHINES_PATH="$fixture/home/.obey/machines.yaml" \
         "$fixture/bin/camp" machine add mac-studio \
         --host mac-studio.example-net.ts.net --auth ssh-agent --user builder >/dev/null
     echo "$fixture"

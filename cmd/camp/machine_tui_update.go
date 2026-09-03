@@ -2,6 +2,7 @@ package main
 
 import (
 	"fmt"
+	"os/exec"
 	"strings"
 
 	camperrors "github.com/Obedience-Corp/camp/internal/errors"
@@ -41,6 +42,12 @@ func (m *machineTUIModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.statusKind = statusError
 		}
 		return m, nil
+	case pairBootstrapPreparedMsg:
+		return m.applyPairBootstrapPrepared(msg)
+	case pairBootstrapFinishedMsg:
+		return m.applyPairBootstrapFinished(msg)
+	case pairFlowFinishedMsg:
+		return m.applyPairFlowFinished(msg)
 	case tea.KeyMsg:
 		if m.overlay != machineNoOverlay {
 			return m.updateOverlay(msg)
@@ -198,23 +205,100 @@ func (m *machineTUIModel) pairSelected() tea.Cmd {
 		m.setError(camperrors.New(`"local" is this machine; select the other machine to pair`))
 		return nil
 	}
-	if m.health[row.id()].State == healthAuthDenied {
-		// This hop just failed login. Pairing rides that same hop, so leaving
-		// the TUI would only reprint the constraint. Stay here and name the
-		// command that has to run on the peer.
-		m.setAdvice(pairFromPeerHint(row.id()))
-		return nil
+	m.pair = machinePairState{
+		machineID: row.id(),
+		bootstrap: m.health[row.id()].State == healthAuthDenied,
 	}
-	m.pairSelection = row.id()
-	m.quitting = true
-	return tea.Quit
+	m.overlay = machinePairOverlay
+	return nil
 }
 
-// pairFromPeerHint is the command an operator runs on the machine that can
-// already get in, targeting this machine. The placeholder stays literal: this
-// screen must not pay for a Tailscale self-id lookup just to render advice.
-func pairFromPeerHint(peerID string) string {
-	return "On " + peerID + ", run: camp machine pair <this-machine>"
+func (m *machineTUIModel) preparePairBootstrap() tea.Cmd {
+	target, ok := m.machineByID(m.pair.machineID)
+	if !ok {
+		return func() tea.Msg {
+			return pairBootstrapPreparedMsg{err: camperrors.New("selected machine is no longer configured")}
+		}
+	}
+	m.pair.busy = true
+	m.pair.err = ""
+	return func() tea.Msg {
+		keyPath, err := localKeyPath(target.ID)
+		if err != nil {
+			return pairBootstrapPreparedMsg{err: err}
+		}
+		_, err = machinePairGenerateKey(keyPath, "camp-to-"+target.ID)
+		return pairBootstrapPreparedMsg{machine: target, keyPath: keyPath, err: err}
+	}
+}
+
+func (m *machineTUIModel) applyPairBootstrapPrepared(msg pairBootstrapPreparedMsg) (tea.Model, tea.Cmd) {
+	if msg.err != nil {
+		m.pair.busy = false
+		m.pair.err = msg.err.Error()
+		return m, nil
+	}
+	m.pair.keyPath = msg.keyPath
+	command := machinePairCopyID(m.ctx, msg.machine, msg.keyPath)
+	return m, tea.ExecProcess(command, func(err error) tea.Msg {
+		return pairBootstrapFinishedMsg{machineID: msg.machine.ID, keyPath: msg.keyPath, err: err}
+	})
+}
+
+func (m *machineTUIModel) applyPairBootstrapFinished(msg pairBootstrapFinishedMsg) (tea.Model, tea.Cmd) {
+	m.pair.busy = false
+	if msg.err != nil {
+		m.pair.err = "Password setup did not finish: " + msg.err.Error()
+		return m, nil
+	}
+	target, ok := m.machineByID(msg.machineID)
+	if !ok {
+		m.pair.err = "Machine was removed before access setup finished."
+		return m, nil
+	}
+	target.AuthMethod = machines.AuthSSHAgent
+	target.IdentityFile = msg.keyPath
+	m.file.Upsert(target)
+	if err := m.file.Save(); err != nil {
+		m.pair.err = err.Error()
+		return m, nil
+	}
+	m.pair.bootstrap = false
+	m.pair.err = ""
+	return m, m.runPairFlow()
+}
+
+func (m *machineTUIModel) runPairFlow() tea.Cmd {
+	id := m.pair.machineID
+	m.pair.busy = true
+	executable, err := machinePairExecutable()
+	if err != nil {
+		return func() tea.Msg { return pairFlowFinishedMsg{machineID: id, err: err} }
+	}
+	command := exec.CommandContext(m.ctx, executable, "machine", "pair", id)
+	return tea.ExecProcess(command, func(err error) tea.Msg {
+		return pairFlowFinishedMsg{machineID: id, err: err}
+	})
+}
+
+func (m *machineTUIModel) applyPairFlowFinished(msg pairFlowFinishedMsg) (tea.Model, tea.Cmd) {
+	m.pair.busy = false
+	m.overlay = machineNoOverlay
+	if err := m.reload(msg.machineID); err != nil {
+		m.setError(err)
+		return m, nil
+	}
+	if msg.err != nil {
+		m.setAdvice("Pairing did not finish; testing the access that was established.")
+	} else {
+		m.setStatus("Pair flow complete · testing both access and camp...")
+	}
+	target, ok := m.machineByID(msg.machineID)
+	if !ok {
+		return m, nil
+	}
+	m.health[msg.machineID] = machineHealth{State: healthTesting}
+	return m, tea.Batch(m.spin.Tick, m.probeSockets(), m.testMachine(target))
 }
 
 // openHopPicker turns the highlighted machine into a hop by asking which
@@ -478,9 +562,32 @@ func (m *machineTUIModel) updateOverlay(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		return m.updateForm(msg)
 	case machineHopOverlay:
 		return m.updateHop(msg)
+	case machinePairOverlay:
+		return m.updatePairOverlay(msg)
 	default:
 		return m, nil
 	}
+}
+
+func (m *machineTUIModel) updatePairOverlay(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
+	if m.pair.busy {
+		return m, nil
+	}
+	switch msg.String() {
+	case "esc", "q":
+		m.overlay = machineNoOverlay
+		m.pair = machinePairState{}
+	case "e":
+		m.overlay = machineNoOverlay
+		m.pair = machinePairState{}
+		return m, m.openEditForm()
+	case "enter":
+		if m.pair.bootstrap {
+			return m, m.preparePairBootstrap()
+		}
+		return m, m.runPairFlow()
+	}
+	return m, nil
 }
 
 func (m *machineTUIModel) updateDelete(msg tea.KeyMsg) (tea.Model, tea.Cmd) {

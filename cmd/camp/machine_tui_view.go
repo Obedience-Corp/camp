@@ -236,7 +236,7 @@ func (m *machineTUIModel) renderDetailPane(lay machineLayout) string {
 		machineDetailRow("SSH user", machine.SSHUser, "your login name"),
 	)
 	if machine.IdentityFile != "" {
-		lines = append(lines, machineDetailRow("Key", machine.IdentityFile, ""))
+		lines = append(lines, machineDetailRow("Key", pathutil.AbbreviateHome(machine.IdentityFile), ""))
 	}
 
 	lines = append(lines, "")
@@ -279,11 +279,7 @@ func (m *machineTUIModel) healthSection(id string, width int) []string {
 		for _, line := range healthDetailLines(health.Detail, max(width-4, 20), false) {
 			lines = append(lines, machineMuted.Render("  "+line))
 		}
-		lines = append(lines, machineMuted.Render("  e edit login/key · t retry"))
-		for _, line := range wrapDisplayWidth(pairFromPeerHint(id), max(width-4, 20)) {
-			lines = append(lines, machineMuted.Render("  "+line))
-		}
-		return lines
+		return append(lines, machineMuted.Render("  p set up access · e edit login/key · t retry"))
 	case healthCampMissing:
 		// ssh got in; the machine simply has no camp where camp looks. Say
 		// that, not "unreachable", or the operator debugs the network.
@@ -572,7 +568,7 @@ func (m *machineTUIModel) overlayView() string {
 			machineTitleStyle.Render("Keys"),
 			machinePrimary.Render("  enter  pick a camp on the selected machine and hop"),
 			machinePrimary.Render("  t  test whether camp can reach the selected machine"),
-			machinePrimary.Render("  p  pair by exchanging dedicated ssh keys (one direction must work)"),
+			machinePrimary.Render("  p  connect or pair, including first-key setup"),
 			machinePrimary.Render("  a  add a machine by hand"),
 			machinePrimary.Render("  s  scan your Tailscale network and pick a device"),
 			machinePrimary.Render("  e  edit      d  remove      j/k  move"),
@@ -601,6 +597,8 @@ func (m *machineTUIModel) overlayView() string {
 		body = m.formBody()
 	case machineHopOverlay:
 		body = m.hopBody()
+	case machinePairOverlay:
+		body = m.pairBody()
 	}
 
 	inner := m.overlayInnerWidth()
@@ -609,6 +607,47 @@ func (m *machineTUIModel) overlayView() string {
 	canvas := lipgloss.Place(lay.width, lay.height, lipgloss.Center, lipgloss.Center, box,
 		lipgloss.WithWhitespaceBackground(machineTUIPal.BgOverlay))
 	return ui.FitFullscreenView(canvas, lay.height)
+}
+
+func (m *machineTUIModel) pairBody() []string {
+	title := machineTitleStyle.Render("Connect " + m.pair.machineID)
+	if m.pair.busy {
+		return []string{
+			title,
+			"",
+			machinePrimary.Render(m.spin.View() + " Waiting for secure setup to finish..."),
+			machineMuted.Render("Complete the prompt in the terminal. Camp will return here."),
+		}
+	}
+	if m.pair.bootstrap {
+		body := []string{
+			title,
+			"",
+			machinePrimary.Render("Camp reached this computer, but it rejected every key."),
+			"",
+			machinePrimary.Render("Set up secure access from this screen:"),
+			machineMuted.Render("  1. Create a dedicated key under ~/.obey/keys."),
+			machineMuted.Render("  2. Ask for the remote account password once."),
+			machineMuted.Render("  3. Install the key, finish pairing, and test again."),
+			"",
+			machineMuted.Render("Camp never stores the password or changes ~/.ssh/id_*."),
+		}
+		if m.pair.err != "" {
+			body = append(body, "", machineErrorStyle.Render(m.pair.err))
+		}
+		return append(body, "", machineHelpStyle.Render("enter set up access · e edit login · esc cancel"))
+	}
+	body := []string{
+		title,
+		"",
+		machinePrimary.Render("Camp will exchange dedicated keys for both directions."),
+		machineMuted.Render("The existing preview and confirmation will open here,"),
+		machineMuted.Render("then this machine screen will return and test the result."),
+	}
+	if m.pair.err != "" {
+		body = append(body, "", machineErrorStyle.Render(m.pair.err))
+	}
+	return append(body, "", machineHelpStyle.Render("enter review pairing · esc cancel"))
 }
 
 // hopBody renders the campaign picker for a hop. It always says where the list
