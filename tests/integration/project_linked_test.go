@@ -194,7 +194,7 @@ func TestProject_Link_RejectsRepoAlreadyLinkedToAnotherCampaign(t *testing.T) {
 
 	output, err := tc.RunCampInDir(campaignB, "project", "link", linkedPath)
 	require.Error(t, err, "second campaign should be rejected")
-	assert.Contains(t, output, "already linked to another campaign")
+	assert.Contains(t, output, "already linked to another camp")
 	assert.Contains(t, output, campaignA)
 
 	marker, err := tc.ReadFile(linkedPath + "/.camp")

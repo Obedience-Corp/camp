@@ -67,7 +67,7 @@ func TestDungeonMove_TriageToDocsRequiresExistingSubdirectory(t *testing.T) {
 	)
 	assert.Error(t, err)
 	assert.Contains(t, output, "invalid docs destination", "error should explain destination rules")
-	assert.Contains(t, output, "does not exist under campaign-root docs", "error should require existing docs subdirectory")
+	assert.Contains(t, output, "does not exist under camp-root docs", "error should require existing docs subdirectory")
 
 	exists, statErr := tc.CheckFileExists(path + "/legacy-notes.md")
 	require.NoError(t, statErr)

@@ -70,7 +70,7 @@ func TestRoot_NotInCampaign(t *testing.T) {
 
 	output, err := tc.RunCampInDir("/test", "root")
 	require.Error(t, err, "camp root should fail outside a campaign")
-	assert.Contains(t, strings.ToLower(output), "campaign", "error should mention campaign detection")
+	assert.Contains(t, strings.ToLower(output), "not inside a camp", "error should mention camp detection")
 }
 
 func TestRoot_RespectsCampRootOverrideOutsideCampaign(t *testing.T) {

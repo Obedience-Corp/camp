@@ -17,7 +17,7 @@ func TestInit_BasicCampaign(t *testing.T) {
 	// Initialize a basic campaign
 	output, err := tc.InitCampaign("/campaigns/test-basic", "test-basic", "")
 	require.NoError(t, err, "camp init should succeed")
-	assert.Contains(t, output, "Campaign Initialized", "output should confirm initialization")
+	assert.Contains(t, output, "Camp created", "output should confirm initialization")
 
 	// Verify .campaign directory was created
 	exists, err := tc.CheckDirExists("/campaigns/test-basic/.campaign")
@@ -36,7 +36,7 @@ func TestInit_WithType(t *testing.T) {
 	// Initialize campaign with type
 	output, err := tc.InitCampaign("/campaigns/test-product", "test-product", "product")
 	require.NoError(t, err, "camp init with type should succeed")
-	assert.Contains(t, output, "Campaign Initialized")
+	assert.Contains(t, output, "Camp created")
 
 	// Verify config has correct type
 	content, err := tc.ReadFile("/campaigns/test-product/.campaign/campaign.yaml")
@@ -54,7 +54,7 @@ func TestInit_AllTypes(t *testing.T) {
 			path := "/campaigns/test-" + campType
 			output, err := tc.InitCampaign(path, "test-"+campType, campType)
 			require.NoError(t, err, "camp init with type %s should succeed", campType)
-			assert.Contains(t, output, "Campaign Initialized")
+			assert.Contains(t, output, "Camp created")
 
 			content, err := tc.ReadFile(path + "/.campaign/campaign.yaml")
 			require.NoError(t, err)
@@ -264,7 +264,7 @@ func TestInit_MissingName(t *testing.T) {
 	// Try to initialize without name - should use directory name
 	output, err := tc.RunCamp("init", "/campaigns/auto-named-campaign", "-d", "Test", "-m", "Test")
 	require.NoError(t, err, "camp init without name should succeed (uses dir name)")
-	assert.Contains(t, output, "Campaign Initialized")
+	assert.Contains(t, output, "Camp created")
 
 	// Verify config uses directory name
 	content, err := tc.ReadFile("/campaigns/auto-named-campaign/.campaign/campaign.yaml")
