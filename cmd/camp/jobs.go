@@ -699,6 +699,20 @@ func suppressesNotices(cmd *cobra.Command) bool {
 // stopped would be the same as no notice for anyone who was not watching that
 // terminal. It is one terse line on purpose: it repeats often, and the detail
 // is one command away.
+//
+// The line names the recovery command as well as where to look. Saying only
+// "camp jobs" made the notice something to read rather than something to act
+// on, and a user who saw it, did not stop what they were doing, and never came
+// back is the failure mode this notice exists to prevent — it is how the
+// conflict in this campaign's worker log went unnoticed for a day.
+//
+// Retry is named unconditionally here even though the `camp jobs` footer is
+// careful to withhold it for conflicts that can never succeed. The footer has
+// already run the git probe that decides which case a job is in; this hook runs
+// before every foreground command and must cost a single failed ReadDir, so it
+// cannot. Of the two possible wrongs, a user who retries once and is then told
+// by the listing to drop the job has lost a second, and a user who never learns
+// the command has lost the commit.
 func renderFailedJobNotice(campRoot string) {
 	n := jobs.FailedCount(campRoot)
 	if n == 0 {
@@ -709,5 +723,6 @@ func renderFailedJobNotice(campRoot string) {
 		noun = "commit"
 	}
 	_, _ = fmt.Fprintln(os.Stderr, ui.Warning(
-		fmt.Sprintf("! %d deferred %s failed (camp jobs)", n, noun)))
+		fmt.Sprintf("! %d deferred %s failed · retry: camp jobs retry all · why: camp jobs",
+			n, noun)))
 }

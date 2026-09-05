@@ -40,9 +40,10 @@ func TestEmptyCommitTreeIsNoop(t *testing.T) {
 	}
 }
 
-// A writer failure fails the job. Camp must not invent a subject and must not
-// land a commit.
-func TestWriterFailureDoesNotInventMessage(t *testing.T) {
+// A writer failure does not fail the job. Execution carries on to the commit
+// with a subject camp derived itself, so whatever the job's eventual outcome
+// is, it is not the writer's.
+func TestWriterFailureDoesNotFailTheJob(t *testing.T) {
 	oldEmpty := isEmptyCommitTree
 	isEmptyCommitTree = func(context.Context, string, *Job) (bool, error) {
 		return false, nil
@@ -64,12 +65,12 @@ func TestWriterFailureDoesNotInventMessage(t *testing.T) {
 		Parent:    "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
 		AutoWrite: true,
 	}
+	// The commit step still fails here, because these directories are not
+	// repositories. What matters is that it is git's failure and not the
+	// writer's: the writer's error must not be what parks a job.
 	err := executeCommitTree(context.Background(), t.TempDir(), t.TempDir(), job)
-	if err == nil {
-		t.Fatal("writer failure must fail the job")
-	}
-	if !errors.Is(err, boom) {
-		t.Fatalf("err = %v, want boom", err)
+	if errors.Is(err, boom) {
+		t.Fatalf("the writer's failure became the job's: %v", err)
 	}
 }
 

@@ -146,6 +146,38 @@ func RunWithEnv(ctx context.Context, repoPath string, env []string, args ...stri
 // visibly, which is the recoverable direction: a false "not applied" parks a
 // job the user can inspect, while an unbounded walk on a rewritten branch
 // could scan the whole history to conclude the same thing.
+// TreeChangedPaths lists the paths that differ between two trees.
+//
+// It exists to describe a deferred commit whose message writer was
+// unavailable. The tree pair is the whole description available at that point,
+// and it is the accurate one: it names what the commit contains rather than
+// what the working tree looks like by the time the worker runs.
+//
+// An empty from is unborn HEAD, whose "parent" for diff purposes is the empty
+// tree; git rejects an empty string as an ambiguous revision.
+func TreeChangedPaths(ctx context.Context, repoPath, from, to string) ([]string, error) {
+	base := strings.TrimSpace(from)
+	if base == "" {
+		empty, err := EmptyTreeSHA(ctx, repoPath)
+		if err != nil {
+			return nil, err
+		}
+		base = empty
+	}
+	out, err := Output(ctx, repoPath,
+		"diff-tree", "-r", "--name-only", "--no-commit-id", base, to)
+	if err != nil {
+		return nil, camperrors.Wrap(err, "list the paths a deferred commit changes")
+	}
+	var paths []string
+	for line := range strings.SplitSeq(out, "\n") {
+		if p := strings.TrimSpace(line); p != "" {
+			paths = append(paths, p)
+		}
+	}
+	return paths, nil
+}
+
 func FirstParentChainContains(ctx context.Context, repoPath, tree, parent string) bool {
 	out, err := Output(ctx, repoPath, "log", "--first-parent", "--max-count=100",
 		"--format=%T %P", "HEAD")

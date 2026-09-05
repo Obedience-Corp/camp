@@ -19,6 +19,10 @@ import (
 // LLM on the other side of a network, and gets it back only when that tool
 // decides to return. That is why the bound, the process group, and the failure
 // vocabulary all live together in this file.
+//
+// It is also why nothing in it is allowed to fail a job. The writer's
+// availability is a property of somebody else's daemon, and a commit the user
+// asked for must not depend on it.
 
 // messageForTree returns the commit message for a commit-tree job, running the
 // configured writer when the job asked for one.
@@ -28,10 +32,11 @@ import (
 // tree looks like now. That is the difference between a deferred message that
 // describes the commit and one that describes an unrelated later state.
 //
-// A writer that fails, prints nothing, or runs past its bound fails the job.
-// Camp does not invent a subject: a filler commit in history is worse than a
-// parked job the user can retry once the writer is healthy, or drop and
-// re-commit by hand.
+// A writer that fails, prints nothing, or runs past its bound never fails the
+// job. The tree is the user's work and the message is how it is labelled, so
+// camp describes the commit itself (see fallback.go) and lands it. Only a job
+// document with no message and no writer to ask is an error, because that is a
+// malformed job rather than a tool that was unavailable.
 func messageForTree(ctx context.Context, campaignRoot, repoPath string, job *Job) (string, error) {
 	if !job.AutoWrite {
 		if strings.TrimSpace(job.Message) == "" {
@@ -41,11 +46,18 @@ func messageForTree(ctx context.Context, campaignRoot, repoPath string, job *Job
 	}
 
 	message, err := writeMessage(ctx, campaignRoot, repoPath, job)
-	if err != nil {
-		return "", err
+	if err == nil && strings.TrimSpace(message) == "" {
+		// A writer that exits zero and prints nothing is indistinguishable, from
+		// here, from one that failed: either way there is no message and the
+		// commit is still owed. Folded into the same path so the queue has one
+		// answer to "the writer did not produce a message" rather than two.
+		err = autowrite.ErrCommitMessageHookEmptyOutput
 	}
-	if strings.TrimSpace(message) == "" {
-		return "", camperrors.Newf("the commit message writer produced no message for job %s", job.ID)
+	if err != nil {
+		// The worker is detached, so this line and the commit body are the only
+		// places the degradation is recorded where anyone will find it.
+		logWorker(campaignRoot, "writer-degraded lane=%s id=%s err=%v", job.Repo, job.ID, err)
+		message = fallbackMessage(ctx, repoPath, job, err)
 	}
 
 	// The tag goes on the subject line, which is why it is prepended here

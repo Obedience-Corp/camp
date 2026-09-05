@@ -295,11 +295,19 @@ func TestIntegration_DeferredCommitFailsWhenReapplyConflicts(t *testing.T) {
 		"the failure must keep the HEAD-moved contract; camp jobs --json:\n%s", jobsOut)
 	assert.Contains(t, jobsOut, "conflict",
 		"the failure must say the re-application conflicted; camp jobs --json:\n%s", jobsOut)
+	// Naming the file is the difference between a failure the user can act on
+	// and one they can only stare at. The recorded error is truncated to a few
+	// hundred bytes, and git's own report opens with "Auto-merging" lines for
+	// the paths that merged fine, so the conflicted path has to lead.
+	assert.Contains(t, jobsOut, "contested.md",
+		"the failure must name the file that conflicted; camp jobs --json:\n%s", jobsOut)
 
 	_, stderr, _, err = tc.RunCampSplitInDir(campPath, "status", "--short")
 	require.NoError(t, err)
 	assert.Contains(t, stderr, "deferred commit failed",
 		"the failure must surface on an ordinary command; stderr:\n%s", stderr)
+	assert.Contains(t, stderr, "camp jobs retry all",
+		"the notice must carry the recovery command, not just where to look; stderr:\n%s", stderr)
 }
 
 // A later commit that sweeps the still-staged queued paths fulfills the job.
@@ -543,9 +551,12 @@ func TestIntegration_DeferredCommitCarriesWorkitemEnv(t *testing.T) {
 		"the deferred commit lost the workitem the foreground path would have tagged; subject: %s", subject)
 }
 
-// A writer that produces nothing fails the job rather than committing an empty
-// message. The queue keeps the failure as evidence.
-func TestIntegration_EmptyWriterOutputFailsTheJob(t *testing.T) {
+// A writer that produces nothing still gets its commit landed, under a subject
+// camp derives from the captured diff.
+//
+// Exit zero with no output is not a writer declining to describe the work; it
+// is a writer that did not answer, and the queue already promised the commit.
+func TestIntegration_EmptyWriterOutputStillLandsTheCommit(t *testing.T) {
 	tc := GetSharedContainer(t)
 	tc.EnableDeferral()
 	campPath, _ := setupDrainCampaign(t, tc, "aw-defer-empty")
@@ -566,18 +577,29 @@ func TestIntegration_EmptyWriterOutputFailsTheJob(t *testing.T) {
 	require.NoError(t, err)
 
 	after := strings.TrimSpace(tc.GitOutput(t, campPath, "rev-parse", "HEAD"))
-	assert.Equal(t, before, after, "no commit may be created without a message")
+	assert.NotEqual(t, before, after, "the commit was lost to a silent writer; HEAD did not move")
+	assert.Contains(t, headSubject(t, tc, campPath), "(writer unavailable)",
+		"a commit camp described itself must say so in its subject")
+
+	tracked := tc.GitOutput(t, campPath, "ls-tree", "-r", "--name-only", "HEAD")
+	assert.Contains(t, tracked, "nomessage.md",
+		"the captured change must be in the commit; tree:\n%s", tracked)
 
 	stdout, _, _, err := tc.RunCampSplitInDir(campPath, "jobs")
 	require.NoError(t, err)
-	assert.Contains(t, stdout, "failed",
-		"the failure must be kept as evidence; camp jobs:\n%s", stdout)
+	assert.NotContains(t, stdout, "failed",
+		"nothing failed: the commit landed; camp jobs:\n%s", stdout)
 }
 
-// A writer outage fails the job. Camp does not invent a commit message: a
-// filler subject in history is worse than a parked job the user can retry or
-// drop once the writer is healthy.
-func TestIntegration_WriterFailureFailsTheJob(t *testing.T) {
+// A writer outage costs the user a subject, never a commit.
+//
+// Camp parked these jobs until 2026-09. The writer is an LLM behind a local
+// daemon and it is unavailable for entirely ordinary reasons — a cold model, an
+// idle deadline, a daemon that is not up — none of which say anything about
+// whether the user's work should be recorded. Parking also decays: every later
+// commit makes the captured parent staler, and once the change conflicts with
+// what landed the job can never be retried at all.
+func TestIntegration_WriterFailureStillLandsTheCommit(t *testing.T) {
 	tc := GetSharedContainer(t)
 	tc.EnableDeferral()
 	campPath, _ := setupDrainCampaign(t, tc, "aw-defer-broken")
@@ -598,15 +620,31 @@ func TestIntegration_WriterFailureFailsTheJob(t *testing.T) {
 	require.NoError(t, err)
 
 	after := strings.TrimSpace(tc.GitOutput(t, campPath, "rev-parse", "HEAD"))
-	assert.Equal(t, before, after,
-		"a writer failure must not land a filler commit; HEAD moved")
+	assert.NotEqual(t, before, after,
+		"the commit was lost to a writer outage; HEAD did not move")
+
+	subject := headSubject(t, tc, campPath)
+	assert.Contains(t, subject, "(writer unavailable)",
+		"the marker is what makes these commits findable later; subject: %s", subject)
+	assert.Regexp(t, `Update \d+ files? \(writer unavailable\)`, subject,
+		"the generated subject must describe the captured diff; subject: %s", subject)
+
+	tracked := tc.GitOutput(t, campPath, "ls-tree", "-r", "--name-only", "HEAD")
+	assert.Contains(t, tracked, "rescued.md",
+		"the captured change must be in the commit; tree:\n%s", tracked)
+
+	// The body carries the writer's own diagnostic, because a detached worker
+	// has no other way to tell anyone why the subject is camp's and not theirs.
+	body := tc.GitOutput(t, campPath, "log", "-1", "--format=%b")
+	assert.Contains(t, body, "daemon not running",
+		"the commit must record why the writer did not answer; body:\n%s", body)
+	assert.Contains(t, body, "git commit --amend",
+		"the commit must say how to reword it; body:\n%s", body)
 
 	stdout, _, _, err := tc.RunCampSplitInDir(campPath, "jobs")
 	require.NoError(t, err)
-	assert.Contains(t, stdout, "failed",
-		"the failure must be kept as evidence; camp jobs:\n%s", stdout)
-	assert.NotContains(t, stdout, "writer unavailable",
-		"camp must not mint a filler subject; camp jobs:\n%s", stdout)
+	assert.NotContains(t, stdout, "failed",
+		"a writer outage must not park a job; camp jobs:\n%s", stdout)
 }
 
 // An empty staged tree must not enqueue a deferred commit. Campaign-root
@@ -829,64 +867,80 @@ func TestIntegration_EmptyStagedTreeDoesNotDefer(t *testing.T) {
 // change conflicts with what landed. A listing that still called this one
 // beyond retry would offer `camp jobs drop` for work a retry would commit,
 // which is camp telling a user to throw away a recoverable commit.
+// The failure is staged directly into failed/ rather than produced by a broken
+// writer, which is how this test used to arrange it. A writer outage no longer
+// parks anything, so the only honest way to get a parked commit-tree job whose
+// captured change still re-applies is to put one there.
 func TestIntegration_JobFailedForAnotherReasonStaysRetryableAfterHeadMoves(t *testing.T) {
 	tc := GetSharedContainer(t)
 	tc.EnableDeferral()
 	campPath, _ := setupDrainCampaign(t, tc, "aw-defer-retryable")
-	configureWriter(t, tc, campPath, "broken")
 
-	tc.Shell(t, fmt.Sprintf(`
-		cd %s
-		printf 'queued\n' > queued.md
-	`, campPath))
+	// A real captured snapshot: HEAD's tree plus queued.md, built through a
+	// scratch index so the repository's own index is untouched, exactly as the
+	// enqueuer would have captured it.
+	tree, parent := captureScratchTree(t, tc, campPath, "queued.md", "queued\n")
 
-	_, stderr, exitCode, err := tc.RunCampSplitInDir(campPath, "commit", "--auto-write")
-	require.NoError(t, err)
-	require.Equal(t, 0, exitCode, "stderr:\n%s", stderr)
+	writeFailedJob(t, tc, campPath, rootLane, 1, map[string]any{
+		"kind": "commit-tree", "repo": ".",
+		"tree": tree, "parent": parent,
+		"message":    "deferred: the captured snapshot",
+		"attempts":   3,
+		"last_error": "the worker died before it could commit",
+	})
 
 	// HEAD moves, but to something the captured change merges with cleanly.
-	// The job fails on the writer, not on the move.
 	commitWithScratchIndex(t, tc, campPath, "unrelated.md")
-
-	_, _, _, err = tc.RunCampSplitInDir(campPath, "jobs", "drain")
-	require.NoError(t, err)
 
 	stdout, _, _, err := tc.RunCampSplitInDir(campPath, "jobs")
 	require.NoError(t, err)
 	assert.NotContains(t, stdout, "cannot retry",
-		"a writer failure over a cleanly re-appliable change is retryable; camp jobs:\n%s", stdout)
+		"a cleanly re-appliable change is retryable however it failed; camp jobs:\n%s", stdout)
 
 	jsonOut, _, _, err := tc.RunCampSplitInDir(campPath, "jobs", "--json")
 	require.NoError(t, err)
 	assert.Contains(t, jsonOut, `"superseded": false`,
 		"--json must not report a retryable job as superseded; output:\n%s", jsonOut)
 
-	// And the claim is true: with the writer fixed, the retry lands the commit
-	// on top of the interloper. The command is rewritten in place rather than
-	// appended, because a second `hooks:` block would be a duplicate YAML key
-	// and the config would stop describing either writer.
-	tc.Shell(t, fmt.Sprintf(`
-		mkdir -p /writers
-		cat > /writers/retryable-fixed.sh <<'SCRIPT'
-#!/bin/sh
-echo "deferred: the fixed writer finished"
-SCRIPT
-		chmod +x /writers/retryable-fixed.sh
-		cd %s
-		sed -i 's|/writers/broken.sh|/writers/retryable-fixed.sh|' .campaign/campaign.yaml
-	`, campPath))
+	// And the claim is true: the retry lands the commit on top of the
+	// interloper rather than reverting it.
 	_, _, _, err = tc.RunCampSplitInDir(campPath, "jobs", "retry", "all")
 	require.NoError(t, err)
 	_, _, _, err = tc.RunCampSplitInDir(campPath, "jobs", "drain")
 	require.NoError(t, err)
 
-	assert.Contains(t, headSubject(t, tc, campPath), "the fixed writer finished",
-		"the retried job must land under the writer's message")
+	assert.Contains(t, headSubject(t, tc, campPath), "the captured snapshot",
+		"the retried job must land under its own message")
 	tracked := tc.GitOutput(t, campPath, "ls-tree", "-r", "--name-only", "HEAD")
 	assert.Contains(t, tracked, "queued.md",
 		"the retried job must land the captured change; tree:\n%s", tracked)
 	assert.Contains(t, tracked, "unrelated.md",
 		"the retry must not revert the interloper; tree:\n%s", tracked)
+}
+
+// captureScratchTree writes a file and returns the tree a deferred job would
+// have captured for it, plus the HEAD it was captured against.
+//
+// The scratch index is the point: it produces the same whole-repository
+// snapshot the enqueuer records without staging anything into the index the
+// user is still using.
+func captureScratchTree(t *testing.T, tc *TestContainer, campPath, name, content string) (tree, parent string) {
+	t.Helper()
+	out := tc.Shell(t, fmt.Sprintf(`
+		cd %s
+		printf '%s' > %s
+		index=/tmp/camp-capture-%s.index
+		rm -f "$index"
+		GIT_INDEX_FILE="$index" git read-tree HEAD
+		GIT_INDEX_FILE="$index" git add -- %s
+		GIT_INDEX_FILE="$index" git write-tree
+		git rev-parse HEAD
+		rm -f "$index"
+	`, campPath, content, name, name, name))
+
+	fields := strings.Fields(out)
+	require.GreaterOrEqual(t, len(fields), 2, "capture produced no tree and parent; output:\n%s", out)
+	return fields[len(fields)-2], fields[len(fields)-1]
 }
 
 // A failed job that can never be retried must not be advertised as retryable.

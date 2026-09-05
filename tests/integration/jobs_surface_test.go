@@ -61,6 +61,12 @@ func TestIntegration_FailedJobNoticeRepeatsUntilResolved(t *testing.T) {
 			"%v must carry the failed-job notice; stderr:\n%s", args, stderr)
 		assert.Contains(t, stderr, "camp jobs",
 			"the notice must name where to look; stderr:\n%s", stderr)
+		// Where to look is not enough. A user who reads the notice, does not
+		// stop what they are doing, and never comes back is the failure this
+		// notice exists to prevent, and the shortest path to acting on it is
+		// the command itself.
+		assert.Contains(t, stderr, "camp jobs retry all",
+			"the notice must carry the one-command recovery; stderr:\n%s", stderr)
 	}
 
 	// Resolving it clears the notice, so the line means something.
