@@ -3,6 +3,7 @@ package workitem
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"os"
@@ -79,6 +80,11 @@ type commitInputs struct {
 	sourcePaths []string
 	destPaths   []string
 	rewritten   []string
+	// shelveErr collects bookkeeping that failed after the directory moved:
+	// a link registry that would not open, a priority store that would not
+	// save. Reported by the tail once the move is committed, never fatal,
+	// because the tree has already changed and git must say so.
+	shelveErr error
 }
 
 func newPromoteCommand() *cobra.Command {
@@ -418,11 +424,18 @@ func doDungeonPromote(ctx context.Context, campaignRoot string, loc *locate.Loca
 	// link left behind only resolves to a workitem the selector cannot see
 	// (`camp p commit` silently stops stamping the ref). So the links go with
 	// the workitem, reported rather than dropped quietly.
+	//
+	// The directory has moved. From here the only correct outcome is a
+	// recorded, committed move: a registry that would not open, or a caller
+	// that gave up waiting, must not leave the tree changed with nothing in
+	// git to say so. That is how a promotion once landed inside an unrelated
+	// hand-made commit. Failures are collected and reported after the commit.
+	ctx = context.WithoutCancel(ctx)
 	if err := releaseLinksForShelvedSource(ctx, campaignRoot, oldID, oldKey, result.From, ci, result); err != nil {
-		return nil, err
+		ci.shelveErr = errors.Join(ci.shelveErr, err)
 	}
 	if err := releasePathStateForShelvedSource(ctx, campaignRoot, oldID, oldKey, result); err != nil {
-		return nil, err
+		ci.shelveErr = errors.Join(ci.shelveErr, err)
 	}
 	return ci, nil
 }

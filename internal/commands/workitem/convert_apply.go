@@ -152,6 +152,7 @@ func commitConvert(ctx context.Context, cmd *cobra.Command, cfg *config.Campaign
 		SourcePaths:      []string{plan.srcPath},
 		DestinationPaths: destPaths,
 		RewrittenFiles:   rewritten,
+		Synchronous:      opts.JSON,
 	})
 	if !opts.JSON {
 		dungeoncmd.PrintDungeonMoveOutcome(cmd.OutOrStdout(), outcome)
