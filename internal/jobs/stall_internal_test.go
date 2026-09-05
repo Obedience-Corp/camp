@@ -11,14 +11,18 @@ import (
 	"github.com/Obedience-Corp/camp/internal/autowrite"
 )
 
-// A writer that runs out of time parks its job, with the reason on the job.
+// A writer that runs out of time is not a verdict on the job.
 //
-// Parked rather than committed with a stand-in subject: camp does not invent a
-// message, so a writer that never answered leaves a job the user can retry or
-// drop, not a commit whose subject camp made up. Parked rather than requeued,
-// because a timeout is a verdict on the work; the shutdown path is the one that
-// declines to give a verdict, and the two must not be confused.
-func TestWriterTimeoutParksTheJob(t *testing.T) {
+// The bound exists to stop a wedged writer from holding a lane, not to decide
+// whether the user's work gets recorded, so execution carries on with a subject
+// camp derives itself. This job still parks, because the test has no repository
+// behind it for the commit step — but on git's failure, never the writer's.
+//
+// The lifecycle claims are the other half: an execution failure parks rather
+// than requeues, and spends an attempt. A timeout is still a completed run; the
+// shutdown path is the one that declines to give a verdict, and the two must
+// not be confused.
+func TestWriterTimeoutIsNotTheJobsVerdict(t *testing.T) {
 	withFastTiming(t, time.Millisecond, time.Millisecond)
 	root := testCampaign(t)
 	ctx := context.Background()
@@ -60,12 +64,23 @@ func TestWriterTimeoutParksTheJob(t *testing.T) {
 	if failed[0].Attempts != 1 {
 		t.Errorf("Attempts = %d, want 1: a run that timed out is a run", failed[0].Attempts)
 	}
-	// The reason has to name both, because they are the two things the user
-	// decides between: fix the writer, or raise the bound.
-	for _, want := range []string{"ob commit", "5m0s"} {
-		if !strings.Contains(failed[0].LastError, want) {
-			t.Errorf("LastError = %q, want it to name %q", failed[0].LastError, want)
+	// The writer's own failure must not be what the job is parked for. If it
+	// is, the fallback did not run and a commit was lost to a slow tool.
+	for _, unwanted := range []string{"ob commit", "5m0s"} {
+		if strings.Contains(failed[0].LastError, unwanted) {
+			t.Errorf("LastError = %q names the writer timeout; a bound on the writer "+
+				"must not decide whether the user's work is recorded", failed[0].LastError)
 		}
+	}
+	// It is recorded, though. The worker log is the only account a detached
+	// process leaves of why a commit carries camp's subject and not the
+	// writer's.
+	data, err := os.ReadFile(WorkerLogPath(root))
+	if err != nil {
+		t.Fatalf("read worker log: %v", err)
+	}
+	if !strings.Contains(string(data), "writer-degraded") {
+		t.Errorf("worker log does not record the degraded writer:\n%s", data)
 	}
 }
 
