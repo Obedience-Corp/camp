@@ -88,6 +88,9 @@ func finishWorkitemMove(
 	ctx context.Context, cmd *cobra.Command, cfg *config.CampaignConfig, root string,
 	ci *commitInputs, result *workitemPromoteResult, tail moveTail,
 ) error {
+	// The move is already on disk. Recording and committing it must finish
+	// even when the caller's context has been cancelled in the meantime.
+	ctx = context.WithoutCancel(ctx)
 	opts := tail.Options
 	appendWorkitemAuditEvent(ctx, cmd, root, wkaudit.Event{
 		Event:      wkaudit.EventPromote,
@@ -117,6 +120,13 @@ func finishWorkitemMove(
 			_, _ = fmt.Fprintf(cmd.ErrOrStderr(), "%s %s\n", ui.WarningIcon(), msg)
 		}
 	}
+	if ci.shelveErr != nil {
+		msg := fmt.Sprintf("moved and committed, but shelve bookkeeping failed: %v (run camp workitem doctor --fix)", ci.shelveErr)
+		result.Warnings = append(result.Warnings, msg)
+		if !opts.JSON {
+			_, _ = fmt.Fprintf(cmd.ErrOrStderr(), "%s %s\n", ui.WarningIcon(), msg)
+		}
+	}
 
 	if opts.JSON {
 		return emitPromoteJSON(cmd, *result)
@@ -139,6 +149,7 @@ func commitWorkitemMove(
 		SourcePaths:      ci.sourcePaths,
 		DestinationPaths: ci.destPaths,
 		RewrittenFiles:   ci.rewritten,
+		Synchronous:      jsonOut,
 	})
 	if !jsonOut {
 		dungeoncmd.PrintDungeonMoveOutcome(cmd.OutOrStdout(), outcome)

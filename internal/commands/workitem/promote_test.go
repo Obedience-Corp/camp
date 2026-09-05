@@ -333,6 +333,14 @@ func TestPromoteFestivalKeepLeavesSource(t *testing.T) {
 }
 
 func TestPromoteFestivalMissingFest(t *testing.T) {
+	// The lookup falls back to fixed system locations that PATH and HOME
+	// cannot hide; a host (or the container image) with fest installed there
+	// cannot simulate its absence.
+	for _, loc := range []string{"/usr/local/bin/fest", "/opt/homebrew/bin/fest"} {
+		if _, err := os.Stat(loc); err == nil {
+			t.Skipf("fest is installed at %s; cannot simulate a missing fest here", loc)
+		}
+	}
 	root := promoteCampaign(t)
 	src := addWorkitem(t, root, "design", "myfeature", "My Feature", "Build it.")
 

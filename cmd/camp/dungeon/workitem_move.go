@@ -26,6 +26,9 @@ type DungeonMoveCommit struct {
 	SourcePaths      []string
 	DestinationPaths []string
 	RewrittenFiles   []string
+	// Synchronous never defers the commit; set by --json callers, whose output
+	// must carry a real hash.
+	Synchronous bool
 }
 
 type resolvedWorkitemDungeonTarget struct {

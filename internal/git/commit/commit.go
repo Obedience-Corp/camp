@@ -69,6 +69,7 @@ type Options struct {
 	Files         []string // If set, stage only these paths instead of everything
 	PreStaged     []string // Paths already staged; copied from the real index into the temp-index commit scope
 	SelectiveOnly bool     // When true, never fall back to CommitAll; no-op if Files is empty
+	Synchronous   bool     // When true, never defer: the caller promised a real hash in its own output (--json)
 }
 
 // resolveCampaignName prefers opts.CampaignName, else loads it from the config
@@ -125,7 +126,7 @@ func doCommit(ctx context.Context, opts Options, action, subject, description st
 		if errors.Is(err, errDeferred) {
 			return Result{
 				Deferred: true,
-				Message:  "queued (" + subject + ")",
+				Message:  "queued (" + subject + "); camp jobs drain waits for it",
 			}
 		}
 		if errors.Is(err, git.ErrNoChanges) {
@@ -168,8 +169,11 @@ func stageAndCommit(ctx context.Context, opts Options, message string) (string, 
 	//
 	// Not silent: the caller reports a deferred result the same way it reports
 	// a committed one, because camp acting on its own has to say so.
+	//
+	// Synchronous callers are the --json surfaces: their document carries a
+	// commit hash or nothing, never a promise, so they never enter the queue.
 	if allowed, _ := defercommit.AllowedForPaths(
-		ctx, opts.CampaignRoot, opts.CampaignRoot, opts.Files, opts.PreStaged); allowed {
+		ctx, opts.CampaignRoot, opts.CampaignRoot, opts.Files, opts.PreStaged); allowed && !opts.Synchronous {
 		if _, err := defercommit.EnqueuePaths(
 			ctx, opts.CampaignRoot, opts.CampaignRoot, message, opts.Files); err == nil {
 			defercommit.SpawnWorker(ctx, opts.CampaignRoot, opts.CampaignRoot)

@@ -60,6 +60,9 @@ var containerFSPackages = []containerFSPackage{
 	{ImportPath: "./internal/clone", MinTests: 29},
 	{ImportPath: "./internal/sync", MinTests: 32},
 	{ImportPath: "./internal/commands/fresh", MinTests: 6},
+	// The dungeon-move commit tests need a real repository to commit into.
+	{ImportPath: "./internal/git/commit", MinTests: 1},
+	{ImportPath: "./internal/commands/workitem", MinTests: 4},
 }
 
 // containerFSTag is the build tag gating host compilation of these suites.

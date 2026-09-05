@@ -443,6 +443,10 @@ func sweepOneToStatus(ctx context.Context, cmd *cobra.Command, cfg *config.Campa
 		return entry
 	}
 	entry.To = moveRes.ToRel
+	// The directory has moved; from here the audit line, the ledger event and
+	// the commit must land whatever else fails, or the tree changes with
+	// nothing in git to say so.
+	ctx = context.WithoutCancel(ctx)
 
 	// Shelving ends the workitem's active life: drop its links so a multi-
 	// worktree design does not leave stale rows that only resolve to a dungeon
@@ -450,8 +454,13 @@ func sweepOneToStatus(ctx context.Context, cmd *cobra.Command, cfg *config.Campa
 	// path arm that catches links made under a directory's earlier name.
 	dropped, unlinkErr := unlinkShelvedWorkitem(ctx, root, ident.LinkID, oldKey, entry.From)
 	if unlinkErr != nil {
-		entry.Error = unlinkErr.Error()
-		return entry
+		// Not fatal: the stale link is what doctor --fix removes, while a move
+		// left uncommitted is a surprise in somebody else's next commit.
+		msg := fmt.Sprintf("%s moved to %s, but releasing its links failed: %v (run camp workitem doctor --fix)", ident.LedgerID, entry.To, unlinkErr)
+		if result != nil {
+			result.Warnings = append(result.Warnings, msg)
+		}
+		_, _ = fmt.Fprintf(cmd.OutOrStdout(), "  %s %s\n", ui.WarningIcon(), msg)
 	}
 
 	appendWorkitemAuditEvent(ctx, cmd, root, wkaudit.Event{
