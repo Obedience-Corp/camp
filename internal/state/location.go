@@ -19,14 +19,16 @@ const (
 	cacheDir = ".campaign/cache"
 	// stateFile is the name of the state file.
 	stateFile = "state.jsonl"
-	// maxHistoryEntries is the maximum number of navigation entries to keep.
-	maxHistoryEntries = 5
+	// maxUniqueEntries is the unique-(rel, kind) LRU cap for the navigation log.
+	maxUniqueEntries = 256
 )
 
 // NavigationEntry represents a single navigation history entry.
 type NavigationEntry struct {
 	Location string    `json:"location"`
+	Rel      string    `json:"rel,omitempty"`
 	Time     time.Time `json:"ts"`
+	Kind     EntryKind `json:"kind,omitempty"`
 }
 
 // StatePath returns the path to the state file for a given campaign root.
@@ -78,34 +80,29 @@ func LoadHistory(ctx context.Context, campaignRoot string) ([]NavigationEntry, e
 }
 
 // SaveEntry appends a navigation entry to the state file.
-// If the file exceeds maxHistoryEntries, it truncates to the last maxHistoryEntries.
+// Unique-(rel, kind) LRU is capped at maxUniqueEntries. Last writer wins;
+// there is no file lock (same as historical SaveEntry).
 func SaveEntry(ctx context.Context, campaignRoot string, entry NavigationEntry) error {
-	if ctx.Err() != nil {
-		return ctx.Err()
+	return rewriteHistory(ctx, campaignRoot, func(entries []NavigationEntry) []NavigationEntry {
+		return appendUnique(entries, fillEntry(campaignRoot, entry))
+	})
+}
+
+func rewriteHistory(ctx context.Context, campaignRoot string, mutate func([]NavigationEntry) []NavigationEntry) error {
+	if err := ctx.Err(); err != nil {
+		return err
 	}
 
 	stateFilePath := StatePath(campaignRoot)
-	stateDir := filepath.Dir(stateFilePath)
-
-	// Ensure cache directory exists
-	if err := os.MkdirAll(stateDir, 0755); err != nil {
+	if err := os.MkdirAll(filepath.Dir(stateFilePath), 0755); err != nil {
 		return camperrors.Newf("failed to create cache directory: %w", err)
 	}
 
-	// Load existing entries
 	entries, err := LoadHistory(ctx, campaignRoot)
 	if err != nil {
-		// If we can't load, start fresh
-		entries = []NavigationEntry{}
+		entries = nil
 	}
-
-	// Append new entry
-	entries = append(entries, entry)
-
-	// Truncate to last maxHistoryEntries
-	if len(entries) > maxHistoryEntries {
-		entries = entries[len(entries)-maxHistoryEntries:]
-	}
+	entries = mutate(backfill(campaignRoot, entries))
 
 	var buf bytes.Buffer
 	enc := json.NewEncoder(&buf)
@@ -114,7 +111,6 @@ func SaveEntry(ctx context.Context, campaignRoot string, entry NavigationEntry) 
 			return camperrors.Newf("failed to marshal entry: %w", err)
 		}
 	}
-
 	if err := fsutil.WriteFileAtomically(stateFilePath, buf.Bytes(), 0600); err != nil {
 		return camperrors.Wrap(err, "failed to write state file")
 	}
@@ -153,11 +149,12 @@ func GetLastLocation(ctx context.Context, campaignRoot string) (string, error) {
 		return "", err
 	}
 
-	if len(entries) == 0 {
-		return "", nil
+	for i := len(entries) - 1; i >= 0; i-- {
+		if kindKey(entries[i]) == KindToggle {
+			return entries[i].Location, nil
+		}
 	}
-
-	return entries[len(entries)-1].Location, nil
+	return "", nil
 }
 
 // SetLastLocation saves a new location to the navigation history.
@@ -174,7 +171,9 @@ func SetLastLocation(ctx context.Context, campaignRoot, location string) error {
 
 	entry := NavigationEntry{
 		Location: location,
+		Rel:      deriveRelWrite(campaignRoot, location),
 		Time:     time.Now(),
+		Kind:     KindToggle,
 	}
 
 	return SaveEntry(ctx, campaignRoot, entry)

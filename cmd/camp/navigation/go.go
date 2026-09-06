@@ -113,8 +113,7 @@ func runGo(cmd *cobra.Command, args []string) error {
 				return nil
 			}
 			// Save current location (source) so toggle can return here
-			cwd, _ := os.Getwd()
-			_ = state.SetLastLocation(ctx, campaignRoot, cwd)
+			recordNavJump(ctx, campaignRoot, pinPath)
 			if printOnly {
 				if err := ensureExistingPrintPath(pinPath); err != nil {
 					return err
@@ -172,7 +171,7 @@ func runGo(cmd *cobra.Command, args []string) error {
 				}
 			} else {
 				// Not at root - save current location and jump to root
-				_ = state.SetLastLocation(ctx, rootResult.Path, cwd)
+				recordNavJump(ctx, rootResult.Path, rootResult.Path)
 				destPath = rootResult.Path
 			}
 
@@ -192,8 +191,7 @@ func runGo(cmd *cobra.Command, args []string) error {
 
 		// Save current location (source) so toggle can return here
 		if result.Category != nav.CategoryAll || !forceRoot {
-			cwd, _ := os.Getwd()
-			_ = state.SetLastLocation(ctx, rootResult.Path, cwd)
+			recordNavJump(ctx, rootResult.Path, jumpResult.Path)
 		}
 
 		if printOnly {
@@ -228,8 +226,7 @@ func runGo(cmd *cobra.Command, args []string) error {
 			// Append the subpath and verify it exists
 			nestedPath := filepath.Join(resolveResult.Path, subPath)
 			if info, statErr := os.Stat(nestedPath); statErr == nil && info.IsDir() {
-				cwd, _ := os.Getwd()
-				_ = state.SetLastLocation(ctx, jumpResult.Path, cwd)
+				recordNavJump(ctx, jumpResult.Path, nestedPath)
 				if printOnly {
 					fmt.Println(nestedPath)
 				} else {
@@ -263,8 +260,7 @@ func runGo(cmd *cobra.Command, args []string) error {
 	}
 
 	// Save current location (source) so toggle can return here
-	cwd, _ := os.Getwd()
-	_ = state.SetLastLocation(ctx, jumpResult.Path, cwd)
+	recordNavJump(ctx, jumpResult.Path, resolveResult.Path)
 
 	// Multiple matches - inform user
 	if resolveResult.HasMultipleMatches() {
@@ -285,6 +281,16 @@ func runGo(cmd *cobra.Command, args []string) error {
 		fmt.Printf("cd %s\n", resolveResult.Path)
 	}
 	return nil
+}
+
+// recordNavJump persists the jump source as a toggle and the dest as a visit
+// in one atomic rewrite. Fire-and-forget: a log write must not fail camp go.
+func recordNavJump(ctx context.Context, campaignRoot, dest string) {
+	cwd, err := os.Getwd()
+	if err != nil || cwd == "" {
+		return
+	}
+	_ = state.RecordJump(ctx, campaignRoot, cwd, dest)
 }
 
 // handleToggle jumps to the last visited location from navigation history.
@@ -308,7 +314,7 @@ func handleToggle(ctx context.Context, campaignRoot string, printOnly bool) erro
 	}
 
 	// Save current location so calling toggle again bounces back
-	_ = state.SetLastLocation(ctx, campaignRoot, cwd)
+	recordNavJump(ctx, campaignRoot, lastLoc)
 
 	if printOnly {
 		fmt.Println(lastLoc)
@@ -362,8 +368,7 @@ func handleRelativePathNavigation(ctx context.Context, campaignRoot, relativePat
 		return nil
 	}
 
-	cwd, _ := os.Getwd()
-	_ = state.SetLastLocation(ctx, campaignRoot, cwd)
+	recordNavJump(ctx, campaignRoot, targetPath)
 
 	if printOnly {
 		fmt.Println(targetPath)
