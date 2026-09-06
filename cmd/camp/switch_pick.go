@@ -49,7 +49,9 @@ type pickSwitchTargetOptions struct {
 	Header string
 }
 
-// localSwitchPicks builds sorted local candidates (most recently accessed first).
+// localSwitchPicks builds sorted local candidates (most recently accessed first
+// in the slice). go-fuzzyfinder v0.9.0 draws index 0 at the visual bottom next
+// to "Switch to:", so this order is already bottom-proximity. Do not reverse it.
 func localSwitchPicks(reg *config.Registry, scope cmdutil.CampaignScope) []switchPick {
 	locals := cmdutil.FilterCampaigns(reg, scope)
 	sort.Slice(locals, func(i, j int) bool {
@@ -279,6 +281,7 @@ func pickSwitchTarget(ctx context.Context, reg *config.Registry, opts pickSwitch
 		fuzzyfinder.WithPromptString("Switch to: "),
 		fuzzyfinder.WithHeader(header),
 		fuzzyfinder.WithContext(ctx),
+		fuzzyfinder.WithCursorPosition(fuzzyfinder.CursorPositionBottom),
 	}
 	if hasMachines {
 		findOpts = append(findOpts, fuzzyfinder.WithHotReloadLock(mu.RLocker()))
