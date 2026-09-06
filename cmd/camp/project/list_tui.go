@@ -1,17 +1,23 @@
 package project
 
 import (
+	"context"
 	"os"
+	"path/filepath"
 	"sort"
 	"strings"
+	"time"
+	"unicode"
 
 	"github.com/charmbracelet/bubbles/textinput"
 	tea "github.com/charmbracelet/bubbletea"
 	"golang.org/x/term"
 
 	camperrors "github.com/Obedience-Corp/camp/internal/errors"
+	navfuzzy "github.com/Obedience-Corp/camp/internal/nav/fuzzy"
 	projectsvc "github.com/Obedience-Corp/camp/internal/project"
 	"github.com/Obedience-Corp/camp/internal/shell"
+	"github.com/Obedience-Corp/camp/internal/state"
 	"github.com/Obedience-Corp/camp/internal/ui"
 	"github.com/spf13/cobra"
 )
@@ -91,6 +97,11 @@ type projListModel struct {
 	width    int
 	height   int
 	quitting bool
+
+	campaignRoot string
+	ranks        map[string]time.Time
+	seeded       bool
+	selectedAbs  string
 }
 
 // projectListTUIRequested decides whether bare `camp project list` opens the
@@ -149,9 +160,23 @@ func newProjListModel(root string, projects []projectsvc.Project) projListModel 
 	ti := textinput.New()
 	ti.Prompt = "/ "
 	ti.Placeholder = "filter"
-	m := projListModel{all: all, groupBy: groupByType, input: ti}
+	m := projListModel{
+		all:          all,
+		groupBy:      groupByType,
+		input:        ti,
+		campaignRoot: root,
+		ranks:        loadProjectRanks(root),
+	}
 	m.rebuildVisible()
 	return m
+}
+
+func loadProjectRanks(root string) map[string]time.Time {
+	entries, err := state.LoadHistory(context.Background(), root)
+	if err != nil {
+		return nil
+	}
+	return state.RankMap(entries, root)
 }
 
 func normalizeSource(source string) string {
@@ -166,7 +191,7 @@ func normalizeSource(source string) string {
 }
 
 func (m *projListModel) rebuildVisible() {
-	q := strings.ToLower(strings.TrimSpace(m.query))
+	q := strings.TrimSpace(m.query)
 	out := make([]projectListItem, 0, len(m.all))
 	for _, e := range m.all {
 		if q != "" && !itemMatches(e, q) {
@@ -175,26 +200,77 @@ func (m *projListModel) rebuildVisible() {
 		out = append(out, e)
 	}
 	sort.SliceStable(out, func(i, j int) bool {
-		return lessProjectItem(out[i], out[j], m.groupBy)
+		return lessProjectItem(out[i], out[j], m.groupBy, m.ranks)
 	})
 	m.visible = out
-	m.cursor = ui.ClampIdx(m.cursor, len(m.visible))
+	m.placeCursor()
+}
+
+func (m *projListModel) placeCursor() {
+	if len(m.visible) == 0 {
+		m.cursor = 0
+		m.selectedAbs = ""
+		return
+	}
+	if !m.seeded {
+		m.cursor = lastRankedIndex(m.visible, m.ranks)
+		m.seeded = true
+		m.syncSelectedAbs()
+		return
+	}
+	if m.selectedAbs != "" {
+		for i, e := range m.visible {
+			if e.AbsPath == m.selectedAbs {
+				m.cursor = i
+				return
+			}
+		}
+	}
+	m.cursor = lastRankedIndex(m.visible, m.ranks)
+	m.syncSelectedAbs()
+}
+
+func (m *projListModel) syncSelectedAbs() {
+	if m.cursor >= 0 && m.cursor < len(m.visible) {
+		m.selectedAbs = m.visible[m.cursor].AbsPath
+		return
+	}
+	m.selectedAbs = ""
+}
+
+func lastRankedIndex(items []projectListItem, ranks map[string]time.Time) int {
+	best := -1
+	var bestTs time.Time
+	for i, e := range items {
+		ts := state.RankTime(ranks, e.RelPath)
+		if ts.IsZero() {
+			continue
+		}
+		if best < 0 || ts.After(bestTs) {
+			best = i
+			bestTs = ts
+		}
+	}
+	if best >= 0 {
+		return best
+	}
+	return ui.ClampIdx(0, len(items))
 }
 
 func itemMatches(e projectListItem, q string) bool {
 	fields := []string{
-		e.Name, e.RelPath, e.AbsPath, e.Type, typeLabel(e.Type),
+		e.Name, e.RelPath, e.Type, typeLabel(e.Type),
 		e.Source, sourceLabel(e.Source), e.URL, e.LinkedPath,
 	}
 	for _, field := range fields {
-		if strings.Contains(strings.ToLower(field), q) {
+		if score, _ := navfuzzy.Score(q, field); score > 0 {
 			return true
 		}
 	}
 	return false
 }
 
-func lessProjectItem(a, b projectListItem, groupBy projGroupBy) bool {
+func lessProjectItem(a, b projectListItem, groupBy projGroupBy, ranks map[string]time.Time) bool {
 	switch groupBy {
 	case groupByType:
 		if ra, rb := typeRank(a.Type), typeRank(b.Type); ra != rb {
@@ -204,6 +280,15 @@ func lessProjectItem(a, b projectListItem, groupBy projGroupBy) bool {
 		if ra, rb := sourceRank(a.Source), sourceRank(b.Source); ra != rb {
 			return ra < rb
 		}
+	}
+	aTs := state.RankTime(ranks, a.RelPath)
+	bTs := state.RankTime(ranks, b.RelPath)
+	aRanked, bRanked := !aTs.IsZero(), !bTs.IsZero()
+	if aRanked != bRanked {
+		return !aRanked
+	}
+	if aRanked && !aTs.Equal(bTs) {
+		return aTs.Before(bTs)
 	}
 	return a.Name < b.Name
 }
@@ -241,6 +326,48 @@ func typeLabel(t string) string {
 		return "other"
 	}
 	return t
+}
+
+func isBrowsePrintable(key tea.KeyMsg) bool {
+	if strings.HasPrefix(key.String(), "ctrl+") {
+		return false
+	}
+	if key.Type == tea.KeyRunes && len(key.Runes) > 0 {
+		return unicode.IsPrint(key.Runes[0])
+	}
+	s := key.String()
+	rs := []rune(s)
+	return len(rs) == 1 && unicode.IsPrint(rs[0])
+}
+
+func printableBrowse(key tea.KeyMsg) string {
+	if len(key.Runes) > 0 {
+		return string(key.Runes)
+	}
+	return key.String()
+}
+
+func (m projListModel) openSearch(initial string) (tea.Model, tea.Cmd) {
+	m.overlay = projOverlaySearch
+	if initial != "" {
+		m.input.SetValue(initial)
+		m.query = strings.TrimSpace(initial)
+		m.rebuildVisible()
+	} else {
+		m.input.SetValue(m.query)
+	}
+	m.input.Focus()
+	return m, nil
+}
+
+func (m projListModel) recordVisit(abs string) {
+	if m.campaignRoot == "" || abs == "" {
+		return
+	}
+	if _, err := os.Stat(filepath.Join(m.campaignRoot, ".campaign")); err != nil {
+		return
+	}
+	_ = state.RecordVisit(context.Background(), m.campaignRoot, abs)
 }
 
 func sourceLabel(s string) string {

@@ -5,6 +5,7 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/spf13/cobra"
@@ -196,6 +197,41 @@ func TestProjModel_SearchTypesLetterG(t *testing.T) {
 	}
 	if m.quitting {
 		t.Fatal("g in search must not jump/quit")
+	}
+}
+
+func TestProjModel_BrowsePrintableOpensSearch(t *testing.T) {
+	m := newTestProjModel()
+	m = projKey(m, "c")
+	if m.overlay != projOverlaySearch {
+		t.Fatal("unbound letter should open search")
+	}
+	if m.query != "c" {
+		t.Fatalf("query = %q, want c", m.query)
+	}
+}
+
+func TestProjModel_RecencyWithinGroupAndKeepAbsPath(t *testing.T) {
+	m := newTestProjModel()
+	m.ranks = map[string]time.Time{
+		"projects/camp": time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC),
+		"projects/fest": time.Date(2026, 9, 1, 0, 0, 0, 0, time.UTC),
+	}
+	m.seeded = false
+	m.selectedAbs = ""
+	m.rebuildVisible()
+	got := visibleNames(m)
+	if got[0] != "camp" || got[1] != "fest" {
+		t.Fatalf("Go group recency = %v, want camp then fest (most recent last)", got)
+	}
+	if m.visible[m.cursor].Name != "fest" {
+		t.Fatalf("first open cursor = %q, want fest", m.visible[m.cursor].Name)
+	}
+	kept := m.visible[m.cursor].AbsPath
+	m.query = "f"
+	m.rebuildVisible()
+	if m.visible[m.cursor].AbsPath != kept {
+		t.Fatalf("filter yanked cursor off %q", kept)
 	}
 }
 

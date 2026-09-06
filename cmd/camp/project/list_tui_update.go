@@ -45,10 +45,10 @@ func (m projListModel) updateBrowse(key tea.KeyMsg) (tea.Model, tea.Cmd) {
 		m.setStatus("grouped by "+m.groupBy.label(), false)
 		return m, nil
 	case "/":
-		m.overlay = projOverlaySearch
-		m.input.SetValue(m.query)
-		m.input.Focus()
-		return m, nil
+		return m.openSearch("")
+	}
+	if isBrowsePrintable(key) {
+		return m.openSearch(printableBrowse(key))
 	}
 	return m, nil
 }
@@ -92,6 +92,7 @@ func (m *projListModel) move(delta int) {
 	}
 	n := len(m.visible)
 	m.cursor = (m.cursor + delta + n) % n
+	m.syncSelectedAbs()
 }
 
 func (m projListModel) goSelected() (tea.Model, tea.Cmd) {
@@ -103,6 +104,7 @@ func (m projListModel) goSelected() (tea.Model, tea.Cmd) {
 		return m, nil
 	}
 	m.gotoPath = m.visible[m.cursor].AbsPath
+	m.recordVisit(m.gotoPath)
 	m.quitting = true
 	return m, tea.Quit
 }
