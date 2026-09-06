@@ -26,7 +26,17 @@ var (
 	}
 
 	nativeClipboardWrite = writeNativeClipboard
+
+	// clipboardLookPath and clipboardRun are seams so the candidate ordering
+	// can be tested on any host without installing a display server.
+	clipboardLookPath = exec.LookPath
+	clipboardRun      = runClipboardCommand
+	clipboardGOOS     = runtime.GOOS
 )
+
+// errNoClipboardCommand reports that no platform clipboard command is
+// installed. Callers fall back to OSC 52.
+var errNoClipboardCommand = errors.New("no clipboard command available")
 
 // WriteClipboard copies s to the operator's clipboard. Local sessions prefer
 // the platform clipboard command; remote sessions use OSC 52 so the request
@@ -51,16 +61,68 @@ func writeClipboard(s string) error {
 	return nil
 }
 
+// clipboardCommand is one candidate clipboard writer.
+type clipboardCommand struct {
+	name string
+	args []string
+}
+
 func writeNativeClipboard(s string) error {
-	var c *exec.Cmd
-	switch runtime.GOOS {
-	case "darwin":
-		c = exec.Command("pbcopy")
-	case "windows":
-		c = exec.Command("cmd", "/c", "clip")
-	default:
-		c = exec.Command("xclip", "-selection", "clipboard")
+	candidates := clipboardCandidates(clipboardGOOS)
+
+	var attemptErrs []error
+	for _, candidate := range candidates {
+		if _, err := clipboardLookPath(candidate.name); err != nil {
+			continue
+		}
+		if err := clipboardRun(candidate, s); err != nil {
+			attemptErrs = append(attemptErrs, err)
+			continue
+		}
+		return nil
 	}
+
+	if len(attemptErrs) == 0 {
+		return errNoClipboardCommand
+	}
+	return errors.Join(attemptErrs...)
+}
+
+// clipboardCandidates returns the clipboard commands to try, most likely to
+// reach the operator's clipboard first.
+//
+// On Unix desktops the display-server environment variables order the list
+// rather than filter it: a session under XWayland sets both, and only wl-copy
+// reaches the compositor's clipboard, but an unset variable is not proof a
+// tool will fail (subshells and login managers routinely drop them). So a
+// missing variable demotes a candidate instead of removing it, and everything
+// installed still gets a turn before the caller falls back to OSC 52.
+func clipboardCandidates(goos string) []clipboardCommand {
+	switch goos {
+	case "darwin":
+		return []clipboardCommand{{name: "pbcopy"}}
+	case "windows":
+		return []clipboardCommand{{name: "cmd", args: []string{"/c", "clip"}}}
+	}
+
+	wayland := clipboardCommand{name: "wl-copy"}
+	x11 := []clipboardCommand{
+		{name: "xclip", args: []string{"-selection", "clipboard"}},
+		{name: "xsel", args: []string{"--clipboard", "--input"}},
+	}
+
+	switch {
+	case os.Getenv("WAYLAND_DISPLAY") != "":
+		return append([]clipboardCommand{wayland}, x11...)
+	case os.Getenv("DISPLAY") != "":
+		return append(x11, wayland)
+	default:
+		return append([]clipboardCommand{wayland}, x11...)
+	}
+}
+
+func runClipboardCommand(candidate clipboardCommand, s string) error {
+	c := exec.Command(candidate.name, candidate.args...)
 	c.Stdin = strings.NewReader(s)
 	return c.Run()
 }

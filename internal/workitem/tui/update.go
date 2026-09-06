@@ -3,11 +3,11 @@ package tui
 import (
 	"os/exec"
 	"runtime"
-	"strings"
 
 	tea "github.com/charmbracelet/bubbletea"
 
 	"github.com/Obedience-Corp/camp/internal/editor"
+	"github.com/Obedience-Corp/camp/internal/ui"
 	"github.com/Obedience-Corp/camp/internal/workitem"
 	"github.com/Obedience-Corp/camp/internal/workitem/priority"
 )
@@ -393,15 +393,7 @@ func (m Model) copyPath() (tea.Model, tea.Cmd) {
 		return m, nil
 	}
 	absPath := item.AbsPath(m.campaignRoot)
-	var c *exec.Cmd
-	switch runtime.GOOS {
-	case "darwin":
-		c = exec.Command("pbcopy")
-	default:
-		c = exec.Command("xclip", "-selection", "clipboard")
-	}
-	c.Stdin = strings.NewReader(absPath)
-	if err := c.Run(); err != nil {
+	if err := ui.WriteClipboard(absPath); err != nil {
 		cmd := m.setStatus("copy failed: "+err.Error(), true)
 		return m, cmd
 	}
