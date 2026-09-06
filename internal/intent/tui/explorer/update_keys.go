@@ -172,7 +172,7 @@ func (m Model) updateNormal(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	case "p":
 		// Promote to festival (ready intents only)
 		if selected := m.SelectedIntent(); selected != nil && selected.Status.IsNote() {
-			m.statusMessage = "Convert note to an intent before promoting it"
+			m.setStatusError("Convert note to an intent before promoting it")
 			return m, nil
 		}
 		return m.handlePromoteAction()
@@ -182,10 +182,10 @@ func (m Model) updateNormal(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		if selected := m.SelectedIntent(); selected != nil && selected.Status.IsNote() {
 			if selected.Status == intent.StatusNoteArchived ||
 				strings.HasPrefix(string(selected.Status), string(intent.StatusNoteArchived)+"/") {
-				m.statusMessage = "Note is already archived"
+				m.setStatusError("Note is already archived")
 				return m, nil
 			}
-			m.statusMessage = "Archiving note..."
+			m.setStatus("Archiving note...")
 			return m, m.archiveNote(selected)
 		}
 		return m.handleArchiveAction()
@@ -196,7 +196,7 @@ func (m Model) updateNormal(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			return m, m.deleteSelectedFolder()
 		}
 		if selected := m.SelectedIntent(); selected != nil && selected.Status.IsNote() {
-			m.statusMessage = "Note deletion is not available in the explorer yet"
+			m.setStatusError("Note deletion is not available in the explorer yet")
 			return m, nil
 		}
 		return m.handleDeleteAction()
@@ -219,6 +219,9 @@ func (m Model) updateNormal(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			m.actionMenu = tui.NewActionMenu(selected)
 		}
 		return m, nil
+	case "y":
+		// Yank the selected intent's id to the clipboard.
+		return m.handleCopyID()
 	case "v":
 		// Toggle preview pane visibility
 		m.showPreview = !m.showPreview

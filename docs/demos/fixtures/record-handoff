@@ -10,18 +10,18 @@
 #
 #   cat "$CAMP_VHS_ROOT/handoff.log"
 #
-# Install it under every name camp might call (open, xdg-open, pbcopy, xclip)
-# and put that directory first on PATH before running vhs.
+# Install it under every name camp might call (open, xdg-open, pbcopy, xclip,
+# wl-copy, xsel) and put that directory first on PATH before running vhs.
 set -euo pipefail
 
 log="${CAMP_VHS_HANDOFF_LOG:-${CAMP_VHS_ROOT:-.}/handoff.log}"
 name="$(basename "$0")"
 
 # Dispatch on the name, not on argv: xclip is invoked as
-# `xclip -selection clipboard` and still reads the URL from stdin, so an
+# `xclip -selection clipboard` and still reads the payload from stdin, so an
 # "has arguments" test would log the flags and drop the payload.
 case "$name" in
-    pbcopy | xclip)
+    pbcopy | xclip | xsel | wl-copy)
         printf '%s %s\n' "$name" "$(cat)" >>"$log"
         ;;
     *)

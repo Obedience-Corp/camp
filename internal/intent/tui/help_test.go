@@ -18,3 +18,9 @@ func TestHelpContentDocumentsMeetingActions(t *testing.T) {
 		}
 	}
 }
+
+func TestHelpContentDocumentsCopyBinding(t *testing.T) {
+	if !strings.Contains(helpContent, "y           Copy intent id to clipboard") {
+		t.Error("help content missing the copy-id binding")
+	}
+}

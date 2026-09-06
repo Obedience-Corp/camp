@@ -113,7 +113,7 @@ func (m *Model) createIntentFromAddResult(result *tui.AddResult) {
 	}
 	created, err := create(m.ctx, opts)
 	if err != nil {
-		m.statusMessage = "Error creating " + noun + ": " + err.Error()
+		m.setStatusError("Error creating " + noun + ": " + err.Error())
 		return
 	}
 
@@ -123,7 +123,7 @@ func (m *Model) createIntentFromAddResult(result *tui.AddResult) {
 		Title: created.Title,
 		To:    string(created.Status),
 	}); err != nil {
-		m.statusMessage = "Error writing audit event: " + err.Error()
+		m.setStatusError("Error writing audit event: " + err.Error())
 		return
 	}
 
@@ -132,7 +132,7 @@ func (m *Model) createIntentFromAddResult(result *tui.AddResult) {
 		m.autoCommitIntent(commit.IntentCreate, result.Title, "", created.Path)
 	}
 
-	m.statusMessage = noun + " created: " + result.Title
+	m.setStatusSuccess(noun + " created: " + result.Title)
 }
 
 // filterQuitCmd wraps a tea.Cmd to intercept tea.QuitMsg and convert it

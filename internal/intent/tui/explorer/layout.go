@@ -87,11 +87,11 @@ func (m *Model) recalculateLayout() {
 		switch m.layoutMode {
 		case layoutNarrow:
 			if m.showPreview {
-				m.statusMessage = "Preview hidden (narrow terminal)"
+				m.setStatus("Preview hidden (narrow terminal)")
 			}
 		case layoutNormal:
 			if oldMode == layoutNarrow && m.showPreview {
-				m.statusMessage = "Preview restored"
+				m.setStatus("Preview restored")
 			}
 		}
 	}

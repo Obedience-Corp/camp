@@ -27,7 +27,7 @@ func (m Model) updateSearch(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		m.focus = focusList
 		m.searchInput.Blur()
 		if !m.placeCursorAtFirstItem() {
-			m.statusMessage = "No matches — press / to refine or Esc to clear"
+			m.setStatus("No matches — press / to refine or Esc to clear")
 		}
 		return m, nil
 	}

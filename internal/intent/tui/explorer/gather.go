@@ -17,7 +17,7 @@ func (m *Model) toggleSelection(i *intent.Intent) {
 		return
 	}
 	if i.Status.IsNote() {
-		m.statusMessage = "Convert note to an intent before gathering it"
+		m.setStatusError("Convert note to an intent before gathering it")
 		return
 	}
 
@@ -37,7 +37,7 @@ func (m *Model) toggleSelection(i *intent.Intent) {
 func (m *Model) exitMultiSelectMode() {
 	m.selectedIntents = make(map[string]bool)
 	m.multiSelectMode = false
-	m.statusMessage = "Selection cleared"
+	m.setStatusSuccess("Selection cleared")
 }
 
 // getSelectedIntentObjects returns the full Intent objects for all selected IDs.
@@ -143,7 +143,7 @@ func (m *Model) handleGatherStart() (tea.Model, tea.Cmd) {
 		m.gatherDialog = tui.NewGatherDialog(intents)
 		m.focus = focusGatherDialog
 	} else {
-		m.statusMessage = "Select 2+ intents with Space, then ga to gather"
+		m.setStatus("Select 2+ intents with Space, then ga to gather")
 	}
 	return m, nil
 }
@@ -155,11 +155,11 @@ func (m *Model) handleGatherGroup() (tea.Model, tea.Cmd) {
 	}
 	group := m.groups[m.cursorGroup]
 	if group.Status.IsNote() {
-		m.statusMessage = "Convert notes to intents before gathering them"
+		m.setStatusError("Convert notes to intents before gathering them")
 		return m, nil
 	}
 	if len(group.Intents) < 2 {
-		m.statusMessage = "Group needs 2+ intents to gather"
+		m.setStatusError("Group needs 2+ intents to gather")
 		return m, nil
 	}
 	for _, i := range group.Intents {
@@ -174,10 +174,10 @@ func (m *Model) handleGatherGroup() (tea.Model, tea.Cmd) {
 // enterGatherModeFromAction enters multi-select mode with current intent pre-selected.
 func (m *Model) enterGatherModeFromAction(selected *intent.Intent) {
 	if selected.Status.IsNote() {
-		m.statusMessage = "Convert note to an intent before gathering it"
+		m.setStatusError("Convert note to an intent before gathering it")
 		return
 	}
 	m.multiSelectMode = true
 	m.selectedIntents[selected.ID] = true
-	m.statusMessage = "Select more intents with Space, then ga to gather"
+	m.setStatus("Select more intents with Space, then ga to gather")
 }

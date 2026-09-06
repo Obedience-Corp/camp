@@ -118,7 +118,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 	case intentsLoadedMsg:
 		if msg.err != nil {
-			m.statusMessage = "Error: " + msg.err.Error()
+			m.setStatusError("Error: " + msg.err.Error())
 			return m, nil
 		}
 		m.intents = msg.intents
@@ -133,24 +133,24 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 	case editorFinishedMsg:
 		if msg.err != nil {
-			m.statusMessage = "Editor error: " + msg.err.Error()
+			m.setStatusError("Editor error: " + msg.err.Error())
 		} else {
-			m.statusMessage = "Edit complete"
+			m.setStatusSuccess("Edit complete")
 		}
 		// Refresh intent list to pick up changes
 		return m, m.loadIntents()
 
 	case openFinishedMsg:
 		if msg.err != nil {
-			m.statusMessage = "Open failed: " + msg.err.Error()
+			m.setStatusError("Open failed: " + msg.err.Error())
 		}
 		return m, nil
 
 	case moveFinishedMsg:
 		if msg.err != nil {
-			m.statusMessage = "Move failed: " + msg.err.Error()
+			m.setStatusError("Move failed: " + msg.err.Error())
 		} else {
-			m.statusMessage = fmt.Sprintf("Moved to %s", msg.newStatus)
+			m.setStatusSuccess(fmt.Sprintf("Moved to %s", msg.newStatus))
 		}
 		m.intentToMove = nil
 		return m, m.loadIntents()
@@ -158,28 +158,28 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case archiveFinishedMsg:
 		if msg.err != nil {
 			if os.IsPermission(msg.err) {
-				m.statusMessage = "Permission denied: cannot archive file"
+				m.setStatusError("Permission denied: cannot archive file")
 			} else if os.IsNotExist(msg.err) {
-				m.statusMessage = "File no longer exists"
+				m.setStatusError("File no longer exists")
 			} else {
-				m.statusMessage = "Archive failed: " + msg.err.Error()
+				m.setStatusError("Archive failed: " + msg.err.Error())
 			}
 		} else {
-			m.statusMessage = "Archived"
+			m.setStatusSuccess("Archived")
 		}
 		return m, m.loadIntents()
 
 	case deleteFinishedMsg:
 		if msg.err != nil {
 			if os.IsPermission(msg.err) {
-				m.statusMessage = "Permission denied: cannot delete file"
+				m.setStatusError("Permission denied: cannot delete file")
 			} else if os.IsNotExist(msg.err) {
-				m.statusMessage = "File already deleted"
+				m.setStatusError("File already deleted")
 			} else {
-				m.statusMessage = "Delete failed: " + msg.err.Error()
+				m.setStatusError("Delete failed: " + msg.err.Error())
 			}
 		} else {
-			m.statusMessage = "Deleted: " + msg.title
+			m.setStatusSuccess("Deleted: " + msg.title)
 		}
 		return m, m.loadIntents()
 
@@ -257,30 +257,30 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 	case promoteFinishedMsg:
 		if msg.err != nil {
-			m.statusMessage = "Promote failed: " + msg.err.Error()
+			m.setStatusError("Promote failed: " + msg.err.Error())
 		} else if msg.designDir != "" {
-			m.statusMessage = fmt.Sprintf("Promoted '%s' → design doc '%s'", msg.intentTitle, msg.designDir)
+			m.setStatusSuccess(fmt.Sprintf("Promoted '%s' → design doc '%s'", msg.intentTitle, msg.designDir))
 		} else if msg.festNotFound {
-			m.statusMessage = fmt.Sprintf("Promoted '%s' to active (fest CLI not found, skipped festival creation)", msg.intentTitle)
+			m.setStatus(fmt.Sprintf("Promoted '%s' to active (fest CLI not found, skipped festival creation)", msg.intentTitle))
 		} else if msg.festivalCreated {
 			name := msg.festivalDir
 			if name == "" {
 				name = msg.festivalName
 			}
-			m.statusMessage = fmt.Sprintf("Promoted '%s' → festival '%s'", msg.intentTitle, name)
+			m.setStatusSuccess(fmt.Sprintf("Promoted '%s' → festival '%s'", msg.intentTitle, name))
 		} else if msg.festCLIError != "" {
-			m.statusMessage = fmt.Sprintf("Promoted '%s' to active (festival creation failed: %s)", msg.intentTitle, msg.festCLIError)
+			m.setStatusError(fmt.Sprintf("Promoted '%s' to active (festival creation failed: %s)", msg.intentTitle, msg.festCLIError))
 		} else {
-			m.statusMessage = fmt.Sprintf("Promoted '%s' to active (festival creation failed)", msg.intentTitle)
+			m.setStatusError(fmt.Sprintf("Promoted '%s' to active (festival creation failed)", msg.intentTitle))
 		}
 		return m, m.loadIntents()
 
 	case gatherFinishedMsg:
 		// Handle gather completion
 		if msg.err != nil {
-			m.statusMessage = "Gather failed: " + msg.err.Error()
+			m.setStatusError("Gather failed: " + msg.err.Error())
 		} else {
-			m.statusMessage = fmt.Sprintf("Gathered %d intents into: %s", msg.sourceCount, msg.gatheredTitle)
+			m.setStatusSuccess(fmt.Sprintf("Gathered %d intents into: %s", msg.sourceCount, msg.gatheredTitle))
 		}
 		// Exit multi-select mode and clear selections
 		m.exitMultiSelectMode()
@@ -288,28 +288,28 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 	case tagsUpdatedMsg:
 		if msg.err != nil {
-			m.statusMessage = "Tag update failed: " + msg.err.Error()
+			m.setStatusError("Tag update failed: " + msg.err.Error())
 		} else {
-			m.statusMessage = "Tags updated"
+			m.setStatusSuccess("Tags updated")
 		}
 		return m, m.loadIntents()
 
 	case renameFinishedMsg:
 		if msg.err != nil {
-			m.statusMessage = "Rename failed: " + msg.err.Error()
+			m.setStatusError("Rename failed: " + msg.err.Error())
 			return m, nil
 		}
-		m.statusMessage = "Renamed"
+		m.setStatusSuccess("Renamed")
 		m.pendingReselectID = msg.renamedID
 		return m, m.loadIntents()
 
 	case folderFinishedMsg:
 		if msg.err != nil {
-			m.statusMessage = msg.err.Error()
+			m.setStatusError(msg.err.Error())
 			return m, nil
 		}
 		if msg.message != "" {
-			m.statusMessage = msg.message
+			m.setStatusSuccess(msg.message)
 		}
 		return m, m.loadIntents()
 
@@ -344,6 +344,8 @@ func (m Model) handleActionMenuSelection(msg tui.ActionMenuSelectedMsg) (tea.Mod
 		)
 	case "edit":
 		return m, openInEditor(m.ctx, selected.Path)
+	case "copy-id":
+		return m.handleCopyID()
 	case "convert":
 		if selected.Status.IsNote() {
 			m.startConvert()
@@ -358,7 +360,7 @@ func (m Model) handleActionMenuSelection(msg tui.ActionMenuSelectedMsg) (tea.Mod
 		m.moveStatusIdx = 0
 	case "promote":
 		if selected.Status.IsNote() {
-			m.statusMessage = "Convert note to an intent before promoting it"
+			m.setStatusError("Convert note to an intent before promoting it")
 			return m, nil
 		}
 		return m.handlePromoteAction()
@@ -366,23 +368,23 @@ func (m Model) handleActionMenuSelection(msg tui.ActionMenuSelectedMsg) (tea.Mod
 		if selected.Status.IsNote() {
 			if selected.Status == intent.StatusNoteArchived ||
 				strings.HasPrefix(string(selected.Status), string(intent.StatusNoteArchived)+"/") {
-				m.statusMessage = "Note is already archived"
+				m.setStatusError("Note is already archived")
 				return m, nil
 			}
-			m.statusMessage = "Archiving note..."
+			m.setStatus("Archiving note...")
 			return m, m.archiveNote(selected)
 		}
 		return m.handleArchiveAction()
 	case "restore":
 		if selected.Status == intent.StatusNoteArchived {
-			m.statusMessage = "Restoring note..."
+			m.setStatus("Restoring note...")
 			return m, m.restoreNote(selected)
 		}
-		m.statusMessage = "Note is not archived"
+		m.setStatusError("Note is not archived")
 		return m, nil
 	case "delete":
 		if selected.Status.IsNote() {
-			m.statusMessage = "Note deletion is not available in the explorer yet"
+			m.setStatusError("Note deletion is not available in the explorer yet")
 			return m, nil
 		}
 		m.focus = focusConfirm
