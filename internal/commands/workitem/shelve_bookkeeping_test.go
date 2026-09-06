@@ -212,3 +212,40 @@ func TestPromoteFinishesAfterCallerCancellation(t *testing.T) {
 		t.Fatal("the promote event is missing from the audit file")
 	}
 }
+
+func TestPromoteMergedWorkitem_IntentMovesToDone(t *testing.T) {
+	t.Setenv(defercommit.EnvNoDefer, "1")
+	root, relPath := intentTestCampaign(t)
+	initGitCampaign(t, root)
+
+	ctx := context.Background()
+	cfg, err := config.LoadCampaignConfig(ctx, root)
+	if err != nil {
+		t.Fatal(err)
+	}
+	wi := wkitem.WorkItem{
+		WorkflowType: wkitem.WorkflowTypeIntent,
+		SourceID:     intentTestID,
+		RelativePath: relPath,
+		Key:          "intent:" + relPath,
+		ItemKind:     wkitem.ItemKindFile,
+	}
+	var out bytes.Buffer
+	if err := PromoteMergedWorkitem(ctx, &out, cfg, root, wi, wkitem.EvidenceMergedBranch); err != nil {
+		t.Fatalf("intent promote: %v\n%s", err, out.String())
+	}
+	matches, err := filepath.Glob(filepath.Join(root, ".campaign", "intents", "*", "done", intentTestID+".md"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(matches) != 1 {
+		t.Fatalf("intent not under intents/*/done/: glob matches %v", matches)
+	}
+	if !strings.Contains(filepath.ToSlash(matches[0]), ".campaign/intents/") || !strings.Contains(filepath.ToSlash(matches[0]), "/done/") {
+		t.Fatalf("intent landed at unexpected path: %s", matches[0])
+	}
+	inboxPath := filepath.Join(root, filepath.FromSlash(relPath))
+	if _, err := os.Stat(inboxPath); !os.IsNotExist(err) {
+		t.Fatalf("intent still at source %s", relPath)
+	}
+}

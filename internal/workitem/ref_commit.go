@@ -22,13 +22,18 @@ func RefOf(wi *WorkItem) string {
 }
 
 // CarriesCommitRef reports whether wi can carry a WI- ref in a campaign commit
-// tag. A ref is stored in a directory's .workitem marker, so only a
-// directory-kind item with a stable id has somewhere to keep one; intents and
-// festivals identify themselves from their own source document and have no
-// marker to write to. Callers use this to avoid promising a WI- segment that
-// EnsureRefForCommit will not produce.
+// tag. Directory workitems store a ref in their .workitem marker; intents store
+// one in their own frontmatter. Festivals declare identity in fest.yaml, which
+// this path does not write, so they are excluded. Callers use this to avoid
+// promising a WI- segment that EnsureRefForCommit will not produce.
 func CarriesCommitRef(wi *WorkItem) bool {
-	return wi != nil && wi.ItemKind == ItemKindDirectory && wi.StableID != ""
+	if wi == nil {
+		return false
+	}
+	if wi.ItemKind == ItemKindDirectory {
+		return wi.StableID != ""
+	}
+	return wi.WorkflowType == WorkflowTypeIntent && wi.SourceID != ""
 }
 
 // WorktreeLinkCommitNote is the one-line note printed after a worktree is
@@ -41,7 +46,7 @@ func WorktreeLinkCommitNote(wi *WorkItem) string {
 		return "camp p commit in this worktree will include WI-* in the camp tag"
 	}
 	return "camp p commit in this worktree will resolve to this workitem " +
-		"(no WI-* segment: only adopted workitems carry a ref)"
+		"(no WI-* segment: festivals and workitems without a stable id carry no ref)"
 }
 
 // EnsureRefForCommit returns the workitem's ref, auto-backfilling the
@@ -67,21 +72,30 @@ func EnsureRefForCommit(ctx context.Context, root string, wi *WorkItem, errw io.
 		return "", camperrors.Wrap(err, "discover for ref collision set")
 	}
 	existing := RefsFromWorkitems(items)
-	ref, err := DeriveUnique(ctx, wi.StableID, existing)
+	workitemID := LinkWorkitemID(wi)
+	ref, err := DeriveUnique(ctx, workitemID, existing)
 	if err != nil {
 		_, _ = fmt.Fprintf(errw,
 			"warning: could not derive ref for %s: %v; committing without WI segment\n",
 			wi.RelativePath, err)
 		return "", nil
 	}
-	if err := BackfillRef(ctx, root, wi.RelativePath, ref); err != nil {
+	writeRef := BackfillRef
+	if wi.ItemKind == ItemKindFile {
+		writeRef = BackfillIntentRef
+	}
+	if err := writeRef(ctx, root, wi.RelativePath, ref); err != nil {
 		_, _ = fmt.Fprintf(errw,
 			"warning: could not backfill ref for %s: %v; committing without WI segment\n",
 			wi.RelativePath, err)
 		return "", nil
 	}
+	backfillNoun := "the .workitem update"
+	if wi.ItemKind == ItemKindFile {
+		backfillNoun = "the intent file"
+	}
 	_, _ = fmt.Fprintf(errw,
-		"warning: backfilled missing ref for %s -> %s; commit the .workitem update with your next change\n",
-		wi.RelativePath, ref)
+		"warning: backfilled missing ref for %s -> %s; commit %s with your next change\n",
+		wi.RelativePath, ref, backfillNoun)
 	return ref, nil
 }

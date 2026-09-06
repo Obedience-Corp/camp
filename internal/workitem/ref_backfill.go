@@ -50,6 +50,22 @@ func BackfillRef(ctx context.Context, root, relPath, ref string) error {
 	return fsutil.WriteFileAtomically(abs, out, 0o644)
 }
 
+// BackfillIntentRef writes ref into a file workitem's frontmatter if it is
+// still empty. The file counterpart of BackfillRef.
+func BackfillIntentRef(ctx context.Context, root, relPath, ref string) error {
+	if err := ctx.Err(); err != nil {
+		return err
+	}
+	abs := filepath.Join(root, filepath.FromSlash(relPath))
+
+	// IfAbsent, not a check followed by a stamp: the "already filled in by a
+	// concurrent writer" no-op has to be decided under the same lock as the
+	// write, exactly as BackfillRef does for a marker.
+	return StampFrontmatterFieldsIfAbsent(ctx, abs, []FrontmatterField{
+		{After: "id", Key: "ref", Value: ref},
+	})
+}
+
 // lookupScalar finds the scalar value of `key` in a top-level mapping
 // document. Returns (value, true) on hit; ("", false) when the document is
 // not a mapping or the key is absent.

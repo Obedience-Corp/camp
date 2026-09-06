@@ -46,6 +46,21 @@ func (f FrontmatterField) node() *yaml.Node {
 // frontmatter block (--- at byte zero); callers prepend a block first for
 // no-frontmatter files.
 func StampFrontmatterFields(ctx context.Context, path string, fields []FrontmatterField) error {
+	return stampFrontmatterFields(ctx, path, fields, false)
+}
+
+// StampFrontmatterFieldsIfAbsent is StampFrontmatterFields, except a key whose
+// value is already set and non-empty is left alone.
+//
+// The skip decision is made under the same lock as the write, which is the
+// whole point: a caller that checks first and then stamps has a window where a
+// concurrent writer's value gets overwritten. BackfillRef makes the same
+// guarantee for a directory workitem's marker.
+func StampFrontmatterFieldsIfAbsent(ctx context.Context, path string, fields []FrontmatterField) error {
+	return stampFrontmatterFields(ctx, path, fields, true)
+}
+
+func stampFrontmatterFields(ctx context.Context, path string, fields []FrontmatterField, onlyIfAbsent bool) error {
 	release, err := fsutil.AcquireFileLock(ctx, path+".lock")
 	if err != nil {
 		return err
@@ -66,10 +81,20 @@ func StampFrontmatterFields(ctx context.Context, path string, fields []Frontmatt
 	if err := yaml.Unmarshal(block, &doc); err != nil {
 		return camperrors.Wrapf(err, "parse frontmatter %s", path)
 	}
+	stamped := false
 	for _, f := range fields {
+		if onlyIfAbsent {
+			if existing, ok := lookupScalar(&doc, f.Key); ok && existing != "" {
+				continue
+			}
+		}
 		if err := insertNodeAfter(&doc, f.After, f.Key, f.node()); err != nil {
 			return err
 		}
+		stamped = true
+	}
+	if !stamped {
+		return nil
 	}
 	encoded, err := encodeFrontmatterNode(&doc)
 	if err != nil {
