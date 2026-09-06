@@ -37,7 +37,7 @@ func (m *Model) selectedNoteFolder() *IntentGroup {
 // otherwise create under the notes root.
 func (m *Model) startFolderCreate() {
 	if m.service == nil {
-		m.statusMessage = "Folder create requires an intent service"
+		m.setStatusError("Folder create requires an intent service")
 		return
 	}
 	parent := ""
@@ -64,15 +64,15 @@ func (m *Model) startFolderRename() {
 		return
 	}
 	if g.Status == intent.StatusNote {
-		m.statusMessage = "Cannot rename the notes root"
+		m.setStatusError("Cannot rename the notes root")
 		return
 	}
 	if g.Status == intent.StatusNoteArchived || g.Status == intent.StatusNoteMeetings {
-		m.statusMessage = "Cannot rename reserved note folders"
+		m.setStatusError("Cannot rename reserved note folders")
 		return
 	}
 	if m.service == nil {
-		m.statusMessage = "Folder rename requires an intent service"
+		m.setStatusError("Folder rename requires an intent service")
 		return
 	}
 	rel := strings.TrimPrefix(string(g.Status), "notes/")
@@ -95,15 +95,15 @@ func (m *Model) deleteSelectedFolder() tea.Cmd {
 		return nil
 	}
 	if g.Status == intent.StatusNote {
-		m.statusMessage = "Cannot delete the notes root"
+		m.setStatusError("Cannot delete the notes root")
 		return nil
 	}
 	if g.Status == intent.StatusNoteArchived || g.Status == intent.StatusNoteMeetings {
-		m.statusMessage = "Cannot delete reserved note folders"
+		m.setStatusError("Cannot delete reserved note folders")
 		return nil
 	}
 	if m.service == nil {
-		m.statusMessage = "Folder delete requires an intent service"
+		m.setStatusError("Folder delete requires an intent service")
 		return nil
 	}
 	rel := strings.TrimPrefix(string(g.Status), "notes/")
@@ -116,12 +116,12 @@ func (m *Model) startNoteFolderMove(note *intent.Intent) {
 		return
 	}
 	if m.service == nil {
-		m.statusMessage = "Note move requires an intent service"
+		m.setStatusError("Note move requires an intent service")
 		return
 	}
 	folders, err := m.service.NoteFolders(m.ctx)
 	if err != nil {
-		m.statusMessage = "Failed to list note folders: " + err.Error()
+		m.setStatusError("Failed to list note folders: " + err.Error())
 		return
 	}
 	// Picker options: root first, then user folders. Reserved destinations are

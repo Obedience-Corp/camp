@@ -28,12 +28,12 @@ func isMeetingNote(i *intent.Intent) bool {
 // handleMeetingTranscript opens the transcript sidecar for the selected meeting.
 func (m *Model) handleMeetingTranscript(selected *intent.Intent) (tea.Model, tea.Cmd) {
 	if m.service == nil {
-		m.statusMessage = "Transcript requires an intent service"
+		m.setStatusError("Transcript requires an intent service")
 		return m, nil
 	}
 	path, ok := m.service.MeetingTranscriptPath(selected)
 	if !ok {
-		m.statusMessage = "No transcript sidecar for this meeting"
+		m.setStatusError("No transcript sidecar for this meeting")
 		return m, nil
 	}
 	return m, openInEditor(m.ctx, path)
@@ -42,28 +42,28 @@ func (m *Model) handleMeetingTranscript(selected *intent.Intent) (tea.Model, tea
 // handleMeetingAudio opens the machine-local audio file referenced by the meeting.
 func (m *Model) handleMeetingAudio(selected *intent.Intent) (tea.Model, tea.Cmd) {
 	if selected.Meeting == nil || selected.Meeting.Bundle == "" || selected.Meeting.Audio == "" {
-		m.statusMessage = "No audio path on this meeting"
+		m.setStatusError("No audio path on this meeting")
 		return m, nil
 	}
 	if selected.Meeting.BundleHost != "" {
 		host, err := os.Hostname()
 		if err != nil {
-			m.statusMessage = "Cannot determine whether meeting audio is local"
+			m.setStatusError("Cannot determine whether meeting audio is local")
 			return m, nil
 		}
 		if host != selected.Meeting.BundleHost {
-			m.statusMessage = "Meeting audio is available on " + selected.Meeting.BundleHost
+			m.setStatusError("Meeting audio is available on " + selected.Meeting.BundleHost)
 			return m, nil
 		}
 	}
 	audioPath := filepath.Join(selected.Meeting.Bundle, selected.Meeting.Audio)
 	info, err := os.Stat(audioPath)
 	if err != nil {
-		m.statusMessage = "Meeting audio is unavailable: " + filepath.Base(audioPath)
+		m.setStatusError("Meeting audio is unavailable: " + filepath.Base(audioPath))
 		return m, nil
 	}
 	if info.IsDir() {
-		m.statusMessage = "Meeting audio path is not a file: " + filepath.Base(audioPath)
+		m.setStatusError("Meeting audio path is not a file: " + filepath.Base(audioPath))
 		return m, nil
 	}
 	return m, openWithSystem(audioPath)
@@ -72,12 +72,12 @@ func (m *Model) handleMeetingAudio(selected *intent.Intent) (tea.Model, tea.Cmd)
 // handleMeetingExtract creates inbox intents from checklist lines in the summary.
 func (m *Model) handleMeetingExtract(selected *intent.Intent) (tea.Model, tea.Cmd) {
 	if m.service == nil {
-		m.statusMessage = "Extract requires an intent service"
+		m.setStatusError("Extract requires an intent service")
 		return m, nil
 	}
 	items := extractItemsFromMeetingBody(selected.Content)
 	if len(items) == 0 {
-		m.statusMessage = "No action items found in meeting summary"
+		m.setStatus("No action items found in meeting summary")
 		return m, nil
 	}
 	return m, m.runMeetingExtract(selected, items)

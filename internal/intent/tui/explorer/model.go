@@ -93,8 +93,12 @@ type Model struct {
 	ready    bool
 	quitting bool
 
-	// Status message
+	// Status message. Always set through setStatus/setStatusSuccess/
+	// setStatusError so the severity cannot go stale: nothing clears the
+	// footer on keypress, so a bare assignment would inherit the previous
+	// message's kind.
 	statusMessage string
+	statusKind    statusKind
 
 	// Concept service (for concept filter and add TUI)
 	conceptSvc concept.Service

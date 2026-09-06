@@ -131,12 +131,12 @@ func (m *Model) renderStatusBarHints() string {
 		return scrollIndicator + "j/k nav · v preview · / search · tab filter · n new · space gather · q quit"
 	case layoutWide:
 		if m.shouldShowPreview() {
-			return scrollIndicator + "j/k navigate · v hide preview · tab focus · / search · f full · n new · ? help · q quit"
+			return scrollIndicator + "j/k navigate · v hide preview · tab focus · / search · y copy id · f full · n new · ? help · q quit"
 		}
 		if onGroupHeader {
 			return scrollIndicator + "enter/l expand · j/k navigate · / search · space select items · f full · ? help · q quit"
 		}
-		return scrollIndicator + "j/k navigate · v preview · / search · tab filter · n new · space gather · f full · ? help · q quit"
+		return scrollIndicator + "j/k navigate · v preview · / search · tab filter · n new · space gather · y copy id · f full · ? help · q quit"
 	}
 	return scrollIndicator
 }
@@ -301,7 +301,7 @@ func (m *Model) buildMainView() string {
 	footerHints := m.renderStatusBarHints()
 	footerStr := tui.Footer(footerHints, m.width)
 	if m.statusMessage != "" {
-		footerStr += "\n" + tui.ErrorStyle.Render(m.statusMessage)
+		footerStr += "\n" + m.statusStyle().Render(m.statusMessage)
 	}
 
 	// Step 3: Count actual line heights

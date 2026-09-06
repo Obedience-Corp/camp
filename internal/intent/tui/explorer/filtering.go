@@ -33,7 +33,7 @@ func (m *Model) rebuildSearchCorpus() {
 
 // applyFilters filters intents using search query and type filter.
 func (m *Model) applyFilters() {
-	m.statusMessage = ""
+	m.clearStatus()
 
 	// Notes mode: the intent-oriented filters (type/status/concept) and the
 	// intent search index do not apply. Show the loaded notes as-is.
@@ -147,7 +147,7 @@ func (m *Model) clearAllFilters() {
 	m.conceptFilterPath = ""
 	m.searchInput.SetValue("")
 	m.applyFilters()
-	m.statusMessage = "Filters cleared"
+	m.setStatusSuccess("Filters cleared")
 }
 
 func statusSelectionToStatus(selection string) (intent.Status, bool) {

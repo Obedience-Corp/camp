@@ -76,7 +76,7 @@ func (m *Model) updateMove(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			newStatus := options[m.moveStatusIdx].status
 			if m.intentToMove.Status == newStatus {
 				// Already at this status
-				m.statusMessage = "Already at " + newStatus.String()
+				m.setStatus("Already at " + newStatus.String())
 				m.focus = focusList
 				m.intentToMove = nil
 				return m, nil
@@ -326,7 +326,7 @@ func (m *Model) handlePromoteAction() (tea.Model, tea.Cmd) {
 	if selected := m.SelectedIntent(); selected != nil {
 		targets := promote.ValidTargetsForStatus(selected.Status)
 		if len(targets) == 0 {
-			m.statusMessage = "No valid promote targets for " + selected.Status.String() + " status"
+			m.setStatusError("No valid promote targets for " + selected.Status.String() + " status")
 			return m, nil
 		}
 		// If only one target, go directly to confirmation
@@ -504,7 +504,7 @@ func (m *Model) updateDungeonReason(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	case "enter":
 		reason := strings.TrimSpace(m.dungeonReasonInput.Value())
 		if reason == "" {
-			m.statusMessage = "Reason is required for dungeon moves"
+			m.setStatusError("Reason is required for dungeon moves")
 			return m, nil
 		}
 		i := m.dungeonReasonIntent
@@ -522,10 +522,10 @@ func (m *Model) updateDungeonReason(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		// the success or failure message when moveFinishedMsg / archiveFinishedMsg
 		// arrives.
 		if action == "archive" {
-			m.statusMessage = "Archiving..."
+			m.setStatus("Archiving...")
 			return m, m.archiveIntentWithReason(i, reason)
 		}
-		m.statusMessage = fmt.Sprintf("Moving to %s...", newStatus)
+		m.setStatus(fmt.Sprintf("Moving to %s...", newStatus))
 		return m, m.moveIntentWithReason(i, newStatus, reason)
 	default:
 		var cmd tea.Cmd
@@ -606,7 +606,7 @@ func (m *Model) moveIntentWithReason(i *intent.Intent, newStatus intent.Status, 
 func (m *Model) handleArchiveAction() (tea.Model, tea.Cmd) {
 	if selected := m.SelectedIntent(); selected != nil {
 		if selected.Status.InDungeon() {
-			m.statusMessage = "Already in dungeon"
+			m.setStatus("Already in dungeon")
 			return m, nil
 		}
 		m.startDungeonReasonInput(selected, intent.StatusArchived, "archive")

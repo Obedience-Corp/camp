@@ -42,9 +42,9 @@ func (m *Model) toggleNotesMode() tea.Cmd {
 	m.cursorGroup = 0
 	m.cursorItem = -1
 	if m.notesMode {
-		m.statusMessage = "Notes view"
+		m.setStatus("Notes view")
 	} else {
-		m.statusMessage = "Intents view"
+		m.setStatus("Intents view")
 	}
 	return m.loadIntents()
 }
