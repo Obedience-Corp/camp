@@ -68,3 +68,35 @@ func TestNewActionMenu_UserFolderNoteIsActive(t *testing.T) {
 		t.Error("user-folder note menu should not enable restore")
 	}
 }
+
+func TestActionMenuOffersCopyID(t *testing.T) {
+	tests := []struct {
+		name   string
+		i      *intent.Intent
+		enable bool
+	}{
+		{"intent with id", &intent.Intent{ID: "inbox-0", Status: intent.StatusInbox}, true},
+		{"note with id", &intent.Intent{ID: "note-0", Status: intent.StatusNote}, true},
+		{"intent without id", &intent.Intent{Status: intent.StatusInbox}, false},
+		{"note without id", &intent.Intent{Status: intent.StatusNote}, false},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			menu := NewActionMenu(tt.i)
+			var found bool
+			for _, item := range menu.items {
+				if item.Action != "copy-id" {
+					continue
+				}
+				found = true
+				if item.Enabled != tt.enable {
+					t.Errorf("Copy ID enabled = %v, want %v", item.Enabled, tt.enable)
+				}
+			}
+			if !found {
+				t.Fatal("action menu has no Copy ID entry")
+			}
+		})
+	}
+}

@@ -144,8 +144,55 @@ pty-machine-tailscale-check:
     CAMP_MACHINES_PATH="$fixture/machines.yaml" \
         "$venv_dir/bin/python" tests/tui/machine_tailscale_check_pty.py "$fixture" "$evidence"
 
+# Build the disposable fixture for the intent-explorer copy check: the branch
+# binary, stub clipboard tools that record what they are handed, and a camp
+# with two intents whose ids are fixed so the assertion is exact. Prints the
+# fixture path. Never touches the operator's camp registry or clipboard.
+[private]
+intent-copy-fixture:
+    #!/usr/bin/env bash
+    set -euo pipefail
+    cd "{{root}}"
+    fixture="${CAMP_VHS_ROOT:-$(mktemp -d)}"
+    mkdir -p "$fixture/bin" "$fixture/home" "$fixture/camp"
+    cp bin/camp "$fixture/bin/camp"
+    for name in pbcopy xclip xsel wl-copy open xdg-open; do
+        cp docs/demos/fixtures/record-handoff "$fixture/bin/$name"
+    done
+    chmod +x "$fixture/bin"/*
+    HOME="$fixture/home" "$fixture/bin/camp" init \
+        --name copy-fixture --no-git --no-register --no-skills --force \
+        -d "Disposable fixture for the intent explorer copy check" \
+        -m "Prove y hands the selected intent id to the clipboard" \
+        "$fixture/camp" >/dev/null
+    inbox="$fixture/camp/.campaign/intents/inbox"
+    mkdir -p "$inbox"
+    # Distinct created_at values, because the explorer sorts by creation date
+    # and equal timestamps leave the first row to filesystem read order.
+    write_intent() {
+        printf -- '---\nid: %s\ntitle: %s\nstatus: inbox\ncreated_at: %s\ntype: feature\nauthor: fixture\n---\n\nFixture intent for the explorer copy check.\n' \
+            "$1" "$2" "$3" >"$inbox/$1.md"
+    }
+    write_intent clipboard-handoff-20260101-090000 "Clipboard handoff" 2026-01-01T09:00:00-07:00
+    write_intent older-fixture-intent-20251231-080000 "Older fixture intent" 2025-12-31T08:00:00-07:00
+    echo "$fixture"
+
+# Assert what a recording of the intent explorer cannot: that y hands the
+# selected intent's exact id to the platform clipboard tool, that the footer
+# says so as a success rather than in the error style, and that a group header
+# copies nothing.
+pty-intent-copy:
+    #!/usr/bin/env bash
+    set -euo pipefail
+    cd "{{root}}"
+    just build-camp >/dev/null
+    venv_dir="$(just tui venv)"
+    fixture="$(CAMP_VHS_ROOT="${CAMP_VHS_ROOT:-}" just tui intent-copy-fixture)"
+    evidence="${CAMP_TUI_EVIDENCE_DIR:-out/evidence/intent-copy}"
+    "$venv_dir/bin/python" tests/tui/intent_copy_pty.py "$fixture" "$evidence"
+
 # Run every pty check.
-pty: pty-triage-review pty-machine-tailscale-check pty-machine-auth-denied pty-sweep-prompt
+pty: pty-triage-review pty-machine-tailscale-check pty-machine-auth-denied pty-sweep-prompt pty-intent-copy
 
 # Record one tape. The tape owns its output path and its fixture bootstrap.
 tape tape_path:

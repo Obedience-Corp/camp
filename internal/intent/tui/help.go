@@ -30,6 +30,7 @@ QUICK ACTIONS
   e           Edit in $EDITOR
   o           Open with system handler
   O           Reveal in file manager
+  y           Copy intent id to clipboard
   n           New intent
   p           Promote to next status
   a           Archive intent

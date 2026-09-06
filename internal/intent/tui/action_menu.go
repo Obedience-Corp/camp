@@ -12,7 +12,7 @@ import (
 // ActionMenuItem represents an item in the action menu.
 type ActionMenuItem struct {
 	Label   string
-	Action  string // "view", "edit", "convert", "move", "promote", "archive", "restore", "gather", "delete", "open", "reveal"
+	Action  string // "view", "edit", "copy-id", "convert", "move", "promote", "archive", "restore", "gather", "delete", "open", "reveal"
 	Enabled bool
 }
 
@@ -40,6 +40,7 @@ func NewActionMenu(i *intent.Intent) ActionMenu {
 		return newActionMenu([]ActionMenuItem{
 			{Label: "View full screen", Action: "view", Enabled: true},
 			{Label: "Edit in editor", Action: "edit", Enabled: true},
+			{Label: "Copy ID", Action: "copy-id", Enabled: i.ID != ""},
 			{Label: "Move to status", Action: "move", Enabled: active},
 			{Label: "Convert to intent", Action: "convert", Enabled: active},
 			{Label: "Archive", Action: "archive", Enabled: active},
@@ -50,6 +51,7 @@ func NewActionMenu(i *intent.Intent) ActionMenu {
 	items := []ActionMenuItem{
 		{Label: "View full screen", Action: "view", Enabled: true},
 		{Label: "Edit in editor", Action: "edit", Enabled: true},
+		{Label: "Copy ID", Action: "copy-id", Enabled: i.ID != ""},
 		{Label: "Move to status", Action: "move", Enabled: true},
 		{Label: "Gather with...", Action: "gather", Enabled: !i.Status.InDungeon()},
 		{Label: "Promote", Action: "promote", Enabled: !i.Status.InDungeon() && i.Status != intent.StatusActive},
