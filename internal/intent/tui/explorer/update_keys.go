@@ -111,7 +111,7 @@ func (m Model) updateNormal(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		}
 		// Enter concept filter mode
 		m.focus = focusConceptFilter
-		m.conceptFilterPicker = tui.NewConceptPickerModel(m.ctx, m.conceptSvc)
+		m.conceptFilterPicker = tui.NewConceptPickerModel(m.ctx, m.conceptSvc, m.campaignRoot)
 		return m, nil
 	case "N":
 		// Toggle between the intent triage view and the notes view

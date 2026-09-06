@@ -2,6 +2,7 @@ package tui
 
 import (
 	"context"
+	"strings"
 	"testing"
 	"testing/fstest"
 
@@ -60,7 +61,7 @@ func TestConceptPicker_InitialState(t *testing.T) {
 		},
 	}
 
-	picker := NewConceptPickerModel(context.Background(), svc)
+	picker := NewConceptPickerModel(context.Background(), svc, "")
 
 	if picker.step != stepSelectingType {
 		t.Errorf("Expected initial step to be stepSelectingType, got %v", picker.step)
@@ -70,9 +71,9 @@ func TestConceptPicker_InitialState(t *testing.T) {
 		t.Errorf("Expected 2 concepts, got %d", len(picker.concepts))
 	}
 
-	// Initial selection should be 0 (NONE option)
-	if picker.typeWheel.Selected() != 0 {
-		t.Errorf("Expected initial selection to be 0 (NONE), got %d", picker.typeWheel.Selected())
+	got, ok := picker.sel.Selected()
+	if !ok || got.ID != noneOptionID {
+		t.Errorf("Expected initial selection %q, got %q ok=%v", noneOptionID, got.ID, ok)
 	}
 
 	if picker.Done() {
@@ -91,7 +92,7 @@ func TestConceptPicker_SelectNone(t *testing.T) {
 		},
 	}
 
-	picker := NewConceptPickerModel(context.Background(), svc)
+	picker := NewConceptPickerModel(context.Background(), svc, "")
 
 	// Initial selection is 0 (NONE), press enter
 	picker, _ = picker.Update(tea.KeyMsg{Type: tea.KeyEnter})
@@ -125,7 +126,7 @@ func TestConceptPicker_NewProjectOption(t *testing.T) {
 		},
 	}
 
-	picker := NewConceptPickerModel(context.Background(), svc)
+	picker := NewConceptPickerModel(context.Background(), svc, "")
 
 	// Navigate to projects concept (skip NONE)
 	picker, _ = picker.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("j")})
@@ -145,7 +146,8 @@ func TestConceptPicker_NewProjectOption(t *testing.T) {
 		t.Errorf("Expected first item path to be 'projects/new', got %q", picker.items[0].Path)
 	}
 
-	// Select the "New" option (it's already selected as first item)
+	// New is PinTop; default cursor is last unpinned (camp). Move up to New.
+	picker, _ = picker.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("k")})
 	picker, _ = picker.Update(tea.KeyMsg{Type: tea.KeyEnter})
 
 	if picker.step != stepDone {
@@ -165,29 +167,29 @@ func TestConceptPicker_TypeSelectionNavigation(t *testing.T) {
 		},
 	}
 
-	picker := NewConceptPickerModel(context.Background(), svc)
+	picker := NewConceptPickerModel(context.Background(), svc, "")
 
-	// Initial selection should be 0 (NONE)
-	if picker.typeWheel.Selected() != 0 {
-		t.Errorf("Expected initial selection 0, got %d", picker.typeWheel.Selected())
+	got, ok := picker.sel.Selected()
+	if !ok || got.ID != noneOptionID {
+		t.Errorf("Expected initial selection %q, got %q", noneOptionID, got.ID)
 	}
 
-	// Navigate down to first concept (index 1)
 	picker, _ = picker.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("j")})
-	if picker.typeWheel.Selected() != 1 {
-		t.Errorf("Expected selection 1 after down, got %d", picker.typeWheel.Selected())
+	got, _ = picker.sel.Selected()
+	if got.ID != "f" {
+		t.Errorf("Expected festivals after down (label order), got %q", got.ID)
 	}
 
-	// Navigate down to second concept (index 2)
 	picker, _ = picker.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("j")})
-	if picker.typeWheel.Selected() != 2 {
-		t.Errorf("Expected selection 2 after second down, got %d", picker.typeWheel.Selected())
+	got, _ = picker.sel.Selected()
+	if got.ID != "p" {
+		t.Errorf("Expected projects after second down, got %q", got.ID)
 	}
 
-	// Navigate up back to first concept
 	picker, _ = picker.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("k")})
-	if picker.typeWheel.Selected() != 1 {
-		t.Errorf("Expected selection 1 after up, got %d", picker.typeWheel.Selected())
+	got, _ = picker.sel.Selected()
+	if got.ID != "f" {
+		t.Errorf("Expected festivals after up, got %q", got.ID)
 	}
 }
 
@@ -204,7 +206,7 @@ func TestConceptPicker_SelectConceptType(t *testing.T) {
 		},
 	}
 
-	picker := NewConceptPickerModel(context.Background(), svc)
+	picker := NewConceptPickerModel(context.Background(), svc, "")
 
 	// Navigate past NONE to the first concept
 	picker, _ = picker.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("j")})
@@ -234,7 +236,7 @@ func TestConceptPicker_SelectConceptWithoutItems(t *testing.T) {
 		},
 	}
 
-	picker := NewConceptPickerModel(context.Background(), svc)
+	picker := NewConceptPickerModel(context.Background(), svc, "")
 
 	// Navigate past NONE to the concept
 	picker, _ = picker.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("j")})
@@ -270,7 +272,7 @@ func TestConceptPicker_DrillIntoDirectory(t *testing.T) {
 		},
 	}
 
-	picker := NewConceptPickerModel(context.Background(), svc)
+	picker := NewConceptPickerModel(context.Background(), svc, "")
 
 	// Navigate past NONE to select concept type
 	picker, _ = picker.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("j")})
@@ -305,7 +307,7 @@ func TestConceptPicker_SelectFile(t *testing.T) {
 		},
 	}
 
-	picker := NewConceptPickerModel(context.Background(), svc)
+	picker := NewConceptPickerModel(context.Background(), svc, "")
 
 	// Navigate past NONE to select concept type
 	picker, _ = picker.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("j")})
@@ -347,7 +349,7 @@ func TestConceptPicker_BackspaceFromNested(t *testing.T) {
 		},
 	}
 
-	picker := NewConceptPickerModel(context.Background(), svc)
+	picker := NewConceptPickerModel(context.Background(), svc, "")
 
 	// Navigate to docs/api/internal
 	picker, _ = picker.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("j")}) // Skip NONE
@@ -388,7 +390,7 @@ func TestConceptPicker_CancelFromTypeSelection(t *testing.T) {
 		},
 	}
 
-	picker := NewConceptPickerModel(context.Background(), svc)
+	picker := NewConceptPickerModel(context.Background(), svc, "")
 
 	// Press Escape
 	picker, _ = picker.Update(tea.KeyMsg{Type: tea.KeyEsc})
@@ -414,7 +416,7 @@ func TestConceptPicker_CancelFromItemSelection(t *testing.T) {
 		},
 	}
 
-	picker := NewConceptPickerModel(context.Background(), svc)
+	picker := NewConceptPickerModel(context.Background(), svc, "")
 
 	// Navigate to item selection (skip NONE first)
 	picker, _ = picker.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("j")})
@@ -444,7 +446,7 @@ func TestConceptPicker_LeftArrowNavigation(t *testing.T) {
 		},
 	}
 
-	picker := NewConceptPickerModel(context.Background(), svc)
+	picker := NewConceptPickerModel(context.Background(), svc, "")
 
 	// Navigate to item selection (skip NONE first)
 	picker, _ = picker.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("j")})
@@ -470,7 +472,7 @@ func TestConceptPicker_HKeyNavigation(t *testing.T) {
 		},
 	}
 
-	picker := NewConceptPickerModel(context.Background(), svc)
+	picker := NewConceptPickerModel(context.Background(), svc, "")
 
 	// Navigate to item selection (skip NONE first)
 	picker, _ = picker.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("j")})
@@ -497,7 +499,7 @@ func TestConceptPicker_EmptyDirectory(t *testing.T) {
 		},
 	}
 
-	picker := NewConceptPickerModel(context.Background(), svc)
+	picker := NewConceptPickerModel(context.Background(), svc, "")
 
 	// Navigate to item selection (skip NONE first)
 	picker, _ = picker.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("j")})
@@ -523,7 +525,7 @@ func TestConceptPicker_ViewRendersCorrectly(t *testing.T) {
 		},
 	}
 
-	picker := NewConceptPickerModel(context.Background(), svc)
+	picker := NewConceptPickerModel(context.Background(), svc, "")
 
 	view := picker.View()
 	if view == "" {
@@ -552,7 +554,7 @@ func TestConceptPicker_InfiniteDepthDrillWithRightKey(t *testing.T) {
 		},
 	}
 
-	picker := NewConceptPickerModel(context.Background(), svc)
+	picker := NewConceptPickerModel(context.Background(), svc, "")
 
 	// Select concept type (skip NONE first)
 	picker, _ = picker.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("j")})
@@ -586,7 +588,7 @@ func TestConceptPicker_InfiniteDepthDrillWithLKey(t *testing.T) {
 		},
 	}
 
-	picker := NewConceptPickerModel(context.Background(), svc)
+	picker := NewConceptPickerModel(context.Background(), svc, "")
 
 	// Select concept type (skip NONE first)
 	picker, _ = picker.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("j")})
@@ -621,7 +623,7 @@ func TestConceptPicker_Breadcrumb(t *testing.T) {
 		},
 	}
 
-	picker := NewConceptPickerModel(context.Background(), svc)
+	picker := NewConceptPickerModel(context.Background(), svc, "")
 
 	// Navigate to docs/api (skip NONE first)
 	picker, _ = picker.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("j")}) // Skip NONE
@@ -669,7 +671,7 @@ func TestConceptPicker_WorkflowParentCascade(t *testing.T) {
 		},
 	}
 
-	picker := NewConceptPickerModel(context.Background(), svc)
+	picker := NewConceptPickerModel(context.Background(), svc, "")
 
 	// Select the workflow concept (typeWheel: none, projects, workflow).
 	picker, _ = picker.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("j")})
@@ -707,7 +709,7 @@ func TestConceptPicker_DrillIntoConfiguredChild(t *testing.T) {
 	}
 	svc := concept.NewFSService("", concepts, fsys)
 
-	picker := NewConceptPickerModel(context.Background(), svc)
+	picker := NewConceptPickerModel(context.Background(), svc, "")
 
 	// Select the workflow concept (typeWheel: none, workflow).
 	picker, _ = picker.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("j")})
@@ -751,7 +753,7 @@ func TestConceptPicker_DrillIntoConfiguredChild(t *testing.T) {
 
 	// Backspace returns to the festivals listing, then the submenu.
 	// (Re-run navigation on a fresh picker since this one is done.)
-	picker = NewConceptPickerModel(context.Background(), svc)
+	picker = NewConceptPickerModel(context.Background(), svc, "")
 	picker, _ = picker.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("j")})
 	picker, _ = picker.Update(tea.KeyMsg{Type: tea.KeyEnter})
 	picker, _ = picker.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("l")})
@@ -767,7 +769,7 @@ func TestConceptPicker_ChildlessConceptUnchanged(t *testing.T) {
 			{Name: "docs", Path: "docs/", Description: "Documentation", HasItems: false},
 		},
 	}
-	picker := NewConceptPickerModel(context.Background(), svc)
+	picker := NewConceptPickerModel(context.Background(), svc, "")
 	// Select docs (no items): should complete immediately with its path.
 	picker, _ = picker.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("j")})
 	picker, _ = picker.Update(tea.KeyMsg{Type: tea.KeyEnter})
@@ -778,4 +780,80 @@ func TestConceptPicker_ChildlessConceptUnchanged(t *testing.T) {
 	if picker.SelectedPath() != "docs/" {
 		t.Errorf("SelectedPath = %q, want docs/", picker.SelectedPath())
 	}
+}
+
+func TestIsProjectsConcept(t *testing.T) {
+	if !isProjectsConcept(&concept.Concept{Name: "p", Path: "projects/"}) {
+		t.Fatal("name p")
+	}
+	if !isProjectsConcept(&concept.Concept{Name: "projects", Path: "projects"}) {
+		t.Fatal("name projects")
+	}
+	if !isProjectsConcept(&concept.Concept{Name: "x", Path: "projects"}) {
+		t.Fatal("exact path projects")
+	}
+	if isProjectsConcept(&concept.Concept{Name: "x", Path: "projects/worktrees"}) {
+		t.Fatal("projects/worktrees must not get + New Project")
+	}
+}
+
+func TestConceptPicker_FilterDoesNotLeakIntoItems(t *testing.T) {
+	svc := mockConceptService{
+		concepts: []concept.Concept{
+			{Name: "projects", Path: "projects", Description: "Projects", HasItems: true},
+		},
+		items: map[string][]concept.Item{
+			"projects:": {
+				{Name: "agent-simulator", Path: "projects/agent-simulator", IsDir: true},
+				{Name: "camp", Path: "projects/camp", IsDir: true},
+			},
+		},
+	}
+	picker := NewConceptPickerModel(context.Background(), svc, "")
+	for _, r := range "proj" {
+		picker, _ = picker.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{r}})
+	}
+	if picker.sel.Query() != "proj" {
+		t.Fatalf("query = %q", picker.sel.Query())
+	}
+	picker, _ = picker.Update(tea.KeyMsg{Type: tea.KeyEnter})
+	if picker.step != stepSelectingItem {
+		t.Fatalf("step = %v", picker.step)
+	}
+	if picker.sel.Query() != "" || picker.sel.Filtering() {
+		t.Fatalf("item step leaked filter query=%q filtering=%v", picker.sel.Query(), picker.sel.Filtering())
+	}
+	view := picker.View()
+	if !containsAll(view, "agent-simulator", "camp") {
+		t.Fatalf("unfiltered item list missing projects: %q", view)
+	}
+	if containsAll(view, "filter:") {
+		t.Fatalf("item step should not show filter row: %q", view)
+	}
+}
+
+func TestConceptPicker_EscClearsFilter(t *testing.T) {
+	svc := mockConceptService{
+		concepts: []concept.Concept{
+			{Name: "projects", Path: "projects", Description: "Projects", HasItems: true},
+		},
+	}
+	picker := NewConceptPickerModel(context.Background(), svc, "")
+	picker, _ = picker.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("p")})
+	picker, _ = picker.Update(tea.KeyMsg{Type: tea.KeyEsc})
+	if picker.Cancelled() {
+		t.Fatal("esc with query must not cancel")
+	}
+	if picker.sel.Query() != "" || picker.sel.Filtering() {
+		t.Fatalf("esc should clear filter, query=%q", picker.sel.Query())
+	}
+}
+
+func containsAll(s string, parts ...string) bool {
+	for _, p := range parts {
+		if !strings.Contains(s, p) {
+			return false
+		}
+	}
+	return true
 }

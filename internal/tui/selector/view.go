@@ -21,9 +21,8 @@ func (m Model) View() string {
 		b.WriteString(m.queryRow())
 		b.WriteString("\n")
 	}
-	help := strings.TrimSpace(m.opts.Help)
-	if help != "" {
-		b.WriteString(helpStyle.Render(ui.CollapseHelp(m.width, help)))
+	if help := m.helpLine(); help != "" {
+		b.WriteString(helpStyle.Render(help))
 	}
 	return strings.TrimRight(b.String(), "\n")
 }
@@ -50,6 +49,21 @@ func (m Model) wheelView() string {
 		b.WriteString("\n")
 	}
 	return b.String()
+}
+
+func (m Model) helpLine() string {
+	long := strings.TrimSpace(m.opts.Help)
+	short := strings.TrimSpace(m.opts.HelpShort)
+	switch {
+	case long == "" && short == "":
+		return ""
+	case short == "":
+		return ui.CollapseHelp(m.width, long)
+	case long == "":
+		return ui.CollapseHelp(m.width, short)
+	default:
+		return ui.CollapseHelp(m.width, long, short)
+	}
 }
 
 func (m Model) queryRow() string {

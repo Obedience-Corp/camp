@@ -8,6 +8,7 @@ import (
 
 	"github.com/Obedience-Corp/camp/internal/concept"
 	"github.com/Obedience-Corp/camp/internal/editor"
+	"github.com/Obedience-Corp/camp/internal/tui/selector"
 	"github.com/Obedience-Corp/camp/internal/tui/vim"
 	"github.com/charmbracelet/bubbles/textinput"
 	tea "github.com/charmbracelet/bubbletea"
@@ -77,6 +78,7 @@ type IntentAddModel struct {
 
 	// Type selection
 	typeIdx int
+	typeSel selector.Model
 
 	// Concept selection
 	conceptPicker ConceptPickerModel
@@ -172,6 +174,7 @@ func NewIntentAddModel(ctx context.Context, conceptSvc concept.Service, opts Add
 		step:              addStepTitle,
 		titleInput:        ti,
 		typeIdx:           typeIdx,
+		typeSel:           newTypeSelector(opts.DefaultType),
 		vimEditor:         vimEd,
 		fullMode:          opts.FullMode,
 		noteMode:          opts.NoteMode,
@@ -218,6 +221,7 @@ func (m IntentAddModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.width = msg.Width
 		m.height = msg.Height
 		m.titleInput.Width = min(msg.Width-10, 80)
+		m.typeSel.SetSize(msg.Width, msg.Height)
 		w, h := m.calculateBodySize()
 		m.vimEditor.SetSize(w, h)
 		return m, nil
@@ -413,7 +417,16 @@ func (m *IntentAddModel) acceptTitleCompletion() {
 // updateType handles input during type selection step.
 func (m IntentAddModel) updateType(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	switch msg.String() {
-	case "esc", "ctrl+c":
+	case "ctrl+c":
+		m.cancelled = true
+		m.step = addStepDone
+		return m, tea.Quit
+
+	case "esc":
+		if m.typeSel.Filtering() {
+			m.typeSel, _ = m.typeSel.Update(msg)
+			return m, nil
+		}
 		m.cancelled = true
 		m.step = addStepDone
 		return m, tea.Quit
@@ -424,26 +437,54 @@ func (m IntentAddModel) updateType(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	case "ctrl+t":
 		return m.openTagOverlay()
 
-	case "j", "down":
-		if m.typeIdx < len(intentTypes)-1 {
-			m.typeIdx++
-		}
-		return m, nil
-
-	case "k", "up":
-		if m.typeIdx > 0 {
-			m.typeIdx--
-		}
-		return m, nil
-
 	case "enter":
-		// Move to concept selection
+		if it, ok := m.typeSel.Selected(); ok {
+			m.typeIdx = indexOfIntentType(it.ID)
+		}
 		m.step = addStepConcept
-		m.conceptPicker = NewConceptPickerModel(m.ctx, m.conceptSvc)
+		m.conceptPicker = NewConceptPickerModel(m.ctx, m.conceptSvc, m.campaignRoot)
 		return m, nil
 	}
 
+	m.typeSel, _ = m.typeSel.Update(msg)
 	return m, nil
+}
+
+func (m IntentAddModel) currentType() string {
+	if m.step == addStepType {
+		if it, ok := m.typeSel.Selected(); ok && it.ID != "" {
+			return it.ID
+		}
+	}
+	if m.typeIdx >= 0 && m.typeIdx < len(intentTypes) {
+		return intentTypes[m.typeIdx]
+	}
+	return "idea"
+}
+
+func indexOfIntentType(id string) int {
+	for i, t := range intentTypes {
+		if t == id {
+			return i
+		}
+	}
+	return 0
+}
+
+func newTypeSelector(defaultType string) selector.Model {
+	if defaultType == "" {
+		defaultType = "idea"
+	}
+	items := make([]selector.Item, len(intentTypes))
+	for i, t := range intentTypes {
+		items[i] = selector.Item{ID: t, Label: t, Pin: selector.PinTop}
+	}
+	return selector.New(items, selector.Options{
+		Title:     "Select type",
+		InitialID: defaultType,
+		Help:      "↑/↓ move · type to filter · enter select · ctrl+n save & new · ctrl+t tags · esc cancel",
+		HelpShort: "↑/↓ · type · enter · esc",
+	})
 }
 
 // updateConcept handles input during concept selection step.
@@ -897,7 +938,7 @@ func (m IntentAddModel) finishBodyStep() (tea.Model, tea.Cmd) {
 
 	m.result = &AddResult{
 		Title:   strings.TrimSpace(m.titleInput.Value()),
-		Type:    intentTypes[m.typeIdx],
+		Type:    m.currentType(),
 		Concept: conceptPath,
 		Body:    strings.TrimSpace(m.vimEditor.Content()),
 		Author:  m.author,
@@ -973,7 +1014,7 @@ func (m IntentAddModel) collectCurrentResult() *AddResult {
 
 	return &AddResult{
 		Title:   title,
-		Type:    intentTypes[m.typeIdx],
+		Type:    m.currentType(),
 		Concept: conceptPath,
 		Body:    body,
 		Author:  m.author,
@@ -1009,6 +1050,7 @@ func (m IntentAddModel) saveAndReset() (tea.Model, tea.Cmd) {
 
 	// Reset concept picker (will be recreated on step entry)
 	m.conceptPicker = ConceptPickerModel{}
+	m.typeSel = newTypeSelector(m.defaultType)
 
 	// Reset vim editor
 	m.vimEditor.SetContent("")
@@ -1078,19 +1120,33 @@ func (m IntentAddModel) View() string {
 		b.WriteString("\n")
 	}
 
-	// Show current step body
 	switch m.step {
 	case addStepTitle:
 		b.WriteString(m.viewTitleStep())
+		return b.String()
 	case addStepType:
-		b.WriteString(m.viewTypeStep())
+		return m.viewBottomCluster(b.String(), m.viewTypeStep())
 	case addStepConcept:
-		b.WriteString(m.viewConceptStep())
+		return m.viewBottomCluster(b.String(), m.viewConceptStep())
 	case addStepBody:
 		b.WriteString(m.viewBodyStep())
 	}
 
 	return b.String()
+}
+
+func (m IntentAddModel) viewBottomCluster(chrome, cluster string) string {
+	chrome = strings.TrimRight(chrome, "\n")
+	cluster = strings.TrimRight(cluster, "\n")
+	if m.height <= 0 {
+		return chrome + "\n\n" + cluster
+	}
+	used := lipgloss.Height(chrome+"\n") + lipgloss.Height(cluster)
+	spacer := m.height - used
+	if spacer < 1 {
+		return chrome + "\n" + cluster
+	}
+	return chrome + strings.Repeat("\n", spacer) + cluster
 }
 
 // stepLabels returns the ordered step names for the current mode.
@@ -1183,40 +1239,12 @@ func (m IntentAddModel) viewTitleStep() string {
 
 // viewTypeStep renders the type selection step.
 func (m IntentAddModel) viewTypeStep() string {
-	var b strings.Builder
-
-	b.WriteString(HelpStyle.Render("Select type") + "\n")
-
-	normalStyle := lipgloss.NewStyle().Foreground(pal.TextPrimary)
-	selectedStyle := lipgloss.NewStyle().
-		Bold(true).
-		Foreground(pal.Accent).
-		Background(pal.BgSelected)
-
-	for i, t := range intentTypes {
-		if i == m.typeIdx {
-			b.WriteString(selectedStyle.Render("▸ " + t))
-		} else {
-			b.WriteString(normalStyle.Render("  " + t))
-		}
-		b.WriteString("\n")
-	}
-
-	b.WriteString("\n")
-	b.WriteString(HelpStyle.Render("j/k navigate · enter select · ctrl+n save & new · ctrl+t tags · esc cancel"))
-
-	return b.String()
+	return m.typeSel.View()
 }
 
 // viewConceptStep renders the concept picker step.
 func (m IntentAddModel) viewConceptStep() string {
-	var b strings.Builder
-
-	b.WriteString(m.conceptPicker.View())
-	b.WriteString("\n")
-	b.WriteString(HelpStyle.Render("tab skip · enter select · ctrl+n save & new · ctrl+t tags · esc cancel"))
-
-	return b.String()
+	return m.conceptPicker.View()
 }
 
 // viewBodyStep renders the body vim editor step.
