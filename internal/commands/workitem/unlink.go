@@ -157,7 +157,7 @@ func matchUnlinkCandidates(layout links.ScopeLayout, registry *links.Links, wi *
 func unlinkScopeFilter(layout links.ScopeLayout, opts unlinkOptions) (links.LinkScope, bool) {
 	switch {
 	case opts.Project != "":
-		return links.LinkScope{Kind: links.ScopeProject, Path: "projects/" + opts.Project}, true
+		return links.LinkScope{Kind: links.ScopeProject, Path: layout.ProjectsDirPath() + opts.Project}, true
 	case opts.Festival != "":
 		path := opts.Festival
 		if !strings.HasPrefix(path, "festivals/") {
@@ -166,8 +166,8 @@ func unlinkScopeFilter(layout links.ScopeLayout, opts unlinkOptions) (links.Link
 		return links.LinkScope{Kind: links.ScopeFestival, Path: path}, true
 	case opts.Worktree != "":
 		path := opts.Worktree
-		if !strings.HasPrefix(path, "projects/worktrees/") {
-			path = "projects/worktrees/" + opts.Worktree
+		if !layout.UnderWorktrees(path) {
+			path = layout.WorktreesDirPath() + opts.Worktree
 		}
 		return links.LinkScope{Kind: links.ScopeWorktree, Path: path}, true
 	case opts.ExplicitPath != "":

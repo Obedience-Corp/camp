@@ -229,14 +229,36 @@ func resolveWorktreeProject(layout links.ScopeLayout, registry *links.Links, wi 
 }
 
 // linkedProjects returns the distinct project names the workitem is linked to.
-// A worktree scope counts as its owning project: a worktree is a checkout of a
-// project, so a workitem already working in one has named its project, and
-// `camp workitem worktree` should not ask for --project again.
+//
+// Project-scope links answer whenever the workitem has any: they are the direct
+// statement of which project the work belongs to, and letting a leftover
+// worktree link add a second name would make the command demand --project on a
+// workitem that already says so. Worktree scopes answer only when there is no
+// project link, which is the case this resolution was widened for: a worktree is
+// a checkout of a project, so a workitem already working in one has named its
+// project and should not be asked again.
 func linkedProjects(layout links.ScopeLayout, registry *links.Links, wi *wkitem.WorkItem) []string {
+	direct := projectNamesFromLinks(layout, registry, wi, func(kind links.ScopeKind) bool {
+		return kind == links.ScopeProject || kind == links.ScopeRepo
+	})
+	if len(direct) > 0 {
+		return direct
+	}
+	return projectNamesFromLinks(layout, registry, wi, func(kind links.ScopeKind) bool {
+		return kind == links.ScopeWorktree
+	})
+}
+
+// projectNamesFromLinks collects the distinct project names the workitem reaches
+// through links whose kind passes want, in registry order.
+func projectNamesFromLinks(
+	layout links.ScopeLayout, registry *links.Links, wi *wkitem.WorkItem,
+	want func(links.ScopeKind) bool,
+) []string {
 	seen := map[string]struct{}{}
 	var out []string
 	for _, link := range registry.Links {
-		if !linkMatchesWorkitem(link, wi) {
+		if !want(link.Scope.Kind) || !linkMatchesWorkitem(link, wi) {
 			continue
 		}
 		name := layout.ProjectName(link.Scope.ProjectFor(layout))

@@ -282,10 +282,12 @@ func resolveLinkScope(layout links.ScopeLayout, root string, opts linkOptions) (
 
 	switch {
 	case opts.Project != "":
-		return normalized(links.LinkScope{
-			Kind: links.ScopeProject,
-			Path: filepath.ToSlash(filepath.Join("projects", opts.Project)),
-		})
+		path := layout.ProjectPath(opts.Project)
+		if path == "" {
+			return nil, camperrors.NewValidation("project",
+				"--project takes a project name, not a path (got "+opts.Project+")", nil)
+		}
+		return normalized(links.LinkScope{Kind: links.ScopeProject, Path: path})
 	case opts.Festival != "":
 		path := opts.Festival
 		if !strings.HasPrefix(path, "festivals/") {
@@ -293,9 +295,9 @@ func resolveLinkScope(layout links.ScopeLayout, root string, opts linkOptions) (
 		}
 		return normalized(links.LinkScope{Kind: links.ScopeFestival, Path: path})
 	case opts.Worktree != "":
-		path := opts.Worktree
-		if !strings.HasPrefix(path, links.DefaultWorktreesDir) {
-			path = filepath.ToSlash(filepath.Join("projects", "worktrees", opts.Worktree))
+		path := filepath.ToSlash(opts.Worktree)
+		if !layout.UnderWorktrees(path) {
+			path = layout.WorktreesDirPath() + strings.Trim(path, "/")
 		}
 		return normalized(links.LinkScope{Kind: links.ScopeWorktree, Path: path})
 	case opts.UseCwd:

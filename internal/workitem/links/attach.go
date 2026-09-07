@@ -127,9 +127,10 @@ func ReportPruned(w io.Writer, pruned []Pruned) {
 }
 
 // WorktreeScopePath returns the campaign-relative path for a project worktree
-// at projects/worktrees/<project>/<name>.
-func WorktreeScopePath(project, name string) string {
-	return DefaultWorktreesDir + project + "/" + name
+// under the layout's worktrees directory. The zero layout is the camp default,
+// so WorktreeScopePath(ScopeLayout{}, "fest", "x") is projects/worktrees/fest/x.
+func WorktreeScopePath(layout ScopeLayout, project, name string) string {
+	return layout.worktrees() + project + "/" + name
 }
 
 // NewLinkID returns a fresh lnk_YYYYMMDD_<6 hex> ID that does not collide with

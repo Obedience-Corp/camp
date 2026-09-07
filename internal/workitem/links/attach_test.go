@@ -172,8 +172,11 @@ func TestAttachPrimary_StillRejectsMissingScopePath(t *testing.T) {
 }
 
 func TestWorktreeScopePath(t *testing.T) {
-	if got := WorktreeScopePath("fest", "list-watch"); got != "projects/worktrees/fest/list-watch" {
+	if got := WorktreeScopePath(ScopeLayout{}, "fest", "list-watch"); got != "projects/worktrees/fest/list-watch" {
 		t.Fatalf("WorktreeScopePath = %q", got)
+	}
+	if got := WorktreeScopePath(LayoutFor("repos/", "repos/trees/"), "fest", "list-watch"); got != "repos/trees/fest/list-watch" {
+		t.Fatalf("WorktreeScopePath under a configured layout = %q", got)
 	}
 }
 

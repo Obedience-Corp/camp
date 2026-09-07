@@ -383,3 +383,110 @@ links:
 		t.Fatalf("reloaded Scope.Project = %q, want projects/camp-timeline", got)
 	}
 }
+
+// A camp may configure paths.projects and paths.worktrees. The writers infer a
+// scope kind from that layout, so the validator has to read the same one, or
+// camp rejects the link it just decided to write.
+func TestValidate_HonoursAConfiguredLayout(t *testing.T) {
+	custom := LayoutFor("repos/", "repos/trees/")
+	base := Link{
+		ID:         "lnk_20260907_0000bb",
+		WorkitemID: "design-example-2026-09-07",
+		Role:       RolePrimary,
+		CreatedAt:  time.Now().UTC().Add(-time.Hour),
+		CreatedBy:  "test",
+	}
+
+	cases := []struct {
+		name    string
+		layout  ScopeLayout
+		scope   LinkScope
+		wantErr string
+		why     string
+	}{
+		{
+			name:   "configured project path is accepted",
+			layout: custom,
+			scope:  LinkScope{Kind: ScopeProject, Path: "repos/camp"},
+			why:    "this is the regression: the writer infers project here",
+		},
+		{
+			name:   "configured worktree path is accepted",
+			layout: custom,
+			scope:  LinkScope{Kind: ScopeWorktree, Path: "repos/trees/camp/feat", Project: "repos/camp"},
+		},
+		{
+			name:    "the configured worktrees dir is still not a project",
+			layout:  custom,
+			scope:   LinkScope{Kind: ScopeProject, Path: "repos/trees/camp/feat"},
+			wantErr: "must not be under repos/trees/",
+			why:     "a checkout is not a project under any layout",
+		},
+		{
+			name:    "the default path is rejected under a configured layout",
+			layout:  custom,
+			scope:   LinkScope{Kind: ScopeProject, Path: "projects/camp"},
+			wantErr: "requires path under repos/",
+			why:     "the configured directory is the only projects directory",
+		},
+		{
+			name:    "a configured path is rejected under the default layout",
+			scope:   LinkScope{Kind: ScopeProject, Path: "repos/camp"},
+			wantErr: "requires path under projects/",
+			why:     "the default layout must not silently accept another camp's shape",
+		},
+		{
+			name:  "the default layout still accepts the default paths",
+			scope: LinkScope{Kind: ScopeWorktree, Path: "projects/worktrees/camp/feat"},
+		},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			link := base
+			link.Scope = tc.scope
+			errs := Validate(context.Background(), &Links{Version: LinksSchemaVersion, Links: []Link{link}},
+				ValidateOptions{Now: time.Now(), Layout: tc.layout})
+			var got string
+			for _, e := range errs {
+				if e.Field == "scope.path" {
+					got = e.Message
+				}
+			}
+			if tc.wantErr == "" {
+				if got != "" {
+					t.Fatalf("unexpected scope.path error %q (%s)", got, tc.why)
+				}
+				return
+			}
+			if !strings.Contains(got, tc.wantErr) {
+				t.Fatalf("scope.path error = %q, want it to mention %q (%s)", got, tc.wantErr, tc.why)
+			}
+		})
+	}
+}
+
+// A recorded project is data the validator constrains to a few kinds, and
+// ProjectFor must not read it on the others: links.Load does not validate, so a
+// hand-edited row reaches every read surface as written.
+func TestLinkScope_ProjectForIgnoresProjectOnKindsThatCannotCarryOne(t *testing.T) {
+	cases := []struct {
+		name string
+		kind ScopeKind
+		want string
+	}{
+		{name: "festival", kind: ScopeFestival},
+		{name: "campaign path", kind: ScopeCampaignPath},
+		{name: "repo keeps it", kind: ScopeRepo, want: "projects/camp"},
+		{name: "project keeps it", kind: ScopeProject, want: "projects/camp"},
+		{name: "worktree keeps it", kind: ScopeWorktree, want: "projects/camp"},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			scope := LinkScope{Kind: tc.kind, Path: "festivals/active/x", Project: "projects/camp"}
+			if got := scope.ProjectFor(ScopeLayout{}); got != tc.want {
+				t.Fatalf("ProjectFor = %q, want %q; a kind the validator forbids a project on "+
+					"must not get one from an unvalidated registry", got, tc.want)
+			}
+		})
+	}
+}

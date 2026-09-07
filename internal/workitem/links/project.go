@@ -64,6 +64,14 @@ func (l ScopeLayout) ProjectPath(name string) string {
 	return l.projects() + name
 }
 
+// ProjectsDirPath and WorktreesDirPath return the configured directories with a
+// trailing slash, for callers that build a path rather than test one. The zero
+// layout returns the camp defaults.
+func (l ScopeLayout) ProjectsDirPath() string { return l.projects() }
+
+// WorktreesDirPath is the worktrees half of ProjectsDirPath.
+func (l ScopeLayout) WorktreesDirPath() string { return l.worktrees() }
+
 // UnderProjects reports whether a campaign-relative path sits inside the
 // projects directory.
 func (l ScopeLayout) UnderProjects(path string) bool {
@@ -164,8 +172,18 @@ func usableSegment(segment string) bool {
 //
 // Scopes that name no project return "".
 func (s LinkScope) ProjectFor(layout ScopeLayout) string {
-	if s.Project != "" {
-		return s.Project
+	// The recorded project is only consulted on the kinds allowed to carry one.
+	// links.Load does not validate, so a hand-edited or foreign registry can put
+	// a project on a festival or campaign_path row; honouring it there would
+	// show a thing that is not a project as one, which is the bug this whole
+	// change exists to fix, pointing the other way.
+	switch s.Kind {
+	case ScopeProject, ScopeRepo, ScopeWorktree:
+		if s.Project != "" {
+			return s.Project
+		}
+	default:
+		return ""
 	}
 	switch s.Kind {
 	case ScopeProject:

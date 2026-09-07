@@ -217,7 +217,7 @@ func validateOneLink(link Link, opts ValidateOptions, now time.Time,
 			}
 		}
 	}
-	if msg, ok := checkKindPathPrefix(link.Scope); !ok {
+	if msg, ok := checkKindPathPrefix(link.Scope, opts.Layout); !ok {
 		addErr("scope.path", msg)
 	}
 	if msg, ok := checkScopeProject(link.Scope, opts.Layout); !ok {
@@ -271,20 +271,27 @@ func isValidRole(r Role) bool {
 	return false
 }
 
-// checkKindPathPrefix enforces the kind-to-path prefix table.
-// Returns (errorMessage, ok). ok=true means the scope is acceptable.
-func checkKindPathPrefix(s LinkScope) (string, bool) {
+// checkKindPathPrefix enforces the kind-to-path table against the campaign's
+// configured directories. Returns (errorMessage, ok); ok=true means the scope is
+// acceptable.
+//
+// The directories come from the layout rather than literal prefixes because the
+// writers infer a scope kind from the same layout. A camp that configures
+// paths.projects would otherwise have `camp workitem link` infer kind project
+// and then reject its own write here.
+func checkKindPathPrefix(s LinkScope, layout ScopeLayout) (string, bool) {
 	switch s.Kind {
 	case ScopeProject:
-		if !strings.HasPrefix(s.Path, "projects/") {
-			return "scope kind project requires path under projects/", false
+		if !layout.UnderProjects(s.Path) {
+			return "scope kind project requires path under " + layout.projects(), false
 		}
-		if strings.HasPrefix(s.Path, "projects/worktrees/") {
-			return "scope kind project must not be under projects/worktrees/ (use kind worktree)", false
+		if layout.UnderWorktrees(s.Path) {
+			return "scope kind project must not be under " + layout.worktrees() +
+				" (use kind worktree)", false
 		}
 	case ScopeWorktree:
-		if !strings.HasPrefix(s.Path, "projects/worktrees/") {
-			return "scope kind worktree requires path under projects/worktrees/", false
+		if !layout.UnderWorktrees(s.Path) {
+			return "scope kind worktree requires path under " + layout.worktrees(), false
 		}
 	case ScopeFestival:
 		if !strings.HasPrefix(s.Path, "festivals/") {
