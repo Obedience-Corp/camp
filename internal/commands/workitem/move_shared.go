@@ -43,6 +43,11 @@ func applyWorkitemMove(ctx context.Context, root string, mv workitemMove, result
 		}
 		return nil, camperrors.Wrapf(err, "moving %s to %s", mv.OldRel, mv.NewRel)
 	}
+	// Same reason as dungeon.Service.ApplyMove: the move is on disk, so the
+	// reference repair after it must finish even if the caller stopped waiting.
+	// Without this the error below is reachable by cancellation alone, and it
+	// says the move was applied and the references were not.
+	ctx = context.WithoutCancel(ctx)
 	rewritten, err := moveref.RewriteForMove(ctx, root, mv.SourcePath, mv.DestPath)
 	if err != nil {
 		return nil, camperrors.Wrapf(err,

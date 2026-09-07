@@ -176,6 +176,13 @@ func (s *Service) ApplyMove(ctx context.Context, mp *MovePlan) (string, error) {
 	if err != nil {
 		return "", mp.translateErr(err)
 	}
+	// The directory has moved. Rewriting the references that point at it is not
+	// optional follow-up: abandoning it here leaves every link to the old path
+	// dangling with the move already on disk, which is a worse outcome than
+	// finishing work the caller stopped waiting for. Detach from the caller's
+	// cancellation the way callers of this detach once their own first mutation
+	// lands (see sweepOneToStatus and finishWorkitemMove).
+	ctx = context.WithoutCancel(ctx)
 	if err := s.rewriteLinksAfterMove(ctx, mp.Source, dst); err != nil {
 		return "", camperrors.Wrapf(err, "rewriting references after moving %s", mp.ItemName)
 	}
