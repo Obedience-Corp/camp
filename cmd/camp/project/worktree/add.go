@@ -177,7 +177,8 @@ func runProjectWorktreeAdd(cmd *cobra.Command, args []string) error {
 	fmt.Printf("  Branch: %s\n", ui.Value(result.Branch))
 
 	if linkTarget != nil {
-		link, lerr := attachWorktreeLink(ctx, campRoot, linkTarget, filepath.ToSlash(result.RelativePath), cmd.ErrOrStderr())
+		link, lerr := attachWorktreeLink(ctx, campRoot, cfg, linkTarget, result.Project,
+			filepath.ToSlash(result.RelativePath), cmd.ErrOrStderr())
 		if lerr != nil {
 			return camperrors.Wrap(lerr, "worktree created but workitem link failed")
 		}
@@ -206,18 +207,29 @@ func runProjectWorktreeAdd(cmd *cobra.Command, args []string) error {
 // (and therefore camp p commit) picks up the workitem ref inside that tree.
 // The workitem is resolved and validated by the caller before the worktree is
 // created, so a bad selector never leaves a dangling worktree behind.
-func attachWorktreeLink(ctx context.Context, campRoot string, wi *wkitem.WorkItem, relativeWorktreePath string, report io.Writer) (links.Link, error) {
+//
+// projectName is the project the worktree checks out. Recording it on the scope
+// is what lets every read surface show the workitem against its project rather
+// than against the worktree, and what keeps that relationship after the
+// worktree is removed.
+func attachWorktreeLink(ctx context.Context, campRoot string, cfg *config.CampaignConfig,
+	wi *wkitem.WorkItem, projectName, relativeWorktreePath string, report io.Writer,
+) (links.Link, error) {
 	scopePath := relativeWorktreePath
 	if scopePath == "" {
 		return links.Link{}, camperrors.NewValidation("worktree", "missing worktree relative path", nil)
 	}
+	campPaths := cfg.Paths()
+	layout := links.LayoutFor(campPaths.Projects, campPaths.Worktrees)
 	return links.AttachPrimary(ctx, campRoot, links.AttachOptions{
 		WorkitemID:  wkitem.LinkWorkitemID(wi),
 		WorkitemKey: wi.Key,
 		Scope: links.LinkScope{
-			Kind: links.ScopeWorktree,
-			Path: scopePath,
+			Kind:    links.ScopeWorktree,
+			Path:    scopePath,
+			Project: layout.ProjectPath(projectName),
 		},
+		Layout:    layout,
 		CreatedBy: "camp_project_worktree_add",
 		Replace:   true,
 		Report:    report,

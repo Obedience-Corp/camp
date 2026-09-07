@@ -81,7 +81,7 @@ type unlinkOptions struct {
 }
 
 func runUnlink(ctx context.Context, cmd *cobra.Command, opts unlinkOptions) error {
-	_, root, err := config.LoadCampaignConfigFromCwd(ctx)
+	cfg, root, err := config.LoadCampaignConfigFromCwd(ctx)
 	if err != nil {
 		return camperrors.Wrap(err, "not in a camp directory")
 	}
@@ -101,7 +101,7 @@ func runUnlink(ctx context.Context, cmd *cobra.Command, opts unlinkOptions) erro
 			if err != nil {
 				return err
 			}
-			matches := matchUnlinkCandidates(registry, wi, opts)
+			matches := matchUnlinkCandidates(scopeLayout(cfg), registry, wi, opts)
 			if len(matches) == 0 {
 				return camperrors.NewValidation("selector",
 					"no links matched selector "+opts.Selector, nil)
@@ -137,8 +137,8 @@ func runUnlink(ctx context.Context, cmd *cobra.Command, opts unlinkOptions) erro
 	return emitUnlinkHuman(cmd.OutOrStdout(), removed)
 }
 
-func matchUnlinkCandidates(registry *links.Links, wi *wkitem.WorkItem, opts unlinkOptions) []links.Link {
-	scopeFilter, useScope := unlinkScopeFilter(opts)
+func matchUnlinkCandidates(layout links.ScopeLayout, registry *links.Links, wi *wkitem.WorkItem, opts unlinkOptions) []links.Link {
+	scopeFilter, useScope := unlinkScopeFilter(layout, opts)
 	var out []links.Link
 	for _, link := range registry.Links {
 		if !wkitem.LinkMatchesWorkitem(wi, link.WorkitemID, link.WorkitemKey) {
@@ -154,7 +154,7 @@ func matchUnlinkCandidates(registry *links.Links, wi *wkitem.WorkItem, opts unli
 	return out
 }
 
-func unlinkScopeFilter(opts unlinkOptions) (links.LinkScope, bool) {
+func unlinkScopeFilter(layout links.ScopeLayout, opts unlinkOptions) (links.LinkScope, bool) {
 	switch {
 	case opts.Project != "":
 		return links.LinkScope{Kind: links.ScopeProject, Path: "projects/" + opts.Project}, true
@@ -171,7 +171,7 @@ func unlinkScopeFilter(opts unlinkOptions) (links.LinkScope, bool) {
 		}
 		return links.LinkScope{Kind: links.ScopeWorktree, Path: path}, true
 	case opts.ExplicitPath != "":
-		return links.LinkScope{Kind: inferScopeKind(opts.ExplicitPath), Path: opts.ExplicitPath}, true
+		return links.LinkScope{Kind: inferScopeKind(layout, opts.ExplicitPath), Path: opts.ExplicitPath}, true
 	}
 	return links.LinkScope{}, false
 }

@@ -47,7 +47,7 @@ machine-readable link lists.`,
 }
 
 func runLinks(ctx context.Context, cmd *cobra.Command, selectorArg string, jsonOut bool) error {
-	_, root, err := config.LoadCampaignConfigFromCwd(ctx)
+	cfg, root, err := config.LoadCampaignConfigFromCwd(ctx)
 	if err != nil {
 		return camperrors.Wrap(err, "not in a camp directory")
 	}
@@ -56,6 +56,13 @@ func runLinks(ctx context.Context, cmd *cobra.Command, selectorArg string, jsonO
 	if err != nil {
 		return err
 	}
+
+	// Fill the owning project on worktree rows that predate the field, so the
+	// listing reads the same whether a row was written before or after it. This
+	// command never saves, so the derivation stays in memory; `camp workitem
+	// doctor --fix` is what writes it back.
+	layout := scopeLayout(cfg)
+	links.BackfillProjects(layout, registry)
 
 	registry.Sort()
 	filtered := registry.Links
@@ -76,21 +83,29 @@ func runLinks(ctx context.Context, cmd *cobra.Command, selectorArg string, jsonO
 	if jsonOut {
 		return emitLinksJSON(cmd.OutOrStdout(), filtered)
 	}
-	return emitLinksHuman(cmd.OutOrStdout(), filtered)
+	return emitLinksHuman(cmd.OutOrStdout(), layout, filtered)
 }
 
-func emitLinksHuman(w io.Writer, list []links.Link) error {
+// emitLinksHuman prints the listing with the project as its own column. A
+// worktree is a checkout of a project rather than a project of its own, so the
+// project is what the row is about and the worktree path is the detail beside
+// it.
+func emitLinksHuman(w io.Writer, layout links.ScopeLayout, list []links.Link) error {
 	if len(list) == 0 {
 		_, err := fmt.Fprintln(w, "no links")
 		return err
 	}
 	tw := tabwriter.NewWriter(w, 0, 0, 2, ' ', 0)
-	if _, err := fmt.Fprintln(tw, "LINK_ID\tWORKITEM\tSCOPE\tROLE\tCREATED"); err != nil {
+	if _, err := fmt.Fprintln(tw, "LINK_ID\tWORKITEM\tPROJECT\tSCOPE\tROLE\tCREATED"); err != nil {
 		return err
 	}
 	for _, link := range list {
-		if _, err := fmt.Fprintf(tw, "%s\t%s\t%s:%s\t%s\t%s\n",
-			link.ID, link.WorkitemID, link.Scope.Kind, link.Scope.Path,
+		project := link.Scope.ProjectFor(layout)
+		if project == "" {
+			project = "-"
+		}
+		if _, err := fmt.Fprintf(tw, "%s\t%s\t%s\t%s:%s\t%s\t%s\n",
+			link.ID, link.WorkitemID, project, link.Scope.Kind, link.Scope.Path,
 			link.Role, link.CreatedAt.Format(time.RFC3339)); err != nil {
 			return err
 		}
