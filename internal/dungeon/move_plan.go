@@ -9,6 +9,7 @@ import (
 
 	camperrors "github.com/Obedience-Corp/camp/internal/errors"
 	"github.com/Obedience-Corp/camp/internal/pathutil"
+	"github.com/Obedience-Corp/camp/internal/postmutation"
 	"github.com/Obedience-Corp/camp/internal/statusmove"
 )
 
@@ -176,14 +177,12 @@ func (s *Service) ApplyMove(ctx context.Context, mp *MovePlan) (string, error) {
 	if err != nil {
 		return "", mp.translateErr(err)
 	}
-	// The directory has moved. Rewriting the references that point at it is not
-	// optional follow-up: abandoning it here leaves every link to the old path
-	// dangling with the move already on disk, which is a worse outcome than
-	// finishing work the caller stopped waiting for. Detach from the caller's
-	// cancellation the way callers of this detach once their own first mutation
-	// lands (see sweepOneToStatus and finishWorkitemMove).
-	ctx = context.WithoutCancel(ctx)
-	if err := s.rewriteLinksAfterMove(ctx, mp.Source, dst); err != nil {
+	// The directory has moved, so the reference repair after it runs on a
+	// context detached from the caller's cancellation and bounded by its own
+	// deadline. See postmutation.Context for why both halves are needed.
+	rewriteCtx, release := postmutation.Context(ctx)
+	defer release()
+	if err := s.postMoveRewrite(rewriteCtx, mp.Source, dst); err != nil {
 		return "", camperrors.Wrapf(err, "rewriting references after moving %s", mp.ItemName)
 	}
 	return dst, nil
