@@ -222,7 +222,7 @@ func TestResolve_JSONShape(t *testing.T) {
 	if err := json.Unmarshal(stdout.Bytes(), &payload); err != nil {
 		t.Fatalf("unmarshal: %v\nraw=%s", err, stdout.String())
 	}
-	if payload["schema_version"] != "workitem-resolve/v1alpha1" {
+	if payload["schema_version"] != "workitem-resolve/v1alpha2" {
 		t.Fatalf("schema_version = %v", payload["schema_version"])
 	}
 }
