@@ -382,28 +382,26 @@ func TestIntentAddModel_TypeSelection(t *testing.T) {
 	model, _ := m.Update(tea.KeyMsg{Type: tea.KeyEnter})
 	m = model.(IntentAddModel)
 
-	// Now on type step, navigate down
+	// Now on type step, navigate down. typeIdx is confirmed only on enter.
 	model, _ = m.Update(tea.KeyMsg{Type: tea.KeyDown})
 	m = model.(IntentAddModel)
-
-	if m.typeIdx != 1 {
-		t.Errorf("Expected typeIdx 1 after down, got %d", m.typeIdx)
+	got, _ := m.typeSel.Selected()
+	if got.ID != "feature" {
+		t.Errorf("Expected feature after down, got %q", got.ID)
 	}
 
-	// Navigate with j
 	model, _ = m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'j'}})
 	m = model.(IntentAddModel)
-
-	if m.typeIdx != 2 {
-		t.Errorf("Expected typeIdx 2 after j, got %d", m.typeIdx)
+	got, _ = m.typeSel.Selected()
+	if got.ID != "bug" {
+		t.Errorf("Expected bug after j, got %q", got.ID)
 	}
 
-	// Navigate up with k
 	model, _ = m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'k'}})
 	m = model.(IntentAddModel)
-
-	if m.typeIdx != 1 {
-		t.Errorf("Expected typeIdx 1 after k, got %d", m.typeIdx)
+	got, _ = m.typeSel.Selected()
+	if got.ID != "feature" {
+		t.Errorf("Expected feature after k, got %q", got.ID)
 	}
 }
 

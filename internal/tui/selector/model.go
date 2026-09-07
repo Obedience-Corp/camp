@@ -19,6 +19,7 @@ const defaultVisible = 5
 type Options struct {
 	Visible   int
 	Help      string
+	HelpShort string
 	Title     string
 	InitialID string
 }

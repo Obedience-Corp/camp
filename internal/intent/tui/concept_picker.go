@@ -2,13 +2,17 @@ package tui
 
 import (
 	"context"
+	"os"
+	"path/filepath"
 	"strings"
+	"time"
 
 	"github.com/Obedience-Corp/camp/internal/concept"
+	"github.com/Obedience-Corp/camp/internal/state"
+	"github.com/Obedience-Corp/camp/internal/tui/selector"
 	tea "github.com/charmbracelet/bubbletea"
 )
 
-// pickerStep represents the current step in the concept selection process.
 type pickerStep int
 
 const (
@@ -17,174 +21,164 @@ const (
 	stepDone
 )
 
-// noneOptionLabel is displayed as the first option to skip concept selection.
-const noneOptionLabel = "(none) - No concept association"
+const (
+	noneOptionID    = "(none)"
+	noneOptionLabel = "(none) - No concept association"
+	newProjectLabel = "+ New Project"
+	newProjectPath  = "projects/new"
 
-// newProjectLabel is displayed as an option for creating new project intents.
-const newProjectLabel = "+ New Project"
+	pickerHelpLong  = "↑/↓ move · type to filter · enter select · backspace back · esc cancel"
+	pickerHelpShort = "↑/↓ · type · enter · esc"
+	pickerHelpDrill = "↑/↓ move · type to filter · enter select · → drill · backspace back · esc cancel"
+)
 
-// newProjectPath is the special path used for new project intents.
-const newProjectPath = "projects/new"
-
-// ConceptPickerModel provides a cascading selection UI for concepts.
-// First, the user selects a concept type (e.g., Projects, Festivals).
-// Then, they can drill into items within that concept.
+// ConceptPickerModel is a cascading concept picker backed by selector.Model.
 type ConceptPickerModel struct {
-	conceptSvc concept.Service
-	concepts   []concept.Concept
-	items      []concept.Item
+	conceptSvc   concept.Service
+	concepts     []concept.Concept
+	items        []concept.Item
+	sel          selector.Model
+	step         pickerStep
+	ranks        map[string]time.Time
+	campaignRoot string
 
-	typeWheel ScrollWheel
-	itemWheel ScrollWheel
-	step      pickerStep
-
-	// Selected state
 	selectedConcept *concept.Concept
 	currentSubpath  string
-	pathHistory     []string // For backspace navigation
+	pathHistory     []string
 
-	// Result
 	selectedPath string
 	cancelled    bool
-
-	// Context for service calls
-	ctx context.Context
+	ctx          context.Context
 }
 
-// NewConceptPickerModel creates a new concept picker with the given service.
-func NewConceptPickerModel(ctx context.Context, svc concept.Service) ConceptPickerModel {
+func NewConceptPickerModel(ctx context.Context, svc concept.Service, campaignRoot string) ConceptPickerModel {
 	concepts, err := svc.List(ctx)
 	if err != nil {
-		// Log error but continue with empty concepts
 		concepts = nil
 	}
-
-	// Build names with NONE as first option, then concepts
-	names := make([]string, len(concepts)+1)
-	names[0] = noneOptionLabel
-	for i, c := range concepts {
-		names[i+1] = c.Name + " - " + c.Description
+	m := ConceptPickerModel{
+		ctx:          ctx,
+		conceptSvc:   svc,
+		concepts:     concepts,
+		campaignRoot: campaignRoot,
+		ranks:        loadPickerRanks(ctx, campaignRoot),
+		step:         stepSelectingType,
 	}
-
-	tw := NewScrollWheel(names)
-	tw.Focus()
-
-	return ConceptPickerModel{
-		ctx:        ctx,
-		conceptSvc: svc,
-		concepts:   concepts,
-		typeWheel:  tw,
-		step:       stepSelectingType,
-	}
+	m.sel = selector.New(m.typeItems(), m.typeOpts())
+	return m
 }
 
-// Init implements tea.Model.
-func (m ConceptPickerModel) Init() tea.Cmd {
-	return nil
-}
+func (m ConceptPickerModel) Init() tea.Cmd { return nil }
 
-// Update implements tea.Model.
 func (m ConceptPickerModel) Update(msg tea.Msg) (ConceptPickerModel, tea.Cmd) {
-	var cmd tea.Cmd
-
-	switch msg := msg.(type) {
-	case tea.KeyMsg:
-		switch m.step {
-		case stepSelectingType:
-			return m.updateTypeSelection(msg)
-		case stepSelectingItem:
-			return m.updateItemSelection(msg)
-		}
+	key, ok := msg.(tea.KeyMsg)
+	if !ok {
+		return m, nil
 	}
-
-	return m, cmd
+	switch m.step {
+	case stepSelectingType:
+		return m.updateTypeSelection(key)
+	case stepSelectingItem:
+		return m.updateItemSelection(key)
+	}
+	return m, nil
 }
 
-// updateTypeSelection handles key input during concept type selection.
 func (m ConceptPickerModel) updateTypeSelection(msg tea.KeyMsg) (ConceptPickerModel, tea.Cmd) {
 	switch msg.String() {
-	case "up", "k":
-		m.typeWheel, _ = m.typeWheel.Update(msg)
-	case "down", "j":
-		m.typeWheel, _ = m.typeWheel.Update(msg)
 	case "enter":
-		idx := m.typeWheel.Selected()
-		if idx == 0 {
-			// NONE selected - no concept association
-			m.selectedPath = ""
+		return m.confirmType()
+	case "esc", "backspace", "left", "h":
+		if !m.sel.Filtering() {
+			m.cancelled = true
 			m.step = stepDone
 			return m, nil
 		}
-		// Adjust index for actual concepts (offset by 1 for NONE option)
-		conceptIdx := idx - 1
-		if conceptIdx >= 0 && conceptIdx < len(m.concepts) {
-			c := m.concepts[conceptIdx]
-			m.selectedConcept = &c
+	}
+	m.sel, _ = m.sel.Update(msg)
+	return m, nil
+}
 
-			// If concept has items, advance to item selection
+func (m ConceptPickerModel) confirmType() (ConceptPickerModel, tea.Cmd) {
+	it, ok := m.sel.Selected()
+	if !ok {
+		return m, nil
+	}
+	if it.ID == noneOptionID {
+		m.selectedPath = ""
+		m.step = stepDone
+		return m, nil
+	}
+	for i := range m.concepts {
+		if m.concepts[i].Name == it.ID {
+			c := m.concepts[i]
+			m.selectedConcept = &c
 			if c.HasItems {
 				m.step = stepSelectingItem
 				m.loadItems("")
 			} else {
-				// No items, just use the concept path
 				m.selectedPath = c.Path
 				m.step = stepDone
 			}
+			return m, nil
 		}
-	case "esc", "backspace", "left", "h":
-		// Cancel picker from type selection
-		m.cancelled = true
-		m.step = stepDone
 	}
-
 	return m, nil
 }
 
-// updateItemSelection handles key input during item selection.
 func (m ConceptPickerModel) updateItemSelection(msg tea.KeyMsg) (ConceptPickerModel, tea.Cmd) {
+	filtering := m.sel.Filtering()
 	switch msg.String() {
-	case "up", "k":
-		m.itemWheel, _ = m.itemWheel.Update(msg)
-	case "down", "j":
-		m.itemWheel, _ = m.itemWheel.Update(msg)
 	case "enter":
-		idx := m.itemWheel.Selected()
-		if idx >= 0 && idx < len(m.items) {
-			item := m.items[idx]
-			// Check if depth is infinite (nil) or configured
-			infiniteDepth := m.selectedConcept.MaxDepth == nil
-			canDrill := item.IsDir && item.Children > 0 && !item.DrillDisabled
-
-			if canDrill && !infiniteDepth {
-				// Configured depth: auto-drill until max depth
-				m.drillInto(item)
-			} else {
-				// Infinite depth OR can't drill: select this item
-				m.selectedPath = item.Path
-				m.step = stepDone
-			}
-		}
+		return m.confirmOrDrillItem(false)
 	case "right", "l":
-		// Explicit drill (useful for infinite depth concepts)
-		idx := m.itemWheel.Selected()
-		if idx >= 0 && idx < len(m.items) {
-			item := m.items[idx]
-			if item.IsDir && item.Children > 0 && !item.DrillDisabled {
-				m.drillInto(item)
-			}
+		if !filtering {
+			return m.confirmOrDrillItem(true)
 		}
 	case "backspace", "left", "h":
-		// Go back in path history
-		m.navigateUp()
+		if !filtering {
+			m.navigateUp()
+			return m, nil
+		}
 	case "esc":
-		m.cancelled = true
-		m.step = stepDone
+		if !filtering {
+			m.cancelled = true
+			m.step = stepDone
+			return m, nil
+		}
 	}
-
+	m.sel, _ = m.sel.Update(msg)
+	if m.sel.Consumed() {
+		return m, nil
+	}
 	return m, nil
 }
 
-// drillInto navigates into a subdirectory.
+func (m ConceptPickerModel) confirmOrDrillItem(forceDrill bool) (ConceptPickerModel, tea.Cmd) {
+	it, ok := m.sel.Selected()
+	if !ok || m.selectedConcept == nil {
+		return m, nil
+	}
+	item, found := m.itemByPath(it.ID)
+	if !found {
+		return m, nil
+	}
+	infiniteDepth := m.selectedConcept.MaxDepth == nil
+	canDrill := item.IsDir && item.Children > 0 && !item.DrillDisabled
+	if forceDrill && canDrill {
+		m.drillInto(item)
+		return m, nil
+	}
+	if canDrill && !infiniteDepth {
+		m.drillInto(item)
+		return m, nil
+	}
+	m.selectedPath = item.Path
+	m.recordVisit(item.Path)
+	m.step = stepDone
+	return m, nil
+}
+
 func (m *ConceptPickerModel) drillInto(item concept.Item) {
 	m.pathHistory = append(m.pathHistory, m.currentSubpath)
 	if m.currentSubpath == "" {
@@ -195,169 +189,228 @@ func (m *ConceptPickerModel) drillInto(item concept.Item) {
 	m.loadItems(m.currentSubpath)
 }
 
-// navigateUp goes back one level in the directory hierarchy.
 func (m *ConceptPickerModel) navigateUp() {
-	if len(m.pathHistory) > 0 {
-		// Pop from history
+	switch {
+	case len(m.pathHistory) > 0:
 		lastIdx := len(m.pathHistory) - 1
 		previousPath := m.pathHistory[lastIdx]
 		m.pathHistory = m.pathHistory[:lastIdx]
-
-		// Reload items at previous path
 		m.currentSubpath = previousPath
 		m.loadItems(previousPath)
-	} else if m.currentSubpath != "" {
-		// At concept root with subpath, go to empty path
+	case m.currentSubpath != "":
 		m.currentSubpath = ""
 		m.loadItems("")
-	} else {
-		// At concept root with empty history, go back to type selection
+	default:
 		m.step = stepSelectingType
 		m.selectedConcept = nil
 		m.items = nil
 		m.currentSubpath = ""
-		m.typeWheel.Focus()
+		m.sel.Reset(m.typeItems(), m.typeOpts())
 	}
 }
 
-// loadItems loads items for the current concept and subpath.
 func (m *ConceptPickerModel) loadItems(subpath string) {
 	if m.selectedConcept == nil {
 		return
 	}
-
 	items, err := m.conceptSvc.ListItems(m.ctx, m.selectedConcept.Name, subpath)
 	if err != nil {
 		m.items = nil
+		m.sel.Reset(nil, m.itemOpts())
 		return
 	}
-
-	// Prepend "New" option for projects concept at root level
-	if m.selectedConcept.Name == "p" && subpath == "" {
-		newItem := concept.Item{
+	if isProjectsConcept(m.selectedConcept) && subpath == "" {
+		items = append([]concept.Item{{
 			Name:          newProjectLabel,
 			Path:          newProjectPath,
 			IsDir:         false,
 			Children:      0,
 			DrillDisabled: true,
-		}
-		items = append([]concept.Item{newItem}, items...)
+		}}, items...)
 	}
-
 	m.items = items
-
-	// Build names for the scroll wheel with directory indicators
-	names := make([]string, len(items))
-	for i, item := range items {
-		if item.Name == newProjectLabel {
-			// Special styling for "New" option
-			names[i] = "✨ " + item.Name
-		} else if item.IsDir {
-			if item.DrillDisabled {
-				// Drilling disabled by depth limit - no arrow, no "(empty)"
-				names[i] = "  " + item.Name
-			} else if item.Children > 0 {
-				names[i] = "▸ " + item.Name
-			} else {
-				names[i] = "  " + item.Name + " (empty)"
-			}
-		} else {
-			names[i] = "  " + item.Name
-		}
-	}
-
-	m.itemWheel = NewScrollWheel(names)
-	m.itemWheel.Focus()
+	m.sel.Reset(m.itemSelectorItems(), m.itemOpts())
 }
 
-// View implements tea.Model.
 func (m ConceptPickerModel) View() string {
 	switch m.step {
-	case stepSelectingType:
-		return m.viewTypeSelection()
-	case stepSelectingItem:
-		return m.viewItemSelection()
+	case stepSelectingType, stepSelectingItem:
+		return m.sel.View()
 	default:
 		return ""
 	}
 }
 
-// viewTypeSelection renders the concept type selection view.
-func (m ConceptPickerModel) viewTypeSelection() string {
-	var b strings.Builder
+func (m ConceptPickerModel) Done() bool { return m.step == stepDone }
 
-	b.WriteString(TitleStyle.Render("Select concept type:"))
-	b.WriteString("\n\n")
+func (m ConceptPickerModel) Cancelled() bool { return m.cancelled }
 
-	if len(m.concepts) == 0 {
-		b.WriteString(HelpStyle.Render("(no concepts configured)"))
-	} else {
-		b.WriteString(m.typeWheel.View())
+func (m ConceptPickerModel) SelectedPath() string { return m.selectedPath }
+
+func (m ConceptPickerModel) SelectedConcept() *concept.Concept { return m.selectedConcept }
+
+func (m ConceptPickerModel) typeItems() []selector.Item {
+	items := make([]selector.Item, 0, len(m.concepts)+1)
+	items = append(items, selector.Item{
+		ID:    noneOptionID,
+		Label: noneOptionLabel,
+		Pin:   selector.PinTop,
+	})
+	for _, c := range m.concepts {
+		items = append(items, selector.Item{
+			ID:     c.Name,
+			Label:  c.Name + " - " + c.Description,
+			Filter: c.Path,
+			Rank:   state.RankTime(m.ranks, c.Path),
+		})
 	}
-
-	b.WriteString("\n")
-	b.WriteString(HelpStyle.Render("↑/↓: navigate • Enter: select • Esc: cancel"))
-
-	return b.String()
+	return items
 }
 
-// viewItemSelection renders the item selection view.
-func (m ConceptPickerModel) viewItemSelection() string {
-	var b strings.Builder
-
-	// Show breadcrumb path with > separator for visual clarity
-	breadcrumb := m.buildBreadcrumb()
-	b.WriteString(TitleStyle.Render("📁 " + breadcrumb))
-	b.WriteString("\n\n")
-
-	if len(m.items) == 0 {
-		b.WriteString(HelpStyle.Render("(no items)"))
-	} else {
-		b.WriteString(m.itemWheel.View())
+func (m ConceptPickerModel) typeOpts() selector.Options {
+	opts := selector.Options{
+		Title:     "Select concept type:",
+		Help:      pickerHelpLong,
+		HelpShort: pickerHelpShort,
+		InitialID: noneOptionID,
 	}
-
-	b.WriteString("\n")
-	// Show different help based on depth mode
-	if m.selectedConcept.MaxDepth == nil {
-		// Infinite depth: Enter selects, Right/l drills
-		b.WriteString(HelpStyle.Render("↑/↓: navigate • Enter: select • →/l: drill • Backspace: back • Esc: cancel"))
-	} else {
-		// Configured depth: Enter auto-drills until max
-		b.WriteString(HelpStyle.Render("↑/↓: navigate • Enter: select • Backspace: back • Esc: cancel"))
+	if id := mostRecentID(m.typeItems()); id != "" {
+		opts.InitialID = id
 	}
-
-	return b.String()
+	return opts
 }
 
-// buildBreadcrumb creates a readable path string with > separators.
+func (m ConceptPickerModel) itemSelectorItems() []selector.Item {
+	out := make([]selector.Item, 0, len(m.items))
+	for _, item := range m.items {
+		sel := selector.Item{
+			ID:     item.Path,
+			Label:  itemLabel(item),
+			Filter: item.Path,
+			Rank:   state.RankTime(m.ranks, item.Path),
+		}
+		if item.Name == newProjectLabel {
+			sel.Pin = selector.PinTop
+			sel.Rank = time.Time{}
+		}
+		out = append(out, sel)
+	}
+	return out
+}
+
+func (m ConceptPickerModel) itemOpts() selector.Options {
+	help := pickerHelpLong
+	if m.selectedConcept != nil && m.selectedConcept.MaxDepth == nil {
+		help = pickerHelpDrill
+	}
+	return selector.Options{
+		Title:     "📁 " + m.buildBreadcrumb(),
+		Help:      help,
+		HelpShort: pickerHelpShort,
+	}
+}
+
+func (m ConceptPickerModel) itemByPath(path string) (concept.Item, bool) {
+	for _, item := range m.items {
+		if item.Path == path {
+			return item, true
+		}
+	}
+	return concept.Item{}, false
+}
+
+func (m ConceptPickerModel) recordVisit(rel string) {
+	if m.campaignRoot == "" || rel == "" || rel == newProjectPath {
+		return
+	}
+	abs := rel
+	if !filepath.IsAbs(rel) {
+		abs = filepath.Join(m.campaignRoot, filepath.FromSlash(rel))
+	}
+	_ = state.RecordVisit(m.ctx, m.campaignRoot, abs)
+}
+
 func (m ConceptPickerModel) buildBreadcrumb() string {
-	parts := []string{m.selectedConcept.Name}
-
-	if m.currentSubpath != "" {
-		// Split the subpath by separator
-		subparts := strings.Split(m.currentSubpath, "/")
-		parts = append(parts, subparts...)
+	if m.selectedConcept == nil {
+		return ""
 	}
-
+	parts := []string{m.selectedConcept.Name}
+	if m.currentSubpath != "" {
+		parts = append(parts, strings.Split(m.currentSubpath, "/")...)
+	}
 	return strings.Join(parts, " > ")
 }
 
-// Done returns true if the picker is finished (selected or cancelled).
-func (m ConceptPickerModel) Done() bool {
-	return m.step == stepDone
+func itemLabel(item concept.Item) string {
+	switch {
+	case item.Name == newProjectLabel:
+		return "✨ " + item.Name
+	case item.IsDir && item.DrillDisabled:
+		return item.Name
+	case item.IsDir && item.Children > 0:
+		return "▸ " + item.Name
+	case item.IsDir:
+		return item.Name + " (empty)"
+	default:
+		return item.Name
+	}
 }
 
-// Cancelled returns true if the user cancelled the picker.
-func (m ConceptPickerModel) Cancelled() bool {
-	return m.cancelled
+func isProjectsConcept(c *concept.Concept) bool {
+	if c == nil {
+		return false
+	}
+	if c.Name == "p" || c.Name == "projects" {
+		return true
+	}
+	path := strings.Trim(strings.TrimSuffix(filepath.ToSlash(c.Path), "/"), "/")
+	return path == "projects"
 }
 
-// SelectedPath returns the selected concept path, or empty if cancelled.
-func (m ConceptPickerModel) SelectedPath() string {
-	return m.selectedPath
+func loadPickerRanks(ctx context.Context, campaignRoot string) map[string]time.Time {
+	if campaignRoot == "" {
+		return nil
+	}
+	entries, err := state.LoadHistory(ctx, campaignRoot)
+	if err != nil {
+		return nil
+	}
+	ranks := state.RankMap(entries, campaignRoot)
+	overlayCwd(ranks, campaignRoot)
+	return ranks
 }
 
-// SelectedConcept returns the selected concept, or nil if cancelled.
-func (m ConceptPickerModel) SelectedConcept() *concept.Concept {
-	return m.selectedConcept
+func overlayCwd(ranks map[string]time.Time, campaignRoot string) {
+	if ranks == nil {
+		return
+	}
+	cwd, err := os.Getwd()
+	if err != nil || cwd == "" {
+		return
+	}
+	rel, err := filepath.Rel(filepath.Clean(campaignRoot), filepath.Clean(cwd))
+	if err != nil {
+		return
+	}
+	rel = filepath.ToSlash(rel)
+	rel = strings.Trim(rel, "/")
+	if rel == "" || rel == "." || strings.Contains(rel, "..") {
+		return
+	}
+	ranks[rel] = time.Now()
+}
+
+func mostRecentID(items []selector.Item) string {
+	var best time.Time
+	id := ""
+	for _, it := range items {
+		if it.Rank.IsZero() {
+			continue
+		}
+		if best.IsZero() || it.Rank.After(best) {
+			best = it.Rank
+			id = it.ID
+		}
+	}
+	return id
 }
