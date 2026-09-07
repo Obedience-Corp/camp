@@ -216,8 +216,15 @@ pty-project-list:
     cd "{{root}}"
     just test integration-run TestProjectList_SelectorTTY
 
+# Drive `camp switch` in the container harness (not a host tempfile).
+pty-switch:
+    #!/usr/bin/env bash
+    set -euo pipefail
+    cd "{{root}}"
+    just test integration-run TestSwitch_BottomProximityTTY
+
 # Run every pty check.
-pty: pty-triage-review pty-machine-tailscale-check pty-machine-auth-denied pty-sweep-prompt pty-selector pty-intent-copy pty-intent-add pty-project-list
+pty: pty-triage-review pty-machine-tailscale-check pty-machine-auth-denied pty-sweep-prompt pty-selector pty-intent-copy pty-intent-add pty-project-list pty-switch
 
 # Record one tape. The tape owns its output path and its fixture bootstrap.
 tape tape_path:
