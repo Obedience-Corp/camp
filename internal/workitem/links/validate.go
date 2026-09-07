@@ -46,6 +46,10 @@ type ValidateOptions struct {
 	// Now is the reference time for created_at future-skew checks. Defaults
 	// to time.Now() if zero.
 	Now time.Time
+
+	// Layout names the campaign-relative projects and worktrees directories
+	// scope paths are read against. The zero value is the camp default layout.
+	Layout ScopeLayout
 }
 
 var linkIDRegex = regexp.MustCompile(LinkIDPattern)
@@ -216,6 +220,9 @@ func validateOneLink(link Link, opts ValidateOptions, now time.Time,
 	if msg, ok := checkKindPathPrefix(link.Scope); !ok {
 		addErr("scope.path", msg)
 	}
+	if msg, ok := checkScopeProject(link.Scope, opts.Layout); !ok {
+		addErr("scope.project", msg)
+	}
 
 	if !isValidRole(link.Role) {
 		addErr("role", "unknown role: "+string(link.Role))
@@ -285,6 +292,35 @@ func checkKindPathPrefix(s LinkScope) (string, bool) {
 		}
 	case ScopeRepo, ScopeCampaignPath:
 		// No prefix constraint.
+	}
+	return "", true
+}
+
+// checkScopeProject enforces the optional scope.project field: when set it must
+// name a project directory, and only a scope that has an owning project may
+// carry one. Returns (errorMessage, ok); ok=true means the scope is acceptable.
+//
+// The value is not required to match what the path derives. A worktree can be
+// moved or its holder renamed, and the recorded project is the durable half of
+// that relationship, so a mismatch is deliberate data rather than corruption.
+func checkScopeProject(s LinkScope, layout ScopeLayout) (string, bool) {
+	if s.Project == "" {
+		return "", true
+	}
+	switch s.Kind {
+	case ScopeProject, ScopeRepo, ScopeWorktree:
+	default:
+		return "scope kind " + string(s.Kind) + " has no owning project; remove scope.project", false
+	}
+	if strings.HasPrefix(s.Project, "/") {
+		return "must be camp-relative (no leading /)", false
+	}
+	if strings.Contains(s.Project, "..") {
+		return "must not contain ..", false
+	}
+	if layout.ProjectRoot(s.Project) != strings.TrimRight(s.Project, "/") {
+		return "must name a project directory under " + layout.projects() +
+			" (got " + s.Project + ")", false
 	}
 	return "", true
 }
