@@ -503,6 +503,7 @@ func sweepOneToStatus(ctx context.Context, cmd *cobra.Command, cfg *config.Campa
 		SourcePaths:      []string{loc.SourcePath},
 		DestinationPaths: destPaths,
 		RewrittenFiles:   moveRes.Svc.RewrittenLinkFiles(),
+		WorkitemRef:      ident.LedgerRef,
 	})
 	entry.Committed = outcome.Committed
 	if cerr := outcome.Err(); cerr != nil {

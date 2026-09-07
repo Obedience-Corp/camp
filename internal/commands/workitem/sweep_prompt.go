@@ -300,6 +300,7 @@ func routeCandidateToDocs(ctx context.Context, cmd *cobra.Command, work *sweepWo
 		SourcePaths:      []string{loc.SourcePath},
 		DestinationPaths: destPaths,
 		RewrittenFiles:   svc.RewrittenLinkFiles(),
+		WorkitemRef:      ident.LedgerRef,
 	})
 	if cerr := outcome.Err(); cerr != nil {
 		return camperrors.Wrapf(cerr, "committing route of %s to %s", loc.Slug, toRel)

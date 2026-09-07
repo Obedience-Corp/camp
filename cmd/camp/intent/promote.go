@@ -18,6 +18,7 @@ import (
 	"github.com/Obedience-Corp/camp/internal/ledger"
 	"github.com/Obedience-Corp/camp/internal/paths"
 	"github.com/Obedience-Corp/camp/internal/ui"
+	"github.com/Obedience-Corp/camp/internal/workitem/selector"
 )
 
 var intentPromoteCmd = &cobra.Command{
@@ -107,6 +108,12 @@ func runIntentPromote(cmd *cobra.Command, args []string) error {
 
 	prevStatus := i.Status
 
+	// Before Promote moves the file: the backfill stamps the frontmatter here.
+	commitRef := i.Ref
+	if commitRef == "" {
+		commitRef = selector.EnsureCommitRef(ctx, campaignRoot, i.ID, cmd.ErrOrStderr())
+	}
+
 	result, err := promote.Promote(ctx, svc, i, promote.Options{
 		CampaignRoot: campaignRoot,
 		Target:       target,
@@ -152,6 +159,9 @@ func runIntentPromote(cmd *cobra.Command, args []string) error {
 
 		files = append(files, audit.FilePath(resolver.Intents()))
 		opts := wkcmd.AmbientCommitOptions(ctx, campaignRoot, cfg.ID, os.Stderr)
+		if commitRef != "" {
+			opts.WorkitemRef = commitRef
+		}
 		opts.Files = commit.NormalizeFiles(campaignRoot, files...)
 		opts.SelectiveOnly = true
 		commitResult := commit.Intent(ctx, commit.IntentOptions{

@@ -334,7 +334,7 @@ func commitSplit(
 		description: "split " + wkitem.StableIDOf(parent) + " into " +
 			joinIDs(idsOf(successors)),
 		destPaths: paths,
-	}, result, false)
+	}, result, wkitem.RefOf(parent), false)
 }
 
 // splitFailure reports a failure with whatever the split already created.
@@ -647,7 +647,7 @@ func commitUndo(
 	return commitWorkitemMove(ctx, cmd, cfg, campaignRoot, &commitInputs{
 		description: "undo split of " + wkitem.StableIDOf(parent),
 		destPaths:   append([]string{parent.RelativePath}, successorPaths...),
-	}, result, false)
+	}, result, wkitem.RefOf(parent), false)
 }
 
 func printUndoResult(cmd *cobra.Command, result undoResult) error {

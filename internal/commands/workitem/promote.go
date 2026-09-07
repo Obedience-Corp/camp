@@ -26,6 +26,7 @@ import (
 	"github.com/Obedience-Corp/camp/internal/workitem/links"
 	"github.com/Obedience-Corp/camp/internal/workitem/locate"
 	"github.com/Obedience-Corp/camp/internal/workitem/priority"
+	"github.com/Obedience-Corp/camp/internal/workitem/selector"
 	"github.com/Obedience-Corp/camp/pkg/ledgerkit"
 )
 
@@ -191,6 +192,10 @@ func runWorkitemPromote(cmd *cobra.Command, opts runWorkitemPromoteOptions) (*wo
 	ledgerID, ledgerRef, ledgerTitle := loc.Slug, "", ""
 	if meta, metaErr := wkitem.LoadMetadata(ctx, loc.SourcePath); metaErr == nil && meta != nil {
 		ledgerID, ledgerRef, ledgerTitle = meta.ID, meta.Ref, meta.Title
+	}
+	// Before the move: the backfill writes to the marker about to relocate.
+	if ledgerRef == "" {
+		ledgerRef = selector.EnsureCommitRef(ctx, root, ledgerID, cmd.ErrOrStderr())
 	}
 
 	result := workitemPromoteResult{

@@ -184,6 +184,7 @@ func commitRename(ctx context.Context, cmd *cobra.Command, cfg *config.CampaignC
 		SourcePaths:      []string{plan.srcPath},
 		DestinationPaths: destPaths,
 		RewrittenFiles:   rewritten,
+		WorkitemRef:      refFromItem(plan),
 	})
 	if !opts.JSON {
 		dungeoncmd.PrintDungeonMoveOutcome(cmd.OutOrStdout(), outcome)
