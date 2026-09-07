@@ -31,7 +31,7 @@ recording is the stable command surface a reader can install. Pass
 | Machine dual-auth CLI | [machine-dual-auth.tape](machine-dual-auth.tape) | [machine-dual-auth.gif](machine-dual-auth.gif) | (WI-ca06e1 record-time proof; private gist optional) |
 | Project-aware worktree list | [worktree-list.tape](worktree-list.tape) | [worktree-list.gif](worktree-list.gif) | — |
 | Intent-add selector | [intent-add-selector.tape](intent-add-selector.tape) | private gist | (fixture: `fixtures/intent-add-selector-fixture.sh`) |
-| Project list browser | [project-list.tape](project-list.tape) | [project-list.gif](project-list.gif) | — |
+| Project list browser | [project-list.tape](project-list.tape) | [project-list.gif](project-list.gif) | (fixture: `fixtures/project-list-selector-fixture.sh`) |
 | Deferred jobs browser | [jobs-tui.tape](jobs-tui.tape) | [jobs-tui.gif](jobs-tui.gif) | (fixture: `fixtures/jobs-tui-fixture.sh`) |
 | Tailscale SSH approval | [machine-tailscale-check.tape](machine-tailscale-check.tape) | private gist | (PR evidence bundle) |
 | OpenSSH login denied | [machine-auth-denied.tape](machine-auth-denied.tape) | private gist | (PR evidence bundle) |

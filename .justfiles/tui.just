@@ -209,14 +209,12 @@ pty-intent-add:
     cd "{{root}}"
     just test integration-run TestIntentAdd_SelectorTTY
 
-# Drive `camp project list`: filter overlay, selection, --path-output write.
+# Drive `camp project list` in the container harness (not a host tempfile).
 pty-project-list:
     #!/usr/bin/env bash
     set -euo pipefail
     cd "{{root}}"
-    just build quick >/dev/null
-    venv_dir="$(just tui venv)"
-    "$venv_dir/bin/python" tests/tui/project_list_pty.py bin/camp
+    just test integration-run TestProjectList_SelectorTTY
 
 # Run every pty check.
 pty: pty-triage-review pty-machine-tailscale-check pty-machine-auth-denied pty-sweep-prompt pty-selector pty-intent-copy pty-intent-add pty-project-list
