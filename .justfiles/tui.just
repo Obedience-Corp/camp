@@ -202,14 +202,12 @@ pty-selector:
     "$venv_dir/bin/python" tests/tui/selector_pty.py "$demo"
     rm -f "$demo"
 
-# Drive `camp intent add`: Type/Concept selector render + saved intent file.
+# Drive `camp intent add` in the container harness (not a host tempfile).
 pty-intent-add:
     #!/usr/bin/env bash
     set -euo pipefail
     cd "{{root}}"
-    just build quick >/dev/null
-    venv_dir="$(just tui venv)"
-    "$venv_dir/bin/python" tests/tui/intent_add_pty.py bin/camp
+    just test integration-run TestIntentAdd_SelectorTTY
 
 # Run every pty check.
 pty: pty-triage-review pty-machine-tailscale-check pty-machine-auth-denied pty-sweep-prompt pty-selector pty-intent-copy pty-intent-add
