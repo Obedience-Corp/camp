@@ -209,8 +209,15 @@ pty-intent-add:
     cd "{{root}}"
     just test integration-run TestIntentAdd_SelectorTTY
 
+# Drive `camp project list` in the container harness (not a host tempfile).
+pty-project-list:
+    #!/usr/bin/env bash
+    set -euo pipefail
+    cd "{{root}}"
+    just test integration-run TestProjectList_SelectorTTY
+
 # Run every pty check.
-pty: pty-triage-review pty-machine-tailscale-check pty-machine-auth-denied pty-sweep-prompt pty-selector pty-intent-copy pty-intent-add
+pty: pty-triage-review pty-machine-tailscale-check pty-machine-auth-denied pty-sweep-prompt pty-selector pty-intent-copy pty-intent-add pty-project-list
 
 # Record one tape. The tape owns its output path and its fixture bootstrap.
 tape tape_path:
