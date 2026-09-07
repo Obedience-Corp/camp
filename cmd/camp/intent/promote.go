@@ -18,6 +18,7 @@ import (
 	"github.com/Obedience-Corp/camp/internal/ledger"
 	"github.com/Obedience-Corp/camp/internal/paths"
 	"github.com/Obedience-Corp/camp/internal/ui"
+	"github.com/Obedience-Corp/camp/internal/workitem/selector"
 )
 
 var intentPromoteCmd = &cobra.Command{
@@ -107,15 +108,10 @@ func runIntentPromote(cmd *cobra.Command, args []string) error {
 
 	prevStatus := i.Status
 
-	// Resolve the promoted intent's own ref, backfilling one when it has none,
-	// so the commit carries WI-<ref> and `camp workitem commits` finds the
-	// promotion. Must happen before Promote moves the file: the ref is stamped
-	// into the frontmatter at the path resolved here. The ambient context the
-	// commit options carry describes where the operator was standing, which is
-	// rarely the intent being promoted.
+	// Before Promote moves the file: the backfill stamps the frontmatter here.
 	commitRef := i.Ref
 	if commitRef == "" {
-		commitRef = wkcmd.EnsureCommitRef(ctx, campaignRoot, i.ID, cmd.ErrOrStderr())
+		commitRef = selector.EnsureCommitRef(ctx, campaignRoot, i.ID, cmd.ErrOrStderr())
 	}
 
 	result, err := promote.Promote(ctx, svc, i, promote.Options{

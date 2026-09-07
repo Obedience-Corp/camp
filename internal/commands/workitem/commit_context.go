@@ -4,12 +4,10 @@ import (
 	"context"
 	"io"
 	"os"
-	"strings"
 
 	"github.com/Obedience-Corp/camp/internal/git/commit"
 	wkitem "github.com/Obedience-Corp/camp/internal/workitem"
 	"github.com/Obedience-Corp/camp/internal/workitem/resolver"
-	"github.com/Obedience-Corp/camp/internal/workitem/selector"
 )
 
 // CommitContext carries the ambient campaign-tag components resolved from the
@@ -81,36 +79,4 @@ func AmbientCommitOptions(ctx context.Context, campaignRoot, campaignID string, 
 		FestivalRef:  cc.FestivalRef,
 		WorkitemRef:  cc.WorkitemRef,
 	}
-}
-
-// EnsureCommitRef returns the WI- ref for the workitem named by query,
-// backfilling one into its marker (or intent frontmatter) when it has none.
-// Returns "" when the query does not resolve or the workitem carries no ref by
-// design, such as a festival.
-//
-// This is the ref a move commit must carry. Unlike ResolveCommitContext it does
-// not read the working directory: a promote, shelve, or sweep is about a named
-// workitem, which is usually not the one the caller happens to be standing in,
-// and tagging the ambient workitem instead would attribute the commit to the
-// wrong work.
-//
-// Callers must invoke it BEFORE the move: the ref is written into a file that
-// the move is about to relocate, and the write has to happen while the path
-// they resolved is still the path on disk.
-func EnsureCommitRef(ctx context.Context, campaignRoot, query string, errw io.Writer) string {
-	if strings.TrimSpace(query) == "" {
-		return ""
-	}
-	if errw == nil {
-		errw = os.Stderr
-	}
-	wi, err := selector.Resolve(ctx, campaignRoot, query, selector.ResolveOptions{})
-	if err != nil || wi == nil {
-		return ""
-	}
-	ref, err := wkitem.EnsureRefForCommit(ctx, campaignRoot, wi, errw)
-	if err != nil {
-		return wkitem.RefOf(wi)
-	}
-	return ref
 }

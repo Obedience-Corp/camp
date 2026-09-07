@@ -26,6 +26,7 @@ import (
 	"github.com/Obedience-Corp/camp/internal/workitem/links"
 	"github.com/Obedience-Corp/camp/internal/workitem/locate"
 	"github.com/Obedience-Corp/camp/internal/workitem/priority"
+	"github.com/Obedience-Corp/camp/internal/workitem/selector"
 	"github.com/Obedience-Corp/camp/pkg/ledgerkit"
 )
 
@@ -192,12 +193,9 @@ func runWorkitemPromote(cmd *cobra.Command, opts runWorkitemPromoteOptions) (*wo
 	if meta, metaErr := wkitem.LoadMetadata(ctx, loc.SourcePath); metaErr == nil && meta != nil {
 		ledgerID, ledgerRef, ledgerTitle = meta.ID, meta.Ref, meta.Title
 	}
-	// The commit that retires a workitem is the one most worth finding later,
-	// so it must carry the WI- segment even when the marker never got a ref.
-	// Backfilled here, before the move, while loc.SourcePath is still where the
-	// marker lives.
+	// Before the move: the backfill writes to the marker about to relocate.
 	if ledgerRef == "" {
-		ledgerRef = EnsureCommitRef(ctx, root, ledgerID, cmd.ErrOrStderr())
+		ledgerRef = selector.EnsureCommitRef(ctx, root, ledgerID, cmd.ErrOrStderr())
 	}
 
 	result := workitemPromoteResult{

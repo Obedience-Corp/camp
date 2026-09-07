@@ -12,6 +12,7 @@ import (
 	"github.com/Obedience-Corp/camp/internal/config"
 	camperrors "github.com/Obedience-Corp/camp/internal/errors"
 	wkitem "github.com/Obedience-Corp/camp/internal/workitem"
+	"github.com/Obedience-Corp/camp/internal/workitem/selector"
 )
 
 // demoteTarget is the audit/ledger target recorded for a demote, so the event
@@ -88,8 +89,9 @@ func runWorkitemDemote(cmd *cobra.Command, opts runWorkitemDemoteOptions) error 
 	if meta, metaErr := wkitem.LoadMetadata(ctx, loc.SourcePath); metaErr == nil && meta != nil {
 		ledgerID, ledgerRef, ledgerTitle = meta.ID, meta.Ref, meta.Title
 	}
+	// Before the move: the backfill writes to the marker about to relocate.
 	if ledgerRef == "" {
-		ledgerRef = EnsureCommitRef(ctx, root, ledgerID, cmd.ErrOrStderr())
+		ledgerRef = selector.EnsureCommitRef(ctx, root, ledgerID, cmd.ErrOrStderr())
 	}
 
 	oldRel := filepath.ToSlash(dungeoncmd.RelFromRoot(root, loc.SourcePath))
