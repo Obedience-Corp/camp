@@ -276,7 +276,8 @@ type TimeoutError struct {
 
 func (e *TimeoutError) Error() string {
 	return "the commit message writer (" + e.Command + ") did not finish within " +
-		e.Timeout.String()
+		e.Timeout.String() +
+		"; raise hooks.commit_message.timeout in .campaign/campaign.yaml"
 }
 
 // RunCommitMessageCommand executes command exactly as configured from repoPath

@@ -101,6 +101,9 @@ func TestWriterDeadline(t *testing.T) {
 					!strings.Contains(err.Error(), tt.timeout.String()) {
 					t.Errorf("error = %q, want it to name both the writer and the bound", err)
 				}
+				if !strings.Contains(err.Error(), "hooks.commit_message.timeout") {
+					t.Errorf("error = %q, want it to name the config key so the operator can raise it", err)
+				}
 				if message != "" {
 					t.Errorf("message = %q, want empty: a message from a writer that "+
 						"never finished would be a subject camp invented", message)
