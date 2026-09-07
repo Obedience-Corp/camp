@@ -246,21 +246,19 @@ func TestBoundedHistory(t *testing.T) {
 		require.NoError(t, os.MkdirAll(locations[i], 0755))
 	}
 
-	// Save all 7 locations
+	// Save all 7 locations. Cap is 256 unique (rel, kind), so all 7 stay.
 	for _, loc := range locations {
 		err := SetLastLocation(context.Background(), tmpDir, loc)
 		require.NoError(t, err)
 	}
 
-	// Should only have last 5 entries
 	entries, err := LoadHistory(context.Background(), tmpDir)
 	require.NoError(t, err)
-	assert.Len(t, entries, 5, "should have exactly 5 entries after adding 7")
+	assert.Len(t, entries, 7, "unique cap is 256; 7 toggles must all remain")
 
-	// Verify we kept the last 5 (indices 2-6 of original)
 	for i, entry := range entries {
-		expectedLoc := locations[i+2] // Offset by 2 since first 2 were truncated
-		assert.Equal(t, expectedLoc, entry.Location, "entry %d should be location %d", i, i+2)
+		assert.Equal(t, locations[i], entry.Location, "entry %d should be location %d", i, i)
+		assert.Equal(t, KindToggle, entry.Kind)
 	}
 }
 

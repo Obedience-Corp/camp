@@ -169,6 +169,53 @@ func TestHandleToggle_BounceBack(t *testing.T) {
 	}
 }
 
+func TestHandleToggle_FromCampaignRoot(t *testing.T) {
+	ctx := context.Background()
+	campaignRoot := t.TempDir()
+	dest := filepath.Join(campaignRoot, "projects", "camp")
+	if err := os.MkdirAll(dest, 0755); err != nil {
+		t.Fatal(err)
+	}
+	if err := state.SetLastLocation(ctx, campaignRoot, dest); err != nil {
+		t.Fatal(err)
+	}
+
+	origDir, _ := os.Getwd()
+	if err := os.Chdir(campaignRoot); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = os.Chdir(origDir) })
+
+	if err := handleToggle(ctx, campaignRoot, true); err != nil {
+		t.Fatalf("toggle from campaign root: %v", err)
+	}
+	lastLoc, err := state.GetLastLocation(ctx, campaignRoot)
+	if err != nil {
+		t.Fatal(err)
+	}
+	rootReal, _ := evalSymlinks(campaignRoot)
+	lastReal, _ := evalSymlinks(lastLoc)
+	if lastReal != rootReal {
+		t.Errorf("after toggle from root: last = %q, want %q", lastReal, rootReal)
+	}
+
+	if err := os.Chdir(dest); err != nil {
+		t.Fatal(err)
+	}
+	if err := handleToggle(ctx, campaignRoot, true); err != nil {
+		t.Fatalf("bounce back to root: %v", err)
+	}
+	lastLoc, err = state.GetLastLocation(ctx, campaignRoot)
+	if err != nil {
+		t.Fatal(err)
+	}
+	destReal, _ := evalSymlinks(dest)
+	lastReal, _ = evalSymlinks(lastLoc)
+	if lastReal != destReal {
+		t.Errorf("after bounce: last = %q, want %q", lastReal, destReal)
+	}
+}
+
 func TestFormatConfigShortcuts_ShowsCanonicalIntentPath(t *testing.T) {
 	output := formatConfigShortcuts(map[string]config.ShortcutConfig{
 		"i": {
