@@ -107,6 +107,17 @@ func runIntentPromote(cmd *cobra.Command, args []string) error {
 
 	prevStatus := i.Status
 
+	// Resolve the promoted intent's own ref, backfilling one when it has none,
+	// so the commit carries WI-<ref> and `camp workitem commits` finds the
+	// promotion. Must happen before Promote moves the file: the ref is stamped
+	// into the frontmatter at the path resolved here. The ambient context the
+	// commit options carry describes where the operator was standing, which is
+	// rarely the intent being promoted.
+	commitRef := i.Ref
+	if commitRef == "" {
+		commitRef = wkcmd.EnsureCommitRef(ctx, campaignRoot, i.ID, cmd.ErrOrStderr())
+	}
+
 	result, err := promote.Promote(ctx, svc, i, promote.Options{
 		CampaignRoot: campaignRoot,
 		Target:       target,
@@ -152,6 +163,9 @@ func runIntentPromote(cmd *cobra.Command, args []string) error {
 
 		files = append(files, audit.FilePath(resolver.Intents()))
 		opts := wkcmd.AmbientCommitOptions(ctx, campaignRoot, cfg.ID, os.Stderr)
+		if commitRef != "" {
+			opts.WorkitemRef = commitRef
+		}
 		opts.Files = commit.NormalizeFiles(campaignRoot, files...)
 		opts.SelectiveOnly = true
 		commitResult := commit.Intent(ctx, commit.IntentOptions{

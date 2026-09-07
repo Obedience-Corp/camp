@@ -29,6 +29,13 @@ type DungeonMoveCommit struct {
 	// Synchronous never defers the commit; set by --json callers, whose output
 	// must carry a real hash.
 	Synchronous bool
+	// WorkitemRef is the WI-<hex> ref of the workitem this move is about, and
+	// becomes the WI- segment of the campaign tag. Without it a promote,
+	// shelve, rename, or sweep commit is only findable by the slug in its
+	// body, so `camp workitem commits` (which matches on the tag) misses the
+	// commit that retired the workitem. Empty for a batch spanning several
+	// workitems, which no single ref describes.
+	WorkitemRef string
 }
 
 type resolvedWorkitemDungeonTarget struct {
@@ -101,6 +108,7 @@ func moveWorkitemToDungeon(ctx context.Context, cmd *cobra.Command, target, stat
 		SourcePaths:      []string{resolved.SourcePath},
 		DestinationPaths: destinationPaths,
 		RewrittenFiles:   svc.RewrittenLinkFiles(),
+		WorkitemRef:      wkitem.RefOf(&resolved.Item),
 	}, nil
 }
 

@@ -108,7 +108,7 @@ func finishWorkitemMove(
 	emitTransitionLedger(ctx, cmd, root, result, tail.Why)
 
 	if !opts.NoCommit {
-		if err := commitWorkitemMove(ctx, cmd, cfg, root, ci, result, opts.JSON); err != nil {
+		if err := commitWorkitemMove(ctx, cmd, cfg, root, ci, result, tail.LedgerRef, opts.JSON); err != nil {
 			return err
 		}
 	}
@@ -140,7 +140,7 @@ func finishWorkitemMove(
 
 func commitWorkitemMove(
 	ctx context.Context, cmd *cobra.Command, cfg *config.CampaignConfig, root string,
-	ci *commitInputs, result *workitemPromoteResult, jsonOut bool,
+	ci *commitInputs, result *workitemPromoteResult, ref string, jsonOut bool,
 ) error {
 	outcome := dungeoncmd.StageAndCommitDungeonMove(ctx, &dungeoncmd.DungeonMoveCommit{
 		Config:           cfg,
@@ -150,6 +150,7 @@ func commitWorkitemMove(
 		DestinationPaths: ci.destPaths,
 		RewrittenFiles:   ci.rewritten,
 		Synchronous:      jsonOut,
+		WorkitemRef:      ref,
 	})
 	if !jsonOut {
 		dungeoncmd.PrintDungeonMoveOutcome(cmd.OutOrStdout(), outcome)

@@ -88,6 +88,9 @@ func runWorkitemDemote(cmd *cobra.Command, opts runWorkitemDemoteOptions) error 
 	if meta, metaErr := wkitem.LoadMetadata(ctx, loc.SourcePath); metaErr == nil && meta != nil {
 		ledgerID, ledgerRef, ledgerTitle = meta.ID, meta.Ref, meta.Title
 	}
+	if ledgerRef == "" {
+		ledgerRef = EnsureCommitRef(ctx, root, ledgerID, cmd.ErrOrStderr())
+	}
 
 	oldRel := filepath.ToSlash(dungeoncmd.RelFromRoot(root, loc.SourcePath))
 	newRel := path.Join("workflow", loc.Type, loc.Slug)

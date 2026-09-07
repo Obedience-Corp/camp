@@ -151,6 +151,7 @@ func runShelveAlias(cmd *cobra.Command, args []string) error {
 			SourcePaths:      []string{loc.SourcePath},
 			DestinationPaths: destinationPaths,
 			RewrittenFiles:   move.Svc.RewrittenLinkFiles(),
+			WorkitemRef:      ledgerRef,
 		})
 		dungeoncmd.PrintDungeonMoveOutcome(textOut, outcome)
 		result.Committed = outcome.Committed

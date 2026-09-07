@@ -170,6 +170,7 @@ func StageAndCommitDungeonMove(ctx context.Context, move *DungeonMoveCommit) *Du
 			CampaignRoot: move.CampaignRoot,
 			CampaignID:   move.Config.ID,
 			Synchronous:  move.Synchronous,
+			WorkitemRef:  move.WorkitemRef,
 		},
 		Description: strings.TrimSpace(move.Description),
 		Files:       files,
