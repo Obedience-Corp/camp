@@ -113,6 +113,27 @@ The `projects[]` entries a workitem reaches only through a link are appended
 after the entries from its own `projects:` list; a project named in both is
 listed once, carrying the worktree detail.
 
+Two deliberate limits on where the project appears:
+
+- `camp workitem links` gained `PROJECT` as its third column, between
+  `WORKITEM` and `SCOPE`. Nothing was renamed or removed, but a script cutting
+  field 3 out of that table now gets the project rather than the scope. Use
+  `--json` for scripts; the human table is free to gain columns.
+- The compact `camp workitem list` output has no project column. It is a
+  fixed-width dashboard row, and widening every line for a field most workitems
+  do not carry costs more than it returns. A person who wants the project asks
+  the surfaces that are about the relationship, `camp workitem links` and
+  `camp workitem resolve`, or reads `--json`.
+
+### `--json` reports the resolved project, the file may not record it
+
+`camp workitem links --json` reports `links.LinksSchemaVersion`, which is also
+the on-disk `links.yaml` version, so it cannot move without a file migration.
+The listing resolves worktree scopes before emitting, which means `--json`
+shows a `scope.project` on rows written before the field existed while the file
+itself still omits it. That is resolution, not drift. `camp workitem doctor
+--fix` writes the value back and the two agree from then on.
+
 ---
 
 ## Roles

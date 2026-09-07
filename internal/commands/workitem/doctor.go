@@ -332,17 +332,8 @@ func collectWorkitemFindings(ctx context.Context, root string, layout links.Scop
 				})
 			}
 		}
-		if link.Scope.Kind == links.ScopeWorktree && link.Scope.Project == "" &&
-			layout.WorktreeProject(link.Scope.Path) != "" {
-			findings = append(findings, docFinding{
-				Code:     codeWorktreeProjectUnknown,
-				Severity: docSeverityInfo,
-				Target:   "link:" + link.ID,
-				Message: "worktree scope " + link.Scope.Path + " does not record its project (" +
-					layout.WorktreeProject(link.Scope.Path) + ")",
-				FixHint:     "run `camp workitem doctor --fix` to record it so the link survives the worktree",
-				AutoFixable: true,
-			})
+		if finding, ok := worktreeProjectFinding(layout, link); ok {
+			findings = append(findings, finding)
 		}
 		if link.Role == links.RolePrimary {
 			key := string(link.Scope.Kind) + "::" + link.Scope.Path
@@ -425,6 +416,8 @@ func collectWorkitemFindings(ctx context.Context, root string, layout links.Scop
 		}
 	}
 
+	findings = collapseWorktreeGone(findings)
+
 	sort.SliceStable(findings, func(i, j int) bool {
 		if findings[i].Code != findings[j].Code {
 			return findings[i].Code < findings[j].Code
@@ -457,17 +450,9 @@ func autoFixWorkitemFindings(ctx context.Context, root string, layout links.Scop
 				applied++
 			}
 		case codeWorktreeProjectUnknown:
-			id := strings.TrimPrefix(f.Target, "link:")
-			link, ok := registry.FindByID(id)
-			if !ok {
-				continue
+			if backfillScopeProject(layout, registry, strings.TrimPrefix(f.Target, "link:")) {
+				applied++
 			}
-			project := layout.WorktreeProject(link.Scope.Path)
-			if project == "" {
-				continue
-			}
-			link.Scope.Project = project
-			applied++
 		case codeMissingRefField:
 			needsRefBackfill = true
 		case codeProjectNotFound:
@@ -515,42 +500,6 @@ func autoFixWorkitemFindings(ctx context.Context, root string, layout links.Scop
 		}
 	}
 	return applied, nil
-}
-
-// machineLocalFinding describes a scope target that is absent here but not
-// gone everywhere. links.yaml is tracked, so the row must survive either way;
-// the finding differs only in what it tells the reader.
-//
-// A worktree is deleted as a matter of course once its branch merges, and the
-// workitem's real subject is the project the worktree checked out. When that
-// project is still present, the missing directory is the expected end of a
-// worktree's life rather than a problem, so it is reported as information and
-// names the project the workitem still belongs to. Everything else keeps the
-// "not on this machine" warning, which is the honest answer for an uncloned
-// submodule or a worktree camp cannot place.
-func machineLocalFinding(root string, layout links.ScopeLayout, link links.Link) docFinding {
-	if link.Scope.Kind == links.ScopeWorktree {
-		if project := link.Scope.ProjectFor(layout); project != "" && scopeTargetExists(root, project) {
-			return docFinding{
-				Code:     codeWorktreeGone,
-				Severity: docSeverityInfo,
-				Target:   "link:" + link.ID,
-				Message: "worktree " + link.Scope.Path + " is gone; workitem " + link.WorkitemID +
-					" stays linked to " + project,
-				FixHint: "no action needed; remove the link with `camp workitem unlink --id " +
-					link.ID + "` if the work is finished",
-			}
-		}
-	}
-	return docFinding{
-		Code:     codeScopeNotLocal,
-		Severity: docSeverityWarning,
-		Target:   "link:" + link.ID,
-		Message: "scope path " + link.Scope.Path + " is not on this machine" +
-			" (" + string(link.Scope.Kind) + " scopes are machine-local)",
-		FixHint: "expected if the worktree or submodule lives on another machine;" +
-			" remove it explicitly with `camp workitem unlink --id " + link.ID + "` if it is really gone",
-	}
 }
 
 func targetForLinkID(linkID string) string {
