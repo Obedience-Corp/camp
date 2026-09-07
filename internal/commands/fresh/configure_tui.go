@@ -343,180 +343,20 @@ func (m *followUpTUIModel) inProjectScope() bool {
 	return m.selectedScope() != globalFollowUpScope
 }
 
-// settingOptionsFor builds the choices the settings editor offers for a step.
-// A project scope gains an inherit option, since clearing the key there is a
-// real third outcome. The global scope has no one to inherit from, but bool
-// keys still need a third choice: "default" clears the key so the built-in
-// applies, which is distinct from writing an explicit true/false.
 func (m *followUpTUIModel) settingOptionsFor(step freshWorkflowStep) []freshSettingOption {
-	project := m.inProjectScope()
-
-	if step.Setting == freshSettingBranch {
-		options := make([]freshSettingOption, 0, 3)
-		if project {
-			options = append(options, freshSettingOption{
-				label:  "inherit from global · " + branchSummary(m.cfg.Branch),
-				action: freshSettingInherit,
-			})
-		}
-		return append(options,
-			freshSettingOption{label: "no branch · stay on the default branch", action: freshSettingNoBranch},
-			freshSettingOption{label: "create a branch...", action: freshSettingCustomBranch},
-		)
-	}
-
-	options := make([]freshSettingOption, 0, 3)
-	switch {
-	case project && !step.GlobalOnly:
-		options = append(options, freshSettingOption{
-			label:  "inherit from global · " + onOffWord(m.globalBoolValue(step.Setting)),
-			action: freshSettingInherit,
-		})
-	case !project:
-		// Built-in defaults for prune / prune_remote / push_upstream are true.
-		// Name the default, not the currently resolved value, so an explicit
-		// "off" does not make the default option read "default · off".
-		options = append(options, freshSettingOption{
-			label:  "default · " + onOffWord(builtInBoolDefault(step.Setting)),
-			action: freshSettingInherit,
-		})
-	}
-	return append(options,
-		freshSettingOption{label: "on", action: freshSettingOn},
-		freshSettingOption{label: "off", action: freshSettingOff},
-	)
+	return settingOptionsFor(m.cfg, scopeProjectName(m.selectedScope()), step)
 }
 
-// currentSettingAction is the option that matches what the selected scope
-// stores today, so the editor opens on the current answer rather than on a
-// default that would silently rewrite the key if the user just pressed enter.
-//
-// For global bools this must inspect the stored pointer, not the resolved
-// value: Resolve* collapses a missing key to the built-in default (true), and
-// mapping that to "on" would open the editor on an option that writes an
-// explicit true into a previously absent key.
 func (m *followUpTUIModel) currentSettingAction(step freshWorkflowStep) freshSettingAction {
-	scope := scopeProjectName(m.selectedScope())
-	pc, hasProject := m.cfg.Projects[scope]
-
-	switch step.Setting {
-	case freshSettingBranch:
-		if scope != "" {
-			if !hasProject || pc.Branch == nil {
-				return freshSettingInherit
-			}
-			if *pc.Branch == "" {
-				return freshSettingNoBranch
-			}
-			return freshSettingCustomBranch
-		}
-		if m.cfg.Branch == "" {
-			return freshSettingNoBranch
-		}
-		return freshSettingCustomBranch
-	case freshSettingPushUpstream:
-		if scope != "" {
-			if !hasProject || pc.PushUpstream == nil {
-				return freshSettingInherit
-			}
-			return boolAction(*pc.PushUpstream)
-		}
-		if m.cfg.PushUpstream == nil {
-			return freshSettingInherit
-		}
-		return boolAction(*m.cfg.PushUpstream)
-	case freshSettingPrune:
-		if m.cfg.Prune == nil {
-			return freshSettingInherit
-		}
-		return boolAction(*m.cfg.Prune)
-	case freshSettingPruneRemote:
-		if m.cfg.PruneRemote == nil {
-			return freshSettingInherit
-		}
-		return boolAction(*m.cfg.PruneRemote)
-	}
-	return freshSettingInherit
+	return currentSettingAction(m.cfg, scopeProjectName(m.selectedScope()), step)
 }
 
-// builtInBoolDefault is the value Resolve* uses when a global bool key is
-// absent. Kept local so option labels do not re-derive it from a currently
-// written override.
-func builtInBoolDefault(setting freshSettingKey) bool {
-	switch setting {
-	case freshSettingPushUpstream, freshSettingPrune, freshSettingPruneRemote:
-		return true
-	default:
-		return false
-	}
-}
-
-// settingScopeBranch is the branch this scope stores on its own, used to seed
-// the text input when the editor opens.
-//
-// It deliberately does not fall back to the global branch. Seeding the field
-// with an inherited value puts text in it that the user never typed and cannot
-// tell apart from their own: switching to "create a branch" and typing then
-// appends, which silently produced branch names like "developfeat/storefront".
-// A scope with no branch of its own opens on an empty field.
 func (m *followUpTUIModel) settingScopeBranch() string {
-	scope := scopeProjectName(m.selectedScope())
-	if scope == "" {
-		return m.cfg.Branch
-	}
-	if pc, ok := m.cfg.Projects[scope]; ok && pc.Branch != nil {
-		return *pc.Branch
-	}
-	return ""
+	return settingScopeBranch(m.cfg, scopeProjectName(m.selectedScope()))
 }
 
 func (m *followUpTUIModel) globalBoolValue(setting freshSettingKey) bool {
-	switch setting {
-	case freshSettingPushUpstream:
-		return m.cfg.ResolveFreshPushUpstream("")
-	case freshSettingPrune:
-		return m.cfg.ResolveFreshPrune()
-	case freshSettingPruneRemote:
-		return m.cfg.ResolveFreshPruneRemote()
-	}
-	return false
-}
-
-func boolAction(on bool) freshSettingAction {
-	if on {
-		return freshSettingOn
-	}
-	return freshSettingOff
-}
-
-func onOffWord(on bool) string {
-	if on {
-		return "on"
-	}
-	return "off"
-}
-
-func branchSummary(branch string) string {
-	if branch == "" {
-		return "no branch"
-	}
-	return branch
-}
-
-// settingTitle names the fresh.yaml key a settings row edits, so the editor
-// header matches what the user would search for in the file.
-func settingTitle(setting freshSettingKey) string {
-	switch setting {
-	case freshSettingPrune:
-		return "prune"
-	case freshSettingPruneRemote:
-		return "prune_remote"
-	case freshSettingBranch:
-		return "branch"
-	case freshSettingPushUpstream:
-		return "push_upstream"
-	}
-	return ""
+	return globalBoolValue(m.cfg, setting)
 }
 
 func (m *followUpTUIModel) Init() tea.Cmd {

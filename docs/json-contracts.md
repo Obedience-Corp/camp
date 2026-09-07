@@ -53,6 +53,8 @@ Schema versions in this release:
 | `camp workflow doctor --json` | `workflow/v1` | Emits findings; exits 2 when error findings exist. |
 | `camp workflow sync --json` | `workflow/v1` | Existing workflow repair-plan contract. |
 | `camp version --json` | `version/v1alpha1` | Emits version, build metadata, platform, and build profile. Carries `bundle` (the festival suite version) only when the binary shipped inside a festival release; standalone builds omit the key. Uses snake_case keys only; legacy camelCase keys were dropped before public release. |
+| `camp fresh show-workflow --json` | `fresh-workflow/v1` | Emits the same Sync/Settings/Follow-ups sequence the configure TUI shows, plus scopes, stored setting actions, and follow-up payloads. |
+| `camp fresh configure set --json` | `fresh-workflow/v1` | Emits `key`, `project`, `action`, `changed`, and `outcome` after writing a fresh.yaml settings key. |
 
 ## Scope: contract vs best-effort
 

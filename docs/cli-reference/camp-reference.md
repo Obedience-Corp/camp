@@ -1499,8 +1499,10 @@ Press enter on a settings step to change it, and a/e/d/K/J on a follow-up to
 add, edit, delete, or reorder it. prune and prune_remote are camp-wide,
 so they are changed under Global defaults rather than under a project.
 
-The subcommands below cover follow-ups only, for scripts and agents; edit the
-other keys in the interactive setup or in fresh.yaml directly.
+The subcommands cover follow-ups and settings for scripts, agents, and the
+Festival app. prune and prune_remote stay camp-wide: configure set refuses
+a project scope for those keys the same way the TUI redirects them to Global
+defaults.
 
 The interactive setup opens on the project you are standing in, resolved the
 same way camp fresh picks its target, so the overrides you edit are the ones
@@ -1511,8 +1513,12 @@ Examples:
   camp fresh configure
   camp fresh configure --project camp
   camp fresh show-workflow camp
+  camp fresh show-workflow camp --json
   camp fresh configure show
+  camp fresh configure set prune --action off
+  camp fresh configure set branch --action branch --value feat/next --project camp
   camp fresh configure add install --run "npm install"
+  camp fresh configure edit install --run "npm ci"
   camp fresh configure add build --run "go build ./..." --project camp --dir cmd/camp
   camp fresh configure move build --up --project camp
   camp fresh configure remove install
@@ -1558,6 +1564,50 @@ camp fresh configure add <name> [flags]
       --continue-on-error   Keep running later follow-ups if this step fails
       --dir string          Directory relative to the project root to run the command in
   -h, --help                help for add
+      --project string      Scope this follow-up to a single project (default: global)
+      --run string          Command to run for this follow-up step (required)
+```
+
+### Options inherited from parent commands
+
+```
+      --allow-default-target   Permit --cleanup-stack against the default branch (main/master). Without this, cleanup-stack refuses default-branch targets because every merged feature worktree would look like a stack child
+  -b, --branch string          Branch to create after syncing (overrides config)
+      --cleanup-stack          Target an existing aggregate branch and remove child worktrees merged into it by ancestry or squash (requires --branch; refuses the default branch unless --allow-default-target)
+  -n, --dry-run                Preview without making changes
+      --no-branch              Skip branch creation even if configured
+      --no-color               disable colored output
+      --no-follow-up           Skip configured follow-up command workflows
+      --no-prune               Skip pruning merged branches
+      --no-push                Skip pushing the new branch upstream
+```
+---
+
+## camp fresh configure edit
+
+Edit a follow-up command workflow step
+
+### Synopsis
+
+Update a follow-up in place, keeping its position in the sequence.
+
+On a project that still inherits the global list, editing forks that list
+into a project override the same way the interactive setup does.
+
+Pass --name to rename the step. --run is required so the command being
+saved is explicit rather than inferred from a previous value.
+
+```
+camp fresh configure edit <name> [flags]
+```
+
+### Options
+
+```
+      --continue-on-error   Keep running later follow-ups if this step fails
+      --dir string          Directory relative to the project root to run the command in
+  -h, --help                help for edit
+      --name string         Rename the follow-up
       --project string      Scope this follow-up to a single project (default: global)
       --run string          Command to run for this follow-up step (required)
 ```
@@ -1639,6 +1689,63 @@ camp fresh configure remove <name> [flags]
 ```
 ---
 
+## camp fresh configure set
+
+Set a camp fresh workflow setting
+
+### Synopsis
+
+Change a fresh.yaml settings key without opening the interactive TUI.
+
+Keys:
+  branch          working branch created after sync
+  push_upstream   push the working branch with --set-upstream
+  prune           prune merged branches (camp-wide)
+  prune_remote    prune stale remote tracking refs (camp-wide)
+
+Actions:
+  inherit     clear the key (project inherits global; global restores the built-in)
+  on / off    write an explicit bool
+  no-branch   stay on the default branch
+  branch      create a working branch; requires --value
+
+prune and prune_remote are camp-wide. Pass them without --project.
+
+Examples:
+  camp fresh configure set prune --action off
+  camp fresh configure set branch --action branch --value feat/next --project camp
+  camp fresh configure set push_upstream --action inherit --project camp
+  camp fresh configure set branch --action no-branch
+
+```
+camp fresh configure set <key> [flags]
+```
+
+### Options
+
+```
+      --action string    inherit, on, off, no-branch, or branch (required)
+  -h, --help             help for set
+      --json             emit a structured JSON result
+      --project string   Project scope (default: global)
+      --value string     Branch name when --action branch
+```
+
+### Options inherited from parent commands
+
+```
+      --allow-default-target   Permit --cleanup-stack against the default branch (main/master). Without this, cleanup-stack refuses default-branch targets because every merged feature worktree would look like a stack child
+  -b, --branch string          Branch to create after syncing (overrides config)
+      --cleanup-stack          Target an existing aggregate branch and remove child worktrees merged into it by ancestry or squash (requires --branch; refuses the default branch unless --allow-default-target)
+  -n, --dry-run                Preview without making changes
+      --no-branch              Skip branch creation even if configured
+      --no-color               disable colored output
+      --no-follow-up           Skip configured follow-up command workflows
+      --no-prune               Skip pruning merged branches
+      --no-push                Skip pushing the new branch upstream
+```
+---
+
 ## camp fresh configure show
 
 Show configured follow-up workflows
@@ -1678,7 +1785,9 @@ Show the ordered steps camp fresh will use, including disabled steps
 and the follow-up commands resolved for a project.
 
 With no project name, the global defaults are shown. Pass a project name to
-include its branch, pruning, and follow-up overrides.
+include its branch, pruning, and follow-up overrides. Use --json for the
+stable machine-readable contract the Festival app and scripts share with
+the configure TUI.
 
 ```
 camp fresh show-workflow [project-name] [flags]
@@ -1688,6 +1797,7 @@ camp fresh show-workflow [project-name] [flags]
 
 ```
   -h, --help   help for show-workflow
+      --json   emit a structured JSON result
 ```
 
 ### Options inherited from parent commands

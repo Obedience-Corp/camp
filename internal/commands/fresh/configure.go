@@ -9,6 +9,7 @@ import (
 	"github.com/Obedience-Corp/camp/internal/campaign"
 	"github.com/Obedience-Corp/camp/internal/config"
 	camperrors "github.com/Obedience-Corp/camp/internal/errors"
+	"github.com/Obedience-Corp/camp/internal/jsoncontract"
 	"github.com/Obedience-Corp/camp/internal/project"
 	"github.com/Obedience-Corp/camp/internal/ui"
 )
@@ -39,8 +40,10 @@ Press enter on a settings step to change it, and a/e/d/K/J on a follow-up to
 add, edit, delete, or reorder it. prune and prune_remote are camp-wide,
 so they are changed under Global defaults rather than under a project.
 
-The subcommands below cover follow-ups only, for scripts and agents; edit the
-other keys in the interactive setup or in fresh.yaml directly.
+The subcommands cover follow-ups and settings for scripts, agents, and the
+Festival app. prune and prune_remote stay camp-wide: configure set refuses
+a project scope for those keys the same way the TUI redirects them to Global
+defaults.
 
 The interactive setup opens on the project you are standing in, resolved the
 same way camp fresh picks its target, so the overrides you edit are the ones
@@ -51,8 +54,12 @@ Examples:
   camp fresh configure
   camp fresh configure --project camp
   camp fresh show-workflow camp
+  camp fresh show-workflow camp --json
   camp fresh configure show
+  camp fresh configure set prune --action off
+  camp fresh configure set branch --action branch --value feat/next --project camp
   camp fresh configure add install --run "npm install"
+  camp fresh configure edit install --run "npm ci"
   camp fresh configure add build --run "go build ./..." --project camp --dir cmd/camp
   camp fresh configure move build --up --project camp
   camp fresh configure remove install
@@ -65,7 +72,9 @@ Examples:
 	_ = configureCmd.RegisterFlagCompletionFunc("project", completeProjectName)
 
 	configureCmd.AddCommand(newConfigureShowCommand())
+	configureCmd.AddCommand(newConfigureSetCommand())
 	configureCmd.AddCommand(newConfigureAddCommand())
+	configureCmd.AddCommand(newConfigureEditCommand())
 	configureCmd.AddCommand(newConfigureMoveCommand())
 	configureCmd.AddCommand(newConfigureRemoveCommand())
 
@@ -73,17 +82,20 @@ Examples:
 }
 
 func newShowWorkflowCommand() *cobra.Command {
-	return &cobra.Command{
+	var jsonOut bool
+	cmd := &cobra.Command{
 		Use:   "show-workflow [project-name]",
 		Short: "Show the fresh cycle and configured follow-up steps",
 		Long: `Show the ordered steps camp fresh will use, including disabled steps
 and the follow-up commands resolved for a project.
 
 With no project name, the global defaults are shown. Pass a project name to
-include its branch, pruning, and follow-up overrides.`,
-		Args:              cobra.MaximumNArgs(1),
+include its branch, pruning, and follow-up overrides. Use --json for the
+stable machine-readable contract the Festival app and scripts share with
+the configure TUI.`,
+		Args:              jsoncontract.Args(JSONSchemaVersion, func() bool { return jsonOut }, cobra.MaximumNArgs(1)),
 		ValidArgsFunction: completeProjectName,
-		RunE: func(cmd *cobra.Command, args []string) error {
+		RunE: jsoncontract.RunE(JSONSchemaVersion, func() bool { return jsonOut }, func(cmd *cobra.Command, args []string) error {
 			ctx := cmd.Context()
 			campRoot, err := campaign.DetectCached(ctx)
 			if err != nil {
@@ -101,9 +113,19 @@ include its branch, pruning, and follow-up overrides.`,
 				}
 				projectName = resolved.Name
 			}
-			return printFreshWorkflow(cmd.OutOrStdout(), cfg, projectName)
-		},
+			if !jsonOut {
+				return printFreshWorkflow(cmd.OutOrStdout(), cfg, projectName)
+			}
+			projects, err := project.List(ctx, campRoot)
+			if err != nil {
+				return camperrors.Wrap(err, "listing camp projects")
+			}
+			return emitFreshWorkflowJSON(cmd.OutOrStdout(), buildFreshWorkflowJSON(cfg, projectName, projects))
+		}),
 	}
+	cmd.SetFlagErrorFunc(jsoncontract.FlagErrorFunc(JSONSchemaVersion, func() bool { return jsonOut }))
+	cmd.Flags().BoolVar(&jsonOut, "json", false, "emit a structured JSON result")
+	return cmd
 }
 
 func newConfigureShowCommand() *cobra.Command {
