@@ -32,6 +32,7 @@ func TestLocalSwitchPicksOrderAndScope(t *testing.T) {
 	if picks[0].Local.Name != "newer" || picks[1].Local.Name != "older" {
 		t.Errorf("order wrong: %s then %s", picks[0].Local.Name, picks[1].Local.Name)
 	}
+	// Slice index 0 is the prompt row in go-fuzzyfinder v0.9.0. Keep newer first.
 }
 
 func TestRemoteSwitchPicksSortAndSkipLocal(t *testing.T) {
