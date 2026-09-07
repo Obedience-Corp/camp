@@ -33,6 +33,8 @@ const (
 	codeOutOfBounds              = "workitem.scope.out-of-bounds"
 	codeScopeUnvalidatable       = "workitem.scope.unvalidatable"
 	codeScopeNotLocal            = "workitem.scope.not-on-this-machine"
+	codeWorktreeGone             = "workitem.scope.worktree-gone"
+	codeWorktreeProjectUnknown   = "workitem.scope.project-unrecorded"
 	codeWorkitemShelved          = "workitem.link.shelved"
 	codeDuplicatePrimary         = "workitem.link.duplicate-primary"
 	codeSchemaViolation          = "workitem.schema.violation"
@@ -107,10 +109,11 @@ rewriting projects: entries whose path git recorded as a project rename. Use
 }
 
 func runDoctor(ctx context.Context, cmd *cobra.Command, jsonOut, fix bool) error {
-	_, root, err := config.LoadCampaignConfigFromCwd(ctx)
+	cfg, root, err := config.LoadCampaignConfigFromCwd(ctx)
 	if err != nil {
 		return renderWorkitemDoctorError(cmd, jsonOut, camperrors.Wrap(err, "not in a camp directory"))
 	}
+	layout := scopeLayout(cfg)
 	knownIDs, items, err := workitemIDsOnDisk(ctx, root)
 	if err != nil {
 		return renderWorkitemDoctorError(cmd, jsonOut, err)
@@ -132,8 +135,8 @@ func runDoctor(ctx context.Context, cmd *cobra.Command, jsonOut, fix bool) error
 			}
 		}
 		err = links.WithLock(ctx, root, func(registry *links.Links) error {
-			findings = collectWorkitemFindings(ctx, root, registry, knownIDs, items)
-			applied, fixErr := autoFixWorkitemFindings(ctx, root, registry, findings, items, cmd.ErrOrStderr())
+			findings = collectWorkitemFindings(ctx, root, layout, registry, knownIDs, items)
+			applied, fixErr := autoFixWorkitemFindings(ctx, root, layout, registry, findings, items, cmd.ErrOrStderr())
 			if fixErr != nil {
 				return fixErr
 			}
@@ -141,7 +144,7 @@ func runDoctor(ctx context.Context, cmd *cobra.Command, jsonOut, fix bool) error
 				return links.ErrSkipSave
 			}
 			knownIDs, items, _ = workitemIDsOnDisk(ctx, root)
-			findings = collectWorkitemFindings(ctx, root, registry, knownIDs, items)
+			findings = collectWorkitemFindings(ctx, root, layout, registry, knownIDs, items)
 			return nil
 		})
 		if err != nil {
@@ -178,7 +181,7 @@ func runDoctor(ctx context.Context, cmd *cobra.Command, jsonOut, fix bool) error
 			}
 			return camperrors.Wrap(loadErr, "load links registry")
 		}
-		findings = collectWorkitemFindings(ctx, root, registry, knownIDs, items)
+		findings = collectWorkitemFindings(ctx, root, layout, registry, knownIDs, items)
 	}
 
 	if jsonOut {
@@ -222,7 +225,7 @@ func renderWorkitemDoctorError(cmd *cobra.Command, jsonOut bool, err error) erro
 	return jsoncontract.RenderError(cmd, WorkitemDoctorJSONVersion, err)
 }
 
-func collectWorkitemFindings(ctx context.Context, root string, registry *links.Links, knownIDs map[string]struct{}, items []wkitem.WorkItem) []docFinding {
+func collectWorkitemFindings(ctx context.Context, root string, layout links.ScopeLayout, registry *links.Links, knownIDs map[string]struct{}, items []wkitem.WorkItem) []docFinding {
 	var findings []docFinding
 	findings = append(findings, collectResidentFindings(root, items)...)
 
@@ -230,6 +233,7 @@ func collectWorkitemFindings(ctx context.Context, root string, registry *links.L
 	for _, v := range links.Validate(ctx, registry, links.ValidateOptions{
 		CampaignRoot: root,
 		WorkitemIDs:  nil, // existence is checked below as a separate finding
+		Layout:       layout,
 	}) {
 		findings = append(findings, docFinding{
 			Code:     codeSchemaViolation,
@@ -298,15 +302,7 @@ func collectWorkitemFindings(ctx context.Context, root string, registry *links.L
 			// its link would destroy a row that is correct elsewhere. Report
 			// those and leave them alone.
 			if links.MachineLocal(root, link.Scope) {
-				findings = append(findings, docFinding{
-					Code:     codeScopeNotLocal,
-					Severity: docSeverityWarning,
-					Target:   "link:" + link.ID,
-					Message: "scope path " + link.Scope.Path + " is not on this machine" +
-						" (" + string(link.Scope.Kind) + " scopes are machine-local)",
-					FixHint: "expected if the worktree or submodule lives on another machine;" +
-						" remove it explicitly with `camp workitem unlink --id " + link.ID + "` if it is really gone",
-				})
+				findings = append(findings, machineLocalFinding(root, layout, link))
 			} else {
 				findings = append(findings, docFinding{
 					Code:        codeBrokenScope,
@@ -335,6 +331,18 @@ func collectWorkitemFindings(ctx context.Context, root string, registry *links.L
 					Message:  "scope path " + link.Scope.Path + " could not be validated: " + err.Error(),
 				})
 			}
+		}
+		if link.Scope.Kind == links.ScopeWorktree && link.Scope.Project == "" &&
+			layout.WorktreeProject(link.Scope.Path) != "" {
+			findings = append(findings, docFinding{
+				Code:     codeWorktreeProjectUnknown,
+				Severity: docSeverityInfo,
+				Target:   "link:" + link.ID,
+				Message: "worktree scope " + link.Scope.Path + " does not record its project (" +
+					layout.WorktreeProject(link.Scope.Path) + ")",
+				FixHint:     "run `camp workitem doctor --fix` to record it so the link survives the worktree",
+				AutoFixable: true,
+			})
 		}
 		if link.Role == links.RolePrimary {
 			key := string(link.Scope.Kind) + "::" + link.Scope.Path
@@ -426,7 +434,7 @@ func collectWorkitemFindings(ctx context.Context, root string, registry *links.L
 	return findings
 }
 
-func autoFixWorkitemFindings(ctx context.Context, root string, registry *links.Links, findings []docFinding, items []wkitem.WorkItem, errw io.Writer) (int, error) {
+func autoFixWorkitemFindings(ctx context.Context, root string, layout links.ScopeLayout, registry *links.Links, findings []docFinding, items []wkitem.WorkItem, errw io.Writer) (int, error) {
 	applied := 0
 	needsRefBackfill := false
 	for _, f := range findings {
@@ -448,6 +456,18 @@ func autoFixWorkitemFindings(ctx context.Context, root string, registry *links.L
 			if registry.RemoveLinkByID(id) {
 				applied++
 			}
+		case codeWorktreeProjectUnknown:
+			id := strings.TrimPrefix(f.Target, "link:")
+			link, ok := registry.FindByID(id)
+			if !ok {
+				continue
+			}
+			project := layout.WorktreeProject(link.Scope.Path)
+			if project == "" {
+				continue
+			}
+			link.Scope.Project = project
+			applied++
 		case codeMissingRefField:
 			needsRefBackfill = true
 		case codeProjectNotFound:
@@ -495,6 +515,42 @@ func autoFixWorkitemFindings(ctx context.Context, root string, registry *links.L
 		}
 	}
 	return applied, nil
+}
+
+// machineLocalFinding describes a scope target that is absent here but not
+// gone everywhere. links.yaml is tracked, so the row must survive either way;
+// the finding differs only in what it tells the reader.
+//
+// A worktree is deleted as a matter of course once its branch merges, and the
+// workitem's real subject is the project the worktree checked out. When that
+// project is still present, the missing directory is the expected end of a
+// worktree's life rather than a problem, so it is reported as information and
+// names the project the workitem still belongs to. Everything else keeps the
+// "not on this machine" warning, which is the honest answer for an uncloned
+// submodule or a worktree camp cannot place.
+func machineLocalFinding(root string, layout links.ScopeLayout, link links.Link) docFinding {
+	if link.Scope.Kind == links.ScopeWorktree {
+		if project := link.Scope.ProjectFor(layout); project != "" && scopeTargetExists(root, project) {
+			return docFinding{
+				Code:     codeWorktreeGone,
+				Severity: docSeverityInfo,
+				Target:   "link:" + link.ID,
+				Message: "worktree " + link.Scope.Path + " is gone; workitem " + link.WorkitemID +
+					" stays linked to " + project,
+				FixHint: "no action needed; remove the link with `camp workitem unlink --id " +
+					link.ID + "` if the work is finished",
+			}
+		}
+	}
+	return docFinding{
+		Code:     codeScopeNotLocal,
+		Severity: docSeverityWarning,
+		Target:   "link:" + link.ID,
+		Message: "scope path " + link.Scope.Path + " is not on this machine" +
+			" (" + string(link.Scope.Kind) + " scopes are machine-local)",
+		FixHint: "expected if the worktree or submodule lives on another machine;" +
+			" remove it explicitly with `camp workitem unlink --id " + link.ID + "` if it is really gone",
+	}
 }
 
 func targetForLinkID(linkID string) string {

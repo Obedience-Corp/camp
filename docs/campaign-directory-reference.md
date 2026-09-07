@@ -134,8 +134,10 @@ Workitem link registry, written by `camp workitem link` and
 Files:
 
 - `links.yaml` is the shared link registry. It stores `lnk_*` entries that
-  bind a workitem to its targets (festival, project, custom workflow item).
-  This file is intended to be committed.
+  bind a workitem to its targets (festival, project, worktree, custom workflow
+  item). A worktree entry also records the project the worktree checks out, so
+  the workitem stays tied to that project once the worktree is removed. This
+  file is intended to be committed.
 - `current.yaml` is no longer used. Older camps may still have a leftover
   local file; `camp init` / `camp init --repair` keep `workitems/current.yaml`
   gitignored so it is not shared accidentally.
