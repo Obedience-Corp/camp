@@ -110,7 +110,7 @@ func handleMergedBackstop(ctx context.Context, out io.Writer, root, projectPath 
 	}
 	for _, m := range surviving {
 		_, _ = fmt.Fprintf(out, "%s workitem %s (%s) had a merged branch and is still active; promote when done:\n    %s\n",
-			ui.InfoIcon(), backstopWorkitemLabel(m.Workitem), backstopWorkitemContext(m.Workitem), backstopPromoteCommand(m.Workitem))
+			ui.InfoIcon(), backstopWorkitemLabel(m.Workitem), backstopWorkitemContext(m.Workitem), backstopPromoteCommand(m))
 	}
 }
 
@@ -206,8 +206,22 @@ func confirmMergedSkipAll(ctx context.Context, remaining int) (bool, error) {
 
 // backstopPromoteCommand renders the exact, copy-pasteable promote command using
 // the workitem's resolvable id (StableID), not its internal Key.
-func backstopPromoteCommand(wi wkitem.WorkItem) string {
-	return "camp workitem promote " + backstopWorkitemID(wi) + " --target completed"
+func backstopPromoteCommand(m MergedBackstopMatch) string {
+	if m.Workitem.WorkflowType == wkitem.WorkflowTypeIntent {
+		return fmt.Sprintf("camp intent move %s done --reason %q",
+			backstopWorkitemID(m.Workitem), backstopIntentMoveReason(m))
+	}
+	return "camp workitem promote " + backstopWorkitemID(m.Workitem) + " --target completed"
+}
+
+func backstopIntentMoveReason(m MergedBackstopMatch) string {
+	if m.Signal == SignalCommitTag {
+		return "workitem-tagged commits merged to the default branch"
+	}
+	if m.Branch != "" {
+		return "merged branch " + m.Branch
+	}
+	return "merged branch"
 }
 
 func backstopWorkitemID(wi wkitem.WorkItem) string {
@@ -267,8 +281,8 @@ type MergedBackstopMatch struct {
 // path captured in branchPaths before prune, then the workitem linked at that
 // path), then WI- commit tags on commits newly reachable from the default
 // branch since beforeSHA (captured before the pull, since the pruned branch ref
-// is gone by the time prune returns). Festivals and intents are excluded per
-// doc 03's scope boundary. Pure of prompt/UI concerns; git calls are I/O so it
+// is gone by the time prune returns). Festivals are excluded (see
+// activeBackstopItems). Pure of prompt/UI concerns; git calls are I/O so it
 // takes ctx. Returns no error on "no matches": absence of evidence is not an
 // error. listFailed disables the worktree-link signal's basename fallback
 // (see matchWorktreeLinkBranch); branches that would have gone through it
@@ -320,12 +334,16 @@ func MapMergedBranchesToWorkitems(ctx context.Context, cfg *config.CampaignConfi
 }
 
 // activeBackstopItems returns the discovered items eligible for tier-2 matching:
-// everything Discover produced except festivals and intents (doc 03 scope
-// boundary). Discover already excludes dungeon subtrees, so these are active.
+// everything Discover produced except festivals. A festival's terminal state is
+// decided by its own workflow, not by a merged branch, and it carries no commit
+// ref for the commit-tag signal to match. Intents are included: they carry a ref
+// (internal/workitem/ref_commit.go) and can hold a primary worktree link, so
+// both tier-2 signals can address one. Discover already excludes dungeon
+// subtrees, so these are active.
 func activeBackstopItems(items []wkitem.WorkItem) []wkitem.WorkItem {
 	out := make([]wkitem.WorkItem, 0, len(items))
 	for _, item := range items {
-		if item.WorkflowType == wkitem.WorkflowTypeFestival || item.WorkflowType == wkitem.WorkflowTypeIntent {
+		if item.WorkflowType == wkitem.WorkflowTypeFestival {
 			continue
 		}
 		out = append(out, item)

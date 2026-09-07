@@ -668,6 +668,9 @@ func PromoteMergedWorkitem(ctx context.Context, out io.Writer, cfg *config.Campa
 	cmd.SetContext(ctx)
 	cmd.SetOut(out)
 	cmd.SetErr(out)
+	if wi.WorkflowType == wkitem.WorkflowTypeIntent {
+		return promoteMergedIntent(ctx, cmd, cfg, root, wi, evidence)
+	}
 	var result workitemSweepResult
 	item := sweepOne(ctx, cmd, cfg, root, wkitem.SweepCandidate{Item: wi, Reason: evidence}, &result)
 	if item.Error != "" {

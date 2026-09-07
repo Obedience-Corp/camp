@@ -14,8 +14,13 @@ func TestCarriesCommitRef(t *testing.T) {
 		{"nil", nil, false},
 		{"file kind without stable id", &WorkItem{ItemKind: ItemKindFile}, false},
 		{
-			"intent identifies itself but has no marker to hold a ref",
+			"intent with source id carries a ref",
 			&WorkItem{WorkflowType: WorkflowTypeIntent, ItemKind: ItemKindFile, SourceID: "idea-20260101-000000"},
+			true,
+		},
+		{
+			"intent without source id",
+			&WorkItem{WorkflowType: WorkflowTypeIntent, ItemKind: ItemKindFile},
 			false,
 		},
 		{
@@ -47,8 +52,13 @@ func TestCarriesCommitRef(t *testing.T) {
 // only promise a WI- segment for a workitem that can actually mint one.
 func TestWorktreeLinkCommitNote(t *testing.T) {
 	intent := &WorkItem{WorkflowType: WorkflowTypeIntent, ItemKind: ItemKindFile, SourceID: "idea-20260101-000000"}
-	if note := WorktreeLinkCommitNote(intent); strings.Contains(note, "will include WI-*") {
-		t.Fatalf("intent note promises a WI- segment it cannot mint: %q", note)
+	if note := WorktreeLinkCommitNote(intent); !strings.Contains(note, "will include WI-*") {
+		t.Fatalf("intent note should promise a WI- segment, got %q", note)
+	}
+
+	festival := &WorkItem{WorkflowType: WorkflowTypeFestival, ItemKind: ItemKindDirectory, SourceID: "SC0001"}
+	if note := WorktreeLinkCommitNote(festival); strings.Contains(note, "will include WI-*") {
+		t.Fatalf("festival note must not promise a WI- segment: %q", note)
 	}
 
 	adopted := &WorkItem{WorkflowType: WorkflowTypeDesign, ItemKind: ItemKindDirectory, StableID: "design-x-2026-07-17"}

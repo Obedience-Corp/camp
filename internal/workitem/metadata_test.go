@@ -2,9 +2,8 @@ package workitem
 
 import (
 	"context"
+	_ "embed"
 	"errors"
-	"os"
-	"path/filepath"
 	"reflect"
 	"strings"
 	"testing"
@@ -22,6 +21,9 @@ func mapFSWith(body string) fstest.MapFS {
 
 const fixturePath = "workflow/feature/foo/.workitem"
 
+//go:embed testdata/workitem_full.yaml
+var workitemFullFixture []byte
+
 func TestLoadMetadata_MissingFile(t *testing.T) {
 	md, err := LoadMetadataFS(context.Background(), fstest.MapFS{}, fixturePath)
 	if err != nil {
@@ -33,11 +35,7 @@ func TestLoadMetadata_MissingFile(t *testing.T) {
 }
 
 func TestLoadMetadata_FullFixture(t *testing.T) {
-	raw, err := os.ReadFile(filepath.Join("testdata", "workitem_full.yaml"))
-	if err != nil {
-		t.Fatalf("read fixture: %v", err)
-	}
-	md, err := LoadMetadataFS(context.Background(), mapFSWith(string(raw)), fixturePath)
+	md, err := LoadMetadataFS(context.Background(), mapFSWith(string(workitemFullFixture)), fixturePath)
 	if err != nil {
 		t.Fatalf("LoadMetadataFS: %v", err)
 	}

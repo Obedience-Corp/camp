@@ -252,6 +252,7 @@ func (h Horizon) String() string {
 type Intent struct {
 	// Required fields
 	ID        string    `yaml:"id"`
+	Ref       string    `yaml:"ref,omitempty"`
 	Title     string    `yaml:"title"`
 	Status    Status    `yaml:"status"`
 	CreatedAt time.Time `yaml:"created_at"`

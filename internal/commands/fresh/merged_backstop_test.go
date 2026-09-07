@@ -12,12 +12,12 @@ import (
 )
 
 func TestBackstopPromoteCommand(t *testing.T) {
-	got := backstopPromoteCommand(wkitem.WorkItem{StableID: "design-foo-01", Key: "design:workflow/design/foo"})
+	got := backstopPromoteCommand(MergedBackstopMatch{Workitem: wkitem.WorkItem{StableID: "design-foo-01", Key: "design:workflow/design/foo"}})
 	if want := "camp workitem promote design-foo-01 --target completed"; got != want {
 		t.Errorf("promote command = %q, want %q", got, want)
 	}
 	// Falls back to Key when there is no StableID.
-	got = backstopPromoteCommand(wkitem.WorkItem{Key: "design:foo"})
+	got = backstopPromoteCommand(MergedBackstopMatch{Workitem: wkitem.WorkItem{Key: "design:foo"}})
 	if want := "camp workitem promote design:foo --target completed"; got != want {
 		t.Errorf("promote command (no StableID) = %q, want %q", got, want)
 	}
@@ -250,21 +250,153 @@ func TestRefMatchesActiveItem(t *testing.T) {
 	}
 }
 
-func TestActiveBackstopItems_ExcludesFestivalsAndIntents(t *testing.T) {
+func TestActiveBackstopItems_KeepsIntentsExcludesFestivals(t *testing.T) {
 	items := []wkitem.WorkItem{
 		{Key: "design:a", WorkflowType: wkitem.WorkflowTypeDesign},
 		{Key: "festival:b", WorkflowType: wkitem.WorkflowTypeFestival},
-		{Key: "intent:c", WorkflowType: wkitem.WorkflowTypeIntent},
+		{Key: "intent:c", WorkflowType: wkitem.WorkflowTypeIntent, SourceID: "idea-20260101"},
 		{Key: "explore:d", WorkflowType: wkitem.WorkflowTypeExplore},
 	}
 	got := activeBackstopItems(items)
-	if len(got) != 2 {
-		t.Fatalf("expected 2 items (design, explore), got %d", len(got))
+	if len(got) != 3 {
+		t.Fatalf("expected 3 items (design, intent, explore), got %d", len(got))
 	}
 	for _, wi := range got {
-		if wi.WorkflowType == wkitem.WorkflowTypeFestival || wi.WorkflowType == wkitem.WorkflowTypeIntent {
-			t.Errorf("festival/intent leaked into backstop set: %+v", wi)
+		if wi.WorkflowType == wkitem.WorkflowTypeFestival {
+			t.Errorf("festival leaked into backstop set: %+v", wi)
 		}
+	}
+	hasIntent := false
+	for _, wi := range got {
+		if wi.WorkflowType == wkitem.WorkflowTypeIntent {
+			hasIntent = true
+		}
+	}
+	if !hasIntent {
+		t.Fatal("intent missing from backstop set")
+	}
+}
+
+func TestCollectWorktreeLinkMatches_IntentWorkitem(t *testing.T) {
+	intentID := "dark-mode-20260101"
+	active := []wkitem.WorkItem{
+		{
+			Key:          "intent:.campaign/intents/active/" + intentID + ".md",
+			WorkflowType: wkitem.WorkflowTypeIntent,
+			SourceID:     intentID,
+			RelativePath: ".campaign/intents/active/" + intentID + ".md",
+			ItemKind:     wkitem.ItemKindFile,
+		},
+	}
+	linkList := []links.Link{
+		{WorkitemID: intentID, Scope: links.LinkScope{Kind: links.ScopeWorktree, Path: "projects/worktrees/obey/dark-mode"}},
+	}
+	matches, unmatched, matchedKeys := collectWorktreeLinkMatches(linkList, active, []string{"feat/dark-mode"}, map[string]string{
+		"feat/dark-mode": "projects/worktrees/obey/dark-mode",
+	}, false)
+	if len(matches) != 1 {
+		t.Fatalf("expected 1 intent match, got %d: %+v", len(matches), matches)
+	}
+	if matches[0].Workitem.WorkflowType != wkitem.WorkflowTypeIntent {
+		t.Fatalf("matched workitem type = %q, want intent", matches[0].Workitem.WorkflowType)
+	}
+	if matches[0].Signal != SignalWorktreeLink {
+		t.Errorf("signal = %q, want %q", matches[0].Signal, SignalWorktreeLink)
+	}
+	if !matchedKeys[active[0].Key] {
+		t.Errorf("matchedKeys missing intent key %q", active[0].Key)
+	}
+	if len(unmatched) != 0 {
+		t.Errorf("unmatched = %v, want none", unmatched)
+	}
+}
+
+func TestRefMatchesActiveItem_IntentRef(t *testing.T) {
+	item := wkitem.WorkItem{
+		Key:            "intent:.campaign/intents/active/foo.md",
+		WorkflowType:   wkitem.WorkflowTypeIntent,
+		SourceID:       "foo-20260101",
+		SourceMetadata: map[string]any{"ref": "WI-intent1"},
+	}
+	if !refMatchesActiveItem(map[string]bool{"WI-intent1": true}, item) {
+		t.Fatal("expected commit-tag ref to match intent SourceMetadata ref")
+	}
+}
+
+func TestBackstopPromoteCommand_IntentUsesSourceID(t *testing.T) {
+	intentID := "dark-mode-20260101"
+	cmd := backstopPromoteCommand(MergedBackstopMatch{
+		Workitem: wkitem.WorkItem{
+			WorkflowType: wkitem.WorkflowTypeIntent,
+			SourceID:     intentID,
+			Key:          "intent:.campaign/intents/active/" + intentID + ".md",
+		},
+		Branch: "feat/dark-mode",
+		Signal: SignalWorktreeLink,
+	})
+	if !strings.HasPrefix(cmd, "camp intent move "+intentID+" done ") {
+		t.Errorf("promote command = %q, want camp intent move prefix", cmd)
+	}
+	if !strings.Contains(cmd, "--reason") {
+		t.Errorf("promote command must include --reason for dungeon move: %q", cmd)
+	}
+	if !strings.Contains(cmd, "merged branch feat/dark-mode") {
+		t.Errorf("promote command = %q, want branch in reason", cmd)
+	}
+}
+
+func TestBackstopPromoteCommand_IntentCommitTagReason(t *testing.T) {
+	intentID := "fix-login-20260101"
+	cmd := backstopPromoteCommand(MergedBackstopMatch{
+		Workitem: wkitem.WorkItem{
+			WorkflowType: wkitem.WorkflowTypeIntent,
+			SourceID:     intentID,
+		},
+		Signal: SignalCommitTag,
+	})
+	if !strings.Contains(cmd, "--reason") {
+		t.Fatalf("promote command must include --reason: %q", cmd)
+	}
+	if !strings.Contains(cmd, "workitem-tagged commits merged") {
+		t.Errorf("commit-tag match reason missing from command: %q", cmd)
+	}
+}
+
+func TestHasOpenWork_IntentWithSecondWorktree(t *testing.T) {
+	intentID := "foo-20260101"
+	wi := wkitem.WorkItem{
+		Key:          "intent:.campaign/intents/active/foo.md",
+		WorkflowType: wkitem.WorkflowTypeIntent,
+		SourceID:     intentID,
+	}
+	const mergedPath = "projects/obey"
+	root := t.TempDir()
+	wtRel := filepath.ToSlash(filepath.Join("projects", "worktrees", "obey", "other"))
+	if err := os.MkdirAll(filepath.Join(root, filepath.FromSlash(wtRel)), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	reg := &links.Links{Links: []links.Link{
+		{WorkitemID: intentID, Scope: links.LinkScope{Kind: links.ScopeProject, Path: mergedPath}},
+		{WorkitemID: intentID, Scope: links.LinkScope{Kind: links.ScopeWorktree, Path: wtRel}},
+	}}
+	if !HasOpenWork(root, reg, wi, mergedPath, mergedPath) {
+		t.Fatal("intent with a second live worktree must be suppressed")
+	}
+}
+
+func TestHasOpenWork_IntentProjectLinkOnlyNotOpen(t *testing.T) {
+	intentID := "foo-20260101"
+	wi := wkitem.WorkItem{
+		Key:          "intent:.campaign/intents/active/foo.md",
+		WorkflowType: wkitem.WorkflowTypeIntent,
+		SourceID:     intentID,
+	}
+	const mergedPath = "projects/obey"
+	reg := &links.Links{Links: []links.Link{
+		{WorkitemID: intentID, Scope: links.LinkScope{Kind: links.ScopeProject, Path: mergedPath}},
+	}}
+	if HasOpenWork("/root", reg, wi, mergedPath, mergedPath) {
+		t.Fatal("intent with only the just-merged project link must not be suppressed")
 	}
 }
 

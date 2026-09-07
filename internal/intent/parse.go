@@ -21,6 +21,7 @@ var (
 // the new "concept" field and the legacy "project" field for backward compatibility.
 type parsedIntent struct {
 	ID                string           `yaml:"id"`
+	Ref               string           `yaml:"ref,omitempty"`
 	Title             string           `yaml:"title"`
 	Status            Status           `yaml:"status"`
 	CreatedAt         time.Time        `yaml:"created_at"`
@@ -50,6 +51,7 @@ type parsedIntent struct {
 func (p *parsedIntent) toIntent() *Intent {
 	intent := &Intent{
 		ID:                p.ID,
+		Ref:               p.Ref,
 		Title:             p.Title,
 		Status:            p.Status,
 		CreatedAt:         p.CreatedAt,
@@ -98,6 +100,7 @@ type frontmatterEntry struct {
 
 var knownFrontmatterKeys = map[string]struct{}{
 	"id":                 {},
+	"ref":                {},
 	"title":              {},
 	"status":             {},
 	"created_at":         {},

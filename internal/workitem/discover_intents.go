@@ -70,6 +70,9 @@ func discoverIntents(ctx context.Context, campaignRoot string, resolver *paths.R
 				Tags:     []string{},
 				Projects: []string{},
 			}
+			if i.Ref != "" {
+				item.SourceMetadata["ref"] = i.Ref
+			}
 			item.SortTimestamp = DeriveSortTimestamp(item.UpdatedAt, item.CreatedAt)
 			item.Summary = extractSummary(i.Content, 200)
 			items = append(items, item)
