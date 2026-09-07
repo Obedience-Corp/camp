@@ -1,26 +1,30 @@
-## camp fresh show-workflow
+## camp fresh configure edit
 
-Show the fresh cycle and configured follow-up steps
+Edit a follow-up command workflow step
 
 ### Synopsis
 
-Show the ordered steps camp fresh will use, including disabled steps
-and the follow-up commands resolved for a project.
+Update a follow-up in place, keeping its position in the sequence.
 
-With no project name, the global defaults are shown. Pass a project name to
-include its branch, pruning, and follow-up overrides. Use --json for the
-stable machine-readable contract the Festival app and scripts share with
-the configure TUI.
+On a project that still inherits the global list, editing forks that list
+into a project override the same way the interactive setup does.
+
+Pass --name to rename the step. --run is required so the command being
+saved is explicit rather than inferred from a previous value.
 
 ```
-camp fresh show-workflow [project-name] [flags]
+camp fresh configure edit <name> [flags]
 ```
 
 ### Options
 
 ```
-  -h, --help   help for show-workflow
-      --json   emit a structured JSON result
+      --continue-on-error   Keep running later follow-ups if this step fails
+      --dir string          Directory relative to the project root to run the command in
+  -h, --help                help for edit
+      --name string         Rename the follow-up
+      --project string      Scope this follow-up to a single project (default: global)
+      --run string          Command to run for this follow-up step (required)
 ```
 
 ### Options inherited from parent commands
@@ -39,4 +43,4 @@ camp fresh show-workflow [project-name] [flags]
 
 ### SEE ALSO
 
-* [camp fresh](camp_fresh.md)	 - Post-merge branch cycling: sync to default branch and optionally create a new working branch
+* [camp fresh configure](camp_fresh_configure.md)	 - Configure the camp fresh workflow

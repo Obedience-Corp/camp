@@ -5,6 +5,7 @@ import (
 
 	"github.com/Obedience-Corp/camp/internal/clone"
 	"github.com/Obedience-Corp/camp/internal/commands/flow"
+	"github.com/Obedience-Corp/camp/internal/commands/fresh"
 	campworkflow "github.com/Obedience-Corp/camp/internal/commands/workflow"
 	"github.com/Obedience-Corp/camp/internal/config"
 	"github.com/Obedience-Corp/camp/internal/quest"
@@ -26,6 +27,7 @@ func TestPublishedSchemaVersionsAreFrozen(t *testing.T) {
 		{"camp workitem --json", workitem.SchemaVersion, "workitems/v1alpha12"},
 		{"workitem link contracts", links.LinksSchemaVersion, "workitem-links/v1alpha1"},
 		{"camp workflow --json", campworkflow.JSONSchemaVersion, "workflow/v1"},
+		{"camp fresh show-workflow --json", fresh.JSONSchemaVersion, "fresh-workflow/v1"},
 		{"camp flow items", flow.WorkflowItemsSchemaVersion, "workflow-items/v1alpha1"},
 		{"camp version --json", version.SchemaVersion, "version/v1alpha1"},
 		{"quest checklist", quest.ChecklistSchemaV1, "quest-checklist/v1alpha1"},

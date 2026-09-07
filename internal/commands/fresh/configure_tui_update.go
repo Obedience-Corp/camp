@@ -5,7 +5,6 @@ import (
 	"strings"
 
 	"github.com/Obedience-Corp/camp/internal/config"
-	camperrors "github.com/Obedience-Corp/camp/internal/errors"
 	"github.com/Obedience-Corp/camp/internal/ui"
 	"github.com/charmbracelet/bubbles/textinput"
 	tea "github.com/charmbracelet/bubbletea"
@@ -439,19 +438,7 @@ func (m *followUpTUIModel) settingUnchanged(step freshWorkflowStep, action fresh
 // write, rejecting a custom branch with no name rather than writing an empty
 // string that would read back as "no branch".
 func (m *followUpTUIModel) resolveBranchAction(action freshSettingAction) (*string, string, error) {
-	switch action {
-	case freshSettingInherit:
-		return nil, "branch now inherits the global default", nil
-	case freshSettingNoBranch:
-		empty := ""
-		return &empty, "branch cleared · fresh stays on the default branch", nil
-	default:
-		name := strings.TrimSpace(m.settingInput.Value())
-		if name == "" {
-			return nil, "", camperrors.NewValidation("branch", "must not be empty; choose \"no branch\" to stay on the default branch", nil)
-		}
-		return &name, fmt.Sprintf("branch set to %s", name), nil
-	}
+	return resolveBranchAction(action, strings.TrimSpace(m.settingInput.Value()))
 }
 
 // boolForAction maps an option onto the pointer the config writers take, where
