@@ -209,8 +209,17 @@ pty-intent-add:
     cd "{{root}}"
     just test integration-run TestIntentAdd_SelectorTTY
 
+# Drive `camp project list`: filter overlay, selection, --path-output write.
+pty-project-list:
+    #!/usr/bin/env bash
+    set -euo pipefail
+    cd "{{root}}"
+    just build quick >/dev/null
+    venv_dir="$(just tui venv)"
+    "$venv_dir/bin/python" tests/tui/project_list_pty.py bin/camp
+
 # Run every pty check.
-pty: pty-triage-review pty-machine-tailscale-check pty-machine-auth-denied pty-sweep-prompt pty-selector pty-intent-copy pty-intent-add
+pty: pty-triage-review pty-machine-tailscale-check pty-machine-auth-denied pty-sweep-prompt pty-selector pty-intent-copy pty-intent-add pty-project-list
 
 # Record one tape. The tape owns its output path and its fixture bootstrap.
 tape tape_path:
