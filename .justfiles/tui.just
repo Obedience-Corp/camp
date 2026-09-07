@@ -191,8 +191,19 @@ pty-intent-copy:
     evidence="${CAMP_TUI_EVIDENCE_DIR:-out/evidence/intent-copy}"
     "$venv_dir/bin/python" tests/tui/intent_copy_pty.py "$fixture" "$evidence"
 
+# Drive the compiled selector widget: recency cursor, type-to-filter, no-match, esc.
+pty-selector:
+    #!/usr/bin/env bash
+    set -euo pipefail
+    cd "{{root}}"
+    venv_dir="$(just tui venv)"
+    demo="$(mktemp "${TMPDIR:-/tmp}/camp-selector-demo.XXXXXX")"
+    go build -o "$demo" ./tests/tui/selector_demo
+    "$venv_dir/bin/python" tests/tui/selector_pty.py "$demo"
+    rm -f "$demo"
+
 # Run every pty check.
-pty: pty-triage-review pty-machine-tailscale-check pty-machine-auth-denied pty-sweep-prompt pty-intent-copy
+pty: pty-triage-review pty-machine-tailscale-check pty-machine-auth-denied pty-sweep-prompt pty-selector pty-intent-copy
 
 # Record one tape. The tape owns its output path and its fixture bootstrap.
 tape tape_path:
