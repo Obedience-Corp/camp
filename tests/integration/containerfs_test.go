@@ -62,8 +62,12 @@ var containerFSPackages = []containerFSPackage{
 	{ImportPath: "./internal/commands/fresh", MinTests: 6},
 	// The dungeon-move commit tests need a real repository to commit into.
 	{ImportPath: "./internal/git/commit", MinTests: 1},
-	{ImportPath: "./internal/commands/workitem", MinTests: 4},
+	{ImportPath: "./internal/commands/workitem", MinTests: 10},
 	{ImportPath: "./internal/workitem", MinTests: 7},
+	// Worktree link scopes: writing links.yaml and resolving from inside a
+	// worktree both stage a campaign on disk.
+	{ImportPath: "./internal/workitem/links", MinTests: 2},
+	{ImportPath: "./internal/workitem/resolver", MinTests: 2},
 }
 
 // containerFSTag is the build tag gating host compilation of these suites.
@@ -122,6 +126,14 @@ var runTestBinaryPattern = regexp.MustCompile(`(?m)^=== RUN\s+(Test[A-Za-z0-9_]+
 //
 // The binary runs with its working directory inside the container, so every
 // t.TempDir and git init it performs lands on the container's filesystem.
+//
+// Each package gets its own working directory rather than sharing one, because
+// its testdata/ is copied in beside the binary so relative reads resolve the
+// way they do when go test runs a package in its own source directory. Three
+// registered packages carry a testdata/ directory, and a shared working
+// directory would let one package's fixtures answer another package's read.
+// HOME and TMPDIR stay shared, as they were before per-package directories
+// existed.
 func RunContainerFSSuite(t *testing.T, tc *TestContainer, pkg containerFSPackage) {
 	t.Helper()
 
@@ -132,13 +144,28 @@ func RunContainerFSSuite(t *testing.T, tc *TestContainer, pkg containerFSPackage
 	binPath, err := buildContainerFSBinary(pkg, outDir)
 	require.NoError(t, err, "cross-compile %s", pkg.ImportPath)
 
-	remote := "/containerfs/" + filepath.Base(binPath)
-	tc.Shell(t, "mkdir -p /containerfs /containerfs/work")
+	workDir := "/containerfs/work/" + strings.TrimSuffix(filepath.Base(binPath), ".test")
+	remote := workDir + "/" + filepath.Base(binPath)
+	tc.Shell(t, "mkdir -p /containerfs "+workDir)
 
 	ctx, cancel := context.WithTimeout(tc.ctx, 10*time.Minute)
 	defer cancel()
 	require.NoError(t, tc.container.CopyFileToContainer(ctx, binPath, remote, 0o755),
 		"copy %s into the container", remote)
+
+	// A go test binary normally runs with its working directory set to the
+	// package source directory, which is what makes a plain testdata/ read
+	// work. Nothing here has the source tree, so the fixtures travel with the
+	// binary. A package without testdata/ copies nothing.
+	//
+	// CopyDirToContainer extracts into the PARENT of the path it is given, so
+	// the destination names the testdata directory itself rather than the
+	// directory it should land in.
+	if hostTestdata := filepath.Join(repoRootForContainerFS(),
+		filepath.FromSlash(strings.TrimPrefix(pkg.ImportPath, "./")), "testdata"); dirExists(hostTestdata) {
+		require.NoError(t, tc.container.CopyDirToContainer(ctx, hostTestdata, workDir+"/testdata", 0o755),
+			"copy %s testdata into the container", pkg.ImportPath)
+	}
 
 	// git needs an identity and a permissive safe.directory for the repos these
 	// tests create. HOME is exported before `git config --global` runs, not just
@@ -149,7 +176,7 @@ func RunContainerFSSuite(t *testing.T, tc *TestContainer, pkg containerFSPackage
 	out, exit, execErr := tc.ExecCommand("sh", "-c", strings.Join([]string{
 		"export HOME=/containerfs/work",
 		"export TMPDIR=/containerfs/work",
-		"cd /containerfs/work",
+		"cd " + workDir,
 		"git config --global user.email t@t.co",
 		"git config --global user.name T",
 		"git config --global --add safe.directory '*'",
@@ -171,6 +198,12 @@ func RunContainerFSSuite(t *testing.T, tc *TestContainer, pkg containerFSPackage
 		pkg.ImportPath, len(ran), pkg.MinTests)
 
 	t.Logf("%s: %d top-level tests executed in the container", pkg.ImportPath, len(ran))
+}
+
+// dirExists reports whether path is an existing directory.
+func dirExists(path string) bool {
+	info, err := os.Stat(path)
+	return err == nil && info.IsDir()
 }
 
 // failureExcerpt pulls the failing tests and their messages out of a verbose Go
