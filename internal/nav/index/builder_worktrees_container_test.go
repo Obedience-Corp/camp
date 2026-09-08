@@ -10,14 +10,14 @@ import (
 	"testing"
 
 	"github.com/Obedience-Corp/camp/internal/nav"
+	"github.com/Obedience-Corp/camp/internal/project"
 )
 
-// These stage real repositories and git worktrees on disk, so they run inside
-// the pooled container rather than on a developer's machine (decision D007).
+// These stage real repositories and worktrees, so they run in the pooled
+// container (D007).
 
-// scanWorktrees runs one "git worktree list" per project concurrently. The
-// hazard of a fan-out is a dropped result, so assert every project's worktrees
-// survive the merge, including for a project that has several.
+// The hazard of a fan-out is a dropped result, so assert every project's
+// worktrees survive the merge, including a project with several.
 func TestScanWorktrees_IndexesEveryProjectsWorktrees(t *testing.T) {
 	root := stageWorktreeCampaign(t, map[string][]string{
 		"alpha": {"wt-a"},
@@ -43,9 +43,7 @@ func TestScanWorktrees_IndexesEveryProjectsWorktrees(t *testing.T) {
 	}
 }
 
-// The index is cached and compared as a whole, and a human reads it when a
-// jump goes somewhere unexpected. Concurrency must not leave the order to
-// whichever "git worktree list" finished first.
+// Concurrency must not leave the order to whichever subprocess finished first.
 func TestScanWorktrees_OrderIsStableAcrossBuilds(t *testing.T) {
 	root := stageWorktreeCampaign(t, map[string][]string{
 		"alpha":   {"wt-a1", "wt-a2"},
@@ -93,9 +91,8 @@ func worktreeTargetNames(idx *Index) []string {
 	return names
 }
 
-// stageWorktreeCampaign builds a campaign whose projects/ holds one committed
-// git repo per key, each with a linked worktree per listed name under the
-// conventional projects/worktrees/<project>/ layout.
+// stageWorktreeCampaign gives projects/ one committed repo per key, each with a
+// linked worktree per listed name.
 func stageWorktreeCampaign(t *testing.T, layout map[string][]string) string {
 	t.Helper()
 
@@ -120,8 +117,7 @@ func stageWorktreeCampaign(t *testing.T, layout map[string][]string) string {
 	return root
 }
 
-// initCommittedRepo makes path a git repository with one commit, which git
-// worktree add requires.
+// initCommittedRepo makes path a repo with the one commit worktree add needs.
 func initCommittedRepo(t *testing.T, path string) {
 	t.Helper()
 
@@ -138,10 +134,90 @@ func initCommittedRepo(t *testing.T, path string) {
 
 func runGitForTest(t *testing.T, dir string, args ...string) {
 	t.Helper()
+	runGitForTestEnv(t, dir, nil, args...)
+}
+
+func runGitForTestEnv(t *testing.T, dir string, env []string, args ...string) {
+	t.Helper()
 
 	cmd := exec.Command("git", args...)
 	cmd.Dir = dir
+	cmd.Env = append(os.Environ(), env...)
 	if out, err := cmd.CombinedOutput(); err != nil {
 		t.Fatalf("git %v in %q: %v: %s", args, dir, err, out)
 	}
+}
+
+// Two checkouts of one remote each keep their worktrees.
+//
+// project.List drops the older checkout, so the index used to hide one
+// project's worktrees outright, and which one it hid flipped with every commit
+// to the other. The projects category never deduped, so "cgo p camp" resolved
+// while "camp@wt-a" did not exist. This makes worktrees agree with projects;
+// names stay distinct because the project directory name is the prefix.
+func TestScanWorktrees_KeepsWorktreesOfEveryCheckoutOfARemote(t *testing.T) {
+	const remote = "git@github.com:Obedience-Corp/camp.git"
+	root := t.TempDir()
+	root, err := filepath.EvalSymlinks(root)
+	if err != nil {
+		t.Fatal(err)
+	}
+	stageCheckoutOfRemote(t, root, "camp", remote, "2026-01-01T00:00:00", "wt-a")
+	stageCheckoutOfRemote(t, root, "camp-copy", remote, "2026-06-01T00:00:00", "wt-b")
+
+	ctx := context.Background()
+
+	// The dedup that hid a checkout is still real: assert it, do not describe it.
+	canonical, err := project.List(ctx, root)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(canonical) != 1 {
+		t.Fatalf("project.List returned %d checkouts, want 1 canonical", len(canonical))
+	}
+
+	idx, err := NewBuilder(root).Build(ctx)
+	if err != nil {
+		t.Fatalf("Build: %v", err)
+	}
+
+	want := []string{"camp@wt-a", "camp-copy@wt-b"}
+	got := worktreeTargetNames(idx)
+	if len(got) != len(want) {
+		t.Fatalf("worktree targets = %v, want %v", got, want)
+	}
+	for i := range want {
+		if got[i] != want[i] {
+			t.Fatalf("worktree targets = %v, want %v", got, want)
+		}
+	}
+
+	// Both checkouts were always navigable as projects.
+	for _, name := range []string{"camp", "camp-copy"} {
+		if idx.Find(name) == nil {
+			t.Fatalf("project target %q missing; the projects category does not dedup", name)
+		}
+	}
+}
+
+// stageCheckoutOfRemote makes projects/<name> a checkout of remote committed at
+// date, with one linked worktree.
+func stageCheckoutOfRemote(t *testing.T, root, name, remote, date, worktreeName string) {
+	t.Helper()
+
+	path := filepath.Join(root, "projects", name)
+	if err := os.MkdirAll(path, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	runGitForTest(t, "", "init", path)
+	runGitForTest(t, path, "remote", "add", "origin", remote)
+	runGitForTest(t, path, "config", "user.email", "test@test.com")
+	runGitForTest(t, path, "config", "user.name", "Test")
+	if err := os.WriteFile(filepath.Join(path, "README.md"), []byte(name), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	runGitForTest(t, path, "add", ".")
+	runGitForTestEnv(t, path, []string{"GIT_AUTHOR_DATE=" + date, "GIT_COMMITTER_DATE=" + date},
+		"commit", "-m", name)
+	runGitForTest(t, path, "worktree", "add", filepath.Join(root, "projects", "worktrees", name, worktreeName))
 }

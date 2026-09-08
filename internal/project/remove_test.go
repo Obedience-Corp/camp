@@ -109,10 +109,8 @@ func TestRemove_RecoveryInstructions_OnPartialFailure(t *testing.T) {
 	if runtime.GOOS == "windows" {
 		t.Skip("chmod not applicable on Windows")
 	}
-	// The partial failure this asserts is a read-only parent directory, and
-	// root is not stopped by one: the removal would succeed and the test would
-	// read that success as a missing error. The containerized lane runs as
-	// root, so the case has to opt out rather than report a false failure.
+	// The failure this asserts is a read-only parent, which does not stop root:
+	// the removal would succeed and read as a missing error.
 	if os.Geteuid() == 0 {
 		t.Skip("root is not blocked by the read-only directory this case needs")
 	}

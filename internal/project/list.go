@@ -15,15 +15,14 @@ import (
 type listMode int
 
 const (
-	// modeFull enriches every entry with its git remote URL and detected
-	// project type, then drops checkouts that share a remote with a
-	// more recently committed copy.
+	// modeFull fills URL and Type, then drops checkouts sharing a remote
+	// with a more recently committed copy.
 	modeFull listMode = iota
 	// modeLocations collects only the fields that say where a project lives.
 	modeLocations
 )
 
-// projectType returns the detected type, or "" when the mode does not want it.
+// projectType returns the detected type, or "" when the mode skips it.
 func (m listMode) projectType(path string) string {
 	if m == modeLocations {
 		return ""
@@ -31,8 +30,8 @@ func (m listMode) projectType(path string) string {
 	return detectProjectType(path)
 }
 
-// remoteURL returns the origin URL, or "" when the mode does not want it.
-// Each lookup is a git subprocess, so skipping it is the point.
+// remoteURL returns the origin URL, or "" when the mode skips it. Each lookup
+// is a git subprocess, which is the whole reason to skip it.
 func (m listMode) remoteURL(ctx context.Context, path string) string {
 	if m == modeLocations {
 		return ""
@@ -52,16 +51,13 @@ func List(ctx context.Context, campaignRoot string) ([]Project, error) {
 // say where each one lives: Name, Path, Source, LinkedPath and MonorepoRoot.
 // Type and URL are left empty.
 //
-// It exists for callers that need to find every project checkout and nothing
-// else. List spends a "git remote get-url" per project and per submodule to
-// fill URL, a "git log -1" per project to compare checkouts that share a
-// remote, and a marker-file sweep to fill Type. On a campaign with dozens of
-// projects that is over a hundred git subprocesses, all of it wasted on a
-// caller that only wants paths.
+// It is for callers that only need to find each checkout. List spends a git
+// subprocess per project and per submodule on URL, another per project on the
+// commit date behind remote dedup, and a marker-file sweep on Type: over a
+// hundred spawns on a campaign with dozens of projects.
 //
-// Deduplicating checkouts by remote needs URL, so ListLocations does not do it:
-// two checkouts of the same repo both appear. Callers that need one canonical
-// entry per remote must use List or dedup at their own boundary.
+// Dedup needs URL, so this does not dedup: both checkouts of a shared remote
+// appear. Callers wanting one canonical entry per remote must use List.
 func ListLocations(ctx context.Context, campaignRoot string) ([]Project, error) {
 	return list(ctx, campaignRoot, modeLocations)
 }

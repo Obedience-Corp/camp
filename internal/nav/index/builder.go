@@ -196,13 +196,11 @@ func (b *Builder) entryTarget(dir string, entry os.DirEntry, cat nav.Category) (
 // name is the worktree directory basename, preserving navigation ergonomics
 // such as "cgo wt camp@feature".
 //
-// Projects are discovered with project.ListLocations (the same discovery
-// project.List performs, which is also what backs "camp worktrees list")
-// rather than the campaign config, because the project set is derived from the
-// projects/ checkout, not from campaign.yaml. The index needs each project's
-// name and checkout path and nothing else, so it takes the locations-only walk
-// and skips the remote-URL and commit-date lookups List would spend a git
-// subprocess apiece on.
+// Projects come from the projects/ checkout, not campaign.yaml. This uses the
+// locations-only walk: the index needs a name and a path, not the remote URL
+// and commit date List spends a subprocess apiece on. That also keeps every
+// checkout of a shared remote, which List would dedup away along with its
+// worktrees.
 func (b *Builder) scanWorktrees(ctx context.Context) ([]Target, error) {
 	projects, err := project.ListLocations(ctx, b.root)
 	if err != nil {
@@ -219,8 +217,7 @@ func (b *Builder) scanWorktrees(ctx context.Context) ([]Target, error) {
 	var targets []Target
 	seen := make(map[string]struct{})
 
-	// Merging in project order, and in git's order within each project, keeps
-	// the index byte-identical to the serial scan this replaced.
+	// Merge in project order so the fan-out does not reorder the index.
 	for _, projectTargets := range perProject {
 		for _, target := range projectTargets {
 			clean := filepath.Clean(target.Path)
@@ -235,21 +232,18 @@ func (b *Builder) scanWorktrees(ctx context.Context) ([]Target, error) {
 	return targets, nil
 }
 
-// projectWorktreeTargets enumerates each project's worktree targets, returning
-// one slice per project in the order given.
+// projectWorktreeTargets returns one slice of targets per project, in order.
 //
-// Every project costs a "git worktree list" subprocess, the calls do not depend
-// on each other, and on a campaign with dozens of projects running them one at
-// a time dominates the whole index build. Fanning them out over a bounded pool
-// makes the scan cost the slowest repo rather than the sum of all of them.
+// Each project costs an independent "git worktree list" subprocess, and running
+// dozens serially dominates the index build. A bounded pool makes the scan cost
+// the slowest repo rather than their sum.
 func (b *Builder) projectWorktreeTargets(ctx context.Context, projects []project.Project) [][]Target {
 	results := make([][]Target, len(projects))
 	if len(projects) == 0 {
 		return results
 	}
 
-	// These wait on subprocesses rather than burning CPU, so a small floor
-	// keeps the fan-out useful on low-core machines.
+	// Subprocess waits, not CPU work, so keep a floor on low-core machines.
 	limit := min(max(runtime.NumCPU(), 4), len(projects))
 
 	sem := make(chan struct{}, limit)

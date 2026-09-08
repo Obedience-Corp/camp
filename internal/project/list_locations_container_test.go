@@ -9,13 +9,10 @@ import (
 	"testing"
 )
 
-// ListLocations stages real git repositories, so these run inside the pooled
-// container rather than on a developer's machine (decision D007).
+// These stage real git repositories, so they run in the pooled container (D007).
 
-// ListLocations skips the git subprocesses List spends filling URL and Type and
-// comparing commit dates. That saving is only safe if it still reports the same
-// projects, so pin the two walks against each other on a campaign where dedup
-// has nothing to remove.
+// The saving is only safe if ListLocations still reports the same projects, so
+// pin it against List on a campaign where dedup has nothing to remove.
 func TestListLocations_ReportsTheSameProjectsAsList(t *testing.T) {
 	root := stageLocationsCampaign(t, map[string]string{
 		"camp": "git@github.com:Obedience-Corp/camp.git",
@@ -48,9 +45,7 @@ func TestListLocations_ReportsTheSameProjectsAsList(t *testing.T) {
 	}
 }
 
-// The two fields ListLocations drops are exactly the ones that cost a
-// subprocess. They must read as absent rather than as a value a caller could
-// act on, because acting on them is what List is for.
+// The dropped fields must read as absent, not as a value a caller could act on.
 func TestListLocations_LeavesTheEnrichedFieldsEmpty(t *testing.T) {
 	root := stageLocationsCampaign(t, map[string]string{
 		"camp": "git@github.com:Obedience-Corp/camp.git",
@@ -73,10 +68,8 @@ func TestListLocations_LeavesTheEnrichedFieldsEmpty(t *testing.T) {
 	}
 }
 
-// List drops a checkout that shares a remote with a more recently committed
-// one. ListLocations cannot: the comparison needs the URL it deliberately does
-// not fetch. That is the documented difference between them, so pin it — a
-// caller needing one entry per remote has to use List.
+// List drops a checkout sharing a remote with a newer one; ListLocations cannot,
+// because the comparison needs the URL it does not fetch. Pin that difference.
 func TestListLocations_KeepsCheckoutsThatShareARemote(t *testing.T) {
 	const shared = "git@github.com:Obedience-Corp/camp.git"
 	root := stageLocationsCampaign(t, map[string]string{
@@ -102,8 +95,7 @@ func TestListLocations_KeepsCheckoutsThatShareARemote(t *testing.T) {
 	}
 }
 
-// stageLocationsCampaign builds a campaign whose projects/ holds one committed
-// git repo per name, each with the given origin URL.
+// stageLocationsCampaign gives projects/ one committed repo per name.
 func stageLocationsCampaign(t *testing.T, remotes map[string]string) string {
 	t.Helper()
 
