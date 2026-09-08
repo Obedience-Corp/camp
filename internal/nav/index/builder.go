@@ -4,7 +4,9 @@ import (
 	"context"
 	"os"
 	"path/filepath"
+	"runtime"
 	"strings"
+	"sync"
 
 	"github.com/Obedience-Corp/camp/internal/config"
 	"github.com/Obedience-Corp/camp/internal/nav"
@@ -194,40 +196,34 @@ func (b *Builder) entryTarget(dir string, entry os.DirEntry, cat nav.Category) (
 // name is the worktree directory basename, preserving navigation ergonomics
 // such as "cgo wt camp@feature".
 //
-// Projects are discovered with project.List (the same source of truth used by
-// "camp worktrees list") rather than the campaign config, because the project
-// set is derived from the projects/ checkout, not from campaign.yaml.
+// Projects are discovered with project.ListLocations (the same discovery
+// project.List performs, which is also what backs "camp worktrees list")
+// rather than the campaign config, because the project set is derived from the
+// projects/ checkout, not from campaign.yaml. The index needs each project's
+// name and checkout path and nothing else, so it takes the locations-only walk
+// and skips the remote-URL and commit-date lookups List would spend a git
+// subprocess apiece on.
 func (b *Builder) scanWorktrees(ctx context.Context) ([]Target, error) {
-	projects, err := project.List(ctx, b.root)
+	projects, err := project.ListLocations(ctx, b.root)
 	if err != nil {
 		// Degrade gracefully: without a project list there are no worktree
 		// targets to add, but the rest of the index is still valid.
 		return nil, nil
 	}
 
+	perProject := b.projectWorktreeTargets(ctx, projects)
+	if ctx.Err() != nil {
+		return nil, ctx.Err()
+	}
+
 	var targets []Target
 	seen := make(map[string]struct{})
 
-	for _, proj := range projects {
-		if ctx.Err() != nil {
-			return nil, ctx.Err()
-		}
-
-		projectPath := project.ResolveProjectPath(b.root, proj)
-
-		entries, err := worktree.NewGitWorktree(projectPath).List(ctx)
-		if err != nil {
-			// Not a git repo, a missing checkout, or a git failure: skip this
-			// project rather than failing the whole index build.
-			continue
-		}
-
-		for _, entry := range entries {
-			target, ok := worktreeTarget(proj.Name, projectPath, entry)
-			if !ok {
-				continue
-			}
-			clean := filepath.Clean(entry.Path)
+	// Merging in project order, and in git's order within each project, keeps
+	// the index byte-identical to the serial scan this replaced.
+	for _, projectTargets := range perProject {
+		for _, target := range projectTargets {
+			clean := filepath.Clean(target.Path)
 			if _, dup := seen[clean]; dup {
 				continue
 			}
@@ -237,6 +233,67 @@ func (b *Builder) scanWorktrees(ctx context.Context) ([]Target, error) {
 	}
 
 	return targets, nil
+}
+
+// projectWorktreeTargets enumerates each project's worktree targets, returning
+// one slice per project in the order given.
+//
+// Every project costs a "git worktree list" subprocess, the calls do not depend
+// on each other, and on a campaign with dozens of projects running them one at
+// a time dominates the whole index build. Fanning them out over a bounded pool
+// makes the scan cost the slowest repo rather than the sum of all of them.
+func (b *Builder) projectWorktreeTargets(ctx context.Context, projects []project.Project) [][]Target {
+	results := make([][]Target, len(projects))
+	if len(projects) == 0 {
+		return results
+	}
+
+	// These wait on subprocesses rather than burning CPU, so a small floor
+	// keeps the fan-out useful on low-core machines.
+	limit := min(max(runtime.NumCPU(), 4), len(projects))
+
+	sem := make(chan struct{}, limit)
+	var wg sync.WaitGroup
+
+	for i, proj := range projects {
+		if ctx.Err() != nil {
+			break
+		}
+		wg.Add(1)
+		sem <- struct{}{}
+		go func() {
+			defer wg.Done()
+			defer func() { <-sem }()
+			results[i] = worktreeTargetsFor(ctx, b.root, proj)
+		}()
+	}
+	wg.Wait()
+
+	return results
+}
+
+// worktreeTargetsFor lists one project's linked worktrees as navigation
+// targets. A project that cannot be listed contributes none.
+func worktreeTargetsFor(ctx context.Context, campaignRoot string, proj project.Project) []Target {
+	projectPath := project.ResolveProjectPath(campaignRoot, proj)
+
+	entries, err := worktree.NewGitWorktree(projectPath).List(ctx)
+	if err != nil {
+		// Not a git repo, a missing checkout, or a git failure: skip this
+		// project rather than failing the whole index build.
+		return nil
+	}
+
+	targets := make([]Target, 0, len(entries))
+	for _, entry := range entries {
+		target, ok := worktreeTarget(proj.Name, projectPath, entry)
+		if !ok {
+			continue
+		}
+		targets = append(targets, target)
+	}
+
+	return targets
 }
 
 // worktreeTarget builds a navigation target for a linked worktree entry. It

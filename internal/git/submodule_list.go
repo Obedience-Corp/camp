@@ -2,6 +2,7 @@ package git
 
 import (
 	"context"
+	"os"
 	"os/exec"
 	"path/filepath"
 	"strings"
@@ -14,6 +15,15 @@ import (
 func ListSubmodulePaths(ctx context.Context, repoRoot string) ([]string, error) {
 	if ctx.Err() != nil {
 		return nil, ctx.Err()
+	}
+
+	// Most repos have no .gitmodules at all, and git exits non-zero when the
+	// file is missing, which this function already treats as "no submodules".
+	// Checking first turns that case into a stat instead of a process spawn.
+	// The saving is what matters to callers that walk every project in a
+	// campaign: those are dozens of spawns whose only outcome is an error.
+	if _, err := os.Stat(filepath.Join(repoRoot, ".gitmodules")); err != nil {
+		return nil, nil
 	}
 
 	cmd := exec.CommandContext(ctx, "git", "-C", repoRoot,

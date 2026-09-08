@@ -11,11 +11,62 @@ import (
 	"github.com/Obedience-Corp/camp/internal/git"
 )
 
+// listMode selects how much per-project detail a walk collects.
+type listMode int
+
+const (
+	// modeFull enriches every entry with its git remote URL and detected
+	// project type, then drops checkouts that share a remote with a
+	// more recently committed copy.
+	modeFull listMode = iota
+	// modeLocations collects only the fields that say where a project lives.
+	modeLocations
+)
+
+// projectType returns the detected type, or "" when the mode does not want it.
+func (m listMode) projectType(path string) string {
+	if m == modeLocations {
+		return ""
+	}
+	return detectProjectType(path)
+}
+
+// remoteURL returns the origin URL, or "" when the mode does not want it.
+// Each lookup is a git subprocess, so skipping it is the point.
+func (m listMode) remoteURL(ctx context.Context, path string) string {
+	if m == modeLocations {
+		return ""
+	}
+	return getGitRemoteURL(ctx, path)
+}
+
 // List returns all projects in the campaign's projects directory.
 // It identifies git repositories, detects their project type, and expands
 // repos with .gitmodules into root + submodule entries. Symlinked project
 // entries are treated as linked projects.
 func List(ctx context.Context, campaignRoot string) ([]Project, error) {
+	return list(ctx, campaignRoot, modeFull)
+}
+
+// ListLocations returns the same projects as List carrying only the fields that
+// say where each one lives: Name, Path, Source, LinkedPath and MonorepoRoot.
+// Type and URL are left empty.
+//
+// It exists for callers that need to find every project checkout and nothing
+// else. List spends a "git remote get-url" per project and per submodule to
+// fill URL, a "git log -1" per project to compare checkouts that share a
+// remote, and a marker-file sweep to fill Type. On a campaign with dozens of
+// projects that is over a hundred git subprocesses, all of it wasted on a
+// caller that only wants paths.
+//
+// Deduplicating checkouts by remote needs URL, so ListLocations does not do it:
+// two checkouts of the same repo both appear. Callers that need one canonical
+// entry per remote must use List or dedup at their own boundary.
+func ListLocations(ctx context.Context, campaignRoot string) ([]Project, error) {
+	return list(ctx, campaignRoot, modeLocations)
+}
+
+func list(ctx context.Context, campaignRoot string, mode listMode) ([]Project, error) {
 	if ctx.Err() != nil {
 		return nil, ctx.Err()
 	}
@@ -54,7 +105,7 @@ func List(ctx context.Context, campaignRoot string) ([]Project, error) {
 			if err != nil || !info.IsDir() {
 				continue
 			}
-			projects = append(projects, resolveLinkedProject(ctx, name, projectPath, resolvedPath)...)
+			projects = append(projects, resolveLinkedProject(ctx, name, projectPath, resolvedPath, mode)...)
 			continue
 		}
 
@@ -71,7 +122,7 @@ func List(ctx context.Context, campaignRoot string) ([]Project, error) {
 				projects = append(projects, Project{Name: name, Path: relPath, Source: SourceSubmodule})
 				continue
 			}
-			resolved := resolveProject(ctx, name, projectPath)
+			resolved := resolveProject(ctx, name, projectPath, mode)
 			for i := range resolved {
 				resolved[i].Source = SourceSubmodule
 			}
@@ -84,7 +135,7 @@ func List(ctx context.Context, campaignRoot string) ([]Project, error) {
 		// undeclared nested repository before mutation.
 		gitPath := filepath.Join(projectPath, ".git")
 		if _, err := os.Stat(gitPath); err == nil {
-			resolved := resolveProject(ctx, name, projectPath)
+			resolved := resolveProject(ctx, name, projectPath, mode)
 			for i := range resolved {
 				resolved[i].Source = SourceSubmodule
 			}
@@ -96,16 +147,18 @@ func List(ctx context.Context, campaignRoot string) ([]Project, error) {
 			continue
 		}
 		projects = append(projects, Project{
-			Name: name, Path: relPath, Type: detectProjectType(projectPath), Source: SourceCampaign,
+			Name: name, Path: relPath, Type: mode.projectType(projectPath), Source: SourceCampaign,
 		})
 	}
 
-	projects = deduplicateByRemoteURL(ctx, campaignRoot, projects)
+	if mode == modeFull {
+		projects = deduplicateByRemoteURL(ctx, campaignRoot, projects)
+	}
 
 	return projects, nil
 }
 
-func resolveLinkedProject(ctx context.Context, name, logicalPath, resolvedPath string) []Project {
+func resolveLinkedProject(ctx context.Context, name, logicalPath, resolvedPath string, mode listMode) []Project {
 	source := SourceLinked
 	if !isGitRepo(resolvedPath) {
 		source = SourceLinkedNonGit
@@ -113,7 +166,7 @@ func resolveLinkedProject(ctx context.Context, name, logicalPath, resolvedPath s
 
 	url := ""
 	if source == SourceLinked {
-		url = getGitRemoteURL(ctx, resolvedPath)
+		url = mode.remoteURL(ctx, resolvedPath)
 	}
 
 	relPath := filepath.Join("projects", name)
@@ -124,7 +177,7 @@ func resolveLinkedProject(ctx context.Context, name, logicalPath, resolvedPath s
 		expanded = append(expanded, Project{
 			Name:        name,
 			Path:        relPath,
-			Type:        detectProjectType(resolvedPath),
+			Type:        mode.projectType(resolvedPath),
 			URL:         url,
 			Source:      source,
 			LinkedPath:  resolvedPath,
@@ -141,8 +194,8 @@ func resolveLinkedProject(ctx context.Context, name, logicalPath, resolvedPath s
 			expanded = append(expanded, Project{
 				Name:         name + "@" + subPath,
 				Path:         filepath.Join(relPath, subPath),
-				Type:         detectProjectType(subFullPath),
-				URL:          getGitRemoteURL(ctx, subFullPath),
+				Type:         mode.projectType(subFullPath),
+				URL:          mode.remoteURL(ctx, subFullPath),
 				Source:       source,
 				LinkedPath:   resolvedPath,
 				MonorepoRoot: relPath,
@@ -154,7 +207,7 @@ func resolveLinkedProject(ctx context.Context, name, logicalPath, resolvedPath s
 	return []Project{{
 		Name:       name,
 		Path:       relPath,
-		Type:       detectProjectType(resolvedPath),
+		Type:       mode.projectType(resolvedPath),
 		URL:        url,
 		Source:     source,
 		LinkedPath: resolvedPath,
@@ -164,8 +217,8 @@ func resolveLinkedProject(ctx context.Context, name, logicalPath, resolvedPath s
 // resolveProject returns one or more Project entries for a discovered git repo.
 // Repos with .gitmodules are expanded into a root entry plus one entry per
 // submodule. Repos without .gitmodules are treated as standalone.
-func resolveProject(ctx context.Context, name, projectPath string) []Project {
-	url := getGitRemoteURL(ctx, projectPath)
+func resolveProject(ctx context.Context, name, projectPath string, mode listMode) []Project {
+	url := mode.remoteURL(ctx, projectPath)
 	relPath := filepath.Join("projects", name)
 
 	submodulePaths, _ := git.ListSubmodulePaths(ctx, projectPath)
@@ -174,7 +227,7 @@ func resolveProject(ctx context.Context, name, projectPath string) []Project {
 		return []Project{{
 			Name: name,
 			Path: relPath,
-			Type: detectProjectType(projectPath),
+			Type: mode.projectType(projectPath),
 			URL:  url,
 		}}
 	}
@@ -186,7 +239,7 @@ func resolveProject(ctx context.Context, name, projectPath string) []Project {
 	expanded = append(expanded, Project{
 		Name:        name,
 		Path:        relPath,
-		Type:        detectProjectType(projectPath),
+		Type:        mode.projectType(projectPath),
 		URL:         url,
 		ExcludeDirs: submodulePaths,
 	})
@@ -202,8 +255,8 @@ func resolveProject(ctx context.Context, name, projectPath string) []Project {
 		expanded = append(expanded, Project{
 			Name:         name + "@" + subPath,
 			Path:         filepath.Join(relPath, subPath),
-			Type:         detectProjectType(subFullPath),
-			URL:          getGitRemoteURL(ctx, subFullPath),
+			Type:         mode.projectType(subFullPath),
+			URL:          mode.remoteURL(ctx, subFullPath),
 			MonorepoRoot: relPath,
 		})
 	}
