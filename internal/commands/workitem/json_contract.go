@@ -6,7 +6,11 @@ const (
 	// slices serialize as [], never null); existing identity fields are unchanged.
 	WorkitemCreateJSONVersion = "workitem-create/v1alpha1"
 	// WorkitemResolveJSONVersion is the schema version of camp workitem resolve --json.
-	WorkitemResolveJSONVersion = "workitem-resolve/v1alpha1"
+	// v1alpha2 added the resolution's project and worktree fields (both
+	// omitempty), populated when a link tier matched: project is the
+	// campaign-relative project the matched scope belongs to, and worktree is
+	// the worktree path when that scope is a worktree.
+	WorkitemResolveJSONVersion = "workitem-resolve/v1alpha2"
 	// WorkitemIDJSONVersion is the schema version of camp workitem id --json.
 	WorkitemIDJSONVersion = "workitem-id/v1alpha1"
 	// WorkitemPriorityJSONVersion is the schema version of camp workitem priority --json.

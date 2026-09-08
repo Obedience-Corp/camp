@@ -61,13 +61,14 @@ type resolveOptions struct {
 }
 
 func runResolve(ctx context.Context, cmd *cobra.Command, opts resolveOptions) error {
-	_, root, err := config.LoadCampaignConfigFromCwd(ctx)
+	cfg, root, err := config.LoadCampaignConfigFromCwd(ctx)
 	if err != nil {
 		return camperrors.Wrap(err, "not in a camp directory")
 	}
 	res, err := resolver.Resolve(ctx, root, resolver.Options{
 		Explicit:   opts.Explicit,
 		FestivalID: opts.FestivalID,
+		Layout:     scopeLayout(cfg),
 	})
 	if err != nil {
 		return err
@@ -98,10 +99,24 @@ func emitResolveHuman(w io.Writer, res *resolver.Resolution, explain bool) error
 	if res.QuestID != "" {
 		quest = res.QuestID
 	}
-	_, err := fmt.Fprintf(w,
+	if _, err := fmt.Fprintf(w,
 		"workitem: %s (source: %s, quest: %s)\n",
-		identityOf(res.Workitem), res.Source, quest)
-	return err
+		identityOf(res.Workitem), res.Source, quest); err != nil {
+		return err
+	}
+	// Name the project the match belongs to, with the worktree as the detail
+	// beside it: a worktree is a checkout of a project, so reporting the
+	// worktree alone would answer with a location instead of a relationship.
+	if res.Project != "" {
+		line := "project: " + res.Project
+		if res.Worktree != "" {
+			line += " (worktree: " + res.Worktree + ")"
+		}
+		if _, err := fmt.Fprintln(w, line); err != nil {
+			return err
+		}
+	}
+	return nil
 }
 
 func emitResolveJSON(w io.Writer, res *resolver.Resolution) error {

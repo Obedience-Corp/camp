@@ -55,6 +55,7 @@ type WorkItem struct {
 	WorkflowMeta *WorkItemWorkflow `json:"workflow,omitempty"`
 	Tags         []string          `json:"tags"`
 	Projects     []string          `json:"-"`
+	ProjectLinks []ProjectLink     `json:"-"`
 	ProjectRefs  []ProjectRef      `json:"projects"`
 	TokenCount   int               `json:"token_count,omitempty"`
 	Completion   *CompletionState  `json:"completion,omitempty"`
@@ -67,15 +68,37 @@ type CompletionState struct {
 	ReviewedRunID string           `json:"reviewed_run_id,omitempty"`
 }
 
+// ProjectLink is a project a workitem reaches through links.yaml rather than
+// through its own projects: list. Worktree is the campaign-relative worktree
+// path that carries the relationship, empty when the link points straight at
+// the project. A worktree is a checkout of a project, so the project is the
+// subject of the relationship and the worktree is a detail of it, which is why
+// this resolves rather than reporting the worktree path as a project.
+//
+// The field is populated at read time from the registry and is never persisted
+// on the workitem.
+type ProjectLink struct {
+	Path     string
+	Worktree string
+	Primary  bool
+}
+
 // ProjectRef is one entry in a workitem's merged projects view: a
-// campaign-relative project path from the workitem's projects: list, annotated
-// with whether that project is also the workitem-scope primary link in
-// links.yaml. It is the JSON shape of the "projects" field (workitems/v1alpha9);
-// the plain []string Projects field stays the internal semantic base that
-// ApplyMetadata populates and the merged view is derived from at output time.
+// campaign-relative project path, annotated with whether that project is also
+// the workitem-scope primary link in links.yaml. It is the JSON shape of the
+// "projects" field (workitems/v1alpha9); the plain []string Projects field
+// stays the internal semantic base that ApplyMetadata populates and the merged
+// view is derived from at output time.
+//
+// Worktree and WorktreeMissing are additive: they name the worktree a
+// link-derived project came through and report whether that directory is still
+// on this machine. Primary keeps its original meaning, a project-scope primary
+// link on this exact path, so an existing reader sees no value change.
 type ProjectRef struct {
-	Path    string `json:"path"`
-	Primary bool   `json:"primary"`
+	Path            string `json:"path"`
+	Primary         bool   `json:"primary"`
+	Worktree        string `json:"worktree,omitempty"`
+	WorktreeMissing bool   `json:"worktree_missing,omitempty"`
 }
 
 // WorkItemWorkflow carries local runtime progress when .workflow/ is present

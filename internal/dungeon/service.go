@@ -41,15 +41,41 @@ type Service struct {
 
 	batchLinks   bool
 	pendingMoves []mdlinks.Move
+
+	postMoveRewrite PostMoveRewrite
+}
+
+// PostMoveRewrite repairs the references that pointed at a moved item. It runs
+// after the rename has landed, on a context detached from the caller's
+// cancellation, because by then abandoning it would leave the tree changed with
+// its references dangling.
+type PostMoveRewrite func(ctx context.Context, srcPath, dstPath string) error
+
+// ServiceOption configures a Service.
+type ServiceOption func(*Service)
+
+// WithPostMoveRewrite replaces the reference repair that runs after a move.
+// The default rewrites markdown and quest links; batching (see the batchLinks
+// path) already varies the same step, so this is the injectable form of a seam
+// the service always had.
+func WithPostMoveRewrite(fn PostMoveRewrite) ServiceOption {
+	return func(s *Service) { s.postMoveRewrite = fn }
 }
 
 // NewService creates a new dungeon Service.
 // dungeonPath is the full path to the dungeon directory (e.g., from PathResolver.Dungeon()).
-func NewService(campaignRoot, dungeonPath string) *Service {
-	return &Service{
+func NewService(campaignRoot, dungeonPath string, opts ...ServiceOption) *Service {
+	s := &Service{
 		campaignRoot: campaignRoot,
 		dungeonPath:  dungeonPath,
 	}
+	for _, opt := range opts {
+		opt(s)
+	}
+	if s.postMoveRewrite == nil {
+		s.postMoveRewrite = s.rewriteLinksAfterMove
+	}
+	return s
 }
 
 // InitOptions contains options for initializing the dungeon.

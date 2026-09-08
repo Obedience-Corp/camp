@@ -123,7 +123,7 @@ Examples:
 			}
 			if opts.json {
 				annotateTokens(cmd.Context(), state.campaignRoot, items, opts.tokenModel, opts.noTokens)
-				return outputJSON(cmd.Context(), state.campaignRoot, state.cfg, items, groupBy)
+				return outputJSON(state.campaignRoot, state.cfg, state.registry, items, groupBy)
 			}
 			annotateTokens(cmd.Context(), state.campaignRoot, items, opts.tokenModel, opts.noTokens)
 			return outputList(cmd.OutOrStdout(), items, groupBy, triageNoticeLine(cmd.Context(), state.campaignRoot))

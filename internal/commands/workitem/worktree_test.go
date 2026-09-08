@@ -1,7 +1,6 @@
 package workitem
 
 import (
-	"context"
 	"testing"
 
 	wkitem "github.com/Obedience-Corp/camp/internal/workitem"
@@ -52,15 +51,53 @@ func TestDeriveWorktreeName(t *testing.T) {
 
 func TestLinkedProjects(t *testing.T) {
 	wi := &wkitem.WorkItem{StableID: "wi-1", Key: "design:foo"}
-	registry := &links.Links{Links: []links.Link{
-		{WorkitemID: "wi-1", Scope: links.LinkScope{Kind: links.ScopeProject, Path: "projects/camp"}},
-		{WorkitemID: "wi-1", Scope: links.LinkScope{Kind: links.ScopeProject, Path: "projects/camp"}},
-		{WorkitemID: "wi-1", Scope: links.LinkScope{Kind: links.ScopeWorktree, Path: "projects/worktrees/camp/x"}},
-		{WorkitemID: "other", Scope: links.LinkScope{Kind: links.ScopeProject, Path: "projects/fest"}},
-	}}
-	got := linkedProjects(registry, wi)
-	if len(got) != 1 || got[0] != "camp" {
-		t.Fatalf("linkedProjects = %v, want [camp]", got)
+	layout := links.ScopeLayout{}
+
+	cases := []struct {
+		name string
+		rows []links.Link
+		want []string
+		why  string
+	}{
+		{
+			name: "another workitem's project does not count",
+			rows: []links.Link{
+				{WorkitemID: "other", Scope: links.LinkScope{Kind: links.ScopeProject, Path: "projects/fest"}},
+			},
+			why: "links are per-workitem",
+		},
+		{
+			name: "repeats and worktrees of the same project collapse",
+			rows: []links.Link{
+				{WorkitemID: "wi-1", Scope: links.LinkScope{Kind: links.ScopeProject, Path: "projects/camp"}},
+				{WorkitemID: "wi-1", Scope: links.LinkScope{Kind: links.ScopeProject, Path: "projects/camp"}},
+				{WorkitemID: "wi-1", Scope: links.LinkScope{Kind: links.ScopeWorktree, Path: "projects/worktrees/camp/x"}},
+				{WorkitemID: "other", Scope: links.LinkScope{Kind: links.ScopeProject, Path: "projects/fest"}},
+			},
+			want: []string{"camp"},
+			why:  "a worktree of camp is camp, not a second project",
+		},
+		{
+			name: "a worktree-only workitem still names its project",
+			rows: []links.Link{
+				{WorkitemID: "wi-1", Scope: links.LinkScope{Kind: links.ScopeWorktree, Path: "projects/worktrees/camp-timeline/host"}},
+			},
+			want: []string{"camp-timeline"},
+			why:  "camp workitem worktree must not ask for --project again",
+		},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			got := linkedProjects(layout, &links.Links{Links: tc.rows}, wi)
+			if len(got) != len(tc.want) {
+				t.Fatalf("linkedProjects = %v, want %v (%s)", got, tc.want, tc.why)
+			}
+			for i := range got {
+				if got[i] != tc.want[i] {
+					t.Fatalf("linkedProjects = %v, want %v (%s)", got, tc.want, tc.why)
+				}
+			}
+		})
 	}
 }
 
@@ -84,20 +121,19 @@ func TestExistingWorktreeLink(t *testing.T) {
 
 func TestResolveWorktreeProject(t *testing.T) {
 	wi := &wkitem.WorkItem{StableID: "wi-1"}
-	ctx := context.Background()
 
-	if got, err := resolveWorktreeProject(ctx, "", &links.Links{}, wi, "explicit"); err != nil || got != "explicit" {
+	if got, err := resolveWorktreeProject(links.ScopeLayout{}, &links.Links{}, wi, "explicit"); err != nil || got != "explicit" {
 		t.Fatalf("flag should win: got %q, err %v", got, err)
 	}
 
 	single := &links.Links{Links: []links.Link{
 		{WorkitemID: "wi-1", Scope: links.LinkScope{Kind: links.ScopeProject, Path: "projects/fest"}},
 	}}
-	if got, err := resolveWorktreeProject(ctx, "", single, wi, ""); err != nil || got != "fest" {
+	if got, err := resolveWorktreeProject(links.ScopeLayout{}, single, wi, ""); err != nil || got != "fest" {
 		t.Fatalf("single linked project: got %q, err %v", got, err)
 	}
 
-	if _, err := resolveWorktreeProject(ctx, "", &links.Links{}, wi, ""); err == nil {
+	if _, err := resolveWorktreeProject(links.ScopeLayout{}, &links.Links{}, wi, ""); err == nil {
 		t.Fatal("no linked project must error asking for --project")
 	}
 
@@ -105,7 +141,7 @@ func TestResolveWorktreeProject(t *testing.T) {
 		{WorkitemID: "wi-1", Scope: links.LinkScope{Kind: links.ScopeProject, Path: "projects/fest"}},
 		{WorkitemID: "wi-1", Scope: links.LinkScope{Kind: links.ScopeProject, Path: "projects/camp"}},
 	}}
-	if _, err := resolveWorktreeProject(ctx, "", multi, wi, ""); err == nil {
+	if _, err := resolveWorktreeProject(links.ScopeLayout{}, multi, wi, ""); err == nil {
 		t.Fatal("multiple linked projects must error asking for --project")
 	}
 }

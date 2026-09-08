@@ -16,13 +16,13 @@ Schema versions in this release:
 
 | Command | Schema version | Notes |
 | --- | --- | --- |
-| `camp workitem --json` | `workitems/v1alpha12` | Workitem dashboard contract. Items can carry an optional `completion` object with `policy` and `reviewed_run_id`; omitted means default review behavior with no acknowledged run. |
+| `camp workitem --json` | `workitems/v1alpha13` | Workitem dashboard contract. Items can carry an optional `completion` object with `policy` and `reviewed_run_id`; omitted means default review behavior with no acknowledged run. Each `projects` entry can carry `worktree` and `worktree_missing`, and `projects` can list a project the workitem reaches only through a link. |
 | `camp workitem create --json` | `workitem-create/v1alpha1` | Create response with next-step hint. Additive `workitem.tags` and `workitem.projects` arrays (empty serializes as `[]`). |
 | `camp workitem completion --json` | `workitem-completion/v1alpha1` | Emits workitem identity, before/after completion state, and changed/adopted/committed/deferred outcomes. |
 | `camp workitem link --json` | `workitem-links/v1alpha1` | Emits one `link`. |
 | `camp workitem unlink --json` | `workitem-links/v1alpha1` | Emits `removed`. |
 | `camp workitem links --json` | `workitem-links/v1alpha1` | Emits `links`. |
-| `camp workitem resolve --json` | `workitem-resolve/v1alpha1` | Emits resolver result and trace. |
+| `camp workitem resolve --json` | `workitem-resolve/v1alpha2` | Emits resolver result and trace, plus `project` and `worktree` when a link tier matched. |
 | `camp workitem doctor --json` | `workitem-doctor/v1alpha1` | Emits findings; exits 2 when error findings exist. |
 | `camp workitem validate --json` | `workitem-validate/v1alpha1` | Emits structural findings for workflow work item directories with stable finding codes and a `repair_command` per finding; exits 2 when error findings exist. Codes are documented in `docs/workitem-validate-reference.md`. |
 | `camp workitem repair --json` | `workitem-repair/v1alpha1` | Emits the repair result: `created_marker`, `changed`, ordered `changes`, and the resulting `workitem` identity. Idempotent and non-destructive; supports `--dry-run`. |

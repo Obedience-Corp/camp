@@ -107,7 +107,7 @@ type linkOptions struct {
 }
 
 func runLink(ctx context.Context, cmd *cobra.Command, opts linkOptions) error {
-	_, root, err := config.LoadCampaignConfigFromCwd(ctx)
+	cfg, root, err := config.LoadCampaignConfigFromCwd(ctx)
 	if err != nil {
 		return camperrors.Wrap(err, "not in a camp directory")
 	}
@@ -126,7 +126,9 @@ func runLink(ctx context.Context, cmd *cobra.Command, opts linkOptions) error {
 		return err
 	}
 
-	scope, err := resolveLinkScope(root, opts)
+	campPaths := cfg.Paths()
+	layout := links.LayoutFor(campPaths.Projects, campPaths.Worktrees)
+	scope, err := resolveLinkScope(layout, root, opts)
 	if err != nil {
 		return err
 	}
@@ -195,6 +197,7 @@ func runLink(ctx context.Context, cmd *cobra.Command, opts linkOptions) error {
 			WorkitemIDs:  knownIDs,
 			AllowMissing: opts.AllowMissing,
 			Now:          link.CreatedAt,
+			Layout:       layout,
 		}))
 	})
 	if err != nil {
@@ -250,7 +253,10 @@ func resolveSelector(ctx context.Context, root, query string, allowMissing bool)
 	return selector.Resolve(ctx, root, query, selector.ResolveOptions{})
 }
 
-func resolveLinkScope(root string, opts linkOptions) (*links.LinkScope, error) {
+// resolveLinkScope turns the scope flags into the scope to record. Worktree
+// scopes come back carrying the project that owns them, so a link made by hand
+// records the same relationship worktree creation does.
+func resolveLinkScope(layout links.ScopeLayout, root string, opts linkOptions) (*links.LinkScope, error) {
 	chosen := 0
 	for _, v := range []string{opts.Project, opts.Festival, opts.Worktree, opts.ExplicitPath} {
 		if v != "" {
@@ -269,21 +275,31 @@ func resolveLinkScope(root string, opts linkOptions) (*links.LinkScope, error) {
 			"--project, --festival, --worktree, --cwd, and the path argument are mutually exclusive", nil)
 	}
 
+	normalized := func(scope links.LinkScope) (*links.LinkScope, error) {
+		scope = links.NormalizeScope(layout, scope)
+		return &scope, nil
+	}
+
 	switch {
 	case opts.Project != "":
-		return &links.LinkScope{Kind: links.ScopeProject, Path: filepath.ToSlash(filepath.Join("projects", opts.Project))}, nil
+		path := layout.ProjectPath(opts.Project)
+		if path == "" {
+			return nil, camperrors.NewValidation("project",
+				"--project takes a project name, not a path (got "+opts.Project+")", nil)
+		}
+		return normalized(links.LinkScope{Kind: links.ScopeProject, Path: path})
 	case opts.Festival != "":
 		path := opts.Festival
 		if !strings.HasPrefix(path, "festivals/") {
 			path = filepath.ToSlash(filepath.Join("festivals", "active", path))
 		}
-		return &links.LinkScope{Kind: links.ScopeFestival, Path: path}, nil
+		return normalized(links.LinkScope{Kind: links.ScopeFestival, Path: path})
 	case opts.Worktree != "":
-		path := opts.Worktree
-		if !strings.HasPrefix(path, "projects/worktrees/") {
-			path = filepath.ToSlash(filepath.Join("projects", "worktrees", opts.Worktree))
+		path := filepath.ToSlash(opts.Worktree)
+		if !layout.UnderWorktrees(path) {
+			path = layout.WorktreesDirPath() + strings.Trim(path, "/")
 		}
-		return &links.LinkScope{Kind: links.ScopeWorktree, Path: path}, nil
+		return normalized(links.LinkScope{Kind: links.ScopeWorktree, Path: path})
 	case opts.UseCwd:
 		cwd, err := os.Getwd()
 		if err != nil {
@@ -295,18 +311,18 @@ func resolveLinkScope(root string, opts linkOptions) (*links.LinkScope, error) {
 				"current directory is outside the camp root", nil)
 		}
 		rel = filepath.ToSlash(rel)
-		return &links.LinkScope{Kind: inferScopeKind(rel), Path: rel}, nil
+		return normalized(links.LinkScope{Kind: inferScopeKind(layout, rel), Path: rel})
 	default: // explicit path
 		path := filepath.ToSlash(opts.ExplicitPath)
-		return &links.LinkScope{Kind: inferScopeKind(path), Path: path}, nil
+		return normalized(links.LinkScope{Kind: inferScopeKind(layout, path), Path: path})
 	}
 }
 
-func inferScopeKind(rel string) links.ScopeKind {
+func inferScopeKind(layout links.ScopeLayout, rel string) links.ScopeKind {
 	switch {
-	case strings.HasPrefix(rel, "projects/worktrees/"):
+	case layout.UnderWorktrees(rel):
 		return links.ScopeWorktree
-	case strings.HasPrefix(rel, "projects/"):
+	case layout.UnderProjects(rel):
 		return links.ScopeProject
 	case strings.HasPrefix(rel, "festivals/"):
 		return links.ScopeFestival
@@ -335,10 +351,19 @@ func workitemKeyForLink(wi *wkitem.WorkItem) string {
 }
 
 func emitLinkHuman(w io.Writer, link links.Link) error {
-	_, err := fmt.Fprintf(w,
+	if _, err := fmt.Fprintf(w,
 		"linked %s -> %s:%s (role %s, id %s)\n",
-		link.WorkitemID, link.Scope.Kind, link.Scope.Path, link.Role, link.ID)
-	return err
+		link.WorkitemID, link.Scope.Kind, link.Scope.Path, link.Role, link.ID); err != nil {
+		return err
+	}
+	// A worktree scope names a checkout; say which project it belongs to so the
+	// user sees the relationship the link actually records.
+	if link.Scope.Kind == links.ScopeWorktree && link.Scope.Project != "" {
+		if _, err := fmt.Fprintf(w, "  project: %s\n", link.Scope.Project); err != nil {
+			return err
+		}
+	}
+	return nil
 }
 
 func emitLinkJSON(w io.Writer, link links.Link) error {

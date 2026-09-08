@@ -20,6 +20,10 @@ type AttachOptions struct {
 	WorkitemKey string
 	// Scope is the target (worktree, project, festival, …).
 	Scope LinkScope
+	// Layout names the campaign's projects and worktrees directories. The zero
+	// value is the camp default layout. It is used to record the owning project
+	// on a worktree scope the caller did not fill in itself.
+	Layout ScopeLayout
 	// CreatedBy stamps the link; empty defaults to "camp".
 	CreatedBy string
 	// Replace replaces an existing primary on the same scope.
@@ -48,6 +52,10 @@ func AttachPrimary(ctx context.Context, campaignRoot string, opts AttachOptions)
 			return Link{}, camperrors.Wrap(err, "scope path")
 		}
 	}
+	// A worktree scope records the project that owns it. Every worktree writer
+	// routes through here, so the relationship is captured once rather than in
+	// each command, and a caller that already knows the project keeps its value.
+	scope := NormalizeScope(opts.Layout, opts.Scope)
 	createdBy := opts.CreatedBy
 	if createdBy == "" {
 		createdBy = "camp"
@@ -76,7 +84,7 @@ func AttachPrimary(ctx context.Context, campaignRoot string, opts AttachOptions)
 			ID:          id,
 			WorkitemID:  opts.WorkitemID,
 			WorkitemKey: opts.WorkitemKey,
-			Scope:       opts.Scope,
+			Scope:       scope,
 			Role:        RolePrimary,
 			CreatedAt:   time.Now().UTC().Truncate(time.Second),
 			CreatedBy:   createdBy,
@@ -88,6 +96,7 @@ func AttachPrimary(ctx context.Context, campaignRoot string, opts AttachOptions)
 			CampaignRoot: campaignRoot,
 			AllowMissing: opts.AllowMissing,
 			Now:          out.CreatedAt,
+			Layout:       opts.Layout,
 		}))
 	})
 	if err != nil {
@@ -118,9 +127,10 @@ func ReportPruned(w io.Writer, pruned []Pruned) {
 }
 
 // WorktreeScopePath returns the campaign-relative path for a project worktree
-// at projects/worktrees/<project>/<name>.
-func WorktreeScopePath(project, name string) string {
-	return "projects/worktrees/" + project + "/" + name
+// under the layout's worktrees directory. The zero layout is the camp default,
+// so WorktreeScopePath(ScopeLayout{}, "fest", "x") is projects/worktrees/fest/x.
+func WorktreeScopePath(layout ScopeLayout, project, name string) string {
+	return layout.worktrees() + project + "/" + name
 }
 
 // NewLinkID returns a fresh lnk_YYYYMMDD_<6 hex> ID that does not collide with

@@ -186,7 +186,7 @@ approval, not part of a vocabulary change.
 
 Every published `schema_version` string keeps its current value. A wording
 change is never a reason to bump a schema. This includes, and is not limited
-to, `workitems/v1alpha12`, `concepts/v1alpha1`, `quest-list/v1alpha1`,
+to, `workitems/v1alpha13`, `concepts/v1alpha1`, `quest-list/v1alpha1`,
 `quest-show/v1alpha1`, `quest-links/v1alpha1`, `status-all/v1alpha1`,
 `workflow/v1`, `version/v1alpha1`, and the Camp Timeline browser contract
 schema. New machine fields, if ever added, are additive and versioned. They are

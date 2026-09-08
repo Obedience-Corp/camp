@@ -12,6 +12,7 @@ import (
 	camperrors "github.com/Obedience-Corp/camp/internal/errors"
 	"github.com/Obedience-Corp/camp/internal/moveref"
 	navindex "github.com/Obedience-Corp/camp/internal/nav/index"
+	"github.com/Obedience-Corp/camp/internal/postmutation"
 	"github.com/Obedience-Corp/camp/internal/statusmove"
 	"github.com/Obedience-Corp/camp/internal/ui"
 	wkaudit "github.com/Obedience-Corp/camp/internal/workitem/audit"
@@ -32,10 +33,23 @@ type workitemMove struct {
 	Description string
 }
 
+// moveRewriter repairs the references that pointed at a moved workitem. It is a
+// parameter rather than a direct call so a test can observe the boundary the
+// move guarantees: everything from here on runs whatever the caller does.
+type moveRewriter func(ctx context.Context, root, srcPath, dstPath string) ([]string, error)
+
 // applyWorkitemMove performs the move and repairs every reference to it,
 // returning commitInputs for the shared tail. Used by the rail move and by
 // demote so the two cannot drift.
 func applyWorkitemMove(ctx context.Context, root string, mv workitemMove, result *workitemPromoteResult) (*commitInputs, error) {
+	return applyWorkitemMoveWith(ctx, root, mv, result, moveref.RewriteForMove)
+}
+
+// applyWorkitemMoveWith is applyWorkitemMove with the reference repair injected.
+func applyWorkitemMoveWith(
+	ctx context.Context, root string, mv workitemMove,
+	result *workitemPromoteResult, rewrite moveRewriter,
+) (*commitInputs, error) {
 	if _, err := statusmove.Move(ctx, mv.SourcePath, mv.DestPath, statusmove.MoveOptions{BoundaryRoot: root}); err != nil {
 		if errors.Is(err, statusmove.ErrAlreadyExists) {
 			return nil, camperrors.Wrapf(camperrors.ErrAlreadyExists,
@@ -43,7 +57,14 @@ func applyWorkitemMove(ctx context.Context, root string, mv workitemMove, result
 		}
 		return nil, camperrors.Wrapf(err, "moving %s to %s", mv.OldRel, mv.NewRel)
 	}
-	rewritten, err := moveref.RewriteForMove(ctx, root, mv.SourcePath, mv.DestPath)
+	// The move is on disk, so everything below runs on a context detached from
+	// the caller's cancellation and bounded by its own deadline. Without it the
+	// error below is reachable by cancellation alone, and it says the move was
+	// applied and the references were not.
+	ctx, release := postmutation.Context(ctx)
+	defer release()
+
+	rewritten, err := rewrite(ctx, root, mv.SourcePath, mv.DestPath)
 	if err != nil {
 		return nil, camperrors.Wrapf(err,
 			"rewriting references after moving %s (move applied; recover with git status)", mv.OldRel)
@@ -90,6 +111,11 @@ func finishWorkitemMove(
 ) error {
 	// The move is already on disk. Recording and committing it must finish
 	// even when the caller's context has been cancelled in the meantime.
+	//
+	// Left unbounded on purpose: postmutation.Context bounds the reference
+	// rewrite above because that walks the whole camp, while this tail is a
+	// fixed amount of work and predates this change. Putting a deadline on a
+	// commit is a separate decision.
 	ctx = context.WithoutCancel(ctx)
 	opts := tail.Options
 	appendWorkitemAuditEvent(ctx, cmd, root, wkaudit.Event{

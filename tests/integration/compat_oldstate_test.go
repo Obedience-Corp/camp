@@ -253,7 +253,7 @@ func TestCompatOldStateSurfacesCarryCampaignRoot(t *testing.T) {
 		schema string
 	}{
 		{name: "concepts", args: []string{"concepts", "--json"}, schema: "concepts/v1alpha1"},
-		{name: "workitem", args: []string{"workitem", "--json"}, schema: "workitems/v1alpha12"},
+		{name: "workitem", args: []string{"workitem", "--json"}, schema: "workitems/v1alpha13"},
 	}
 
 	for _, tt := range tests {

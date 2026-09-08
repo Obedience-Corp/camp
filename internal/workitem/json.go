@@ -28,11 +28,12 @@ import (
 //     category_counts, and category in available_group_by and section rows.
 //   - v1alpha9: add tags and projects fields. tags is a non-nil slice of
 //     free-form topic labels ([] not null when absent). projects is the merged
-//     view: a non-nil slice of {path, primary} objects ([] not null when
-//     absent), where path is a campaign-relative project path and primary
-//     reflects whether that project is the workitem-scope primary link in
-//     links.yaml. See internal/workitem/metadata.go for the marker-level
-//     v1alpha9 schema these are sourced from.
+//     view: a non-nil slice of objects ([] not null when absent) that carried
+//     {path, primary} at this version, where path is a campaign-relative
+//     project path and primary reflects whether that project is the
+//     workitem-scope primary link in links.yaml. See
+//     internal/workitem/metadata.go for the marker-level v1alpha9 schema these
+//     are sourced from. v1alpha13 widened the entry shape; see below.
 //   - v1alpha10: no new fields. Non-festival types can now report
 //     lifecycle_stage ready/active with a relative_path under festivals/, since a
 //     workitem promoted onto the festival rail lives on a stage while keeping its
@@ -43,7 +44,15 @@ import (
 //     Populated by tcount token counting when the workitem has a readable
 //     primary document; omitted when zero or when --no-tokens is set.
 //   - v1alpha12: add optional completion object with policy and reviewed_run_id.
-const SchemaVersion = "workitems/v1alpha12"
+//   - v1alpha13: add optional worktree and worktree_missing to each projects
+//     entry (both omitempty). worktree is the campaign-relative path of the
+//     worktree a link-derived project came through; worktree_missing reports
+//     that the directory is no longer on this machine. projects can now also
+//     carry an entry the workitem reaches only through a link, appended after
+//     the entries from its own projects: list, so the array can be non-empty on
+//     a workitem whose marker names no project. primary keeps its v1alpha9
+//     meaning, a project-scope primary link on that exact path.
+const SchemaVersion = "workitems/v1alpha13"
 
 // Payload is the top-level JSON output for camp workitem --json.
 type Payload struct {

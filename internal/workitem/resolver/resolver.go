@@ -34,6 +34,11 @@ type Options struct {
 	Cwd        string
 	FestivalID string
 	AllowFuzzy bool
+
+	// Layout names the campaign's projects and worktrees directories, used to
+	// report which project a matched link scope belongs to. The zero value is
+	// the camp default layout.
+	Layout links.ScopeLayout
 }
 
 // TraceStep records what one tier of the resolver did. Surfaced via --json
@@ -45,11 +50,18 @@ type TraceStep struct {
 }
 
 // Resolution is what Resolve returns.
+//
+// Project and Worktree are additive and populated when a link matched. A
+// worktree scope reports the project that owns the worktree, with the worktree
+// path as the detail, so the answer names the project the work belongs to
+// rather than a checkout of it.
 type Resolution struct {
 	Workitem *workitem.WorkItem `json:"workitem,omitempty"`
 	Source   Source             `json:"source"`
 	Reason   string             `json:"reason"`
 	QuestID  string             `json:"quest_id,omitempty"`
+	Project  string             `json:"project,omitempty"`
+	Worktree string             `json:"worktree,omitempty"`
 	Trace    []TraceStep        `json:"trace"`
 }
 
@@ -80,6 +92,7 @@ func Resolve(ctx context.Context, root string, opts Options) (*Resolution, error
 	}
 
 	result := &Resolution{Source: SourceNone, Reason: "no tier matched"}
+	var matchedScope links.LinkScope
 	tiers := []resolveTier{
 		{SourceExplicit, func() (*workitem.WorkItem, TraceStep, error) {
 			return resolveExplicit(ctx, root, opts)
@@ -88,7 +101,9 @@ func Resolve(ctx context.Context, root string, opts Options) (*Resolution, error
 			return resolveAncestor(ctx, root, cwd)
 		}, "nearest ancestor .workitem"},
 		{SourceLink, func() (*workitem.WorkItem, TraceStep, error) {
-			return resolveLink(ctx, root, cwd)
+			wi, scope, step, err := resolveLink(ctx, root, cwd)
+			matchedScope = scope
+			return wi, step, err
 		}, ""},
 		{SourceFestival, func() (*workitem.WorkItem, TraceStep, error) {
 			return resolveFestival(ctx, root, opts.FestivalID)
@@ -114,6 +129,8 @@ func Resolve(ctx context.Context, root string, opts Options) (*Resolution, error
 			result.Source = tier.source
 			result.Reason = firstNonEmpty(tier.reason, step.Detail)
 			result.QuestID = questIDOf(wi)
+			result.Project = matchedScope.ProjectFor(opts.Layout)
+			result.Worktree = worktreeDetail(matchedScope)
 			return result, nil
 		}
 	}
@@ -197,15 +214,27 @@ func resolveAncestor(ctx context.Context, root, cwd string) (*workitem.WorkItem,
 	return nil, TraceStep{Tier: SourceAncestor, Result: "miss", Detail: "no .workitem found between cwd and camp root"}, nil
 }
 
-func resolveLink(ctx context.Context, root, cwd string) (*workitem.WorkItem, TraceStep, error) {
+// worktreeDetail returns the worktree path a link scope names, or "" when the
+// scope is not a worktree.
+func worktreeDetail(scope links.LinkScope) string {
+	if scope.Kind != links.ScopeWorktree {
+		return ""
+	}
+	return scope.Path
+}
+
+// resolveLink returns the workitem the longest matching primary path link
+// points at, along with that link's scope so the caller can report which
+// project the match belongs to.
+func resolveLink(ctx context.Context, root, cwd string) (*workitem.WorkItem, links.LinkScope, TraceStep, error) {
 	registry, err := links.Load(ctx, root)
 	if err != nil {
-		return nil, TraceStep{Tier: SourceLink, Result: "error", Detail: err.Error()},
+		return nil, links.LinkScope{}, TraceStep{Tier: SourceLink, Result: "error", Detail: err.Error()},
 			camperrors.Wrap(err, "load links registry")
 	}
 	rel, err := filepath.Rel(root, cwd)
 	if err != nil || relOutsideRoot(rel) {
-		return nil, TraceStep{Tier: SourceLink, Result: "skip", Detail: "cwd outside camp root"}, nil
+		return nil, links.LinkScope{}, TraceStep{Tier: SourceLink, Result: "skip", Detail: "cwd outside camp root"}, nil
 	}
 	relSlash := filepath.ToSlash(rel)
 
@@ -231,7 +260,7 @@ func resolveLink(ctx context.Context, root, cwd string) (*workitem.WorkItem, Tra
 		}
 	}
 	if best == nil {
-		return nil, TraceStep{Tier: SourceLink, Result: "miss", Detail: "no primary path link covers cwd"}, nil
+		return nil, links.LinkScope{}, TraceStep{Tier: SourceLink, Result: "miss", Detail: "no primary path link covers cwd"}, nil
 	}
 	wi, err := selector.Resolve(ctx, root, best.WorkitemID, selector.ResolveOptions{})
 	if err != nil {
@@ -240,17 +269,17 @@ func resolveLink(ctx context.Context, root, cwd string) (*workitem.WorkItem, Tra
 		// fall through to the next tier. Any other selector failure is
 		// returned so the caller sees the operational problem.
 		if errors.Is(err, selector.ErrSelectorNotFound) {
-			return nil, TraceStep{
+			return nil, links.LinkScope{}, TraceStep{
 				Tier:   SourceLink,
 				Result: "error",
 				Detail: "primary link " + best.ID + " points to missing workitem " + best.WorkitemID,
 			}, nil
 		}
 		detail := "primary link " + best.ID + " could not resolve workitem " + best.WorkitemID + ": " + err.Error()
-		return nil, TraceStep{Tier: SourceLink, Result: "error", Detail: detail},
+		return nil, links.LinkScope{}, TraceStep{Tier: SourceLink, Result: "error", Detail: detail},
 			camperrors.NewValidation("workitem_link", detail, err)
 	}
-	return wi, TraceStep{
+	return wi, best.Scope, TraceStep{
 		Tier:   SourceLink,
 		Result: "match",
 		Detail: "via link " + best.ID + " on " + string(best.Scope.Kind) + ":" + best.Scope.Path,

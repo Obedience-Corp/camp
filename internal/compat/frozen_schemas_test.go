@@ -16,15 +16,16 @@ import (
 
 // TestPublishedSchemaVersionsAreFrozen pins the version strings agents and
 // scripts branch on. A wording change is never a reason to bump one: a consumer
-// that pins workitems/v1alpha12 stops reading camp's output the moment the
-// string moves, whether or not the payload actually changed.
+// that pins workitems/v1alpha13 stops reading camp's output the moment the
+// string moves, whether or not the payload actually changed. A payload that
+// really did gain a field is the one reason, and then this pin moves with it.
 func TestPublishedSchemaVersionsAreFrozen(t *testing.T) {
 	tests := []struct {
 		name string
 		got  string
 		want string
 	}{
-		{"camp workitem --json", workitem.SchemaVersion, "workitems/v1alpha12"},
+		{"camp workitem --json", workitem.SchemaVersion, "workitems/v1alpha13"},
 		{"workitem link contracts", links.LinksSchemaVersion, "workitem-links/v1alpha1"},
 		{"camp workflow --json", campworkflow.JSONSchemaVersion, "workflow/v1"},
 		{"camp fresh show-workflow --json", fresh.JSONSchemaVersion, "fresh-workflow/v1"},

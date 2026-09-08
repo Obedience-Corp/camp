@@ -67,9 +67,72 @@ A link's `scope` specifies what area of the camp the workitem is attached to.
 | `repo` | A git repository root not registered as a project | `vendor/external` |
 | `campaign_path` | Any camp-relative path (catch-all) | `workflow/design/spike` |
 | `festival` | A festival path under `festivals/` | `festivals/active/myrepo-MR0001` |
-| `worktree` | A project worktree under `projects/worktrees/` | `projects/worktrees/myrepo@feat-x` |
+| `worktree` | A project worktree under `projects/worktrees/` | `projects/worktrees/myrepo/feat-x` |
 
 Paths are camp-relative, forward-slash-normalized, and validated to be contained within the camp root.
+
+### The owning project
+
+A worktree is a checkout of a project, not a project of its own. A worktree
+scope therefore carries an optional `project` field naming the
+`projects/<name>` it belongs to:
+
+```yaml
+scope:
+  kind: worktree
+  path: projects/worktrees/myrepo/feat-x
+  project: projects/myrepo
+```
+
+Every command that creates a worktree link records it, and `camp workitem
+link --worktree` records it too. Reading is backward compatible: a registry
+written before the field existed is loaded unchanged, and the project is
+derived from the `projects/worktrees/<project>/<name>` path convention on the
+way to display. `camp workitem doctor --fix` writes the derived value back so
+the relationship no longer depends on the path.
+
+The field is accepted on `project`, `repo`, and `worktree` scopes and rejected
+on the others, which have no owning project. It must name a project directory:
+a worktree path or a subdirectory inside a project is refused.
+
+Because the project is recorded rather than inferred from the filesystem, the
+relationship survives the worktree being deleted. Removing a worktree after its
+branch merges leaves the workitem showing the project it worked on.
+
+### Where the project appears
+
+| Surface | What it shows |
+|---|---|
+| `camp workitem links` | A `PROJECT` column beside the scope; `-` for scopes with no owning project |
+| `camp workitem links --json` | `scope.project` on every worktree row |
+| `camp workitem list --json` | The project in `projects[]`, with `worktree` and `worktree_missing` as its detail |
+| `camp workitem list --project <path>` | Matches workitems linked through a worktree of that project |
+| `camp workitem resolve` | `project` and `worktree` when a link tier matched |
+
+The `projects[]` entries a workitem reaches only through a link are appended
+after the entries from its own `projects:` list; a project named in both is
+listed once, carrying the worktree detail.
+
+Two deliberate limits on where the project appears:
+
+- `camp workitem links` gained `PROJECT` as its third column, between
+  `WORKITEM` and `SCOPE`. Nothing was renamed or removed, but a script cutting
+  field 3 out of that table now gets the project rather than the scope. Use
+  `--json` for scripts; the human table is free to gain columns.
+- The compact `camp workitem list` output has no project column. It is a
+  fixed-width dashboard row, and widening every line for a field most workitems
+  do not carry costs more than it returns. A person who wants the project asks
+  the surfaces that are about the relationship, `camp workitem links` and
+  `camp workitem resolve`, or reads `--json`.
+
+### `--json` reports the resolved project, the file may not record it
+
+`camp workitem links --json` reports `links.LinksSchemaVersion`, which is also
+the on-disk `links.yaml` version, so it cannot move without a file migration.
+The listing resolves worktree scopes before emitting, which means `--json`
+shows a `scope.project` on rows written before the field existed while the file
+itself still omits it. That is resolution, not drift. `camp workitem doctor
+--fix` writes the value back and the two agree from then on.
 
 ---
 
@@ -190,7 +253,7 @@ camp workitem resolve [flags]
 
 `--workitem <selector>` tests explicit resolution. `--festival <id>` supplies a festival ID for tier 4.
 
-`--json` emits the `Resolution` struct including `source`, `reason`, and the full `trace` array.
+`--json` emits the `Resolution` struct including `source`, `reason`, and the full `trace` array. When a link matched, it also carries `project` and, for a worktree scope, `worktree`.
 
 See [cli-reference/camp\_workitem\_resolve.md](cli-reference/camp_workitem_resolve.md).
 
@@ -208,13 +271,22 @@ Doctor checks for:
 - Links whose `scope.path` no longer exists on disk (orphaned scope).
 - Duplicate primary links for the same scope.
 - Schema violations in `links.yaml`.
+- Worktree scopes that do not record their project
+  (`workitem.scope.project-unrecorded`, informational and auto-fixable).
+- Worktree directories that are gone while their project is still present
+  (`workitem.scope.worktree-gone`, informational). This is the normal end of a
+  worktree's life once its branch merges, so it is not a warning and needs no
+  action. A scope camp cannot tie to a present project keeps the
+  `workitem.scope.not-on-this-machine` warning instead.
 - Workitem `projects:` entries whose path does not exist. This is a warning.
   When git recorded a `projects/<name>` directory rename, the finding is
   `auto_fixable` and `--fix` rewrites the stale path.
 
 `--fix` auto-repairs findings tagged `auto_fixable`. This includes broken
-links and rename-mapped `projects:` entries. The fix is applied in one pass
-before re-checking.
+links, rename-mapped `projects:` entries, and backfilling `scope.project` on
+worktree links written before that field existed. The fix is applied in one
+pass before re-checking. Backfill never overwrites a project already recorded
+on a row.
 
 `--json` emits structured finding output.
 

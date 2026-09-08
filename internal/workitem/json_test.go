@@ -154,9 +154,9 @@ func TestWorkItemWorkflow_ZeroValuesAreEmitted(t *testing.T) {
 	}
 }
 
-func TestSchemaVersion_IsV1Alpha12(t *testing.T) {
-	if SchemaVersion != "workitems/v1alpha12" {
-		t.Errorf("SchemaVersion = %q, want workitems/v1alpha12", SchemaVersion)
+func TestSchemaVersion_IsV1Alpha13(t *testing.T) {
+	if SchemaVersion != "workitems/v1alpha13" {
+		t.Errorf("SchemaVersion = %q, want workitems/v1alpha13", SchemaVersion)
 	}
 }
 

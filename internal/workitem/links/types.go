@@ -51,9 +51,16 @@ const (
 var ValidRoles = []Role{RolePrimary, RoleRelated, RoleBlockedBy, RoleSupersedes}
 
 // LinkScope is the target of a link.
+//
+// Project is optional and names the campaign-relative projects/<name> the
+// scope belongs to. It is meaningful for kind worktree, where the path names a
+// checkout rather than a project, and it is what keeps the workitem attached to
+// its project after the worktree is removed. Rows written before the field
+// existed simply omit it; ProjectFor derives the same answer from the path.
 type LinkScope struct {
-	Kind ScopeKind `yaml:"kind" json:"kind"`
-	Path string    `yaml:"path" json:"path"`
+	Kind    ScopeKind `yaml:"kind" json:"kind"`
+	Path    string    `yaml:"path" json:"path"`
+	Project string    `yaml:"project,omitempty" json:"project,omitempty"`
 }
 
 // Link is one workitem-to-scope relationship.

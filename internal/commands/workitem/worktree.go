@@ -117,7 +117,7 @@ func runWorktree(cmd *cobra.Command, opts worktreeOptions) error {
 		return emitWorktree(cmd, opts.Print, existing, "", wi, true)
 	}
 
-	projectName, err := resolveWorktreeProject(ctx, root, registry, wi, opts.Project)
+	projectName, err := resolveWorktreeProject(scopeLayout(cfg), registry, wi, opts.Project)
 	if err != nil {
 		return err
 	}
@@ -146,7 +146,8 @@ func runWorktree(cmd *cobra.Command, opts worktreeOptions) error {
 		return err
 	}
 
-	link, err := attachWorktreeLink(ctx, root, wi, filepath.ToSlash(result.RelativePath), cmd.ErrOrStderr())
+	link, err := attachWorktreeLink(ctx, root, cfg, wi, resolved.Name,
+		filepath.ToSlash(result.RelativePath), cmd.ErrOrStderr())
 	if err != nil {
 		return camperrors.Wrap(err, "worktree created but workitem link failed")
 	}
@@ -209,11 +210,11 @@ func createWorktree(
 
 // resolveWorktreeProject returns the project to create the worktree in: the
 // explicit flag when set, otherwise the workitem's single linked project.
-func resolveWorktreeProject(ctx context.Context, root string, registry *links.Links, wi *wkitem.WorkItem, flag string) (string, error) {
+func resolveWorktreeProject(layout links.ScopeLayout, registry *links.Links, wi *wkitem.WorkItem, flag string) (string, error) {
 	if flag != "" {
 		return flag, nil
 	}
-	projects := linkedProjects(registry, wi)
+	projects := linkedProjects(layout, registry, wi)
 	switch len(projects) {
 	case 1:
 		return projects[0], nil
@@ -227,16 +228,40 @@ func resolveWorktreeProject(ctx context.Context, root string, registry *links.Li
 	}
 }
 
-// linkedProjects returns the distinct project names the workitem is linked to,
-// derived from project-scope links (whose path is projects/<name>).
-func linkedProjects(registry *links.Links, wi *wkitem.WorkItem) []string {
+// linkedProjects returns the distinct project names the workitem is linked to.
+//
+// Project-scope links answer whenever the workitem has any: they are the direct
+// statement of which project the work belongs to, and letting a leftover
+// worktree link add a second name would make the command demand --project on a
+// workitem that already says so. Worktree scopes answer only when there is no
+// project link, which is the case this resolution was widened for: a worktree is
+// a checkout of a project, so a workitem already working in one has named its
+// project and should not be asked again.
+func linkedProjects(layout links.ScopeLayout, registry *links.Links, wi *wkitem.WorkItem) []string {
+	direct := projectNamesFromLinks(layout, registry, wi, func(kind links.ScopeKind) bool {
+		return kind == links.ScopeProject || kind == links.ScopeRepo
+	})
+	if len(direct) > 0 {
+		return direct
+	}
+	return projectNamesFromLinks(layout, registry, wi, func(kind links.ScopeKind) bool {
+		return kind == links.ScopeWorktree
+	})
+}
+
+// projectNamesFromLinks collects the distinct project names the workitem reaches
+// through links whose kind passes want, in registry order.
+func projectNamesFromLinks(
+	layout links.ScopeLayout, registry *links.Links, wi *wkitem.WorkItem,
+	want func(links.ScopeKind) bool,
+) []string {
 	seen := map[string]struct{}{}
 	var out []string
 	for _, link := range registry.Links {
-		if link.Scope.Kind != links.ScopeProject || !linkMatchesWorkitem(link, wi) {
+		if !want(link.Scope.Kind) || !linkMatchesWorkitem(link, wi) {
 			continue
 		}
-		name := strings.Trim(strings.TrimPrefix(filepath.ToSlash(link.Scope.Path), "projects/"), "/")
+		name := layout.ProjectName(link.Scope.ProjectFor(layout))
 		if name == "" {
 			continue
 		}
@@ -265,18 +290,27 @@ func linkMatchesWorkitem(link links.Link, wi *wkitem.WorkItem) bool {
 
 // attachWorktreeLink primary-links the worktree so the resolver (and therefore
 // camp p commit) picks up the workitem ref inside that tree.
-func attachWorktreeLink(ctx context.Context, root string, wi *wkitem.WorkItem, relativeWorktreePath string, report io.Writer) (links.Link, error) {
+//
+// projectName is the project the worktree checks out. Recording it on the scope
+// is what makes the workitem read as related to that project rather than to the
+// worktree, and what keeps the relationship once the worktree is removed.
+func attachWorktreeLink(ctx context.Context, root string, cfg *config.CampaignConfig,
+	wi *wkitem.WorkItem, projectName, relativeWorktreePath string, report io.Writer,
+) (links.Link, error) {
 	if relativeWorktreePath == "" {
 		return links.Link{}, camperrors.NewValidation("worktree", "missing worktree relative path", nil)
 	}
+	layout := scopeLayout(cfg)
 	workitemID := wkitem.LinkWorkitemID(wi)
 	return links.AttachPrimary(ctx, root, links.AttachOptions{
 		WorkitemID:  workitemID,
 		WorkitemKey: wi.Key,
 		Scope: links.LinkScope{
-			Kind: links.ScopeWorktree,
-			Path: relativeWorktreePath,
+			Kind:    links.ScopeWorktree,
+			Path:    relativeWorktreePath,
+			Project: layout.ProjectPath(projectName),
 		},
+		Layout:    layout,
 		CreatedBy: "camp_workitem_worktree",
 		Replace:   true,
 		Report:    report,

@@ -62,7 +62,13 @@ func FilterAdvanced(items []WorkItem, opts FilterOptions) []WorkItem {
 		if !hasAllTags(item.Tags, opts.Tags) {
 			continue
 		}
-		if len(projectSet) > 0 && !anyMatches(item.Projects, projectSet) {
+		// A workitem reaches a project either by naming it in projects: or by
+		// holding a link to it, including a worktree link resolved back to the
+		// project that owns the worktree. Both are the same relationship, so
+		// --project matches either.
+		if len(projectSet) > 0 &&
+			!anyMatches(item.Projects, projectSet) &&
+			!anyLinkedProject(item.ProjectLinks, projectSet) {
 			continue
 		}
 		if !opts.ShowParked && len(attentionSet) == 0 && len(statusSet) == 0 && item.AttentionStage == "parked" {
@@ -132,4 +138,14 @@ func matchesQuery(item WorkItem, query string) bool {
 		strings.Contains(strings.ToLower(item.SourceID), query) ||
 		strings.Contains(strings.ToLower(item.Group), query) ||
 		strings.Contains(strings.ToLower(item.WorkflowCategory), query)
+}
+
+// anyLinkedProject reports whether any link-derived project path is in set.
+func anyLinkedProject(links []ProjectLink, set map[string]bool) bool {
+	for _, link := range links {
+		if set[link.Path] {
+			return true
+		}
+	}
+	return false
 }

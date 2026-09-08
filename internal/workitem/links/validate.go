@@ -46,6 +46,10 @@ type ValidateOptions struct {
 	// Now is the reference time for created_at future-skew checks. Defaults
 	// to time.Now() if zero.
 	Now time.Time
+
+	// Layout names the campaign-relative projects and worktrees directories
+	// scope paths are read against. The zero value is the camp default layout.
+	Layout ScopeLayout
 }
 
 var linkIDRegex = regexp.MustCompile(LinkIDPattern)
@@ -213,8 +217,11 @@ func validateOneLink(link Link, opts ValidateOptions, now time.Time,
 			}
 		}
 	}
-	if msg, ok := checkKindPathPrefix(link.Scope); !ok {
+	if msg, ok := checkKindPathPrefix(link.Scope, opts.Layout); !ok {
 		addErr("scope.path", msg)
+	}
+	if msg, ok := checkScopeProject(link.Scope, opts.Layout); !ok {
+		addErr("scope.project", msg)
 	}
 
 	if !isValidRole(link.Role) {
@@ -264,20 +271,27 @@ func isValidRole(r Role) bool {
 	return false
 }
 
-// checkKindPathPrefix enforces the kind-to-path prefix table.
-// Returns (errorMessage, ok). ok=true means the scope is acceptable.
-func checkKindPathPrefix(s LinkScope) (string, bool) {
+// checkKindPathPrefix enforces the kind-to-path table against the campaign's
+// configured directories. Returns (errorMessage, ok); ok=true means the scope is
+// acceptable.
+//
+// The directories come from the layout rather than literal prefixes because the
+// writers infer a scope kind from the same layout. A camp that configures
+// paths.projects would otherwise have `camp workitem link` infer kind project
+// and then reject its own write here.
+func checkKindPathPrefix(s LinkScope, layout ScopeLayout) (string, bool) {
 	switch s.Kind {
 	case ScopeProject:
-		if !strings.HasPrefix(s.Path, "projects/") {
-			return "scope kind project requires path under projects/", false
+		if !layout.UnderProjects(s.Path) {
+			return "scope kind project requires path under " + layout.projects(), false
 		}
-		if strings.HasPrefix(s.Path, "projects/worktrees/") {
-			return "scope kind project must not be under projects/worktrees/ (use kind worktree)", false
+		if layout.UnderWorktrees(s.Path) {
+			return "scope kind project must not be under " + layout.worktrees() +
+				" (use kind worktree)", false
 		}
 	case ScopeWorktree:
-		if !strings.HasPrefix(s.Path, "projects/worktrees/") {
-			return "scope kind worktree requires path under projects/worktrees/", false
+		if !layout.UnderWorktrees(s.Path) {
+			return "scope kind worktree requires path under " + layout.worktrees(), false
 		}
 	case ScopeFestival:
 		if !strings.HasPrefix(s.Path, "festivals/") {
@@ -285,6 +299,35 @@ func checkKindPathPrefix(s LinkScope) (string, bool) {
 		}
 	case ScopeRepo, ScopeCampaignPath:
 		// No prefix constraint.
+	}
+	return "", true
+}
+
+// checkScopeProject enforces the optional scope.project field: when set it must
+// name a project directory, and only a scope that has an owning project may
+// carry one. Returns (errorMessage, ok); ok=true means the scope is acceptable.
+//
+// The value is not required to match what the path derives. A worktree can be
+// moved or its holder renamed, and the recorded project is the durable half of
+// that relationship, so a mismatch is deliberate data rather than corruption.
+func checkScopeProject(s LinkScope, layout ScopeLayout) (string, bool) {
+	if s.Project == "" {
+		return "", true
+	}
+	switch s.Kind {
+	case ScopeProject, ScopeRepo, ScopeWorktree:
+	default:
+		return "scope kind " + string(s.Kind) + " has no owning project; remove scope.project", false
+	}
+	if strings.HasPrefix(s.Project, "/") {
+		return "must be camp-relative (no leading /)", false
+	}
+	if strings.Contains(s.Project, "..") {
+		return "must not contain ..", false
+	}
+	if layout.ProjectRoot(s.Project) != strings.TrimRight(s.Project, "/") {
+		return "must name a project directory under " + layout.projects() +
+			" (got " + s.Project + ")", false
 	}
 	return "", true
 }

@@ -119,7 +119,7 @@ Examples:
 				return outputList(cmd.OutOrStdout(), items, displayGroupBy, triageNoticeLine(ctx, state.campaignRoot))
 			case flagJSON:
 				annotateTokens(ctx, state.campaignRoot, items, flagTokenModel, flagNoTokens)
-				return outputJSON(ctx, state.campaignRoot, state.cfg, items, displayGroupBy)
+				return outputJSON(state.campaignRoot, state.cfg, state.registry, items, displayGroupBy)
 			default:
 				// Non-interactive --print/--path-output: output first item path directly.
 				if len(items) == 0 {
@@ -182,6 +182,7 @@ type discoveredWorkitems struct {
 	campaignRoot string
 	resolver     *paths.Resolver
 	items        []wkitem.WorkItem
+	registry     *links.Links
 	store        *priority.Store
 	storePath    string
 }
@@ -208,7 +209,26 @@ func discoverWorkitems(ctx context.Context) (*discoveredWorkitems, error) {
 	}
 	items = priority.Apply(store, items)
 	wkitem.Sort(items)
-	return &discoveredWorkitems{cfg: cfg, campaignRoot: campaignRoot, resolver: resolver, items: items, store: store, storePath: storePath}, nil
+	registry := loadLinkRegistryForDisplay(ctx, campaignRoot)
+	annotateProjectLinks(scopeLayout(cfg), registry, items)
+	return &discoveredWorkitems{
+		cfg: cfg, campaignRoot: campaignRoot, resolver: resolver,
+		items: items, registry: registry, store: store, storePath: storePath,
+	}, nil
+}
+
+// loadLinkRegistryForDisplay reads links.yaml for read-only annotation. A
+// malformed registry must not hard-fail a listing that was registry-independent
+// before the annotation existed, so it warns and returns nil, mirroring
+// doctor's continue posture.
+func loadLinkRegistryForDisplay(ctx context.Context, campaignRoot string) *links.Links {
+	registry, err := links.Load(ctx, campaignRoot)
+	if err != nil {
+		_, _ = fmt.Fprintf(os.Stderr,
+			"warning: could not read links.yaml (%v); showing projects without link annotation; run `camp workitem doctor --fix`\n", err)
+		return nil
+	}
+	return registry
 }
 
 // annotateTokens counts tokens for each work item's primary document using
@@ -392,21 +412,15 @@ func warnDeprecatedStatus(cmd *cobra.Command, statuses []string) {
 		"warning: --status is deprecated and will be removed in a future release; use --stage (lifecycle) and/or --attention-stage instead.")
 }
 
-func outputJSON(ctx context.Context, campaignRoot string, cfg *config.CampaignConfig, items []wkitem.WorkItem, groupBy string) error {
-	// Annotate each item's projects: with its primary designation from links.yaml
-	// so the JSON projects field is the merged view. Both --json call sites
-	// (list.go, workitem.go) route through here. A malformed registry must not
-	// hard-fail this read-only listing (it was registry-independent before the
-	// merged view): fall back to no annotation and warn, mirroring doctor's
-	// continue posture. mergeProjectRefs treats a nil registry as no primaries.
-	registry, err := links.Load(ctx, campaignRoot)
-	if err != nil {
-		registry = nil
-		_, _ = fmt.Fprintf(os.Stderr,
-			"warning: could not read links.yaml (%v); showing projects without primary annotation; run `camp workitem doctor --fix`\n", err)
-	}
+func outputJSON(campaignRoot string, cfg *config.CampaignConfig, registry *links.Links, items []wkitem.WorkItem, groupBy string) error {
+	// Annotate each item's projects: with its primary designation from
+	// links.yaml, and append the projects it reaches only through a link, so
+	// the JSON projects field is the merged view. Both --json call sites
+	// (list.go, workitem.go) route through here. The registry comes from
+	// discovery, which already warned and passed nil if it could not be read;
+	// mergeProjectRefs treats a nil registry as no primaries.
 	for i := range items {
-		items[i].ProjectRefs = mergeProjectRefs(items[i].Projects, registry)
+		items[i].ProjectRefs = mergeProjectRefs(campaignRoot, items[i], registry)
 	}
 	payload := wkitem.NewPayloadWithGrouping(campaignRoot, items, groupBy)
 	payload.CategoryVocabulary = categoryVocabulary(cfg)
