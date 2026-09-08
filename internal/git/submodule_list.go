@@ -2,6 +2,7 @@ package git
 
 import (
 	"context"
+	"os"
 	"os/exec"
 	"path/filepath"
 	"strings"
@@ -14,6 +15,12 @@ import (
 func ListSubmodulePaths(ctx context.Context, repoRoot string) ([]string, error) {
 	if ctx.Err() != nil {
 		return nil, ctx.Err()
+	}
+
+	// git resolves the same relative path and its failure already means "no
+	// submodules", so a missing file costs a stat instead of a spawn.
+	if _, err := os.Stat(filepath.Join(repoRoot, ".gitmodules")); err != nil {
+		return nil, nil
 	}
 
 	cmd := exec.CommandContext(ctx, "git", "-C", repoRoot,

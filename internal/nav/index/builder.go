@@ -4,7 +4,9 @@ import (
 	"context"
 	"os"
 	"path/filepath"
+	"runtime"
 	"strings"
+	"sync"
 
 	"github.com/Obedience-Corp/camp/internal/config"
 	"github.com/Obedience-Corp/camp/internal/nav"
@@ -194,40 +196,31 @@ func (b *Builder) entryTarget(dir string, entry os.DirEntry, cat nav.Category) (
 // name is the worktree directory basename, preserving navigation ergonomics
 // such as "cgo wt camp@feature".
 //
-// Projects are discovered with project.List (the same source of truth used by
-// "camp worktrees list") rather than the campaign config, because the project
-// set is derived from the projects/ checkout, not from campaign.yaml.
+// Projects come from the projects/ checkout, not campaign.yaml. This uses the
+// locations-only walk: the index needs a name and a path, not the remote URL
+// and commit date List spends a subprocess apiece on. That also keeps every
+// checkout of a shared remote, which List would dedup away along with its
+// worktrees.
 func (b *Builder) scanWorktrees(ctx context.Context) ([]Target, error) {
-	projects, err := project.List(ctx, b.root)
+	projects, err := project.ListLocations(ctx, b.root)
 	if err != nil {
 		// Degrade gracefully: without a project list there are no worktree
 		// targets to add, but the rest of the index is still valid.
 		return nil, nil
 	}
 
+	perProject := b.projectWorktreeTargets(ctx, projects)
+	if ctx.Err() != nil {
+		return nil, ctx.Err()
+	}
+
 	var targets []Target
 	seen := make(map[string]struct{})
 
-	for _, proj := range projects {
-		if ctx.Err() != nil {
-			return nil, ctx.Err()
-		}
-
-		projectPath := project.ResolveProjectPath(b.root, proj)
-
-		entries, err := worktree.NewGitWorktree(projectPath).List(ctx)
-		if err != nil {
-			// Not a git repo, a missing checkout, or a git failure: skip this
-			// project rather than failing the whole index build.
-			continue
-		}
-
-		for _, entry := range entries {
-			target, ok := worktreeTarget(proj.Name, projectPath, entry)
-			if !ok {
-				continue
-			}
-			clean := filepath.Clean(entry.Path)
+	// Merge in project order so the fan-out does not reorder the index.
+	for _, projectTargets := range perProject {
+		for _, target := range projectTargets {
+			clean := filepath.Clean(target.Path)
 			if _, dup := seen[clean]; dup {
 				continue
 			}
@@ -237,6 +230,64 @@ func (b *Builder) scanWorktrees(ctx context.Context) ([]Target, error) {
 	}
 
 	return targets, nil
+}
+
+// projectWorktreeTargets returns one slice of targets per project, in order.
+//
+// Each project costs an independent "git worktree list" subprocess, and running
+// dozens serially dominates the index build. A bounded pool makes the scan cost
+// the slowest repo rather than their sum.
+func (b *Builder) projectWorktreeTargets(ctx context.Context, projects []project.Project) [][]Target {
+	results := make([][]Target, len(projects))
+	if len(projects) == 0 {
+		return results
+	}
+
+	// Subprocess waits, not CPU work, so keep a floor on low-core machines.
+	limit := min(max(runtime.NumCPU(), 4), len(projects))
+
+	sem := make(chan struct{}, limit)
+	var wg sync.WaitGroup
+
+	for i, proj := range projects {
+		if ctx.Err() != nil {
+			break
+		}
+		wg.Add(1)
+		sem <- struct{}{}
+		go func() {
+			defer wg.Done()
+			defer func() { <-sem }()
+			results[i] = worktreeTargetsFor(ctx, b.root, proj)
+		}()
+	}
+	wg.Wait()
+
+	return results
+}
+
+// worktreeTargetsFor lists one project's linked worktrees as navigation
+// targets. A project that cannot be listed contributes none.
+func worktreeTargetsFor(ctx context.Context, campaignRoot string, proj project.Project) []Target {
+	projectPath := project.ResolveProjectPath(campaignRoot, proj)
+
+	entries, err := worktree.NewGitWorktree(projectPath).List(ctx)
+	if err != nil {
+		// Not a git repo, a missing checkout, or a git failure: skip this
+		// project rather than failing the whole index build.
+		return nil
+	}
+
+	targets := make([]Target, 0, len(entries))
+	for _, entry := range entries {
+		target, ok := worktreeTarget(proj.Name, projectPath, entry)
+		if !ok {
+			continue
+		}
+		targets = append(targets, target)
+	}
+
+	return targets
 }
 
 // worktreeTarget builds a navigation target for a linked worktree entry. It

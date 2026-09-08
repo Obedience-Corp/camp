@@ -68,6 +68,10 @@ var containerFSPackages = []containerFSPackage{
 	// worktree both stage a campaign on disk.
 	{ImportPath: "./internal/workitem/links", MinTests: 2},
 	{ImportPath: "./internal/workitem/resolver", MinTests: 2},
+	// Project discovery and the navigation index both stage git repositories,
+	// and the index scan adds worktrees on top of them.
+	{ImportPath: "./internal/project", MinTests: 3},
+	{ImportPath: "./internal/nav/index", MinTests: 2},
 }
 
 // containerFSTag is the build tag gating host compilation of these suites.

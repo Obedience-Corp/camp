@@ -109,6 +109,11 @@ func TestRemove_RecoveryInstructions_OnPartialFailure(t *testing.T) {
 	if runtime.GOOS == "windows" {
 		t.Skip("chmod not applicable on Windows")
 	}
+	// The failure this asserts is a read-only parent, which does not stop root:
+	// the removal would succeed and read as a missing error.
+	if os.Geteuid() == 0 {
+		t.Skip("root is not blocked by the read-only directory this case needs")
+	}
 	tmp := t.TempDir()
 	tmp, _ = filepath.EvalSymlinks(tmp)
 

@@ -196,6 +196,12 @@ func setupStatusAllTestCampaign(t *testing.T) string {
 	if err := os.MkdirAll(filepath.Join(root, "projects", "alpha"), 0755); err != nil {
 		t.Fatalf("mkdir submodule path: %v", err)
 	}
+	// The fake git answers "config -f .gitmodules" for this campaign, and both
+	// it and real git resolve -f as a path, so the file has to exist.
+	gitmodules := "[submodule \"alpha\"]\n\tpath = projects/alpha\n\turl = https://example.com/alpha.git\n"
+	if err := os.WriteFile(filepath.Join(root, ".gitmodules"), []byte(gitmodules), 0644); err != nil {
+		t.Fatalf("write .gitmodules: %v", err)
+	}
 	return root
 }
 
