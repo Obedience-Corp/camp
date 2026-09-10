@@ -202,17 +202,28 @@ pty-selector:
     "$venv_dir/bin/python" tests/tui/selector_pty.py "$demo"
     rm -f "$demo"
 
-# Drive the fresh merged-branch Promote/Skip confirm: the focused button is
-# marked in text, the marker follows focus, and Enter returns the marked choice.
+# Verify shared confirm focus and the value submitted by Enter.
 pty-confirm:
     #!/usr/bin/env bash
     set -euo pipefail
     cd "{{root}}"
     venv_dir="$(just tui venv)"
-    demo="$(mktemp "${TMPDIR:-/tmp}/camp-confirm-demo.XXXXXX")"
-    go build -o "$demo" ./tests/tui/confirm_demo
-    "$venv_dir/bin/python" tests/tui/confirm_pty.py "$demo"
-    rm -f "$demo"
+    fixture="$(mktemp -d)"
+    trap 'rm -rf "$fixture"' EXIT
+    mkdir "$fixture/home"
+    go build -o "$fixture/confirm-demo" ./tests/tui/confirm_demo
+    HOME="$fixture/home" "$venv_dir/bin/python" tests/tui/confirm_pty.py "$fixture/confirm-demo"
+
+# Record the shared confirm widget in full color; keep generated media outside git.
+record-confirm output_dir:
+    #!/usr/bin/env bash
+    set -euo pipefail
+    cd "{{root}}"
+    mkdir -p "$1/home"
+    output_dir="$(cd "$1" && pwd)"
+    go build -o "$output_dir/confirm-demo" ./tests/tui/confirm_demo
+    cd "$output_dir"
+    vhs "{{root}}/tests/tui/confirm.tape"
 
 # Drive `camp intent add` in the container harness (not a host tempfile).
 pty-intent-add:

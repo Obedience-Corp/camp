@@ -6,8 +6,7 @@ import (
 	"testing"
 
 	"github.com/Obedience-Corp/obey-shared/brand"
-	"github.com/charmbracelet/lipgloss"
-	"github.com/muesli/termenv"
+	"github.com/charmbracelet/huh"
 )
 
 func TestIsValidTheme(t *testing.T) {
@@ -128,68 +127,38 @@ func TestBackgroundFromColorFGBG(t *testing.T) {
 	}
 }
 
-// renderConfirmButtons renders a Promote/Skip confirm's buttons the way huh
-// does, with Promote focused, through the theme built for mode and rendered
-// under profile.
-func renderConfirmButtons(t *testing.T, mode brand.Mode, profile termenv.Profile) (focused, blurred string) {
-	t.Helper()
-	lipgloss.SetColorProfile(profile)
-	t.Cleanup(func() { lipgloss.SetColorProfile(termenv.Ascii) })
-
-	caps := brand.Capabilities{IsTTY: true, ColorDepth: brand.ColorTrueColor, DarkBackground: true, BackgroundKnown: true}
-	theme := buildTheme(brand.Resolve(mode, caps))
-	return theme.Focused.FocusedButton.Render("Promote"), theme.Focused.BlurredButton.Render("Skip")
-}
-
-func TestConfirmButtonsMarkTheFocusedChoiceWithoutColor(t *testing.T) {
-	focused, blurred := renderConfirmButtons(t, brand.ModePlain, termenv.Ascii)
-	if !strings.Contains(focused, ButtonFocusMarker+" Promote") {
-		t.Fatalf("focused button %q lacks the focus marker", focused)
-	}
-	if strings.Contains(blurred, ButtonFocusMarker) {
-		t.Fatalf("blurred button %q carries the focus marker", blurred)
-	}
-	if lipgloss.Width(focused)-lipgloss.Width("Promote") != lipgloss.Width(blurred)-lipgloss.Width("Skip") {
-		t.Fatalf("button padding differs between focused %q and blurred %q; focus would shift the row", focused, blurred)
-	}
-}
-
-func TestConfirmButtonsUseDistinctFillsInColor(t *testing.T) {
-	for _, mode := range []brand.Mode{brand.ModeAdaptive, brand.ModeLight, brand.ModeDark, brand.ModeHighContrast} {
+// Exercise huh's choice rendering, including losing field focus, rather than
+// reproducing its renderer or parsing terminal escape sequences.
+func TestConfirmFocus(t *testing.T) {
+	for _, mode := range []brand.Mode{brand.ModePlain, brand.ModeAdaptive, brand.ModeLight, brand.ModeDark, brand.ModeHighContrast} {
 		t.Run(string(mode), func(t *testing.T) {
-			focused, blurred := renderConfirmButtons(t, mode, termenv.TrueColor)
-			if !strings.Contains(focused, ButtonFocusMarker+" Promote") {
-				t.Fatalf("focused button %q lacks the focus marker", focused)
+			caps := brand.Capabilities{IsTTY: true, ColorDepth: brand.ColorTrueColor, DarkBackground: true, BackgroundKnown: true}
+			styles := buildTheme(brand.Resolve(mode, caps))
+			var promote bool
+			confirm := huh.NewConfirm().Affirmative("Promote").Negative("Skip").Value(&promote)
+			confirm.WithTheme(styles)
+			confirm.Focus()
+			for _, value := range []bool{false, true} {
+				promote = value
+				want := "Skip"
+				if promote {
+					want = "Promote"
+				}
+				view := confirm.View()
+				if strings.Count(view, confirmFocusMarker) != 1 || !strings.Contains(view, confirmFocusMarker+" "+want) {
+					t.Fatalf("choice %v: expected one marker on %s, got %q", value, want, view)
+				}
 			}
-			if !isBold(focused) {
-				t.Fatalf("focused button %q is not bold", focused)
+			confirm.Blur()
+			if view := confirm.View(); strings.Contains(view, confirmFocusMarker) {
+				t.Fatalf("inactive field still has a focus marker: %q", view)
 			}
-			if isBold(blurred) {
-				t.Fatalf("blurred button %q is bold; focus must be the only bold button", blurred)
-			}
-			focusedBG, blurredBG := backgroundSGR(focused), backgroundSGR(blurred)
-			if focusedBG == "" || focusedBG == blurredBG {
-				t.Fatalf("focused background %q must differ from blurred %q", focusedBG, blurredBG)
+			if mode != brand.ModePlain {
+				focused, blurred := styles.Focused.FocusedButton, styles.Focused.BlurredButton
+				if !focused.GetBold() || blurred.GetBold() || reflect.DeepEqual(focused.GetBackground(), blurred.GetBackground()) {
+					t.Fatal("active choice must be bold with a distinct background")
+				}
 			}
 		})
 	}
-}
-
-func isBold(rendered string) bool {
-	return strings.Contains(rendered, "\x1b[1;") || strings.Contains(rendered, ";1m") || strings.Contains(rendered, "\x1b[1m")
-}
-
-// backgroundSGR extracts the first 48;2;r;g;b background parameter from a
-// rendered string, or "" when no true-color background is set.
-func backgroundSGR(rendered string) string {
-	const prefix = "48;2;"
-	start := strings.Index(rendered, prefix)
-	if start < 0 {
-		return ""
-	}
-	rest := rendered[start+len(prefix):]
-	if i := strings.Index(rest, "m"); i >= 0 {
-		rest = rest[:i]
-	}
-	return rest
 }

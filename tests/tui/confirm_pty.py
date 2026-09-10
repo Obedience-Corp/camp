@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""PTY checks for the fresh merged-branch Promote/Skip confirm via confirm_demo.
+"""PTY checks for the shared Promote/Skip theme via confirm_demo.
 
 huh's base theme told the two buttons apart only by swapping two grays, and a
 NO_COLOR terminal stripped even that, so a user could not see which choice
@@ -59,7 +59,6 @@ class Session:
                 return False
             self.stream.feed(data)
             self.transcript += data.decode("utf-8", "replace")
-            deadline = time.time() + budget
         return True
 
     def press(self, key):

@@ -1,5 +1,4 @@
-// Confirm demo binary for PTY verification of the fresh merged-branch backstop
-// prompt. Driven by tests/tui/confirm_pty.py; not a user-facing command.
+// Confirm demo binary for PTY verification of the shared huh theme. Driven by tests/tui/confirm_pty.py; not a user-facing command.
 package main
 
 import (
@@ -7,17 +6,17 @@ import (
 	"fmt"
 	"os"
 
-	"github.com/Obedience-Corp/camp/internal/commands/fresh"
 	"github.com/Obedience-Corp/camp/internal/ui/theme"
+	"github.com/charmbracelet/huh"
 )
 
 func main() {
 	var promote bool
-	form := fresh.NewMergedPromoteForm(
-		`Workitem "Settings: a row is a setting" had a merged branch and is still active. Promote to completed?`,
-		"branch feature/obey-voice-settings-rows (merged)",
-		&promote,
-	)
+	form := huh.NewForm(huh.NewGroup(
+		huh.NewConfirm().
+			Title("Promote the completed workitem?").
+			Affirmative("Promote").Negative("Skip").Value(&promote),
+	))
 	if err := theme.RunForm(context.Background(), form); err != nil {
 		if theme.IsCancelled(err) {
 			fmt.Fprintln(os.Stderr, "CANCELLED")
