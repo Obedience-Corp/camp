@@ -119,8 +119,14 @@ func color(value string) lipgloss.TerminalColor {
 	return lipgloss.Color(value)
 }
 
+const confirmFocusMarker = "▸"
+
 func buildTheme(p brand.Palette) *huh.Theme {
 	t := huh.ThemeBase()
+	// Lip Gloss prepends SetString's value when huh renders the button label.
+	// Reserve the same width on the other button so moving focus cannot shift it.
+	t.Focused.FocusedButton = t.Focused.FocusedButton.SetString(confirmFocusMarker)
+	t.Focused.BlurredButton = t.Focused.BlurredButton.SetString(" ")
 	if p.Mode == brand.ModePlain {
 		return t
 	}
@@ -137,6 +143,8 @@ func buildTheme(p brand.Palette) *huh.Theme {
 
 	// Style focused elements
 	t.Focused.Title = t.Focused.Title.Foreground(title).Bold(true)
+	t.Focused.FocusedButton = t.Focused.FocusedButton.Foreground(color(p.SurfaceBase)).Background(selected).Bold(true)
+	t.Focused.BlurredButton = t.Focused.BlurredButton.Foreground(placeholder).Background(color(p.SurfaceRaised))
 	t.Focused.Description = t.Focused.Description.Foreground(description)
 	t.Focused.SelectSelector = t.Focused.SelectSelector.Foreground(focus)
 	t.Focused.SelectedOption = t.Focused.SelectedOption.Foreground(selected)

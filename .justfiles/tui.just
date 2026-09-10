@@ -202,6 +202,29 @@ pty-selector:
     "$venv_dir/bin/python" tests/tui/selector_pty.py "$demo"
     rm -f "$demo"
 
+# Verify shared confirm focus and the value submitted by Enter.
+pty-confirm:
+    #!/usr/bin/env bash
+    set -euo pipefail
+    cd "{{root}}"
+    venv_dir="$(just tui venv)"
+    fixture="$(mktemp -d)"
+    trap 'rm -rf "$fixture"' EXIT
+    mkdir "$fixture/home"
+    go build -o "$fixture/confirm-demo" ./tests/tui/confirm_demo
+    HOME="$fixture/home" "$venv_dir/bin/python" tests/tui/confirm_pty.py "$fixture/confirm-demo"
+
+# Record the shared confirm widget in full color; keep generated media outside git.
+record-confirm output_dir:
+    #!/usr/bin/env bash
+    set -euo pipefail
+    cd "{{root}}"
+    mkdir -p "$1/home"
+    output_dir="$(cd "$1" && pwd)"
+    go build -o "$output_dir/confirm-demo" ./tests/tui/confirm_demo
+    cd "$output_dir"
+    vhs "{{root}}/tests/tui/confirm.tape"
+
 # Drive `camp intent add` in the container harness (not a host tempfile).
 pty-intent-add:
     #!/usr/bin/env bash
@@ -224,7 +247,7 @@ pty-switch:
     just test integration-run TestSwitch_BottomProximityTTY
 
 # Run every pty check.
-pty: pty-triage-review pty-machine-tailscale-check pty-machine-auth-denied pty-sweep-prompt pty-selector pty-intent-copy pty-intent-add pty-project-list pty-switch
+pty: pty-triage-review pty-machine-tailscale-check pty-machine-auth-denied pty-sweep-prompt pty-selector pty-intent-copy pty-intent-add pty-project-list pty-switch pty-confirm
 
 # Record one tape. The tape owns its output path and its fixture bootstrap.
 tape tape_path:

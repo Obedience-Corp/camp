@@ -2,9 +2,11 @@ package theme
 
 import (
 	"reflect"
+	"strings"
 	"testing"
 
 	"github.com/Obedience-Corp/obey-shared/brand"
+	"github.com/charmbracelet/huh"
 )
 
 func TestIsValidTheme(t *testing.T) {
@@ -122,5 +124,41 @@ func TestBackgroundFromColorFGBG(t *testing.T) {
 		if dark != tc.dark || ok != tc.ok {
 			t.Errorf("backgroundFromColorFGBG(%q) = (%v, %v), want (%v, %v)", tc.value, dark, ok, tc.dark, tc.ok)
 		}
+	}
+}
+
+// Exercise huh's choice rendering, including losing field focus, rather than
+// reproducing its renderer or parsing terminal escape sequences.
+func TestConfirmFocus(t *testing.T) {
+	for _, mode := range []brand.Mode{brand.ModePlain, brand.ModeAdaptive, brand.ModeLight, brand.ModeDark, brand.ModeHighContrast} {
+		t.Run(string(mode), func(t *testing.T) {
+			caps := brand.Capabilities{IsTTY: true, ColorDepth: brand.ColorTrueColor, DarkBackground: true, BackgroundKnown: true}
+			styles := buildTheme(brand.Resolve(mode, caps))
+			var promote bool
+			confirm := huh.NewConfirm().Affirmative("Promote").Negative("Skip").Value(&promote)
+			confirm.WithTheme(styles)
+			confirm.Focus()
+			for _, value := range []bool{false, true} {
+				promote = value
+				want := "Skip"
+				if promote {
+					want = "Promote"
+				}
+				view := confirm.View()
+				if strings.Count(view, confirmFocusMarker) != 1 || !strings.Contains(view, confirmFocusMarker+" "+want) {
+					t.Fatalf("choice %v: expected one marker on %s, got %q", value, want, view)
+				}
+			}
+			confirm.Blur()
+			if view := confirm.View(); strings.Contains(view, confirmFocusMarker) {
+				t.Fatalf("inactive field still has a focus marker: %q", view)
+			}
+			if mode != brand.ModePlain {
+				focused, blurred := styles.Focused.FocusedButton, styles.Focused.BlurredButton
+				if !focused.GetBold() || blurred.GetBold() || reflect.DeepEqual(focused.GetBackground(), blurred.GetBackground()) {
+					t.Fatal("active choice must be bold with a distinct background")
+				}
+			}
+		})
 	}
 }
