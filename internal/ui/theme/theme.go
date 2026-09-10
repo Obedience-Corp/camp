@@ -119,8 +119,14 @@ func color(value string) lipgloss.TerminalColor {
 	return lipgloss.Color(value)
 }
 
+// ButtonFocusMarker prefixes the focused confirm button so the choice under the
+// cursor is readable without color: huh's base theme distinguishes the two
+// buttons only by swapping near-identical grays, and plain mode strips even that.
+const ButtonFocusMarker = "▸"
+
 func buildTheme(p brand.Palette) *huh.Theme {
 	t := huh.ThemeBase()
+	styleButtons(t)
 	if p.Mode == brand.ModePlain {
 		return t
 	}
@@ -137,6 +143,9 @@ func buildTheme(p brand.Palette) *huh.Theme {
 
 	// Style focused elements
 	t.Focused.Title = t.Focused.Title.Foreground(title).Bold(true)
+	t.Focused.FocusedButton = t.Focused.FocusedButton.Foreground(color(p.SurfaceBase)).Background(selected).Bold(true)
+	t.Focused.BlurredButton = t.Focused.BlurredButton.Foreground(placeholder).Background(color(p.SurfaceRaised))
+	t.Focused.Next = t.Focused.FocusedButton
 	t.Focused.Description = t.Focused.Description.Foreground(description)
 	t.Focused.SelectSelector = t.Focused.SelectSelector.Foreground(focus)
 	t.Focused.SelectedOption = t.Focused.SelectedOption.Foreground(selected)
@@ -163,6 +172,18 @@ func buildTheme(p brand.Palette) *huh.Theme {
 	t.Help.FullSeparator = t.Help.FullSeparator.Foreground(helpDesc)
 
 	return t
+}
+
+// styleButtons gives confirm buttons a text-level focus cue in every mode. The
+// focused button carries ButtonFocusMarker; the blurred one carries the same
+// width of blank so the pair does not shift when focus moves.
+func styleButtons(t *huh.Theme) {
+	t.Focused.FocusedButton = t.Focused.FocusedButton.SetString(ButtonFocusMarker)
+	t.Focused.BlurredButton = t.Focused.BlurredButton.SetString(strings.Repeat(" ", lipgloss.Width(ButtonFocusMarker)))
+	t.Focused.Next = t.Focused.FocusedButton
+	t.Blurred.FocusedButton = t.Focused.FocusedButton
+	t.Blurred.BlurredButton = t.Focused.BlurredButton
+	t.Blurred.Next = t.Focused.Next
 }
 
 // TUIPalette provides shared semantic colors for custom TUI components

@@ -174,11 +174,17 @@ func backstopPromptDescription(m MergedBackstopMatch) string {
 	return strings.Join(lines, "\n")
 }
 
+// NewMergedPromoteForm builds the per-match Promote/Skip confirm. Exported so
+// the pty harness (tests/tui/confirm_demo) drives the exact form a user sees.
+func NewMergedPromoteForm(title, description string, promote *bool) *huh.Form {
+	return huh.NewForm(huh.NewGroup(
+		huh.NewConfirm().Title(title).Description(description).Affirmative("Promote").Negative("Skip").Value(promote),
+	))
+}
+
 func confirmMergedPromote(ctx context.Context, title, description string) (bool, error) {
 	var promote bool
-	form := huh.NewForm(huh.NewGroup(
-		huh.NewConfirm().Title(title).Description(description).Affirmative("Promote").Negative("Skip").Value(&promote),
-	))
+	form := NewMergedPromoteForm(title, description, &promote)
 	if err := theme.RunForm(ctx, form); err != nil {
 		if theme.IsCancelled(err) {
 			return false, nil

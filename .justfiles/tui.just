@@ -202,6 +202,18 @@ pty-selector:
     "$venv_dir/bin/python" tests/tui/selector_pty.py "$demo"
     rm -f "$demo"
 
+# Drive the fresh merged-branch Promote/Skip confirm: the focused button is
+# marked in text, the marker follows focus, and Enter returns the marked choice.
+pty-confirm:
+    #!/usr/bin/env bash
+    set -euo pipefail
+    cd "{{root}}"
+    venv_dir="$(just tui venv)"
+    demo="$(mktemp "${TMPDIR:-/tmp}/camp-confirm-demo.XXXXXX")"
+    go build -o "$demo" ./tests/tui/confirm_demo
+    "$venv_dir/bin/python" tests/tui/confirm_pty.py "$demo"
+    rm -f "$demo"
+
 # Drive `camp intent add` in the container harness (not a host tempfile).
 pty-intent-add:
     #!/usr/bin/env bash
@@ -224,7 +236,7 @@ pty-switch:
     just test integration-run TestSwitch_BottomProximityTTY
 
 # Run every pty check.
-pty: pty-triage-review pty-machine-tailscale-check pty-machine-auth-denied pty-sweep-prompt pty-selector pty-intent-copy pty-intent-add pty-project-list pty-switch
+pty: pty-triage-review pty-machine-tailscale-check pty-machine-auth-denied pty-sweep-prompt pty-selector pty-intent-copy pty-intent-add pty-project-list pty-switch pty-confirm
 
 # Record one tape. The tape owns its output path and its fixture bootstrap.
 tape tape_path:
