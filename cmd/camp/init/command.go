@@ -48,7 +48,9 @@ Also creates:
   AGENTS.md     - AI agent instruction file
   CLAUDE.md     - Symlink to AGENTS.md
 
-Initializes a git repository if not already inside one.
+Initializes a git repository if not already inside one, then records the
+scaffold as the workspace's first commit. Inside an existing repository only
+the scaffold's own files are staged; unrelated changes are left alone.
 
 Camp metadata lives in the directory named .campaign/. That name is stable and
 Camp expects it, so do not rename it. The separate .camp file is an attachment
@@ -325,14 +327,19 @@ func RunFlow(ctx context.Context, p Params, w Writers, isInteractive bool) error
 		commitRepairChanges(ctx, result, opts.RepairPlan, migrationCount, skillsProjectedPaths, w)
 	}
 
-	// Initialize Festival Methodology (unless dry-run).
-	var festInitialized bool
+	// Initialize Festival Methodology (unless dry-run). festRan distinguishes
+	// "this invocation created festivals/" from "it was already there":
+	// InitializeFestivals reports true for both, and only the first belongs
+	// in the scaffold commit.
+	var festInitialized, festRan bool
 	if !p.DryRun {
+		festPresent := fest.IsInitialized(result.CampaignRoot)
 		var festErr error
 		festInitialized, festErr = InitializeFestivals(ctx, result.CampaignRoot, w)
 		if festErr != nil && !errors.Is(festErr, fest.ErrFestNotFound) {
 			return festErr
 		}
+		festRan = festInitialized && !festPresent
 	}
 
 	// Emit the campaign ledger event for the init/repair itself (D003 boundary:
@@ -345,6 +352,12 @@ func RunFlow(ctx context.Context, p Params, w Writers, isInteractive bool) error
 		}
 		ledger.NewFromRoot(ctx, result.CampaignRoot, ledger.WarnToStderr()).
 			Emit(ctx, kind, ledgerkit.Scope{})
+	}
+
+	// First commit of a new workspace. Repair has its own selective commit
+	// above; --no-git has no repository to commit into.
+	if !p.Repair && !p.DryRun && !p.NoGit {
+		commitInitialScaffold(ctx, result, skillsProjectedPaths, festRan, w)
 	}
 
 	// Print results

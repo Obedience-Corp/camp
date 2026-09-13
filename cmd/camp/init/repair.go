@@ -7,6 +7,7 @@ import (
 	"strings"
 
 	"github.com/Obedience-Corp/camp/internal/config"
+	"github.com/Obedience-Corp/camp/internal/git"
 	"github.com/Obedience-Corp/camp/internal/git/commit"
 	"github.com/Obedience-Corp/camp/internal/scaffold"
 	"github.com/Obedience-Corp/camp/internal/ui"
@@ -34,7 +35,11 @@ func commitRepairChanges(ctx context.Context, initResult *scaffold.InitResult, p
 	}
 
 	description := buildRepairCommitMessage(initResult, plan, migrationCount, skillPaths)
-	files := buildRepairCommitFiles(initResult, plan, skillPaths)
+	files, err := git.FilterIgnored(ctx, initResult.CampaignRoot, buildRepairCommitFiles(initResult, plan, skillPaths))
+	if err != nil {
+		writef(w.HumanOut, "\n%s repair commit skipped: %v\n", ui.WarningIcon(), err)
+		return
+	}
 
 	result := commit.Repair(ctx, commit.RepairOptions{
 		Options: commit.Options{

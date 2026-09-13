@@ -415,7 +415,7 @@ workitems/current.yaml
 				// Symlinks may fail on some systems, just note it
 				result.Skipped = append(result.Skipped, claudePath+" (symlink failed)")
 			} else {
-				result.FilesCreated = append(result.FilesCreated, claudePath+" -> AGENTS.md")
+				result.FilesCreated = append(result.FilesCreated, claudePath)
 			}
 		}
 	}

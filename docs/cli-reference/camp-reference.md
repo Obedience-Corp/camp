@@ -810,7 +810,7 @@ Create a new camp at the default camps directory
 
 ### Synopsis
 
-Create a new camp at <campaigns_dir>/<name>/, using the same scaffolding as 'camp init'. The default camps directory is ~/campaigns/ and can be configured via 'camp settings' or by editing the campaigns_dir field in ~/.obey/campaign/config.json.
+Create a new camp at <campaigns_dir>/<name>/, using the same scaffolding as 'camp init', and records the scaffold as the workspace's first commit. The default camps directory is ~/campaigns/ and can be configured via 'camp settings' or by editing the campaigns_dir field in ~/.obey/campaign/config.json.
 
 ```
 camp create <name> [flags]
@@ -3290,7 +3290,9 @@ Also creates:
   AGENTS.md     - AI agent instruction file
   CLAUDE.md     - Symlink to AGENTS.md
 
-Initializes a git repository if not already inside one.
+Initializes a git repository if not already inside one, then records the
+scaffold as the workspace's first commit. Inside an existing repository only
+the scaffold's own files are staged; unrelated changes are left alone.
 
 Camp metadata lives in the directory named .campaign/. That name is stable and
 Camp expects it, so do not rename it. The separate .camp file is an attachment
