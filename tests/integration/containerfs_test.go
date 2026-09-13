@@ -72,6 +72,8 @@ var containerFSPackages = []containerFSPackage{
 	// and the index scan adds worktrees on top of them.
 	{ImportPath: "./internal/project", MinTests: 3},
 	{ImportPath: "./internal/nav/index", MinTests: 2},
+	// The initial-commit tests git-init a campaign and commit its scaffold.
+	{ImportPath: "./cmd/camp/init", MinTests: 3},
 }
 
 // containerFSTag is the build tag gating host compilation of these suites.

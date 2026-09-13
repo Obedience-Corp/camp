@@ -19,7 +19,7 @@ import (
 var createCmd = &cobra.Command{
 	Use:   "create <name>",
 	Short: "Create a new camp at the default camps directory",
-	Long:  `Create a new camp at <campaigns_dir>/<name>/, using the same scaffolding as 'camp init'. The default camps directory is ~/campaigns/ and can be configured via 'camp settings' or by editing the campaigns_dir field in ~/.obey/campaign/config.json.`,
+	Long:  `Create a new camp at <campaigns_dir>/<name>/, using the same scaffolding as 'camp init', and records the scaffold as the workspace's first commit. The default camps directory is ~/campaigns/ and can be configured via 'camp settings' or by editing the campaigns_dir field in ~/.obey/campaign/config.json.`,
 	Example: `  camp create my-project
   camp create my-project -d "Description" -m "Mission"
   camp create my-project --path ~/Dev/sandbox
