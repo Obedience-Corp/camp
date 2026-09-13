@@ -25,8 +25,8 @@ const festivalsDir = "festivals"
 // waiting on init itself and a fresh repository with only a queued commit is
 // not a finished workspace. Failure is reported, never fatal: the scaffold is
 // on disk either way.
-func commitInitialScaffold(ctx context.Context, initResult *scaffold.InitResult, skillPaths []string, festInitialized bool, w Writers) {
-	files, err := git.FilterIgnored(ctx, initResult.CampaignRoot, buildInitCommitFiles(initResult, skillPaths, festInitialized))
+func commitInitialScaffold(ctx context.Context, initResult *scaffold.InitResult, skillPaths []string, festRan bool, w Writers) {
+	files, err := git.FilterIgnored(ctx, initResult.CampaignRoot, buildInitCommitFiles(initResult, skillPaths, festRan))
 	if err != nil {
 		writef(w.HumanOut, "\n%s initial commit skipped: %v\n", ui.WarningIcon(), err)
 		return
@@ -50,7 +50,7 @@ func commitInitialScaffold(ctx context.Context, initResult *scaffold.InitResult,
 			SelectiveOnly: true,
 			Synchronous:   true,
 		},
-		Description: buildInitCommitMessage(initResult, skillPaths, festInitialized),
+		Description: buildInitCommitMessage(initResult, skillPaths, festRan),
 	})
 
 	switch {
@@ -65,16 +65,17 @@ func commitInitialScaffold(ctx context.Context, initResult *scaffold.InitResult,
 }
 
 // buildInitCommitFiles returns the campaign-root-relative paths the scaffold
-// produced, including projected skill links and the festivals tree when fest
-// init ran. The caller drops gitignored entries (worktrees, ledger events)
+// produced, including projected skill links and the festivals tree only when
+// this invocation ran fest init (a pre-existing festivals/ tree is the user's,
+// not the scaffold's). The caller drops gitignored entries (worktrees, ledger events)
 // before staging, since git add refuses an explicitly named ignored path.
-func buildInitCommitFiles(initResult *scaffold.InitResult, skillPaths []string, festInitialized bool) []string {
+func buildInitCommitFiles(initResult *scaffold.InitResult, skillPaths []string, festRan bool) []string {
 	files := make([]string, 0, len(initResult.FilesCreated)+len(initResult.FilesModified)+len(initResult.DirsCreated)+len(skillPaths)+1)
 	files = append(files, initResult.FilesCreated...)
 	files = append(files, initResult.FilesModified...)
 	files = append(files, initResult.DirsCreated...)
 	files = append(files, skillPaths...)
-	if festInitialized {
+	if festRan {
 		files = append(files, festivalsDir)
 	}
 	return commit.NormalizeFiles(initResult.CampaignRoot, files...)
@@ -84,7 +85,7 @@ func buildInitCommitFiles(initResult *scaffold.InitResult, skillPaths []string, 
 // commit reads as a record of what camp init produced. Paths are campaign-root
 // relative; directories are counted rather than listed because git tracks the
 // files inside them, not the directories themselves.
-func buildInitCommitMessage(initResult *scaffold.InitResult, skillPaths []string, festInitialized bool) string {
+func buildInitCommitMessage(initResult *scaffold.InitResult, skillPaths []string, festRan bool) string {
 	var b strings.Builder
 	root := initResult.CampaignRoot
 
@@ -107,7 +108,7 @@ func buildInitCommitMessage(initResult *scaffold.InitResult, skillPaths []string
 	writeSection("Files updated", initResult.FilesModified)
 	writeSection("Skill links projected", skillPaths)
 
-	if festInitialized {
+	if festRan {
 		fmt.Fprintf(&b, "Festival Methodology initialized in %s/\n", festivalsDir)
 	}
 

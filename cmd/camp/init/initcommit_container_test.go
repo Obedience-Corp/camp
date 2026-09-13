@@ -109,7 +109,10 @@ func TestRunFlow_NoGitSkipsInitialCommit(t *testing.T) {
 }
 
 // Init inside an existing repository stages only the scaffold. A dirty
-// unrelated file stays out of the first camp commit.
+// unrelated file stays out of the first camp commit, and so does a festivals/
+// tree that was already fest-initialized before this init ran: that tree is
+// the user's, and InitializeFestivals reporting it present is not the same as
+// having created it.
 func TestRunFlow_InitInsideExistingRepoLeavesUnrelatedChangesAlone(t *testing.T) {
 	dir := newInitFixture(t, "nested-camp")
 	gitOut(t, dir, "init", "-q")
@@ -119,6 +122,13 @@ func TestRunFlow_InitInsideExistingRepoLeavesUnrelatedChangesAlone(t *testing.T)
 	gitOut(t, dir, "add", "notes.txt")
 	gitOut(t, dir, "commit", "-q", "-m", "user work")
 	if err := os.WriteFile(filepath.Join(dir, "notes.txt"), []byte("mine, edited\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	festDir := filepath.Join(dir, festivalsDir)
+	if err := os.MkdirAll(filepath.Join(festDir, ".festival"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(festDir, "draft.md"), []byte("untracked festival draft\n"), 0o644); err != nil {
 		t.Fatal(err)
 	}
 
@@ -141,10 +151,21 @@ func TestRunFlow_InitInsideExistingRepoLeavesUnrelatedChangesAlone(t *testing.T)
 	if got := gitOut(t, dir, "rev-list", "--count", "HEAD"); got != "2" {
 		t.Fatalf("commit count = %s, want 2 (user commit + init)", got)
 	}
-	if changed := gitOut(t, dir, "show", "--name-only", "--format=", "HEAD"); strings.Contains(changed, "notes.txt") {
+	changed := gitOut(t, dir, "show", "--name-only", "--format=", "HEAD")
+	if strings.Contains(changed, "notes.txt") {
 		t.Fatalf("init commit swept up the user's dirty file:\n%s", changed)
 	}
-	if status := gitOut(t, dir, "status", "--porcelain"); status != "M notes.txt" {
-		t.Fatalf("expected only the user's edit to remain dirty, got:\n%s", status)
+	if strings.Contains(changed, festivalsDir+"/") {
+		t.Fatalf("init commit swept up the pre-existing festivals/ tree:\n%s", changed)
+	}
+	body := gitOut(t, dir, "log", "-1", "--format=%b")
+	if strings.Contains(body, "Festival Methodology initialized") {
+		t.Fatalf("commit body claims to have initialized festivals it did not create:\n%s", body)
+	}
+	status := gitOut(t, dir, "status", "--porcelain")
+	for _, want := range []string{"M notes.txt", "?? " + festivalsDir + "/"} {
+		if !strings.Contains(status, want) {
+			t.Fatalf("expected %q to remain uncommitted, status:\n%s", want, status)
+		}
 	}
 }
