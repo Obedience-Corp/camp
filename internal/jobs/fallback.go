@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"strings"
+	"time"
 
 	"github.com/Obedience-Corp/camp/internal/autowrite"
 	camperrors "github.com/Obedience-Corp/camp/internal/errors"
@@ -26,6 +27,12 @@ import (
 //
 // So the tree wins over the subject. What lands is deterministic, derived from
 // the diff the job actually carries, and marked so the user can find it again.
+//
+// What changed since is when this runs, never whether. A writer that reports
+// itself temporarily unavailable buys the job a bounded wait first
+// (writerwait.go), because "the daemon is not up" is an outage rather than a
+// verdict on the commit. At the end of that window this is still what lands,
+// and the body says how long camp waited.
 
 // FallbackSubjectMarker tags the subject of a commit camp had to describe
 // itself, so `git log --oneline | grep` finds every one of them.
@@ -44,18 +51,70 @@ const maxFallbackSubject = 60
 // unavailable, so it may use only what git already knows. The body names the
 // cause because a background worker has no other way to tell anyone, and a
 // commit the user cannot explain later is its own small mystery.
-func fallbackMessage(ctx context.Context, repoPath string, job *Job, writerErr error) string {
+func fallbackMessage(ctx context.Context, repoPath string, job *Job, writerErr error, now time.Time) string {
+	return fallbackSubject(ctx, repoPath, job) + "\n\n" +
+		fallbackBody(writerFailureReason(writerErr), writerWaitSummary(job, writerErr, now))
+}
+
+// writerWaited says how long camp kept asking an unavailable writer before
+// giving up, or nil when it never waited at all.
+type writerWaited struct {
+	// For is the elapsed time since the first unavailable attempt.
+	For time.Duration
+	// Attempts is how many times the writer said it was unavailable.
+	Attempts int
+}
+
+// writerWaitSummary reconstructs the wait from the job document, and returns
+// nil when there was none.
+//
+// The attempt that is landing this commit counts only when it too found the
+// writer unavailable. A writer that was down for half an hour and then came
+// back broken did not go unreachable a final time, and a body that said so
+// would send the user looking for an outage that had already ended.
+func writerWaitSummary(job *Job, writerErr error, now time.Time) *writerWaited {
+	since, ok := jobTime(job.WriterUnavailableSince)
+	if !ok {
+		return nil
+	}
+	attempts := job.WriterAttempts
+	if autowrite.WriterUnavailable(writerErr) {
+		attempts++
+	}
+	return &writerWaited{For: max(now.Sub(since), 0).Round(time.Second), Attempts: attempts}
+}
+
+// fallbackBody renders everything under the subject of a degraded commit.
+//
+// Split from the git call above so the text a user is left with forever is
+// testable without a repository, the same reason fallbackSubjectFor is.
+func fallbackBody(reason string, waited *writerWaited) string {
 	var b strings.Builder
-	b.WriteString(fallbackSubject(ctx, repoPath, job))
-	b.WriteString("\n\ncamp wrote this message itself: the configured commit message\n")
+	b.WriteString("camp wrote this message itself: the configured commit message\n")
 	b.WriteString("writer did not return one.\n")
-	if reason := writerFailureReason(writerErr); reason != "" {
+	if waited != nil {
+		// Named in the commit because this is the only place it survives: the
+		// worker log is a cache file, and a user reading `git log` a week later
+		// has nothing else to tell "camp gave up instantly" from "camp waited
+		// an hour for your daemon and it never came back".
+		fmt.Fprintf(&b, "\ncamp waited for it: the writer was unreachable for %s across %s.\n",
+			waited.For, attemptPhrase(waited.Attempts))
+	}
+	if reason != "" {
 		b.WriteString("\n  ")
 		b.WriteString(reason)
 		b.WriteString("\n")
 	}
 	b.WriteString("\nReword it with: git commit --amend\n")
 	return b.String()
+}
+
+// attemptPhrase renders an attempt count in prose.
+func attemptPhrase(n int) string {
+	if n == 1 {
+		return "1 attempt"
+	}
+	return fmt.Sprintf("%d attempts", n)
 }
 
 // fallbackSubject names what the commit contains, in the shape a person scans.

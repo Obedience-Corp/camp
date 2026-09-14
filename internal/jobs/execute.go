@@ -337,7 +337,10 @@ func SpawnIfNeeded(ctx context.Context, campaignRoot, repo string) {
 	// Deliberately not exec.CommandContext: the child must outlive this
 	// process, which is the entire point of deferring. Setsid detaches it from
 	// the terminal so closing the shell does not take the worker with it.
-	cmd := exec.Command(exe, "jobs", "run", "--campaign", campaignRoot)
+	// --detached says nobody is watching this one, which is what earns it the
+	// right to wait for a message writer whose daemon is down. The same
+	// command run by a person in a terminal serves the queue without waiting.
+	cmd := exec.Command(exe, "jobs", "run", "--campaign", campaignRoot, "--detached")
 	detachProcess(cmd)
 	cmd.Stdin = nil
 	cmd.Stdout = logFile

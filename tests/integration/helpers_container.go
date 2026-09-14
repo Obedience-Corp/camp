@@ -418,8 +418,16 @@ func (tc *TestContainer) InitCampaign(path, name, campType string) (string, erro
 		return output, err
 	}
 
-	// Initialize campaign as git repo (required for submodule operations)
-	cmdStr := fmt.Sprintf("cd %s && git init && git add . && git commit -m 'Initial campaign setup'", path)
+	// Initialize campaign as git repo (required for submodule operations).
+	//
+	// `camp init` now creates the repository and commits the scaffold itself,
+	// so the staged set here is usually empty and `git commit` would exit 1
+	// with "nothing to commit" — failing every test that stages a campaign for
+	// a reason that is the setup having already succeeded. Commit only what is
+	// actually left over.
+	cmdStr := fmt.Sprintf(
+		"cd %s && git init -q && git add . && "+
+			"{ git diff --cached --quiet || git commit -q -m 'Initial campaign setup'; }", path)
 	exitCode, reader, gitErr := tc.exec(tc.ctx, []string{"sh", "-c", cmdStr})
 	if gitErr != nil {
 		return output, fmt.Errorf("failed to init git repo: %w", gitErr)

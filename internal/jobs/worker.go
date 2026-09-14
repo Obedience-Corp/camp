@@ -11,6 +11,7 @@ import (
 	"sync/atomic"
 	"time"
 
+	camperrors "github.com/Obedience-Corp/camp/internal/errors"
 	"github.com/Obedience-Corp/camp/internal/git"
 )
 
@@ -119,11 +120,46 @@ func runLane(ctx context.Context, campaignRoot, repo string) (served bool) {
 				break
 			}
 			if job == nil {
-				break // lane drained
+				// Empty, or the head of the lane is waiting for a message
+				// writer that is not answering. Sleeping through that wait is
+				// what makes the fallback inevitable without anyone running
+				// camp again: the lane lock stays warm, so nothing spawns a
+				// second worker, and the commit lands on its own.
+				until, waiting := laneWaitUntil(campaignRoot, repo)
+				if !waiting {
+					break // lane drained
+				}
+				if !waitForClaim(ctx, campaignRoot, repo, until) {
+					lock.release()
+					return served
+				}
+				continue
 			}
 
 			logWorker(campaignRoot, "claimed lane=%s seq=%d id=%s kind=%s", repo, job.Seq, job.ID, job.Kind)
 			execErr := executeJob(ctx, campaignRoot, job)
+
+			// A writer that is temporarily unavailable is not a verdict on
+			// this job, so the job goes back to pending with nothing counted
+			// against it rather than to failed/. Handled before the follow-up
+			// and the completion because neither applies: no commit was made,
+			// so there is nothing to record and nothing to report.
+			var wait *writerWaitError
+			if camperrors.As(execErr, &wait) {
+				if err := deferForWriter(campaignRoot, repo, job, wait); err != nil {
+					// The job stays in running/ rather than being completed,
+					// which is the same answer requeueJobFile gives to the
+					// same problem: an unreadable or unwritable job is left
+					// where the next reclaim will find it. Completing it here
+					// would unlink a commit nobody has made.
+					logWorker(campaignRoot, "writer-defer-error lane=%s id=%s err=%v", repo, job.ID, err)
+					break
+				}
+				if err := complete(nil); err != nil {
+					logWorker(campaignRoot, "complete-error lane=%s id=%s err=%v", repo, job.ID, err)
+				}
+				continue
+			}
 			// The follow-up is made durable before the parent is completed.
 			//
 			// Completing unlinks the parent's queue file. Enqueuing after that

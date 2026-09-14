@@ -77,6 +77,16 @@ type CommitMessageHookConfig struct {
 	// it; a worker's writer has nobody watching, so an unbounded one holds a
 	// lane, and every drain behind it, until someone notices.
 	Timeout string `yaml:"timeout,omitempty"`
+	// RetryWindow is how long a deferred commit keeps asking a writer that
+	// reports itself temporarily unavailable (exit 75), as a Go duration
+	// ("1h", "10m"). Empty takes autowrite.DefaultRetryWindow; "0" turns the
+	// wait off and lands the commit with a message camp wrote itself.
+	//
+	// It is not a second timeout. The timeout bounds one run of a writer that
+	// is answering; this bounds how long camp keeps a captured commit waiting
+	// for a writer that is not there at all, which is a daemon outage rather
+	// than a slow message.
+	RetryWindow string `yaml:"retry_window,omitempty"`
 }
 
 // ConceptEntry defines a concept for the picker with ordering and depth control.

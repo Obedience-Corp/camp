@@ -50,12 +50,33 @@ func Claim(ctx context.Context, campaignRoot, repo string) (*Job, func(error) er
 		}
 	}
 
+	now := time.Now()
 	for _, name := range names {
 		if ctx.Err() != nil {
 			return nil, nil, ctx.Err()
 		}
 		src := filepath.Join(pendingDir, name)
 		dst := filepath.Join(runningDir, name)
+
+		// A job waiting for an unavailable message writer holds the lane
+		// rather than being stepped over. Sequence order inside a lane is the
+		// ordering contract the whole queue rests on: a deferred push runs
+		// after the commits it was queued behind because it is numbered after
+		// them, and claiming past a waiting job would publish a branch missing
+		// the commit that is still waiting for its subject.
+		//
+		// Unless something is blocked on the lane, in which case the wait is
+		// over by definition and the job is due now. That is the only way the
+		// wait can end early, and it has to be decided here rather than by
+		// rewriting the job: a foreground command editing a pending file races
+		// this rename, and a half-written document in running/ is the one
+		// failure this queue cannot recover from.
+		if job, err := readJob(src); err == nil {
+			if _, waiting := claimableAt(job, now); waiting &&
+				!laneWanted(QueueDir(campaignRoot), LaneSlug(repo)) {
+				return nil, nil, nil
+			}
+		}
 
 		if err := os.Rename(src, dst); err != nil {
 			if os.IsNotExist(err) {
@@ -284,11 +305,22 @@ func RequeueRunning(campaignRoot, repo string) (int, error) {
 // put a job they cannot parse, and leaving it is what lets the next reclaim try
 // again.
 func requeueJobFile(pendingDir, runningPath, name string) bool {
+	return moveToPending(pendingDir, runningPath, name, func(job *Job) { job.Attempts++ })
+}
+
+// moveToPending writes a running job back to pending with mutate applied, and
+// reports whether it moved.
+//
+// Shared by the two reasons a claimed job goes back: crash recovery, which
+// counts an attempt, and a wait for an unavailable message writer, which
+// counts nothing. What they must not differ on is the ordering above, so it
+// lives here once rather than being reimplemented alongside each reason.
+func moveToPending(pendingDir, runningPath, name string, mutate func(*Job)) bool {
 	job, err := readJob(runningPath)
 	if err != nil {
 		return false
 	}
-	job.Attempts++
+	mutate(job)
 	data, err := json.MarshalIndent(job, "", "  ")
 	if err != nil {
 		return false
@@ -300,4 +332,23 @@ func requeueJobFile(pendingDir, runningPath, name string) bool {
 		return false
 	}
 	return true
+}
+
+// laneWaitUntil reports when a lane's next job may be claimed, and whether it
+// is waiting at all.
+//
+// The worker asks it after a claim comes back empty, which is the one moment
+// the two answers "the lane is drained" and "the lane's turn has not come"
+// have to be told apart: the first means go away, the second means come back.
+func laneWaitUntil(campaignRoot, repo string) (time.Time, bool) {
+	dir := laneDir(campaignRoot, statePending, repo)
+	names, err := sortedJobFiles(dir)
+	if err != nil || len(names) == 0 {
+		return time.Time{}, false
+	}
+	job, err := readJob(filepath.Join(dir, names[0]))
+	if err != nil {
+		return time.Time{}, false
+	}
+	return claimableAt(job, time.Now())
 }

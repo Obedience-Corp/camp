@@ -172,8 +172,15 @@ func commentedHooksPlaceholder() []byte {
 #     # a local model.
 #     command: ob commit --print-session-id
 #     # How long a deferred run of that command may take before camp stops it
-#     # and parks the job in failed/. Foreground runs are not bounded: you are
-#     # watching those and can interrupt them yourself. Default 12m.
+#     # and writes the commit message itself. Foreground runs are not bounded:
+#     # you are watching those and can interrupt them yourself. Default 12m.
 #     timeout: 12m
+#     # How long a deferred commit keeps asking a writer that says it is
+#     # temporarily unavailable — exit 75, which is how a writer reports that
+#     # its daemon is down rather than that it failed. Camp retries with a
+#     # backoff for this long, then writes the message itself so the commit
+#     # still lands. The wait also ends the moment any camp command needs the
+#     # queue. Default 1h; "0" writes the message immediately.
+#     retry_window: 1h
 `)
 }

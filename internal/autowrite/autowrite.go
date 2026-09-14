@@ -6,6 +6,24 @@
 // commitkit already imports internal/jobs for DrainJobs. Extracting the
 // implementation here is what breaks that cycle; pkg/commitkit re-exports it
 // unchanged, so the public API is exactly what it was.
+//
+// # The exit-75 contract
+//
+// Camp is writer-agnostic: the configured command is run as written and its
+// stdout is the message. That leaves one thing a writer cannot otherwise say,
+// and it is the thing that matters most to a deferred commit: "ask me again
+// later". A writer backed by a daemon is unavailable for reasons that say
+// nothing about the commit — the daemon is down, the machine just rebooted, a
+// model is still loading — and a writer that ran and produced nothing usable is
+// a different fact entirely.
+//
+// So a writer that exits 75 (EX_TEMPFAIL from sysexits.h) is saying it is
+// temporarily unavailable, and camp keeps the job rather than describing the
+// commit itself. Every other non-zero exit, a timeout, an empty message, and a
+// command that is not installed all keep the old behavior: camp writes the
+// message (see internal/jobs/fallback.go) and the commit lands immediately.
+//
+// The bound on that patience is hooks.commit_message.retry_window.
 package autowrite
 
 import (
@@ -62,18 +80,59 @@ type WriterError struct {
 	// Reason is the writer's own last diagnostic line: sanitized, single
 	// line, bounded. Empty when the writer said nothing.
 	Reason string
+	// Unavailable reports that the writer said it was temporarily unavailable
+	// (ExitWriterUnavailable) rather than that it ran and could not write a
+	// message. The queue treats the two differently: an unavailable writer is
+	// worth asking again, a failed one is not.
+	Unavailable bool
 	// Err is the underlying failure.
 	Err error
 }
 
 func (e *WriterError) Error() string {
-	if e.Reason == "" {
-		return "auto-write commit message command failed"
+	subject := "auto-write commit message command failed"
+	if e.Unavailable {
+		subject = "the commit message writer is temporarily unavailable"
 	}
-	return "auto-write commit message command failed: " + e.Reason
+	if e.Reason == "" {
+		return subject
+	}
+	return subject + ": " + e.Reason
 }
 
 func (e *WriterError) Unwrap() error { return e.Err }
+
+// ExitWriterUnavailable is the exit status a writer uses to say it is
+// temporarily unavailable rather than broken: EX_TEMPFAIL from sysexits.h.
+//
+// Standard rather than invented, because the writer is somebody else's program
+// and the contract has to be one its author can look up. A shell propagates the
+// status of the command it ran, so a writer configured through one still
+// reports it.
+const ExitWriterUnavailable = 75
+
+// WriterUnavailable reports whether err is a writer that said it was
+// temporarily unavailable.
+//
+// The queue asks this to decide whether a deferred commit waits or lands with
+// a message camp wrote itself, so it is the whole of the exit-75 contract as
+// far as callers are concerned.
+func WriterUnavailable(err error) bool {
+	var writerErr *WriterError
+	return errors.As(err, &writerErr) && writerErr.Unavailable
+}
+
+// writerExitStatus returns the exit status of a failed run, and whether the
+// failure was an exit status at all. A writer killed by a signal reports -1,
+// which is not a status any contract can be built on.
+func writerExitStatus(err error) (int, bool) {
+	var exitErr *exec.ExitError
+	if !errors.As(err, &exitErr) {
+		return 0, false
+	}
+	code := exitErr.ExitCode()
+	return code, code >= 0
+}
 
 // maxWriterReasonBytes bounds the writer diagnostic camp repeats.
 //
@@ -141,6 +200,17 @@ const DefaultWriterTimeout = 12 * time.Minute
 // cover the wait too, or it is not a bound.
 const writerWaitDelay = 2 * time.Second
 
+// DefaultRetryWindow is how long a deferred commit waits for a writer that
+// reports itself unavailable before camp describes the commit itself.
+//
+// An hour because the outage this exists for is a daemon that is not up, and
+// the thing that ends it is a person noticing — a reboot finishing, a service
+// restarting, a laptop coming back from sleep. Minutes are too short to cover
+// any of those, and a commit that waited an hour for its real message is still
+// a commit that landed today. Nothing is at risk while it waits: the tree is
+// captured, and the wait ends the moment anything needs the queue.
+const DefaultRetryWindow = time.Hour
+
 // CommitMessageHook is the configured commit message writer command.
 type CommitMessageHook struct {
 	// Command is executed as-written from the target repository.
@@ -149,6 +219,11 @@ type CommitMessageHook struct {
 	// DefaultWriterTimeout, so a caller that honors this field cannot end up
 	// running the writer unbounded by forgetting to check for zero.
 	Timeout time.Duration
+	// RetryWindow is how long a deferred job keeps asking a writer that
+	// reports itself unavailable (ExitWriterUnavailable) before camp writes
+	// the message itself. Zero disables the wait, which is the behavior camp
+	// had before the exit-75 contract existed.
+	RetryWindow time.Duration
 }
 
 // LoadCommitMessageHook loads hooks.commit_message from campaign config.
@@ -172,7 +247,37 @@ func LoadCommitMessageHook(ctx context.Context, campaignRoot string) (*CommitMes
 		return nil, err
 	}
 
-	return &CommitMessageHook{Command: command, Timeout: timeout}, nil
+	window, err := parseRetryWindow(cfg.Hooks.CommitMessage.RetryWindow)
+	if err != nil {
+		return nil, err
+	}
+
+	return &CommitMessageHook{Command: command, Timeout: timeout, RetryWindow: window}, nil
+}
+
+// parseRetryWindow resolves how long an unavailable writer is waited for.
+//
+// Unlike the timeout, zero is a real answer here and "0" is how it is spelled:
+// it turns the wait off and restores the immediate fallback. Negative is not,
+// because a window that has already expired before it starts is a typo for
+// either the default or zero and camp cannot tell which.
+func parseRetryWindow(raw string) (time.Duration, error) {
+	trimmed := strings.TrimSpace(raw)
+	if trimmed == "" {
+		return DefaultRetryWindow, nil
+	}
+	d, err := time.ParseDuration(trimmed)
+	if err != nil {
+		return 0, camperrors.NewValidation("hooks.commit_message.retry_window",
+			"must be a duration such as \"1h\", or \"0\" to fall back immediately, got "+
+				strconv.Quote(raw), err)
+	}
+	if d < 0 {
+		return 0, camperrors.NewValidation("hooks.commit_message.retry_window",
+			"must not be negative, got "+strconv.Quote(raw)+
+				"; \"0\" is how you spell \"do not wait for the writer\"", nil)
+	}
+	return d, nil
 }
 
 // parseWriterTimeout resolves the configured bound, defaulting when unset.
@@ -397,10 +502,17 @@ func runCommitMessageCommand(
 		// streamed live to diagnosticOut, so repeating it here would render a
 		// failing writer's help text twice in the same log with nothing to
 		// distinguish the copies.
+		//
+		// The status is read after the cases above rather than before them: a
+		// writer killed at its timeout, or one whose output survived a stray
+		// grandchild, is already answered, and only a writer that chose its own
+		// exit status gets to claim it is merely unavailable.
+		status, ok := writerExitStatus(err)
 		return "", &WriterError{
-			Command: command,
-			Reason:  writerReason(stderr.String()),
-			Err:     err,
+			Command:     command,
+			Reason:      writerReason(stderr.String()),
+			Unavailable: ok && status == ExitWriterUnavailable,
+			Err:         err,
 		}
 	}
 

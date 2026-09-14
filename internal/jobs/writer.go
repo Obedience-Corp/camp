@@ -5,6 +5,7 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"time"
 
 	"github.com/Obedience-Corp/camp/internal/autowrite"
 	camperrors "github.com/Obedience-Corp/camp/internal/errors"
@@ -37,6 +38,12 @@ import (
 // camp describes the commit itself (see fallback.go) and lands it. Only a job
 // document with no message and no writer to ask is an error, because that is a
 // malformed job rather than a tool that was unavailable.
+//
+// The one thing that does not land immediately is a writer that says it is
+// temporarily unavailable rather than broken. That returns a writerWaitError,
+// which is not a failure either: the worker puts the job back and asks again
+// later, until hooks.commit_message.retry_window is spent or something needs
+// the lane. See writerwait.go.
 func messageForTree(ctx context.Context, campaignRoot, repoPath string, job *Job) (string, error) {
 	if !job.AutoWrite {
 		if strings.TrimSpace(job.Message) == "" {
@@ -54,10 +61,21 @@ func messageForTree(ctx context.Context, campaignRoot, repoPath string, job *Job
 		err = autowrite.ErrCommitMessageHookEmptyOutput
 	}
 	if err != nil {
-		// The worker is detached, so this line and the commit body are the only
-		// places the degradation is recorded where anyone will find it.
+		// Two different lines because they are two different events, and the
+		// worker log is the only place either is recorded. A writer that is
+		// down is a job still coming; a degraded one is a subject the user is
+		// stuck with. One name for both leaves nothing to grep on the morning
+		// a whole night of commits arrives unlabelled.
+		if wait := writerWait(ctx, campaignRoot, job, err, time.Now()); wait != nil {
+			logWorker(campaignRoot,
+				"writer-unavailable lane=%s id=%s attempt=%d retry_in=%s falls_back_at=%s err=%v",
+				job.Repo, job.ID, wait.Attempts,
+				time.Until(wait.RetryAt).Round(time.Second),
+				wait.FallbackAt.Local().Format("15:04:05"), err)
+			return "", wait
+		}
 		logWorker(campaignRoot, "writer-degraded lane=%s id=%s err=%v", job.Repo, job.ID, err)
-		message = fallbackMessage(ctx, repoPath, job, err)
+		message = fallbackMessage(ctx, repoPath, job, err, time.Now())
 	}
 
 	// The tag goes on the subject line, which is why it is prepended here
