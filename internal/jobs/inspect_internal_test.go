@@ -230,7 +230,7 @@ func TestAttemptNote(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			if got := AttemptNote(tt.attempts, tt.failed); got != tt.want {
+			if got := AttemptNote(Job{Attempts: tt.attempts}, tt.failed); got != tt.want {
 				t.Errorf("AttemptNote(%d, %v) = %q, want %q",
 					tt.attempts, tt.failed, got, tt.want)
 			}
@@ -241,7 +241,7 @@ func TestAttemptNote(t *testing.T) {
 // A failed job's forward-looking count would exceed the bound it already hit,
 // so the two must never render the same way.
 func TestAttemptNoteNeverExceedsTheBound(t *testing.T) {
-	got := AttemptNote(MaxAttempts, true)
+	got := AttemptNote(Job{Attempts: MaxAttempts}, true)
 	if got == "attempt 4 of 3" {
 		t.Fatalf("AttemptNote = %q; a parked job must not describe a run that will never happen", got)
 	}

@@ -256,7 +256,7 @@ func refusal(e *jobs.DrainTimeoutError, mode Mode) string {
 		fmt.Fprintf(&b, "  %s", jobs.Describe(job))
 		// Never failed here: a drain only ever waits on pending and running
 		// jobs, so the count is always forward-looking.
-		if note := jobs.AttemptNote(job.Attempts, false); note != "" {
+		if note := jobs.AttemptNote(job, false); note != "" {
 			fmt.Fprintf(&b, " (%s)", note)
 		}
 		b.WriteString("\n")

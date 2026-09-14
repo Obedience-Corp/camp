@@ -53,7 +53,7 @@ func TestExecutionFailureRecordsTheAttempt(t *testing.T) {
 	// The count the user reads and the count a script reads are the same
 	// count, and the copy must not imply a crash-reclaim budget this job
 	// never spent.
-	note := AttemptNote(failed[0].Attempts, true)
+	note := AttemptNote(failed[0], true)
 	if note != "failed after 1 attempt" {
 		t.Errorf("AttemptNote(%d, true) = %q, want it to agree with the "+
 			"recorded count without claiming unused retries", failed[0].Attempts, note)

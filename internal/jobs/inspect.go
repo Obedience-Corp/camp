@@ -314,6 +314,14 @@ func Retry(ctx context.Context, campaignRoot, selector string) ([]Job, error) {
 		// its last attempt failed would report a failure that has not happened
 		// yet.
 		job.LastError = ""
+		// So does a wait for a writer that was down, and for the same reason
+		// twice over: the outage is as much history as the failure, and a
+		// retry the user asked for now must not sit out a backoff that was
+		// scheduled before they asked.
+		job.NotBefore = ""
+		job.WriterUnavailableSince = ""
+		job.WriterFallbackAt = ""
+		job.WriterAttempts = 0
 		pendingDir := laneDir(campaignRoot, statePending, job.Repo)
 		if err := os.MkdirAll(pendingDir, 0o755); err != nil {
 			return camperrors.Wrapf(err, "create pending lane %s", pendingDir)

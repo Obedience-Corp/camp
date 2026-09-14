@@ -215,6 +215,37 @@ type Job struct {
 	Branch string `json:"branch,omitempty"`
 	// CreatedAt is the enqueuing process's clock, RFC3339 with millis.
 	CreatedAt string `json:"created_at"`
+	// NotBefore is the earliest a worker may claim this job, in CreatedAt's
+	// layout. Empty means now, which is every job the queue has ever written
+	// except one waiting for a message writer that is temporarily unavailable.
+	//
+	// Claim honors it at the head of the lane and stops there rather than
+	// looking further down: sequence order inside a lane is the queue's
+	// ordering contract, and a job that ran ahead of an earlier one would
+	// break the barrier a deferred push depends on.
+	NotBefore string `json:"not_before,omitempty"`
+	// WriterUnavailableSince is when the first attempt found the message
+	// writer temporarily unavailable, in CreatedAt's layout.
+	//
+	// It is the elapsed time a degraded commit reports, so the message says
+	// how long camp waited rather than merely that it gave up.
+	WriterUnavailableSince string `json:"writer_unavailable_since,omitempty"`
+	// WriterFallbackAt is when camp stops waiting for the writer and describes
+	// the commit itself, in CreatedAt's layout.
+	//
+	// Recorded rather than recomputed from the window on each attempt so the
+	// deadline a listing shows is the deadline the worker will act on, and so
+	// editing hooks.commit_message.retry_window cannot move the goalposts
+	// under a commit that is already waiting.
+	WriterFallbackAt string `json:"writer_fallback_at,omitempty"`
+	// WriterAttempts counts how many times the writer has been asked and
+	// reported itself unavailable.
+	//
+	// Deliberately not Attempts. That budget is crash recovery, and a writer
+	// whose daemon is down says nothing about whether this job can run; a job
+	// that spent it waiting for an outage would be parked for somebody else's
+	// problem, which is the exact loss the fallback exists to prevent.
+	WriterAttempts int `json:"writer_attempts,omitempty"`
 	// Attempts counts how many times this job has been claimed.
 	Attempts int `json:"attempts"`
 	// LastError is why the most recent attempt failed, recorded when the job

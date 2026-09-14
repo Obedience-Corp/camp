@@ -119,6 +119,7 @@ they describe, so they are correct whenever they land.`,
 
 var jobsOpts struct {
 	campaign    string
+	detached    bool
 	json        bool
 	running     bool
 	plain       bool
@@ -130,6 +131,13 @@ func init() {
 	// which campaign to serve rather than detecting one.
 	jobsRunCmd.Flags().StringVar(&jobsOpts.campaign, "campaign", "",
 		"Camp root to serve (defaults to the detected camp)")
+	// Hidden, and only ever passed by the spawn: it says nobody is watching
+	// this run. A worker with nobody watching may wait out a commit message
+	// writer whose daemon is down; one a person started in their terminal may
+	// not, because that wait would be spending their time.
+	jobsRunCmd.Flags().BoolVar(&jobsOpts.detached, "detached", false,
+		"Serve as a background worker started by camp itself")
+	_ = jobsRunCmd.Flags().MarkHidden("detached")
 	jobsCmd.Flags().BoolVar(&jobsOpts.json, "json", false,
 		"Emit a structured JSON result")
 	jobsCmd.Flags().BoolVar(&jobsOpts.plain, "plain", false,
@@ -160,12 +168,12 @@ type jobsPayload struct {
 // jobJSON is one row. The fields are what a caller needs to decide what to do:
 // which job, where, how old, how many attempts have started, and whether anyone is on it.
 type jobJSON struct {
-	ID       string `json:"id"`
-	Seq      int    `json:"seq"`
-	State    string `json:"state"`
-	Lane     string `json:"lane"`
-	Kind     string `json:"kind"`
-	Class    string `json:"class"`
+	ID    string `json:"id"`
+	Seq   int    `json:"seq"`
+	State string `json:"state"`
+	Lane  string `json:"lane"`
+	Kind  string `json:"kind"`
+	Class string `json:"class"`
 	// CreatedAt is the enqueue timestamp from the job file (UTC, RFC3339 with
 	// millis). AgeMs is derived from it; keeping both means a consumer can
 	// show "when" without re-deriving from age_ms and wall clock.
@@ -190,8 +198,21 @@ type jobJSON struct {
 	// Superseded marks a failed job that retrying can never fix, because
 	// history moved past the commit it was queued against. An agent reading
 	// this queue needs it to pick 'drop' over 'retry' without first failing.
-	Superseded bool   `json:"superseded"`
-	Summary    string `json:"summary"`
+	Superseded bool `json:"superseded"`
+	// WriterAttempts is how many times this job's commit message writer has
+	// reported itself temporarily unavailable, and WriterFallbackAt is when
+	// camp stops waiting and writes the message itself. Both are absent unless
+	// the job is waiting.
+	//
+	// They are not attempts: an unavailable writer spends none of the
+	// crash-recovery budget in attempts, so an agent that summed the two would
+	// report a job as nearly given up on when nothing has gone wrong with it.
+	WriterAttempts   int    `json:"writer_attempts,omitempty"`
+	WriterFallbackAt string `json:"writer_fallback_at,omitempty"`
+	// WriterRetryAt is when the next attempt at the writer may start. Absent
+	// when the job is not waiting, or is due now.
+	WriterRetryAt string `json:"writer_retry_at,omitempty"`
+	Summary       string `json:"summary"`
 	// LastError is why the most recent attempt failed, as the worker recorded
 	// it when it parked the job. Empty for anything not parked, and prose
 	// rather than a code: it is there to be read, not matched on.
@@ -257,22 +278,25 @@ func emitJobsJSON(cmd *cobra.Command, campRoot string, entries []jobs.Entry, sup
 			class = string(jobs.ClassCommit)
 		}
 		payload.Jobs = append(payload.Jobs, jobJSON{
-			ID:            e.ID,
-			Seq:           e.Seq,
-			State:         e.State,
-			Lane:          e.Lane,
-			Kind:          string(e.Kind),
-			Class:         class,
-			CreatedAt:     e.CreatedAt,
-			AgeMs:         e.Age(now).Milliseconds(),
-			Attempts:      e.Attempts,
-			Stuck:         e.Stuck,
-			RunningMs:     e.RunningFor.Milliseconds(),
-			Stalled:       e.Stalled,
-			StalledReason: e.StalledReason,
-			Superseded:    superseded[e.ID],
-			Summary:       jobs.Describe(e.Job),
-			LastError:     e.LastError,
+			ID:               e.ID,
+			Seq:              e.Seq,
+			State:            e.State,
+			Lane:             e.Lane,
+			Kind:             string(e.Kind),
+			Class:            class,
+			CreatedAt:        e.CreatedAt,
+			AgeMs:            e.Age(now).Milliseconds(),
+			Attempts:         e.Attempts,
+			Stuck:            e.Stuck,
+			RunningMs:        e.RunningFor.Milliseconds(),
+			Stalled:          e.Stalled,
+			StalledReason:    e.StalledReason,
+			Superseded:       superseded[e.ID],
+			WriterAttempts:   e.WriterAttempts,
+			WriterFallbackAt: e.WriterFallbackAt,
+			WriterRetryAt:    e.NotBefore,
+			Summary:          jobs.Describe(e.Job),
+			LastError:        e.LastError,
 		})
 	}
 
@@ -296,7 +320,7 @@ func jobsWhat(e jobs.Entry, superseded bool) string {
 	case e.State == "running":
 		notes = append(notes, "running "+jobs.ShortDuration(e.RunningFor))
 	}
-	if note := jobs.AttemptNote(e.Attempts, e.State == "failed"); note != "" {
+	if note := jobs.AttemptNote(e.Job, e.State == "failed"); note != "" {
 		notes = append(notes, note)
 	}
 	if superseded {
@@ -451,6 +475,15 @@ func runJobsRun(cmd *cobra.Command, _ []string) error {
 			return camperrors.Wrap(err, "not in a camp")
 		}
 		campRoot = detected
+	}
+
+	// A person ran this and is waiting for it, so nothing it serves may stop to
+	// wait for an unavailable message writer: finishing the queue is what they
+	// asked for, and a commit camp described itself is how that finishes when
+	// the writer is not there. The detached worker skips this, because the
+	// whole value of the wait is that it costs nobody anything.
+	if !jobsOpts.detached {
+		defer jobs.KeepWanted(ctx, campRoot)()
 	}
 
 	// Silent on success, including when there was nothing to do. This runs

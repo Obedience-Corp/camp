@@ -167,6 +167,7 @@ func drainWith(ctx context.Context, campaignRoot, label string, opts DrainOption
 		announced    bool
 		lastProgress time.Time
 		lastSpawn    = time.Now()
+		lastWanted   time.Time
 		poll         = drainPollMin
 	)
 	for {
@@ -178,6 +179,16 @@ func drainWith(ctx context.Context, campaignRoot, label string, opts DrainOption
 		}
 		if poll < drainPollMax {
 			poll = min(poll*2, drainPollMax)
+		}
+
+		// A command is now blocked on these lanes, which is the fact a worker
+		// waiting out an unavailable message writer cannot otherwise learn.
+		// Marked from inside the loop rather than before it, so the drain that
+		// finds the queue already empty — the common one, on every camp
+		// command — costs a worker nothing.
+		if time.Since(lastWanted) >= wantedMarkEvery {
+			MarkWanted(campaignRoot, blocking)
+			lastWanted = time.Now()
 		}
 
 		blocking, err = outstanding()
@@ -382,14 +393,27 @@ func Describe(job Job) string {
 	return string(job.Kind) + " in " + job.Repo
 }
 
-// AttemptNote renders a job's attempt count, or "" when there is nothing worth
-// saying.
+// AttemptNote renders what a job's run history is worth saying, or "" when it
+// is nothing.
 //
 // Pending jobs count forward against the crash-reclaim budget (MaxAttempts).
 // Failed jobs that spent that budget say they gave up. Execution failures park
 // after one run and must not borrow the crash copy: "gave up after 1 attempt"
 // next to a budget of 3 reads as two unused retries.
-func AttemptNote(attempts int, failed bool) string {
+//
+// A job waiting for an unavailable message writer says that instead, and says
+// all of it: which attempt, when the next one is, and when camp stops waiting.
+// The alternative was a row reading "pending" for an hour with nothing to
+// explain why, which is how a queue teaches people to distrust it. That count
+// is deliberately not rendered as an attempt "of" anything, because it spends
+// no budget and has no maximum.
+func AttemptNote(job Job, failed bool) string {
+	if !failed {
+		if note := writerWaitNote(&job, time.Now()); note != "" {
+			return note
+		}
+	}
+	attempts := job.Attempts
 	switch {
 	case failed && attempts >= MaxAttempts:
 		if attempts <= 1 {
@@ -405,6 +429,21 @@ func AttemptNote(attempts int, failed bool) string {
 	default:
 		return fmt.Sprintf("attempt %d of %d", attempts+1, MaxAttempts)
 	}
+}
+
+// writerWaitNote describes a job waiting out an unavailable message writer.
+//
+// Rendered as plain clauses rather than a parenthesised phrase because every
+// caller already wraps the note in parentheses of its own, and a row reading
+// "(waiting (attempt 3, ...))" costs the reader a bracket-matching exercise to
+// learn one fact.
+func writerWaitNote(job *Job, now time.Time) string {
+	retryIn, fallbackAt, waiting := waitingForWriter(job, now)
+	if !waiting {
+		return ""
+	}
+	return fmt.Sprintf("waiting for the message writer, attempt %d, retrying in %s, falls back at %s",
+		job.WriterAttempts+1, ShortDuration(retryIn), fallbackAt.Local().Format("15:04"))
 }
 
 // firstLine returns the first non-empty line of a message, trimmed.
