@@ -143,6 +143,7 @@ func buildTheme(p brand.Palette) *huh.Theme {
 
 	// Style focused elements
 	t.Focused.Title = t.Focused.Title.Foreground(title).Bold(true)
+	t.Focused.Base = t.Focused.Base.BorderForeground(focus)
 	t.Focused.FocusedButton = t.Focused.FocusedButton.Foreground(color(p.SurfaceBase)).Background(selected).Bold(true)
 	t.Focused.BlurredButton = t.Focused.BlurredButton.Foreground(placeholder).Background(color(p.SurfaceRaised))
 	t.Focused.Description = t.Focused.Description.Foreground(description)
@@ -152,6 +153,9 @@ func buildTheme(p brand.Palette) *huh.Theme {
 	t.Focused.ErrorMessage = t.Focused.ErrorMessage.Foreground(errorColor)
 	t.Focused.TextInput.Placeholder = t.Focused.TextInput.Placeholder.Foreground(placeholder)
 	t.Focused.TextInput.Text = t.Focused.TextInput.Text.Foreground(title)
+	t.Focused.TextInput.Prompt = t.Focused.TextInput.Prompt.Foreground(selected)
+	t.Focused.TextInput.Cursor = t.Focused.TextInput.Cursor.Foreground(focus)
+	t.Focused.TextInput.CursorText = t.Focused.TextInput.CursorText.Foreground(title)
 
 	// Style blurred elements (non-focused fields in multi-field forms)
 	t.Blurred.Title = t.Blurred.Title.Foreground(placeholder)
@@ -202,7 +206,14 @@ type TUIPalette struct {
 // TUI returns the shared adaptive TUI palette.
 // Use this for all custom TUI components to ensure consistent theming.
 func TUI() TUIPalette {
-	p := CurrentPalette()
+	return TUIForTheme(ThemeAdaptive)
+}
+
+// TUIForTheme returns the shared adaptive TUI palette for a resolved theme.
+// Unlike TUI, callers that already have a context should pass the effective
+// configured theme so custom output matches huh forms in the same command.
+func TUIForTheme(name ThemeName) TUIPalette {
+	p := resolvePalette(name, currentCapabilities())
 	return TUIPalette{
 		Accent:        color(p.Accent),
 		AccentAlt:     color(p.AccentHighlight),
