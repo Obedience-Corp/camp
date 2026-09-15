@@ -9,7 +9,9 @@ import (
 	camperrors "github.com/Obedience-Corp/camp/internal/errors"
 
 	"github.com/charmbracelet/huh"
+	"github.com/charmbracelet/lipgloss"
 
+	"github.com/Obedience-Corp/camp/internal/config"
 	"github.com/Obedience-Corp/camp/internal/git"
 	"github.com/Obedience-Corp/camp/internal/ui/theme"
 )
@@ -138,8 +140,7 @@ func showChangeSummary(ctx context.Context, executor git.GitExecutor, ignoreSubm
 	}
 
 	if len(output) > 0 {
-		fmt.Println("\nChanges to be committed:")
-		fmt.Println(string(output))
+		printChangeSummary(ctx, "Changes to be committed:", output)
 	} else {
 		// Check unstaged changes
 		args = []string{"-C", executor.Path(), "diff", "--stat"}
@@ -149,8 +150,15 @@ func showChangeSummary(ctx context.Context, executor git.GitExecutor, ignoreSubm
 		cmd = exec.CommandContext(ctx, "git", args...)
 		output, _ = cmd.Output()
 		if len(output) > 0 {
-			fmt.Println("\nUnstaged changes (will be staged with --all):")
-			fmt.Println(string(output))
+			printChangeSummary(ctx, "Unstaged changes (will be staged with --all):", output)
 		}
 	}
+}
+
+func printChangeSummary(ctx context.Context, title string, output []byte) {
+	p := theme.TUIForTheme(theme.ThemeName(config.EffectiveTheme(ctx)))
+	heading := lipgloss.NewStyle().Foreground(p.Accent).Bold(true)
+	details := lipgloss.NewStyle().Foreground(p.TextSecondary)
+	fmt.Println(heading.Render("\n" + title))
+	fmt.Println(details.Render(string(output)))
 }
