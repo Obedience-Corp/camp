@@ -100,3 +100,47 @@ func TestActionMenuOffersCopyID(t *testing.T) {
 		})
 	}
 }
+
+func TestNewActionMenu_PromoteAvailability(t *testing.T) {
+	tests := []struct {
+		name   string
+		intent *intent.Intent
+		want   bool
+	}{
+		{
+			name:   "inbox",
+			intent: &intent.Intent{ID: "i", Status: intent.StatusInbox},
+			want:   true,
+		},
+		{
+			name:   "ready",
+			intent: &intent.Intent{ID: "r", Status: intent.StatusReady},
+			want:   true,
+		},
+		{
+			name:   "active unpromoted",
+			intent: &intent.Intent{ID: "a", Status: intent.StatusActive},
+			want:   true,
+		},
+		{
+			name:   "active already promoted",
+			intent: &intent.Intent{ID: "a", Status: intent.StatusActive, PromotedTo: "workflow/design/a"},
+			want:   false,
+		},
+		{
+			name:   "done",
+			intent: &intent.Intent{ID: "d", Status: intent.StatusDone},
+			want:   false,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			menu := NewActionMenu(tt.intent)
+			got := itemEnabled(menu, "promote")
+			if got != tt.want {
+				t.Fatalf("promote enabled = %v, want %v", got, tt.want)
+			}
+		})
+	}
+}

@@ -337,7 +337,7 @@ func discoverIntentsToGather(ctx context.Context, svc *gather.Service, intentSvc
 			return nil, camperrors.Wrapf(err, "reference idea %q not found", gatherSimilar)
 		}
 		if refIntent.Status.InDungeon() {
-			return nil, camperrors.Newf("reference idea %q is in %s status — only inbox/active/ready ideas can be gathered", gatherSimilar, refIntent.Status)
+			return nil, camperrors.Newf("reference idea %q is in %s status — only inbox/ready/active ideas can be gathered", gatherSimilar, refIntent.Status)
 		}
 
 		similar, err := svc.FindSimilar(ctx, gatherSimilar, gatherMinScore)

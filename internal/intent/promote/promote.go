@@ -5,8 +5,8 @@
 //
 // Pipeline transitions:
 //   - TargetReady:    inbox → ready (simple advancement)
-//   - TargetFestival: ready → active + create festival
-//   - TargetDesign:   ready → active + create design doc
+//   - TargetFestival: ready or active → active + create festival
+//   - TargetDesign:   ready or active → active + create design doc
 package promote
 
 import (
@@ -29,10 +29,10 @@ const (
 	// TargetReady advances an inbox intent to ready status.
 	TargetReady Target = "ready"
 
-	// TargetFestival promotes a ready intent to active and creates a festival.
+	// TargetFestival promotes a ready or active intent to active and creates a festival.
 	TargetFestival Target = "festival"
 
-	// TargetDesign promotes a ready intent to active and creates a design doc.
+	// TargetDesign promotes a ready or active intent to active and creates a design doc.
 	TargetDesign Target = "design"
 )
 
@@ -61,8 +61,8 @@ type Result struct {
 //
 // Targets and their behavior:
 //   - TargetReady:    moves inbox → ready
-//   - TargetFestival: moves ready → active, creates festival, sets PromotedTo
-//   - TargetDesign:   moves ready → active, creates design doc, sets PromotedTo
+//   - TargetFestival: moves ready or active → active, creates festival, sets PromotedTo
+//   - TargetDesign:   moves ready or active → active, creates design doc, sets PromotedTo
 func Promote(ctx context.Context, svc *intent.IntentService, i *intent.Intent, opts Options) (Result, error) {
 	if err := ctx.Err(); err != nil {
 		return Result{}, camperrors.Wrap(err, "context cancelled")
@@ -100,10 +100,10 @@ func promoteToReady(ctx context.Context, svc *intent.IntentService, i *intent.In
 	return Result{NewStatus: intent.StatusReady}, nil
 }
 
-// promoteToFestival promotes a ready intent to active and creates a festival.
+// promoteToFestival promotes a ready or active intent to active and creates a festival.
 func promoteToFestival(ctx context.Context, svc *intent.IntentService, i *intent.Intent, opts Options) (Result, error) {
-	if i.Status != intent.StatusReady && !opts.Force {
-		return Result{}, camperrors.New("intent is not ready for promotion (status: " + i.Status.String() + ")")
+	if err := checkWorkPromote(i, opts.Force); err != nil {
+		return Result{}, err
 	}
 
 	moved, err := svc.Move(ctx, i.ID, intent.StatusActive)
@@ -141,11 +141,12 @@ func promoteToFestival(ctx context.Context, svc *intent.IntentService, i *intent
 	return result, nil
 }
 
-// promoteToDesign promotes a ready intent to active and creates a design doc.
+// promoteToDesign promotes a ready or active intent to active and creates a design doc.
 func promoteToDesign(ctx context.Context, svc *intent.IntentService, i *intent.Intent, opts Options) (Result, error) {
-	if i.Status != intent.StatusReady && !opts.Force {
-		return Result{}, camperrors.New("intent is not ready for promotion (status: " + i.Status.String() + ")")
+	if err := checkWorkPromote(i, opts.Force); err != nil {
+		return Result{}, err
 	}
+	originalStatus := i.Status
 
 	// Create design doc first for transactional semantics — if this fails, intent
 	// remains in ready and no status transition occurs.
@@ -167,7 +168,7 @@ func promoteToDesign(ctx context.Context, svc *intent.IntentService, i *intent.I
 	// Set PromotedTo.
 	moved.PromotedTo = designDir
 	if err := svc.Save(ctx, moved); err != nil {
-		rollbackErr := rollbackIntentToReady(ctx, svc, i.ID)
+		rollbackErr := rollbackIntentStatus(ctx, svc, i.ID, originalStatus)
 		if createdNow {
 			_ = removeCreatedDesignDoc(opts.CampaignRoot, designDir)
 		}
@@ -255,9 +256,21 @@ func createDesignDoc(ctx context.Context, campaignRoot string, i *intent.Intent)
 	return relDir, createdNow, nil
 }
 
-func rollbackIntentToReady(ctx context.Context, svc *intent.IntentService, id string) error {
-	_, err := svc.Move(ctx, id, intent.StatusReady)
+func rollbackIntentStatus(ctx context.Context, svc *intent.IntentService, id string, status intent.Status) error {
+	_, err := svc.Move(ctx, id, status)
 	return err
+}
+
+// checkWorkPromote validates festival/design promotion from ready or active.
+// --force bypasses both the status check and the already-promoted guard.
+func checkWorkPromote(i *intent.Intent, force bool) error {
+	if !force && i.Status != intent.StatusReady && i.Status != intent.StatusActive {
+		return camperrors.New("intent is not ready for promotion (status: " + i.Status.String() + ")")
+	}
+	if !force && i.PromotedTo != "" {
+		return camperrors.New("intent already promoted to " + i.PromotedTo)
+	}
+	return nil
 }
 
 func removeCreatedDesignDoc(campaignRoot, relDir string) error {
@@ -302,7 +315,7 @@ func ValidTargetsForStatus(status intent.Status) []Target {
 	switch status {
 	case intent.StatusInbox:
 		return []Target{TargetReady}
-	case intent.StatusReady:
+	case intent.StatusReady, intent.StatusActive:
 		return []Target{TargetFestival, TargetDesign}
 	default:
 		return nil

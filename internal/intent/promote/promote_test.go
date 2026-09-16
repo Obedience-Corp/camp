@@ -108,6 +108,110 @@ func TestPromoteToDesign(t *testing.T) {
 	}
 }
 
+func TestPromoteToDesignFromActive(t *testing.T) {
+	ctx := context.Background()
+	campaignRoot := t.TempDir()
+	intentsDir := filepath.Join(campaignRoot, "workflow", "intents")
+	svc := intent.NewIntentService(campaignRoot, intentsDir)
+	if err := svc.EnsureDirectories(ctx); err != nil {
+		t.Fatalf("EnsureDirectories() error = %v", err)
+	}
+
+	created, err := svc.CreateDirect(ctx, intent.CreateOptions{
+		Title:  "Design API request signing flow",
+		Type:   intent.TypeResearch,
+		Author: "test",
+		Body:   "We need a clear signing strategy with replay protection.",
+	})
+	if err != nil {
+		t.Fatalf("CreateDirect() error = %v", err)
+	}
+	active, err := svc.Move(ctx, created.ID, intent.StatusActive)
+	if err != nil {
+		t.Fatalf("Move() to active error = %v", err)
+	}
+
+	got, err := Promote(ctx, svc, active, Options{
+		CampaignRoot: campaignRoot,
+		Target:       TargetDesign,
+	})
+	if err != nil {
+		t.Fatalf("Promote() from active error = %v", err)
+	}
+	if got.NewStatus != intent.StatusActive {
+		t.Fatalf("NewStatus = %q, want %q", got.NewStatus, intent.StatusActive)
+	}
+	if !got.DesignCreated {
+		t.Fatalf("DesignCreated = false, want true")
+	}
+
+	reloaded, err := svc.Get(ctx, created.ID)
+	if err != nil {
+		t.Fatalf("Get() error = %v", err)
+	}
+	if reloaded.Status != intent.StatusActive {
+		t.Fatalf("Status = %q, want %q", reloaded.Status, intent.StatusActive)
+	}
+	if reloaded.PromotedTo != got.DesignDir {
+		t.Fatalf("PromotedTo = %q, want %q", reloaded.PromotedTo, got.DesignDir)
+	}
+}
+
+func TestPromoteToDesignAlreadyPromotedRequiresForce(t *testing.T) {
+	ctx := context.Background()
+	campaignRoot := t.TempDir()
+	intentsDir := filepath.Join(campaignRoot, "workflow", "intents")
+	svc := intent.NewIntentService(campaignRoot, intentsDir)
+	if err := svc.EnsureDirectories(ctx); err != nil {
+		t.Fatalf("EnsureDirectories() error = %v", err)
+	}
+
+	created, err := svc.CreateDirect(ctx, intent.CreateOptions{
+		Title:  "Design API request signing flow",
+		Type:   intent.TypeResearch,
+		Author: "test",
+		Body:   "We need a clear signing strategy with replay protection.",
+	})
+	if err != nil {
+		t.Fatalf("CreateDirect() error = %v", err)
+	}
+	ready, err := svc.Move(ctx, created.ID, intent.StatusReady)
+	if err != nil {
+		t.Fatalf("Move() to ready error = %v", err)
+	}
+	first, err := Promote(ctx, svc, ready, Options{
+		CampaignRoot: campaignRoot,
+		Target:       TargetDesign,
+	})
+	if err != nil {
+		t.Fatalf("first Promote() error = %v", err)
+	}
+
+	active, err := svc.Get(ctx, created.ID)
+	if err != nil {
+		t.Fatalf("Get() error = %v", err)
+	}
+	_, err = Promote(ctx, svc, active, Options{
+		CampaignRoot: campaignRoot,
+		Target:       TargetDesign,
+	})
+	if err == nil {
+		t.Fatal("Promote() expected error when intent is already promoted")
+	}
+
+	_, err = Promote(ctx, svc, active, Options{
+		CampaignRoot: campaignRoot,
+		Target:       TargetDesign,
+		Force:        true,
+	})
+	if err != nil {
+		t.Fatalf("Promote() with Force error = %v", err)
+	}
+	if first.DesignDir == "" {
+		t.Fatal("first DesignDir empty")
+	}
+}
+
 func TestPromoteToDesignRequiresReadyWithoutForce(t *testing.T) {
 	ctx := context.Background()
 	campaignRoot := t.TempDir()
@@ -378,7 +482,7 @@ func TestValidTargetsForStatus(t *testing.T) {
 	}{
 		{status: intent.StatusInbox, want: []Target{TargetReady}},
 		{status: intent.StatusReady, want: []Target{TargetFestival, TargetDesign}},
-		{status: intent.StatusActive, want: nil},
+		{status: intent.StatusActive, want: []Target{TargetFestival, TargetDesign}},
 		{status: intent.StatusDone, want: nil},
 	}
 

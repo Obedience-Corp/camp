@@ -16,7 +16,7 @@ func setupTestIntents(t *testing.T) string {
 	tmpDir := t.TempDir()
 
 	// Create status directories
-	for _, status := range []string{"inbox", "active", "ready"} {
+	for _, status := range []string{"inbox", "ready", "active"} {
 		if err := os.MkdirAll(filepath.Join(tmpDir, status), 0755); err != nil {
 			t.Fatal(err)
 		}
@@ -116,7 +116,7 @@ func TestIndex_Build(t *testing.T) {
 		t.Fatalf("Build() error = %v", err)
 	}
 
-	// Should index 4 intents from inbox, active, ready
+	// Should index 4 intents from inbox, ready, active
 	if idx.Size() != 4 {
 		t.Errorf("Size() = %d, want 4", idx.Size())
 	}

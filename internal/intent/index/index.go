@@ -65,17 +65,13 @@ func NewIndex(intentsDir string) *Index {
 }
 
 // DefaultStatuses returns the statuses to index by default.
-// Only indexes active working set (inbox, active, ready).
+// Only indexes the working set (inbox → ready → active).
 func DefaultStatuses() []intent.Status {
-	return []intent.Status{
-		intent.StatusInbox,
-		intent.StatusActive,
-		intent.StatusReady,
-	}
+	return intent.ActiveStatuses()
 }
 
 // Build scans intents and builds the index.
-// By default, only indexes inbox/active/ready statuses.
+// By default, only indexes inbox/ready/active statuses.
 func (idx *Index) Build(ctx context.Context, statuses []intent.Status) error {
 	idx.mu.Lock()
 	defer idx.mu.Unlock()

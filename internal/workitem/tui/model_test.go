@@ -924,10 +924,10 @@ func TestModel_EmptyView(t *testing.T) {
 	if !strings.Contains(view, "No work items") {
 		t.Error("empty state should show 'No work items' message")
 	}
-	if !strings.Contains(view, ".campaign/intents/{inbox,active,ready}") {
+	if !strings.Contains(view, ".campaign/intents/{inbox,ready,active}") {
 		t.Error("empty state should advertise the canonical intent root")
 	}
-	if strings.Contains(view, "workflow/intents/{inbox,active,ready}") {
+	if strings.Contains(view, "workflow/intents/{inbox,ready,active}") {
 		t.Error("empty state should not advertise the legacy intent root")
 	}
 }

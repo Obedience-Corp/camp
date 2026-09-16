@@ -320,30 +320,40 @@ func (m *Model) viewConfirmation() string {
 	return b.String()
 }
 
-// handlePromoteAction shows the promote target picker.
-// Valid for inbox (→ ready) and ready (→ festival or design doc) intents.
+// handlePromoteAction shows the promote target picker for the list selection.
 func (m *Model) handlePromoteAction() (tea.Model, tea.Cmd) {
-	if selected := m.SelectedIntent(); selected != nil {
-		targets := promote.ValidTargetsForStatus(selected.Status)
-		if len(targets) == 0 {
-			m.setStatusError("No valid promote targets for " + selected.Status.String() + " status")
-			return m, nil
-		}
-		// If only one target, go directly to confirmation
-		if len(targets) == 1 && targets[0] == promote.TargetReady {
-			m.focus = focusConfirm
-			m.pendingAction = "promote-ready"
-			m.pendingIntent = selected
-			m.confirmDialog = tui.NewConfirmationDialog(
-				"Promote to Ready",
-				fmt.Sprintf("Move '%s' from inbox to ready?", selected.Title),
-			)
-			return m, nil
-		}
-		m.focus = focusPromoteTarget
-		m.promoteTargetIdx = 0
-		m.promoteTargetIntent = selected
+	return m.handlePromoteActionFor(m.SelectedIntent())
+}
+
+// handlePromoteActionFor shows the promote target picker.
+// Valid for inbox (→ ready) and ready or active (→ festival or design doc).
+func (m *Model) handlePromoteActionFor(selected *intent.Intent) (tea.Model, tea.Cmd) {
+	if selected == nil {
+		return m, nil
 	}
+	if selected.PromotedTo != "" {
+		m.setStatusError("Already promoted to " + selected.PromotedTo)
+		return m, nil
+	}
+	targets := promote.ValidTargetsForStatus(selected.Status)
+	if len(targets) == 0 {
+		m.setStatusError("No valid promote targets for " + selected.Status.String() + " status")
+		return m, nil
+	}
+	// If only one target, go directly to confirmation
+	if len(targets) == 1 && targets[0] == promote.TargetReady {
+		m.focus = focusConfirm
+		m.pendingAction = "promote-ready"
+		m.pendingIntent = selected
+		m.confirmDialog = tui.NewConfirmationDialog(
+			"Promote to Ready",
+			fmt.Sprintf("Move '%s' from inbox to ready?", selected.Title),
+		)
+		return m, nil
+	}
+	m.focus = focusPromoteTarget
+	m.promoteTargetIdx = 0
+	m.promoteTargetIntent = selected
 	return m, nil
 }
 
@@ -600,6 +610,47 @@ func (m *Model) moveIntentWithReason(i *intent.Intent, newStatus intent.Status, 
 			newStatus: newStatus,
 		}
 	}
+}
+
+func (m *Model) recordViewerMove(msg tui.ViewerMoveFinishedMsg) {
+	if msg.Err != nil {
+		return
+	}
+	_ = m.appendAuditEvent(audit.Event{
+		Type:  audit.EventMove,
+		ID:    msg.ID,
+		Title: msg.Title,
+		From:  string(msg.From),
+		To:    string(msg.NewStatus),
+	})
+	m.autoCommitIntent(commit.IntentMove, msg.Title, fmt.Sprintf("Moved to %s status", msg.NewStatus), msg.FromPath, msg.ToPath)
+}
+
+func (m *Model) recordViewerArchive(msg tui.ViewerArchiveFinishedMsg) {
+	if msg.Err != nil {
+		return
+	}
+	_ = m.appendAuditEvent(audit.Event{
+		Type:  audit.EventArchive,
+		ID:    msg.ID,
+		Title: msg.Title,
+		From:  string(msg.From),
+		To:    string(intent.StatusArchived),
+	})
+	m.autoCommitIntent(commit.IntentArchive, msg.Title, fmt.Sprintf("Moved to %s status", intent.StatusArchived), msg.FromPath, msg.ToPath)
+}
+
+func (m *Model) recordViewerDelete(msg tui.ViewerDeleteFinishedMsg) {
+	if msg.Err != nil {
+		return
+	}
+	_ = m.appendAuditEvent(audit.Event{
+		Type:  audit.EventDelete,
+		ID:    msg.ID,
+		Title: msg.Title,
+		From:  string(msg.Status),
+	})
+	m.autoCommitIntent(commit.IntentDelete, msg.Title, "", msg.Path)
 }
 
 // handleArchiveAction archives the selected intent with confirmation.

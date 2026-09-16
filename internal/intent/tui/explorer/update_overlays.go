@@ -148,6 +148,18 @@ func (m Model) updateGatherDialog(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 
 // updateViewer handles viewer - pass all keys to it.
 func (m Model) updateViewer(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
+	// Promote from the detail view uses the explorer pipeline so it creates
+	// festival/design artifacts and records the session-end auto-commit. The
+	// viewer used to call Move() directly, which left the status change
+	// uncommitted.
+	if !m.viewer.HasOverlay() && msg.String() == "p" {
+		selected := m.viewer.CurrentIntent()
+		if selected != nil && selected.Status.IsNote() {
+			m.setStatusError("Convert note to an intent before promoting it")
+			return m, nil
+		}
+		return m.handlePromoteActionFor(selected)
+	}
 	var viewerModel tea.Model
 	var cmd tea.Cmd
 	viewerModel, cmd = m.viewer.Update(msg)

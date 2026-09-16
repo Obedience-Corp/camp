@@ -36,9 +36,20 @@ func (m IntentViewerModel) openInEditor() tea.Cmd {
 // moveIntent moves the intent to a new status.
 func (m IntentViewerModel) moveIntent(newStatus intent.Status) tea.Cmd {
 	return func() tea.Msg {
-		_, err := m.service.Move(m.ctx, m.intent.ID, newStatus)
+		fromPath := m.intent.Path
+		from := m.intent.Status
+		moved, err := m.service.Move(m.ctx, m.intent.ID, newStatus)
+		toPath := ""
+		if err == nil && moved != nil {
+			toPath = moved.Path
+		}
 		return ViewerMoveFinishedMsg{
 			Err:       err,
+			ID:        m.intent.ID,
+			Title:     m.intent.Title,
+			FromPath:  fromPath,
+			ToPath:    toPath,
+			From:      from,
 			NewStatus: newStatus,
 		}
 	}
@@ -47,8 +58,21 @@ func (m IntentViewerModel) moveIntent(newStatus intent.Status) tea.Cmd {
 // archiveIntent archives the intent.
 func (m IntentViewerModel) archiveIntent() tea.Cmd {
 	return func() tea.Msg {
-		_, err := m.service.Archive(m.ctx, m.intent.ID)
-		return ViewerArchiveFinishedMsg{Err: err}
+		fromPath := m.intent.Path
+		from := m.intent.Status
+		archived, err := m.service.Archive(m.ctx, m.intent.ID)
+		toPath := ""
+		if err == nil && archived != nil {
+			toPath = archived.Path
+		}
+		return ViewerArchiveFinishedMsg{
+			Err:      err,
+			ID:       m.intent.ID,
+			Title:    m.intent.Title,
+			FromPath: fromPath,
+			ToPath:   toPath,
+			From:     from,
+		}
 	}
 }
 
@@ -56,7 +80,13 @@ func (m IntentViewerModel) archiveIntent() tea.Cmd {
 func (m IntentViewerModel) deleteIntent() tea.Cmd {
 	return func() tea.Msg {
 		err := m.service.Delete(m.ctx, m.intent.ID)
-		return ViewerDeleteFinishedMsg{Err: err}
+		return ViewerDeleteFinishedMsg{
+			Err:    err,
+			ID:     m.intent.ID,
+			Title:  m.intent.Title,
+			Path:   m.intent.Path,
+			Status: m.intent.Status,
+		}
 	}
 }
 

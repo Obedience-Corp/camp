@@ -211,6 +211,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m, nil
 
 	case tui.ViewerMoveFinishedMsg:
+		m.recordViewerMove(msg)
 		if m.focus == focusViewer {
 			var viewerModel tea.Model
 			viewerModel, cmd = m.viewer.Update(msg)
@@ -220,6 +221,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m, nil
 
 	case tui.ViewerArchiveFinishedMsg:
+		m.recordViewerArchive(msg)
 		if m.focus == focusViewer {
 			var viewerModel tea.Model
 			viewerModel, cmd = m.viewer.Update(msg)
@@ -229,6 +231,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m, nil
 
 	case tui.ViewerDeleteFinishedMsg:
+		m.recordViewerDelete(msg)
 		if m.focus == focusViewer {
 			var viewerModel tea.Model
 			viewerModel, cmd = m.viewer.Update(msg)

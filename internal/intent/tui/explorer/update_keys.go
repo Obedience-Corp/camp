@@ -170,7 +170,7 @@ func (m Model) updateNormal(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		}
 		return m, nil
 	case "p":
-		// Promote to festival (ready intents only)
+		// Promote: inbox → ready, ready/active → festival or design doc
 		if selected := m.SelectedIntent(); selected != nil && selected.Status.IsNote() {
 			m.setStatusError("Convert note to an intent before promoting it")
 			return m, nil

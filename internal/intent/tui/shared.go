@@ -14,32 +14,12 @@ var moveStatusOptions = []struct {
 	status intent.Status
 }{
 	{"Inbox", intent.StatusInbox},
-	{"Active", intent.StatusActive},
 	{"Ready", intent.StatusReady},
+	{"Active", intent.StatusActive},
 	{"  Done", intent.StatusDone},
 	{"  Killed", intent.StatusKilled},
 	{"  Archived", intent.StatusArchived},
 	{"  Someday", intent.StatusSomeday},
-}
-
-// StatusWorkflow defines the promotion order for intents.
-// Dungeon statuses are excluded — promotion ends at done.
-var statusWorkflow = []intent.Status{
-	intent.StatusInbox,
-	intent.StatusActive,
-	intent.StatusReady,
-	intent.StatusDone,
-}
-
-// getNextStatus returns the next status in the promotion workflow.
-// Returns the same status if already at the final state.
-func getNextStatus(current intent.Status) intent.Status {
-	for i, s := range statusWorkflow {
-		if s == current && i < len(statusWorkflow)-1 {
-			return statusWorkflow[i+1]
-		}
-	}
-	return current // No change if at end or not in workflow
 }
 
 // formatRelativeTime returns a human-friendly relative time string.
