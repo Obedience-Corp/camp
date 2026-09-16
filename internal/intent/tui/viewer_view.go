@@ -111,10 +111,10 @@ func renderStatusBadge(s intent.Status) string {
 	switch s {
 	case intent.StatusInbox:
 		color = pal.Warning // Orange
-	case intent.StatusActive:
-		color = pal.Success // Green
 	case intent.StatusReady:
 		color = pal.AccentAlt // Blue
+	case intent.StatusActive:
+		color = pal.Success // Green
 	case intent.StatusDone:
 		color = pal.TextMuted // Gray
 	case intent.StatusKilled:

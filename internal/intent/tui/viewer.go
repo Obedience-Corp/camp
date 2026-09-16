@@ -85,17 +85,31 @@ type ViewerEditorFinishedMsg struct {
 // ViewerMoveFinishedMsg is sent when move completes from viewer.
 type ViewerMoveFinishedMsg struct {
 	Err       error
+	ID        string
+	Title     string
+	FromPath  string
+	ToPath    string
+	From      intent.Status
 	NewStatus intent.Status
 }
 
 // ViewerArchiveFinishedMsg is sent when archive completes from viewer.
 type ViewerArchiveFinishedMsg struct {
-	Err error
+	Err      error
+	ID       string
+	Title    string
+	FromPath string
+	ToPath   string
+	From     intent.Status
 }
 
 // ViewerDeleteFinishedMsg is sent when delete completes from viewer.
 type ViewerDeleteFinishedMsg struct {
-	Err error
+	Err    error
+	ID     string
+	Title  string
+	Path   string
+	Status intent.Status
 }
 
 // NewIntentViewerModel creates a new intent viewer for the given intent.
@@ -134,6 +148,17 @@ func NewIntentViewerModelWithGather(ctx context.Context, i *intent.Intent, sibli
 	m.loadContent()
 
 	return m
+}
+
+// CurrentIntent returns the intent currently shown in the viewer.
+func (m IntentViewerModel) CurrentIntent() *intent.Intent {
+	return m.intent
+}
+
+// HasOverlay reports whether a viewer modal (search, confirm, move, gather)
+// is consuming keys so the explorer should not intercept them.
+func (m IntentViewerModel) HasOverlay() bool {
+	return m.searchMode || m.showConfirm || m.moveOverlay || m.gatherOverlay || m.showGatherTitle
 }
 
 // loadContent reads the intent file and renders markdown.

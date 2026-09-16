@@ -25,7 +25,9 @@ func promotablePool(ctx context.Context, campaignRoot string, resolver *paths.Re
 func isPromotable(it workitem.WorkItem) bool {
 	switch it.WorkflowType {
 	case workitem.WorkflowTypeIntent:
-		return it.LifecycleStage == workitem.LifecycleStageInbox || it.LifecycleStage == workitem.LifecycleStageReady
+		return it.LifecycleStage == workitem.LifecycleStageInbox ||
+			it.LifecycleStage == workitem.LifecycleStageReady ||
+			it.LifecycleStage == workitem.LifecycleStageActive
 	case workitem.WorkflowTypeFestival:
 		return it.LifecycleStage == workitem.LifecycleStagePlanning ||
 			it.LifecycleStage == workitem.LifecycleStageReady ||

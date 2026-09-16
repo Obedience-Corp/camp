@@ -139,7 +139,7 @@ func TestIsPromotable(t *testing.T) {
 		item workitem.WorkItem
 		want bool
 	}{
-		{"intent active excluded", workitem.WorkItem{WorkflowType: workitem.WorkflowTypeIntent, LifecycleStage: workitem.LifecycleStageActive}, false},
+		{"intent active", workitem.WorkItem{WorkflowType: workitem.WorkflowTypeIntent, LifecycleStage: workitem.LifecycleStageActive}, true},
 		{"intent inbox", workitem.WorkItem{WorkflowType: workitem.WorkflowTypeIntent, LifecycleStage: workitem.LifecycleStageInbox}, true},
 		{"intent ready", workitem.WorkItem{WorkflowType: workitem.WorkflowTypeIntent, LifecycleStage: workitem.LifecycleStageReady}, true},
 		{"festival planning", workitem.WorkItem{WorkflowType: workitem.WorkflowTypeFestival, LifecycleStage: workitem.LifecycleStagePlanning}, true},

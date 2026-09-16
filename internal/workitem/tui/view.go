@@ -324,7 +324,7 @@ func (m Model) renderEmpty(_, height int) string {
 	b.WriteString("\n\n")
 	b.WriteString(footerStyle.Render("  Scanned:"))
 	b.WriteString("\n")
-	b.WriteString(footerStyle.Render("    .campaign/intents/{inbox,active,ready}"))
+	b.WriteString(footerStyle.Render("    .campaign/intents/{inbox,ready,active}"))
 	b.WriteString("\n")
 	b.WriteString(footerStyle.Render("    workflow/design/"))
 	b.WriteString("\n")

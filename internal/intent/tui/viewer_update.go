@@ -188,8 +188,11 @@ func (m IntentViewerModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m, nil
 
 	case ViewerMoveFinishedMsg:
-		if msg.Err == nil {
+		if msg.Err == nil && m.intent != nil {
 			m.intent.Status = msg.NewStatus
+			if msg.ToPath != "" {
+				m.intent.Path = msg.ToPath
+			}
 			m.refreshOnReturn = true
 		}
 		return m, nil
@@ -344,11 +347,8 @@ func (m IntentViewerModel) updateViewerKeys(msg tea.KeyMsg) (tea.Model, tea.Cmd)
 		m.moveStatusIdx = 0
 		return m, nil
 	case "p":
-		// Promote to next status
-		nextStatus := getNextStatus(m.intent.Status)
-		if nextStatus != m.intent.Status {
-			return m, m.moveIntent(nextStatus)
-		}
+		// Explorer intercepts promote (same pipeline + auto-commit as the list).
+		return m, nil
 	case "a":
 		// Archive - requires confirmation
 		if !m.intent.Status.InDungeon() {

@@ -12,6 +12,8 @@ import (
 	"time"
 
 	"github.com/Obedience-Corp/camp/internal/git/commit"
+	"github.com/Obedience-Corp/camp/internal/intent"
+	"github.com/Obedience-Corp/camp/internal/intent/tui"
 )
 
 func captureSlogWarnings(t *testing.T) *bytes.Buffer {
@@ -347,5 +349,40 @@ func TestBuildSessionCommit(t *testing.T) {
 	}
 	if !strings.Contains(multi.Description, "Create: A — d1") || !strings.Contains(multi.Description, "Move: B — d2") {
 		t.Fatalf("multi description = %q", multi.Description)
+	}
+}
+
+func TestViewerMoveFinished_RecordsAutoCommit(t *testing.T) {
+	campaignRoot := filepath.Join(string(filepath.Separator), "tmp", "campaign")
+	intentsDir := filepath.Join(campaignRoot, ".campaign", "intents")
+	m := NewModel(context.Background(), nil, nil, intentsDir, campaignRoot, "test-id", "", nil)
+	viewed := &intent.Intent{ID: "ready-1", Title: "Implement search", Status: intent.StatusReady, Path: filepath.Join(intentsDir, "ready", "ready-1.md")}
+	m.focus = focusViewer
+	m.viewer = tui.NewIntentViewerModel(context.Background(), viewed, []*intent.Intent{viewed}, 0, nil, 80, 24)
+
+	ran := false
+	m.autoCommit.run = func(ctx context.Context, opts commit.IntentOptions) {
+		ran = true
+	}
+
+	updated, _ := m.Update(tui.ViewerMoveFinishedMsg{
+		ID:        "ready-1",
+		Title:     "Implement search",
+		FromPath:  filepath.Join(intentsDir, "ready", "ready-1.md"),
+		ToPath:    filepath.Join(intentsDir, "active", "ready-1.md"),
+		From:      intent.StatusReady,
+		NewStatus: intent.StatusActive,
+	})
+	m = asExplorerModel(t, updated)
+
+	if ran {
+		t.Fatal("auto-commit must wait until drain")
+	}
+	_, ops := m.autoCommit.pending()
+	if len(ops) != 1 {
+		t.Fatalf("pending ops = %d, want 1", len(ops))
+	}
+	if ops[0].Action != commit.IntentMove || ops[0].Title != "Implement search" {
+		t.Fatalf("pending op = %+v", ops[0])
 	}
 }

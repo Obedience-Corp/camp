@@ -2,6 +2,7 @@ package explorer
 
 import (
 	"context"
+	"strings"
 	"testing"
 	"time"
 
@@ -57,6 +58,94 @@ func TestPromoteAction_PressP_ReadyIntent_ShowsPicker(t *testing.T) {
 	}
 	if m.promoteTargetIntent == nil {
 		t.Fatal("promoteTargetIntent should be set when showing picker")
+	}
+}
+
+func makeActiveModel() Model {
+	ctx := context.Background()
+	m := NewModel(ctx, nil, nil, "/tmp/intents", "/tmp/campaign", "test-id", "", nil)
+	m.ready = true
+	m.width = 120
+	m.height = 30
+
+	activeIntent := &intent.Intent{
+		ID:        "active-1",
+		Title:     "Implement search",
+		Status:    intent.StatusActive,
+		Type:      intent.TypeFeature,
+		CreatedAt: time.Now(),
+	}
+	m.intents = []*intent.Intent{activeIntent}
+	m.filteredIntents = m.intents
+	m.groups = groupIntentsByStatus(m.intents, false)
+	m.cursorGroup = 2 // Active is the third top-level group
+	m.cursorItem = 0
+	return m
+}
+
+func TestPromoteAction_PressP_ActiveIntent_ShowsPicker(t *testing.T) {
+	m := makeActiveModel()
+
+	updated, _ := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'p'}})
+	m = asExplorerModel(t, updated)
+
+	if m.focus != focusPromoteTarget {
+		t.Fatalf("focus = %v, want focusPromoteTarget after pressing p on active intent", m.focus)
+	}
+	if m.promoteTargetIntent == nil {
+		t.Fatal("promoteTargetIntent should be set when showing picker")
+	}
+}
+
+func TestPromoteAction_PressP_ActiveAlreadyPromoted_ShowsError(t *testing.T) {
+	m := makeActiveModel()
+	m.intents[0].PromotedTo = "workflow/design/implement-search"
+
+	updated, _ := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'p'}})
+	m = asExplorerModel(t, updated)
+
+	if m.focus != focusList {
+		t.Fatalf("focus = %v, want focusList when already promoted", m.focus)
+	}
+	if m.statusMessage == "" || !strings.Contains(m.statusMessage, "Already promoted to") {
+		t.Fatalf("statusMessage = %q, want already-promoted error", m.statusMessage)
+	}
+}
+
+func TestPromoteAction_PressP_FromViewer_ShowsPicker(t *testing.T) {
+	m := makeReadyModel()
+	m.focus = focusViewer
+	m.viewer = tui.NewIntentViewerModel(m.ctx, m.intents[0], m.intents, 0, nil, 120, 30)
+
+	updated, _ := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'p'}})
+	m = asExplorerModel(t, updated)
+
+	if m.focus != focusPromoteTarget {
+		t.Fatalf("focus = %v, want focusPromoteTarget after pressing p in detail view", m.focus)
+	}
+	if m.promoteTargetIntent == nil || m.promoteTargetIntent.ID != "ready-1" {
+		t.Fatalf("promoteTargetIntent = %+v, want ready-1", m.promoteTargetIntent)
+	}
+}
+
+func TestPromoteAction_PressP_FromViewer_UsesViewedIntent(t *testing.T) {
+	m := makeReadyModel()
+	other := &intent.Intent{
+		ID:        "ready-2",
+		Title:     "Other search",
+		Status:    intent.StatusReady,
+		Type:      intent.TypeFeature,
+		CreatedAt: time.Now(),
+	}
+	siblings := []*intent.Intent{m.intents[0], other}
+	m.focus = focusViewer
+	m.viewer = tui.NewIntentViewerModel(m.ctx, other, siblings, 1, nil, 120, 30)
+
+	updated, _ := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'p'}})
+	m = asExplorerModel(t, updated)
+
+	if m.promoteTargetIntent == nil || m.promoteTargetIntent.ID != "ready-2" {
+		t.Fatalf("promoteTargetIntent = %+v, want viewed sibling ready-2", m.promoteTargetIntent)
 	}
 }
 

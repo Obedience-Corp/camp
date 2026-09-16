@@ -5,6 +5,7 @@ import (
 	"strings"
 
 	"github.com/Obedience-Corp/camp/internal/intent"
+	"github.com/Obedience-Corp/camp/internal/intent/promote"
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
 )
@@ -54,7 +55,7 @@ func NewActionMenu(i *intent.Intent) ActionMenu {
 		{Label: "Copy ID", Action: "copy-id", Enabled: i.ID != ""},
 		{Label: "Move to status", Action: "move", Enabled: true},
 		{Label: "Gather with...", Action: "gather", Enabled: !i.Status.InDungeon()},
-		{Label: "Promote", Action: "promote", Enabled: !i.Status.InDungeon() && i.Status != intent.StatusActive},
+		{Label: "Promote", Action: "promote", Enabled: len(promote.ValidTargetsForStatus(i.Status)) > 0 && i.PromotedTo == ""},
 		{Label: "Archive", Action: "archive", Enabled: !i.Status.InDungeon()},
 		{Label: "Delete", Action: "delete", Enabled: true},
 	}

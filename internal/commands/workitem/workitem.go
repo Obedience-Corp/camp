@@ -347,7 +347,7 @@ func validateFlags(jsonMode, listMode, printMode bool, pathOutput string, types,
 	for _, s := range stages {
 		if !wkitem.IsValidStageForTypes(wkitem.LifecycleStage(s), types) {
 			return camperrors.NewValidation("stage",
-				fmt.Sprintf("unknown --stage value: %q (valid stages depend on --type; built-in stages: none, inbox, active, ready, planning, ritual, chains)", s), nil)
+				fmt.Sprintf("unknown --stage value: %q (valid stages depend on --type; built-in stages: none, inbox, ready, active, planning, ritual, chains)", s), nil)
 		}
 	}
 	for _, s := range attentionStages {

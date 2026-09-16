@@ -37,7 +37,7 @@ func NewService(intentSvc *intent.IntentService, intentsDir string) *Service {
 }
 
 // BuildIndex builds or rebuilds the content index.
-// Only indexes active working set (inbox, active, ready).
+// Only indexes the working set (inbox, ready, active).
 func (s *Service) BuildIndex(ctx context.Context) error {
 	return s.index.Build(ctx, nil)
 }

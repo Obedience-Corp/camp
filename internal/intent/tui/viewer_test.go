@@ -168,6 +168,21 @@ func TestViewer_SingleIntentNoNavigation(t *testing.T) {
 	}
 }
 
+func TestViewer_PDoesNotMoveStatus(t *testing.T) {
+	ctx := context.Background()
+	siblings := mockIntents(1)
+	m := NewIntentViewerModel(ctx, siblings[0], siblings, 0, nil, 80, 24)
+
+	updated, cmd := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'p'}})
+	got := updated.(IntentViewerModel)
+	if cmd != nil {
+		t.Fatal("viewer p must be a no-op; explorer intercepts promote")
+	}
+	if got.intent.Status != intent.StatusInbox {
+		t.Fatalf("status = %q, want inbox (p must not move)", got.intent.Status)
+	}
+}
+
 func TestViewer_ClosedMsgIncludesFinalIndex(t *testing.T) {
 	ctx := context.Background()
 	siblings := mockIntents(5)
