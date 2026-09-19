@@ -150,6 +150,17 @@ cp %s/projects/alpha/main.go %s/projects/worktrees/alpha/feature/main.go
 git -C %s add -f projects/worktrees/alpha/feature/main.go
 git -C %s -c user.email=test@test.com -c user.name=Test commit -q -m "track worktree fixture"
 `, root, root, root, root, root))
+	listed, listStderr, listCode, err := tc.RunCampSplitInDir(root, "project", "list", "--json")
+	require.NoError(t, err, "camp project list: %s\n%s", listed, listStderr)
+	require.Equal(t, 0, listCode, "camp project list: %s\n%s", listed, listStderr)
+	var discovered []struct {
+		Name string `json:"Name"`
+	}
+	require.NoError(t, json.Unmarshal([]byte(listed), &discovered))
+	require.Len(t, discovered, 2, "worktree storage must not be listed as a project")
+	for _, item := range discovered {
+		assert.NotEqual(t, "worktrees", item.Name)
+	}
 
 	configPath := root + "/.campaign/leverage/config.json"
 	require.NoError(t, tc.WriteFile(configPath, `{

@@ -40,13 +40,14 @@ func TestResolveProjects_ConfigDriven(t *testing.T) {
 		{
 			name: "configured worktree paths excluded",
 			projects: map[string]ProjectEntry{
-				"camp":           {Path: "projects/camp", Include: true},
-				"worktrees":      {Path: "projects/worktrees", Include: true},
-				"feature":        {Path: "projects/worktrees/camp/feature", Include: true},
-				"hidden-feature": {Path: "projects/.camp-worktrees/camp/feature", Include: true},
-				"worktrees-demo": {Path: "projects/worktrees-demo", Include: true},
+				"camp":             {Path: "projects/camp", Include: true},
+				"worktrees":        {Path: "projects/worktrees", Include: true},
+				"feature":          {Path: "projects/worktrees/camp/feature", Include: true},
+				"hidden-feature":   {Path: "projects/.camp-worktrees/camp/feature", Include: true},
+				"nested-worktrees": {Path: "projects/mono/worktrees/api", Include: true},
+				"worktrees-demo":   {Path: "projects/worktrees-demo", Include: true},
 			},
-			wantNames: []string{"camp", "worktrees-demo"},
+			wantNames: []string{"camp", "nested-worktrees", "worktrees-demo"},
 		},
 		{
 			name: "missing_path_error",
@@ -408,9 +409,10 @@ func TestDeduplicateProjectsForLeverage(t *testing.T) {
 				{Name: "foo", Path: "projects/foo", URL: sharedURL},
 				{Name: "worktrees", Path: "projects/worktrees"},
 				{Name: "feature", Path: "projects/.worktrees/foo/feature", URL: "git@github.com:test/feature.git"},
+				{Name: "nested-worktrees", Path: "projects/mono/worktrees/api"},
 				{Name: "worktrees-demo", Path: "projects/worktrees-demo"},
 			},
-			wantNames: []string{"foo", "worktrees-demo"},
+			wantNames: []string{"foo", "nested-worktrees", "worktrees-demo"},
 		},
 	}
 

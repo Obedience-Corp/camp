@@ -144,16 +144,13 @@ func deduplicateProjectsForLeverage(projects []project.Project) []project.Projec
 	return out
 }
 
-// isLeverageWorktreePath identifies checkout storage, not a scored project.
-// Project discovery can surface the container itself when it is tracked by the
-// campaign, and a saved config may retain it after that discovery changes.
+// isLeverageWorktreePath guards against saved config entries for campaign
+// worktree storage. Project discovery omits the managed projects/worktrees
+// container, but old configs can still name it explicitly.
 func isLeverageWorktreePath(path string) bool {
-	if path == "" {
-		return false
-	}
-	for _, part := range strings.Split(filepath.ToSlash(filepath.Clean(path)), "/") {
-		switch part {
-		case "worktrees", ".worktrees", ".camp-worktrees":
+	clean := filepath.ToSlash(filepath.Clean(path))
+	for _, root := range []string{"projects/worktrees", "projects/.worktrees", "projects/.camp-worktrees"} {
+		if clean == root || strings.HasPrefix(clean, root+"/") {
 			return true
 		}
 	}

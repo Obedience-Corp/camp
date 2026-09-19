@@ -89,6 +89,11 @@ func list(ctx context.Context, campaignRoot string, mode listMode) ([]Project, e
 		}
 
 		name := entry.Name()
+		// Camp reserves projects/worktrees for linked checkouts. A tracked
+		// README or .gitkeep there must not turn the container into a project.
+		if name == "worktrees" {
+			continue
+		}
 		projectPath := filepath.Join(projectsDir, name)
 
 		if entry.Type()&os.ModeSymlink != 0 {

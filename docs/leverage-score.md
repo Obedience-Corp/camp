@@ -155,8 +155,9 @@ checkouts that would inflate COCOMO estimates: `node_modules`, `vendor`,
 `dist`, `build`, `target`, `worktrees`, `.worktrees`, `.camp-worktrees`,
 and similar. Project worktrees under `projects/worktrees/` are full source
 trees; counting them would multi-count the same codebase in leverage scores.
-Leverage project discovery also excludes these worktree paths as projects and
-removes previously saved entries from the leverage config.
+Camp project discovery excludes its `projects/worktrees` storage directory.
+Leverage also rejects saved entries for worktree storage and removes them from
+the leverage config.
 Monorepo root entries additionally exclude their expanded subproject
 directories via the project list's `ExcludeDirs`, so submodule code is
 not double-counted.
