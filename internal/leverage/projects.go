@@ -4,6 +4,7 @@ import (
 	"context"
 	"path/filepath"
 	"sort"
+	"strings"
 
 	camperrors "github.com/Obedience-Corp/camp/internal/errors"
 	"github.com/Obedience-Corp/camp/internal/project"
@@ -121,6 +122,9 @@ func deduplicateProjectsForLeverage(projects []project.Project) []project.Projec
 	out := make([]project.Project, 0, len(projects))
 
 	for _, p := range projects {
+		if isLeverageWorktreePath(p.Path) || isLeverageWorktreePath(p.MonorepoRoot) {
+			continue
+		}
 		if p.URL == "" {
 			out = append(out, p)
 			continue
@@ -138,6 +142,22 @@ func deduplicateProjectsForLeverage(projects []project.Project) []project.Projec
 		}
 	}
 	return out
+}
+
+// isLeverageWorktreePath identifies checkout storage, not a scored project.
+// Project discovery can surface the container itself when it is tracked by the
+// campaign, and a saved config may retain it after that discovery changes.
+func isLeverageWorktreePath(path string) bool {
+	if path == "" {
+		return false
+	}
+	for _, part := range strings.Split(filepath.ToSlash(filepath.Clean(path)), "/") {
+		switch part {
+		case "worktrees", ".worktrees", ".camp-worktrees":
+			return true
+		}
+	}
+	return false
 }
 
 func shouldPreferLeverageProject(current, candidate project.Project) bool {
@@ -159,6 +179,9 @@ func resolveFromConfig(ctx context.Context, campaignRoot string, projects map[st
 
 		if entry.Path == "" {
 			return nil, camperrors.Newf("project %q: path is required", name)
+		}
+		if isLeverageWorktreePath(entry.Path) || isLeverageWorktreePath(entry.MonorepoPath) {
+			continue
 		}
 
 		sccDir := filepath.Join(campaignRoot, entry.Path)

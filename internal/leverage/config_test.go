@@ -210,6 +210,10 @@ func TestPopulateProjectsFromDiscoveredPrunesDuplicateRepoURLs(t *testing.T) {
 				Path:    "projects/gone",
 				Include: true,
 			},
+			"worktrees": {
+				Path:    "projects/worktrees",
+				Include: true,
+			},
 		},
 	}
 	projects := []project.Project{
@@ -217,6 +221,7 @@ func TestPopulateProjectsFromDiscoveredPrunesDuplicateRepoURLs(t *testing.T) {
 		{Name: "mono-a@shared", Path: "projects/mono-a/shared", URL: sharedURL, MonorepoRoot: "projects/mono-a"},
 		{Name: "mono-b", Path: "projects/mono-b", URL: "git@github.com:test/mono-b.git"},
 		{Name: "mono-b@shared", Path: "projects/mono-b/shared", URL: sharedURL, MonorepoRoot: "projects/mono-b"},
+		{Name: "worktrees", Path: "projects/worktrees"},
 	}
 
 	populateProjectsFromDiscovered(cfg, projects)
@@ -226,6 +231,9 @@ func TestPopulateProjectsFromDiscoveredPrunesDuplicateRepoURLs(t *testing.T) {
 	}
 	if _, ok := cfg.Projects["gone"]; ok {
 		t.Fatalf("stale project entry should be pruned from leverage config")
+	}
+	if _, ok := cfg.Projects["worktrees"]; ok {
+		t.Fatalf("worktree storage should be pruned from leverage config")
 	}
 	if got := cfg.Projects["mono-a@shared"]; got.Include {
 		t.Fatalf("existing Include=false should be preserved for canonical duplicate entry")

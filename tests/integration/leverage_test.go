@@ -137,6 +137,54 @@ func TestLeverage_JSONOutput(t *testing.T) {
 		"the autocommit still has to be reported somewhere: %s", stderr)
 }
 
+func TestLeverage_TrackedWorktreeStorageIsNotScored(t *testing.T) {
+	if !sccAvailable {
+		t.Fatal("scc binary is required for leverage integration coverage")
+	}
+
+	tc := GetSharedContainer(t)
+	root := setupLeverageCampaign(t, tc, "leverage-worktree-storage")
+	tc.Shell(t, fmt.Sprintf(`set -e
+mkdir -p %s/projects/worktrees/alpha/feature
+cp %s/projects/alpha/main.go %s/projects/worktrees/alpha/feature/main.go
+git -C %s add -f projects/worktrees/alpha/feature/main.go
+git -C %s -c user.email=test@test.com -c user.name=Test commit -q -m "track worktree fixture"
+`, root, root, root, root, root))
+
+	configPath := root + "/.campaign/leverage/config.json"
+	require.NoError(t, tc.WriteFile(configPath, `{
+  "actual_people": 1,
+  "project_start": "2025-01-01T00:00:00Z",
+  "projects": {
+    "alpha": {"path": "projects/alpha", "include": true},
+    "worktrees": {"path": "projects/worktrees", "include": true}
+  }
+}`))
+
+	output, stderr, code, err := tc.RunCampSplitInDir(root, "leverage", "--json", "--no-commit")
+	require.NoError(t, err, "camp leverage: %s\n%s", output, stderr)
+	require.Equal(t, 0, code, "camp leverage: %s\n%s", output, stderr)
+
+	var report struct {
+		Projects []struct {
+			ProjectName string `json:"project_name"`
+		} `json:"projects"`
+	}
+	require.NoError(t, json.Unmarshal([]byte(output), &report), "parse leverage JSON: %s", output)
+	require.Len(t, report.Projects, 2, "only the real projects should be scored")
+	for _, scored := range report.Projects {
+		assert.NotEqual(t, "worktrees", scored.ProjectName)
+	}
+
+	saved, err := tc.ReadFile(configPath)
+	require.NoError(t, err)
+	var config struct {
+		Projects map[string]json.RawMessage `json:"projects"`
+	}
+	require.NoError(t, json.Unmarshal([]byte(saved), &config))
+	assert.NotContains(t, config.Projects, "worktrees", "stale worktree config should be pruned")
+}
+
 // TestLeverage_ProjectFilter exercises `--project` valid and invalid filters.
 //
 // Migrated from cmd/camp/leverage/main_command_test.go::TestLeverageCommand_ProjectFilter.
