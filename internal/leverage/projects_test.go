@@ -12,7 +12,7 @@ import (
 )
 
 func TestResolveProjects_ConfigDriven(t *testing.T) {
-	root := t.TempDir()
+	root := filepath.Join("campaign", "fixture")
 
 	tests := []struct {
 		name      string
@@ -36,6 +36,18 @@ func TestResolveProjects_ConfigDriven(t *testing.T) {
 				"archive": {Path: "projects/archive", Include: false},
 			},
 			wantNames: []string{"camp"},
+		},
+		{
+			name: "configured worktree paths excluded",
+			projects: map[string]ProjectEntry{
+				"camp":             {Path: "projects/camp", Include: true},
+				"worktrees":        {Path: "projects/worktrees", Include: true},
+				"feature":          {Path: "projects/worktrees/camp/feature", Include: true},
+				"hidden-feature":   {Path: "projects/.camp-worktrees/camp/feature", Include: true},
+				"nested-worktrees": {Path: "projects/mono/worktrees/api", Include: true},
+				"worktrees-demo":   {Path: "projects/worktrees-demo", Include: true},
+			},
+			wantNames: []string{"camp", "nested-worktrees", "worktrees-demo"},
 		},
 		{
 			name: "missing_path_error",
@@ -390,6 +402,17 @@ func TestDeduplicateProjectsForLeverage(t *testing.T) {
 				{Name: "bar", URL: "git@github.com:test/bar.git"},
 			},
 			wantNames: []string{"foo", "bar"},
+		},
+		{
+			name: "exclude worktree storage even when discovered as projects",
+			input: []project.Project{
+				{Name: "foo", Path: "projects/foo", URL: sharedURL},
+				{Name: "worktrees", Path: "projects/worktrees"},
+				{Name: "feature", Path: "projects/.worktrees/foo/feature", URL: "git@github.com:test/feature.git"},
+				{Name: "nested-worktrees", Path: "projects/mono/worktrees/api"},
+				{Name: "worktrees-demo", Path: "projects/worktrees-demo"},
+			},
+			wantNames: []string{"foo", "nested-worktrees", "worktrees-demo"},
 		},
 	}
 
