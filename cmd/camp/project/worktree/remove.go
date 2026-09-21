@@ -87,10 +87,14 @@ func runProjectWorktreeRemove(cmd *cobra.Command, args []string) error {
 
 	wtPath := pathManager.WorktreePath(projectName, worktreeName)
 	git := intworktree.NewGitWorktree(resolved.Path)
-	if err := git.Remove(ctx, wtPath, wtRemoveForce); err != nil {
+	forcedForSubmodules, err := git.RemoveSubmoduleAware(ctx, wtPath, wtRemoveForce)
+	if err != nil {
 		return camperrors.Wrap(err, "failed to remove worktree")
 	}
 
+	if forcedForSubmodules {
+		fmt.Println(ui.Dim("Worktree contains submodules, which git only removes with --force; verified it was clean first."))
+	}
 	fmt.Println(ui.Success(fmt.Sprintf("Removed worktree: %s/%s", projectName, worktreeName)))
 	return nil
 }
