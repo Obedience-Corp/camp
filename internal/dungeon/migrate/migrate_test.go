@@ -3,6 +3,7 @@ package migrate
 import (
 	"context"
 	"errors"
+	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
@@ -65,8 +66,77 @@ func TestBuildPlan_RefusesOnConflict(t *testing.T) {
 	if !errors.Is(err, camperrors.ErrConflict) {
 		t.Errorf("errors.Is(err, ErrConflict) = false, want true (err = %v)", err)
 	}
-	if !strings.Contains(err.Error(), ".") {
-		t.Errorf("error should name the conflicting location, got: %v", err)
+	msg := err.Error()
+	if !strings.Contains(msg, "dungeon/ and .dungeon/:") {
+		t.Errorf("error should name both spellings at the campaign root, got: %v", err)
+	}
+	if !strings.Contains(msg, "(empty)") {
+		t.Errorf("error should say both directories are empty, got: %v", err)
+	}
+	if strings.Contains(msg, "workflow/design") {
+		t.Errorf("error should not blame a parent that has only one spelling, got: %v", err)
+	}
+}
+
+// TestBuildPlan_ConflictListsEachSide is the information the refusal exists
+// to provide: which paths are unique to each spelling, and which directory
+// exists on both sides so a rename would stop there.
+func TestBuildPlan_ConflictListsEachSide(t *testing.T) {
+	root := t.TempDir()
+	mustMkdir(t, filepath.Join(root, "festivals", spelling.Visible, "completed", "2026-07-29", "micbridge-hollyland"))
+	mustMkdir(t, filepath.Join(root, "festivals", spelling.Hidden, "completed", "2026-07-29", "obey-agent"))
+	mustWrite(t, filepath.Join(root, "festivals", spelling.Hidden, "archived", ".gitkeep"), "")
+	mustMkdir(t, filepath.Join(root, "festivals", spelling.Hidden, "someday", "later-idea"))
+	// Same work item filed under both spellings.
+	mustMkdir(t, filepath.Join(root, "festivals", spelling.Visible, "completed", "2026-07-15", "shared-item"))
+	mustMkdir(t, filepath.Join(root, "festivals", spelling.Hidden, "completed", "2026-07-15", "shared-item"))
+
+	_, err := BuildPlan(context.Background(), root)
+	if err == nil {
+		t.Fatal("BuildPlan() error = nil, want a refusal")
+	}
+	msg := err.Error()
+	for _, want := range []string{
+		"festivals/dungeon/ and festivals/.dungeon/:",
+		"only in festivals/dungeon/",
+		"completed/2026-07-29/micbridge-hollyland",
+		"only in festivals/.dungeon/",
+		"archived",
+		"someday/later-idea",
+		"completed/2026-07-29/obey-agent",
+		"in both",
+		"completed/2026-07-15/shared-item",
+		"directories that exist on both sides",
+		"completed/2026-07-29",
+	} {
+		if !strings.Contains(msg, want) {
+			t.Errorf("error missing %q, got:\n%s", want, msg)
+		}
+	}
+	// The shared parent of the date directories is implied by the deeper
+	// merge stop; listing it too would send the reader to the wrong level.
+	if strings.Contains(msg, "\n    completed\n") || strings.HasSuffix(msg, "\n    completed") {
+		t.Errorf("error should not list the ancestor directory completed as its own merge stop, got:\n%s", msg)
+	}
+}
+
+func TestBuildPlan_ConflictTruncatesLongSide(t *testing.T) {
+	root := t.TempDir()
+	for i := 0; i < conflictListLimit+1; i++ {
+		mustMkdir(t, filepath.Join(root, spelling.Visible, fmt.Sprintf("item-%02d", i)))
+	}
+	mustMkdir(t, filepath.Join(root, spelling.Hidden, "kept"))
+
+	_, err := BuildPlan(context.Background(), root)
+	if err == nil {
+		t.Fatal("BuildPlan() error = nil, want a refusal")
+	}
+	msg := err.Error()
+	if !strings.Contains(msg, "and 1 more") {
+		t.Errorf("error should cap the listing, got:\n%s", msg)
+	}
+	if strings.Contains(msg, fmt.Sprintf("item-%02d", conflictListLimit)) {
+		t.Errorf("error listed past the cap, got:\n%s", msg)
 	}
 }
 
