@@ -9,7 +9,9 @@ package migrate
 
 import (
 	"context"
+	"fmt"
 	"os"
+	"path"
 	"path/filepath"
 	"sort"
 	"strings"
@@ -192,6 +194,10 @@ func hasTrackedContent(ctx context.Context, repoPath, rel string) (bool, error) 
 	return strings.TrimSpace(out) != "", nil
 }
 
+// conflictListLimit caps how many paths one side of a conflict error lists.
+// The long tail is still counted so the refusal says what it left out.
+const conflictListLimit = 40
+
 func checkConflicts(absRoot string, found []spelling.Dungeon) error {
 	spellings := make(map[string]map[string]bool, len(found))
 	for _, d := range found {
@@ -211,10 +217,247 @@ func checkConflicts(absRoot string, found []spelling.Dungeon) error {
 		return nil
 	}
 	sort.Strings(conflicts)
-	return camperrors.Wrapf(camperrors.ErrConflict,
-		"cannot migrate: %d location(s) hold both %s/ and %s/, and only you can decide what to keep: %s. "+
-			"Move the contents of one into the other and delete the empty directory, then re-run",
-		len(conflicts), spelling.Visible, spelling.Hidden, strings.Join(conflicts, ", "))
+
+	// The parent path alone is not enough to reconcile: the two trees can hold
+	// different work, and a directory that exists on both sides cannot be moved
+	// onto itself. List each side so a person can see what is unique and where
+	// a merge would stop.
+	loc := "locations"
+	if len(conflicts) == 1 {
+		loc = "location"
+	}
+	var b strings.Builder
+	fmt.Fprintf(&b, "cannot migrate: %d %s hold both %s/ and %s/, and only you can decide what to keep",
+		len(conflicts), loc, spelling.Visible, spelling.Hidden)
+	for _, parent := range conflicts {
+		writeConflict(absRoot, parent, &b)
+	}
+	b.WriteString("\n\nMove each unique entry into the spelling you want to keep, " +
+		"merge any directory that exists on both sides, delete the directory you emptied, then re-run")
+	return camperrors.Wrap(camperrors.ErrConflict, b.String())
+}
+
+// writeConflict appends one parent's two dungeon trees to b. Listing failures
+// stay inside the refusal: the conflict is still the thing the user must fix,
+// and a stat error should not hide where the two spellings are.
+func writeConflict(absRoot, parentRel string, b *strings.Builder) {
+	parent := absRoot
+	if parentRel != "." {
+		parent = filepath.Join(absRoot, parentRel)
+	}
+	visibleLabel, hiddenLabel := conflictLabels(parentRel)
+	visible, visErr := snapshotDungeon(filepath.Join(parent, spelling.Visible))
+	hidden, hidErr := snapshotDungeon(filepath.Join(parent, spelling.Hidden))
+
+	fmt.Fprintf(b, "\n\n%s/ and %s/:", visibleLabel, hiddenLabel)
+	writeOnlyIn(b, visibleLabel+"/", visible, hidden, visErr)
+	writeOnlyIn(b, hiddenLabel+"/", hidden, visible, hidErr)
+	if visErr != nil || hidErr != nil {
+		return
+	}
+	// "In both" means the same work-item path on each side, not merely a shared
+	// parent directory. A parent that exists on both sides but holds different
+	// children is a merge stop, reported separately below.
+	both := intersect(visible.entries, entrySet(hidden.entries))
+	writePathList(b, "in both (same path on each side; compare them before deleting either)", both)
+	writePathList(b, "directories that exist on both sides (move their children; do not replace the directory)",
+		mergeStops(visible.dirs, hidden.dirs, both))
+}
+
+func conflictLabels(parentRel string) (visible, hidden string) {
+	if parentRel == "." {
+		return spelling.Visible, spelling.Hidden
+	}
+	return filepath.ToSlash(filepath.Join(parentRel, spelling.Visible)),
+		filepath.ToSlash(filepath.Join(parentRel, spelling.Hidden))
+}
+
+// dungeonSnapshot is the set of paths under a dungeon that a person would
+// reconcile. entries are the work items: leaf directories, plus files that are
+// not represented by one (placeholder .gitkeep files are not work). dirs is
+// every relative directory. paths is every relative directory and file.
+type dungeonSnapshot struct {
+	entries []string
+	dirs    map[string]struct{}
+	paths   map[string]struct{}
+}
+
+func snapshotDungeon(root string) (dungeonSnapshot, error) {
+	var dirs []string
+	var files []string
+	err := filepath.WalkDir(root, func(p string, d os.DirEntry, walkErr error) error {
+		if walkErr != nil {
+			return walkErr
+		}
+		if p == root {
+			return nil
+		}
+		rel, relErr := filepath.Rel(root, p)
+		if relErr != nil {
+			return relErr
+		}
+		rel = filepath.ToSlash(rel)
+		if d.IsDir() {
+			if d.Name() == ".git" {
+				return filepath.SkipDir
+			}
+			dirs = append(dirs, rel)
+			return nil
+		}
+		files = append(files, rel)
+		return nil
+	})
+	if err != nil {
+		return dungeonSnapshot{}, err
+	}
+
+	dirSet := make(map[string]struct{}, len(dirs))
+	paths := make(map[string]struct{}, len(dirs)+len(files))
+	for _, d := range dirs {
+		dirSet[d] = struct{}{}
+		paths[d] = struct{}{}
+	}
+	for _, f := range files {
+		paths[f] = struct{}{}
+	}
+
+	leaf := func(rel string) bool {
+		prefix := rel + "/"
+		for _, other := range dirs {
+			if strings.HasPrefix(other, prefix) {
+				return false
+			}
+		}
+		return true
+	}
+
+	var entries []string
+	for _, d := range dirs {
+		if leaf(d) {
+			entries = append(entries, d)
+		}
+	}
+	for _, f := range files {
+		if path.Base(f) == ".gitkeep" {
+			continue
+		}
+		parent := path.Dir(f)
+		if parent != "." {
+			if _, ok := dirSet[parent]; ok && leaf(parent) {
+				continue
+			}
+		}
+		entries = append(entries, f)
+	}
+	sort.Strings(entries)
+	return dungeonSnapshot{entries: entries, dirs: dirSet, paths: paths}, nil
+}
+
+// writeOnlyIn lists entries from this side whose path does not exist on the
+// other. A directory that exists on both sides is not "only" here even when
+// this side has no children under it; that case is a merge stop instead.
+func writeOnlyIn(b *strings.Builder, label string, this, other dungeonSnapshot, listErr error) {
+	fmt.Fprintf(b, "\n  only in %s:", label)
+	if listErr != nil {
+		fmt.Fprintf(b, "\n    (could not list: %v)", listErr)
+		return
+	}
+	if len(this.paths) == 0 {
+		b.WriteString("\n    (empty)")
+		return
+	}
+	writePathList(b, "", subtract(this.entries, other.paths))
+}
+
+func writePathList(b *strings.Builder, heading string, items []string) {
+	if heading != "" {
+		if len(items) == 0 {
+			return
+		}
+		fmt.Fprintf(b, "\n  %s:", heading)
+	}
+	if len(items) == 0 {
+		b.WriteString("\n    (nothing unique)")
+		return
+	}
+	shown := items
+	extra := 0
+	if len(items) > conflictListLimit {
+		shown = items[:conflictListLimit]
+		extra = len(items) - conflictListLimit
+	}
+	for _, item := range shown {
+		fmt.Fprintf(b, "\n    %s", item)
+	}
+	if extra > 0 {
+		fmt.Fprintf(b, "\n    and %d more", extra)
+	}
+}
+
+func subtract(entries []string, other map[string]struct{}) []string {
+	var out []string
+	for _, e := range entries {
+		if _, ok := other[e]; ok {
+			continue
+		}
+		out = append(out, e)
+	}
+	return out
+}
+
+func entrySet(entries []string) map[string]struct{} {
+	m := make(map[string]struct{}, len(entries))
+	for _, e := range entries {
+		m[e] = struct{}{}
+	}
+	return m
+}
+
+func intersect(entries []string, other map[string]struct{}) []string {
+	var out []string
+	for _, e := range entries {
+		if _, ok := other[e]; ok {
+			out = append(out, e)
+		}
+	}
+	return out
+}
+
+// mergeStops returns the deepest directories present on both sides that are
+// not themselves a shared work item. Those are where a rename stops: the
+// children have to be merged, because the directory cannot be moved onto the
+// copy that is already there.
+func mergeStops(a, b map[string]struct{}, sharedEntries []string) []string {
+	sharedEntry := make(map[string]struct{}, len(sharedEntries))
+	for _, e := range sharedEntries {
+		sharedEntry[e] = struct{}{}
+	}
+	var shared []string
+	for p := range a {
+		if _, ok := b[p]; !ok {
+			continue
+		}
+		if _, isEntry := sharedEntry[p]; isEntry {
+			continue
+		}
+		shared = append(shared, p)
+	}
+	sort.Strings(shared)
+	var deepest []string
+	for i, p := range shared {
+		prefix := p + "/"
+		covered := false
+		for _, other := range shared[i+1:] {
+			if strings.HasPrefix(other, prefix) {
+				covered = true
+				break
+			}
+		}
+		if !covered {
+			deepest = append(deepest, p)
+		}
+	}
+	return deepest
 }
 
 func relTo(root, path string) string {
