@@ -20,7 +20,9 @@ Use --no-recurse to only pull top-level submodules.
 
 The camp root pulls first, then submodules pull concurrently (8 at a
 time by default; set with --parallel N). Results print in .gitmodules
-order.
+order. In a terminal, a live area below the results shows the repos
+pulling right now and overall progress; piped output prints one plain
+line per repo.
 
 Examples:
   camp pull all                      # Pull all repos

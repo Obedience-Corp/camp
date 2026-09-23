@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/stretchr/testify/require"
 )
@@ -252,39 +253,39 @@ func setupPullLockCampaignWithSubmodule(t *testing.T, tc *TestContainer, campaig
 	`, campaignDir, subDir))
 }
 
-func TestPullAll_ParallelPullsEverySubmoduleAndReportsInOrder(t *testing.T) {
-	tc := GetSharedContainer(t)
-
-	const campaignDir = "/campaigns/pull-all-parallel"
-	names := []string{"alpha", "bravo", "charlie", "delta"}
+// setupParallelPullCampaign builds a campaign whose submodules each have one
+// remote commit to pull, except charlie, which has also committed locally so a
+// fast-forward-only pull of it fails.
+func setupParallelPullCampaign(t *testing.T, tc *TestContainer, campaignDir, remotePrefix string, names []string) {
+	t.Helper()
 
 	_, err := tc.InitCampaign(campaignDir, "Pull All Parallel", "")
 	require.NoError(t, err)
 
 	for _, name := range names {
 		tc.Shell(t, fmt.Sprintf(`
-			git init --bare --initial-branch=main /test/parallel-%[1]s.git
-			git clone /test/parallel-%[1]s.git /test/parallel-seed-%[1]s
-			cd /test/parallel-seed-%[1]s
+			git init --bare --initial-branch=main /test/%[3]s-%[1]s.git
+			git clone /test/%[3]s-%[1]s.git /test/%[3]s-seed-%[1]s
+			cd /test/%[3]s-seed-%[1]s
 			printf '# %[1]s' > README.md
 			git add README.md
 			git commit -m 'initial %[1]s'
 			git push origin main
 			cd %[2]s
-			GIT_ALLOW_PROTOCOL=file git submodule add /test/parallel-%[1]s.git projects/%[1]s
+			GIT_ALLOW_PROTOCOL=file git submodule add /test/%[3]s-%[1]s.git projects/%[1]s
 			git -C projects/%[1]s branch --set-upstream-to=origin/main main
-		`, name, campaignDir))
+		`, name, campaignDir, remotePrefix))
 	}
 	tc.Shell(t, fmt.Sprintf(`cd %s && git branch -M main && git commit -m 'add submodules'`, campaignDir))
 
 	for _, name := range names {
 		tc.Shell(t, fmt.Sprintf(`
-			cd /test/parallel-seed-%[1]s
+			cd /test/%[2]s-seed-%[1]s
 			printf 'remote change' > pulled.txt
 			git add pulled.txt
 			git commit -m 'remote change %[1]s'
 			git push origin main
-		`, name))
+		`, name, remotePrefix))
 	}
 	tc.Shell(t, fmt.Sprintf(`
 		cd %s/projects/charlie
@@ -292,17 +293,30 @@ func TestPullAll_ParallelPullsEverySubmoduleAndReportsInOrder(t *testing.T) {
 		git add local.txt
 		git commit -m 'local change charlie'
 	`, campaignDir))
+}
 
-	output, err := tc.RunCampInDir(campaignDir, "pull", "all", "--ff-only", "--parallel", "2")
-	require.Error(t, err, "diverged charlie should fail the run: %s", output)
-	require.Contains(t, output, "Pulled 3/4 repos (1 failed)")
-	require.Contains(t, output, "charlie:")
-
+func requireParallelPullLanded(t *testing.T, tc *TestContainer, campaignDir string) {
+	t.Helper()
 	for _, name := range []string{"alpha", "bravo", "delta"} {
 		exists, err := tc.CheckFileExists(fmt.Sprintf("%s/projects/%s/pulled.txt", campaignDir, name))
 		require.NoError(t, err)
 		require.True(t, exists, "%s should be pulled even though charlie failed", name)
 	}
+}
+
+func TestPullAll_ParallelPullsEverySubmoduleAndReportsInOrder(t *testing.T) {
+	tc := GetSharedContainer(t)
+
+	const campaignDir = "/campaigns/pull-all-parallel"
+	names := []string{"alpha", "bravo", "charlie", "delta"}
+	setupParallelPullCampaign(t, tc, campaignDir, "parallel", names)
+
+	output, err := tc.RunCampInDir(campaignDir, "pull", "all", "--ff-only", "--parallel", "2")
+	require.Error(t, err, "diverged charlie should fail the run: %s", output)
+	require.Contains(t, output, "Pulled 3/4 repos (1 failed)")
+	require.Contains(t, output, "charlie:")
+	require.NotContains(t, output, "\x1b[1A", "piped output must not redraw a live area")
+	requireParallelPullLanded(t, tc, campaignDir)
 
 	last := -1
 	for _, name := range names {
@@ -310,6 +324,29 @@ func TestPullAll_ParallelPullsEverySubmoduleAndReportsInOrder(t *testing.T) {
 		require.Greater(t, idx, last, "%s should be reported after the submodules declared before it:\n%s", name, output)
 		last = idx
 	}
+}
+
+func TestPullAll_TTYShowsLiveProgressThenFinalResults(t *testing.T) {
+	tc := GetSharedContainer(t)
+
+	const campaignDir = "/campaigns/pull-all-parallel-tty"
+	names := []string{"alpha", "bravo", "charlie", "delta"}
+	setupParallelPullCampaign(t, tc, campaignDir, "parallel-tty", names)
+
+	output, err := tc.runCampInteractive(campaignDir, nil, 60*time.Second,
+		[]InteractiveStep{{WaitFor: "Pulled 3/4 repos (1 failed)"}},
+		"pull", "all", "--ff-only", "--parallel", "2", "--no-drain",
+	)
+	require.Error(t, err, "diverged charlie should fail the run; output:\n%s", output)
+	require.Contains(t, output, "Pulled 3/4 repos (1 failed)")
+
+	require.Contains(t, output, "\x1b[1A\x1b[2K", "a terminal should get the redrawn live area")
+	require.Contains(t, output, "/5", "the progress bar should count the root and all four submodules")
+	for _, name := range []string{"alpha", "bravo", "delta"} {
+		require.Regexp(t, `✓\S* `+name+` `, output, "%s should finish with a success mark", name)
+	}
+	require.Regexp(t, `✗\S* charlie `, output, "charlie should finish with a failure mark")
+	requireParallelPullLanded(t, tc, campaignDir)
 }
 
 func TestPullAll_RejectsInvalidParallel(t *testing.T) {

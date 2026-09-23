@@ -90,7 +90,13 @@ func runPull(cmd *cobra.Command, args []string) error {
 }
 
 func runPullAll(ctx context.Context, campRoot string, gitArgs []string, opts pullsvc.Options) error {
-	_, err := pullsvc.RunAll(ctx, campRoot, gitArgs, opts, newPullHooks())
+	hooks := newPullHooks()
+	if pullProgressLive(os.Stdout) {
+		var closeProgress func()
+		hooks, closeProgress = newLivePullHooks(os.Stdout)
+		defer closeProgress()
+	}
+	_, err := pullsvc.RunAll(ctx, campRoot, gitArgs, opts, hooks)
 	return err
 }
 
@@ -128,7 +134,7 @@ func renderPullStart() {
 }
 
 func renderPullSkip(t pullsvc.Target, status string, styles pullStyles) {
-	fmt.Printf("  %-30s %s\n", t.Name, styles.yellow.Render(status))
+	fmt.Println(formatPullSkip(t, status, styles))
 }
 
 func renderPulling(t pullsvc.Target, originalBranch string, styles pullStyles) {
@@ -143,14 +149,7 @@ func renderPulling(t pullsvc.Target, originalBranch string, styles pullStyles) {
 }
 
 func renderPullResult(result pullsvc.Result, styles pullStyles) {
-	switch result.Outcome {
-	case pullsvc.OutcomePulled:
-		fmt.Println(styles.green.Render(result.Status))
-	case pullsvc.OutcomeSkipped:
-		fmt.Println(styles.dim.Render(result.Status))
-	case pullsvc.OutcomeFailed:
-		fmt.Println(styles.red.Render(result.Status))
-	}
+	fmt.Println(pullResultStatus(result, styles))
 }
 
 func renderPullSummary(summary pullsvc.Summary, styles pullStyles) {

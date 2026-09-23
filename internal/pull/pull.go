@@ -70,8 +70,16 @@ type Summary struct {
 }
 
 // Hooks let callers render progress without putting UI dependencies in this package.
+//
+// OnBegin and OnFinish fire from worker goroutines as each target starts and
+// finishes, in whatever order that happens, so they must be safe for concurrent
+// use. Every other hook fires on the calling goroutine, and OnSkip, OnPulling,
+// and OnResult fire in declaration order.
 type Hooks struct {
 	OnStart       func()
+	OnTargets     func([]Target)
+	OnBegin       func(Target)
+	OnFinish      func(Result)
 	OnSkip        func(Target, string)
 	OnPulling     func(Target, string)
 	OnResult      func(Result)
@@ -145,6 +153,20 @@ func RunAll(ctx context.Context, campRoot string, gitArgs []string, opts Options
 	}
 
 	targets := buildTargets(ctx, campRoot, paths)
+	if hooks.OnTargets != nil {
+		hooks.OnTargets(targets)
+	}
+
+	run := func(t *Target) attempt {
+		if hooks.OnBegin != nil {
+			hooks.OnBegin(*t)
+		}
+		a := pullTarget(ctx, t, gitArgs, opts)
+		if hooks.OnFinish != nil {
+			hooks.OnFinish(a.result)
+		}
+		return a
+	}
 
 	var summary Summary
 	record := func(result Result) {
@@ -163,12 +185,12 @@ func RunAll(ctx context.Context, campRoot string, gitArgs []string, opts Options
 	if ctx.Err() != nil {
 		return summary, ctx.Err()
 	}
-	record(PullTarget(ctx, &targets[0], gitArgs, opts, hooks))
+	record(run(&targets[0]).report(hooks))
 
 	subs := targets[1:]
 	attempts := make([]attempt, len(subs))
 	err = runOrdered(ctx, len(subs), opts.Parallel,
-		func(i int) { attempts[i] = pullTarget(ctx, &subs[i], gitArgs, opts) },
+		func(i int) { attempts[i] = run(&subs[i]) },
 		func(i int) { record(attempts[i].report(hooks)) },
 	)
 	if err != nil {
