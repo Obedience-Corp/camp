@@ -1,8 +1,12 @@
 package main
 
 import (
+	"strconv"
+	"strings"
+
 	"github.com/Obedience-Corp/camp/internal/campaign"
 	"github.com/Obedience-Corp/camp/internal/drain"
+	camperrors "github.com/Obedience-Corp/camp/internal/errors"
 	pullsvc "github.com/Obedience-Corp/camp/internal/pull"
 	"github.com/spf13/cobra"
 )
@@ -24,12 +28,17 @@ branches whose remote tracking branch has been deleted.
 By default, nested submodules (e.g. inside monorepos) are included.
 Use --no-recurse to only pull top-level submodules.
 
+The camp root pulls first, then submodules pull concurrently (8 at a
+time by default; set with --parallel N). Results print in .gitmodules
+order.
+
 Examples:
   camp pull all                      # Pull all repos
   camp pull all --rebase             # Pull all repos with rebase
   camp pull all --ff-only            # Fast-forward only for all repos
   camp pull all --no-recurse         # Only top-level submodules
-  camp pull all --default-branch     # Checkout default branch first`,
+  camp pull all --default-branch     # Checkout default branch first
+  camp pull all --parallel 2         # Pull at most 2 submodules at once`,
 	RunE:               runPullAllCmd,
 	DisableFlagParsing: true,
 }
@@ -51,6 +60,10 @@ func runPullAllCmd(cmd *cobra.Command, args []string) error {
 	args, noRecurse = extractFlag(args, "--no-recurse")
 	args, useDefault = extractFlag(args, "--default-branch")
 	args, noDrain = extractFlag(args, "--no-drain")
+	args, parallel, err := extractParallelFlag(args)
+	if err != nil {
+		return err
+	}
 
 	if !noDrain {
 		if _, err := drain.AllLanes(ctx, campRoot, drain.Write); err != nil {
@@ -61,6 +74,38 @@ func runPullAllCmd(cmd *cobra.Command, args []string) error {
 	return runPullAll(ctx, campRoot, args, pullsvc.Options{
 		NoRecurse:     noRecurse,
 		DefaultBranch: useDefault,
+		Parallel:      parallel,
 		IO:            pullsvc.DefaultIO(),
 	})
+}
+
+// extractParallelFlag removes --parallel N or --parallel=N from args. It is
+// long-form only because -p passes through to git pull as --prune.
+func extractParallelFlag(args []string) ([]string, int, error) {
+	const flag = "--parallel"
+	filtered := make([]string, 0, len(args))
+	parallel := pullsvc.DefaultParallel
+	for i := 0; i < len(args); i++ {
+		a := args[i]
+		var raw string
+		switch {
+		case a == flag:
+			if i+1 >= len(args) {
+				return nil, 0, camperrors.New(flag + " requires a value")
+			}
+			i++
+			raw = args[i]
+		case strings.HasPrefix(a, flag+"="):
+			raw = strings.TrimPrefix(a, flag+"=")
+		default:
+			filtered = append(filtered, a)
+			continue
+		}
+		n, err := strconv.Atoi(raw)
+		if err != nil || n < 1 {
+			return nil, 0, camperrors.Newf("%s must be a positive integer, got %q", flag, raw)
+		}
+		parallel = n
+	}
+	return filtered, parallel, nil
 }
