@@ -110,3 +110,11 @@ func TestRunOrderedDefaultsParallelWhenUnset(t *testing.T) {
 		t.Fatalf("work calls = %d, want 4", got)
 	}
 }
+
+func TestTargetPullArgsKeepsEveryPullOutOfNestedSubmodules(t *testing.T) {
+	got := targetPullArgs([]string{"--ff-only", "--recurse-submodules"})
+	want := []string{"--no-recurse-submodules", "--ff-only", "--recurse-submodules"}
+	if !slices.Equal(got, want) {
+		t.Fatalf("targetPullArgs() = %q, want %q: the default comes first so an explicit user flag still wins", got, want)
+	}
+}

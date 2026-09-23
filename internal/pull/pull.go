@@ -273,12 +273,7 @@ func pullTarget(ctx context.Context, t *Target, gitArgs []string, opts Options) 
 		}
 	}
 
-	pullArgs := make([]string, 0, len(gitArgs)+1)
-	if t.IsRoot {
-		pullArgs = append(pullArgs, "--no-recurse-submodules")
-	}
-	pullArgs = append(pullArgs, gitArgs...)
-	output, err := RunGitPullWithLockRetry(ctx, t.Path, pullArgs, false, opts.IO)
+	output, err := RunGitPullWithLockRetry(ctx, t.Path, targetPullArgs(gitArgs), false, opts.IO)
 	if err != nil {
 		rebaseInitiatedHere := git.IsRebaseInProgress(ctx, t.Path)
 		return attempt{
@@ -298,6 +293,15 @@ func pullTarget(ctx context.Context, t *Target, gitArgs []string, opts Options) 
 		result.Status = "done"
 	}
 	return attempt{result: result, originalBranch: originalBranch, pulled: true}
+}
+
+// targetPullArgs keeps every pull, not just the root's, out of nested
+// submodules. RunAll already pulls each nested repo as its own target, and it
+// may be running at the same moment, so a parent pull that recursed into it
+// would put two git processes in one repository. User args come after, so an
+// explicit --recurse-submodules still wins.
+func targetPullArgs(gitArgs []string) []string {
+	return append([]string{"--no-recurse-submodules"}, gitArgs...)
 }
 
 func skipped(t Target, status string) attempt {
