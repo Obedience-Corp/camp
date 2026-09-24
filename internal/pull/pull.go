@@ -27,7 +27,9 @@ type IO struct {
 type Options struct {
 	NoRecurse     bool
 	DefaultBranch bool
-	IO            IO
+	// Parallel bounds how many submodules pull at once; below 1 means DefaultParallel.
+	Parallel int
+	IO       IO
 }
 
 // Target is one repository that may be pulled.
@@ -68,8 +70,16 @@ type Summary struct {
 }
 
 // Hooks let callers render progress without putting UI dependencies in this package.
+//
+// OnBegin and OnFinish fire from worker goroutines as each target starts and
+// finishes, in whatever order that happens, so they must be safe for concurrent
+// use. Every other hook fires on the calling goroutine, and OnSkip, OnPulling,
+// and OnResult fire in declaration order.
 type Hooks struct {
 	OnStart       func()
+	OnTargets     func([]Target)
+	OnBegin       func(Target)
+	OnFinish      func(Result)
 	OnSkip        func(Target, string)
 	OnPulling     func(Target, string)
 	OnResult      func(Result)
@@ -143,15 +153,23 @@ func RunAll(ctx context.Context, campRoot string, gitArgs []string, opts Options
 	}
 
 	targets := buildTargets(ctx, campRoot, paths)
+	if hooks.OnTargets != nil {
+		hooks.OnTargets(targets)
+	}
+
+	run := func(t *Target) attempt {
+		if hooks.OnBegin != nil {
+			hooks.OnBegin(*t)
+		}
+		a := pullTarget(ctx, t, gitArgs, opts)
+		if hooks.OnFinish != nil {
+			hooks.OnFinish(a.result)
+		}
+		return a
+	}
 
 	var summary Summary
-	for i := range targets {
-		t := &targets[i]
-		if ctx.Err() != nil {
-			return summary, ctx.Err()
-		}
-
-		result := PullTarget(ctx, t, gitArgs, opts, hooks)
+	record := func(result Result) {
 		summary.Results = append(summary.Results, result)
 		switch result.Outcome {
 		case OutcomePulled:
@@ -162,6 +180,21 @@ func RunAll(ctx context.Context, campRoot string, gitArgs []string, opts Options
 			summary.Failed++
 			summary.Errors = append(summary.Errors, result.ErrorMessage)
 		}
+	}
+
+	if ctx.Err() != nil {
+		return summary, ctx.Err()
+	}
+	record(run(&targets[0]).report(hooks))
+
+	subs := targets[1:]
+	attempts := make([]attempt, len(subs))
+	err = runOrdered(ctx, len(subs), opts.Parallel,
+		func(i int) { attempts[i] = run(&subs[i]) },
+		func(i int) { record(attempts[i].report(hooks)) },
+	)
+	if err != nil {
+		return summary, err
 	}
 
 	summary.ChangedRefs = ChangedRefs(ctx, campRoot, paths)
@@ -180,19 +213,46 @@ func RunAll(ctx context.Context, campRoot string, gitArgs []string, opts Options
 
 // PullTarget handles checkout-if-needed, upstream checks, and pull for one target.
 func PullTarget(ctx context.Context, t *Target, gitArgs []string, opts Options, hooks Hooks) Result {
+	return pullTarget(ctx, t, gitArgs, opts).report(hooks)
+}
+
+// attempt is one target's outcome, held until it is reported in declaration order.
+type attempt struct {
+	result         Result
+	originalBranch string
+	pulled         bool
+}
+
+func (a attempt) report(hooks Hooks) Result {
+	if !a.pulled {
+		if hooks.OnSkip != nil {
+			hooks.OnSkip(a.result.Target, a.result.Status)
+		}
+		return a.result
+	}
+	if hooks.OnPulling != nil {
+		hooks.OnPulling(a.result.Target, a.originalBranch)
+	}
+	if hooks.OnResult != nil {
+		hooks.OnResult(a.result)
+	}
+	return a.result
+}
+
+func pullTarget(ctx context.Context, t *Target, gitArgs []string, opts Options) attempt {
 	originalBranch := t.Branch
 
 	if git.IsRebaseInProgress(ctx, t.Path) {
-		return skipped(*t, "rebase in progress -- resolve or abort manually", hooks)
+		return skipped(*t, "rebase in progress -- resolve or abort manually")
 	}
 
 	if t.Branch == "" || t.Branch == "HEAD" {
 		if opts.DefaultBranch && !t.IsRoot {
 			if _, _, err := checkoutDefaultIfNeeded(ctx, t); err != nil {
-				return skipped(*t, "detached HEAD (checkout failed)", hooks)
+				return skipped(*t, "detached HEAD (checkout failed)")
 			}
 		} else {
-			return skipped(*t, "detached HEAD", hooks)
+			return skipped(*t, "detached HEAD")
 		}
 	}
 
@@ -200,36 +260,27 @@ func PullTarget(ctx context.Context, t *Target, gitArgs []string, opts Options, 
 		if opts.DefaultBranch && !t.IsRoot {
 			branch, checkoutErr := git.CheckoutDefaultBranch(ctx, t.Path)
 			if checkoutErr != nil {
-				return skipped(*t, "no upstream (checkout failed)", hooks)
+				return skipped(*t, "no upstream (checkout failed)")
 			}
 			if t.Branch != branch {
 				t.Branch = branch
 			}
 			if _, err := git.Output(ctx, t.Path, "rev-parse", "--abbrev-ref", "@{upstream}"); err != nil {
-				return skipped(*t, "no upstream", hooks)
+				return skipped(*t, "no upstream")
 			}
 		} else {
-			return skipped(*t, "no upstream", hooks)
+			return skipped(*t, "no upstream")
 		}
 	}
 
-	if hooks.OnPulling != nil {
-		hooks.OnPulling(*t, originalBranch)
-	}
-
-	pullArgs := make([]string, 0, len(gitArgs)+1)
-	if t.IsRoot {
-		pullArgs = append(pullArgs, "--no-recurse-submodules")
-	}
-	pullArgs = append(pullArgs, gitArgs...)
-	output, err := RunGitPullWithLockRetry(ctx, t.Path, pullArgs, false, opts.IO)
+	output, err := RunGitPullWithLockRetry(ctx, t.Path, targetPullArgs(gitArgs), false, opts.IO)
 	if err != nil {
 		rebaseInitiatedHere := git.IsRebaseInProgress(ctx, t.Path)
-		result := handleError(ctx, t, output, err, rebaseInitiatedHere)
-		if hooks.OnResult != nil {
-			hooks.OnResult(result)
+		return attempt{
+			result:         handleError(ctx, t, output, err, rebaseInitiatedHere),
+			originalBranch: originalBranch,
+			pulled:         true,
 		}
-		return result
 	}
 
 	outStr := strings.TrimSpace(string(output))
@@ -241,22 +292,24 @@ func PullTarget(ctx context.Context, t *Target, gitArgs []string, opts Options, 
 		result.Outcome = OutcomePulled
 		result.Status = "done"
 	}
-	if hooks.OnResult != nil {
-		hooks.OnResult(result)
-	}
-	return result
+	return attempt{result: result, originalBranch: originalBranch, pulled: true}
 }
 
-func skipped(t Target, status string, hooks Hooks) Result {
-	result := Result{
+// targetPullArgs keeps every pull, not just the root's, out of nested
+// submodules. RunAll already pulls each nested repo as its own target, and it
+// may be running at the same moment, so a parent pull that recursed into it
+// would put two git processes in one repository. User args come after, so an
+// explicit --recurse-submodules still wins.
+func targetPullArgs(gitArgs []string) []string {
+	return append([]string{"--no-recurse-submodules"}, gitArgs...)
+}
+
+func skipped(t Target, status string) attempt {
+	return attempt{result: Result{
 		Target:  t,
 		Outcome: OutcomeSkipped,
 		Status:  status,
-	}
-	if hooks.OnSkip != nil {
-		hooks.OnSkip(t, status)
-	}
-	return result
+	}}
 }
 
 func checkoutDefaultIfNeeded(ctx context.Context, t *Target) (originalBranch string, switched bool, err error) {

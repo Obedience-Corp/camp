@@ -70,3 +70,42 @@ func TestPullPushHelpDoesNotAdvertiseProjectShortFlag(t *testing.T) {
 		})
 	}
 }
+
+func TestExtractParallelFlag(t *testing.T) {
+	tests := []struct {
+		name     string
+		args     []string
+		wantArgs []string
+		wantN    int
+		wantErr  bool
+	}{
+		{name: "absent uses default", args: []string{"--ff-only"}, wantArgs: []string{"--ff-only"}, wantN: pullsvc.DefaultParallel},
+		{name: "separate value", args: []string{"--parallel", "3", "--rebase"}, wantArgs: []string{"--rebase"}, wantN: 3},
+		{name: "equals value", args: []string{"--parallel=2"}, wantArgs: []string{}, wantN: 2},
+		{name: "short -p passes through to git", args: []string{"-p"}, wantArgs: []string{"-p"}, wantN: pullsvc.DefaultParallel},
+		{name: "missing value", args: []string{"--parallel"}, wantErr: true},
+		{name: "zero", args: []string{"--parallel", "0"}, wantErr: true},
+		{name: "not a number", args: []string{"--parallel=many"}, wantErr: true},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			gotArgs, gotN, err := extractParallelFlag(tt.args)
+			if tt.wantErr {
+				if err == nil {
+					t.Fatalf("extractParallelFlag(%q) error = nil, want error", tt.args)
+				}
+				return
+			}
+			if err != nil {
+				t.Fatalf("extractParallelFlag(%q) error = %v", tt.args, err)
+			}
+			if gotN != tt.wantN {
+				t.Fatalf("parallel = %d, want %d", gotN, tt.wantN)
+			}
+			if strings.Join(gotArgs, " ") != strings.Join(tt.wantArgs, " ") {
+				t.Fatalf("args = %q, want %q", gotArgs, tt.wantArgs)
+			}
+		})
+	}
+}
