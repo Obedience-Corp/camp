@@ -80,6 +80,9 @@ func parentChildItems(parent *Concept, diskItems []Item, countFn func(relPath st
 		covered[ch.Name] = true
 	}
 
+	// Ad-hoc directories drill under the parent's own depth rule, so at the
+	// parent's max depth they are selectable leaves rather than empty drills.
+	diskDrillDisabled := parent.MaxDepth != nil && *parent.MaxDepth <= 1
 	ignoreSet := makeIgnoreSet(parent.Ignore)
 	for _, di := range diskItems {
 		if !di.IsDir || covered[di.Name] || isPickerHidden(di.Name) {
@@ -88,6 +91,7 @@ func parentChildItems(parent *Concept, diskItems []Item, countFn func(relPath st
 		if ignoreSet[di.Name] || ignoreSet[di.Name+"/"] {
 			continue
 		}
+		di.DrillDisabled = di.DrillDisabled || diskDrillDisabled
 		items = append(items, di)
 		covered[di.Name] = true
 	}
