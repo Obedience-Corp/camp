@@ -26,6 +26,7 @@ const (
 	noneOptionLabel = "(none) - No concept association"
 	newProjectLabel = "+ New Project"
 	newProjectPath  = "projects/new"
+	thisDirOptionID = "(this directory)"
 
 	pickerHelpLong  = "↑/↓ move · type to filter · enter select · backspace back · esc cancel"
 	pickerHelpShort = "↑/↓ · type · enter · esc"
@@ -45,6 +46,8 @@ type ConceptPickerModel struct {
 	selectedConcept *concept.Concept
 	currentSubpath  string
 	pathHistory     []string
+	currentDir      string
+	dirHistory      []string
 
 	selectedPath string
 	cancelled    bool
@@ -159,6 +162,12 @@ func (m ConceptPickerModel) confirmOrDrillItem(forceDrill bool) (ConceptPickerMo
 	if !ok || m.selectedConcept == nil {
 		return m, nil
 	}
+	if it.ID == thisDirOptionID {
+		m.selectedPath = m.currentDir
+		m.recordVisit(m.currentDir)
+		m.step = stepDone
+		return m, nil
+	}
 	item, found := m.itemByPath(it.ID)
 	if !found {
 		return m, nil
@@ -181,6 +190,8 @@ func (m ConceptPickerModel) confirmOrDrillItem(forceDrill bool) (ConceptPickerMo
 
 func (m *ConceptPickerModel) drillInto(item concept.Item) {
 	m.pathHistory = append(m.pathHistory, m.currentSubpath)
+	m.dirHistory = append(m.dirHistory, m.currentDir)
+	m.currentDir = item.Path
 	if m.currentSubpath == "" {
 		m.currentSubpath = item.Name
 	} else {
@@ -196,15 +207,19 @@ func (m *ConceptPickerModel) navigateUp() {
 		previousPath := m.pathHistory[lastIdx]
 		m.pathHistory = m.pathHistory[:lastIdx]
 		m.currentSubpath = previousPath
+		m.currentDir = m.dirHistory[lastIdx]
+		m.dirHistory = m.dirHistory[:lastIdx]
 		m.loadItems(previousPath)
 	case m.currentSubpath != "":
 		m.currentSubpath = ""
+		m.currentDir = ""
 		m.loadItems("")
 	default:
 		m.step = stepSelectingType
 		m.selectedConcept = nil
 		m.items = nil
 		m.currentSubpath = ""
+		m.currentDir = ""
 		m.sel.Reset(m.typeItems(), m.typeOpts())
 	}
 }
@@ -281,7 +296,16 @@ func (m ConceptPickerModel) typeOpts() selector.Options {
 }
 
 func (m ConceptPickerModel) itemSelectorItems() []selector.Item {
-	out := make([]selector.Item, 0, len(m.items))
+	out := make([]selector.Item, 0, len(m.items)+1)
+	if m.currentDir != "" {
+		// A drilled directory is itself a valid association (e.g. a workflow
+		// type like workflow/blog), not only the work items beneath it.
+		out = append(out, selector.Item{
+			ID:    thisDirOptionID,
+			Label: "✓ Use " + strings.TrimSuffix(m.currentDir, "/") + " (this directory)",
+			Pin:   selector.PinTop,
+		})
+	}
 	for _, item := range m.items {
 		sel := selector.Item{
 			ID:     item.Path,

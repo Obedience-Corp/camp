@@ -269,3 +269,49 @@ func TestList_PopulatesChildren(t *testing.T) {
 		t.Errorf("workflow.Children = %+v, want [festivals design]", workflow.Children)
 	}
 }
+
+func TestListItems_ParentChildren_DiskOnlyDirHonorsParentDepth(t *testing.T) {
+	depth1 := 1
+	tests := []struct {
+		name         string
+		depth        *int
+		wantDisabled bool
+	}{
+		{name: "parent depth 1 makes disk dir a leaf", depth: &depth1, wantDisabled: true},
+		{name: "unlimited parent depth keeps disk dir drillable", depth: nil, wantDisabled: false},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			concepts := []config.ConceptEntry{{
+				Name:     "workflow",
+				Path:     "workflow",
+				Depth:    tt.depth,
+				Children: []config.ConceptEntry{{Name: "design", Path: "workflow/design", Depth: &depth1}},
+			}}
+			fsys := fstest.MapFS{
+				"workflow/design/doc/file":   &fstest.MapFile{Data: []byte("")},
+				"workflow/blog/posts/p.md":   &fstest.MapFile{Data: []byte("")},
+				"workflow/blog/README.md":    &fstest.MapFile{Data: []byte("")},
+				"workflow/blog/tools/gen.py": &fstest.MapFile{Data: []byte("")},
+			}
+			svc := NewFSService("", concepts, fsys)
+
+			items, err := svc.ListItems(context.Background(), "workflow", "")
+			if err != nil {
+				t.Fatalf("ListItems: %v", err)
+			}
+			for _, it := range items {
+				switch it.Name {
+				case "blog":
+					if it.DrillDisabled != tt.wantDisabled {
+						t.Errorf("blog DrillDisabled = %v, want %v", it.DrillDisabled, tt.wantDisabled)
+					}
+				case "design":
+					if it.DrillDisabled {
+						t.Error("configured child design should stay drillable under its own depth")
+					}
+				}
+			}
+		})
+	}
+}
