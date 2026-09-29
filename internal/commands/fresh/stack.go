@@ -189,23 +189,23 @@ func classifyPendingWorktrees(ctx context.Context, pending []stackWorktreePlan, 
 // printStackPlan writes the cleanup plan to stdout so the user sees exactly
 // what will be kept, removed, and skipped before any mutation occurs. In
 // dry-run mode this is the only output for the stack step.
-func printStackPlan(prefix string, plan stackCleanupPlan, dryRun bool) {
+func printStackPlan(plan stackCleanupPlan, dryRun bool) {
 	total := len(plan.keep) + len(plan.remove) + len(plan.skipDirty) + len(plan.skipUnmerged) + len(plan.skipOffStack)
-	fmt.Printf("%s── Stack cleanup plan %-16s %s\n", prefix,
-		ui.Value(plan.targetBranch), freshStepDim.Render(fmt.Sprintf("(%d worktree(s) found)", total)))
+	freshRow("Stack cleanup plan", plan.targetBranch, ui.StatusPlain)
+	freshDetail(fmt.Sprintf("%d worktree(s) found", total))
 
-	printPlanGroup(prefix, "keep:", plan.keep, false)
+	printPlanGroup("keep:", plan.keep, false)
 	removeLabel := "remove:"
 	if dryRun {
 		removeLabel = "would remove:"
 	}
-	printPlanGroup(prefix, removeLabel, plan.remove, true)
-	printPlanGroup(prefix, "skip (dirty):", plan.skipDirty, false)
-	printPlanGroup(prefix, "skip (not merged):", plan.skipUnmerged, false)
-	printPlanGroup(prefix, "skip (not stacked):", plan.skipOffStack, false)
+	printPlanGroup(removeLabel, plan.remove, true)
+	printPlanGroup("skip (dirty):", plan.skipDirty, false)
+	printPlanGroup("skip (not merged):", plan.skipUnmerged, false)
+	printPlanGroup("skip (not stacked):", plan.skipOffStack, false)
 }
 
-func printPlanGroup(prefix, label string, entries []stackWorktreePlan, highlight bool) {
+func printPlanGroup(label string, entries []stackWorktreePlan, highlight bool) {
 	if len(entries) == 0 {
 		return
 	}
@@ -215,14 +215,14 @@ func printPlanGroup(prefix, label string, entries []stackWorktreePlan, highlight
 	} else if strings.HasPrefix(label, "skip") {
 		rendered = ui.Warning(label)
 	}
-	fmt.Printf("%s   %s\n", prefix, rendered)
+	fmt.Printf("%s%s\n", ui.ChecklistDetailIndent, rendered)
 	for _, p := range entries {
 		name := filepath.Base(p.entry.Path)
 		if highlight {
-			fmt.Printf("%s     %s %s\n", prefix, name, freshStepDim.Render(p.entry.Branch))
+			fmt.Printf("%s  %s %s\n", ui.ChecklistDetailIndent, name, freshStepDim.Render(p.entry.Branch))
 			continue
 		}
-		fmt.Printf("%s     %s %s\n", prefix, ui.Dim(name), freshStepDim.Render(p.entry.Branch))
+		fmt.Printf("%s  %s %s\n", ui.ChecklistDetailIndent, ui.Dim(name), freshStepDim.Render(p.entry.Branch))
 	}
 }
 
@@ -269,7 +269,7 @@ func executeStackCleanup(ctx context.Context, plan stackCleanupPlan) (removed in
 // plan cannot be computed; per-worktree removal failures are collected and
 // reported as warnings, not fatal errors, so a single bad worktree does not
 // abort the fresh cycle.
-func runStackCleanup(ctx context.Context, name, path, targetBranch string, dryRun, allowDefaultTarget bool, prefix string) error {
+func runStackCleanup(ctx context.Context, name, path, targetBranch string, dryRun, allowDefaultTarget bool) error {
 	if strings.TrimSpace(targetBranch) == "" {
 		return camperrors.New("--cleanup-stack requires --branch <existing-branch>")
 	}
@@ -279,27 +279,26 @@ func runStackCleanup(ctx context.Context, name, path, targetBranch string, dryRu
 		return err
 	}
 
-	printStackPlan(prefix, plan, dryRun)
+	printStackPlan(plan, dryRun)
 
 	if dryRun {
-		fmt.Printf("%s── Stack cleanup %-22s %s\n", prefix, "", freshStepDim.Render("(dry-run — no worktrees or branches changed)"))
+		freshRow("Stack cleanup", "dry-run — no worktrees or branches changed", ui.StatusMuted)
 		return nil
 	}
 
 	if len(plan.remove) == 0 {
-		fmt.Printf("%s── Stack cleanup %-22s %s\n", prefix, "", freshStepDim.Render("nothing to remove"))
+		freshRow("Stack cleanup", "nothing to remove", ui.StatusMuted)
 		return nil
 	}
 
 	removed, errs := executeStackCleanup(ctx, plan)
 
 	if removed > 0 {
-		detail := fmt.Sprintf("removed %d worktree(s)", removed)
-		fmt.Printf("%s── Stack cleanup %-22s %s\n", prefix, "", freshStepGreen.Render(detail))
+		freshRow("Stack cleanup", fmt.Sprintf("removed %d worktree(s)", removed), ui.StatusSuccess)
 	}
 
 	for _, msg := range errs {
-		fmt.Printf("%s   %s %s\n", prefix, ui.WarningIcon(), ui.Warning(msg))
+		fmt.Printf("     %s %s\n", ui.WarningIcon(), ui.Warning(msg))
 	}
 
 	return nil

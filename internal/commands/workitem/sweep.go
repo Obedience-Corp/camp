@@ -693,19 +693,22 @@ func emitSweepReport(ctx context.Context, out io.Writer, work *sweepWork) error 
 	if err := triage.WriteBanner(ctx, out, work.root, time.Now()); err != nil {
 		return err
 	}
+	if len(work.actionable) > 0 || len(work.skipped) > 0 {
+		if err := writeSweepHeading(out); err != nil {
+			return err
+		}
+	}
 	for _, cand := range work.actionable {
 		verb := "promote to completed"
 		if cand.Disposition == wkitem.DispositionRoute {
 			verb = "route its findings"
 		}
-		if _, err := fmt.Fprintf(out, "  %s %s (%s): would %s\n",
-			ui.InfoIcon(), filepath.ToSlash(cand.Item.RelativePath), cand.Item.WorkflowType, verb); err != nil {
+		if err := writeSweepFact(out, cand.Item.RelativePath, string(cand.Item.WorkflowType), "would "+verb, "would "+verb); err != nil {
 			return err
 		}
 	}
 	for _, skip := range work.skipped {
-		if _, err := fmt.Fprintf(out, "  %s %s (%s): not moved, %s\n",
-			ui.InfoIcon(), filepath.ToSlash(skip.Item.RelativePath), skip.Item.WorkflowType, skip.Detail); err != nil {
+		if err := writeSweepFact(out, skip.Item.RelativePath, string(skip.Item.WorkflowType), "not moved", "not moved, "+skip.Detail); err != nil {
 			return err
 		}
 	}
@@ -782,9 +785,14 @@ func emitSweepResult(cmd *cobra.Command, result *workitemSweepResult, jsonOut bo
 // printSweepSkips names every workitem the sweep declined to move and why, so
 // the automatic path never leaves a decision unexplained.
 func printSweepSkips(out io.Writer, result *workitemSweepResult) error {
+	if len(result.Skipped) == 0 {
+		return nil
+	}
+	if err := writeSweepHeading(out); err != nil {
+		return err
+	}
 	for _, s := range result.Skipped {
-		if _, err := fmt.Fprintf(out, "  %s %s (%s): not moved, %s\n",
-			ui.InfoIcon(), s.From, s.Type, s.Detail); err != nil {
+		if err := writeSweepFact(out, s.From, s.Type, "not moved", "not moved, "+s.Detail); err != nil {
 			return err
 		}
 	}
