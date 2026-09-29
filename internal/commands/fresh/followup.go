@@ -69,26 +69,52 @@ func runFreshFollowUps(ctx context.Context, path string, steps []config.FollowUp
 	return nil
 }
 
-// runFollowUpCommand runs command through the shell in dir, streaming its
-// stdout/stderr directly to the terminal so long-running steps (installs,
-// builds) show live progress rather than a silent pause.
+// runFollowUpCommand runs command through the shell in dir. When camp's own
+// stdout is a terminal, the command gets one too, so tools that color their
+// log and size their layout still do. The bytes are copied to output, which
+// is the live row's stream: the spinner clears before the first child byte
+// is drawn. A pipe or a dumb terminal keeps the direct write.
 func runFollowUpCommand(ctx context.Context, dir, command string, output io.Writer) error {
-	if ctx.Err() != nil {
-		return ctx.Err()
+	return runFollowUpCommandOn(ctx, dir, command, output, os.Stdout)
+}
+
+func runFollowUpCommandOn(ctx context.Context, dir, command string, output io.Writer, termFile *os.File) error {
+	if err := ctx.Err(); err != nil {
+		return err
 	}
 
-	cmd := exec.CommandContext(ctx, "sh", "-c", command)
-	cmd.Dir = dir
+	if followUpUsesTerminal(termFile) {
+		cmd := newFollowUpCmd(ctx, dir, command)
+		err := runFollowUpOnTerminal(cmd, termFile, output)
+		if err == nil {
+			return nil
+		}
+		// Only a terminal that never opened falls through to the pipe.
+		// An exit, or a command that failed to start, is the result.
+		if !errors.Is(err, errFollowUpTTYUnavailable) {
+			return followUpCommandError(command, err)
+		}
+	}
+
+	cmd := newFollowUpCmd(ctx, dir, command)
 	cmd.Stdout = output
 	cmd.Stderr = output
-
 	if err := cmd.Run(); err != nil {
-		var exitErr *exec.ExitError
-		if errors.As(err, &exitErr) {
-			return camperrors.NewCommand(command, exitErr.ExitCode(), "", exitErr)
-		}
-		return camperrors.Wrapf(err, "execute %q", command)
+		return followUpCommandError(command, err)
 	}
-
 	return nil
+}
+
+func newFollowUpCmd(ctx context.Context, dir, command string) *exec.Cmd {
+	cmd := exec.CommandContext(ctx, "sh", "-c", command)
+	cmd.Dir = dir
+	return cmd
+}
+
+func followUpCommandError(command string, err error) error {
+	var exitErr *exec.ExitError
+	if errors.As(err, &exitErr) {
+		return camperrors.NewCommand(command, exitErr.ExitCode(), "", exitErr)
+	}
+	return camperrors.Wrapf(err, "execute %q", command)
 }
