@@ -46,20 +46,25 @@ func init() {
 			if asJSON {
 				return json.NewEncoder(cmd.OutOrStdout()).Encode(result)
 			}
-			switch result.Action {
-			case "created", "registered":
-				_, err = fmt.Fprintf(cmd.OutOrStdout(), "Your festival camp is ready at %s\nEnter it with: cd %s\n", result.Path, "'"+strings.ReplaceAll(result.Path, "'", "'\"'\"'")+"'")
-			case "existing":
-				_, err = fmt.Fprintln(cmd.OutOrStdout(), "Your existing camps are ready; no starter was added.")
-			case "complete":
-				_, err = fmt.Fprintln(cmd.OutOrStdout(), "Starter camp setup has already completed.")
-			}
-			if result.Message != "" {
-				_, err = fmt.Fprintln(cmd.OutOrStdout(), result.Message)
-			}
-			return err
+			return renderStarterResult(cmd.OutOrStdout(), result)
 		},
 	}
 	cmd.Flags().BoolVar(&asJSON, "json", false, "Emit the setup result as JSON")
 	rootCmd.AddCommand(cmd)
+}
+
+func renderStarterResult(out io.Writer, result starter.Result) error {
+	var err error
+	switch result.Action {
+	case "created", "registered":
+		_, err = fmt.Fprintf(out, "Your festival camp is ready at %s\nEnter it with: cd %s\n", result.Path, "'"+strings.ReplaceAll(result.Path, "'", "'\"'\"'")+"'")
+	case "existing":
+		_, err = fmt.Fprintln(out, "Your existing camps are ready; no starter was added.")
+	case "complete":
+		_, err = fmt.Fprintln(out, "Starter camp setup has already completed.")
+	}
+	if err == nil && result.Message != "" {
+		_, err = fmt.Fprintln(out, result.Message)
+	}
+	return err
 }
