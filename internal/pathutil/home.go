@@ -2,6 +2,7 @@ package pathutil
 
 import (
 	"os"
+	"path/filepath"
 	"strings"
 
 	camperrors "github.com/Obedience-Corp/camp/internal/errors"
@@ -23,6 +24,25 @@ func Home() (string, error) {
 		return "", camperrors.New("cannot determine home directory: $HOME is not set")
 	}
 	return home, nil
+}
+
+// ExpandHome replaces a leading "~/" or a bare "~" with the user's home
+// directory. Any other path, including one whose home cannot be resolved, is
+// returned trimmed but otherwise unchanged.
+func ExpandHome(path string) string {
+	path = strings.TrimSpace(path)
+	if path != "~" && !strings.HasPrefix(path, "~"+string(os.PathSeparator)) {
+		return path
+	}
+	home, err := Home()
+	if err != nil {
+		return path
+	}
+	if path == "~" {
+		return home
+	}
+	rest, _ := strings.CutPrefix(path, "~"+string(os.PathSeparator))
+	return filepath.Join(home, rest)
 }
 
 // AbbreviateHome replaces a leading $HOME in path with "~" for display. It

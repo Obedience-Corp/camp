@@ -55,13 +55,27 @@ func (e *ErrProjectNotLinked) Error() string {
 	return fmt.Sprintf("project %q is not a linked project (use 'camp project remove %s' for submodules)", e.Name, e.Name)
 }
 
-// AddLinked links an existing local directory into the campaign via symlink.
-func AddLinked(ctx context.Context, campaignRoot, localPath string, opts LinkOptions) (*LinkResult, error) {
+// LinkPlan is a checked link that has not been written yet.
+// Source is the folder on this machine. Path is the shortcut under the camp.
+type LinkPlan struct {
+	Name         string
+	Path         string
+	Source       string
+	Type         string
+	IsGit        bool
+	CampaignID   string
+	CampaignName string
+	Root         string
+}
+
+// PlanLinked checks that a local directory can be linked. It does not write
+// the shortcut or the .camp marker.
+func PlanLinked(ctx context.Context, campaignRoot, localPath string, opts LinkOptions) (*LinkPlan, error) {
 	if ctx.Err() != nil {
 		return nil, ctx.Err()
 	}
 
-	localPath = strings.TrimSpace(localPath)
+	localPath = pathutil.ExpandHome(strings.TrimSpace(localPath))
 	if localPath == "" {
 		return nil, camperrors.Wrap(camperrors.ErrInvalidInput, "link path is required")
 	}
@@ -116,47 +130,95 @@ func AddLinked(ctx context.Context, campaignRoot, localPath string, opts LinkOpt
 	if err := ensureLinkedTargetUnique(normalizedCampaignRoot, absLocal, fullPath, name); err != nil {
 		return nil, err
 	}
-
 	if _, err := os.Lstat(fullPath); err == nil {
 		return nil, &ErrProjectExists{Name: name, Path: destPath}
 	}
 
-	previousMarker, err := snapshotLinkMarker(absLocal)
+	campName := cfg.Name
+	if campName == "" {
+		campName = filepath.Base(normalizedCampaignRoot)
+	}
+	return &LinkPlan{
+		Name:         name,
+		Path:         destPath,
+		Source:       absLocal,
+		Type:         detectProjectType(absLocal),
+		IsGit:        isGitRepo(absLocal),
+		CampaignID:   cfg.ID,
+		CampaignName: campName,
+		Root:         campaignRoot,
+	}, nil
+}
+
+// ApplyLinked writes a previously checked plan. The check runs again at write
+// time so a stale review cannot link a folder that is no longer eligible.
+func ApplyLinked(ctx context.Context, plan *LinkPlan) (*LinkResult, error) {
+	if ctx.Err() != nil {
+		return nil, ctx.Err()
+	}
+	if plan == nil || strings.TrimSpace(plan.Root) == "" || strings.TrimSpace(plan.Source) == "" || strings.TrimSpace(plan.Name) == "" {
+		return nil, camperrors.Wrap(camperrors.ErrInvalidInput, "link plan is required")
+	}
+	fresh, err := PlanLinked(ctx, plan.Root, plan.Source, LinkOptions{Name: plan.Name})
+	if err != nil {
+		return nil, err
+	}
+	return writeLinked(ctx, fresh)
+}
+
+// AddLinked links an existing local directory into the campaign via symlink.
+func AddLinked(ctx context.Context, campaignRoot, localPath string, opts LinkOptions) (*LinkResult, error) {
+	plan, err := PlanLinked(ctx, campaignRoot, localPath, opts)
+	if err != nil {
+		return nil, err
+	}
+	return writeLinked(ctx, plan)
+}
+
+func writeLinked(ctx context.Context, plan *LinkPlan) (*LinkResult, error) {
+	if ctx.Err() != nil {
+		return nil, ctx.Err()
+	}
+	fullPath := filepath.Join(plan.Root, plan.Path)
+	if _, err := os.Lstat(fullPath); err == nil {
+		return nil, &ErrProjectExists{Name: plan.Name, Path: plan.Path}
+	}
+
+	previousMarker, err := snapshotLinkMarker(plan.Source)
 	if err != nil {
 		return nil, camperrors.Wrap(err, "snapshot existing .camp marker")
 	}
 
-	isGit := isGitRepo(absLocal)
 	warnings := make([]string, 0, 1)
 	marker := campaign.LinkMarker{
 		Version:          campaign.LinkMarkerVersion,
 		Kind:             campaign.KindProject,
-		ActiveCampaignID: cfg.ID,
+		ActiveCampaignID: plan.CampaignID,
 	}
-	if err := campaign.WriteMarker(absLocal, marker); err != nil {
+	if err := campaign.WriteMarker(plan.Source, marker); err != nil {
 		return nil, camperrors.Wrap(err, "write .camp marker")
 	}
 	if err := os.MkdirAll(filepath.Dir(fullPath), 0755); err != nil {
-		_ = restoreLinkMarker(absLocal, previousMarker)
+		_ = restoreLinkMarker(plan.Source, previousMarker)
 		return nil, camperrors.Wrap(err, "create parent directory")
 	}
-	if err := os.Symlink(absLocal, fullPath); err != nil {
-		_ = restoreLinkMarker(absLocal, previousMarker)
+	if err := os.Symlink(plan.Source, fullPath); err != nil {
+		_ = restoreLinkMarker(plan.Source, previousMarker)
 		return nil, camperrors.Wrap(err, "create symlink")
 	}
 
-	if isGit {
-		if _, err := git.EnsureInfoExclude(ctx, absLocal, campaign.LinkMarkerFile); err != nil {
+	if plan.IsGit {
+		if _, err := git.EnsureInfoExclude(ctx, plan.Source, campaign.LinkMarkerFile); err != nil {
 			warnings = append(warnings, formatLinkedRepoWarning("could not update linked repo .git/info/exclude for .camp", err))
 		}
 	}
 
 	return &LinkResult{
-		Name:     name,
-		Path:     destPath,
-		Source:   absLocal,
-		Type:     detectProjectType(absLocal),
-		IsGit:    isGit,
+		Name:     plan.Name,
+		Path:     plan.Path,
+		Source:   plan.Source,
+		Type:     plan.Type,
+		IsGit:    plan.IsGit,
 		Warnings: warnings,
 	}, nil
 }

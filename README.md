@@ -194,19 +194,26 @@ camp clone <url>           # Clone a camp with full submodule setup
 
 ### Project Management
 
-Projects can be added inside the camp as a git submodule, or linked to the
-camp if they're already on your machine.
+Most projects already live somewhere on your machine. Link that folder into
+the camp. The folder stays where it is. Camp adds a shortcut under `projects/`
+and a `.camp` file in the folder. This is not a git submodule.
 
 ```bash
-camp project add <url>      # Add as a git submodule
-camp project link <path>    # Link an existing local directory as a project
-camp project rename         # Review the plan in the terminal, then rename
-camp project rename old new # Same rename; a terminal confirms before writing
+camp project link               # Browse for the folder, then confirm
+camp project link <path>        # Review that folder, then link it
+camp project link <path> --yes  # Link immediately
+camp project add <url>          # Add a git submodule for a shared checkout
+camp project rename             # Review the plan in the terminal, then rename
+camp project rename old new     # Same rename; a terminal confirms before writing
 ```
 
-Use submodules via `camp project add` (or `camp p add`) if you plan to use
-your camp on multiple devices. Linked projects must exist in the same location
-on each device in order to work.
+In a terminal, `camp project link` opens a folder browser. Pick the folder,
+name it, choose the camp, and confirm before anything is written. `--yes`
+and a shell without a terminal link immediately.
+
+Use `camp project add` (or `camp p add`) when the checkout should travel with
+the camp to another machine. A linked folder has to exist at the same path
+on each machine.
 
 In a terminal the review shows the project, the new path, worktrees, and
 metadata before anything is written. Piped output and `--yes` apply
