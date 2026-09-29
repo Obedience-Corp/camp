@@ -26,6 +26,7 @@ recording is the stable command surface a reader can install. Pass
 | Journey | Tape | Delivery GIF | Manifest |
 | --- | --- | --- | --- |
 | Fresh configure | [fresh-configure.tape](fresh-configure.tape) | [fresh-configure.gif](fresh-configure.gif) | [fresh-configure.manifest.json](fresh-configure.manifest.json) |
+| Fresh checklist | [fresh-checklist.tape](fresh-checklist.tape) | private gist | (fixture: `fixtures/fresh-checklist-fixture.sh`) |
 | Completed-run sweep prompt | [sweep-prompt.tape](sweep-prompt.tape) | [sweep-prompt.gif](sweep-prompt.gif) | — |
 | Machine/status | [machine-tui.tape](machine-tui.tape) | [machine-tui.gif](machine-tui.gif) | [machine-tui.manifest.json](machine-tui.manifest.json) |
 | Machine dual-auth CLI | [machine-dual-auth.tape](machine-dual-auth.tape) | [machine-dual-auth.gif](machine-dual-auth.gif) | (WI-ca06e1 record-time proof; private gist optional) |

@@ -31,12 +31,11 @@ func runFreshFollowUps(ctx context.Context, path string, steps []config.FollowUp
 		return nil
 	}
 
-	prefix := "  "
 	fmt.Println()
 	if dryRun {
-		fmt.Printf("%s── Follow-ups (%d)                 %s\n", prefix, len(steps), freshStepDim.Render("preview only"))
+		freshRow(fmt.Sprintf("Follow-ups (%d)", len(steps)), "preview only", ui.StatusMuted)
 	} else {
-		fmt.Printf("%s── Follow-ups (%d)\n", prefix, len(steps))
+		freshRow(fmt.Sprintf("Follow-ups (%d)", len(steps)), "", ui.StatusPlain)
 	}
 
 	for _, step := range steps {
@@ -45,12 +44,12 @@ func runFreshFollowUps(ctx context.Context, path string, steps []config.FollowUp
 		}
 
 		if dryRun {
-			fmt.Printf("%s   %s %s\n", prefix, ui.Value(step.Name),
-				freshStepDim.Render(fmt.Sprintf("(would run: %s)", step.Run)))
+			freshSubRow(step.Name, "would run: "+step.Run, ui.StatusMuted)
 			continue
 		}
 
-		fmt.Printf("%s   %s %s\n", prefix, ui.Value(step.Name), freshStepDim.Render("$ "+step.Run))
+		freshSubRow(step.Name, "running", ui.StatusMuted)
+		freshDetail("$ " + step.Run)
 
 		workDir := path
 		if step.Dir != "" {
@@ -59,15 +58,14 @@ func runFreshFollowUps(ctx context.Context, path string, steps []config.FollowUp
 
 		if err := runFollowUpCommand(ctx, workDir, step.Run); err != nil {
 			if step.ContinueOnError {
-				fmt.Printf("%s   %s %s\n", prefix, ui.Value(step.Name),
-					ui.Warning("failed (continuing): "+err.Error()))
+				freshSubRow(step.Name, "failed (continuing): "+err.Error(), ui.StatusWarning)
 				continue
 			}
-			fmt.Printf("%s   %s %s\n", prefix, ui.Value(step.Name), ui.Error("failed"))
+			freshSubRow(step.Name, "failed", ui.StatusError)
 			return camperrors.Wrapf(err, "follow-up %q", step.Name)
 		}
 
-		fmt.Printf("%s   %s %s\n", prefix, ui.Value(step.Name), freshStepGreen.Render("done"))
+		freshSubRow(step.Name, "done", ui.StatusSuccess)
 	}
 
 	return nil

@@ -190,6 +190,7 @@ Examples:
 			doPush := !freshNoPush && cfg.ResolveFreshPushUpstream(result.Name)
 			followUps := resolveFreshFollowUps(cfg, result.Name, freshNoFollowUp)
 
+			var summary string
 			if err := executeFresh(ctx, result.Name, result.Path, freshOptions{
 				branch:             branch,
 				prune:              doPrune,
@@ -201,13 +202,16 @@ Examples:
 				mergedWorkitems:    cfg.ResolveFreshMergedWorkitems(),
 				cleanupStack:       freshCleanupStack,
 				allowDefaultTarget: freshAllowDefaultTarget,
+				holdSummary:        &summary,
 			}); err != nil {
 				return err
 			}
 
 			// Campaign-root workitem sweep runs once, after the project's
-			// git-hygiene cycle, never inside executeFresh.
+			// git-hygiene cycle, never inside executeFresh. The closing line
+			// follows it so "Fresh!" is the last thing on the screen.
 			runCampaignWorkitemSweep(ctx, cfg, freshDryRun)
+			printFreshSummary(summary)
 			return nil
 		},
 	}
@@ -249,6 +253,10 @@ type freshOptions struct {
 	mergedWorkitems    string
 	cleanupStack       bool
 	allowDefaultTarget bool
+	// holdSummary, when set, receives the closing line instead of printing it.
+	// The single-project command prints that line after the campaign workitem
+	// sweep, so the sweep is not an afterthought under "Fresh!".
+	holdSummary *string
 }
 
 type freshSyncState struct {
@@ -274,7 +282,6 @@ func executeFresh(ctx context.Context, name, path string, opts freshOptions) err
 		}
 	}
 
-	prefix := "  "
 	if opts.dryRun {
 		fmt.Printf("  %s %s\n", ui.Value(name), freshStepDim.Render("(dry-run)"))
 	} else {
@@ -302,15 +309,15 @@ func executeFresh(ctx context.Context, name, path string, opts freshOptions) err
 	// clean so this project path can check out main/master normally. Leaving
 	// main stuck on a finished feature worktree is the failure mode after
 	// camp project worktree add --start-point main.
-	if err := maybeReclaimDefaultBranch(ctx, &syncState, opts.dryRun, prefix); err != nil {
+	if err := maybeReclaimDefaultBranch(ctx, &syncState, opts.dryRun); err != nil {
 		return err
 	}
 
 	if !syncState.detached && currentBranch == defaultBranch && !syncState.reclaimed {
-		fmt.Printf("%s── Checkout %-24s %s\n", prefix, defaultBranch, freshStepDim.Render("already on it"))
+		freshRow("Checkout "+defaultBranch, "already on it", ui.StatusMuted)
 	} else if !syncState.detached && opts.dryRun {
-		fmt.Printf("%s── Would checkout %-19s %s\n", prefix, defaultBranch,
-			freshStepDim.Render(fmt.Sprintf("(currently on %s)", emptyBranchLabel(currentBranch))))
+		freshRow("Would checkout "+defaultBranch,
+			fmt.Sprintf("currently on %s", emptyBranchLabel(currentBranch)), ui.StatusMuted)
 	} else if !syncState.detached {
 		if err := git.Checkout(ctx, path, defaultBranch); err != nil {
 			// Surface a clearer message than git's raw "already used by worktree".
@@ -322,7 +329,7 @@ func executeFresh(ctx context.Context, name, path string, opts freshOptions) err
 			}
 			return camperrors.Wrapf(err, "checkout %s", defaultBranch)
 		}
-		fmt.Printf("%s── Checkout %-24s %s\n", prefix, defaultBranch, freshStepGreen.Render("done"))
+		freshRow("Checkout "+defaultBranch, "done", ui.StatusSuccess)
 	}
 
 	// Capture the sync base SHA before fetching so the tier-2 backstop can
@@ -344,26 +351,25 @@ func executeFresh(ctx context.Context, name, path string, opts freshOptions) err
 	if err := fetchFreshRemote(ctx, path, opts.prune); err != nil {
 		return camperrors.Wrap(err, "fetch origin")
 	}
-	fetchDetail := freshStepGreen.Render("done")
+	fetchStatus := "done"
 	if opts.dryRun {
-		fetchDetail += " " + freshStepDim.Render("(remote refs only)")
+		fetchStatus = "done (remote refs only)"
 	}
-	fmt.Printf("%s── Fetch %-28s %s\n", prefix, "origin", fetchDetail)
+	freshRow("Fetch origin", fetchStatus, ui.StatusSuccess)
 
 	if syncState.detached {
 		note := freshSyncWorktreeNote(syncState)
 		if opts.dryRun {
-			fmt.Printf("%s── Would use %-24s %s\n", prefix, syncState.displayRef,
-				freshStepDim.Render(note))
+			freshRow("Would use "+syncState.displayRef, note, ui.StatusMuted)
 		} else {
 			if err := git.CheckoutDetached(ctx, path, syncState.baseRef); err != nil {
 				return camperrors.Wrapf(err, "checkout detached %s", syncState.baseRef)
 			}
-			fmt.Printf("%s── Checkout %-25s %s\n", prefix, syncState.displayRef,
-				freshStepGreen.Render("done")+" "+freshStepDim.Render(note))
+			freshRow("Checkout "+syncState.displayRef, "done", ui.StatusSuccess)
+			freshDetail(note)
 		}
 	} else {
-		if err := reconcileFreshDefault(ctx, path, defaultBranch, opts.dryRun, prefix); err != nil {
+		if err := reconcileFreshDefault(ctx, path, defaultBranch, opts.dryRun); err != nil {
 			return err
 		}
 	}
@@ -406,36 +412,26 @@ func executeFresh(ctx context.Context, name, path string, opts freshOptions) err
 
 		switch {
 		case len(deletedNames) > 0 || removedWorktrees > 0:
-			action := "deleted"
-			worktreeAction := "removed"
-			style := freshStepGreen
+			status, names := pruneChecklistStatus(deletedNames, removedWorktrees, opts.dryRun)
+			tone := ui.StatusSuccess
 			if opts.dryRun {
-				action = "would delete"
-				worktreeAction = "would remove"
-				style = freshStepDim
+				tone = ui.StatusMuted
 			}
-			detail := fmt.Sprintf("%s: %s", action, strings.Join(deletedNames, ", "))
-			if len(deletedNames) == 0 {
-				detail = "removed merged detached worktrees"
-				if opts.dryRun {
-					detail = "would remove merged detached worktrees"
-				}
+			freshRow("Prune merged branches", status, tone)
+			for _, name := range names {
+				freshDetail(name)
 			}
-			if removedWorktrees > 0 {
-				detail = fmt.Sprintf("%s; %s %d worktree(s)", detail, worktreeAction, removedWorktrees)
-			}
-			fmt.Printf("%s── Prune merged branches           %s\n", prefix, style.Render(detail))
 		default:
-			fmt.Printf("%s── Prune merged branches           %s\n", prefix, freshStepDim.Render("nothing to prune"))
+			freshRow("Prune merged branches", "nothing to prune", ui.StatusMuted)
 		}
 		if pr.Pruned > 0 {
 			detail := fmt.Sprintf("%d stale refs", pr.Pruned)
-			style := freshStepGreen
+			tone := ui.StatusSuccess
 			if opts.dryRun {
 				detail = "would prune stale refs"
-				style = freshStepDim
+				tone = ui.StatusMuted
 			}
-			fmt.Printf("%s── Prune remote tracking refs      %s\n", prefix, style.Render(detail))
+			freshRow("Prune remote tracking refs", detail, tone)
 		}
 
 		// Tier-2 merged-branch backstop: per project, right after prune, using
@@ -466,31 +462,30 @@ func executeFresh(ctx context.Context, name, path string, opts freshOptions) err
 			}
 			currentBranch := git.CurrentBranch(ctx, path)
 			if currentBranch == opts.branch {
-				fmt.Printf("%s── Checkout %-24s %s\n", prefix, opts.branch, freshStepDim.Render("already on it"))
+				freshRow("Checkout "+opts.branch, "already on it", ui.StatusMuted)
 				branchCheckedOut = true
 			} else if opts.dryRun {
-				fmt.Printf("%s── Would checkout %-19s %s\n", prefix, opts.branch,
-					freshStepDim.Render(fmt.Sprintf("(currently on %s)", emptyBranchLabel(currentBranch))))
+				freshRow("Would checkout "+opts.branch,
+					fmt.Sprintf("currently on %s", emptyBranchLabel(currentBranch)), ui.StatusMuted)
 				branchCheckedOut = true
 			} else {
 				if err := git.Checkout(ctx, path, opts.branch); err != nil {
 					return camperrors.Wrapf(err, "checkout %s", opts.branch)
 				}
-				fmt.Printf("%s── Checkout %-24s %s\n", prefix, opts.branch, freshStepGreen.Render("done"))
+				freshRow("Checkout "+opts.branch, "done", ui.StatusSuccess)
 				branchCheckedOut = true
 			}
 		} else if git.BranchExists(ctx, path, opts.branch) {
-			fmt.Fprintf(os.Stderr, "%s── Branch %-25s %s\n", prefix, opts.branch,
+			fmt.Fprintf(os.Stderr, "  ── Branch %s %s\n", opts.branch,
 				freshStepDim.Render(fmt.Sprintf("already exists, staying on %s", syncState.displayRef)))
 		} else if opts.dryRun {
-			fmt.Printf("%s── Would create branch %-12s %s\n", prefix, opts.branch,
-				freshStepDim.Render(fmt.Sprintf("(from %s)", syncState.baseRef)))
+			freshRow("Would create branch "+opts.branch, "from "+syncState.baseRef, ui.StatusMuted)
 		} else {
 			if err := git.CreateBranch(ctx, path, opts.branch); err != nil {
 				return camperrors.Wrapf(err, "create branch %s", opts.branch)
 			} else {
 				branchCreated = true
-				fmt.Printf("%s── Create branch %-19s %s\n", prefix, opts.branch, freshStepGreen.Render("done"))
+				freshRow("Create branch "+opts.branch, "done", ui.StatusSuccess)
 			}
 		}
 	}
@@ -501,7 +496,7 @@ func executeFresh(ctx context.Context, name, path string, opts freshOptions) err
 	// branch, then removes them, skipping dirty or unmerged ones. Dry-run
 	// prints the plan without acting.
 	if opts.cleanupStack && branchCheckedOut {
-		if err := runStackCleanup(ctx, name, path, opts.branch, opts.dryRun, opts.allowDefaultTarget, prefix); err != nil {
+		if err := runStackCleanup(ctx, name, path, opts.branch, opts.dryRun, opts.allowDefaultTarget); err != nil {
 			return camperrors.Wrapf(err, "stack cleanup for %s", opts.branch)
 		}
 	}
@@ -509,12 +504,12 @@ func executeFresh(ctx context.Context, name, path string, opts freshOptions) err
 	// Step 5: Push upstream (optional)
 	if branchCreated && opts.push {
 		if opts.dryRun {
-			fmt.Printf("%s── Would push %s -> origin\n", prefix, opts.branch)
+			freshRow("Would push "+opts.branch, "to origin", ui.StatusMuted)
 		} else {
 			if err := git.PushSetUpstream(ctx, path, opts.branch); err != nil {
 				return camperrors.Wrapf(err, "push %s to origin", opts.branch)
 			} else {
-				fmt.Printf("%s── Push %-28s %s\n", prefix, opts.branch+" -> origin", freshStepGreen.Render("done"))
+				freshRow("Push "+opts.branch+" -> origin", "done", ui.StatusSuccess)
 			}
 		}
 	}
@@ -526,21 +521,38 @@ func executeFresh(ctx context.Context, name, path string, opts freshOptions) err
 		return err
 	}
 
-	// Summary
-	fmt.Println()
-	if opts.dryRun {
-		fmt.Println(freshStepDim.Render("  (dry-run — remote refs refreshed; no local branches or files changed)"))
-	} else if opts.cleanupStack && branchCheckedOut {
-		fmt.Printf("  %s On %s — stack cleaned.\n", freshStepGreen.Render("Fresh!"), ui.Value(opts.branch))
-	} else if branchCreated {
-		fmt.Printf("  %s Ready to work on %s.\n", freshStepGreen.Render("Fresh!"), ui.Value(opts.branch))
-	} else if syncState.detached {
-		fmt.Printf("  %s Synced to %s.\n", freshStepGreen.Render("Fresh!"), ui.Value(syncState.displayRef))
+	summary := freshSummaryLine(opts, syncState, defaultBranch, branchCreated, branchCheckedOut)
+	if opts.holdSummary != nil {
+		*opts.holdSummary = summary
 	} else {
-		fmt.Printf("  %s Synced to %s.\n", freshStepGreen.Render("Fresh!"), ui.Value(defaultBranch))
+		printFreshSummary(summary)
 	}
 
 	return nil
+}
+
+func freshSummaryLine(opts freshOptions, syncState freshSyncState, defaultBranch string, branchCreated, branchCheckedOut bool) string {
+	if opts.dryRun {
+		return freshStepDim.Render("  (dry-run — remote refs refreshed; no local branches or files changed)")
+	}
+	if opts.cleanupStack && branchCheckedOut {
+		return fmt.Sprintf("  %s On %s — stack cleaned.", freshStepGreen.Render("Fresh!"), ui.Value(opts.branch))
+	}
+	if branchCreated {
+		return fmt.Sprintf("  %s Ready to work on %s.", freshStepGreen.Render("Fresh!"), ui.Value(opts.branch))
+	}
+	if syncState.detached {
+		return fmt.Sprintf("  %s Synced to %s.", freshStepGreen.Render("Fresh!"), ui.Value(syncState.displayRef))
+	}
+	return fmt.Sprintf("  %s Synced to %s.", freshStepGreen.Render("Fresh!"), ui.Value(defaultBranch))
+}
+
+func printFreshSummary(summary string) {
+	if summary == "" {
+		return
+	}
+	fmt.Println()
+	fmt.Println(summary)
 }
 
 func resolveFreshSyncState(ctx context.Context, path, defaultBranch string) (freshSyncState, error) {
@@ -576,7 +588,7 @@ func resolveFreshSyncState(ctx context.Context, path, defaultBranch string) (fre
 // non-mutating) so the printed plan matches a real run. On success, mutates
 // state so the primary path checks out the real default branch; on dirty
 // skip, leaves the detached-origin fallback in place.
-func maybeReclaimDefaultBranch(ctx context.Context, state *freshSyncState, dryRun bool, prefix string) error {
+func maybeReclaimDefaultBranch(ctx context.Context, state *freshSyncState, dryRun bool) error {
 	if state == nil || state.worktreePath == "" {
 		return nil
 	}
@@ -596,7 +608,7 @@ func maybeReclaimDefaultBranch(ctx context.Context, state *freshSyncState, dryRu
 	if reclaimed {
 		applyReclaimDecision(state)
 	}
-	printReclaimStep(prefix, *state, reclaimed, dryRun)
+	printReclaimStep(*state, reclaimed, dryRun)
 	return nil
 }
 
@@ -617,7 +629,7 @@ func applyReclaimDecision(state *freshSyncState) {
 func reclaimStepDetail(branch, worktreePath string, reclaimed, dryRun bool) (label, detail string) {
 	base := filepath.Base(worktreePath)
 	if dryRun {
-		label = fmt.Sprintf("Would free %-23s", branch)
+		label = "Would free " + branch
 		if reclaimed {
 			detail = fmt.Sprintf("(detach clean worktree %s)", base)
 		} else {
@@ -625,7 +637,7 @@ func reclaimStepDetail(branch, worktreePath string, reclaimed, dryRun bool) (lab
 		}
 		return label, detail
 	}
-	label = fmt.Sprintf("Free %-28s", branch)
+	label = "Free " + branch
 	if reclaimed {
 		detail = fmt.Sprintf("(detached %s so %s is free here)", base, branch)
 	} else {
@@ -634,19 +646,15 @@ func reclaimStepDetail(branch, worktreePath string, reclaimed, dryRun bool) (lab
 	return label, detail
 }
 
-func printReclaimStep(prefix string, state freshSyncState, reclaimed, dryRun bool) {
+func printReclaimStep(state freshSyncState, reclaimed, dryRun bool) {
 	label, detail := reclaimStepDetail(state.defaultBranch, state.worktreePath, reclaimed, dryRun)
-	if dryRun {
-		fmt.Printf("%s── %s %s\n", prefix, label, freshStepDim.Render(detail))
+	if !dryRun && reclaimed {
+		freshRow(label, "done", ui.StatusSuccess)
+		freshDetail(detail)
 		return
 	}
-	if reclaimed {
-		fmt.Printf("%s── %s %s\n", prefix, label,
-			freshStepGreen.Render("done")+" "+freshStepDim.Render(detail))
-		return
-	}
-	// Dirty worktree: keep detached-sync fallback, but make the reason obvious.
-	fmt.Printf("%s── %s %s\n", prefix, label, freshStepDim.Render(detail))
+	// Dry-run, or a dirty worktree that keeps the detached-sync fallback.
+	freshRow(label, detail, ui.StatusMuted)
 }
 
 // findBranchInOtherWorktree returns the first worktree (other than path) that

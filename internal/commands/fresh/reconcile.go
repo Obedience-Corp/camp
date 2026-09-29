@@ -7,6 +7,7 @@ import (
 
 	camperrors "github.com/Obedience-Corp/camp/internal/errors"
 	"github.com/Obedience-Corp/camp/internal/git"
+	"github.com/Obedience-Corp/camp/internal/ui"
 )
 
 const (
@@ -27,7 +28,7 @@ func fetchFreshRemote(ctx context.Context, path string, pruneEnabled bool) error
 // reconcileFreshDefault makes a checked-out local default branch match its
 // fetched origin ref. Local-only commits are first anchored by a recovery
 // branch, which makes the subsequent hard reset lossless and reversible.
-func reconcileFreshDefault(ctx context.Context, path, defaultBranch string, dryRun bool, prefix string) error {
+func reconcileFreshDefault(ctx context.Context, path, defaultBranch string, dryRun bool) error {
 	localRef := "refs/heads/" + defaultBranch
 	remoteRef := "refs/remotes/origin/" + defaultBranch
 
@@ -40,22 +41,21 @@ func reconcileFreshDefault(ctx context.Context, path, defaultBranch string, dryR
 		return camperrors.Wrap(err, "compare local and remote default branches")
 	}
 
+	syncLabel := defaultBranch + " ← origin/" + defaultBranch
 	if divergence.Ahead == 0 {
 		if divergence.Behind == 0 {
-			fmt.Printf("%s── Sync %-29s %s\n", prefix, defaultBranch+" <- origin/"+defaultBranch,
-				freshStepDim.Render("up-to-date"))
+			freshRow("Sync "+syncLabel, "up-to-date", ui.StatusMuted)
 			return nil
 		}
 		if dryRun {
-			fmt.Printf("%s── Would fast-forward %-19s %s\n", prefix, defaultBranch,
-				freshStepDim.Render(fmt.Sprintf("(%d commit(s) from origin/%s)", divergence.Behind, defaultBranch)))
+			freshRow("Would fast-forward "+defaultBranch,
+				fmt.Sprintf("%d commit(s) from origin/%s", divergence.Behind, defaultBranch), ui.StatusMuted)
 			return nil
 		}
 		if err := git.FastForwardTo(ctx, path, remoteRef); err != nil {
 			return camperrors.Wrapf(err, "fast-forward %s to origin/%s", defaultBranch, defaultBranch)
 		}
-		fmt.Printf("%s── Sync %-29s %s\n", prefix, defaultBranch+" <- origin/"+defaultBranch,
-			freshStepGreen.Render(fmt.Sprintf("updated %d commit(s)", divergence.Behind)))
+		freshRow("Sync "+syncLabel, fmt.Sprintf("updated %d commit(s)", divergence.Behind), ui.StatusSuccess)
 		return nil
 	}
 
@@ -73,10 +73,8 @@ func reconcileFreshDefault(ctx context.Context, path, defaultBranch string, dryR
 		if reuse {
 			action = "Recovery exists"
 		}
-		fmt.Printf("%s── %-14s %-21s %s\n", prefix, action, recoveryBranch,
-			freshStepDim.Render(fmt.Sprintf("(%d local-only commit(s))", divergence.Ahead)))
-		fmt.Printf("%s── Would realign %-22s %s\n", prefix, defaultBranch,
-			freshStepDim.Render("to origin/"+defaultBranch))
+		freshRow(action+" "+recoveryBranch, fmt.Sprintf("%d local-only commit(s)", divergence.Ahead), ui.StatusMuted)
+		freshRow("Would realign "+defaultBranch, "to origin/"+defaultBranch, ui.StatusMuted)
 		return nil
 	}
 
@@ -85,20 +83,21 @@ func reconcileFreshDefault(ctx context.Context, path, defaultBranch string, dryR
 			return camperrors.Wrapf(err, "preserve local %s at %s", defaultBranch, recoveryBranch)
 		}
 	}
-	status := freshStepGreen.Render("done")
+	status := "done"
+	tone := ui.StatusSuccess
 	if reuse {
-		status = freshStepDim.Render("already preserved")
+		status = "already preserved"
+		tone = ui.StatusMuted
 	}
-	fmt.Printf("%s── Preserve %-25s %s %s\n", prefix, recoveryBranch, status,
-		freshStepDim.Render(fmt.Sprintf("(%d local-only commit(s))", divergence.Ahead)))
+	freshRow("Preserve "+recoveryBranch, status, tone)
+	freshDetail(fmt.Sprintf("%d local-only commit(s)", divergence.Ahead))
 
 	if err := git.ResetHardTo(ctx, path, remoteRef); err != nil {
 		return camperrors.Wrapf(err,
 			"realign %s to origin/%s; local commits remain at %s", defaultBranch, defaultBranch, recoveryBranch)
 	}
-	fmt.Printf("%s── Realign %-26s %s\n", prefix, defaultBranch+" -> origin/"+defaultBranch,
-		freshStepGreen.Render("done"))
-	fmt.Printf("%s   %s\n", prefix, freshStepDim.Render(freshRecoveryUndo(defaultBranch, recoveryBranch)))
+	freshRow("Realign "+defaultBranch+" -> origin/"+defaultBranch, "done", ui.StatusSuccess)
+	freshDetail(freshRecoveryUndo(defaultBranch, recoveryBranch))
 	return nil
 }
 
