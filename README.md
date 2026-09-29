@@ -200,12 +200,17 @@ camp if they're already on your machine.
 ```bash
 camp project add <url>      # Add as a git submodule
 camp project link <path>    # Link an existing local directory as a project
-camp project rename old new # Rename a managed project and its camp references
+camp project rename         # Review the plan in the terminal, then rename
+camp project rename old new # Same rename; a terminal confirms before writing
 ```
 
 Use submodules via `camp project add` (or `camp p add`) if you plan to use
 your camp on multiple devices. Linked projects must exist in the same location
 on each device in order to work.
+
+In a terminal the review shows the project, the new path, worktrees, and
+metadata before anything is written. Piped output and `--yes` apply
+immediately. `--json` stays scripted.
 
 When an upstream repository was renamed too, pass the new URL explicitly:
 

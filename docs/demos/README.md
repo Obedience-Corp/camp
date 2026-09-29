@@ -32,6 +32,7 @@ recording is the stable command surface a reader can install. Pass
 | Project-aware worktree list | [worktree-list.tape](worktree-list.tape) | [worktree-list.gif](worktree-list.gif) | — |
 | Intent-add selector | [intent-add-selector.tape](intent-add-selector.tape) | private gist | (fixture: `fixtures/intent-add-selector-fixture.sh`) |
 | Project list browser | [project-list.tape](project-list.tape) | [project-list.gif](project-list.gif) | (fixture: `fixtures/project-list-selector-fixture.sh`) |
+| Project rename review | [project-rename.tape](project-rename.tape) | [project-rename.gif](project-rename.gif) | (fixture: `fixtures/project-rename-fixture.sh`) |
 | Switch selector geometry | [switch-selector.tape](switch-selector.tape) | private gist | (fixture: `fixtures/switch-selector-fixture.sh`) |
 | Deferred jobs browser | [jobs-tui.tape](jobs-tui.tape) | [jobs-tui.gif](jobs-tui.gif) | (fixture: `fixtures/jobs-tui-fixture.sh`) |
 | Tailscale SSH approval | [machine-tailscale-check.tape](machine-tailscale-check.tape) | private gist | (PR evidence bundle) |
@@ -78,6 +79,17 @@ It drives `camp workitem sweep --prompt` rather than `camp fresh`. Fresh's
 `completed_runs: prompt` calls the same `runSweepPrompt`, but the prompt is
 camp-root work that runs after a project's git cycle, and the fixture
 camp has no project submodules to cycle.
+
+`project-rename` needs a fixture camp with two owned directories and one
+linked checkout, then the truecolor recorder. The tape renames `atlas` to
+`atlas-core` through the review screen:
+
+```sh
+just build-camp
+FIXTURE=$(mktemp -d)
+docs/demos/fixtures/project-rename-fixture.sh "$FIXTURE" ./bin/camp
+CAMP_VHS_ROOT=$FIXTURE just vhs record-color docs/demos/project-rename.tape
+```
 
 `jobs-tui` needs a fixture that seeds failed deferred commits under a fake
 `HOME`, then the truecolor recorder:
