@@ -215,14 +215,14 @@ func printPlanGroup(label string, entries []stackWorktreePlan, highlight bool) {
 	} else if strings.HasPrefix(label, "skip") {
 		rendered = ui.Warning(label)
 	}
-	fmt.Printf("     %s\n", rendered)
+	fmt.Printf("%s%s\n", ui.ChecklistDetailIndent, rendered)
 	for _, p := range entries {
 		name := filepath.Base(p.entry.Path)
 		if highlight {
-			fmt.Printf("       %s %s\n", name, freshStepDim.Render(p.entry.Branch))
+			fmt.Printf("%s  %s %s\n", ui.ChecklistDetailIndent, name, freshStepDim.Render(p.entry.Branch))
 			continue
 		}
-		fmt.Printf("       %s %s\n", ui.Dim(name), freshStepDim.Render(p.entry.Branch))
+		fmt.Printf("%s  %s %s\n", ui.ChecklistDetailIndent, ui.Dim(name), freshStepDim.Render(p.entry.Branch))
 	}
 }
 

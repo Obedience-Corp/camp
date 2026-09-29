@@ -17,7 +17,7 @@ import termios
 import time
 
 COLS = 88
-ROWS = 36
+ROWS = 48
 FIXTURE_ID = "camp-fresh-checklist-v1"
 
 
@@ -71,9 +71,10 @@ def drive(home, project, binary):
         )
     fcntl_winsize(fd)
     raw = bytearray()
+    initial = None
     deadline = time.time() + 40
     while time.time() < deadline:
-        ready, _, _ = select.select([fd], [], [], 0.3)
+        ready, _, _ = select.select([fd], [], [], 0.05)
         if not ready:
             status = os.waitpid(pid, os.WNOHANG)
             if status[0] == pid:
@@ -87,13 +88,15 @@ def drive(home, project, binary):
             break
         raw.extend(data)
         stream.feed(data)
+        if initial is None and "running" in "\n".join(screen.display):
+            initial = snapshot(screen, "initial")
     else:
         os.kill(pid, 15)
     try:
         os.waitpid(pid, 0)
     except ChildProcessError:
         pass
-    return screen, raw
+    return screen, raw, initial
 
 
 def fcntl_winsize(fd):
@@ -118,13 +121,26 @@ def main():
     binary, evidence = sys.argv[1:]
     os.makedirs(evidence, exist_ok=True)
     values = run_fixture(os.path.abspath(binary))
-    screen, _raw = drive(values["FRESH_CHECKLIST_HOME"], values["FRESH_CHECKLIST_PROJECT"], os.path.abspath(binary))
+    screen, raw, initial = drive(
+        values["FRESH_CHECKLIST_HOME"], values["FRESH_CHECKLIST_PROJECT"], os.path.abspath(binary)
+    )
     complete = snapshot(screen, "complete")
-    # The command is not interactive. The same finished screen is the journey.
-    initial = snapshot(screen, "initial")
     text = "\n".join(complete["display"])
     problems = []
+    if initial is None:
+        initial = snapshot(screen, "initial")
+        problems.append("never saw the follow-up spinner row")
+    else:
+        running = "\n".join(initial["display"])
+        if "running" not in running:
+            problems.append("initial frame lost the running row")
+    if not any(frame.encode() in raw for frame in "⠋⠙⠹⠸⠼⠴⠦⠧⠇⠏"):
+        problems.append("spinner frames were not written")
     for needle in (
+        "Sync",
+        "Prune",
+        "Follow-ups",
+        "Work items",
         "already on it",
         "updated",
         "fix-leverage-worktrees",
@@ -135,6 +151,8 @@ def main():
     ):
         if needle not in text:
             problems.append("screen is missing %r" % needle)
+    if "running" in text:
+        problems.append("finished screen still says running")
     if "fix-l\n" in text or any(
         "fix-l" in line and "fix-leverage-worktrees" not in line for line in complete["display"]
     ):
@@ -147,7 +165,7 @@ def main():
         "columns": COLS,
         "rows": ROWS,
         "pixel_width": 980,
-        "pixel_height": 720,
+        "pixel_height": 680,
         "mode": "dark/adaptive truecolor",
     }
     transcript = ["===== initial =====", *initial["display"], "===== complete =====", *complete["display"]]

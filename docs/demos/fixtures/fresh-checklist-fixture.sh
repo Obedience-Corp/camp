@@ -4,7 +4,8 @@
 # The project is already on its default branch, behind origin by three
 # commits, with four merged local branches whose names are long enough to
 # show that prune lists them instead of wrapping one status line. A follow-up
-# prints three short lines. A completed design is left in place so the sweep
+# pauses, then prints three short lines, so the recording shows the spinner.
+# A completed design is left in place so the sweep
 # reports why it did not move.
 #
 # Usage: eval "$(CAMP_BIN=$PWD/bin/camp bash docs/demos/fixtures/fresh-checklist-fixture.sh)"
@@ -59,7 +60,7 @@ done
 
 (
     cd "$campaign"
-    "$camp_bin" fresh configure add install --run "printf '%s\n' 'built camp' 'signed' 'installed'" >/dev/null
+    "$camp_bin" fresh configure add install --run "sleep 1.2; printf '    %s\n' 'built camp' 'signed' 'installed'" >/dev/null
 )
 
 seed="$campaign/workflow/design/camp-immerse-color-profiles"

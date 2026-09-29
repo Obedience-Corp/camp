@@ -693,6 +693,11 @@ func emitSweepReport(ctx context.Context, out io.Writer, work *sweepWork) error 
 	if err := triage.WriteBanner(ctx, out, work.root, time.Now()); err != nil {
 		return err
 	}
+	if len(work.actionable) > 0 || len(work.skipped) > 0 {
+		if err := writeSweepHeading(out); err != nil {
+			return err
+		}
+	}
 	for _, cand := range work.actionable {
 		verb := "promote to completed"
 		if cand.Disposition == wkitem.DispositionRoute {
@@ -780,6 +785,12 @@ func emitSweepResult(cmd *cobra.Command, result *workitemSweepResult, jsonOut bo
 // printSweepSkips names every workitem the sweep declined to move and why, so
 // the automatic path never leaves a decision unexplained.
 func printSweepSkips(out io.Writer, result *workitemSweepResult) error {
+	if len(result.Skipped) == 0 {
+		return nil
+	}
+	if err := writeSweepHeading(out); err != nil {
+		return err
+	}
 	for _, s := range result.Skipped {
 		if err := writeSweepFact(out, s.From, s.Type, "not moved", "not moved, "+s.Detail); err != nil {
 			return err

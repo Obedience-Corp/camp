@@ -1,4 +1,4 @@
-# camp fresh — one checklist for sync, prune, follow-ups, and a sweep note.
+# camp fresh — grouped checklist with a spinner on the step that is running.
 #
 # Record from the camp repo, after the fixture exports its variables:
 #   eval "$(CAMP_BIN=$PWD/bin/camp bash docs/demos/fixtures/fresh-checklist-fixture.sh)"
@@ -9,7 +9,7 @@ Set Shell "bash"
 Set FontFamily "JetBrainsMono Nerd Font"
 Set FontSize 16
 Set Width 980
-Set Height 720
+Set Height 680
 Set Padding 20
 Set Margin 0
 Set BorderRadius 0
@@ -27,4 +27,4 @@ Type "clear" Enter
 Show
 
 Type "camp fresh" Sleep 400ms Enter
-Sleep 5s
+Sleep 7s

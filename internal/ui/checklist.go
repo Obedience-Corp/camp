@@ -15,6 +15,14 @@ import (
 // label keeps a single space before its status instead of being truncated.
 const ChecklistLabelWidth = 32
 
+// ChecklistRowIndent is the left margin of a checklist row.
+// ChecklistDetailIndent lines the detail text up with the label, which starts
+// after that margin and a one-column mark.
+const (
+	ChecklistRowIndent    = "  "
+	ChecklistDetailIndent = "    "
+)
+
 // StatusTone is how a checklist status is colored. The text itself stays plain
 // so a row can wrap on word boundaries before the color is applied.
 type StatusTone int
@@ -30,6 +38,8 @@ const (
 	StatusWarning
 	// StatusError is a result that stopped the step.
 	StatusError
+	// StatusInfo is a result the operator can act on, short of a warning.
+	StatusInfo
 )
 
 // TermColumns reports the stdout terminal width. A pipe, a redirected
@@ -41,6 +51,55 @@ func TermColumns() int {
 		return 0
 	}
 	return w
+}
+
+// ChecklistMark is the one-column glyph for a tone, plus the trailing space
+// that separates it from the label. Every tone is the same width so status
+// columns stay aligned, including a spinner standing in the same cell.
+func ChecklistMark(tone StatusTone) string {
+	var glyph string
+	switch tone {
+	case StatusSuccess:
+		glyph = Success("✓")
+	case StatusWarning:
+		glyph = Warning("!")
+	case StatusError:
+		glyph = Error("✗")
+	case StatusMuted:
+		glyph = Dim("·")
+	case StatusInfo:
+		glyph = Info("•")
+	default:
+		glyph = Accent("•")
+	}
+	return glyph + " "
+}
+
+// WriteChecklistSection writes a blank line and a section title. An amber rule
+// runs from the title to the status column so the group is visible before the
+// rows under it.
+func WriteChecklistSection(w io.Writer, width int, title, note string) error {
+	statusCol := lipgloss.Width(ChecklistRowIndent) + 2 + ChecklistLabelWidth
+	used := lipgloss.Width(ChecklistRowIndent) + lipgloss.Width(title) + 1
+	if note != "" {
+		used += lipgloss.Width(note) + 1
+	}
+	ruleWidth := statusCol - used
+	if ruleWidth < 4 {
+		ruleWidth = 4
+	}
+	if width > 0 && used+ruleWidth >= width {
+		ruleWidth = max(4, width-used-1)
+	}
+	rule := ColoredText(strings.Repeat("━", ruleWidth), InfoColor)
+	var line string
+	if note != "" {
+		line = fmt.Sprintf("%s%s %s %s\n", ChecklistRowIndent, Accent(title), Dim(note), rule)
+	} else {
+		line = fmt.Sprintf("%s%s %s\n", ChecklistRowIndent, Accent(title), rule)
+	}
+	_, err := io.WriteString(w, "\n"+line)
+	return err
 }
 
 // WriteChecklistRow writes one aligned checklist row.
@@ -95,7 +154,7 @@ func WriteChecklistDetail(w io.Writer, width int, indent, text string) error {
 		avail = width - lipgloss.Width(indent)
 	}
 	for _, line := range wrapFields(text, avail) {
-		if _, err := fmt.Fprintf(w, "%s%s\n", indent, line); err != nil {
+		if _, err := fmt.Fprintf(w, "%s%s\n", indent, Dim(line)); err != nil {
 			return err
 		}
 	}
@@ -112,6 +171,8 @@ func styleTone(text string, tone StatusTone) string {
 		return Warning(text)
 	case StatusError:
 		return Error(text)
+	case StatusInfo:
+		return Info(text)
 	default:
 		return text
 	}

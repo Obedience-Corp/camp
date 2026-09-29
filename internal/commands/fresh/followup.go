@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"io"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -31,12 +32,11 @@ func runFreshFollowUps(ctx context.Context, path string, steps []config.FollowUp
 		return nil
 	}
 
-	fmt.Println()
+	note := fmt.Sprintf("(%d)", len(steps))
 	if dryRun {
-		freshRow(fmt.Sprintf("Follow-ups (%d)", len(steps)), "preview only", ui.StatusMuted)
-	} else {
-		freshRow(fmt.Sprintf("Follow-ups (%d)", len(steps)), "", ui.StatusPlain)
+		note = "preview only"
 	}
+	freshHeading("Follow-ups", note)
 
 	for _, step := range steps {
 		if ctx.Err() != nil {
@@ -44,28 +44,26 @@ func runFreshFollowUps(ctx context.Context, path string, steps []config.FollowUp
 		}
 
 		if dryRun {
-			freshSubRow(step.Name, "would run: "+step.Run, ui.StatusMuted)
+			freshRow(step.Name, "would run", ui.StatusMuted)
+			freshDetail(step.Run)
 			continue
 		}
-
-		freshSubRow(step.Name, "running", ui.StatusMuted)
-		freshDetail("$ " + step.Run)
 
 		workDir := path
 		if step.Dir != "" {
 			workDir = filepath.Join(path, step.Dir)
 		}
-
-		if err := runFollowUpCommand(ctx, workDir, step.Run); err != nil {
+		stepLive := newFreshLive(os.Stdout, step.Name, "running", "$ "+step.Run)
+		stepLive.Begin()
+		if err := runFollowUpCommand(ctx, workDir, step.Run, stepLive.Stream()); err != nil {
 			if step.ContinueOnError {
-				freshSubRow(step.Name, "failed (continuing): "+err.Error(), ui.StatusWarning)
+				stepLive.Finish("failed (continuing): "+err.Error(), ui.StatusWarning)
 				continue
 			}
-			freshSubRow(step.Name, "failed", ui.StatusError)
+			stepLive.Finish("failed", ui.StatusError)
 			return camperrors.Wrapf(err, "follow-up %q", step.Name)
 		}
-
-		freshSubRow(step.Name, "done", ui.StatusSuccess)
+		stepLive.Finish("done", ui.StatusSuccess)
 	}
 
 	return nil
@@ -74,15 +72,15 @@ func runFreshFollowUps(ctx context.Context, path string, steps []config.FollowUp
 // runFollowUpCommand runs command through the shell in dir, streaming its
 // stdout/stderr directly to the terminal so long-running steps (installs,
 // builds) show live progress rather than a silent pause.
-func runFollowUpCommand(ctx context.Context, dir, command string) error {
+func runFollowUpCommand(ctx context.Context, dir, command string, output io.Writer) error {
 	if ctx.Err() != nil {
 		return ctx.Err()
 	}
 
 	cmd := exec.CommandContext(ctx, "sh", "-c", command)
 	cmd.Dir = dir
-	cmd.Stdout = os.Stdout
-	cmd.Stderr = os.Stderr
+	cmd.Stdout = output
+	cmd.Stderr = output
 
 	if err := cmd.Run(); err != nil {
 		var exitErr *exec.ExitError

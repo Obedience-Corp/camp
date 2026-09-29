@@ -83,6 +83,12 @@ func runSweepPrompt(ctx context.Context, cmd *cobra.Command, work *sweepWork) er
 }
 
 func printWorkSkips(out io.Writer, work *sweepWork) error {
+	if len(work.skipped) == 0 {
+		return nil
+	}
+	if err := writeSweepHeading(out); err != nil {
+		return err
+	}
 	for _, skip := range work.skipped {
 		if err := writeSweepFact(out, skip.Item.RelativePath, string(skip.Item.WorkflowType), "not moved", "not moved, "+skip.Detail); err != nil {
 			return err

@@ -283,9 +283,9 @@ func executeFresh(ctx context.Context, name, path string, opts freshOptions) err
 	}
 
 	if opts.dryRun {
-		fmt.Printf("  %s %s\n", ui.Value(name), freshStepDim.Render("(dry-run)"))
+		fmt.Printf("  %s %s\n", ui.Info(name), freshStepDim.Render("(dry-run)"))
 	} else {
-		fmt.Printf("  %s\n", ui.Value(name))
+		fmt.Printf("  %s\n", ui.Info(name))
 	}
 
 	// Step 0: Safety checks
@@ -309,6 +309,7 @@ func executeFresh(ctx context.Context, name, path string, opts freshOptions) err
 	// clean so this project path can check out main/master normally. Leaving
 	// main stuck on a finished feature worktree is the failure mode after
 	// camp project worktree add --start-point main.
+	freshHeading("Sync", "")
 	if err := maybeReclaimDefaultBranch(ctx, &syncState, opts.dryRun); err != nil {
 		return err
 	}
@@ -348,14 +349,17 @@ func executeFresh(ctx context.Context, name, path string, opts freshOptions) err
 	// Step 2: Fetch once, then either sync detached at origin/<default> or
 	// reconcile the checked-out local default branch. When local commits exist,
 	// reconciliation first creates a recovery branch and only then resets.
-	if err := fetchFreshRemote(ctx, path, opts.prune); err != nil {
-		return camperrors.Wrap(err, "fetch origin")
-	}
 	fetchStatus := "done"
 	if opts.dryRun {
 		fetchStatus = "done (remote refs only)"
 	}
-	freshRow("Fetch origin", fetchStatus, ui.StatusSuccess)
+	fetchStep := newFreshLive(os.Stdout, "Fetch origin", "fetching", "")
+	fetchStep.Begin()
+	if err := fetchFreshRemote(ctx, path, opts.prune); err != nil {
+		fetchStep.Finish("failed", ui.StatusError)
+		return camperrors.Wrap(err, "fetch origin")
+	}
+	fetchStep.Finish(fetchStatus, ui.StatusSuccess)
 
 	if syncState.detached {
 		note := freshSyncWorktreeNote(syncState)
@@ -378,6 +382,9 @@ func executeFresh(ctx context.Context, name, path string, opts freshOptions) err
 	// Step 2 already refreshed and pruned remote tracking refs, so prune does
 	// not perform a second network fetch.
 	if opts.prune {
+		freshHeading("Prune", "")
+		pruneStep := newFreshLive(os.Stdout, "Prune merged branches", "pruning", "")
+		pruneStep.Begin()
 		// Record branch → worktree path before prune deletes the branch and
 		// detaches/removes the worktree. The tier-2 backstop uses this map
 		// instead of guessing the branch from the worktree directory name.
@@ -404,6 +411,7 @@ func executeFresh(ctx context.Context, name, path string, opts freshOptions) err
 		}
 		pr := prune.Execute(ctx, name, path, pruneOpts)
 		if pr.Error != "" {
+			pruneStep.Finish("failed", ui.StatusError)
 			return camperrors.Wrapf(errors.New(pr.Error), "prune merged branches")
 		}
 
@@ -417,12 +425,12 @@ func executeFresh(ctx context.Context, name, path string, opts freshOptions) err
 			if opts.dryRun {
 				tone = ui.StatusMuted
 			}
-			freshRow("Prune merged branches", status, tone)
+			pruneStep.Finish(status, tone)
 			for _, name := range names {
 				freshDetail(name)
 			}
 		default:
-			freshRow("Prune merged branches", "nothing to prune", ui.StatusMuted)
+			pruneStep.Finish("nothing to prune", ui.StatusMuted)
 		}
 		if pr.Pruned > 0 {
 			detail := fmt.Sprintf("%d stale refs", pr.Pruned)
@@ -456,6 +464,7 @@ func executeFresh(ctx context.Context, name, path string, opts freshOptions) err
 	branchCheckedOut := false
 	branchCreated := false
 	if opts.branch != "" {
+		freshHeading("Branch", "")
 		if opts.cleanupStack {
 			if !git.BranchExists(ctx, path, opts.branch) {
 				return camperrors.Newf("--cleanup-stack: branch %q does not exist", opts.branch)
@@ -476,7 +485,7 @@ func executeFresh(ctx context.Context, name, path string, opts freshOptions) err
 				branchCheckedOut = true
 			}
 		} else if git.BranchExists(ctx, path, opts.branch) {
-			fmt.Fprintf(os.Stderr, "  ── Branch %s %s\n", opts.branch,
+			fmt.Fprintf(os.Stderr, "  %sBranch %s %s\n", ui.ChecklistMark(ui.StatusMuted), opts.branch,
 				freshStepDim.Render(fmt.Sprintf("already exists, staying on %s", syncState.displayRef)))
 		} else if opts.dryRun {
 			freshRow("Would create branch "+opts.branch, "from "+syncState.baseRef, ui.StatusMuted)

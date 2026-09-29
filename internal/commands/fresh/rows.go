@@ -2,30 +2,26 @@ package fresh
 
 import (
 	"fmt"
+	"io"
 	"os"
 
 	"github.com/Obedience-Corp/camp/internal/ui"
 )
 
-const (
-	freshMark         = "── "
-	freshRowIndent    = "  "
-	freshSubIndent    = "     "
-	freshDetailIndent = "       "
-)
-
 func freshRow(label, status string, tone ui.StatusTone) {
-	_ = ui.WriteChecklistRow(os.Stdout, ui.TermColumns(), freshRowIndent, freshMark, label, status, tone)
+	_ = ui.WriteChecklistRow(os.Stdout, ui.TermColumns(), ui.ChecklistRowIndent, ui.ChecklistMark(tone), label, status, tone)
 }
 
-// freshSubRow is a row nested under a section. Its label starts where a
-// top-level label starts, so the status column stays put.
-func freshSubRow(label, status string, tone ui.StatusTone) {
-	_ = ui.WriteChecklistRow(os.Stdout, ui.TermColumns(), freshSubIndent, "", label, status, tone)
+func freshHeading(title, note string) {
+	_ = ui.WriteChecklistSection(os.Stdout, ui.TermColumns(), title, note)
 }
 
 func freshDetail(text string) {
-	_ = ui.WriteChecklistDetail(os.Stdout, ui.TermColumns(), freshDetailIndent, text)
+	writeFreshDetail(os.Stdout, ui.TermColumns(), text)
+}
+
+func writeFreshDetail(w io.Writer, width int, text string) {
+	_ = ui.WriteChecklistDetail(w, width, ui.ChecklistDetailIndent, text)
 }
 
 // pruneChecklistStatus is the short result for a prune step. Branch names are

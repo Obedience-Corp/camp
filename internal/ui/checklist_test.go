@@ -90,6 +90,30 @@ func TestChecklistDetailWrapsUnderTheIndent(t *testing.T) {
 	}
 }
 
+func TestChecklistMarkWidthsMatch(t *testing.T) {
+	for _, tone := range []StatusTone{StatusPlain, StatusMuted, StatusSuccess, StatusWarning, StatusError, StatusInfo} {
+		if got := lipgloss.Width(ChecklistMark(tone)); got != 2 {
+			t.Fatalf("tone %d mark width = %d, want 2 (%q)", tone, got, stripANSI(ChecklistMark(tone)))
+		}
+	}
+}
+
+func TestChecklistSectionRuleEndsAtTheStatusColumn(t *testing.T) {
+	var buf bytes.Buffer
+	if err := WriteChecklistSection(&buf, 88, "Sync", ""); err != nil {
+		t.Fatal(err)
+	}
+	plain := stripANSI(buf.String())
+	line := strings.Trim(plain, "\n")
+	statusCol := lipgloss.Width(ChecklistRowIndent) + 2 + ChecklistLabelWidth
+	if got := lipgloss.Width(line); got != statusCol {
+		t.Fatalf("section width = %d, want %d\n%s", got, statusCol, line)
+	}
+	if !strings.Contains(line, "Sync") {
+		t.Fatalf("section dropped the title: %q", line)
+	}
+}
+
 func stripANSI(s string) string {
 	var b strings.Builder
 	for i := 0; i < len(s); i++ {

@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"io"
 	"path/filepath"
+	"strings"
 
 	"github.com/Obedience-Corp/camp/internal/ui"
 )
@@ -18,11 +19,25 @@ func writeSweepFact(out io.Writer, path, typ, status, sentence string) error {
 		title = path
 	}
 	width := ui.TermColumns()
-	// The info mark is two columns plus a space, matching the fresh "── " mark
-	// so this row's status lines up with a fresh checklist above it.
-	if err := ui.WriteChecklistRow(out, width, "  ", ui.InfoIcon()+"  ", title, status, ui.StatusMuted); err != nil {
+	tone := sweepTone(status)
+	if err := ui.WriteChecklistRow(out, width, ui.ChecklistRowIndent, ui.ChecklistMark(tone), title, status, tone); err != nil {
 		return err
 	}
 	fact := fmt.Sprintf("%s (%s): %s", filepath.ToSlash(path), typ, sentence)
-	return ui.WriteChecklistDetail(out, width, "     ", fact)
+	return ui.WriteChecklistDetail(out, width, ui.ChecklistDetailIndent, fact)
+}
+
+func sweepTone(status string) ui.StatusTone {
+	switch {
+	case strings.HasPrefix(status, "would "):
+		return ui.StatusInfo
+	case status == "not moved" || strings.HasPrefix(status, "not moved"):
+		return ui.StatusWarning
+	default:
+		return ui.StatusMuted
+	}
+}
+
+func writeSweepHeading(out io.Writer) error {
+	return ui.WriteChecklistSection(out, ui.TermColumns(), "Work items", "")
 }
