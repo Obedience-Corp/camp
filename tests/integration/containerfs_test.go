@@ -57,6 +57,7 @@ type containerFSPackage struct {
 // containerFSPackages are the suites migrated under D007. The counts are the
 // tests actually behind the tag at migration time.
 var containerFSPackages = []containerFSPackage{
+	{ImportPath: "./internal/starter", MinTests: 3},
 	{ImportPath: "./internal/clone", MinTests: 29},
 	{ImportPath: "./internal/sync", MinTests: 32},
 	{ImportPath: "./internal/commands/fresh", MinTests: 6},
