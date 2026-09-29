@@ -7,6 +7,7 @@ import (
 	"encoding/json"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -105,8 +106,16 @@ func TestProject_Link_PicksCampaignOutsideCurrentContext(t *testing.T) {
 	require.NoError(t, tc.CreateGitRepo(linkedPath))
 	campaignIDB := readCampaignID(t, tc, campaignB)
 
-	output, err := tc.RunCampInteractiveInDir(linkedPath, "Switch to:", "bravo\r", "project", "link")
-	require.NoError(t, err, "project link should open the campaign picker outside campaign context")
+	// Outside a camp, a terminal starts on the folder itself, then asks which
+	// camp. The filter has to survive other camps registered in this container.
+	output, err := tc.RunCampInteractiveStepsInDirTimeout(linkedPath, 30*time.Second, []InteractiveStep{
+		{WaitFor: "Link this folder", Input: "\r"},
+		{WaitFor: "Name in the camp", Input: "\r"},
+		{WaitFor: "Choose a camp", Input: "/pick-bravo\r"},
+		{WaitFor: "Nothing is written until you confirm.", Input: "\r"},
+		{WaitFor: "Project linked", Input: "\r"},
+	}, "project", "link")
+	require.NoError(t, err, "project link should browse, then ask which camp\n%s", output)
 	assert.Contains(t, output, "Linked project: picker-linked-app")
 	assert.Contains(t, output, "Committed changes to git")
 
@@ -121,6 +130,79 @@ func TestProject_Link_PicksCampaignOutsideCurrentContext(t *testing.T) {
 	marker, err := tc.ReadFile(linkedPath + "/.camp")
 	require.NoError(t, err)
 	assert.Contains(t, marker, "\"active_campaign_id\": \""+campaignIDB+"\"")
+}
+
+func TestProject_Link_TTYReviewQuitDoesNotWrite(t *testing.T) {
+	tc := GetSharedContainer(t)
+	campaignPath := "/campaigns/proj-link-tui-abort"
+	linkedPath := "/test/tui-abort-app"
+
+	_, err := tc.InitCampaign(campaignPath, "proj-link-tui-abort", "product")
+	require.NoError(t, err)
+	require.NoError(t, tc.CreateGitRepo(linkedPath))
+
+	output, err := tc.RunCampInteractiveStepsInDirTimeout(campaignPath, 30*time.Second, []InteractiveStep{
+		{WaitFor: "Name in the camp", Input: "\r"},
+		{WaitFor: "Nothing is written until you confirm.", Input: "q"},
+	}, "project", "link", linkedPath)
+	require.NoError(t, err, "quitting the review should leave the camp unchanged\n%s", output)
+
+	_, exitCode, err := tc.ExecCommand("test", "-L", campaignPath+"/projects/tui-abort-app")
+	require.NoError(t, err)
+	assert.NotEqual(t, 0, exitCode, "quitting the review must not create the shortcut")
+
+	exists, err := tc.CheckFileExists(linkedPath + "/.camp")
+	require.NoError(t, err)
+	assert.False(t, exists, "quitting the review must not write a .camp marker")
+}
+
+func TestProject_Link_TTYReviewConfirms(t *testing.T) {
+	tc := GetSharedContainer(t)
+	campaignPath := "/campaigns/proj-link-tui-review"
+	linkedPath := "/test/tui-review-app"
+
+	_, err := tc.InitCampaign(campaignPath, "proj-link-tui-review", "product")
+	require.NoError(t, err)
+	require.NoError(t, tc.CreateGitRepo(linkedPath))
+
+	output, err := tc.RunCampInteractiveStepsInDirTimeout(campaignPath, 30*time.Second, []InteractiveStep{
+		{WaitFor: "Name in the camp", Input: "\r"},
+		{WaitFor: "Nothing is written until you confirm.", Input: "\r"},
+		{WaitFor: "Project linked", Input: "\r"},
+	}, "project", "link", linkedPath)
+	require.NoError(t, err, "confirming the review should link the folder\n%s", output)
+	assert.Contains(t, output, "Project linked")
+	assert.Contains(t, output, "Linked project: tui-review-app")
+	assert.Contains(t, output, "Committed changes to git")
+
+	_, exitCode, err := tc.ExecCommand("test", "-L", campaignPath+"/projects/tui-review-app")
+	require.NoError(t, err)
+	assert.Equal(t, 0, exitCode, "confirming the review should create the shortcut")
+
+	exists, err := tc.CheckFileExists(linkedPath + "/.camp")
+	require.NoError(t, err)
+	assert.True(t, exists, "confirming the review should write a .camp marker")
+}
+
+func TestProject_Link_YesSkipsBrowserOnTTY(t *testing.T) {
+	tc := GetSharedContainer(t)
+	campaignPath := "/campaigns/proj-link-tui-yes"
+	linkedPath := "/test/tui-yes-app"
+
+	_, err := tc.InitCampaign(campaignPath, "proj-link-tui-yes", "product")
+	require.NoError(t, err)
+	require.NoError(t, tc.CreateGitRepo(linkedPath))
+
+	output, err := tc.RunCampInteractiveStepsInDirTimeout(campaignPath, 30*time.Second, []InteractiveStep{
+		{WaitFor: "Linked project:", Input: ""},
+	}, "project", "link", "--yes", linkedPath)
+	require.NoError(t, err, "--yes should link immediately on a terminal\n%s", output)
+	assert.Contains(t, output, "Linked project: tui-yes-app")
+	assert.NotContains(t, output, "Project linked")
+
+	_, exitCode, err := tc.ExecCommand("test", "-L", campaignPath+"/projects/tui-yes-app")
+	require.NoError(t, err)
+	assert.Equal(t, 0, exitCode, "--yes should create the shortcut without the browser")
 }
 
 func TestProject_Link_NonGitDir(t *testing.T) {

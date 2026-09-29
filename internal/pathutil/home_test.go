@@ -5,6 +5,38 @@ import (
 	"testing"
 )
 
+func TestExpandHome(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+
+	cases := []struct {
+		name string
+		in   string
+		want string
+	}{
+		{"home slash", "~/Dev/app", filepath.Join(home, "Dev", "app")},
+		{"bare home", "~", home},
+		{"absolute", "/tmp/app", "/tmp/app"},
+		{"relative", "app", "app"},
+		{"tilde mid", "foo/~/app", "foo/~/app"},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			if got := ExpandHome(tc.in); got != tc.want {
+				t.Errorf("ExpandHome(%q) = %q, want %q", tc.in, got, tc.want)
+			}
+		})
+	}
+}
+
+func TestExpandHome_UnsetHome(t *testing.T) {
+	t.Setenv("HOME", "")
+	t.Setenv("USERPROFILE", "")
+	if got := ExpandHome("~/app"); got != "~/app" {
+		t.Errorf("ExpandHome with no HOME = %q, want the original path", got)
+	}
+}
+
 func TestAbbreviateHome(t *testing.T) {
 	home := t.TempDir()
 	t.Setenv("HOME", home)
