@@ -89,6 +89,7 @@ camp [flags]
 * [camp root](camp_root.md)	 - Print the current camp root
 * [camp run](camp_run.md)	 - Execute command from camp root, or just recipe in a project
 * [camp settings](camp_settings.md)	 - Manage camp configuration
+* [camp setup](camp_setup.md)	 - Create your first festival camp once
 * [camp shell-init](camp_shell-init.md)	 - Output shell initialization code
 * [camp shortcuts](camp_shortcuts.md)	 - List all available shortcuts
 * [camp skills](camp_skills.md)	 - Manage camp skill directory links
