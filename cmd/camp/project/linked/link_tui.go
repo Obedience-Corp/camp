@@ -4,6 +4,7 @@ import (
 	"cmp"
 	"context"
 	"fmt"
+	"net/url"
 	"os"
 	"path/filepath"
 	"slices"
@@ -41,7 +42,7 @@ const (
 type linkEntry struct {
 	label string
 	path  string
-	kind  string // here, up, dir
+	kind  string // here, up, dir, place
 	badge string
 }
 
@@ -112,19 +113,20 @@ type linkModel struct {
 	campQuery      string
 	campFiltering  bool
 
-	cwd        string
-	dirs       []linkEntry
-	visible    []linkEntry
-	cursor     int
-	query      string
-	filtering  bool
-	showHidden bool
-	offerHere  bool
-	preset     bool
+	cwd          string
+	anchor       string
+	anchorOffer  bool
+	dirs         []linkEntry
+	visible      []linkEntry
+	cursor       int
+	query        string
+	showHidden   bool
+	offerHere    bool
+	awaitingPath bool
+	preset       bool
 
 	nameInput textinput.Model
-	jumpInput textinput.Model
-	jumping   bool
+	pathInput textinput.Model
 	nameSet   bool
 
 	chosenPath string
@@ -328,8 +330,8 @@ func linkInsideCamp(cwd, campRoot string) bool {
 
 // linkBrowseFrom chooses the directory the browser opens on.
 // Inside a camp, start at the user's home so the camp's own tree is not the
-// list of projects to link. The bool is true when that directory itself is
-// the project being offered.
+// list of projects to link, and do not offer that directory as the project.
+// The bool is true when the opened directory itself is the project.
 func linkBrowseFrom(cwd, campRoot, home string, inside bool) (string, bool) {
 	if inside {
 		if strings.TrimSpace(home) != "" {
@@ -347,7 +349,7 @@ func newLinkModel(open linkOpen) linkModel {
 	if open.nameSet {
 		name.SetValue(open.name)
 	}
-	jump := newLinkInput("/path/to/project")
+	path := newLinkInput("paste or type a path")
 	spin := spinner.New()
 	spin.Spinner = spinner.Dot
 	spin.Style = lipgloss.NewStyle().Foreground(linkPal.Accent)
@@ -365,7 +367,7 @@ func newLinkModel(open linkOpen) linkModel {
 		offerHere:  open.offerHere,
 		preset:     open.chosen != "",
 		nameInput:  name,
-		jumpInput:  jump,
+		pathInput:  path,
 		nameSet:    open.nameSet,
 		chosenPath: open.chosen,
 		spin:       spin,
@@ -395,7 +397,11 @@ func newLinkModel(open linkOpen) linkModel {
 	switch {
 	case open.chosen == "":
 		m.step = stepFolder
+		m.anchor = m.cwd
+		m.anchorOffer = m.offerHere
+		m.awaitingPath = !m.offerHere
 		m = m.loadDir()
+		m.pathInput.Focus()
 	case !open.nameSet:
 		m.step = stepName
 		m.chosenPath = open.chosen
@@ -438,7 +444,10 @@ func (m linkModel) needsCamp() bool {
 
 func (m linkModel) Init() tea.Cmd {
 	cmds := []tea.Cmd{textinput.Blink}
-	if m.step == stepName {
+	switch m.step {
+	case stepFolder:
+		cmds = append(cmds, m.pathInput.Focus())
+	case stepName:
 		cmds = append(cmds, m.nameInput.Focus())
 	}
 	if m.planning {
@@ -467,6 +476,10 @@ func (m linkModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m.applied(msg)
 	case tea.KeyMsg:
 		return m.onKey(msg)
+	default:
+		if m.step == stepFolder {
+			return m.absorbPathMsg(msg)
+		}
 	}
 	return m, nil
 }
@@ -496,121 +509,101 @@ func (m linkModel) onKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 }
 
 func (m linkModel) onBrowseKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
-	if m.jumping {
-		return m.onJumpKey(msg)
-	}
-	if m.filtering {
-		return m.onFilterKey(msg)
+	if msg.Paste {
+		return m.pastePath(string(msg.Runes))
 	}
 	switch msg.String() {
-	case "q", "esc":
-		m.quitting = true
-		return m, tea.Quit
-	case "up", "k":
+	case "esc":
+		if strings.TrimSpace(m.pathInput.Value()) == "" {
+			m.quitting = true
+			return m, tea.Quit
+		}
+		m.pathInput.SetValue("")
+		m.errMsg = ""
+		return m.showAnchor(), nil
+	case "ctrl+u":
+		m.pathInput.SetValue("")
+		m.errMsg = ""
+		return m.showAnchor(), nil
+	case "up":
 		return m.move(-1), nil
-	case "down", "j":
+	case "down":
 		return m.move(1), nil
-	case "/":
-		m.filtering = true
-		m.query = ""
-		m.rebuildVisible()
-		return m, nil
-	case ".":
-		m.showHidden = !m.showHidden
-		m.errMsg = ""
-		return m.loadDir(), nil
-	case "g":
-		m.jumping = true
-		m.jumpInput.SetValue("")
-		m.errMsg = ""
-		return m, m.jumpInput.Focus()
-	case "l":
-		return m.linkHighlighted()
-	case "enter":
+	case "tab", "right":
 		return m.openHighlighted()
+	case "enter":
+		return m.submitBrowse()
+	default:
+		return m.absorbPathMsg(msg)
+	}
+}
+
+func (m linkModel) absorbPathMsg(msg tea.Msg) (tea.Model, tea.Cmd) {
+	before := m.pathInput.Value()
+	var cmd tea.Cmd
+	m.pathInput, cmd = m.pathInput.Update(msg)
+	m.rewritePathField()
+	if m.pathInput.Value() == before {
+		return m, cmd
+	}
+	return m.applyPathText(), cmd
+}
+
+func (m linkModel) pastePath(raw string) (tea.Model, tea.Cmd) {
+	cleaned, submit := normalizePastedPath(raw)
+	m.pathInput.SetValue(cleaned)
+	m.pathInput.CursorEnd()
+	m = m.applyPathText()
+	if submit {
+		return m.submitBrowse()
 	}
 	return m, nil
 }
 
-func (m linkModel) onFilterKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
-	switch msg.String() {
-	case "esc":
-		m.filtering = false
-		m.query = ""
-		m.rebuildVisible()
-		return m, nil
-	case "enter":
-		m.filtering = false
-		return m.openHighlighted()
-	case "up", "k":
-		return m.move(-1), nil
-	case "down", "j":
-		return m.move(1), nil
-	case "backspace":
-		if m.query == "" {
-			m.filtering = false
-			m.rebuildVisible()
+func (m linkModel) submitBrowse() (tea.Model, tea.Cmd) {
+	raw := m.pathInput.Value()
+	trimmed := trimTrailingSlashField(raw)
+	if trimmed != raw {
+		m.pathInput.SetValue(trimmed)
+		m = m.applyPathText()
+	}
+	if strings.TrimSpace(m.pathInput.Value()) == "" {
+		if _, ok := m.selected(); !ok {
+			m.errMsg = "paste or type a path"
 			return m, nil
 		}
-		runes := []rune(m.query)
-		m.query = string(runes[:len(runes)-1])
-		m.rebuildVisible()
-		return m, nil
-	default:
-		if linkPrintable(msg) {
-			m.query += msg.String()
-			m.rebuildVisible()
+		return m.activateHighlighted()
+	}
+	if cleaned, ok := m.lookupPath(m.pathInput.Value()); ok {
+		if isDir, err := m.statFn(cleaned); err == nil && isDir {
+			return m.choosePath(cleaned)
 		}
-		return m, nil
 	}
+	if dir, ok := m.onlyVisibleDir(); ok {
+		return m.choosePath(dir.path)
+	}
+	if entry, ok := m.selected(); ok && entry.kind == "dir" {
+		return m.choosePath(entry.path)
+	}
+	m.errMsg = "folder not found"
+	return m, nil
 }
 
-func (m linkModel) onJumpKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
-	switch msg.String() {
-	case "esc":
-		m.jumping = false
-		m.errMsg = ""
+func (m linkModel) activateHighlighted() (tea.Model, tea.Cmd) {
+	entry, ok := m.selected()
+	if !ok {
 		return m, nil
-	case "enter":
-		return m.submitJump()
+	}
+	switch entry.kind {
+	case "here", "dir":
+		return m.choosePath(entry.path)
+	case "up":
+		return m.goUp(), nil
+	case "place":
+		return m.jumpTo(entry.path), nil
 	default:
-		var cmd tea.Cmd
-		m.jumpInput, cmd = m.jumpInput.Update(msg)
-		return m, cmd
+		return m.choosePath(entry.path)
 	}
-}
-
-func (m linkModel) submitJump() (tea.Model, tea.Cmd) {
-	raw := pathutil.ExpandHome(strings.TrimSpace(m.jumpInput.Value()))
-	if raw == "" {
-		m.errMsg = "path is required"
-		return m, nil
-	}
-	if !filepath.IsAbs(raw) {
-		raw = filepath.Join(m.cwd, raw)
-	}
-	cleaned, err := cleanLinkDir(raw)
-	if err != nil {
-		m.errMsg = err.Error()
-		return m, nil
-	}
-	isDir, err := m.statFn(cleaned)
-	if err != nil {
-		m.errMsg = err.Error()
-		return m, nil
-	}
-	if !isDir {
-		m.errMsg = "path is not a directory"
-		return m, nil
-	}
-	m.jumping = false
-	m.cwd = cleaned
-	m.offerHere = true
-	m.query = ""
-	m.filtering = false
-	m.errMsg = ""
-	m.jumpInput.SetValue("")
-	return m.loadDir(), nil
 }
 
 func (m linkModel) openHighlighted() (tea.Model, tea.Cmd) {
@@ -620,27 +613,27 @@ func (m linkModel) openHighlighted() (tea.Model, tea.Cmd) {
 	}
 	switch entry.kind {
 	case "here":
-		return m.choosePath(entry.path)
+		return m, nil
 	case "up":
 		return m.goUp(), nil
+	case "place":
+		return m.jumpTo(entry.path), nil
 	default:
 		return m.descend(entry), nil
 	}
 }
 
-func (m linkModel) linkHighlighted() (tea.Model, tea.Cmd) {
-	entry, ok := m.selected()
-	if !ok {
-		return m, nil
-	}
-	return m.choosePath(entry.path)
-}
-
 func (m linkModel) choosePath(path string) (tea.Model, tea.Cmd) {
 	m.chosenPath = path
 	m.errMsg = ""
-	m.filtering = false
 	m.query = ""
+	m.showHidden = false
+	m.pathInput.SetValue("")
+	m.awaitingPath = false
+	if m.cwd != "" {
+		m.anchor = m.cwd
+		m.anchorOffer = m.offerHere
+	}
 	if !m.nameSet {
 		m.nameInput.SetValue(filepath.Base(path))
 	}
@@ -650,10 +643,14 @@ func (m linkModel) choosePath(path string) (tea.Model, tea.Cmd) {
 
 func (m linkModel) descend(entry linkEntry) linkModel {
 	m.cwd = entry.path
+	m.anchor = entry.path
 	m.offerHere = entry.badge != ""
+	m.anchorOffer = m.offerHere
+	m.awaitingPath = false
 	m.query = ""
-	m.filtering = false
+	m.showHidden = false
 	m.errMsg = ""
+	m.pathInput.SetValue("")
 	return m.loadDir()
 }
 
@@ -664,10 +661,14 @@ func (m linkModel) goUp() linkModel {
 	}
 	child := filepath.Base(m.cwd)
 	m.cwd = parent
+	m.anchor = parent
 	m.offerHere = false
+	m.anchorOffer = false
+	m.awaitingPath = false
 	m.query = ""
-	m.filtering = false
+	m.showHidden = false
 	m.errMsg = ""
+	m.pathInput.SetValue("")
 	m = m.loadDir()
 	for i, entry := range m.visible {
 		if entry.kind == "dir" && entry.label == child {
@@ -676,6 +677,19 @@ func (m linkModel) goUp() linkModel {
 		}
 	}
 	return m
+}
+
+func (m linkModel) jumpTo(path string) linkModel {
+	m.cwd = path
+	m.anchor = path
+	m.offerHere = false
+	m.anchorOffer = false
+	m.awaitingPath = false
+	m.query = ""
+	m.showHidden = false
+	m.errMsg = ""
+	m.pathInput.SetValue("")
+	return m.loadDir()
 }
 
 func (m linkModel) onNameKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
@@ -687,7 +701,10 @@ func (m linkModel) onNameKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			return m, tea.Quit
 		}
 		m.step = stepFolder
-		return m.loadDir(), nil
+		m.query = ""
+		m.showHidden = false
+		m.pathInput.SetValue("")
+		return m.loadDir(), m.pathInput.Focus()
 	case "enter":
 		return m.submitName()
 	default:
@@ -930,7 +947,7 @@ func (m *linkModel) fitInputs() {
 		w = 56
 	}
 	m.nameInput.Width = w
-	m.jumpInput.Width = w
+	m.pathInput.Width = w
 }
 
 func (m linkModel) loadDir() linkModel {
@@ -948,6 +965,9 @@ func (m linkModel) loadDir() linkModel {
 }
 
 func (m linkModel) defaultCursor() int {
+	if m.awaitingPath {
+		return -1
+	}
 	if m.offerHere || len(m.visible) == 0 {
 		return 0
 	}
@@ -985,22 +1005,252 @@ func (m *linkModel) rebuildVisible() {
 }
 
 func (m linkModel) pinned() []linkEntry {
-	here := linkEntry{
-		label: "Link this folder",
-		path:  m.cwd,
-		kind:  "here",
-		badge: linkDirBadge(m.cwd),
+	var pins []linkEntry
+	if m.offerHere {
+		pins = append(pins, linkEntry{
+			label: "Link this folder",
+			path:  m.cwd,
+			kind:  "here",
+			badge: linkDirBadge(m.cwd),
+		})
 	}
 	parent := filepath.Dir(m.cwd)
-	if parent == m.cwd {
-		return []linkEntry{here}
+	if parent != m.cwd {
+		pins = append(pins, linkEntry{label: "..", path: parent, kind: "up"})
 	}
-	return []linkEntry{here, {label: "..", path: parent, kind: "up"}}
+	if strings.TrimSpace(m.query) == "" {
+		pins = append(pins, m.places()...)
+	}
+	return pins
+}
+
+func (m linkModel) places() []linkEntry {
+	var out []linkEntry
+	if home := m.homePath(); home != "" && !m.listingHome() {
+		out = append(out, linkEntry{label: "Home", path: home, kind: "place"})
+	}
+	const disks = "/Volumes"
+	if m.statFn != nil && m.cwd != disks {
+		if ok, err := m.statFn(disks); err == nil && ok {
+			out = append(out, linkEntry{label: "Disks", path: disks, kind: "place"})
+		}
+	}
+	if m.cwd != "/" {
+		out = append(out, linkEntry{label: "/", path: "/", kind: "place"})
+	}
+	return out
+}
+
+func (m linkModel) homePath() string {
+	if len(m.homes) == 0 {
+		return ""
+	}
+	return m.homes[0]
+}
+
+func (m linkModel) listingHome() bool {
+	for _, home := range m.homes {
+		if home != "" && m.cwd == home {
+			return true
+		}
+	}
+	return false
+}
+
+func (m linkModel) applyPathText() linkModel {
+	m.errMsg = ""
+	raw := strings.TrimSpace(m.pathInput.Value())
+	if raw == "" {
+		return m.showAnchor()
+	}
+	m.awaitingPath = false
+	cleaned, ok := m.lookupPath(raw)
+	if !ok {
+		return m.showAnchor()
+	}
+	if m.statFn != nil {
+		if isDir, err := m.statFn(cleaned); err == nil && isDir {
+			return m.showDir(cleaned)
+		}
+	}
+	parent := filepath.Dir(cleaned)
+	if parent == cleaned || m.statFn == nil {
+		return m.showAnchor()
+	}
+	if isDir, err := m.statFn(parent); err != nil || !isDir {
+		return m.showAnchor()
+	}
+	return m.showFilter(parent, filepath.Base(cleaned))
+}
+
+func (m linkModel) showAnchor() linkModel {
+	if m.anchor == "" {
+		m.anchor = m.cwd
+		m.anchorOffer = m.offerHere
+	}
+	if strings.TrimSpace(m.pathInput.Value()) == "" {
+		m.awaitingPath = !m.anchorOffer
+	}
+	if m.cwd == m.anchor && m.query == "" && !m.showHidden && m.offerHere == m.anchorOffer {
+		if m.awaitingPath {
+			m.cursor = -1
+		}
+		return m
+	}
+	m.query = ""
+	m.showHidden = false
+	m.cwd = m.anchor
+	m.offerHere = m.anchorOffer
+	return m.loadDir()
+}
+
+func (m linkModel) showDir(dir string) linkModel {
+	if m.cwd == dir && m.query == "" && m.offerHere && !m.showHidden {
+		return m
+	}
+	m.cwd = dir
+	m.query = ""
+	m.showHidden = false
+	m.offerHere = true
+	return m.loadDir()
+}
+
+func (m linkModel) showFilter(parent, base string) linkModel {
+	hidden := strings.HasPrefix(base, ".")
+	if m.cwd == parent && m.query == base && m.showHidden == hidden && !m.offerHere {
+		m.rebuildVisible()
+		m.cursor = m.defaultCursor()
+		return m
+	}
+	m.cwd = parent
+	m.query = base
+	m.showHidden = hidden
+	m.offerHere = false
+	return m.loadDir()
+}
+
+func (m linkModel) lookupPath(raw string) (string, bool) {
+	expanded := pathutil.ExpandHome(strings.TrimSpace(stripFileURL(stripWrappingQuotes(strings.TrimSpace(raw)))))
+	expanded = trimTrailingSlashField(expanded)
+	if expanded == "" {
+		return "", false
+	}
+	if !filepath.IsAbs(expanded) {
+		base := m.anchor
+		if base == "" {
+			base = m.cwd
+		}
+		expanded = filepath.Join(base, expanded)
+	}
+	cleaned, err := cleanLinkDir(expanded)
+	if err != nil {
+		return "", false
+	}
+	return cleaned, true
+}
+
+func (m linkModel) onlyVisibleDir() (linkEntry, bool) {
+	var found linkEntry
+	count := 0
+	for _, entry := range m.visible {
+		if entry.kind != "dir" {
+			continue
+		}
+		count++
+		found = entry
+		if count > 1 {
+			return linkEntry{}, false
+		}
+	}
+	return found, count == 1
+}
+
+func (m *linkModel) rewritePathField() {
+	raw := m.pathInput.Value()
+	cleaned := rewritePathText(raw)
+	if cleaned == raw {
+		return
+	}
+	m.pathInput.SetValue(cleaned)
+	m.pathInput.CursorEnd()
+}
+
+func rewritePathText(raw string) string {
+	trimmed := strings.TrimSpace(raw)
+	if trimmed == "" {
+		return raw
+	}
+	if stripped := stripFileURL(trimmed); stripped != trimmed {
+		return stripped
+	}
+	if unquoted := stripWrappingQuotes(trimmed); unquoted != trimmed {
+		return unquoted
+	}
+	return raw
+}
+
+func normalizePastedPath(raw string) (string, bool) {
+	submit := strings.ContainsAny(raw, "\r\n")
+	raw = strings.ReplaceAll(raw, "\r\n", "\n")
+	raw = strings.ReplaceAll(raw, "\r", "\n")
+	if line, _, ok := strings.Cut(raw, "\n"); ok {
+		raw = line
+	}
+	raw = strings.TrimSpace(raw)
+	raw = stripWrappingQuotes(raw)
+	raw = strings.TrimSpace(raw)
+	raw = stripFileURL(raw)
+	return raw, submit
+}
+
+func stripWrappingQuotes(s string) string {
+	if len(s) >= 2 {
+		if (s[0] == '\'' && s[len(s)-1] == '\'') || (s[0] == '"' && s[len(s)-1] == '"') {
+			return s[1 : len(s)-1]
+		}
+	}
+	return s
+}
+
+func stripFileURL(s string) string {
+	rest, ok := strings.CutPrefix(s, "file://localhost")
+	if !ok {
+		rest, ok = strings.CutPrefix(s, "file://")
+	}
+	if !ok || !strings.HasPrefix(rest, "/") {
+		return s
+	}
+	if unescaped, err := url.PathUnescape(rest); err == nil {
+		return unescaped
+	}
+	return rest
+}
+
+func trimTrailingSlashField(s string) string {
+	if s == "" || s == "/" || s == "~" {
+		return s
+	}
+	return strings.TrimRight(s, `/\`)
 }
 
 func (m linkModel) move(delta int) linkModel {
 	n := len(m.visible)
 	if n == 0 {
+		return m
+	}
+	m.awaitingPath = false
+	if m.cursor < 0 {
+		if delta < 0 {
+			m.cursor = n - 1
+			return m
+		}
+		for i, entry := range m.visible {
+			if entry.kind == "dir" {
+				m.cursor = i
+				return m
+			}
+		}
+		m.cursor = 0
 		return m
 	}
 	m.cursor = (m.cursor + delta + n) % n

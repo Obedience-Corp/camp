@@ -35,6 +35,15 @@ func linkFixtureCamps() []linkCamp {
 	}
 }
 
+func linkFixtureStat(path string) (bool, error) {
+	switch path {
+	case "/home", "/home/src", "/home/src/ledger", "/home/src/notes", "/home/campaign", "/srv/app":
+		return true, nil
+	default:
+		return false, errors.New("missing")
+	}
+}
+
 func linkOpenBrowse() linkOpen {
 	return linkOpen{
 		ctx:       context.Background(),
@@ -45,6 +54,7 @@ func linkOpenBrowse() linkOpen {
 		hasCamp:   true,
 		homes:     []string{"/home"},
 		listFn:    linkFixtureDirs,
+		statFn:    linkFixtureStat,
 	}
 }
 
@@ -63,6 +73,12 @@ func linkKey(m linkModel, key string) (linkModel, tea.Cmd) {
 		msg = tea.KeyMsg{Type: tea.KeyBackspace}
 	case "ctrl+c":
 		msg = tea.KeyMsg{Type: tea.KeyCtrlC}
+	case "ctrl+u":
+		msg = tea.KeyMsg{Type: tea.KeyCtrlU}
+	case "tab":
+		msg = tea.KeyMsg{Type: tea.KeyTab}
+	case "right":
+		msg = tea.KeyMsg{Type: tea.KeyRight}
 	default:
 		msg = tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune(key)}
 	}
@@ -91,19 +107,45 @@ func TestLinkBrowse_OffersTheCurrentFolder(t *testing.T) {
 	}
 }
 
-func TestLinkBrowse_LLinksTheHighlightedProject(t *testing.T) {
+func TestLinkBrowse_InsideCampWaitsForAPath(t *testing.T) {
 	m := newLinkModel(linkOpenBrowse())
-	// Home lists campaign, then src. Move onto src and open it.
-	m, _ = linkKey(m, "down")
+	if m.cursor >= 0 || m.step != stepFolder {
+		t.Fatalf("cursor %d step %d", m.cursor, m.step)
+	}
+	view := m.View()
+	for _, needle := range []string{"into alpha", "anywhere on this machine", "type or paste a path"} {
+		if !strings.Contains(view, needle) {
+			t.Fatalf("view missing %q\n%s", needle, view)
+		}
+	}
+	if strings.Contains(view, "Link this folder") {
+		t.Fatalf("home should not be offered as the project\n%s", view)
+	}
 	m, _ = linkKey(m, "enter")
-	if m.cwd != "/home/src" {
-		t.Fatalf("cwd = %q", m.cwd)
+	if m.step != stepFolder || m.chosenPath != "" || m.errMsg != "paste or type a path" {
+		t.Fatalf("step %d path %q err %q", m.step, m.chosenPath, m.errMsg)
+	}
+}
+
+func TestLinkBrowse_TabOpensAndEnterLinks(t *testing.T) {
+	m := newLinkModel(linkOpenBrowse())
+	// Nothing is selected yet. Move onto src and open it.
+	for range 6 {
+		entry, ok := m.selected()
+		if ok && entry.label == "src" {
+			break
+		}
+		m, _ = linkKey(m, "down")
+	}
+	m, _ = linkKey(m, "tab")
+	if m.cwd != "/home/src" || m.pathInput.Value() != "" {
+		t.Fatalf("cwd = %q field %q", m.cwd, m.pathInput.Value())
 	}
 	entry, _ := m.selected()
 	if entry.label != "ledger" {
 		t.Fatalf("selected = %+v", entry)
 	}
-	m, _ = linkKey(m, "l")
+	m, _ = linkKey(m, "enter")
 	if m.step != stepName || m.chosenPath != "/home/src/ledger" || m.nameInput.Value() != "ledger" {
 		t.Fatalf("linked path %q name %q step %d", m.chosenPath, m.nameInput.Value(), m.step)
 	}
@@ -113,9 +155,11 @@ func TestLinkBrowse_FilterNarrowsFolders(t *testing.T) {
 	open := linkOpenBrowse()
 	open.browse = "/home/src"
 	m := newLinkModel(open)
-	m, _ = linkKey(m, "/")
 	m, _ = linkKey(m, "n")
-	if m.hasDir() != true {
+	if m.pathInput.Value() != "n" || m.query != "n" {
+		t.Fatalf("field %q query %q", m.pathInput.Value(), m.query)
+	}
+	if !m.hasDir() {
 		t.Fatal("expected a match")
 	}
 	found := false
@@ -132,30 +176,37 @@ func TestLinkBrowse_FilterNarrowsFolders(t *testing.T) {
 	}
 }
 
-func TestLinkBrowse_JumpToAPath(t *testing.T) {
-	open := linkOpenBrowse()
-	open.statFn = func(path string) (bool, error) {
-		if path == "/srv/app" {
-			return true, nil
-		}
-		return false, errors.New("missing")
-	}
-	m := newLinkModel(open)
-	m, _ = linkKey(m, "g")
+func TestLinkBrowse_EnterOnTypedPathLinksIt(t *testing.T) {
+	m := newLinkModel(linkOpenBrowse())
 	for _, r := range "/srv/app" {
 		m, _ = linkKey(m, string(r))
 	}
-	m, _ = linkKey(m, "enter")
 	if m.cwd != "/srv/app" || m.step != stepFolder {
-		t.Fatalf("cwd %q step %d err %q", m.cwd, m.step, m.errMsg)
+		t.Fatalf("while typing cwd %q step %d err %q", m.cwd, m.step, m.errMsg)
 	}
-	entry, _ := m.selected()
-	if entry.kind != "here" {
-		t.Fatalf("after jump selected = %+v", entry)
+	m, _ = linkKey(m, "enter")
+	if m.step != stepName || m.chosenPath != "/srv/app" {
+		t.Fatalf("path %q step %d err %q", m.chosenPath, m.step, m.errMsg)
 	}
 }
 
-func TestLinkBrowse_HiddenToggleReloads(t *testing.T) {
+func TestLinkBrowse_PasteLinksAnAbsolutePath(t *testing.T) {
+	m := newLinkModel(linkOpenBrowse())
+	next, _ := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("'/srv/app'\n"), Paste: true})
+	m = next.(linkModel)
+	if m.step != stepName || m.chosenPath != "/srv/app" {
+		t.Fatalf("path %q step %d err %q field %q", m.chosenPath, m.step, m.errMsg, m.pathInput.Value())
+	}
+
+	m = newLinkModel(linkOpenBrowse())
+	next, _ = m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("file://localhost/srv/app\n"), Paste: true})
+	m = next.(linkModel)
+	if m.step != stepName || m.chosenPath != "/srv/app" {
+		t.Fatalf("file url path %q step %d err %q", m.chosenPath, m.step, m.errMsg)
+	}
+}
+
+func TestLinkBrowse_DotPrefixListsHiddenFolders(t *testing.T) {
 	hidden := false
 	open := linkOpenBrowse()
 	open.listFn = func(path string, showHidden bool) ([]linkEntry, error) {
@@ -166,9 +217,92 @@ func TestLinkBrowse_HiddenToggleReloads(t *testing.T) {
 	if hidden {
 		t.Fatal("first load should hide dot dirs")
 	}
-	m, _ = linkKey(m, ".")
+	for _, r := range ".config" {
+		m, _ = linkKey(m, string(r))
+	}
 	if !hidden || !m.showHidden {
-		t.Fatalf("hidden = %v", m.showHidden)
+		t.Fatalf("hidden = %v query %q", m.showHidden, m.query)
+	}
+}
+
+func TestLinkBrowse_EscClearsThenQuits(t *testing.T) {
+	m := newLinkModel(linkOpenBrowse())
+	if !strings.Contains(m.View(), "Project folder") || !strings.Contains(m.View(), "esc quit") {
+		t.Fatalf("empty folder view:\n%s", m.View())
+	}
+	m, _ = linkKey(m, "n")
+	if !strings.Contains(m.View(), "esc clear") {
+		t.Fatalf("typed folder view:\n%s", m.View())
+	}
+	m, _ = linkKey(m, "esc")
+	if m.quitting || m.pathInput.Value() != "" || m.cwd != "/home" {
+		t.Fatalf("after clear quitting=%v field %q cwd %q", m.quitting, m.pathInput.Value(), m.cwd)
+	}
+	m, cmd := linkKey(m, "esc")
+	if !m.quitting || cmd == nil {
+		t.Fatalf("second esc quitting=%v cmd=%v", m.quitting, cmd != nil)
+	}
+}
+
+func TestLinkBrowse_LettersTypeIntoThePath(t *testing.T) {
+	m := newLinkModel(linkOpenBrowse())
+	m, _ = linkKey(m, "j")
+	if m.quitting || m.pathInput.Value() != "j" || m.query != "j" {
+		t.Fatalf("field %q query %q quitting %v", m.pathInput.Value(), m.query, m.quitting)
+	}
+	m, _ = linkKey(m, "ctrl+u")
+	if m.pathInput.Value() != "" || m.query != "" {
+		t.Fatalf("after clear field %q query %q", m.pathInput.Value(), m.query)
+	}
+}
+
+func TestLinkBrowse_EnterOnRootJumpsWithoutLinking(t *testing.T) {
+	m := newLinkModel(linkOpenBrowse())
+	for range 6 {
+		entry, ok := m.selected()
+		if ok && entry.kind == "place" && entry.path == "/" {
+			break
+		}
+		m, _ = linkKey(m, "up")
+	}
+	entry, _ := m.selected()
+	if entry.kind != "place" || entry.path != "/" {
+		t.Fatalf("selected = %+v", entry)
+	}
+	m, _ = linkKey(m, "enter")
+	if m.step != stepFolder || m.cwd != "/" || m.chosenPath != "" {
+		t.Fatalf("cwd %q step %d chosen %q", m.cwd, m.step, m.chosenPath)
+	}
+}
+
+func TestLinkBrowse_KeepsATrailingSlashWhileTyping(t *testing.T) {
+	m := newLinkModel(linkOpenBrowse())
+	for _, r := range "/home/src/" {
+		m, _ = linkKey(m, string(r))
+	}
+	if m.pathInput.Value() != "/home/src/" {
+		t.Fatalf("field = %q", m.pathInput.Value())
+	}
+	m, _ = linkKey(m, "n")
+	if m.pathInput.Value() != "/home/src/n" {
+		t.Fatalf("field = %q", m.pathInput.Value())
+	}
+	if m.query != "n" {
+		t.Fatalf("query = %q", m.query)
+	}
+}
+
+func TestLinkBrowse_EnterOnMissingPath(t *testing.T) {
+	m := newLinkModel(linkOpenBrowse())
+	for _, r := range "zzz" {
+		m, _ = linkKey(m, string(r))
+	}
+	if m.errMsg != "" {
+		t.Fatalf("typing should not error yet: %q", m.errMsg)
+	}
+	m, _ = linkKey(m, "enter")
+	if m.step != stepFolder || m.errMsg != "folder not found" {
+		t.Fatalf("step %d err %q", m.step, m.errMsg)
 	}
 }
 

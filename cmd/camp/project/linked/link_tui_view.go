@@ -107,6 +107,11 @@ func (m linkModel) titleLine() string {
 	case stepCamp:
 		label := ui.CountLabel(len(m.camps), "camp", "camps")
 		return linkTitle.Render("Choose a camp") + "  " + linkMuted.Render(label)
+	case stepFolder:
+		if m.hasCamp && m.camp.Name != "" && !m.anchorOffer {
+			return linkTitle.Render("Link a project") + "  " + linkMuted.Render("into "+m.camp.Name)
+		}
+		return linkTitle.Render("Link a project") + "  " + linkMuted.Render("the folder stays where it is")
 	default:
 		return linkTitle.Render("Link a project") + "  " + linkMuted.Render("the folder stays where it is")
 	}
@@ -156,21 +161,14 @@ func (m linkModel) bodyLines(lay linkLayout) []string {
 }
 
 func (m linkModel) browseLines(lay linkLayout) []string {
-	lines := []string{m.locationLine(lay.cw), ""}
-	if m.jumping {
-		lines = append(lines,
-			linkMuted.Render("  Go to folder"),
-			"  "+m.jumpInput.View(),
-		)
-		return lines
+	lines := []string{
+		linkMuted.Render("  Project folder"),
+		"  " + m.pathInput.View(),
 	}
-	if m.filtering {
-		header := linkAccent.Render("  / " + m.query)
-		if m.query == "" {
-			header = linkMuted.Render("  / filter")
-		}
-		lines = append(lines, header, "")
+	if m.awaitingPath && strings.TrimSpace(m.pathInput.Value()) == "" {
+		lines = append(lines, linkMuted.Render("  The project can live anywhere on this machine."))
 	}
+	lines = append(lines, "", m.locationLine(lay.cw), "")
 	lines = append(lines, m.browseRows(lay)...)
 	if m.query != "" && !m.hasDir() {
 		lines = append(lines, linkMuted.Render("  no folders match"))
@@ -408,18 +406,19 @@ func linkGitFact(plan *projectsvc.LinkPlan) string {
 }
 
 func (m linkModel) helpLine() string {
-	if m.jumping {
-		return linkHelp.Render("enter go  ·  esc cancel")
-	}
 	if m.campFiltering {
 		return linkHelp.Render("enter choose  ·  esc clear  ·  up/down move")
 	}
-	if m.filtering {
-		return linkHelp.Render("enter open  ·  esc clear  ·  up/down move")
-	}
 	switch m.step {
 	case stepFolder:
-		return linkHelp.Render("j/k move  ·  enter open  ·  l link  ·  / filter  ·  g path  ·  . all  ·  q quit")
+		if m.awaitingPath && strings.TrimSpace(m.pathInput.Value()) == "" {
+			return linkHelp.Render("type or paste a path  ·  up/down browse  ·  esc quit")
+		}
+		esc := "esc quit"
+		if strings.TrimSpace(m.pathInput.Value()) != "" {
+			esc = "esc clear"
+		}
+		return linkHelp.Render("enter link  ·  tab open  ·  up/down move  ·  " + esc)
 	case stepName:
 		return linkHelp.Render("enter continue  ·  esc back")
 	case stepCamp:

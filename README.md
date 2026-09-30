@@ -199,7 +199,7 @@ the camp. The folder stays where it is. Camp adds a shortcut under `projects/`
 and a `.camp` file in the folder. This is not a git submodule.
 
 ```bash
-camp project link               # Browse for the folder, then confirm
+camp project link               # Paste a path or browse, then confirm
 camp project link <path>        # Review that folder, then link it
 camp project link <path> --yes  # Link immediately
 camp project add <url>          # Add a git submodule for a shared checkout
@@ -207,8 +207,10 @@ camp project rename             # Review the plan in the terminal, then rename
 camp project rename old new     # Same rename; a terminal confirms before writing
 ```
 
-In a terminal, `camp project link` opens a folder browser. Pick the folder,
-name it, choose the camp, and confirm before anything is written. `--yes`
+In a terminal, `camp project link` asks for the project folder. From
+that folder, Enter links it. From inside a camp, the camp is already
+selected, so paste or type the project path, or move through the list.
+Tab opens a folder. Then confirm before anything is written. `--yes`
 and a shell without a terminal link immediately.
 
 Use `camp project add` (or `camp p add`) when the checkout should travel with

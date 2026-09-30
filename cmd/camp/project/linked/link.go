@@ -28,12 +28,14 @@ func NewLinkCommand(newResolver CampaignResolverFactory) *cobra.Command {
 The folder stays where it is. Camp adds a shortcut at projects/<name>
 and a .camp file in that folder. This is not a git submodule.
 
-In a terminal, the command opens a browser. Pick the folder, name it,
-choose the camp, and confirm before anything is written. Pass --yes,
+In a terminal, paste or type a path, or move through folders.
+Enter links the folder. Tab opens a folder. Then name it, choose
+the camp, and confirm before anything is written. Pass --yes,
 or run the command without a terminal, to link immediately.
 
-Inside a camp, that camp is selected for you. Outside a camp, the
-browser asks which camp to use. --campaign <name-or-id> skips that
+Inside a camp, that camp is already selected. Paste or type the
+project folder, or move through the list. Outside a camp, the
+screen asks which camp to use. --campaign <name-or-id> skips that
 choice. A bare --campaign always asks.
 
 Examples:
@@ -66,15 +68,15 @@ Examples:
 	flagset.StringP("name", "n", "", "Override project name (defaults to directory name)")
 	flagset.StringP("campaign", "c", "", "Target camp by name or ID; defaults to current camp or interactive picker")
 	flagset.Bool("no-commit", false, "Skip automatic git commit")
-	flagset.Bool("yes", false, "Link immediately without the browser")
-	flagset.BoolP("interactive", "i", false, "Open the browser")
+	flagset.Bool("yes", false, "Link immediately without the folder screen")
+	flagset.BoolP("interactive", "i", false, "Open the folder screen")
 	flagset.Lookup("campaign").NoOptDefVal = NoOptCampaign
 
 	return cmd
 }
 
-// linkUsesTUI reports whether this invocation should open the browser.
-// --yes stays on the scripted path. -i forces the browser. Otherwise an
+// linkUsesTUI reports whether this invocation should open the folder screen.
+// --yes stays on the scripted path. -i forces the screen. Otherwise an
 // interactive terminal opens it.
 func linkUsesTUI(flags linkFlags, isTTY bool) bool {
 	if flags.yes {
