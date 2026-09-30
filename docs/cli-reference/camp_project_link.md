@@ -14,8 +14,9 @@ Enter links the folder. Tab opens a folder. Then name it, choose
 the camp, and confirm before anything is written. Pass --yes,
 or run the command without a terminal, to link immediately.
 
-Inside a camp, that camp is selected for you. Outside a camp, the
-browser asks which camp to use. --campaign <name-or-id> skips that
+Inside a camp, that camp is already selected. Paste or type the
+project folder, or move through the list. Outside a camp, the
+screen asks which camp to use. --campaign <name-or-id> skips that
 choice. A bare --campaign always asks.
 
 Examples:

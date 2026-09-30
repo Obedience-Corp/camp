@@ -113,16 +113,17 @@ type linkModel struct {
 	campQuery      string
 	campFiltering  bool
 
-	cwd         string
-	anchor      string
-	anchorOffer bool
-	dirs        []linkEntry
-	visible     []linkEntry
-	cursor      int
-	query       string
-	showHidden  bool
-	offerHere   bool
-	preset      bool
+	cwd          string
+	anchor       string
+	anchorOffer  bool
+	dirs         []linkEntry
+	visible      []linkEntry
+	cursor       int
+	query        string
+	showHidden   bool
+	offerHere    bool
+	awaitingPath bool
+	preset       bool
 
 	nameInput textinput.Model
 	pathInput textinput.Model
@@ -329,8 +330,8 @@ func linkInsideCamp(cwd, campRoot string) bool {
 
 // linkBrowseFrom chooses the directory the browser opens on.
 // Inside a camp, start at the user's home so the camp's own tree is not the
-// list of projects to link. The bool is true when that directory itself is
-// the project being offered.
+// list of projects to link, and do not offer that directory as the project.
+// The bool is true when the opened directory itself is the project.
 func linkBrowseFrom(cwd, campRoot, home string, inside bool) (string, bool) {
 	if inside {
 		if strings.TrimSpace(home) != "" {
@@ -398,6 +399,7 @@ func newLinkModel(open linkOpen) linkModel {
 		m.step = stepFolder
 		m.anchor = m.cwd
 		m.anchorOffer = m.offerHere
+		m.awaitingPath = !m.offerHere
 		m = m.loadDir()
 		m.pathInput.Focus()
 	case !open.nameSet:
@@ -566,6 +568,10 @@ func (m linkModel) submitBrowse() (tea.Model, tea.Cmd) {
 		m = m.applyPathText()
 	}
 	if strings.TrimSpace(m.pathInput.Value()) == "" {
+		if _, ok := m.selected(); !ok {
+			m.errMsg = "paste or type a path"
+			return m, nil
+		}
 		return m.activateHighlighted()
 	}
 	if cleaned, ok := m.lookupPath(m.pathInput.Value()); ok {
@@ -623,6 +629,7 @@ func (m linkModel) choosePath(path string) (tea.Model, tea.Cmd) {
 	m.query = ""
 	m.showHidden = false
 	m.pathInput.SetValue("")
+	m.awaitingPath = false
 	if m.cwd != "" {
 		m.anchor = m.cwd
 		m.anchorOffer = m.offerHere
@@ -639,6 +646,7 @@ func (m linkModel) descend(entry linkEntry) linkModel {
 	m.anchor = entry.path
 	m.offerHere = entry.badge != ""
 	m.anchorOffer = m.offerHere
+	m.awaitingPath = false
 	m.query = ""
 	m.showHidden = false
 	m.errMsg = ""
@@ -656,6 +664,7 @@ func (m linkModel) goUp() linkModel {
 	m.anchor = parent
 	m.offerHere = false
 	m.anchorOffer = false
+	m.awaitingPath = false
 	m.query = ""
 	m.showHidden = false
 	m.errMsg = ""
@@ -675,6 +684,7 @@ func (m linkModel) jumpTo(path string) linkModel {
 	m.anchor = path
 	m.offerHere = false
 	m.anchorOffer = false
+	m.awaitingPath = false
 	m.query = ""
 	m.showHidden = false
 	m.errMsg = ""
@@ -955,6 +965,9 @@ func (m linkModel) loadDir() linkModel {
 }
 
 func (m linkModel) defaultCursor() int {
+	if m.awaitingPath {
+		return -1
+	}
 	if m.offerHere || len(m.visible) == 0 {
 		return 0
 	}
@@ -992,13 +1005,15 @@ func (m *linkModel) rebuildVisible() {
 }
 
 func (m linkModel) pinned() []linkEntry {
-	here := linkEntry{
-		label: "Link this folder",
-		path:  m.cwd,
-		kind:  "here",
-		badge: linkDirBadge(m.cwd),
+	var pins []linkEntry
+	if m.offerHere {
+		pins = append(pins, linkEntry{
+			label: "Link this folder",
+			path:  m.cwd,
+			kind:  "here",
+			badge: linkDirBadge(m.cwd),
+		})
 	}
-	pins := []linkEntry{here}
 	parent := filepath.Dir(m.cwd)
 	if parent != m.cwd {
 		pins = append(pins, linkEntry{label: "..", path: parent, kind: "up"})
@@ -1048,6 +1063,7 @@ func (m linkModel) applyPathText() linkModel {
 	if raw == "" {
 		return m.showAnchor()
 	}
+	m.awaitingPath = false
 	cleaned, ok := m.lookupPath(raw)
 	if !ok {
 		return m.showAnchor()
@@ -1072,7 +1088,13 @@ func (m linkModel) showAnchor() linkModel {
 		m.anchor = m.cwd
 		m.anchorOffer = m.offerHere
 	}
+	if strings.TrimSpace(m.pathInput.Value()) == "" {
+		m.awaitingPath = !m.anchorOffer
+	}
 	if m.cwd == m.anchor && m.query == "" && !m.showHidden && m.offerHere == m.anchorOffer {
+		if m.awaitingPath {
+			m.cursor = -1
+		}
 		return m
 	}
 	m.query = ""
@@ -1214,6 +1236,21 @@ func trimTrailingSlashField(s string) string {
 func (m linkModel) move(delta int) linkModel {
 	n := len(m.visible)
 	if n == 0 {
+		return m
+	}
+	m.awaitingPath = false
+	if m.cursor < 0 {
+		if delta < 0 {
+			m.cursor = n - 1
+			return m
+		}
+		for i, entry := range m.visible {
+			if entry.kind == "dir" {
+				m.cursor = i
+				return m
+			}
+		}
+		m.cursor = 0
 		return m
 	}
 	m.cursor = (m.cursor + delta + n) % n

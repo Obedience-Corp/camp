@@ -207,10 +207,11 @@ camp project rename             # Review the plan in the terminal, then rename
 camp project rename old new     # Same rename; a terminal confirms before writing
 ```
 
-In a terminal, `camp project link` asks for the project folder. Paste or
-type a path, or move through folders. Enter links the folder. Tab opens
-a folder. Then confirm before anything is written. `--yes` and a shell
-without a terminal link immediately.
+In a terminal, `camp project link` asks for the project folder. From
+that folder, Enter links it. From inside a camp, the camp is already
+selected, so paste or type the project path, or move through the list.
+Tab opens a folder. Then confirm before anything is written. `--yes`
+and a shell without a terminal link immediately.
 
 Use `camp project add` (or `camp p add`) when the checkout should travel with
 the camp to another machine. A linked folder has to exist at the same path

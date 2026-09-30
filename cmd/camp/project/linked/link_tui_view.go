@@ -107,6 +107,11 @@ func (m linkModel) titleLine() string {
 	case stepCamp:
 		label := ui.CountLabel(len(m.camps), "camp", "camps")
 		return linkTitle.Render("Choose a camp") + "  " + linkMuted.Render(label)
+	case stepFolder:
+		if m.hasCamp && m.camp.Name != "" && !m.anchorOffer {
+			return linkTitle.Render("Link a project") + "  " + linkMuted.Render("into "+m.camp.Name)
+		}
+		return linkTitle.Render("Link a project") + "  " + linkMuted.Render("the folder stays where it is")
 	default:
 		return linkTitle.Render("Link a project") + "  " + linkMuted.Render("the folder stays where it is")
 	}
@@ -159,10 +164,11 @@ func (m linkModel) browseLines(lay linkLayout) []string {
 	lines := []string{
 		linkMuted.Render("  Project folder"),
 		"  " + m.pathInput.View(),
-		"",
-		m.locationLine(lay.cw),
-		"",
 	}
+	if m.awaitingPath && strings.TrimSpace(m.pathInput.Value()) == "" {
+		lines = append(lines, linkMuted.Render("  The project can live anywhere on this machine."))
+	}
+	lines = append(lines, "", m.locationLine(lay.cw), "")
 	lines = append(lines, m.browseRows(lay)...)
 	if m.query != "" && !m.hasDir() {
 		lines = append(lines, linkMuted.Render("  no folders match"))
@@ -405,6 +411,9 @@ func (m linkModel) helpLine() string {
 	}
 	switch m.step {
 	case stepFolder:
+		if m.awaitingPath && strings.TrimSpace(m.pathInput.Value()) == "" {
+			return linkHelp.Render("type or paste a path  ·  up/down browse  ·  esc quit")
+		}
 		esc := "esc quit"
 		if strings.TrimSpace(m.pathInput.Value()) != "" {
 			esc = "esc clear"

@@ -107,10 +107,36 @@ func TestLinkBrowse_OffersTheCurrentFolder(t *testing.T) {
 	}
 }
 
+func TestLinkBrowse_InsideCampWaitsForAPath(t *testing.T) {
+	m := newLinkModel(linkOpenBrowse())
+	if m.cursor >= 0 || m.step != stepFolder {
+		t.Fatalf("cursor %d step %d", m.cursor, m.step)
+	}
+	view := m.View()
+	for _, needle := range []string{"into alpha", "anywhere on this machine", "type or paste a path"} {
+		if !strings.Contains(view, needle) {
+			t.Fatalf("view missing %q\n%s", needle, view)
+		}
+	}
+	if strings.Contains(view, "Link this folder") {
+		t.Fatalf("home should not be offered as the project\n%s", view)
+	}
+	m, _ = linkKey(m, "enter")
+	if m.step != stepFolder || m.chosenPath != "" || m.errMsg != "paste or type a path" {
+		t.Fatalf("step %d path %q err %q", m.step, m.chosenPath, m.errMsg)
+	}
+}
+
 func TestLinkBrowse_TabOpensAndEnterLinks(t *testing.T) {
 	m := newLinkModel(linkOpenBrowse())
-	// Home lists campaign, then src. Move onto src and open it.
-	m, _ = linkKey(m, "down")
+	// Nothing is selected yet. Move onto src and open it.
+	for range 6 {
+		entry, ok := m.selected()
+		if ok && entry.label == "src" {
+			break
+		}
+		m, _ = linkKey(m, "down")
+	}
 	m, _ = linkKey(m, "tab")
 	if m.cwd != "/home/src" || m.pathInput.Value() != "" {
 		t.Fatalf("cwd = %q field %q", m.cwd, m.pathInput.Value())
