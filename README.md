@@ -8,7 +8,7 @@
 
 > **Easily manage hundreds of projects and millions of planning documents.** Part of [Festival](https://github.com/Obedience-Corp/festival). Camp handles the workspace: your projects, tools, ideas, and context. [fest](https://github.com/Obedience-Corp/fest) handles the planning and execution inside it.
 
-Camp manages your camps. A camp is one context in your life: your job, a side project, your taxes. Each camp holds the projects you work on and hosts the festivals you run in them. A camp, previously called a campaign, is one such workspace: create them instantly, then move between camps, projects, and workstations without losing your place.
+Camp manages your camps. A camp is one context in your life: your job, a side project, your taxes. Each camp holds the projects you work on and hosts the festivals you run in them. Move between camps, projects, and workstations with your plans and context in reach.
 
 <p align="center">
   <img src="docs/images/demos/cgo-navigation.gif" alt="cgo jumping to a project and design directory with fuzzy matching, then csw switching between two sample camps" width="700">
@@ -53,15 +53,13 @@ Use `festival update` to update the suite. See the
 [installation guide](https://docs.fest.build/getting-started/installation/)
 for Linux packages and WSL2.
 
-### Camp Only — Go Install
-
-To install just Camp (without Fest or the Festival manager):
+### Install Camp with Go
 
 ```bash
 go install github.com/Obedience-Corp/camp/cmd/camp@latest
 ```
 
-### Camp Only — From Source
+### Build Camp from Source
 
 ```bash
 git clone https://github.com/Obedience-Corp/camp
@@ -101,37 +99,8 @@ fest shell-init fish | source  # Festival suite
 For other POSIX shells, use `eval "$(camp shell-init sh)"`; tab completion is
 available in bash, zsh, and fish.
 
-The Camp hook provides:
-
-- **`cgo` function** - Shell-native navigation with actual `cd` behavior
-- **Tab completion** - Context-aware completion for categories, projects, and commands
-- **`camp` completion** - Full command completion for the camp CLI
-
-After adding the eval line, restart your shell or run `source ~/.zshrc` (or equivalent).
-
-### Finding the installed binary
-
-Shell integration defines `camp` as a **shell function** (so `camp go` / `cgo` can `cd` in your current shell). That means plain `which camp` usually prints the function body, not a filesystem path.
-
-Use these instead:
-
-```bash
-# zsh: path of the external binary (skips shell functions)
-whence -p camp
-# or: which -p camp
-
-# bash
-type -P camp
-
-# show the function plus every binary on PATH
-type -a camp
-
-# resolve symlinks to the real file
-realpath "$(whence -p camp)"   # zsh
-realpath "$(type -P camp)"     # bash
-```
-
-To run the binary without the wrapper (scripts, debugging): `command camp version`.
+Restart your shell or reload its config, such as `source ~/.zshrc`. You can
+then use `cgo` to change directories and Tab to complete paths and commands.
 
 ## Quick Start
 
@@ -159,15 +128,12 @@ omitted. `camp project link` lets you paste a path or browse folders, then
 review the link before writing it. The project stays in its original location.
 
 Use `cgo p <name>` to fuzzy-find a project and `cgo f` to reach the festival
-workspace. Camp delegates festival scaffolding to `fest` when it is installed;
-a Camp-only installation does not scaffold `festivals/`.
+workspace. Festival includes `fest`, which sets up the festival directories
+during camp creation.
 
 For a goal that needs a plan, open your coding agent at the camp root and ask it
 to create a festival and run the `fest next` loop. See the
 [Festival quick start](https://docs.fest.build/getting-started/quickstart/).
-
-Camp stores its state in `.campaign/`. Keep that name; `.camp` is a separate
-attachment marker used by linked directories.
 
 ## Features
 
@@ -180,11 +146,6 @@ attachment marker used by linked directories.
 - **Shell Integration**: Native `cd` behavior with zsh, bash, fish, and POSIX sh (`shell-init`)
 - **Tab Completion**: Smart completion for categories, projects, and paths
 - **Plugins**: Discover camp plugins on `PATH` (`plugins`)
-
-`camp intent` remains an alias for `camp idea`. Use `camp promote` for lifecycle
-promotion. The command examples below cover the standard build; dev builds also
-include working contexts (`camp quest`) and audit/event tools. Check `camp version`
-for your installed profile and `camp --help` for its command surface.
 
 ## Category Shortcuts
 
@@ -204,12 +165,8 @@ Navigate with the default category shortcuts:
 | `de`     | workflow/design/       | Design documents       |
 | `ex`     | workflow/explore/      | Exploratory notes      |
 
-`cgo i` remains available as an operator shortcut into the hidden intent state,
-but the normal human interface is `camp idea`. Paths and shortcuts can be
-customized in `.campaign/settings/jumps.yaml`; run `camp shortcuts` to see yours.
-New camps scaffold hidden `.dungeon/` directories. If `cgo du` reports that
-`dungeon/` is missing, set both `paths.dungeon` and `shortcuts.du.path` to
-`.dungeon/` in `jumps.yaml` to match the scaffold.
+Run `camp shortcuts` to see your camp’s paths. Customize them in
+`.campaign/settings/jumps.yaml`; see the [shortcuts guide](docs/SHORTCUTS.md).
 
 ## Commands
 
@@ -268,7 +225,7 @@ camp setup                 # One-time starter camp when no camps are registered
 
 Most projects already live somewhere on your machine. Link that folder into
 the camp. The folder stays where it is. Camp adds a shortcut under `projects/`
-and a `.camp` file in the folder. This is not a git submodule.
+and a `.camp` attachment file in the folder.
 
 ```bash
 camp project link               # Paste a path or browse, then confirm
@@ -299,48 +256,31 @@ When an upstream repository was renamed too, pass the new URL explicitly:
 camp project rename old new --remote-url git@github.com:org/new.git
 ```
 
-Camp preserves dirty checkouts and conventional Camp worktrees, migrates
-typed settings and work-item references, and reports historical prose it
-intentionally leaves unchanged. Use `--dry-run` to inspect the transaction.
+Use `--dry-run` to preview the rename, including worktree paths, settings, and
+work-item references.
 
 For the rest of the project surface (`list`, `remove`, `unlink`, `stage`,
 `commit`, `run`, `worktree`, `prune`, `remote`, `new`), see
 [`docs/cli-reference/`](docs/cli-reference/).
 
-### Attaching Non-Project Directories
+### Attaching Reference Directories
 
-Some directories belong to a camp for context but aren't full projects
-(notes, reference repos, scratch dirs). After creating a symlink to one
-inside the camp tree, run `camp attach` on the symlink to bind its
-target so detection works from inside it. The same attachment can be bound
-to multiple camps; each camp-local symlink selects its own context:
+Link notes, reference repositories, or scratch directories into a camp, then
+use `camp attach` to make Camp commands available from inside them:
 
 ```bash
+mkdir -p docs/examples
 ln -s ~/Dev/external-repo docs/examples/external-repo
 camp attach docs/examples/external-repo
 
-# From another camp, attach the same resolved target again. The flag keeps its
-# spelling, --campaign, and takes the target camp:
-camp attach /path/to/external-repo --campaign other-camp
-
-# Force the camp picker instead of using the current camp:
-camp attach docs/examples/external-repo --campaign
-
-# now you can pin and navigate to it:
 cd docs/examples/external-repo
 camp pin external-repo
 cgo external-repo
 ```
 
-`camp detach <path>` removes the current camp’s binding, preserving other
-camps’ bindings and the user-managed symlink. Outside a camp it removes the
-entire marker. Linked projects keep using
-`camp project link` / `camp project unlink`.
-
-When a shared attachment is accessed directly rather than through a
-camp-local symlink, camp resolves it to the first bound camp, recorded under
-the compatibility key `active_campaign_id`. Detaching that fallback camp makes
-the next bound camp active.
+See [`camp attach`](docs/cli-reference/camp_attach.md) for sharing a directory
+across camps and [`camp detach`](docs/cli-reference/camp_detach.md) for removing
+an attachment.
 
 ### Planning
 
@@ -368,9 +308,8 @@ plan or work content there. Use `camp workitem adopt` to track an existing
 file or directory, and `camp workitem link` to connect work to projects,
 worktrees, and festivals.
 
-For scripts, pass `--json`, `--list`, or `--print` to `camp workitem`; the
-bare command requires a terminal. `camp intent` and the `cint` / `cnote` shell
-helpers remain supported. Idea state stays under `.campaign/intents/`.
+Use `camp workitem` for the interactive dashboard. For scripts, choose
+`--json` for structured data, `--list` for a compact list, or `--print` for a path.
 
 The dungeon triage crawl honors a `.crawlignore` file alongside the dungeon
 directory. See [docs/crawlignore.md](docs/crawlignore.md) for syntax and
@@ -410,8 +349,7 @@ camp fresh show-workflow  # Inspect the resolved sequence
 camp fresh all             # Same cycle across every project in the camp
 ```
 
-Camp-root commits exclude submodule pointer updates by default; use
-`camp refs-sync` when you want to record those pointers. From a project,
+Use `camp refs-sync` to record project revision pointers in the camp. From a project,
 `camp status --sub`, `camp pull --sub`, and `camp push --sub` target that project.
 `camp jobs` inspects the deferred commit queue.
 
@@ -462,11 +400,7 @@ Camp records organization, tags, and lifecycle status in
   and the same tag crosses orgs freely.
 - **status**: lifecycle, one of `active` / `inactive` / `reference`. The default
   `camp list` and `camp switch` surfaces show only `active`; use `--all` or
-  `--status` to include inactive/reference camps. The lifecycle command is
-  `camp lifecycle`, not `camp status` (which stays the git-status wrapper).
-
-A camp at its defaults (org `default`, no tags, `active`) stores no extra
-keys, so existing registries are untouched until you organize something.
+  `--status` to include inactive/reference camps. Set it with `camp lifecycle`.
 
 ```bash
 camp org add obey c1 c2       # Assign camps to an org (also reassigns)
@@ -486,8 +420,8 @@ camp lifecycle list              # Status counts
 camp festivals --org obey     # Festivals across an org's camps (composes 'fest list')
 ```
 
-All of these accept `--json`. `camp festivals` filters camps by org/tag and
-composes `fest list --json` per camp; it does not modify `fest list`.
+These commands accept `--json` for scripting. `camp festivals` lists festivals
+across camps selected by org or tag.
 
 ### Skills
 
@@ -508,88 +442,32 @@ camp date                  # Append date suffix to file or directory name
 camp version               # Show version information
 ```
 
-### Shell Integration
+### Shell Helpers
+
+The shell integration provides shortcuts for navigation, capture, and running
+commands from the camp root:
 
 ```bash
-camp shell-init zsh       # Output zsh init script
-camp shell-init bash      # Output bash init script
-camp shell-init fish      # Output fish init script
-camp shell-init sh        # Output POSIX sh init script (no completion)
+cgo p api               # Jump to a matching project
+csw <name>              # Switch camps
+cr just build           # Run a command from the camp root
+cint "new feature idea" # Capture an idea
+cnote "meeting note"    # Capture a note
 ```
 
-#### How the Eval Hook Works
-
-The eval hook dynamically generates and executes shell code at startup:
-
-```bash
-# What happens when you add this to ~/.zshrc:
-eval "$(camp shell-init zsh)"
-
-# 1. camp shell-init zsh outputs shell code (functions, completions)
-# 2. eval executes that code in your current shell
-# 3. The cgo function and completions become available
-```
-
-#### Why Eval Instead of Sourcing a File?
-
-- **Version sync** - Always uses functions matching your installed camp version
-- **No file management** - Nothing to update when camp is upgraded
-- **Shell detection** - Camp can detect your shell environment dynamically
-
-#### What Gets Installed
-
-The shell-init script provides:
-
-```bash
-# 1. The cgo navigation function
-cgo p                    # Runs: cd "$(camp go p --print)"
-cgo p api                # Runs: cd "$(camp go p api --print)"
-command camp go p -c ls  # Run ls there without changing shell directory
-
-# 2. Quick capture helpers
-cint "new feature idea"  # Runs: camp intent add "new feature idea"
-cnote "meeting note"     # Runs: camp intent note "meeting note"
-
-# 3. Tab completion for cgo
-cgo <TAB>                # Completes categories: p f w d i wt du r de ex settings cfg
-cgo p <TAB>              # Completes project names
-
-# 4. Tab completion for camp commands
-camp <TAB>               # Completes: init go project list register...
-camp project <TAB>       # Completes: add commit link list new prune remote remove run unlink worktree
-```
-
-#### Troubleshooting
-
-```bash
-# Verify the camp binary is on PATH. Do not use plain `which camp`:
-# after shell-init it prints the wrapper function, not the binary path.
-whence -p camp            # zsh: external binary only
-type -P camp              # bash: external binary only
-type -a camp              # function + every binary on PATH
-realpath "$(whence -p camp)"  # follow symlinks to the real install
-
-# Test shell-init output
-camp shell-init zsh
-
-# Manually reload
-source ~/.zshrc
-
-# Check if cgo is defined
-type cgo
-```
+See the [shell integration guide](docs/shell-integration.md) for setup,
+completion, and troubleshooting.
 
 ## Camp Directory Structure
 
-A typical camp after projects and festival plans have been added looks like
-this. Some state is created on first use, and `fest` owns the festival scaffold:
+Your projects, plans, and supporting documents live together:
 
 ```
 my-camp/
 ├── .campaign/           # Camp configuration and system state
 │   ├── campaign.yaml
 │   ├── watchers.yaml
-│   ├── intents/         # Ideas; stable storage path (camp idea, cgo i)
+│   ├── intents/         # Captured ideas (camp idea, cgo i)
 │   │   ├── inbox/
 │   │   ├── active/
 │   │   ├── ready/
@@ -622,23 +500,6 @@ my-camp/
 └── .dungeon/            # Archived work (cgo du)
 ```
 
-### Names That Stay the Same
-
-Camps used to be called campaigns, and the earlier name is still what the
-files, flags, and machine-readable output are spelled with. Both words mean the
-same thing to Camp, in commands and in agent prompts alike.
-
-- **Should I rename `.campaign/`?** No. It is the stable metadata directory and
-  Camp expects it.
-- **Is `.camp` the new metadata directory?** No. `.camp` is an attachment marker
-  written into linked external directories, not a workspace directory.
-- **Do my scripts using `--campaign` or `campaign_root` still work?** Yes.
-  Nothing about flags, selectors, or machine-readable output changed.
-- **Why do internal files still say campaign?** They are stable compatibility
-  contracts that protect your existing data and integrations.
-
-See [docs/terminology.md](docs/terminology.md) for the full vocabulary contract.
-
 ## Worktree Navigation
 
 Navigate git worktrees with `@` syntax:
@@ -669,8 +530,7 @@ camp project worktree add -p <TAB>     # Same project name completion
 
 ### Camp Config
 
-Camp configuration lives in the compatibility filename `campaign.yaml`, inside
-the camp metadata directory, `.campaign/`:
+Camp configuration lives in `.campaign/campaign.yaml`:
 
 ```yaml
 name: my-camp
@@ -729,7 +589,6 @@ full file-by-file reference, including which files are scaffolded by
 ## Documentation
 
 - [CLI Reference](docs/cli-reference/camp-reference.md): complete reference for every command and flag
-- [Terminology](docs/terminology.md): the vocabulary contract for Camp and everything built on it
 - [`.campaign/` Directory Reference](docs/campaign-directory-reference.md): the hidden camp metadata layout and ownership
 - [Camp Settings Files](docs/campaign-settings-files.md): global and local config/state files explained
 - [Leverage Scoring](docs/leverage-score.md): how leverage scores are computed
@@ -759,7 +618,7 @@ just run <args>           # Run with arguments
 
 ### Quality Gate
 
-Camp has no hosted CI. Quality gates run locally, on demand:
+Run the local quality gates before sharing a change:
 
 ```bash
 just gate-push   # quick smoke: whitespace, build, vet, lint, short dev tests
@@ -767,18 +626,12 @@ just gate-fast   # broader: both-profile build, vet, lint, CLI docs check, full 
 just gate        # full matrix: gate-fast plus stable unit tests
 ```
 
-Every release recipe runs `just gate` before tagging, so releases are always
-gated (including `just docs-check`: generated `docs/cli-reference/` must match
-the current command surface). There is no pre-push hook; run a gate when you
-want a signal. Changing pack/unbundle/clone/transport (or any) command help
-requires `just docs` and a commit of the regenerated reference.
-
-If you previously ran `just hooks-install`, run `git config --unset core.hooksPath`
-once to fully revert that local setting, it now points at a removed directory.
+Release recipes run `just gate` before tagging. When changing command help,
+run `just docs` and include the regenerated CLI reference in the commit.
 
 ## Part of Festival
 
-Camp is part of [Festival](https://github.com/Obedience-Corp/festival), the current product from [Obedience Corp](https://github.com/Obedience-Corp).
+Camp is part of [Festival](https://github.com/Obedience-Corp/festival) by [Obedience Corp](https://github.com/Obedience-Corp).
 
 - **camp**: workspace and context. One place for all your projects, tools, ideas, agents, and work.
 - **[fest](https://github.com/Obedience-Corp/fest)**: planning and execution. Hierarchical: festival → phase → sequence → task.

@@ -104,8 +104,22 @@ These defaults are written by `camp init` and can be overridden per camp:
 | `settings` | `.campaign/` | navigation only |
 | `cfg` | `.campaign/` | navigation plus command expansion |
 
-`camp go i` and `cgo i` remain available as operator shortcuts, but the primary
-human interface for this state is `camp intent`.
+Use `camp idea` to capture and browse ideas, and `cgo i` to open their directory.
+
+### Matching the dungeon path
+
+New camps scaffold `.dungeon/`. If `cgo du` reports that `dungeon/` is missing,
+set both `paths.dungeon` and `shortcuts.du.path` to `.dungeon/` in
+`.campaign/settings/jumps.yaml`. Keep the other paths and shortcuts in that file:
+
+```yaml
+paths:
+  dungeon: .dungeon/
+shortcuts:
+  du:
+    path: .dungeon/
+    description: Jump to archived work
+```
 
 ## Listing shortcuts
 

@@ -30,9 +30,9 @@ Camp manages camps
 and needed explaining every time. "Camp" is shorter, it lands immediately, and
 it fits the product line now that the suite is called Festival.
 
-Use this story, or a shortened version of it, as the canonical definition copy
-in help text, onboarding, READMEs, and docs. Do not invent a competing
-explanation.
+Use the definition of a camp and its relationship to projects and festivals
+as the canonical introduction in help text, onboarding, READMEs, and docs.
+Reserve naming history for migration documentation.
 
 ## The five terms
 
@@ -116,10 +116,10 @@ working as user vocabulary.
    "campaign" and "camp" as the same concept.** "Where is my campaign?" must
    work exactly like "where is my camp?". A skill, prompt, or agent instruction
    that recognizes one must recognize the other.
-2. **Docs acknowledge the earlier name at least once.** Every repository's
-   primary entry point (README, docs index, or onboarding page) says it once,
-   in the form "a camp, previously called a campaign", or equivalent. Once is
-   enough. Do not repeat it in every paragraph.
+2. **Entry points describe Camp as it works today.** READMEs, docs indexes,
+   and onboarding pages use "camp" directly. Keep rename history in migration
+   documentation. Explain technical spellings such as `.campaign/` where a
+   reader needs the path, flag, or schema to perform a task.
 3. **No deprecation warning, nag, or correction is ever shown** for
    campaign-era vocabulary. Not in CLI output, not in TUI hints, not in agent
    replies, not in docs asides. There is nothing to deprecate: the technical
@@ -368,11 +368,11 @@ stable: do not rename it. The separate `.camp` file is an attachment marker
 written into linked external directories.
 ```
 
-Also right, for the once-per-repository acknowledgment:
+For a README or onboarding page:
 
 ```text
-A camp, previously called a campaign, is one workspace holding a group of
-related projects and the festivals you run in them.
+A camp holds the projects, plans, and context for one part of your life:
+your job, a side project, or a hobby.
 ```
 
 ### Release notes
