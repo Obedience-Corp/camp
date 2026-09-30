@@ -184,6 +184,34 @@ func TestProject_Link_TTYReviewConfirms(t *testing.T) {
 	assert.True(t, exists, "confirming the review should write a .camp marker")
 }
 
+func TestProject_Link_TTYTypesAnAbsolutePath(t *testing.T) {
+	tc := GetSharedContainer(t)
+	campaignPath := "/campaigns/proj-link-tui-typed"
+	linkedPath := "/test/tui-typed-app"
+
+	_, err := tc.InitCampaign(campaignPath, "proj-link-tui-typed", "product")
+	require.NoError(t, err)
+	require.NoError(t, tc.CreateGitRepo(linkedPath))
+
+	output, err := tc.RunCampInteractiveStepsInDirTimeout(campaignPath, 30*time.Second, []InteractiveStep{
+		{WaitFor: "Project folder", Input: linkedPath + "\r"},
+		{WaitFor: "Name in the camp", Input: "\r"},
+		{WaitFor: "Nothing is written until you confirm.", Input: "\r"},
+		{WaitFor: "Project linked", Input: "\r"},
+	}, "project", "link")
+	require.NoError(t, err, "typing an absolute path should link that folder\n%s", output)
+	assert.Contains(t, output, "Linked project: tui-typed-app")
+	assert.Contains(t, output, "Committed changes to git")
+
+	_, exitCode, err := tc.ExecCommand("test", "-L", campaignPath+"/projects/tui-typed-app")
+	require.NoError(t, err)
+	assert.Equal(t, 0, exitCode, "the typed folder should be linked")
+
+	exists, err := tc.CheckFileExists(linkedPath + "/.camp")
+	require.NoError(t, err)
+	assert.True(t, exists, "the typed folder should receive a .camp marker")
+}
+
 func TestProject_Link_YesSkipsBrowserOnTTY(t *testing.T) {
 	tc := GetSharedContainer(t)
 	campaignPath := "/campaigns/proj-link-tui-yes"

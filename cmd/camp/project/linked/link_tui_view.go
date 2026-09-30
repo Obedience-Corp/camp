@@ -156,20 +156,12 @@ func (m linkModel) bodyLines(lay linkLayout) []string {
 }
 
 func (m linkModel) browseLines(lay linkLayout) []string {
-	lines := []string{m.locationLine(lay.cw), ""}
-	if m.jumping {
-		lines = append(lines,
-			linkMuted.Render("  Go to folder"),
-			"  "+m.jumpInput.View(),
-		)
-		return lines
-	}
-	if m.filtering {
-		header := linkAccent.Render("  / " + m.query)
-		if m.query == "" {
-			header = linkMuted.Render("  / filter")
-		}
-		lines = append(lines, header, "")
+	lines := []string{
+		linkMuted.Render("  Project folder"),
+		"  " + m.pathInput.View(),
+		"",
+		m.locationLine(lay.cw),
+		"",
 	}
 	lines = append(lines, m.browseRows(lay)...)
 	if m.query != "" && !m.hasDir() {
@@ -408,18 +400,16 @@ func linkGitFact(plan *projectsvc.LinkPlan) string {
 }
 
 func (m linkModel) helpLine() string {
-	if m.jumping {
-		return linkHelp.Render("enter go  ·  esc cancel")
-	}
 	if m.campFiltering {
 		return linkHelp.Render("enter choose  ·  esc clear  ·  up/down move")
 	}
-	if m.filtering {
-		return linkHelp.Render("enter open  ·  esc clear  ·  up/down move")
-	}
 	switch m.step {
 	case stepFolder:
-		return linkHelp.Render("j/k move  ·  enter open  ·  l link  ·  / filter  ·  g path  ·  . all  ·  q quit")
+		esc := "esc quit"
+		if strings.TrimSpace(m.pathInput.Value()) != "" {
+			esc = "esc clear"
+		}
+		return linkHelp.Render("enter link  ·  tab open  ·  up/down move  ·  " + esc)
 	case stepName:
 		return linkHelp.Render("enter continue  ·  esc back")
 	case stepCamp:

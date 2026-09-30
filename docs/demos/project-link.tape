@@ -1,4 +1,4 @@
-# camp project link: browse for a folder, then confirm.
+# camp project link: paste or type a path, then confirm.
 #
 # Fixture + record (repo root, truecolor):
 #   FIXTURE=$(mktemp -d)
@@ -29,15 +29,13 @@ Type "cd $HOME/campaign" Enter
 Type "clear" Enter
 Show
 
-# Home lists campaign, then src. Open src and link ledger.
+# The path field is focused. Type a folder, then confirm the name and the link.
 Type "camp project link" Sleep 350ms Enter
-Sleep 1800ms
-Down
-Sleep 700ms
-Enter
+Sleep 2000ms
+Type "~/src/ledger"
 Sleep 1400ms
-Type "l"
-Sleep 1000ms
+Enter
+Sleep 1200ms
 Enter
 Sleep 1800ms
 Enter
