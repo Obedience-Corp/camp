@@ -455,8 +455,7 @@ cint "new feature idea" # Capture an idea
 cnote "meeting note"    # Capture a note
 ```
 
-See the [shell integration guide](docs/shell-integration.md) for setup,
-completion, and troubleshooting.
+See the [shell integration guide](docs/shell-integration.md) for setup and completion.
 
 ## Camp Directory Structure
 
@@ -628,6 +627,12 @@ just gate        # full matrix: gate-fast plus stable unit tests
 
 Release recipes run `just gate` before tagging. When changing command help,
 run `just docs` and include the regenerated CLI reference in the commit.
+
+## Troubleshooting
+
+- [Shell commands and tab completion](docs/shell-integration.md#troubleshooting)
+- [Finding the installed binary](docs/shell-integration.md#finding-the-installed-binary)
+- [Configuring the dungeon shortcut](docs/SHORTCUTS.md#matching-the-dungeon-path)
 
 ## Part of Festival
 
