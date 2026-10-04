@@ -45,6 +45,8 @@ var listCmd = &cobra.Command{
 
 Camps are registered when created with 'camp init' or manually
 with 'camp register'. The registry lives at ~/.obey/campaign/registry.json.
+Verification keeps registrations when their paths or configs are unavailable.
+Use 'camp registry prune' or 'camp unregister' to remove unwanted entries.
 
 In a terminal, 'camp list' (with no flags) opens an interactive browser where you
 can deactivate/reactivate camps (cycle lifecycle status), reassign their org,
@@ -187,7 +189,7 @@ func renderListTable(cmd *cobra.Command, positionalOrg string) error {
 		return err
 	}
 
-	if report.HasChanges() {
+	if report.HasChanges() || len(report.Skipped) > 0 {
 		verbose, _ := cmd.Flags().GetBool("verify-verbose")
 		if verbose {
 			printVerificationDetails(report)
@@ -388,6 +390,9 @@ func outputCampaigns(out io.Writer, campaigns []campaignEntry, format string) er
 
 func verificationSummaryText(r *config.VerificationReport) string {
 	var parts []string
+	if len(r.Skipped) > 0 {
+		parts = append(parts, fmt.Sprintf("retained %d unavailable", len(r.Skipped)))
+	}
 	if len(r.Removed) > 0 {
 		parts = append(parts, fmt.Sprintf("removed %d", len(r.Removed)))
 	}
@@ -401,19 +406,22 @@ func verificationSummaryText(r *config.VerificationReport) string {
 }
 
 func printVerificationSummary(r *config.VerificationReport) {
-	fmt.Printf("%s Registry cleaned: %s\n\n", ui.SuccessIcon(), verificationSummaryText(r))
+	fmt.Fprintf(os.Stderr, "%s Registry verification: %s\n\n", ui.InfoIcon(), verificationSummaryText(r))
 }
 
 func printVerificationDetails(r *config.VerificationReport) {
-	fmt.Println("Registry verification:")
+	fmt.Fprintln(os.Stderr, "Registry verification:")
+	for _, e := range r.Skipped {
+		fmt.Fprintf(os.Stderr, "  %s retained: %s (%s) - %s\n", ui.WarningIcon(), e.Name, e.Path, e.Reason)
+	}
 	for _, e := range r.Removed {
-		fmt.Printf("  %s removed: %s (%s) - %s\n", ui.WarningIcon(), e.Name, e.Path, e.Reason)
+		fmt.Fprintf(os.Stderr, "  %s removed: %s (%s) - %s\n", ui.WarningIcon(), e.Name, e.Path, e.Reason)
 	}
 	for _, e := range r.Added {
-		fmt.Printf("  %s added: %s (%s)\n", ui.SuccessIcon(), e.Name, e.Path)
+		fmt.Fprintf(os.Stderr, "  %s added: %s (%s)\n", ui.SuccessIcon(), e.Name, e.Path)
 	}
 	for _, e := range r.Updated {
-		fmt.Printf("  %s updated: %s - %s\n", ui.InfoIcon(), e.Path, strings.Join(e.Changes, ", "))
+		fmt.Fprintf(os.Stderr, "  %s updated: %s - %s\n", ui.InfoIcon(), e.Path, strings.Join(e.Changes, ", "))
 	}
-	fmt.Println()
+	fmt.Fprintln(os.Stderr)
 }
