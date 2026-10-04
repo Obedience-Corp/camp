@@ -76,19 +76,39 @@ func machineCacheDir() (string, bool) {
 // fresh cache hit. It performs NO ssh — the keystroke path must never block on the
 // network. A miss (absent/corrupt/stale) returns (nil, false).
 func readMachineCacheCampaigns(id string) ([]string, bool) {
-	dir, ok := machineCacheDir()
-	if !ok {
-		return nil, false
-	}
-	data, err := os.ReadFile(filepath.Join(dir, id+".json"))
-	if err != nil {
-		return nil, false
-	}
-	var e machineCacheEntry
-	if json.Unmarshal(data, &e) != nil || !e.fresh(time.Now()) {
+	e, ok := readMachineCacheEntry(id)
+	if !ok || !e.fresh(time.Now()) {
 		return nil, false
 	}
 	return e.Campaigns, true
+}
+
+// readMachineCacheCampaignsIncludingStale returns cached names even past the
+// completion TTL. Switch uses this so a bare name still resolves after the
+// short pull TTL; the hop itself asks the far registry, so a renamed camp
+// fails there instead of being completed as if it were current.
+func readMachineCacheCampaignsIncludingStale(id string) ([]string, bool) {
+	e, ok := readMachineCacheEntry(id)
+	if !ok || len(e.Campaigns) == 0 {
+		return nil, false
+	}
+	return e.Campaigns, true
+}
+
+func readMachineCacheEntry(id string) (machineCacheEntry, bool) {
+	dir, ok := machineCacheDir()
+	if !ok {
+		return machineCacheEntry{}, false
+	}
+	data, err := os.ReadFile(filepath.Join(dir, id+".json"))
+	if err != nil {
+		return machineCacheEntry{}, false
+	}
+	var e machineCacheEntry
+	if json.Unmarshal(data, &e) != nil {
+		return machineCacheEntry{}, false
+	}
+	return e, true
 }
 
 // writeMachineCacheCampaigns warms the cache for id (best-effort; a failure just

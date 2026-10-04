@@ -3,6 +3,7 @@ package main
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"path/filepath"
@@ -53,9 +54,15 @@ Use camp@tab to navigate to a specific location in the target camp:
   camp switch obey-campaign@p    # Switch and navigate to projects/
   camp switch obey/platform@f    # Switch inside org and navigate to festivals/
 
-Use machine:campaign to resolve a camp on a machine registered in
-~/.obey/machines.yaml. The interactive picker also lists remote camps when
-machines are configured (locals open instantly; remotes append as they load).
+A bare name is resolved on this machine first, then across machines in
+~/.obey/machines.yaml and the machine this shell was hopped from. One match
+hops there. From inside a hop, a switch to any other machine unwinds this
+ssh session first and continues in the shell underneath, so hops do not nest
+and a camp name behaves the same wherever you are sitting.
+
+Use machine:campaign to name a machine explicitly. The interactive picker
+also lists remote camps when machines are configured (locals open instantly;
+remotes append as they load).
 Bare 'command camp switch machine:…' resolves without hopping: use the csw
 shell wrapper (or --shell-connect under shell-init) to hop.
 
@@ -67,7 +74,7 @@ giving up. If camp lives somewhere else, set CAMP_REMOTE_CAMP_PATH to its exact
 path on that machine. 'camp machine diagnose' shows which binary a hop would run.`,
 	Example: `  eval "$(camp shell-init zsh)"
   csw                                # Interactive picker (local + remotes)
-  csw obey-campaign                  # Switch by name
+  csw obey-campaign                  # Switch by name, on this machine or another
   csw archdtop:lance-arch            # Hop to remote camp
   csw -                              # Hop back via CAMP_HOP_ORIGIN
   camp switch --org obey platform    # Switch by name within an org
@@ -337,21 +344,14 @@ func runSwitch(cmd *cobra.Command, args []string) error {
 		// mac) would try to ssh archdtop to itself once you are on it, which is
 		// the shape agents and humans both produce after a hop.
 		if msel.Machine != "" && msel.Machine != machines.LocalMachineID && !isSelfMachine(ctx, msel.Machine) {
-			// A selector naming the ORIGIN of this hopped shell must not open a
-			// second ssh back into the machine that already has a live inbound
-			// session to us — that is the recursive-ssh shape. Exact origin
-			// campaign (or none) is the hop-back gesture in different words;
-			// anything else gets guidance rather than a nested connection.
-			unwind, refuse := originSwitchGuard(msel)
-			if refuse != nil {
-				return refuse
-			}
-			if unwind {
-				return runHopBack(ctx, cmd, printOnly, shellConnect, jsonOut)
-			}
-			return runRemoteSwitch(ctx, cmd, msel, printOnly, shellConnect, jsonOut)
+			// Inside a hop this unwinds instead of dialing, including back to a
+			// different camp on the origin. A fresh shell dials.
+			return dispatchRemoteSwitch(ctx, cmd, msel, printOnly, shellConnect, jsonOut)
 		}
 		if reg.Len() == 0 {
+			if handled, ferr := dispatchFleetSwitch(ctx, cmd, msel.Remainder, scope, printOnly, shellConnect, jsonOut); handled {
+				return ferr
+			}
 			return camperrors.Newf("no camps registered (use 'camp init' to create one)")
 		}
 		// Local (no "machine:" prefix, or "local:"): Remainder equals args[0]
@@ -365,6 +365,12 @@ func runSwitch(cmd *cobra.Command, args []string) error {
 		}
 		c, err := cmdutil.ResolveCampaignSelectionScoped(parsed.Campaign, reg, scope, cmd.ErrOrStderr())
 		if err != nil {
+			var missing *cmdutil.CampaignNotFoundError
+			if errors.As(err, &missing) {
+				if handled, ferr := dispatchFleetSwitch(ctx, cmd, msel.Remainder, scope, printOnly, shellConnect, jsonOut); handled {
+					return ferr
+				}
+			}
 			return err
 		}
 		selected = c
@@ -384,7 +390,7 @@ func runSwitch(cmd *cobra.Command, args []string) error {
 			return err
 		}
 		if pick.Kind == switchPickRemote {
-			return runRemoteSwitch(ctx, cmd, cmdutil.ParsedMachineSelector{
+			return dispatchRemoteSwitch(ctx, cmd, cmdutil.ParsedMachineSelector{
 				Machine:   pick.Machine,
 				Remainder: pick.Name,
 			}, printOnly, shellConnect, jsonOut)

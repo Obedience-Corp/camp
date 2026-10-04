@@ -132,8 +132,12 @@ the origin shell resumes exactly where it was. That is why hopping back and fort
 grow a chain of nested connections: each return pops one real level of the shell stack
 rather than opening a second ssh into the machine that already has an inbound session to
 you. A selector naming that origin behaves the same way — `csw devbox:notes`, typed in a
-shell hopped from `devbox`, unwinds instead of dialing, and naming a *different* camp
-on the origin tells you to `csw -` first rather than nesting.
+shell hopped from `devbox`, unwinds instead of dialing. Naming a different camp on the
+origin unwinds and continues the switch in the shell underneath, so you land in that
+camp without a second ssh. A bare camp name is resolved on this machine first and then
+across the fleet, so `csw notes` reaches `notes` wherever it is registered. Switching
+from a hopped shell to a camp on a third machine unwinds first and lets the shell you
+hopped from open that hop, which keeps a single ssh instead of a nest.
 
 The dial-back below remains for the case where the payload is present but the shell has
 no ssh markers around it (an exotic transport, or an exported variable that outlived its

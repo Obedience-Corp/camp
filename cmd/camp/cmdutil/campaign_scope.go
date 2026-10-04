@@ -11,6 +11,15 @@ import (
 	"github.com/Obedience-Corp/camp/internal/nav/fuzzy"
 )
 
+// CampaignNotFoundError is a local-registry miss. Switch uses it to decide
+// whether a bare name should be resolved against other machines. The message
+// text stays the historical "camp %q not found…" line.
+type CampaignNotFoundError struct {
+	Msg string
+}
+
+func (e *CampaignNotFoundError) Error() string { return e.Msg }
+
 // CampaignScope describes the candidate set for switch resolution.
 type CampaignScope struct {
 	Org    string
@@ -127,7 +136,9 @@ func resolveCampaignFromCandidates(query string, candidates []config.RegisteredC
 	names := campaignNames(candidates)
 	matches := fuzzy.Filter(names, query)
 	if len(matches) == 0 {
-		return config.RegisteredCampaign{}, camperrors.New(fmt.Sprintf("camp %q not found%s", query, scopeDescription(scope)))
+		return config.RegisteredCampaign{}, &CampaignNotFoundError{
+			Msg: fmt.Sprintf("camp %q not found%s", query, scopeDescription(scope)),
+		}
 	}
 
 	bestName := matches[0].Target
