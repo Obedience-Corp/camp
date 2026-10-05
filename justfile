@@ -237,7 +237,8 @@ gate-fast:
 
 # Run the full both-profile gate: gate-fast plus stable unit tests (C-2 matrix).
 # Required by release recipes before tagging; the per-sequence closing command for sequences 05-12.
-# No GitHub Actions: all enforcement is local (C-1).
+# GitHub Actions runs gate-fast on every PR and main push (.github/workflows/gate.yml);
+# the stable unit pass and the containerized integration suite stay local.
 gate:
     #!/usr/bin/env sh
     set -eu
