@@ -349,7 +349,7 @@ func runSwitch(cmd *cobra.Command, args []string) error {
 			if handled, ferr := dispatchFleetSwitch(ctx, cmd, msel.Remainder, scope, printOnly, shellConnect, jsonOut); handled {
 				return ferr
 			}
-			return camperrors.Newf("no camps registered (use 'camp init' to create one)")
+			return camperrors.Newf("no camps registered (use 'camp register <path>' for an existing camp, or 'camp init' to create one)")
 		}
 		// Local (no "machine:" prefix, or "local:"): Remainder equals args[0]
 		// verbatim for the no-colon case, so local resolution stays byte-identical.

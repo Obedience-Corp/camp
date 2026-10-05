@@ -105,8 +105,8 @@ func runListTUI(cmd *cobra.Command, positionalOrg string) error {
 	}
 	model := newListTUIModel(ctx, reg, orgFilter)
 	model.gotoEnabled = pathOutput != ""
-	if report.HasChanges() {
-		model.setStatus("registry cleaned: "+verificationSummaryText(report), false)
+	if report.HasChanges() || len(report.Skipped) > 0 {
+		model.setStatus("registry verification: "+verificationSummaryText(report), false)
 	}
 	prog := tea.NewProgram(model, tea.WithContext(ctx), tea.WithAltScreen())
 	final, err := prog.Run()

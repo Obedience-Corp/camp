@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"encoding/json"
 	"os"
 	"path/filepath"
 	"reflect"
@@ -195,8 +196,8 @@ func TestLoadVerifiedListRegistry_RepairsBeforeBrowser(t *testing.T) {
 	if _, ok := reg.Campaigns["wrong-id"]; ok {
 		t.Fatal("wrong ID should be removed")
 	}
-	if _, ok := reg.Campaigns["missing-id"]; ok {
-		t.Fatal("missing path should be removed")
+	if _, ok := reg.Campaigns["missing-id"]; !ok {
+		t.Fatal("unavailable path should be retained")
 	}
 	if got := reg.Campaigns["actual-id"]; got.Name != "fresh-name" || got.Type != config.CampaignTypeResearch {
 		t.Fatalf("actual campaign not repaired from campaign.yaml: %+v", got)
@@ -205,6 +206,9 @@ func TestLoadVerifiedListRegistry_RepairsBeforeBrowser(t *testing.T) {
 	persisted, err := config.LoadRegistry(context.Background())
 	if err != nil {
 		t.Fatalf("reload registry: %v", err)
+	}
+	if _, ok := persisted.Campaigns["missing-id"]; !ok {
+		t.Fatal("metadata repair discarded an unavailable registration on disk")
 	}
 	if _, ok := persisted.Campaigns["actual-id"]; !ok {
 		t.Fatal("repaired registry was not persisted")
@@ -572,5 +576,58 @@ func TestListTUI_FooterMentionsRemotesWhenConfigured(t *testing.T) {
 	out := m.View()
 	if !strings.Contains(out, "r: remotes") && !strings.Contains(out, "r remotes") {
 		t.Errorf("footer should mention r remotes when machines configured:\n%s", out)
+	}
+}
+
+// A remote discovery request uses the same list path. It must neither erase a
+// temporarily unavailable camp nor mix diagnostics into the JSON response.
+func TestListJSONRetainsUnavailableRegistration(t *testing.T) {
+	setupListCountRegistry(t, []listCountSpec{{"offline-id", "offline", config.DefaultOrg, config.StatusActive}})
+	ctx := context.Background()
+	reg, err := config.LoadRegistry(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	root := reg.Campaigns["offline-id"].Path
+	if err := os.Rename(root, root+".offline"); err != nil {
+		t.Fatal(err)
+	}
+	registryPath, err := config.RegistryPath()
+	if err != nil {
+		t.Fatal(err)
+	}
+	before, err := os.ReadFile(registryPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	prevCount, prevJSON, prevRemote := listCount, listJSON, listRemote
+	t.Cleanup(func() { listCount, listJSON, listRemote = prevCount, prevJSON, prevRemote })
+	listCount, listJSON, listRemote = false, false, false
+	for range 2 {
+		out := captureListStdout(t, func() error { return runList(listCountCmd("json", "", "", false), nil) })
+		var entries []campaignEntry
+		if err := json.Unmarshal([]byte(out), &entries); err != nil {
+			t.Fatalf("list stdout must remain JSON: %v\n%s", err, out)
+		}
+		if len(entries) != 1 || entries[0].ID != "offline-id" {
+			t.Fatalf("unavailable registration lost: %+v", entries)
+		}
+	}
+	after, err := os.ReadFile(registryPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if string(after) != string(before) {
+		t.Fatal("listing unavailable camp rewrote the registry")
+	}
+	if err := os.Rename(root+".offline", root); err != nil {
+		t.Fatal(err)
+	}
+	reg, report, err := loadVerifiedListRegistry(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(report.Skipped) != 0 || reg.Len() != 1 {
+		t.Fatalf("restored camp should be usable without registering again: %+v", report)
 	}
 }
