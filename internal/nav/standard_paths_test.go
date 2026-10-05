@@ -42,7 +42,7 @@ func TestCategoryForStandardPath_LegacyIntentPathNotStandard(t *testing.T) {
 }
 
 func TestIsFestivalStatusDir(t *testing.T) {
-	for _, name := range []string{"planning", "active", "ready", "ritual", "chains", "Planning"} {
+	for _, name := range []string{"planning", "active", "ready", "parked", "ritual", "chains", "Planning"} {
 		if !IsFestivalStatusDir(name) {
 			t.Fatalf("IsFestivalStatusDir(%q) = false, want true", name)
 		}
