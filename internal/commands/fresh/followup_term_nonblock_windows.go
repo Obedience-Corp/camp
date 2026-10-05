@@ -1,8 +1,10 @@
 package fresh
 
-import "os"
+import (
+	"os"
+)
 
-func setFollowUpPTYNonblocking(_ *os.File) error {
+func newFollowUpPTYMaster(_ *os.File) (*os.File, error) {
 	// The pty dependency does not support Windows; keep the pipe fallback.
-	return errFollowUpTTYUnavailable
+	return nil, errFollowUpTTYUnavailable
 }
