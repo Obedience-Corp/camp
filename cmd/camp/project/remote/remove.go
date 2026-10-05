@@ -67,6 +67,15 @@ func runProjectRemoteRemove(cmd *cobra.Command, args []string) error {
 	if err := resolved.RequireGit("git remotes"); err != nil {
 		return err
 	}
+	isSubmodule := resolved.Source == project.SourceSubmodule
+	submodulePath := resolved.LogicalPath
+	var submoduleName string
+	if remoteName == "origin" && isSubmodule {
+		submoduleName, err = git.SubmoduleNameForPath(ctx, campRoot, submodulePath)
+		if err != nil {
+			return camperrors.Wrap(err, "resolve .gitmodules section")
+		}
+	}
 
 	if err := git.RemoveRemote(ctx, resolved.Path, remoteName); err != nil {
 		return camperrors.Wrap(err, "remove remote")
@@ -77,14 +86,12 @@ func runProjectRemoteRemove(cmd *cobra.Command, args []string) error {
 
 	// Campaign-sync: if we just removed origin from a submodule, clean up .gitmodules
 	if remoteName == "origin" {
-		isSubmodule := resolved.Source == project.SourceSubmodule
 		if isSubmodule {
-			submodulePath := resolved.LogicalPath
-			if err := git.RemoveDeclaredSubmodule(ctx, campRoot, submodulePath); err != nil {
+			if err := git.RemoveDeclaredSubmodule(ctx, campRoot, submoduleName); err != nil {
 				fmt.Printf("%s Could not clean .gitmodules entry: %s\n",
 					ui.WarningIcon(), ui.Dim(err.Error()))
 				fmt.Printf("  %s Manual cleanup: git -C %s config -f .gitmodules --remove-section submodule.%s\n",
-					ui.Dim("→"), campRoot, submodulePath)
+					ui.Dim("→"), campRoot, submoduleName)
 			} else {
 				fmt.Printf("%s Removed .gitmodules entry for %s\n",
 					ui.SuccessIcon(), ui.Value(submodulePath))

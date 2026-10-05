@@ -87,6 +87,138 @@ func TestProject_RemoteSetURL_SubmoduleKeyIsCampaignRelative(t *testing.T) {
 		"git config resolution under the campaign-relative key should return the new URL")
 }
 
+func TestProject_RemoteSetURL_UsesDeclaredSectionName(t *testing.T) {
+	tc := GetSharedContainer(t)
+	campaignPath := "/campaigns/remote-seturl-named"
+	remoteRepo := "/test/remote-seturl-named-origin"
+	projectName := "remote-seturl-named-origin"
+	projectPath := campaignPath + "/projects/" + projectName
+	sectionName := "legacy-short-name"
+	newURL := "git@github.com:obedience-corp/renamed-submodule.git"
+
+	_, err := tc.InitCampaign(campaignPath, "remote-seturl-named", "product")
+	require.NoError(t, err)
+	require.NoError(t, tc.CreateGitRepo(remoteRepo))
+	_, err = tc.RunCampInDir(campaignPath, "project", "add", remoteRepo, "--local", remoteRepo)
+	require.NoError(t, err)
+
+	oldSection := "submodule.projects/" + projectName
+	newSection := "submodule." + sectionName
+	_, _, err = tc.ExecCommand("git", "-C", campaignPath, "config", "-f", ".gitmodules", "--rename-section", oldSection, newSection)
+	require.NoError(t, err)
+	_, _, err = tc.ExecCommand("git", "-C", campaignPath, "config", "--rename-section", oldSection, newSection)
+	require.NoError(t, err)
+
+	output, err := tc.RunCampInDir(campaignPath, "project", "remote", "set-url", newURL,
+		"--project", projectName, "--no-verify", "--no-stage")
+	require.NoError(t, err, "set-url should update the existing section:\n%s", output)
+
+	gitmodules, err := tc.ReadFile(campaignPath + "/.gitmodules")
+	require.NoError(t, err)
+	assert.Contains(t, gitmodules, `[submodule "`+sectionName+`"]`)
+	assert.NotContains(t, gitmodules, `[submodule "projects/`+projectName+`"]`)
+	declared, _, err := tc.ExecCommand("git", "-C", campaignPath,
+		"config", "-f", ".gitmodules", "--get", newSection+".url")
+	require.NoError(t, err)
+	assert.Equal(t, newURL, strings.TrimSpace(declared))
+	active, _, err := tc.ExecCommand("git", "-C", campaignPath,
+		"config", "--get", newSection+".url")
+	require.NoError(t, err)
+	assert.Equal(t, newURL, strings.TrimSpace(active))
+	remoteURL, _, err := tc.ExecCommand("git", "-C", projectPath,
+		"remote", "get-url", "origin")
+	require.NoError(t, err)
+	assert.Equal(t, newURL, strings.TrimSpace(remoteURL))
+	listOutput, err := tc.RunCampInDir(campaignPath, "project", "remote", "list", "--project", projectName)
+	require.NoError(t, err)
+	assert.Contains(t, listOutput, "ok", "list should compare the legacy section's declared and active URLs")
+
+	// A later failure must restore the same legacy section and synchronized URL.
+	rollbackURL := "git@github.com:obedience-corp/rollback-test.git"
+	output, err = tc.RunCampInDir(campaignPath, "project", "remote", "set-url", rollbackURL,
+		"--project", projectName, "--name", "missing-remote", "--no-verify", "--no-stage")
+	require.Error(t, err, "updating a nonexistent remote should trigger rollback: %s", output)
+	gitmodules, err = tc.ReadFile(campaignPath + "/.gitmodules")
+	require.NoError(t, err)
+	assert.NotContains(t, gitmodules, rollbackURL)
+	assert.NotContains(t, gitmodules, `[submodule "projects/`+projectName+`"]`)
+	declared, _, err = tc.ExecCommand("git", "-C", campaignPath,
+		"config", "-f", ".gitmodules", "--get", newSection+".url")
+	require.NoError(t, err)
+	assert.Equal(t, newURL, strings.TrimSpace(declared))
+	active, _, err = tc.ExecCommand("git", "-C", campaignPath,
+		"config", "--get", newSection+".url")
+	require.NoError(t, err)
+	assert.Equal(t, newURL, strings.TrimSpace(active))
+}
+
+func TestProject_RemoteSetURL_RejectsMissingOrAmbiguousDeclaration(t *testing.T) {
+	for _, test := range []struct {
+		name      string
+		wantError string
+	}{
+		{
+			name:      "missing path",
+			wantError: "not found in .gitmodules",
+		},
+		{
+			name:      "ambiguous path",
+			wantError: "ambiguous .gitmodules sections",
+		},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			tc := GetSharedContainer(t)
+			suffix := strings.ReplaceAll(test.name, " ", "-")
+			campaignPath := "/campaigns/remote-seturl-" + suffix
+			remoteRepo := "/test/remote-seturl-" + suffix + "-origin"
+			projectName := "remote-seturl-" + suffix + "-origin"
+			projectPath := campaignPath + "/projects/" + projectName
+			logicalPath := "projects/" + projectName
+			newURL := "git@github.com:obedience-corp/should-not-be-written.git"
+
+			_, err := tc.InitCampaign(campaignPath, "remote-seturl-"+suffix, "product")
+			require.NoError(t, err)
+			require.NoError(t, tc.CreateGitRepo(remoteRepo))
+			_, err = tc.RunCampInDir(campaignPath, "project", "add", remoteRepo, "--local", remoteRepo)
+			require.NoError(t, err)
+
+			key := "submodule." + logicalPath + ".path"
+			if test.name == "missing path" {
+				_, _, err = tc.ExecCommand("git", "-C", campaignPath, "config", "-f", ".gitmodules", key, "projects/other")
+			} else {
+				_, _, err = tc.ExecCommand("git", "-C", campaignPath, "config", "-f", ".gitmodules", "submodule.duplicate.path", logicalPath)
+			}
+			require.NoError(t, err)
+
+			before, err := tc.ReadFile(campaignPath + "/.gitmodules")
+			require.NoError(t, err)
+			remoteBefore, _, err := tc.ExecCommand("git", "-C", projectPath, "remote", "get-url", "origin")
+			require.NoError(t, err)
+			localKey := "submodule." + logicalPath + ".url"
+			localBefore, _, err := tc.ExecCommand("git", "-C", campaignPath, "config", "--get", localKey)
+			require.NoError(t, err)
+
+			listOutput, err := tc.RunCampInDir(campaignPath, "project", "remote", "list", "--project", projectName)
+			require.Error(t, err, "list must report an invalid declaration instead of omitting status")
+			assert.Contains(t, listOutput, test.wantError)
+
+			output, err := tc.RunCampInDir(campaignPath, "project", "remote", "set-url", newURL,
+				"--project", projectName, "--no-verify", "--no-stage")
+			require.Error(t, err)
+			assert.Contains(t, output, test.wantError)
+			after, err := tc.ReadFile(campaignPath + "/.gitmodules")
+			require.NoError(t, err)
+			assert.Equal(t, before, after, "failed preflight must not rewrite .gitmodules")
+			remoteAfter, _, err := tc.ExecCommand("git", "-C", projectPath, "remote", "get-url", "origin")
+			require.NoError(t, err)
+			assert.Equal(t, remoteBefore, remoteAfter, "failed preflight must not rewrite origin")
+			localAfter, _, err := tc.ExecCommand("git", "-C", campaignPath, "config", "--get", localKey)
+			require.NoError(t, err)
+			assert.Equal(t, localBefore, localAfter, "failed preflight must not rewrite local submodule config")
+		})
+	}
+}
+
 // TestProject_RemoteRename_ToOriginUpdatesCampaignRelativeKey exercises the
 // `camp project remote rename <other> origin` flow for submodules. This path
 // re-declares .gitmodules with the origin URL and must target the
@@ -140,4 +272,127 @@ func TestProject_RemoteRename_ToOriginUpdatesCampaignRelativeKey(t *testing.T) {
 	require.NoError(t, err)
 	assert.Equal(t, upstreamURL, strings.TrimSpace(declared),
 		"git config resolution under the campaign-relative key should return the renamed URL")
+}
+
+func TestProject_RemoteRename_UsesDeclaredSectionName(t *testing.T) {
+	tc := GetSharedContainer(t)
+	campaignPath := "/campaigns/remote-rename-named"
+	remoteRepo := "/test/remote-rename-named-origin"
+	projectName := "remote-rename-named-origin"
+	projectPath := campaignPath + "/projects/" + projectName
+	newURL := "git@github.com:obedience-corp/renamed-origin.git"
+
+	_, err := tc.InitCampaign(campaignPath, "remote-rename-named", "product")
+	require.NoError(t, err)
+	require.NoError(t, tc.CreateGitRepo(remoteRepo))
+	_, err = tc.RunCampInDir(campaignPath, "project", "add", remoteRepo, "--local", remoteRepo)
+	require.NoError(t, err)
+	oldSection := "submodule.projects/" + projectName
+	newSection := "submodule.legacy-rename"
+	_, _, err = tc.ExecCommand("git", "-C", campaignPath, "config", "-f", ".gitmodules", "--rename-section", oldSection, newSection)
+	require.NoError(t, err)
+	_, _, err = tc.ExecCommand("git", "-C", campaignPath, "config", "--rename-section", oldSection, newSection)
+	require.NoError(t, err)
+	_, _, err = tc.ExecCommand("git", "-C", projectPath, "remote", "add", "upstream", newURL)
+	require.NoError(t, err)
+	_, _, err = tc.ExecCommand("git", "-C", projectPath, "remote", "remove", "origin")
+	require.NoError(t, err)
+
+	output, err := tc.RunCampInDir(campaignPath, "project", "remote", "rename", "upstream", "origin", "--project", projectName)
+	require.NoError(t, err, "rename should update legacy section: %s", output)
+	declared, _, err := tc.ExecCommand("git", "-C", campaignPath,
+		"config", "-f", ".gitmodules", "--get", newSection+".url")
+	require.NoError(t, err)
+	assert.Equal(t, newURL, strings.TrimSpace(declared))
+	gitmodules, err := tc.ReadFile(campaignPath + "/.gitmodules")
+	require.NoError(t, err)
+	assert.NotContains(t, gitmodules, `[submodule "projects/`+projectName+`"]`)
+}
+
+func TestProject_RemoteRemove_UsesDeclaredSectionName(t *testing.T) {
+	tc := GetSharedContainer(t)
+	campaignPath := "/campaigns/remote-remove-named"
+	remoteRepo := "/test/remote-remove-named-origin"
+	projectName := "remote-remove-named-origin"
+	projectPath := campaignPath + "/projects/" + projectName
+
+	_, err := tc.InitCampaign(campaignPath, "remote-remove-named", "product")
+	require.NoError(t, err)
+	require.NoError(t, tc.CreateGitRepo(remoteRepo))
+	_, err = tc.RunCampInDir(campaignPath, "project", "add", remoteRepo, "--local", remoteRepo)
+	require.NoError(t, err)
+	oldSection := "submodule.projects/" + projectName
+	_, _, err = tc.ExecCommand("git", "-C", campaignPath, "config", "-f", ".gitmodules", "--rename-section", oldSection, "submodule.legacy-remove")
+	require.NoError(t, err)
+
+	output, err := tc.RunCampInDir(campaignPath, "project", "remote", "remove", "origin", "--force", "--project", projectName)
+	require.NoError(t, err, "forced remove should clean legacy section: %s", output)
+	gitmodules, err := tc.ReadFile(campaignPath + "/.gitmodules")
+	require.NoError(t, err)
+	assert.NotContains(t, gitmodules, `[submodule "legacy-remove"]`)
+	assert.NotContains(t, gitmodules, `[submodule "projects/`+projectName+`"]`)
+	_, exitCode, err := tc.ExecCommand("git", "-C", projectPath, "remote", "get-url", "origin")
+	require.NoError(t, err)
+	assert.NotZero(t, exitCode, "origin should be removed")
+}
+
+func TestProject_RemoteMutation_RejectsMissingOrAmbiguousDeclaration(t *testing.T) {
+	for _, operation := range []string{"rename", "remove"} {
+		for _, declaration := range []string{"missing", "ambiguous"} {
+			t.Run(operation+"/"+declaration, func(t *testing.T) {
+				tc := GetSharedContainer(t)
+				suffix := operation + "-" + declaration
+				campaignPath := "/campaigns/remote-" + suffix
+				remoteRepo := "/test/remote-" + suffix + "-origin"
+				projectName := "remote-" + suffix + "-origin"
+				projectPath := campaignPath + "/projects/" + projectName
+				logicalPath := "projects/" + projectName
+
+				_, err := tc.InitCampaign(campaignPath, "remote-"+suffix, "product")
+				require.NoError(t, err)
+				require.NoError(t, tc.CreateGitRepo(remoteRepo))
+				_, err = tc.RunCampInDir(campaignPath, "project", "add", remoteRepo, "--local", remoteRepo)
+				require.NoError(t, err)
+				if declaration == "missing" {
+					_, _, err = tc.ExecCommand("git", "-C", campaignPath, "config", "-f", ".gitmodules",
+						"submodule."+logicalPath+".path", "projects/other")
+				} else {
+					_, _, err = tc.ExecCommand("git", "-C", campaignPath, "config", "-f", ".gitmodules",
+						"submodule.duplicate.path", logicalPath)
+				}
+				require.NoError(t, err)
+				before, err := tc.ReadFile(campaignPath + "/.gitmodules")
+				require.NoError(t, err)
+
+				var args []string
+				remoteToKeep := "origin"
+				if operation == "rename" {
+					remoteToKeep = "upstream"
+					_, _, err = tc.ExecCommand("git", "-C", projectPath, "remote", "add", "upstream", remoteRepo)
+					require.NoError(t, err)
+					_, _, err = tc.ExecCommand("git", "-C", projectPath, "remote", "remove", "origin")
+					require.NoError(t, err)
+					args = []string{"project", "remote", "rename", "upstream", "origin", "--project", projectName}
+				} else {
+					args = []string{"project", "remote", "remove", "origin", "--force", "--project", projectName}
+				}
+				remoteBefore, _, err := tc.ExecCommand("git", "-C", projectPath, "remote", "get-url", remoteToKeep)
+				require.NoError(t, err)
+
+				output, err := tc.RunCampInDir(campaignPath, args...)
+				require.Error(t, err, "invalid declaration must reject %s before mutation: %s", operation, output)
+				if declaration == "missing" {
+					assert.Contains(t, output, "not found in .gitmodules")
+				} else {
+					assert.Contains(t, output, "ambiguous .gitmodules sections")
+				}
+				after, err := tc.ReadFile(campaignPath + "/.gitmodules")
+				require.NoError(t, err)
+				assert.Equal(t, before, after)
+				remoteAfter, _, err := tc.ExecCommand("git", "-C", projectPath, "remote", "get-url", remoteToKeep)
+				require.NoError(t, err)
+				assert.Equal(t, remoteBefore, remoteAfter, "remote must survive rejected %s", operation)
+			})
+		}
+	}
 }

@@ -83,7 +83,12 @@ func runProjectRemoteRename(cmd *cobra.Command, args []string) error {
 
 	// Capture the URL of the source remote before renaming (for campaign-sync)
 	var sourceURL string
+	var submoduleName string
 	if isSubmodule && newName == "origin" {
+		submoduleName, err = git.SubmoduleNameForPath(ctx, campRoot, submodulePath)
+		if err != nil {
+			return camperrors.Wrap(err, "resolve .gitmodules section")
+		}
 		remotes, _ := git.ListRemotes(ctx, resolved.Path)
 		for _, r := range remotes {
 			if r.Name == oldName {
@@ -102,7 +107,7 @@ func runProjectRemoteRename(cmd *cobra.Command, args []string) error {
 
 	// Campaign-sync: update .gitmodules when renaming TO origin (new canonical)
 	if isSubmodule && newName == "origin" && sourceURL != "" {
-		if err := git.SetDeclaredURL(ctx, campRoot, submodulePath, sourceURL); err != nil {
+		if err := git.SetDeclaredURL(ctx, campRoot, submoduleName, sourceURL); err != nil {
 			fmt.Printf("%s Could not update .gitmodules: %s\n",
 				ui.WarningIcon(), ui.Dim(err.Error()))
 		} else {

@@ -1,6 +1,7 @@
 package git
 
 import (
+	"bytes"
 	"context"
 	"errors"
 	"fmt"
@@ -11,6 +12,48 @@ import (
 
 	camperrors "github.com/Obedience-Corp/camp/internal/errors"
 )
+
+// SubmoduleNameForPath finds the .gitmodules section that owns a repository path.
+// Submodule section names need not equal their paths, especially in older camps.
+func SubmoduleNameForPath(ctx context.Context, repoRoot, submodulePath string) (string, error) {
+	if err := ctx.Err(); err != nil {
+		return "", err
+	}
+
+	cmd := exec.CommandContext(ctx, "git", "-C", repoRoot,
+		"config", "-f", ".gitmodules", "--null", "--get-regexp", `^submodule\..*\.path$`)
+	output, err := cmd.Output()
+	if err != nil {
+		if ctx.Err() != nil {
+			return "", ctx.Err()
+		}
+		var exitErr *exec.ExitError
+		if !errors.As(err, &exitErr) {
+			return "", camperrors.Wrap(err, "read submodule paths from .gitmodules")
+		}
+		if exitErr.ExitCode() != 1 {
+			return "", camperrors.Wrapf(err, "read submodule paths from .gitmodules: %s", strings.TrimSpace(string(exitErr.Stderr)))
+		}
+	}
+
+	const prefix, suffix = "submodule.", ".path"
+	var match string
+	for _, record := range bytes.Split(output, []byte{0}) {
+		key, path, ok := bytes.Cut(record, []byte{'\n'})
+		if !ok || string(path) != submodulePath {
+			continue
+		}
+		name := strings.TrimSuffix(strings.TrimPrefix(string(key), prefix), suffix)
+		if name == "" || match != "" {
+			return "", camperrors.Newf("ambiguous .gitmodules sections for submodule path %q", submodulePath)
+		}
+		match = name
+	}
+	if match == "" {
+		return "", camperrors.Newf("submodule path %q not found in .gitmodules", submodulePath)
+	}
+	return match, nil
+}
 
 // IsSubmodule checks if the given path is a git submodule.
 // Returns true if .git is a file (gitdir pointer) rather than a directory.
@@ -224,13 +267,17 @@ func CompareURLs(ctx context.Context, repoRoot, submodulePath string) (*URLCompa
 	if ctx.Err() != nil {
 		return nil, ctx.Err()
 	}
-
-	declared, err := GetDeclaredURL(ctx, repoRoot, submodulePath)
+	submoduleName, err := SubmoduleNameForPath(ctx, repoRoot, submodulePath)
 	if err != nil {
 		return nil, err
 	}
 
-	active, err := GetActiveURL(ctx, repoRoot, submodulePath)
+	declared, err := GetDeclaredURL(ctx, repoRoot, submoduleName)
+	if err != nil {
+		return nil, err
+	}
+
+	active, err := GetActiveURL(ctx, repoRoot, submoduleName)
 	if err != nil {
 		return nil, err
 	}

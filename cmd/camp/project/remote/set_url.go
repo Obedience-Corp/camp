@@ -53,6 +53,7 @@ func init() {
 type setURLState struct {
 	campRoot      string
 	submodulePath string
+	submoduleName string
 	remoteName    string
 	projectPath   string
 
@@ -87,11 +88,11 @@ func (s *setURLState) rollback(ctx context.Context) []string {
 
 	// Undo step 1: restore .gitmodules
 	if s.gitmodulesUpdated && s.oldDeclaredURL != "" {
-		if err := git.SetDeclaredURL(ctx, s.campRoot, s.submodulePath, s.oldDeclaredURL); err != nil {
+		if err := git.SetDeclaredURL(ctx, s.campRoot, s.submoduleName, s.oldDeclaredURL); err != nil {
 			failures = append(failures,
 				"# Restore .gitmodules URL:",
 				fmt.Sprintf("  git -C %s config -f .gitmodules submodule.%s.url %s",
-					s.campRoot, s.submodulePath, s.oldDeclaredURL),
+					s.campRoot, s.submoduleName, s.oldDeclaredURL),
 			)
 		} else if s.syncCompleted {
 			// Re-sync so .git/config matches the restored .gitmodules
@@ -143,10 +144,18 @@ func runProjectRemoteSetURL(cmd *cobra.Command, args []string) error {
 		ui.Value(remoteName), ui.Value(resolved.Name))
 
 	if isSubmodule {
-		state.oldDeclaredURL, _ = git.GetDeclaredURL(ctx, campRoot, submodulePath)
-		if state.oldDeclaredURL != "" {
-			fmt.Printf("  %s %s\n", ui.Dim("before (.gitmodules):"), ui.Dim(state.oldDeclaredURL))
+		state.submoduleName, err = git.SubmoduleNameForPath(ctx, campRoot, submodulePath)
+		if err != nil {
+			return camperrors.Wrap(err, "resolve .gitmodules section")
 		}
+		state.oldDeclaredURL, err = git.GetDeclaredURL(ctx, campRoot, state.submoduleName)
+		if err != nil {
+			return camperrors.Wrap(err, "read .gitmodules URL")
+		}
+		if state.oldDeclaredURL == "" {
+			return camperrors.Newf("submodule %q has no URL in .gitmodules", state.submoduleName)
+		}
+		fmt.Printf("  %s %s\n", ui.Dim("before (.gitmodules):"), ui.Dim(state.oldDeclaredURL))
 	}
 
 	remotesBefore, _ := git.ListRemotes(ctx, resolved.Path)
@@ -162,7 +171,7 @@ func runProjectRemoteSetURL(cmd *cobra.Command, args []string) error {
 	// Step 1: Update .gitmodules (submodule only, lock-susceptible)
 	if isSubmodule {
 		setURLErr := git.WithLockRetry(ctx, campRoot, git.SubmoduleRetryConfig(), func() error {
-			return git.SetDeclaredURL(ctx, campRoot, submodulePath, newURL)
+			return git.SetDeclaredURL(ctx, campRoot, state.submoduleName, newURL)
 		})
 		if setURLErr != nil {
 			return camperrors.Wrap(setURLErr, "update .gitmodules")
