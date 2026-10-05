@@ -37,5 +37,15 @@ jobs:
       - name: Install just
         uses: extractions/setup-just@v4
 
+      - name: Configure git like a developer machine
+        # Unit tests create real repositories and expect the branch to be
+        # named main, a commit identity to exist, and file:// submodule
+        # clones to be allowed. Repo-local config set by tests still wins.
+        run: |
+          git config --global init.defaultBranch main
+          git config --global user.name "camp-ci"
+          git config --global user.email "camp-ci@users.noreply.github.com"
+          git config --global protocol.file.allow always
+
       - name: gate-fast
         run: just gate-fast
