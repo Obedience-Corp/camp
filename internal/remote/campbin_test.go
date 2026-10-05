@@ -488,3 +488,14 @@ func TestCampNotFoundHintPassesThroughNonCommandErrors(t *testing.T) {
 		t.Errorf("campNotFoundHint changed a non-CommandError: got %v, want unchanged %v", got, original)
 	}
 }
+
+func TestScopedResolveRootArgs(t *testing.T) {
+	got := scopedResolveRootArgs("work/camp-id@p", SwitchScope{Org: "work", Status: "inactive", All: true})
+	want := "switch 'work/camp-id@p' --print --org 'work' --status 'inactive' --all"
+	if got != want {
+		t.Fatalf("args = %q, want %q", got, want)
+	}
+	if got := scopedResolveRootArgs("notes", SwitchScope{}); got != resolveRootArgs("notes") {
+		t.Fatalf("default scope changed: %s", got)
+	}
+}

@@ -52,11 +52,15 @@ type containerFSPackage struct {
 	// the harness, but it is high enough that a tag misconfiguration — which
 	// would run zero — fails loudly instead of passing silently.
 	MinTests int
+	// TestPattern narrows a mixed package whose other tests need source fixtures.
+	TestPattern string
 }
 
 // containerFSPackages are the suites migrated under D007. The counts are the
 // tests actually behind the tag at migration time.
 var containerFSPackages = []containerFSPackage{
+	// Hop resume socket and machine registry handoff regressions.
+	{ImportPath: "./cmd/camp", MinTests: 5, TestPattern: "^TestHopResume"},
 	{ImportPath: "./internal/starter", MinTests: 3},
 	{ImportPath: "./internal/clone", MinTests: 29},
 	{ImportPath: "./internal/sync", MinTests: 32},
@@ -174,6 +178,11 @@ func RunContainerFSSuite(t *testing.T, tc *TestContainer, pkg containerFSPackage
 			"copy %s testdata into the container", pkg.ImportPath)
 	}
 
+	testArgs := " -test.v -test.count=1"
+	if pkg.TestPattern != "" {
+		testArgs += " -test.run=" + shellQuote(pkg.TestPattern)
+	}
+
 	// git needs an identity and a permissive safe.directory for the repos these
 	// tests create. HOME is exported before `git config --global` runs, not just
 	// for the binary: --global writes to $HOME/.gitconfig, so configuring it
@@ -187,7 +196,7 @@ func RunContainerFSSuite(t *testing.T, tc *TestContainer, pkg containerFSPackage
 		"git config --global user.email t@t.co",
 		"git config --global user.name T",
 		"git config --global --add safe.directory '*'",
-		remote + " -test.v -test.count=1",
+		remote + testArgs,
 	}, " && "))
 	require.NoError(t, execErr, "exec %s in container", remote)
 

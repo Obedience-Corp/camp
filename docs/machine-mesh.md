@@ -132,8 +132,12 @@ the origin shell resumes exactly where it was. That is why hopping back and fort
 grow a chain of nested connections: each return pops one real level of the shell stack
 rather than opening a second ssh into the machine that already has an inbound session to
 you. A selector naming that origin behaves the same way — `csw devbox:notes`, typed in a
-shell hopped from `devbox`, unwinds instead of dialing, and naming a *different* camp
-on the origin tells you to `csw -` first rather than nesting.
+shell hopped from `devbox`, unwinds instead of dialing. Naming a different camp on the
+origin unwinds and continues the switch in the shell underneath, so you land in that
+camp without a second ssh. A bare camp name is resolved on this machine first and then
+across the fleet, so `csw notes` reaches `notes` wherever it is registered. Switching
+from a hopped shell to a camp on a third machine unwinds first and lets the shell you
+hopped from open that hop, which keeps a single ssh instead of a nest.
 
 The dial-back below remains for the case where the payload is present but the shell has
 no ssh markers around it (an exotic transport, or an exported variable that outlived its
@@ -327,3 +331,41 @@ hangs:
 - `camp machine --help` — the command surface
 - `camp machine diagnose <id>` — the one command to run when a hop fails
 - [transfer.md](./transfer.md) — moving files across the mesh
+
+### Scope during a resumed switch
+
+Bare-name fleet lookup reads live org and lifecycle metadata, including the hop
+origin when it has not been registered as a machine. Completion caches contain
+names only and cannot authorize a selection. Default lookups include active camps;
+`--org`, `--status`, and `--all` apply to the candidates and the final switch.
+The selected camp ID and org identify the target across the handoff. A return
+switch carries its scope through the resume socket and resolves locally on the
+parent, so it cannot silently fall back to another machine. Named origin switches
+need the resume socket; `csw -` can still return without it.
+
+Bare-name lookup requires every queried machine to answer. If any machine fails,
+Camp reports the failed machines and treats the lookup as incomplete, even when a
+reachable machine has a matching camp. Retry after resolving the failure, or use
+an explicit `csw machine:camp` selector to choose a known target.
+
+### Machine identity during a resumed switch
+
+An onward switch carries the selected host, not just the current machine's alias.
+The shell underneath the hop maps that host to its own machine registry and uses
+its own SSH user, key, and authentication method. Different aliases for the same
+host work; an alias pointing to a different host is never substituted. Missing
+routes and multiple entries for the same host are rejected while the current
+shell remains open. Org and lifecycle scope still apply when that route resolves.
+
+The current shell exits only after the parent acknowledges a prepared switch.
+If route resolution fails, fix the parent's registry or choose another target and
+retry from the same shell. Host comparison uses Camp's DNS normalization (case
+and a trailing dot); distinct DNS aliases and IP addresses are not assumed to
+identify the same host.
+
+This acknowledgement requires the updated resume protocol on both machines.
+A new child refuses a parent without it, and the old parent cannot queue the new
+request as a switch. An old child does not wait for acknowledgement and may still
+exit, but a new parent rejects its unverified request instead of dialing an
+alias-selected host. Update Camp on both machines, re-source shell init, and open
+a new hop before using onward switching. Plain `csw -` remains a direct return.

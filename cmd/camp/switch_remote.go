@@ -25,6 +25,8 @@ import (
 // must not call t.Parallel().
 var resolveRemoteRoot = remote.ResolveRoot
 
+var resolveRemoteRootScoped = remote.ResolveRootScoped
+
 // runRemoteSwitch resolves a machine:campaign selector by asking the remote
 // machine's own `camp switch --print` for the absolute campaign root over ssh (so
 // the remote registry decides the path), then emits the interactive ssh hop line
@@ -42,7 +44,18 @@ func runRemoteSwitch(ctx context.Context, cmd *cobra.Command, msel cmdutil.Parse
 	if !found {
 		return camperrors.New("unknown machine \"" + msel.Machine + "\"; add it to ~/.obey/machines.yaml")
 	}
-	root, err := resolveRemoteRoot(ctx, m, msel.Remainder)
+	scope, err := switchScopeFromFlags(cmd)
+	if err != nil {
+		return err
+	}
+	var root string
+	if scope.Org == "" && scope.Status == "" && !scope.All {
+		root, err = resolveRemoteRoot(ctx, m, msel.Remainder)
+	} else {
+		root, err = resolveRemoteRootScoped(ctx, m, msel.Remainder, remote.SwitchScope{
+			Org: scope.Org, Status: scope.Status, All: scope.All,
+		})
+	}
 	if err != nil {
 		return withRemoteSuggestions(err, msel)
 	}

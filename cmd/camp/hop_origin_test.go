@@ -546,7 +546,9 @@ func TestRunHopBackNeverWritesMachinesFile(t *testing.T) {
 func TestRunHopBackReverseLineCarriesItsOwnOrigin(t *testing.T) {
 	// The toggle property: the session the reverse hop lands in must know the
 	// machine it just left, or a second `csw -` would claim the session did not
-	// start from a hop.
+	// start from a hop. Clear inherited ssh markers so this asserts the dial-back
+	// line even when the test process itself was started inside a hop.
+	clearSSHSessionEnv(t)
 	t.Setenv("CAMP_MACHINES_PATH", filepath.Join(t.TempDir(), "machines.yaml"))
 	t.Setenv(HopOriginEnvVar, testOriginPayload)
 
@@ -707,6 +709,7 @@ func TestIsSelfMachine(t *testing.T) {
 
 // A payload naming this machine must not emit an ssh to ourselves.
 func TestRunSwitchHopBackRefusesASelfOrigin(t *testing.T) {
+	clearSSHSessionEnv(t)
 	t.Setenv("CAMP_MACHINES_PATH", filepath.Join(t.TempDir(), "machines.yaml"))
 	host, err := detectReachableName(context.Background(), runTailscaleStatusForSelf)
 	if err != nil || host == "" {

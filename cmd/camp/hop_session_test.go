@@ -107,7 +107,7 @@ func TestSelectorNamesOrigin(t *testing.T) {
 	}
 }
 
-func TestOriginSwitchGuard(t *testing.T) {
+func TestUnwindInsteadOfHop(t *testing.T) {
 	clearSSHSessionEnv(t)
 	t.Setenv("CAMP_MACHINES_PATH", filepath.Join(t.TempDir(), "machines.yaml"))
 	t.Setenv(HopOriginEnvVar, testOriginPayload) // origin devbox, campaign obey-campaign
@@ -122,25 +122,28 @@ func TestOriginSwitchGuard(t *testing.T) {
 	}
 
 	// Outside an ssh session a stale payload must not hijack ordinary hops.
-	if unwind, refuse := originSwitchGuard(sel("devbox:obey-campaign")); unwind || refuse != nil {
-		t.Errorf("fresh shell: guard fired (unwind=%v refuse=%v)", unwind, refuse)
+	if resume, unwind := unwindInsteadOfHop(sel("devbox:obey-campaign")); unwind || resume != "" {
+		t.Errorf("fresh shell: unwind fired (unwind=%v resume=%q)", unwind, resume)
 	}
 
 	t.Setenv("SSH_CONNECTION", "100.1.2.3 50000 100.4.5.6 22")
 
-	// Origin + its own campaign is the hop-back gesture in different words.
-	if unwind, refuse := originSwitchGuard(sel("devbox:obey-campaign")); !unwind || refuse != nil {
-		t.Errorf("origin+own campaign: want unwind, got unwind=%v refuse=%v", unwind, refuse)
+	// Named camps resolve again on the parent so lifecycle scope is enforced.
+	if resume, unwind := unwindInsteadOfHop(sel("devbox:obey-campaign")); !unwind || resume != "local:obey-campaign" {
+		t.Errorf("origin+own camp: want plain unwind, got unwind=%v resume=%q", unwind, resume)
 	}
-	// Origin + a different campaign is refused with the unwind gesture, never
-	// a second ssh into the machine holding our inbound session.
-	if unwind, refuse := originSwitchGuard(sel("devbox:something-else")); unwind || refuse == nil {
-		t.Errorf("origin+other campaign: want refusal, got unwind=%v refuse=%v", unwind, refuse)
-	} else if !strings.Contains(refuse.Error(), "'csw -'") {
-		t.Errorf("refusal should teach the unwind gesture: %v", refuse)
+	// Preserve the typed selector for resolution on the parent.
+	if resume, unwind := unwindInsteadOfHop(sel("devbox:obey_campaign")); !unwind || resume != "local:obey_campaign" {
+		t.Errorf("origin camp alias: want plain unwind, got unwind=%v resume=%q", unwind, resume)
 	}
-	// A third machine is a new hop.
-	if unwind, refuse := originSwitchGuard(sel("thirdbox:any")); unwind || refuse != nil {
-		t.Errorf("third machine: guard fired (unwind=%v refuse=%v)", unwind, refuse)
+	// A different camp on the origin unwinds and tells the shell underneath
+	// which camp to open. It must not be a second ssh.
+	if resume, unwind := unwindInsteadOfHop(sel("devbox:something-else")); !unwind || resume != "local:something-else" {
+		t.Errorf("origin+other camp: want resume something-else, got unwind=%v resume=%q", unwind, resume)
+	}
+	// A third machine unwinds too. The shell underneath opens that hop, so the
+	// ssh stack stays one level deep.
+	if resume, unwind := unwindInsteadOfHop(sel("thirdbox:any")); !unwind || resume != "thirdbox:any" {
+		t.Errorf("third machine: want resume thirdbox:any, got unwind=%v resume=%q", unwind, resume)
 	}
 }
