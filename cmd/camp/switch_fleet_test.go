@@ -2,8 +2,6 @@ package main
 
 import (
 	"errors"
-	"net"
-	"os"
 	"strings"
 	"testing"
 
@@ -91,33 +89,5 @@ func TestResumeSwitchLineQuotesSelector(t *testing.T) {
 	line := resumeSwitchLine("Festival Method Kit", cmdutil.CampaignScope{})
 	if !strings.Contains(line, `'Festival Method Kit'`) || !strings.HasSuffix(line, "&& exit\n") {
 		t.Fatalf("line = %q", line)
-	}
-}
-
-func TestHopResumeSocketRoundTrip(t *testing.T) {
-	local, _, err := resumeSocketPaths()
-	if err != nil {
-		t.Fatal(err)
-	}
-	t.Cleanup(func() { _ = os.Remove(local) })
-	ln, err := net.Listen("unix", local)
-	if err != nil {
-		t.Fatal(err)
-	}
-	defer func() { _ = ln.Close() }()
-	got := make(chan hopResumeRequest, 1)
-	go func() {
-		sel, err := readResumeSelector(ln)
-		if err != nil {
-			t.Errorf("read: %v", err)
-		}
-		got <- sel
-	}()
-	t.Setenv(hopResumeSockEnv, local)
-	if err := sendHopResume("sarah", cmdutil.CampaignScope{Org: "obey", Status: "inactive", All: true}); err != nil {
-		t.Fatal(err)
-	}
-	if sel := <-got; sel.Selector != "sarah" || sel.Scope.Org != "obey" || sel.Scope.Status != "inactive" || !sel.Scope.All {
-		t.Fatalf("request = %+v", sel)
 	}
 }

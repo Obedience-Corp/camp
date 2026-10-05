@@ -1,6 +1,7 @@
 package main
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -14,6 +15,7 @@ import (
 	"github.com/spf13/cobra"
 
 	camperrors "github.com/Obedience-Corp/camp/internal/errors"
+	"github.com/Obedience-Corp/camp/internal/machines"
 	"github.com/Obedience-Corp/camp/internal/remote"
 )
 
@@ -28,6 +30,7 @@ func init() {
 	hopResumeSendCmd.Flags().String("org", "", "Limit the resumed switch to this org")
 	hopResumeSendCmd.Flags().String("status", "", "Limit the resumed switch to this status")
 	hopResumeSendCmd.Flags().Bool("all", false, "Include all lifecycle statuses")
+	hopResumeSendCmd.Flags().String("host", "", "Selected machine host identity")
 }
 
 // hopResumeCmd is wrapper plumbing. Operators do not type it; shell-init calls
@@ -47,7 +50,11 @@ var hopResumeSendCmd = &cobra.Command{
 		if err != nil {
 			return err
 		}
-		return sendHopResume(args[0], scope)
+		host, err := cmd.Flags().GetString("host")
+		if err != nil {
+			return err
+		}
+		return sendHopResume(cmd.Context(), args[0], scope, host)
 	},
 }
 
@@ -56,7 +63,7 @@ var hopResumeRunCmd = &cobra.Command{
 	Hidden: true,
 	Args:   cobra.ExactArgs(1),
 	RunE: func(cmd *cobra.Command, args []string) error {
-		follow, err := runHopResume(args[0])
+		follow, err := runHopResume(cmd.Context(), args[0])
 		if err != nil {
 			return err
 		}
@@ -70,9 +77,10 @@ var hopResumeRunCmd = &cobra.Command{
 type hopResumeRequest struct {
 	Selector string                `json:"selector"`
 	Scope    cmdutil.CampaignScope `json:"scope"`
+	Host     string                `json:"host,omitempty"`
 }
 
-func sendHopResume(selector string, scope cmdutil.CampaignScope) error {
+func sendHopResume(ctx context.Context, selector string, scope cmdutil.CampaignScope, host string) error {
 	selector, err := sanitizeResumeSelector(selector)
 	if err != nil {
 		return err
@@ -80,17 +88,40 @@ func sendHopResume(selector string, scope cmdutil.CampaignScope) error {
 	if selector == "" {
 		return camperrors.New("hop-resume: empty selector")
 	}
+	request, err := newHopResumeRequest(selector, scope, host)
+	if err != nil {
+		return err
+	}
 	sock := strings.TrimSpace(os.Getenv(hopResumeSockEnv))
 	if sock == "" {
 		return camperrors.New("hop-resume: " + hopResumeSockEnv + " is not set\nHint: re-source shell init and hop again")
 	}
 	dialer := net.Dialer{Timeout: 2 * time.Second}
-	conn, err := dialer.Dial("unix", sock)
+	conn, err := dialer.DialContext(ctx, "unix", sock)
 	if err != nil {
 		return camperrors.Wrap(err, "hop-resume: tell the shell that opened this hop")
 	}
 	defer func() { _ = conn.Close() }()
-	return json.NewEncoder(conn).Encode(hopResumeRequest{Selector: selector, Scope: scope})
+	stopClose := context.AfterFunc(ctx, func() { _ = conn.Close() })
+	defer stopClose()
+	_ = conn.SetDeadline(time.Now().Add(hopResumeTimeout))
+	if err := json.NewEncoder(conn).Encode(hopResumeEnvelope{Version: 1, Request: request}); err != nil {
+		return err
+	}
+	var response hopResumeResponse
+	if err := json.NewDecoder(io.LimitReader(conn, 4096)).Decode(&response); err != nil {
+		return camperrors.Wrap(err, "hop-resume: parent did not acknowledge the route; staying in this shell")
+	}
+	if response.Version != 1 {
+		return camperrors.New("hop-resume: unsupported parent acknowledgement; staying in this shell")
+	}
+	if response.Error != "" {
+		return camperrors.New(response.Error)
+	}
+	if !response.Accepted {
+		return camperrors.New("hop-resume: parent rejected the route; staying in this shell")
+	}
+	return nil
 }
 
 func sanitizeResumeSelector(raw string) (string, error) {
@@ -108,7 +139,7 @@ func sanitizeResumeSelector(raw string) (string, error) {
 // the far shell. stdout of this process is reserved for the follow-up shell
 // line (possibly empty); the interactive session is attached to /dev/tty
 // because the wrapper captures stdout.
-func runHopResume(line string) (string, error) {
+func runHopResume(ctx context.Context, line string) (string, error) {
 	local, remoteSock, err := resumeSocketPaths()
 	if err != nil {
 		return "", err
@@ -122,17 +153,19 @@ func runHopResume(line string) (string, error) {
 	_ = os.Chmod(local, 0o700)
 	defer func() { _ = ln.Close() }()
 
-	got := make(chan hopResumeRequest, 1)
+	resumeCtx, cancelResume := context.WithCancel(ctx)
+	defer cancelResume()
+	got := make(chan string, 1)
 	go func() {
-		sel, _ := readResumeSelector(ln)
-		got <- sel
+		follow, _ := serveHopResume(resumeCtx, ln, prepareHopResume)
+		got <- follow
 	}()
 
 	argv, err := prepareResumeSSH(line, local, remoteSock)
 	if err != nil {
 		return "", err
 	}
-	sshCmd := exec.Command(argv[0], argv[1:]...)
+	sshCmd := exec.CommandContext(ctx, argv[0], argv[1:]...)
 	tty, err := os.OpenFile("/dev/tty", os.O_RDWR, 0)
 	if err != nil {
 		return "", camperrors.Wrap(err, "hop-resume: open /dev/tty")
@@ -142,15 +175,13 @@ func runHopResume(line string) (string, error) {
 	sshCmd.Stdout = tty
 	sshCmd.Stderr = tty
 	runErr := sshCmd.Run()
+	cancelResume()
 	_ = ln.Close()
-	sel := <-got
+	follow := <-got
 	if runErr != nil {
 		return "", runErr
 	}
-	if sel.Selector == "" {
-		return "", nil
-	}
-	return switchFollowUp(sel)
+	return follow, nil
 }
 
 func resumeSocketPaths() (local, remoteSock string, err error) {
@@ -167,19 +198,161 @@ func resumeSocketPaths() (local, remoteSock string, err error) {
 	return "/tmp/" + base + "-l.sock", "/tmp/" + base + "-r.sock", nil
 }
 
-func readResumeSelector(ln net.Listener) (hopResumeRequest, error) {
-	conn, err := ln.Accept()
+// A request is acknowledged only after the parent has prepared its route.
+// The child exits on success, so errors must arrive while its shell is alive.
+const hopResumeTimeout = 30 * time.Second
+
+// Keep the actionable selector nested: a legacy reader sees an empty selector
+// and cannot queue a misdirected switch when this client rejects its missing ACK.
+type hopResumeEnvelope struct {
+	Version int              `json:"version"`
+	Request hopResumeRequest `json:"request"`
+}
+
+type hopResumeResponse struct {
+	Version  int    `json:"version"`
+	Accepted bool   `json:"accepted"`
+	Error    string `json:"error,omitempty"`
+}
+
+func newHopResumeRequest(selector string, scope cmdutil.CampaignScope, host string) (hopResumeRequest, error) {
+	request := hopResumeRequest{Selector: selector, Scope: scope, Host: host}
+	parsed, err := cmdutil.ParseMachineSelector(selector)
 	if err != nil {
-		return hopResumeRequest{}, err
+		return request, err
 	}
-	defer func() { _ = conn.Close() }()
-	_ = conn.SetDeadline(time.Now().Add(2 * time.Second))
-	var request hopResumeRequest
-	if err := json.NewDecoder(io.LimitReader(conn, 4096)).Decode(&request); err != nil {
-		return hopResumeRequest{}, err
+	if parsed.Machine == "" {
+		return request, camperrors.New("hop-resume: selector must name a machine")
 	}
-	request.Selector, err = sanitizeResumeSelector(request.Selector)
-	return request, err
+	if parsed.Machine == machines.LocalMachineID {
+		if host != "" {
+			return request, camperrors.New("hop-resume: local selector cannot carry a remote host")
+		}
+	} else if strings.TrimSpace(host) == "" {
+		return request, camperrors.New("hop-resume: remote request has no host identity; re-source shell init and hop again")
+	}
+	return request, nil
+}
+
+// Capture the selected identity before emitting shell code. The later send
+// subprocess must not reinterpret an alias if the child's registry changes.
+func hopResumeTargetHost(selector string) (string, error) {
+	parsed, err := cmdutil.ParseMachineSelector(selector)
+	if err != nil {
+		return "", err
+	}
+	if parsed.Machine == "" || parsed.Machine == machines.LocalMachineID {
+		return "", nil
+	}
+	mf, err := machines.Load()
+	if err != nil {
+		return "", err
+	}
+	machine, _, found := mf.Lookup(parsed.Machine)
+	if !found || machine == nil || strings.TrimSpace(machine.Host) == "" {
+		return "", camperrors.New("hop-resume: unknown target machine " + parsed.Machine)
+	}
+	return machine.Host, nil
+}
+
+// mapHopResume uses host identity, never an alias from the child registry.
+// The selected parent entry supplies all authentication and endpoint settings.
+func mapHopResume(request hopResumeRequest, registry *machines.File) (hopResumeRequest, error) {
+	parsed, err := cmdutil.ParseMachineSelector(request.Selector)
+	if err != nil {
+		return request, err
+	}
+	if parsed.Machine == "" {
+		return request, camperrors.New("hop-resume: selector must name a machine")
+	}
+	if parsed.Machine == machines.LocalMachineID {
+		if request.Host != "" {
+			return request, camperrors.New("hop-resume: local selector cannot carry a remote host")
+		}
+		return request, nil
+	}
+	host := strings.ToLower(normalizeDNSName(strings.TrimSpace(request.Host)))
+	if host == "" {
+		return request, camperrors.New("hop-resume: remote request has no host identity; re-source shell init and hop again")
+	}
+	var match *machines.Machine
+	for i := range registry.Machines {
+		machine := &registry.Machines[i]
+		if strings.ToLower(normalizeDNSName(machine.Host)) != host {
+			continue
+		}
+		if match != nil {
+			return request, camperrors.New("hop-resume: parent has multiple routes to " + request.Host + "; staying in this shell")
+		}
+		match = machine
+	}
+	if match == nil {
+		return request, camperrors.New("hop-resume: parent has no route to " + request.Host + "; add the host to its machines registry before switching")
+	}
+	request.Selector = match.ID + ":" + parsed.Remainder
+	return request, nil
+}
+
+func prepareHopResume(ctx context.Context, request hopResumeRequest) (string, error) {
+	registry, err := machines.Load()
+	if err != nil {
+		return "", err
+	}
+	request, err = mapHopResume(request, registry)
+	if err != nil {
+		return "", err
+	}
+	return switchFollowUpContext(ctx, request)
+}
+
+func serveHopResume(ctx context.Context, ln net.Listener, prepare func(context.Context, hopResumeRequest) (string, error)) (string, error) {
+	for {
+		conn, err := ln.Accept()
+		if err != nil {
+			return "", err
+		}
+		follow, err := acceptHopResume(ctx, conn, prepare)
+		_ = conn.Close()
+		if err == nil {
+			return follow, nil
+		}
+		// A rejected request must not disable onward switching for this shell.
+		if ctx.Err() != nil {
+			return "", ctx.Err()
+		}
+	}
+}
+
+func acceptHopResume(ctx context.Context, conn net.Conn, prepare func(context.Context, hopResumeRequest) (string, error)) (string, error) {
+	_ = conn.SetDeadline(time.Now().Add(hopResumeTimeout))
+	ctx, cancel := context.WithTimeout(ctx, hopResumeTimeout-time.Second)
+	defer cancel()
+	stopClose := context.AfterFunc(ctx, func() { _ = conn.Close() })
+	defer stopClose()
+	var envelope hopResumeEnvelope
+	err := json.NewDecoder(io.LimitReader(conn, 4096)).Decode(&envelope)
+	if err == nil && envelope.Version != 1 {
+		err = camperrors.New("hop-resume: unsupported request version; update camp on both machines and hop again")
+	}
+	request := envelope.Request
+	if err == nil {
+		request.Selector, err = sanitizeResumeSelector(request.Selector)
+	}
+	if err == nil && request.Selector == "" {
+		err = camperrors.New("hop-resume: empty selector")
+	}
+	var follow string
+	if err == nil {
+		follow, err = prepare(ctx, request)
+	}
+	response := hopResumeResponse{Version: 1, Accepted: err == nil}
+	if err != nil {
+		response.Error = err.Error()
+	}
+	if writeErr := json.NewEncoder(conn).Encode(response); writeErr != nil {
+		return "", writeErr
+	}
+	return follow, err
 }
 
 // prepareResumeSSH parses the one ssh line emitShellConnect prints and adds a
@@ -219,12 +392,12 @@ func resumeSwitchArgs(request hopResumeRequest) []string {
 	return append(args, "--", request.Selector)
 }
 
-func switchFollowUp(request hopResumeRequest) (string, error) {
+func switchFollowUpContext(ctx context.Context, request hopResumeRequest) (string, error) {
 	exe, err := os.Executable()
 	if err != nil || exe == "" {
 		exe = "camp"
 	}
-	cmd := exec.Command(exe, resumeSwitchArgs(request)...)
+	cmd := exec.CommandContext(ctx, exe, resumeSwitchArgs(request)...)
 	cmd.Stderr = os.Stderr
 	out, err := cmd.Output()
 	if err != nil {
@@ -279,7 +452,14 @@ func splitShellQuoted(line string) ([]string, error) {
 // underneath this hop and then leaves. `exit` is what pops the ssh; send runs
 // first so a failed handoff does not dump the user in the wrong camp.
 func resumeSwitchLine(selector string, scope cmdutil.CampaignScope) string {
+	return resumeSwitchLineForHost(selector, scope, "")
+}
+
+func resumeSwitchLineForHost(selector string, scope cmdutil.CampaignScope, host string) string {
 	var flags string
+	if host != "" {
+		flags += " --host " + remote.ShellQuote(host)
+	}
 	if scope.Org != "" {
 		flags += " --org " + remote.ShellQuote(scope.Org)
 	}

@@ -67,21 +67,21 @@ func selectorNamesOrigin(machineSel string, origin HopOrigin) bool {
 	if machineSel == "" {
 		return false
 	}
-	if machineSel == transientOriginID(origin.Host) {
-		return true
-	}
-	if origin.ID != "" && machineSel == origin.ID {
-		return true
-	}
 	want := strings.ToLower(normalizeDNSName(origin.Host))
-	if strings.ToLower(normalizeDNSName(machineSel)) == want {
-		return true
-	}
+	// Registry aliases are authoritative; origin.ID is only advisory. A child
+	// can reuse the parent's alias for an entirely different host.
 	if mf, err := machines.Load(); err == nil {
 		if m, _, found := mf.Lookup(machineSel); found && m != nil {
 			return strings.ToLower(normalizeDNSName(m.Host)) == want
 		}
 	}
+	if machineSel == transientOriginID(origin.Host) || (origin.ID != "" && machineSel == origin.ID) {
+		return true
+	}
+	if strings.ToLower(normalizeDNSName(machineSel)) == want {
+		return true
+	}
+
 	return false
 }
 
@@ -155,7 +155,11 @@ func emitHopUnwind(cmd *cobra.Command, resume string, printOnly, shellConnect, j
 	if err != nil {
 		return err
 	}
-	_, err = io.WriteString(cmd.OutOrStdout(), resumeSwitchLine(resume, scope))
+	host, err := hopResumeTargetHost(resume)
+	if err != nil {
+		return err
+	}
+	_, err = io.WriteString(cmd.OutOrStdout(), resumeSwitchLineForHost(resume, scope, host))
 	return err
 }
 

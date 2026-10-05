@@ -347,3 +347,25 @@ Bare-name lookup requires every queried machine to answer. If any machine fails,
 Camp reports the failed machines and treats the lookup as incomplete, even when a
 reachable machine has a matching camp. Retry after resolving the failure, or use
 an explicit `csw machine:camp` selector to choose a known target.
+
+### Machine identity during a resumed switch
+
+An onward switch carries the selected host, not just the current machine's alias.
+The shell underneath the hop maps that host to its own machine registry and uses
+its own SSH user, key, and authentication method. Different aliases for the same
+host work; an alias pointing to a different host is never substituted. Missing
+routes and multiple entries for the same host are rejected while the current
+shell remains open. Org and lifecycle scope still apply when that route resolves.
+
+The current shell exits only after the parent acknowledges a prepared switch.
+If route resolution fails, fix the parent's registry or choose another target and
+retry from the same shell. Host comparison uses Camp's DNS normalization (case
+and a trailing dot); distinct DNS aliases and IP addresses are not assumed to
+identify the same host.
+
+This acknowledgement requires the updated resume protocol on both machines.
+A new child refuses a parent without it, and the old parent cannot queue the new
+request as a switch. An old child does not wait for acknowledgement and may still
+exit, but a new parent rejects its unverified request instead of dialing an
+alias-selected host. Update Camp on both machines, re-source shell init, and open
+a new hop before using onward switching. Plain `csw -` remains a direct return.
