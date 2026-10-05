@@ -1,18 +1,25 @@
 package fresh
 
 import (
+	"bytes"
 	"errors"
 	"io"
 	"os"
 	"os/exec"
 	"strings"
 	"sync"
+	"time"
 
 	"github.com/creack/pty"
 	"golang.org/x/term"
 
 	camperrors "github.com/Obedience-Corp/camp/internal/errors"
 )
+
+// followUpTailCapture bounds output captured from surviving descendants after
+// the command exits. The window starts after the streaming writer finishes and
+// never extends when more bytes arrive. Closed terminals drain immediately.
+const followUpTailCapture = 100 * time.Millisecond
 
 // errFollowUpTTYUnavailable means the command has not started and the caller
 // should run it on a pipe instead.
@@ -51,6 +58,19 @@ func runFollowUpOnTerminal(cmd *exec.Cmd, parent *os.File, output io.Writer) err
 		_ = slave.Close()
 		return camperrors.WrapJoin(errFollowUpTTYUnavailable, err, "")
 	}
+	// Construct a fresh wrapper after enabling nonblocking mode so Go polling
+	// can wake the reader when a surviving descendant still holds the slave.
+	replacement, err := newFollowUpPTYMaster(master)
+	if err != nil {
+		_ = slave.Close()
+		return camperrors.WrapJoin(errFollowUpTTYUnavailable, err, "")
+	}
+	if err := master.Close(); err != nil {
+		_ = replacement.Close()
+		_ = slave.Close()
+		return camperrors.WrapJoin(errFollowUpTTYUnavailable, err, "")
+	}
+	master = replacement
 
 	cmd.Stdout = slave
 	cmd.Stderr = slave
@@ -64,12 +84,21 @@ func runFollowUpOnTerminal(cmd *exec.Cmd, parent *os.File, output io.Writer) err
 
 	var wg sync.WaitGroup
 	wg.Go(func() {
-		// Closing the master unblocks this copy when a descendant still holds
-		// the slave. The command's exit status is the result that matters.
+		// A read deadline interrupts this copy after the command exits even
+		// when a descendant retains the slave. Preserve the command exit status.
 		_, _ = io.Copy(output, master)
 	})
 	waitErr := cmd.Wait()
-	closeMaster()
+	// Interrupt a pending read without discarding the bytes already queued.
+	_ = master.SetReadDeadline(time.Now())
 	wg.Wait()
+	// Capture separately from forwarding: a slow writer must not consume the
+	// finite window for draining queued child output. Descendant output after
+	// this fixed window is deliberately excluded.
+	_ = master.SetReadDeadline(time.Now().Add(followUpTailCapture))
+	var tail bytes.Buffer
+	_, _ = io.Copy(&tail, master)
+	_, _ = tail.WriteTo(output)
+	closeMaster()
 	return waitErr
 }
