@@ -5,6 +5,7 @@ import (
 	"strings"
 
 	"github.com/Obedience-Corp/camp/internal/campaign"
+	camperrors "github.com/Obedience-Corp/camp/internal/errors"
 	"github.com/Obedience-Corp/camp/internal/git"
 	"github.com/Obedience-Corp/camp/internal/project"
 	"github.com/Obedience-Corp/camp/internal/ui"
@@ -62,7 +63,10 @@ func runProjectRemoteList(cmd *cobra.Command, args []string) error {
 
 	var urlCmp *git.URLComparison
 	if isSubmodule {
-		urlCmp, _ = git.CompareURLs(ctx, campRoot, submodulePath)
+		urlCmp, err = git.CompareURLs(ctx, campRoot, submodulePath)
+		if err != nil {
+			return camperrors.Wrap(err, "compare submodule URLs")
+		}
 	}
 
 	fmt.Printf("Remotes for %s:\n\n", ui.Value(resolved.Name))
