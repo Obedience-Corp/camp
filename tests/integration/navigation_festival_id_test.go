@@ -45,11 +45,15 @@ func TestGo_FestivalIDAcrossLifecycleAndAmbiguity(t *testing.T) {
 	root := "/campaigns/festival-id-lifecycle"
 	_, err := tc.InitCampaign(root, "festival-id-lifecycle", "product")
 	require.NoError(t, err)
-	stages := []string{"active", "ready", "planning", "ritual", "chains",
-		".dungeon/completed", ".dungeon/archived", ".dungeon/someday"}
+	stages := []string{"active", "ready", "planning", "ritual", "chains", "parked",
+		".dungeon/completed", ".dungeon/archived", ".dungeon/someday",
+		".dungeon/completed/2026-10-04", ".dungeon/archived/2026-10-04",
+		".dungeon/someday/2026-10-04", ".dungeon/completed/2026-09"}
 	for i, stage := range stages {
 		id := fmt.Sprintf("FI%04d", i+1)
 		want := writeNavigationFestival(t, tc, root, stage, "lifecycle-"+id, id)
+		_, _, err := tc.ExecCommand("mkdir", "-p", filepath.Join(root, "projects", id))
+		require.NoError(t, err)
 		output, err := tc.RunCampInDir(root, "go", "--print", id)
 		require.NoError(t, err, "festival in %s should resolve: %s", stage, output)
 		require.Equal(t, want, strings.TrimSpace(output))
@@ -66,6 +70,10 @@ func TestGo_FestivalIDAcrossLifecycleAndAmbiguity(t *testing.T) {
 	require.Contains(t, output, "festival ID FI0001 is ambiguous")
 	require.Contains(t, output, "active/lifecycle-FI0001")
 	require.Contains(t, output, "planning/duplicate-FI0001")
+	writeNavigationFestival(t, tc, root, ".dungeon/completed/2026-10-04", "dated-duplicate-FI0001", "FI0001")
+	output, err = tc.RunCampInDir(root, "go", "--print", "FI0001")
+	require.Error(t, err)
+	require.Contains(t, output, ".dungeon/completed/2026-10-04/dated-duplicate-FI0001", "dated duplicates must participate in ambiguity")
 	output, err = tc.RunCampInDir(root, "go", "--print", "ZZ9998")
 	require.Error(t, err, "an unknown identifier must not invent a destination")
 	require.Contains(t, output, "no targets matching")

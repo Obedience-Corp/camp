@@ -48,7 +48,7 @@ func IsStandardPath(path string) bool {
 // FestivalStatusDirs are dest buckets that hold individual festival directories.
 // Live statuses are listed first so nested fuzzy search prefers an active
 // festival over a planning copy of the same name.
-var FestivalStatusDirs = []string{"active", "ready", "planning", "ritual", "chains"}
+var FestivalStatusDirs = []string{"active", "ready", "planning", "parked", "ritual", "chains"}
 
 // IsFestivalStatusDir reports whether name is a festival dest bucket.
 func IsFestivalStatusDir(name string) bool {

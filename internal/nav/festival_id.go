@@ -6,7 +6,9 @@ import (
 	"path/filepath"
 	"regexp"
 	"strings"
+	"time"
 
+	"github.com/Obedience-Corp/camp/internal/dungeon/statuspath"
 	camperrors "github.com/Obedience-Corp/camp/internal/errors"
 	"gopkg.in/yaml.v3"
 )
@@ -25,8 +27,29 @@ func ResolveFestivalID(ctx context.Context, campaignRoot, query string) (string,
 
 	root := filepath.Join(campaignRoot, CategoryFestivals.Dir())
 	stages := append([]string{""}, FestivalStatusDirs...)
-	stages = append(stages, filepath.Join(".dungeon", "completed"),
-		filepath.Join(".dungeon", "archived"), filepath.Join(".dungeon", "someday"))
+	terminalStages := []string{filepath.Join(".dungeon", "completed"),
+		filepath.Join(".dungeon", "archived"), filepath.Join(".dungeon", "someday")}
+	stages = append(stages, terminalStages...)
+	// Fest moves terminal festivals into date buckets. Keep the flat layout as
+	// well, and include its documented historical YYYY-MM bucket form.
+	for _, stage := range terminalStages {
+		if err := ctx.Err(); err != nil {
+			return "", err
+		}
+		stagePath := filepath.Join(root, stage)
+		entries, err := os.ReadDir(stagePath)
+		if os.IsNotExist(err) {
+			continue
+		}
+		if err != nil {
+			return "", camperrors.Wrapf(err, "reading festival stage %s", stagePath)
+		}
+		for _, entry := range entries {
+			if entry.IsDir() && isFestivalDateBucket(entry.Name()) {
+				stages = append(stages, filepath.Join(stage, entry.Name()))
+			}
+		}
+	}
 	var matches []string
 	for _, stage := range stages {
 		if err := ctx.Err(); err != nil {
@@ -98,4 +121,12 @@ func ResolveFestivalID(ctx context.Context, campaignRoot, query string) (string,
 		return "", camperrors.Newf("festival ID %s is ambiguous: %s", id, strings.Join(matches, ", "))
 	}
 	return matches[0], nil
+}
+
+func isFestivalDateBucket(name string) bool {
+	if statuspath.IsDateDir(name) {
+		return true
+	}
+	_, err := time.Parse("2006-01", name)
+	return err == nil
 }
