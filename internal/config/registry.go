@@ -447,7 +447,9 @@ func (r *Registry) FindByPath(path string) (RegisteredCampaign, bool) {
 }
 
 // VerifyAndRepair validates all registry entries against their campaign.yaml files
-// and auto-heals any inconsistencies by removing bad entries and creating correct ones.
+// and repairs metadata only when a config can be read. Unavailable entries are
+// retained: a missing mount, partial checkout, or config edit is not an unregister.
+// Explicit removal belongs to camp unregister or camp registry prune.
 func (r *Registry) VerifyAndRepair(ctx context.Context) (*VerificationReport, error) {
 	if ctx.Err() != nil {
 		return nil, ctx.Err()
@@ -465,41 +467,21 @@ func (r *Registry) VerifyAndRepair(ctx context.Context) (*VerificationReport, er
 	for id, entry := range r.Campaigns {
 		report.TotalVerified++
 
-		// Check path exists
-		if _, err := os.Stat(entry.Path); os.IsNotExist(err) {
-			report.Removed = append(report.Removed, RemovedEntry{
-				ID:     id,
-				Name:   entry.Name,
-				Path:   entry.Path,
-				Reason: "path does not exist",
-			})
-			toRemove = append(toRemove, id)
-			continue
+		if err := ctx.Err(); err != nil {
+			return nil, err
 		}
 
-		// Check campaign.yaml exists
-		configPath := filepath.Join(entry.Path, CampaignDir, CampaignConfigFile)
-		if _, err := os.Stat(configPath); os.IsNotExist(err) {
-			report.Removed = append(report.Removed, RemovedEntry{
-				ID:     id,
-				Name:   entry.Name,
-				Path:   entry.Path,
-				Reason: "no campaign.yaml (not a camp)",
-			})
-			toRemove = append(toRemove, id)
-			continue
-		}
-
-		// Load campaign.yaml
+		// Loading can fail temporarily, including when campaign.yaml is being
+		// rewritten or the camp's filesystem is offline. Keep its registration.
 		cfg, err := LoadCampaignConfig(ctx, entry.Path)
 		if err != nil {
-			report.Removed = append(report.Removed, RemovedEntry{
-				ID:     id,
-				Name:   entry.Name,
-				Path:   entry.Path,
-				Reason: fmt.Sprintf("invalid campaign.yaml: %v", err),
+			if ctx.Err() != nil {
+				return nil, ctx.Err()
+			}
+			report.Skipped = append(report.Skipped, SkippedEntry{
+				ID: id, Name: entry.Name, Path: entry.Path,
+				Reason: fmt.Sprintf("cannot read campaign.yaml: %v", err),
 			})
-			toRemove = append(toRemove, id)
 			continue
 		}
 

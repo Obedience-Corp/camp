@@ -475,6 +475,7 @@ func (t CampaignType) String() string {
 
 // VerificationReport contains results from registry verification.
 type VerificationReport struct {
+	Skipped       []SkippedEntry
 	Removed       []RemovedEntry
 	Updated       []UpdatedEntry
 	Added         []AddedEntry
@@ -484,6 +485,14 @@ type VerificationReport struct {
 // HasChanges returns true if any changes were made during verification.
 func (r *VerificationReport) HasChanges() bool {
 	return len(r.Removed) > 0 || len(r.Updated) > 0 || len(r.Added) > 0
+}
+
+// SkippedEntry is a registration retained because its config could not be read.
+type SkippedEntry struct {
+	ID     string
+	Name   string
+	Path   string
+	Reason string
 }
 
 // RemovedEntry represents a registry entry that was removed during verification.

@@ -800,55 +800,47 @@ func TestRegistry_VerifyAndRepair_ContextCancelled(t *testing.T) {
 	}
 }
 
-func TestRegistry_VerifyAndRepair_RemoveMissingPath(t *testing.T) {
-	reg := NewRegistry()
-	// Register campaign with nonexistent path
-	if err := reg.Register("test-id", "test", "/nonexistent/path", CampaignTypeProduct); err != nil {
-		t.Fatalf("Register() error = %v", err)
-	}
-
-	ctx := context.Background()
-	report, err := reg.VerifyAndRepair(ctx)
-	if err != nil {
-		t.Fatalf("VerifyAndRepair() error = %v", err)
-	}
-
-	if !report.HasChanges() {
-		t.Error("expected changes in report")
-	}
-	if len(report.Removed) != 1 {
-		t.Errorf("len(Removed) = %d, want 1", len(report.Removed))
-	}
-	if report.Removed[0].Reason != "path does not exist" {
-		t.Errorf("Reason = %q, want 'path does not exist'", report.Removed[0].Reason)
-	}
-
-	// Verify entry was removed
-	if _, ok := reg.GetByID("test-id"); ok {
-		t.Error("campaign should be removed from registry")
-	}
-}
-
-func TestRegistry_VerifyAndRepair_RemoveNoCampaignYaml(t *testing.T) {
-	dir := t.TempDir()
-
-	reg := NewRegistry()
-	// Register campaign pointing to directory without .campaign/campaign.yaml
-	if err := reg.Register("test-id", "test", dir, CampaignTypeProduct); err != nil {
-		t.Fatalf("Register() error = %v", err)
-	}
-
-	ctx := context.Background()
-	report, err := reg.VerifyAndRepair(ctx)
-	if err != nil {
-		t.Fatalf("VerifyAndRepair() error = %v", err)
-	}
-
-	if len(report.Removed) != 1 {
-		t.Errorf("len(Removed) = %d, want 1", len(report.Removed))
-	}
-	if report.Removed[0].Reason != "no campaign.yaml (not a camp)" {
-		t.Errorf("Reason = %q, want 'no campaign.yaml (not a camp)'", report.Removed[0].Reason)
+func TestRegistry_VerifyAndRepair_RetainsUnavailable(t *testing.T) {
+	for _, kind := range []string{"missing path", "missing config", "invalid config", "unreadable config"} {
+		t.Run(kind, func(t *testing.T) {
+			dir := t.TempDir()
+			root := filepath.Join(dir, "camp")
+			configPath := filepath.Join(root, CampaignDir, CampaignConfigFile)
+			if kind != "missing path" {
+				if err := os.MkdirAll(filepath.Dir(configPath), 0o755); err != nil {
+					t.Fatal(err)
+				}
+			}
+			if kind == "invalid config" {
+				if err := os.WriteFile(configPath, []byte("name: ["), 0o644); err != nil {
+					t.Fatal(err)
+				}
+			}
+			if kind == "unreadable config" {
+				// A directory produces a read error even when tests run as root.
+				if err := os.Mkdir(configPath, 0o755); err != nil {
+					t.Fatal(err)
+				}
+			}
+			reg := NewRegistry()
+			if err := reg.Register("test-id", "test", root, CampaignTypeProduct); err != nil {
+				t.Fatal(err)
+			}
+			before := reg.Campaigns["test-id"]
+			report, err := reg.VerifyAndRepair(context.Background())
+			if err != nil {
+				t.Fatal(err)
+			}
+			if report.HasChanges() || len(report.Skipped) != 1 {
+				t.Fatalf("expected one retained entry and no mutations: %+v", report)
+			}
+			if got := reg.Campaigns["test-id"]; !reflect.DeepEqual(got, before) {
+				t.Fatalf("registration changed: got %+v, want %+v", got, before)
+			}
+			if _, ok := reg.FindByPath(root); !ok {
+				t.Fatal("retained entry missing from path index")
+			}
+		})
 	}
 }
 
