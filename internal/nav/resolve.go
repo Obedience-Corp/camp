@@ -24,6 +24,12 @@ func ResolveRelativePathNavigation(ctx context.Context, campaignRoot, relativePa
 		return jumpResult.Path, nil
 	}
 
+	if IsFestivalsRelativePath(relativePath) {
+		if path, err := ResolveFestivalID(ctx, campaignRoot, query); err != nil || path != "" {
+			return path, err
+		}
+	}
+
 	basePath := filepath.Join(campaignRoot, relativePath)
 	exactPath := filepath.Join(basePath, query)
 	if info, err := os.Stat(exactPath); err == nil && info.IsDir() {

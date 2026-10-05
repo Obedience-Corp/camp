@@ -81,6 +81,9 @@ func Resolve(ctx context.Context, opts ResolveOptions) (*ResolveResult, error) {
 	}
 
 	// Has query - use index for search
+	if festival, err := resolveFestivalID(ctx, opts); festival != nil || err != nil {
+		return festival, err
+	}
 	return resolveWithQuery(ctx, opts)
 }
 
