@@ -235,3 +235,45 @@ func TestResumeSwitchArgsKeepsScope(t *testing.T) {
 		t.Fatalf("args=%q, want %q", got, want)
 	}
 }
+
+func TestRunSwitchRejectsPartialFleetResults(t *testing.T) {
+	for _, withLocal := range []bool{false, true} {
+		for _, hasCandidate := range []bool{false, true} {
+			name := map[bool]string{false: "empty", true: "local"}[withLocal] +
+				map[bool]string{false: "-miss", true: "-candidate"}[hasCandidate]
+			t.Run(name, func(t *testing.T) {
+				fleetReviewEnv(t, withLocal)
+				writeReviewMachines(t)
+				stubFleet(t, func(_ context.Context, m *machines.Machine) ([]campaignEntry, error) {
+					if m.ID == "remote-b" {
+						return nil, errors.New("connection refused")
+					}
+					if hasCandidate {
+						return []campaignEntry{{ID: "notes-id", Name: "notes", Status: config.StatusActive}}, nil
+					}
+					return nil, nil
+				})
+				prev := resolveRemoteRoot
+				resolveRemoteRoot = func(context.Context, *machines.Machine, string) (string, error) {
+					t.Error("partial fleet lookup must not select a target")
+					return "", errors.New("unexpected remote resolution")
+				}
+				t.Cleanup(func() { resolveRemoteRoot = prev })
+
+				cmd, out := fleetReviewCmd(cmdutil.CampaignScope{}, true)
+				err := runSwitch(cmd, []string{"notes"})
+				if err == nil || errors.Is(err, errFleetMiss) {
+					t.Fatalf("partial results must be reported as incomplete, got %v", err)
+				}
+				for _, want := range []string{"fleet lookup incomplete", "remote-b", "connection refused", "camp machine diagnose", "machine:camp"} {
+					if !strings.Contains(err.Error(), want) {
+						t.Errorf("error = %v, want %q", err, want)
+					}
+				}
+				if out.Len() != 0 {
+					t.Fatalf("incomplete lookup emitted a shell command: %s", out)
+				}
+			})
+		}
+	}
+}

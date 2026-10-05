@@ -171,8 +171,10 @@ func lookupFleetCampaign(ctx context.Context, query string, scope cmdutil.Campai
 		return fleetCamp{}, err
 	}
 	var live []fleetCamp
+	var failed []string
 	for _, result := range results {
 		if result.err != nil {
+			failed = append(failed, result.machineID+": "+formatUnreachableErr(result.err))
 			continue
 		}
 		// Re-filter locally too: older remote binaries may ignore filters.
@@ -183,14 +185,18 @@ func lookupFleetCampaign(ctx context.Context, query string, scope cmdutil.Campai
 			})
 		}
 	}
-	hit, matchErr := matchFleetCamps(query, live)
-	if matchErr == nil || !errors.Is(matchErr, errFleetMiss) {
-		return hit, matchErr
+	// Unreachable machines may contain another match. Neither uniqueness nor
+	// absence can be established from a partial scan, regardless of the rows
+	// that the successful machines returned.
+	if len(failed) > 0 {
+		verdict := "fleet lookup incomplete"
+		if len(failed) == len(results) {
+			verdict = "every remote machine failed to answer"
+		}
+		return fleetCamp{}, camperrors.Newf("camp %q: %s; failed machines: %s\nHint: run 'camp machine diagnose' or select a known target with 'csw machine:camp'",
+			query, verdict, strings.Join(failed, "; "))
 	}
-	if remoteAttemptsAllFailed(results) {
-		return fleetCamp{}, camperrors.New(fmt.Sprintf("camp %q was not found on this machine, and every remote machine failed to answer\nHint: run 'camp machine diagnose'", query))
-	}
-	return fleetCamp{}, errFleetMiss
+	return matchFleetCamps(query, live)
 }
 
 func scopedFleetName(org, name string) string {
@@ -198,18 +204,6 @@ func scopedFleetName(org, name string) string {
 		return org + "/" + name
 	}
 	return name
-}
-
-func remoteAttemptsAllFailed(results []remoteResult) bool {
-	if len(results) == 0 {
-		return false
-	}
-	for _, r := range results {
-		if r.err == nil {
-			return false
-		}
-	}
-	return true
 }
 
 // fleetSwitchSelector turns a fleet hit back into the machine:camp form the

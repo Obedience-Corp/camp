@@ -342,3 +342,8 @@ The selected camp ID and org identify the target across the handoff. A return
 switch carries its scope through the resume socket and resolves locally on the
 parent, so it cannot silently fall back to another machine. Named origin switches
 need the resume socket; `csw -` can still return without it.
+
+Bare-name lookup requires every queried machine to answer. If any machine fails,
+Camp reports the failed machines and treats the lookup as incomplete, even when a
+reachable machine has a matching camp. Retry after resolving the failure, or use
+an explicit `csw machine:camp` selector to choose a known target.
