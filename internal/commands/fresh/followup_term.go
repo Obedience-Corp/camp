@@ -51,6 +51,13 @@ func runFollowUpOnTerminal(cmd *exec.Cmd, parent *os.File, output io.Writer) err
 		_ = slave.Close()
 		return camperrors.WrapJoin(errFollowUpTTYUnavailable, err, "")
 	}
+	// pty.Open's ioctl calls leave the master in blocking mode. Restore
+	// nonblocking reads so Close can wake io.Copy when a surviving descendant
+	// still holds the slave after the shell exits or is cancelled.
+	if err := setFollowUpPTYNonblocking(master); err != nil {
+		_ = slave.Close()
+		return camperrors.WrapJoin(errFollowUpTTYUnavailable, err, "")
+	}
 
 	cmd.Stdout = slave
 	cmd.Stderr = slave
