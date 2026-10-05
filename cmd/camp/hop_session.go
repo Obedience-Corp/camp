@@ -67,6 +67,9 @@ func selectorNamesOrigin(machineSel string, origin HopOrigin) bool {
 	if machineSel == "" {
 		return false
 	}
+	if machineSel == transientOriginID(origin.Host) {
+		return true
+	}
 	if origin.ID != "" && machineSel == origin.ID {
 		return true
 	}
@@ -102,15 +105,15 @@ func unwindInsteadOfHop(msel cmdutil.ParsedMachineSelector) (resume string, unwi
 	}
 	if !selectorNamesOrigin(msel.Machine, origin) {
 		if msel.Remainder == "" {
-			return msel.Machine, true
+			return msel.Machine + ":", true
 		}
 		return msel.Machine + ":" + msel.Remainder, true
 	}
 	parsed := cmdutil.ParseSwitchSelector(msel.Remainder)
-	if parsed.Campaign == "" || (sameCampaignName(parsed.Campaign, origin.Campaign) && !parsed.HasTab) {
+	if parsed.Campaign == "" {
 		return "", true
 	}
-	return msel.Remainder, true
+	return "local:" + msel.Remainder, true
 }
 
 // emitHopUnwind writes the shell line that pops this hop. A non-empty resume
@@ -148,7 +151,11 @@ func emitHopUnwind(cmd *cobra.Command, resume string, printOnly, shellConnect, j
 	}
 	_, _ = fmt.Fprintln(cmd.ErrOrStderr(), ui.Dim("camp: returning to "+label+
 		" — unwinding this ssh session, then switching to "+resume))
-	_, err := io.WriteString(cmd.OutOrStdout(), resumeSwitchLine(resume))
+	scope, err := switchScopeFromFlags(cmd)
+	if err != nil {
+		return err
+	}
+	_, err = io.WriteString(cmd.OutOrStdout(), resumeSwitchLine(resume, scope))
 	return err
 }
 

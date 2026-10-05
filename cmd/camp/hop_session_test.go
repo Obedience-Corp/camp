@@ -128,17 +128,17 @@ func TestUnwindInsteadOfHop(t *testing.T) {
 
 	t.Setenv("SSH_CONNECTION", "100.1.2.3 50000 100.4.5.6 22")
 
-	// Origin + its own camp unwinds in place. The shell underneath is already there.
-	if resume, unwind := unwindInsteadOfHop(sel("devbox:obey-campaign")); !unwind || resume != "" {
+	// Named camps resolve again on the parent so lifecycle scope is enforced.
+	if resume, unwind := unwindInsteadOfHop(sel("devbox:obey-campaign")); !unwind || resume != "local:obey-campaign" {
 		t.Errorf("origin+own camp: want plain unwind, got unwind=%v resume=%q", unwind, resume)
 	}
-	// A typed alias of the origin camp ("obey_campaign") is the same camp.
-	if resume, unwind := unwindInsteadOfHop(sel("devbox:obey_campaign")); !unwind || resume != "" {
+	// Preserve the typed selector for resolution on the parent.
+	if resume, unwind := unwindInsteadOfHop(sel("devbox:obey_campaign")); !unwind || resume != "local:obey_campaign" {
 		t.Errorf("origin camp alias: want plain unwind, got unwind=%v resume=%q", unwind, resume)
 	}
 	// A different camp on the origin unwinds and tells the shell underneath
 	// which camp to open. It must not be a second ssh.
-	if resume, unwind := unwindInsteadOfHop(sel("devbox:something-else")); !unwind || resume != "something-else" {
+	if resume, unwind := unwindInsteadOfHop(sel("devbox:something-else")); !unwind || resume != "local:something-else" {
 		t.Errorf("origin+other camp: want resume something-else, got unwind=%v resume=%q", unwind, resume)
 	}
 	// A third machine unwinds too. The shell underneath opens that hop, so the

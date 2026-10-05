@@ -321,7 +321,33 @@ func resolveRootArgs(remainder string) string {
 // never the local filesystem. The remainder is single-quoted for injection
 // safety. The returned path is meaningful only on the far machine.
 func ResolveRoot(ctx context.Context, m *machines.Machine, remainder string) (string, error) {
-	out, err := RunCampCommand(ctx, m, resolveRootArgs(remainder))
+	return ResolveRootScoped(ctx, m, remainder, SwitchScope{})
+}
+
+// SwitchScope constrains the remote switch exactly as the initiating command.
+type SwitchScope struct {
+	Org    string
+	Status string
+	All    bool
+}
+
+func scopedResolveRootArgs(remainder string, scope SwitchScope) string {
+	args := resolveRootArgs(remainder)
+	if scope.Org != "" {
+		args += " --org " + ShellQuote(scope.Org)
+	}
+	if scope.Status != "" {
+		args += " --status " + ShellQuote(scope.Status)
+	}
+	if scope.All {
+		args += " --all"
+	}
+	return args
+}
+
+// ResolveRootScoped preserves org and lifecycle constraints on the far machine.
+func ResolveRootScoped(ctx context.Context, m *machines.Machine, remainder string, scope SwitchScope) (string, error) {
+	out, err := RunCampCommand(ctx, m, scopedResolveRootArgs(remainder, scope))
 	if err != nil {
 		return "", camperrors.Wrapf(err, "could not resolve %q on %s", remainder, m.ID)
 	}

@@ -69,4 +69,26 @@ machines:
 
 	countOut := tc.Shell(t, "ls /root/.obey/ssh-ctl/ | wc -l")
 	require.Equal(t, "1", strings.TrimSpace(countOut), "resolve and hop should share a single ControlMaster socket")
+
+	// Scope must reach the remote switch, not stop at local candidate filtering.
+	out, err := tc.RunCamp("lifecycle", "set", campaignName, "inactive")
+	require.NoError(t, err, "%s", out)
+	out, err = tc.RunCamp("switch", "self:"+campaignName, "--shell-connect")
+	require.Error(t, err, "default active scope must reject an inactive remote camp: %s", out)
+	for _, flags := range [][]string{{"--status", "inactive"}, {"--all"}} {
+		args := append([]string{"switch", "self:" + campaignName, "--shell-connect"}, flags...)
+		out, err := tc.RunCamp(args...)
+		require.NoError(t, err, "remote scope %v was lost: %s", flags, out)
+		require.Contains(t, out, root)
+
+		// Empty only the initiating process's registry. The remote SSH command
+		// still sees the real registry, exercising bare-name fleet selection
+		// and its final org/ID selector through the actual remote binary.
+		fleetArgs := append([]string{"env", "CAMP_REGISTRY_PATH=/tmp/fleet-empty-registry.json", "/camp", "switch", campaignName, "--shell-connect"}, flags...)
+		out, code, err := tc.ExecCommand(fleetArgs...)
+		require.NoError(t, err)
+		require.Zero(t, code, "bare-name fleet scope %v was lost: %s", flags, out)
+		require.Contains(t, out, root)
+	}
+
 }

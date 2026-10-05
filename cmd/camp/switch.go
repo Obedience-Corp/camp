@@ -59,6 +59,10 @@ A bare name is resolved on this machine first, then across machines in
 hops there. From inside a hop, a switch to any other machine unwinds this
 ssh session first and continues in the shell underneath, so hops do not nest
 and a camp name behaves the same wherever you are sitting.
+Remote candidates are checked against live org and lifecycle metadata. Name-only
+completion caches do not select a camp. Org/status filters and the selected camp
+identity are preserved through remote resolution and resumed switches.
+Explicit local: or self-machine selectors only search that machine.
 
 Use machine:campaign to name a machine explicitly. The interactive picker
 also lists remote camps when machines are configured (locals open instantly;
@@ -322,13 +326,6 @@ func runSwitch(cmd *cobra.Command, args []string) error {
 	if err != nil {
 		return camperrors.Wrap(err, "load registry")
 	}
-	hasMachines := false
-	if mf, merr := machines.Load(); merr == nil && len(mf.Machines) > 0 {
-		hasMachines = true
-	}
-	if reg.Len() == 0 && !hasMachines {
-		return camperrors.Newf("no camps registered (use 'camp init' to create one)")
-	}
 
 	var selected config.RegisteredCampaign
 	targetPath := ""
@@ -348,7 +345,7 @@ func runSwitch(cmd *cobra.Command, args []string) error {
 			// different camp on the origin. A fresh shell dials.
 			return dispatchRemoteSwitch(ctx, cmd, msel, printOnly, shellConnect, jsonOut)
 		}
-		if reg.Len() == 0 {
+		if reg.Len() == 0 && msel.Machine == "" {
 			if handled, ferr := dispatchFleetSwitch(ctx, cmd, msel.Remainder, scope, printOnly, shellConnect, jsonOut); handled {
 				return ferr
 			}
@@ -366,7 +363,7 @@ func runSwitch(cmd *cobra.Command, args []string) error {
 		c, err := cmdutil.ResolveCampaignSelectionScoped(parsed.Campaign, reg, scope, cmd.ErrOrStderr())
 		if err != nil {
 			var missing *cmdutil.CampaignNotFoundError
-			if errors.As(err, &missing) {
+			if msel.Machine == "" && errors.As(err, &missing) {
 				if handled, ferr := dispatchFleetSwitch(ctx, cmd, msel.Remainder, scope, printOnly, shellConnect, jsonOut); handled {
 					return ferr
 				}
@@ -392,7 +389,7 @@ func runSwitch(cmd *cobra.Command, args []string) error {
 		if pick.Kind == switchPickRemote {
 			return dispatchRemoteSwitch(ctx, cmd, cmdutil.ParsedMachineSelector{
 				Machine:   pick.Machine,
-				Remainder: pick.Name,
+				Remainder: scopedFleetName(pick.Org, pick.Name),
 			}, printOnly, shellConnect, jsonOut)
 		}
 		selected = pick.Local

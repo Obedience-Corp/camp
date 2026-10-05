@@ -24,6 +24,9 @@ var errFleetMiss = errors.New("no matching camp on another machine")
 type fleetCamp struct {
 	Machine string
 	Name    string
+	ID      string
+	Org     string
+	Status  string
 }
 
 // normalizeCampName folds case and drops the separators people leave out when
@@ -112,7 +115,7 @@ func dedupeFleetCamps(camps []fleetCamp) []fleetCamp {
 		if c.Machine == "" || c.Name == "" {
 			continue
 		}
-		key := c.Machine + "\n" + c.Name
+		key := c.Machine + "\n" + c.Org + "\n" + c.Name + "\n" + c.ID
 		if _, ok := seen[key]; ok {
 			continue
 		}
@@ -126,7 +129,7 @@ func ambiguousFleetError(query string, hits []fleetCamp) error {
 	labels := make([]string, 0, len(hits))
 	seen := map[string]struct{}{}
 	for _, h := range hits {
-		label := h.Machine + ":" + h.Name
+		label := h.Machine + ":" + scopedFleetName(h.Org, h.Name)
 		if _, ok := seen[label]; ok {
 			continue
 		}
@@ -142,121 +145,59 @@ func ambiguousFleetError(query string, hits []fleetCamp) error {
 		query, strings.Join(shown, ", "), shown[0]))
 }
 
-// fleetCandidatesFromCache is the no-network view: the hop origin's camp, plus
-// every machine's cached names (including a stale pull cache).
-func fleetCandidatesFromCache() []fleetCamp {
-	var out []fleetCamp
-	if c, ok := originFleetCandidate(); ok {
-		out = append(out, c)
+// Fleet selection needs authoritative org and lifecycle metadata. Completion
+// caches contain names only (possibly from --all), so they cannot select a camp.
+// The hop origin is enumerated like every other machine, even before adoption.
+var fleetEnumerator = enumerateRemoteFor
+
+func lookupFleetCampaign(ctx context.Context, query string, scope cmdutil.CampaignScope) (fleetCamp, error) {
+	if err := ctx.Err(); err != nil {
+		return fleetCamp{}, err
 	}
 	mf, err := machines.Load()
 	if err != nil {
-		return dedupeFleetCamps(out)
-	}
-	for _, m := range mf.Machines {
-		names, ok := readMachineCacheCampaignsIncludingStale(m.ID)
-		if !ok {
-			continue
-		}
-		for _, name := range names {
-			out = append(out, fleetCamp{Machine: m.ID, Name: name})
-		}
-	}
-	return dedupeFleetCamps(out)
-}
-
-func originFleetCandidate() (fleetCamp, bool) {
-	origin, ok := sessionHopOrigin()
-	if !ok || origin.Campaign == "" {
-		return fleetCamp{}, false
-	}
-	id := origin.ID
-	if mf, err := machines.Load(); err == nil {
-		if id != "" {
-			if m, _, found := mf.Lookup(id); found && m != nil {
-				id = m.ID
-			}
-		}
-		if id == "" || !fleetIDKnown(mf, id) {
-			want := strings.ToLower(normalizeDNSName(origin.Host))
-			for i := range mf.Machines {
-				if strings.ToLower(normalizeDNSName(mf.Machines[i].Host)) == want {
-					id = mf.Machines[i].ID
-					break
-				}
-			}
-		}
-	}
-	if id == "" {
-		id = suggestedMachineID(origin.Host)
-	}
-	if id == "" {
-		return fleetCamp{}, false
-	}
-	return fleetCamp{Machine: id, Name: origin.Campaign}, true
-}
-
-func fleetIDKnown(mf *machines.File, id string) bool {
-	if mf == nil || id == "" {
-		return false
-	}
-	_, _, found := mf.Lookup(id)
-	return found
-}
-
-func scopeRestrictsFleet(scope cmdutil.CampaignScope) bool {
-	return scope.Org != "" || scope.Status != "" || scope.All
-}
-
-// lookupFleetCampaign resolves a bare camp name that missed the local registry.
-// Cache and the hop origin are tried first so a warm fleet does not ssh. A miss
-// there enumerates ~/.obey/machines.yaml, because a name that was never cached
-// is still a real camp.
-func lookupFleetCampaign(ctx context.Context, query string, scope cmdutil.CampaignScope) (fleetCamp, error) {
-	if !scopeRestrictsFleet(scope) {
-		hit, err := matchFleetCamps(query, fleetCandidatesFromCache())
-		if err == nil || !errors.Is(err, errFleetMiss) {
-			return hit, err
-		}
-	}
-
-	mf, loadErr := machines.Load()
-	originHit, hasOrigin := originFleetCandidate()
-	if loadErr != nil {
-		if hasOrigin {
-			return matchFleetCamps(query, []fleetCamp{originHit})
-		}
-		return fleetCamp{}, errFleetMiss
-	}
-	if len(mf.Machines) == 0 {
-		if hasOrigin {
-			return matchFleetCamps(query, []fleetCamp{originHit})
-		}
-		return fleetCamp{}, errFleetMiss
-	}
-
-	rows, results, err := loadRemoteCampaigns(ctx, listFilterFromScope(scope))
-	if err != nil {
 		return fleetCamp{}, err
 	}
-	live := make([]fleetCamp, 0, len(rows)+1)
-	if hasOrigin {
-		live = append(live, originHit)
+	targets := append([]machines.Machine(nil), mf.Machines...)
+	if origin, ok := sessionHopOrigin(); ok && insideSSHSession() {
+		m, registered := originTarget(origin)
+		if !registered {
+			targets = append(targets, *m)
+		}
 	}
-	for _, row := range rows {
-		if row.Machine == "" || row.Machine == machines.LocalMachineID {
+	filter := listFilterFromScope(scope)
+	results := fanOutRemote(ctx, targets, fleetEnumerator(filter))
+	if err := ctx.Err(); err != nil {
+		return fleetCamp{}, err
+	}
+	var live []fleetCamp
+	for _, result := range results {
+		if result.err != nil {
 			continue
 		}
-		live = append(live, fleetCamp{Machine: row.Machine, Name: row.Name})
+		// Re-filter locally too: older remote binaries may ignore filters.
+		for _, row := range filterEntries(result.rows, filter) {
+			live = append(live, fleetCamp{
+				Machine: result.machineID, Name: row.Name, ID: row.ID,
+				Org: row.Org, Status: row.Status,
+			})
+		}
 	}
 	hit, matchErr := matchFleetCamps(query, live)
 	if matchErr == nil || !errors.Is(matchErr, errFleetMiss) {
 		return hit, matchErr
 	}
-	if len(rows) == 0 && remoteAttemptsAllFailed(results) {
+	if remoteAttemptsAllFailed(results) {
 		return fleetCamp{}, camperrors.New(fmt.Sprintf("camp %q was not found on this machine, and every remote machine failed to answer\nHint: run 'camp machine diagnose'", query))
 	}
 	return fleetCamp{}, errFleetMiss
+}
+
+func scopedFleetName(org, name string) string {
+	if org != "" {
+		return org + "/" + name
+	}
+	return name
 }
 
 func remoteAttemptsAllFailed(results []remoteResult) bool {
@@ -274,7 +215,11 @@ func remoteAttemptsAllFailed(results []remoteResult) bool {
 // fleetSwitchSelector turns a fleet hit back into the machine:camp form the
 // remote path already understands. hasTab keeps a `@tab` the user typed.
 func fleetSwitchSelector(hit fleetCamp, hasTab bool, tab string) (cmdutil.ParsedMachineSelector, error) {
-	rem := hit.Name
+	name := hit.ID
+	if name == "" {
+		name = hit.Name
+	}
+	rem := scopedFleetName(hit.Org, name)
 	if hasTab {
 		rem += "@" + tab
 	}
@@ -292,6 +237,15 @@ func reportFleetMatch(w io.Writer, query string, hit fleetCamp) {
 // Unwind is what keeps a switch from nesting ssh sessions.
 func dispatchRemoteSwitch(ctx context.Context, cmd *cobra.Command, msel cmdutil.ParsedMachineSelector, printOnly, shellConnect, jsonOut bool) error {
 	if resume, unwind := unwindInsteadOfHop(msel); unwind {
+		scope, err := switchScopeFromFlags(cmd)
+		if err != nil {
+			return err
+		}
+		// An explicit scope must be checked on the parent even for its own
+		// camp. A plain exit cannot validate org or lifecycle membership.
+		if resume == "" && (scope.Org != "" || scope.Status != "" || scope.All || cmdutil.ParseSwitchSelector(msel.Remainder).Org != "") {
+			resume = "local:" + msel.Remainder
+		}
 		return emitHopUnwind(cmd, resume, printOnly, shellConnect, jsonOut)
 	}
 	return runRemoteSwitch(ctx, cmd, msel, printOnly, shellConnect, jsonOut)
@@ -302,7 +256,7 @@ func dispatchRemoteSwitch(ctx context.Context, cmd *cobra.Command, msel cmdutil.
 func dispatchFleetSwitch(ctx context.Context, cmd *cobra.Command, raw string, scope cmdutil.CampaignScope, printOnly, shellConnect, jsonOut bool) (bool, error) {
 	parsed, err := parseSwitchArg(raw, scope)
 	if err != nil {
-		return false, err
+		return true, err
 	}
 	if parsed.Org != "" {
 		scope.Org = parsed.Org
@@ -315,7 +269,7 @@ func dispatchFleetSwitch(ctx context.Context, cmd *cobra.Command, raw string, sc
 		return false, nil
 	}
 	if err != nil {
-		return false, err
+		return true, err
 	}
 	if hit.Machine == machines.LocalMachineID || isSelfMachine(ctx, hit.Machine) {
 		return false, nil
@@ -323,7 +277,7 @@ func dispatchFleetSwitch(ctx context.Context, cmd *cobra.Command, raw string, sc
 	reportFleetMatch(cmd.ErrOrStderr(), parsed.Campaign, hit)
 	msel, err := fleetSwitchSelector(hit, parsed.HasTab, parsed.Tab)
 	if err != nil {
-		return false, err
+		return true, err
 	}
 	return true, dispatchRemoteSwitch(ctx, cmd, msel, printOnly, shellConnect, jsonOut)
 }

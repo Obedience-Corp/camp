@@ -1,6 +1,7 @@
 package main
 
 import (
+	"encoding/json"
 	"fmt"
 	"io"
 	"net"
@@ -9,6 +10,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/Obedience-Corp/camp/cmd/camp/cmdutil"
 	"github.com/spf13/cobra"
 
 	camperrors "github.com/Obedience-Corp/camp/internal/errors"
@@ -23,6 +25,9 @@ const hopResumeSockEnv = "CAMP_HOP_RESUME_SOCK"
 func init() {
 	rootCmd.AddCommand(hopResumeCmd)
 	hopResumeCmd.AddCommand(hopResumeSendCmd, hopResumeRunCmd)
+	hopResumeSendCmd.Flags().String("org", "", "Limit the resumed switch to this org")
+	hopResumeSendCmd.Flags().String("status", "", "Limit the resumed switch to this status")
+	hopResumeSendCmd.Flags().Bool("all", false, "Include all lifecycle statuses")
 }
 
 // hopResumeCmd is wrapper plumbing. Operators do not type it; shell-init calls
@@ -37,8 +42,12 @@ var hopResumeSendCmd = &cobra.Command{
 	Use:    "send <selector>",
 	Hidden: true,
 	Args:   cobra.ExactArgs(1),
-	RunE: func(_ *cobra.Command, args []string) error {
-		return sendHopResume(args[0])
+	RunE: func(cmd *cobra.Command, args []string) error {
+		scope, err := switchScopeFromFlags(cmd)
+		if err != nil {
+			return err
+		}
+		return sendHopResume(args[0], scope)
 	},
 }
 
@@ -58,7 +67,12 @@ var hopResumeRunCmd = &cobra.Command{
 	},
 }
 
-func sendHopResume(selector string) error {
+type hopResumeRequest struct {
+	Selector string                `json:"selector"`
+	Scope    cmdutil.CampaignScope `json:"scope"`
+}
+
+func sendHopResume(selector string, scope cmdutil.CampaignScope) error {
 	selector, err := sanitizeResumeSelector(selector)
 	if err != nil {
 		return err
@@ -76,8 +90,7 @@ func sendHopResume(selector string) error {
 		return camperrors.Wrap(err, "hop-resume: tell the shell that opened this hop")
 	}
 	defer func() { _ = conn.Close() }()
-	_, err = io.WriteString(conn, selector+"\n")
-	return err
+	return json.NewEncoder(conn).Encode(hopResumeRequest{Selector: selector, Scope: scope})
 }
 
 func sanitizeResumeSelector(raw string) (string, error) {
@@ -109,7 +122,7 @@ func runHopResume(line string) (string, error) {
 	_ = os.Chmod(local, 0o700)
 	defer func() { _ = ln.Close() }()
 
-	got := make(chan string, 1)
+	got := make(chan hopResumeRequest, 1)
 	go func() {
 		sel, _ := readResumeSelector(ln)
 		got <- sel
@@ -134,7 +147,7 @@ func runHopResume(line string) (string, error) {
 	if runErr != nil {
 		return "", runErr
 	}
-	if sel == "" {
+	if sel.Selector == "" {
 		return "", nil
 	}
 	return switchFollowUp(sel)
@@ -154,18 +167,19 @@ func resumeSocketPaths() (local, remoteSock string, err error) {
 	return "/tmp/" + base + "-l.sock", "/tmp/" + base + "-r.sock", nil
 }
 
-func readResumeSelector(ln net.Listener) (string, error) {
+func readResumeSelector(ln net.Listener) (hopResumeRequest, error) {
 	conn, err := ln.Accept()
 	if err != nil {
-		return "", err
+		return hopResumeRequest{}, err
 	}
 	defer func() { _ = conn.Close() }()
 	_ = conn.SetDeadline(time.Now().Add(2 * time.Second))
-	data, err := io.ReadAll(io.LimitReader(conn, 4096))
-	if err != nil && !os.IsTimeout(err) {
-		return "", err
+	var request hopResumeRequest
+	if err := json.NewDecoder(io.LimitReader(conn, 4096)).Decode(&request); err != nil {
+		return hopResumeRequest{}, err
 	}
-	return sanitizeResumeSelector(string(data))
+	request.Selector, err = sanitizeResumeSelector(request.Selector)
+	return request, err
 }
 
 // prepareResumeSSH parses the one ssh line emitShellConnect prints and adds a
@@ -191,12 +205,26 @@ func prepareResumeSSH(line, localSock, remoteSock string) ([]string, error) {
 	return argv, nil
 }
 
-func switchFollowUp(selector string) (string, error) {
+func resumeSwitchArgs(request hopResumeRequest) []string {
+	args := []string{"switch", "--shell-connect"}
+	if request.Scope.Org != "" {
+		args = append(args, "--org", request.Scope.Org)
+	}
+	if request.Scope.Status != "" {
+		args = append(args, "--status", request.Scope.Status)
+	}
+	if request.Scope.All {
+		args = append(args, "--all")
+	}
+	return append(args, "--", request.Selector)
+}
+
+func switchFollowUp(request hopResumeRequest) (string, error) {
 	exe, err := os.Executable()
 	if err != nil || exe == "" {
 		exe = "camp"
 	}
-	cmd := exec.Command(exe, "switch", selector, "--shell-connect")
+	cmd := exec.Command(exe, resumeSwitchArgs(request)...)
 	cmd.Stderr = os.Stderr
 	out, err := cmd.Output()
 	if err != nil {
@@ -250,6 +278,16 @@ func splitShellQuoted(line string) ([]string, error) {
 // resumeSwitchLine is the remote shell line that hands selector to the shell
 // underneath this hop and then leaves. `exit` is what pops the ssh; send runs
 // first so a failed handoff does not dump the user in the wrong camp.
-func resumeSwitchLine(selector string) string {
-	return fmt.Sprintf("command camp hop-resume send -- %s && exit\n", remote.ShellQuote(selector))
+func resumeSwitchLine(selector string, scope cmdutil.CampaignScope) string {
+	var flags string
+	if scope.Org != "" {
+		flags += " --org " + remote.ShellQuote(scope.Org)
+	}
+	if scope.Status != "" {
+		flags += " --status " + remote.ShellQuote(scope.Status)
+	}
+	if scope.All {
+		flags += " --all"
+	}
+	return fmt.Sprintf("command camp hop-resume send%s -- %s && exit\n", flags, remote.ShellQuote(selector))
 }

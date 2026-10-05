@@ -7443,6 +7443,10 @@ A bare name is resolved on this machine first, then across machines in
 hops there. From inside a hop, a switch to any other machine unwinds this
 ssh session first and continues in the shell underneath, so hops do not nest
 and a camp name behaves the same wherever you are sitting.
+Remote candidates are checked against live org and lifecycle metadata. Name-only
+completion caches do not select a camp. Org/status filters and the selected camp
+identity are preserved through remote resolution and resumed switches.
+Explicit local: or self-machine selectors only search that machine.
 
 Use machine:campaign to name a machine explicitly. The interactive picker
 also lists remote camps when machines are configured (locals open instantly;

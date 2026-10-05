@@ -7,6 +7,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/Obedience-Corp/camp/cmd/camp/cmdutil"
 	"github.com/Obedience-Corp/camp/internal/machines"
 	"github.com/Obedience-Corp/camp/internal/remote"
 )
@@ -87,7 +88,7 @@ func TestPrepareResumeSSHInjectsSocket(t *testing.T) {
 }
 
 func TestResumeSwitchLineQuotesSelector(t *testing.T) {
-	line := resumeSwitchLine("Festival Method Kit")
+	line := resumeSwitchLine("Festival Method Kit", cmdutil.CampaignScope{})
 	if !strings.Contains(line, `'Festival Method Kit'`) || !strings.HasSuffix(line, "&& exit\n") {
 		t.Fatalf("line = %q", line)
 	}
@@ -104,7 +105,7 @@ func TestHopResumeSocketRoundTrip(t *testing.T) {
 		t.Fatal(err)
 	}
 	defer func() { _ = ln.Close() }()
-	got := make(chan string, 1)
+	got := make(chan hopResumeRequest, 1)
 	go func() {
 		sel, err := readResumeSelector(ln)
 		if err != nil {
@@ -113,10 +114,10 @@ func TestHopResumeSocketRoundTrip(t *testing.T) {
 		got <- sel
 	}()
 	t.Setenv(hopResumeSockEnv, local)
-	if err := sendHopResume("sarah"); err != nil {
+	if err := sendHopResume("sarah", cmdutil.CampaignScope{Org: "obey", Status: "inactive", All: true}); err != nil {
 		t.Fatal(err)
 	}
-	if sel := <-got; sel != "sarah" {
-		t.Fatalf("selector = %q", sel)
+	if sel := <-got; sel.Selector != "sarah" || sel.Scope.Org != "obey" || sel.Scope.Status != "inactive" || !sel.Scope.All {
+		t.Fatalf("request = %+v", sel)
 	}
 }

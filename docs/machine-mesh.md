@@ -331,3 +331,14 @@ hangs:
 - `camp machine --help` — the command surface
 - `camp machine diagnose <id>` — the one command to run when a hop fails
 - [transfer.md](./transfer.md) — moving files across the mesh
+
+### Scope during a resumed switch
+
+Bare-name fleet lookup reads live org and lifecycle metadata, including the hop
+origin when it has not been registered as a machine. Completion caches contain
+names only and cannot authorize a selection. Default lookups include active camps;
+`--org`, `--status`, and `--all` apply to the candidates and the final switch.
+The selected camp ID and org identify the target across the handoff. A return
+switch carries its scope through the resume socket and resolves locally on the
+parent, so it cannot silently fall back to another machine. Named origin switches
+need the resume socket; `csw -` can still return without it.
