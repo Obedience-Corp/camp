@@ -561,18 +561,37 @@ csw() {
 
 # Tab completion for csw (camp switch)
 _csw() {
-  local -a campaigns
-  local output line
+  setopt localoptions extendedglob
+  local -a campaigns prefixed
+  local output line typed
 
-  # Use Cobra's built-in completion mechanism
-  output=$(command camp __complete switch -- "${words[2]:-}" 2>/dev/null)
+  # Only the camp selector takes completion; a second word is never one.
+  (( CURRENT == 2 )) || return 1
+
+  # Use Cobra's built-in completion mechanism. camp fuzzy-matches the typed
+  # word server-side ("myt" -> "My_Tools"), so pass it unquoted.
+  typed="${(Q)words[CURRENT]:-}"
+  output=$(command camp __complete switch -- "$typed" 2>/dev/null)
   for line in ${(f)output}; do
     # Skip directive line (starts with :)
     [[ "$line" == :* ]] && continue
     [[ -n "$line" ]] && campaigns+=("$line")
   done
+  (( ${#campaigns} )) || return 1
 
-  (( ${#campaigns} )) && compadd -a campaigns
+  # When candidates share the typed prefix (any case), let zsh do its normal
+  # listing and automenu cycling, keeping what was typed on the line.
+  prefixed=(${(M)campaigns:#(#i)${(b)typed}*})
+  if (( ${#prefixed} )); then
+    compadd -M 'm:{a-zA-Z}={A-Za-z}' -a campaigns
+    return
+  fi
+
+  # Fuzzy-only matches ("myt" -> "My_Tools") would be dropped by zsh's own
+  # prefix filter and nothing inserted. -U accepts camp's candidates as-is;
+  # menu insertion puts the first on the line and cycles on further TABs.
+  compstate[insert]=menu
+  compadd -U -a campaigns
 }
 # Camp workitem shorthand.
 # Routes through the camp() wrapper, so selecting a work item cd's to it.
