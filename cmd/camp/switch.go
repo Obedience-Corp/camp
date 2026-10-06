@@ -14,10 +14,12 @@ import (
 	"github.com/spf13/cobra"
 
 	"github.com/Obedience-Corp/camp/cmd/camp/cmdutil"
+	"github.com/Obedience-Corp/camp/internal/complete"
 	"github.com/Obedience-Corp/camp/internal/config"
 	"github.com/Obedience-Corp/camp/internal/machines"
 	"github.com/Obedience-Corp/camp/internal/nav"
 	navfuzzy "github.com/Obedience-Corp/camp/internal/nav/fuzzy"
+	"github.com/Obedience-Corp/camp/internal/nav/index"
 	"github.com/Obedience-Corp/camp/internal/nav/tui"
 	"github.com/Obedience-Corp/camp/internal/remote"
 )
@@ -50,9 +52,13 @@ camp query.
 The --print flag outputs just the path for shell integration (local only):
   cd "$(camp switch --print)"
 
-Use camp@tab to navigate to a specific location in the target camp:
-  camp switch obey-campaign@p    # Switch and navigate to projects/
-  camp switch obey/platform@f    # Switch inside org and navigate to festivals/
+Use camp@target to land somewhere specific in the target camp. The part
+after @ resolves exactly like 'camp go' inside that camp: a navigation tab
+first, then any indexed target such as a project, worktree, or festival.
+  camp switch obey-campaign@p         # Switch and navigate to projects/
+  camp switch obey/platform@f         # Switch inside org and navigate to festivals/
+  csw mytools@keepshot                # Switch and land in projects/keepshot
+  csw mytools@p@keepshot              # Same, via the tab drill form
 
 A bare name is resolved on this machine first, then across machines in
 ~/.obey/machines.yaml and the machine this shell was hopped from. One match
@@ -86,6 +92,7 @@ path on that machine. 'camp machine diagnose' shows which binary a hop would run
   camp switch a1b2                   # Switch by ID prefix
   camp switch --print                # Picker, output path only (local)
   camp switch obey-campaign@p        # Switch and navigate to projects/
+  csw mytools@keepshot               # Switch and land in a project
   camp switch --all old-reference    # Include inactive/reference camps
   camp switch --org obey platform --json`,
 	Aliases: []string{"sw"},
@@ -162,7 +169,7 @@ func resolveTabInCampaign(ctx context.Context, c config.RegisteredCampaign, tabK
 	}
 	resolved := nav.ResolveConfiguredTarget(cfg, []string{tabKey})
 	if !resolved.Matched {
-		return "", camperrors.New(fmt.Sprintf("tab %q not found in camp %s", tabKey, c.Name))
+		return resolveIndexedTargetInCampaign(ctx, c, tabKey)
 	}
 	relativePath := resolved.RelativePath
 	if relativePath == "" && resolved.Category != nav.CategoryAll {
@@ -171,7 +178,35 @@ func resolveTabInCampaign(ctx context.Context, c config.RegisteredCampaign, tabK
 	if relativePath == "" {
 		return "", camperrors.New(fmt.Sprintf("tab %q resolved to camp root in %s", tabKey, c.Name))
 	}
+	if resolved.Query != "" {
+		return nav.ResolveRelativePathNavigation(ctx, c.Path, relativePath, resolved.Query)
+	}
 	return filepath.Join(c.Path, relativePath), nil
+}
+
+// resolveIndexedTargetInCampaign resolves the part after @ against the target
+// camp's navigation index. Projects win first (exact, then fuzzy) because
+// camp@name is how you land in a project from anywhere; anything else the
+// index knows (worktrees, festivals, the other categories) is the fallback,
+// exactly as 'camp go' would resolve it inside that camp.
+func resolveIndexedTargetInCampaign(ctx context.Context, c config.RegisteredCampaign, query string) (string, error) {
+	for _, cat := range []nav.Category{nav.CategoryProjects, nav.CategoryAll} {
+		result, err := index.Resolve(ctx, index.ResolveOptions{
+			CampaignRoot: c.Path,
+			Category:     cat,
+			Query:        query,
+		})
+		if err == nil {
+			return result.Path, nil
+		}
+		if ctx.Err() != nil {
+			return "", ctx.Err()
+		}
+		if cat == nav.CategoryAll {
+			return "", camperrors.Wrapf(err, "tab or target %q not found in camp %s", query, c.Name)
+		}
+	}
+	return "", camperrors.New(fmt.Sprintf("tab or target %q not found in camp %s", query, c.Name))
 }
 
 func completeSwitchTabs(ctx context.Context, reg *config.Registry, campaignQuery, tabPrefix string, scope cmdutil.CampaignScope) []string {
@@ -192,18 +227,45 @@ func completeSwitchTabs(ctx context.Context, reg *config.Registry, campaignQuery
 		return nil
 	}
 
-	all := nav.TopLevelNavigationNames(cfg)
-	if tabPrefix == "" {
-		return all
-	}
-
-	var filtered []string
-	for _, name := range all {
+	var names []string
+	for _, name := range nav.TopLevelNavigationNames(cfg) {
 		if strings.HasPrefix(name, tabPrefix) {
-			filtered = append(filtered, name)
+			names = append(names, name)
 		}
 	}
-	return filtered
+	return appendUnique(names, completeIndexedTargets(ctx, c.Path, tabPrefix))
+}
+
+// completeIndexedTargets mirrors 'camp go' completion inside the target camp.
+// An empty prefix lists the camp's projects so they are discoverable next to
+// the tabs; a prefix matches any indexed target the way 'cgo <prefix>' does.
+func completeIndexedTargets(ctx context.Context, campaignRoot, prefix string) []string {
+	ctx, cancel := context.WithTimeout(ctx, complete.Timeout)
+	defer cancel()
+	idx, err := index.GetOrBuild(ctx, campaignRoot, false)
+	if err != nil {
+		return nil
+	}
+	q := index.NewQuery(idx)
+	if prefix == "" {
+		return q.Complete("", nav.CategoryProjects)
+	}
+	return q.CompleteAny(prefix, nav.CategoryAll)
+}
+
+func appendUnique(names []string, more []string) []string {
+	seen := make(map[string]struct{}, len(names)+len(more))
+	for _, name := range names {
+		seen[name] = struct{}{}
+	}
+	for _, name := range more {
+		if _, ok := seen[name]; ok {
+			continue
+		}
+		seen[name] = struct{}{}
+		names = append(names, name)
+	}
+	return names
 }
 
 func completeSwitchCampaigns(reg *config.Registry, scope cmdutil.CampaignScope, toComplete string) []string {
