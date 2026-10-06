@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"os"
 	"path/filepath"
 	"sort"
 	"strings"
@@ -189,7 +190,34 @@ func resolveTabInCampaign(ctx context.Context, c config.RegisteredCampaign, tabK
 // camp@name is how you land in a project from anywhere; anything else the
 // index knows (worktrees, festivals, the other categories) is the fallback,
 // exactly as 'camp go' would resolve it inside that camp.
+//
+// The index is a cache, and a cached hit can point at a directory that no
+// longer exists (a worktree removed or moved since the index was warmed).
+// A switch always hands its path to cd, so a stale hit is validated before
+// it is reported: rebuild the index once and resolve again, then refuse
+// rather than emit a destination that is not there.
 func resolveIndexedTargetInCampaign(ctx context.Context, c config.RegisteredCampaign, query string) (string, error) {
+	result, err := resolveIndexedQuery(ctx, c, query)
+	if err != nil {
+		return "", err
+	}
+	if exists, err := directoryExists(result.Path); err != nil || exists {
+		return result.Path, err
+	}
+	if _, err := index.GetOrBuild(ctx, c.Path, true); err != nil {
+		return "", camperrors.Wrapf(err, "nav index rebuild failed for camp %s", c.Name)
+	}
+	refreshed, err := resolveIndexedQuery(ctx, c, query)
+	if err != nil {
+		return "", camperrors.New(fmt.Sprintf("target %q in camp %s no longer exists at %s", query, c.Name, result.Path))
+	}
+	if exists, err := directoryExists(refreshed.Path); err != nil || exists {
+		return refreshed.Path, err
+	}
+	return "", camperrors.New(fmt.Sprintf("target %q in camp %s no longer exists at %s", query, c.Name, refreshed.Path))
+}
+
+func resolveIndexedQuery(ctx context.Context, c config.RegisteredCampaign, query string) (*index.ResolveResult, error) {
 	for _, cat := range []nav.Category{nav.CategoryProjects, nav.CategoryAll} {
 		result, err := index.Resolve(ctx, index.ResolveOptions{
 			CampaignRoot: c.Path,
@@ -197,16 +225,27 @@ func resolveIndexedTargetInCampaign(ctx context.Context, c config.RegisteredCamp
 			Query:        query,
 		})
 		if err == nil {
-			return result.Path, nil
+			return result, nil
 		}
 		if ctx.Err() != nil {
-			return "", ctx.Err()
+			return nil, ctx.Err()
 		}
 		if cat == nav.CategoryAll {
-			return "", camperrors.Wrapf(err, "tab or target %q not found in camp %s", query, c.Name)
+			return nil, camperrors.Wrapf(err, "tab or target %q not found in camp %s", query, c.Name)
 		}
 	}
-	return "", camperrors.New(fmt.Sprintf("tab or target %q not found in camp %s", query, c.Name))
+	return nil, camperrors.New(fmt.Sprintf("tab or target %q not found in camp %s", query, c.Name))
+}
+
+func directoryExists(path string) (bool, error) {
+	info, err := os.Stat(path)
+	if err == nil {
+		return info.IsDir(), nil
+	}
+	if os.IsNotExist(err) {
+		return false, nil
+	}
+	return false, camperrors.Wrapf(err, "checking resolved path %s", path)
 }
 
 func completeSwitchTabs(ctx context.Context, reg *config.Registry, campaignQuery, tabPrefix string, scope cmdutil.CampaignScope) []string {
