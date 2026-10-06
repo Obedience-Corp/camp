@@ -375,3 +375,32 @@ func BenchmarkGenerate(b *testing.B) {
 		_, _ = Generate(shells[i%len(shells)])
 	}
 }
+
+// csw completion hands zsh candidates camp already fuzzy-matched ("myt" ->
+// "My_Tools"). Without -U zsh re-filters them by typed prefix, drops every
+// candidate that does not start with the typed text, and inserts nothing.
+func TestGenerateZsh_CswCompletionInsertsFuzzyMatches(t *testing.T) {
+	output := generateZsh()
+
+	checks := []struct {
+		name    string
+		content string
+	}{
+		{"candidates bypass zsh prefix matching", "compadd -U -a campaigns"},
+		{"first match inserted, further TABs cycle", "compstate[insert]=menu"},
+		{"only the camp selector completes", "(( CURRENT == 2 )) || return 1"},
+		{"typed word is unquoted before camp sees it", `typed="${(Q)words[CURRENT]:-}"`},
+		{"prefix matches keep zsh listing with case folding", `compadd -M 'm:{a-zA-Z}={A-Za-z}' -a campaigns`},
+	}
+
+	for _, check := range checks {
+		t.Run(check.name, func(t *testing.T) {
+			if !strings.Contains(output, check.content) {
+				t.Errorf("zsh init missing %s: %q", check.name, check.content)
+			}
+		})
+	}
+	if strings.Contains(output, "compadd -a campaigns\n") {
+		t.Error("zsh init still carries the prefix-filtered compadd for csw")
+	}
+}
