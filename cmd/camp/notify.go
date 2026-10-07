@@ -40,7 +40,7 @@ artifact declarations it concerns do.`,
   camp notify --json          # the same, for scripts and agents
   camp notify dismiss <id>    # dismiss one notice by id
   camp notify restore <id>    # show a dismissed notice again`,
-	Args: cobra.NoArgs,
+	Args: jsoncontract.Args(NotifyJSONVersion, func() bool { return notifyOpts.json }, cobra.NoArgs),
 	RunE: jsoncontract.RunE(NotifyJSONVersion, func() bool { return notifyOpts.json }, runNotify),
 }
 

@@ -73,6 +73,11 @@ type Model struct {
 	height     int
 	quitting   bool
 	changed    map[string]bool
+	// inFlight is the write a pending actionMsg will report. quitPending
+	// holds a quit until it lands, so the exit report never omits a change
+	// that reached the disk.
+	inFlight    *Change
+	quitPending bool
 }
 
 // New returns a browser over inv. The detail pane starts open because the
@@ -101,6 +106,16 @@ func (m Model) Changes() []Change {
 	return out
 }
 
+// Unsettled reports a write still in flight when the browser exited, which
+// only happens when a second ctrl+c forced the quit. Whether it reached the
+// disk is unknown.
+func (m Model) Unsettled() []Change {
+	if m.inFlight == nil {
+		return nil
+	}
+	return []Change{*m.inFlight}
+}
+
 type actionMsg struct {
 	target    row
 	dismiss   bool
@@ -116,7 +131,11 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.width, m.height = msg.Width, msg.Height
 		return m, nil
 	case actionMsg:
-		return m.applyAction(msg), nil
+		m = m.applyAction(msg)
+		if m.quitPending {
+			return m.quit()
+		}
+		return m, nil
 	case tea.KeyMsg:
 		return m.handleKey(msg)
 	}

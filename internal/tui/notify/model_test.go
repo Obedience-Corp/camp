@@ -305,7 +305,7 @@ func TestQuitKeys(t *testing.T) {
 	}
 }
 
-func TestBusyIgnoresActionsButStillQuits(t *testing.T) {
+func TestBusyIgnoresActions(t *testing.T) {
 	store := newFakeStore(legacyNotice(), linksNotice())
 	m := setup(t, store, nil)
 
@@ -318,8 +318,61 @@ func TestBusyIgnoresActionsButStillQuits(t *testing.T) {
 	if cmd != nil {
 		t.Error("a second d while busy started another write")
 	}
-	if _, cmd = press(t, m, "q"); !isQuit(cmd) {
-		t.Error("q while busy did not quit")
+}
+
+func TestQuitWhileBusyWaitsForTheWriteToLand(t *testing.T) {
+	for _, key := range []string{"q", "esc", "ctrl+c"} {
+		t.Run(key, func(t *testing.T) {
+			store := newFakeStore(legacyNotice(), linksNotice())
+			m := setup(t, store, nil)
+
+			m, write := press(t, m, "d")
+			if write == nil {
+				t.Fatal("d did not start a write")
+			}
+			m, cmd := press(t, m, key)
+			if isQuit(cmd) || m.quitting {
+				t.Fatalf("%s quit before the dismissal reported", key)
+			}
+			if !strings.Contains(m.status, "finishing") {
+				t.Errorf("status while the quit waits = %q", m.status)
+			}
+
+			next, cmd := m.Update(write())
+			m = next.(Model)
+			if !isQuit(cmd) {
+				t.Fatal("the quit did not follow once the dismissal landed")
+			}
+			if got := m.Changes(); len(got) != 1 || got[0] != (Change{ID: legacyID, Dismissed: true}) {
+				t.Errorf("exit report source Changes() = %+v, want the dismissal", got)
+			}
+			if len(m.Unsettled()) != 0 {
+				t.Errorf("a landed write was reported unsettled: %+v", m.Unsettled())
+			}
+			if len(store.writes) != 1 {
+				t.Errorf("writes = %v", store.writes)
+			}
+		})
+	}
+}
+
+func TestSecondCtrlCForcesQuitAndNamesTheUnsettledWrite(t *testing.T) {
+	m := setup(t, newFakeStore(legacyNotice()), nil)
+
+	m, _ = press(t, m, "d")
+	m, cmd := press(t, m, "ctrl+c")
+	if isQuit(cmd) {
+		t.Fatal("the first ctrl+c while busy quit at once")
+	}
+	m, cmd = press(t, m, "ctrl+c")
+	if !isQuit(cmd) {
+		t.Fatal("a second ctrl+c did not force the quit")
+	}
+	if got := m.Unsettled(); len(got) != 1 || got[0] != (Change{ID: legacyID, Dismissed: true}) {
+		t.Errorf("Unsettled() = %+v, want the in-flight dismissal", got)
+	}
+	if len(m.Changes()) != 0 {
+		t.Errorf("an unconfirmed write was reported as done: %+v", m.Changes())
 	}
 }
 

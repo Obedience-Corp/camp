@@ -74,7 +74,7 @@ func Partition(detected []Notice, dismissals *DismissalFile, subjects map[string
 		return inv
 	}
 
-	for id, at := range dismissals.Dismissed {
+	for id, at := range canonicalDismissals(dismissals.Dismissed) {
 		d := DismissedNotice{ID: id, At: at, Subject: subjects[id], Summary: Summary(id)}
 		if n, ok := stillDetected[id]; ok {
 			d.Notice = &n
@@ -92,6 +92,22 @@ func Partition(detected []Notice, dismissals *DismissalFile, subjects map[string
 		return a.ID < b.ID
 	})
 	return inv
+}
+
+// canonicalDismissals keys every dismissal by its current ID. A file read
+// through LoadDismissals is already in that form; a hand-built one may still
+// carry the long form, and two spellings of one ID collapse to the earlier
+// dismissal, the same rule DecodeDismissals applies.
+func canonicalDismissals(dismissed map[string]time.Time) map[string]time.Time {
+	out := make(map[string]time.Time, len(dismissed))
+	for id, at := range dismissed {
+		id = CanonicalID(id)
+		if prev, ok := out[id]; ok && prev.Before(at) {
+			continue
+		}
+		out[id] = at
+	}
+	return out
 }
 
 // FixCommand returns the command that fixes a notice.

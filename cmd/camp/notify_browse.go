@@ -91,6 +91,7 @@ func runNotifyTUI(cmd *cobra.Command, campRoot string, inv notice.Inventory) err
 	}
 	if m, ok := final.(tuinotify.Model); ok {
 		reportNotifyChanges(cmd.OutOrStdout(), m.Changes())
+		reportNotifyUnsettled(cmd.OutOrStdout(), m.Unsettled())
 	}
 	return nil
 }
@@ -108,6 +109,20 @@ func reportNotifyChanges(w io.Writer, changes []tuinotify.Change) {
 	}
 	if len(changes) > 0 {
 		_, _ = fmt.Fprintf(w, "  Recorded in %s.\n", notice.DismissalRelPath)
+	}
+}
+
+// reportNotifyUnsettled names a write the user quit out of before it
+// reported. Its outcome is unknown, so it says how to find out rather than
+// guessing either way.
+func reportNotifyUnsettled(w io.Writer, unsettled []tuinotify.Change) {
+	for _, c := range unsettled {
+		verb := "Restoring"
+		if c.Dismissed {
+			verb = "Dismissing"
+		}
+		_, _ = fmt.Fprintf(w, "%s %s %s was still in progress at exit. Check: camp notify list\n",
+			ui.WarningIcon(), verb, c.ID)
 	}
 }
 

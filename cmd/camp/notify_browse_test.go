@@ -2,10 +2,15 @@ package main
 
 import (
 	"bytes"
+	"context"
 	"encoding/json"
+	"errors"
 	"strings"
 	"testing"
 	"time"
+
+	camperrors "github.com/Obedience-Corp/camp/internal/errors"
+	"github.com/Obedience-Corp/camp/internal/jsoncontract"
 
 	"github.com/Obedience-Corp/camp/internal/notice"
 	tuinotify "github.com/Obedience-Corp/camp/internal/tui/notify"
@@ -162,5 +167,53 @@ func TestReportNotifyChangesNamesTheUndo(t *testing.T) {
 	reportNotifyChanges(&none, nil)
 	if none.Len() != 0 {
 		t.Errorf("a session that changed nothing printed %q", none.String())
+	}
+}
+
+func TestReportNotifyUnsettledSaysHowToCheck(t *testing.T) {
+	var buf bytes.Buffer
+	reportNotifyUnsettled(&buf, []tuinotify.Change{{ID: notice.DungeonLegacyID, Dismissed: true}})
+	if !strings.Contains(buf.String(), "Dismissing dungeon-legacy-layout was still in progress at exit. Check: camp notify list") {
+		t.Errorf("unsettled report = %q", buf.String())
+	}
+
+	var none bytes.Buffer
+	reportNotifyUnsettled(&none, nil)
+	if none.Len() != 0 {
+		t.Errorf("nothing in flight printed %q", none.String())
+	}
+}
+
+func TestNotifyJSONRejectsArgumentsWithTheEnvelope(t *testing.T) {
+	var stdout, stderr bytes.Buffer
+	rootCmd.SetOut(&stdout)
+	rootCmd.SetErr(&stderr)
+	rootCmd.SetArgs([]string{"notify", "--json", "unexpected"})
+	t.Cleanup(func() {
+		rootCmd.SetOut(nil)
+		rootCmd.SetErr(nil)
+		rootCmd.SetArgs(nil)
+		_ = notifyCmd.Flags().Set("json", "false")
+		notifyOpts.json = false
+	})
+
+	err := rootCmd.ExecuteContext(context.Background())
+
+	var cmdErr *camperrors.CommandError
+	if !errors.As(err, &cmdErr) || cmdErr.ExitCode == 0 {
+		t.Fatalf("error = %T %v, want a non-zero *CommandError", err, err)
+	}
+	if stdout.Len() != 0 {
+		t.Errorf("stdout = %q, want empty on a refusal", stdout.String())
+	}
+	var envelope jsoncontract.ErrorEnvelope
+	if err := json.Unmarshal(stderr.Bytes(), &envelope); err != nil {
+		t.Fatalf("stderr is not the JSON error envelope: %v\nraw=%s", err, stderr.String())
+	}
+	if envelope.SchemaVersion != NotifyJSONVersion {
+		t.Errorf("schema_version = %q, want %q", envelope.SchemaVersion, NotifyJSONVersion)
+	}
+	if !strings.Contains(envelope.Error.Message, "unexpected") {
+		t.Errorf("error.message = %q, want it to name the stray argument", envelope.Error.Message)
 	}
 }

@@ -8,6 +8,13 @@ import (
 
 func (m Model) handleKey(key tea.KeyMsg) (tea.Model, tea.Cmd) {
 	k := key.String()
+	if m.busy {
+		switch k {
+		case "q", "esc", "ctrl+c":
+			return m.quitWhenSettled(k)
+		}
+		return m, nil
+	}
 	if k == "ctrl+c" {
 		return m.quit()
 	}
@@ -15,12 +22,6 @@ func (m Model) handleKey(key tea.KeyMsg) (tea.Model, tea.Cmd) {
 		switch k {
 		case "?", "esc", "q", "enter":
 			m.showHelp = false
-		}
-		return m, nil
-	}
-	if m.busy {
-		if k == "q" {
-			return m.quit()
 		}
 		return m, nil
 	}
@@ -56,6 +57,18 @@ func (m Model) quit() (tea.Model, tea.Cmd) {
 	return m, tea.Quit
 }
 
+// quitWhenSettled defers a quit until the write in flight reports, so its
+// outcome is recorded before the exit report is printed. A second ctrl+c
+// quits at once for a write that never returns; Unsettled names it then.
+func (m Model) quitWhenSettled(key string) (tea.Model, tea.Cmd) {
+	if m.quitPending && key == "ctrl+c" {
+		return m.quit()
+	}
+	m.quitPending = true
+	m.setStatus("finishing, then quitting… (ctrl+c again quits now)", false)
+	return m, nil
+}
+
 func (m *Model) move(delta int) {
 	n := len(m.rows())
 	if n == 0 {
@@ -75,6 +88,7 @@ func (m Model) dismissSelected() (tea.Model, tea.Cmd) {
 		return m, nil
 	}
 	m.busy = true
+	m.inFlight = &Change{ID: r.id, Dismissed: true}
 	m.setStatus("dismissing…", false)
 	return m, m.write(r, true)
 }
@@ -90,6 +104,7 @@ func (m Model) restoreSelected() (tea.Model, tea.Cmd) {
 		return m, nil
 	}
 	m.busy = true
+	m.inFlight = &Change{ID: r.id, Dismissed: false}
 	m.setStatus("restoring…", false)
 	return m, m.write(r, false)
 }
@@ -116,6 +131,7 @@ func (m Model) write(target row, dismiss bool) tea.Cmd {
 
 func (m Model) applyAction(msg actionMsg) Model {
 	m.busy = false
+	m.inFlight = nil
 	verb, done := "restore", "restored"
 	if msg.dismiss {
 		verb, done = "dismiss", "dismissed"

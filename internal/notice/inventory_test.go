@@ -65,6 +65,33 @@ func TestPartition_LegacyDismissalMatchesItsNotice(t *testing.T) {
 	}
 }
 
+func TestPartition_CanonicalizesAHandBuiltLegacyKey(t *testing.T) {
+	id := SubjectID(KindNeverSynced, "data/models")
+	earlier := time.Date(2026, 10, 1, 0, 0, 0, 0, time.UTC)
+	later := time.Date(2026, 10, 5, 0, 0, 0, 0, time.UTC)
+	dismissals := &DismissalFile{Dismissed: map[string]time.Time{
+		"artifact-root-never-synced:data/models": earlier,
+		id:                                       later,
+	}}
+
+	inv := Partition(
+		[]Notice{{ID: id, Subject: "data/models", Message: "never synced", Command: "camp commit"}},
+		dismissals,
+		map[string]string{id: "data/models"},
+	)
+
+	if len(inv.Live) != 0 {
+		t.Errorf("live = %+v, want the notice covered by its legacy dismissal", inv.Live)
+	}
+	if len(inv.Dismissed) != 1 {
+		t.Fatalf("dismissed = %+v, want the two spellings collapsed to one row", inv.Dismissed)
+	}
+	d := inv.Dismissed[0]
+	if d.ID != id || d.Notice == nil || d.Subject != "data/models" || !d.At.Equal(earlier) {
+		t.Errorf("dismissed row = %+v, want the short id, its message, its subject, and the earlier time", d)
+	}
+}
+
 func TestPartition_EmptyIsArraysNotNil(t *testing.T) {
 	inv := Partition(nil, &DismissalFile{}, nil)
 	if inv.Live == nil || inv.Dismissed == nil {

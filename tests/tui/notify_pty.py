@@ -174,6 +174,24 @@ class Session:
             pass
 
 
+def expected_clipboard_tool(env):
+    """The clipboard command camp calls given the environment the child gets.
+
+    Mirrors ui.clipboardCandidates, and reads the child's env rather than this
+    script's: camp_env passes neither DISPLAY nor WAYLAND_DISPLAY, so on Linux
+    camp takes its no-display order, which puts wl-copy first. The fixture
+    installs every candidate as a stub, so the first in that order is the one
+    handed the command.
+    """
+    if sys.platform == "darwin":
+        return "pbcopy"
+    if env.get("WAYLAND_DISPLAY"):
+        return "wl-copy"
+    if env.get("DISPLAY"):
+        return "xclip"
+    return "wl-copy"
+
+
 def run_camp(fixture, args):
     return subprocess.run(
         [os.path.join(fixture, "bin", "camp")] + args,
@@ -388,7 +406,7 @@ def main():
     colors(run)
     empty(run)
 
-    tool = "pbcopy" if sys.platform == "darwin" else ("wl-copy" if os.environ.get("WAYLAND_DISPLAY") else "xclip")
+    tool = expected_clipboard_tool(camp_env(fixture))
     log = handed(fixture)
     run.save("handoff.log", "\n".join(log) + "\n")
     want = ["%s camp dungeon migrate" % tool, "%s %s" % (tool, SYNC_FIX)]
