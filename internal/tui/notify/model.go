@@ -75,7 +75,8 @@ type Model struct {
 	changed    map[string]bool
 	// inFlight is the write a pending actionMsg will report. quitPending
 	// holds a quit until it lands, so the exit report never omits a change
-	// that reached the disk.
+	// that reached the disk. A write that fails cancels the quit instead:
+	// the browser's status line is the only place that failure is shown.
 	inFlight    *Change
 	quitPending bool
 }
@@ -132,10 +133,15 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m, nil
 	case actionMsg:
 		m = m.applyAction(msg)
-		if m.quitPending {
-			return m.quit()
+		if !m.quitPending {
+			return m, nil
 		}
-		return m, nil
+		if msg.writeErr != nil {
+			m.quitPending = false
+			m.setStatus(m.status+" · quit cancelled so you can see this; q quits", true)
+			return m, nil
+		}
+		return m.quit()
 	case tea.KeyMsg:
 		return m.handleKey(msg)
 	}

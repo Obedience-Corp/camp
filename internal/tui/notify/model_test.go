@@ -356,6 +356,34 @@ func TestQuitWhileBusyWaitsForTheWriteToLand(t *testing.T) {
 	}
 }
 
+func TestFailedWriteCancelsThePendingQuit(t *testing.T) {
+	for _, key := range []string{"q", "esc", "ctrl+c"} {
+		t.Run(key, func(t *testing.T) {
+			store := newFakeStore(legacyNotice())
+			store.writeErr = errors.New("disk full")
+			m := setup(t, store, nil)
+
+			m, write := press(t, m, "d")
+			m, _ = press(t, m, key)
+			next, cmd := m.Update(write())
+			m = next.(Model)
+			if isQuit(cmd) || m.quitting {
+				t.Fatal("the browser quit over a failed write, so the error was never shown")
+			}
+			if !m.statusErr || !strings.Contains(m.status, "dismiss failed: disk full") {
+				t.Errorf("status = %q (err=%v), want the write failure", m.status, m.statusErr)
+			}
+			if len(m.Changes()) != 0 || len(m.Unsettled()) != 0 {
+				t.Errorf("failed write reported as changed %+v or unsettled %+v", m.Changes(), m.Unsettled())
+			}
+
+			if _, cmd = press(t, m, "q"); !isQuit(cmd) {
+				t.Error("q after the failure did not quit")
+			}
+		})
+	}
+}
+
 func TestSecondCtrlCForcesQuitAndNamesTheUnsettledWrite(t *testing.T) {
 	m := setup(t, newFakeStore(legacyNotice()), nil)
 
