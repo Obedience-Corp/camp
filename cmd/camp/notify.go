@@ -2,6 +2,7 @@ package main
 
 import (
 	"fmt"
+	"io"
 	"time"
 
 	"github.com/Obedience-Corp/camp/internal/campaign"
@@ -61,7 +62,7 @@ func runNotifyDismiss(cmd *cobra.Command, args []string) error {
 		return camperrors.Wrap(err, "not in a camp")
 	}
 
-	id := args[0]
+	id := notice.CanonicalID(args[0])
 	dismissals, err := notice.LoadDismissals(campRoot)
 	if err != nil {
 		return err
@@ -98,16 +99,15 @@ func runNotifyRestore(cmd *cobra.Command, args []string) error {
 		return camperrors.Wrap(err, "not in a camp")
 	}
 
-	id := args[0]
+	id := notice.CanonicalID(args[0])
 	dismissals, err := notice.LoadDismissals(campRoot)
 	if err != nil {
 		return err
 	}
-	if !dismissals.IsDismissed(id) {
+	if !dismissals.Restore(id) {
 		_, _ = fmt.Fprintf(cmd.OutOrStdout(), "%s %s is not dismissed\n", ui.SuccessIcon(), id)
 		return nil
 	}
-	delete(dismissals.Dismissed, id)
 	if err := dismissals.Save(campRoot); err != nil {
 		return err
 	}
@@ -131,10 +131,29 @@ func runNotifyList(cmd *cobra.Command, args []string) error {
 		return nil
 	}
 
-	_, _ = fmt.Fprintf(cmd.OutOrStdout(), "DISMISSED NOTICES\n")
-	for id, at := range dismissals.Dismissed {
-		_, _ = fmt.Fprintf(cmd.OutOrStdout(), "  %s  %s\n", at.Format("2006-01-02"), id)
-	}
-	_, _ = fmt.Fprintf(cmd.OutOrStdout(), "\nRestore one: camp notify restore <id>\n")
+	writeDismissedNotices(cmd.OutOrStdout(), dismissals.Describe(notice.Subjects(campRoot)))
 	return nil
+}
+
+// writeDismissedNotices prints each dismissal with what it is about, so an id
+// is never the only thing the user has to recognize it by.
+func writeDismissedNotices(w io.Writer, dismissed []notice.Dismissed) {
+	_, _ = fmt.Fprintf(w, "DISMISSED NOTICES\n")
+	for _, d := range dismissed {
+		subject := d.Subject
+		if subject == "" && notice.HasSubject(d.ID) {
+			subject = "(root no longer declared)"
+		}
+		if subject == "" {
+			_, _ = fmt.Fprintf(w, "  %s\n", d.ID)
+		} else {
+			_, _ = fmt.Fprintf(w, "  %s  %s\n", d.ID, subject)
+		}
+		summary := d.Summary
+		if summary == "" {
+			summary = "a notice this version of Camp does not raise"
+		}
+		_, _ = fmt.Fprintf(w, "    %s\n", ui.Dim(summary+", dismissed "+d.At))
+	}
+	_, _ = fmt.Fprintf(w, "\nRestore one: camp notify restore <id>\n")
 }

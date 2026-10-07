@@ -5,6 +5,7 @@ package integration
 
 import (
 	"fmt"
+	"regexp"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
@@ -32,20 +33,104 @@ func TestIntegration_StatusNoticeNeverSynced(t *testing.T) {
 	stderr := statusStderr(t, tc, campPath)
 	assert.Contains(t, stderr, "media/renders")
 	assert.Contains(t, stderr, "never synced")
-	assert.Contains(t, stderr, "camp sync --from")
-	assert.Contains(t, stderr, "camp notify dismiss",
-		"every dismissible notice must carry its own dismiss command")
+	assert.Contains(t, stderr, "on another machine: camp sync --from",
+		"the remedy runs on the machine that does not hold the bytes")
+	assert.Contains(t, stderr, "--artifacts-only")
+	assert.Regexp(t, `camp notify dismiss never-synced-[0-9a-f]{6}\)`, stderr,
+		"every dismissible notice must carry its own short dismiss id")
+	assert.NotContains(t, stderr, "artifact-root-never-synced:",
+		"the root path must not be part of the id")
 
-	// A recorded snapshot means it has left this machine; the notice stops.
+	// Pulling from a peer whose root is empty records a snapshot that agreed
+	// on nothing. The bytes have still never left this machine.
 	tc.Shell(t, fmt.Sprintf(`
 		cd %s
 		mkdir -p .campaign/cache/peersync/laptop
 		printf '{"version":1,"root":"media/renders","files":[]}' > .campaign/cache/peersync/laptop/media%%2Frenders.json
 	`, campPath))
+	stderr = statusStderr(t, tc, campPath)
+	assert.Contains(t, stderr, "never synced",
+		"an empty snapshot is not a second copy")
 
+	// A snapshot that agreed on files means it has left this machine.
+	tc.Shell(t, fmt.Sprintf(`
+		cd %s
+		printf '{"version":1,"root":"media/renders","files":[{"path":"a.bin","size":1,"mtime_unix_nano":1}]}' > .campaign/cache/peersync/laptop/media%%2Frenders.json
+	`, campPath))
 	stderr = statusStderr(t, tc, campPath)
 	assert.NotContains(t, stderr, "never synced",
 		"the notice must stop after the first successful sync")
+}
+
+// The pull that makes a second copy runs on the other machine, so the snapshot
+// it writes never reaches this one. Its committed manifest does, through git.
+func TestIntegration_StatusNoticeNeverSyncedClearsFromAnotherMachinesManifest(t *testing.T) {
+	tc := GetSharedContainer(t)
+	campPath := setupGuardCampaign(t, tc, "notice-never-synced-manifest")
+
+	tc.Shell(t, fmt.Sprintf(`cd %s && mkdir -p media/renders && printf 'x' > media/renders/a.bin`, campPath))
+	declareRoots(t, tc, campPath, "media/renders")
+	manifestDir := campPath + "/.campaign/artifacts/manifests/other-studio"
+	manifestFile := manifestDir + "/media%2Frenders.json"
+
+	// A machine without the root commits an empty manifest for it.
+	tc.Shell(t, fmt.Sprintf(`mkdir -p %s && printf '{"version":1,"root":"media/renders","describes_commit":"x","files":[]}' > '%s'`,
+		manifestDir, manifestFile))
+	stderr := statusStderr(t, tc, campPath)
+	assert.Contains(t, stderr, "never synced",
+		"an empty manifest from another machine is not a second copy")
+
+	tc.Shell(t, fmt.Sprintf(`printf '{"version":1,"root":"media/renders","describes_commit":"x","files":[{"path":"a.bin","size":1,"mtime_unix_nano":1}]}' > '%s'`,
+		manifestFile))
+	stderr = statusStderr(t, tc, campPath)
+	assert.NotContains(t, stderr, "never synced",
+		"another machine recording the root's files is a second copy")
+}
+
+// camp v0.10.0 committed dismissals under ids carrying the whole root path.
+// They keep working after the id change, and every notify verb accepts them.
+func TestIntegration_StatusNoticeV010DismissalsMigrate(t *testing.T) {
+	tc := GetSharedContainer(t)
+	campPath := setupGuardCampaign(t, tc, "notice-legacy-dismissal")
+
+	tc.Shell(t, fmt.Sprintf(`cd %s && mkdir -p media/renders && printf 'x' > media/renders/a.bin`, campPath))
+	declareRoots(t, tc, campPath, "media/renders")
+	shortID := neverSyncedID(t, statusStderr(t, tc, campPath))
+
+	require.NoError(t, tc.WriteFile(campPath+"/.campaign/notices.yaml",
+		"version: 1\ndismissed:\n    artifact-root-never-synced:media/renders: 2026-09-01T00:00:00Z\n"))
+	stderr := statusStderr(t, tc, campPath)
+	assert.NotContains(t, stderr, "never synced", "a v0.10.0 dismissal must still silence its notice")
+
+	out, err := tc.RunCampInDir(campPath, "notify", "list")
+	require.NoError(t, err, "output:\n%s", out)
+	assert.Contains(t, out, shortID, "list shows the current id")
+	assert.Contains(t, out, "media/renders", "list names what the id is about")
+	assert.Contains(t, out, "never synced to another machine")
+	assert.NotContains(t, out, "artifact-root-never-synced:")
+
+	out, err = tc.RunCampInDir(campPath, "notify", "restore", "artifact-root-never-synced:media/renders")
+	require.NoError(t, err, "output:\n%s", out)
+	assert.Contains(t, out, "Restored "+shortID)
+	assert.Contains(t, statusStderr(t, tc, campPath), "never synced")
+
+	out, err = tc.RunCampInDir(campPath, "notify", "dismiss", "artifact-root-never-synced:media/renders")
+	require.NoError(t, err, "output:\n%s", out)
+	assert.Contains(t, out, "Dismissed "+shortID)
+	content, err := tc.ReadFile(campPath + "/.campaign/notices.yaml")
+	require.NoError(t, err)
+	assert.Contains(t, content, shortID)
+	assert.NotContains(t, content, "artifact-root-never-synced:", "a save writes the current form")
+}
+
+var neverSyncedIDPattern = regexp.MustCompile(`never-synced-[0-9a-f]{6}`)
+
+// neverSyncedID returns the dismiss id a never-synced notice printed.
+func neverSyncedID(t *testing.T, stderr string) string {
+	t.Helper()
+	id := neverSyncedIDPattern.FindString(stderr)
+	require.NotEmpty(t, id, "no never-synced id in:\n%s", stderr)
+	return id
 }
 
 // Criterion 31c: a declared root absent locally is one line naming the count.
@@ -82,7 +167,7 @@ func TestIntegration_StatusNoticeDismissalIsPerSignature(t *testing.T) {
 	stderr := statusStderr(t, tc, campPath)
 	require.Contains(t, stderr, "first")
 
-	out, err := tc.RunCampInDir(campPath, "notify", "dismiss", "artifact-root-never-synced:first")
+	out, err := tc.RunCampInDir(campPath, "notify", "dismiss", neverSyncedID(t, stderr))
 	require.NoError(t, err, "output:\n%s", out)
 	assert.Contains(t, out, "Dismissed")
 	assert.Contains(t, out, "Undo: camp notify restore")

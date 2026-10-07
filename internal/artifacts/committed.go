@@ -51,6 +51,26 @@ func CommittedManifestRelPath(machine, rootRel string) string {
 	return filepath.ToSlash(filepath.Join(CommittedRelDir, machine, snapshotSlug(rootRel)+".json"))
 }
 
+// ListManifestMachines returns the machines that have committed a manifest in
+// this campaign: the directories under the committed manifest tree. A name
+// that could not have been written as a machine segment is skipped.
+func ListManifestMachines(campaignRoot string) ([]string, error) {
+	entries, err := os.ReadDir(filepath.Join(campaignRoot, filepath.FromSlash(CommittedRelDir)))
+	if err != nil {
+		if os.IsNotExist(err) {
+			return nil, nil
+		}
+		return nil, camperrors.Wrap(err, "list committed manifest machines")
+	}
+	var names []string
+	for _, e := range entries {
+		if e.IsDir() && ValidateMachineSegment(e.Name()) == nil {
+			names = append(names, e.Name())
+		}
+	}
+	return names, nil
+}
+
 // LoadCommitted reads one machine's committed manifest for a root from the
 // working tree. A missing file is (nil, "", nil): no record yet, which
 // callers treat as a first pass.

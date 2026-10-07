@@ -26,6 +26,9 @@ type Notice struct {
 	// ID identifies the signal. It is the key per-signature dismissal will
 	// use, so it must stay stable across runs.
 	ID string
+	// Subject is what the notice is about, such as an artifact root, or ""
+	// for a notice about the camp as a whole.
+	Subject string
 	// Message states what is drifted, in one line.
 	Message string
 	// Command fixes it.
@@ -35,6 +38,18 @@ type Notice struct {
 // Detector reports a Notice for campaignRoot, or nil when it has nothing to
 // say. Detectors must be stat-level cheap.
 type Detector func(ctx context.Context, campaignRoot string) (*Notice, error)
+
+// Detectors returns every detector, in the order their notices are shown, so
+// each surface that reports notices runs the same set.
+func Detectors() []Detector {
+	return []Detector{
+		DungeonLegacy,
+		StaleLinks,
+		ArtifactRootNeverSynced,
+		ArtifactRootsMissingLocally,
+		ArtifactRootDrift,
+	}
+}
 
 // Detect runs detectors against campaignRoot and collects what they report.
 //

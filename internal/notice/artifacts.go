@@ -22,12 +22,9 @@ import (
 // Every detector below is stat-level over the declared-root list. None scans
 // the campaign tree, so a campaign with no declared roots does no work at all.
 
-// Notice ID prefixes. The root path is part of the ID so a newly declared root
-// produces a new signature and notifies even if an older one was dismissed.
-const (
-	neverSyncedIDPrefix = "artifact-root-never-synced:"
-	missingRootID       = "artifact-roots-missing-locally"
-)
+// missingRootID names the one notice about every absent root at once, so it
+// has no subject.
+const missingRootID = "artifact-roots-missing-locally"
 
 // ArtifactRootNeverSynced reports a declared root that has never left this
 // machine.
@@ -36,6 +33,14 @@ const (
 // bytes out of git's care and into sync's, and until a sync actually runs
 // there is exactly one copy of them anywhere. The user believes the
 // declaration protected the data; it did not, yet.
+//
+// A second copy is proven two ways. Another machine's committed manifest
+// records files under the root, which is the signal that reaches this machine
+// when the other one pulled from it: that pull happens over there, and the
+// manifest comes back through git. Or this machine has a non-empty snapshot
+// from pulling the root off a peer. An empty record proves nothing in either
+// case: a machine without the root commits an empty manifest, and pulling from
+// a peer whose root is empty snapshots nothing agreed.
 func ArtifactRootNeverSynced(ctx context.Context, campaignRoot string) (*Notice, error) {
 	if ctx.Err() != nil {
 		return nil, ctx.Err()
@@ -49,6 +54,7 @@ func ArtifactRootNeverSynced(ctx context.Context, campaignRoot string) (*Notice,
 	if err != nil {
 		return nil, err
 	}
+	self, others := otherManifestMachines(campaignRoot)
 
 	// Dismissals are consulted here rather than left to the caller's filter.
 	// A detector reports at most one notice, so filtering afterward would let
@@ -65,22 +71,70 @@ func ArtifactRootNeverSynced(ctx context.Context, campaignRoot string) (*Notice,
 		if rel == "" || !rootExists(campaignRoot, rel) {
 			continue
 		}
-		if hasAnySnapshot(campaignRoot, peers, rel) {
+		id := SubjectID(KindNeverSynced, rel)
+		if dismissals.IsDismissed(id) {
 			continue
 		}
-		if dismissals.IsDismissed(neverSyncedIDPrefix + rel) {
+		if hasPopulatedSnapshot(campaignRoot, peers, rel) || anotherMachineHolds(campaignRoot, others, rel) {
 			continue
 		}
-		id := neverSyncedIDPrefix + rel
 		return &Notice{
-			ID: id,
+			ID:      id,
+			Subject: rel,
 			Message: fmt.Sprintf(
 				"%s is a declared artifact root that has never synced; its contents exist on this machine only",
 				rel),
-			Command: "camp sync --from <machine>   (dismiss: camp notify dismiss " + id + ")",
+			Command: "on another machine: camp sync --from " + pullSourceHint(self) +
+				" --artifacts-only   (dismiss: camp notify dismiss " + id + ")",
 		}, nil
 	}
 	return nil, nil
+}
+
+// otherManifestMachines returns this machine's manifest identity and every
+// other machine that has committed manifests. Without an identity, no
+// manifest can be told apart from this machine's own, so none is counted. An
+// unreadable manifest tree counts none either: it can only keep the notice up,
+// never hide it.
+func otherManifestMachines(campaignRoot string) (string, []string) {
+	self, err := artifacts.MachineName()
+	if err != nil {
+		return "", nil
+	}
+	machines, err := artifacts.ListManifestMachines(campaignRoot)
+	if err != nil {
+		return self, nil
+	}
+	others := make([]string, 0, len(machines))
+	for _, m := range machines {
+		if m != self {
+			others = append(others, m)
+		}
+	}
+	return self, others
+}
+
+// anotherMachineHolds reports whether another machine's committed manifest
+// records files under a root. One file read per machine: no hashing, no walk.
+func anotherMachineHolds(campaignRoot string, others []string, rel string) bool {
+	for _, machine := range others {
+		m, _, err := artifacts.LoadCommitted(campaignRoot, machine, rel)
+		if err == nil && m != nil && len(m.Files) > 0 {
+			return true
+		}
+	}
+	return false
+}
+
+// pullSourceHint names this machine for the command run on another one. The id
+// that machine knows this one by is its own choice in its machines file, so
+// the hostname is offered as a hint rather than printed as though it were that
+// id.
+func pullSourceHint(self string) string {
+	if self == "" {
+		return "<this-machine-id>"
+	}
+	return "<id of " + self + ">"
 }
 
 // ArtifactRootsMissingLocally reports declared roots absent from this machine.
@@ -149,7 +203,8 @@ func ArtifactRootDrift(ctx context.Context, campaignRoot string) (*Notice, error
 		if rel == "" || !rootExists(campaignRoot, rel) {
 			continue
 		}
-		if dismissals.IsDismissed(manifestDriftIDPrefix + rel) {
+		id := SubjectID(KindManifestDrift, rel)
+		if dismissals.IsDismissed(id) {
 			continue
 		}
 		committed, _, err := artifacts.LoadCommitted(campaignRoot, machine, rel)
@@ -160,9 +215,9 @@ func ArtifactRootDrift(ctx context.Context, campaignRoot string) (*Notice, error
 		if err != nil || len(drifts) == 0 {
 			continue
 		}
-		id := manifestDriftIDPrefix + rel
 		return &Notice{
-			ID: id,
+			ID:      id,
+			Subject: rel,
 			Message: fmt.Sprintf(
 				"%s has drifted from its committed manifest (%d paths); the record no longer matches this machine",
 				rel, len(drifts)),
@@ -178,17 +233,14 @@ func rootExists(campaignRoot, rel string) bool {
 	return err == nil
 }
 
-// hasAnySnapshot reports whether any peer has ever recorded a transfer for a
-// root. One stat per peer per root: no hashing, no walking the root itself.
-func hasAnySnapshot(campaignRoot string, peers []string, rel string) bool {
+// hasPopulatedSnapshot reports whether a pull from any peer agreed on at least
+// one file under a root. One read per peer per root: no hashing, no walking
+// the root itself.
+func hasPopulatedSnapshot(campaignRoot string, peers []string, rel string) bool {
 	for _, peer := range peers {
-		if snap, err := artifacts.LoadSnapshot(campaignRoot, peer, rel); err == nil && snap != nil {
+		if snap, err := artifacts.LoadSnapshot(campaignRoot, peer, rel); err == nil && snap != nil && len(snap.Files) > 0 {
 			return true
 		}
 	}
 	return false
 }
-
-// manifestDriftIDPrefix keys drift dismissals per root, so silencing one
-// root's drift does not silence the next root that drifts.
-const manifestDriftIDPrefix = "artifact-manifest-drift:"
