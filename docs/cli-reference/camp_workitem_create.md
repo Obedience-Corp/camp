@@ -6,6 +6,13 @@ Create workitem tracking metadata
 
 Create tracking metadata for a new workitem (directory + .workitem marker).
 
+Without --type, the type comes from where the workitem is created. Run from
+anywhere under workflow/<type>/, including inside another workitem, and the
+new item gets that type and is created at workflow/<type>/<slug>/, a sibling
+of the items already there. --dir workflow/<type>[/...] and
+--file workflow/<type>/<name>.md infer the type the same way. Everywhere else
+the type defaults to feature. An explicit --type always wins.
+
 This command does NOT create the substantive work scaffold (no design docs,
 explore notes, or festival structure). It only:
 
@@ -41,7 +48,7 @@ camp workitem create <slug> [flags]
       --quest string          quest ID to associate (requires dev-profile camp; forward-compatible flag)
       --tag stringArray       add a tag (repeatable, normalized to lowercase kebab-case)
       --title string          human-readable title
-      --type string           workitem type (feature, bug, chore, or custom) (default "feature")
+      --type string           workitem type (feature, bug, chore, or custom); when omitted, inferred from a workflow/<type>/ cwd, --dir, or --file (default "feature")
 ```
 
 ### Options inherited from parent commands

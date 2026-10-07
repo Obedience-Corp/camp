@@ -218,8 +218,12 @@ for that collection, matching the existing `workflow/design` and
 Each directory contains a `.gitkeep` file so git tracks empty directories and
 the paths are available after a clean checkout.
 
-`camp workitem create --type <T>` currently places new items at
-`workflow/<T>/<slug>/`.
+`camp workitem create --type <T>` places new items at `workflow/<T>/<slug>/`.
+Without `--type`, the type is the workflow directory you run it from: anywhere
+under `workflow/<T>/`, including inside another work item, creates a sibling at
+`workflow/<T>/<slug>/` with type `<T>`. `--dir workflow/<T>[/...]` and
+`--file workflow/<T>/<name>.md` infer `<T>` the same way. Everywhere else the
+type defaults to `feature`.
 
 `discover_custom_workflows.go` skips dot-prefixed names inside the type
 directory. The `.gitkeep` files are therefore invisible to workitem discovery.

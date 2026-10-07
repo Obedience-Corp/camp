@@ -86,7 +86,8 @@ func TestIntegration_WorkflowFullFlow(t *testing.T) {
 		"--title", "Compare LLMs",
 	)
 	require.NoError(t, err, "workitem create: %s", out)
-	assert.Contains(t, out, "created workitem tracking at workflow/research/compare-llms")
+	assert.Contains(t, out, "Created research workitem compare-llms")
+	assert.Regexp(t, `path:\s+workflow/research/compare-llms\n`, out)
 
 	markerExists, err := tc.CheckFileExists(dir + "/workflow/research/compare-llms/.workitem")
 	require.NoError(t, err)

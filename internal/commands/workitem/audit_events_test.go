@@ -47,7 +47,7 @@ func TestRunCreate_AppendsCreateAuditEvent(t *testing.T) {
 	cmd.SetOut(os.Stdout)
 	cmd.SetErr(os.Stderr)
 
-	if err := runCreate(context.Background(), cmd, "atomic-marker", "design", "Atomic Marker", "design-atomic-marker-fixed", "", "", nil, nil, false); err != nil {
+	if err := runCreate(context.Background(), cmd, "atomic-marker", "design", true, "Atomic Marker", "design-atomic-marker-fixed", "", "", nil, nil, false); err != nil {
 		t.Fatalf("runCreate() error = %v", err)
 	}
 
