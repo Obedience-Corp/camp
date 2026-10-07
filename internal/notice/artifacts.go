@@ -97,7 +97,7 @@ func ArtifactRootNeverSynced(ctx context.Context, campaignRoot string) (*Notice,
 			ID:      id,
 			Subject: rel,
 			Message: message,
-			Command: "on another machine: camp sync --from " + pullSourceHint(self) +
+			Command: ElsewherePrefix + "camp sync --from " + pullSourceHint(self) +
 				" --artifacts-only   (dismiss: camp notify dismiss " + id + ")",
 		}, nil
 	}
