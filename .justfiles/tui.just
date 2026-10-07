@@ -191,50 +191,16 @@ pty-intent-copy:
     evidence="${CAMP_TUI_EVIDENCE_DIR:-out/evidence/intent-copy}"
     "$venv_dir/bin/python" tests/tui/intent_copy_pty.py "$fixture" "$evidence"
 
-# Build the disposable fixture for the notify browser check: the branch binary,
-# stub clipboard tools that record what they are handed, a camp with three live
-# notices (legacy dungeon layout, a stale workitem link, and two never-synced
-# artifact roots of which the detector reports one at a time), and an empty
-# camp for the empty state. Prints the fixture path. Never touches the
-# operator's camp registry or clipboard.
+# Build the disposable fixture for the notify browser check. The same script
+# seeds docs/demos/notify-browse.tape, so the recording and the pty check show
+# one camp. Prints the fixture path. Never touches the operator's camp
+# registry or clipboard.
 [private]
 notify-fixture:
     #!/usr/bin/env bash
     set -euo pipefail
     cd "{{root}}"
-    fixture="${CAMP_VHS_ROOT:-$(mktemp -d)}"
-    mkdir -p "$fixture/bin" "$fixture/home"
-    cp bin/camp "$fixture/bin/camp"
-    for name in pbcopy xclip xsel wl-copy open xdg-open; do
-        cp docs/demos/fixtures/record-handoff "$fixture/bin/$name"
-    done
-    chmod +x "$fixture/bin"/*
-    for name in camp empty; do
-        HOME="$fixture/home" "$fixture/bin/camp" init \
-            --name "notify-$name" --no-git --no-register --no-skills --force \
-            -d "Disposable fixture for the notify browser check" \
-            -m "Prove camp notify dismisses and restores in place" \
-            "$fixture/$name" >/dev/null
-    done
-    camp="$fixture/camp"
-    # The visible spelling is what the legacy-layout detector looks for.
-    mv "$camp/.dungeon" "$camp/dungeon"
-    mkdir -p "$camp/data/models" "$camp/data/zoo" "$camp/.campaign/workitems"
-    echo weights >"$camp/data/models/model.bin"
-    echo weights >"$camp/data/zoo/zoo.bin"
-    printf 'version: 1\nroots:\n  - path: data/models\n  - path: data/zoo\n' >"$camp/.campaign/artifacts.yaml"
-    printf '%s\n' \
-        'version: workitem-links/v1alpha1' \
-        'links:' \
-        '  - id: lnk_20261006_00000a' \
-        '    workitem_id: design-gone-2026-10-06' \
-        '    scope:' \
-        '      kind: campaign_path' \
-        '      path: workflow/design/gone' \
-        '    role: primary' \
-        '    created_at: 2026-10-06T00:00:00Z' \
-        '    created_by: fixture' >"$camp/.campaign/workitems/links.yaml"
-    echo "$fixture"
+    docs/demos/fixtures/notify-fixture.sh "${CAMP_VHS_ROOT:-$(mktemp -d)}" bin/camp
 
 # Assert what a recording of the notify browser cannot: d and r land in
 # .campaign/notices.yaml, dismissing one artifact root surfaces the next, the

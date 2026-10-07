@@ -209,6 +209,10 @@ class Run:
         self.transcript.extend(session.transcript)
 
     def save(self, name, text):
+        # The fixture root is a host temp path; evidence names it by role so
+        # the bundle passes the privacy scan and reads the same on any host.
+        for root in {os.path.realpath(self.fixture), self.fixture}:
+            text = text.replace(root, "$CAMP_VHS_ROOT")
         with open(os.path.join(self.evidence, name), "w") as fh:
             fh.write(text)
         self.transcript.append("===== file: %s =====" % name)
@@ -351,7 +355,13 @@ def empty(run):
 
 
 def write_bundle(run):
-    terminal = {"columns": COLS, "rows": ROWS, "mode": "NO_COLOR except the color run"}
+    terminal = {
+        "columns": COLS,
+        "rows": ROWS,
+        "pixel_width": 1200,
+        "pixel_height": 700,
+        "mode": "NO_COLOR except the color run; dark palette",
+    }
     with open(os.path.join(run.evidence, "pty-transcript.txt"), "w") as fh:
         fh.write("\n".join(run.transcript) + "\n")
     with open(os.path.join(run.evidence, "screen-snapshots.json"), "w") as fh:
