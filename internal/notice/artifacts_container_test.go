@@ -15,6 +15,7 @@ import (
 const (
 	testRoot    = "media/renders"
 	thisMachine = "this-box"
+	neverSynced = "has never synced"
 )
 
 // stageRoot declares testRoot in a fresh campaign, puts one file in it, and
@@ -37,12 +38,12 @@ func stageRoot(t *testing.T) string {
 	return campaignRoot
 }
 
-func record(files ...string) *artifacts.Manifest {
-	m := &artifacts.Manifest{Version: 1, Root: testRoot}
-	for _, f := range files {
-		m.Files = append(m.Files, artifacts.FileEntry{Path: f, Size: 1, MTime: 1})
-	}
-	return m
+func file(path string, size int64, hash string) artifacts.FileEntry {
+	return artifacts.FileEntry{Path: path, Size: size, MTime: 1, HashSHA256: hash}
+}
+
+func record(files ...artifacts.FileEntry) *artifacts.Manifest {
+	return &artifacts.Manifest{Version: 1, Root: testRoot, Files: files}
 }
 
 func commitManifest(t *testing.T, campaignRoot, machine string, m *artifacts.Manifest) {
@@ -52,7 +53,14 @@ func commitManifest(t *testing.T, campaignRoot, machine string, m *artifacts.Man
 	}
 }
 
-func neverSynced(t *testing.T, campaignRoot string) *Notice {
+func saveSnapshot(t *testing.T, campaignRoot, peer string, m *artifacts.Manifest) {
+	t.Helper()
+	if err := artifacts.SaveSnapshot(campaignRoot, peer, testRoot, m); err != nil {
+		t.Fatal(err)
+	}
+}
+
+func detectNeverSynced(t *testing.T, campaignRoot string) *Notice {
 	t.Helper()
 	n, err := ArtifactRootNeverSynced(context.Background(), campaignRoot)
 	if err != nil {
@@ -61,10 +69,28 @@ func neverSynced(t *testing.T, campaignRoot string) *Notice {
 	return n
 }
 
+func requireNotice(t *testing.T, campaignRoot, wantMessage string) {
+	t.Helper()
+	n := detectNeverSynced(t, campaignRoot)
+	if n == nil {
+		t.Fatal("expected the never-synced notice")
+	}
+	if !strings.Contains(n.Message, wantMessage) {
+		t.Errorf("Message = %q, want it to contain %q", n.Message, wantMessage)
+	}
+}
+
+func requireNoNotice(t *testing.T, campaignRoot string) {
+	t.Helper()
+	if n := detectNeverSynced(t, campaignRoot); n != nil {
+		t.Fatalf("expected no notice, got %+v", n)
+	}
+}
+
 func TestNeverSyncedNamesTheRemedyFromAnotherMachine(t *testing.T) {
 	campaignRoot := stageRoot(t)
 
-	n := neverSynced(t, campaignRoot)
+	n := detectNeverSynced(t, campaignRoot)
 	if n == nil {
 		t.Fatal("a root with no second copy must notify")
 	}
@@ -84,38 +110,103 @@ func TestNeverSyncedNamesTheRemedyFromAnotherMachine(t *testing.T) {
 	}
 }
 
-func TestNeverSyncedPersistsWithOnlyThisMachinesManifest(t *testing.T) {
+// Without this machine's own record there is nothing to measure coverage
+// against, so even a populated peer record leaves the notice up.
+func TestNeverSyncedStaysWithoutThisMachinesManifest(t *testing.T) {
 	campaignRoot := stageRoot(t)
-	commitManifest(t, campaignRoot, thisMachine, record("a.bin"))
+	commitManifest(t, campaignRoot, "studio", record(file("a.bin", 1, "h-a")))
+	saveSnapshot(t, campaignRoot, "laptop", record(file("a.bin", 1, "")))
 
-	if neverSynced(t, campaignRoot) == nil {
-		t.Fatal("this machine's own manifest is not a second copy; the notice must stay")
-	}
+	requireNotice(t, campaignRoot, neverSynced)
 }
 
-func TestNeverSyncedClearsWithAnotherMachinesManifest(t *testing.T) {
+func TestNeverSyncedStaysWithOnlyThisMachinesManifest(t *testing.T) {
 	campaignRoot := stageRoot(t)
-	commitManifest(t, campaignRoot, thisMachine, record("a.bin"))
-	commitManifest(t, campaignRoot, "studio", record("a.bin"))
+	commitManifest(t, campaignRoot, thisMachine, record(file("a.bin", 1, "h-a")))
 
-	if n := neverSynced(t, campaignRoot); n != nil {
-		t.Fatalf("another machine records the root's files; got %+v", n)
-	}
+	requireNotice(t, campaignRoot, neverSynced)
+}
+
+func TestNeverSyncedClearsWhenAnotherMachineHoldsEveryFile(t *testing.T) {
+	campaignRoot := stageRoot(t)
+	commitManifest(t, campaignRoot, thisMachine, record(file("a.bin", 1, "h-a"), file("b.bin", 2, "h-b")))
+	commitManifest(t, campaignRoot, "studio", record(file("a.bin", 1, "h-a"), file("b.bin", 2, "h-b")))
+
+	requireNoNotice(t, campaignRoot)
+}
+
+// The reviewer's case: another machine's manifest is populated, but with a
+// different file. Nothing here has a second copy.
+func TestNeverSyncedStaysWhenAnotherMachineHoldsDifferentFiles(t *testing.T) {
+	campaignRoot := stageRoot(t)
+	commitManifest(t, campaignRoot, thisMachine, record(file("a.bin", 1, "h-a")))
+	commitManifest(t, campaignRoot, "studio", record(file("b.bin", 1, "h-b")))
+
+	requireNotice(t, campaignRoot, neverSynced)
+}
+
+// A root holding git-tracked notes beside its media: every machine that pulls
+// git has the notes, and its manifest job records them. The media still exist
+// here only, and the notice says how many.
+func TestNeverSyncedCountsFilesAnotherMachineLacks(t *testing.T) {
+	campaignRoot := stageRoot(t)
+	commitManifest(t, campaignRoot, thisMachine, record(
+		file("notes.md", 10, "h-notes"),
+		file("cut-30s.mp4", 4000, "h-30"),
+		file("cut.mp4", 9000, "h-full"),
+	))
+	commitManifest(t, campaignRoot, "studio", record(file("notes.md", 10, "h-notes")))
+
+	requireNotice(t, campaignRoot, "2 of 3 files under "+testRoot+" exist on this machine only")
+}
+
+func TestNeverSyncedSaysExistsForOneUncoveredFile(t *testing.T) {
+	campaignRoot := stageRoot(t)
+	commitManifest(t, campaignRoot, thisMachine, record(file("a.bin", 1, "h-a"), file("b.bin", 2, "h-b")))
+	commitManifest(t, campaignRoot, "studio", record(file("a.bin", 1, "h-a")))
+
+	requireNotice(t, campaignRoot, "1 of 2 files under "+testRoot+" exists on this machine only")
+}
+
+func TestNeverSyncedStaysOnAHashMismatch(t *testing.T) {
+	campaignRoot := stageRoot(t)
+	commitManifest(t, campaignRoot, thisMachine, record(file("a.bin", 1, "h-local")))
+	commitManifest(t, campaignRoot, "studio", record(file("a.bin", 1, "h-other")))
+
+	requireNotice(t, campaignRoot, neverSynced)
+}
+
+func TestNeverSyncedStaysOnASizeMismatch(t *testing.T) {
+	campaignRoot := stageRoot(t)
+	commitManifest(t, campaignRoot, thisMachine, record(file("a.bin", 1, "")))
+	commitManifest(t, campaignRoot, "studio", record(file("a.bin", 2, "")))
+
+	requireNotice(t, campaignRoot, neverSynced)
+}
+
+// A file written while it was hashed is recorded with no hash, so path and
+// size are all there is to compare.
+func TestNeverSyncedMatchesPathAndSizeWhenAHashIsUnknown(t *testing.T) {
+	campaignRoot := stageRoot(t)
+	commitManifest(t, campaignRoot, thisMachine, record(file("a.bin", 1, "")))
+	commitManifest(t, campaignRoot, "studio", record(file("a.bin", 1, "h-a")))
+
+	requireNoNotice(t, campaignRoot)
 }
 
 // A machine without the root still commits a manifest for it, with no files.
 func TestNeverSyncedIgnoresAnotherMachinesEmptyManifest(t *testing.T) {
 	campaignRoot := stageRoot(t)
+	commitManifest(t, campaignRoot, thisMachine, record(file("a.bin", 1, "h-a")))
 	commitManifest(t, campaignRoot, "studio", record())
 
-	if neverSynced(t, campaignRoot) == nil {
-		t.Fatal("an empty manifest from another machine proves no copy; the notice must stay")
-	}
+	requireNotice(t, campaignRoot, neverSynced)
 }
 
 // A manifest whose embedded root is another root's is not this root's record.
 func TestNeverSyncedIgnoresAManifestForAnotherRoot(t *testing.T) {
 	campaignRoot := stageRoot(t)
+	commitManifest(t, campaignRoot, thisMachine, record(file("a.bin", 1, "")))
 	path := filepath.Join(campaignRoot, filepath.FromSlash(artifacts.CommittedManifestRelPath("studio", testRoot)))
 	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
 		t.Fatal(err)
@@ -125,33 +216,36 @@ func TestNeverSyncedIgnoresAManifestForAnotherRoot(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	if neverSynced(t, campaignRoot) == nil {
-		t.Fatal("a mismatched record must not count as a copy of this root")
-	}
+	requireNotice(t, campaignRoot, neverSynced)
+}
+
+func TestNeverSyncedClearsWhenAPeerSnapshotHoldsEveryFile(t *testing.T) {
+	campaignRoot := stageRoot(t)
+	commitManifest(t, campaignRoot, thisMachine, record(file("a.bin", 1, "h-a")))
+	saveSnapshot(t, campaignRoot, "laptop", record(file("a.bin", 1, "")))
+
+	requireNoNotice(t, campaignRoot)
 }
 
 // Pulling from a peer whose root is empty records a snapshot with no agreed
 // files; that is not a second copy.
 func TestNeverSyncedIgnoresAnEmptySnapshot(t *testing.T) {
 	campaignRoot := stageRoot(t)
-	if err := artifacts.SaveSnapshot(campaignRoot, "laptop", testRoot, record()); err != nil {
-		t.Fatal(err)
-	}
+	commitManifest(t, campaignRoot, thisMachine, record(file("a.bin", 1, "h-a")))
+	saveSnapshot(t, campaignRoot, "laptop", record())
 
-	if neverSynced(t, campaignRoot) == nil {
-		t.Fatal("an empty snapshot must not clear the notice")
-	}
+	requireNotice(t, campaignRoot, neverSynced)
 }
 
-func TestNeverSyncedClearsWithAPopulatedSnapshot(t *testing.T) {
+// Coverage is per file across every record held elsewhere, so two partial
+// copies on different machines together clear the notice.
+func TestNeverSyncedCombinesManifestsAndSnapshots(t *testing.T) {
 	campaignRoot := stageRoot(t)
-	if err := artifacts.SaveSnapshot(campaignRoot, "laptop", testRoot, record("a.bin")); err != nil {
-		t.Fatal(err)
-	}
+	commitManifest(t, campaignRoot, thisMachine, record(file("a.bin", 1, "h-a"), file("b.bin", 2, "h-b")))
+	commitManifest(t, campaignRoot, "studio", record(file("a.bin", 1, "h-a")))
+	saveSnapshot(t, campaignRoot, "laptop", record(file("b.bin", 2, "")))
 
-	if n := neverSynced(t, campaignRoot); n != nil {
-		t.Fatalf("a pull that agreed on files is a second copy; got %+v", n)
-	}
+	requireNoNotice(t, campaignRoot)
 }
 
 // A dismissal committed by camp v0.10.0, under the long id, keeps working.
@@ -162,9 +256,7 @@ func TestNeverSyncedHonorsAV010Dismissal(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	if n := neverSynced(t, campaignRoot); n != nil {
-		t.Fatalf("a v0.10.0 dismissal must still silence the notice; got %+v", n)
-	}
+	requireNoNotice(t, campaignRoot)
 	data, err := os.ReadFile(DismissalPath(campaignRoot))
 	if err != nil {
 		t.Fatal(err)
@@ -176,7 +268,7 @@ func TestNeverSyncedHonorsAV010Dismissal(t *testing.T) {
 
 func TestManifestDriftUsesAShortID(t *testing.T) {
 	campaignRoot := stageRoot(t)
-	commitManifest(t, campaignRoot, thisMachine, record("gone.bin"))
+	commitManifest(t, campaignRoot, thisMachine, record(file("gone.bin", 1, "")))
 
 	n, err := ArtifactRootDrift(context.Background(), campaignRoot)
 	if err != nil {

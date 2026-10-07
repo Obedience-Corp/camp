@@ -106,8 +106,9 @@ func TestArtifactsPullFromEmptyOrAbsentPeerRootKeepsNeverSyncedNotice(t *testing
 			createOut, err := tc.RunCamp("create", c.name, "-d", "holds media", "-m", "source", "--path", "/campaigns")
 			require.NoError(t, err, "local camp create failed: %s", createOut)
 			tc.Shell(t, fmt.Sprintf("mkdir -p %[1]s/%[2]s && printf 'only-here' > %[1]s/%[2]s/a.bin", localRoot, artifactRoot))
-			addOut, err := tc.RunCampInDir(localRoot, "artifacts", "add", artifactRoot)
-			require.NoError(t, err, "artifacts add failed: %s", addOut)
+			// This machine's own record is the baseline the notice measures
+			// coverage against, so the real manifest job writes it first.
+			declareAndRecord(t, tc, localRoot, artifactRoot)
 
 			syncOut, _ := tc.RunCampInDir(localRoot, "sync", "--artifacts-only", "--from", loopbackMachineID)
 			t.Logf("sync output:\n%s", syncOut)
@@ -124,7 +125,7 @@ func TestArtifactsPullFromEmptyOrAbsentPeerRootKeepsNeverSyncedNotice(t *testing
 			}
 
 			requireFileContent(t, tc, localRoot+"/"+artifactRoot+"/a.bin", "only-here")
-			require.Contains(t, statusStderr(t, tc, localRoot), "never synced",
+			require.Contains(t, campAs(t, tc, noticeMachine, localRoot, "status"), "never synced",
 				"nothing left this machine, so the notice must stay")
 		})
 	}

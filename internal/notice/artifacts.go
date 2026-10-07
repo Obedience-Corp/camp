@@ -34,13 +34,20 @@ const missingRootID = "artifact-roots-missing-locally"
 // there is exactly one copy of them anywhere. The user believes the
 // declaration protected the data; it did not, yet.
 //
-// A second copy is proven two ways. Another machine's committed manifest
-// records files under the root, which is the signal that reaches this machine
-// when the other one pulled from it: that pull happens over there, and the
-// manifest comes back through git. Or this machine has a non-empty snapshot
-// from pulling the root off a peer. An empty record proves nothing in either
-// case: a machine without the root commits an empty manifest, and pulling from
-// a peer whose root is empty snapshots nothing agreed.
+// The notice clears only when every file in this machine's committed manifest
+// for the root has a second copy: the same path and size, and the same content
+// hash when both records know it, in another machine's committed manifest or
+// in this machine's snapshot of a pull from a peer. Another machine's manifest
+// is the signal that reaches this machine when the other one pulled from it:
+// that pull happens over there, and the manifest comes back through git.
+// Coverage is per file because a record that merely exists proves little. A
+// machine without the root commits an empty manifest, a machine that has only
+// the root's git-tracked files commits a manifest of those, and a pull from a
+// peer whose root differs agrees only on what the peer had. When some files are
+// covered and some are not, the notice counts the ones that are not.
+//
+// Without this machine's own record there is nothing to check coverage
+// against, so the notice stays until the manifest job has written one.
 func ArtifactRootNeverSynced(ctx context.Context, campaignRoot string) (*Notice, error) {
 	if ctx.Err() != nil {
 		return nil, ctx.Err()
@@ -75,20 +82,99 @@ func ArtifactRootNeverSynced(ctx context.Context, campaignRoot string) (*Notice,
 		if dismissals.IsDismissed(id) {
 			continue
 		}
-		if hasPopulatedSnapshot(campaignRoot, peers, rel) || anotherMachineHolds(campaignRoot, others, rel) {
-			continue
+		message := fmt.Sprintf(
+			"%s is a declared artifact root that has never synced; its contents exist on this machine only", rel)
+		if own := ownRecord(campaignRoot, self, rel); own != nil {
+			only := countOnlyHere(own, secondCopies(campaignRoot, others, peers, rel))
+			if only == 0 {
+				continue
+			}
+			if only < len(own.Files) {
+				message = partialCoverageMessage(rel, only, len(own.Files))
+			}
 		}
 		return &Notice{
 			ID:      id,
 			Subject: rel,
-			Message: fmt.Sprintf(
-				"%s is a declared artifact root that has never synced; its contents exist on this machine only",
-				rel),
+			Message: message,
 			Command: "on another machine: camp sync --from " + pullSourceHint(self) +
 				" --artifacts-only   (dismiss: camp notify dismiss " + id + ")",
 		}, nil
 	}
 	return nil, nil
+}
+
+// ownRecord returns this machine's committed manifest for a root, or nil when
+// there is no identity, no record, or a record of no files.
+func ownRecord(campaignRoot, self, rel string) *artifacts.Manifest {
+	if self == "" {
+		return nil
+	}
+	m, _, err := artifacts.LoadCommitted(campaignRoot, self, rel)
+	if err != nil || m == nil || len(m.Files) == 0 {
+		return nil
+	}
+	return m
+}
+
+// secondCopies collects every record of a root held off this machine: other
+// machines' committed manifests and this machine's snapshots of pulls from
+// peers. One file read per machine and per peer: no hashing, no walk.
+func secondCopies(campaignRoot string, others, peers []string, rel string) []map[string]artifacts.FileEntry {
+	var copies []map[string]artifacts.FileEntry
+	for _, machine := range others {
+		if m, _, err := artifacts.LoadCommitted(campaignRoot, machine, rel); err == nil && m != nil && len(m.Files) > 0 {
+			copies = append(copies, m.Index())
+		}
+	}
+	for _, peer := range peers {
+		if snap, err := artifacts.LoadSnapshot(campaignRoot, peer, rel); err == nil && snap != nil && len(snap.Files) > 0 {
+			copies = append(copies, snap.Index())
+		}
+	}
+	return copies
+}
+
+// countOnlyHere counts the files in this machine's record that no second copy
+// holds.
+func countOnlyHere(own *artifacts.Manifest, copies []map[string]artifacts.FileEntry) int {
+	only := 0
+	for _, f := range own.Files {
+		if !heldElsewhere(f, copies) {
+			only++
+		}
+	}
+	return only
+}
+
+func heldElsewhere(f artifacts.FileEntry, copies []map[string]artifacts.FileEntry) bool {
+	for _, index := range copies {
+		if c, ok := index[f.Path]; ok && sameContent(f, c) {
+			return true
+		}
+	}
+	return false
+}
+
+// sameContent compares two records of one path. Size and kind always; the
+// content hash only when both records know it, because an unsettled file and
+// every peer snapshot carry none.
+func sameContent(a, b artifacts.FileEntry) bool {
+	if a.Size != b.Size || a.Symlink != b.Symlink {
+		return false
+	}
+	if a.HashSHA256 != "" && b.HashSHA256 != "" {
+		return a.HashSHA256 == b.HashSHA256
+	}
+	return true
+}
+
+func partialCoverageMessage(rel string, only, total int) string {
+	verb := "exist"
+	if only == 1 {
+		verb = "exists"
+	}
+	return fmt.Sprintf("%d of %d files under %s %s on this machine only", only, total, rel, verb)
 }
 
 // otherManifestMachines returns this machine's manifest identity and every
@@ -112,18 +198,6 @@ func otherManifestMachines(campaignRoot string) (string, []string) {
 		}
 	}
 	return self, others
-}
-
-// anotherMachineHolds reports whether another machine's committed manifest
-// records files under a root. One file read per machine: no hashing, no walk.
-func anotherMachineHolds(campaignRoot string, others []string, rel string) bool {
-	for _, machine := range others {
-		m, _, err := artifacts.LoadCommitted(campaignRoot, machine, rel)
-		if err == nil && m != nil && len(m.Files) > 0 {
-			return true
-		}
-	}
-	return false
 }
 
 // pullSourceHint names this machine for the command run on another one. The id
@@ -231,16 +305,4 @@ func ArtifactRootDrift(ctx context.Context, campaignRoot string) (*Notice, error
 func rootExists(campaignRoot, rel string) bool {
 	_, err := os.Stat(filepath.Join(campaignRoot, filepath.FromSlash(rel)))
 	return err == nil
-}
-
-// hasPopulatedSnapshot reports whether a pull from any peer agreed on at least
-// one file under a root. One read per peer per root: no hashing, no walking
-// the root itself.
-func hasPopulatedSnapshot(campaignRoot string, peers []string, rel string) bool {
-	for _, peer := range peers {
-		if snap, err := artifacts.LoadSnapshot(campaignRoot, peer, rel); err == nil && snap != nil && len(snap.Files) > 0 {
-			return true
-		}
-	}
-	return false
 }

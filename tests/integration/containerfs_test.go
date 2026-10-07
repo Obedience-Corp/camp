@@ -81,7 +81,7 @@ var containerFSPackages = []containerFSPackage{
 	{ImportPath: "./cmd/camp/init", MinTests: 3},
 	// The artifact notice detectors read declarations, committed manifests,
 	// snapshots, and dismissals staged in a campaign.
-	{ImportPath: "./internal/notice", MinTests: 9},
+	{ImportPath: "./internal/notice", MinTests: 17},
 }
 
 // containerFSTag is the build tag gating host compilation of these suites.
