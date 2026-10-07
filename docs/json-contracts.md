@@ -38,6 +38,7 @@ Schema versions in this release:
 | `camp intent note --json` | `intents/v1alpha1` | Emits the created note's `id` and `path`, the same shape as `add --json`. |
 | `camp clone --json` | `clone/v1alpha1` | Existing clone result shape; setup and validation failures use the JSON error envelope. |
 | `camp doctor --json` | `doctor/v1alpha1` | Emits `schema_version` plus the snake_case health result on stdout; discovered error findings also emit a JSON error envelope on stderr with the same exit code. |
+| `camp notify --json` | `notify/v1alpha1` | Emits `schema_version`, `campaign_root`, `live`, and `dismissed`. Each `live` entry has `id`, `subject` (what it is about, such as an artifact root; empty for a camp-wide notice), `message`, and `command` (the fix, without the dismiss hint). Each `dismissed` entry has `id`, `subject`, `dismissed_at`, and `summary` (what the id says the notice was about), plus `message` and `command` only while a detector still reports that id. Both arrays are always present. |
 | `camp leverage --json` | `leverage/v1alpha1` | Existing leverage result shape; refusals use the JSON error envelope. |
 | `camp leverage history --json` | `leverage-history/v1alpha1` | Existing history result shape; refusals use the JSON error envelope. |
 | `camp quest list --json` | `quest-list/v1alpha1` | Emits `schema_version`, `campaign_root`, and `items` with camp-relative paths. |

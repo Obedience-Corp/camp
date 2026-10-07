@@ -20,4 +20,4 @@ camp notify restore <notice-id> [flags]
 
 ### SEE ALSO
 
-* [camp notify](camp_notify.md)	 - Manage camp state notices
+* [camp notify](camp_notify.md)	 - Review, dismiss, and restore camp state notices

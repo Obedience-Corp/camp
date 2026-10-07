@@ -26,6 +26,9 @@ type Notice struct {
 	// ID identifies the signal. It is the key per-signature dismissal will
 	// use, so it must stay stable across runs.
 	ID string
+	// Subject is what the notice is about, such as an artifact root, or ""
+	// for a notice about the camp as a whole.
+	Subject string
 	// Message states what is drifted, in one line.
 	Message string
 	// Command fixes it.

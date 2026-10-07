@@ -74,3 +74,109 @@ func requireFileContent(t *testing.T, tc *TestContainer, path, want string) {
 	require.NoError(t, err, "read %s", path)
 	require.Equal(t, want, got, "content of %s", path)
 }
+
+// The machine that holds a root's bytes can still pull from a peer. When the
+// peer's root is empty or absent, nothing came across and the bytes have still
+// never left this machine, so the never-synced notice must survive the pull.
+func TestArtifactsPullFromEmptyOrAbsentPeerRootKeepsNeverSyncedNotice(t *testing.T) {
+	tc := GetSharedContainer(t)
+	ensurePeerAccount(t, tc)
+	registerLoopbackMachine(t, tc)
+
+	const artifactRoot = "renders"
+	cases := []struct {
+		name         string
+		peerHasRoot  bool
+		wantSnapshot bool
+	}{
+		{name: "never-synced-empty-peer", peerHasRoot: true, wantSnapshot: true},
+		{name: "never-synced-absent-peer", peerHasRoot: false, wantSnapshot: false},
+	}
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			peerRoot := peerCampaignsDir + "/" + c.name
+			script := fmt.Sprintf("set -e\ncamp create %s -d 'peer' -m 'empty peer' --no-git --path %s\n",
+				c.name, peerCampaignsDir)
+			if c.peerHasRoot {
+				script += fmt.Sprintf("mkdir -p %s\n", shQuote(peerRoot+"/"+artifactRoot))
+			}
+			peerSSH(t, tc, script)
+
+			localRoot := "/campaigns/" + c.name
+			createOut, err := tc.RunCamp("create", c.name, "-d", "holds media", "-m", "source", "--path", "/campaigns")
+			require.NoError(t, err, "local camp create failed: %s", createOut)
+			tc.Shell(t, fmt.Sprintf("mkdir -p %[1]s/%[2]s && printf 'only-here' > %[1]s/%[2]s/a.bin", localRoot, artifactRoot))
+			// This machine's own record is the baseline the notice measures
+			// coverage against, so the real manifest job writes it first.
+			declareAndRecord(t, tc, localRoot, artifactRoot)
+
+			syncOut, _ := tc.RunCampInDir(localRoot, "sync", "--artifacts-only", "--from", loopbackMachineID)
+			t.Logf("sync output:\n%s", syncOut)
+
+			snapshot := localRoot + "/.campaign/cache/peersync/" + loopbackMachineID + "/" + artifactRoot + ".json"
+			exists, err := tc.CheckFileExists(snapshot)
+			require.NoError(t, err)
+			require.Equal(t, c.wantSnapshot, exists, "snapshot presence after the pull")
+			if exists {
+				content, err := tc.ReadFile(snapshot)
+				require.NoError(t, err)
+				t.Logf("snapshot: %s", content)
+				require.NotContains(t, content, "a.bin", "a file the peer never had must not be recorded as agreed")
+			}
+
+			requireFileContent(t, tc, localRoot+"/"+artifactRoot+"/a.bin", "only-here")
+			require.Contains(t, campAs(t, tc, noticeMachine, localRoot, "status"), "never synced",
+				"nothing left this machine, so the notice must stay")
+		})
+	}
+}
+
+// A file pulled from a peer has a second copy until it is edited here. An edit
+// that keeps the size must still bring the notice back: the snapshot carries no
+// hash, and its mtime is the pull's.
+func TestArtifactsSameSizeEditAfterAPullBringsNeverSyncedBack(t *testing.T) {
+	tc := GetSharedContainer(t)
+	ensurePeerAccount(t, tc)
+	registerLoopbackMachine(t, tc)
+
+	const (
+		name         = "never-synced-edit-after-pull"
+		artifactRoot = "renders"
+	)
+	peerSSH(t, tc, fmt.Sprintf(`
+set -e
+camp create %[1]s -d 'peer' -m 'holds the original' --no-git --path %[2]s
+mkdir -p %[3]s
+printf 'PEER-v1' > %[3]s/c.bin
+`, name, peerCampaignsDir, shQuote(peerCampaignsDir+"/"+name+"/"+artifactRoot)))
+
+	localRoot := "/campaigns/" + name
+	createOut, err := tc.RunCamp("create", name, "-d", "pulls media", "-m", "copy", "--path", "/campaigns")
+	require.NoError(t, err, "local camp create failed: %s", createOut)
+	tc.Shell(t, fmt.Sprintf("mkdir -p %s/%s", localRoot, artifactRoot))
+	campAs(t, tc, noticeMachine, localRoot, "artifacts add "+artifactRoot)
+
+	syncOut, err := tc.RunCampInDir(localRoot, "sync", "--artifacts-only", "--from", loopbackMachineID)
+	require.NoError(t, err, "artifact sync failed: %s", syncOut)
+	requireFileContent(t, tc, localRoot+"/"+artifactRoot+"/c.bin", "PEER-v1")
+
+	campAs(t, tc, noticeMachine, localRoot, `commit -m "record the pulled root"`)
+	settleJobs(t, tc, noticeMachine, localRoot)
+	out := campAs(t, tc, noticeMachine, localRoot, "status")
+	require.NotContains(t, out, "never synced", "a file that arrived from the peer has a second copy")
+
+	// The root is gitignored, so the edit alone gives a commit nothing to
+	// record; until something does, the drift notice is what reports it. A
+	// tracked change makes the commit that refreshes this machine's record.
+	tc.Shell(t, fmt.Sprintf("printf 'LOCALv2' > %s/%s/c.bin", localRoot, artifactRoot))
+	out = campAs(t, tc, noticeMachine, localRoot, "status")
+	require.Contains(t, out, "renders has drifted from its committed manifest",
+		"before the record is refreshed, drift reports the edit")
+	tc.Shell(t, fmt.Sprintf("printf 'edited c.bin\\n' >> %s/notes.md", localRoot))
+	campAs(t, tc, noticeMachine, localRoot, `commit -m "edit the pulled file in place"`)
+	settleJobs(t, tc, noticeMachine, localRoot)
+	out = campAs(t, tc, noticeMachine, localRoot, "status")
+	require.Contains(t, out, "never synced",
+		"the edited bytes exist only here, whatever the stale snapshot says")
+	require.NotContains(t, out, "has drifted", "the refreshed record matches the tree")
+}

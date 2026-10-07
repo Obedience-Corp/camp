@@ -37,6 +37,7 @@ recording is the stable command surface a reader can install. Pass
 | Project link browser | [project-link.tape](project-link.tape) | [project-link.gif](project-link.gif) | (fixture: `fixtures/project-link-fixture.sh`) |
 | Switch selector geometry | [switch-selector.tape](switch-selector.tape) | private gist | (fixture: `fixtures/switch-selector-fixture.sh`) |
 | Deferred jobs browser | [jobs-tui.tape](jobs-tui.tape) | [jobs-tui.gif](jobs-tui.gif) | (fixture: `fixtures/jobs-tui-fixture.sh`) |
+| Notice browser | [notify-browse.tape](notify-browse.tape) | [notify-browse.gif](notify-browse.gif) | (fixture: `fixtures/notify-fixture.sh`) |
 | Tailscale SSH approval | [machine-tailscale-check.tape](machine-tailscale-check.tape) | private gist | (PR evidence bundle) |
 | OpenSSH login denied | [machine-auth-denied.tape](machine-auth-denied.tape) | private gist | (PR evidence bundle) |
 | Diagnose an unresolvable host | [machine-diagnose-dns.tape](machine-diagnose-dns.tape) | private gist | (PR evidence bundle) |
@@ -112,6 +113,19 @@ just build-camp
 FIXTURE=$(mktemp -d)
 docs/demos/fixtures/jobs-tui-fixture.sh "$FIXTURE" ./bin/camp
 CAMP_VHS_ROOT=$FIXTURE just vhs record-color docs/demos/jobs-tui.tape
+```
+
+`notify-browse` needs a fixture camp with three live notices (the legacy
+dungeon layout, a stale workitem link, and two never-synced artifact roots the
+detector reports one at a time) and stub clipboard tools, then the truecolor
+recorder. The same fixture backs `just tui pty-notify`, which asserts the
+writes to `.campaign/notices.yaml` that a recording cannot:
+
+```sh
+just build-camp
+FIXTURE=$(mktemp -d)
+docs/demos/fixtures/notify-fixture.sh "$FIXTURE" ./bin/camp
+CAMP_VHS_ROOT=$FIXTURE just vhs record-color docs/demos/notify-browse.tape
 ```
 
 Machine fixture layout (disposable, no live tailnet):

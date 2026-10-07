@@ -73,7 +73,7 @@ camp [flags]
 * [camp log](camp_log.md)	 - Show git log of the camp
 * [camp machine](camp_machine.md)	 - Manage remote machines (~/.obey/machines.yaml)
 * [camp move](camp_move.md)	 - Move a file or directory within the camp
-* [camp notify](camp_notify.md)	 - Manage camp state notices
+* [camp notify](camp_notify.md)	 - Review, dismiss, and restore camp state notices
 * [camp org](camp_org.md)	 - Group camps into orgs
 * [camp pack](camp_pack.md)	 - Pack a directory into a portable .festival bundle
 * [camp pin](camp_pin.md)	 - Pin a directory

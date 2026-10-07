@@ -3,6 +3,7 @@ package notice
 import (
 	"os"
 	"path/filepath"
+	"sort"
 	"time"
 
 	camperrors "github.com/Obedience-Corp/camp/internal/errors"
@@ -43,7 +44,16 @@ func LoadDismissals(campaignRoot string) (*DismissalFile, error) {
 		}
 		return nil, camperrors.Wrap(err, "read notice dismissals")
 	}
+	return DecodeDismissals(data)
+}
 
+// DecodeDismissals parses dismissal file bytes.
+//
+// IDs in the long form camp v0.10.0 wrote are rewritten to their current form
+// here, so a dismissal made before the change keeps silencing its notice. The
+// file on disk is left alone until the next Save, because this runs on the
+// status path and reading state must not dirty a committed file.
+func DecodeDismissals(data []byte) (*DismissalFile, error) {
 	var f DismissalFile
 	if err := yaml.Unmarshal(data, &f); err != nil {
 		return nil, camperrors.Wrap(err, "parse notice dismissals")
@@ -51,9 +61,15 @@ func LoadDismissals(campaignRoot string) (*DismissalFile, error) {
 	if f.Version == 0 {
 		f.Version = 1
 	}
-	if f.Dismissed == nil {
-		f.Dismissed = map[string]time.Time{}
+	migrated := make(map[string]time.Time, len(f.Dismissed))
+	for id, at := range f.Dismissed {
+		id = CanonicalID(id)
+		if prev, ok := migrated[id]; ok && prev.Before(at) {
+			continue
+		}
+		migrated[id] = at
 	}
+	f.Dismissed = migrated
 	return &f, nil
 }
 
@@ -63,9 +79,9 @@ func (f *DismissalFile) Save(campaignRoot string) error {
 	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
 		return camperrors.Wrap(err, "create .campaign directory")
 	}
-	data, err := yaml.Marshal(f)
+	data, err := f.Encode()
 	if err != nil {
-		return camperrors.Wrap(err, "encode notice dismissals")
+		return err
 	}
 	if err := fsutil.WriteFileAtomically(path, data, 0o644); err != nil {
 		return camperrors.Wrap(err, "write notice dismissals")
@@ -73,12 +89,22 @@ func (f *DismissalFile) Save(campaignRoot string) error {
 	return nil
 }
 
-// IsDismissed reports whether a notice ID has been dismissed.
+// Encode renders the dismissal file as it is saved.
+func (f *DismissalFile) Encode() ([]byte, error) {
+	data, err := yaml.Marshal(f)
+	if err != nil {
+		return nil, camperrors.Wrap(err, "encode notice dismissals")
+	}
+	return data, nil
+}
+
+// IsDismissed reports whether a notice ID has been dismissed. An ID in its
+// v0.10.0 long form is accepted.
 func (f *DismissalFile) IsDismissed(id string) bool {
 	if f == nil || id == "" {
 		return false
 	}
-	_, ok := f.Dismissed[id]
+	_, ok := f.Dismissed[CanonicalID(id)]
 	return ok
 }
 
@@ -87,10 +113,20 @@ func (f *DismissalFile) Dismiss(id string, at time.Time) bool {
 	if f.Dismissed == nil {
 		f.Dismissed = map[string]time.Time{}
 	}
+	id = CanonicalID(id)
 	if _, exists := f.Dismissed[id]; exists {
 		return false
 	}
 	f.Dismissed[id] = at.UTC()
+	return true
+}
+
+// Restore removes a dismissal, reporting whether there was one.
+func (f *DismissalFile) Restore(id string) bool {
+	if !f.IsDismissed(id) {
+		return false
+	}
+	delete(f.Dismissed, CanonicalID(id))
 	return true
 }
 
@@ -117,4 +153,31 @@ func (f *DismissalFile) Filter(notices []Notice) []Notice {
 		}
 	}
 	return kept
+}
+
+// Dismissed is one dismissal described for display.
+type Dismissed struct {
+	ID      string
+	Subject string
+	Summary string
+	At      string
+}
+
+// Describe lists the dismissals in ID order with what each one is about.
+// subjects comes from Subjects.
+func (f *DismissalFile) Describe(subjects map[string]string) []Dismissed {
+	if f == nil {
+		return nil
+	}
+	out := make([]Dismissed, 0, len(f.Dismissed))
+	for id, at := range f.Dismissed {
+		out = append(out, Dismissed{
+			ID:      id,
+			Subject: subjects[id],
+			Summary: Summary(id),
+			At:      at.Format("2006-01-02"),
+		})
+	}
+	sort.Slice(out, func(i, j int) bool { return out[i].ID < out[j].ID })
+	return out
 }

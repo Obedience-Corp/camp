@@ -79,6 +79,9 @@ var containerFSPackages = []containerFSPackage{
 	{ImportPath: "./internal/nav/index", MinTests: 2},
 	// The initial-commit tests git-init a campaign and commit its scaffold.
 	{ImportPath: "./cmd/camp/init", MinTests: 3},
+	// The artifact notice detectors read declarations, committed manifests,
+	// snapshots, and dismissals staged in a campaign.
+	{ImportPath: "./internal/notice", MinTests: 21},
 }
 
 // containerFSTag is the build tag gating host compilation of these suites.
