@@ -39,18 +39,6 @@ type Notice struct {
 // say. Detectors must be stat-level cheap.
 type Detector func(ctx context.Context, campaignRoot string) (*Notice, error)
 
-// Detectors returns every detector, in the order their notices are shown, so
-// each surface that reports notices runs the same set.
-func Detectors() []Detector {
-	return []Detector{
-		DungeonLegacy,
-		StaleLinks,
-		ArtifactRootNeverSynced,
-		ArtifactRootsMissingLocally,
-		ArtifactRootDrift,
-	}
-}
-
 // Detect runs detectors against campaignRoot and collects what they report.
 //
 // A detector that fails is skipped rather than surfaced: a notice is an
