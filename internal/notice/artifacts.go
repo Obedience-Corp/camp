@@ -36,10 +36,11 @@ const missingRootID = "artifact-roots-missing-locally"
 //
 // The notice clears only when every file in this machine's committed manifest
 // for the root has a second copy: the same path and size, and the same content
-// hash when both records know it, in another machine's committed manifest or
-// in this machine's snapshot of a pull from a peer. Another machine's manifest
-// is the signal that reaches this machine when the other one pulled from it:
-// that pull happens over there, and the manifest comes back through git.
+// hash when both records know it or the same mtime when either does not, in
+// another machine's committed manifest or in this machine's snapshot of a pull
+// from a peer. Another machine's manifest is the signal that reaches this
+// machine when the other one pulled from it: that pull happens over there, and
+// the manifest comes back through git.
 // Coverage is per file because a record that merely exists proves little. A
 // machine without the root commits an empty manifest, a machine that has only
 // the root's git-tracked files commits a manifest of those, and a pull from a
@@ -156,9 +157,14 @@ func heldElsewhere(f artifacts.FileEntry, copies []map[string]artifacts.FileEntr
 	return false
 }
 
-// sameContent compares two records of one path. Size and kind always; the
-// content hash only when both records know it, because an unsettled file and
-// every peer snapshot carry none.
+// sameContent compares two records of one path. Size and kind always. When
+// both records know the content hash, the hash decides. When either does not,
+// which is every peer snapshot and any file written while it was hashed, the
+// nanosecond mtime must match too: without it, an in-place edit that kept the
+// size would still match the stale record and pass as a second copy of bytes
+// that exist only here. A pull keeps the peer's mtime, so a true copy matches;
+// a copy whose mtime was not preserved simply does not count, which can only
+// keep the notice up.
 func sameContent(a, b artifacts.FileEntry) bool {
 	if a.Size != b.Size || a.Symlink != b.Symlink {
 		return false
@@ -166,7 +172,7 @@ func sameContent(a, b artifacts.FileEntry) bool {
 	if a.HashSHA256 != "" && b.HashSHA256 != "" {
 		return a.HashSHA256 == b.HashSHA256
 	}
-	return true
+	return a.MTime == b.MTime
 }
 
 func partialCoverageMessage(rel string, only, total int) string {

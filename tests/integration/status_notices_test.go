@@ -49,7 +49,7 @@ func TestIntegration_StatusNoticeNeverSynced(t *testing.T) {
 	campPath := setupGuardCampaign(t, tc, "notice-never-synced")
 
 	tc.Shell(t, fmt.Sprintf(`cd %s && mkdir -p media/renders && printf 'x' > media/renders/a.bin`, campPath))
-	declareAndRecord(t, tc, campPath, "media/renders")
+	own := declareAndRecord(t, tc, campPath, "media/renders")
 
 	out := campAs(t, tc, noticeMachine, campPath, "status")
 	assert.Contains(t, out, "media/renders")
@@ -72,11 +72,17 @@ func TestIntegration_StatusNoticeNeverSynced(t *testing.T) {
 	out = campAs(t, tc, noticeMachine, campPath, "status")
 	assert.Contains(t, out, "never synced", "an empty snapshot is not a second copy")
 
+	// Snapshots carry no hash, so the mtime has to match this machine's record.
+	// One a nanosecond off describes other bytes.
+	snapshot := campPath + "/.campaign/cache/peersync/laptop/media%2Frenders.json"
+	tc.Shell(t, fmt.Sprintf(`jq '{version: 1, root: .root, files: [.files[] | del(.hash_sha256) | .mtime_unix_nano -= 1]}' '%s' > '%s'`,
+		own, snapshot))
+	out = campAs(t, tc, noticeMachine, campPath, "status")
+	assert.Contains(t, out, "never synced", "a snapshot with another mtime is not a copy of these bytes")
+
 	// A snapshot that agreed on this machine's file means it has left.
-	tc.Shell(t, fmt.Sprintf(`
-		cd %s
-		printf '{"version":1,"root":"media/renders","files":[{"path":"a.bin","size":1,"mtime_unix_nano":1}]}' > .campaign/cache/peersync/laptop/media%%2Frenders.json
-	`, campPath))
+	tc.Shell(t, fmt.Sprintf(`jq '{version: 1, root: .root, files: [.files[] | del(.hash_sha256)]}' '%s' > '%s'`,
+		own, snapshot))
 	out = campAs(t, tc, noticeMachine, campPath, "status")
 	assert.NotContains(t, out, "never synced",
 		"the notice must stop once every recorded file has a second copy")

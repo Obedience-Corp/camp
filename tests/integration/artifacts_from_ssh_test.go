@@ -130,3 +130,53 @@ func TestArtifactsPullFromEmptyOrAbsentPeerRootKeepsNeverSyncedNotice(t *testing
 		})
 	}
 }
+
+// A file pulled from a peer has a second copy until it is edited here. An edit
+// that keeps the size must still bring the notice back: the snapshot carries no
+// hash, and its mtime is the pull's.
+func TestArtifactsSameSizeEditAfterAPullBringsNeverSyncedBack(t *testing.T) {
+	tc := GetSharedContainer(t)
+	ensurePeerAccount(t, tc)
+	registerLoopbackMachine(t, tc)
+
+	const (
+		name         = "never-synced-edit-after-pull"
+		artifactRoot = "renders"
+	)
+	peerSSH(t, tc, fmt.Sprintf(`
+set -e
+camp create %[1]s -d 'peer' -m 'holds the original' --no-git --path %[2]s
+mkdir -p %[3]s
+printf 'PEER-v1' > %[3]s/c.bin
+`, name, peerCampaignsDir, shQuote(peerCampaignsDir+"/"+name+"/"+artifactRoot)))
+
+	localRoot := "/campaigns/" + name
+	createOut, err := tc.RunCamp("create", name, "-d", "pulls media", "-m", "copy", "--path", "/campaigns")
+	require.NoError(t, err, "local camp create failed: %s", createOut)
+	tc.Shell(t, fmt.Sprintf("mkdir -p %s/%s", localRoot, artifactRoot))
+	campAs(t, tc, noticeMachine, localRoot, "artifacts add "+artifactRoot)
+
+	syncOut, err := tc.RunCampInDir(localRoot, "sync", "--artifacts-only", "--from", loopbackMachineID)
+	require.NoError(t, err, "artifact sync failed: %s", syncOut)
+	requireFileContent(t, tc, localRoot+"/"+artifactRoot+"/c.bin", "PEER-v1")
+
+	campAs(t, tc, noticeMachine, localRoot, `commit -m "record the pulled root"`)
+	settleJobs(t, tc, noticeMachine, localRoot)
+	out := campAs(t, tc, noticeMachine, localRoot, "status")
+	require.NotContains(t, out, "never synced", "a file that arrived from the peer has a second copy")
+
+	// The root is gitignored, so the edit alone gives a commit nothing to
+	// record; until something does, the drift notice is what reports it. A
+	// tracked change makes the commit that refreshes this machine's record.
+	tc.Shell(t, fmt.Sprintf("printf 'LOCALv2' > %s/%s/c.bin", localRoot, artifactRoot))
+	out = campAs(t, tc, noticeMachine, localRoot, "status")
+	require.Contains(t, out, "renders has drifted from its committed manifest",
+		"before the record is refreshed, drift reports the edit")
+	tc.Shell(t, fmt.Sprintf("printf 'edited c.bin\\n' >> %s/notes.md", localRoot))
+	campAs(t, tc, noticeMachine, localRoot, `commit -m "edit the pulled file in place"`)
+	settleJobs(t, tc, noticeMachine, localRoot)
+	out = campAs(t, tc, noticeMachine, localRoot, "status")
+	require.Contains(t, out, "never synced",
+		"the edited bytes exist only here, whatever the stale snapshot says")
+	require.NotContains(t, out, "has drifted", "the refreshed record matches the tree")
+}

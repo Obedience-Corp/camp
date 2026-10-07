@@ -38,8 +38,15 @@ func stageRoot(t *testing.T) string {
 	return campaignRoot
 }
 
+// pulledAt is the mtime fixtures share unless a test is about mtime.
+const pulledAt = 100
+
 func file(path string, size int64, hash string) artifacts.FileEntry {
-	return artifacts.FileEntry{Path: path, Size: size, MTime: 1, HashSHA256: hash}
+	return fileAt(path, size, pulledAt, hash)
+}
+
+func fileAt(path string, size, mtime int64, hash string) artifacts.FileEntry {
+	return artifacts.FileEntry{Path: path, Size: size, MTime: mtime, HashSHA256: hash}
 }
 
 func record(files ...artifacts.FileEntry) *artifacts.Manifest {
@@ -184,12 +191,49 @@ func TestNeverSyncedStaysOnASizeMismatch(t *testing.T) {
 	requireNotice(t, campaignRoot, neverSynced)
 }
 
-// A file written while it was hashed is recorded with no hash, so path and
-// size are all there is to compare.
-func TestNeverSyncedMatchesPathAndSizeWhenAHashIsUnknown(t *testing.T) {
+// Another machine's checkout and copy times differ from this machine's, so
+// when both records carry a hash, the hash alone decides.
+func TestNeverSyncedLetsTheHashDecideWhenBothAreKnown(t *testing.T) {
 	campaignRoot := stageRoot(t)
-	commitManifest(t, campaignRoot, thisMachine, record(file("a.bin", 1, "")))
-	commitManifest(t, campaignRoot, "studio", record(file("a.bin", 1, "h-a")))
+	commitManifest(t, campaignRoot, thisMachine, record(fileAt("a.bin", 1, 100, "h-a")))
+	commitManifest(t, campaignRoot, "studio", record(fileAt("a.bin", 1, 999, "h-a")))
+
+	requireNoNotice(t, campaignRoot)
+}
+
+// A file written while it was hashed is recorded with no hash, so path, size,
+// and mtime are what there is to compare.
+func TestNeverSyncedMatchesMTimeWhenAHashIsUnknown(t *testing.T) {
+	campaignRoot := stageRoot(t)
+	commitManifest(t, campaignRoot, thisMachine, record(fileAt("a.bin", 1, 100, "")))
+	commitManifest(t, campaignRoot, "studio", record(fileAt("a.bin", 1, 100, "h-a")))
+
+	requireNoNotice(t, campaignRoot)
+}
+
+func TestNeverSyncedStaysOnADifferentMTimeWhenAHashIsUnknown(t *testing.T) {
+	campaignRoot := stageRoot(t)
+	commitManifest(t, campaignRoot, thisMachine, record(fileAt("a.bin", 1, 100, "")))
+	commitManifest(t, campaignRoot, "studio", record(fileAt("a.bin", 1, 101, "h-a")))
+
+	requireNotice(t, campaignRoot, neverSynced)
+}
+
+// The re-review's case: a file pulled from a peer, then edited in place with
+// its size kept and committed. The snapshot carries no hash and still holds
+// the pull's mtime, so it no longer describes these bytes.
+func TestNeverSyncedStaysAfterASameSizeEditSinceThePull(t *testing.T) {
+	campaignRoot := stageRoot(t)
+	commitManifest(t, campaignRoot, thisMachine, record(fileAt("a.bin", 1, 200, "h-edited")))
+	saveSnapshot(t, campaignRoot, "laptop", record(fileAt("a.bin", 1, 100, "")))
+
+	requireNotice(t, campaignRoot, neverSynced)
+}
+
+func TestNeverSyncedClearsOnASnapshotWithTheSameMTimeWhenTheOwnHashIsUnknown(t *testing.T) {
+	campaignRoot := stageRoot(t)
+	commitManifest(t, campaignRoot, thisMachine, record(fileAt("a.bin", 1, 100, "")))
+	saveSnapshot(t, campaignRoot, "laptop", record(fileAt("a.bin", 1, 100, "")))
 
 	requireNoNotice(t, campaignRoot)
 }
