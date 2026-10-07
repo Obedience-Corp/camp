@@ -191,6 +191,31 @@ pty-intent-copy:
     evidence="${CAMP_TUI_EVIDENCE_DIR:-out/evidence/intent-copy}"
     "$venv_dir/bin/python" tests/tui/intent_copy_pty.py "$fixture" "$evidence"
 
+# Build the disposable fixture for the notify browser check. The same script
+# seeds docs/demos/notify-browse.tape, so the recording and the pty check show
+# one camp. Prints the fixture path. Never touches the operator's camp
+# registry or clipboard.
+[private]
+notify-fixture:
+    #!/usr/bin/env bash
+    set -euo pipefail
+    cd "{{root}}"
+    docs/demos/fixtures/notify-fixture.sh "${CAMP_VHS_ROOT:-$(mktemp -d)}" bin/camp
+
+# Assert what a recording of the notify browser cannot: d and r land in
+# .campaign/notices.yaml, dismissing one artifact root surfaces the next, the
+# non-interactive list and --json agree afterwards, and y hands the bare fix
+# command to the platform clipboard tool.
+pty-notify:
+    #!/usr/bin/env bash
+    set -euo pipefail
+    cd "{{root}}"
+    just build-camp >/dev/null
+    venv_dir="$(just tui venv)"
+    fixture="$(CAMP_VHS_ROOT="${CAMP_VHS_ROOT:-}" just tui notify-fixture)"
+    evidence="${CAMP_TUI_EVIDENCE_DIR:-out/evidence/notify}"
+    "$venv_dir/bin/python" tests/tui/notify_pty.py "$fixture" "$evidence"
+
 # Drive the compiled selector widget: recency cursor, type-to-filter, no-match, esc.
 pty-selector:
     #!/usr/bin/env bash
@@ -247,7 +272,7 @@ pty-switch:
     just test integration-run TestSwitch_BottomProximityTTY
 
 # Run every pty check.
-pty: pty-triage-review pty-machine-tailscale-check pty-machine-auth-denied pty-sweep-prompt pty-selector pty-intent-copy pty-intent-add pty-project-list pty-switch pty-confirm
+pty: pty-triage-review pty-machine-tailscale-check pty-machine-auth-denied pty-sweep-prompt pty-selector pty-intent-copy pty-notify pty-intent-add pty-project-list pty-switch pty-confirm
 
 # Record one tape. The tape owns its output path and its fixture bootstrap.
 tape tape_path:

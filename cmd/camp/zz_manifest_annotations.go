@@ -40,6 +40,7 @@ var manifestAgentAllowedReasons = map[string]string{
 	"machine diagnose":           "Read path (socket status) is safe; never pass --reset from an agent",
 	"machine list":               "Read-only listing of ~/.obey/machines.yaml",
 	"machine remove":             "Non-interactive removal with explicit id argument",
+	"notify":                     "Read-only notice listing with --json; TTY opens an interactive browser",
 	"org next":                   "Non-interactive; --print/--json resolve the next org camp without a TUI",
 	"org toggle":                 "Non-interactive; --print/--json resolve the last-visited org camp without a TUI",
 	"project list":               "Read-only project listing",
@@ -126,6 +127,7 @@ var manifestAllowedInteractivePaths = map[string]bool{
 	"gather design":  true,
 	"gather explore": true,
 	"idea add":       true,
+	"notify":         true,
 	"quest list":     true,
 	"switch":         true,
 }

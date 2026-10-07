@@ -19,3 +19,12 @@ func TestSwitchSchemaVersionIsFrozen(t *testing.T) {
 		t.Fatalf("camp switch schema version: got %q, want %q", switchSchemaVersion, "camp-switch/v1")
 	}
 }
+
+// TestNotifySchemaVersionIsFrozen pins camp notify --json, which agents read
+// to find and dismiss notices by id.
+func TestNotifySchemaVersionIsFrozen(t *testing.T) {
+	if NotifyJSONVersion != "notify/v1alpha1" {
+		t.Fatalf("camp notify schema version: got %q, want %q (docs/json-contracts.md)",
+			NotifyJSONVersion, "notify/v1alpha1")
+	}
+}

@@ -7,26 +7,49 @@ import (
 
 	"github.com/Obedience-Corp/camp/internal/campaign"
 	camperrors "github.com/Obedience-Corp/camp/internal/errors"
+	"github.com/Obedience-Corp/camp/internal/jsoncontract"
 	"github.com/Obedience-Corp/camp/internal/notice"
 	"github.com/Obedience-Corp/camp/internal/ui"
 	"github.com/spf13/cobra"
 )
 
-// Every dismissible notice prints its own dismiss command, so this surface is
-// never the only way to act on one. A user who wants the notice gone can copy
-// the line they are already reading rather than going looking for a command
-// they have not met yet.
+// Bare notify is where a person who met a notice on camp status goes to act on
+// it: read the fix, copy it, or dismiss it in place, without carrying an id
+// from one command to another. The subcommands keep the by-id path for
+// scripts and agents, and every notice still prints its own dismiss command.
 var notifyCmd = &cobra.Command{
 	Use:   "notify",
-	Short: "Manage camp state notices",
-	Long: `Manage the advisory notices camp surfaces on commands you already run.
+	Short: "Review, dismiss, and restore camp state notices",
+	Long: `Review the advisory notices camp surfaces on commands you already run.
 
 Notices describe camp state you may not know is true, such as a declared
-artifact root that has never synced. Each one carries its own dismiss command.
+artifact root that has never synced. Run bare in a terminal to open the notice
+browser: live notices first, then the ones you have dismissed. The selected
+notice shows its fix command and id; d dismisses it, r restores a dismissed
+one, y copies the fix, and ? lists every key.
+
+Off a terminal, or with --plain, bare camp notify prints the same two lists.
+--json emits them for scripts and agents. The dismiss, restore, and list
+subcommands act on one id at a time.
 
 Dismissals are stored in .campaign/notices.yaml, which is committed: a
 dismissal you make on one machine travels to your others, the same way the
 artifact declarations it concerns do.`,
+	Example: `  camp notify                 # browse notices in a terminal; plain list otherwise
+  camp notify --plain         # always print the plain list
+  camp notify --json          # the same, for scripts and agents
+  camp notify dismiss <id>    # dismiss one notice by id
+  camp notify restore <id>    # show a dismissed notice again`,
+	Args: jsoncontract.Args(NotifyJSONVersion, func() bool { return notifyOpts.json }, cobra.NoArgs),
+	RunE: jsoncontract.RunE(NotifyJSONVersion, func() bool { return notifyOpts.json }, runNotify),
+}
+
+// NotifyJSONVersion is the schema of camp notify --json.
+const NotifyJSONVersion = "notify/v1alpha1"
+
+var notifyOpts struct {
+	json  bool
+	plain bool
 }
 
 var notifyDismissCmd = &cobra.Command{
@@ -50,6 +73,9 @@ var notifyListCmd = &cobra.Command{
 }
 
 func init() {
+	notifyCmd.Flags().BoolVar(&notifyOpts.json, "json", false, "Emit live and dismissed notices as JSON")
+	notifyCmd.Flags().BoolVar(&notifyOpts.plain, "plain", false, "Print the plain list even when stdout is a terminal")
+	notifyCmd.SetFlagErrorFunc(jsoncontract.FlagErrorFunc(NotifyJSONVersion, func() bool { return notifyOpts.json }))
 	notifyCmd.AddCommand(notifyDismissCmd)
 	notifyCmd.AddCommand(notifyListCmd)
 	rootCmd.AddCommand(notifyCmd)
