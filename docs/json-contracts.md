@@ -31,9 +31,11 @@ Schema versions in this release:
 | `camp workitem commits --json` | `workitem-commits/v1alpha1` | Emits matching commits and per-repo query errors. |
 | `camp workitem priority --json` | `workitem-priority/v1alpha1` | Emits `cleared: true` when priority is cleared. |
 | `camp concepts --json` | `concepts/v1alpha1` | Emits configured camp concepts with `generated_at`, `campaign_root`, and concept metadata. |
-| `camp intent list/find/show --json` | `intents/v1alpha1` | `--format json` is a deprecated alias. |
+| `camp intent list/find/show --json` | `intents/v1alpha1` | `--format json` is a deprecated alias. `list --status notes` adds note items (see `notes list`). |
+| `camp intent notes list --json` | `intents/v1alpha1` | Emits note items newest first by `created_at`. Each note item has `status: "notes"` and `folder` relative to `notes/`, `""` for the notes root; lifecycle items omit `folder`. Archived notes appear only with `--folder archived`. |
 | `camp intent count --json` | `intents/v1alpha1` | Counts are emitted as status-count objects in `items[]`; `--format json` is a deprecated alias. |
 | `camp intent add --json` | `intents/v1alpha1` | Emits created `id` and `path`. |
+| `camp intent note --json` | `intents/v1alpha1` | Emits the created note's `id` and `path`, the same shape as `add --json`. |
 | `camp clone --json` | `clone/v1alpha1` | Existing clone result shape; setup and validation failures use the JSON error envelope. |
 | `camp doctor --json` | `doctor/v1alpha1` | Emits `schema_version` plus the snake_case health result on stdout; discovered error findings also emit a JSON error envelope on stderr with the same exit code. |
 | `camp leverage --json` | `leverage/v1alpha1` | Existing leverage result shape; refusals use the JSON error envelope. |

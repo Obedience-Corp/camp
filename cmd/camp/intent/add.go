@@ -190,9 +190,9 @@ func runIntentAdd(cmd *cobra.Command, args []string) error {
 
 		if createNote {
 			if useEditor {
-				return runDeepNoteCapture(ctx, svc, resolver.Intents(), cfg, campaignRoot, noCommit, opts)
+				return runDeepNoteCapture(ctx, svc, resolver.Intents(), cfg, campaignRoot, noCommit, opts, cmd.OutOrStdout(), jsonOut)
 			}
-			return runNoteCapture(ctx, svc, resolver.Intents(), cfg, campaignRoot, noCommit, opts)
+			return runNoteCapture(ctx, svc, resolver.Intents(), cfg, campaignRoot, noCommit, opts, cmd.OutOrStdout(), jsonOut)
 		}
 
 		// Deep capture overrides ultra-fast; body flags pre-fill the template
@@ -476,7 +476,7 @@ func runDeepCaptureWithOutput(ctx context.Context, svc *intent.IntentService, in
 }
 
 // runDeepNoteCapture opens the note template in $EDITOR and saves it to notes/.
-func runDeepNoteCapture(ctx context.Context, svc *intent.IntentService, intentsDir string, cfg *config.CampaignConfig, campaignRoot string, noCommit bool, opts intent.CreateOptions) error {
+func runDeepNoteCapture(ctx context.Context, svc *intent.IntentService, intentsDir string, cfg *config.CampaignConfig, campaignRoot string, noCommit bool, opts intent.CreateOptions, output io.Writer, jsonOut bool) error {
 	editorFn := func(ctx context.Context, path string) error {
 		return editor.Edit(ctx, path)
 	}
@@ -492,7 +492,7 @@ func runDeepNoteCapture(ctx context.Context, svc *intent.IntentService, intentsD
 		return camperrors.Wrap(err, "failed to create note")
 	}
 
-	return finalizeCreatedNote(ctx, result, intentsDir, cfg, campaignRoot, noCommit)
+	return finalizeCreatedNote(ctx, result, intentsDir, cfg, campaignRoot, noCommit, output, jsonOut)
 }
 
 func finalizeCreatedIntent(ctx context.Context, result *intent.Intent, intentsDir string, cfg *config.CampaignConfig, campaignRoot string, noCommit bool) error {

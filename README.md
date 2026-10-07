@@ -290,7 +290,7 @@ Capture an idea, find work across the camp, and promote it when it is ready:
 camp idea add "Make onboarding simpler"      # Save an idea to the inbox
 camp idea explore                            # Browse ideas and notes
 camp idea note "Decision from today's review" # Capture a note
-camp idea notes --help                       # Note folders, moves, and meetings
+camp idea notes --help                       # Note list, folders, moves, and meetings
 camp gather                                  # Gather related work
 
 camp workitem                                # Interactive dashboard (alias: camp wi)

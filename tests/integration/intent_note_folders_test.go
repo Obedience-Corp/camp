@@ -5,7 +5,6 @@ package integration
 
 import (
 	"fmt"
-	"strings"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
@@ -51,13 +50,10 @@ func TestIntentNoteFolders_CRUDAndImportMeetingJSON(t *testing.T) {
 	require.NoError(t, err, "note --folder: %s", out)
 	assert.Contains(t, out, "notes/reading/books/")
 
-	// The note-create command has no JSON mode and lifecycle list/find omit
-	// notes. Resolve the ID from the exact folder contract rather than parsing
-	// human success text.
-	id := strings.TrimSpace(tc.Shell(t, fmt.Sprintf(
-		"basename \"$(find %s/.campaign/intents/notes/reading/books -maxdepth 1 -type f -name '*.md' | head -n 1)\" .md",
-		campPath,
-	)))
+	var listed notesListPayload
+	runCampJSONInDir(t, tc, campPath, &listed, "idea", "notes", "list", "--folder", "reading/books", "--json")
+	require.Len(t, listed.Items, 1)
+	id := listed.Items[0].ID
 	require.NotEmpty(t, id)
 
 	out, err = tc.RunCampInDir(campPath, "idea", "notes", "mv", id, ".")

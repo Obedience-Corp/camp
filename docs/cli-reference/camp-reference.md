@@ -2712,6 +2712,9 @@ List ideas with filtering, sorting, and output format options.
 
 By default, lists ideas in inbox, ready, and active status.
 Use --all to include dungeon ideas.
+Use --status notes to list notes from every note folder except archived, the
+same notes "camp idea notes list" returns. Notes have no type, project, or
+claim, so --type, --project, and --stale leave them out.
 
 OUTPUT FORMATS:
   table (default)   Human-readable table with columns
@@ -2721,6 +2724,7 @@ OUTPUT FORMATS:
 Examples:
   camp idea list                         List active ideas
   camp idea ls --status inbox            List inbox only
+  camp idea list --status notes --json   Notes as JSON items
   camp idea list -f json                 JSON output
   camp idea list -f simple | xargs ...   Pipe IDs to commands
   camp idea list --all                   Include archived
@@ -2744,7 +2748,7 @@ camp idea list [flags]
   -p, --project string   Filter by project
   -S, --sort string      Sort by: updated, created, priority, title (default "updated")
       --stale            Only show claimed ideas with no update in --days (default 7)
-  -s, --status strings   Filter by status (repeatable)
+  -s, --status strings   Filter by status (repeatable); notes lists notes
   -t, --type strings     Filter by type (repeatable)
 ```
 
@@ -2821,6 +2825,7 @@ Examples:
   camp idea note "check the daemon socket path"   Capture a note immediately
   camp idea note "follow up" --body "details..."  Note with a longer body
   echo "body" | camp idea note "idea" --body-file -
+  camp idea note "standup" --json                 Print the new note's id and path as JSON
   camp idea note                                  Note TUI (title + body)
 
 ```
@@ -2836,6 +2841,7 @@ camp idea note [text] [flags]
       --create-folder      Create --folder path if missing
       --folder string      Note folder under notes/ (must exist unless --create-folder)
   -h, --help               help for note
+      --json               emit a structured JSON result
       --no-commit          Don't create a git commit
   -t, --tag stringArray    Add a tag (repeatable)
 ```
@@ -2849,16 +2855,19 @@ camp idea note [text] [flags]
 
 ## camp idea notes
 
-Manage the note store (folders, moves, meetings)
+Manage the note store (list, folders, moves, meetings)
 
 ### Synopsis
 
 Manage the camp note store under .campaign/intents/notes/.
 
-Use "camp idea note" to capture a note. This command group manages folders
-and placement of notes already in the store.
+Use "camp idea note" to capture a note. This command group lists notes and
+manages folders and placement of notes already in the store.
 
 Examples:
+  camp idea notes list                    List notes, newest first
+  camp idea notes list --folder reading   Notes in one folder
+  camp idea notes list --json             Machine-readable note list
   camp idea notes folders                 List note folders
   camp idea notes folders --json          Machine-readable folder list
   camp idea notes folders add reading     Create notes/reading/
@@ -3037,6 +3046,45 @@ camp idea notes import-meeting <bundle-path> [flags]
       --summary-file string      Path to summary markdown (overrides bundle summary.md)
       --title string             Override note title
       --transcript-file string   Path to transcript file
+```
+
+### Options inherited from parent commands
+
+```
+      --no-color   disable colored output
+```
+---
+
+## camp idea notes list
+
+List notes across folders
+
+### Synopsis
+
+List notes in the note store, newest first by creation time.
+
+Notes in the notes root and every folder, including meetings, are listed.
+Archived notes are listed only with --folder archived. --folder matches one
+folder exactly, without its subfolders; use "." for the notes root.
+
+"camp idea list --status notes" returns the same notes.
+
+Examples:
+  camp idea notes list                          All notes except archived
+  camp idea notes list --folder reading         Notes directly in notes/reading/
+  camp idea notes list --folder .               Notes in the notes root only
+  camp idea notes list --json                   Machine-readable note list
+
+```
+camp idea notes list [flags]
+```
+
+### Options
+
+```
+      --folder string   Only list notes directly in this folder under notes/ ("." for the root)
+  -h, --help            help for list
+      --json            emit a structured JSON result
 ```
 
 ### Options inherited from parent commands

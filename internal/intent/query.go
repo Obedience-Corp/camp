@@ -144,9 +144,9 @@ func (s *IntentService) List(ctx context.Context, opts *ListOptions) ([]*Intent,
 	intents = deduped
 
 	if opts != nil && opts.SortBy != "" {
-		s.sortIntents(intents, opts.SortBy, opts.SortDesc)
+		SortIntents(intents, opts.SortBy, opts.SortDesc)
 	} else {
-		s.sortIntents(intents, "updated", true)
+		SortIntents(intents, "updated", true)
 	}
 
 	return intents, nil
@@ -184,8 +184,10 @@ func (s *IntentService) Search(ctx context.Context, query string) ([]*Intent, er
 	return results, nil
 }
 
-// sortIntents sorts a slice of intents by the given field.
-func (s *IntentService) sortIntents(intents []*Intent, sortBy string, desc bool) {
+// SortIntents orders intents by sortBy ("created", "updated", "title", or
+// "priority"), the same ordering List applies. Callers that merge List results
+// with notes use it to keep one ordering across both.
+func SortIntents(intents []*Intent, sortBy string, desc bool) {
 	sort.Slice(intents, func(i, j int) bool {
 		var less bool
 		switch sortBy {

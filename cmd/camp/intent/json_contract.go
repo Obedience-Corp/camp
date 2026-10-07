@@ -27,6 +27,7 @@ type IntentItem struct {
 	Title             string   `json:"title"`
 	Type              string   `json:"type"`
 	Status            string   `json:"status"`
+	Folder            *string  `json:"folder,omitempty"`
 	Concept           string   `json:"concept,omitempty"`
 	Author            string   `json:"author,omitempty"`
 	Priority          string   `json:"priority,omitempty"`
@@ -66,11 +67,22 @@ type IntentAddPayload struct {
 }
 
 func outputIntentPayload(w io.Writer, campaignRoot string, intents []*intentcore.Intent) error {
+	return outputIntentListPayload(w, campaignRoot, intents, nil)
+}
+
+// outputIntentListPayload renders intents as items. An intent present in
+// noteFolders is a note: its item carries status "notes" and the folder,
+// relative to notes/, that holds it.
+func outputIntentListPayload(w io.Writer, campaignRoot string, intents []*intentcore.Intent, noteFolders map[*intentcore.Intent]string) error {
 	items := make([]IntentItem, 0, len(intents))
 	for _, i := range intents {
 		item, err := intentItemFromIntent(campaignRoot, i)
 		if err != nil {
 			return err
+		}
+		if folder, ok := noteFolders[i]; ok {
+			item.Status = string(intentcore.StatusNote)
+			item.Folder = &folder
 		}
 		items = append(items, item)
 	}

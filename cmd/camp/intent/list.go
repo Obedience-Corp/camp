@@ -2,6 +2,8 @@ package intent
 
 import (
 	"fmt"
+	"slices"
+	"strings"
 	"time"
 
 	"github.com/charmbracelet/lipgloss"
@@ -29,6 +31,9 @@ func newIntentListCommand() *cobra.Command {
 
 By default, lists ideas in inbox, ready, and active status.
 Use --all to include dungeon ideas.
+Use --status notes to list notes from every note folder except archived, the
+same notes "camp idea notes list" returns. Notes have no type, project, or
+claim, so --type, --project, and --stale leave them out.
 
 OUTPUT FORMATS:
   table (default)   Human-readable table with columns
@@ -38,6 +43,7 @@ OUTPUT FORMATS:
 Examples:
   camp idea list                         List active ideas
   camp idea ls --status inbox            List inbox only
+  camp idea list --status notes --json   Notes as JSON items
   camp idea list -f json                 JSON output
   camp idea list -f simple | xargs ...   Pipe IDs to commands
   camp idea list --all                   Include archived
@@ -53,7 +59,7 @@ Examples:
 	flags.StringP("format", "f", "table", "Output format: table, simple, json")
 	flags.BoolVar(&jsonOut, "json", false, "emit a structured JSON result")
 	flags.StringP("sort", "S", "updated", "Sort by: updated, created, priority, title")
-	flags.StringSliceP("status", "s", nil, "Filter by status (repeatable)")
+	flags.StringSliceP("status", "s", nil, "Filter by status (repeatable); notes lists notes")
 	flags.StringSliceP("type", "t", nil, "Filter by type (repeatable)")
 	flags.StringP("project", "p", "", "Filter by project")
 	flags.String("horizon", "", "Filter by horizon")
@@ -103,20 +109,39 @@ func runIntentList(cmd *cobra.Command, args []string) error {
 	svc := intent.NewIntentService(campaignRoot, resolver.Intents())
 	warnPendingLegacyMigration(svc)
 
+	wantNotes, statuses := splitNotesStatus(statuses)
+
 	// Build list options
 	opts, err := buildListOptions(statuses, types, project, horizon, sortBy, includeAll)
 	if err != nil {
 		return err
 	}
 
-	// Get intents
-	intents, err := svc.List(ctx, opts)
-	if err != nil {
-		return camperrors.Wrap(err, "failed to list ideas")
+	var intents []*intent.Intent
+	if !wantNotes || len(statuses) > 0 {
+		intents, err = svc.List(ctx, opts)
+		if err != nil {
+			return camperrors.Wrap(err, "failed to list ideas")
+		}
+		// Apply status filtering (exclude dungeon statuses by default)
+		intents = filterStatuses(intents, includeAll, statuses)
 	}
 
-	// Apply status filtering (exclude dungeon statuses by default)
-	intents = filterStatuses(intents, includeAll, statuses)
+	var noteFolders map[*intent.Intent]string
+	if wantNotes {
+		entries, err := svc.ListNoteEntries(ctx, false)
+		if err != nil {
+			return camperrors.Wrap(err, "failed to list notes")
+		}
+		var notes []*intent.Intent
+		notes, noteFolders = splitNoteEntries(entries)
+		if project != "" {
+			notes = filterConcept(notes, project)
+		}
+		intents = append(intents, notes...)
+		intent.SortIntents(intents, opts.SortBy, opts.SortDesc)
+	}
+
 	intents = filterTypes(intents, types)
 	intents = filterStale(intents, stale, staleDays)
 
@@ -128,12 +153,35 @@ func runIntentList(cmd *cobra.Command, args []string) error {
 	// Format output
 	switch {
 	case jsonOut || format == "json":
-		return outputIntentPayload(cmd.OutOrStdout(), campaignRoot, intents)
+		return outputIntentListPayload(cmd.OutOrStdout(), campaignRoot, intents, noteFolders)
 	case format == "simple":
 		return outputSimple(intents)
 	default:
 		return outputTable(intents)
 	}
+}
+
+// splitNotesStatus removes "notes" from the requested statuses. Notes live
+// outside the lifecycle directories, so they are listed by the note store
+// rather than parsed as an intent status.
+func splitNotesStatus(statuses []string) (bool, []string) {
+	wantNotes := false
+	lifecycle := make([]string, 0, len(statuses))
+	for _, raw := range statuses {
+		switch strings.TrimSpace(strings.ToLower(raw)) {
+		case string(intent.StatusNote), "note":
+			wantNotes = true
+		default:
+			lifecycle = append(lifecycle, raw)
+		}
+	}
+	return wantNotes, lifecycle
+}
+
+func filterConcept(intents []*intent.Intent, concept string) []*intent.Intent {
+	return slices.DeleteFunc(intents, func(i *intent.Intent) bool {
+		return i.Concept != concept
+	})
 }
 
 func filterTypes(intents []*intent.Intent, allowedTypes []string) []*intent.Intent {
