@@ -38,13 +38,16 @@ type NoteFolderItem struct {
 
 var intentNotesCmd = &cobra.Command{
 	Use:   "notes",
-	Short: "Manage the note store (folders, moves, meetings)",
+	Short: "Manage the note store (list, folders, moves, meetings)",
 	Long: `Manage the camp note store under .campaign/intents/notes/.
 
-Use "camp idea note" to capture a note. This command group manages folders
-and placement of notes already in the store.
+Use "camp idea note" to capture a note. This command group lists notes and
+manages folders and placement of notes already in the store.
 
 Examples:
+  camp idea notes list                    List notes, newest first
+  camp idea notes list --folder reading   Notes in one folder
+  camp idea notes list --json             Machine-readable note list
   camp idea notes folders                 List note folders
   camp idea notes folders --json          Machine-readable folder list
   camp idea notes folders add reading     Create notes/reading/

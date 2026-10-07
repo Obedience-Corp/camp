@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"io"
 	"os"
 
 	tea "github.com/charmbracelet/bubbletea"
@@ -18,8 +19,10 @@ import (
 	"github.com/Obedience-Corp/camp/internal/intent"
 	"github.com/Obedience-Corp/camp/internal/intent/audit"
 	"github.com/Obedience-Corp/camp/internal/intent/tui"
+	"github.com/Obedience-Corp/camp/internal/jsoncontract"
 	navtui "github.com/Obedience-Corp/camp/internal/nav/tui"
 	"github.com/Obedience-Corp/camp/internal/paths"
+	"github.com/Obedience-Corp/camp/internal/pathutil"
 	wkitem "github.com/Obedience-Corp/camp/internal/workitem"
 )
 
@@ -34,10 +37,14 @@ func noteRef(id string) string {
 	return wkitem.DeriveWithPrefix(noteRefPrefix, id)
 }
 
-var intentNoteCmd = &cobra.Command{
-	Use:   "note [text]",
-	Short: "Capture a quick note",
-	Long: `Capture a freeform note. Notes are a separate category from ideas: they
+var intentNoteCmd = newIntentNoteCommand()
+
+func newIntentNoteCommand() *cobra.Command {
+	var jsonOut bool
+	cmd := &cobra.Command{
+		Use:   "note [text]",
+		Short: "Capture a quick note",
+		Long: `Capture a freeform note. Notes are a separate category from ideas: they
 are stored in .campaign/intents/notes/ and do not flow through the
 inbox → ready → active lifecycle. A note carries no type or concept; tags
 organize them.
@@ -49,15 +56,16 @@ Examples:
   camp idea note "check the daemon socket path"   Capture a note immediately
   camp idea note "follow up" --body "details..."  Note with a longer body
   echo "body" | camp idea note "idea" --body-file -
+  camp idea note "standup" --json                 Print the new note's id and path as JSON
   camp idea note                                  Note TUI (title + body)`,
-	Args: cobra.MaximumNArgs(1),
-	RunE: runIntentNote,
-}
+	}
+	jsonRequested := func() bool { return jsonOut }
+	cmd.Args = jsoncontract.Args(IntentJSONVersion, jsonRequested, cobra.MaximumNArgs(1))
+	cmd.RunE = jsoncontract.RunE(IntentJSONVersion, jsonRequested, runIntentNote)
+	cmd.SetFlagErrorFunc(jsoncontract.FlagErrorFunc(IntentJSONVersion, jsonRequested))
 
-func init() {
-	Cmd.AddCommand(intentNoteCmd)
-
-	flags := intentNoteCmd.Flags()
+	flags := cmd.Flags()
+	flags.BoolVar(&jsonOut, "json", false, "emit a structured JSON result")
 	flags.Bool("no-commit", false, "Don't create a git commit")
 	flags.String("body", "", "Set note body as a literal string")
 	flags.String("body-file", "", "Read note body from file (- for stdin, 10 MiB cap)")
@@ -65,16 +73,26 @@ func init() {
 	flags.StringArrayP("tag", "t", nil, "Add a tag (repeatable)")
 	flags.String("folder", "", "Note folder under notes/ (must exist unless --create-folder)")
 	flags.Bool("create-folder", false, "Create --folder path if missing")
+	return cmd
+}
+
+func init() {
+	Cmd.AddCommand(intentNoteCmd)
 }
 
 func runIntentNote(cmd *cobra.Command, args []string) error {
 	ctx := cmd.Context()
 
 	noCommit, _ := cmd.Flags().GetBool("no-commit")
+	jsonOut, _ := cmd.Flags().GetBool("json")
 	authorFlag, _ := cmd.Flags().GetString("author")
 	tags, _ := cmd.Flags().GetStringArray("tag")
 	folder, _ := cmd.Flags().GetString("folder")
 	createFolder, _ := cmd.Flags().GetBool("create-folder")
+
+	if jsonOut && len(args) == 0 {
+		return camperrors.Wrap(camperrors.ErrInvalidInput, "--json requires note text")
+	}
 
 	body, _, err := resolveBody(cmd)
 	if err != nil {
@@ -84,6 +102,10 @@ func runIntentNote(cmd *cobra.Command, args []string) error {
 	cfg, campaignRoot, err := config.LoadCampaignConfigFromCwd(ctx)
 	if err != nil {
 		return err
+	}
+	campaignRoot, err = pathutil.ResolveRoot(campaignRoot)
+	if err != nil {
+		return camperrors.Wrap(err, "resolving camp root")
 	}
 
 	resolver := paths.NewResolverFromConfig(campaignRoot, cfg)
@@ -108,7 +130,7 @@ func runIntentNote(cmd *cobra.Command, args []string) error {
 			author = authorFlag
 		}
 		opts := intent.CreateOptions{Title: args[0], Author: author, Body: body, Tags: tags, Folder: folder}
-		return runNoteCapture(ctx, svc, resolver.Intents(), cfg, campaignRoot, noCommit, opts)
+		return runNoteCapture(ctx, svc, resolver.Intents(), cfg, campaignRoot, noCommit, opts, cmd.OutOrStdout(), jsonOut)
 	}
 
 	// No argument: non-TTY requires note text (can't launch TUI)
@@ -146,7 +168,7 @@ func runIntentNote(cmd *cobra.Command, args []string) error {
 			Body:   saved.Body,
 			Tags:   mergeTags(tags, saved.Tags),
 			Folder: saved.NoteFolder,
-		}); err != nil {
+		}, cmd.OutOrStdout(), false); err != nil {
 			return err
 		}
 	}
@@ -165,7 +187,7 @@ func runIntentNote(cmd *cobra.Command, args []string) error {
 		Body:   result.Body,
 		Tags:   mergeTags(tags, result.Tags),
 		Folder: result.NoteFolder,
-	})
+	}, cmd.OutOrStdout(), false)
 }
 
 func runIntentNoteTUI(ctx context.Context, conceptSvc concept.Service, opts tui.AddOptions) (*tui.IntentAddModel, error) {
@@ -202,16 +224,19 @@ func mergeTags(a, b []string) []string {
 	return out
 }
 
-func runNoteCapture(ctx context.Context, svc *intent.IntentService, intentsDir string, cfg *config.CampaignConfig, campaignRoot string, noCommit bool, opts intent.CreateOptions) error {
+func runNoteCapture(ctx context.Context, svc *intent.IntentService, intentsDir string, cfg *config.CampaignConfig, campaignRoot string, noCommit bool, opts intent.CreateOptions, output io.Writer, jsonOut bool) error {
 	result, err := svc.CreateNote(ctx, opts)
 	if err != nil {
 		return camperrors.Wrap(err, "failed to create note")
 	}
 
-	return finalizeCreatedNote(ctx, result, intentsDir, cfg, campaignRoot, noCommit)
+	return finalizeCreatedNote(ctx, result, intentsDir, cfg, campaignRoot, noCommit, output, jsonOut)
 }
 
-func finalizeCreatedNote(ctx context.Context, result *intent.Intent, intentsDir string, cfg *config.CampaignConfig, campaignRoot string, noCommit bool) error {
+// finalizeCreatedNote records the audit event, reports the note, and commits
+// it. With jsonOut the report is the intents/v1alpha1 add payload and the
+// commit summary line is suppressed so stdout stays one JSON document.
+func finalizeCreatedNote(ctx context.Context, result *intent.Intent, intentsDir string, cfg *config.CampaignConfig, campaignRoot string, noCommit bool, output io.Writer, jsonOut bool) error {
 	if err := appendIntentAuditEvent(ctx, intentsDir, audit.Event{
 		Type:  audit.EventCreate,
 		ID:    result.ID,
@@ -221,7 +246,13 @@ func finalizeCreatedNote(ctx context.Context, result *intent.Intent, intentsDir 
 		return err
 	}
 
-	fmt.Printf("✓ Note created: %s\n", displayPath(campaignRoot, result.Path))
+	if jsonOut {
+		if err := outputIntentAddPayload(output, campaignRoot, result); err != nil {
+			return err
+		}
+	} else if _, err := fmt.Fprintf(output, "✓ Note created: %s\n", displayPath(campaignRoot, result.Path)); err != nil {
+		return camperrors.Wrap(err, "writing note result")
+	}
 
 	if !noCommit {
 		opts := wkcmd.AmbientCommitOptions(ctx, campaignRoot, cfg.ID, os.Stderr)
@@ -233,8 +264,10 @@ func finalizeCreatedNote(ctx context.Context, result *intent.Intent, intentsDir 
 			Action:      commit.IntentCreate,
 			IntentTitle: result.Title,
 		})
-		if commitResult.Message != "" {
-			fmt.Printf("  %s\n", commitResult.Message)
+		if !jsonOut && commitResult.Message != "" {
+			if _, err := fmt.Fprintf(output, "  %s\n", commitResult.Message); err != nil {
+				return camperrors.Wrap(err, "writing commit result")
+			}
 		}
 		commit.WarnIfSkipped(os.Stderr, commitResult)
 	}
