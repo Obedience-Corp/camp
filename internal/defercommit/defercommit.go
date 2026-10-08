@@ -143,10 +143,10 @@ func AllowedForPaths(ctx context.Context, campaignRoot, repoPath string, paths, 
 	if campaignRoot == "" || jobs.RepoForPath(campaignRoot, repoPath) == "" {
 		return false, RefusedNoCampaign
 	}
-	// Same hook rule as Allowed. Bookkeeping that does defer still goes through
-	// git commit on a temp index, so a direction shim runs there for real and
-	// the worker must not also append trailers.
-	if git.HasCommitHooks(ctx, repoPath) {
+	// Path jobs run git commit and its real hooks. They do not carry the tree
+	// job's frozen direction context, so keep hooked bookkeeping foreground.
+	shim, err := git.OnlyDirectionShim(ctx, repoPath)
+	if err != nil || shim {
 		return false, RefusedHooks
 	}
 	return true, ""

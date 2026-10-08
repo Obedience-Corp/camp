@@ -13,11 +13,10 @@ import (
 	"github.com/Obedience-Corp/camp/internal/git"
 )
 
-// The direction shim is not a hook commit-tree has to skip. Its effect is
-// trailers of the captured tree, which the worker appends. Anything else git
-// would run at commit time still refuses, and so does a hooks directory camp
-// cannot read.
-func TestAllowedForPathsHonorsOnlyTheDirectionShim(t *testing.T) {
+// Bookkeeping jobs execute real hooks without a captured direction context,
+// so all executable hooks keep them foreground. Captured-tree jobs can still
+// reproduce the supported shim.
+func TestAllowedForPathsKeepsHooksForeground(t *testing.T) {
 	t.Setenv(EnvNoDefer, "")
 	paths := []string{"note.md"}
 
@@ -32,9 +31,12 @@ func TestAllowedForPathsHonorsOnlyTheDirectionShim(t *testing.T) {
 		name  string
 		setup func(t *testing.T, repo string)
 		want  Refusal
+		shim  bool
 	}{
 		{
 			name: "only the direction shim",
+			want: RefusedHooks,
+			shim: true,
 			setup: func(t *testing.T, repo string) {
 				writeHook(t, repo, "commit-msg", stock, 0o755)
 			},
@@ -48,6 +50,8 @@ func TestAllowedForPathsHonorsOnlyTheDirectionShim(t *testing.T) {
 		},
 		{
 			name: "older direction shim",
+			want: RefusedHooks,
+			shim: true,
 			setup: func(t *testing.T, repo string) {
 				writeHook(t, repo, "commit-msg", older, 0o755)
 			},
@@ -98,6 +102,9 @@ func TestAllowedForPathsHonorsOnlyTheDirectionShim(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			repo := initGitRepo(t)
 			tt.setup(t, repo)
+			if tt.shim && git.HasCommitHooks(context.Background(), repo) {
+				t.Fatal("supported shim must still allow captured-tree deferral")
+			}
 			allowed, why := AllowedForPaths(context.Background(), repo, repo, paths, nil)
 			if tt.want == "" {
 				if !allowed || why != "" {

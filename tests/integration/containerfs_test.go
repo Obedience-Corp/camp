@@ -61,7 +61,7 @@ type containerFSPackage struct {
 var containerFSPackages = []containerFSPackage{
 	// Deferred commits must preserve hooks and trailers against real repositories.
 	{ImportPath: "./internal/jobs", MinTests: 6, TestPattern: "^Test(ExecuteCommit|CaptureDirection)"},
-	{ImportPath: "./internal/defercommit", MinTests: 2, TestPattern: "^TestAllowedForPaths(Honors|Unreadable)"},
+	{ImportPath: "./internal/defercommit", MinTests: 2, TestPattern: "^TestAllowedForPaths(Keeps|Unreadable)"},
 	// Hop resume socket and machine registry handoff regressions.
 	{ImportPath: "./cmd/camp", MinTests: 5, TestPattern: "^TestHopResume"},
 	{ImportPath: "./internal/starter", MinTests: 3},
