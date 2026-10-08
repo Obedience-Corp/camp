@@ -7,6 +7,7 @@ import (
 	"path/filepath"
 	"strings"
 
+	"github.com/Obedience-Corp/camp/internal/artifacts"
 	"github.com/Obedience-Corp/camp/internal/git"
 )
 
@@ -27,10 +28,13 @@ type RepoStatus struct {
 	Staged      int    `json:"staged"`
 	Modified    int    `json:"modified"`
 	Untracked   int    `json:"untracked"`
-	Unmerged    int    `json:"unmerged"`
-	StaleRefs   int    `json:"stale_refs"`
-	Remote      string `json:"remote"`
-	Error       string `json:"error,omitempty"`
+	// Artifacts counts untracked files camp keeps out of git as artifact
+	// content. They are not in Untracked and do not make the repo dirty.
+	Artifacts int    `json:"artifacts,omitempty"`
+	Unmerged  int    `json:"unmerged"`
+	StaleRefs int    `json:"stale_refs"`
+	Remote    string `json:"remote"`
+	Error     string `json:"error,omitempty"`
 }
 
 // Collect gathers status for submodule paths relative to campRoot.
@@ -74,8 +78,20 @@ func GetRepoStatus(ctx context.Context, repoPath, name string, isCampaignRoot bo
 	}
 
 	statusArgs := []string{}
+	artifactPaths := make(map[string]bool)
 	if isCampaignRoot {
 		statusArgs = append(statusArgs, "--ignore-submodules=all")
+		// Filter decoded output instead of adding one argument per artifact.
+		// Expanding untracked directories prevents an artifact-only directory
+		// from being counted as a normal untracked path.
+		if content, err := artifacts.UntrackedContent(ctx, repoPath); err == nil {
+			for _, path := range artifacts.UntrackedPaths(content) {
+				artifactPaths[path] = true
+			}
+			if len(artifactPaths) > 0 {
+				statusArgs = append(statusArgs, "--untracked-files=all")
+			}
+		}
 	}
 	output, err := git.StatusPorcelain(ctx, repoPath, statusArgs...)
 	if err != nil {
@@ -83,22 +99,25 @@ func GetRepoStatus(ctx context.Context, repoPath, name string, isCampaignRoot bo
 		return rs
 	}
 
-	rs.Clean = len(output) == 0
-	if !rs.Clean {
-		for _, entry := range git.ParseStatusPorcelainZ(output) {
-			if len(entry.Code) < 2 {
-				continue
-			}
-			x, y := entry.Code[0], entry.Code[1]
-			if x != ' ' && x != '?' {
-				rs.Staged++
-			}
-			if y != ' ' && y != '?' {
-				rs.Modified++
-			}
-			if x == '?' && y == '?' {
-				rs.Untracked++
-			}
+	rs.Clean = true
+	for _, entry := range git.ParseStatusPorcelainZ(output) {
+		if entry.Code == "??" && artifactPaths[entry.Path] {
+			rs.Artifacts++
+			continue
+		}
+		if len(entry.Code) < 2 {
+			continue
+		}
+		rs.Clean = false
+		x, y := entry.Code[0], entry.Code[1]
+		if x != ' ' && x != '?' {
+			rs.Staged++
+		}
+		if y != ' ' && y != '?' {
+			rs.Modified++
+		}
+		if x == '?' && y == '?' {
+			rs.Untracked++
 		}
 	}
 

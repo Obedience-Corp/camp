@@ -194,6 +194,9 @@ func renderStatusTable(statuses []statuspkg.RepoStatus) {
 		if s.Untracked > 0 {
 			changeParts = append(changeParts, dim.Render(fmt.Sprintf("?%d", s.Untracked)))
 		}
+		if s.Artifacts > 0 {
+			changeParts = append(changeParts, dim.Render(fmt.Sprintf("%d artifacts", s.Artifacts)))
+		}
 		changeStr := strings.Join(changeParts, " ")
 
 		// Branch (truncate if needed)

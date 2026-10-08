@@ -20,7 +20,7 @@ func CheckStaging(ctx context.Context, repoPath string, limits GuardLimits) ([]G
 		return nil, ctx.Err()
 	}
 
-	candidates, dirs, err := enumerate(ctx, repoPath)
+	candidates, dirs, err := enumerate(ctx, repoPath, nil)
 	if err != nil {
 		return nil, err
 	}
@@ -50,6 +50,42 @@ func CheckStaging(ctx context.Context, repoPath string, limits GuardLimits) ([]G
 		}
 		violations = append(violations, nested...)
 	}
+	return violations, nil
+}
+
+// UntrackedOverThreshold reports the untracked files under dirs that the
+// per-file guard holds back under limits: the same files a stage-everything
+// operation would exclude, found by the same LFS, allowlist, and size rules as
+// CheckStaging, so a caller asking "what will commit leave out here" and the
+// commit itself cannot disagree.
+//
+// The status call is scoped to dirs, so a caller asking about a few
+// directories never pays for a whole-repository walk. An empty dirs list
+// reports nothing rather than meaning "everywhere".
+func UntrackedOverThreshold(ctx context.Context, repoPath string, limits GuardLimits, dirs []string) ([]GuardViolation, error) {
+	if ctx.Err() != nil {
+		return nil, ctx.Err()
+	}
+	if len(dirs) == 0 || limits.LargeFiles == ModeOff {
+		return nil, nil
+	}
+
+	candidates, _, err := enumerate(ctx, repoPath, dirs)
+	if err != nil {
+		return nil, err
+	}
+
+	untracked := make([]Candidate, 0, len(candidates))
+	for _, candidate := range candidates {
+		if candidate.Untracked {
+			untracked = append(untracked, candidate)
+		}
+	}
+	untracked, err = FilterLFSManaged(ctx, repoPath, untracked)
+	if err != nil {
+		return nil, err
+	}
+	violations, _ := checkPerFile(filterAllowed(untracked, limits.Allow), limits)
 	return violations, nil
 }
 
