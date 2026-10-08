@@ -33,10 +33,15 @@ type Refusal string
 const (
 	// RefusedDisabled is CAMP_NO_DEFER=1.
 	RefusedDisabled Refusal = "CAMP_NO_DEFER is set"
-	// RefusedHooks is a repository with commit hooks. A hook is the user's own
-	// code expecting to run at commit time, against the tree being committed.
-	// Deferring past it would either skip it or run it minutes later against a
-	// different working tree.
+	// RefusedHooks is a repository with a commit hook a deferred commit cannot
+	// reproduce. A hook is the user's own code expecting to run at commit time,
+	// against the tree being committed. Deferring past it would either skip it
+	// or run it minutes later against a different working tree.
+	//
+	// The fest-direction commit-msg shim is not this refusal. Its effect is
+	// trailers of the tree the job already captured, and the commit-tree worker
+	// appends those before commit-tree. Any other executable hook still refuses,
+	// including a hook the shim itself chains in front of the trailers.
 	RefusedHooks Refusal = "this repository has commit hooks"
 	// RefusedJSON is --json, whose contract is that the document always carries
 	// a real commit hash and never a promise.
@@ -96,7 +101,8 @@ func Allowed(ctx context.Context, req Request) (bool, Refusal) {
 	if _, err := autowrite.LoadCommitMessageHook(ctx, req.CampaignRoot); err != nil {
 		return false, RefusedNoWriter
 	}
-	// Last because it is the only one that shells out to git.
+	// Last because it is the only one that shells out to git. The direction
+	// shim does not count; see RefusedHooks.
 	if git.HasCommitHooks(ctx, req.RepoPath) {
 		return false, RefusedHooks
 	}
@@ -137,6 +143,9 @@ func AllowedForPaths(ctx context.Context, campaignRoot, repoPath string, paths, 
 	if campaignRoot == "" || jobs.RepoForPath(campaignRoot, repoPath) == "" {
 		return false, RefusedNoCampaign
 	}
+	// Same hook rule as Allowed. Bookkeeping that does defer still goes through
+	// git commit on a temp index, so a direction shim runs there for real and
+	// the worker must not also append trailers.
 	if git.HasCommitHooks(ctx, repoPath) {
 		return false, RefusedHooks
 	}
