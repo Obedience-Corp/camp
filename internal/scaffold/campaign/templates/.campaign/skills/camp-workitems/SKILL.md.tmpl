@@ -66,12 +66,21 @@ camp workitem create --file "$(camp root)/workflow/design/notes.md" --type desig
 camp workitem adopt workflow/feature/existing-dir --type feature --title "Human title"
 ```
 
-`camp workitem create` places the item at `workflow/<type>/<slug>/`. The type
-is `--type` when given. Without it, the type is the `workflow/<type>/`
-directory the command runs from, including from inside another work item,
-which creates a sibling; anywhere else it is `feature`. `--json` reports the
-type and path it used. Agents should pass `--type` so the result does not
-depend on the working directory.
+For both directory and file creation, an explicit `--type` wins. Without it:
+
+- `camp workitem create <slug>` infers the type from `--dir` when given,
+  otherwise from the current directory, when that location is under
+  `workflow/<type>/`. Elsewhere it defaults to `feature`. The item goes in
+  `workflow/<type>/<slug>/` unless `--dir` overrides the parent directory.
+  Creating from inside another work item creates a sibling by default.
+- `camp workitem create --file <path>` infers the type from the target file's
+  parent directory under `workflow/<type>/`, defaulting to `feature`
+  elsewhere. For example, from the camp root,
+  `camp workitem create --file workflow/design/notes.md` creates a `design`
+  item.
+
+`--json` reports the type and path used. Agents should pass `--type` so the
+type does not depend on the working directory or target location.
 
 A relative `--file` path is read from the current directory. From outside
 `workflow/`, build it from `camp root` as above. `camp workitem adopt` paths
