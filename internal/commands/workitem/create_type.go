@@ -71,9 +71,11 @@ func workflowTypeSegment(dir string) string {
 	return seg
 }
 
-// campRelativeCwd returns the cwd relative to the camp root, resolving
-// symlinks on both sides the way camp root detection does. ok is false when
-// the cwd is outside the camp.
+// campRelativeCwd returns the shell's logical cwd relative to the camp root.
+// Symlinks below the root are kept as the user walked them, so a linked
+// directory under workflow/<type>/ still counts as that type and cd guidance
+// matches the shell's logical path; a symlinked root still matches. ok is
+// false when the cwd is outside the camp.
 func campRelativeCwd(campaignRoot string) (rel string, ok bool) {
 	cwd, err := pathutil.LogicalCwd()
 	if err != nil {
@@ -82,6 +84,9 @@ func campRelativeCwd(campaignRoot string) (rel string, ok bool) {
 	root, err := pathutil.ResolveRoot(campaignRoot)
 	if err != nil {
 		root = campaignRoot
+	}
+	if logical, found := pathutil.LogicalRelativeToRoot(root, cwd); found && !escapesRoot(logical) {
+		return filepath.ToSlash(logical), true
 	}
 	rel, err = pathutil.RelativeToRoot(root, cwd)
 	if err != nil || escapesRoot(rel) {

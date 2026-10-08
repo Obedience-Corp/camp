@@ -391,6 +391,29 @@ func TestIntegration_WorkitemCreateInfersTypeFromLocation(t *testing.T) {
 		assertMarkerType(t, "workflow/explore/via-link", "explore")
 	})
 
+	t.Run("ThroughSymlinkBelowTheRootToOutsideTheCamp", func(t *testing.T) {
+		external := campaignDir + "-external-notes"
+		tc.Shell(t, "rm -rf "+external+" && mkdir -p "+external+" "+campaignDir+"/workflow/explore/linked-first && ln -sfn "+external+" "+campaignDir+"/workflow/explore/linked-first/notes")
+
+		out, err := tc.RunCampInDir(campaignDir+"/workflow/explore/linked-first/notes", "workitem", "create", "linked-second", "--json")
+		require.NoError(t, err, "create --json from a symlink below the root: %s", out)
+		payload := decodeWorkitemCreateInfer(t, out)
+		assert.Equal(t, "explore", payload.Workitem.Type)
+		assert.Equal(t, "workflow/explore/linked-second", payload.Workitem.RelativePath)
+		assertMarkerType(t, "workflow/explore/linked-second", "explore")
+	})
+
+	t.Run("ThroughInternalSymlinkKeepsLogicalPath", func(t *testing.T) {
+		tc.Shell(t, "mkdir -p "+campaignDir+"/workflow/design/alias-target && ln -sfn ../design/alias-target "+campaignDir+"/workflow/explore/alias")
+
+		out, err := tc.RunCampInDir(campaignDir+"/workflow/explore/alias", "workitem", "create", "alias-sibling")
+		require.NoError(t, err, "create from an internal symlink: %s", out)
+		assert.Contains(t, out, "Created explore workitem alias-sibling")
+		assert.Regexp(t, `path:\s+workflow/explore/alias-sibling\n`, out)
+		assert.Regexp(t, `next:\s+cd \.\./alias-sibling && fest create workflow alias-sibling\n`, out)
+		assertMarkerType(t, "workflow/explore/alias-sibling", "explore")
+	})
+
 	t.Run("ExplicitTypeWins", func(t *testing.T) {
 		out, err := tc.RunCampInDir(campaignDir+"/workflow/explore", "workitem", "create", "explicit-bug", "--type", "bug")
 		require.NoError(t, err, "create --type bug from workflow/explore: %s", out)
