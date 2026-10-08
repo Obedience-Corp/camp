@@ -7,6 +7,7 @@ import (
 	"path/filepath"
 	"strings"
 
+	"github.com/Obedience-Corp/camp/internal/artifacts"
 	"github.com/Obedience-Corp/camp/internal/git"
 )
 
@@ -27,10 +28,13 @@ type RepoStatus struct {
 	Staged      int    `json:"staged"`
 	Modified    int    `json:"modified"`
 	Untracked   int    `json:"untracked"`
-	Unmerged    int    `json:"unmerged"`
-	StaleRefs   int    `json:"stale_refs"`
-	Remote      string `json:"remote"`
-	Error       string `json:"error,omitempty"`
+	// Artifacts counts untracked files camp keeps out of git as artifact
+	// content. They are not in Untracked and do not make the repo dirty.
+	Artifacts int    `json:"artifacts,omitempty"`
+	Unmerged  int    `json:"unmerged"`
+	StaleRefs int    `json:"stale_refs"`
+	Remote    string `json:"remote"`
+	Error     string `json:"error,omitempty"`
 }
 
 // Collect gathers status for submodule paths relative to campRoot.
@@ -76,6 +80,18 @@ func GetRepoStatus(ctx context.Context, repoPath, name string, isCampaignRoot bo
 	statusArgs := []string{}
 	if isCampaignRoot {
 		statusArgs = append(statusArgs, "--ignore-submodules=all")
+		// Classification failing leaves the count as git reports it, which
+		// is the pre-artifact behavior rather than a wrong answer.
+		if content, err := artifacts.UntrackedContent(ctx, repoPath); err == nil {
+			paths := artifacts.UntrackedPaths(content)
+			rs.Artifacts = len(paths)
+			if len(paths) > 0 {
+				statusArgs = append(statusArgs, "--")
+				for _, p := range paths {
+					statusArgs = append(statusArgs, ":(exclude,literal)"+p)
+				}
+			}
+		}
 	}
 	output, err := git.StatusPorcelain(ctx, repoPath, statusArgs...)
 	if err != nil {

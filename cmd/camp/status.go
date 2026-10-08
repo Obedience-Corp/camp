@@ -9,6 +9,7 @@ import (
 	camperrors "github.com/Obedience-Corp/camp/internal/errors"
 	"github.com/Obedience-Corp/camp/internal/triage"
 
+	"github.com/Obedience-Corp/camp/internal/artifacts"
 	"github.com/Obedience-Corp/camp/internal/campaign"
 	"github.com/Obedience-Corp/camp/internal/drain"
 	"github.com/Obedience-Corp/camp/internal/git"
@@ -32,6 +33,10 @@ var statusCmd = &cobra.Command{
 
 Works from anywhere within the camp - always shows the status
 of the camp root repository.
+
+Untracked files that camp commit keeps out of git as artifact content
+(over-threshold files inside a declared artifact root) are listed in their
+own section instead of under git's untracked files.
 
 Use --sub to show status of the submodule detected from your current directory.
 Use --project/-p to show status of a specific project.
@@ -94,6 +99,25 @@ func runStatus(cmd *cobra.Command, args []string) error {
 		gitArgs = append(gitArgs, "--ignore-submodules=all")
 	}
 
+	// Untracked files in a mixed artifact root are artifact content that
+	// camp commit leaves out every time; git can only call them untracked.
+	// They move out of git's listing into camp's own section, so they are
+	// reported rather than hidden. Projects never hold artifact roots.
+	var artifactContent []artifacts.UntrackedRoot
+	format := detectStatusFormat(gitArgs)
+	if !target.IsNestedRepo() {
+		content, err := artifacts.UntrackedContent(ctx, target.Path)
+		if err != nil {
+			if ctx.Err() != nil {
+				return ctx.Err()
+			}
+			fmt.Fprintln(os.Stderr, ui.Warning("artifact content not checked: "+err.Error()))
+		} else {
+			artifactContent = content
+			gitArgs = withArtifactExclusions(gitArgs, artifacts.UntrackedPaths(content))
+		}
+	}
+
 	fullArgs := append([]string{"-C", target.Path, "status"}, gitArgs...)
 	gitCmd := exec.CommandContext(ctx, "git", fullArgs...)
 	gitCmd.Stdout = os.Stdout
@@ -103,6 +127,12 @@ func runStatus(cmd *cobra.Command, args []string) error {
 	if err := gitCmd.Run(); err != nil {
 		return camperrors.Wrapf(err, "git status failed for %s", target.Path)
 	}
+
+	artifactOut := os.Stdout
+	if format == statusFormatMachine {
+		artifactOut = os.Stderr
+	}
+	renderStatusArtifacts(artifactOut, artifactContent, format)
 
 	// One line when the campaign's last triage has gone stale. It reads the
 	// verdict a refresh already cached and the campaign's own threshold —

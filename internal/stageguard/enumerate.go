@@ -39,7 +39,7 @@ type Candidate struct {
 //
 // Enumeration is stat-only. Nothing is hashed, opened, or read.
 func Enumerate(ctx context.Context, repoPath string) ([]Candidate, error) {
-	candidates, _, err := enumerate(ctx, repoPath)
+	candidates, _, err := enumerate(ctx, repoPath, nil)
 	return candidates, err
 }
 
@@ -47,12 +47,14 @@ func Enumerate(ctx context.Context, repoPath string) ([]Candidate, error) {
 // directories git declined to expand. Both come from one status call: running
 // it twice would double the cost of every guarded stage to learn something the
 // first call already reported.
-func enumerate(ctx context.Context, repoPath string) ([]Candidate, []string, error) {
+//
+// A non-empty scope limits the status call to those repo-relative directories.
+func enumerate(ctx context.Context, repoPath string, scope []string) ([]Candidate, []string, error) {
 	if ctx.Err() != nil {
 		return nil, nil, ctx.Err()
 	}
 
-	out, err := statusPorcelain(ctx, repoPath)
+	out, err := statusPorcelain(ctx, repoPath, scope)
 	if err != nil {
 		return nil, nil, err
 	}
@@ -78,8 +80,17 @@ func enumerate(ctx context.Context, repoPath string) ([]Candidate, []string, err
 // statusPorcelain runs git status in repoPath. Ignored files are absent by
 // construction, which is why the commit path structurally cannot see content
 // the user gitignored long ago; the doctor bigfiles sweep covers that instead.
-func statusPorcelain(ctx context.Context, repoPath string) ([]byte, error) {
+//
+// Scope entries are passed as literal pathspecs, so a directory name holding
+// glob characters means itself.
+func statusPorcelain(ctx context.Context, repoPath string, scope []string) ([]byte, error) {
 	args := []string{"-C", repoPath, "status", "--porcelain=v1", "-z", "-uall"}
+	if len(scope) > 0 {
+		args = append(args, "--")
+		for _, dir := range scope {
+			args = append(args, ":(literal)"+dir)
+		}
+	}
 	cmd := exec.CommandContext(ctx, "git", args...)
 	cmd.Env = gitEnv(os.Environ())
 
