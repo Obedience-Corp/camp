@@ -5,7 +5,6 @@ import (
 	"errors"
 	"io/fs"
 	"os"
-	"os/exec"
 	"path/filepath"
 	"testing"
 
@@ -379,9 +378,8 @@ func TestAllowedForPathsUnreadableHooksDirectoryRefuses(t *testing.T) {
 func initGitRepo(t *testing.T) string {
 	t.Helper()
 	repo := t.TempDir()
-	cmd := exec.Command("git", "init", "-q", "-b", "main", repo)
-	if out, err := cmd.CombinedOutput(); err != nil {
-		t.Fatalf("git init: %v\n%s", err, out)
+	if _, err := git.Output(context.Background(), repo, "init", "-q", "-b", "main"); err != nil {
+		t.Fatalf("git init: %v", err)
 	}
 	return repo
 }

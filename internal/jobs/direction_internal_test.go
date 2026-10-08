@@ -6,6 +6,8 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+
+	"github.com/Obedience-Corp/camp/internal/git"
 	"strings"
 	"testing"
 )
@@ -263,14 +265,12 @@ func shellQuote(path string) string {
 
 func writeBlob(t *testing.T, repo, content string) string {
 	t.Helper()
-	cmd := exec.Command("git", "hash-object", "-w", "--stdin")
-	cmd.Dir = repo
-	cmd.Stdin = strings.NewReader(content)
-	out, err := cmd.Output()
-	if err != nil {
-		t.Fatalf("git hash-object: %v", err)
+	path := filepath.Join(repo, ".direction-blob")
+	if err := os.WriteFile(path, []byte(content), 0o644); err != nil {
+		t.Fatal(err)
 	}
-	return strings.TrimSpace(string(out))
+	t.Cleanup(func() { _ = os.Remove(path) })
+	return gitOutput(t, repo, "hash-object", "-w", "--", ".direction-blob")
 }
 
 func gitRun(t *testing.T, repo string, args ...string) {
@@ -280,12 +280,11 @@ func gitRun(t *testing.T, repo string, args ...string) {
 
 func gitOutput(t *testing.T, repo string, args ...string) string {
 	t.Helper()
-	cmd := exec.Command("git", append([]string{"-C", repo}, args...)...)
-	out, err := cmd.CombinedOutput()
+	out, err := git.Output(context.Background(), repo, args...)
 	if err != nil {
-		t.Fatalf("git %v: %v\n%s", args, err, out)
+		t.Fatalf("git %v: %v", args, err)
 	}
-	return strings.TrimSpace(string(out))
+	return out
 }
 
 func readTestFile(t *testing.T, path string) string {
