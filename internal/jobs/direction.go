@@ -21,16 +21,21 @@ var directionBinaryNames = []string{"fest-direction", "direction"}
 //
 // commit-tree does not run hooks. The shim's effect is trailers of the tree
 // the job already captured, so the worker appends them from job.Tree and uses
-// the command's stdout as the message. A repository with no such hook returns
+// the command's stdout as the message. A repository with no commit hooks returns
 // message unchanged and does not look for the binary: there is nothing to
-// reproduce. A missing binary or a non-zero exit fails the job. The commit
+// reproduce. Other hooks or inspection errors fail the job, including hooks
+// installed after capture. A missing binary or a non-zero exit also fails. The commit
 // must not land without the trailers the hook would have added, and it must
 // not land when the hook would have refused.
 func appendDirectionTrailers(ctx context.Context, repoPath string, job *Job, message string) (string, error) {
 	if ctx.Err() != nil {
 		return "", ctx.Err()
 	}
-	if !git.OnlyDirectionShim(ctx, repoPath) {
+	shim, err := git.OnlyDirectionShim(ctx, repoPath)
+	if err != nil {
+		return "", camperrors.Wrapf(err, "job %s: cannot defer commit", job.ID)
+	}
+	if !shim {
 		return message, nil
 	}
 	bin, err := lookupDirectionBinary()

@@ -5,6 +5,8 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+
+	camperrors "github.com/Obedience-Corp/camp/internal/errors"
 )
 
 // commitHookNames are the hooks that run during an ordinary `git commit`.
@@ -42,7 +44,11 @@ const directionChainedHook = "commit-msg.before-direction"
 // directory cannot be read, this reports that hooks exist: the expensive
 // mistake is skipping a hook the user wrote, not committing in the foreground.
 func HasCommitHooks(ctx context.Context, repoPath string) bool {
-	switch classifyCommitHooks(ctx, repoPath) {
+	class, err := classifyCommitHooks(ctx, repoPath)
+	if err != nil {
+		return true
+	}
+	switch class {
 	case commitHooksNone, commitHooksDirection:
 		return false
 	default:
@@ -50,14 +56,22 @@ func HasCommitHooks(ctx context.Context, repoPath string) bool {
 	}
 }
 
-// OnlyDirectionShim reports whether the only executable commit hook is the
-// fest-direction commit-msg shim.
-//
-// commit-tree does not run hooks. The commit-tree worker uses this to decide
-// whether to append that shim's trailers before creating the commit. An
-// unreadable hooks directory is not this case.
-func OnlyDirectionShim(ctx context.Context, repoPath string) bool {
-	return classifyCommitHooks(ctx, repoPath) == commitHooksDirection
+// OnlyDirectionShim reports whether deferred commits must reproduce direction
+// trailers. No hooks returns false, nil. Other hooks or inspection failures
+// return an error: commit-tree cannot safely reproduce their behavior.
+func OnlyDirectionShim(ctx context.Context, repoPath string) (bool, error) {
+	class, err := classifyCommitHooks(ctx, repoPath)
+	if err != nil {
+		return false, err
+	}
+	switch class {
+	case commitHooksNone:
+		return false, nil
+	case commitHooksDirection:
+		return true, nil
+	default:
+		return false, camperrors.New("commit hooks require a foreground commit")
+	}
 }
 
 type commitHookClass int
@@ -69,16 +83,23 @@ const (
 	commitHooksBlocking
 )
 
-func classifyCommitHooks(ctx context.Context, repoPath string) commitHookClass {
-	dir, ok := hooksDirectory(ctx, repoPath)
-	if !ok {
-		return commitHooksUnknown
+func classifyCommitHooks(ctx context.Context, repoPath string) (commitHookClass, error) {
+	if err := ctx.Err(); err != nil {
+		return commitHooksUnknown, err
+	}
+	dir, err := hooksDirectory(ctx, repoPath)
+	if err != nil {
+		return commitHooksUnknown, err
 	}
 	shim := false
 	blocking := false
 	for _, name := range commitHookNames {
 		path := filepath.Join(dir, name)
-		if !executableHook(path) {
+		executable, err := executableHook(path)
+		if err != nil {
+			return commitHooksUnknown, err
+		}
+		if !executable {
 			continue
 		}
 		if name == "commit-msg" && isDirectionShim(path) {
@@ -87,78 +108,83 @@ func classifyCommitHooks(ctx context.Context, repoPath string) commitHookClass {
 		}
 		blocking = true
 	}
-	if shim && executableHook(filepath.Join(dir, directionChainedHook)) {
-		blocking = true
+	if shim {
+		executable, err := executableHook(filepath.Join(dir, directionChainedHook))
+		if err != nil {
+			return commitHooksUnknown, err
+		}
+		blocking = blocking || executable
 	}
 	switch {
 	case blocking:
-		return commitHooksBlocking
+		return commitHooksBlocking, nil
 	case shim:
-		return commitHooksDirection
+		return commitHooksDirection, nil
 	default:
-		return commitHooksNone
+		return commitHooksNone, nil
 	}
 }
 
-func hooksDirectory(ctx context.Context, repoPath string) (string, bool) {
+func hooksDirectory(ctx context.Context, repoPath string) (string, error) {
 	out, err := Output(ctx, repoPath, "rev-parse", "--git-path", "hooks")
 	if err != nil {
-		return "", false
+		return "", camperrors.Wrap(err, "resolve commit hooks directory")
 	}
 	dir := strings.TrimSpace(out)
 	if dir == "" {
-		return "", false
+		return "", camperrors.New("git returned an empty commit hooks directory")
 	}
 	if !filepath.IsAbs(dir) {
 		dir = filepath.Join(repoPath, dir)
 	}
-	return dir, true
+	return dir, nil
 }
 
-func executableHook(path string) bool {
+func executableHook(path string) (bool, error) {
 	info, err := os.Stat(path)
-	if err != nil || info.IsDir() {
-		return false
+	if os.IsNotExist(err) {
+		return false, nil
+	}
+	if err != nil {
+		return false, camperrors.Wrapf(err, "inspect commit hook %s", path)
+	}
+	if info.IsDir() {
+		return false, nil
 	}
 	// The executable bit is what git itself requires, so a disabled hook left
 	// in place as a .sample or with its bit cleared does not force the whole
 	// repository back to synchronous commits.
-	return info.Mode().Perm()&0o111 != 0
+	return info.Mode().Perm()&0o111 != 0, nil
 }
 
-// isDirectionShim reports whether path is the fest-direction commit-msg shim.
-//
-// The marker alone is not enough: a user's hook could mention it. The shim
-// also execs `fest-direction hook commit-msg` or, in older installs,
-// `direction hook commit-msg`. A file that cannot be read is not the shim.
+// isDirectionShim accepts only the supported shim bodies. Recognizing a marker
+// and exec anywhere in a script would silently bypass additional user logic.
 func isDirectionShim(path string) bool {
 	body, err := os.ReadFile(path)
-	if err != nil {
-		return false
-	}
-	marker := false
-	execLine := false
-	for line := range strings.SplitSeq(string(body), "\n") {
-		line = strings.TrimSpace(line)
-		if line == directionHookMarker || strings.HasPrefix(line, directionHookMarker+" ") {
-			marker = true
-		}
-		if directionExecLine(line) {
-			execLine = true
-		}
-	}
-	return marker && execLine
+	return err == nil && directionShimBody(string(body))
 }
 
-func directionExecLine(line string) bool {
-	fields := strings.Fields(line)
-	if len(fields) < 4 || fields[0] != "exec" {
+func directionShimBody(body string) bool {
+	lines := strings.SplitN(body, "\n", 3)
+	if len(lines) != 3 || lines[0] != "#!/bin/sh" {
 		return false
 	}
-	switch filepath.Base(fields[1]) {
-	case "fest-direction", "direction":
+	if lines[1] != directionHookMarker && !strings.HasPrefix(lines[1], directionHookMarker+" ") {
+		return false
+	}
+
+	// Current shims optionally chain a previous hook; classification separately
+	// checks that the chained file is not executable. Older shims exec directly.
+	const chain = "here=\"$(dirname \"$0\")\"\n" +
+		"if [ -x \"$here/commit-msg.before-direction\" ]; then \"$here/commit-msg.before-direction\" \"$@\" || exit $?; fi\n"
+	script := strings.TrimSuffix(strings.TrimPrefix(lines[2], chain), "\n")
+	switch script {
+	case `exec fest-direction hook commit-msg "$1"`,
+		`exec fest-direction hook commit-msg "$@"`,
+		`exec direction hook commit-msg "$1"`,
+		`exec direction hook commit-msg "$@"`:
+		return true
 	default:
 		return false
 	}
-	return fields[2] == "hook" && fields[3] == "commit-msg"
 }

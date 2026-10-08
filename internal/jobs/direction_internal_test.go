@@ -1,3 +1,5 @@
+//go:build container_fs
+
 package jobs
 
 import (
@@ -6,10 +8,10 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
-
-	"github.com/Obedience-Corp/camp/internal/git"
 	"strings"
 	"testing"
+
+	"github.com/Obedience-Corp/camp/internal/git"
 )
 
 const directionShim = "#!/bin/sh\n" +
@@ -187,6 +189,65 @@ func TestExecuteCommitPathsDoesNotAppendDirectionTrailers(t *testing.T) {
 	}
 	if strings.Contains(log, "trailers") {
 		t.Fatalf("hook log = %q, want no trailers command; git commit already ran the shim", log)
+	}
+}
+
+// The hook configuration can change between capturing a job and executing it.
+func TestExecuteCommitTreeChangedHooksSkipsCommit(t *testing.T) {
+	tests := []struct {
+		name   string
+		change func(*testing.T, string)
+		want   string
+	}{
+		{"chained hook", func(t *testing.T, repo string) {
+			if err := os.WriteFile(filepath.Join(repo, ".git/hooks/commit-msg.before-direction"), []byte("#!/bin/sh\nexit 1\n"), 0o755); err != nil {
+				t.Fatal(err)
+			}
+		}, "foreground commit"},
+		{"pre-commit", func(t *testing.T, repo string) {
+			if err := os.WriteFile(filepath.Join(repo, ".git/hooks/pre-commit"), []byte("#!/bin/sh\nexit 1\n"), 0o755); err != nil {
+				t.Fatal(err)
+			}
+		}, "foreground commit"},
+		{"prepare-commit-msg", func(t *testing.T, repo string) {
+			if err := os.WriteFile(filepath.Join(repo, ".git/hooks/prepare-commit-msg"), []byte("#!/bin/sh\nexit 1\n"), 0o755); err != nil {
+				t.Fatal(err)
+			}
+		}, "foreground commit"},
+		{"modified shim", func(t *testing.T, repo string) {
+			installCommitMsg(t, repo, strings.Replace(directionShim, "exec fest-direction", "./validate-message \"$1\" || exit 1\nexec fest-direction", 1))
+		}, "foreground commit"},
+		{"unknown hooks path", func(t *testing.T, repo string) {
+			gitRun(t, repo, "config", "core.hooksPath", filepath.Join(repo, "README.md"))
+		}, "inspect commit hook"},
+		{"hook stat failure", func(t *testing.T, repo string) {
+			if err := os.Symlink("pre-commit", filepath.Join(repo, ".git/hooks/pre-commit")); err != nil {
+				t.Fatal(err)
+			}
+		}, "inspect commit hook"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			repo, parent := seedRepo(t)
+			tree := captureTree(t, repo, "must remain staged\n")
+			installCommitMsg(t, repo, directionShim)
+			job := &Job{ID: "job-changed-hooks", Kind: KindCommitTree, Repo: ".", Tree: tree, Parent: parent, Message: "do not commit\n"}
+			tt.change(t, repo)
+			before := looseObjectCount(t, repo)
+			err := executeCommitTree(context.Background(), repo, repo, job)
+			if err == nil || !strings.Contains(err.Error(), tt.want) {
+				t.Fatalf("executeCommitTree() error = %v, want %q", err, tt.want)
+			}
+			if head := gitOutput(t, repo, "rev-parse", "HEAD"); head != parent {
+				t.Fatalf("HEAD = %s, want %s", head, parent)
+			}
+			if after := looseObjectCount(t, repo); after != before {
+				t.Fatalf("loose objects = %d, was %d; rejected job created an object", after, before)
+			}
+			if got := gitOutput(t, repo, "write-tree"); got != tree {
+				t.Fatalf("index tree = %s, want captured %s", got, tree)
+			}
+		})
 	}
 }
 
