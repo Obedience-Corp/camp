@@ -37,9 +37,10 @@ func TestIntegration_WorkitemCreateAndAdopt(t *testing.T) {
 
 		out, err := tc.RunCampInDir(campaignDir, "workitem", "create", "nav-design", "--type", "design", "--title", "Navigation Design")
 		require.NoError(t, err, "camp workitem create design: %s", out)
-		assert.Contains(t, out, "created workitem tracking at workflow/design/nav-design")
-		assert.Contains(t, out, "directory + .workitem only")
-		assert.Contains(t, out, "recommended next:")
+		assert.Contains(t, out, "Created design workitem nav-design")
+		assert.Regexp(t, `path:\s+workflow/design/nav-design\n`, out)
+		assert.Contains(t, out, "Tracking only")
+		assert.Regexp(t, `next:\s+cd workflow/design/nav-design && fest create workflow nav-design\n`, out)
 		assert.NotContains(t, out, "optional next:")
 
 		out, err = tc.RunCampInDir(campaignDir, "complete", "de")
@@ -55,13 +56,16 @@ func TestIntegration_WorkitemCreateAndAdopt(t *testing.T) {
 	t.Run("CreateBuildsDirectoryAndWorkitem", func(t *testing.T) {
 		out, err := tc.RunCampInDir(campaignDir, "workitem", "create", "demo-feature", "--type", "feature", "--title", "Demo")
 		require.NoError(t, err, "camp workitem create: %s", out)
-		assert.Contains(t, out, "created workitem tracking at workflow/feature/demo-feature")
-		assert.Contains(t, out, "id: feature-demo-feature-")
-		assert.Contains(t, out, "type: feature")
-		assert.Contains(t, out, "directory + .workitem only")
+		assert.Contains(t, out, "Created feature workitem demo-feature")
+		assert.Regexp(t, `path:\s+workflow/feature/demo-feature\n`, out)
+		assert.Regexp(t, `id:\s+feature-demo-feature-`, out)
+		assert.Regexp(t, `ref:\s+WI-[0-9a-f]{6}\n`, out)
+		assert.Regexp(t, `type:\s+feature\n`, out, "explicit --type carries no provenance note")
+		assert.Contains(t, out, "Tracking only")
 		assert.NotContains(t, out, "optional next:")
-		assert.NotContains(t, out, "recommended next:")
+		assert.NotContains(t, out, "next:")
 		assert.NotContains(t, out, "fest create workflow")
+		assert.NotContains(t, out, "—", "human output must not contain an em dash")
 
 		manifest, err := tc.ReadFile(campaignDir + "/workflow/feature/demo-feature/.workitem")
 		require.NoError(t, err)
@@ -193,9 +197,9 @@ func TestIntegration_WorkitemCreateJSON(t *testing.T) {
 		"--json",
 	)
 	require.NoError(t, err, "camp workitem create --json: %s", out)
-	assert.NotContains(t, out, "created workitem tracking at workflow/feature/agent-json")
+	assert.NotContains(t, out, "Created feature workitem agent-json")
 	assert.NotContains(t, out, "\n  optional next:")
-	assert.NotContains(t, out, "\n  recommended next:")
+	assert.NotContains(t, out, "\n  next:")
 
 	var payload struct {
 		SchemaVersion string    `json:"schema_version"`
@@ -275,4 +279,194 @@ func TestIntegration_WorkitemCreateJSON(t *testing.T) {
 		"workitem", "resolve", "--workitem", payload.Workitem.ID, "--json")
 	require.NoError(t, err, "resolve returned workitem: %s", resolveOut)
 	assert.Contains(t, resolveOut, payload.Workitem.ID)
+}
+
+type workitemCreateInferPayload struct {
+	Workitem struct {
+		Type         string `json:"type"`
+		RelativePath string `json:"relative_path"`
+	} `json:"workitem"`
+	Next struct {
+		Command string `json:"command"`
+		Cwd     string `json:"cwd"`
+	} `json:"next"`
+}
+
+func decodeWorkitemCreateInfer(t *testing.T, out string) workitemCreateInferPayload {
+	t.Helper()
+	var payload workitemCreateInferPayload
+	require.NoError(t, json.Unmarshal([]byte(out), &payload), "raw=%s", out)
+	return payload
+}
+
+func TestIntegration_WorkitemCreateInfersTypeFromLocation(t *testing.T) {
+	tc := GetSharedContainer(t)
+
+	const campaignDir = "/test/workitem-create-infer"
+	_, err := tc.RunCamp(
+		"init", campaignDir,
+		"--name", "Workitem Create Infer Test",
+		"--type", "product",
+		"-d", "Workitem create type inference",
+		"-m", "Verify create infers the type from where it runs",
+		"--force",
+		"--no-register",
+		"--no-git",
+	)
+	require.NoError(t, err, "camp init should succeed")
+
+	assertMarkerType := func(t *testing.T, rel, wantType string) {
+		t.Helper()
+		manifest, err := tc.ReadFile(campaignDir + "/" + rel + "/.workitem")
+		require.NoError(t, err, "marker missing for %s", rel)
+		assert.Contains(t, manifest, "type: "+wantType+"\n")
+	}
+
+	t.Run("FromTypeDirectory", func(t *testing.T) {
+		out, err := tc.RunCampInDir(campaignDir+"/workflow/explore", "workitem", "create", "agent-chat-eval")
+		require.NoError(t, err, "create from workflow/explore: %s", out)
+		t.Logf("human output from workflow/explore:\n%s", out)
+		assert.Contains(t, out, "Created explore workitem agent-chat-eval")
+		assert.Regexp(t, `path:\s+workflow/explore/agent-chat-eval\n`, out)
+		assert.Regexp(t, `id:\s+explore-agent-chat-eval-`, out)
+		assert.Regexp(t, `type:\s+explore \(from workflow/explore\)\n`, out)
+		assert.Regexp(t, `next:\s+cd agent-chat-eval && fest create workflow agent-chat-eval\n`, out,
+			"the cd target must work from the directory the command ran in")
+		assert.NotContains(t, out, "—")
+
+		assertMarkerType(t, "workflow/explore/agent-chat-eval", "explore")
+		misplaced, err := tc.CheckDirExists(campaignDir + "/workflow/feature/agent-chat-eval")
+		require.NoError(t, err)
+		assert.False(t, misplaced, "inferred explore item must not land in workflow/feature")
+	})
+
+	t.Run("FromTypeDirectoryJSON", func(t *testing.T) {
+		out, err := tc.RunCampInDir(campaignDir+"/workflow/design", "workitem", "create", "nav-redo", "--json")
+		require.NoError(t, err, "create --json from workflow/design: %s", out)
+		payload := decodeWorkitemCreateInfer(t, out)
+		assert.Equal(t, "design", payload.Workitem.Type)
+		assert.Equal(t, "workflow/design/nav-redo", payload.Workitem.RelativePath)
+		assert.Equal(t, "fest create workflow nav-redo", payload.Next.Command)
+		assert.Equal(t, "workflow/design/nav-redo", payload.Next.Cwd, "JSON next.cwd stays camp-relative")
+		assertMarkerType(t, "workflow/design/nav-redo", "design")
+	})
+
+	t.Run("FromInsideExistingWorkitemCreatesSibling", func(t *testing.T) {
+		tc.Shell(t, "mkdir -p "+campaignDir+"/workflow/explore/first-spike/notes")
+		nested := campaignDir + "/workflow/explore/first-spike/notes"
+
+		out, err := tc.RunCampInDir(nested, "workitem", "create", "second-spike", "--json")
+		require.NoError(t, err, "create --json from inside a workitem: %s", out)
+		payload := decodeWorkitemCreateInfer(t, out)
+		assert.Equal(t, "explore", payload.Workitem.Type)
+		assert.Equal(t, "workflow/explore/second-spike", payload.Workitem.RelativePath)
+		assertMarkerType(t, "workflow/explore/second-spike", "explore")
+
+		out, err = tc.RunCampInDir(nested, "workitem", "create", "third-spike")
+		require.NoError(t, err, "create from inside a workitem: %s", out)
+		t.Logf("human output from workflow/explore/first-spike/notes:\n%s", out)
+		assert.Regexp(t, `path:\s+workflow/explore/third-spike\n`, out)
+		assert.Regexp(t, `next:\s+cd \.\./\.\./third-spike && fest create workflow third-spike\n`, out)
+		assertMarkerType(t, "workflow/explore/third-spike", "explore")
+
+		for _, slug := range []string{"second-spike", "third-spike"} {
+			nestedItem, err := tc.CheckDirExists(campaignDir + "/workflow/explore/first-spike/" + slug)
+			require.NoError(t, err)
+			assert.False(t, nestedItem, "%s must be a sibling, never nested inside first-spike", slug)
+			nestedInNotes, err := tc.CheckDirExists(nested + "/" + slug)
+			require.NoError(t, err)
+			assert.False(t, nestedInNotes, "%s must not be created under the cwd", slug)
+		}
+	})
+
+	t.Run("ThroughSymlinkedCampRoot", func(t *testing.T) {
+		link := campaignDir + "-link"
+		tc.Shell(t, "rm -f "+link+" && ln -s "+campaignDir+" "+link)
+
+		out, err := tc.RunCampInDir(link+"/workflow/explore", "workitem", "create", "via-link", "--json")
+		require.NoError(t, err, "create --json through a symlinked camp root: %s", out)
+		payload := decodeWorkitemCreateInfer(t, out)
+		assert.Equal(t, "explore", payload.Workitem.Type)
+		assert.Equal(t, "workflow/explore/via-link", payload.Workitem.RelativePath)
+		assertMarkerType(t, "workflow/explore/via-link", "explore")
+	})
+
+	t.Run("ThroughSymlinkBelowTheRootToOutsideTheCamp", func(t *testing.T) {
+		external := campaignDir + "-external-notes"
+		tc.Shell(t, "rm -rf "+external+" && mkdir -p "+external+" "+campaignDir+"/workflow/explore/linked-first && ln -sfn "+external+" "+campaignDir+"/workflow/explore/linked-first/notes")
+
+		out, err := tc.RunCampInDir(campaignDir+"/workflow/explore/linked-first/notes", "workitem", "create", "linked-second", "--json")
+		require.NoError(t, err, "create --json from a symlink below the root: %s", out)
+		payload := decodeWorkitemCreateInfer(t, out)
+		assert.Equal(t, "explore", payload.Workitem.Type)
+		assert.Equal(t, "workflow/explore/linked-second", payload.Workitem.RelativePath)
+		assertMarkerType(t, "workflow/explore/linked-second", "explore")
+	})
+
+	t.Run("ThroughInternalSymlinkKeepsLogicalPath", func(t *testing.T) {
+		tc.Shell(t, "mkdir -p "+campaignDir+"/workflow/design/alias-target && ln -sfn ../design/alias-target "+campaignDir+"/workflow/explore/alias")
+
+		out, err := tc.RunCampInDir(campaignDir+"/workflow/explore/alias", "workitem", "create", "alias-sibling")
+		require.NoError(t, err, "create from an internal symlink: %s", out)
+		assert.Contains(t, out, "Created explore workitem alias-sibling")
+		assert.Regexp(t, `path:\s+workflow/explore/alias-sibling\n`, out)
+		assert.Regexp(t, `next:\s+cd \.\./alias-sibling && fest create workflow alias-sibling\n`, out)
+		assertMarkerType(t, "workflow/explore/alias-sibling", "explore")
+	})
+
+	t.Run("ExplicitTypeWins", func(t *testing.T) {
+		out, err := tc.RunCampInDir(campaignDir+"/workflow/explore", "workitem", "create", "explicit-bug", "--type", "bug")
+		require.NoError(t, err, "create --type bug from workflow/explore: %s", out)
+		assert.Contains(t, out, "Created bug workitem explicit-bug")
+		assert.Regexp(t, `path:\s+workflow/bug/explicit-bug\n`, out)
+		assert.Regexp(t, `type:\s+bug\n`, out)
+		assertMarkerType(t, "workflow/bug/explicit-bug", "bug")
+	})
+
+	t.Run("CampRootKeepsFeatureDefault", func(t *testing.T) {
+		out, err := tc.RunCampInDir(campaignDir, "workitem", "create", "root-default")
+		require.NoError(t, err, "create from camp root: %s", out)
+		assert.Contains(t, out, "Created feature workitem root-default")
+		assert.Regexp(t, `path:\s+workflow/feature/root-default\n`, out)
+		assert.Regexp(t, `type:\s+feature \(default\)\n`, out)
+		assertMarkerType(t, "workflow/feature/root-default", "feature")
+	})
+
+	t.Run("DirFlagInfersType", func(t *testing.T) {
+		out, err := tc.RunCampInDir(campaignDir+"/workflow/explore", "workitem", "create", "dir-design", "--dir", "workflow/design", "--json")
+		require.NoError(t, err, "create --dir workflow/design: %s", out)
+		payload := decodeWorkitemCreateInfer(t, out)
+		assert.Equal(t, "design", payload.Workitem.Type, "--dir wins over the cwd for inference")
+		assert.Equal(t, "workflow/design/dir-design", payload.Workitem.RelativePath)
+		assertMarkerType(t, "workflow/design/dir-design", "design")
+	})
+
+	t.Run("FileRelativeToTheCwd", func(t *testing.T) {
+		out, err := tc.RunCampInDir(campaignDir+"/workflow/explore", "workitem", "create", "--file", "cwd-notes.md")
+		require.NoError(t, err, "create --file from workflow/explore: %s", out)
+		assert.Contains(t, out, "Created explore workitem cwd-notes")
+		assert.Regexp(t, `path:\s+workflow/explore/cwd-notes\.md\n`, out)
+		content, err := tc.ReadFile(campaignDir + "/workflow/explore/cwd-notes.md")
+		require.NoError(t, err)
+		assert.Contains(t, content, "type: explore")
+
+		out, err = tc.RunCampInDir(campaignDir+"/workflow/explore", "workitem", "create", "--file", "../bug/sibling-notes.md")
+		require.NoError(t, err, "create --file ../bug from workflow/explore: %s", out)
+		assert.Contains(t, out, "Created bug workitem sibling-notes")
+		assert.Regexp(t, `path:\s+workflow/bug/sibling-notes\.md\n`, out)
+	})
+
+	t.Run("FileUnderTypeDirectory", func(t *testing.T) {
+		out, err := tc.RunCampInDir(campaignDir, "workitem", "create", "--file", "workflow/bug/p99-notes.md")
+		require.NoError(t, err, "create --file under workflow/bug: %s", out)
+		t.Logf("human output for --file workflow/bug/p99-notes.md:\n%s", out)
+		assert.Contains(t, out, "Created bug workitem p99-notes")
+		assert.Regexp(t, `path:\s+workflow/bug/p99-notes\.md\n`, out)
+		assert.Regexp(t, `type:\s+bug \(from workflow/bug\)\n`, out)
+
+		content, err := tc.ReadFile(campaignDir + "/workflow/bug/p99-notes.md")
+		require.NoError(t, err)
+		assert.Contains(t, content, "kind: workitem")
+		assert.Contains(t, content, "type: bug\n")
+	})
 }

@@ -216,6 +216,26 @@ pty-notify:
     evidence="${CAMP_TUI_EVIDENCE_DIR:-out/evidence/notify}"
     "$venv_dir/bin/python" tests/tui/notify_pty.py "$fixture" "$evidence"
 
+workitem-create-fixture:
+    #!/usr/bin/env bash
+    set -euo pipefail
+    cd "{{root}}"
+    docs/demos/fixtures/workitem-create-fixture.sh "${CAMP_VHS_ROOT:-$(mktemp -d)}" bin/camp
+
+# Assert what a recording of camp workitem create cannot: the type comes from
+# the workflow directory, a create inside a workitem lands beside it, the
+# success mark is green, NO_COLOR has no escapes, and the markers and --json
+# agree with the screen.
+pty-workitem-create:
+    #!/usr/bin/env bash
+    set -euo pipefail
+    cd "{{root}}"
+    just build-camp >/dev/null
+    venv_dir="$(just tui venv)"
+    fixture="$(CAMP_VHS_ROOT="${CAMP_VHS_ROOT:-}" just tui workitem-create-fixture)"
+    evidence="${CAMP_TUI_EVIDENCE_DIR:-out/evidence/workitem-create}"
+    "$venv_dir/bin/python" tests/tui/workitem_create_pty.py "$fixture" "$evidence"
+
 # Drive the compiled selector widget: recency cursor, type-to-filter, no-match, esc.
 pty-selector:
     #!/usr/bin/env bash
@@ -272,7 +292,7 @@ pty-switch:
     just test integration-run TestSwitch_BottomProximityTTY
 
 # Run every pty check.
-pty: pty-triage-review pty-machine-tailscale-check pty-machine-auth-denied pty-sweep-prompt pty-selector pty-intent-copy pty-notify pty-intent-add pty-project-list pty-switch pty-confirm
+pty: pty-triage-review pty-machine-tailscale-check pty-machine-auth-denied pty-sweep-prompt pty-selector pty-intent-copy pty-notify pty-intent-add pty-project-list pty-switch pty-confirm pty-workitem-create
 
 # Record one tape. The tape owns its output path and its fixture bootstrap.
 tape tape_path:

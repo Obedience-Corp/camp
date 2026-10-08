@@ -6,7 +6,6 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"errors"
-	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
@@ -35,6 +34,13 @@ func newCreateCommand() *cobra.Command {
 		Short: "Create workitem tracking metadata",
 		Long: `Create tracking metadata for a new workitem (directory + .workitem marker).
 
+Without --type, the type comes from where the workitem is created. Run from
+anywhere under workflow/<type>/, including inside another workitem, and the
+new item gets that type and is created at workflow/<type>/<slug>/, a sibling
+of the items already there. --dir workflow/<type>[/...] and
+--file workflow/<type>/<name>.md infer the type the same way. Everywhere else
+the type defaults to feature. An explicit --type always wins.
+
 This command does NOT create the substantive work scaffold (no design docs,
 explore notes, or festival structure). It only:
 
@@ -60,20 +66,21 @@ explore/design (recommended scaffold); otherwise it is empty/omitted.`,
 		},
 		RunE: jsoncontract.RunE(WorkitemCreateJSONVersion, func() bool { return jsonOut }, func(cmd *cobra.Command, args []string) error {
 			ctx := cmd.Context()
+			typeExplicit := cmd.Flags().Changed("type")
 			if fileFlag != "" {
 				if len(args) > 0 {
 					return camperrors.NewValidation("args", "provide either a slug argument or --file, not both", nil)
 				}
-				return runCreateFile(ctx, cmd, fileFlag, typeFlag, title, idOverride, questSelector, tags, projects, jsonOut)
+				return runCreateFile(ctx, cmd, fileFlag, typeFlag, typeExplicit, title, idOverride, questSelector, tags, projects, jsonOut)
 			}
 			if len(args) != 1 {
 				return camperrors.NewValidation("args", "create requires a slug argument or --file <path>", nil)
 			}
-			return runCreate(ctx, cmd, args[0], typeFlag, title, idOverride, dirOverride, questSelector, tags, projects, jsonOut)
+			return runCreate(ctx, cmd, args[0], typeFlag, typeExplicit, title, idOverride, dirOverride, questSelector, tags, projects, jsonOut)
 		}),
 	}
 	cmd.SetFlagErrorFunc(jsoncontract.FlagErrorFunc(WorkitemCreateJSONVersion, func() bool { return jsonOut }))
-	cmd.Flags().StringVar(&typeFlag, "type", "feature", "workitem type (feature, bug, chore, or custom)")
+	cmd.Flags().StringVar(&typeFlag, "type", "feature", "workitem type (feature, bug, chore, or custom); when omitted, inferred from a workflow/<type>/ cwd, --dir, or --file")
 	cmd.Flags().StringVar(&title, "title", "", "human-readable title")
 	cmd.Flags().StringVar(&idOverride, "id", "", "override the generated id")
 	cmd.Flags().StringVar(&dirOverride, "dir", "", "parent dir override (default: workflow/<type>)")
@@ -81,14 +88,14 @@ explore/design (recommended scaffold); otherwise it is empty/omitted.`,
 	cmd.Flags().BoolVar(&jsonOut, "json", false, "emit a structured JSON result")
 	cmd.Flags().StringArrayVar(&tags, "tag", nil, "add a tag (repeatable, normalized to lowercase kebab-case)")
 	cmd.Flags().StringArrayVar(&projects, "project", nil, "add a related project path (repeatable, e.g. projects/camp)")
-	cmd.Flags().StringVar(&fileFlag, "file", "", "create a new markdown file with kind: workitem frontmatter instead of a directory workitem")
+	cmd.Flags().StringVar(&fileFlag, "file", "", "create a new markdown file with kind: workitem frontmatter instead of a directory workitem (relative paths are from the current directory)")
 	return cmd
 }
 
 // runCreateFile mints a new markdown file with a kind: workitem frontmatter
 // block and a minimal heading body, reusing the frontmatter construction of the
 // no-existing-frontmatter adopt branch.
-func runCreateFile(ctx context.Context, cmd *cobra.Command, filePath, typeFlag, title, idOverride, questSelector string, tags, projects []string, jsonOut bool) error {
+func runCreateFile(ctx context.Context, cmd *cobra.Command, filePath, typeFlag string, typeExplicit bool, title, idOverride, questSelector string, tags, projects []string, jsonOut bool) error {
 	if err := validateSlug(typeFlag); err != nil {
 		return camperrors.NewValidation("type", "invalid type slug: "+err.Error(), nil)
 	}
@@ -109,12 +116,15 @@ func runCreateFile(ctx context.Context, cmd *cobra.Command, filePath, typeFlag, 
 		return camperrors.Wrap(err, "not in a camp directory")
 	}
 
-	rel := filePath
+	var rel string
 	if filepath.IsAbs(filePath) {
 		rel, err = filepath.Rel(campaignRoot, filePath)
 		if err != nil {
 			return camperrors.Wrap(err, "resolve file relative to camp root")
 		}
+	} else {
+		cwdRel, cwdInCamp := campRelativeCwd(campaignRoot)
+		rel = createFileRel(cwdRel, cwdInCamp, filePath)
 	}
 	if err := validateParentPath(rel); err != nil {
 		return err
@@ -128,8 +138,10 @@ func runCreateFile(ctx context.Context, cmd *cobra.Command, filePath, typeFlag, 
 			"target file already exists: "+rel+" — use `camp workitem adopt --file` to stamp an existing file", nil)
 	}
 
+	placement := planCreateFile(typeFlag, typeExplicit, rel)
+	typ := placement.Type
 	slug := strings.TrimSuffix(filepath.Base(rel), filepath.Ext(rel))
-	id, err := generateID(ctx, typeFlag, slug, idOverride, campaignRoot)
+	id, err := generateID(ctx, typ, slug, idOverride, campaignRoot)
 	if err != nil {
 		return err
 	}
@@ -147,7 +159,7 @@ func runCreateFile(ctx context.Context, cmd *cobra.Command, filePath, typeFlag, 
 		Version:  wkitem.WorkitemSchemaVersion,
 		Kind:     "workitem",
 		ID:       id,
-		Type:     typeFlag,
+		Type:     typ,
 		Title:    titleText,
 		Ref:      ref,
 		QuestID:  questID,
@@ -172,14 +184,14 @@ func runCreateFile(ctx context.Context, cmd *cobra.Command, filePath, typeFlag, 
 		Event: wkaudit.EventCreate,
 		ID:    id,
 		Ref:   ref,
-		Type:  typeFlag,
+		Type:  typ,
 		Title: titleText,
 		To:    filepath.ToSlash(rel),
 	})
 	ledger.NewFromRoot(ctx, campaignRoot, ledger.WarnTo(cmd.ErrOrStderr())).
 		Emit(ctx, ledgerkit.KindCreated, ledgerkit.Scope{Workitem: ref, Quest: questID},
 			ledger.WithWhy(titleText),
-			ledger.WithPayload(map[string]any{"type": typeFlag, "title": titleText, "path": rel, "file": true}))
+			ledger.WithPayload(map[string]any{"type": typ, "title": titleText, "path": rel, "file": true}))
 
 	if jsonOut {
 		payload := struct {
@@ -199,7 +211,7 @@ func runCreateFile(ctx context.Context, cmd *cobra.Command, filePath, typeFlag, 
 		}{SchemaVersion: WorkitemCreateJSONVersion, GeneratedAt: time.Now().UTC()}
 		payload.Workitem.ID = id
 		payload.Workitem.Ref = ref
-		payload.Workitem.Type = typeFlag
+		payload.Workitem.Type = typ
 		payload.Workitem.Title = titleText
 		payload.Workitem.RelativePath = rel
 		payload.Workitem.ItemKind = "file"
@@ -211,26 +223,31 @@ func runCreateFile(ctx context.Context, cmd *cobra.Command, filePath, typeFlag, 
 		return enc.Encode(payload)
 	}
 
-	questLine := ""
-	if questID != "" {
-		questLine = fmt.Sprintf("  quest: %s\n", questID)
-	}
-	_, _ = fmt.Fprintf(cmd.OutOrStdout(),
-		"created file %s\n  id: %s\n  ref: %s\n  type: %s\n%s",
-		rel, id, ref, typeFlag, questLine)
-	return nil
+	return writeCreateSummary(cmd.OutOrStdout(), createSummary{
+		Type:         typ,
+		TypeExplicit: typeExplicit,
+		TypeFrom:     placement.From,
+		Slug:         slug,
+		Path:         filepath.ToSlash(rel),
+		ID:           id,
+		Ref:          ref,
+		QuestID:      questID,
+	})
 }
 
-func runCreate(ctx context.Context, cmd *cobra.Command, slug, typeFlag, title, idOverride, dirOverride, questSelector string, tags, projects []string, jsonOut bool) error {
+func runCreate(ctx context.Context, cmd *cobra.Command, slug, typeFlag string, typeExplicit bool, title, idOverride, dirOverride, questSelector string, tags, projects []string, jsonOut bool) error {
 	cfg, campaignRoot, err := config.LoadCampaignConfigFromCwd(ctx)
 	if err != nil {
 		return camperrors.Wrap(err, "not in a camp directory")
 	}
 	questID := resolveQuestIDForCreate(ctx, cmd, campaignRoot, questSelector)
+	cwdRel, cwdInCamp := campRelativeCwd(campaignRoot)
+	placement := planCreateDir(typeFlag, typeExplicit, dirOverride, cwdRel)
+	typ := placement.Type
 
 	created, err := CreateWorkitemDir(ctx, campaignRoot, cfg, CreateWorkitemRequest{
-		Slug: slug, Type: typeFlag, Title: title, IDOverride: idOverride,
-		DirOverride: dirOverride, QuestID: questID, Tags: tags, Projects: projects,
+		Slug: slug, Type: typ, Title: title, IDOverride: idOverride,
+		DirOverride: placement.Parent, QuestID: questID, Tags: tags, Projects: projects,
 	})
 	if err != nil {
 		return err
@@ -242,15 +259,15 @@ func runCreate(ctx context.Context, cmd *cobra.Command, slug, typeFlag, title, i
 		Event: wkaudit.EventCreate,
 		ID:    id,
 		Ref:   ref,
-		Type:  typeFlag,
+		Type:  typ,
 		Title: title,
 		To:    filepath.ToSlash(rel),
 	})
 	ledger.NewFromRoot(ctx, campaignRoot, ledger.WarnTo(cmd.ErrOrStderr())).
 		Emit(ctx, ledgerkit.KindCreated, ledgerkit.Scope{Workitem: ref, Quest: questID},
 			ledger.WithWhy(title),
-			ledger.WithPayload(map[string]any{"type": typeFlag, "title": title, "path": rel}))
-	nextCommand, nextHint, humanNextLine := createNextGuidance(typeFlag, slug, rel)
+			ledger.WithPayload(map[string]any{"type": typ, "title": title, "path": rel}))
+	nextCommand, nextHint := createNextGuidance(typ, slug, rel)
 	if jsonOut {
 		payload := struct {
 			SchemaVersion string    `json:"schema_version"`
@@ -274,7 +291,7 @@ func runCreate(ctx context.Context, cmd *cobra.Command, slug, typeFlag, title, i
 		}{SchemaVersion: WorkitemCreateJSONVersion, GeneratedAt: time.Now().UTC()}
 		payload.Workitem.ID = id
 		payload.Workitem.Ref = ref
-		payload.Workitem.Type = typeFlag
+		payload.Workitem.Type = typ
 		payload.Workitem.Title = title
 		payload.Workitem.QuestID = questID
 		payload.Workitem.RelativePath = rel
@@ -288,14 +305,22 @@ func runCreate(ctx context.Context, cmd *cobra.Command, slug, typeFlag, title, i
 		enc.SetIndent("", "  ")
 		return enc.Encode(payload)
 	}
-	questLine := ""
-	if questID != "" {
-		questLine = fmt.Sprintf("  quest: %s\n", questID)
+	humanNext := ""
+	if nextCommand != "" {
+		humanNext = "cd " + cdTargetFromCwd(cwdRel, cwdInCamp, rel) + " && " + nextCommand
 	}
-	fmt.Fprintf(cmd.OutOrStdout(),
-		"created workitem tracking at %s\n  id: %s\n  ref: %s\n  type: %s\n%s  note: directory + .workitem only — not a design/explore/festival scaffold\n%s",
-		rel, id, ref, typeFlag, questLine, humanNextLine)
-	return nil
+	return writeCreateSummary(cmd.OutOrStdout(), createSummary{
+		Type:         typ,
+		TypeExplicit: typeExplicit,
+		TypeFrom:     placement.From,
+		Slug:         slug,
+		Path:         rel,
+		ID:           id,
+		Ref:          ref,
+		QuestID:      questID,
+		Next:         humanNext,
+		Hint:         createTrackingOnlyHint,
+	})
 }
 
 func jsonStringSlice(s []string) []string {
@@ -316,19 +341,17 @@ func recommendsWorkflowScaffold(typeFlag string) bool {
 	}
 }
 
-// createNextGuidance returns JSON next.command / next.hint and the human
-// stdout next line (including trailing newline, or empty when omitted).
-// explore/design get a recommended fest scaffold; other types get tracking-only
-// guidance with no agent-executable command.
-func createNextGuidance(typeFlag, slug, rel string) (command, hint, humanNextLine string) {
+// createNextGuidance returns JSON next.command / next.hint. explore/design get
+// a recommended fest scaffold; other types get tracking-only guidance with no
+// agent-executable command.
+func createNextGuidance(typeFlag, slug, rel string) (command, hint string) {
 	if recommendsWorkflowScaffold(typeFlag) {
 		command = "fest create workflow " + slug
 		hint = "tracking only: marker created; recommended next: cd " + rel + " && fest create workflow " + slug
-		humanNextLine = "  recommended next: cd " + rel + " && fest create workflow " + slug + "\n"
-		return command, hint, humanNextLine
+		return command, hint
 	}
 	hint = "tracking only: marker created; add content under " + rel + " as needed (no festival scaffold implied)"
-	return "", hint, ""
+	return "", hint
 }
 
 func validateSlug(slug string) error {
