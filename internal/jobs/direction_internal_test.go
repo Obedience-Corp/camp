@@ -32,12 +32,13 @@ func TestExecuteCommitTreeAppendsDirectionTrailers(t *testing.T) {
 
 	const message = "subject from the writer\n"
 	job := &Job{
-		ID:      "job-trailers",
-		Kind:    KindCommitTree,
-		Repo:    ".",
-		Tree:    tree,
-		Parent:  parent,
-		Message: message,
+		ID:        "job-trailers",
+		Kind:      KindCommitTree,
+		Direction: &DirectionContext{WorkUnit: "."},
+		Repo:      ".",
+		Tree:      tree,
+		Parent:    parent,
+		Message:   message,
 	}
 	if err := executeCommitTree(context.Background(), repo, repo, job); err != nil {
 		t.Fatalf("executeCommitTree() error = %v", err)
@@ -51,7 +52,7 @@ func TestExecuteCommitTreeAppendsDirectionTrailers(t *testing.T) {
 		t.Fatal("commit message was not replaced with the trailer command's stdout")
 	}
 	args := readTestFile(t, argsFile)
-	if args != "trailers\n--tree\n"+tree+"\n" {
+	if args != "trailers\n--tree\n"+tree+"\n--work-unit\n.\n" {
 		t.Fatalf("trailer args = %q, want trailers --tree %s", args, tree)
 	}
 	if stdin := readTestFile(t, stdinFile); stdin != message {
@@ -73,7 +74,7 @@ func TestExecuteCommitTreeDirectionFallbackBinary(t *testing.T) {
 	})
 
 	job := &Job{
-		ID: "job-direction-bin", Kind: KindCommitTree, Repo: ".",
+		ID: "job-direction-bin", Kind: KindCommitTree, Repo: ".", Direction: &DirectionContext{WorkUnit: "."},
 		Tree: tree, Parent: parent, Message: "older binary\n",
 	}
 	if err := executeCommitTree(context.Background(), repo, repo, job); err != nil {
@@ -95,7 +96,7 @@ func TestExecuteCommitTreeDirectionTrailerFailureSkipsCommit(t *testing.T) {
 	before := looseObjectCount(t, repo)
 
 	job := &Job{
-		ID: "job-trailers-fail", Kind: KindCommitTree, Repo: ".",
+		ID: "job-trailers-fail", Kind: KindCommitTree, Repo: ".", Direction: &DirectionContext{WorkUnit: "."},
 		Tree: tree, Parent: parent, Message: "do not commit\n",
 	}
 	err := executeCommitTree(context.Background(), repo, repo, job)
@@ -121,7 +122,7 @@ func TestExecuteCommitTreeMissingDirectionBinarySkipsCommit(t *testing.T) {
 	before := looseObjectCount(t, repo)
 
 	job := &Job{
-		ID: "job-no-binary", Kind: KindCommitTree, Repo: ".",
+		ID: "job-no-binary", Kind: KindCommitTree, Repo: ".", Direction: &DirectionContext{WorkUnit: "."},
 		Tree: tree, Parent: parent, Message: "do not commit\n",
 	}
 	err := executeCommitTree(context.Background(), repo, repo, job)
@@ -231,7 +232,7 @@ func TestExecuteCommitTreeChangedHooksSkipsCommit(t *testing.T) {
 			repo, parent := seedRepo(t)
 			tree := captureTree(t, repo, "must remain staged\n")
 			installCommitMsg(t, repo, directionShim)
-			job := &Job{ID: "job-changed-hooks", Kind: KindCommitTree, Repo: ".", Tree: tree, Parent: parent, Message: "do not commit\n"}
+			job := &Job{ID: "job-changed-hooks", Kind: KindCommitTree, Repo: ".", Direction: &DirectionContext{WorkUnit: "."}, Tree: tree, Parent: parent, Message: "do not commit\n"}
 			tt.change(t, repo)
 			before := looseObjectCount(t, repo)
 			err := executeCommitTree(context.Background(), repo, repo, job)
@@ -248,6 +249,130 @@ func TestExecuteCommitTreeChangedHooksSkipsCommit(t *testing.T) {
 				t.Fatalf("index tree = %s, want captured %s", got, tree)
 			}
 		})
+	}
+}
+
+func TestExecuteCommitTreeKeepsEnqueueDirectionContext(t *testing.T) {
+	cases := []struct {
+		name, config, env, want string
+		removeHook              bool
+	}{
+		{"config changed", "unit-a", "", "unit-a", false},
+		{"config cleared", "unit-a", "", "unit-a", false},
+		{"config removed", "unit-a", "", "unit-a", false},
+		{"environment overrides config", "unit-a", "unit-b", "unit-b", false},
+		{"initially unconfigured", "", "", "", false},
+		{"hook removed", "unit-a", "", "unit-a", true},
+	}
+	for _, tt := range cases {
+		t.Run(tt.name, func(t *testing.T) {
+			repo, parent := seedRepo(t)
+			installCommitMsg(t, repo, directionShim)
+			for _, unit := range []string{"unit-a", "unit-b"} {
+				if err := os.MkdirAll(filepath.Join(repo, unit), 0o755); err != nil {
+					t.Fatal(err)
+				}
+				if err := os.WriteFile(filepath.Join(repo, unit, "goal.md"), []byte("captured goal"), 0o644); err != nil {
+					t.Fatal(err)
+				}
+			}
+			gitRun(t, repo, "add", "unit-a", "unit-b")
+			tree := gitOutput(t, repo, "write-tree")
+			writeDirectionConfig(t, repo, "default_work_unit: "+tt.config+"\n")
+			t.Setenv("DIRECTION_WORK_UNIT", tt.env)
+			direction, err := CaptureDirectionContext(context.Background(), repo, tree)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if direction == nil || direction.WorkUnit != tt.want {
+				t.Fatalf("captured = %+v, want %q", direction, tt.want)
+			}
+			_, err = Enqueue(context.Background(), repo, Job{Kind: KindCommitTree, Repo: ".", Tree: tree, Parent: parent, Message: "queued message\n", Direction: direction})
+			if err != nil {
+				t.Fatal(err)
+			}
+			queued, err := List(repo, statePending, ".")
+			if err != nil || len(queued) != 1 {
+				t.Fatalf("queued = %+v, %v", queued, err)
+			}
+			// Mutate both inputs before a worker with a different environment starts.
+			writeDirectionConfig(t, repo, "default_work_unit: unit-b\n")
+			if tt.name == "config cleared" {
+				writeDirectionConfig(t, repo, "{}\n")
+			}
+			if tt.name == "config removed" {
+				if err := os.Remove(filepath.Join(repo, ".direction/config.yaml")); err != nil {
+					t.Fatal(err)
+				}
+			}
+			if tt.removeHook {
+				if err := os.Remove(filepath.Join(repo, ".git/hooks/commit-msg")); err != nil {
+					t.Fatal(err)
+				}
+			}
+			t.Setenv("DIRECTION_WORK_UNIT", "worker-unit")
+			argsFile, stdinFile := filepath.Join(t.TempDir(), "args"), filepath.Join(t.TempDir(), "stdin")
+			isolatePath(t, map[string]string{"fest-direction": trailerScript(argsFile, stdinFile)})
+			if err := executeCommitTree(context.Background(), repo, repo, &queued[0]); err != nil {
+				t.Fatal(err)
+			}
+			message := gitOutput(t, repo, "log", "-1", "--format=%B")
+			if tt.want == "" {
+				if _, err := os.Stat(argsFile); !os.IsNotExist(err) {
+					t.Fatalf("unconfigured capture invoked trailers: %v", err)
+				}
+				if strings.Contains(message, "Direction-Trailer") {
+					t.Fatalf("unconfigured capture gained trailers: %s", message)
+				}
+			} else {
+				wantArgs := "trailers\n--tree\n" + tree + "\n--work-unit\n" + tt.want + "\n"
+				if got := readTestFile(t, argsFile); got != wantArgs {
+					t.Fatalf("args = %q, want %q", got, wantArgs)
+				}
+				if !strings.Contains(message, "Direction-Trailer: appended") {
+					t.Fatalf("missing captured trailer: %s", message)
+				}
+			}
+		})
+	}
+}
+
+func TestExecuteCommitTreeMissingCapturedDirectionFails(t *testing.T) {
+	repo, parent := seedRepo(t)
+	tree := captureTree(t, repo, "legacy queue\n")
+	installCommitMsg(t, repo, directionShim)
+	before := looseObjectCount(t, repo)
+	err := executeCommitTree(context.Background(), repo, repo, &Job{ID: "old-job", Kind: KindCommitTree, Repo: ".", Tree: tree, Parent: parent, Message: "old job"})
+	if err == nil || !strings.Contains(err.Error(), "direction context was not captured") {
+		t.Fatalf("error = %v", err)
+	}
+	if gitOutput(t, repo, "rev-parse", "HEAD") != parent || looseObjectCount(t, repo) != before {
+		t.Fatal("old job created a commit without captured context")
+	}
+}
+
+func TestCaptureDirectionContextRefusesUnsafeInputs(t *testing.T) {
+	for _, config := range []string{"default_work_unit: [invalid", "default_work_unit: ../outside", "default_work_unit: missing-unit", "default_work_unit: README.md"} {
+		t.Run(config, func(t *testing.T) {
+			repo, _ := seedRepo(t)
+			installCommitMsg(t, repo, directionShim)
+			t.Setenv("DIRECTION_WORK_UNIT", "")
+			writeDirectionConfig(t, repo, config)
+			tree := gitOutput(t, repo, "write-tree")
+			if got, err := CaptureDirectionContext(context.Background(), repo, tree); err == nil {
+				t.Fatalf("capture = %+v, want refusal for %q", got, config)
+			}
+		})
+	}
+}
+
+func writeDirectionConfig(t *testing.T, repo, body string) {
+	t.Helper()
+	if err := os.MkdirAll(filepath.Join(repo, ".direction"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(repo, ".direction/config.yaml"), []byte(body), 0o644); err != nil {
+		t.Fatal(err)
 	}
 }
 

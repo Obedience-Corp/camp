@@ -303,12 +303,17 @@ func Enqueue(ctx context.Context, campaignRoot, repoPath string, opts EnqueueOpt
 		return nil, git.ErrNoChanges
 	}
 
+	direction, err := jobs.CaptureDirectionContext(ctx, repoPath, tree)
+	if err != nil {
+		return nil, err
+	}
 	repo := jobs.RepoForPath(campaignRoot, repoPath)
 	job, err := jobs.Enqueue(ctx, campaignRoot, jobs.Job{
 		Kind:          jobs.KindCommitTree,
 		Class:         jobs.ClassCommit,
 		Repo:          repo,
 		Tree:          tree,
+		Direction:     direction,
 		Parent:        parent,
 		AutoWrite:     true,
 		Env:           opts.WriterEnv,

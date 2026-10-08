@@ -141,6 +141,9 @@ type Job struct {
 	Blobs []BlobRef `json:"blobs,omitempty"`
 	// Tree is the captured tree SHA, for KindCommitTree.
 	Tree string `json:"tree,omitempty"`
+	// Direction preserves the hook's resolved work unit at enqueue time.
+	// Nil on older jobs means no context was captured, not an empty work unit.
+	Direction *DirectionContext `json:"direction,omitempty"`
 	// Parent is the HEAD the tree was captured against. Empty means HEAD was
 	// unborn: the captured tree is a root commit. If HEAD moves before
 	// execution, the job succeeds when later history already versioned every
