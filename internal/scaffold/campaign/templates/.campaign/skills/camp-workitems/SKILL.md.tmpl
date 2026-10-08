@@ -62,8 +62,20 @@ appear in discovery.
 
 ```bash
 camp workitem create <slug> --type feature --title "Human title"
+camp workitem create --file "$(camp root)/workflow/design/notes.md" --type design
 camp workitem adopt workflow/feature/existing-dir --type feature --title "Human title"
 ```
+
+`camp workitem create` places the item at `workflow/<type>/<slug>/`. The type
+is `--type` when given. Without it, the type is the `workflow/<type>/`
+directory the command runs from, including from inside another work item,
+which creates a sibling; anywhere else it is `feature`. `--json` reports the
+type and path it used. Agents should pass `--type` so the result does not
+depend on the working directory.
+
+A relative `--file` path is read from the current directory. From outside
+`workflow/`, build it from `camp root` as above. `camp workitem adopt` paths
+are relative to the camp root.
 
 Slug and type values must be path-safe: no `/`, `\`, whitespace, or control
 characters; no leading `.` or `-`; max 80 characters.
