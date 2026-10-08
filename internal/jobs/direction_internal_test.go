@@ -263,6 +263,7 @@ func TestExecuteCommitTreeKeepsEnqueueDirectionContext(t *testing.T) {
 		{"environment overrides config", "unit-a", "unit-b", "unit-b", false},
 		{"initially unconfigured", "", "", "", false},
 		{"hook removed", "unit-a", "", "unit-a", true},
+		{"unit redirected", "unit-a", "", "unit-a", false},
 	}
 	for _, tt := range cases {
 		t.Run(tt.name, func(t *testing.T) {
@@ -313,7 +314,26 @@ func TestExecuteCommitTreeKeepsEnqueueDirectionContext(t *testing.T) {
 			t.Setenv("DIRECTION_WORK_UNIT", "worker-unit")
 			argsFile, stdinFile := filepath.Join(t.TempDir(), "args"), filepath.Join(t.TempDir(), "stdin")
 			isolatePath(t, map[string]string{"fest-direction": trailerScript(argsFile, stdinFile)})
-			if err := executeCommitTree(context.Background(), repo, repo, &queued[0]); err != nil {
+			if tt.name == "unit redirected" {
+				if err := os.Rename(filepath.Join(repo, "unit-a"), filepath.Join(repo, "old-unit")); err != nil {
+					t.Fatal(err)
+				}
+				if err := os.Symlink("unit-b", filepath.Join(repo, "unit-a")); err != nil {
+					t.Fatal(err)
+				}
+			}
+			before := looseObjectCount(t, repo)
+			err = executeCommitTree(context.Background(), repo, repo, &queued[0])
+			if tt.name == "unit redirected" {
+				if err == nil || !strings.Contains(err.Error(), "work unit was redirected") {
+					t.Fatalf("error = %v", err)
+				}
+				if gitOutput(t, repo, "rev-parse", "HEAD") != parent || looseObjectCount(t, repo) != before {
+					t.Fatal("redirected unit created a commit")
+				}
+				return
+			}
+			if err != nil {
 				t.Fatal(err)
 			}
 			message := gitOutput(t, repo, "log", "-1", "--format=%B")

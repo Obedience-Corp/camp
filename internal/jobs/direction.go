@@ -114,6 +114,16 @@ func appendDirectionTrailers(ctx context.Context, repoPath string, job *Job, mes
 	if job.Direction.WorkUnit == "" {
 		return message, nil
 	}
+	// The direction CLI resolves symlinks before hashing. A directory replaced
+	// by a symlink after capture must not redirect this job to another unit.
+	root, err := filepath.EvalSymlinks(repoPath)
+	if err != nil {
+		return "", camperrors.Wrapf(err, "job %s: resolve direction repository", job.ID)
+	}
+	candidate := filepath.Join(root, filepath.FromSlash(job.Direction.WorkUnit))
+	if resolved, err := filepath.EvalSymlinks(candidate); err == nil && resolved != candidate {
+		return "", camperrors.Newf("job %s: captured direction work unit was redirected; commit in the foreground", job.ID)
+	}
 	bin, err := lookupDirectionBinary()
 	if err != nil {
 		return "", camperrors.Wrapf(err, "job %s", job.ID)
