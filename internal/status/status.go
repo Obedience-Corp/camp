@@ -78,18 +78,18 @@ func GetRepoStatus(ctx context.Context, repoPath, name string, isCampaignRoot bo
 	}
 
 	statusArgs := []string{}
+	artifactPaths := make(map[string]bool)
 	if isCampaignRoot {
 		statusArgs = append(statusArgs, "--ignore-submodules=all")
-		// Classification failing leaves the count as git reports it, which
-		// is the pre-artifact behavior rather than a wrong answer.
+		// Filter decoded output instead of adding one argument per artifact.
+		// Expanding untracked directories prevents an artifact-only directory
+		// from being counted as a normal untracked path.
 		if content, err := artifacts.UntrackedContent(ctx, repoPath); err == nil {
-			paths := artifacts.UntrackedPaths(content)
-			rs.Artifacts = len(paths)
-			if len(paths) > 0 {
-				statusArgs = append(statusArgs, "--")
-				for _, p := range paths {
-					statusArgs = append(statusArgs, ":(exclude,literal)"+p)
-				}
+			for _, path := range artifacts.UntrackedPaths(content) {
+				artifactPaths[path] = true
+			}
+			if len(artifactPaths) > 0 {
+				statusArgs = append(statusArgs, "--untracked-files=all")
 			}
 		}
 	}
@@ -99,22 +99,25 @@ func GetRepoStatus(ctx context.Context, repoPath, name string, isCampaignRoot bo
 		return rs
 	}
 
-	rs.Clean = len(output) == 0
-	if !rs.Clean {
-		for _, entry := range git.ParseStatusPorcelainZ(output) {
-			if len(entry.Code) < 2 {
-				continue
-			}
-			x, y := entry.Code[0], entry.Code[1]
-			if x != ' ' && x != '?' {
-				rs.Staged++
-			}
-			if y != ' ' && y != '?' {
-				rs.Modified++
-			}
-			if x == '?' && y == '?' {
-				rs.Untracked++
-			}
+	rs.Clean = true
+	for _, entry := range git.ParseStatusPorcelainZ(output) {
+		if entry.Code == "??" && artifactPaths[entry.Path] {
+			rs.Artifacts++
+			continue
+		}
+		if len(entry.Code) < 2 {
+			continue
+		}
+		rs.Clean = false
+		x, y := entry.Code[0], entry.Code[1]
+		if x != ' ' && x != '?' {
+			rs.Staged++
+		}
+		if y != ' ' && y != '?' {
+			rs.Modified++
+		}
+		if x == '?' && y == '?' {
+			rs.Untracked++
 		}
 	}
 

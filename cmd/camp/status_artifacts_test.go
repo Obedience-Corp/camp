@@ -37,20 +37,20 @@ func TestDetectStatusFormat(t *testing.T) {
 func TestWithArtifactExclusions(t *testing.T) {
 	paths := []string{"videos/a.mp4", "videos/[take] 1.mov"}
 
-	got := withArtifactExclusions([]string{"--short"}, paths)
+	got, separated := withArtifactExclusions([]string{"--short"}, paths)
 	want := []string{"--short", "--", ":(exclude,literal)videos/a.mp4", ":(exclude,literal)videos/[take] 1.mov"}
-	if !reflect.DeepEqual(got, want) {
+	if !separated || !reflect.DeepEqual(got, want) {
 		t.Errorf("without a user dash-dash: got %q, want %q", got, want)
 	}
 
-	got = withArtifactExclusions([]string{"--", "docs"}, paths[:1])
+	got, separated = withArtifactExclusions([]string{"--", "docs"}, paths[:1])
 	want = []string{"--", "docs", ":(exclude,literal)videos/a.mp4"}
-	if !reflect.DeepEqual(got, want) {
+	if !separated || !reflect.DeepEqual(got, want) {
 		t.Errorf("a user dash-dash must be reused: got %q, want %q", got, want)
 	}
 
 	in := []string{"--short"}
-	if got := withArtifactExclusions(in, nil); !reflect.DeepEqual(got, in) {
+	if got, separated := withArtifactExclusions(in, nil); !separated || !reflect.DeepEqual(got, in) {
 		t.Errorf("no artifact content must leave args untouched: got %q", got)
 	}
 }
@@ -97,5 +97,22 @@ func TestRenderStatusArtifactsSummarizesLongLists(t *testing.T) {
 	}
 	if !strings.Contains(out.String(), "\trenders/ (11 files, 11.0 MB)\n") {
 		t.Errorf("missing per-root summary:\n%s", out.String())
+	}
+}
+
+func TestArtifactExclusionsBoundedFallback(t *testing.T) {
+	args := []string{"--porcelain=v2", "--", "docs"}
+	paths := []string{strings.Repeat("x", statusExclusionBudget)}
+	got, separated := withArtifactExclusions(args, paths)
+	if separated || !reflect.DeepEqual(got, args) {
+		t.Fatalf("fallback = %q, %v; want original args", got, separated)
+	}
+}
+
+func TestStatusOptionsPrecedePathspecs(t *testing.T) {
+	got := withStatusOptions([]string{"--", "docs"}, "--short", "--ignore-submodules=all")
+	want := []string{"--short", "--ignore-submodules=all", "--", "docs"}
+	if !reflect.DeepEqual(got, want) {
+		t.Fatalf("args = %q, want %q", got, want)
 	}
 }

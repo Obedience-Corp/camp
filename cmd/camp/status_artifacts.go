@@ -1,11 +1,13 @@
 package main
 
 import (
+	"context"
 	"fmt"
 	"io"
 	"strings"
 
 	"github.com/Obedience-Corp/camp/internal/artifacts"
+	"github.com/Obedience-Corp/camp/internal/git"
 	"github.com/Obedience-Corp/camp/internal/ui"
 )
 
@@ -13,12 +15,20 @@ import (
 // individually before it falls back to one line per root.
 const statusArtifactListLimit = 10
 
-// withArtifactExclusions appends exclude pathspecs that keep artifact content
-// out of git's untracked listing. They go last, after every flag camp adds,
-// and reuse a "--" the user already passed so a user pathspec still applies.
-func withArtifactExclusions(gitArgs, paths []string) []string {
+// Keep generated arguments comfortably below supported platforms' exec limits.
+// Beyond this budget the CLI reports plain git status with an explicit notice.
+const statusExclusionBudget = 16 * 1024
+
+func withArtifactExclusions(gitArgs, paths []string) ([]string, bool) {
+	size := 0
+	for _, p := range paths {
+		size += len(p) + len(":(exclude,literal)") + 1
+		if size > statusExclusionBudget {
+			return gitArgs, false
+		}
+	}
 	if len(paths) == 0 {
-		return gitArgs
+		return gitArgs, true
 	}
 	args := append([]string{}, gitArgs...)
 	if !containsDashDash(args) {
@@ -27,7 +37,7 @@ func withArtifactExclusions(gitArgs, paths []string) []string {
 	for _, p := range paths {
 		args = append(args, ":(exclude,literal)"+p)
 	}
-	return args
+	return args, true
 }
 
 func containsDashDash(args []string) bool {
@@ -37,6 +47,53 @@ func containsDashDash(args []string) bool {
 		}
 	}
 	return false
+}
+
+// Git options must precede an explicit pathspec separator.
+func withStatusOptions(args []string, options ...string) []string {
+	split := len(args)
+	for i, arg := range args {
+		if arg == "--" {
+			split = i
+			break
+		}
+	}
+	result := append([]string{}, args[:split]...)
+	result = append(result, options...)
+	return append(result, args[split:]...)
+}
+
+// Ask Git to apply the user's pathspecs, including glob and exclude magic.
+// Only untracked paths selected by that same request belong in our section.
+func scopedStatusArtifacts(ctx context.Context, repo string, args []string, roots []artifacts.UntrackedRoot) ([]artifacts.UntrackedRoot, error) {
+	if len(roots) == 0 {
+		return nil, nil
+	}
+	scopeArgs := withStatusOptions(args, "--porcelain=v1", "-z", "--untracked-files=all")
+	output, err := git.StatusPorcelain(ctx, repo, scopeArgs...)
+	if err != nil {
+		return nil, err
+	}
+	selected := make(map[string]bool)
+	for _, entry := range git.ParseStatusPorcelainZ(output) {
+		if entry.Code == "??" {
+			selected[entry.Path] = true
+		}
+	}
+	var scoped []artifacts.UntrackedRoot
+	for _, root := range roots {
+		group := artifacts.UntrackedRoot{Root: root.Root}
+		for _, file := range root.Files {
+			if selected[file.Path] {
+				group.Files = append(group.Files, file)
+				group.Bytes += file.Size
+			}
+		}
+		if len(group.Files) > 0 {
+			scoped = append(scoped, group)
+		}
+	}
+	return scoped, nil
 }
 
 // statusFormat is the git status output form a camp status call asked for.

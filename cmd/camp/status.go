@@ -71,7 +71,7 @@ func runStatus(cmd *cobra.Command, args []string) error {
 	gitArgs, showRefsArg := extractShowRefs(args)
 	showRefs := statusShowRefs || showRefsArg
 	if statusShort {
-		gitArgs = append(gitArgs, "--short")
+		gitArgs = withStatusOptions(gitArgs, "--short")
 	}
 
 	target, err := git.ResolveTarget(ctx, campRoot, statusSub, statusProject)
@@ -96,7 +96,7 @@ func runStatus(cmd *cobra.Command, args []string) error {
 
 	// Hide submodule ref noise by default (only at campaign root)
 	if !showRefs && !target.IsNestedRepo() {
-		gitArgs = append(gitArgs, "--ignore-submodules=all")
+		gitArgs = withStatusOptions(gitArgs, "--ignore-submodules=all")
 	}
 
 	// Untracked files in a mixed artifact root are artifact content that
@@ -107,14 +107,22 @@ func runStatus(cmd *cobra.Command, args []string) error {
 	format := detectStatusFormat(gitArgs)
 	if !target.IsNestedRepo() {
 		content, err := artifacts.UntrackedContent(ctx, target.Path)
+		if err == nil {
+			content, err = scopedStatusArtifacts(ctx, target.Path, gitArgs, content)
+		}
 		if err != nil {
 			if ctx.Err() != nil {
 				return ctx.Err()
 			}
 			fmt.Fprintln(os.Stderr, ui.Warning("artifact content not checked: "+err.Error()))
 		} else {
-			artifactContent = content
-			gitArgs = withArtifactExclusions(gitArgs, artifacts.UntrackedPaths(content))
+			var separated bool
+			gitArgs, separated = withArtifactExclusions(gitArgs, artifacts.UntrackedPaths(content))
+			if separated {
+				artifactContent = content
+			} else {
+				fmt.Fprintln(os.Stderr, ui.Warning("artifact list exceeds the status argument budget; showing plain git status including artifact content"))
+			}
 		}
 	}
 

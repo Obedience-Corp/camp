@@ -181,3 +181,85 @@ func TestIntegration_StatusAllCountsArtifactsSeparately(t *testing.T) {
 	assert.Equal(t, 1, root.Artifacts)
 	assert.True(t, root.Clean, "artifact content alone must not make the camp root dirty")
 }
+
+func TestIntegration_StatusArtifactsRespectPathspecs(t *testing.T) {
+	tc := GetSharedContainer(t)
+	campPath := setupCommittedMixedRoot(t, tc, "status-artifacts-scoped")
+	tc.Shell(t, fmt.Sprintf("mkdir -p %s/docs; printf note > %s/docs/new.md", campPath, campPath))
+	cases := []struct {
+		name         string
+		args         []string
+		want, absent string
+	}{
+		{"unrelated directory", []string{"--", "docs"}, "", "Artifact content:"},
+		{"one artifact directory", []string{"--", "videos/my-video/takes"}, "videos/my-video/takes/take1.mp4", "videos/my-video/footage.mp4"},
+		{"glob", []string{"--", ":(glob)videos/**/*.mp4"}, "videos/my-video/footage.mp4", "todo.md"},
+		{"exclude", []string{"--", "videos", ":(exclude)videos/my-video/takes"}, "videos/my-video/footage.mp4", "take1.mp4"},
+		{"explicit separator", []string{"--", "--", "docs"}, "docs/new.md", "Artifact content:"},
+		{"short explicit separator", []string{"-s", "--", "--", "docs"}, "?? docs/new.md", "artifact content"},
+	}
+	for _, tt := range cases {
+		t.Run(tt.name, func(t *testing.T) {
+			args := append([]string{"status"}, tt.args...)
+			stdout, stderr, code, err := tc.RunCampSplitInDir(campPath, args...)
+			require.NoError(t, err)
+			require.Zero(t, code, "stderr: %s", stderr)
+			if tt.want != "" {
+				assert.Contains(t, stdout, tt.want)
+			}
+			assert.NotContains(t, stdout, tt.absent)
+		})
+	}
+	stdout, stderr, code, err := tc.RunCampSplitInDir(campPath, "status", "--", "--porcelain=v2", "-z", "videos/my-video/takes")
+	require.NoError(t, err)
+	require.Zero(t, code, "stderr: %s", stderr)
+	assert.Empty(t, stdout)
+	assert.Contains(t, stderr, "videos/my-video/ (1 file, 2.0 MB)")
+}
+
+func TestIntegration_StatusLargeArtifactCollection(t *testing.T) {
+	tc := GetSharedContainer(t)
+	campPath, _ := setupSubmoduleCampaign(t, tc, "status-artifacts-large")
+	writeGuardConfig(t, tc, campPath, "    max_file_size: 1MiB")
+	tc.Shell(t, fmt.Sprintf(`
+  cd %s
+  mkdir -p videos
+  printf 'tracked notes' > videos/notes.md
+  printf 'version: 1\nroots:\n    - path: videos\n' > .campaign/artifacts.yaml
+  git add .
+  git -c user.email=t@t -c user.name=t commit -qm fixture
+  prefix=$(printf '%%0180d' 0)
+  i=0
+  while [ "$i" -lt 1200 ]; do
+   truncate -s 2097152 "videos/$prefix-$i.mp4"
+   i=$((i+1))
+  done
+ `, campPath))
+	// A constrained stack reproduces the OS argument limit with a small fixture.
+	output, code, err := tc.ExecCommand("sh", "-c", fmt.Sprintf("ulimit -s 256; cd %s; %s/camp status -s", campPath, tc.campEnvPrefix()))
+	require.NoError(t, err)
+	require.Zero(t, code, "output: %s", output)
+	assert.Contains(t, output, "showing plain git status including artifact content")
+	assert.NotContains(t, output, "argument list too long")
+
+	output, code, err = tc.ExecCommand("sh", "-c", fmt.Sprintf("ulimit -s 256; cd %s; %s/camp status all --json", campPath, tc.campEnvPrefix()))
+	require.NoError(t, err)
+	require.Zero(t, code, "output: %s", output)
+	// ExecCommand combines streams; suppress notices for machine readback.
+	stdout, stderr, code, err := tc.RunCampSplitInDir(campPath, "status", "all", "--json")
+	require.NoError(t, err)
+	require.Zero(t, code, "stderr: %s", stderr)
+	var doc struct {
+		Repos []struct {
+			Clean                bool
+			Untracked, Artifacts int
+			Error                string
+		}
+	}
+	require.NoError(t, json.Unmarshal([]byte(stdout), &doc))
+	require.NotEmpty(t, doc.Repos)
+	assert.Empty(t, doc.Repos[0].Error)
+	assert.Equal(t, 1200, doc.Repos[0].Artifacts)
+	assert.Zero(t, doc.Repos[0].Untracked)
+	assert.True(t, doc.Repos[0].Clean)
+}
