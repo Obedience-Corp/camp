@@ -441,6 +441,21 @@ func TestIntegration_WorkitemCreateInfersTypeFromLocation(t *testing.T) {
 		assertMarkerType(t, "workflow/design/dir-design", "design")
 	})
 
+	t.Run("FileRelativeToTheCwd", func(t *testing.T) {
+		out, err := tc.RunCampInDir(campaignDir+"/workflow/explore", "workitem", "create", "--file", "cwd-notes.md")
+		require.NoError(t, err, "create --file from workflow/explore: %s", out)
+		assert.Contains(t, out, "Created explore workitem cwd-notes")
+		assert.Regexp(t, `path:\s+workflow/explore/cwd-notes\.md\n`, out)
+		content, err := tc.ReadFile(campaignDir + "/workflow/explore/cwd-notes.md")
+		require.NoError(t, err)
+		assert.Contains(t, content, "type: explore")
+
+		out, err = tc.RunCampInDir(campaignDir+"/workflow/explore", "workitem", "create", "--file", "../bug/sibling-notes.md")
+		require.NoError(t, err, "create --file ../bug from workflow/explore: %s", out)
+		assert.Contains(t, out, "Created bug workitem sibling-notes")
+		assert.Regexp(t, `path:\s+workflow/bug/sibling-notes\.md\n`, out)
+	})
+
 	t.Run("FileUnderTypeDirectory", func(t *testing.T) {
 		out, err := tc.RunCampInDir(campaignDir, "workitem", "create", "--file", "workflow/bug/p99-notes.md")
 		require.NoError(t, err, "create --file under workflow/bug: %s", out)

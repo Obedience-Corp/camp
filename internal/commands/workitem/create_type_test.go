@@ -115,3 +115,26 @@ func TestCdTargetFromCwd(t *testing.T) {
 		})
 	}
 }
+
+func TestCreateFileRel(t *testing.T) {
+	cases := []struct {
+		name      string
+		cwdRel    string
+		cwdInCamp bool
+		file      string
+		want      string
+	}{
+		{name: "camp root keeps the path", cwdRel: ".", cwdInCamp: true, file: "workflow/bug/p99.md", want: "workflow/bug/p99.md"},
+		{name: "type directory joins the cwd", cwdRel: "workflow/explore", cwdInCamp: true, file: "notes.md", want: "workflow/explore/notes.md"},
+		{name: "parent segments resolve lexically", cwdRel: "workflow/explore", cwdInCamp: true, file: "../bug/p99.md", want: "workflow/bug/p99.md"},
+		{name: "escaping the root stays visible to validation", cwdRel: "workflow", cwdInCamp: true, file: "../../out.md", want: "../out.md"},
+		{name: "cwd outside the camp reads from the root", cwdRel: "", cwdInCamp: false, file: "workflow/bug/p99.md", want: "workflow/bug/p99.md"},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			if got := createFileRel(tc.cwdRel, tc.cwdInCamp, tc.file); got != tc.want {
+				t.Errorf("createFileRel(%q, %v, %q) = %q, want %q", tc.cwdRel, tc.cwdInCamp, tc.file, got, tc.want)
+			}
+		})
+	}
+}

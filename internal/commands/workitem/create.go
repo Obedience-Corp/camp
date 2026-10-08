@@ -88,7 +88,7 @@ explore/design (recommended scaffold); otherwise it is empty/omitted.`,
 	cmd.Flags().BoolVar(&jsonOut, "json", false, "emit a structured JSON result")
 	cmd.Flags().StringArrayVar(&tags, "tag", nil, "add a tag (repeatable, normalized to lowercase kebab-case)")
 	cmd.Flags().StringArrayVar(&projects, "project", nil, "add a related project path (repeatable, e.g. projects/camp)")
-	cmd.Flags().StringVar(&fileFlag, "file", "", "create a new markdown file with kind: workitem frontmatter instead of a directory workitem")
+	cmd.Flags().StringVar(&fileFlag, "file", "", "create a new markdown file with kind: workitem frontmatter instead of a directory workitem (relative paths are from the current directory)")
 	return cmd
 }
 
@@ -116,12 +116,15 @@ func runCreateFile(ctx context.Context, cmd *cobra.Command, filePath, typeFlag s
 		return camperrors.Wrap(err, "not in a camp directory")
 	}
 
-	rel := filePath
+	var rel string
 	if filepath.IsAbs(filePath) {
 		rel, err = filepath.Rel(campaignRoot, filePath)
 		if err != nil {
 			return camperrors.Wrap(err, "resolve file relative to camp root")
 		}
+	} else {
+		cwdRel, cwdInCamp := campRelativeCwd(campaignRoot)
+		rel = createFileRel(cwdRel, cwdInCamp, filePath)
 	}
 	if err := validateParentPath(rel); err != nil {
 		return err

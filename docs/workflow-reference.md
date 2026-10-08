@@ -223,7 +223,9 @@ Without `--type`, the type is the workflow directory you run it from: anywhere
 under `workflow/<T>/`, including inside another work item, creates a sibling at
 `workflow/<T>/<slug>/` with type `<T>`. `--dir workflow/<T>[/...]` and
 `--file workflow/<T>/<name>.md` infer `<T>` the same way. Everywhere else the
-type defaults to `feature`.
+type defaults to `feature`. A relative `--file` path is read from the current
+directory, so `--file notes.md` run from `workflow/explore/` creates
+`workflow/explore/notes.md`.
 
 `discover_custom_workflows.go` skips dot-prefixed names inside the type
 directory. The `.gitkeep` files are therefore invisible to workitem discovery.

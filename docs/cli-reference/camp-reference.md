@@ -9291,7 +9291,7 @@ camp workitem create <slug> [flags]
 
 ```
       --dir string            parent dir override (default: workflow/<type>)
-      --file string           create a new markdown file with kind: workitem frontmatter instead of a directory workitem
+      --file string           create a new markdown file with kind: workitem frontmatter instead of a directory workitem (relative paths are from the current directory)
   -h, --help                  help for create
       --id string             override the generated id
       --json                  emit a structured JSON result

@@ -95,6 +95,16 @@ func campRelativeCwd(campaignRoot string) (rel string, ok bool) {
 	return filepath.ToSlash(rel), true
 }
 
+// createFileRel resolves a relative --file path the way a shell argument
+// reads: against the cwd when the cwd is inside the camp, otherwise against
+// the camp root. The result is camp-relative.
+func createFileRel(cwdRel string, cwdInCamp bool, filePath string) string {
+	if !cwdInCamp {
+		return filepath.ToSlash(filepath.Clean(filePath))
+	}
+	return filepath.ToSlash(filepath.Clean(filepath.Join(filepath.FromSlash(cwdRel), filePath)))
+}
+
 // cdTargetFromCwd rewrites a camp-relative path so it can be passed to cd
 // from the user's cwd. It falls back to the camp-relative path when the cwd
 // is outside the camp.
