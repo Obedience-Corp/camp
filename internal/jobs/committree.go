@@ -84,6 +84,13 @@ func executeCommitTree(ctx context.Context, campaignRoot, repoPath string, job *
 	if err != nil {
 		return err
 	}
+	// commit-tree will not run the direction shim. Append its trailers from
+	// the captured tree, or fail the job. executeCommitPaths is not this path:
+	// it uses git commit, so the real hook still runs there.
+	message, err = appendDirectionTrailers(ctx, repoPath, job, message)
+	if err != nil {
+		return err
+	}
 
 	return applyCapturedTree(ctx, campaignRoot, repoPath, job, tree, parent, message)
 }

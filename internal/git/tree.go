@@ -69,10 +69,10 @@ func shortForMessage(sha string) string {
 // CommitTree creates a commit object for a tree without touching the index,
 // the working tree, or any ref.
 //
-// Plumbing on purpose: it runs no hooks. Repositories with commit hooks never
-// reach this path, because a hook is a user's own code that expects to run at
-// commit time in the foreground, and the enqueue side degrades those to a full
-// synchronous commit.
+// Plumbing on purpose: it runs no hooks. Repositories with a commit hook camp
+// cannot reproduce never reach this path; the enqueue side degrades those to
+// a synchronous commit. The fest-direction commit-msg shim does reach it, but
+// only after the worker has appended that shim's trailers to the message.
 //
 // An empty parent makes a root commit (no `-p`): unborn HEAD.
 func CommitTree(ctx context.Context, repoPath, tree, parent, message string) (string, error) {
@@ -466,54 +466,6 @@ func CaptureGitlink(ctx context.Context, repoPath, path string) (BlobRef, error)
 		return BlobRef{}, camperrors.Wrapf(err, "capture gitlink %s", clean)
 	}
 	return BlobRef{Path: clean, Mode: "160000", SHA: sha}, nil
-}
-
-// commitHookNames are the hooks that run during an ordinary `git commit`.
-//
-// Only these three. A repository with a `pre-push` hook can still defer
-// commits, because nothing about deferring changes when a push happens.
-var commitHookNames = []string{"pre-commit", "prepare-commit-msg", "commit-msg"}
-
-// HasCommitHooks reports whether the repository has an executable hook that an
-// ordinary commit would run.
-//
-// A hook is the user's own code, and it expects to run at commit time, in the
-// foreground, against the tree being committed. Deferring past it would either
-// skip it silently or run it minutes later against a different working tree,
-// and both are worse than not deferring. So a repository with commit hooks
-// keeps today's synchronous behavior exactly.
-//
-// The hooks directory comes from git rather than being assumed, so a repo that
-// sets core.hooksPath, or a worktree whose hooks live in the parent's common
-// directory, resolves correctly without camp knowing the rules.
-func HasCommitHooks(ctx context.Context, repoPath string) bool {
-	out, err := Output(ctx, repoPath, "rev-parse", "--git-path", "hooks")
-	if err != nil {
-		// Cannot tell. Assume hooks exist: the expensive mistake is skipping a
-		// hook the user wrote, not committing in the foreground.
-		return true
-	}
-	dir := strings.TrimSpace(out)
-	if dir == "" {
-		return true
-	}
-	if !filepath.IsAbs(dir) {
-		dir = filepath.Join(repoPath, dir)
-	}
-
-	for _, name := range commitHookNames {
-		info, err := os.Stat(filepath.Join(dir, name))
-		if err != nil || info.IsDir() {
-			continue
-		}
-		// The executable bit is what git itself requires, so a disabled hook
-		// left in place as a `.sample` or with its bit cleared does not force
-		// the whole repository back to synchronous commits.
-		if info.Mode().Perm()&0o111 != 0 {
-			return true
-		}
-	}
-	return false
 }
 
 // BlobRef is one path's content, captured as a git object.
