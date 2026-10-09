@@ -313,7 +313,7 @@ func ValidTargetsForStatus(status intent.Status) []Target {
 func composeDesignReadme(title, id, date, content string) string {
 	var out strings.Builder
 	out.WriteString("# " + title + "\n\n")
-	sections := splitBodySections(content)
+	sections := splitBodySections(title, content)
 	if len(sections) > 0 {
 		out.WriteString("## Content\n\n")
 	}
@@ -354,9 +354,11 @@ var designPlaceholders = map[string]string{
 	"notes":   "<!-- Additional thoughts, references, or considerations -->",
 }
 
-func splitBodySections(content string) []bodySection {
+func splitBodySections(title, content string) []bodySection {
 	lines := trimBlankLines(strings.Split(content, "\n"))
-	if len(lines) > 0 && strings.HasPrefix(lines[0], "# ") {
+	// Only the generated title is redundant; a different opening H1 belongs
+	// to the authored body. Strip CR from CRLF input for the comparison only.
+	if len(lines) > 0 && strings.TrimSuffix(lines[0], "\r") == "# "+title {
 		lines = lines[1:]
 	}
 

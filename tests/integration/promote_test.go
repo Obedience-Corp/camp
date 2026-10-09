@@ -252,12 +252,12 @@ func TestIntentPromote_TargetDesign_PreservesMarkdownAndSummary(t *testing.T) {
 	path := setupPromoteCampaign(t, tc, "promote-design-markdown")
 	id := "markdown-preservation-20260303-120005"
 	title := "Markdown Preservation"
-	body := "## Non-goals\n\nSupport offline mode.\n\n" +
+	body := "# Migration plan\n\n## Non-goals\n\nSupport offline mode.\n\n" +
 		"## Description\n\n### Retry request\n\nRetry\n\n    first()\n    second()\n\n" +
 		"## Notes\n\n<!-- Keep this note. -->\n\n" +
 		"~~~~md\n```\n## Context\n## Example\n<!-- Additional thoughts, references, or considerations -->\n```\n~~~~"
 	content := strings.SplitN(intentContent(id, title, "ready"), "## Description", 2)[0] +
-		"# " + title + "\n\n" + body + "\n\n" +
+		body + "\n\n" +
 		"## Context\n\n<!-- Why is this needed? What triggered this idea? -->\n"
 	require.NoError(t, tc.WriteFile(path+"/workflow/intents/ready/"+id+".md", content))
 

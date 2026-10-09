@@ -90,7 +90,7 @@ func TestComposeDesignReadme_PreservesAuthoredMarkdown(t *testing.T) {
 	}
 	for _, tt := range cases {
 		t.Run(tt.name, func(t *testing.T) {
-			got := composeDesignReadme(testTitle, testID, testDate, "# Old title\n\n"+tt.body+"\n\n")
+			got := composeDesignReadme(testTitle, testID, testDate, "# "+testTitle+"\n\n"+tt.body+"\n\n")
 			want := "# " + testTitle + "\n\n## Content\n\n" + tt.body + "\n\n## Status\n\n" +
 				"In progress — promoted from intent " + testID + " on " + testDate + ".\n"
 			if got != want {
@@ -108,6 +108,34 @@ func TestComposeDesignReadme_RemovesPlaceholdersAfterClosingFence(t *testing.T) 
 			got := composeDesignReadme(testTitle, testID, testDate, content)
 			if !strings.Contains(got, body) || strings.Count(got, "## Notes") != 1 || strings.Contains(got, "<!--") {
 				t.Fatalf("fence boundary or placeholder cleanup changed content:\n%s", got)
+			}
+		})
+	}
+}
+
+func TestComposeDesignReadme_OnlyRemovesMatchingOpeningTitle(t *testing.T) {
+	cases := []struct {
+		name    string
+		content string
+		body    string
+	}{
+		{"matching title", "# Effort levels\n\nIntro.", "Intro."},
+		{"matching title after blank lines", "\n \n# Effort levels\n\nIntro.", "Intro."},
+		{"matching title with CRLF", "# Effort levels\r\n\r\nIntro.", "Intro."},
+		{"custom heading", "# Migration plan\n\nIntro.", "# Migration plan\n\nIntro."},
+		{"title prefix", "# Effort levels migration\n\nIntro.", "# Effort levels migration\n\nIntro."},
+		{"different case", "# Effort Levels\n\nIntro.", "# Effort Levels\n\nIntro."},
+		{"matching title later in body", "Intro.\n\n# Effort levels\n\nDetails.", "Intro.\n\n# Effort levels\n\nDetails."},
+		{"custom heading after matching title", "# Effort levels\n\n# Migration plan\n\nIntro.", "# Migration plan\n\nIntro."},
+		{"indented literal heading", "    # Effort levels\n    example", "    # Effort levels\n    example"},
+	}
+	for _, tt := range cases {
+		t.Run(tt.name, func(t *testing.T) {
+			got := composeDesignReadme(testTitle, testID, testDate, tt.content)
+			want := "# " + testTitle + "\n\n## Content\n\n" + tt.body + "\n\n## Status\n\n" +
+				"In progress — promoted from intent " + testID + " on " + testDate + ".\n"
+			if got != want {
+				t.Fatalf("opening heading changed incorrectly:\n got: %q\nwant: %q", got, want)
 			}
 		})
 	}
