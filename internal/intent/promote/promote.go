@@ -14,6 +14,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"regexp"
 	"strings"
 	"time"
 
@@ -224,21 +225,16 @@ func createDesignDoc(ctx context.Context, campaignRoot string, i *intent.Intent)
 		return "", false, camperrors.Wrap(err, "creating design directory")
 	}
 
-	// Build README content from intent.
-	firstParagraph := promotecore.ExtractFirstParagraph(i.Content)
+	body := designBody(i.Content)
 	date := time.Now().Format("2006-01-02")
 
 	var content strings.Builder
 	content.WriteString("# " + i.Title + "\n\n")
-	content.WriteString("## Context\n\n")
-	if firstParagraph != "" {
-		content.WriteString(firstParagraph + "\n\n")
-	}
 	content.WriteString("## Status\n\n")
-	content.WriteString(fmt.Sprintf("In progress — promoted from intent %s on %s.\n\n", i.ID, date))
-	if i.Content != "" {
-		content.WriteString("## Content\n\n")
-		content.WriteString(strings.TrimSpace(i.Content) + "\n")
+	fmt.Fprintf(&content, "In progress — promoted from intent %s on %s.\n", i.ID, date)
+	if body != "" {
+		content.WriteString("\n## Content\n\n")
+		content.WriteString(body + "\n")
 	}
 
 	readmePath := filepath.Join(absDir, "README.md")
@@ -320,4 +316,52 @@ func ValidTargetsForStatus(status intent.Status) []Target {
 	default:
 		return nil
 	}
+}
+
+var (
+	htmlCommentRe       = regexp.MustCompile(`(?s)<!--.*?-->`)
+	placeholderSections = map[string]bool{"context": true, "notes": true}
+)
+
+// designBody returns the intent body for a design README: the leading H1 is
+// removed because the README supplies its own, and the template's Context and
+// Notes sections are dropped when they hold only placeholder comments.
+func designBody(content string) string {
+	lines := strings.Split(strings.TrimSpace(content), "\n")
+	if len(lines) > 0 && strings.HasPrefix(lines[0], "# ") {
+		lines = lines[1:]
+	}
+
+	var kept []string
+	var section []string
+	var heading string
+	inFence := false
+
+	flush := func() {
+		if heading != "" && placeholderSections[strings.ToLower(strings.TrimSpace(strings.TrimPrefix(heading, "## ")))] {
+			text := strings.TrimSpace(htmlCommentRe.ReplaceAllString(strings.Join(section, "\n"), ""))
+			if text == "" {
+				return
+			}
+		}
+		if heading != "" {
+			kept = append(kept, heading)
+		}
+		kept = append(kept, section...)
+	}
+
+	for _, line := range lines {
+		if strings.HasPrefix(strings.TrimSpace(line), "```") {
+			inFence = !inFence
+		}
+		if !inFence && strings.HasPrefix(line, "## ") {
+			flush()
+			heading, section = line, nil
+			continue
+		}
+		section = append(section, line)
+	}
+	flush()
+
+	return strings.TrimSpace(strings.Join(kept, "\n"))
 }
