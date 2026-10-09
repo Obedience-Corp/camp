@@ -295,6 +295,32 @@ func TestIntentPromote_TargetDesign_PreservesMarkdownAndSummary(t *testing.T) {
 		"preview should start with authored prose: %s", result.Items[0].Summary)
 }
 
+func TestIntentPromote_TargetDesign_PlaceholderBoundary(t *testing.T) {
+	tc := GetSharedContainer(t)
+	root := setupPromoteCampaign(t, tc, "promote-placeholder-boundary")
+	id := "placeholder-boundary-20260303-120006"
+	const hint = "<!-- Additional thoughts, references, or considerations -->"
+	body := "## Notes\n\nExample:\n" + hint + "\n    <token>\n\n" +
+		"1. First list\n" + hint + "\n1. Restart numbering\n"
+	content := strings.SplitN(intentContent(id, "Placeholder Boundary", "ready"), "## Description", 2)[0] + body
+	require.NoError(t, tc.WriteFile(root+"/workflow/intents/ready/"+id+".md", content))
+
+	out, err := tc.RunCampInDir(root, "idea", "promote", id, "--target", "design", "--no-commit")
+	require.NoError(t, err, "promote: %s", out)
+	readme, err := tc.ReadFile(root + "/workflow/design/" + id + "/README.md")
+	require.NoError(t, err)
+	assert.NotContains(t, readme, hint)
+	var rendered bytes.Buffer
+	require.NoError(t, goldmark.Convert([]byte(readme), &rendered))
+	assert.Contains(t, rendered.String(), "<p>Example:</p>")
+	assert.Contains(t, rendered.String(), "<pre><code>&lt;token&gt;\n</code></pre>", "the token must remain displayed code")
+	assert.Equal(t, 2, strings.Count(rendered.String(), "<ol>"), "the second list must restart numbering")
+	assert.Contains(t, rendered.String(), "<h2>Status</h2>")
+	active, err := tc.ReadFile(root + "/.campaign/intents/active/" + id + ".md")
+	require.NoError(t, err)
+	assert.Contains(t, active, body, "the source intent must remain intact")
+}
+
 func TestIntentPromote_TargetDesign_LiteralBlocks(t *testing.T) {
 	tc := GetSharedContainer(t)
 	cases := []struct {

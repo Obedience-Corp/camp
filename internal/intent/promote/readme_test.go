@@ -6,6 +6,7 @@ import (
 	"testing"
 
 	"github.com/yuin/goldmark"
+	"github.com/yuin/goldmark/renderer/html"
 )
 
 const (
@@ -55,6 +56,59 @@ func TestComposeDesignReadme_EmptyBody(t *testing.T) {
 	want := "# Empty body\n\n## Status\n\nIn progress \u2014 promoted from intent empty-20261008-200732 on 2026-10-08.\n"
 	if got != want {
 		t.Fatalf("got %q want %q", got, want)
+	}
+}
+
+func TestComposeDesignReadme_PlaceholderBlockBoundaries(t *testing.T) {
+	cases := []struct {
+		name   string
+		before string
+		after  string
+	}{
+		{"indented code after paragraph", "Example:\n", "    <token>\n"},
+		{"separate paragraphs", "First paragraph.\n", "Second paragraph.\n"},
+		{"thematic break", "Paragraph.\n", "---\n"},
+		{"ordered list after paragraph", "Steps:\n", "2. Second step\n"},
+		{"separate ordered lists", "1. First list\n", "1. Restart numbering\n"},
+		{"separate unordered lists", "- First list\n", "- Second list\n"},
+		{"separate quotes", "> First quote\n", "> Second quote\n"},
+		{"separate code blocks", "    first()\n", "    second()\n"},
+		{"code after list", "- List item\n", "    <token>\n"},
+		{"placeholder at section start", "", "    <token>\n"},
+		{"placeholder at section end", "Paragraph.\n", ""},
+	}
+	md := goldmark.New(goldmark.WithRendererOptions(html.WithUnsafe()))
+	for heading, hint := range map[string]string{
+		"## Context": "<!-- Why is this needed? What triggered this idea? -->",
+		"## Notes":   "<!-- Additional thoughts, references, or considerations -->",
+	} {
+		for name, newline := range map[string]string{"LF": "\n", "CRLF": "\r\n"} {
+			for _, tt := range cases {
+				t.Run(heading+"/"+tt.name+"/"+name, func(t *testing.T) {
+					body := strings.ReplaceAll(heading+"\n\n"+tt.before+hint+"\n"+tt.after, "\n", newline)
+					cleaned := cleanDesignBody(testTitle, body)
+					if strings.Contains(cleaned, hint) {
+						t.Fatalf("template text was retained: %q", cleaned)
+					}
+					var originalHTML, cleanedHTML bytes.Buffer
+					if err := md.Convert([]byte(body), &originalHTML); err != nil {
+						t.Fatal(err)
+					}
+					if err := md.Convert([]byte(cleaned), &cleanedHTML); err != nil {
+						t.Fatal(err)
+					}
+					// Compare the rendered authored blocks, excluding only the
+					// invisible template/separator comments. This catches changed
+					// code, list numbering, quote boundaries and paragraph breaks.
+					want := strings.ReplaceAll(originalHTML.String(), hint+newline, "")
+					got := strings.ReplaceAll(cleanedHTML.String(), "<!---->"+newline, "")
+					if got != want {
+						t.Fatalf("authored block structure changed:\n got: %s\nwant: %s\nMarkdown: %q", got, want, cleaned)
+					}
+					assertDesignStatusRendered(t, composeDesignReadme(testTitle, testID, testDate, body))
+				})
+			}
+		}
 	}
 }
 

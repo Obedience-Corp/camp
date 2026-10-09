@@ -63,7 +63,7 @@ func cleanDesignBody(title, content string) string {
 		}
 
 		end := len(content)
-		var hints []sourceSpan
+		var hints, edits []sourceSpan
 		inSubsection := false
 		for next := node.NextSibling(); next != nil; next = next.NextSibling() {
 			if h, ok := next.(*ast.Heading); ok {
@@ -80,14 +80,25 @@ func cleanDesignBody(title, content string) string {
 			comment := sourceLine(content, block.Lines().At(0).Start)
 			raw := strings.TrimSuffix(strings.TrimSuffix(content[comment.start:comment.end], "\n"), "\r")
 			if raw == hint {
-				hints = append(hints, sourceSpan{comment.start - line.end, comment.end - line.end})
+				// Keep the line ending so removing a hint cannot join lines.
+				span := sourceSpan{comment.start - line.end, comment.start + len(raw) - line.end}
+				hints = append(hints, span)
+				before, after := next.PreviousSibling(), next.NextSibling()
+				if before != nil && after != nil && before.Kind() != ast.KindHeading && after.Kind() != ast.KindHeading {
+					// A blank line cannot separate every block (lists, quotes and
+					// indented code can merge). Retain an empty HTML comment as
+					// the original structural separator between authored blocks.
+					span.start += len("<!--")
+					span.end -= len("-->")
+				}
+				edits = append(edits, span)
 			}
 		}
 		if markdownBlank(withoutSpans(content[line.end:end], hints)) {
 			removed = append(removed, sourceSpan{line.start, end})
 		} else {
-			for _, hint := range hints {
-				removed = append(removed, sourceSpan{line.end + hint.start, line.end + hint.end})
+			for _, edit := range edits {
+				removed = append(removed, sourceSpan{line.end + edit.start, line.end + edit.end})
 			}
 		}
 	}
