@@ -11,7 +11,6 @@ package promote
 
 import (
 	"context"
-	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
@@ -224,22 +223,7 @@ func createDesignDoc(ctx context.Context, campaignRoot string, i *intent.Intent)
 		return "", false, camperrors.Wrap(err, "creating design directory")
 	}
 
-	// Build README content from intent.
-	firstParagraph := promotecore.ExtractFirstParagraph(i.Content)
-	date := time.Now().Format("2006-01-02")
-
-	var content strings.Builder
-	content.WriteString("# " + i.Title + "\n\n")
-	content.WriteString("## Context\n\n")
-	if firstParagraph != "" {
-		content.WriteString(firstParagraph + "\n\n")
-	}
-	content.WriteString("## Status\n\n")
-	content.WriteString(fmt.Sprintf("In progress — promoted from intent %s on %s.\n\n", i.ID, date))
-	if i.Content != "" {
-		content.WriteString("## Content\n\n")
-		content.WriteString(strings.TrimSpace(i.Content) + "\n")
-	}
+	readme := composeDesignReadme(i.Title, i.ID, time.Now().Format("2006-01-02"), i.Content)
 
 	readmePath := filepath.Join(absDir, "README.md")
 	if _, err := os.Stat(readmePath); err == nil {
@@ -249,7 +233,7 @@ func createDesignDoc(ctx context.Context, campaignRoot string, i *intent.Intent)
 		return "", false, camperrors.Wrap(err, "checking design README")
 	}
 
-	if err := os.WriteFile(readmePath, []byte(content.String()), 0644); err != nil {
+	if err := os.WriteFile(readmePath, []byte(readme), 0644); err != nil {
 		return "", false, camperrors.Wrap(err, "writing design README")
 	}
 
