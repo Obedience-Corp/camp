@@ -225,17 +225,7 @@ func createDesignDoc(ctx context.Context, campaignRoot string, i *intent.Intent)
 		return "", false, camperrors.Wrap(err, "creating design directory")
 	}
 
-	body := designBody(i.Content)
-	date := time.Now().Format("2006-01-02")
-
-	var content strings.Builder
-	content.WriteString("# " + i.Title + "\n\n")
-	content.WriteString("## Status\n\n")
-	fmt.Fprintf(&content, "In progress — promoted from intent %s on %s.\n", i.ID, date)
-	if body != "" {
-		content.WriteString("\n## Content\n\n")
-		content.WriteString(body + "\n")
-	}
+	readme := composeDesignReadme(i.Title, i.ID, time.Now().Format("2006-01-02"), i.Content)
 
 	readmePath := filepath.Join(absDir, "README.md")
 	if _, err := os.Stat(readmePath); err == nil {
@@ -245,7 +235,7 @@ func createDesignDoc(ctx context.Context, campaignRoot string, i *intent.Intent)
 		return "", false, camperrors.Wrap(err, "checking design README")
 	}
 
-	if err := os.WriteFile(readmePath, []byte(content.String()), 0644); err != nil {
+	if err := os.WriteFile(readmePath, []byte(readme), 0644); err != nil {
 		return "", false, camperrors.Wrap(err, "writing design README")
 	}
 
@@ -323,45 +313,90 @@ var (
 	placeholderSections = map[string]bool{"context": true, "notes": true}
 )
 
-// designBody returns the intent body for a design README: the leading H1 is
-// removed because the README supplies its own, and the template's Context and
-// Notes sections are dropped when they hold only placeholder comments.
-func designBody(content string) string {
+type bodySection struct {
+	heading string
+	lines   []string
+}
+
+func (b bodySection) text() string { return strings.TrimSpace(strings.Join(b.lines, "\n")) }
+
+// composeDesignReadme renders the design README. Context carries the intent's
+// first paragraph once (workitem summaries read it), and Content carries the
+// rest of the body with the leading H1 and empty template placeholders removed.
+func composeDesignReadme(title, id, date, content string) string {
+	sections := splitBodySections(content)
+
+	var all []string
+	for _, sec := range sections {
+		all = append(all, sec.text())
+	}
+	summary := promotecore.ExtractFirstParagraph(strings.Join(all, "\n\n"))
+
+	var rest []string
+	removed := false
+	for _, sec := range sections {
+		if !removed && summary != "" && strings.Contains(sec.text(), summary) {
+			removed = true
+			sec.lines = strings.Split(strings.Replace(sec.text(), summary, "", 1), "\n")
+			if sec.text() == "" {
+				continue
+			}
+		}
+		block := sec.text()
+		if sec.heading != "" {
+			block = strings.TrimSpace(sec.heading + "\n\n" + block)
+		}
+		rest = append(rest, block)
+	}
+	body := strings.TrimSpace(strings.Join(rest, "\n\n"))
+
+	var out strings.Builder
+	out.WriteString("# " + title + "\n\n")
+	if summary != "" {
+		out.WriteString("## Context\n\n" + summary + "\n\n")
+	}
+	out.WriteString("## Status\n\n")
+	fmt.Fprintf(&out, "In progress — promoted from intent %s on %s.\n", id, date)
+	if body != "" {
+		out.WriteString("\n## Content\n\n" + body + "\n")
+	}
+	return out.String()
+}
+
+func splitBodySections(content string) []bodySection {
 	lines := strings.Split(strings.TrimSpace(content), "\n")
 	if len(lines) > 0 && strings.HasPrefix(lines[0], "# ") {
 		lines = lines[1:]
 	}
 
-	var kept []string
-	var section []string
-	var heading string
+	var sections []bodySection
+	cur := bodySection{}
 	inFence := false
-
 	flush := func() {
-		if heading != "" && placeholderSections[strings.ToLower(strings.TrimSpace(strings.TrimPrefix(heading, "## ")))] {
-			text := strings.TrimSpace(htmlCommentRe.ReplaceAllString(strings.Join(section, "\n"), ""))
-			if text == "" {
-				return
-			}
+		name := strings.ToLower(strings.TrimSpace(strings.TrimPrefix(cur.heading, "## ")))
+		if cur.heading != "" && placeholderSections[name] &&
+			strings.TrimSpace(htmlCommentRe.ReplaceAllString(cur.text(), "")) == "" {
+			return
 		}
-		if heading != "" {
-			kept = append(kept, heading)
+		if cur.heading == "" && cur.text() == "" {
+			return
 		}
-		kept = append(kept, section...)
+		if cur.heading != "" && placeholderSections[name] {
+			cur.lines = strings.Split(htmlCommentRe.ReplaceAllString(cur.text(), ""), "\n")
+		}
+		sections = append(sections, cur)
 	}
-
 	for _, line := range lines {
 		if strings.HasPrefix(strings.TrimSpace(line), "```") {
 			inFence = !inFence
 		}
 		if !inFence && strings.HasPrefix(line, "## ") {
 			flush()
-			heading, section = line, nil
+			cur = bodySection{heading: line}
 			continue
 		}
-		section = append(section, line)
+		cur.lines = append(cur.lines, line)
 	}
 	flush()
-
-	return strings.TrimSpace(strings.Join(kept, "\n"))
+	return sections
 }

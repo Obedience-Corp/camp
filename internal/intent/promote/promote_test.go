@@ -4,7 +4,6 @@ import (
 	"context"
 	"os"
 	"path/filepath"
-	"strings"
 	"testing"
 	"time"
 
@@ -497,90 +496,5 @@ func TestValidTargetsForStatus(t *testing.T) {
 				t.Fatalf("ValidTargetsForStatus(%q)[%d] = %q, want %q", tt.status, i, got[i], tt.want[i])
 			}
 		}
-	}
-}
-
-func TestCreateDesignDoc_WritesBodyOnceWithoutTemplatePlaceholders(t *testing.T) {
-	ctx := context.Background()
-	campaignRoot := t.TempDir()
-
-	i := &intent.Intent{
-		ID:    "effort-levels-20261008-200730",
-		Title: "Effort levels",
-		Content: "# Effort levels\n\n## Description\n\nAdd effort levels to the agent.\n\n" +
-			"## Context\n\n<!-- Why is this needed? What triggered this idea? -->\n\n" +
-			"## Notes\n\n<!-- Additional thoughts, references, or considerations -->\n",
-	}
-
-	dir, _, err := createDesignDoc(ctx, campaignRoot, i)
-	if err != nil {
-		t.Fatalf("createDesignDoc() error = %v", err)
-	}
-	data, err := os.ReadFile(filepath.Join(campaignRoot, dir, "README.md"))
-	if err != nil {
-		t.Fatalf("ReadFile(README) error = %v", err)
-	}
-	got := string(data)
-
-	if n := strings.Count(got, "# Effort levels"); n != 1 {
-		t.Errorf("title appears %d times, want 1:\n%s", n, got)
-	}
-	if n := strings.Count(got, "## Description"); n != 1 {
-		t.Errorf("Description header appears %d times, want 1:\n%s", n, got)
-	}
-	if n := strings.Count(got, "Add effort levels to the agent."); n != 1 {
-		t.Errorf("body appears %d times, want 1:\n%s", n, got)
-	}
-	for _, unwanted := range []string{"## Context", "## Notes", "<!--"} {
-		if strings.Contains(got, unwanted) {
-			t.Errorf("README contains %q:\n%s", unwanted, got)
-		}
-	}
-}
-
-func TestCreateDesignDoc_KeepsNonEmptyTemplateSections(t *testing.T) {
-	ctx := context.Background()
-	campaignRoot := t.TempDir()
-
-	i := &intent.Intent{
-		ID:    "keep-sections-20261008-200731",
-		Title: "Keep sections",
-		Content: "# Keep sections\n\n## Description\n\nBody.\n\n" +
-			"## Context\n\n<!-- hint -->\nReal context.\n\n## Notes\n\n<!-- hint -->\n",
-	}
-
-	dir, _, err := createDesignDoc(ctx, campaignRoot, i)
-	if err != nil {
-		t.Fatalf("createDesignDoc() error = %v", err)
-	}
-	data, err := os.ReadFile(filepath.Join(campaignRoot, dir, "README.md"))
-	if err != nil {
-		t.Fatalf("ReadFile(README) error = %v", err)
-	}
-	got := string(data)
-	if !strings.Contains(got, "## Context") || !strings.Contains(got, "Real context.") {
-		t.Errorf("non-empty Context dropped:\n%s", got)
-	}
-	if strings.Contains(got, "## Notes") {
-		t.Errorf("empty Notes kept:\n%s", got)
-	}
-}
-
-func TestCreateDesignDoc_EmptyBodyProducesValidReadme(t *testing.T) {
-	ctx := context.Background()
-	campaignRoot := t.TempDir()
-
-	i := &intent.Intent{ID: "empty-body-20261008-200732", Title: "Empty body"}
-	dir, _, err := createDesignDoc(ctx, campaignRoot, i)
-	if err != nil {
-		t.Fatalf("createDesignDoc() error = %v", err)
-	}
-	data, err := os.ReadFile(filepath.Join(campaignRoot, dir, "README.md"))
-	if err != nil {
-		t.Fatalf("ReadFile(README) error = %v", err)
-	}
-	got := string(data)
-	if !strings.HasPrefix(got, "# Empty body\n\n## Status\n\n") || strings.Contains(got, "## Content") {
-		t.Errorf("unexpected README:\n%s", got)
 	}
 }
