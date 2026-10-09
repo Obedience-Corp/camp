@@ -4,6 +4,7 @@
 package integration
 
 import (
+	"bytes"
 	"encoding/json"
 	"fmt"
 	"strings"
@@ -11,6 +12,7 @@ import (
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+	"github.com/yuin/goldmark"
 )
 
 // intentContent returns a minimal intent markdown file with the given fields.
@@ -291,4 +293,53 @@ func TestIntentPromote_TargetDesign_PreservesMarkdownAndSummary(t *testing.T) {
 	assert.Equal(t, title, result.Items[0].Title)
 	assert.True(t, strings.HasPrefix(result.Items[0].Summary, "Support offline mode."),
 		"preview should start with authored prose: %s", result.Items[0].Summary)
+}
+
+func TestIntentPromote_TargetDesign_LiteralBlocks(t *testing.T) {
+	tc := GetSharedContainer(t)
+	cases := []struct {
+		name string
+		body string
+	}{
+		{"html", "Intro.\n\n<pre>\n## Notes\n## Example\n</pre>"},
+		{"eof-fence", "Intro.\n\n~~~~md\n## Notes\n## Example\n```\ncode sample"},
+		{"eof-comment", "Intro.\n\n<!--\n## Notes\n## Example"},
+		{"eof-html", "Intro.\n\n<pre>\n## Notes\n## Example"},
+	}
+	for index, tt := range cases {
+		t.Run(tt.name, func(t *testing.T) {
+			root := setupPromoteCampaign(t, tc, "promote-literal-"+tt.name)
+			title := "Literal " + tt.name
+			id := fmt.Sprintf("literal-%s-20260303-1201%02d", tt.name, index)
+			content := strings.SplitN(intentContent(id, title, "ready"), "## Description", 2)[0] +
+				"# " + title + "\n\n## Context\n\n<!-- Why is this needed? What triggered this idea? -->\n\n" +
+				"## Description\n\n" + tt.body
+			require.NoError(t, tc.WriteFile(root+"/workflow/intents/ready/"+id+".md", content))
+			out, err := tc.RunCampInDir(root, "idea", "promote", id, "--target", "design", "--no-commit")
+			require.NoError(t, err, "%s", out)
+			readmePath := root + "/workflow/design/" + id + "/README.md"
+			readme, err := tc.ReadFile(readmePath)
+			require.NoError(t, err)
+			assert.Contains(t, readme, "## Description\n\n"+tt.body, "authored source must survive promotion")
+			assert.NotContains(t, readme, "<!-- Why is this needed?")
+			var rendered bytes.Buffer
+			require.NoError(t, goldmark.Convert([]byte(readme), &rendered))
+			assert.Contains(t, rendered.String(), "<h2>Status</h2>\n<p>In progress — promoted from intent "+id+" on ",
+				"saved provenance must render outside the literal block")
+			active, err := tc.ReadFile(root + "/.campaign/intents/active/" + id + ".md")
+			require.NoError(t, err)
+			assert.Contains(t, active, tt.body, "the original source intent must remain intact")
+
+			if tt.name == "html" {
+				// A forced retry must retain edits to an existing design README.
+				custom := readme + "\n## Decisions\n\nKeep this review note.\n"
+				require.NoError(t, tc.WriteFile(readmePath, custom))
+				out, err = tc.RunCampInDir(root, "idea", "promote", id, "--target", "design", "--force", "--no-commit")
+				require.NoError(t, err, "%s", out)
+				retried, err := tc.ReadFile(readmePath)
+				require.NoError(t, err)
+				assert.Equal(t, custom, retried, "retry must not overwrite an existing design")
+			}
+		})
+	}
 }

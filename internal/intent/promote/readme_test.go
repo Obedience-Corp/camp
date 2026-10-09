@@ -1,8 +1,11 @@
 package promote
 
 import (
+	"bytes"
 	"strings"
 	"testing"
+
+	"github.com/yuin/goldmark"
 )
 
 const (
@@ -87,6 +90,11 @@ func TestComposeDesignReadme_PreservesAuthoredMarkdown(t *testing.T) {
 		{"hard line break", "First line.  \nSecond line.  "},
 		{"leading code", "    first()\n    second()"},
 		{"empty custom heading", "## Decisions"},
+		{"nonbreaking space in notes", "## Notes\n\n\u00a0\n\n## Details\n\nText."},
+		{"leading nonbreaking space", "\u00a0\n\nIntro."},
+		{"authored spacing", "Intro.\n\n\n## Details\nText.\n\n\n## More\nMore text."},
+		{"reference definition in notes", "## Notes\n\n[design]: https://example.com/design"},
+		{"placeholder in subsection", "## Notes\n\n### Example\n\n<!-- Additional thoughts, references, or considerations -->"},
 	}
 	for _, tt := range cases {
 		t.Run(tt.name, func(t *testing.T) {
@@ -139,4 +147,103 @@ func TestComposeDesignReadme_OnlyRemovesMatchingOpeningTitle(t *testing.T) {
 			}
 		})
 	}
+}
+
+func TestComposeDesignReadme_PreservesLiteralBlocks(t *testing.T) {
+	cases := []string{
+		"<pre>\n## Notes\n## Example\n</pre>",
+		"<PRE class=example>\n## Notes\n## Example\n</PRE>",
+		"<script>\n## Notes\n## Example\n</script>",
+		"<style>\n## Notes\n## Example\n</style>",
+		"<textarea>\n## Notes\n## Example\n</textarea>",
+		"<!--\n## Notes\n## Example\n-->",
+		"<?example\n## Notes\n## Example\n?>",
+		"<!DOCTYPE\n## Notes\n## Example\n>",
+		"<![CDATA[\n## Notes\n## Example\n]]>",
+		"<div>\n## Notes\n## Example\n</div>",
+		"<custom-tag>\n## Notes\n## Example\n</custom-tag>",
+		"<pre>\n```\n## Notes\n</pre>",
+		"```html\n<pre>\n## Notes\n```",
+		"<pre>\n<!-- Additional thoughts, references, or considerations -->\n</pre>",
+		"<!-- A user note\n<!-- Additional thoughts, references, or considerations -->",
+		"> ## Notes\n>\n> <!-- Additional thoughts, references, or considerations -->",
+		"- Example:\n\n  ~~~md\n  ## Notes\n  ## Example\n  ~~~",
+		"- Notes:\n  <!-- Additional thoughts, references, or considerations -->",
+	}
+	for _, body := range cases {
+		t.Run(body, func(t *testing.T) {
+			content := "# " + testTitle + "\n\n## Notes\n\n" + body +
+				"\n\n## Context\n\n<!-- Why is this needed? What triggered this idea? -->\n"
+			got := composeDesignReadme(testTitle, testID, testDate, content)
+			wantBody := "## Notes\n\n" + body
+			if !strings.Contains(got, wantBody) {
+				t.Fatalf("literal block changed:\nwant body: %q\n got: %q", wantBody, got)
+			}
+			if strings.Contains(got, "## Context") {
+				t.Fatalf("real template placeholder after literal block was retained:\n%s", got)
+			}
+			assertDesignStatusRendered(t, got)
+		})
+	}
+}
+
+func TestComposeDesignReadme_StatusOutsideEOFBlocks(t *testing.T) {
+	cases := []string{
+		"```",
+		"```go\nfirst()",
+		"````md\n```\n## Notes\n## Example",
+		"~~~md\n## Notes\n## Example",
+		"   ~~~md\n## Notes\n## Example",
+		"```go\nfirst()\n\n\n",
+		"```go\r\nfirst()\r\n",
+		"> ```md\n> ## Notes",
+		"- ```md\n  ## Notes",
+		"<pre>\n## Notes\n## Example",
+		"<SCRIPT>\n## Notes\n## Example",
+		"<pre\fclass=example>\n## Notes\n## Example",
+		"<style>\n## Notes\n## Example",
+		"<textarea>\n## Notes\n## Example",
+		"<!--\n## Notes\n## Example",
+		"<?example\n## Notes\n## Example",
+		"<!DOCTYPE\n## Notes\n## Example",
+		"<![CDATA[\n## Notes\n## Example",
+		"<div>\n## Notes\n## Example",
+		"<custom-tag>\n## Notes\n## Example",
+		"<pre></pre>",
+		"<!-- closed -->",
+	}
+	for _, body := range cases {
+		t.Run(body, func(t *testing.T) {
+			got := composeDesignReadme(testTitle, testID, testDate, body)
+			if !strings.Contains(got, body) {
+				t.Fatalf("EOF block content changed:\nwant body: %q\n got: %q", body, got)
+			}
+			assertDesignStatusRendered(t, got)
+		})
+	}
+}
+
+func assertDesignStatusRendered(t *testing.T, readme string) {
+	t.Helper()
+	var rendered bytes.Buffer
+	if err := goldmark.Convert([]byte(readme), &rendered); err != nil {
+		t.Fatal(err)
+	}
+	want := "<h2>Status</h2>\n<p>In progress — promoted from intent " + testID + " on " + testDate + ".</p>"
+	if !strings.HasSuffix(strings.TrimSpace(rendered.String()), want) {
+		t.Fatalf("status/provenance did not render outside authored blocks:\n%s", rendered.String())
+	}
+}
+
+func FuzzComposeDesignReadme_StatusRendered(f *testing.F) {
+	for _, body := range []string{
+		"", "Intro.", "```", "~~~md\n## Notes", "<pre>\n## Notes", "<!--", "<?xml", "<![CDATA[",
+		"## Notes\n\n<!-- Additional thoughts, references, or considerations -->",
+		"## Context\n\n## Notes\n\n# Effort levels", "> ```\n> ## Notes", "- ```\n  ## Notes",
+	} {
+		f.Add(body)
+	}
+	f.Fuzz(func(t *testing.T, body string) {
+		assertDesignStatusRendered(t, composeDesignReadme(testTitle, testID, testDate, body))
+	})
 }
