@@ -4,6 +4,7 @@
 package integration
 
 import (
+	"encoding/json"
 	"fmt"
 	"strings"
 	"testing"
@@ -244,4 +245,50 @@ func TestIntentPromote_TargetFestivalThenDesign_BothArtifactsCreated(t *testing.
 	require.NoError(t, err)
 	assert.Contains(t, designActiveContent, "promoted_to:")
 	assert.Contains(t, designActiveContent, designDir)
+}
+
+func TestIntentPromote_TargetDesign_PreservesMarkdownAndSummary(t *testing.T) {
+	tc := GetSharedContainer(t)
+	path := setupPromoteCampaign(t, tc, "promote-design-markdown")
+	id := "markdown-preservation-20260303-120005"
+	title := "Markdown Preservation"
+	body := "## Non-goals\n\nSupport offline mode.\n\n" +
+		"## Description\n\n### Retry request\n\nRetry\n\n    first()\n    second()\n\n" +
+		"## Notes\n\n<!-- Keep this note. -->\n\n" +
+		"~~~~md\n```\n## Context\n## Example\n<!-- Additional thoughts, references, or considerations -->\n```\n~~~~"
+	content := strings.SplitN(intentContent(id, title, "ready"), "## Description", 2)[0] +
+		"# " + title + "\n\n" + body + "\n\n" +
+		"## Context\n\n<!-- Why is this needed? What triggered this idea? -->\n"
+	require.NoError(t, tc.WriteFile(path+"/workflow/intents/ready/"+id+".md", content))
+
+	out, err := tc.RunCampInDir(path, "idea", "promote", id, "--target", "design", "--no-commit")
+	require.NoError(t, err, "promote: %s", out)
+	designDir := "workflow/design/" + id
+	readme, err := tc.ReadFile(path + "/" + designDir + "/README.md")
+	require.NoError(t, err)
+	prefix := "# " + title + "\n\n## Content\n\n" + body + "\n\n## Status\n\n"
+	require.True(t, strings.HasPrefix(readme, prefix), "saved README altered authored Markdown:\n%s", readme)
+	assert.Contains(t, readme, "In progress — promoted from intent "+id+" on ")
+	assert.NotContains(t, readme, "<!-- Why is this needed?")
+
+	active, err := tc.ReadFile(path + "/.campaign/intents/active/" + id + ".md")
+	require.NoError(t, err)
+	assert.Contains(t, active, "promoted_to: "+designDir)
+	assert.Contains(t, active, body, "promotion must preserve the source intent too")
+
+	out, err = tc.RunCampInDir(path, "workitem", "list", "design", "--json")
+	require.NoError(t, err, "workitem readback: %s", out)
+	start := strings.Index(out, "{")
+	require.GreaterOrEqual(t, start, 0, "missing JSON: %s", out)
+	var result struct {
+		Items []struct {
+			Title   string `json:"title"`
+			Summary string `json:"summary"`
+		} `json:"items"`
+	}
+	require.NoError(t, json.Unmarshal([]byte(out[start:]), &result))
+	require.Len(t, result.Items, 1)
+	assert.Equal(t, title, result.Items[0].Title)
+	assert.True(t, strings.HasPrefix(result.Items[0].Summary, "Support offline mode."),
+		"preview should start with authored prose: %s", result.Items[0].Summary)
 }

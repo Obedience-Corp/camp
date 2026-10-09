@@ -14,7 +14,6 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
-	"regexp"
 	"strings"
 	"time"
 
@@ -308,95 +307,123 @@ func ValidTargetsForStatus(status intent.Status) []Target {
 	}
 }
 
-var (
-	htmlCommentRe       = regexp.MustCompile(`(?s)<!--.*?-->`)
-	placeholderSections = map[string]bool{"context": true, "notes": true}
-)
+// composeDesignReadme keeps the authored body in order. Putting generated status
+// last lets workitem previews read the original opening text without extracting
+// and relocating prose away from the headings that give it meaning.
+func composeDesignReadme(title, id, date, content string) string {
+	var out strings.Builder
+	out.WriteString("# " + title + "\n\n")
+	sections := splitBodySections(content)
+	if len(sections) > 0 {
+		out.WriteString("## Content\n\n")
+	}
+	for _, sec := range sections {
+		if sec.heading != "" {
+			out.WriteString(sec.heading + "\n\n")
+		}
+		if body := strings.Join(trimBlankLines(sec.lines), "\n"); body != "" {
+			out.WriteString(body + "\n\n")
+		}
+	}
+	out.WriteString("## Status\n\n")
+	fmt.Fprintf(&out, "In progress — promoted from intent %s on %s.\n", id, date)
+	return out.String()
+}
 
 type bodySection struct {
 	heading string
 	lines   []string
 }
 
-func (b bodySection) text() string { return strings.TrimSpace(strings.Join(b.lines, "\n")) }
-
-// composeDesignReadme renders the design README. Context carries the intent's
-// first paragraph once (workitem summaries read it), and Content carries the
-// rest of the body with the leading H1 and empty template placeholders removed.
-func composeDesignReadme(title, id, date, content string) string {
-	sections := splitBodySections(content)
-
-	var all []string
-	for _, sec := range sections {
-		all = append(all, sec.text())
+// trimBlankLines preserves indentation and trailing spaces on content lines;
+// both can carry meaning in Markdown.
+func trimBlankLines(lines []string) []string {
+	for len(lines) > 0 && strings.TrimSpace(lines[0]) == "" {
+		lines = lines[1:]
 	}
-	summary := promotecore.ExtractFirstParagraph(strings.Join(all, "\n\n"))
+	for len(lines) > 0 && strings.TrimSpace(lines[len(lines)-1]) == "" {
+		lines = lines[:len(lines)-1]
+	}
+	return lines
+}
 
-	var rest []string
-	removed := false
-	for _, sec := range sections {
-		if !removed && summary != "" && strings.Contains(sec.text(), summary) {
-			removed = true
-			sec.lines = strings.Split(strings.Replace(sec.text(), summary, "", 1), "\n")
-			if sec.text() == "" {
-				continue
-			}
-		}
-		block := sec.text()
-		if sec.heading != "" {
-			block = strings.TrimSpace(sec.heading + "\n\n" + block)
-		}
-		rest = append(rest, block)
-	}
-	body := strings.TrimSpace(strings.Join(rest, "\n\n"))
-
-	var out strings.Builder
-	out.WriteString("# " + title + "\n\n")
-	if summary != "" {
-		out.WriteString("## Context\n\n" + summary + "\n\n")
-	}
-	out.WriteString("## Status\n\n")
-	fmt.Fprintf(&out, "In progress — promoted from intent %s on %s.\n", id, date)
-	if body != "" {
-		out.WriteString("\n## Content\n\n" + body + "\n")
-	}
-	return out.String()
+// Only these comments from templates/intent.md.tmpl are disposable. Unknown
+// comments, even in otherwise empty sections, belong to the author.
+var designPlaceholders = map[string]string{
+	"context": "<!-- Why is this needed? What triggered this idea? -->",
+	"notes":   "<!-- Additional thoughts, references, or considerations -->",
 }
 
 func splitBodySections(content string) []bodySection {
-	lines := strings.Split(strings.TrimSpace(content), "\n")
+	lines := trimBlankLines(strings.Split(content, "\n"))
 	if len(lines) > 0 && strings.HasPrefix(lines[0], "# ") {
 		lines = lines[1:]
 	}
 
 	var sections []bodySection
 	cur := bodySection{}
-	inFence := false
+	var fence markdownFence
 	flush := func() {
-		name := strings.ToLower(strings.TrimSpace(strings.TrimPrefix(cur.heading, "## ")))
-		if cur.heading != "" && placeholderSections[name] &&
-			strings.TrimSpace(htmlCommentRe.ReplaceAllString(cur.text(), "")) == "" {
+		_, placeholder := designPlaceholders[sectionName(cur.heading)]
+		if len(trimBlankLines(cur.lines)) == 0 && (cur.heading == "" || placeholder) {
 			return
-		}
-		if cur.heading == "" && cur.text() == "" {
-			return
-		}
-		if cur.heading != "" && placeholderSections[name] {
-			cur.lines = strings.Split(htmlCommentRe.ReplaceAllString(cur.text(), ""), "\n")
 		}
 		sections = append(sections, cur)
 	}
 	for _, line := range lines {
-		if strings.HasPrefix(strings.TrimSpace(line), "```") {
-			inFence = !inFence
+		if fence.consume(line) {
+			cur.lines = append(cur.lines, line)
+			continue
 		}
-		if !inFence && strings.HasPrefix(line, "## ") {
+		if strings.HasPrefix(line, "## ") {
 			flush()
 			cur = bodySection{heading: line}
+			continue
+		}
+		// Match the template line exactly: indentation may make an otherwise
+		// identical comment a literal code example.
+		if hint, ok := designPlaceholders[sectionName(cur.heading)]; ok &&
+			strings.TrimSuffix(line, "\r") == hint {
 			continue
 		}
 		cur.lines = append(cur.lines, line)
 	}
 	flush()
 	return sections
+}
+
+func sectionName(heading string) string {
+	return strings.ToLower(strings.TrimSpace(strings.TrimPrefix(heading, "## ")))
+}
+
+type markdownFence struct {
+	char   byte
+	length int
+}
+
+// consume reports whether a line belongs to a fenced block, including its
+// delimiters. A closing fence must use the opening character, be at least as
+// long, and have no info string. Up to three leading spaces are allowed.
+func (f *markdownFence) consume(line string) bool {
+	trimmed := strings.TrimLeft(line, " ")
+	if len(line)-len(trimmed) > 3 || len(trimmed) == 0 ||
+		(trimmed[0] != '`' && trimmed[0] != '~') {
+		return f.length > 0
+	}
+	char := trimmed[0]
+	n := 0
+	for n < len(trimmed) && trimmed[n] == char {
+		n++
+	}
+	if f.length > 0 {
+		if char == f.char && n >= f.length && strings.TrimSpace(trimmed[n:]) == "" {
+			*f = markdownFence{}
+		}
+		return true
+	}
+	if n < 3 || (char == '`' && strings.Contains(trimmed[n:], "`")) {
+		return false
+	}
+	f.char, f.length = char, n
+	return true
 }
