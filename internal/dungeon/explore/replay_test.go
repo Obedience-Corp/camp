@@ -82,7 +82,7 @@ func TestKittyPNGRoundTripMarker(t *testing.T) {
 		t.Fatal("sequence missing kitty terminator")
 	}
 	del := KittyDelete(7)
-	if del != "\033_Ga=d,d=i,i=7\033\\" {
+	if del != "\033_Ga=d,d=i,q=2,i=7\033\\" {
 		t.Fatalf("delete = %q", del)
 	}
 }

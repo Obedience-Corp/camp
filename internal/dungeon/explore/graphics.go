@@ -87,7 +87,7 @@ func HasKittyImage(s string) bool {
 
 // KittyDelete removes the image id placed by KittyPNG.
 func KittyDelete(id int) string {
-	return "\033_Ga=d,d=i,i=" + itoa(id) + "\033\\"
+	return "\033_Ga=d,d=i,q=2,i=" + itoa(id) + "\033\\"
 }
 
 // ITermPNG transmits png with the iTerm2 inline image protocol.

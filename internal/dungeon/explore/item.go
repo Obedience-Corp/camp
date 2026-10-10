@@ -262,8 +262,6 @@ func Apply(idx Index, q Query) (Result, error) {
 	}, nil
 }
 
-// resolveStatus returns the preset or status directory name that raw names.
-// An exact match wins, so differently cased custom statuses stay distinct.
 func resolveStatus(raw string, items []Item) (string, bool) {
 	names := Presets(items)
 	if slices.Contains(names, raw) {

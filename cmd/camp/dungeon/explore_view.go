@@ -11,8 +11,6 @@ import (
 	"github.com/Obedience-Corp/camp/internal/dungeon/explore"
 )
 
-// View renders the frame. Kitty keeps a placed image until it is deleted, so
-// every Kitty frame that does not draw the replay removes it.
 func (m exploreModel) View() string {
 	out := m.view()
 	if m.protocol == explore.ProtocolKitty && !explore.HasKittyImage(out) {
@@ -362,9 +360,6 @@ func prettyDay(day string) string {
 	return stamp.Format("Jan 2, 2006")
 }
 
-// termSafe strips escape sequences and control characters from text read
-// out of the camp, so a title or path cannot drive the terminal. Line breaks
-// and tabs become spaces.
 func termSafe(s string) string {
 	return strings.Map(func(r rune) rune {
 		switch {
@@ -378,8 +373,6 @@ func termSafe(s string) string {
 	}, ansi.Strip(s))
 }
 
-// termSafeText is termSafe for multi-line documents: it keeps line breaks and
-// tabs.
 func termSafeText(s string) string {
 	return strings.Map(func(r rune) rune {
 		if r == '\n' || r == '\t' || !unicode.IsControl(r) {

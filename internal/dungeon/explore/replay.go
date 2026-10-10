@@ -17,10 +17,8 @@ const (
 	maxReplayBytes  = 8 << 20
 	maxReplayFrames = 200
 	maxDecodedBytes = 32 << 20
-	// maxDecodeBytes bounds what gif.DecodeAll and compositing hold at once:
-	// one palette byte per pixel of every frame plus two RGBA canvases.
-	maxDecodeBytes = 96 << 20
-	minFrameDelay  = 125 * time.Millisecond
+	maxDecodeBytes  = 96 << 20
+	minFrameDelay   = 125 * time.Millisecond
 )
 
 // Frames is a decoded replay scaled to fit inside the stage.
@@ -75,8 +73,6 @@ func decodeReplay(data []byte, maxW, maxH int) (Frames, error) {
 	return out, nil
 }
 
-// gifShape is what a GIF will cost to decode, read from its block structure
-// without decompressing any image data.
 type gifShape struct {
 	width  int
 	height int
@@ -88,8 +84,6 @@ func (s gifShape) decodeBytes() int {
 	return s.pixels + 2*4*s.width*s.height
 }
 
-// scanGIF walks the GIF block structure: header, color tables, extensions,
-// and image descriptors. It stops counting once the decode budget is spent.
 func scanGIF(data []byte) (gifShape, error) {
 	if len(data) < 13 || (string(data[:6]) != "GIF87a" && string(data[:6]) != "GIF89a") {
 		return gifShape{}, errNotGIF
@@ -171,9 +165,6 @@ func frameDelay(g *gif.GIF, i int) time.Duration {
 	return d
 }
 
-// composite draws every frame onto one canvas and keeps a scaled copy of each
-// until the frame or decoded budget runs out. Past that it keeps drawing so
-// the poster still shows the final frame, and reports the replay too long.
 func composite(g *gif.GIF, maxW, maxH int) (Frames, bool) {
 	w, h := g.Config.Width, g.Config.Height
 	if w <= 0 || h <= 0 {
@@ -221,8 +212,6 @@ func composite(g *gif.GIF, maxW, maxH int) (Frames, bool) {
 	return out, tooLong
 }
 
-// snapshot scales canvas to fit, copying it when no scaling was needed so
-// later frames do not draw over the result.
 func snapshot(canvas *image.RGBA, maxW, maxH int) image.Image {
 	img := scale(canvas, maxW, maxH)
 	if same, ok := img.(*image.RGBA); ok && same == canvas {

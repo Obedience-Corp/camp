@@ -30,8 +30,6 @@ type exploreReader struct {
 	entry   int
 }
 
-// readerBody is what the reader shows, kept unrendered so a resize can wrap
-// it again at the new width.
 type readerBody struct {
 	lead     []string
 	text     string

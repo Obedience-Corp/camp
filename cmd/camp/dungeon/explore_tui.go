@@ -362,9 +362,6 @@ func (m *exploreModel) applyQuery() error {
 	return nil
 }
 
-// schedulePoster drops the current replay and, after a short pause, decodes
-// the focused one. The pause lets a burst of moves or resizes settle so only
-// the last one decodes.
 func (m exploreModel) schedulePoster() (exploreModel, tea.Cmd) {
 	m.loadGen++
 	m.tickGen++

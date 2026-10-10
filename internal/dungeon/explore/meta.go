@@ -12,9 +12,6 @@ import (
 
 const metaReadLimit = 256 << 10
 
-// fillDirectory classifies an item directory. A .workitem marker wins over
-// festival artifacts, matching workitem discovery: the marker records a
-// promote camp performed, while a leftover fest.yaml proves nothing.
 func fillDirectory(item *Item, dir string) {
 	base := filepath.Base(dir)
 	workitem := filepath.Join(dir, ".workitem")
