@@ -40,6 +40,7 @@ type exploreModel struct {
 	filtering bool
 	filter    string
 	plain     bool
+	styles    exploreStyles
 
 	reading bool
 	reader  exploreReader
@@ -96,6 +97,7 @@ func runExploreTUI(cmd *cobra.Command, root, cacheDir string, query explore.Quer
 		protocol:    protocol,
 		decode:      explore.DecodeReplay,
 		plain:       plain,
+		styles:      newExploreStyles(plain),
 		reduced:     brand.ReducedMotion(),
 		gotoEnabled: pathOutput != "",
 	}
@@ -209,6 +211,7 @@ func (m exploreModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.status = "The replay could not be read."
 		}
 		if m.playing {
+			m.poster = m.frames[0]
 			return m, m.tick()
 		}
 		return m, nil
@@ -413,6 +416,10 @@ func (m exploreModel) decodeCmd(ctx context.Context) tea.Cmd {
 			msg.err = err
 			return msg
 		}
+		if err := ctx.Err(); err != nil {
+			msg.err = err
+			return msg
+		}
 		if frames.Poster != nil {
 			png, encErr := explore.EncodePNG(frames.Poster)
 			if encErr != nil {
@@ -425,6 +432,11 @@ func (m exploreModel) decodeCmd(ctx context.Context) tea.Cmd {
 			msg.frames = make([][]byte, len(frames.Frames))
 			msg.delays = frames.Delays
 			for i, frame := range frames.Frames {
+				if err := ctx.Err(); err != nil {
+					msg.err = err
+					msg.frames = nil
+					return msg
+				}
 				png, encErr := explore.EncodePNG(frame)
 				if encErr != nil {
 					msg.err = encErr

@@ -1,6 +1,7 @@
 package dungeon
 
 import (
+	"io"
 	"os"
 	"path/filepath"
 	"slices"
@@ -9,9 +10,11 @@ import (
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/glamour"
 	"github.com/charmbracelet/glamour/styles"
+	"github.com/charmbracelet/x/ansi"
 	"github.com/muesli/termenv"
 
 	"github.com/Obedience-Corp/camp/internal/dungeon/explore"
+	camperrors "github.com/Obedience-Corp/camp/internal/errors"
 	"github.com/Obedience-Corp/camp/internal/ui"
 )
 
@@ -230,9 +233,11 @@ func readExploreText(path string) (string, error) {
 		return "", err
 	}
 	defer func() { _ = f.Close() }()
-	buf := make([]byte, 256<<10)
-	n, _ := f.Read(buf)
-	return string(buf[:n]), nil
+	buf, err := io.ReadAll(io.LimitReader(f, 256<<10))
+	if err != nil {
+		return "", camperrors.Wrapf(err, "reading %s", path)
+	}
+	return string(buf), nil
 }
 
 func renderExploreMarkdown(text string, width int, plain bool) []string {
@@ -262,15 +267,7 @@ func wrapPlain(text string, width int) []string {
 	if width < 20 {
 		width = 20
 	}
-	var lines []string
-	for _, line := range strings.Split(text, "\n") {
-		for len(line) > width {
-			lines = append(lines, line[:width])
-			line = line[width:]
-		}
-		lines = append(lines, line)
-	}
-	return lines
+	return strings.Split(ansi.Hardwrap(text, width, true), "\n")
 }
 
 func maxReaderOffset(offset, lines, height int) int {

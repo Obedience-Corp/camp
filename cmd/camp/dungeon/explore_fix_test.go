@@ -158,7 +158,7 @@ func TestExploreReaderListingKeepsSelectionVisible(t *testing.T) {
 	visible := func(m exploreModel) string {
 		for _, line := range strings.Split(m.renderReader(), "\n") {
 			if strings.HasPrefix(line, "> ") {
-				return strings.TrimPrefix(line, "> ")
+				return strings.TrimSpace(strings.TrimPrefix(line, "> "))
 			}
 		}
 		return ""

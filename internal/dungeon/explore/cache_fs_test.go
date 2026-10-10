@@ -173,3 +173,43 @@ func TestWorkitemMarkerWinsOverFestivalArtifacts(t *testing.T) {
 		t.Fatalf("replay = %q, want none for a workitem", item.Replay)
 	}
 }
+
+func TestCachePathConfinement(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+	base := filepath.Join(home, ".obey", "campaign", "caches")
+	for _, id := range []string{"normal", "../../../../checkout", "/absolute", "", `..\escape`} {
+		dir, err := CacheDir(id, "/camp")
+		if err != nil {
+			t.Fatal(err)
+		}
+		rel, err := filepath.Rel(base, dir)
+		if err != nil || !filepath.IsLocal(rel) {
+			t.Fatalf("cache escaped for %q: %s", id, dir)
+		}
+		if err := SaveCache(dir, Index{}); err != nil {
+			t.Fatal(err)
+		}
+	}
+}
+
+func TestCacheWriteSymlinks(t *testing.T) {
+	dir := t.TempDir()
+	target := filepath.Join(t.TempDir(), "private")
+	mustWrite(t, target, "untouched")
+	for _, name := range []string{"index.json.tmp", "index.json"} {
+		if err := os.Symlink(target, filepath.Join(dir, name)); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if err := SaveCache(dir, Index{}); err != nil {
+		t.Fatal(err)
+	}
+	data, err := os.ReadFile(target)
+	if err != nil || string(data) != "untouched" {
+		t.Fatalf("cache write followed symlink: %q, %v", data, err)
+	}
+	if _, ok, err := LoadCache(dir); err != nil || !ok {
+		t.Fatalf("cache not published: %v %v", ok, err)
+	}
+}

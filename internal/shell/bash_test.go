@@ -88,7 +88,7 @@ func TestGenerateBash_DungeonExploreArm(t *testing.T) {
 		name    string
 		content string
 	}{
-		{"explore path output", `command camp dungeon explore "$@" --path-output`},
+		{"explore path output", `command camp dungeon explore --path-output "$tmp" "$@"`},
 		{"temp file", "camp-dungeon-explore.XXXXXX"},
 		{"absolute cd", `cd "$dest"`},
 		{"json passthrough", `--json|--json=*`},

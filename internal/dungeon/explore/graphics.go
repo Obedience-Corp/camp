@@ -46,7 +46,7 @@ func ChooseProtocol(flag string, getenv func(string) string, plain bool) (string
 
 // KittyPNG transmits png with the Kitty graphics protocol, displayed at the
 // cursor. C=1 keeps the cursor where it was so the next row lands in place.
-func KittyPNG(id int, png []byte) string {
+func KittyPNG(id int, png []byte, cols, rows int) string {
 	payload := base64.StdEncoding.EncodeToString(png)
 	const chunk = 4096
 	var b strings.Builder
@@ -63,7 +63,7 @@ func KittyPNG(id int, png []byte) string {
 			b.WriteString("\033_G")
 			b.WriteString("a=T,f=100,q=2,i=")
 			b.WriteString(itoa(id))
-			b.WriteString(",C=1,m=")
+			b.WriteString(",C=1,c=" + itoa(max(1, cols)) + ",r=" + itoa(max(1, rows)) + ",m=")
 			b.WriteString(itoa(more))
 			b.WriteByte(';')
 			b.WriteString(part)

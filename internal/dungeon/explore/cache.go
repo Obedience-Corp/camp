@@ -28,11 +28,13 @@ func CacheDir(campaignID, root string) (string, error) {
 	if err != nil {
 		return "", err
 	}
-	id := campaignID
-	if id == "" {
-		sum := sha256.Sum256([]byte(root))
-		id = hex.EncodeToString(sum[:8])
+	// Repository-controlled IDs are opaque identifiers, never path components.
+	key := "id:" + campaignID
+	if campaignID == "" {
+		key = "root:" + root
 	}
+	sum := sha256.Sum256([]byte(key))
+	id := hex.EncodeToString(sum[:])
 	return filepath.Join(home, ".obey", "campaign", "caches", id, "dungeon-feed"), nil
 }
 
@@ -64,9 +66,19 @@ func SaveCache(dir string, idx Index) error {
 		return camperrors.Wrap(err, "encoding dungeon feed cache")
 	}
 	path := filepath.Join(dir, "index.json")
-	tmp := path + ".tmp"
-	if err := os.WriteFile(tmp, data, 0o644); err != nil {
+	// A unique, exclusively created file cannot follow a pre-existing symlink.
+	f, err := os.CreateTemp(dir, ".index-*.tmp")
+	if err != nil {
+		return camperrors.Wrap(err, "creating dungeon feed cache file")
+	}
+	tmp := f.Name()
+	defer func() { _ = os.Remove(tmp) }()
+	if _, err := f.Write(data); err != nil {
+		_ = f.Close()
 		return camperrors.Wrap(err, "writing dungeon feed cache")
+	}
+	if err := f.Close(); err != nil {
+		return camperrors.Wrap(err, "closing dungeon feed cache")
 	}
 	if err := os.Rename(tmp, path); err != nil {
 		return camperrors.Wrap(err, "publishing dungeon feed cache")

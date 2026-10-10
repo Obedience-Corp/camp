@@ -14,7 +14,9 @@ import (
 	camperrors "github.com/Obedience-Corp/camp/internal/errors"
 )
 
-var exploreStdoutIsTTY = func() bool { return term.IsTerminal(int(os.Stdout.Fd())) }
+var exploreTerminal = func() bool {
+	return term.IsTerminal(int(os.Stdin.Fd())) && term.IsTerminal(int(os.Stdout.Fd()))
+}
 
 var dungeonExploreCmd = &cobra.Command{
 	Use:   "explore",
@@ -74,7 +76,7 @@ func runDungeonExplore(cmd *cobra.Command, _ []string) error {
 		return err
 	}
 	asJSON, _ := cmd.Flags().GetBool("json")
-	if asJSON || !exploreStdoutIsTTY() {
+	if asJSON || !exploreTerminal() {
 		idx, err := explore.Build(ctx, root)
 		if err != nil {
 			return err

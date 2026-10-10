@@ -1,16 +1,41 @@
 package dungeon
 
 import (
+	"fmt"
 	"slices"
 	"strings"
 	"time"
+	"unicode/utf8"
 
+	"github.com/Obedience-Corp/camp/internal/ui/theme"
 	"github.com/charmbracelet/lipgloss"
+	"github.com/charmbracelet/x/ansi"
 
 	"github.com/Obedience-Corp/camp/internal/dungeon/explore"
 )
 
 const exploreGutter = 2
+
+// Styles are resolved once per terminal session from Camp's shared palette.
+type exploreStyles struct {
+	header, selected, title, muted, day, help, failure lipgloss.Style
+}
+
+func newExploreStyles(plain bool) exploreStyles {
+	if plain {
+		return exploreStyles{}
+	}
+	p := theme.TUI()
+	return exploreStyles{
+		header:   lipgloss.NewStyle().Foreground(p.Accent).Bold(true),
+		selected: lipgloss.NewStyle().Foreground(p.AccentAlt).Background(p.BgSelected).Bold(true),
+		title:    lipgloss.NewStyle().Foreground(p.TextPrimary).Bold(true),
+		muted:    lipgloss.NewStyle().Foreground(p.TextMuted),
+		day:      lipgloss.NewStyle().Foreground(p.Accent),
+		help:     lipgloss.NewStyle().Foreground(p.TextSecondary),
+		failure:  lipgloss.NewStyle().Foreground(p.Error),
+	}
+}
 
 type helpHint struct {
 	text string
@@ -32,11 +57,37 @@ var (
 )
 
 func (m exploreModel) View() string {
-	out := m.view()
+	out := m.placeReplay(m.view())
 	if m.protocol == explore.ProtocolKitty && !explore.HasKittyImage(out) {
 		out = explore.KittyDelete(exploreImageID) + out
 	}
 	return out
+}
+
+// Bubble Tea erases each text row after writing it. Cell-based images must
+// therefore be painted after the body, from the final (help) row. Restoring
+// the cursor there keeps its trailing erase away from the image reservation.
+func (m exploreModel) placeReplay(view string) string {
+	width := m.width
+	if m.wide() {
+		width -= m.width / 2
+	}
+	seq := m.imageSequence(width)
+	if seq == "" {
+		return view
+	}
+	at := strings.Index(view, seq)
+	if at < 0 {
+		return view
+	}
+	row := strings.Count(view[:at], "\n") + 1
+	lineStart := strings.LastIndex(view[:at], "\n") + 1
+	col := lipgloss.Width(view[lineStart:at]) + 1
+	view = view[:at] + view[at+len(seq):]
+	// imageSequence itself saves/restores at its origin. Strip that inner
+	// pair so the single saved cursor remains on the help row.
+	seq = strings.TrimSuffix(strings.TrimPrefix(seq, "\x1b7"), "\x1b8")
+	return view + fmt.Sprintf("\x1b7\x1b[%d;%dH", row, col) + seq + "\x1b8"
 }
 
 func (m exploreModel) view() string {
@@ -46,21 +97,25 @@ func (m exploreModel) view() string {
 	if m.height < 4 || m.width < 20 {
 		return "Terminal is too small.\n"
 	}
-	lines := []string{fit(m.renderHeader(), m.width)}
+	lines := []string{m.renderHeader()}
 	body := strings.Split(strings.TrimSuffix(m.renderBody(), "\n"), "\n")
 	for len(body) < m.bodyHeight() {
 		body = append(body, "")
 	}
 	lines = append(lines, body...)
 	if m.status != "" {
-		lines = append(lines, fit(m.status, m.width))
+		style := m.styles.muted
+		if m.statusErr {
+			style = m.styles.failure
+		}
+		lines = append(lines, style.Render(fit(m.status, m.width)))
 	}
 	lines = append(lines, m.renderHelp())
 	return strings.Join(lines, "\n")
 }
 
 func (m exploreModel) renderHeader() string {
-	return explore.CleanText(m.headerText())
+	return m.styles.header.Render(fit(m.headerText(), m.width))
 }
 
 func (m exploreModel) headerText() string {
@@ -90,17 +145,18 @@ func statusTitle(status string) string {
 	if status == "" {
 		return "Finished"
 	}
-	return strings.ToUpper(status[:1]) + status[1:]
+	_, n := utf8.DecodeRuneInString(status)
+	return strings.ToUpper(status[:n]) + status[n:]
 }
 
 func (m exploreModel) renderHelp() string {
 	if m.help {
-		return fitHelp(exploreFullHelp, "  ", m.width)
+		return m.styles.help.Render(fitHelp(exploreFullHelp, "  ", m.width))
 	}
 	if m.reading {
-		return fitHelp(exploreReaderHelp, "   ", m.width)
+		return m.styles.help.Render(fitHelp(exploreReaderHelp, "   ", m.width))
 	}
-	return fitHelp(exploreFeedHelp, "   ", m.width)
+	return m.styles.help.Render(fitHelp(exploreFeedHelp, "   ", m.width))
 }
 
 func fitHelp(hints []helpHint, sep string, width int) string {
@@ -156,7 +212,10 @@ func (m exploreModel) renderReader() string {
 			if i == m.reader.entry {
 				prefix = "> "
 			}
-			lines[i] = prefix + explore.CleanText(entry.name)
+			lines[i] = prefix + fit(entry.name, m.contentWidth()-2)
+			if i == m.reader.entry {
+				lines[i] = m.styles.selected.Render(padWidth(lines[i], m.contentWidth()))
+			}
 		}
 		if len(lines) == 0 {
 			lines = []string{"No markdown files."}
@@ -217,7 +276,7 @@ func (m exploreModel) feedLines(width int, includeStage bool) []string {
 	for i, item := range m.visible.Items {
 		if item.DoneDate != lastDay {
 			lastDay = item.DoneDate
-			lines = append(lines, prettyDay(item.DoneDate))
+			lines = append(lines, m.styles.day.Render(fit(prettyDay(item.DoneDate), width)))
 		}
 		if i == m.cursor {
 			focusAt = len(lines)
@@ -230,9 +289,13 @@ func (m exploreModel) feedLines(width int, includeStage bool) []string {
 		if item.ID != "" {
 			title += "  " + item.ID
 		}
-		lines = append(lines, mark+keepTail(title, "  "+item.DungeonLabel, width-2))
+		row := mark + keepTail(title, "  "+item.DungeonLabel, width-2)
+		if i == m.cursor {
+			row = m.styles.selected.Render(padWidth(row, width))
+		}
+		lines = append(lines, row)
 		if item.Summary != "" {
-			lines = append(lines, "  "+fit(item.Summary, width-2))
+			lines = append(lines, m.styles.muted.Render("  "+fit(item.Summary, width-2)))
 		}
 		if includeStage && i == m.cursor && m.stageRows() > 0 {
 			lines = append(lines, m.stageBlock(m.width)...)
@@ -293,15 +356,15 @@ func (m exploreModel) stageBlock(width int) []string {
 			lines = append(lines, "")
 		}
 	}
-	lines = append(lines, fit(item.Title, width))
-	lines = append(lines, keepTail(item.ID, "  "+item.DungeonLabel+"  "+item.Status, width))
+	lines = append(lines, m.styles.title.Render(fit(item.Title, width)))
+	lines = append(lines, m.styles.day.Render(keepTail(item.ID, "  "+item.DungeonLabel+"  "+item.Status, width)))
 	if item.Summary != "" {
-		lines = append(lines, fit(item.Summary, width))
+		lines = append(lines, m.styles.muted.Render(fit(item.Summary, width)))
 	}
-	lines = append(lines, datePhrase(item))
-	lines = append(lines, fit(item.Path, width))
+	lines = append(lines, m.styles.muted.Render(fit(datePhrase(item), width)))
+	lines = append(lines, m.styles.muted.Render(fit(item.Path, width)))
 	if item.Kind == explore.KindFestival && item.Replay == "" {
-		lines = append(lines, "No replay yet.")
+		lines = append(lines, m.styles.muted.Render("No replay yet."))
 	}
 	return lines
 }
@@ -319,7 +382,7 @@ func (m exploreModel) imageSequence(width int) string {
 	// renderer's next row lands where it expects on every terminal.
 	switch m.protocol {
 	case explore.ProtocolKitty:
-		return "\x1b7" + explore.KittyDelete(exploreImageID) + explore.KittyPNG(exploreImageID, m.poster) + "\x1b8"
+		return "\x1b7" + explore.KittyDelete(exploreImageID) + explore.KittyPNG(exploreImageID, m.poster, min(width, 48), rows) + "\x1b8"
 	case explore.ProtocolITerm:
 		return "\x1b7" + explore.ITermPNG(m.poster, min(width, 48), rows) + "\x1b8"
 	default:
@@ -349,10 +412,11 @@ func (m exploreModel) stageRows() int {
 }
 
 func (m exploreModel) stagePixels() (int, int) {
-	cols := 48
-	if !m.wide() && m.width < cols {
-		cols = m.width
+	cols := m.width
+	if m.wide() {
+		cols -= m.width / 2
 	}
+	cols = min(48, cols)
 	return cols * 8, m.stageRows() * 16
 }
 
@@ -394,14 +458,7 @@ func fit(s string, width int) string {
 	if width <= 0 {
 		return ""
 	}
-	if lipgloss.Width(s) <= width {
-		return s
-	}
-	runes := []rune(s)
-	for len(runes) > 0 && lipgloss.Width(string(runes)) > width {
-		runes = runes[:len(runes)-1]
-	}
-	return string(runes)
+	return ansi.Truncate(s, width, "…")
 }
 
 func keepTail(head, tail string, width int) string {
@@ -419,7 +476,7 @@ func keepTail(head, tail string, width int) string {
 func padWidth(s string, width int) string {
 	gap := width - lipgloss.Width(s)
 	if gap <= 0 {
-		return fit(s, width)
+		return ansi.Truncate(s, width, "")
 	}
 	return s + strings.Repeat(" ", gap)
 }

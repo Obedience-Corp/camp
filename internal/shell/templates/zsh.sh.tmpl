@@ -326,7 +326,7 @@ camp() {
         return
       fi
       tmp=$(mktemp "${TMPDIR:-/tmp}/camp-dungeon-explore.XXXXXX") || return 1
-      command camp dungeon explore "$@" --path-output "$tmp"
+      command camp dungeon explore --path-output "$tmp" "$@"
       cmd_status=$?
       if [[ "$cmd_status" -ne 0 ]]; then
         rm -f "$tmp"

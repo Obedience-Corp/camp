@@ -71,7 +71,7 @@ func TestChooseProtocol(t *testing.T) {
 
 func TestKittyPNGRoundTripMarker(t *testing.T) {
 	png := []byte{1, 2, 3, 4}
-	seq := KittyPNG(7, png)
+	seq := KittyPNG(7, png, 44, 12)
 	if !bytes.Contains([]byte(seq), []byte("a=T,f=100,q=2,i=7")) {
 		t.Fatalf("sequence = %q", seq)
 	}
