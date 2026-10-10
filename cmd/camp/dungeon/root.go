@@ -15,11 +15,13 @@ It keeps items visible without them competing for your attention.
 Commands:
   add     Initialize dungeon structure with documentation
   crawl   Interactive review and archival of dungeon contents
+  explore Browse finished work across every dungeon
   list    List dungeon items (agent-friendly)
   move    Move items between dungeon statuses (agent-friendly)
 
 Examples:
   camp dungeon add                        Initialize the dungeon
+  camp dungeon explore                    Browse finished work in every dungeon
   camp dungeon crawl                      Review and archive dungeon items
   camp dungeon list                       List dungeon root items
   camp dungeon list --triage              List parent items eligible for triage

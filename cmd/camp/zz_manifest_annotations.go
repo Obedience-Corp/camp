@@ -17,6 +17,7 @@ var manifestAgentAllowedReasons = map[string]string{
 	"concepts":                   "Read-only concept listing",
 	"create":                     "Non-interactive with -d and -m; interactive fallback otherwise",
 	"doctor":                     "Read path (--json) is safe; never pass --fix from an agent",
+	"dungeon explore":            "Read-only dungeon feed; agents use --json and must not drive the TUI",
 	"dungeon list":               "Read-only dungeon listing",
 	"dungeon move":               "Non-interactive move with explicit arguments",
 	"event add":                  "Explicit ledger capture; flags-only, supports --json for automation",
@@ -123,13 +124,14 @@ var manifestAgentAllowedReasons = map[string]string{
 }
 
 var manifestAllowedInteractivePaths = map[string]bool{
-	"create":         true,
-	"gather design":  true,
-	"gather explore": true,
-	"idea add":       true,
-	"notify":         true,
-	"quest list":     true,
-	"switch":         true,
+	"create":          true,
+	"dungeon explore": true,
+	"gather design":   true,
+	"gather explore":  true,
+	"idea add":        true,
+	"notify":          true,
+	"quest list":      true,
+	"switch":          true,
 }
 
 var manifestInteractivePaths = map[string]bool{

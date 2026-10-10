@@ -338,6 +338,52 @@ function camp --description "Camp CLI wrapper with directory-changing support"
             else
                 rm -f "$tmp"
             end
+        case dungeon
+            set -l rest $argv[2..-1]
+            if test (count $rest) -eq 0; or test "$rest[1]" != explore
+                command camp dungeon $rest
+                return $status
+            end
+            set -e rest[1]
+            set -l passthrough 0
+            for arg in $rest
+                switch "$arg"
+                    case --help -h --json '--json=*'
+                        set passthrough 1
+                        break
+                end
+            end
+            if test "$passthrough" -eq 1
+                command camp dungeon explore $rest
+                return $status
+            end
+            if not isatty stdin; or not isatty stdout
+                command camp dungeon explore $rest
+                return $status
+            end
+            set -l tmpdir /tmp
+            if set -q TMPDIR
+                set tmpdir $TMPDIR
+            end
+            set -l tmp (mktemp "$tmpdir/camp-dungeon-explore.XXXXXX" 2>/dev/null)
+            if test -z "$tmp"
+                return 1
+            end
+            command camp dungeon explore $rest --path-output "$tmp"
+            set -l cmd_status $status
+            if test "$cmd_status" -ne 0
+                rm -f "$tmp"
+                return $cmd_status
+            end
+            if test -s "$tmp"
+                set -l dest (cat "$tmp")
+                rm -f "$tmp"
+                if test -n "$dest"
+                    cd "$dest"
+                end
+            else
+                rm -f "$tmp"
+            end
         case festivals
             set -l rest $argv[2..-1]
             set -l passthrough 0

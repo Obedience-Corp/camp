@@ -1008,11 +1008,13 @@ It keeps items visible without them competing for your attention.
 Commands:
   add     Initialize dungeon structure with documentation
   crawl   Interactive review and archival of dungeon contents
+  explore Browse finished work across every dungeon
   list    List dungeon items (agent-friendly)
   move    Move items between dungeon statuses (agent-friendly)
 
 Examples:
   camp dungeon add                        Initialize the dungeon
+  camp dungeon explore                    Browse finished work in every dungeon
   camp dungeon crawl                      Review and archive dungeon items
   camp dungeon list                       List dungeon root items
   camp dungeon list --triage              List parent items eligible for triage
@@ -1116,6 +1118,54 @@ camp dungeon crawl [flags]
   -h, --help     help for crawl
       --inner    Force inner mode (review dungeon items)
       --triage   Force triage mode (review parent items)
+```
+
+### Options inherited from parent commands
+
+```
+      --no-color   disable colored output
+```
+---
+
+## camp dungeon explore
+
+Browse finished work across every dungeon
+
+### Synopsis
+
+Browse finished work across every dungeon in this camp.
+
+The feed is newest day first. Each row shows the work, the day it was put in
+the dungeon, and which dungeon it came from. Festivals with a replay show that
+replay on the focused row. Enter reads the item. g jumps the shell to it when
+shell integration is installed.
+
+[ and ] move between dungeons. s changes the status lens. The opening lens is
+finished work: completed and done.
+
+  camp dungeon explore
+  camp dungeon explore --status archived
+  camp dungeon explore --dungeon Festivals --query FA0024
+  camp dungeon explore --json --since 2026-09-01
+
+A pipe, or --json, prints the same index and does not open the feed.
+
+```
+camp dungeon explore [flags]
+```
+
+### Options
+
+```
+      --dungeon string   Dungeon lens: all, a label, or a camp-relative dungeon path (default "all")
+  -h, --help             help for explore
+      --images string    Replay rendering: auto, kitty, iterm, or off (default "auto")
+      --json             Print the feed as JSON
+      --no-media         Do not draw replays
+      --query string     Case-insensitive substring matched against title, id, summary, dungeon, and path
+      --since string     Include items put in the dungeon on or after this YYYY-MM-DD date
+      --status string    Status lens: finished, completed, done, archived, someday, killed, holding, all, or a status name (default "finished")
+      --until string     Include items put in the dungeon on or before this YYYY-MM-DD date
 ```
 
 ### Options inherited from parent commands
