@@ -91,14 +91,15 @@ type gifSpan struct {
 }
 
 type gifShape struct {
-	width    int
-	height   int
-	header   int
-	frames   []gifSpan
-	widest   int
-	largest  int64
-	work     int64
-	overWork bool
+	background color.RGBA
+	width      int
+	height     int
+	header     int
+	frames     []gifSpan
+	widest     int
+	largest    int64
+	work       int64
+	overWork   bool
 }
 
 func (s gifShape) memoryBytes() int64 {
@@ -114,9 +115,22 @@ func scanGIF(data []byte) (gifShape, error) {
 		height: int(data[8]) | int(data[9])<<8,
 		header: 13 + colorTableLen(data[10]),
 	}
+	if shape.header > len(data) {
+		return gifShape{}, errNotGIF
+	}
+	// The logical-screen background belongs to the global table, never a
+	// frame's local palette or transparency index (GIF89a sections 18 and 23).
+	// Without a usable global entry, keep the existing transparent fallback.
+	if index := int(data[11]); index < (shape.header-13)/3 {
+		offset := 13 + 3*index
+		shape.background = color.RGBA{R: data[offset], G: data[offset+1], B: data[offset+2], A: 255}
+	}
 	// Budget canvas allocation and the final poster, as well as per-frame work.
 	canvasBytes := 4 * int64(shape.width) * int64(shape.height)
 	shape.work = 2 * canvasBytes
+	if shape.background.A != 0 {
+		shape.work += canvasBytes
+	}
 	var disposal, previousDisposal byte
 	var previousPixels int64
 	pos, start := shape.header, shape.header
@@ -224,6 +238,9 @@ func frameDelay(g *gif.GIF, i int) time.Duration {
 
 func composite(ctx context.Context, data []byte, shape gifShape, spans []gifSpan, tooLong bool, maxW, maxH int) (Frames, bool, error) {
 	canvas := image.NewRGBA(image.Rect(0, 0, shape.width, shape.height))
+	if shape.background.A != 0 {
+		fillRect(canvas, canvas.Bounds(), shape.background)
+	}
 	var saved *image.RGBA
 	var prev image.Rectangle
 	prevDisposal := byte(gif.DisposalNone)
@@ -241,7 +258,7 @@ func composite(ctx context.Context, data []byte, shape gifShape, spans []gifSpan
 		if i > 0 {
 			switch prevDisposal {
 			case gif.DisposalBackground:
-				clearRect(canvas, prev)
+				fillRect(canvas, prev, shape.background)
 			case gif.DisposalPrevious:
 				if saved != nil {
 					copyRGBA(canvas, saved)
@@ -334,10 +351,9 @@ func snapshot(canvas *image.RGBA, maxW, maxH int) image.Image {
 	return img
 }
 
-func clearRect(dst *image.RGBA, rect image.Rectangle) {
+func fillRect(dst *image.RGBA, rect image.Rectangle, background color.RGBA) {
 	rect = rect.Intersect(dst.Bounds())
-	clear := image.NewUniform(color.RGBA{})
-	draw.Draw(dst, rect, clear, image.Point{}, draw.Src)
+	draw.Draw(dst, rect, image.NewUniform(background), image.Point{}, draw.Src)
 }
 
 func cloneRGBA(src *image.RGBA) *image.RGBA {

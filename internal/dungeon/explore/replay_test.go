@@ -246,7 +246,7 @@ func TestScanGIFCountsPerFrameWork(t *testing.T) {
 		t.Fatalf("frames = %d, overWork = %v", len(shape.frames), shape.overWork)
 	}
 	localCost := int64(len(local) * paletteEntryCost)
-	if want := 5*(16+16+4) + 3*frameOverhead + localCost + 5*4*16; shape.work != want {
+	if want := 5*(16+16+4) + 3*frameOverhead + localCost + 6*4*16; shape.work != want {
 		t.Fatalf("work = %d, want %d (pixels, a per-frame term for each frame, and the local color table)", shape.work, want)
 	}
 	if want := 16 + localCost; shape.largest != want {
