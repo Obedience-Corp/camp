@@ -11,6 +11,7 @@ import (
 	"github.com/charmbracelet/glamour/styles"
 	"github.com/muesli/termenv"
 
+	"github.com/Obedience-Corp/camp/internal/dungeon/explore"
 	"github.com/Obedience-Corp/camp/internal/ui"
 )
 
@@ -40,7 +41,7 @@ func (b readerBody) render(width int, plain bool) []string {
 	text := termSafeText(b.text)
 	var lines []string
 	if b.markdown {
-		lines = renderExploreMarkdown(text, width, plain)
+		lines = renderExploreMarkdown(explore.MarkdownBody(text), width, plain)
 	} else {
 		lines = wrapPlain(text, width)
 	}

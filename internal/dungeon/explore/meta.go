@@ -264,6 +264,12 @@ func firstParagraph(body string) string {
 	return strings.Join(lines, " ")
 }
 
+// MarkdownBody returns text without a leading YAML frontmatter block.
+func MarkdownBody(text string) string {
+	_, body := splitFrontmatter(text)
+	return body
+}
+
 func splitFrontmatter(text string) (map[string]string, string) {
 	if !strings.HasPrefix(text, "---\n") && !strings.HasPrefix(text, "---\r\n") {
 		return nil, text

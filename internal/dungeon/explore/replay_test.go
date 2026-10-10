@@ -7,7 +7,6 @@ import (
 	"image/color"
 	"image/gif"
 	"os"
-	"path/filepath"
 	"testing"
 )
 
@@ -35,11 +34,7 @@ func TestDecodeReplayCompositesPartialFrames(t *testing.T) {
 	if err := gif.EncodeAll(&buf, g); err != nil {
 		t.Fatal(err)
 	}
-	path := filepath.Join(t.TempDir(), "replay.gif")
-	if err := os.WriteFile(path, buf.Bytes(), 0o644); err != nil {
-		t.Fatal(err)
-	}
-	got, err := DecodeReplay(path, 8, 8)
+	got, err := decodeReplay(buf.Bytes(), 8, 8)
 	if err != nil {
 		t.Fatal(err)
 	}

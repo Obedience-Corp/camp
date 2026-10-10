@@ -1,6 +1,7 @@
 package dungeon
 
 import (
+	"slices"
 	"strings"
 	"time"
 	"unicode"
@@ -9,6 +10,27 @@ import (
 	"github.com/charmbracelet/x/ansi"
 
 	"github.com/Obedience-Corp/camp/internal/dungeon/explore"
+)
+
+const exploreGutter = 2
+
+type helpHint struct {
+	text string
+	rank int
+}
+
+var (
+	exploreFeedHelp = []helpHint{
+		{"j/k move", 7}, {"enter read", 6}, {"g go", 2}, {"[ ] dungeon", 4},
+		{"s status", 3}, {"space play", 1}, {"/ filter", 5}, {"q quit", 99},
+	}
+	exploreFullHelp = []helpHint{
+		{"j/k move", 9}, {"enter read", 8}, {"g go", 4}, {"[ ] dungeon", 6}, {"s status", 5},
+		{"space play", 3}, {"/ filter", 7}, {"y copy", 1}, {"r rescan", 2}, {"q quit", 99},
+	}
+	exploreReaderHelp = []helpHint{
+		{"j/k scroll", 4}, {"enter open", 3}, {"g go", 1}, {"y copy", 2}, {"esc back", 99},
+	}
 )
 
 func (m exploreModel) View() string {
@@ -26,20 +48,17 @@ func (m exploreModel) view() string {
 	if m.height < 4 || m.width < 20 {
 		return "Terminal is too small.\n"
 	}
-	var b strings.Builder
-	b.WriteString(m.renderHeader())
-	b.WriteByte('\n')
-	body := m.renderBody()
-	b.WriteString(body)
-	if !strings.HasSuffix(body, "\n") {
-		b.WriteByte('\n')
+	lines := []string{fit(m.renderHeader(), m.width)}
+	body := strings.Split(strings.TrimSuffix(m.renderBody(), "\n"), "\n")
+	for len(body) < m.bodyHeight() {
+		body = append(body, "")
 	}
+	lines = append(lines, body...)
 	if m.status != "" {
-		b.WriteString(termSafe(m.status))
-		b.WriteByte('\n')
+		lines = append(lines, fit(m.status, m.width))
 	}
-	b.WriteString(m.renderHelp())
-	return b.String()
+	lines = append(lines, m.renderHelp())
+	return strings.Join(lines, "\n")
 }
 
 func (m exploreModel) renderHeader() string {
@@ -78,12 +97,33 @@ func statusTitle(status string) string {
 
 func (m exploreModel) renderHelp() string {
 	if m.help {
-		return "j/k move  enter read  g go  [ ] dungeon  s status  space play  / filter  y copy  r rescan  q quit"
+		return fitHelp(exploreFullHelp, "  ", m.width)
 	}
 	if m.reading {
-		return "j/k scroll   enter open   g go   y copy   esc back"
+		return fitHelp(exploreReaderHelp, "   ", m.width)
 	}
-	return "j/k move   enter read   g go   [ ] dungeon   s status   space play   / filter   q quit"
+	return fitHelp(exploreFeedHelp, "   ", m.width)
+}
+
+func fitHelp(hints []helpHint, sep string, width int) string {
+	shown := slices.Clone(hints)
+	for {
+		texts := make([]string, len(shown))
+		for i, hint := range shown {
+			texts[i] = hint.text
+		}
+		line := strings.Join(texts, sep)
+		if lipgloss.Width(line) <= width || len(shown) == 1 {
+			return fit(line, width)
+		}
+		drop := 0
+		for i, hint := range shown {
+			if hint.rank < shown[drop].rank {
+				drop = i
+			}
+		}
+		shown = slices.Delete(shown, drop, drop+1)
+	}
 }
 
 func (m exploreModel) renderBody() string {
@@ -106,7 +146,7 @@ func (m exploreModel) renderBody() string {
 	if m.wide() {
 		return m.renderWide()
 	}
-	return strings.Join(m.window(m.feedLines(true)), "\n")
+	return strings.Join(m.window(m.feedLines(m.width, true)), "\n")
 }
 
 func (m exploreModel) renderReader() string {
@@ -143,9 +183,9 @@ func (m exploreModel) renderWide() string {
 	}
 	rightW := m.width - leftW
 	if rightW < 20 {
-		return strings.Join(m.window(m.feedLines(true)), "\n")
+		return strings.Join(m.window(m.feedLines(m.width, true)), "\n")
 	}
-	left := m.window(m.feedLines(false))
+	left := m.window(m.feedLines(leftW-exploreGutter, false))
 	right := m.stageBlock(rightW)
 	height := m.bodyHeight()
 	var b strings.Builder
@@ -172,7 +212,7 @@ func (m exploreModel) renderWide() string {
 	return b.String()
 }
 
-func (m exploreModel) feedLines(includeStage bool) []string {
+func (m exploreModel) feedLines(width int, includeStage bool) []string {
 	var lines []string
 	var lastDay string
 	focusAt := 0
@@ -192,10 +232,9 @@ func (m exploreModel) feedLines(includeStage bool) []string {
 		if item.ID != "" {
 			title += "  " + item.ID
 		}
-		title += "  " + item.DungeonLabel
-		lines = append(lines, mark+fit(title, m.width-2))
+		lines = append(lines, mark+keepTail(title, "  "+item.DungeonLabel, width-2))
 		if item.Summary != "" {
-			lines = append(lines, "  "+fit(item.Summary, m.width-2))
+			lines = append(lines, "  "+fit(item.Summary, width-2))
 		}
 		if includeStage && i == m.cursor && m.stageRows() > 0 {
 			lines = append(lines, m.stageBlock(m.width)...)
@@ -257,12 +296,7 @@ func (m exploreModel) stageBlock(width int) []string {
 		}
 	}
 	lines = append(lines, fit(item.Title, width))
-	meta := item.ID
-	if meta != "" {
-		meta += "  "
-	}
-	meta += item.DungeonLabel + "  " + item.Status
-	lines = append(lines, fit(meta, width))
+	lines = append(lines, keepTail(item.ID, "  "+item.DungeonLabel+"  "+item.Status, width))
 	if item.Summary != "" {
 		lines = append(lines, fit(item.Summary, width))
 	}
@@ -336,9 +370,6 @@ func (m exploreModel) bodyHeight() int {
 }
 
 func (m exploreModel) contentWidth() int {
-	if m.wide() {
-		return m.width/2 - 2
-	}
 	return m.width - 2
 }
 
@@ -395,6 +426,18 @@ func fit(s string, width int) string {
 		runes = runes[:len(runes)-1]
 	}
 	return string(runes)
+}
+
+func keepTail(head, tail string, width int) string {
+	tail = termSafe(tail)
+	if head == "" {
+		return fit(strings.TrimLeft(tail, " "), width)
+	}
+	room := width - lipgloss.Width(tail)
+	if room < 1 {
+		return fit(head+tail, width)
+	}
+	return fit(head, room) + tail
 }
 
 func padWidth(s string, width int) string {

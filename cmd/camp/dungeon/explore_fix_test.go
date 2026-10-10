@@ -239,8 +239,8 @@ func TestExploreRescanClearsReadingStatus(t *testing.T) {
 	if m.status != "" {
 		t.Fatalf("status after a successful rescan = %q", m.status)
 	}
-	if strings.Count(m.View(), "\n") != strings.Count(replayModel(explore.ProtocolOff).View(), "\n") {
-		t.Fatal("the rescan message still takes a row")
+	if strings.Contains(m.View(), exploreReadingStatus) {
+		t.Fatal("the rescan message is still on screen")
 	}
 }
 
