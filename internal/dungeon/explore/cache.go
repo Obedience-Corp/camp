@@ -13,6 +13,10 @@ import (
 	"github.com/Obedience-Corp/camp/internal/pathutil"
 )
 
+// cacheSchemaVersion changes whenever the cached index gains information a
+// stale cache would silently lack, so old files are rebuilt instead of trusted.
+const cacheSchemaVersion = "camp-dungeon-explore-cache/v2"
+
 type cacheFile struct {
 	SchemaVersion string `json:"schema_version"`
 	Index         Index  `json:"index"`
@@ -43,7 +47,7 @@ func LoadCache(dir string) (Index, bool, error) {
 		return Index{}, false, nil
 	}
 	var file cacheFile
-	if err := json.Unmarshal(data, &file); err != nil || file.SchemaVersion != SchemaVersion {
+	if err := json.Unmarshal(data, &file); err != nil || file.SchemaVersion != cacheSchemaVersion {
 		return Index{}, false, nil
 	}
 	return file.Index, true, nil
@@ -55,7 +59,7 @@ func SaveCache(dir string, idx Index) error {
 	if err := os.MkdirAll(dir, 0o755); err != nil {
 		return camperrors.Wrap(err, "creating dungeon feed cache")
 	}
-	data, err := json.Marshal(cacheFile{SchemaVersion: SchemaVersion, Index: idx})
+	data, err := json.Marshal(cacheFile{SchemaVersion: cacheSchemaVersion, Index: idx})
 	if err != nil {
 		return camperrors.Wrap(err, "encoding dungeon feed cache")
 	}

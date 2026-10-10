@@ -44,7 +44,8 @@ func ChooseProtocol(flag string, getenv func(string) string, plain bool) (string
 	return ProtocolOff, nil
 }
 
-// KittyPNG transmits png with the Kitty graphics protocol, displayed at the cursor.
+// KittyPNG transmits png with the Kitty graphics protocol, displayed at the
+// cursor. C=1 keeps the cursor where it was so the next row lands in place.
 func KittyPNG(id int, png []byte) string {
 	payload := base64.StdEncoding.EncodeToString(png)
 	const chunk = 4096
@@ -62,7 +63,7 @@ func KittyPNG(id int, png []byte) string {
 			b.WriteString("\033_G")
 			b.WriteString("a=T,f=100,q=2,i=")
 			b.WriteString(itoa(id))
-			b.WriteString(",m=")
+			b.WriteString(",C=1,m=")
 			b.WriteString(itoa(more))
 			b.WriteByte(';')
 			b.WriteString(part)
@@ -77,6 +78,11 @@ func KittyPNG(id int, png []byte) string {
 		b.WriteString("\033\\")
 	}
 	return b.String()
+}
+
+// HasKittyImage reports whether s places a Kitty image.
+func HasKittyImage(s string) bool {
+	return strings.Contains(s, "\033_Ga=T")
 }
 
 // KittyDelete removes the image id placed by KittyPNG.

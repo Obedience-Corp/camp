@@ -2,6 +2,7 @@ package explore
 
 import (
 	"bytes"
+	"errors"
 	"image"
 	"image/color"
 	"image/gif"
@@ -83,5 +84,98 @@ func TestKittyPNGRoundTripMarker(t *testing.T) {
 	del := KittyDelete(7)
 	if del != "\033_Ga=d,d=i,i=7\033\\" {
 		t.Fatalf("delete = %q", del)
+	}
+}
+
+func encodeReplay(t *testing.T, frames []*image.Paletted, w, h int) []byte {
+	t.Helper()
+	g := &gif.GIF{Config: image.Config{Width: w, Height: h}}
+	for _, frame := range frames {
+		g.Image = append(g.Image, frame)
+		g.Delay = append(g.Delay, 10)
+		g.Disposal = append(g.Disposal, gif.DisposalNone)
+	}
+	g.Config.ColorModel = frames[0].Palette
+	var buf bytes.Buffer
+	if err := gif.EncodeAll(&buf, g); err != nil {
+		t.Fatal(err)
+	}
+	return buf.Bytes()
+}
+
+func solidFrame(w, h int, index uint8) *image.Paletted {
+	pal := color.Palette{color.RGBA{0, 0, 0, 255}, color.RGBA{255, 0, 0, 255}}
+	frame := image.NewPaletted(image.Rect(0, 0, w, h), pal)
+	if index != 0 {
+		for i := range frame.Pix {
+			frame.Pix[i] = index
+		}
+	}
+	return frame
+}
+
+func TestDecodeReplayRejectsHugeCanvasBeforeDecoding(t *testing.T) {
+	const side = 4096
+	valid := encodeReplay(t, []*image.Paletted{solidFrame(side, side, 0)}, side, side)
+	headerOnly := []byte("GIF89a")
+	headerOnly = append(headerOnly, 0x00, 0x10, 0x00, 0x10, 0x80, 0x00, 0x00)
+	headerOnly = append(headerOnly, 0, 0, 0, 255, 255, 255)
+	headerOnly = append(headerOnly, 0x2C, 0, 0, 0, 0, 0x00, 0x10, 0x00, 0x10, 0x00)
+	headerOnly = append(headerOnly, 0x02, 0x01, 0x00, 0x00, 0x3B)
+	for name, data := range map[string][]byte{"valid": valid, "header only": headerOnly} {
+		t.Run(name, func(t *testing.T) {
+			if len(data) > 64<<10 {
+				t.Fatalf("fixture is %d bytes, want a small file", len(data))
+			}
+			got, err := decodeReplay(data, 384, 192)
+			if !errors.Is(err, ErrReplayTooLong) {
+				t.Fatalf("decodeReplay() error = %v, want ErrReplayTooLong before decoding", err)
+			}
+			if got.Poster != nil || got.Frames != nil {
+				t.Fatal("an oversized replay still produced pixels")
+			}
+		})
+	}
+}
+
+func TestDecodeReplayKeepsPosterWhenTooManyFrames(t *testing.T) {
+	frames := make([]*image.Paletted, maxReplayFrames+50)
+	for i := range frames {
+		frames[i] = solidFrame(4, 4, uint8(i%2))
+	}
+	frames[len(frames)-1] = solidFrame(4, 4, 1)
+	got, err := decodeReplay(encodeReplay(t, frames, 4, 4), 8, 8)
+	if !errors.Is(err, ErrReplayTooLong) {
+		t.Fatalf("decodeReplay() error = %v, want ErrReplayTooLong", err)
+	}
+	if got.Frames != nil {
+		t.Fatalf("kept %d frames for a replay that is too long", len(got.Frames))
+	}
+	if got.Poster == nil {
+		t.Fatal("too-long replay has no poster")
+	}
+	if r, g, b, _ := got.Poster.At(0, 0).RGBA(); r>>8 != 255 || g>>8 != 0 || b>>8 != 0 {
+		t.Fatalf("poster = %d %d %d, want the last frame's red", r>>8, g>>8, b>>8)
+	}
+}
+
+func TestDecodeReplayStopsKeepingFramesPastTheBudget(t *testing.T) {
+	const w, h = 1200, 1000
+	frames := make([]*image.Paletted, 10)
+	for i := range frames {
+		frames[i] = solidFrame(w, h, uint8(i%2))
+	}
+	got, err := decodeReplay(encodeReplay(t, frames, w, h), w, h)
+	if !errors.Is(err, ErrReplayTooLong) {
+		t.Fatalf("decodeReplay() error = %v, want ErrReplayTooLong", err)
+	}
+	if got.Frames != nil || got.Delays != nil {
+		t.Fatalf("kept %d frames past the decoded budget", len(got.Frames))
+	}
+	if got.Poster == nil || got.Poster.Bounds().Dx() != w || got.Poster.Bounds().Dy() != h {
+		t.Fatal("poster missing or wrongly sized")
+	}
+	if r, _, _, _ := got.Poster.At(0, 0).RGBA(); r>>8 != 255 {
+		t.Fatal("poster is not the last frame")
 	}
 }

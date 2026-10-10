@@ -22,5 +22,8 @@ func errSinceAfterUntil() error {
 	return camperrors.New("--since is after --until")
 }
 
-// ErrReplayTooLong means the GIF can contribute a poster but must not play.
+// ErrReplayTooLong means the GIF must not play. A poster comes with it when
+// the replay was small enough to decode.
 var ErrReplayTooLong = camperrors.New("replay is too long to play here")
+
+var errNotGIF = camperrors.New("replay is not a valid GIF")

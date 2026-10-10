@@ -12,12 +12,22 @@ import (
 
 const metaReadLimit = 256 << 10
 
+// fillDirectory classifies an item directory. A .workitem marker wins over
+// festival artifacts, matching workitem discovery: the marker records a
+// promote camp performed, while a leftover fest.yaml proves nothing.
 func fillDirectory(item *Item, dir string) {
 	base := filepath.Base(dir)
+	workitem := filepath.Join(dir, ".workitem")
+	if fileExists(workitem) {
+		item.Kind = KindWorkitem
+		if warning := fillWorkitem(item, workitem, filepath.Join(dir, "README.md")); warning != "" {
+			item.Warning = warning
+		}
+		return
+	}
 	replay := replayPath(dir, base)
 	festYAML := filepath.Join(dir, "fest.yaml")
 	goalFile := filepath.Join(dir, "FESTIVAL_GOAL.md")
-	workitem := filepath.Join(dir, ".workitem")
 	hasFest := fileExists(festYAML) || fileExists(goalFile) || replay != ""
 	if hasFest {
 		item.Kind = KindFestival
@@ -29,13 +39,6 @@ func fillDirectory(item *Item, dir string) {
 		}
 		if item.Title == "" || item.Title == base && item.ID == "" && item.Summary == "" {
 			item.Title = base
-		}
-		return
-	}
-	if fileExists(workitem) {
-		item.Kind = KindWorkitem
-		if warning := fillWorkitem(item, workitem, filepath.Join(dir, "README.md")); warning != "" {
-			item.Warning = warning
 		}
 		return
 	}
@@ -319,7 +322,7 @@ func readLimited(path string) (string, error) {
 	if err != nil {
 		return "", err
 	}
-	defer f.Close()
+	defer func() { _ = f.Close() }()
 	buf := make([]byte, metaReadLimit)
 	n, err := f.Read(buf)
 	if err != nil && n == 0 {

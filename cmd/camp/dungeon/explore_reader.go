@@ -3,10 +3,13 @@ package dungeon
 import (
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/glamour"
+	"github.com/charmbracelet/glamour/styles"
+	"github.com/muesli/termenv"
 
 	"github.com/Obedience-Corp/camp/internal/ui"
 )
@@ -19,11 +22,52 @@ type readerEntry struct {
 type exploreReader struct {
 	title   string
 	path    string
+	body    readerBody
 	lines   []string
 	offset  int
 	listing bool
 	entries []readerEntry
 	entry   int
+}
+
+// readerBody is what the reader shows, kept unrendered so a resize can wrap
+// it again at the new width.
+type readerBody struct {
+	lead     []string
+	text     string
+	markdown bool
+}
+
+func (b readerBody) render(width int, plain bool) []string {
+	text := termSafeText(b.text)
+	var lines []string
+	if b.markdown {
+		lines = renderExploreMarkdown(text, width, plain)
+	} else {
+		lines = wrapPlain(text, width)
+	}
+	return append(slices.Clone(b.lead), lines...)
+}
+
+func (r *exploreReader) follow(height int) {
+	if r.entry < r.offset {
+		r.offset = r.entry
+	}
+	if height > 0 && r.entry >= r.offset+height {
+		r.offset = r.entry - height + 1
+	}
+}
+
+func (m *exploreModel) reflowReader() {
+	if !m.reading {
+		return
+	}
+	if m.reader.listing {
+		m.reader.follow(m.bodyHeight())
+		return
+	}
+	m.reader.lines = m.reader.body.render(m.contentWidth(), m.plain)
+	m.reader.offset = maxReaderOffset(m.reader.offset, len(m.reader.lines), m.bodyHeight())
 }
 
 func (m exploreModel) openReader() (tea.Model, tea.Cmd) {
@@ -43,41 +87,43 @@ func (m exploreModel) openReader() (tea.Model, tea.Cmd) {
 		}
 		reader.listing = true
 		reader.entries = entries
-		reader.lines = readerListLines(entries)
 	case item.Kind == "festival" && item.IsDir:
 		goal := filepath.Join(abs, "FESTIVAL_GOAL.md")
 		if _, err := os.Stat(goal); err == nil {
-			lines, err := readExploreBody(goal, m.contentWidth())
+			text, err := readExploreText(goal)
 			if err != nil {
 				m.statusErr = true
 				m.status = "The file could not be parsed."
 				return m, nil
 			}
 			reader.path = goal
-			reader.lines = lines
+			reader.body = readerBody{text: text, markdown: true}
 		} else if item.Summary != "" {
-			reader.lines = wrapPlain(item.Summary, m.contentWidth())
+			reader.body = readerBody{text: item.Summary}
 		} else {
-			reader.lines = []string{"No festival goal file."}
+			reader.body = readerBody{text: "No festival goal file."}
 		}
 		if item.Replay == "" {
-			reader.lines = append([]string{"No replay yet.", ""}, reader.lines...)
+			reader.body.lead = []string{"No replay yet.", ""}
 		}
 	case !item.IsDir && strings.HasSuffix(strings.ToLower(item.Path), ".md"):
-		lines, err := readExploreBody(abs, m.contentWidth())
+		text, err := readExploreText(abs)
 		if err != nil {
 			m.statusErr = true
 			m.status = "The file could not be parsed."
 			return m, nil
 		}
-		reader.lines = lines
+		reader.body = readerBody{text: text, markdown: true}
 	default:
 		info, err := os.Lstat(abs)
 		if err != nil {
-			reader.lines = []string{abs}
+			reader.body = readerBody{text: abs}
 		} else {
-			reader.lines = []string{abs, info.ModTime().Format("2006-01-02 15:04"), "size " + itoa64(info.Size())}
+			reader.body = readerBody{text: abs + "\n" + info.ModTime().Format("2006-01-02 15:04") + "\nsize " + itoa64(info.Size())}
 		}
+	}
+	if !reader.listing {
+		reader.lines = reader.body.render(m.contentWidth(), m.plain)
 	}
 	m.reading = true
 	m.reader = reader
@@ -95,10 +141,7 @@ func (m exploreModel) onReaderKey(key tea.KeyMsg) (tea.Model, tea.Cmd) {
 		return m, nil
 	case "up", "k":
 		if m.reader.listing {
-			if m.reader.entry > 0 {
-				m.reader.entry--
-			}
-			return m, nil
+			return m.moveEntry(-1)
 		}
 		if m.reader.offset > 0 {
 			m.reader.offset--
@@ -106,20 +149,23 @@ func (m exploreModel) onReaderKey(key tea.KeyMsg) (tea.Model, tea.Cmd) {
 		return m, nil
 	case "down", "j":
 		if m.reader.listing {
-			if m.reader.entry < len(m.reader.entries)-1 {
-				m.reader.entry++
-			}
-			return m, nil
+			return m.moveEntry(1)
 		}
 		m.reader.offset = maxReaderOffset(m.reader.offset+1, len(m.reader.lines), m.bodyHeight())
 		return m, nil
 	case "ctrl+u":
+		if m.reader.listing {
+			return m.moveEntry(-m.page())
+		}
 		m.reader.offset -= m.page()
 		if m.reader.offset < 0 {
 			m.reader.offset = 0
 		}
 		return m, nil
 	case "ctrl+d":
+		if m.reader.listing {
+			return m.moveEntry(m.page())
+		}
 		m.reader.offset = maxReaderOffset(m.reader.offset+m.page(), len(m.reader.lines), m.bodyHeight())
 		return m, nil
 	case "enter":
@@ -127,7 +173,7 @@ func (m exploreModel) onReaderKey(key tea.KeyMsg) (tea.Model, tea.Cmd) {
 			return m, nil
 		}
 		picked := m.reader.entries[m.reader.entry]
-		lines, err := readExploreBody(picked.path, m.contentWidth())
+		text, err := readExploreText(picked.path)
 		if err != nil {
 			m.statusErr = true
 			m.status = "The file could not be parsed."
@@ -136,7 +182,8 @@ func (m exploreModel) onReaderKey(key tea.KeyMsg) (tea.Model, tea.Cmd) {
 		m.reader.listing = false
 		m.reader.path = picked.path
 		m.reader.title = picked.name
-		m.reader.lines = lines
+		m.reader.body = readerBody{text: text, markdown: true}
+		m.reader.lines = m.reader.body.render(m.contentWidth(), m.plain)
 		m.reader.offset = 0
 		return m, nil
 	case "g":
@@ -146,6 +193,15 @@ func (m exploreModel) onReaderKey(key tea.KeyMsg) (tea.Model, tea.Cmd) {
 	case " ":
 		return m.togglePlay()
 	}
+	return m, nil
+}
+
+func (m exploreModel) moveEntry(delta int) (tea.Model, tea.Cmd) {
+	if len(m.reader.entries) == 0 {
+		return m, nil
+	}
+	m.reader.entry = min(max(m.reader.entry+delta, 0), len(m.reader.entries)-1)
+	m.reader.follow(m.bodyHeight())
 	return m, nil
 }
 
@@ -170,38 +226,38 @@ func markdownEntries(dir string) ([]readerEntry, error) {
 	return append(out, rest...), nil
 }
 
-func readerListLines(entries []readerEntry) []string {
-	if len(entries) == 0 {
-		return []string{"No markdown files."}
-	}
-	lines := make([]string, len(entries))
-	for i, entry := range entries {
-		lines[i] = entry.name
-	}
-	return lines
-}
-
-func readExploreBody(path string, width int) ([]string, error) {
+func readExploreText(path string) (string, error) {
 	f, err := os.Open(path)
 	if err != nil {
-		return nil, err
+		return "", err
 	}
-	defer f.Close()
+	defer func() { _ = f.Close() }()
 	buf := make([]byte, 256<<10)
 	n, _ := f.Read(buf)
-	text := string(buf[:n])
+	return string(buf[:n]), nil
+}
+
+func renderExploreMarkdown(text string, width int, plain bool) []string {
 	if width < 20 {
 		width = 20
 	}
-	rendered, err := glamour.NewTermRenderer(glamour.WithStylePath("dark"), glamour.WithWordWrap(width))
+	opts := []glamour.TermRendererOption{glamour.WithStylePath("dark"), glamour.WithWordWrap(width)}
+	if plain {
+		opts = []glamour.TermRendererOption{
+			glamour.WithStandardStyle(styles.NoTTYStyle),
+			glamour.WithColorProfile(termenv.Ascii),
+			glamour.WithWordWrap(width),
+		}
+	}
+	rendered, err := glamour.NewTermRenderer(opts...)
 	if err != nil {
-		return wrapPlain(text, width), nil
+		return wrapPlain(text, width)
 	}
 	out, err := rendered.Render(text)
 	if err != nil {
-		return wrapPlain(text, width), nil
+		return wrapPlain(text, width)
 	}
-	return strings.Split(strings.TrimRight(out, "\n"), "\n"), nil
+	return strings.Split(strings.TrimRight(out, "\n"), "\n")
 }
 
 func wrapPlain(text string, width int) []string {

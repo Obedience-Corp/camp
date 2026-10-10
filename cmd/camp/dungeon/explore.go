@@ -3,6 +3,7 @@ package dungeon
 import (
 	"encoding/json"
 	"os"
+	"path/filepath"
 	"time"
 
 	"github.com/spf13/cobra"
@@ -78,7 +79,7 @@ func runDungeonExplore(cmd *cobra.Command, _ []string) error {
 		if err != nil {
 			return err
 		}
-		result, err := explore.Apply(idx.Items, query)
+		result, err := explore.Apply(idx, query)
 		if err != nil {
 			return err
 		}
@@ -89,7 +90,7 @@ func runDungeonExplore(cmd *cobra.Command, _ []string) error {
 	if err != nil {
 		cacheDir = ""
 	}
-	return runExploreTUI(cmd, root, cacheDir, query, images, pathOutput)
+	return runExploreTUI(cmd, root, cacheDir, query, images, pathOutput, plainExplore(cmd))
 }
 
 func exploreQuery(cmd *cobra.Command) (explore.Query, error) {
@@ -187,20 +188,5 @@ func joinAbs(root, rel string) string {
 	if rel == "." {
 		return root
 	}
-	return root + string(os.PathSeparator) + relToOS(rel)
-}
-
-func relToOS(rel string) string {
-	if os.PathSeparator == '/' {
-		return rel
-	}
-	out := make([]byte, len(rel))
-	for i := range rel {
-		if rel[i] == '/' {
-			out[i] = os.PathSeparator
-		} else {
-			out[i] = rel[i]
-		}
-	}
-	return string(out)
+	return root + string(os.PathSeparator) + filepath.FromSlash(rel)
 }

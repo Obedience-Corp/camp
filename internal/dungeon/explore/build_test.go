@@ -125,7 +125,7 @@ Stand up a blog on both domains.
 		t.Fatalf("newest first = %s", idx.Items[0].DoneDate)
 	}
 
-	finished, err := Apply(idx.Items, Query{})
+	finished, err := Apply(idx, Query{})
 	if err != nil {
 		t.Fatalf("Apply() error = %v", err)
 	}
@@ -134,7 +134,7 @@ Stand up a blog on both domains.
 			t.Fatalf("finished lens included holding item %s", item.Path)
 		}
 	}
-	holding, err := Apply(idx.Items, Query{Status: "holding"})
+	holding, err := Apply(idx, Query{Status: "holding"})
 	if err != nil {
 		t.Fatalf("Apply(holding) error = %v", err)
 	}
@@ -142,14 +142,14 @@ Stand up a blog on both domains.
 		t.Fatalf("holding = %+v", holding.Items)
 	}
 
-	onlyFest, err := Apply(idx.Items, Query{Dungeon: "Festivals", Text: "FA0024"})
+	onlyFest, err := Apply(idx, Query{Dungeon: "Festivals", Text: "FA0024"})
 	if err != nil {
 		t.Fatalf("Apply(dungeon) error = %v", err)
 	}
 	if len(onlyFest.Items) != 1 || onlyFest.Items[0].ID != "FA0024" {
 		t.Fatalf("filtered = %+v", onlyFest.Items)
 	}
-	if _, err := Apply(idx.Items, Query{Status: "nope"}); err == nil {
+	if _, err := Apply(idx, Query{Status: "nope"}); err == nil {
 		t.Fatal("unknown status error = nil")
 	}
 }
@@ -159,14 +159,14 @@ func TestApplySinceUntil(t *testing.T) {
 		{DoneDate: "2026-10-01", Title: "a", DungeonPath: "festivals/.dungeon", DungeonLabel: "Festivals", Status: "completed"},
 		{DoneDate: "2026-10-05", Title: "b", DungeonPath: "festivals/.dungeon", DungeonLabel: "Festivals", Status: "completed"},
 	}
-	got, err := Apply(items, Query{Since: "2026-10-05", Until: "2026-10-05"})
+	got, err := Apply(Index{Items: items}, Query{Since: "2026-10-05", Until: "2026-10-05"})
 	if err != nil {
 		t.Fatalf("Apply() error = %v", err)
 	}
 	if len(got.Items) != 1 || got.Items[0].Title != "b" {
 		t.Fatalf("items = %+v", got.Items)
 	}
-	if _, err := Apply(items, Query{Since: "2026-10-06", Until: "2026-10-01"}); err == nil {
+	if _, err := Apply(Index{Items: items}, Query{Since: "2026-10-06", Until: "2026-10-01"}); err == nil {
 		t.Fatal("since after until error = nil")
 	}
 }

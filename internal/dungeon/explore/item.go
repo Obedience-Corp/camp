@@ -40,13 +40,14 @@ type Item struct {
 	Path         string `json:"path"`
 	Replay       string `json:"replay,omitempty"`
 	Warning      string `json:"warning,omitempty"`
-	IsDir        bool   `json:"-"`
+	IsDir        bool   `json:"is_dir,omitempty"`
 }
 
 // DungeonPrint is the freshness record for one dungeon directory.
 type DungeonPrint struct {
 	Path        string `json:"path"`
 	Name        string `json:"name"`
+	Label       string `json:"label"`
 	Fingerprint string `json:"fingerprint"`
 }
 
@@ -158,7 +159,10 @@ func NextPreset(items []Item, name string) string {
 	if len(names) == 0 {
 		return "finished"
 	}
-	i := slices.Index(names, strings.ToLower(name))
+	i := -1
+	if resolved, ok := resolveStatus(name, items); ok {
+		i = slices.Index(names, resolved)
+	}
 	if i < 0 {
 		return names[0]
 	}
@@ -200,20 +204,22 @@ func StepDungeon(items []Item, status, current string, delta int) string {
 	return lenses[next]
 }
 
-// Apply filters items. Status and dungeon names are matched case-insensitively
-// for presets and labels. Dungeon paths match as stored.
-func Apply(items []Item, q Query) (Result, error) {
+// Apply filters the index items. Status names and dungeon labels are matched
+// case-insensitively. Dungeon paths match as stored. A dungeon resolves when
+// the index discovered it, even if it holds no items.
+func Apply(idx Index, q Query) (Result, error) {
+	items := idx.Items
 	status := q.Status
 	if status == "" {
 		status = "finished"
 	}
-	statusKey := strings.ToLower(status)
-	if !knownStatus(statusKey, items) {
+	statusKey, ok := resolveStatus(status, items)
+	if !ok {
 		return Result{}, errUnknownStatus(status)
 	}
 	want := statusesFor(statusKey, items)
 
-	dungeonKey, dungeonLabel, err := resolveDungeon(items, q.Dungeon)
+	dungeonKey, dungeonLabel, err := resolveDungeon(idx, q.Dungeon)
 	if err != nil {
 		return Result{}, err
 	}
@@ -256,8 +262,19 @@ func Apply(items []Item, q Query) (Result, error) {
 	}, nil
 }
 
-func knownStatus(name string, items []Item) bool {
-	return slices.Contains(Presets(items), name)
+// resolveStatus returns the preset or status directory name that raw names.
+// An exact match wins, so differently cased custom statuses stay distinct.
+func resolveStatus(raw string, items []Item) (string, bool) {
+	names := Presets(items)
+	if slices.Contains(names, raw) {
+		return raw, true
+	}
+	for _, name := range names {
+		if strings.EqualFold(name, raw) {
+			return name, true
+		}
+	}
+	return "", false
 }
 
 func statusesFor(name string, items []Item) []string {
@@ -279,25 +296,36 @@ func statusMatch(status string, want []string) bool {
 	return slices.Contains(want, status)
 }
 
-func resolveDungeon(items []Item, raw string) (path, label string, err error) {
+func resolveDungeon(idx Index, raw string) (path, label string, err error) {
 	raw = strings.TrimSpace(raw)
 	if raw == "" || strings.EqualFold(raw, LensAll) {
 		return LensAll, "All dungeons", nil
 	}
-	var match *Item
-	for i := range items {
-		item := &items[i]
-		if item.DungeonPath == raw || strings.EqualFold(item.DungeonLabel, raw) {
-			if match != nil && match.DungeonPath != item.DungeonPath {
-				return "", "", errAmbiguousDungeon(raw)
-			}
-			match = item
+	for _, d := range idx.Dungeons {
+		if d.Path != raw && !strings.EqualFold(d.Label, raw) {
+			continue
+		}
+		if path != "" && path != d.Path {
+			return "", "", errAmbiguousDungeon(raw)
+		}
+		path, label = d.Path, d.Label
+	}
+	for _, item := range idx.Items {
+		if item.DungeonPath != raw && !strings.EqualFold(item.DungeonLabel, raw) {
+			continue
+		}
+		if path != "" && path != item.DungeonPath {
+			return "", "", errAmbiguousDungeon(raw)
+		}
+		path = item.DungeonPath
+		if label == "" {
+			label = item.DungeonLabel
 		}
 	}
-	if match == nil {
+	if path == "" {
 		return "", "", errUnknownDungeon(raw)
 	}
-	return match.DungeonPath, match.DungeonLabel, nil
+	return path, label, nil
 }
 
 func matchesText(item Item, text string) bool {

@@ -8,6 +8,7 @@ import (
 	"os"
 	"path/filepath"
 	"sort"
+	"strconv"
 	"strings"
 	"time"
 
@@ -57,7 +58,7 @@ func scanDungeon(ctx context.Context, root string, dungeon spelling.Dungeon) (Du
 	if err != nil {
 		return DungeonPrint{}, nil, []string{warn(relDungeon, err)}, nil
 	}
-	print := DungeonPrint{Path: relDungeon, Name: dungeon.Name, Fingerprint: fp}
+	print := DungeonPrint{Path: relDungeon, Name: dungeon.Name, Label: label, Fingerprint: fp}
 
 	entries, err := os.ReadDir(dungeon.Path)
 	if err != nil {
@@ -206,6 +207,12 @@ func warn(path string, err error) string {
 	return path + ": " + err.Error()
 }
 
+var itemMetaFiles = []string{"fest.yaml", "FESTIVAL_GOAL.md", ".workitem", "README.md"}
+
+func stamp(rel string, info fs.FileInfo) string {
+	return rel + " " + info.ModTime().UTC().Format(time.RFC3339Nano) + " " + strconv.FormatInt(info.Size(), 10)
+}
+
 func fingerprint(ctx context.Context, dungeonPath string) (string, error) {
 	var lines []string
 	err := filepath.WalkDir(dungeonPath, func(path string, entry fs.DirEntry, err error) error {
@@ -226,10 +233,18 @@ func fingerprint(ctx context.Context, dungeonPath string) (string, error) {
 		if infoErr != nil {
 			return infoErr
 		}
-		lines = append(lines, filepath.ToSlash(rel)+" "+info.ModTime().UTC().Format(time.RFC3339Nano))
+		lines = append(lines, stamp(filepath.ToSlash(rel), info))
 		// Status directories and YYYY-MM-DD buckets are containers. Everything
-		// else is an item; its own mtime covers edits to its root metadata.
+		// else is an item. A directory's mtime misses in-place edits, so the
+		// metadata files an item is read from are stamped as well.
 		if entry.IsDir() && !statuspath.IsDateDir(entry.Name()) && strings.Count(filepath.ToSlash(rel), "/") >= 1 {
+			for _, name := range itemMetaFiles {
+				meta, err := os.Lstat(filepath.Join(path, name))
+				if err != nil {
+					continue
+				}
+				lines = append(lines, stamp(filepath.ToSlash(rel)+"/"+name, meta))
+			}
 			return filepath.SkipDir
 		}
 		return nil

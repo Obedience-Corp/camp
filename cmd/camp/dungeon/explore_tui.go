@@ -7,6 +7,7 @@ import (
 	"path/filepath"
 	"strings"
 	"time"
+	"unicode"
 
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/spf13/cobra"
@@ -16,7 +17,10 @@ import (
 	"github.com/Obedience-Corp/obey-shared/brand"
 )
 
-const exploreImageID = 1
+const (
+	exploreImageID       = 1
+	exploreReadingStatus = "Reading dungeons…"
+)
 
 type exploreModel struct {
 	ctx      context.Context
@@ -35,6 +39,7 @@ type exploreModel struct {
 	help      bool
 	filtering bool
 	filter    string
+	plain     bool
 
 	reading bool
 	reader  exploreReader
@@ -48,6 +53,7 @@ type exploreModel struct {
 	delays   []time.Duration
 	frame    int
 	playing  bool
+	tickGen  int
 
 	gotoEnabled bool
 	gotoPath    string
@@ -72,7 +78,9 @@ type explorePoster struct {
 
 type exploreTick struct{ gen int }
 
-func runExploreTUI(cmd *cobra.Command, root, cacheDir string, query explore.Query, protocol, pathOutput string) error {
+type exploreDecode struct{ gen int }
+
+func runExploreTUI(cmd *cobra.Command, root, cacheDir string, query explore.Query, protocol, pathOutput string, plain bool) error {
 	ctx := cmd.Context()
 	model := exploreModel{
 		ctx:         ctx,
@@ -83,6 +91,7 @@ func runExploreTUI(cmd *cobra.Command, root, cacheDir string, query explore.Quer
 		height:      24,
 		loading:     true,
 		protocol:    protocol,
+		plain:       plain,
 		reduced:     brand.ReducedMotion(),
 		gotoEnabled: pathOutput != "",
 	}
@@ -133,14 +142,25 @@ func (m exploreModel) loadCmd() tea.Cmd {
 func (m exploreModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	switch msg := msg.(type) {
 	case tea.WindowSizeMsg:
+		rows := m.stageRows()
+		pixW, pixH := m.stagePixels()
 		m.width, m.height = msg.Width, msg.Height
-		return m, nil
+		m.reflowReader()
+		newW, newH := m.stagePixels()
+		if m.stageRows() == rows && newW == pixW && newH == pixH {
+			return m, nil
+		}
+		m, cmd := m.schedulePoster()
+		return m, cmd
 	case exploreLoaded:
 		m.loading = false
 		if msg.err != nil {
 			m.statusErr = true
 			m.status = msg.err.Error()
 			return m, nil
+		}
+		if m.status == exploreReadingStatus {
+			m.status = ""
 		}
 		if msg.changed {
 			m.index = msg.index
@@ -154,6 +174,11 @@ func (m exploreModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 		m, cmd := m.schedulePoster()
 		return m, cmd
+	case exploreDecode:
+		if msg.gen != m.loadGen {
+			return m, nil
+		}
+		return m, m.decodeCmd()
 	case explorePoster:
 		if msg.gen != m.loadGen {
 			return m, nil
@@ -176,7 +201,7 @@ func (m exploreModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 		return m, nil
 	case exploreTick:
-		if msg.gen != m.loadGen || !m.playing || len(m.frames) == 0 {
+		if msg.gen != m.tickGen || !m.playing || len(m.frames) == 0 {
 			return m, nil
 		}
 		m.frame = (m.frame + 1) % len(m.frames)
@@ -244,7 +269,7 @@ func (m exploreModel) onKey(key tea.KeyMsg) (tea.Model, tea.Cmd) {
 	case "r":
 		m.loading = true
 		m.index = explore.Index{}
-		m.status = "Reading dungeons…"
+		m.status = exploreReadingStatus
 		m.statusErr = false
 		return m, m.loadCmd()
 	case "?":
@@ -255,6 +280,14 @@ func (m exploreModel) onKey(key tea.KeyMsg) (tea.Model, tea.Cmd) {
 }
 
 func (m exploreModel) onFilterKey(key tea.KeyMsg) (tea.Model, tea.Cmd) {
+	switch {
+	case key.Type == tea.KeyRunes && !key.Alt:
+		m.filter += filterText(key.Runes)
+		return m, nil
+	case key.Type == tea.KeySpace:
+		m.filter += " "
+		return m, nil
+	}
 	switch key.String() {
 	case "esc", "ctrl+c":
 		m.filtering = false
@@ -271,12 +304,17 @@ func (m exploreModel) onFilterKey(key tea.KeyMsg) (tea.Model, tea.Cmd) {
 			m.filter = string(runes[:len(runes)-1])
 		}
 		return m, nil
-	default:
-		if len(key.String()) == 1 {
-			m.filter += key.String()
-		}
-		return m, nil
 	}
+	return m, nil
+}
+
+func filterText(runes []rune) string {
+	return strings.Map(func(r rune) rune {
+		if unicode.IsControl(r) {
+			return -1
+		}
+		return r
+	}, string(runes))
 }
 
 func (m exploreModel) move(delta int) (tea.Model, tea.Cmd) {
@@ -308,7 +346,7 @@ func (m exploreModel) page() int {
 }
 
 func (m *exploreModel) applyQuery() error {
-	result, err := explore.Apply(m.index.Items, m.query)
+	result, err := explore.Apply(m.index, m.query)
 	if err != nil {
 		return err
 	}
@@ -324,8 +362,12 @@ func (m *exploreModel) applyQuery() error {
 	return nil
 }
 
+// schedulePoster drops the current replay and, after a short pause, decodes
+// the focused one. The pause lets a burst of moves or resizes settle so only
+// the last one decodes.
 func (m exploreModel) schedulePoster() (exploreModel, tea.Cmd) {
 	m.loadGen++
+	m.tickGen++
 	m.poster = nil
 	m.frames = nil
 	m.playing = false
@@ -338,10 +380,21 @@ func (m exploreModel) schedulePoster() (exploreModel, tea.Cmd) {
 		return m, nil
 	}
 	gen := m.loadGen
+	return m, tea.Tick(50*time.Millisecond, func(time.Time) tea.Msg {
+		return exploreDecode{gen: gen}
+	})
+}
+
+func (m exploreModel) decodeCmd() tea.Cmd {
+	item, ok := m.focused()
+	if !ok || item.Replay == "" {
+		return nil
+	}
+	gen := m.loadGen
 	rel := item.Path
 	path := filepath.Join(m.root, filepath.FromSlash(item.Replay))
 	maxW, maxH := m.stagePixels()
-	return m, tea.Tick(50*time.Millisecond, func(time.Time) tea.Msg {
+	return func() tea.Msg {
 		frames, err := explore.DecodeReplay(path, maxW, maxH)
 		msg := explorePoster{gen: gen, item: rel, tooLong: errors.Is(err, explore.ErrReplayTooLong)}
 		if err != nil && !msg.tooLong {
@@ -370,7 +423,7 @@ func (m exploreModel) schedulePoster() (exploreModel, tea.Cmd) {
 			}
 		}
 		return msg
-	})
+	}
 }
 
 func (m exploreModel) tick() tea.Cmd {
@@ -378,7 +431,7 @@ func (m exploreModel) tick() tea.Cmd {
 		return nil
 	}
 	delay := m.delays[m.frame]
-	gen := m.loadGen
+	gen := m.tickGen
 	return tea.Tick(delay, func(time.Time) tea.Msg {
 		return exploreTick{gen: gen}
 	})
@@ -389,6 +442,7 @@ func (m exploreModel) togglePlay() (tea.Model, tea.Cmd) {
 		return m, nil
 	}
 	m.playing = !m.playing
+	m.tickGen++
 	if m.playing {
 		return m, m.tick()
 	}

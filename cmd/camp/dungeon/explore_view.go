@@ -3,13 +3,25 @@ package dungeon
 import (
 	"strings"
 	"time"
+	"unicode"
 
 	"github.com/charmbracelet/lipgloss"
+	"github.com/charmbracelet/x/ansi"
 
 	"github.com/Obedience-Corp/camp/internal/dungeon/explore"
 )
 
+// View renders the frame. Kitty keeps a placed image until it is deleted, so
+// every Kitty frame that does not draw the replay removes it.
 func (m exploreModel) View() string {
+	out := m.view()
+	if m.protocol == explore.ProtocolKitty && !explore.HasKittyImage(out) {
+		out = explore.KittyDelete(exploreImageID) + out
+	}
+	return out
+}
+
+func (m exploreModel) view() string {
 	if m.quitting {
 		return ""
 	}
@@ -25,7 +37,7 @@ func (m exploreModel) View() string {
 		b.WriteByte('\n')
 	}
 	if m.status != "" {
-		b.WriteString(m.status)
+		b.WriteString(termSafe(m.status))
 		b.WriteByte('\n')
 	}
 	b.WriteString(m.renderHelp())
@@ -33,6 +45,10 @@ func (m exploreModel) View() string {
 }
 
 func (m exploreModel) renderHeader() string {
+	return termSafe(m.headerText())
+}
+
+func (m exploreModel) headerText() string {
 	if m.filtering {
 		return "/ " + m.filter
 	}
@@ -74,7 +90,7 @@ func (m exploreModel) renderHelp() string {
 
 func (m exploreModel) renderBody() string {
 	if m.loading && len(m.index.Items) == 0 && len(m.index.Dungeons) == 0 {
-		return "Reading dungeons…"
+		return exploreReadingStatus
 	}
 	if m.reading {
 		return m.renderReader()
@@ -104,7 +120,7 @@ func (m exploreModel) renderReader() string {
 			if i == m.reader.entry {
 				prefix = "> "
 			}
-			lines[i] = prefix + entry.name
+			lines[i] = prefix + termSafe(entry.name)
 		}
 		if len(lines) == 0 {
 			lines = []string{"No markdown files."}
@@ -269,11 +285,13 @@ func (m exploreModel) imageSequence(width int) string {
 	if rows < 1 {
 		return ""
 	}
+	// DECSC and DECRC put the cursor back where the image started, so the
+	// renderer's next row lands where it expects on every terminal.
 	switch m.protocol {
 	case explore.ProtocolKitty:
-		return explore.KittyDelete(exploreImageID) + explore.KittyPNG(exploreImageID, m.poster)
+		return "\x1b7" + explore.KittyDelete(exploreImageID) + explore.KittyPNG(exploreImageID, m.poster) + "\x1b8"
 	case explore.ProtocolITerm:
-		return explore.ITermPNG(m.poster, min(width, 48), rows)
+		return "\x1b7" + explore.ITermPNG(m.poster, min(width, 48), rows) + "\x1b8"
 	default:
 		return ""
 	}
@@ -344,7 +362,35 @@ func prettyDay(day string) string {
 	return stamp.Format("Jan 2, 2006")
 }
 
+// termSafe strips escape sequences and control characters from text read
+// out of the camp, so a title or path cannot drive the terminal. Line breaks
+// and tabs become spaces.
+func termSafe(s string) string {
+	return strings.Map(func(r rune) rune {
+		switch {
+		case r == '\t' || r == '\n' || r == '\r':
+			return ' '
+		case unicode.IsControl(r):
+			return -1
+		default:
+			return r
+		}
+	}, ansi.Strip(s))
+}
+
+// termSafeText is termSafe for multi-line documents: it keeps line breaks and
+// tabs.
+func termSafeText(s string) string {
+	return strings.Map(func(r rune) rune {
+		if r == '\n' || r == '\t' || !unicode.IsControl(r) {
+			return r
+		}
+		return -1
+	}, ansi.Strip(s))
+}
+
 func fit(s string, width int) string {
+	s = termSafe(s)
 	if width <= 0 {
 		return ""
 	}
