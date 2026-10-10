@@ -1,6 +1,8 @@
 package dungeon
 
 import (
+	"context"
+	"errors"
 	"fmt"
 	"path/filepath"
 	"strings"
@@ -267,4 +269,65 @@ func TestExploreMarkdownHonorsPlainOutput(t *testing.T) {
 	if styled := strings.Join(renderExploreMarkdown(doc, 60, false), "\n"); !strings.Contains(styled, "\x1b[") {
 		t.Fatal("styled Markdown carries no styling; the plain check proves nothing")
 	}
+}
+
+func TestExploreFocusChangeCancelsReplayDecode(t *testing.T) {
+	m := replayModel(explore.ProtocolKitty)
+	m.index.Items[1].Replay = m.index.Items[1].Path + "/replay.gif"
+	if err := m.applyQuery(); err != nil {
+		t.Fatal(err)
+	}
+	started := make(chan context.Context, 4)
+	m.decode = func(ctx context.Context, _ string, _, _ int) (explore.Frames, error) {
+		started <- ctx
+		<-ctx.Done()
+		return explore.Frames{}, ctx.Err()
+	}
+	run := func(cmd tea.Cmd) <-chan tea.Msg {
+		out := make(chan tea.Msg, 1)
+		go func() { out <- cmd() }()
+		return out
+	}
+	await := func(what string) context.Context {
+		select {
+		case ctx := <-started:
+			return ctx
+		case <-time.After(2 * time.Second):
+			t.Fatalf("%s decode never started", what)
+			return nil
+		}
+	}
+
+	m, cmd := press(t, m, exploreDecode{gen: m.loadGen})
+	if cmd == nil {
+		t.Fatal("no decode for the focused replay")
+	}
+	firstDone := run(cmd)
+	first := await("first")
+
+	m, _ = press(t, m, runes("j"))
+	if !errors.Is(first.Err(), context.Canceled) {
+		t.Fatal("moving focus left the first decode running")
+	}
+	select {
+	case msg := <-firstDone:
+		m, _ = press(t, m, msg)
+	case <-time.After(2 * time.Second):
+		t.Fatal("the cancelled decode did not return")
+	}
+	if m.statusErr {
+		t.Fatalf("a cancelled decode reported %q", m.status)
+	}
+
+	m, cmd = press(t, m, exploreDecode{gen: m.loadGen})
+	secondDone := run(cmd)
+	second := await("second")
+	if second.Err() != nil {
+		t.Fatal("the new focus started with a cancelled decode")
+	}
+	m, _ = press(t, m, runes("q"))
+	if !errors.Is(second.Err(), context.Canceled) {
+		t.Fatal("quitting left the decode running")
+	}
+	<-secondDone
 }

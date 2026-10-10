@@ -133,8 +133,7 @@ func (m exploreModel) openReader() (tea.Model, tea.Cmd) {
 func (m exploreModel) onReaderKey(key tea.KeyMsg) (tea.Model, tea.Cmd) {
 	switch key.String() {
 	case "ctrl+c":
-		m.quitting = true
-		return m, tea.Quit
+		return m.quit()
 	case "esc", "q":
 		m.reading = false
 		return m, nil

@@ -2,6 +2,7 @@ package explore
 
 import (
 	"bytes"
+	"context"
 	"image"
 	"image/color"
 	"image/draw"
@@ -33,7 +34,11 @@ type Frames struct {
 
 // DecodeReplay composites a GIF and scales it to fit maxW by maxH.
 // A file past the size or frame budget returns a poster and ErrReplayTooLong.
-func DecodeReplay(path string, maxW, maxH int) (Frames, error) {
+// Cancelling ctx stops the decode between frames and returns ctx's error.
+func DecodeReplay(ctx context.Context, path string, maxW, maxH int) (Frames, error) {
+	if err := ctx.Err(); err != nil {
+		return Frames{}, camperrors.Wrap(err, "decoding replay")
+	}
 	info, err := os.Lstat(path)
 	if err != nil {
 		return Frames{}, camperrors.Wrap(err, "reading replay")
@@ -48,10 +53,10 @@ func DecodeReplay(path string, maxW, maxH int) (Frames, error) {
 	if err != nil {
 		return Frames{}, camperrors.Wrap(err, "reading replay")
 	}
-	return decodeReplay(data, maxW, maxH)
+	return decodeReplay(ctx, data, maxW, maxH)
 }
 
-func decodeReplay(data []byte, maxW, maxH int) (Frames, error) {
+func decodeReplay(ctx context.Context, data []byte, maxW, maxH int) (Frames, error) {
 	shape, err := scanGIF(data)
 	if err != nil {
 		return Frames{}, camperrors.Wrap(err, "decoding replay")
@@ -67,7 +72,7 @@ func decodeReplay(data []byte, maxW, maxH int) (Frames, error) {
 	if shape.overWork {
 		spans = spans[:1]
 	}
-	out, tooLong, err := composite(data, shape, spans, tooLong, maxW, maxH)
+	out, tooLong, err := composite(ctx, data, shape, spans, tooLong, maxW, maxH)
 	if err != nil {
 		return Frames{}, camperrors.Wrap(err, "decoding replay")
 	}
@@ -184,7 +189,7 @@ func frameDelay(g *gif.GIF, i int) time.Duration {
 	return d
 }
 
-func composite(data []byte, shape gifShape, spans []gifSpan, tooLong bool, maxW, maxH int) (Frames, bool, error) {
+func composite(ctx context.Context, data []byte, shape gifShape, spans []gifSpan, tooLong bool, maxW, maxH int) (Frames, bool, error) {
 	canvas := image.NewRGBA(image.Rect(0, 0, shape.width, shape.height))
 	var saved *image.RGBA
 	var prev image.Rectangle
@@ -193,6 +198,9 @@ func composite(data []byte, shape gifShape, spans []gifSpan, tooLong bool, maxW,
 	var out Frames
 	kept := 0
 	for i, span := range spans {
+		if err := ctx.Err(); err != nil {
+			return Frames{}, false, err
+		}
 		frame, delay, disposal, err := decodeFrame(&buf, data, shape.header, span)
 		if err != nil {
 			return Frames{}, false, err

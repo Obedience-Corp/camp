@@ -2,6 +2,7 @@ package explore
 
 import (
 	"bytes"
+	"context"
 	"errors"
 	"image"
 	"image/color"
@@ -35,7 +36,7 @@ func TestDecodeReplayCompositesPartialFrames(t *testing.T) {
 	if err := gif.EncodeAll(&buf, g); err != nil {
 		t.Fatal(err)
 	}
-	got, err := decodeReplay(buf.Bytes(), 8, 8)
+	got, err := decodeReplay(context.Background(), buf.Bytes(), 8, 8)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -123,9 +124,9 @@ func TestDecodeReplayRejectsHugeCanvasBeforeDecoding(t *testing.T) {
 			if len(data) > 64<<10 {
 				t.Fatalf("fixture is %d bytes, want a small file", len(data))
 			}
-			got, err := decodeReplay(data, 384, 192)
+			got, err := decodeReplay(context.Background(), data, 384, 192)
 			if !errors.Is(err, ErrReplayTooLong) {
-				t.Fatalf("decodeReplay() error = %v, want ErrReplayTooLong before decoding", err)
+				t.Fatalf("decodeReplay(context.Background(), ) error = %v, want ErrReplayTooLong before decoding", err)
 			}
 			if got.Poster != nil || got.Frames != nil {
 				t.Fatal("an oversized replay still produced pixels")
@@ -140,9 +141,9 @@ func TestDecodeReplayKeepsPosterWhenTooManyFrames(t *testing.T) {
 		frames[i] = solidFrame(4, 4, uint8(i%2))
 	}
 	frames[len(frames)-1] = solidFrame(4, 4, 1)
-	got, err := decodeReplay(encodeReplay(t, frames, 4, 4), 8, 8)
+	got, err := decodeReplay(context.Background(), encodeReplay(t, frames, 4, 4), 8, 8)
 	if !errors.Is(err, ErrReplayTooLong) {
-		t.Fatalf("decodeReplay() error = %v, want ErrReplayTooLong", err)
+		t.Fatalf("decodeReplay(context.Background(), ) error = %v, want ErrReplayTooLong", err)
 	}
 	if got.Frames != nil {
 		t.Fatalf("kept %d frames for a replay that is too long", len(got.Frames))
@@ -161,9 +162,9 @@ func TestDecodeReplayStopsKeepingFramesPastTheBudget(t *testing.T) {
 	for i := range frames {
 		frames[i] = solidFrame(w, h, uint8(i%2))
 	}
-	got, err := decodeReplay(encodeReplay(t, frames, w, h), w, h)
+	got, err := decodeReplay(context.Background(), encodeReplay(t, frames, w, h), w, h)
 	if !errors.Is(err, ErrReplayTooLong) {
-		t.Fatalf("decodeReplay() error = %v, want ErrReplayTooLong", err)
+		t.Fatalf("decodeReplay(context.Background(), ) error = %v, want ErrReplayTooLong", err)
 	}
 	if got.Frames != nil || got.Delays != nil {
 		t.Fatalf("kept %d frames past the decoded budget", len(got.Frames))
@@ -205,10 +206,10 @@ func TestDecodeReplayStopsAtFirstFramePastTheWorkBudget(t *testing.T) {
 	runtime.GC()
 	var before, after runtime.MemStats
 	runtime.ReadMemStats(&before)
-	got, err := decodeReplay(data, 8, 8)
+	got, err := decodeReplay(context.Background(), data, 8, 8)
 	runtime.ReadMemStats(&after)
 	if !errors.Is(err, ErrReplayTooLong) {
-		t.Fatalf("decodeReplay() error = %v, want ErrReplayTooLong", err)
+		t.Fatalf("decodeReplay(context.Background(), ) error = %v, want ErrReplayTooLong", err)
 	}
 	if got.Poster == nil || got.Frames != nil {
 		t.Fatalf("poster %v, %d frames; want a poster and no frames", got.Poster != nil, len(got.Frames))
@@ -253,5 +254,44 @@ func TestScanGIFCountsPerFrameWork(t *testing.T) {
 	}
 	if want := 2*4*16 + shape.largest + frameOverhead; shape.memoryBytes() != want {
 		t.Fatalf("memory = %d, want %d", shape.memoryBytes(), want)
+	}
+}
+
+type cancelAfter struct {
+	context.Context
+	checks int
+	after  int
+}
+
+func (c *cancelAfter) Err() error {
+	c.checks++
+	if c.checks >= c.after {
+		return context.Canceled
+	}
+	return nil
+}
+
+func TestDecodeReplayStopsWhenCancelled(t *testing.T) {
+	frames := make([]*image.Paletted, maxReplayFrames+100)
+	for i := range frames {
+		frames[i] = solidFrame(4, 4, uint8(i%2))
+	}
+	data := encodeReplay(t, frames, 4, 4)
+	ctx := &cancelAfter{Context: context.Background(), after: 5}
+	got, err := decodeReplay(ctx, data, 8, 8)
+	if !errors.Is(err, context.Canceled) {
+		t.Fatalf("decodeReplay() error = %v, want context.Canceled", err)
+	}
+	if got.Poster != nil || got.Frames != nil {
+		t.Fatal("a cancelled decode still produced pixels")
+	}
+	if ctx.checks != ctx.after {
+		t.Fatalf("decode checked the context %d times after it was cancelled at check %d; it kept decoding %d frames", ctx.checks, ctx.after, len(frames))
+	}
+
+	cancelled, cancel := context.WithCancel(context.Background())
+	cancel()
+	if _, err := DecodeReplay(cancelled, "/nonexistent/replay.gif", 8, 8); !errors.Is(err, context.Canceled) {
+		t.Fatalf("DecodeReplay() with a cancelled context = %v, want context.Canceled before reading", err)
 	}
 }

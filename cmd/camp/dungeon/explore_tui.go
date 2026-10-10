@@ -55,6 +55,9 @@ type exploreModel struct {
 	playing  bool
 	tickGen  int
 
+	decode       func(context.Context, string, int, int) (explore.Frames, error)
+	decodeCancel context.CancelFunc
+
 	gotoEnabled bool
 	gotoPath    string
 	quitting    bool
@@ -91,6 +94,7 @@ func runExploreTUI(cmd *cobra.Command, root, cacheDir string, query explore.Quer
 		height:      24,
 		loading:     true,
 		protocol:    protocol,
+		decode:      explore.DecodeReplay,
 		plain:       plain,
 		reduced:     brand.ReducedMotion(),
 		gotoEnabled: pathOutput != "",
@@ -107,10 +111,13 @@ func runExploreTUI(cmd *cobra.Command, root, cacheDir string, query explore.Quer
 	}
 	prog := tea.NewProgram(model, tea.WithContext(ctx), tea.WithAltScreen())
 	final, err := prog.Run()
+	done, ok := final.(exploreModel)
+	if ok {
+		done.cancelDecode()
+	}
 	if err != nil {
 		return camperrors.Wrap(err, "running dungeon explorer")
 	}
-	done, ok := final.(exploreModel)
 	if !ok || pathOutput == "" || done.gotoPath == "" {
 		return nil
 	}
@@ -178,9 +185,14 @@ func (m exploreModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		if msg.gen != m.loadGen {
 			return m, nil
 		}
-		return m, m.decodeCmd()
+		cmd := m.startDecode()
+		return m, cmd
 	case explorePoster:
 		if msg.gen != m.loadGen {
+			return m, nil
+		}
+		m.cancelDecode()
+		if errors.Is(msg.err, context.Canceled) {
 			return m, nil
 		}
 		m.poster = msg.poster
@@ -222,15 +234,13 @@ func (m exploreModel) onKey(key tea.KeyMsg) (tea.Model, tea.Cmd) {
 	}
 	switch key.String() {
 	case "ctrl+c", "q":
-		m.quitting = true
-		return m, tea.Quit
+		return m.quit()
 	case "esc":
 		if m.help {
 			m.help = false
 			return m, nil
 		}
-		m.quitting = true
-		return m, tea.Quit
+		return m.quit()
 	case "up", "k":
 		return m.move(-1)
 	case "down", "j":
@@ -365,6 +375,7 @@ func (m *exploreModel) applyQuery() error {
 func (m exploreModel) schedulePoster() (exploreModel, tea.Cmd) {
 	m.loadGen++
 	m.tickGen++
+	m.cancelDecode()
 	m.poster = nil
 	m.frames = nil
 	m.playing = false
@@ -382,17 +393,21 @@ func (m exploreModel) schedulePoster() (exploreModel, tea.Cmd) {
 	})
 }
 
-func (m exploreModel) decodeCmd() tea.Cmd {
+func (m exploreModel) decodeCmd(ctx context.Context) tea.Cmd {
 	item, ok := m.focused()
 	if !ok || item.Replay == "" {
 		return nil
+	}
+	decode := m.decode
+	if decode == nil {
+		decode = explore.DecodeReplay
 	}
 	gen := m.loadGen
 	rel := item.Path
 	path := filepath.Join(m.root, filepath.FromSlash(item.Replay))
 	maxW, maxH := m.stagePixels()
 	return func() tea.Msg {
-		frames, err := explore.DecodeReplay(path, maxW, maxH)
+		frames, err := decode(ctx, path, maxW, maxH)
 		msg := explorePoster{gen: gen, item: rel, tooLong: errors.Is(err, explore.ErrReplayTooLong)}
 		if err != nil && !msg.tooLong {
 			msg.err = err
@@ -472,8 +487,36 @@ func (m exploreModel) hop() (tea.Model, tea.Cmd) {
 		return m, nil
 	}
 	m.gotoPath = exploreJump(m.root, item)
+	return m.quit()
+}
+
+func (m exploreModel) quit() (tea.Model, tea.Cmd) {
+	m.cancelDecode()
 	m.quitting = true
 	return m, tea.Quit
+}
+
+func (m *exploreModel) cancelDecode() {
+	if m.decodeCancel != nil {
+		m.decodeCancel()
+		m.decodeCancel = nil
+	}
+}
+
+func (m *exploreModel) startDecode() tea.Cmd {
+	m.cancelDecode()
+	base := m.ctx
+	if base == nil {
+		base = context.Background()
+	}
+	ctx, cancel := context.WithCancel(base)
+	cmd := m.decodeCmd(ctx)
+	if cmd == nil {
+		cancel()
+		return nil
+	}
+	m.decodeCancel = cancel
+	return cmd
 }
 
 func (m exploreModel) copyPath(path string) (tea.Model, tea.Cmd) {
