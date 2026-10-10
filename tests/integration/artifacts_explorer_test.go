@@ -89,7 +89,7 @@ func TestArtifactsExplorerTTY(t *testing.T) {
 	// A failed opener remains visible and does not exit or navigate.
 	tc.Shell(t, "printf '#!/bin/sh\necho unavailable >&2\nexit 1\n' > /artifact-bin/xdg-open")
 	output, err = tc.RunCampInteractiveStepsInDirWithEnv(root, map[string]string{"PATH": "/artifact-bin:/usr/local/bin:/usr/bin:/bin"}, []InteractiveStep{
-		{WaitFor: "clip.mp4", Input: "o", WaitTimeout: 15 * time.Second}, {WaitFor: "unavailable", Input: "q"},
+		{WaitFor: "clip.mp4", Input: "o", WaitTimeout: 15 * time.Second}, {WaitFor: "open final.mp4: exit status 1", Input: "q"},
 	}, "artifacts")
 	require.NoError(t, err, "%s", output)
 }
@@ -114,6 +114,67 @@ func TestArtifactsExplorerShellNavigation(t *testing.T) {
 			}, "run", sh, "/tmp/artifact-shell-script")
 			require.NoError(t, err, "%s", output)
 			selected, err := tc.ReadFile("/tmp/artifact-cwd")
+			require.NoError(t, err)
+			assert.Equal(t, root+"/media/takes", strings.TrimSpace(selected))
+		})
+	}
+}
+
+func TestArtifactsExplorerOpenReleasesActions(t *testing.T) {
+	tc := GetSharedContainer(t)
+	root := setupArtifactExplorer(t, tc, "artifact-open-release")
+	// The opener outlives the action, like xdg-open waiting on a viewer.
+	tc.Shell(t, "mkdir -p /artifact-open-bin && printf '#!/bin/sh\nsleep 20\n' > /artifact-open-bin/xdg-open && chmod +x /artifact-open-bin/xdg-open")
+	output, err := tc.runCampInteractive(root, map[string]string{"PATH": "/artifact-open-bin:/usr/local/bin:/usr/bin:/bin"}, 30*time.Second, []InteractiveStep{
+		{WaitFor: "clip.mp4", Input: "o", WaitTimeout: 15 * time.Second},
+		{WaitFor: "Opened final.mp4", Input: "g"},
+	}, "artifacts", "--path-output", "/tmp/artifact-open-release")
+	require.NoError(t, err, "%s", output)
+	selected, err := tc.ReadFile("/tmp/artifact-open-release")
+	require.NoError(t, err)
+	assert.Equal(t, root+"/exports [final]", selected)
+}
+
+func TestArtifactsExplorerClipboardPaste(t *testing.T) {
+	tc := GetSharedContainer(t)
+	root := setupArtifactExplorer(t, tc, "artifact-paste")
+	tc.Shell(t, "mkdir -p /artifact-paste-bin && printf '#!/bin/sh\nprintf \"take two\"\n' > /artifact-paste-bin/xclip && chmod +x /artifact-paste-bin/xclip")
+	output, err := tc.runCampInteractive(root, map[string]string{"PATH": "/artifact-paste-bin:/usr/local/bin:/usr/bin:/bin"}, 30*time.Second, []InteractiveStep{
+		{WaitFor: "clip.mp4", Input: "/", WaitTimeout: 15 * time.Second},
+		{WaitFor: "/ ", Input: "\x16"},
+		{WaitFor: "1–1 of 1", Input: "\r"},
+		{Input: "g"},
+	}, "artifacts", "--path-output", "/tmp/artifact-paste")
+	require.NoError(t, err, "%s", output)
+	selected, err := tc.ReadFile("/tmp/artifact-paste")
+	require.NoError(t, err)
+	assert.Equal(t, root+"/media/takes", selected)
+}
+
+func TestArtifactsExplorerShellLeadingFlags(t *testing.T) {
+	tc := GetSharedContainer(t)
+	root := setupArtifactExplorer(t, tc, "artifact-shell-flags")
+	installShells(t, tc)
+	for _, sh := range []string{"bash", "zsh", "fish"} {
+		t.Run(sh, func(t *testing.T) {
+			init := shellInitScript(t, tc, sh)
+			require.NoError(t, tc.WriteFile("/tmp/artifact-flags-init", init))
+			// stdout stays on the terminal: the wrapper passes everything through
+			// when it is redirected, which would hide the subcommand check.
+			script := "export PATH=/artifact-bin:$PATH; source /tmp/artifact-flags-init; camp artifacts --no-color list; echo \"list-status=$?\"; camp artifacts --no-color; pwd > /tmp/artifact-flags-cwd"
+			if sh == "fish" {
+				script = "set -gx PATH /artifact-bin $PATH; source /tmp/artifact-flags-init; camp artifacts --no-color list; echo \"list-status=$status\"; camp artifacts --no-color; pwd > /tmp/artifact-flags-cwd"
+			}
+			require.NoError(t, tc.WriteFile("/tmp/artifact-flags-script", script))
+			output, err := tc.runCampInteractive(root, nil, 30*time.Second, []InteractiveStep{
+				{WaitFor: "list-status=", WaitTimeout: 15 * time.Second},
+				{WaitFor: "clip.mp4", Input: "/", WaitTimeout: 15 * time.Second}, {WaitFor: "/ ", Input: "take two"}, {WaitFor: "1–1 of 1", Input: "\r"}, {Input: "g"},
+			}, "run", sh, "/tmp/artifact-flags-script")
+			require.NoError(t, err, "%s", output)
+			assert.Contains(t, output, "list-status=0")
+			assert.Contains(t, output, "media/takes")
+			assert.NotContains(t, output, "Usage:")
+			selected, err := tc.ReadFile("/tmp/artifact-flags-cwd")
 			require.NoError(t, err)
 			assert.Equal(t, root+"/media/takes", strings.TrimSpace(selected))
 		})

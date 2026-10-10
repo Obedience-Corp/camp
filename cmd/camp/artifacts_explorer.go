@@ -8,7 +8,6 @@ import (
 	"os/exec"
 	"path/filepath"
 	"runtime"
-	"strings"
 
 	"github.com/Obedience-Corp/camp/internal/artifacts"
 	"github.com/Obedience-Corp/camp/internal/campaign"
@@ -79,21 +78,38 @@ func artifactAction(ctx context.Context, root, path, action string) tea.Cmd {
 		case "copy":
 			result.err = ui.WriteClipboard(abs)
 		case "open":
-			var c *exec.Cmd
-			switch runtime.GOOS {
-			case "darwin":
-				c = exec.CommandContext(ctx, "open", abs)
-			case "linux", "freebsd":
-				c = exec.CommandContext(ctx, "xdg-open", abs)
-			default:
-				result.err = camperrors.New("file opening is not supported on " + runtime.GOOS)
+			if err := ctx.Err(); err != nil {
+				result.err = err
 				return result
 			}
-			// This runs in a Tea command so a slow desktop opener never blocks keys.
-			if output, err := c.CombinedOutput(); err != nil {
-				result.err = camperrors.Wrapf(err, "open artifact: %s", strings.TrimSpace(string(output)))
+			c, err := artifactOpenCommand(abs)
+			if err != nil {
+				result.err = err
+				return result
+			}
+			if err := c.Start(); err != nil {
+				result.err = camperrors.Wrap(err, "open artifact")
+				return result
+			}
+			// The opener can live as long as the viewer it launched, so the action
+			// completes at launch and the exit is reported separately.
+			result.wait = func() tea.Msg {
+				if err := c.Wait(); err != nil {
+					return artifactOpenExitMsg{err: camperrors.Wrap(err, "open "+filepath.Base(abs))}
+				}
+				return nil
 			}
 		}
 		return result
 	}
+}
+
+var artifactOpenCommand = func(path string) (*exec.Cmd, error) {
+	switch runtime.GOOS {
+	case "darwin":
+		return exec.Command("open", path), nil
+	case "linux", "freebsd":
+		return exec.Command("xdg-open", path), nil
+	}
+	return nil, camperrors.New("file opening is not supported on " + runtime.GOOS)
 }

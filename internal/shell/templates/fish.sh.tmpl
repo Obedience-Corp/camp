@@ -220,13 +220,16 @@ function camp --description "Camp CLI wrapper with directory-changing support"
             end
         case artifacts
             set -l rest $argv[2..-1]
-            if test (count $rest) -gt 0; and not string match -qr -- '^-' $rest[1]
-                command camp artifacts $rest
-                return $status
-            end
+            # The explorer takes no positional argument, so a bare word anywhere,
+            # even after a flag such as --no-color, is a subcommand that must not
+            # get --path-output.
             for arg in $rest
                 switch "$arg"
                     case --help -h --plain --json --path-output '--path-output=*'
+                        command camp artifacts $rest
+                        return $status
+                    case '-*'
+                    case '*'
                         command camp artifacts $rest
                         return $status
                 end

@@ -19,7 +19,9 @@ type artifactLoadedMsg struct {
 type artifactActionMsg struct {
 	action, path string
 	err          error
+	wait         tea.Cmd
 }
+type artifactOpenExitMsg struct{ err error }
 type artifactModel struct {
 	ctx                                             context.Context
 	root                                            string
@@ -96,7 +98,11 @@ func (m artifactModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.status = "Copied path"
 		case "open":
 			m.status = "Opened " + artifactDisplay(filepath.Base(msg.path))
+			return m, msg.wait
 		}
+	case artifactOpenExitMsg:
+		m.status = msg.err.Error()
+		m.statusErr = true
 	case tea.KeyMsg:
 		if msg.String() == "ctrl+c" {
 			m.quitting = true
@@ -164,6 +170,16 @@ func (m artifactModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.status = "Working…"
 			m.statusErr = false
 			return m, artifactAction(m.ctx, m.root, m.visible[m.cursor].Path, action)
+		}
+	default:
+		if m.filtering {
+			before := m.input.Value()
+			var cmd tea.Cmd
+			m.input, cmd = m.input.Update(msg)
+			if m.input.Value() != before {
+				m.filter()
+			}
+			return m, cmd
 		}
 	}
 	return m, nil

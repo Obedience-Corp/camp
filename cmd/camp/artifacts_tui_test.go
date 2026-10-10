@@ -3,8 +3,10 @@ package main
 import (
 	"context"
 	"fmt"
+	"os/exec"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/Obedience-Corp/camp/internal/artifacts"
 	"github.com/Obedience-Corp/camp/internal/ui/uitest"
@@ -83,5 +85,56 @@ func TestArtifactExplorerFailureAndCancellation(t *testing.T) {
 	}
 	if strings.Contains(artifactDisplay("media/bad\x1b[2J\nname"), "\x1b") {
 		t.Fatal("filename can control terminal")
+	}
+}
+
+func TestArtifactExplorerOpenDoesNotHoldActions(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+	t.Cleanup(cancel)
+	previous := artifactOpenCommand
+	t.Cleanup(func() { artifactOpenCommand = previous })
+	artifactOpenCommand = func(string) (*exec.Cmd, error) {
+		return exec.CommandContext(ctx, "sleep", "30"), nil
+	}
+	await := func(cmd tea.Cmd) tea.Msg {
+		t.Helper()
+		done := make(chan tea.Msg, 1)
+		go func() { done <- cmd() }()
+		select {
+		case msg := <-done:
+			return msg
+		case <-time.After(5 * time.Second):
+			t.Fatal("command did not return")
+			return nil
+		}
+	}
+
+	m := newArtifactModel(ctx, "/", true)
+	updated, _ := m.Update(artifactLoadedMsg{files: []artifacts.InventoryFile{{Path: "."}}})
+	m = updated.(artifactModel)
+	updated, cmd := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'o'}})
+	m = updated.(artifactModel)
+	if !m.busy || cmd == nil {
+		t.Fatal("open must start asynchronously")
+	}
+	launched := await(cmd)
+	updated, wait := m.Update(launched)
+	m = updated.(artifactModel)
+	if m.busy || m.statusErr || wait == nil {
+		t.Fatalf("open must finish at launch: busy=%v status=%q", m.busy, m.status)
+	}
+	if _, next := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'g'}}); next == nil {
+		t.Fatal("actions must stay available while the opener runs")
+	}
+
+	cancel()
+	exited, ok := await(wait).(artifactOpenExitMsg)
+	if !ok || exited.err == nil {
+		t.Fatalf("opener failure must be reported: %#v", exited)
+	}
+	updated, _ = m.Update(exited)
+	m = updated.(artifactModel)
+	if m.busy || !m.statusErr || !strings.Contains(m.status, "open") {
+		t.Fatalf("late opener failure: busy=%v status=%q", m.busy, m.status)
 	}
 }

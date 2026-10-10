@@ -221,15 +221,16 @@ camp() {
       ;;
     artifacts)
       shift
-      case "${1:-}" in
-        ""|-*) ;;
-        *) command camp artifacts "$@"; return ;;
-      esac
       local arg tmp dest cmd_status
+      # The explorer takes no positional argument, so a bare word anywhere, even
+      # after a flag such as --no-color, is a subcommand that must not get
+      # --path-output.
       for arg in "$@"; do
         case "$arg" in
           --help|-h|--plain|--json|--path-output|--path-output=*)
             command camp artifacts "$@"; return ;;
+          -*) ;;
+          *) command camp artifacts "$@"; return ;;
         esac
       done
       if ! [ -t 0 ] || ! [ -t 1 ]; then
