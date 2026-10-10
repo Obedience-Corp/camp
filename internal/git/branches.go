@@ -148,6 +148,22 @@ func CurrentBranch(ctx context.Context, repoPath string) string {
 // MergedBranchesFromRef returns local branches that have been merged into the
 // given base ref, excluding the base ref itself and the current branch.
 func MergedBranchesFromRef(ctx context.Context, repoPath, baseRef string) ([]string, error) {
+	return mergedBranchesFromRef(ctx, repoPath, baseRef, CurrentBranch(ctx, repoPath))
+}
+
+// MergedBranchesFromRefIncludingCurrent is MergedBranchesFromRef without the
+// current-branch exclusion. It exists for previewing a pass that runs after
+// the working tree has been moved off its current branch, where that branch
+// is as deletable as any other. Its result must never be deleted from while
+// the branch is still checked out.
+func MergedBranchesFromRefIncludingCurrent(ctx context.Context, repoPath, baseRef string) ([]string, error) {
+	return mergedBranchesFromRef(ctx, repoPath, baseRef, "")
+}
+
+// mergedBranchesFromRef lists local branches merged into baseRef, leaving out
+// the base itself and checkedOut, the branch to treat as checked out. An empty
+// checkedOut leaves out only the base.
+func mergedBranchesFromRef(ctx context.Context, repoPath, baseRef, checkedOut string) ([]string, error) {
 	if ctx.Err() != nil {
 		return nil, ctx.Err()
 	}
@@ -155,7 +171,6 @@ func MergedBranchesFromRef(ctx context.Context, repoPath, baseRef string) ([]str
 		return nil, camperrors.Newf("base ref is required")
 	}
 
-	currentBranch := CurrentBranch(ctx, repoPath)
 	localBaseRef := strings.TrimPrefix(baseRef, "refs/remotes/")
 	localBaseRef = strings.TrimPrefix(localBaseRef, "origin/")
 
@@ -172,9 +187,9 @@ func MergedBranchesFromRef(ctx context.Context, repoPath, baseRef string) ([]str
 	}
 
 	var branches []string
-	for _, line := range strings.Split(trimmed, "\n") {
+	for line := range strings.SplitSeq(trimmed, "\n") {
 		branch := strings.TrimSpace(line)
-		if branch == "" || branch == baseRef || branch == localBaseRef || branch == currentBranch {
+		if branch == "" || branch == baseRef || branch == localBaseRef || branch == checkedOut {
 			continue
 		}
 		branches = append(branches, branch)
@@ -337,9 +352,24 @@ func GoneBranches(ctx context.Context, repoPath string) ([]string, error) {
 	if ctx.Err() != nil {
 		return nil, ctx.Err()
 	}
+	return goneBranches(ctx, repoPath, CurrentBranch(ctx, repoPath))
+}
 
-	current := CurrentBranch(ctx, repoPath)
+// GoneBranchesIncludingCurrent is GoneBranches without the current-branch
+// exclusion, for the same preview case as
+// MergedBranchesFromRefIncludingCurrent and under the same rule: never delete
+// from its result while the branch is still checked out.
+func GoneBranchesIncludingCurrent(ctx context.Context, repoPath string) ([]string, error) {
+	if ctx.Err() != nil {
+		return nil, ctx.Err()
+	}
+	return goneBranches(ctx, repoPath, "")
+}
 
+// goneBranches lists local branches whose upstream is gone, leaving out
+// checkedOut, the branch to treat as checked out. An empty checkedOut leaves
+// out nothing.
+func goneBranches(ctx context.Context, repoPath, checkedOut string) ([]string, error) {
 	cmd := exec.CommandContext(ctx, "git", "-C", repoPath,
 		"for-each-ref", "--format=%(refname:short) %(upstream:track)", "refs/heads/")
 	output, err := cmd.Output()
@@ -353,7 +383,7 @@ func GoneBranches(ctx context.Context, repoPath string) ([]string, error) {
 	}
 
 	var branches []string
-	for _, line := range strings.Split(trimmed, "\n") {
+	for line := range strings.SplitSeq(trimmed, "\n") {
 		fields := strings.Fields(line)
 		if len(fields) < 2 {
 			continue
@@ -363,7 +393,7 @@ func GoneBranches(ctx context.Context, repoPath string) ([]string, error) {
 		if !strings.Contains(track, "gone") {
 			continue
 		}
-		if branch == current {
+		if branch == checkedOut {
 			continue
 		}
 		branches = append(branches, branch)
