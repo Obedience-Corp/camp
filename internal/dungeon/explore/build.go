@@ -40,6 +40,9 @@ func Build(ctx context.Context, root string) (Index, error) {
 		idx.Items = append(idx.Items, items...)
 		idx.Warnings = append(idx.Warnings, warnings...)
 	}
+	if err := ctx.Err(); err != nil {
+		return Index{}, camperrors.Wrap(err, "context cancelled")
+	}
 	Sort(idx.Items)
 	return idx, nil
 }
@@ -75,8 +78,8 @@ func scanDungeon(ctx context.Context, root string, dungeon spelling.Dungeon) (Du
 			continue
 		}
 		path := filepath.Join(dungeon.Path, name)
-		if !entry.IsDir() {
-			item, w := readItem(root, relDungeon, label, StatusHolding, "", path, entry)
+		if !entry.IsDir() || markedItemDirectory(path) {
+			item, w := readItem(ctx, root, relDungeon, label, StatusHolding, "", path, entry)
 			if w != "" {
 				warnings = append(warnings, w)
 			}
@@ -118,7 +121,7 @@ func scanStatus(ctx context.Context, root, relDungeon, label, status, statusPath
 			items = append(items, nested...)
 			continue
 		}
-		item, w := readItem(root, relDungeon, label, status, "", path, entry)
+		item, w := readItem(ctx, root, relDungeon, label, status, "", path, entry)
 		if w != "" {
 			warnings = append(warnings, w)
 		}
@@ -142,7 +145,7 @@ func scanBucket(ctx context.Context, root, relDungeon, label, status, day, bucke
 		if skipName(name) || isSymlink(entry) {
 			continue
 		}
-		item, w := readItem(root, relDungeon, label, status, day, filepath.Join(bucketPath, name), entry)
+		item, w := readItem(ctx, root, relDungeon, label, status, day, filepath.Join(bucketPath, name), entry)
 		if w != "" {
 			warnings = append(warnings, w)
 		}
@@ -151,7 +154,7 @@ func scanBucket(ctx context.Context, root, relDungeon, label, status, day, bucke
 	return items, warnings, nil
 }
 
-func readItem(root, relDungeon, label, status, bucketDay, path string, entry fs.DirEntry) (Item, string) {
+func readItem(ctx context.Context, root, relDungeon, label, status, bucketDay, path string, entry fs.DirEntry) (Item, string) {
 	rel, err := relSlash(root, path)
 	if err != nil {
 		return Item{}, warn(path, err)
@@ -176,9 +179,9 @@ func readItem(root, relDungeon, label, status, bucketDay, path string, entry fs.
 		item.DateSource = DateBucket
 	}
 	if entry.IsDir() {
-		fillDirectory(&item, path)
+		fillDirectory(ctx, &item, path)
 	} else if strings.HasSuffix(strings.ToLower(entry.Name()), ".md") {
-		fillMarkdown(&item, path)
+		fillMarkdown(ctx, &item, path)
 	}
 	if item.DateSource == DateFileTime {
 		item.DoneDate = info.ModTime().Format("2006-01-02")
@@ -240,7 +243,7 @@ func fingerprint(ctx context.Context, dungeonPath string) (string, error) {
 		// Status directories and YYYY-MM-DD buckets are containers. Everything
 		// else is an item. A directory's mtime misses in-place edits, so the
 		// metadata files an item is read from are stamped as well.
-		if entry.IsDir() && !statuspath.IsDateDir(entry.Name()) && strings.Count(filepath.ToSlash(rel), "/") >= 1 {
+		if entry.IsDir() && !statuspath.IsDateDir(entry.Name()) && (strings.Count(filepath.ToSlash(rel), "/") >= 1 || markedItemDirectory(path)) {
 			for _, name := range itemMetaFiles {
 				meta, err := os.Lstat(filepath.Join(path, name))
 				if err != nil {
@@ -258,4 +261,13 @@ func fingerprint(ctx context.Context, dungeonPath string) (string, error) {
 	sort.Strings(lines)
 	sum := sha256.Sum256([]byte(strings.Join(lines, "\n")))
 	return hex.EncodeToString(sum[:]), nil
+}
+
+// Explicit item metadata takes precedence over the legacy directory-as-status
+// layout, including items moved directly into holding by dungeon move --triage.
+func markedItemDirectory(path string) bool {
+	return fileExists(filepath.Join(path, ".workitem")) ||
+		fileExists(filepath.Join(path, "fest.yaml")) ||
+		fileExists(filepath.Join(path, "FESTIVAL_GOAL.md")) ||
+		replayPath(path, filepath.Base(path)) != ""
 }

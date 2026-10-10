@@ -1,11 +1,13 @@
 package dungeon
 
 import (
-	"io"
+	"context"
 	"os"
 	"path/filepath"
 	"slices"
 	"strings"
+	"unicode"
+	"unicode/utf8"
 
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/glamour"
@@ -14,7 +16,6 @@ import (
 	"github.com/muesli/termenv"
 
 	"github.com/Obedience-Corp/camp/internal/dungeon/explore"
-	camperrors "github.com/Obedience-Corp/camp/internal/errors"
 	"github.com/Obedience-Corp/camp/internal/ui"
 )
 
@@ -24,6 +25,7 @@ type readerEntry struct {
 }
 
 type exploreReader struct {
+	item    explore.Item
 	title   string
 	path    string
 	body    readerBody
@@ -78,7 +80,7 @@ func (m exploreModel) openReader() (tea.Model, tea.Cmd) {
 		return m, nil
 	}
 	abs := joinAbs(m.root, item.Path)
-	reader := exploreReader{title: item.Title, path: abs}
+	reader := exploreReader{title: item.Title, path: abs, item: item}
 	switch {
 	case item.Kind == "workitem" && item.IsDir:
 		entries, err := markdownEntries(abs)
@@ -92,7 +94,7 @@ func (m exploreModel) openReader() (tea.Model, tea.Cmd) {
 	case item.Kind == "festival" && item.IsDir:
 		goal := filepath.Join(abs, "FESTIVAL_GOAL.md")
 		if _, err := os.Stat(goal); err == nil {
-			text, err := readExploreText(goal)
+			text, err := readExploreText(m.readerContext(), goal)
 			if err != nil {
 				m.statusErr = true
 				m.status = "The file could not be parsed."
@@ -109,7 +111,7 @@ func (m exploreModel) openReader() (tea.Model, tea.Cmd) {
 			reader.body.lead = []string{"No replay yet.", ""}
 		}
 	case !item.IsDir && strings.HasSuffix(strings.ToLower(item.Path), ".md"):
-		text, err := readExploreText(abs)
+		text, err := readExploreText(m.readerContext(), abs)
 		if err != nil {
 			m.statusErr = true
 			m.status = "The file could not be parsed."
@@ -174,7 +176,7 @@ func (m exploreModel) onReaderKey(key tea.KeyMsg) (tea.Model, tea.Cmd) {
 			return m, nil
 		}
 		picked := m.reader.entries[m.reader.entry]
-		text, err := readExploreText(picked.path)
+		text, err := readExploreText(m.readerContext(), picked.path)
 		if err != nil {
 			m.statusErr = true
 			m.status = "The file could not be parsed."
@@ -188,7 +190,7 @@ func (m exploreModel) onReaderKey(key tea.KeyMsg) (tea.Model, tea.Cmd) {
 		m.reader.offset = 0
 		return m, nil
 	case "g":
-		return m.hop()
+		return m.hopTo(m.reader.item)
 	case "y":
 		return m.copyPath(m.reader.path)
 	case " ":
@@ -214,7 +216,7 @@ func markdownEntries(dir string) ([]readerEntry, error) {
 	var out []readerEntry
 	var rest []readerEntry
 	for _, entry := range entries {
-		if entry.IsDir() || !strings.HasSuffix(strings.ToLower(entry.Name()), ".md") {
+		if !entry.Type().IsRegular() || !strings.HasSuffix(strings.ToLower(entry.Name()), ".md") {
 			continue
 		}
 		item := readerEntry{name: entry.Name(), path: filepath.Join(dir, entry.Name())}
@@ -227,23 +229,20 @@ func markdownEntries(dir string) ([]readerEntry, error) {
 	return append(out, rest...), nil
 }
 
-func readExploreText(path string) (string, error) {
-	f, err := os.Open(path)
-	if err != nil {
-		return "", err
+func (m exploreModel) readerContext() context.Context {
+	if m.ctx != nil {
+		return m.ctx
 	}
-	defer func() { _ = f.Close() }()
-	buf, err := io.ReadAll(io.LimitReader(f, 256<<10))
-	if err != nil {
-		return "", camperrors.Wrapf(err, "reading %s", path)
-	}
-	return string(buf), nil
+	return context.Background()
+}
+
+func readExploreText(ctx context.Context, path string) (string, error) {
+	data, err := explore.ReadRegular(ctx, path, 256<<10)
+	return string(data), err
 }
 
 func renderExploreMarkdown(text string, width int, plain bool) []string {
-	if width < 20 {
-		width = 20
-	}
+	width = max(width, 1)
 	opts := []glamour.TermRendererOption{glamour.WithStylePath("dark"), glamour.WithWordWrap(width)}
 	if plain {
 		opts = []glamour.TermRendererOption{
@@ -260,13 +259,14 @@ func renderExploreMarkdown(text string, width int, plain bool) []string {
 	if err != nil {
 		return wrapPlain(text, width)
 	}
-	return strings.Split(strings.TrimRight(out, "\n"), "\n")
+	// Markdown entity decoding happens inside Glamour. Filter the result, too:
+	// only styling may reach the terminal, never document-supplied commands.
+	out = safeReaderOutput(out, plain)
+	return wrapPlain(strings.TrimRight(out, "\n"), width)
 }
 
 func wrapPlain(text string, width int) []string {
-	if width < 20 {
-		width = 20
-	}
+	width = max(width, 1)
 	return strings.Split(ansi.Hardwrap(text, width, true), "\n")
 }
 
@@ -308,4 +308,34 @@ func itoa64(n int64) string {
 		digits[i] = '-'
 	}
 	return string(digits[i:])
+}
+
+// safeReaderOutput preserves printable text and SGR styling only. In particular,
+// OSC hyperlinks/clipboard, cursor controls and incomplete sequences are dropped.
+func safeReaderOutput(text string, plain bool) string {
+	var out strings.Builder
+	var state byte
+	for len(text) > 0 {
+		seq, _, n, next := ansi.DecodeSequence(text, state, nil)
+		state = next
+		text = text[n:]
+		if !plain && readerSGR(seq) {
+			out.WriteString(seq)
+		} else if utf8.ValidString(seq) && !strings.ContainsFunc(seq, func(r rune) bool { return unicode.IsControl(r) && r != '\n' && r != '\t' }) {
+			out.WriteString(seq)
+		}
+	}
+	return out.String()
+}
+
+func readerSGR(seq string) bool {
+	if !strings.HasPrefix(seq, "\x1b[") || !strings.HasSuffix(seq, "m") {
+		return false
+	}
+	for _, r := range seq[2 : len(seq)-1] {
+		if r != ';' && r != ':' && (r < '0' || r > '9') {
+			return false
+		}
+	}
+	return true
 }

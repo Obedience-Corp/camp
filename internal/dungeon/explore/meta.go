@@ -2,6 +2,7 @@ package explore
 
 import (
 	"bytes"
+	"context"
 	"os"
 	"path/filepath"
 	"strings"
@@ -12,12 +13,12 @@ import (
 
 const metaReadLimit = 256 << 10
 
-func fillDirectory(item *Item, dir string) {
+func fillDirectory(ctx context.Context, item *Item, dir string) {
 	base := filepath.Base(dir)
 	workitem := filepath.Join(dir, ".workitem")
 	if fileExists(workitem) {
 		item.Kind = KindWorkitem
-		if warning := fillWorkitem(item, workitem, filepath.Join(dir, "README.md")); warning != "" {
+		if warning := fillWorkitem(ctx, item, workitem, filepath.Join(dir, "README.md")); warning != "" {
 			item.Warning = warning
 		}
 		return
@@ -31,7 +32,7 @@ func fillDirectory(item *Item, dir string) {
 		if replay != "" {
 			item.Replay = slashUnder(item.Path, filepath.Base(replay))
 		}
-		if warning := fillFestival(item, festYAML, goalFile); warning != "" {
+		if warning := fillFestival(ctx, item, festYAML, goalFile); warning != "" {
 			item.Warning = warning
 		}
 		if item.Title == "" || item.Title == base && item.ID == "" && item.Summary == "" {
@@ -41,7 +42,7 @@ func fillDirectory(item *Item, dir string) {
 	}
 	readme := filepath.Join(dir, "README.md")
 	if fileExists(readme) {
-		fillMarkdown(item, readme)
+		fillMarkdown(ctx, item, readme)
 		if item.Title == "" {
 			item.Title = base
 		}
@@ -78,10 +79,10 @@ type festMeta struct {
 	} `yaml:"metadata"`
 }
 
-func fillFestival(item *Item, festYAML, goalFile string) string {
+func fillFestival(ctx context.Context, item *Item, festYAML, goalFile string) string {
 	if fileExists(festYAML) {
 		var meta festMeta
-		if err := readYAML(festYAML, &meta); err != nil {
+		if err := readYAML(ctx, festYAML, &meta); err != nil {
 			item.Title = filepath.Base(filepath.Dir(festYAML))
 			return err.Error()
 		}
@@ -103,7 +104,7 @@ func fillFestival(item *Item, festYAML, goalFile string) string {
 	}
 	if item.Summary == "" || item.ID == "" || item.Title == "" {
 		if fileExists(goalFile) {
-			text, err := readLimited(goalFile)
+			text, err := readLimited(ctx, goalFile)
 			if err != nil {
 				return err.Error()
 			}
@@ -162,9 +163,9 @@ type workitemMeta struct {
 	Ref   string `yaml:"ref"`
 }
 
-func fillWorkitem(item *Item, marker, readme string) string {
+func fillWorkitem(ctx context.Context, item *Item, marker, readme string) string {
 	var meta workitemMeta
-	if err := readYAML(marker, &meta); err != nil {
+	if err := readYAML(ctx, marker, &meta); err != nil {
 		return err.Error()
 	}
 	if meta.Title != "" {
@@ -174,7 +175,7 @@ func fillWorkitem(item *Item, marker, readme string) string {
 		item.ID = meta.Ref
 	}
 	if fileExists(readme) {
-		text, err := readLimited(readme)
+		text, err := readLimited(ctx, readme)
 		if err != nil {
 			return err.Error()
 		}
@@ -184,8 +185,8 @@ func fillWorkitem(item *Item, marker, readme string) string {
 	return ""
 }
 
-func fillMarkdown(item *Item, path string) {
-	text, err := readLimited(path)
+func fillMarkdown(ctx context.Context, item *Item, path string) {
+	text, err := readLimited(ctx, path)
 	if err != nil {
 		item.Kind = KindMarkdown
 		item.Warning = err.Error()
@@ -312,26 +313,20 @@ func yamlScalar(value any) string {
 	return string(data)
 }
 
-func readYAML(path string, dest any) error {
-	data, err := readLimited(path)
+func readYAML(ctx context.Context, path string, dest any) error {
+	data, err := readLimited(ctx, path)
 	if err != nil {
 		return err
 	}
 	return yaml.Unmarshal([]byte(data), dest)
 }
 
-func readLimited(path string) (string, error) {
-	f, err := os.Open(path)
+func readLimited(ctx context.Context, path string) (string, error) {
+	data, err := ReadRegular(ctx, path, metaReadLimit)
 	if err != nil {
 		return "", err
 	}
-	defer func() { _ = f.Close() }()
-	buf := make([]byte, metaReadLimit)
-	n, err := f.Read(buf)
-	if err != nil && n == 0 {
-		return "", err
-	}
-	return string(bytes.TrimSpace(buf[:n])), nil
+	return string(bytes.TrimSpace(data)), nil
 }
 
 func fileExists(path string) bool {

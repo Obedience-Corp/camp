@@ -6,19 +6,22 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"golang.org/x/sys/unix"
 	"os"
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/Obedience-Corp/camp/internal/dungeon/explore"
+	tea "github.com/charmbracelet/bubbletea"
 	"github.com/creack/pty"
 )
 
 func TestExploreReadFailures(t *testing.T) {
 	root := t.TempDir()
 	for _, path := range []string{root, filepath.Join(root, "missing")} {
-		if _, err := readExploreText(path); err == nil {
+		if _, err := readExploreText(context.Background(), path); err == nil {
 			t.Fatalf("reading %s silently succeeded", path)
 		}
 	}
@@ -27,7 +30,7 @@ func TestExploreReadFailures(t *testing.T) {
 	if err := os.WriteFile(path, []byte(want), 0600); err != nil {
 		t.Fatal(err)
 	}
-	if got, err := readExploreText(path); err != nil || got != want[:256<<10] {
+	if got, err := readExploreText(context.Background(), path); err != nil || got != want[:256<<10] {
 		t.Fatalf("bounded read: %d bytes, %v", len(got), err)
 	}
 	m := replayModel(explore.ProtocolOff)
@@ -85,5 +88,38 @@ func TestExplorePipedInputJSON(t *testing.T) {
 	}
 	if result["schema_version"] != explore.SchemaVersion {
 		t.Fatalf("wrong result: %+v", result)
+	}
+}
+
+func TestExploreReaderRejectsSpecialFiles(t *testing.T) {
+	root := t.TempDir()
+	normal := filepath.Join(root, "README.md")
+	if err := os.WriteFile(normal, []byte("safe"), 0600); err != nil {
+		t.Fatal(err)
+	}
+	fifo := filepath.Join(root, "pending.md")
+	if err := unix.Mkfifo(fifo, 0600); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Symlink(normal, filepath.Join(root, "link.md")); err != nil {
+		t.Fatal(err)
+	}
+	entries, err := markdownEntries(root)
+	if err != nil || len(entries) != 1 || entries[0].name != "README.md" {
+		t.Fatalf("entries: %+v, %v", entries, err)
+	}
+	// A file selected in a previous directory listing may have been replaced.
+	m := replayModel(explore.ProtocolOff)
+	m.reading = true
+	m.reader = exploreReader{listing: true, entries: []readerEntry{{name: "pending.md", path: fifo}}}
+	done := make(chan exploreModel, 1)
+	go func() { next, _ := m.onReaderKey(tea.KeyMsg{Type: tea.KeyEnter}); done <- next.(exploreModel) }()
+	select {
+	case next := <-done:
+		if !next.statusErr || !next.reader.listing {
+			t.Fatal("special file opened in reader")
+		}
+	case <-time.After(time.Second):
+		t.Fatal("reader blocked on FIFO")
 	}
 }

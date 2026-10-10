@@ -245,8 +245,8 @@ func TestScanGIFCountsPerFrameWork(t *testing.T) {
 	if len(shape.frames) != 3 || shape.overWork {
 		t.Fatalf("frames = %d, overWork = %v", len(shape.frames), shape.overWork)
 	}
-	localCost := len(local) * paletteEntryCost
-	if want := 16 + 16 + 4 + 3*frameOverhead + localCost; shape.work != want {
+	localCost := int64(len(local) * paletteEntryCost)
+	if want := 5*(16+16+4) + 3*frameOverhead + localCost + 5*4*16; shape.work != want {
 		t.Fatalf("work = %d, want %d (pixels, a per-frame term for each frame, and the local color table)", shape.work, want)
 	}
 	if want := 16 + localCost; shape.largest != want {
@@ -293,5 +293,38 @@ func TestDecodeReplayStopsWhenCancelled(t *testing.T) {
 	cancel()
 	if _, err := DecodeReplay(cancelled, "/nonexistent/replay.gif", 8, 8); !errors.Is(err, context.Canceled) {
 		t.Fatalf("DecodeReplay() with a cancelled context = %v, want context.Canceled before reading", err)
+	}
+}
+
+func TestReplaySparseDisposalWorkIsBounded(t *testing.T) {
+	pal := color.Palette{color.RGBA{}, color.RGBA{255, 0, 0, 255}}
+	frame := image.NewPaletted(image.Rect(0, 0, 1, 1), pal)
+	frame.Pix[0] = 1
+	g := &gif.GIF{Config: image.Config{ColorModel: pal, Width: 3500, Height: 3500}}
+	for range 30000 {
+		g.Image = append(g.Image, frame)
+		g.Delay = append(g.Delay, 1)
+		g.Disposal = append(g.Disposal, gif.DisposalPrevious)
+	}
+	var buf bytes.Buffer
+	if err := gif.EncodeAll(&buf, g); err != nil {
+		t.Fatal(err)
+	}
+	if buf.Len() > maxReplayBytes {
+		t.Fatal("fixture exceeds file budget")
+	}
+	shape, err := scanGIF(buf.Bytes())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !shape.overWork || len(shape.frames) >= maxReplayFrames {
+		t.Fatalf("sparse canvas copying escaped budget: %+v", shape)
+	}
+	got, err := decodeReplay(context.Background(), buf.Bytes(), 8, 8)
+	if !errors.Is(err, ErrReplayTooLong) || got.Poster == nil || len(got.Frames) != 0 {
+		t.Fatalf("expected static poster: %v", err)
+	}
+	if r, _, _, _ := got.Poster.At(0, 0).RGBA(); r>>8 != 255 {
+		t.Fatal("lost first-frame poster")
 	}
 }

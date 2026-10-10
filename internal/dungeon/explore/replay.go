@@ -49,9 +49,12 @@ func DecodeReplay(ctx context.Context, path string, maxW, maxH int) (Frames, err
 	if info.Size() > maxReplayBytes {
 		return Frames{}, ErrReplayTooLong
 	}
-	data, err := os.ReadFile(path)
+	data, err := ReadRegular(ctx, path, maxReplayBytes+1)
 	if err != nil {
 		return Frames{}, camperrors.Wrap(err, "reading replay")
+	}
+	if len(data) > maxReplayBytes {
+		return Frames{}, ErrReplayTooLong
 	}
 	return decodeReplay(ctx, data, maxW, maxH)
 }
@@ -93,13 +96,13 @@ type gifShape struct {
 	header   int
 	frames   []gifSpan
 	widest   int
-	largest  int
-	work     int
+	largest  int64
+	work     int64
 	overWork bool
 }
 
-func (s gifShape) memoryBytes() int {
-	return 2*4*s.width*s.height + s.largest + frameOverhead
+func (s gifShape) memoryBytes() int64 {
+	return 2*4*int64(s.width)*int64(s.height) + s.largest + frameOverhead
 }
 
 func scanGIF(data []byte) (gifShape, error) {
@@ -111,10 +114,24 @@ func scanGIF(data []byte) (gifShape, error) {
 		height: int(data[8]) | int(data[9])<<8,
 		header: 13 + colorTableLen(data[10]),
 	}
+	// Budget canvas allocation and the final poster, as well as per-frame work.
+	canvasBytes := 4 * int64(shape.width) * int64(shape.height)
+	shape.work = 2 * canvasBytes
+	var disposal, previousDisposal byte
+	var previousPixels int64
 	pos, start := shape.header, shape.header
 	for pos < len(data) {
 		switch data[pos] {
 		case 0x21:
+			if pos+2 >= len(data) {
+				return gifShape{}, errNotGIF
+			}
+			if data[pos+1] == 0xf9 {
+				if pos+8 > len(data) || data[pos+2] != 4 || data[pos+7] != 0 {
+					return gifShape{}, errNotGIF
+				}
+				disposal = (data[pos+3] >> 2) & 7
+			}
 			next, err := skipSubBlocks(data, pos+2)
 			if err != nil {
 				return gifShape{}, err
@@ -131,11 +148,27 @@ func scanGIF(data []byte) (gifShape, error) {
 			if err != nil {
 				return gifShape{}, err
 			}
-			cost := w*h + table/3*paletteEntryCost
+			pixels := int64(w) * int64(h)
+			cost := pixels + int64(table/3*paletteEntryCost)
 			shape.frames = append(shape.frames, gifSpan{start: start, end: next})
 			shape.widest = max(shape.widest, next-start)
 			shape.largest = max(shape.largest, cost)
-			shape.work += cost + frameOverhead
+			// Decode, composite, dispose, and retain a (possibly full-size) snapshot.
+			shape.work += cost + frameOverhead + 4*pixels
+			if previousDisposal == gif.DisposalBackground {
+				shape.work += 4 * previousPixels
+			}
+			if previousDisposal == gif.DisposalPrevious {
+				shape.work += canvasBytes
+			}
+			if disposal == gif.DisposalPrevious {
+				shape.work += canvasBytes
+			}
+			if len(shape.frames) <= maxReplayFrames {
+				shape.work += canvasBytes
+			}
+			previousDisposal, previousPixels = disposal, pixels
+			disposal = 0
 			pos, start = next, next
 			if shape.work > maxDecodeWork {
 				shape.overWork = true

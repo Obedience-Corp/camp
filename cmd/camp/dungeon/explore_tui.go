@@ -493,6 +493,10 @@ func (m exploreModel) hop() (tea.Model, tea.Cmd) {
 	if !ok {
 		return m, nil
 	}
+	return m.hopTo(item)
+}
+
+func (m exploreModel) hopTo(item explore.Item) (tea.Model, tea.Cmd) {
 	if !m.gotoEnabled {
 		m.statusErr = true
 		m.status = `go needs shell integration: eval "$(camp shell-init <shell>)"`
