@@ -56,9 +56,14 @@ camp [flags]
 
 ## camp artifacts
 
-Manage declared artifact roots (.campaign/artifacts.yaml)
+Explore artifact files and manage declared roots
 
 ### Synopsis
+
+Open the artifact explorer: search files, open them with Enter, copy paths
+with y, or go to their folder with g (requires camp shell-init).
+The explorer lists files outside git in declared roots, including ignored
+files. Tracked files are excluded. --plain and --json work without a terminal.
 
 Manage the camp's declared artifact roots: directories of heavy non-git
 payloads (media, renders, datasets) that 'camp sync --from <machine>' moves
@@ -70,10 +75,17 @@ gitignored: a root that is also git-tracked would make the same bytes both
 git content and artifact content. Manifests and per-peer sync snapshots are
 machine-local derived state under .campaign/cache (gitignored).
 
+```
+camp artifacts [flags]
+```
+
 ### Examples
 
 ```
-  camp artifacts list
+  camp artifacts              # interactive explorer
+  camp artifacts --plain      # file list
+  camp artifacts --json       # file inventory for scripts
+  camp artifacts list         # declared roots
   camp artifacts add media/renders
   camp artifacts add datasets --policy on-demand
   camp artifacts remove media/renders
@@ -83,7 +95,9 @@ machine-local derived state under .campaign/cache (gitignored).
 ### Options
 
 ```
-  -h, --help   help for artifacts
+  -h, --help    help for artifacts
+      --json    Print artifact files as JSON
+      --plain   Print artifact files instead of opening the explorer
 ```
 
 ### Options inherited from parent commands
@@ -7405,8 +7419,8 @@ Works from anywhere within the camp - always shows the status
 of the camp root repository.
 
 Untracked files that camp commit keeps out of git as artifact content
-(over-threshold files inside a declared artifact root) are listed in their
-own section instead of under git's untracked files.
+(over-threshold files inside a declared artifact root) are summarized by
+count and size. Run camp artifacts to explore files outside git.
 
 Use --sub to show status of the submodule detected from your current directory.
 Use --project/-p to show status of a specific project.

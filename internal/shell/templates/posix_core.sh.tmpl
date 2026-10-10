@@ -219,6 +219,40 @@ camp() {
         rm -f "$tmp"
       fi
       ;;
+    artifacts)
+      shift
+      case "${1:-}" in
+        ""|-*) ;;
+        *) command camp artifacts "$@"; return ;;
+      esac
+      local arg tmp dest cmd_status
+      for arg in "$@"; do
+        case "$arg" in
+          --help|-h|--plain|--json|--path-output|--path-output=*)
+            command camp artifacts "$@"; return ;;
+        esac
+      done
+      if ! [ -t 0 ] || ! [ -t 1 ]; then
+        command camp artifacts "$@"
+        return
+      fi
+      tmp=$(mktemp "${TMPDIR:-/tmp}/camp-artifacts.XXXXXX") || return 1
+      command camp artifacts "$@" --path-output "$tmp"
+      cmd_status=$?
+      if [ "$cmd_status" -ne 0 ]; then
+        rm -f "$tmp"
+        return "$cmd_status"
+      fi
+      if [ -s "$tmp" ]; then
+        # Preserve trailing newlines in a valid directory name.
+        dest=$(cat "$tmp"; printf '.')
+        dest=${dest%.}
+        rm -f "$tmp"
+        if [ -d "$dest" ]; then cd -- "$dest"; fi
+      else
+        rm -f "$tmp"
+      fi
+      ;;
     machine)
       shift
       # A machine subcommand (list, add, remove, diagnose, adopt, ...) is always

@@ -218,6 +218,46 @@ function camp --description "Camp CLI wrapper with directory-changing support"
             else
                 rm -f "$tmp"
             end
+        case artifacts
+            set -l rest $argv[2..-1]
+            if test (count $rest) -gt 0; and not string match -qr -- '^-' $rest[1]
+                command camp artifacts $rest
+                return $status
+            end
+            for arg in $rest
+                switch "$arg"
+                    case --help -h --plain --json --path-output '--path-output=*'
+                        command camp artifacts $rest
+                        return $status
+                end
+            end
+            if not isatty stdin; or not isatty stdout
+                command camp artifacts $rest
+                return $status
+            end
+            set -l tmpdir /tmp
+            if set -q TMPDIR
+                set tmpdir $TMPDIR
+            end
+            set -l tmp (mktemp "$tmpdir/camp-artifacts.XXXXXX")
+            if test -z "$tmp"
+                return 1
+            end
+            command camp artifacts $rest --path-output "$tmp"
+            set -l cmd_status $status
+            if test "$cmd_status" -ne 0
+                rm -f "$tmp"
+                return $cmd_status
+            end
+            if test -s "$tmp"
+                set -l dest (string collect --no-trim < "$tmp")
+                rm -f "$tmp"
+                if test -d "$dest"
+                    cd -- "$dest"
+                end
+            else
+                rm -f "$tmp"
+            end
         case machine
             set -l rest $argv[2..-1]
             # A machine subcommand (list, add, remove, diagnose, adopt, ...) is
