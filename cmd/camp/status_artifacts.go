@@ -11,10 +11,6 @@ import (
 	"github.com/Obedience-Corp/camp/internal/ui"
 )
 
-// statusArtifactListLimit is how many artifact files the long format names
-// individually before it falls back to one line per root.
-const statusArtifactListLimit = 10
-
 // Keep generated arguments comfortably below supported platforms' exec limits.
 // Beyond this budget the CLI reports plain git status with an explicit notice.
 const statusExclusionBudget = 16 * 1024
@@ -139,33 +135,23 @@ func renderStatusArtifacts(out io.Writer, roots []artifacts.UntrackedRoot, forma
 	if len(roots) == 0 {
 		return
 	}
-	if format != statusFormatLong {
-		for _, r := range roots {
-			_, _ = fmt.Fprintf(out, "artifact content kept out of git: %s/ (%s)\n", r.Root, fileTally(r))
-		}
+	count := 0
+	var size int64
+	for _, root := range roots {
+		count += len(root.Files)
+		size += root.Bytes
+	}
+	if count == 0 {
 		return
 	}
-
-	_, _ = fmt.Fprintln(out)
-	_, _ = fmt.Fprintln(out, "Artifact content:")
-	_, _ = fmt.Fprintln(out, `  (kept out of git; "camp sync --from <machine>" copies it between machines)`)
-	if len(artifacts.UntrackedPaths(roots)) <= statusArtifactListLimit {
-		for _, r := range roots {
-			for _, f := range r.Files {
-				_, _ = fmt.Fprintf(out, "\t%s (%s)\n", f.Path, ui.FormatBytes(f.Size))
-			}
-		}
-		return
+	noun := "artifacts"
+	if count == 1 {
+		noun = "artifact"
 	}
-	for _, r := range roots {
-		_, _ = fmt.Fprintf(out, "\t%s/ (%s)\n", r.Root, fileTally(r))
+	summary := fmt.Sprintf("%s %s · %s kept out of git", ui.FormatCount(count), noun, ui.FormatBytes(size))
+	if format == statusFormatLong {
+		_, _ = fmt.Fprintf(out, "\n%s  %s\n", ui.Accent(summary), ui.Dim("→ camp artifacts"))
+	} else {
+		_, _ = fmt.Fprintf(out, "%s → camp artifacts\n", summary)
 	}
-}
-
-func fileTally(r artifacts.UntrackedRoot) string {
-	noun := "files"
-	if len(r.Files) == 1 {
-		noun = "file"
-	}
-	return fmt.Sprintf("%s %s, %s", ui.FormatCount(len(r.Files)), noun, ui.FormatBytes(r.Bytes))
 }

@@ -27,6 +27,8 @@ func (tc *TestContainer) RunCampInteractiveInDir(dir, waitFor, input string, arg
 type InteractiveStep struct {
 	WaitFor string
 	Input   string
+	// WaitTimeout overrides the default screen wait for asynchronous loads.
+	WaitTimeout time.Duration
 }
 
 // defaultInteractiveTimeout bounds a full interactive TTY session. Deep
@@ -105,7 +107,11 @@ func (tc *TestContainer) runCampInteractive(dir string, env map[string]string, t
 	waitStart := 0
 	for _, step := range steps {
 		if step.WaitFor != "" {
-			if err := waitForBufferContainsAfter(&output, step.WaitFor, waitStart, 5*time.Second); err != nil {
+			waitTimeout := step.WaitTimeout
+			if waitTimeout <= 0 {
+				waitTimeout = 5 * time.Second
+			}
+			if err := waitForBufferContainsAfter(&output, step.WaitFor, waitStart, waitTimeout); err != nil {
 				if cmd.Process != nil {
 					_ = cmd.Process.Kill()
 				}
