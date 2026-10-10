@@ -7,6 +7,7 @@ import (
 	"image/color"
 	"image/gif"
 	"os"
+	"runtime"
 	"testing"
 )
 
@@ -172,5 +173,85 @@ func TestDecodeReplayStopsKeepingFramesPastTheBudget(t *testing.T) {
 	}
 	if r, _, _, _ := got.Poster.At(0, 0).RGBA(); r>>8 != 255 {
 		t.Fatal("poster is not the last frame")
+	}
+}
+
+func transparentFrames(t *testing.T, n int) []byte {
+	t.Helper()
+	pal := color.Palette{color.RGBA{}, color.RGBA{255, 0, 0, 255}}
+	for len(pal) < 256 {
+		pal = append(pal, color.RGBA{0, 0, uint8(len(pal)), 255})
+	}
+	frame := image.NewPaletted(image.Rect(0, 0, 1, 1), pal)
+	frame.Pix[0] = 1
+	g := &gif.GIF{Config: image.Config{ColorModel: pal, Width: 1, Height: 1}}
+	for range n {
+		g.Image = append(g.Image, frame)
+		g.Delay = append(g.Delay, 1)
+	}
+	var buf bytes.Buffer
+	if err := gif.EncodeAll(&buf, g); err != nil {
+		t.Fatal(err)
+	}
+	return buf.Bytes()
+}
+
+func TestDecodeReplayStopsAtFirstFramePastTheWorkBudget(t *testing.T) {
+	frames := maxDecodeWork/(frameOverhead+1) + 1000
+	data := transparentFrames(t, frames)
+	if len(data) > maxReplayBytes {
+		t.Fatalf("fixture is %d bytes, over the file cap", len(data))
+	}
+	runtime.GC()
+	var before, after runtime.MemStats
+	runtime.ReadMemStats(&before)
+	got, err := decodeReplay(data, 8, 8)
+	runtime.ReadMemStats(&after)
+	if !errors.Is(err, ErrReplayTooLong) {
+		t.Fatalf("decodeReplay() error = %v, want ErrReplayTooLong", err)
+	}
+	if got.Poster == nil || got.Frames != nil {
+		t.Fatalf("poster %v, %d frames; want a poster and no frames", got.Poster != nil, len(got.Frames))
+	}
+	if r, _, _, _ := got.Poster.At(0, 0).RGBA(); r>>8 != 255 {
+		t.Fatal("poster is not the first frame")
+	}
+	if allocated := after.TotalAlloc - before.TotalAlloc; allocated > 64<<20 {
+		t.Fatalf("decoding %d tiny frames allocated %d MiB; the frames were decoded", frames, allocated>>20)
+	}
+}
+
+func TestScanGIFCountsPerFrameWork(t *testing.T) {
+	global := color.Palette{color.RGBA{0, 0, 0, 255}, color.RGBA{255, 0, 0, 255}}
+	local := color.Palette{color.RGBA{0, 0, 0, 255}, color.RGBA{0, 255, 0, 255}, color.RGBA{0, 0, 255, 255}, color.RGBA{255, 255, 255, 255}}
+	g := &gif.GIF{
+		Image: []*image.Paletted{
+			image.NewPaletted(image.Rect(0, 0, 4, 4), global),
+			image.NewPaletted(image.Rect(0, 0, 4, 4), local),
+			image.NewPaletted(image.Rect(1, 1, 3, 3), global),
+		},
+		Delay:  []int{1, 1, 1},
+		Config: image.Config{ColorModel: global, Width: 4, Height: 4},
+	}
+	var buf bytes.Buffer
+	if err := gif.EncodeAll(&buf, g); err != nil {
+		t.Fatal(err)
+	}
+	shape, err := scanGIF(buf.Bytes())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(shape.frames) != 3 || shape.overWork {
+		t.Fatalf("frames = %d, overWork = %v", len(shape.frames), shape.overWork)
+	}
+	localCost := len(local) * paletteEntryCost
+	if want := 16 + 16 + 4 + 3*frameOverhead + localCost; shape.work != want {
+		t.Fatalf("work = %d, want %d (pixels, a per-frame term for each frame, and the local color table)", shape.work, want)
+	}
+	if want := 16 + localCost; shape.largest != want {
+		t.Fatalf("largest frame cost = %d, want %d", shape.largest, want)
+	}
+	if want := 2*4*16 + shape.largest + frameOverhead; shape.memoryBytes() != want {
+		t.Fatalf("memory = %d, want %d", shape.memoryBytes(), want)
 	}
 }

@@ -38,7 +38,7 @@ type readerBody struct {
 }
 
 func (b readerBody) render(width int, plain bool) []string {
-	text := termSafeText(b.text)
+	text := explore.CleanDocument(b.text)
 	var lines []string
 	if b.markdown {
 		lines = renderExploreMarkdown(explore.MarkdownBody(text), width, plain)

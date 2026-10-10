@@ -4,10 +4,8 @@ import (
 	"slices"
 	"strings"
 	"time"
-	"unicode"
 
 	"github.com/charmbracelet/lipgloss"
-	"github.com/charmbracelet/x/ansi"
 
 	"github.com/Obedience-Corp/camp/internal/dungeon/explore"
 )
@@ -62,7 +60,7 @@ func (m exploreModel) view() string {
 }
 
 func (m exploreModel) renderHeader() string {
-	return termSafe(m.headerText())
+	return explore.CleanText(m.headerText())
 }
 
 func (m exploreModel) headerText() string {
@@ -158,7 +156,7 @@ func (m exploreModel) renderReader() string {
 			if i == m.reader.entry {
 				prefix = "> "
 			}
-			lines[i] = prefix + termSafe(entry.name)
+			lines[i] = prefix + explore.CleanText(entry.name)
 		}
 		if len(lines) == 0 {
 			lines = []string{"No markdown files."}
@@ -391,30 +389,8 @@ func prettyDay(day string) string {
 	return stamp.Format("Jan 2, 2006")
 }
 
-func termSafe(s string) string {
-	return strings.Map(func(r rune) rune {
-		switch {
-		case r == '\t' || r == '\n' || r == '\r':
-			return ' '
-		case unicode.IsControl(r):
-			return -1
-		default:
-			return r
-		}
-	}, ansi.Strip(s))
-}
-
-func termSafeText(s string) string {
-	return strings.Map(func(r rune) rune {
-		if r == '\n' || r == '\t' || !unicode.IsControl(r) {
-			return r
-		}
-		return -1
-	}, ansi.Strip(s))
-}
-
 func fit(s string, width int) string {
-	s = termSafe(s)
+	s = explore.CleanText(s)
 	if width <= 0 {
 		return ""
 	}
@@ -429,7 +405,7 @@ func fit(s string, width int) string {
 }
 
 func keepTail(head, tail string, width int) string {
-	tail = termSafe(tail)
+	tail = explore.CleanText(tail)
 	if head == "" {
 		return fit(strings.TrimLeft(tail, " "), width)
 	}

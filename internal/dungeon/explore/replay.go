@@ -14,11 +14,14 @@ import (
 )
 
 const (
-	maxReplayBytes  = 8 << 20
-	maxReplayFrames = 200
-	maxDecodedBytes = 32 << 20
-	maxDecodeBytes  = 96 << 20
-	minFrameDelay   = 125 * time.Millisecond
+	maxReplayBytes   = 8 << 20
+	maxReplayFrames  = 200
+	maxDecodedBytes  = 32 << 20
+	maxDecodeBytes   = 96 << 20
+	maxDecodeWork    = 1 << 30
+	frameOverhead    = 32 << 10
+	paletteEntryCost = 20
+	minFrameDelay    = 125 * time.Millisecond
 )
 
 // Frames is a decoded replay scaled to fit inside the stage.
@@ -53,35 +56,45 @@ func decodeReplay(data []byte, maxW, maxH int) (Frames, error) {
 	if err != nil {
 		return Frames{}, camperrors.Wrap(err, "decoding replay")
 	}
-	if shape.frames == 0 {
+	if len(shape.frames) == 0 || shape.width <= 0 || shape.height <= 0 {
 		return Frames{}, camperrors.New("replay has no frames")
 	}
-	if shape.decodeBytes() > maxDecodeBytes {
+	if shape.memoryBytes() > maxDecodeBytes {
 		return Frames{}, ErrReplayTooLong
 	}
-	decoded, err := gif.DecodeAll(bytes.NewReader(data))
+	spans := shape.frames
+	tooLong := shape.overWork || len(spans) > maxReplayFrames
+	if shape.overWork {
+		spans = spans[:1]
+	}
+	out, tooLong, err := composite(data, shape, spans, tooLong, maxW, maxH)
 	if err != nil {
 		return Frames{}, camperrors.Wrap(err, "decoding replay")
 	}
-	if len(decoded.Image) == 0 {
-		return Frames{}, camperrors.New("replay has no frames")
-	}
-	out, tooLong := composite(decoded, maxW, maxH)
 	if tooLong {
 		return out, ErrReplayTooLong
 	}
 	return out, nil
 }
 
-type gifShape struct {
-	width  int
-	height int
-	frames int
-	pixels int
+type gifSpan struct {
+	start int
+	end   int
 }
 
-func (s gifShape) decodeBytes() int {
-	return s.pixels + 2*4*s.width*s.height
+type gifShape struct {
+	width    int
+	height   int
+	header   int
+	frames   []gifSpan
+	widest   int
+	largest  int
+	work     int
+	overWork bool
+}
+
+func (s gifShape) memoryBytes() int {
+	return 2*4*s.width*s.height + s.largest + frameOverhead
 }
 
 func scanGIF(data []byte) (gifShape, error) {
@@ -91,8 +104,9 @@ func scanGIF(data []byte) (gifShape, error) {
 	shape := gifShape{
 		width:  int(data[6]) | int(data[7])<<8,
 		height: int(data[8]) | int(data[9])<<8,
+		header: 13 + colorTableLen(data[10]),
 	}
-	pos := 13 + colorTableLen(data[10])
+	pos, start := shape.header, shape.header
 	for pos < len(data) {
 		switch data[pos] {
 		case 0x21:
@@ -107,16 +121,21 @@ func scanGIF(data []byte) (gifShape, error) {
 			}
 			w := int(data[pos+5]) | int(data[pos+6])<<8
 			h := int(data[pos+7]) | int(data[pos+8])<<8
-			shape.frames++
-			shape.pixels += w * h
-			if shape.decodeBytes() > maxDecodeBytes {
-				return shape, nil
-			}
-			next, err := skipSubBlocks(data, pos+10+colorTableLen(data[pos+9])+1)
+			table := colorTableLen(data[pos+9])
+			next, err := skipSubBlocks(data, pos+10+table+1)
 			if err != nil {
 				return gifShape{}, err
 			}
-			pos = next
+			cost := w*h + table/3*paletteEntryCost
+			shape.frames = append(shape.frames, gifSpan{start: start, end: next})
+			shape.widest = max(shape.widest, next-start)
+			shape.largest = max(shape.largest, cost)
+			shape.work += cost + frameOverhead
+			pos, start = next, next
+			if shape.work > maxDecodeWork {
+				shape.overWork = true
+				return shape, nil
+			}
 		case 0x3B:
 			return shape, nil
 		default:
@@ -165,32 +184,38 @@ func frameDelay(g *gif.GIF, i int) time.Duration {
 	return d
 }
 
-func composite(g *gif.GIF, maxW, maxH int) (Frames, bool) {
-	w, h := g.Config.Width, g.Config.Height
-	if w <= 0 || h <= 0 {
-		b := g.Image[0].Bounds()
-		w, h = b.Dx(), b.Dy()
-	}
-	canvas := image.NewRGBA(image.Rect(0, 0, w, h))
+func composite(data []byte, shape gifShape, spans []gifSpan, tooLong bool, maxW, maxH int) (Frames, bool, error) {
+	canvas := image.NewRGBA(image.Rect(0, 0, shape.width, shape.height))
 	var saved *image.RGBA
+	var prev image.Rectangle
+	prevDisposal := byte(gif.DisposalNone)
+	buf := make([]byte, 0, shape.header+shape.widest+1)
 	var out Frames
-	tooLong := len(g.Image) > maxReplayFrames
 	kept := 0
-	for i, frame := range g.Image {
+	for i, span := range spans {
+		frame, delay, disposal, err := decodeFrame(&buf, data, shape.header, span)
+		if err != nil {
+			return Frames{}, false, err
+		}
 		if i > 0 {
-			switch disposal(g, i-1) {
+			switch prevDisposal {
 			case gif.DisposalBackground:
-				clearRect(canvas, g.Image[i-1].Bounds())
+				clearRect(canvas, prev)
 			case gif.DisposalPrevious:
 				if saved != nil {
 					copyRGBA(canvas, saved)
 				}
 			}
 		}
-		if disposal(g, i) == gif.DisposalPrevious {
-			saved = cloneRGBA(canvas)
+		if disposal == gif.DisposalPrevious {
+			if saved == nil {
+				saved = cloneRGBA(canvas)
+			} else {
+				copyRGBA(saved, canvas)
+			}
 		}
-		draw.Draw(canvas, frame.Bounds(), frame, frame.Bounds().Min, draw.Over)
+		drawFrame(canvas, frame)
+		prev, prevDisposal = frame.Bounds(), disposal
 		if tooLong {
 			continue
 		}
@@ -203,13 +228,61 @@ func composite(g *gif.GIF, maxW, maxH int) (Frames, bool) {
 			continue
 		}
 		out.Frames = append(out.Frames, shot)
-		out.Delays = append(out.Delays, frameDelay(g, i))
+		out.Delays = append(out.Delays, delay)
 	}
 	out.Poster = snapshot(canvas, maxW, maxH)
 	if tooLong {
 		out.Frames, out.Delays = nil, nil
 	}
-	return out, tooLong
+	return out, tooLong, nil
+}
+
+func drawFrame(dst *image.RGBA, src *image.Paletted) {
+	var lut [256][4]uint8
+	var opaque [256]bool
+	for i, c := range src.Palette {
+		r, g, b, a := c.RGBA()
+		if a == 0 {
+			continue
+		}
+		if a != 0xffff {
+			draw.Draw(dst, src.Bounds(), src, src.Bounds().Min, draw.Over)
+			return
+		}
+		lut[i] = [4]uint8{uint8(r >> 8), uint8(g >> 8), uint8(b >> 8), 0xff}
+		opaque[i] = true
+	}
+	area := src.Bounds().Intersect(dst.Bounds())
+	for y := area.Min.Y; y < area.Max.Y; y++ {
+		si := src.PixOffset(area.Min.X, y)
+		di := dst.PixOffset(area.Min.X, y)
+		for range area.Dx() {
+			if idx := src.Pix[si]; opaque[idx] {
+				copy(dst.Pix[di:di+4], lut[idx][:])
+			}
+			si++
+			di += 4
+		}
+	}
+}
+
+func decodeFrame(buf *[]byte, data []byte, header int, span gifSpan) (*image.Paletted, time.Duration, byte, error) {
+	one := append((*buf)[:0], data[:header]...)
+	one = append(one, data[span.start:span.end]...)
+	one = append(one, 0x3B)
+	*buf = one
+	g, err := gif.DecodeAll(bytes.NewReader(one))
+	if err != nil {
+		return nil, 0, 0, err
+	}
+	if len(g.Image) != 1 {
+		return nil, 0, 0, errNotGIF
+	}
+	disposal := byte(gif.DisposalNone)
+	if len(g.Disposal) > 0 {
+		disposal = g.Disposal[0]
+	}
+	return g.Image[0], frameDelay(g, 0), disposal, nil
 }
 
 func snapshot(canvas *image.RGBA, maxW, maxH int) image.Image {
@@ -218,13 +291,6 @@ func snapshot(canvas *image.RGBA, maxW, maxH int) image.Image {
 		return cloneRGBA(canvas)
 	}
 	return img
-}
-
-func disposal(g *gif.GIF, i int) byte {
-	if i < 0 || i >= len(g.Disposal) {
-		return gif.DisposalNone
-	}
-	return g.Disposal[i]
 }
 
 func clearRect(dst *image.RGBA, rect image.Rectangle) {

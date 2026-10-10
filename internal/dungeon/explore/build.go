@@ -53,7 +53,7 @@ func scanDungeon(ctx context.Context, root string, dungeon spelling.Dungeon) (Du
 	if err != nil {
 		return DungeonPrint{}, nil, nil, err
 	}
-	label := Label(parentRel)
+	label := CleanText(Label(parentRel))
 	fp, err := fingerprint(ctx, dungeon.Path)
 	if err != nil {
 		return DungeonPrint{}, nil, []string{warn(relDungeon, err)}, nil
@@ -158,7 +158,7 @@ func readItem(root, relDungeon, label, status, bucketDay, path string, entry fs.
 	}
 	info, err := entry.Info()
 	if err != nil {
-		return Item{Title: entry.Name(), Path: rel, Status: status, DungeonLabel: label, DungeonPath: relDungeon, Kind: KindOther, DateSource: DateFileTime, DoneDate: time.Now().Format("2006-01-02"), Warning: err.Error()}, warn(rel, err)
+		return Item{Title: CleanText(entry.Name()), Path: rel, Status: status, DungeonLabel: label, DungeonPath: relDungeon, Kind: KindOther, DateSource: DateFileTime, DoneDate: time.Now().Format("2006-01-02"), Warning: CleanText(err.Error())}, warn(rel, err)
 	}
 	item := Item{
 		Status:       status,
@@ -183,7 +183,10 @@ func readItem(root, relDungeon, label, status, bucketDay, path string, entry fs.
 	if item.DateSource == DateFileTime {
 		item.DoneDate = info.ModTime().Format("2006-01-02")
 	}
-	item.Summary = oneLine(item.Summary)
+	item.Title = CleanText(item.Title)
+	item.ID = CleanText(item.ID)
+	item.Summary = oneLine(CleanText(item.Summary))
+	item.Warning = CleanText(item.Warning)
 	return item, ""
 }
 
@@ -204,7 +207,7 @@ func relSlash(root, path string) (string, error) {
 }
 
 func warn(path string, err error) string {
-	return path + ": " + err.Error()
+	return CleanText(path + ": " + err.Error())
 }
 
 var itemMetaFiles = []string{"fest.yaml", "FESTIVAL_GOAL.md", ".workitem", "README.md"}

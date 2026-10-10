@@ -4,8 +4,10 @@ package explore
 
 import (
 	"context"
+	"encoding/json"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 )
 
@@ -163,5 +165,34 @@ func mustWrite(t *testing.T, path, body string) {
 	}
 	if err := os.WriteFile(path, []byte(body), 0o644); err != nil {
 		t.Fatal(err)
+	}
+}
+
+func TestBuildSanitizesRepositoryText(t *testing.T) {
+	root := t.TempDir()
+	rel := "festivals/.dungeon/completed/2026-10-05/evil-FA0099"
+	mustWrite(t, filepath.Join(root, filepath.FromSlash(rel), "fest.yaml"),
+		"metadata:\n  id: \"FA\\u009b01\"\n  name: \"evil\\e]52;c;ZXZpbA==\\aname\"\n  goal: \"Goal\\u0085 with \\e[31mred\\e[0m text\"\n")
+	idx, err := Build(context.Background(), root)
+	if err != nil {
+		t.Fatalf("Build() error = %v", err)
+	}
+	var item Item
+	for _, candidate := range idx.Items {
+		if candidate.Path == rel {
+			item = candidate
+		}
+	}
+	if item.ID != "FA01" || item.Title != "evilname" || item.Summary != "Goal with red text" {
+		t.Fatalf("item = id %q title %q summary %q", item.ID, item.Title, item.Summary)
+	}
+	encoded, err := json.Marshal(idx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, raw := range []string{"\u009b", "\u0085", `\u001b`, `\u0007`} {
+		if strings.Contains(string(encoded), raw) {
+			t.Fatalf("index JSON carries %q: %s", raw, encoded)
+		}
 	}
 }
