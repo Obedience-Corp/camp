@@ -246,7 +246,7 @@ function camp --description "Camp CLI wrapper with directory-changing support"
             if test -z "$tmp"
                 return 1
             end
-            command camp artifacts $rest --path-output "$tmp"
+            command camp artifacts --path-output "$tmp" $rest
             set -l cmd_status $status
             if test "$cmd_status" -ne 0
                 rm -f "$tmp"

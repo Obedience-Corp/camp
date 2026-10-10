@@ -211,7 +211,7 @@ camp() {
         return
       fi
       tmp=$(mktemp "${TMPDIR:-/tmp}/camp-artifacts.XXXXXX") || return 1
-      command camp artifacts "$@" --path-output "$tmp"
+      command camp artifacts --path-output "$tmp" "$@"
       cmd_status=$?
       if [ "$cmd_status" -ne 0 ]; then
         rm -f "$tmp"

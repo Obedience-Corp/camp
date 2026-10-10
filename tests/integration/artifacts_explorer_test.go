@@ -161,9 +161,9 @@ func TestArtifactsExplorerShellLeadingFlags(t *testing.T) {
 			require.NoError(t, tc.WriteFile("/tmp/artifact-flags-init", init))
 			// stdout stays on the terminal: the wrapper passes everything through
 			// when it is redirected, which would hide the subcommand check.
-			script := "export PATH=/artifact-bin:$PATH; source /tmp/artifact-flags-init; camp artifacts --no-color list; echo \"list-status=$?\"; camp artifacts --no-color; pwd > /tmp/artifact-flags-cwd"
+			script := "export PATH=/artifact-bin:$PATH; source /tmp/artifact-flags-init; camp artifacts --no-color list; echo \"list-status=$?\"; camp artifacts --no-color --; pwd > /tmp/artifact-flags-cwd"
 			if sh == "fish" {
-				script = "set -gx PATH /artifact-bin $PATH; source /tmp/artifact-flags-init; camp artifacts --no-color list; echo \"list-status=$status\"; camp artifacts --no-color; pwd > /tmp/artifact-flags-cwd"
+				script = "set -gx PATH /artifact-bin $PATH; source /tmp/artifact-flags-init; camp artifacts --no-color list; echo \"list-status=$status\"; camp artifacts --no-color --; pwd > /tmp/artifact-flags-cwd"
 			}
 			require.NoError(t, tc.WriteFile("/tmp/artifact-flags-script", script))
 			output, err := tc.runCampInteractive(root, nil, 30*time.Second, []InteractiveStep{
