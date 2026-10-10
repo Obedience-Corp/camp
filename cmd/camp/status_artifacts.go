@@ -61,9 +61,17 @@ func withStatusOptions(args []string, options ...string) []string {
 
 // Ask Git to apply the user's pathspecs, including glob and exclude magic.
 // Only untracked paths selected by that same request belong in our section.
+//
+// A request with no pathspec already selected every candidate. UntrackedContent
+// found them with a status limited to the declared roots. Running a second
+// status of the whole camp here only repeats the scan the printed status is
+// about to do.
 func scopedStatusArtifacts(ctx context.Context, repo string, args []string, roots []artifacts.UntrackedRoot) ([]artifacts.UntrackedRoot, error) {
 	if len(roots) == 0 {
 		return nil, nil
+	}
+	if !statusHasPathspec(args) {
+		return roots, nil
 	}
 	scopeArgs := withStatusOptions(args, "--porcelain=v1", "-z", "--untracked-files=all")
 	output, err := git.StatusPorcelain(ctx, repo, scopeArgs...)
@@ -90,6 +98,26 @@ func scopedStatusArtifacts(ctx context.Context, repo string, args []string, root
 		}
 	}
 	return scoped, nil
+}
+
+// statusHasPathspec reports whether args limit the status to paths.
+//
+// Flags before the separator are options, including the ones camp adds
+// (--ignore-submodules=all, --short). Anything after the separator is a
+// pathspec, even when it looks like a flag. A non-option before the
+// separator is a pathspec too.
+func statusHasPathspec(args []string) bool {
+	afterSeparator := false
+	for _, arg := range args {
+		if arg == "--" {
+			afterSeparator = true
+			continue
+		}
+		if afterSeparator || !strings.HasPrefix(arg, "-") {
+			return true
+		}
+	}
+	return false
 }
 
 // statusFormat is the git status output form a camp status call asked for.

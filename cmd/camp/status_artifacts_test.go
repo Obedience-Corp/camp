@@ -2,6 +2,7 @@ package main
 
 import (
 	"bytes"
+	"context"
 	"fmt"
 	"reflect"
 	"strings"
@@ -93,6 +94,66 @@ func TestArtifactExclusionsBoundedFallback(t *testing.T) {
 	got, separated := withArtifactExclusions(args, paths)
 	if separated || !reflect.DeepEqual(got, args) {
 		t.Fatalf("fallback = %q, %v; want original args", got, separated)
+	}
+}
+
+func TestStatusHasPathspec(t *testing.T) {
+	roots := []artifacts.UntrackedRoot{{
+		Root:  "videos",
+		Files: []artifacts.UntrackedFile{{Path: "videos/a.mp4", Size: 10}},
+		Bytes: 10,
+	}}
+	skip := [][]string{
+		nil,
+		{"--ignore-submodules=all"},
+		{"--short", "--ignore-submodules=all"},
+		{"-uno"},
+		{"--untracked-files=no"},
+		{"--porcelain"},
+		{"--porcelain=v2"},
+		{"--"},
+	}
+	for _, args := range skip {
+		if statusHasPathspec(args) {
+			t.Errorf("statusHasPathspec(%q) = true, want false", args)
+		}
+		ctx, cancel := context.WithCancel(t.Context())
+		cancel()
+		got, err := scopedStatusArtifacts(ctx, t.TempDir(), args, roots)
+		if err != nil {
+			t.Errorf("scopedStatusArtifacts(%q) error = %v, want the candidate list", args, err)
+		}
+		if !reflect.DeepEqual(got, roots) {
+			t.Errorf("scopedStatusArtifacts(%q) = %#v, want the candidate list", args, got)
+		}
+	}
+
+	keep := [][]string{
+		{"docs"},
+		{"--", "docs"},
+		{"--", ":(glob)videos/**/*.mp4"},
+		{"--", "videos", ":(exclude)videos/my-video/takes"},
+		{"--porcelain=v2", "-z", "videos/my-video/takes"},
+		{"-s", "--", "docs"},
+		{"--", "-z"},
+	}
+	for _, args := range keep {
+		if !statusHasPathspec(args) {
+			t.Errorf("statusHasPathspec(%q) = false, want true", args)
+		}
+		ctx, cancel := context.WithCancel(t.Context())
+		cancel()
+		_, err := scopedStatusArtifacts(ctx, t.TempDir(), args, roots)
+		if err == nil {
+			t.Errorf("scopedStatusArtifacts(%q) skipped git, want a status of the pathspec", args)
+		}
+	}
+
+	ctx, cancel := context.WithCancel(t.Context())
+	cancel()
+	got, err := scopedStatusArtifacts(ctx, t.TempDir(), nil, nil)
+	if err != nil || got != nil {
+		t.Errorf("empty candidates = %#v, %v; want nil, nil", got, err)
 	}
 }
 
