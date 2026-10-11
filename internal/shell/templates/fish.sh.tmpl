@@ -48,6 +48,31 @@ end
 # Wrap camp binary so directory-changing subcommands work natively.
 # Uses "command camp" to call the real binary, avoiding recursion.
 function camp --description "Camp CLI wrapper with directory-changing support"
+    # Root flags are valid anywhere on the line. Move the ones ahead of
+    # `dungeon explore` behind the two words, so the dungeon case reads one
+    # spelling and the explorer still gets its handoff file.
+    set -l lead_flags
+    set -l lead_words 0
+    set -l lead_count 0
+    for lead_arg in $argv
+        set lead_count (math $lead_count + 1)
+        switch "$lead_arg"
+            case {{.RootFlagFish}}
+                set lead_flags $lead_flags $lead_arg
+                continue
+        end
+        if test $lead_words -eq 0; and test "$lead_arg" = dungeon
+            set lead_words 1
+            continue
+        end
+        if test $lead_words -eq 1; and test "$lead_arg" = explore
+            set lead_words 2
+        end
+        break
+    end
+    if test $lead_words -eq 2; and test (count $lead_flags) -gt 0
+        set argv dungeon explore $lead_flags $argv[(math $lead_count + 1)..-1]
+    end
     switch "$argv[1]"
         case switch sw
             set -l rest $argv[2..-1]

@@ -2,6 +2,8 @@ package explore
 
 import (
 	"context"
+	"errors"
+	"io/fs"
 	"os"
 	"path/filepath"
 	"strings"
@@ -97,7 +99,7 @@ func (m exploreModel) openReader() (tea.Model, tea.Cmd) {
 	case item.Kind == "workitem" && item.IsDir:
 		entries, err := markdownEntries(abs)
 		if err != nil {
-			m.setStatus(exploreReadStatus, err.Error(), true)
+			m.setStatus(exploreReadStatus, readFailure("directory", err), true)
 			return m, nil
 		}
 		reader.listing = true
@@ -107,7 +109,7 @@ func (m exploreModel) openReader() (tea.Model, tea.Cmd) {
 		if info, err := os.Lstat(goal); err == nil && info.Mode().IsRegular() {
 			text, cut, err := readExploreText(m.readerContext(), goal)
 			if err != nil {
-				m.setStatus(exploreReadStatus, "The file could not be parsed.", true)
+				m.setStatus(exploreReadStatus, readFailure("file", err), true)
 				return m, nil
 			}
 			reader.path = goal
@@ -123,7 +125,7 @@ func (m exploreModel) openReader() (tea.Model, tea.Cmd) {
 	case !item.IsDir && strings.HasSuffix(strings.ToLower(item.Path), ".md"):
 		text, cut, err := readExploreText(m.readerContext(), abs)
 		if err != nil {
-			m.setStatus(exploreReadStatus, "The file could not be parsed.", true)
+			m.setStatus(exploreReadStatus, readFailure("file", err), true)
 			return m, nil
 		}
 		reader.body = readerBody{text: text, markdown: true, lead: cutNotice(cut)}
@@ -169,7 +171,7 @@ func (m exploreModel) onReaderKey(key tea.KeyMsg) (tea.Model, tea.Cmd) {
 		picked := m.reader.entries[m.reader.entry]
 		text, cut, err := readExploreText(m.readerContext(), picked.path)
 		if err != nil {
-			m.setStatus(exploreReadStatus, "The file could not be parsed.", true)
+			m.setStatus(exploreReadStatus, readFailure("file", err), true)
 			return m, nil
 		}
 		m.clearActionStatus()
@@ -204,6 +206,19 @@ func (m exploreModel) scrollReader(delta int) (tea.Model, tea.Cmd) {
 	}
 	m.reader.offset = maxReaderOffset(m.reader.offset+delta, len(m.reader.lines), m.bodyHeight())
 	return m, nil
+}
+
+// readFailure says why a document or a listing did not open. The index is a
+// snapshot: what it names may since have been removed or closed to the reader.
+func readFailure(what string, err error) string {
+	switch {
+	case errors.Is(err, fs.ErrNotExist):
+		return "The " + what + " is no longer there."
+	case errors.Is(err, fs.ErrPermission):
+		return "The " + what + " cannot be read: permission denied."
+	default:
+		return "The " + what + " could not be read."
+	}
 }
 
 func markdownEntries(dir string) ([]readerEntry, error) {

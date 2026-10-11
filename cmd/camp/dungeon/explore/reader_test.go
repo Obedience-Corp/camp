@@ -1,7 +1,9 @@
 package explore
 
 import (
+	"context"
 	"fmt"
+	"io/fs"
 	"regexp"
 	"strings"
 	"testing"
@@ -14,6 +16,7 @@ import (
 	"github.com/charmbracelet/x/ansi"
 
 	intexplore "github.com/Obedience-Corp/camp/internal/dungeon/explore"
+	camperrors "github.com/Obedience-Corp/camp/internal/errors"
 )
 
 func TestExploreReaderStripsFrontmatter(t *testing.T) {
@@ -300,6 +303,61 @@ func TestExploreReaderGoKeepsOpenedItemAfterRefresh(t *testing.T) {
 		m, _ = press(t, m, tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'g'}})
 		if m.gotoPath != exploreJump(m.root, original) || !m.quitting {
 			t.Fatalf("%s navigated to %q", change, m.gotoPath)
+		}
+	}
+}
+
+// The index is a snapshot, so what Enter opens may be gone. Every failure
+// read "The file could not be parsed.", though nothing is parsed on the way
+// in and the usual cause is a file that was moved or removed.
+func TestExploreReaderSaysWhyADocumentDidNotOpen(t *testing.T) {
+	// Nothing exists under this root. The reader only looks; no file is made.
+	const root = "/nonexistent-camp-explore-test"
+	cases := []struct {
+		name string
+		item intexplore.Item
+		want string
+	}{
+		{"document", intexplore.Item{Kind: intexplore.KindMarkdown, Path: "notes/gone.md"}, "The file is no longer there."},
+		{"workitem directory", intexplore.Item{Kind: "workitem", Path: "work/gone", IsDir: true}, "The directory is no longer there."},
+	}
+	for _, tc := range cases {
+		m := replayModel(intexplore.ProtocolOff)
+		m.ctx, m.root = context.Background(), root
+		tc.item.Title = "Gone"
+		m.visible.Items[0] = tc.item
+		m, _ = press(t, m, tea.KeyMsg{Type: tea.KeyEnter})
+		if m.reading || !m.statusErr || m.status != tc.want {
+			t.Errorf("%s: reading %v, failed %v, status %q; want %q", tc.name, m.reading, m.statusErr, m.status, tc.want)
+		}
+		if strings.Contains(m.status, root) {
+			t.Errorf("%s: the status row carries the absolute path: %q", tc.name, m.status)
+		}
+	}
+
+	// An entry picked from a listing whose file has since been removed.
+	listing := replayModel(intexplore.ProtocolOff)
+	listing.ctx, listing.reading = context.Background(), true
+	listing.reader = exploreReader{listing: true, entries: []readerEntry{{name: "gone.md", path: root + "/gone.md"}}}
+	listing, _ = press(t, listing, tea.KeyMsg{Type: tea.KeyEnter})
+	if !listing.reader.listing || !listing.statusErr || listing.status != "The file is no longer there." {
+		t.Errorf("listing entry: status %q, failed %v, listing %v", listing.status, listing.statusErr, listing.reader.listing)
+	}
+
+	denied := &fs.PathError{Op: "open", Path: "notes/closed.md", Err: fs.ErrPermission}
+	gone := &fs.PathError{Op: "lstat", Path: "notes/gone.md", Err: fs.ErrNotExist}
+	for _, tc := range []struct {
+		err  error
+		want string
+	}{
+		{gone, "The file is no longer there."},
+		{camperrors.Wrap(gone, "reading notes/gone.md"), "The file is no longer there."},
+		{denied, "The file cannot be read: permission denied."},
+		{camperrors.Wrap(denied, "opening notes/closed.md"), "The file cannot be read: permission denied."},
+		{context.Canceled, "The file could not be read."},
+	} {
+		if got := readFailure("file", tc.err); got != tc.want {
+			t.Errorf("readFailure(%v) = %q, want %q", tc.err, got, tc.want)
 		}
 	}
 }

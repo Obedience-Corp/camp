@@ -13,32 +13,52 @@ const (
 	ProtocolOff   = "off"
 )
 
-// ChooseProtocol picks how a replay is drawn. Plain mode always returns off.
-// Auto also returns off inside a terminal multiplexer, an editor's terminal,
-// or any terminal it cannot name; naming a protocol still forces it there.
+// ChooseProtocol picks how a replay is drawn. Plain mode always returns off,
+// and so does a terminal multiplexer (insideMultiplexer says why). Auto also
+// returns off inside an editor's terminal or any terminal it cannot name;
+// naming a protocol forces it there.
 func ChooseProtocol(flag string, getenv func(string) string, plain bool) (string, error) {
 	if getenv == nil {
 		getenv = os.Getenv
 	}
-	flag = strings.ToLower(strings.TrimSpace(flag))
-	if flag == "" {
-		flag = ProtocolAuto
-	}
+	flag = protocolName(flag)
 	switch flag {
 	case ProtocolAuto, ProtocolKitty, ProtocolITerm, ProtocolOff:
 	default:
 		return "", errUnknownImages(flag)
 	}
-	if plain || flag == ProtocolOff {
+	if plain || flag == ProtocolOff || insideMultiplexer(getenv) {
 		return ProtocolOff, nil
 	}
 	if flag == ProtocolKitty || flag == ProtocolITerm {
 		return flag, nil
 	}
-	if insideNestedTerminal(getenv) {
+	if insideEditorTerminal(getenv) {
 		return ProtocolOff, nil
 	}
 	return hostProtocol(getenv), nil
+}
+
+// NamedInMultiplexer reports an --images value that names a protocol inside
+// a multiplexer, where ChooseProtocol turns it off.
+func NamedInMultiplexer(flag string, getenv func(string) string) bool {
+	if getenv == nil {
+		getenv = os.Getenv
+	}
+	switch protocolName(flag) {
+	case ProtocolKitty, ProtocolITerm:
+		return insideMultiplexer(getenv)
+	}
+	return false
+}
+
+// protocolName is an --images value as ChooseProtocol compares it.
+func protocolName(flag string) string {
+	flag = strings.ToLower(strings.TrimSpace(flag))
+	if flag == "" {
+		return ProtocolAuto
+	}
+	return flag
 }
 
 // hostProtocol names the protocol of the terminal that draws the screen.
@@ -88,18 +108,33 @@ func namesTerminalWithoutGraphics(term string, getenv func(string) string) bool 
 	return getenv("TERMINAL_EMULATOR") == "JetBrains-JediTerm"
 }
 
-// insideNestedTerminal reports tmux, GNU screen, zellij, or a terminal run by
-// Neovim, Vim, or Emacs. They keep the outer terminal's KITTY_WINDOW_ID and
-// LC_TERMINAL but do not forward its image sequences, so detection would
-// reserve rows for a replay that never draws.
-func insideNestedTerminal(getenv func(string) string) bool {
-	for _, name := range []string{"TMUX", "STY", "ZELLIJ", "NVIM", "VIM_TERMINAL", "INSIDE_EMACS"} {
+// insideMultiplexer reports tmux, GNU screen, or zellij. An image sequence
+// written there does not reach the terminal that draws the screen, so the
+// rows a replay is given stay blank. tmux also takes a Kitty sequence for the
+// pane title, which its status line shows and which stays after the explorer
+// exits. TERM is checked as well as the variables each one sets: unlike them
+// it crosses an SSH hop made from inside one.
+func insideMultiplexer(getenv func(string) string) bool {
+	for _, name := range []string{"TMUX", "STY", "ZELLIJ"} {
 		if getenv(name) != "" {
 			return true
 		}
 	}
 	term := getenv("TERM")
 	return strings.HasPrefix(term, "screen") || strings.HasPrefix(term, "tmux")
+}
+
+// insideEditorTerminal reports a terminal run by Neovim, Vim, or Emacs. They
+// keep the outer terminal's KITTY_WINDOW_ID and LC_TERMINAL but may not
+// forward its image sequences, so detection would reserve rows for a replay
+// that never draws.
+func insideEditorTerminal(getenv func(string) string) bool {
+	for _, name := range []string{"NVIM", "VIM_TERMINAL", "INSIDE_EMACS"} {
+		if getenv(name) != "" {
+			return true
+		}
+	}
+	return false
 }
 
 // KittyPNG transmits png with the Kitty graphics protocol, displayed at the

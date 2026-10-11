@@ -207,3 +207,46 @@ func TestExploreRefreshEmptyAndInvalidResults(t *testing.T) {
 		})
 	}
 }
+
+// A lens the refreshed camp no longer has leaves no rows and a reason on the
+// status row. The header went on to say "All dungeons", which is not the lens
+// in force and not what the reason beside it says.
+func TestExploreHeaderNamesAnUnresolvedLens(t *testing.T) {
+	header := func(m exploreModel) string {
+		return strings.Split(viewText(m.View()), "\n")[0]
+	}
+	m := screenFeed(t, 100, 30, intexplore.ProtocolOff, 12)
+	if got := header(m); !strings.HasPrefix(got, "All dungeons · Finished") {
+		t.Fatalf("header with every dungeon in the lens = %q", got)
+	}
+	m.query.Dungeon = "Festivals"
+	if err := m.applyQuery(); err != nil {
+		t.Fatal(err)
+	}
+	if got := header(m); !strings.HasPrefix(got, "Festivals · Finished") {
+		t.Fatalf("header with a dungeon lens = %q", got)
+	}
+
+	moved := m.index
+	moved.Dungeons = []intexplore.DungeonPrint{{Path: "other/.dungeon", Label: "Other"}}
+	moved.Items = append([]intexplore.Item(nil), m.index.Items...)
+	for i := range moved.Items {
+		moved.Items[i].DungeonLabel, moved.Items[i].DungeonPath = "Other", "other/.dungeon"
+	}
+	m, _ = press(t, m, exploreLoaded{gen: m.indexGen, index: moved, changed: true})
+	if row := m.statusRow(); !row.failed || !strings.Contains(row.text, `unknown dungeon "Festivals"`) {
+		t.Fatalf("status row = %+v", row)
+	}
+	got := header(m)
+	if strings.Contains(got, "All dungeons") || !strings.HasPrefix(got, "Festivals · Finished") {
+		t.Fatalf("header beside an unresolved dungeon = %q", got)
+	}
+	if problems := checkLayout(m); len(problems) > 0 {
+		t.Fatal(problems)
+	}
+	// The lens keys leave the dungeon that is gone, and the header follows.
+	m, _ = press(t, m, runes("]"))
+	if got := header(m); m.shownStatus() != "" || !strings.HasPrefix(got, "Other · Finished") {
+		t.Fatalf("after ]: status %q, header %q", m.shownStatus(), got)
+	}
+}

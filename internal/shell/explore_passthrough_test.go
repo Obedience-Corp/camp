@@ -10,6 +10,7 @@ import (
 	"os/exec"
 	"path/filepath"
 	"runtime"
+	"slices"
 	"strconv"
 	"strings"
 	"testing"
@@ -146,18 +147,135 @@ func runExplorePassthroughCases(t *testing.T, shellName, script string) {
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
-			invoked := invokeExploreWrapper(t, shellName, script, tc.args)
+			invoked := invokeExploreWrapper(t, shellName, script, append([]string{"dungeon", "explore"}, tc.args...))
 			got := strings.Contains(invoked, "--path-output")
 			if got != tc.handoff {
 				t.Fatalf("handoff=%v, wrapper ran %q", got, invoked)
 			}
 		})
 	}
+	runExploreRootFlagCases(t, shellName, script)
 }
 
-func invokeExploreWrapper(t *testing.T, shellName, script string, args []string) string {
+// A root flag is valid before or between the command words. The wrapper
+// matched `dungeon explore` only as the first two words, so
+// `camp --no-color dungeon explore` opened the feed without its handoff file
+// and g reported that shell integration was missing.
+func runExploreRootFlagCases(t *testing.T, shellName, script string) {
 	t.Helper()
-	bin, initScript := exploreWrapperCommand(t, shellName, script, args)
+	const handoff = "dungeon explore --path-output /no/such/camp-explore"
+	cases := []struct {
+		name string
+		line []string
+		want string
+	}{
+		{"root flag first", []string{"--no-color", "dungeon", "explore"}, handoff + " --no-color"},
+		{"root flag with a value first", []string{"--no-color=false", "dungeon", "explore"}, handoff + " --no-color=false"},
+		{"root flag between the words", []string{"dungeon", "--no-color", "explore"}, handoff + " --no-color"},
+		{"root flag before and between", []string{"--no-color", "dungeon", "--no-color=true", "explore", "--query", "a b"}, handoff + " --no-color --no-color=true --query a b"},
+		{"root flag first, value flag eats json", []string{"--no-color", "dungeon", "explore", "--query", "--json"}, handoff + " --no-color --query --json"},
+		{"root flag first, json passes through", []string{"--no-color", "dungeon", "explore", "--json"}, "dungeon explore --no-color --json"},
+		{"root flag first, help passes through", []string{"--no-color", "dungeon", "explore", "-h"}, "dungeon explore --no-color -h"},
+		// Everything else is left exactly as typed.
+		{"root flag after the words", []string{"dungeon", "explore", "--no-color"}, handoff + " --no-color"},
+		{"another dungeon command", []string{"--no-color", "dungeon", "list"}, "--no-color dungeon list"},
+		{"dungeon alone", []string{"dungeon", "--no-color"}, "dungeon --no-color"},
+		{"a word between the flags and the command", []string{"--no-color", "false", "dungeon", "explore"}, "--no-color false dungeon explore"},
+		{"not a root flag", []string{"--no-colors", "dungeon", "explore"}, "--no-colors dungeon explore"},
+		{"end of options first", []string{"--", "dungeon", "explore"}, "-- dungeon explore"},
+		{"root flag alone", []string{"--no-color"}, "--no-color"},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			// The bash and zsh stubs print the command name; the fish one
+			// stands in for it.
+			got := strings.TrimPrefix(invokeExploreWrapper(t, shellName, script, tc.line), "camp ")
+			if got != tc.want {
+				t.Fatalf("camp %s ran camp %q, want camp %q", strings.Join(tc.line, " "), got, tc.want)
+			}
+		})
+	}
+}
+
+// The wrappers read past the root flags by name. A flag added to the root
+// command, or one that takes a value, has to be added there too.
+func TestWrapperRootFlagsMatchTheRootCommand(t *testing.T) {
+	_, here, _, ok := runtime.Caller(0)
+	if !ok {
+		t.Fatal("no caller")
+	}
+	dir := filepath.Join(filepath.Dir(here), "..", "..", "cmd", "camp")
+	files, err := filepath.Glob(filepath.Join(dir, "*.go"))
+	if err != nil || len(files) == 0 {
+		t.Fatalf("no root command sources in %s: %v", dir, err)
+	}
+	var declared []string
+	for _, path := range files {
+		if strings.HasSuffix(path, "_test.go") {
+			continue
+		}
+		file, err := parser.ParseFile(token.NewFileSet(), path, nil, 0)
+		if err != nil {
+			t.Fatal(err)
+		}
+		ast.Inspect(file, func(n ast.Node) bool {
+			call, ok := n.(*ast.CallExpr)
+			if !ok {
+				return true
+			}
+			method, ok := call.Fun.(*ast.SelectorExpr)
+			if !ok {
+				return true
+			}
+			set, ok := method.X.(*ast.CallExpr)
+			if !ok {
+				return true
+			}
+			owner, ok := set.Fun.(*ast.SelectorExpr)
+			if !ok || owner.Sel.Name != "PersistentFlags" {
+				return true
+			}
+			if root, ok := owner.X.(*ast.Ident); !ok || root.Name != "rootCmd" {
+				return true
+			}
+			switch method.Sel.Name {
+			case "Bool", "BoolP":
+				if name, found := callString(call, 0); found {
+					declared = append(declared, name)
+				}
+			case "BoolVar", "BoolVarP":
+				if name, found := callString(call, 1); found {
+					declared = append(declared, name)
+				}
+			case "Lookup", "VisitAll", "Changed", "GetBool":
+			default:
+				t.Errorf("%s: rootCmd.PersistentFlags().%s is not a boolean flag; the wrappers skip only boolean root flags", filepath.Base(path), method.Sel.Name)
+			}
+			return true
+		})
+	}
+	slices.Sort(declared)
+	want := slices.Clone(rootBoolFlags)
+	slices.Sort(want)
+	if !slices.Equal(declared, want) {
+		t.Fatalf("the root command declares persistent flags %v; the wrappers skip %v", declared, want)
+	}
+	for _, sh := range []struct{ name, script string }{
+		{"bash", generateBash()}, {"sh", generateSh()}, {"zsh", generateZsh()}, {"fish", generateFish()},
+	} {
+		for _, name := range rootBoolFlags {
+			if !strings.Contains(sh.script, "--"+name+"=*") {
+				t.Errorf("%s does not read past --%s", sh.name, name)
+			}
+		}
+	}
+}
+
+// invokeExploreWrapper runs `camp words...` through the wrapper and returns
+// the one command the wrapper ran.
+func invokeExploreWrapper(t *testing.T, shellName, script string, words []string) string {
+	t.Helper()
+	bin, initScript := exploreWrapperCommand(t, shellName, script, words)
 	if _, err := exec.LookPath(bin[0]); err != nil {
 		t.Skip(bin[0] + " not available")
 	}
@@ -183,12 +301,16 @@ func invokeExploreWrapper(t *testing.T, shellName, script string, args []string)
 	}
 	var invoked []string
 	for _, line := range strings.Split(out, "\n") {
-		if rest, ok := strings.CutPrefix(strings.TrimSpace(line), "INVOKE "); ok {
+		line = strings.TrimSpace(line)
+		if rest, ok := strings.CutPrefix(line, "INVOKE "); ok {
 			invoked = append(invoked, rest)
+		} else if line != "" {
+			// zsh prints a variable that one function declares twice.
+			t.Errorf("%s %v: the wrapper printed %q", shellName, words, line)
 		}
 	}
 	if len(invoked) != 1 {
-		t.Fatalf("%s %v invoked camp %d times:\n%s", shellName, args, len(invoked), out)
+		t.Fatalf("%s %v invoked camp %d times:\n%s", shellName, words, len(invoked), out)
 	}
 	return invoked[0]
 }
@@ -246,7 +368,7 @@ func exploreWrapperCommand(t *testing.T, shellName, script string, args []string
 	}
 }
 
-func bashExploreRunner(args string) string {
+func bashExploreRunner(line string) string {
 	return `
 camp() { :; }
 eval "$CAMP_INIT"
@@ -255,12 +377,12 @@ enable -n command || exit 1
 mktemp() { printf '%s\n' /no/such/camp-explore; }
 rm() { return 0; }
 cd() { return 0; }
-camp dungeon explore ` + args + `
+camp ` + line + `
 exit 0
 `
 }
 
-func zshExploreRunner(args string) string {
+func zshExploreRunner(line string) string {
 	return `
 camp() { :; }
 eval "$CAMP_INIT"
@@ -269,12 +391,12 @@ disable command || exit 1
 mktemp() { printf '%s\n' /no/such/camp-explore; }
 rm() { return 0; }
 cd() { return 0; }
-camp dungeon explore ` + args + `
+camp ` + line + `
 exit 0
 `
 }
 
-func fishExploreRunner(args string) string {
+func fishExploreRunner(line string) string {
 	return `
 function camp_stub
     printf 'INVOKE %s\n' "$argv"
@@ -287,7 +409,7 @@ end
 function cd
 end
 eval $CAMP_INIT
-camp dungeon explore ` + args + `
+camp ` + line + `
 exit 0
 `
 }

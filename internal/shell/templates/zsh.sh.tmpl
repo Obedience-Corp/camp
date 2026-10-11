@@ -29,9 +29,58 @@ _camp_eval_connect() {
   done
 }
 
+# Reports `dungeon explore` spelled with a root flag before or between the
+# two words, as in `camp --no-color dungeon explore`.
+_camp_explore_past_root_flags() {
+  local arg words=0 flagged=0
+  for arg in "$@"; do
+    case "$arg" in
+      {{.RootFlagCase}})
+        flagged=1
+        continue
+        ;;
+    esac
+    case "$words:$arg" in
+      0:dungeon)
+        words=1
+        ;;
+      1:explore)
+        [[ "$flagged" -eq 1 ]]
+        return
+        ;;
+      *)
+        return 1
+        ;;
+    esac
+  done
+  return 1
+}
+
 # Wrap camp binary so directory-changing subcommands work natively.
 # Uses "command camp" to call the real binary, avoiding recursion.
 camp() {
+  # Root flags are valid anywhere on the line. Move the ones ahead of
+  # `dungeon explore` behind the two words, so the dungeon arm reads one
+  # spelling and the explorer still gets its handoff file. The names here are
+  # none the arms declare: zsh prints a variable declared twice in one
+  # function.
+  if _camp_explore_past_root_flags "$@"; then
+    local lead_arg lead_words=0 lead_count=$#
+    for lead_arg in "$@"; do
+      if [[ "$lead_words" -lt 2 ]]; then
+        case "$lead_arg" in
+          {{.RootFlagCase}}) ;;
+          *)
+            lead_words=$((lead_words + 1))
+            continue
+            ;;
+        esac
+      fi
+      set -- "$@" "$lead_arg"
+    done
+    shift "$lead_count"
+    set -- dungeon explore "$@"
+  fi
   case "$1" in
     switch|sw)
       shift

@@ -33,11 +33,27 @@ func TestChooseProtocolInsideMultiplexer(t *testing.T) {
 			if err != nil || got != ProtocolOff {
 				t.Errorf("auto in %s inside %s = %q, %v; want off", innerName, outerName, got, err)
 			}
-			for _, forced := range []string{ProtocolKitty, ProtocolITerm} {
+			// A multiplexer does not pass an image on, and tmux takes a
+			// Kitty sequence for its pane title: naming a protocol there
+			// must not send one.
+			for _, forced := range []string{ProtocolKitty, ProtocolITerm, " Kitty "} {
 				got, err := ChooseProtocol(forced, getenv, false)
-				if err != nil || got != forced {
-					t.Errorf("--images %s in %s inside %s = %q, %v", forced, innerName, outerName, got, err)
+				if err != nil || got != ProtocolOff {
+					t.Errorf("--images %s in %s inside %s = %q, %v; want off", forced, innerName, outerName, got, err)
 				}
+				if !NamedInMultiplexer(forced, getenv) {
+					t.Errorf("--images %s in %s inside %s is not reported as named in a multiplexer", forced, innerName, outerName)
+				}
+			}
+			for _, flag := range []string{ProtocolAuto, ProtocolOff, "", "sixel"} {
+				if NamedInMultiplexer(flag, getenv) {
+					t.Errorf("--images %q in %s names no protocol", flag, innerName)
+				}
+			}
+		}
+		for _, forced := range []string{ProtocolKitty, ProtocolITerm} {
+			if NamedInMultiplexer(forced, direct) {
+				t.Errorf("--images %s in %s alone is reported as inside a multiplexer", forced, outerName)
 			}
 		}
 	}

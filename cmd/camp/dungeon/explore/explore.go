@@ -56,10 +56,12 @@ Keys in the reader:
   esc, q            back to the feed
 
 Replays draw in Kitty, Ghostty, WezTerm, and iTerm. The automatic choice is
-off inside tmux, screen, or zellij, inside an editor's terminal (Neovim, Vim,
-Emacs), and in any terminal it does not recognize. --images kitty or
---images iterm forces a protocol there. With NO_COLOR set or --no-color given,
-output is plain and no replay is drawn, whatever --images says.
+off inside an editor's terminal (Neovim, Vim, Emacs) and in any terminal it
+does not recognize; --images kitty or --images iterm forces a protocol there.
+Inside tmux, screen, or zellij no replay is drawn, whatever --images says:
+an image written there does not reach the terminal. With NO_COLOR set or
+--no-color given, output is plain and no replay is drawn, whatever --images
+says.
 
   camp dungeon explore
   camp dungeon explore --status archived
@@ -86,7 +88,7 @@ func init() {
 	flags.String("since", "", "Include items put in the dungeon on or after this YYYY-MM-DD date")
 	flags.String("until", "", "Include items put in the dungeon on or before this YYYY-MM-DD date")
 	flags.String("query", "", "Case-insensitive substring matched against title, id, summary, dungeon, and path")
-	flags.String("images", intexplore.ProtocolAuto, "Replay rendering: auto, kitty, iterm, or off; always off with NO_COLOR or --no-color")
+	flags.String("images", intexplore.ProtocolAuto, "Replay rendering: auto, kitty, iterm, or off; always off with NO_COLOR or --no-color, and inside tmux, screen, or zellij")
 	flags.Bool("no-media", false, "Do not draw replays")
 	flags.String("path-output", "", "Write the selected item directory to a file (shell integration)")
 	_ = flags.MarkHidden("path-output")

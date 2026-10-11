@@ -20,6 +20,9 @@ import (
 const (
 	exploreImageID       = 1
 	exploreReadingStatus = "Reading dungeons…"
+	// exploreMultiplexerNote answers --images kitty or --images iterm inside a
+	// multiplexer, where no replay is drawn.
+	exploreMultiplexerNote = "Replays are not drawn inside tmux, screen, or zellij."
 )
 
 type exploreStatusSource uint8
@@ -127,6 +130,28 @@ type exploreDecode struct{ gen int }
 // to paint from the cache and then read the camp.
 func runExploreTUI(cmd *cobra.Command, root, cacheDir string, query intexplore.Query, protocol, pathOutput string, plain bool, start *intexplore.Index) error {
 	ctx := cmd.Context()
+	model := newExploreModel(cmd, root, cacheDir, query, protocol, pathOutput, plain, start)
+	final, err := tea.NewProgram(model, exploreProgramOptions(ctx)...).Run()
+	done, ok := final.(exploreModel)
+	if ok {
+		done.cancelDecode()
+	}
+	if err != nil {
+		return camperrors.Wrap(err, "running dungeon explorer")
+	}
+	if !ok || pathOutput == "" || done.gotoPath == "" {
+		return nil
+	}
+	if err := os.WriteFile(pathOutput, []byte(done.gotoPath), 0o600); err != nil {
+		return camperrors.Wrap(err, "writing selected dungeon path")
+	}
+	return nil
+}
+
+// newExploreModel is the feed as it opens: on start when an index was built
+// for this run, else on the cache, else empty and reading.
+func newExploreModel(cmd *cobra.Command, root, cacheDir string, query intexplore.Query, protocol, pathOutput string, plain bool, start *intexplore.Index) exploreModel {
+	ctx := cmd.Context()
 	model := exploreModel{
 		ctx:         ctx,
 		root:        root,
@@ -154,21 +179,23 @@ func runExploreTUI(cmd *cobra.Command, root, cacheDir string, query intexplore.Q
 			_ = model.applyQuery()
 		}
 	}
-	final, err := tea.NewProgram(model, exploreProgramOptions(ctx)...).Run()
-	done, ok := final.(exploreModel)
-	if ok {
-		done.cancelDecode()
+	if note := exploreImagesNote(cmd); note != "" {
+		model.setStatus(exploreActionStatus, note, false)
 	}
-	if err != nil {
-		return camperrors.Wrap(err, "running dungeon explorer")
+	return model
+}
+
+// exploreImagesNote is what the feed says once when --images names a protocol
+// inside a multiplexer. The request was explicit, and nothing else on screen
+// says why the replay it asked for is missing. Plain output and --no-media
+// draw none by their own rule and need no note.
+func exploreImagesNote(cmd *cobra.Command) string {
+	flag, _ := cmd.Flags().GetString("images")
+	noMedia, _ := cmd.Flags().GetBool("no-media")
+	if noMedia || plainExplore(cmd) || !intexplore.NamedInMultiplexer(flag, os.Getenv) {
+		return ""
 	}
-	if !ok || pathOutput == "" || done.gotoPath == "" {
-		return nil
-	}
-	if err := os.WriteFile(pathOutput, []byte(done.gotoPath), 0o600); err != nil {
-		return camperrors.Wrap(err, "writing selected dungeon path")
-	}
-	return nil
+	return exploreMultiplexerNote
 }
 
 func (m exploreModel) Init() tea.Cmd {
@@ -356,6 +383,9 @@ func (m exploreModel) onKey(key tea.KeyMsg) (tea.Model, tea.Cmd) {
 	case "y":
 		return m.copyPath(m.focusedPath())
 	case "r":
+		// The rescan reports on the status row, running and failed. The
+		// answer to the key before it must not sit over that.
+		m.clearActionStatus()
 		if m.loading {
 			return m, nil
 		}
@@ -363,7 +393,11 @@ func (m exploreModel) onKey(key tea.KeyMsg) (tea.Model, tea.Cmd) {
 		m.indexGen++
 		// A rescan rereads the camp, the focused replay included.
 		m.posterFor = ""
-		m.setStatus(exploreLoadStatus, exploreReadingStatus, false)
+		note := exploreReadingStatus
+		if m.readingInBody() {
+			note = ""
+		}
+		m.setStatus(exploreLoadStatus, note, false)
 		return m, m.loadCmd()
 	case "?":
 		m.help = !m.help
@@ -686,9 +720,9 @@ func (m exploreModel) copyPath(path string) (tea.Model, tea.Cmd) {
 
 // clearActionStatus drops a status that answers one key press: a copy, a
 // jump that needs shell integration, or a document that would not open. It
-// goes with the next key that moves focus, changes the lens or filter, or
-// opens, scrolls, or closes the reader. What it covered on the status row,
-// a query, load, or replay note, shows again.
+// goes with the next key that moves focus, changes the lens or filter, starts
+// a rescan, or opens, scrolls, or closes the reader. What it covered on the
+// status row, a query, load, or replay note, shows again.
 func (m *exploreModel) clearActionStatus() {
 	m.status, m.statusErr = "", false
 }

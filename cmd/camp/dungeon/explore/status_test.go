@@ -95,7 +95,7 @@ func TestExploreReaderStatusClearsOnTheNextKey(t *testing.T) {
 		for _, source := range []exploreStatusSource{exploreActionStatus, exploreReadStatus} {
 			for name, key := range keys {
 				m := open(listing)
-				m.setStatus(source, "The file could not be parsed.", true)
+				m.setStatus(source, "The file could not be read.", true)
 				m, _ = press(t, m, key)
 				if m.status != "" || m.statusErr {
 					t.Errorf("listing=%v source=%d: %s left %q", listing, source, name, m.status)
@@ -258,5 +258,65 @@ func TestExploreRescanClearsReadingStatus(t *testing.T) {
 	}
 	if strings.Contains(m.View(), exploreReadingStatus) {
 		t.Fatal("the rescan message is still on screen")
+	}
+}
+
+// r starts a rescan, which reports on the status row while it runs and when
+// it fails. The answer to the key before it stayed on the row, so neither was
+// shown until a movement key.
+func TestExploreRescanClearsTheLastAnswer(t *testing.T) {
+	m := screenFeed(t, 100, 30, intexplore.ProtocolOff, 12)
+	m, _ = press(t, m, runes("g"))
+	if !strings.Contains(m.shownStatus(), goNeedsShell) {
+		t.Fatalf("g without shell integration shows %q", m.shownStatus())
+	}
+	m, cmd := press(t, m, runes("r"))
+	if cmd == nil || !m.loading {
+		t.Fatal("r did not start a rescan")
+	}
+	if m.shownStatus() != exploreReadingStatus || !strings.Contains(viewText(m.View()), exploreReadingStatus) {
+		t.Fatalf("a running rescan shows %q", m.shownStatus())
+	}
+	// A second r is ignored while the first runs, and still gives the row up.
+	m, _ = press(t, m, runes("g"))
+	m, cmd = press(t, m, runes("r"))
+	if cmd != nil || m.shownStatus() != exploreReadingStatus {
+		t.Fatalf("r during a rescan: started another %v, row %q", cmd != nil, m.shownStatus())
+	}
+	m, _ = press(t, m, runes("g"))
+	m, _ = press(t, m, runes("r"))
+	m, _ = press(t, m, exploreLoaded{gen: m.indexGen, err: context.DeadlineExceeded})
+	if row := m.statusRow(); row.text != context.DeadlineExceeded.Error() || !row.failed {
+		t.Fatalf("a failed rescan shows %+v", row)
+	}
+}
+
+// With no index to show, the body says the camp is being read. A rescan from
+// there, as after a first read that failed, said it on the status row too.
+func TestExploreRescanWithNoIndexSaysReadingOnce(t *testing.T) {
+	m := exploreModel{
+		ctx: context.Background(), width: 100, height: 30, loading: true,
+		query: intexplore.Query{Status: "finished", Dungeon: intexplore.LensAll},
+	}
+	m, _ = press(t, m, exploreLoaded{gen: m.indexGen, err: context.DeadlineExceeded})
+	if !m.neverIndexed() || m.shownStatus() != context.DeadlineExceeded.Error() {
+		t.Fatalf("a failed first read shows %q", m.shownStatus())
+	}
+	m, _ = press(t, m, runes("r"))
+	view := viewText(m.View())
+	if n := strings.Count(view, exploreReadingStatus); n != 1 {
+		t.Fatalf("%q is on screen %d times:\n%s", exploreReadingStatus, n, view)
+	}
+	if strings.Contains(view, context.DeadlineExceeded.Error()) {
+		t.Fatalf("the failure of the read before is still on screen:\n%s", view)
+	}
+	if problems := checkLayout(m); len(problems) > 0 {
+		t.Fatal(problems)
+	}
+	// A feed on screen keeps its rows, so the status row is where it is said.
+	fed := screenFeed(t, 100, 30, intexplore.ProtocolOff, 12)
+	fed, _ = press(t, fed, runes("r"))
+	if n := strings.Count(viewText(fed.View()), exploreReadingStatus); n != 1 || fed.shownStatus() != exploreReadingStatus {
+		t.Fatalf("a rescan over a feed says it %d times, row %q", n, fed.shownStatus())
 	}
 }

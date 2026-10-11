@@ -266,6 +266,11 @@ func (m exploreModel) renderHeader() string {
 func (m exploreModel) lensParts() []string {
 	label := m.visible.DungeonLabel
 	if label == "" {
+		// The query did not resolve, so no lens has a label. The header names
+		// the dungeon that was asked for, beside the status row's reason.
+		label = strings.TrimSpace(m.query.Dungeon)
+	}
+	if label == "" || strings.EqualFold(label, intexplore.LensAll) {
 		label = "All dungeons"
 	}
 	return []string{label, statusTitle(m.query.Status)}
@@ -388,7 +393,7 @@ func (m exploreModel) unfilteredFinished() bool {
 }
 
 func (m exploreModel) renderBody() string {
-	if m.loading && len(m.index.Items) == 0 && len(m.index.Dungeons) == 0 {
+	if m.readingInBody() {
 		return fit(exploreReadingStatus, m.width)
 	}
 	if m.reading {
@@ -407,6 +412,12 @@ func (m exploreModel) renderBody() string {
 		return m.renderWide()
 	}
 	return strings.Join(m.window(m.feedLines(m.width, true)), "\n")
+}
+
+// readingInBody reports a read with no index to show meanwhile. The body says
+// the camp is being read, so the status row does not say it as well.
+func (m exploreModel) readingInBody() bool {
+	return m.loading && len(m.index.Items) == 0 && len(m.index.Dungeons) == 0
 }
 
 // neverIndexed reports an empty index left by a load that failed, as when

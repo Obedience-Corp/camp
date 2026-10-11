@@ -36,10 +36,12 @@ Keys in the reader:
   esc, q            back to the feed
 
 Replays draw in Kitty, Ghostty, WezTerm, and iTerm. The automatic choice is
-off inside tmux, screen, or zellij, inside an editor's terminal (Neovim, Vim,
-Emacs), and in any terminal it does not recognize. --images kitty or
---images iterm forces a protocol there. With NO_COLOR set or --no-color given,
-output is plain and no replay is drawn, whatever --images says.
+off inside an editor's terminal (Neovim, Vim, Emacs) and in any terminal it
+does not recognize; --images kitty or --images iterm forces a protocol there.
+Inside tmux, screen, or zellij no replay is drawn, whatever --images says:
+an image written there does not reach the terminal. With NO_COLOR set or
+--no-color given, output is plain and no replay is drawn, whatever --images
+says.
 
   camp dungeon explore
   camp dungeon explore --status archived
@@ -61,7 +63,7 @@ camp dungeon explore [flags]
 ```
       --dungeon string   Dungeon lens: all, a label, or a camp-relative dungeon path (default "all")
   -h, --help             help for explore
-      --images string    Replay rendering: auto, kitty, iterm, or off; always off with NO_COLOR or --no-color (default "auto")
+      --images string    Replay rendering: auto, kitty, iterm, or off; always off with NO_COLOR or --no-color, and inside tmux, screen, or zellij (default "auto")
       --json             Print the feed as JSON
       --no-media         Do not draw replays
       --query string     Case-insensitive substring matched against title, id, summary, dungeon, and path

@@ -99,7 +99,7 @@ func TestExploreReaderClearsParseError(t *testing.T) {
 		},
 	}
 	m, _ = press(t, m, tea.KeyMsg{Type: tea.KeyEnter})
-	if !m.statusErr || m.status != "The file could not be parsed." || !m.reader.listing {
+	if !m.statusErr || m.status != "The file is no longer there." || !m.reader.listing {
 		t.Fatalf("unreadable entry status=%q err=%v listing=%v", m.status, m.statusErr, m.reader.listing)
 	}
 	stuck := m
@@ -118,8 +118,8 @@ func TestExploreReaderClearsParseError(t *testing.T) {
 	if stuck.statusErr || stuck.status != "" || stuck.reader.listing {
 		t.Fatalf("reopened document still shows %q err=%v listing=%v", stuck.status, stuck.statusErr, stuck.reader.listing)
 	}
-	if strings.Contains(m.View(), "could not be parsed") || !strings.Contains(m.View(), "Hello") {
-		t.Fatal("the reader kept the parse error or dropped the document")
+	if strings.Contains(m.View(), "no longer there") || !strings.Contains(m.View(), "Hello") {
+		t.Fatal("the reader kept the read failure or dropped the document")
 	}
 
 	// A status from an earlier key press, such as a copy, describes the

@@ -1,13 +1,16 @@
 package explore
 
 import (
+	"context"
 	"fmt"
+	"os"
 	"path/filepath"
 	"strings"
 	"testing"
 
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
+	"github.com/spf13/cobra"
 
 	intexplore "github.com/Obedience-Corp/camp/internal/dungeon/explore"
 )
@@ -378,5 +381,108 @@ func TestExploreHelpSaysPlainOutputDrawsNoReplay(t *testing.T) {
 	usage := Cmd.Flags().Lookup("images").Usage
 	if !strings.Contains(usage, "NO_COLOR") || !strings.Contains(usage, "--no-color") {
 		t.Errorf("--images help does not name plain output: %q", usage)
+	}
+}
+
+// tmux, screen, and zellij do not pass an image on, and tmux takes a Kitty
+// sequence for its pane title. The help said --images forces a protocol there.
+func TestExploreHelpSaysAMultiplexerDrawsNoReplay(t *testing.T) {
+	long := strings.Join(strings.Fields(Cmd.Long), " ")
+	if want := "Inside tmux, screen, or zellij no replay is drawn, whatever --images says"; !strings.Contains(long, want) {
+		t.Errorf("camp dungeon explore --help does not say %q", want)
+	}
+	forces := strings.Index(long, "forces a protocol there")
+	if forces < 0 {
+		t.Fatal("the help no longer says where --images forces a protocol")
+	}
+	sentence := long[strings.LastIndex(long[:forces], ". ")+1 : forces]
+	for _, name := range []string{"tmux", "screen", "zellij"} {
+		if strings.Contains(sentence, name) {
+			t.Errorf("the help still says --images forces a protocol inside %s: %q", name, sentence)
+		}
+	}
+	if usage := Cmd.Flags().Lookup("images").Usage; !strings.Contains(usage, "tmux, screen, or zellij") {
+		t.Errorf("--images help does not name the multiplexers: %q", usage)
+	}
+}
+
+// imagesCommand is a command with the explorer's replay flags, parsed.
+func imagesCommand(t *testing.T, args ...string) *cobra.Command {
+	t.Helper()
+	cmd := &cobra.Command{Use: "explore"}
+	cmd.Flags().String("images", intexplore.ProtocolAuto, "")
+	cmd.Flags().Bool("no-media", false, "")
+	cmd.SetContext(context.Background())
+	if err := cmd.ParseFlags(args); err != nil {
+		t.Fatal(err)
+	}
+	return cmd
+}
+
+// A protocol named inside a multiplexer is not sent. The feed says so once,
+// on the row that answers a key: the request was explicit and nothing else
+// on screen explains the missing replay.
+func TestExploreSaysOnceThatAMultiplexerDrawsNoReplay(t *testing.T) {
+	// The developer's own terminal must not decide the result, and nothing
+	// is read from their configuration.
+	for _, name := range []string{"TMUX", "STY", "ZELLIJ", "NO_COLOR"} {
+		t.Setenv(name, "")
+		if err := os.Unsetenv(name); err != nil {
+			t.Fatal(err)
+		}
+	}
+	t.Setenv("TERM", "xterm-256color")
+	t.Setenv("XDG_CONFIG_HOME", "/nonexistent-camp-explore-test/config")
+	feed := screenFeed(t, 100, 30, intexplore.ProtocolOff, 6)
+	open := func(args ...string) exploreModel {
+		t.Helper()
+		cmd := imagesCommand(t, args...)
+		flag, _ := cmd.Flags().GetString("images")
+		protocol, err := intexplore.ChooseProtocol(flag, os.Getenv, false)
+		if err != nil {
+			t.Fatal(err)
+		}
+		m := newExploreModel(cmd, "/camp", "", feed.query, protocol, "", false, &feed.index)
+		m.width, m.height = 100, 30
+		return m
+	}
+
+	if m := open("--images", "kitty"); m.protocol != intexplore.ProtocolKitty || m.shownStatus() != "" {
+		t.Fatalf("outside a multiplexer: protocol %q, status %q", m.protocol, m.shownStatus())
+	}
+	for name, env := range map[string][2]string{
+		"tmux": {"TMUX", "/tmp/tmux-501/default,1,0"}, "screen": {"STY", "1234.pts-0.host"},
+		"zellij": {"ZELLIJ", "0"}, "tmux across ssh": {"TERM", "tmux-256color"},
+	} {
+		t.Run(name, func(t *testing.T) {
+			t.Setenv(env[0], env[1])
+			for _, forced := range []string{"kitty", "iterm", "KITTY"} {
+				m := open("--images", forced)
+				if m.protocol != intexplore.ProtocolOff {
+					t.Fatalf("--images %s: protocol %q, want off", forced, m.protocol)
+				}
+				if m.shownStatus() != exploreMultiplexerNote || m.statusRow().failed || !strings.Contains(viewText(m.View()), exploreMultiplexerNote) {
+					t.Fatalf("--images %s: the feed opens on status %q", forced, m.shownStatus())
+				}
+				if problems := checkLayout(m); len(problems) > 0 {
+					t.Fatal(problems)
+				}
+				// Once: it goes with the first key, like any other answer.
+				m, _ = press(t, m, runes("j"))
+				if m.shownStatus() != "" {
+					t.Fatalf("--images %s: after j the status is still %q", forced, m.shownStatus())
+				}
+			}
+			// Nothing was asked for, or replays are off by another rule.
+			for _, args := range [][]string{nil, {"--images", "auto"}, {"--images", "off"}, {"--images", "kitty", "--no-media"}} {
+				if m := open(args...); m.shownStatus() != "" {
+					t.Errorf("%v: the feed opens on status %q", args, m.shownStatus())
+				}
+			}
+			t.Setenv("NO_COLOR", "1")
+			if note := exploreImagesNote(imagesCommand(t, "--images", "kitty")); note != "" {
+				t.Errorf("plain output: note %q", note)
+			}
+		})
 	}
 }
