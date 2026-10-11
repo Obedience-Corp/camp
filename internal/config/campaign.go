@@ -131,6 +131,26 @@ func LoadCampaignConfigFromCwd(ctx context.Context) (*CampaignConfig, string, er
 	return cfg, root, nil
 }
 
+// ReadCampaignConfig reads campaign.yaml and jumps.yaml without writing.
+// A missing campaign ID stays empty, and a missing jumps.yaml is not created.
+func ReadCampaignConfig(ctx context.Context, campaignRoot string) (*CampaignConfig, error) {
+	if ctx.Err() != nil {
+		return nil, ctx.Err()
+	}
+
+	cfg, err := readCampaignFile(ctx, campaignRoot)
+	if err != nil {
+		return nil, err
+	}
+	if err := loadJumps(ctx, campaignRoot, cfg, false); err != nil {
+		return nil, err
+	}
+	if err := validateCampaignFile(campaignRoot, cfg); err != nil {
+		return nil, err
+	}
+	return cfg, nil
+}
+
 // ReadCampaignConfigFromCwd detects the camp root and reads campaign.yaml.
 // A missing campaign ID stays empty, and a missing jumps.yaml is not created.
 func ReadCampaignConfigFromCwd(ctx context.Context) (*CampaignConfig, string, error) {
@@ -143,14 +163,8 @@ func ReadCampaignConfigFromCwd(ctx context.Context) (*CampaignConfig, string, er
 		return nil, "", err
 	}
 
-	cfg, err := readCampaignFile(ctx, root)
+	cfg, err := ReadCampaignConfig(ctx, root)
 	if err != nil {
-		return nil, "", err
-	}
-	if err := loadJumps(ctx, root, cfg, false); err != nil {
-		return nil, "", err
-	}
-	if err := validateCampaignFile(root, cfg); err != nil {
 		return nil, "", err
 	}
 	return cfg, root, nil

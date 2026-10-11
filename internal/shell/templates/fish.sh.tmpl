@@ -348,7 +348,11 @@ function camp --description "Camp CLI wrapper with directory-changing support"
             set -l passthrough 0
             for arg in $rest
                 switch "$arg"
-                    case --help -h --json '--json=*'
+                    case --help -h --json
+                        set passthrough 1
+                        break
+                    case --json=false --json=FALSE --json=False --json=f --json=F --json=0
+                    case '--json=*'
                         set passthrough 1
                         break
                 end

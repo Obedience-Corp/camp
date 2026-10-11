@@ -91,7 +91,7 @@ func TestGenerateBash_DungeonExploreArm(t *testing.T) {
 		{"explore path output", `command camp dungeon explore --path-output "$tmp" "$@"`},
 		{"temp file", "camp-dungeon-explore.XXXXXX"},
 		{"absolute cd", `cd "$dest"`},
-		{"json passthrough", `--json|--json=*`},
+		{"json passthrough", `--json=*)`},
 		{"other subcommands", `command camp dungeon "$@"`},
 	}
 	for _, check := range checks {
@@ -104,6 +104,7 @@ func TestGenerateBash_DungeonExploreArm(t *testing.T) {
 	if strings.Contains(section, `--status|--status=*`) {
 		t.Error("dungeon explore arm must keep status filters on the hop path")
 	}
+	assertJSONFalseKeepsExploreHandoff(t, section)
 }
 
 func TestGenerateBash_FestivalsArm(t *testing.T) {

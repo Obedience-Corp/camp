@@ -131,6 +131,73 @@ func TestExploreNarrowHelpKeepsQuit(t *testing.T) {
 	}
 }
 
+func TestExploreViewShowsScanAndItemWarnings(t *testing.T) {
+	m := exploreModel{
+		width:    100,
+		height:   30,
+		protocol: explore.ProtocolOff,
+		query:    explore.Query{Status: "finished", Dungeon: explore.LensAll},
+		index: explore.Index{
+			Dungeons: []explore.DungeonPrint{{Path: "festivals/.dungeon", Label: "Festivals"}},
+			Items: []explore.Item{
+				{
+					DoneDate: "2026-10-05", DateSource: explore.DateBucket, Status: "completed",
+					DungeonLabel: "Festivals", DungeonPath: "festivals/.dungeon", Kind: explore.KindFestival,
+					Title: "festival-activity-desktop", ID: "FA0024", Path: "festivals/.dungeon/completed/clean", IsDir: true,
+				},
+				{
+					DoneDate: "2026-09-02", DateSource: explore.DateBucket, Status: "completed",
+					DungeonLabel: "Festivals", DungeonPath: "festivals/.dungeon", Kind: explore.KindFestival,
+					Title: "broken-festival", Path: "festivals/.dungeon/completed/broken", IsDir: true,
+				},
+			},
+		},
+	}
+	if err := m.applyQuery(); err != nil {
+		t.Fatal(err)
+	}
+	clean := m.View()
+	if len(viewLines(m)) != m.height {
+		t.Fatalf("clean view has %d rows, want %d", len(viewLines(m)), m.height)
+	}
+	m.index.Warnings = []string{" ", ""}
+	m.visible.Items[0].Warning = "  "
+	m.visible.Items[1].Warning = "\t"
+	if m.View() != clean {
+		t.Fatal("blank warnings changed the layout")
+	}
+
+	const scan = "festivals/.dungeon: unreadable directory"
+	const itemWarn = "fest.yaml: mapping values are not allowed"
+	m.index.Warnings = []string{scan}
+	m.visible.Items[1].Warning = itemWarn
+	focused := m.View()
+	if !strings.Contains(focused, scan) {
+		t.Fatalf("scan warning missing:\n%s", focused)
+	}
+	if strings.Contains(focused, itemWarn) {
+		t.Fatalf("unfocused item warning is showing:\n%s", focused)
+	}
+	m.cursor = 1
+	focused = m.View()
+	if !strings.Contains(focused, scan) || !strings.Contains(focused, itemWarn) {
+		t.Fatalf("focused warnings missing:\n%s", focused)
+	}
+	if len(viewLines(m)) != m.height {
+		t.Fatalf("warnings changed the view height to %d", len(viewLines(m)))
+	}
+
+	body := m.bodyHeight()
+	m.index.Warnings = []string{scan, "docs/.dungeon: permission denied", "workflow/.dungeon: permission denied"}
+	many := m.View()
+	if !strings.Contains(many, "3 scan warnings, first: "+scan) || strings.Contains(many, "docs/.dungeon") {
+		t.Fatalf("scan warnings were not collapsed to one row:\n%s", many)
+	}
+	if m.bodyHeight() != body {
+		t.Fatalf("more scan warnings shrank the body from %d to %d rows", body, m.bodyHeight())
+	}
+}
+
 func TestExploreLongIDKeepsDungeonLabel(t *testing.T) {
 	for _, width := range []int{64, 100} {
 		m := longIDModel(width, 30)

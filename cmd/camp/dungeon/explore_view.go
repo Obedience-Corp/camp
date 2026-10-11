@@ -1,7 +1,9 @@
 package dungeon
 
 import (
+	"bytes"
 	"fmt"
+	"image/png"
 	"slices"
 	"strings"
 	"time"
@@ -15,6 +17,12 @@ import (
 )
 
 const exploreGutter = 2
+
+// Terminal cells are 8×16 in the pixel budget DecodeReplay scales into.
+const (
+	exploreCellWidth  = 8
+	exploreCellHeight = 16
+)
 
 // Styles are resolved once per terminal session from Camp's shared palette.
 type exploreStyles struct {
@@ -98,6 +106,7 @@ func (m exploreModel) view() string {
 		return "Terminal is too small.\n"
 	}
 	lines := []string{m.renderHeader()}
+	lines = append(lines, m.noticeLines()...)
 	body := strings.Split(strings.TrimSuffix(m.renderBody(), "\n"), "\n")
 	for len(body) < m.bodyHeight() {
 		body = append(body, "")
@@ -378,13 +387,17 @@ func (m exploreModel) imageSequence(width int) string {
 	if rows < 1 {
 		return ""
 	}
+	cols := min(width, 48)
 	// DECSC and DECRC put the cursor back where the image started, so the
 	// renderer's next row lands where it expects on every terminal.
 	switch m.protocol {
 	case explore.ProtocolKitty:
-		return "\x1b7" + explore.KittyDelete(exploreImageID) + explore.KittyPNG(exploreImageID, m.poster, min(width, 48), rows) + "\x1b8"
+		// Kitty's c and r stretch the PNG. Place it in the cell box of the
+		// decoded image so a square or portrait replay keeps its aspect.
+		cols, rows = kittyPlacement(m.poster, cols, rows)
+		return "\x1b7" + explore.KittyDelete(exploreImageID) + explore.KittyPNG(exploreImageID, m.poster, cols, rows) + "\x1b8"
 	case explore.ProtocolITerm:
-		return "\x1b7" + explore.ITermPNG(m.poster, min(width, 48), rows) + "\x1b8"
+		return "\x1b7" + explore.ITermPNG(m.poster, cols, rows) + "\x1b8"
 	default:
 		return ""
 	}
@@ -417,18 +430,119 @@ func (m exploreModel) stagePixels() (int, int) {
 		cols -= m.width / 2
 	}
 	cols = min(48, cols)
-	return cols * 8, m.stageRows() * 16
+	return cols * exploreCellWidth, m.stageRows() * exploreCellHeight
 }
 
 func (m exploreModel) bodyHeight() int {
-	h := m.height - 2
-	if m.status != "" {
-		h--
-	}
+	h := m.height - m.chromeLines() - len(m.noticeLines())
 	if h < 1 {
 		return 1
 	}
 	return h
+}
+
+func (m exploreModel) chromeLines() int {
+	n := 2
+	if m.status != "" {
+		n++
+	}
+	return n
+}
+
+func (m exploreModel) noticeLines() []string {
+	if m.reading || m.filtering {
+		return nil
+	}
+	var lines []string
+	if text := scanWarning(m.index.Warnings); text != "" {
+		lines = append(lines, m.styles.failure.Render(fit(text, m.width)))
+	}
+	if item, ok := m.focused(); ok {
+		if text := strings.TrimSpace(item.Warning); text != "" {
+			lines = append(lines, m.styles.failure.Render(fit(text, m.width)))
+		}
+	}
+	limit := m.height - m.chromeLines() - 1
+	if limit < 0 {
+		return nil
+	}
+	if len(lines) > limit {
+		return lines[:limit]
+	}
+	return lines
+}
+
+// scanWarning keeps the notice to one row however many paths failed to scan.
+func scanWarning(warnings []string) string {
+	first, count := "", 0
+	for _, warning := range warnings {
+		if text := strings.TrimSpace(warning); text != "" {
+			if count == 0 {
+				first = text
+			}
+			count++
+		}
+	}
+	if count > 1 {
+		return fmt.Sprintf("%d scan warnings, first: %s", count, first)
+	}
+	return first
+}
+
+func kittyPlacement(pngBytes []byte, maxCols, maxRows int) (int, int) {
+	if maxCols < 1 {
+		maxCols = 1
+	}
+	if maxRows < 1 {
+		maxRows = 1
+	}
+	w, h, ok := pngPixelSize(pngBytes)
+	if !ok {
+		return maxCols, maxRows
+	}
+	maxW := maxCols * exploreCellWidth
+	maxH := maxRows * exploreCellHeight
+	if w > maxW || h > maxH {
+		dw, dh := w, h
+		if dw > maxW {
+			dh = dh * maxW / dw
+			dw = maxW
+		}
+		if dh > maxH {
+			dw = dw * maxH / dh
+			dh = maxH
+		}
+		if dw < 1 {
+			dw = 1
+		}
+		if dh < 1 {
+			dh = 1
+		}
+		w, h = dw, dh
+	}
+	cols := (w + exploreCellWidth - 1) / exploreCellWidth
+	rows := (h + exploreCellHeight - 1) / exploreCellHeight
+	if cols < 1 {
+		cols = 1
+	}
+	if rows < 1 {
+		rows = 1
+	}
+	if cols > maxCols {
+		cols = maxCols
+	}
+	if rows > maxRows {
+		rows = maxRows
+	}
+	return cols, rows
+}
+
+func pngPixelSize(data []byte) (int, int, bool) {
+	cfg, err := png.DecodeConfig(bytes.NewReader(data))
+	if err != nil || cfg.Width < 1 || cfg.Height < 1 {
+		return 0, 0, false
+	}
+	return cfg.Width, cfg.Height, true
 }
 
 func (m exploreModel) contentWidth() int {

@@ -340,7 +340,13 @@ camp() {
       passthrough=0
       for arg in "$@"; do
         case "$arg" in
-          --help|-h|--json|--json=*)
+          --help|-h|--json)
+            passthrough=1
+            break
+            ;;
+          --json=false|--json=FALSE|--json=False|--json=f|--json=F|--json=0)
+            ;;
+          --json=*)
             passthrough=1
             break
             ;;

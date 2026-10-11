@@ -88,6 +88,38 @@ func TestExploreCancelsPNGEncoding(t *testing.T) {
 	}
 }
 
+func TestExploreKittyPlacementKeepsAspect(t *testing.T) {
+	for _, tc := range []struct {
+		name string
+		w, h int
+		want string
+	}{
+		{name: "square", w: 192, h: 192, want: ",c=24,r=12,"},
+		{name: "portrait", w: 96, h: 192, want: ",c=12,r=12,"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			m := replayModel(explore.ProtocolKitty)
+			png, err := explore.EncodePNG(image.NewRGBA(image.Rect(0, 0, tc.w, tc.h)))
+			if err != nil {
+				t.Fatal(err)
+			}
+			m.poster = png
+			view := m.View()
+			if strings.Contains(view, ",c=48,r=12,") {
+				t.Fatal("replay stretched to the full stage")
+			}
+			if !strings.Contains(view, tc.want) {
+				at := strings.Index(view, ",c=")
+				got := view
+				if at >= 0 && at+16 <= len(view) {
+					got = view[at : at+16]
+				}
+				t.Fatalf("placement %q, want %s", got, tc.want)
+			}
+		})
+	}
+}
+
 func TestExploreReplayPaintsAfterBody(t *testing.T) {
 	for _, protocol := range []string{explore.ProtocolKitty, explore.ProtocolITerm} {
 		for _, width := range []int{64, 88, 120} {
