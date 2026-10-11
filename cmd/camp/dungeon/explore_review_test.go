@@ -171,23 +171,34 @@ func TestExploreReplayStaysInsideVisibleBody(t *testing.T) {
 	if !strings.Contains(lines[21], "q quit") {
 		t.Fatalf("help row = %q", lines[21])
 	}
-	if !strings.Contains(view, ",c=14,r=7,") {
-		at := strings.Index(view, ",c=")
-		got := view
-		if at >= 0 && at+16 <= len(view) {
-			got = view[at : at+16]
-		}
-		t.Fatalf("placement %q, want ,c=14,r=7,", got)
+	// The feed window leaves room for the focused block, so the replay keeps
+	// all eight rows and still ends above the status row.
+	row, _, cols, rows, ok := imageBox(view)
+	if !ok || cols != 16 || rows != 8 {
+		t.Fatalf("placement %dx%d at row %d (ok %v), want 16x8", cols, rows, row, ok)
 	}
-	if strings.Contains(view, ",r=8,") {
-		t.Fatal("replay kept the full eight rows")
+	if cup, ok := replayCupRow(view); !ok || cup != row {
+		t.Fatalf("image row = %d, ok %v, want %d", cup, ok, row)
 	}
-	row, ok := replayCupRow(view)
-	if !ok || row != 14 {
-		t.Fatalf("image row = %d, ok %v, want 14", row, ok)
+	if row+rows-1 >= 21 {
+		t.Fatalf("replay rows %d-%d cover the status row", row, row+rows-1)
 	}
-	if row+7-1 >= 21 {
-		t.Fatalf("replay rows %d-%d cover the status row", row, row+6)
+	if problems := checkLayout(m); len(problems) > 0 {
+		t.Fatal(problems)
+	}
+
+	// Whatever the window does, a reservation that reaches the end of the
+	// body is painted only as far as the body goes.
+	seq := m.imageSequence(m.width)
+	body := make([]string, 22)
+	body[17] = seq // rows 18, 19 and 20 are the last three of the body
+	clipped := m.placeReplay(strings.Join(body, "\n"))
+	if !strings.Contains(clipped, ",c=6,r=3,") || strings.Contains(clipped, ",r=8,") {
+		at := strings.Index(clipped, ",c=")
+		t.Fatalf("clipped placement %q, want ,c=6,r=3,", clipped[at:min(at+16, len(clipped))])
+	}
+	if cup, ok := replayCupRow(clipped); !ok || cup != 18 {
+		t.Fatalf("clipped image row = %d, ok %v, want 18", cup, ok)
 	}
 }
 

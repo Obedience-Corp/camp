@@ -140,6 +140,9 @@ func runExplorePassthroughCases(t *testing.T, shellName, script string) {
 		{name: "equals query is not json", args: []string{"--query=--json"}, handoff: true},
 		{name: "json alone passes through", args: []string{"--json"}, handoff: false},
 		{name: "json false keeps handoff", args: []string{"--json=false"}, handoff: true},
+		{name: "query value is not short help", args: []string{"--query", "-h"}, handoff: true},
+		{name: "dungeon value is not help", args: []string{"--dungeon", "--help"}, handoff: true},
+		{name: "help after a value flag passes through", args: []string{"--query", "x", "--help"}, handoff: false},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {

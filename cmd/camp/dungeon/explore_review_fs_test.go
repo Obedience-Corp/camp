@@ -12,6 +12,7 @@ import (
 	"strings"
 	"testing"
 	"time"
+	"unicode/utf8"
 
 	"github.com/Obedience-Corp/camp/internal/dungeon/explore"
 	tea "github.com/charmbracelet/bubbletea"
@@ -21,7 +22,7 @@ import (
 func TestExploreReadFailures(t *testing.T) {
 	root := t.TempDir()
 	for _, path := range []string{root, filepath.Join(root, "missing")} {
-		if _, err := readExploreText(context.Background(), path); err == nil {
+		if _, _, err := readExploreText(context.Background(), path); err == nil {
 			t.Fatalf("reading %s silently succeeded", path)
 		}
 	}
@@ -30,8 +31,8 @@ func TestExploreReadFailures(t *testing.T) {
 	if err := os.WriteFile(path, []byte(want), 0600); err != nil {
 		t.Fatal(err)
 	}
-	if got, err := readExploreText(context.Background(), path); err != nil || got != want[:256<<10] {
-		t.Fatalf("bounded read: %d bytes, %v", len(got), err)
+	if got, cut, err := readExploreText(context.Background(), path); err != nil || !cut || got != want[:256<<10] {
+		t.Fatalf("bounded read: %d bytes, cut %v, %v", len(got), cut, err)
 	}
 	m := replayModel(explore.ProtocolOff)
 	m.root = root
@@ -195,21 +196,84 @@ func TestExploreReaderClearsParseError(t *testing.T) {
 		t.Fatal("the reader kept the parse error or dropped the document")
 	}
 
-	kept := replayModel(explore.ProtocolOff)
-	kept.reading = true
-	kept.reader = exploreReader{listing: true, entries: []readerEntry{{name: "readme.md", path: good}}}
-	kept.setStatus(exploreActionStatus, "copied", false)
-	kept, _ = press(t, kept, tea.KeyMsg{Type: tea.KeyEnter})
-	if kept.statusErr || kept.status != "copied" || kept.reader.listing {
-		t.Fatalf("successful open cleared an unrelated status: %q err=%v listing=%v", kept.status, kept.statusErr, kept.reader.listing)
+	// A status from an earlier key press, such as a copy, describes the
+	// listing. It does not stay over the document that opens next.
+	for _, earlier := range []struct {
+		text   string
+		failed bool
+	}{{"copied", false}, {"copy failed: denied", true}} {
+		opened := replayModel(explore.ProtocolOff)
+		opened.reading = true
+		opened.reader = exploreReader{listing: true, entries: []readerEntry{{name: "readme.md", path: good}}}
+		opened.setStatus(exploreActionStatus, earlier.text, earlier.failed)
+		opened, _ = press(t, opened, tea.KeyMsg{Type: tea.KeyEnter})
+		if opened.reader.listing || opened.status != "" || opened.statusErr {
+			t.Fatalf("opened document still shows %q err=%v listing=%v", opened.status, opened.statusErr, opened.reader.listing)
+		}
 	}
-	kept = replayModel(explore.ProtocolOff)
-	kept.reading = true
-	kept.reader = exploreReader{listing: true, entries: []readerEntry{{name: "readme.md", path: good}}}
-	kept.setStatus(exploreActionStatus, "copy failed: denied", true)
-	kept, _ = press(t, kept, tea.KeyMsg{Type: tea.KeyEnter})
-	if !kept.statusErr || kept.status != "copy failed: denied" || kept.reader.listing {
-		t.Fatalf("successful open cleared an unrelated error: %q err=%v listing=%v", kept.status, kept.statusErr, kept.reader.listing)
+}
+
+// A document longer than the reader loads must say that the rest is missing.
+func TestExploreReaderSaysWhenADocumentIsCut(t *testing.T) {
+	root := t.TempDir()
+	// The limit falls one byte into a three-byte character.
+	long := "# Long\n\n"
+	long += strings.Repeat("word ", readerLimit/5)[:readerLimit-len(long)-1] + "界界界 the end\n"
+	small := "# Small\n\nAll of it.\n"
+	for name, text := range map[string]string{"long.md": long, "small.md": small, "FESTIVAL_GOAL.md": long} {
+		if err := os.WriteFile(filepath.Join(root, name), []byte(text), 0o600); err != nil {
+			t.Fatal(err)
+		}
+	}
+	const notice = "Showing the first 256 KiB of this file."
+	text, cut, err := readExploreText(context.Background(), filepath.Join(root, "long.md"))
+	if err != nil || !cut || len(text) != readerLimit-1 || !utf8.ValidString(text) || strings.Contains(text, "界") {
+		t.Fatalf("long read: %d bytes, cut %v, valid %v, %v", len(text), cut, utf8.ValidString(text), err)
+	}
+	if text, cut, err := readExploreText(context.Background(), filepath.Join(root, "small.md")); err != nil || cut || text != small {
+		t.Fatalf("small read: %q, cut %v, %v", text, cut, err)
+	}
+
+	open := func(item explore.Item) exploreModel {
+		m := replayModel(explore.ProtocolOff)
+		m.root = root
+		m.visible.Items[0] = item
+		m.cursor = 0
+		m, _ = press(t, m, tea.KeyMsg{Type: tea.KeyEnter})
+		if !m.reading {
+			t.Fatalf("enter did not open %s: %q", item.Path, m.status)
+		}
+		return m
+	}
+	// The top of the screen, as text.
+	top := func(m exploreModel) string {
+		lines := strings.Split(m.View(), "\n")
+		for i, line := range lines {
+			lines[i] = strings.TrimRight(viewText(line), " ")
+		}
+		return strings.Join(lines[:8], "\n")
+	}
+	file := open(explore.Item{Kind: explore.KindMarkdown, Title: "long", Path: "long.md"})
+	if got := top(file); !strings.Contains(got, notice) || !strings.Contains(got, "Long") {
+		t.Fatalf("a cut document does not say so: %q", got)
+	}
+	whole := open(explore.Item{Kind: explore.KindMarkdown, Title: "small", Path: "small.md"})
+	if got := top(whole); strings.Contains(got, notice) || !strings.Contains(got, "All of it.") {
+		t.Fatalf("a whole document claims to be cut: %q", got)
+	}
+	goal := open(explore.Item{Kind: explore.KindFestival, Title: "festival", Path: ".", IsDir: true})
+	if got := top(goal); !strings.Contains(got, notice) || !strings.Contains(got, "No replay yet.") {
+		t.Fatalf("a cut festival goal lost a notice: %q", got)
+	}
+	listing := open(explore.Item{Kind: explore.KindWorkitem, Title: "workitem", Path: ".", IsDir: true})
+	for i, entry := range listing.reader.entries {
+		if entry.name == "long.md" {
+			listing.reader.entry = i
+		}
+	}
+	listing, _ = press(t, listing, tea.KeyMsg{Type: tea.KeyEnter})
+	if got := top(listing); listing.reader.listing || !strings.Contains(got, notice) {
+		t.Fatalf("a cut listing entry does not say so: %q", got)
 	}
 }
 

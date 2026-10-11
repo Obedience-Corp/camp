@@ -46,6 +46,8 @@ type exploreModel struct {
 	height   int
 
 	loading      bool
+	loadFailed   bool
+	sized        bool
 	status       string
 	statusErr    bool
 	statusSource exploreStatusSource
@@ -69,6 +71,11 @@ type exploreModel struct {
 	frame    int
 	playing  bool
 	tickGen  int
+
+	// posterFor and posterReplay name the item and replay file the last
+	// schedulePoster asked for, drawn or still decoding.
+	posterFor    string
+	posterReplay string
 
 	decode       func(context.Context, string, int, int) (explore.Frames, error)
 	decodeCancel context.CancelFunc
@@ -179,10 +186,18 @@ func (m exploreModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case tea.WindowSizeMsg:
 		rows := m.stageRows()
 		pixW, pixH := m.stagePixels()
+		first := !m.sized
+		m.sized = true
 		m.width, m.height = msg.Width, msg.Height
 		m.reflowReader()
 		newW, newH := m.stagePixels()
 		if m.stageRows() == rows && newW == pixW && newH == pixH {
+			if first {
+				// The model starts at 80x24, so a terminal of that size
+				// reports no change. Its focused replay is still unrequested.
+				m, cmd := m.ensurePoster()
+				return m, cmd
+			}
 			return m, nil
 		}
 		m, cmd := m.schedulePoster()
@@ -192,9 +207,12 @@ func (m exploreModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			return m, nil
 		}
 		m.loading = false
+		m.loadFailed = msg.err != nil
 		if msg.err != nil {
 			m.setStatus(exploreLoadStatus, msg.err.Error(), true)
-			return m, nil
+			// The index on screen is still the one being browsed.
+			m, cmd := m.ensurePoster()
+			return m, cmd
 		}
 		if m.statusSource == exploreLoadStatus {
 			m.setStatus(exploreLoadStatus, "", false)
@@ -217,7 +235,12 @@ func (m exploreModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				}
 			}
 		}
-		m, cmd := m.schedulePoster()
+		if now, ok := m.focused(); !ok || !hadSelection || now.Path != selected.Path {
+			// A status about the row that was focused does not follow the
+			// cursor to another one.
+			m.clearActionStatus()
+		}
+		m, cmd := m.ensurePoster()
 		return m, tea.Batch(save, cmd)
 	case exploreDecode:
 		if msg.gen != m.loadGen {
@@ -289,16 +312,19 @@ func (m exploreModel) onKey(key tea.KeyMsg) (tea.Model, tea.Cmd) {
 	case "ctrl+d":
 		return m.move(m.page())
 	case "left", "[":
+		m.clearActionStatus()
 		m.query.Dungeon = explore.StepDungeon(m.index.Items, m.query.Status, m.visible.DungeonLens, -1)
 		_ = m.applyQuery()
 		m, cmd := m.schedulePoster()
 		return m, cmd
 	case "right", "]":
+		m.clearActionStatus()
 		m.query.Dungeon = explore.StepDungeon(m.index.Items, m.query.Status, m.visible.DungeonLens, 1)
 		_ = m.applyQuery()
 		m, cmd := m.schedulePoster()
 		return m, cmd
 	case "s":
+		m.clearActionStatus()
 		m.query.Status = explore.NextPreset(m.index.Items, m.query.Status)
 		_ = m.applyQuery()
 		m, cmd := m.schedulePoster()
@@ -321,6 +347,8 @@ func (m exploreModel) onKey(key tea.KeyMsg) (tea.Model, tea.Cmd) {
 		}
 		m.loading = true
 		m.indexGen++
+		// A rescan rereads the camp, the focused replay included.
+		m.posterFor = ""
 		m.setStatus(exploreLoadStatus, exploreReadingStatus, false)
 		return m, m.loadCmd()
 	case "?":
@@ -345,6 +373,7 @@ func (m exploreModel) onFilterKey(key tea.KeyMsg) (tea.Model, tea.Cmd) {
 		return m, nil
 	case "enter":
 		m.filtering = false
+		m.clearActionStatus()
 		m.query.Text = strings.TrimSpace(m.filter)
 		_ = m.applyQuery()
 		m, cmd := m.schedulePoster()
@@ -369,6 +398,9 @@ func filterText(runes []rune) string {
 }
 
 func (m exploreModel) move(delta int) (tea.Model, tea.Cmd) {
+	// A status reports one key press. The next movement key clears it even
+	// when the cursor has nowhere to go, as on a feed of one row.
+	m.clearActionStatus()
 	if len(m.visible.Items) == 0 {
 		return m, nil
 	}
@@ -383,7 +415,6 @@ func (m exploreModel) move(delta int) (tea.Model, tea.Cmd) {
 		return m, nil
 	}
 	m.cursor = next
-	m.clearStatus()
 	m, cmd := m.schedulePoster()
 	return m, cmd
 }
@@ -432,6 +463,7 @@ func (m exploreModel) schedulePoster() (exploreModel, tea.Cmd) {
 	m.frames = nil
 	m.playing = false
 	m.mediaFor = ""
+	m.posterFor, m.posterReplay = "", ""
 	if m.protocol == explore.ProtocolOff || m.stageRows() == 0 {
 		return m, nil
 	}
@@ -439,10 +471,21 @@ func (m exploreModel) schedulePoster() (exploreModel, tea.Cmd) {
 	if !ok || item.Replay == "" {
 		return m, nil
 	}
+	m.posterFor, m.posterReplay = item.Path, item.Replay
 	gen := m.loadGen
 	return m, tea.Tick(50*time.Millisecond, func(time.Time) tea.Msg {
 		return exploreDecode{gen: gen}
 	})
+}
+
+// ensurePoster asks for the focused replay unless that replay is already
+// drawn or decoding. A refresh that leaves the focused row alone must not
+// blank the replay and start it again.
+func (m exploreModel) ensurePoster() (exploreModel, tea.Cmd) {
+	if item, ok := m.focused(); ok && m.posterFor != "" && m.posterFor == item.Path && m.posterReplay == item.Replay {
+		return m, nil
+	}
+	return m.schedulePoster()
 }
 
 func (m exploreModel) decodeCmd(ctx context.Context) tea.Cmd {
@@ -595,15 +638,14 @@ func (m exploreModel) copyPath(path string) (tea.Model, tea.Cmd) {
 	return m, nil
 }
 
-func (m *exploreModel) clearStatus() {
-	if m.statusSource == exploreActionStatus || m.statusSource == exploreReplayStatus || m.statusSource == exploreReadStatus {
+// clearActionStatus drops a status that answers one key press: a copy, a
+// jump that needs shell integration, or a document that would not open. It
+// goes with the next key that moves focus, changes the lens or filter, or
+// opens, scrolls, or closes the reader. Query, load, and replay statuses
+// describe state and are cleared by their own sources.
+func (m *exploreModel) clearActionStatus() {
+	if m.statusSource == exploreActionStatus || m.statusSource == exploreReadStatus {
 		m.setStatus(m.statusSource, "", false)
-	}
-}
-
-func (m *exploreModel) clearReadStatus() {
-	if m.statusSource == exploreReadStatus {
-		m.setStatus(exploreReadStatus, "", false)
 	}
 }
 

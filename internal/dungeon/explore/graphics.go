@@ -14,6 +14,8 @@ const (
 )
 
 // ChooseProtocol picks how a replay is drawn. Plain mode always returns off.
+// Auto also returns off inside a terminal multiplexer; naming a protocol
+// still forces it there.
 func ChooseProtocol(flag string, getenv func(string) string, plain bool) (string, error) {
 	if getenv == nil {
 		getenv = os.Getenv
@@ -33,6 +35,9 @@ func ChooseProtocol(flag string, getenv func(string) string, plain bool) (string
 	if flag == ProtocolKitty || flag == ProtocolITerm {
 		return flag, nil
 	}
+	if insideMultiplexer(getenv) {
+		return ProtocolOff, nil
+	}
 	if getenv("KITTY_WINDOW_ID") != "" || strings.HasPrefix(getenv("TERM"), "xterm-ghostty") || getenv("WEZTERM_PANE") != "" {
 		return ProtocolKitty, nil
 	}
@@ -40,6 +45,17 @@ func ChooseProtocol(flag string, getenv func(string) string, plain bool) (string
 		return ProtocolITerm, nil
 	}
 	return ProtocolOff, nil
+}
+
+// insideMultiplexer reports tmux, GNU screen, or zellij. They keep the outer
+// terminal's KITTY_WINDOW_ID and LC_TERMINAL but do not forward its image
+// sequences, so detection would reserve rows for a replay that never draws.
+func insideMultiplexer(getenv func(string) string) bool {
+	if getenv("TMUX") != "" || getenv("STY") != "" || getenv("ZELLIJ") != "" {
+		return true
+	}
+	term := getenv("TERM")
+	return strings.HasPrefix(term, "screen") || strings.HasPrefix(term, "tmux")
 }
 
 // KittyPNG transmits png with the Kitty graphics protocol, displayed at the

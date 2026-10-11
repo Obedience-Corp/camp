@@ -2,9 +2,12 @@ package dungeon
 
 import (
 	"bytes"
+	"encoding/base64"
 	"fmt"
+	"hash/fnv"
 	"image/png"
 	"slices"
+	"strconv"
 	"strings"
 	"time"
 	"unicode/utf8"
@@ -50,17 +53,24 @@ type helpHint struct {
 	rank int
 }
 
+// exploreHelpSep separates hints. Two columns keep the feed row, with its
+// pointer to the full help, inside 80 columns.
+const exploreHelpSep = "  "
+
+// The feed row is the short list and always points at the full one. The full
+// help names every feed key and takes a second row when one is too narrow.
 var (
 	exploreFeedHelp = []helpHint{
 		{"j/k move", 7}, {"enter read", 6}, {"g go", 2}, {"[ ] dungeon", 4},
-		{"s status", 3}, {"space play", 1}, {"/ filter", 5}, {"q quit", 99},
+		{"s status", 3}, {"space play", 1}, {"/ filter", 5}, {"? help", 98}, {"q quit", 99},
 	}
 	exploreFullHelp = []helpHint{
-		{"j/k move", 9}, {"enter read", 8}, {"g go", 4}, {"[ ] dungeon", 6}, {"s status", 5},
-		{"space play", 3}, {"/ filter", 7}, {"y copy", 1}, {"r rescan", 2}, {"q quit", 99},
+		{"j/k move", 11}, {"ctrl+u/d page", 3}, {"enter read", 10}, {"g go", 6}, {"[ ] dungeon", 8},
+		{"s status", 7}, {"space play", 5}, {"/ filter", 9}, {"y copy", 2}, {"r rescan", 4},
+		{"? close", 98}, {"q quit", 99},
 	}
 	exploreReaderHelp = []helpHint{
-		{"j/k scroll", 4}, {"enter open", 3}, {"g go", 1}, {"y copy", 2}, {"esc back", 99},
+		{"j/k scroll", 5}, {"ctrl+u/d page", 1}, {"enter open", 4}, {"g go", 2}, {"y copy", 3}, {"esc back", 99},
 	}
 )
 
@@ -102,13 +112,15 @@ func (m exploreModel) placeReplay(view string) string {
 			return view
 		}
 	}
+	key := ""
 	if m.protocol == explore.ProtocolITerm {
 		view = markReplayRows(view, row, rows, col, min(width, 48))
+		key = replayRowsKey(view, row, rows)
 	}
 	// imageSequence itself saves/restores at its origin. Strip that inner
 	// pair so the single saved cursor remains on the help row.
 	seq = strings.TrimSuffix(strings.TrimPrefix(seq, "\x1b7"), "\x1b8")
-	return view + fmt.Sprintf("\x1b7\x1b[%d;%dH", row, col) + seq + "\x1b8"
+	return view + key + fmt.Sprintf("\x1b7\x1b[%d;%dH", row, col) + seq + "\x1b8"
 }
 
 // iTerm has no command that deletes an image. Its cells clear only when their
@@ -123,6 +135,22 @@ func markReplayRows(view string, row, rows, col, cols int) string {
 		lines[i] += mark
 	}
 	return strings.Join(lines, "\n")
+}
+
+// replayRowsKey names the bytes of the rows under an iTerm replay. Bubble Tea
+// repaints a changed row and erases to its end, which clears the image cells
+// there, and skips the row that draws the image unless that row changed too.
+// The image row therefore carries a digest of the rows it covers, so the two
+// are always painted together. SetUserVar is an iTerm sequence with no width.
+func replayRowsKey(view string, row, rows int) string {
+	lines := strings.Split(view, "\n")
+	digest := fnv.New64a()
+	for i := max(row-1, 0); i < row-1+rows && i < len(lines); i++ {
+		_, _ = digest.Write([]byte(lines[i]))
+		_, _ = digest.Write([]byte{'\n'})
+	}
+	sum := strconv.FormatUint(digest.Sum64(), 36)
+	return "\x1b]1337;SetUserVar=campReplayRows=" + base64.StdEncoding.EncodeToString([]byte(sum)) + "\a"
 }
 
 func (m exploreModel) bodyRowsFrom(row int) int {
@@ -144,25 +172,35 @@ func (m exploreModel) view() string {
 		body = append(body, "")
 	}
 	lines = append(lines, body...)
-	if m.status != "" {
+	if status := m.shownStatus(); status != "" {
 		style := m.styles.muted
 		if m.statusErr {
 			style = m.styles.failure
 		}
-		lines = append(lines, style.Render(fit(m.status, m.width)))
+		lines = append(lines, style.Render(fit(status, m.width)))
 	}
-	lines = append(lines, m.renderHelp())
+	lines = append(lines, m.helpLines()...)
 	return strings.Join(lines, "\n")
 }
 
+// shownStatus is the text of the status row. A replay status describes the
+// focused feed row; the reader does not draw the replay, so it waits until
+// the reader closes.
+func (m exploreModel) shownStatus() string {
+	if m.reading && m.statusSource == exploreReplayStatus {
+		return ""
+	}
+	return m.status
+}
+
 func (m exploreModel) renderHeader() string {
+	if m.filtering {
+		return m.styles.header.Render(keepEnd("/ ", m.filter, m.width))
+	}
 	return m.styles.header.Render(fit(m.headerText(), m.width))
 }
 
 func (m exploreModel) headerText() string {
-	if m.filtering {
-		return "/ " + m.filter
-	}
 	if m.reading {
 		return m.reader.title
 	}
@@ -190,26 +228,57 @@ func statusTitle(status string) string {
 	return strings.ToUpper(status[:n]) + status[n:]
 }
 
-func (m exploreModel) renderHelp() string {
-	if m.help {
-		return m.styles.help.Render(fitHelp(exploreFullHelp, "  ", m.width))
+// helpLines is the help at the bottom of the screen: one row, or two for the
+// full help when one row cannot name every key and the terminal has the room.
+func (m exploreModel) helpLines() []string {
+	hints, rows := exploreFeedHelp, 1
+	switch {
+	case m.reading:
+		hints = exploreReaderHelp
+	case m.help:
+		hints = exploreFullHelp
+		// Leave the header and one body row, and the status row when shown.
+		room := m.height - 2
+		if m.shownStatus() != "" {
+			room--
+		}
+		rows = min(max(room, 1), 2)
 	}
-	if m.reading {
-		return m.styles.help.Render(fitHelp(exploreReaderHelp, "   ", m.width))
+	lines := fitHelp(hints, exploreHelpSep, m.width, rows)
+	for i, line := range lines {
+		lines[i] = m.styles.help.Render(line)
 	}
-	return m.styles.help.Render(fitHelp(exploreFeedHelp, "   ", m.width))
+	return lines
 }
 
-func fitHelp(hints []helpHint, sep string, width int) string {
+// fitHelp packs hints into at most rows rows of width columns, dropping the
+// lowest-ranked hint until they fit.
+func fitHelp(hints []helpHint, sep string, width, rows int) []string {
 	shown := slices.Clone(hints)
 	for {
-		texts := make([]string, len(shown))
-		for i, hint := range shown {
-			texts[i] = hint.text
+		var lines []string
+		line := ""
+		for _, hint := range shown {
+			next := hint.text
+			if line != "" {
+				next = line + sep + hint.text
+			}
+			if line != "" && lipgloss.Width(next) > width {
+				lines = append(lines, line)
+				next = hint.text
+			}
+			line = next
 		}
-		line := strings.Join(texts, sep)
-		if lipgloss.Width(line) <= width || len(shown) == 1 {
-			return fit(line, width)
+		lines = append(lines, line)
+		fits := len(lines) <= rows
+		for _, text := range lines {
+			fits = fits && lipgloss.Width(text) <= width
+		}
+		if fits || len(shown) == 1 {
+			for i, text := range lines {
+				lines[i] = fit(text, width)
+			}
+			return lines[:min(len(lines), rows)]
 		}
 		drop := 0
 		for i, hint := range shown {
@@ -245,21 +314,30 @@ func (m exploreModel) unfilteredFinished() bool {
 
 func (m exploreModel) renderBody() string {
 	if m.loading && len(m.index.Items) == 0 && len(m.index.Dungeons) == 0 {
-		return exploreReadingStatus
+		return fit(exploreReadingStatus, m.width)
 	}
 	if m.reading {
 		return m.renderReader()
 	}
 	if len(m.index.Dungeons) == 0 {
-		return "No dungeons in this camp."
+		if m.neverIndexed() {
+			return fit("The dungeons could not be read. Press r to try again.", m.width)
+		}
+		return fit("No dungeons in this camp.", m.width)
 	}
 	if len(m.visible.Items) == 0 {
-		return m.emptyFeed()
+		return fit(m.emptyFeed(), m.width)
 	}
 	if m.wide() {
 		return m.renderWide()
 	}
 	return strings.Join(m.window(m.feedLines(m.width, true)), "\n")
+}
+
+// neverIndexed reports an empty index left by a load that failed, as when
+// the first read fails with no cache: the camp may well have dungeons.
+func (m exploreModel) neverIndexed() bool {
+	return m.loadFailed && len(m.index.Items) == 0 && len(m.index.Dungeons) == 0
 }
 
 func (m exploreModel) renderReader() string {
@@ -282,6 +360,13 @@ func (m exploreModel) renderReader() string {
 	}
 	height := m.bodyHeight()
 	start := m.reader.offset
+	if m.reader.listing {
+		// The status row comes and goes between key presses and changes the
+		// body height, so the stored offset can leave the selection outside.
+		reader := m.reader
+		reader.follow(height)
+		start = reader.offset
+	}
 	if start > len(lines) {
 		start = len(lines)
 	}
@@ -391,6 +476,11 @@ func (m exploreModel) window(lines []string) []string {
 		}
 	}
 	start := focus - height/2
+	// The focused row's block must fit below it: its summary and, in the
+	// narrow layout, the replay and the card.
+	if low := focus + m.focusBlockRows() - height; start < low {
+		start = min(low, focus)
+	}
 	if start < 0 {
 		start = 0
 	}
@@ -398,6 +488,18 @@ func (m exploreModel) window(lines []string) []string {
 		start = len(lines) - height
 	}
 	return lines[start : start+height]
+}
+
+// focusBlockRows is the most rows the focused item takes in the feed column:
+// its row and summary, then in the narrow layout the replay reservation and
+// the five card lines. It does not depend on whether the replay has arrived,
+// so the feed does not jump when it does. Without a replay to draw, the card
+// alone already fits under a centered row.
+func (m exploreModel) focusBlockRows() int {
+	if m.wide() || m.stageRows() == 0 || m.protocol == explore.ProtocolOff {
+		return 2
+	}
+	return 2 + 1 + m.stageRows() + 5
 }
 
 func (m exploreModel) stageBlock(width int) []string {
@@ -495,8 +597,8 @@ func (m exploreModel) bodyHeight() int {
 }
 
 func (m exploreModel) chromeLines() int {
-	n := 2
-	if m.status != "" {
+	n := 1 + len(m.helpLines())
+	if m.shownStatus() != "" {
 		n++
 	}
 	return n
@@ -638,6 +740,22 @@ func keepTail(head, tail string, width int) string {
 		return fit(head+tail, width)
 	}
 	return fit(head, room) + tail
+}
+
+// keepEnd fits prefix and text into width, cutting text from the left so the
+// end being typed stays visible.
+func keepEnd(prefix, text string, width int) string {
+	text = explore.CleanText(text)
+	room := width - lipgloss.Width(prefix)
+	over := lipgloss.Width(text) - room
+	if room < 1 {
+		return fit(prefix, width)
+	}
+	if over <= 0 {
+		return prefix + text
+	}
+	// One more column goes to the ellipsis that marks the cut.
+	return prefix + ansi.Truncate("…"+ansi.TruncateLeft(text, over+1, ""), room, "")
 }
 
 func padWidth(s string, width int) string {

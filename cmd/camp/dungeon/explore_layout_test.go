@@ -89,7 +89,7 @@ func TestExploreHelpLineSitsOnLastRow(t *testing.T) {
 		if len(lines) != m.height {
 			t.Fatalf("%s view has %d rows, want %d", name, len(lines), m.height)
 		}
-		if last := lines[len(lines)-1]; last != m.renderHelp() {
+		if last := lines[len(lines)-1]; last != strings.Join(m.helpLines(), "\n") {
 			t.Fatalf("%s last row = %q, want the help line", name, last)
 		}
 	}
@@ -121,11 +121,11 @@ func TestExploreNarrowHelpKeepsQuit(t *testing.T) {
 			t.Fatalf("help at %d columns = %q", width, help)
 		}
 		m.help = true
-		if help := m.renderHelp(); lipgloss.Width(help) > width || !strings.HasSuffix(help, "q quit") {
+		if help := strings.Join(m.helpLines(), "\n"); lipgloss.Width(help) > width || !strings.HasSuffix(help, "q quit") {
 			t.Fatalf("full help at %d columns = %q", width, help)
 		}
 		reading, _ := press(t, longIDModel(width, 24), tea.KeyMsg{Type: tea.KeyEnter})
-		if help := reading.renderHelp(); lipgloss.Width(help) > width || !strings.HasSuffix(help, "esc back") {
+		if help := strings.Join(reading.helpLines(), "\n"); lipgloss.Width(help) > width || !strings.HasSuffix(help, "esc back") {
 			t.Fatalf("reader help at %d columns = %q", width, help)
 		}
 	}

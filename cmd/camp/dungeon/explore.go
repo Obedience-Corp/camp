@@ -26,11 +26,36 @@ var dungeonExploreCmd = &cobra.Command{
 
 The feed is newest day first. Each row shows the work, the day it was put in
 the dungeon, and which dungeon it came from. Festivals with a replay show that
-replay on the focused row. Enter reads the item. g jumps the shell to it when
-shell integration is installed.
+replay on the focused row. The opening lens is finished work: completed and
+done.
 
-[ and ] move between dungeons. s changes the status lens. The opening lens is
-finished work: completed and done.
+Keys in the feed:
+
+  j/k, up/down      move
+  ctrl+u/d          move half a page
+  enter             read the item
+  g                 jump the shell to the item; needs shell integration
+  [ ], left/right   previous or next dungeon
+  s                 next status lens
+  /                 filter by text; enter applies, esc cancels
+  space             play or pause the replay
+  y                 copy the item path
+  r                 rescan the camp
+  ?                 show or close the full key list
+  q, esc, ctrl+c    quit
+
+Keys in the reader:
+
+  j/k, up/down      scroll, or move through a listing
+  ctrl+u/d          scroll half a page
+  enter             open the selected document
+  g                 jump the shell to the item
+  y                 copy the document path
+  esc, q            back to the feed
+
+Replays draw in Kitty, Ghostty, WezTerm, and iTerm. Inside tmux, screen, or
+zellij the automatic choice is off; --images kitty or --images iterm forces
+a protocol.
 
   camp dungeon explore
   camp dungeon explore --status archived
