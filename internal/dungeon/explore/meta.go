@@ -80,6 +80,7 @@ type festMeta struct {
 }
 
 func fillFestival(ctx context.Context, item *Item, festYAML, goalFile string) string {
+	named := false
 	if fileExists(festYAML) {
 		var meta festMeta
 		if err := readYAML(ctx, festYAML, &meta); err != nil {
@@ -88,6 +89,7 @@ func fillFestival(ctx context.Context, item *Item, festYAML, goalFile string) st
 		}
 		if meta.Metadata.Name != "" {
 			item.Title = meta.Metadata.Name
+			named = true
 		}
 		if meta.Metadata.ID != "" {
 			item.ID = meta.Metadata.ID
@@ -102,7 +104,7 @@ func fillFestival(ctx context.Context, item *Item, festYAML, goalFile string) st
 			}
 		}
 	}
-	if item.Summary == "" || item.ID == "" || item.Title == "" {
+	if item.Summary == "" || item.ID == "" || !named {
 		if fileExists(goalFile) {
 			text, err := readLimited(ctx, goalFile)
 			if err != nil {
@@ -112,7 +114,7 @@ func fillFestival(ctx context.Context, item *Item, festYAML, goalFile string) st
 			if item.ID == "" {
 				item.ID = fm["fest_id"]
 			}
-			if item.Title == "" || item.Title == filepath.Base(filepath.Dir(goalFile)) {
+			if !named {
 				if name := fm["fest_name"]; name != "" {
 					item.Title = name
 				}

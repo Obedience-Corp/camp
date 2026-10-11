@@ -158,6 +158,77 @@ Stand up a blog on both domains.
 	}
 }
 
+func TestBuildFestivalGoalSuppliesMissingName(t *testing.T) {
+	root := t.TempDir()
+	fromGoal := filepath.Join(root, "festivals", ".dungeon", "completed", "2026-09-15", "goal-named-FA0099")
+	mustWrite(t, filepath.Join(fromGoal, "fest.yaml"), `
+metadata:
+  id: FA0099
+  goal: Keep the fest.yaml goal
+`)
+	mustWrite(t, filepath.Join(fromGoal, "FESTIVAL_GOAL.md"), `---
+fest_name: Goal Supplied Name
+fest_id: IGNORE
+---
+
+# Goal
+
+**Primary Goal:** This summary must not replace fest.yaml
+`)
+
+	explicit := filepath.Join(root, "festivals", ".dungeon", "completed", "2026-09-14", "explicit-name-FA0100")
+	mustWrite(t, filepath.Join(explicit, "fest.yaml"), `
+metadata:
+  id: FA0100
+  name: Explicit Name
+  goal: Named in fest.yaml
+`)
+	mustWrite(t, filepath.Join(explicit, "FESTIVAL_GOAL.md"), `---
+fest_name: Other Name
+---
+
+**Primary Goal:** Do not use this summary
+`)
+
+	basenamed := filepath.Join(root, "festivals", ".dungeon", "completed", "2026-09-13", "basename-only-FA0101")
+	mustWrite(t, filepath.Join(basenamed, "fest.yaml"), `
+metadata:
+  id: FA0101
+  goal: No festival name anywhere
+`)
+	mustWrite(t, filepath.Join(basenamed, "FESTIVAL_GOAL.md"), "# Goal\n\n**Primary Goal:** Still no name\n")
+
+	idx, err := Build(context.Background(), root)
+	if err != nil {
+		t.Fatalf("Build() error = %v", err)
+	}
+	byPath := map[string]Item{}
+	for _, item := range idx.Items {
+		byPath[item.Path] = item
+	}
+
+	got := byPath["festivals/.dungeon/completed/2026-09-15/goal-named-FA0099"]
+	if got.Title != "Goal Supplied Name" || got.ID != "FA0099" || got.Summary != "Keep the fest.yaml goal" {
+		t.Fatalf("goal-named row = %+v", got)
+	}
+	found, err := Apply(idx, Query{Text: "goal supplied name"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(found.Items) != 1 || found.Items[0].ID != "FA0099" {
+		t.Fatalf("title search = %+v", found.Items)
+	}
+
+	named := byPath["festivals/.dungeon/completed/2026-09-14/explicit-name-FA0100"]
+	if named.Title != "Explicit Name" || named.Summary != "Named in fest.yaml" {
+		t.Fatalf("explicit name row = %+v", named)
+	}
+	base := byPath["festivals/.dungeon/completed/2026-09-13/basename-only-FA0101"]
+	if base.Title != "basename-only-FA0101" || base.ID != "FA0101" || base.Summary != "No festival name anywhere" {
+		t.Fatalf("basename row = %+v", base)
+	}
+}
+
 func mustWrite(t *testing.T, path, body string) {
 	t.Helper()
 	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {

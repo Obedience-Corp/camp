@@ -47,6 +47,50 @@ func refreshIndex(titles ...string) explore.Index {
 	return idx
 }
 
+func TestExploreRefreshKeepsSuppliedDungeonLabel(t *testing.T) {
+	cached := migratedDungeonIndex("festivals/dungeon", "old")
+	fresh := migratedDungeonIndex("festivals/.dungeon", "new")
+
+	m := exploreModel{
+		width: 80, height: 24,
+		query: explore.Query{Status: "finished", Dungeon: "Festivals"},
+		index: cached,
+	}
+	if err := m.applyQuery(); err != nil {
+		t.Fatal(err)
+	}
+	if m.query.Dungeon != "Festivals" || m.visible.DungeonLens != "festivals/dungeon" || m.visible.DungeonLabel != "Festivals" {
+		t.Fatalf("startup selector %q lens %q label %q", m.query.Dungeon, m.visible.DungeonLens, m.visible.DungeonLabel)
+	}
+	m, _ = press(t, m, exploreLoaded{index: fresh, changed: true})
+	if m.statusErr || m.query.Dungeon != "Festivals" || m.visible.DungeonLens != "festivals/.dungeon" || len(m.visible.Items) != 1 || m.visible.Items[0].Title != "new" {
+		t.Fatalf("label refresh: status=%q err=%v selector=%q lens=%q items=%d", m.status, m.statusErr, m.query.Dungeon, m.visible.DungeonLens, len(m.visible.Items))
+	}
+
+	stale := exploreModel{
+		width: 80, height: 24,
+		query: explore.Query{Status: "finished", Dungeon: "festivals/dungeon"},
+		index: cached,
+	}
+	if err := stale.applyQuery(); err != nil {
+		t.Fatal(err)
+	}
+	stale, _ = press(t, stale, exploreLoaded{index: fresh, changed: true})
+	if !stale.statusErr || len(stale.visible.Items) != 0 {
+		t.Fatalf("obsolete path stayed visible: status=%q items=%d", stale.status, len(stale.visible.Items))
+	}
+}
+
+func migratedDungeonIndex(path, title string) explore.Index {
+	return explore.Index{
+		Dungeons: []explore.DungeonPrint{{Path: path, Label: "Festivals"}},
+		Items: []explore.Item{{
+			Title: title, Path: path + "/completed/" + title, Status: "completed",
+			DungeonPath: path, DungeonLabel: "Festivals",
+		}},
+	}
+}
+
 func TestExploreRefreshPreservesFocusedItem(t *testing.T) {
 	m := replayModel(explore.ProtocolOff)
 	m.index, m.query = refreshIndex("B", "C"), explore.Query{Status: "all"}

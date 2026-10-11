@@ -63,7 +63,7 @@ func init() {
 
 func runDungeonExplore(cmd *cobra.Command, _ []string) error {
 	ctx := cmd.Context()
-	cfg, root, err := config.LoadCampaignConfigFromCwd(ctx)
+	cfg, root, err := config.ReadCampaignConfigFromCwd(ctx)
 	if err != nil {
 		return camperrors.Wrap(err, "not in a camp directory")
 	}

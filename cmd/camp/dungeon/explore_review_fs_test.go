@@ -91,6 +91,71 @@ func TestExplorePipedInputJSON(t *testing.T) {
 	}
 }
 
+func TestExploreJSONDoesNotWriteConfig(t *testing.T) {
+	t.Setenv("CAMP_ROOT", "")
+	root := t.TempDir()
+	t.Chdir(root)
+	campaignDir := filepath.Join(root, ".campaign")
+	if err := os.Mkdir(campaignDir, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	configPath := filepath.Join(campaignDir, "campaign.yaml")
+	original := []byte("name: fixture\n")
+	if err := os.WriteFile(configPath, original, 0o600); err != nil {
+		t.Fatal(err)
+	}
+
+	var out bytes.Buffer
+	cmd := dungeonExploreCmd
+	cmd.SetOut(&out)
+	cmd.SetContext(context.Background())
+	if err := cmd.Flags().Set("json", "true"); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() {
+		cmd.SetOut(nil)
+		_ = cmd.Flags().Set("json", "false")
+	})
+	if err := runDungeonExplore(cmd, nil); err != nil {
+		t.Fatal(err)
+	}
+	got, err := os.ReadFile(configPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if string(got) != string(original) {
+		t.Fatalf("campaign.yaml changed:\n%s", got)
+	}
+	jumps := filepath.Join(campaignDir, "settings", "jumps.yaml")
+	if _, err := os.Stat(jumps); !os.IsNotExist(err) {
+		t.Fatalf("explore created jumps.yaml: %v", err)
+	}
+	var result map[string]any
+	if err := json.Unmarshal(out.Bytes(), &result); err != nil {
+		t.Fatalf("--json did not emit JSON: %s (%v)", out.String(), err)
+	}
+
+	// A config that cannot be loaded must still leave the tree untouched.
+	broken := []byte("description: missing name\n")
+	if err := os.WriteFile(configPath, broken, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	out.Reset()
+	if err := runDungeonExplore(cmd, nil); err == nil {
+		t.Fatal("missing camp name was accepted")
+	}
+	got, err = os.ReadFile(configPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if string(got) != string(broken) {
+		t.Fatalf("failed explore rewrote campaign.yaml:\n%s", got)
+	}
+	if _, err := os.Stat(jumps); !os.IsNotExist(err) {
+		t.Fatalf("failed explore created jumps.yaml: %v", err)
+	}
+}
+
 func TestExploreReaderRejectsSpecialFiles(t *testing.T) {
 	root := t.TempDir()
 	normal := filepath.Join(root, "README.md")

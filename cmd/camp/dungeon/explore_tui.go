@@ -396,7 +396,7 @@ func (m *exploreModel) applyQuery() error {
 	}
 	m.visible = result
 	m.query.Status = result.StatusLens
-	m.query.Dungeon = result.DungeonLens
+	// Keep the supplied dungeon selector so a later refresh can resolve that label.
 	if m.cursor >= len(result.Items) {
 		m.cursor = 0
 	}
