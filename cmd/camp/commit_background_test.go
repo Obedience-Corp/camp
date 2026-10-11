@@ -62,16 +62,41 @@ func TestCommitFlagParseErrorUsesBackgroundJSONContract(t *testing.T) {
 		name    string
 		args    []string
 		jsonErr bool
+		message string
 	}{
 		{
 			name:    "background json",
 			args:    []string{"commit", "--auto-write", "--background", "--json", "--all=invalid"},
 			jsonErr: true,
+			message: "invalid",
 		},
 		{
 			name:    "mode flags after the parse failure",
 			args:    []string{"commit", "--all=invalid", "--auto-write", "--background", "--json"},
 			jsonErr: true,
+			message: "invalid",
+		},
+		{
+			name:    "missing flag value",
+			args:    []string{"commit", "--auto-write", "--background", "--json", "--project"},
+			jsonErr: true,
+			message: "flag needs an argument",
+		},
+		{
+			name:    "unknown shorthand",
+			args:    []string{"commit", "--auto-write", "--background", "--json", "-Z"},
+			jsonErr: true,
+			message: "unknown shorthand flag",
+		},
+		{
+			name:    "background enabled again after an opt-out",
+			args:    []string{"commit", "--auto-write", "--background=false", "--background", "--json", "--all=invalid"},
+			jsonErr: true,
+			message: "invalid",
+		},
+		{
+			name: "background opted out after being enabled",
+			args: []string{"commit", "--auto-write", "--background", "--background=false", "--json", "--all=invalid"},
 		},
 		{
 			name: "legacy commit json",
@@ -109,8 +134,8 @@ func TestCommitFlagParseErrorUsesBackgroundJSONContract(t *testing.T) {
 				if env.SchemaVersion != CommitBackgroundJSONVersion {
 					t.Fatalf("schema_version = %q, want %q", env.SchemaVersion, CommitBackgroundJSONVersion)
 				}
-				if env.Error.Code != "validation_error" || env.Error.ExitCode != 2 || !strings.Contains(env.Error.Message, "invalid") {
-					t.Fatalf("error payload = %+v, want validation_error exit 2 mentioning invalid", env.Error)
+				if env.Error.Code != "validation_error" || env.Error.ExitCode != 2 || !strings.Contains(env.Error.Message, tt.message) {
+					t.Fatalf("error payload = %+v, want validation_error exit 2 mentioning %q", env.Error, tt.message)
 				}
 				return
 			}

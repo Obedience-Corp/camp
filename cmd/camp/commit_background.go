@@ -45,7 +45,8 @@ type backgroundCommitResult struct {
 // can stop before either bool is bound, so the process argv decides.
 func backgroundCommitFlagError(cmd *cobra.Command, err error) error {
 	if err != nil && jsoncontract.Requested(nil) && jsoncontract.BoolArg("background") {
-		return jsoncontract.RenderError(cmd, CommitBackgroundJSONVersion, err)
+		// Every error this hook receives is a rejected argument, whatever its wording.
+		return jsoncontract.RenderError(cmd, CommitBackgroundJSONVersion, camperrors.NewValidation("flags", err.Error(), err))
 	}
 	cmd.SilenceUsage = false
 	if root := cmd.Root(); root != nil {
