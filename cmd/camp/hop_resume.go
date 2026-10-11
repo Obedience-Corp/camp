@@ -218,8 +218,9 @@ func runHopResume(ctx context.Context, line string) (string, error) {
 	resumeCtx, cancelResume := context.WithCancel(ctx)
 	defer cancelResume()
 	got := make(chan string, 2)
+	onward := new(hopSwitch)
 	serve := func(ln net.Listener, token string) {
-		follow, _ := serveHopResume(resumeCtx, ln, token, prepareHopResume)
+		follow, _ := serveHopResume(resumeCtx, ln, token, onward, prepareHopResume)
 		got <- follow
 	}
 	go serve(ln, "")
@@ -545,26 +546,40 @@ const (
 	hopResumeMaxConns    = 8
 )
 
-// serveHopResume answers requests on one listener until one is accepted. A
-// non-empty token is required from every request arriving there. A rejected
-// request must not disable onward switching for this shell, so serving goes on
-// until the listener closes.
-func serveHopResume(ctx context.Context, ln net.Listener, token string, prepare func(context.Context, hopResumeRequest) (string, error)) (string, error) {
-	var mu sync.Mutex
-	taken := false
-	once := func(ctx context.Context, request hopResumeRequest) (string, error) {
-		mu.Lock()
-		defer mu.Unlock()
-		if taken {
-			return "", camperrors.New("hop-resume: this hop is already switching")
-		}
-		follow, err := prepare(ctx, request)
-		taken = err == nil
-		return follow, err
+// hopSwitch admits one onward switch per hop, whichever route carries it. A
+// request holds it while its route is prepared and acknowledged, and gives it
+// back when either step fails: a switch the far shell never heard about must
+// not block the next attempt.
+type hopSwitch struct {
+	mu   sync.Mutex
+	held bool
+}
+
+func (s *hopSwitch) reserve() bool {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if s.held {
+		return false
 	}
+	s.held = true
+	return true
+}
+
+func (s *hopSwitch) release() {
+	s.mu.Lock()
+	s.held = false
+	s.mu.Unlock()
+}
+
+// serveHopResume answers requests on one listener and returns the follow-up
+// line of the switch it acknowledged. A non-empty token is required from every
+// request arriving there. A rejected request must not disable onward switching
+// for this shell, so serving goes on until the listener closes.
+func serveHopResume(ctx context.Context, ln net.Listener, token string, hop *hopSwitch, prepare func(context.Context, hopResumeRequest) (string, error)) (string, error) {
 	accepted := make(chan string, 1)
 	stopped := make(chan error, 1)
 	slots := make(chan struct{}, hopResumeMaxConns)
+	var handlers sync.WaitGroup
 	go func() {
 		for {
 			conn, err := ln.Accept()
@@ -579,12 +594,28 @@ func serveHopResume(ctx context.Context, ln net.Listener, token string, prepare 
 				_ = conn.Close()
 				continue
 			}
+			handlers.Add(1)
 			go func() {
+				defer handlers.Done()
 				defer func() { <-slots }()
-				follow, err := acceptHopResume(ctx, conn, token, once)
+				reserved := false
+				follow, err := acceptHopResume(ctx, conn, token, func(ctx context.Context, request hopResumeRequest) (string, error) {
+					if !hop.reserve() {
+						return "", camperrors.New("hop-resume: this hop is already switching")
+					}
+					follow, err := prepare(ctx, request)
+					if err != nil {
+						hop.release()
+						return "", err
+					}
+					reserved = true
+					return follow, nil
+				})
 				_ = conn.Close()
 				if err == nil {
 					accepted <- follow
+				} else if reserved {
+					hop.release()
 				}
 			}()
 		}
@@ -593,6 +624,9 @@ func serveHopResume(ctx context.Context, ln net.Listener, token string, prepare 
 	case follow := <-accepted:
 		return follow, nil
 	case err := <-stopped:
+		// The far shell exits on its acknowledgement, which can close this
+		// listener before the handler that sent it has handed the line over.
+		handlers.Wait()
 		select {
 		case follow := <-accepted:
 			return follow, nil
@@ -600,6 +634,17 @@ func serveHopResume(ctx context.Context, ln net.Listener, token string, prepare 
 			return "", err
 		}
 	}
+}
+
+// peerGone reports whether the far side hung up while its route was being
+// prepared. A write to a closed TCP peer still succeeds once, so the
+// acknowledgement alone cannot tell. End of input counts as a hang-up: a
+// sender keeps its write side open until it is acknowledged, as send does.
+func peerGone(conn net.Conn) bool {
+	_ = conn.SetReadDeadline(time.Now().Add(10 * time.Millisecond))
+	var probe [1]byte
+	n, err := conn.Read(probe[:])
+	return n == 0 && err != nil && !errors.Is(err, os.ErrDeadlineExceeded)
 }
 
 func acceptHopResume(ctx context.Context, conn net.Conn, token string, prepare func(context.Context, hopResumeRequest) (string, error)) (string, error) {
@@ -629,6 +674,9 @@ func acceptHopResume(ctx context.Context, conn net.Conn, token string, prepare f
 		// full window.
 		_ = conn.SetDeadline(time.Now().Add(hopResumeTimeout))
 		follow, err = prepare(ctx, request)
+	}
+	if err == nil && peerGone(conn) {
+		err = camperrors.New("hop-resume: far shell hung up before its switch was acknowledged")
 	}
 	response := hopResumeResponse{Version: 1, Accepted: err == nil}
 	if err != nil {

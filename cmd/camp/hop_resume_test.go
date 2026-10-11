@@ -259,16 +259,22 @@ func serveLoopback(t *testing.T, token string) (string, <-chan string) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	return ln.Addr().String(), serveRoute(t, ln, token, new(hopSwitch), func(context.Context, hopResumeRequest) (string, error) {
+		return "ssh prepared-parent-route", nil
+	})
+}
+
+// serveRoute serves one of a hop's listeners until the test ends.
+func serveRoute(t *testing.T, ln net.Listener, token string, hop *hopSwitch, prepare func(context.Context, hopResumeRequest) (string, error)) <-chan string {
+	t.Helper()
 	ctx, cancel := context.WithCancel(context.Background())
 	t.Cleanup(func() { cancel(); _ = ln.Close() })
 	follow := make(chan string, 1)
 	go func() {
-		line, _ := serveHopResume(ctx, ln, token, func(context.Context, hopResumeRequest) (string, error) {
-			return "ssh prepared-parent-route", nil
-		})
+		line, _ := serveHopResume(ctx, ln, token, hop, prepare)
 		follow <- line
 	}()
-	return ln.Addr().String(), follow
+	return follow
 }
 
 func dialSilent(t *testing.T, addr string) net.Conn {
@@ -283,9 +289,14 @@ func dialSilent(t *testing.T, addr string) net.Conn {
 
 func requestSwitch(t *testing.T, addr, token string) (hopResumeResponse, error) {
 	t.Helper()
+	return requestSwitchTo(t, addr, token, "thirdbox:notes")
+}
+
+func requestSwitchTo(t *testing.T, addr, token, selector string) (hopResumeResponse, error) {
+	t.Helper()
 	conn := dialSilent(t, addr)
 	_ = conn.SetDeadline(time.Now().Add(2 * time.Second))
-	envelope := hopResumeEnvelope{Version: 1, Token: token, Request: hopResumeRequest{Selector: "thirdbox:notes", Host: "c.example"}}
+	envelope := hopResumeEnvelope{Version: 1, Token: token, Request: hopResumeRequest{Selector: selector, Host: "c.example"}}
 	if err := json.NewEncoder(conn).Encode(envelope); err != nil {
 		return hopResumeResponse{}, err
 	}
@@ -336,5 +347,134 @@ func TestHopResumeAcceptsOneSwitchPerHop(t *testing.T) {
 	response, err := requestSwitch(t, addr, token)
 	if err != nil || response.Accepted || !strings.Contains(response.Error, "already switching") {
 		t.Fatalf("a second switch must be refused, the hop is already unwinding: %+v %v", response, err)
+	}
+}
+
+// heldCloseListener hands out connections whose Close blocks until released,
+// holding a handler between its acknowledgement and its hand-off.
+type heldCloseListener struct {
+	net.Listener
+	release chan struct{}
+}
+
+func (l heldCloseListener) Accept() (net.Conn, error) {
+	conn, err := l.Listener.Accept()
+	if err != nil {
+		return nil, err
+	}
+	return heldCloseConn{Conn: conn, release: l.release}, nil
+}
+
+type heldCloseConn struct {
+	net.Conn
+	release chan struct{}
+}
+
+func (c heldCloseConn) Close() error {
+	<-c.release
+	return c.Conn.Close()
+}
+
+func TestHopResumeKeepsAnAcknowledgedSwitchWhenTheHopEndsFirst(t *testing.T) {
+	const token = "0123456789abcdef0123456789abcdef"
+	ln, err := net.Listen("tcp", "127.0.0.1:0")
+	if err != nil {
+		t.Fatal(err)
+	}
+	held := heldCloseListener{Listener: ln, release: make(chan struct{})}
+	follow := serveRoute(t, held, token, new(hopSwitch), func(context.Context, hopResumeRequest) (string, error) {
+		return "ssh prepared-parent-route", nil
+	})
+	if response, err := requestSwitch(t, ln.Addr().String(), token); err != nil || !response.Accepted {
+		t.Fatalf("switch: %+v %v", response, err)
+	}
+	// The far shell exits on that acknowledgement and the hop closes its
+	// listener while the handler has not handed the line over yet.
+	_ = ln.Close()
+	select {
+	case line := <-follow:
+		t.Fatalf("serving ended before the acknowledged handler finished, returning %q", line)
+	case <-time.After(200 * time.Millisecond):
+	}
+	close(held.release)
+	select {
+	case line := <-follow:
+		if line != "ssh prepared-parent-route" {
+			t.Fatalf("the acknowledged switch was lost: %q", line)
+		}
+	case <-time.After(2 * time.Second):
+		t.Fatal("serving never returned")
+	}
+}
+
+func TestHopResumeInterruptedSenderDoesNotHoldTheSwitch(t *testing.T) {
+	const token = "0123456789abcdef0123456789abcdef"
+	ln, err := net.Listen("tcp", "127.0.0.1:0")
+	if err != nil {
+		t.Fatal(err)
+	}
+	hop := new(hopSwitch)
+	preparing := make(chan struct{}, 1)
+	proceed := make(chan struct{})
+	follow := serveRoute(t, ln, token, hop, func(_ context.Context, request hopResumeRequest) (string, error) {
+		if request.Selector == "first:notes" {
+			preparing <- struct{}{}
+			<-proceed
+		}
+		return "ssh " + request.Selector, nil
+	})
+
+	// The sender is interrupted while this side is still preparing its route.
+	first := dialSilent(t, ln.Addr().String())
+	envelope := hopResumeEnvelope{Version: 1, Token: token, Request: hopResumeRequest{Selector: "first:notes", Host: "c.example"}}
+	if err := json.NewEncoder(first).Encode(envelope); err != nil {
+		t.Fatal(err)
+	}
+	<-preparing
+	_ = first.Close()
+	close(proceed)
+	deadline := time.Now().Add(2 * time.Second)
+	for !hop.reserve() {
+		if time.Now().After(deadline) {
+			t.Fatal("a switch whose sender hung up kept the hop reserved")
+		}
+		time.Sleep(5 * time.Millisecond)
+	}
+	hop.release()
+
+	response, err := requestSwitchTo(t, ln.Addr().String(), token, "second:notes")
+	if err != nil || !response.Accepted {
+		t.Fatalf("the retry must be accepted: %+v %v", response, err)
+	}
+	select {
+	case line := <-follow:
+		if line != "ssh second:notes" {
+			t.Fatalf("follow-up %q, want the retry's; the interrupted switch must not be queued", line)
+		}
+	case <-time.After(2 * time.Second):
+		t.Fatal("the retry did not complete the hop")
+	}
+}
+
+func TestHopResumeRoutesShareOneSwitch(t *testing.T) {
+	const token = "0123456789abcdef0123456789abcdef"
+	hop := new(hopSwitch)
+	var addrs []string
+	for range 2 {
+		ln, err := net.Listen("tcp", "127.0.0.1:0")
+		if err != nil {
+			t.Fatal(err)
+		}
+		serveRoute(t, ln, token, hop, func(_ context.Context, request hopResumeRequest) (string, error) {
+			return "ssh " + request.Selector, nil
+		})
+		addrs = append(addrs, ln.Addr().String())
+	}
+	if response, err := requestSwitchTo(t, addrs[0], token, "first:notes"); err != nil || !response.Accepted {
+		t.Fatalf("first route: %+v %v", response, err)
+	}
+	response, err := requestSwitchTo(t, addrs[1], token, "second:notes")
+	if err != nil || response.Accepted || !strings.Contains(response.Error, "already switching") {
+		t.Fatalf("the hop's other route must refuse a second destination: %+v %v", response, err)
 	}
 }

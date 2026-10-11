@@ -35,7 +35,7 @@ func TestHopResumeSocketRoundTrip(t *testing.T) {
 	scope := cmdutil.CampaignScope{Org: "obey", Status: "inactive", All: true}
 	done := make(chan string, 1)
 	go func() {
-		follow, _ := serveHopResume(context.Background(), ln, "", func(_ context.Context, request hopResumeRequest) (string, error) {
+		follow, _ := serveHopResume(context.Background(), ln, "", new(hopSwitch), func(_ context.Context, request hopResumeRequest) (string, error) {
 			if request.Scope != scope {
 				t.Errorf("scope %+v", request.Scope)
 			}
@@ -194,7 +194,7 @@ func TestHopResumeSendFallsBackToLoopbackWithToken(t *testing.T) {
 	reject := true
 	served := make(chan error, 1)
 	go func() {
-		_, err := serveHopResume(context.Background(), ln, token, func(_ context.Context, request hopResumeRequest) (string, error) {
+		_, err := serveHopResume(context.Background(), ln, token, new(hopSwitch), func(_ context.Context, request hopResumeRequest) (string, error) {
 			if request.Selector != "thirdbox:notes" || request.Host != "c.example" {
 				return "", errors.New("request changed in transit")
 			}
