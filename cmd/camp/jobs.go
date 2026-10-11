@@ -695,7 +695,8 @@ func jobCountPhrase(n int) string {
 //     user is already looking at
 //   - completion and shell-init, which produce machine input, and where an
 //     extra line on stderr is a broken shell rather than a warning
-//   - anything under --json, for the same reason
+//   - anything that prints JSON, for the same reason: under --json, under a
+//     --format json alias, or by a command's own rule such as a pipe
 //
 // It never errors. A notice that cannot be computed must not break the command
 // it was going to annotate.
@@ -711,8 +712,19 @@ func maybeWarnFailedJobs(cmd *cobra.Command) {
 }
 
 // suppressesNotices reports whether a command's output must stay clean.
+//
+// A JSON caller parses stderr as well as stdout: a refusal is an envelope
+// there, and a notice line ahead of it is not JSON. So the question is
+// whether the command prints JSON, not whether --json was typed. A command
+// that decides by more than its flags declares how (jsoncontract.Declare).
 func suppressesNotices(cmd *cobra.Command) bool {
 	if f := cmd.Flags().Lookup("json"); f != nil && f.Changed {
+		return true
+	}
+	if f := cmd.Flags().Lookup("format"); f != nil && f.Value.String() == "json" {
+		return true
+	}
+	if jsoncontract.Declared(cmd) {
 		return true
 	}
 	for c := cmd; c != nil; c = c.Parent() {

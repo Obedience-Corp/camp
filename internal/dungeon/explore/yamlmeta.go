@@ -22,20 +22,33 @@ type workitemMeta struct {
 	ref   string
 }
 
+// readFestMeta reads a fest.yaml. A file past the read limit gives the fields
+// found inside it and errMetaCut: the cut is what is wrong with the row,
+// whatever the parser then made of where the text stops.
 func readFestMeta(ctx context.Context, path string) (festMeta, error) {
-	text, err := readLimited(ctx, path)
+	text, cut, err := readLimited(ctx, path)
 	if err != nil {
 		return festMeta{}, err
 	}
-	return parseFestMeta(text)
+	meta, err := parseFestMeta(text)
+	if cut {
+		err = errMetaCut
+	}
+	return meta, err
 }
 
+// readWorkitemMeta reads a .workitem marker the way readFestMeta reads a
+// fest.yaml.
 func readWorkitemMeta(ctx context.Context, path string) (workitemMeta, error) {
-	text, err := readLimited(ctx, path)
+	text, cut, err := readLimited(ctx, path)
 	if err != nil {
 		return workitemMeta{}, err
 	}
-	return parseWorkitemMeta(text)
+	meta, err := parseWorkitemMeta(text)
+	if cut {
+		err = errMetaCut
+	}
+	return meta, err
 }
 
 // parseFestMeta reads the metadata block of a fest.yaml. It returns every

@@ -3,12 +3,14 @@ package explore
 import (
 	"context"
 	"fmt"
+	"slices"
 	"strings"
 	"testing"
 	"time"
 
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
+	"github.com/charmbracelet/x/ansi"
 
 	intexplore "github.com/Obedience-Corp/camp/internal/dungeon/explore"
 )
@@ -451,5 +453,63 @@ func TestExploreLayoutMatrix(t *testing.T) {
 		empty.loading, empty.loadFailed = false, true
 		empty.setStatus(exploreLoadStatus, "open /camp: permission denied", true)
 		report(label+" load-failed", empty)
+	}
+}
+
+// A row with no done date sits under its own heading, last in the feed, and
+// its card says so. The heading is there when every visible row is undated.
+func TestExploreFeedHeadsUndatedRows(t *testing.T) {
+	undated := intexplore.Item{
+		DateSource: intexplore.DateUnknown, Status: "completed",
+		DungeonLabel: "Festivals", DungeonPath: "festivals/.dungeon",
+		Title: "locked", Path: "festivals/.dungeon/completed/locked", Warning: "permission denied",
+	}
+	dated := intexplore.Item{
+		DoneDate: "2026-10-05", DateSource: intexplore.DateBucket, Status: "completed",
+		DungeonLabel: "Festivals", DungeonPath: "festivals/.dungeon",
+		Title: "shipped", Path: "festivals/.dungeon/completed/2026-10-05/shipped",
+	}
+	plain := func(lines []string) []string {
+		out := make([]string, len(lines))
+		for i, line := range lines {
+			out[i] = strings.TrimSpace(ansi.Strip(line))
+		}
+		return out
+	}
+
+	both := plain(feedModel(t, []intexplore.Item{dated, undated}, intexplore.Query{}).feedLines(78, false))
+	if want := []string{prettyDay("2026-10-05"), "> shipped  Festivals", "No date", "locked  Festivals"}; !slices.Equal(both, want) {
+		t.Fatalf("feed = %q, want %q", both, want)
+	}
+
+	alone := feedModel(t, []intexplore.Item{undated}, intexplore.Query{})
+	if got := plain(alone.feedLines(78, false)); !slices.Equal(got, []string{"No date", "> locked  Festivals"}) {
+		t.Fatalf("feed of one undated row = %q, want its heading above it", got)
+	}
+	if card := plain(alone.cardLines(undated, 78)); !slices.Contains(card, "no date") {
+		t.Fatalf("card = %q, want it to say the row has no date", card)
+	}
+
+	// The window counts that heading too: a long feed of undated rows scrolls
+	// exactly as the same feed does when every row shares one day.
+	cursorRow := func(day string) int {
+		var many []intexplore.Item
+		for i := range 40 {
+			row := undated
+			row.DoneDate = day
+			row.Title = fmt.Sprintf("locked-%02d", i)
+			row.Path = fmt.Sprintf("festivals/.dungeon/completed/locked-%02d", i)
+			row.Summary = fmt.Sprintf("summary %02d", i)
+			many = append(many, row)
+		}
+		m := feedModel(t, many, intexplore.Query{})
+		m.width, m.height = 120, 24
+		m.cursor = len(many) / 2
+		return slices.IndexFunc(plain(m.window(m.feedLines(60, false))), func(line string) bool {
+			return strings.HasPrefix(line, "> ")
+		})
+	}
+	if dated, none := cursorRow("2026-10-05"), cursorRow(""); none != dated || dated < 0 {
+		t.Fatalf("the cursor sits on window row %d in an undated feed and %d in a dated one", none, dated)
 	}
 }

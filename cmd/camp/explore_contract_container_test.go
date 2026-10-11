@@ -6,13 +6,17 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"io"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 
+	"github.com/spf13/cobra"
 	"github.com/spf13/pflag"
 
 	"github.com/Obedience-Corp/camp/internal/dungeon/explore"
+	"github.com/Obedience-Corp/camp/internal/jobs"
 	"github.com/Obedience-Corp/camp/internal/jsoncontract"
 )
 
@@ -131,5 +135,78 @@ func TestExploreExecuteRefusesInvalidFlags(t *testing.T) {
 	}
 	if _, err := os.Stat(filepath.Join(payload.CampaignRoot, filepath.FromSlash(payload.Items[0].Path))); err != nil {
 		t.Fatalf("campaign_root joined with the item path does not resolve: %v", err)
+	}
+}
+
+// processStderr returns what run wrote to the process's own stderr, the
+// stream a notice is printed on whatever the command's writers are set to.
+func processStderr(t *testing.T, run func()) string {
+	t.Helper()
+	r, w, err := os.Pipe()
+	if err != nil {
+		t.Fatal(err)
+	}
+	orig := os.Stderr
+	os.Stderr = w
+	read := make(chan string, 1)
+	go func() {
+		data, _ := io.ReadAll(r)
+		read <- string(data)
+	}()
+	run()
+	os.Stderr = orig
+	_ = w.Close()
+	out := <-read
+	_ = r.Close()
+	return out
+}
+
+// A failed deferred commit is announced on stderr before every foreground
+// command. The explorer prints JSON on a pipe without --json, and its refusal
+// is an envelope on stderr: a notice line ahead of it is not JSON.
+func TestExploreExecuteKeepsStderrJSONWhenAJobFailed(t *testing.T) {
+	t.Setenv("CAMP_ROOT", "")
+	root := t.TempDir()
+	if err := os.MkdirAll(filepath.Join(root, ".campaign"), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(root, ".campaign", "campaign.yaml"), []byte("id: fixture\nname: fixture\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	lane := filepath.Join(jobs.QueueDir(root), "failed", "root")
+	if err := os.MkdirAll(lane, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(lane, "0001.json"), []byte("{}\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	chdirForTest(t, root)
+
+	// The camp does raise the notice for a command that prints text.
+	textCommand := &cobra.Command{Use: "status"}
+	textCommand.SetContext(context.Background())
+	if notice := processStderr(t, func() { maybeWarnFailedJobs(textCommand) }); !strings.Contains(notice, "deferred commit failed") {
+		t.Fatalf("the fixture raised no notice: %q", notice)
+	}
+
+	for name, args := range map[string][]string{
+		"pipe":      {"--status", "bogus"},
+		"json flag": {"--json", "--status", "bogus"},
+	} {
+		t.Run(name, func(t *testing.T) {
+			var stderr string
+			var code int
+			direct := processStderr(t, func() { _, stderr, code = executeExplore(t, args...) })
+			if direct != "" {
+				t.Fatalf("text reached stderr beside the envelope: %q", direct)
+			}
+			var envelope jsoncontract.ErrorEnvelope
+			if err := json.Unmarshal([]byte(stderr), &envelope); err != nil {
+				t.Fatalf("stderr is not one JSON envelope: %q (%v)", stderr, err)
+			}
+			if code != 2 || envelope.Error.Code != "validation_error" {
+				t.Fatalf("exit %d, error %+v; want a validation refusal with exit 2", code, envelope.Error)
+			}
+		})
 	}
 }

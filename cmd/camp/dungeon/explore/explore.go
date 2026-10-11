@@ -98,6 +98,7 @@ func init() {
 		return exploreRefusal(cmd, exploreUnderSignals(cmd, func() error { return runDungeonExplore(cmd, args) }))
 	})
 	Cmd.SetFlagErrorFunc(jsoncontract.FlagErrorFunc(intexplore.SchemaVersion, jsonMode))
+	jsoncontract.Declare(Cmd, jsonMode)
 }
 
 // exploreJSONMode reports whether this run prints JSON. A pipe prints the

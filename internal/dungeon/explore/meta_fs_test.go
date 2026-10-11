@@ -336,3 +336,61 @@ func TestBuildSurvivesMetadataTheYAMLDecoderCannotRead(t *testing.T) {
 		})
 	}
 }
+
+// A metadata file is read up to a limit. Past it the row keeps what the
+// opening gave and says the file was cut, instead of reading as complete.
+func TestBuildWarnsWhenMetadataPassesTheReadLimit(t *testing.T) {
+	root := t.TempDir()
+	done := filepath.Join(root, "festivals", ".dungeon", "completed")
+	filler := strings.Repeat("# "+strings.Repeat("x", 78)+"\n", metaReadLimit/80+1)
+	mustWrite(t, filepath.Join(done, "long-fest", "fest.yaml"), "metadata:\n  id: LF0001\n  name: Long Fest\n"+filler+"  goal: past the limit\n")
+	mustWrite(t, filepath.Join(done, "long-work", ".workitem"), "title: Long Work\n"+filler+"ref: WI-after\n")
+	mustWrite(t, filepath.Join(done, "short-fest", "fest.yaml"), "metadata:\n  id: SF0001\n  name: Short Fest\n")
+
+	idx, err := Build(context.Background(), root)
+	if err != nil {
+		t.Fatalf("Build() error = %v", err)
+	}
+	fest := itemAt(t, idx, "festivals/.dungeon/completed/long-fest")
+	if fest.Title != "Long Fest" || fest.ID != "LF0001" || fest.Summary != "" {
+		t.Fatalf("cut fest.yaml row = %+v, want the fields before the limit and none after", fest)
+	}
+	if want := "fest.yaml: longer than 256 KB; the rest was not read"; fest.Warning != want {
+		t.Fatalf("cut fest.yaml warning = %q, want %q", fest.Warning, want)
+	}
+	work := itemAt(t, idx, "festivals/.dungeon/completed/long-work")
+	if work.Title != "Long Work" || work.ID != "" {
+		t.Fatalf("cut .workitem row = %+v, want the title before the limit and no id", work)
+	}
+	if want := ".workitem: longer than 256 KB; the rest was not read"; work.Warning != want {
+		t.Fatalf("cut .workitem warning = %q, want %q", work.Warning, want)
+	}
+	if short := itemAt(t, idx, "festivals/.dungeon/completed/short-fest"); short.Warning != "" {
+		t.Fatalf("a file inside the limit warns: %q", short.Warning)
+	}
+}
+
+// Frontmatter with a repeated key reads like a .workitem with one: the row
+// takes the first value and carries the warning.
+func TestBuildKeepsTheFirstOfARepeatedFrontmatterKey(t *testing.T) {
+	root := t.TempDir()
+	done := filepath.Join(root, ".dungeon", "completed")
+	mustWrite(t, filepath.Join(done, "note.md"), "---\ntitle: First Title\nid: N-1\ntitle: Second Title\n---\n\nThe body.\n")
+	mustWrite(t, filepath.Join(done, "work", ".workitem"), "title: First Title\nid: N-1\ntitle: Second Title\n")
+
+	idx, err := Build(context.Background(), root)
+	if err != nil {
+		t.Fatalf("Build() error = %v", err)
+	}
+	note := itemAt(t, idx, ".dungeon/completed/note.md")
+	if note.Kind != KindMarkdown || note.Title != "First Title" || note.ID != "N-1" || note.Summary != "The body." {
+		t.Fatalf("note row = %+v, want a markdown row with the first title", note)
+	}
+	if want := `note.md: key "title" is repeated`; note.Warning != want {
+		t.Fatalf("note warning = %q, want %q", note.Warning, want)
+	}
+	work := itemAt(t, idx, ".dungeon/completed/work")
+	if work.Title != note.Title || work.Warning != `.workitem: key "title" is repeated` {
+		t.Fatalf(".workitem row = %+v, want the same first title and warning", work)
+	}
+}

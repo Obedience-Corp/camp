@@ -20,6 +20,9 @@ const (
 	DateBucket   = "bucket"
 	DateHistory  = "history"
 	DateFileTime = "filetime"
+	// DateUnknown marks a row with no done date: the entry could not be
+	// examined, so not even its file time is known.
+	DateUnknown = "unknown"
 
 	StatusHolding = "holding"
 	LensAll       = "all"
@@ -130,7 +133,8 @@ func Label(parentRel string) string {
 	}
 }
 
-// Sort orders newest done date first, then dungeon label, then title.
+// Sort orders newest done date first, then dungeon label, then title. A row
+// with no done date sorts after every dated one.
 func Sort(items []Item) {
 	slices.SortStableFunc(items, func(a, b Item) int {
 		if a.DoneDate != b.DoneDate {
@@ -233,7 +237,8 @@ func (q Query) Validate() error {
 
 // Apply filters the index items. Status names and dungeon labels are matched
 // case-insensitively. Dungeon paths match as stored. A dungeon resolves when
-// the index discovered it, even if it holds no items.
+// the index discovered it, even if it holds no items. A row with no done
+// date is outside every --since and --until range.
 func Apply(idx Index, q Query) (Result, error) {
 	items := idx.Items
 	status := q.Status
@@ -261,7 +266,10 @@ func Apply(idx Index, q Query) (Result, error) {
 		if !statusMatch(item.Status, want) {
 			continue
 		}
-		if dungeonKey != LensAll && item.DungeonPath != dungeonKey && !strings.EqualFold(item.DungeonLabel, dungeonKey) {
+		if dungeonKey != LensAll && item.DungeonPath != dungeonKey {
+			continue
+		}
+		if item.DoneDate == "" && (since != "" || until != "") {
 			continue
 		}
 		if since != "" && item.DoneDate < since {
@@ -349,37 +357,67 @@ func statusMatch(status string, want []string) bool {
 	return slices.Contains(want, status)
 }
 
+// resolveDungeon turns a --dungeon value, or a lens the feed stepped to, into
+// one dungeon path. A path the index holds is that dungeon exactly as
+// written: nothing is trimmed from it and no label is weighed against it, so
+// every lens DungeonLenses offers resolves to itself. Only then is the value
+// read as typed text: trimmed, cleaned as a path, and last tried as a label,
+// which unlike a path can name more than one dungeon.
 func resolveDungeon(idx Index, raw string) (path, label string, err error) {
-	raw = strings.TrimSpace(raw)
-	if raw == "" || strings.EqualFold(raw, LensAll) {
-		return LensAll, "All dungeons", nil
+	if raw == "" {
+		return LensAll, allDungeons, nil
 	}
-	name := storedPath(raw)
+	if label, ok := labelAt(idx, raw); ok {
+		return raw, label, nil
+	}
+	typed := strings.TrimSpace(raw)
+	if typed == "" || strings.EqualFold(typed, LensAll) {
+		return LensAll, allDungeons, nil
+	}
+	name := storedPath(typed)
+	if label, ok := labelAt(idx, name); ok {
+		return name, label, nil
+	}
 	for _, d := range idx.Dungeons {
-		if d.Path != name && !strings.EqualFold(d.Label, raw) && !strings.EqualFold(d.Label, name) {
+		if !strings.EqualFold(d.Label, typed) && !strings.EqualFold(d.Label, name) {
 			continue
 		}
 		if path != "" && path != d.Path {
-			return "", "", errAmbiguousDungeon(raw)
+			return "", "", errAmbiguousDungeon(typed)
 		}
 		path, label = d.Path, d.Label
 	}
 	for _, item := range idx.Items {
-		if item.DungeonPath != name && !strings.EqualFold(item.DungeonLabel, raw) && !strings.EqualFold(item.DungeonLabel, name) {
+		if !strings.EqualFold(item.DungeonLabel, typed) && !strings.EqualFold(item.DungeonLabel, name) {
 			continue
 		}
 		if path != "" && path != item.DungeonPath {
-			return "", "", errAmbiguousDungeon(raw)
+			return "", "", errAmbiguousDungeon(typed)
 		}
-		path = item.DungeonPath
-		if label == "" {
-			label = item.DungeonLabel
-		}
+		path, label = item.DungeonPath, item.DungeonLabel
 	}
 	if path == "" {
-		return "", "", errUnknownDungeon(raw)
+		return "", "", errUnknownDungeon(typed)
 	}
 	return path, label, nil
+}
+
+const allDungeons = "All dungeons"
+
+// labelAt is the label of the dungeon stored at path. A dungeon the sweep
+// found is known even when it holds no rows.
+func labelAt(idx Index, path string) (string, bool) {
+	for _, d := range idx.Dungeons {
+		if d.Path == path {
+			return d.Label, true
+		}
+	}
+	for _, item := range idx.Items {
+		if item.DungeonPath == path {
+			return item.DungeonLabel, true
+		}
+	}
+	return "", false
 }
 
 // storedPath is a path as the index spells it. One typed or completed by a

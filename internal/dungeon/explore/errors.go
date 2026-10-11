@@ -66,12 +66,13 @@ var (
 	errFrontmatterOpen  = camperrors.New("frontmatter has no closing --- line")
 )
 
-// What is wrong with a fest.yaml or a .workitem that still parsed. Each is
-// the text after the file name in a row's warning.
+// What is wrong with a fest.yaml, a .workitem, or a frontmatter block that
+// still gave fields. Each is the text after the file name in a row's warning.
 var (
 	errYAMLParse   = camperrors.New("could not be parsed")
 	errYAMLKey     = camperrors.New("a key is not a plain name")
 	errYAMLTooMany = camperrors.New("aliases repeat more entries than a file can hold")
+	errMetaCut     = camperrors.Newf("longer than %d KB; the rest was not read", metaReadLimit>>10)
 )
 
 func errNotMapping(name string) error {

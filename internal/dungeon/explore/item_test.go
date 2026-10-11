@@ -1,6 +1,7 @@
 package explore
 
 import (
+	"math/rand/v2"
 	"slices"
 	"testing"
 )
@@ -187,5 +188,121 @@ func TestApplyPrefersTheStatusDirectorySpelledAsAsked(t *testing.T) {
 	}
 	if next := NextPreset(items, "Completed"); next != "Finished" {
 		t.Errorf("NextPreset(Completed) = %q, want the next directory", next)
+	}
+}
+
+// A dungeon set directly inside another carries the outer one's path as its
+// label. A path names one dungeon, whatever label reads the same.
+func TestApplyTakesAStoredDungeonPathBeforeAnyLabel(t *testing.T) {
+	idx := Index{
+		Dungeons: []DungeonPrint{
+			{Path: ".dungeon", Name: ".dungeon", Label: "Camp"},
+			{Path: ".dungeon/.dungeon", Name: ".dungeon", Label: ".dungeon"},
+			{Path: " lead/dungeon", Name: "dungeon", Label: " lead"},
+		},
+		Items: []Item{
+			{DoneDate: "2026-10-03", Title: "outer", Status: "completed", DungeonPath: ".dungeon", DungeonLabel: "Camp"},
+			{DoneDate: "2026-10-02", Title: "inner", Status: "completed", DungeonPath: ".dungeon/.dungeon", DungeonLabel: ".dungeon"},
+			{DoneDate: "2026-10-01", Title: "spaced", Status: "completed", DungeonPath: " lead/dungeon", DungeonLabel: " lead"},
+		},
+	}
+	for raw, want := range map[string]string{
+		".dungeon":          "outer",
+		"./.dungeon/":       "outer",
+		"Camp":              "outer",
+		".dungeon/.dungeon": "inner",
+		" lead/dungeon":     "spaced",
+	} {
+		got, err := Apply(idx, Query{Dungeon: raw})
+		if err != nil {
+			t.Fatalf("Apply(dungeon %q) error = %v", raw, err)
+		}
+		if len(got.Items) != 1 || got.Items[0].Title != want {
+			t.Fatalf("Apply(dungeon %q) = lens %q, rows %+v; want only %q", raw, got.DungeonLens, got.Items, want)
+		}
+	}
+	// A label two dungeons share is still ambiguous, and says so.
+	idx.Dungeons = append(idx.Dungeons, DungeonPrint{Path: "dungeon", Name: "dungeon", Label: "Camp"})
+	if _, err := Apply(idx, Query{Dungeon: "camp"}); err == nil || err.Error() != errAmbiguousDungeon("camp").Error() {
+		t.Fatalf("Apply(dungeon camp) error = %v, want the ambiguity", err)
+	}
+}
+
+// The feed steps through the lenses Presets and DungeonLenses offer. Each
+// must resolve, to itself, and show only its own rows, in any camp: dungeons
+// nested in dungeons, parents named like labels or lenses, names with spaces.
+func TestEveryLensTheFeedOffersResolvesToItsOwnRows(t *testing.T) {
+	parents := []string{".", "festivals", "workflow/design", ".dungeon", "dungeon", " lead", "trail ", "all", "ALL", "Camp", "camp", "festivals/.dungeon/archived/x", "explore", "workflow/explore", "a b", "Festivals"}
+	statuses := []string{"completed", "done", "archived", "holding", "all", "finished", "Finished", "ALL", "Done", "wip", "all ", " x"}
+	// A fixed seed: the same 3000 camps on every run.
+	r := rand.New(rand.NewPCG(740, 4))
+	for range 3000 {
+		var idx Index
+		seen := map[string]bool{}
+		for range r.IntN(4) + 1 {
+			parent := parents[r.IntN(len(parents))]
+			name := []string{"dungeon", ".dungeon"}[r.IntN(2)]
+			path := parent + "/" + name
+			if parent == "." {
+				path = name
+			}
+			if seen[path] {
+				continue
+			}
+			seen[path] = true
+			idx.Dungeons = append(idx.Dungeons, DungeonPrint{Path: path, Name: name, Label: CleanText(Label(parent))})
+		}
+		for range r.IntN(4) + 1 {
+			status := statuses[r.IntN(len(statuses))]
+			for _, d := range idx.Dungeons {
+				idx.Items = append(idx.Items, Item{DoneDate: "2026-01-01", Status: status, DungeonPath: d.Path, DungeonLabel: d.Label, Title: "t", Path: d.Path + "/" + status + "/x"})
+			}
+		}
+		for _, preset := range Presets(idx.Items) {
+			got, err := Apply(idx, Query{Status: preset})
+			if err != nil || got.StatusLens != preset {
+				t.Fatalf("status lens %q in %+v: resolved to %q, error %v", preset, idx.Dungeons, got.StatusLens, err)
+			}
+			for _, lens := range DungeonLenses(idx.Items, preset) {
+				got, err := Apply(idx, Query{Status: preset, Dungeon: lens})
+				if err != nil || got.DungeonLens != lens {
+					t.Fatalf("dungeon lens %q in %+v: resolved to %q, error %v", lens, idx.Dungeons, got.DungeonLens, err)
+				}
+				for _, item := range got.Items {
+					if lens != LensAll && item.DungeonPath != lens {
+						t.Fatalf("dungeon lens %q in %+v shows a row from %q", lens, idx.Dungeons, item.DungeonPath)
+					}
+				}
+			}
+		}
+	}
+}
+
+func TestUndatedRowsSortLastAndFallOutsideDateRanges(t *testing.T) {
+	items := []Item{
+		{Title: "undated", Status: "completed", DateSource: DateUnknown, DungeonPath: ".dungeon", DungeonLabel: "Camp"},
+		{DoneDate: "2026-10-01", Title: "old", Status: "completed", DateSource: DateBucket, DungeonPath: ".dungeon", DungeonLabel: "Camp"},
+		{DoneDate: "2026-10-09", Title: "new", Status: "completed", DateSource: DateBucket, DungeonPath: ".dungeon", DungeonLabel: "Camp"},
+	}
+	Sort(items)
+	if got := []string{items[0].Title, items[1].Title, items[2].Title}; !slices.Equal(got, []string{"new", "old", "undated"}) {
+		t.Fatalf("sorted = %v, want the undated row after every dated one", got)
+	}
+	idx := Index{Items: items}
+	for name, q := range map[string]Query{
+		"since": {Since: "2026-01-01"},
+		"until": {Until: "2026-12-31"},
+		"both":  {Since: "2026-01-01", Until: "2026-12-31"},
+	} {
+		got, err := Apply(idx, q)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if len(got.Items) != 2 {
+			t.Fatalf("%s: rows = %+v, want the two dated rows", name, got.Items)
+		}
+	}
+	if got, err := Apply(idx, Query{}); err != nil || len(got.Items) != 3 {
+		t.Fatalf("no range: rows = %+v, error %v; want all three", got.Items, err)
 	}
 }

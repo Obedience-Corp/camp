@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"os"
 	"strings"
 	"testing"
 
@@ -140,5 +141,50 @@ func TestExploreRefusalsExitTwoOnATerminal(t *testing.T) {
 	_, stderr, err := runExploreCommand(t, true, "--json=false", "--since", "2026-13-01")
 	if exitCode(err) != 2 || !strings.HasPrefix(stderr, "Error: --since must be YYYY-MM-DD") {
 		t.Fatalf("--json=false: exit %d, stderr %q", exitCode(err), stderr)
+	}
+}
+
+// A --json in argv is not always the flag. It can be another flag's value,
+// follow --, or be overridden by a later --json=false, and cobra opens the
+// feed for each. A refusal then comes out once, in the form the parsed flags
+// picked: the text line on a terminal, the envelope on a pipe, never both
+// and never neither.
+func TestExploreRefusalIsReportedOnceWhateverArgvHolds(t *testing.T) {
+	const badSince = `--since must be YYYY-MM-DD, got "2026-13-01"`
+	for _, tc := range []struct {
+		name string
+		args []string
+		want string
+	}{
+		{"the value of another flag", []string{"--query", "--json", "--since", "2026-13-01"}, badSince},
+		{"after the end of flags", []string{"--", "--json"}, `unknown command "--json" for "dungeon explore"`},
+		{"overridden by a later false", []string{"--json", "--json=false", "--since", "2026-13-01"}, badSince},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			// jsoncontract looks for --json in the process arguments.
+			origArgs := os.Args
+			os.Args = append([]string{"camp", "dungeon", "explore"}, tc.args...)
+			defer func() { os.Args = origArgs }()
+
+			stdout, stderr, err := runExploreCommand(t, true, tc.args...)
+			if got := exitCode(err); got != 2 || stdout != "" {
+				t.Fatalf("terminal: exit %d (%v), stdout %q; want 2 and nothing", got, err, stdout)
+			}
+			if want := "Error: " + tc.want + "\n"; stderr != want {
+				t.Fatalf("terminal: stderr = %q, want only %q", stderr, want)
+			}
+
+			stdout, stderr, err = runExploreCommand(t, false, tc.args...)
+			if got := exitCode(err); got != 2 || stdout != "" {
+				t.Fatalf("pipe: exit %d (%v), stdout %q; want 2 and nothing", got, err, stdout)
+			}
+			var envelope jsoncontract.ErrorEnvelope
+			if err := json.Unmarshal([]byte(stderr), &envelope); err != nil {
+				t.Fatalf("pipe: stderr is not one JSON envelope: %q (%v)", stderr, err)
+			}
+			if envelope.Error.Message != tc.want || envelope.Error.ExitCode != 2 {
+				t.Fatalf("pipe: error = %+v, want %q with exit_code 2", envelope.Error, tc.want)
+			}
+		})
 	}
 }

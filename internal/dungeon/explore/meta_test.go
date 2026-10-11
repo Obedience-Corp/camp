@@ -254,3 +254,24 @@ func TestTidyDropsATemplatePlaceholderSummary(t *testing.T) {
 		}
 	}
 }
+
+// Frontmatter is read the way fest.yaml and .workitem are: a repeated key
+// keeps its first value and the block comes back with a warning.
+func TestFrontmatterRepeatedKeyKeepsItsFirstValueAndWarns(t *testing.T) {
+	text := "---\ntitle: one\nid: N-1\ntitle: two\n---\nBody."
+	fm, body, err := splitFrontmatter(text)
+	if err == nil || err.Error() != `key "title" is repeated` {
+		t.Fatalf("error = %v, want the repeated key named", err)
+	}
+	if fm["title"] != "one" || fm["id"] != "N-1" || body != "Body." {
+		t.Fatalf("frontmatter = %#v, body = %q; want the first title, the other field, and the body", fm, body)
+	}
+	if got := MarkdownBody(text); got != "Body." {
+		t.Fatalf("MarkdownBody = %q, want the block taken off: it parsed", got)
+	}
+
+	work, workErr := parseWorkitemMeta("title: one\nid: N-1\ntitle: two\n")
+	if work.title != fm["title"] || workErr == nil || workErr.Error() != err.Error() {
+		t.Fatalf(".workitem reads the same text as title %q, error %v; frontmatter gave %q, %v", work.title, workErr, fm["title"], err)
+	}
+}

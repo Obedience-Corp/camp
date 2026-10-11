@@ -223,3 +223,25 @@ func TestReadItemSkipsAnEntryRemovedAfterItWasListed(t *testing.T) {
 		t.Fatalf("an ordinary entry = %+v, warning %q, row %v", item, warning, ok)
 	}
 }
+
+// An entry that cannot be examined has no file time to date it by. It keeps
+// its bucket's day when it sits in one, and otherwise has no done date; it is
+// never dated today, which would put it first in the feed.
+func TestReadItemLeavesAnEntryItCannotExamineUndated(t *testing.T) {
+	const root = "/camp"
+	denied := func(path string) error {
+		return &fs.PathError{Op: "lstat", Path: root + "/" + path, Err: syscall.EACCES}
+	}
+
+	loose := "festivals/.dungeon/completed/locked.txt"
+	item, _, ok := readItem(context.Background(), root, "festivals/.dungeon", "Festivals", "completed", "", root+"/"+loose, fakeEntry{name: "locked.txt", err: denied(loose)})
+	if !ok || item.DoneDate != "" || item.DateSource != DateUnknown || item.Warning != "permission denied" {
+		t.Fatalf("row = %+v, row %v; want no done date, date source %q, and the reason", item, ok, DateUnknown)
+	}
+
+	bucketed := "festivals/.dungeon/completed/2026-09-01/locked.txt"
+	item, _, ok = readItem(context.Background(), root, "festivals/.dungeon", "Festivals", "completed", "2026-09-01", root+"/"+bucketed, fakeEntry{name: "locked.txt", err: denied(bucketed)})
+	if !ok || item.DoneDate != "2026-09-01" || item.DateSource != DateBucket {
+		t.Fatalf("bucketed row = %+v, row %v; want the bucket's day", item, ok)
+	}
+}

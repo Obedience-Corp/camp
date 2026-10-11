@@ -305,8 +305,9 @@ func TestCacheDiscardsEarlierSchemas(t *testing.T) {
 	if cached, ok, err := LoadCache(ctx, dir); err != nil || !ok || len(cached.Items) != 1 {
 		t.Fatalf("current cache: ok %v, err %v, items %d", ok, err, len(cached.Items))
 	}
-	for _, version := range []string{"v1", "v2", "v3", "v4", "v5"} {
-		stale := `{"schema_version":"camp-dungeon-explore-cache/` + version + `","index":{"items":[{"title":"stale"}],"dungeons":[]}}`
+	// The zone is the current one, so only the schema can turn these away.
+	for _, version := range []string{"v1", "v2", "v3", "v4", "v5", "v6"} {
+		stale := `{"schema_version":"camp-dungeon-explore-cache/` + version + `","zone":"` + zoneKey() + `","index":{"items":[{"title":"stale"}],"dungeons":[]}}`
 		mustWrite(t, filepath.Join(dir, "index.json"), stale)
 		if cached, ok, err := LoadCache(ctx, dir); err != nil || ok {
 			t.Fatalf("cache written by schema %s was trusted: %+v (err %v)", version, cached, err)
@@ -550,5 +551,64 @@ func TestBuildHoldingDirectoryItems(t *testing.T) {
 	holding, err = Apply(refreshed, Query{Status: StatusHolding})
 	if err != nil || holding.Items[0].Title != "Revised holding item" {
 		t.Fatalf("holding metadata stale: %+v, %v", holding, err)
+	}
+}
+
+// JSON text is UTF-8. A name in another encoding would come back from the
+// cache with U+FFFD where its bytes were, as a path that is not on disk, and
+// the fingerprints would still match. Such an index is not cached, and a
+// cache written before the name appeared is removed.
+func TestCacheLeavesOutAnIndexJSONCannotCarry(t *testing.T) {
+	ctx := context.Background()
+	root := t.TempDir()
+	done := filepath.Join(root, ".dungeon", "completed")
+	mustWrite(t, filepath.Join(done, "plain.md"), "Plain body.\n")
+	dir := filepath.Join(t.TempDir(), "dungeon-feed")
+
+	before, err := Build(ctx, root)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := SaveCache(ctx, dir, before); err != nil {
+		t.Fatal(err)
+	}
+	if _, ok, _ := LoadCache(ctx, dir); !ok {
+		t.Fatal("a camp of UTF-8 names was not cached")
+	}
+
+	latin := "caf\xe9.md"
+	mustWrite(t, filepath.Join(done, latin), "Latin body.\n")
+	idx, err := Build(ctx, root)
+	if err != nil {
+		t.Fatal(err)
+	}
+	item := itemAt(t, idx, ".dungeon/completed/"+latin)
+	if _, err := os.Lstat(filepath.Join(root, filepath.FromSlash(item.Path))); err != nil {
+		t.Fatalf("the built row does not lead to its file: %v", err)
+	}
+	if err := SaveCache(ctx, dir, idx); err != nil {
+		t.Fatalf("SaveCache() error = %v", err)
+	}
+	if cached, ok, _ := LoadCache(ctx, dir); ok {
+		t.Fatalf("a cache is on disk for an index JSON cannot carry: %+v", cached.Items)
+	}
+	if _, err := os.Lstat(filepath.Join(dir, "index.json")); !errors.Is(err, os.ErrNotExist) {
+		t.Fatalf("the earlier cache was left in place: %v", err)
+	}
+
+	// A status directory and a dungeon's parent are names from disk too.
+	for name, bad := range map[string]Index{
+		"status":       {Items: []Item{{Path: "x", Status: "stat\xfcs"}}},
+		"replay":       {Items: []Item{{Path: "x", Replay: "x/r\xe9.gif"}}},
+		"dungeon path": {Items: []Item{{Path: "x", DungeonPath: "caf\xe9/.dungeon"}}},
+		"dungeon":      {Dungeons: []DungeonPrint{{Path: "caf\xe9/.dungeon"}}},
+	} {
+		fresh := filepath.Join(t.TempDir(), "dungeon-feed")
+		if err := SaveCache(ctx, fresh, bad); err != nil {
+			t.Fatalf("%s: SaveCache() error = %v", name, err)
+		}
+		if _, ok, _ := LoadCache(ctx, fresh); ok {
+			t.Fatalf("%s: an index JSON cannot carry was cached", name)
+		}
 	}
 }

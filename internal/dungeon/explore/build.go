@@ -203,7 +203,13 @@ func readItem(ctx context.Context, root, relDungeon, label, status, bucketDay, p
 		return Item{}, "", false
 	}
 	if err != nil {
-		item := Item{Title: entry.Name(), Path: rel, Status: status, DungeonLabel: label, DungeonPath: relDungeon, Kind: KindOther, DateSource: DateFileTime, DoneDate: time.Now().Format("2006-01-02"), Warning: cause(err).Error()}
+		// Nothing about the entry can be read, its file time included. Only a
+		// bucket still dates it; today's date would put it at the top of the
+		// feed as the newest work.
+		item := Item{Title: entry.Name(), Path: rel, Status: status, DungeonLabel: label, DungeonPath: relDungeon, Kind: KindOther, DateSource: DateUnknown, Warning: cause(err).Error()}
+		if bucketDay != "" {
+			item.DoneDate, item.DateSource = bucketDay, DateBucket
+		}
 		tidy(&item, entry.Name())
 		return item, warn(root, rel, err), true
 	}

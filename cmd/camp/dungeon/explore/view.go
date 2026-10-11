@@ -496,7 +496,8 @@ func (m exploreModel) feedLines(width int, includeStage bool) []string {
 	var lines []string
 	var lastDay string
 	for i, item := range m.visible.Items {
-		if item.DoneDate != lastDay {
+		// The first row always opens a day, the undated one included.
+		if i == 0 || item.DoneDate != lastDay {
 			lastDay = item.DoneDate
 			lines = append(lines, m.styles.day.Render(fit(prettyDay(item.DoneDate), width)))
 		}
@@ -533,7 +534,7 @@ func (m exploreModel) window(lines []string) []string {
 	seen := 0
 	lastDay := ""
 	for i, item := range m.visible.Items {
-		if item.DoneDate != lastDay {
+		if i == 0 || item.DoneDate != lastDay {
 			lastDay = item.DoneDate
 			if i == m.cursor {
 				focus = seen
@@ -810,13 +811,21 @@ func (m exploreModel) contentWidth() int {
 }
 
 func datePhrase(item intexplore.Item) string {
-	if item.DateSource == intexplore.DateFileTime {
+	switch {
+	case item.DoneDate == "":
+		return "no date"
+	case item.DateSource == intexplore.DateFileTime:
 		return "file time " + prettyDay(item.DoneDate)
 	}
 	return "moved " + prettyDay(item.DoneDate)
 }
 
+// prettyDay is the heading a day's rows sit under. Rows with no done date
+// share one heading at the end of the feed.
 func prettyDay(day string) string {
+	if day == "" {
+		return "No date"
+	}
 	stamp, err := time.Parse("2006-01-02", day)
 	if err != nil {
 		return day

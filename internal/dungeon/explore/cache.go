@@ -5,10 +5,12 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
+	"io/fs"
 	"os"
 	"path/filepath"
 	"strconv"
 	"time"
+	"unicode/utf8"
 
 	"github.com/Obedience-Corp/camp/internal/config"
 	"github.com/Obedience-Corp/camp/internal/dungeon/spelling"
@@ -17,9 +19,10 @@ import (
 
 // cacheSchemaVersion changes whenever the cached index gains information a
 // stale cache would silently lack, so old files are rebuilt instead of trusted.
-const cacheSchemaVersion = "camp-dungeon-explore-cache/v6"
+const cacheSchemaVersion = "camp-dungeon-explore-cache/v7"
 
 const (
+	cacheFileName    = "index.json"
 	cacheTempPattern = ".index-*.tmp"
 	// staleTempAge is longer than any save takes, so a file this old belongs
 	// to a process that exited before it could publish or remove it.
@@ -65,7 +68,7 @@ func LoadCache(ctx context.Context, dir string) (Index, bool, error) {
 	if err := ctx.Err(); err != nil {
 		return Index{}, false, camperrors.Wrap(err, "loading dungeon feed cache")
 	}
-	data, err := os.ReadFile(filepath.Join(dir, "index.json"))
+	data, err := os.ReadFile(filepath.Join(dir, cacheFileName))
 	if err != nil {
 		return Index{}, false, nil
 	}
@@ -78,9 +81,19 @@ func LoadCache(ctx context.Context, dir string) (Index, bool, error) {
 
 // SaveCache writes the index. A failure is returned to the caller, which
 // should keep the in-memory feed.
+//
+// An index JSON cannot carry unchanged is not written, and a cache already
+// there is removed: it describes an earlier camp, and the next start reads
+// the camp instead of painting from it.
 func SaveCache(ctx context.Context, dir string, idx Index) error {
 	if err := ctx.Err(); err != nil {
 		return camperrors.Wrap(err, "saving dungeon feed cache")
+	}
+	if !survivesJSON(idx) {
+		if err := os.Remove(filepath.Join(dir, cacheFileName)); err != nil && !camperrors.Is(err, fs.ErrNotExist) {
+			return camperrors.Wrap(err, "removing dungeon feed cache")
+		}
+		return nil
 	}
 	if err := os.MkdirAll(dir, 0o755); err != nil {
 		return camperrors.Wrap(err, "creating dungeon feed cache")
@@ -89,7 +102,7 @@ func SaveCache(ctx context.Context, dir string, idx Index) error {
 	if err != nil {
 		return camperrors.Wrap(err, "encoding dungeon feed cache")
 	}
-	path := filepath.Join(dir, "index.json")
+	path := filepath.Join(dir, cacheFileName)
 	sweepStaleTemps(dir)
 	// A unique, exclusively created file cannot follow a pre-existing symlink.
 	f, err := os.CreateTemp(dir, cacheTempPattern)
@@ -112,6 +125,28 @@ func SaveCache(ctx context.Context, dir string, idx Index) error {
 		return camperrors.Wrap(err, "publishing dungeon feed cache")
 	}
 	return nil
+}
+
+// survivesJSON reports whether the index reads back from the cache as it was
+// written. JSON text is UTF-8: a file or directory name in another encoding
+// is written with U+FFFD in place of each byte that is not, and comes back
+// as a path that is not on disk. The fingerprints still match, so such a
+// cache would be trusted on every start. Titles, ids, summaries, labels, and
+// warnings are cleaned text and always valid.
+func survivesJSON(idx Index) bool {
+	for _, d := range idx.Dungeons {
+		if !utf8.ValidString(d.Path) {
+			return false
+		}
+	}
+	for _, item := range idx.Items {
+		for _, name := range []string{item.Path, item.Replay, item.Status, item.DungeonPath} {
+			if !utf8.ValidString(name) {
+				return false
+			}
+		}
+	}
+	return true
 }
 
 // sweepStaleTemps removes temp files an earlier save left behind. A save that

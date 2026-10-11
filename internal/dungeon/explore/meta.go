@@ -354,10 +354,12 @@ func skipComments(line string, inComment bool) (string, bool) {
 }
 
 // MarkdownBody returns text without a leading YAML frontmatter block. A block
-// that does not parse is left in place for the reader to show.
+// that does not parse is left in place for the reader to show. One that
+// parses with something wrong in it, such as a repeated key, is still taken
+// off.
 func MarkdownBody(text string) string {
-	_, body, err := splitFrontmatter(text)
-	if err != nil {
+	fm, body, err := splitFrontmatter(text)
+	if err != nil && fm == nil {
 		return text
 	}
 	return body
@@ -372,7 +374,8 @@ const (
 // nil when text does not open with a fenced block. A fenced block that is not
 // a YAML mapping returns an error and the body after it, so a caller can warn
 // without the raw block reaching a summary. A block that is never closed
-// returns an error and no body: nothing says where it ends.
+// returns an error and no body: nothing says where it ends. A mapping with
+// something wrong in it returns its fields together with the error.
 func splitFrontmatter(text string) (map[string]string, string, error) {
 	text = strings.TrimPrefix(text, byteOrderMark)
 	first, rest, found := strings.Cut(text, "\n")
@@ -403,7 +406,9 @@ func isFence(line string) bool {
 // decodeFrontmatter reads each scalar value as the text the author wrote.
 // Decoding into Go types would rewrite it: 0012 becomes 10, 1e3 becomes 1000,
 // and a date becomes a timestamp. A key with no value, a null, or a list or
-// mapping value is kept with an empty value.
+// mapping value is kept with an empty value. The mapping is read the way a
+// fest.yaml is: a repeated key keeps its first value, and the fields come
+// back with the first thing wrong.
 func decodeFrontmatter(raw string) (map[string]string, error) {
 	root, err := parseYAML(raw)
 	if err != nil {
@@ -416,26 +421,21 @@ func decodeFrontmatter(raw string) (map[string]string, error) {
 	if root.Kind != yaml.MappingNode {
 		return nil, errFrontmatterShape
 	}
-	for i := 0; i+1 < len(root.Content); i += 2 {
-		key, value := root.Content[i], root.Content[i+1]
-		if key.Kind != yaml.ScalarNode {
-			continue
-		}
-		if value.Kind == yaml.AliasNode && value.Alias != nil {
-			value = value.Alias
-		}
-		fm[key.Value] = ""
-		if value.Kind == yaml.ScalarNode && value.ShortTag() != "!!null" {
-			fm[key.Value] = strings.TrimSpace(value.Value)
+	walk := yamlWalk{budget: metaReadLimit}
+	for key, value := range walk.fields("", root) {
+		fm[key] = ""
+		if value = present(value); value != nil && value.Kind == yaml.ScalarNode {
+			fm[key] = strings.TrimSpace(value.Value)
 		}
 	}
-	return fm, nil
+	return fm, walk.problem
 }
 
 // readFrontmatter reads a markdown file and splits it. On a read error the
-// map and body are empty.
+// map and body are empty. A long document is expected to run past the read
+// limit; only its opening is needed.
 func readFrontmatter(ctx context.Context, path string) (map[string]string, string, error) {
-	text, err := readLimited(ctx, path)
+	text, _, err := readLimited(ctx, path)
 	if err != nil {
 		return nil, "", err
 	}
@@ -449,12 +449,23 @@ func readWarning(path string, err error) string {
 	return filepath.Base(path) + ": " + cause(err).Error()
 }
 
-func readLimited(ctx context.Context, path string) (string, error) {
-	data, err := ReadRegular(ctx, path, metaReadLimit)
+// readLimited reads a metadata file up to metaReadLimit. cut says the file
+// is longer than that. The text then stops at the end of the last line that
+// fits inside the limit, when one does, so a value is not read as half of
+// what was written.
+func readLimited(ctx context.Context, path string) (text string, cut bool, err error) {
+	data, err := ReadRegular(ctx, path, metaReadLimit+1)
 	if err != nil {
-		return "", err
+		return "", false, err
 	}
-	return string(bytes.TrimSpace(data)), nil
+	if len(data) > metaReadLimit {
+		cut = true
+		data = data[:metaReadLimit]
+		if end := bytes.LastIndexByte(data, '\n'); end >= 0 {
+			data = data[:end]
+		}
+	}
+	return string(bytes.TrimSpace(data)), cut, nil
 }
 
 func fileExists(path string) bool {
