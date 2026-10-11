@@ -431,3 +431,179 @@ func quoteShellArgs(args []string) string {
 	}
 	return strings.Join(parts, " ")
 }
+
+// A bare cat substitution drops a trailing newline and, in fish, splits on an
+// embedded one. g would enter a different directory than the explorer wrote.
+func TestDungeonExploreHandoffKeepsNewlines(t *testing.T) {
+	paths := []struct {
+		name string
+		path string
+	}{
+		{"trailing newline", "task\n"},
+		{"embedded newline", "em\nbed"},
+	}
+	shells := []struct {
+		name, script string
+	}{
+		{"bash", generateBash()},
+		{"zsh", generateZsh()},
+		{"fish", generateFish()},
+	}
+	for _, sh := range shells {
+		for _, path := range paths {
+			t.Run(sh.name+"/"+path.name, func(t *testing.T) {
+				got := exploreHandoffPath(t, sh.name, sh.script, path.path)
+				if got != path.path {
+					t.Fatalf("cd argument = %q, want %q", got, path.path)
+				}
+			})
+		}
+	}
+}
+
+// exploreHandoffPath runs the dungeon explore arm with a stand-in for camp
+// that writes path into the handoff file, and returns the exact argument cd
+// received. cd is a stub, so the directory does not have to exist.
+func exploreHandoffPath(t *testing.T, shellName, script, path string) string {
+	t.Helper()
+	dir := t.TempDir()
+	src := filepath.Join(dir, "path")
+	if err := os.WriteFile(src, []byte(path), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	tmp := filepath.Join(dir, "handoff")
+	bin, initScript := exploreHandoffCommand(t, shellName, script)
+	if _, err := exec.LookPath(bin[0]); err != nil {
+		t.Skip(bin[0] + " not available")
+	}
+	cmd := exec.Command(bin[0], bin[1:]...)
+	cmd.Env = append(exploreShellEnv(initScript),
+		"CAMP_HANDOFF_SRC="+src,
+		"CAMP_HANDOFF_TMP="+tmp,
+	)
+	ptmx, err := pty.Start(cmd)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer func() { _ = ptmx.Close() }()
+	var buf bytes.Buffer
+	readDone := make(chan struct{})
+	go func() {
+		_, _ = io.Copy(&buf, ptmx)
+		close(readDone)
+	}()
+	waitErr := cmd.Wait()
+	_ = ptmx.Close()
+	<-readDone
+	out := strings.ReplaceAll(buf.String(), "\r", "")
+	if waitErr != nil {
+		t.Fatalf("%s: %v\n%s", shellName, waitErr, out)
+	}
+	const open, closeMark = "CD<", ">CD"
+	start := strings.Index(out, open)
+	if start < 0 {
+		t.Fatalf("%s did not cd; output:\n%s", shellName, out)
+	}
+	rest := out[start+len(open):]
+	end := strings.Index(rest, closeMark)
+	if end < 0 {
+		t.Fatalf("%s cd marker was not closed; output:\n%s", shellName, out)
+	}
+	return rest[:end]
+}
+
+func exploreHandoffCommand(t *testing.T, shellName, script string) ([]string, string) {
+	t.Helper()
+	switch shellName {
+	case "bash":
+		return []string{"bash", "--noprofile", "--norc", "-c", bashHandoffRunner()}, script
+	case "zsh":
+		return []string{"zsh", "-f", "-c", zshHandoffRunner()}, script
+	case "fish":
+		return []string{"fish", "--no-config", "-c", fishHandoffRunner()}, prepareFishExploreScript(t, script)
+	default:
+		t.Fatalf("unknown shell %s", shellName)
+		return nil, ""
+	}
+}
+
+func bashHandoffRunner() string {
+	return `
+camp() { :; }
+eval "$CAMP_INIT"
+command() {
+  prev=""
+  out=""
+  for arg in "$@"; do
+    if [ "$prev" = "--path-output" ]; then
+      out="$arg"
+    fi
+    prev="$arg"
+  done
+  if [ -n "$out" ]; then
+    cat "$CAMP_HANDOFF_SRC" > "$out"
+  fi
+}
+enable -n command || exit 1
+mktemp() { printf '%s\n' "$CAMP_HANDOFF_TMP"; }
+rm() { return 0; }
+cd() { printf 'CD<%s>CD' "$1"; }
+camp dungeon explore
+exit 0
+`
+}
+
+func zshHandoffRunner() string {
+	return `
+camp() { :; }
+eval "$CAMP_INIT"
+command() {
+  prev=""
+  out=""
+  for arg in "$@"; do
+    if [ "$prev" = "--path-output" ]; then
+      out="$arg"
+    fi
+    prev="$arg"
+  done
+  if [ -n "$out" ]; then
+    cat "$CAMP_HANDOFF_SRC" > "$out"
+  fi
+}
+disable command || exit 1
+mktemp() { printf '%s\n' "$CAMP_HANDOFF_TMP"; }
+rm() { return 0; }
+cd() { printf 'CD<%s>CD' "$1"; }
+camp dungeon explore
+exit 0
+`
+}
+
+func fishHandoffRunner() string {
+	return `
+function camp_stub
+    set -l prev ""
+    set -l out ""
+    for arg in $argv
+        if test "$prev" = "--path-output"
+            set out "$arg"
+        end
+        set prev "$arg"
+    end
+    if test -n "$out"
+        cat "$CAMP_HANDOFF_SRC" > "$out"
+    end
+end
+function mktemp
+    echo "$CAMP_HANDOFF_TMP"
+end
+function rm
+end
+function cd
+    printf 'CD<%s>CD' "$argv[1]"
+end
+eval $CAMP_INIT
+camp dungeon explore
+exit 0
+`
+}

@@ -476,7 +476,9 @@ camp() {
         return "$cmd_status"
       fi
       if [ -s "$tmp" ]; then
-        dest=$(cat "$tmp")
+        # $(cat) drops trailing newlines, so a directory name that ends with one would cd elsewhere.
+        dest=$(cat "$tmp"; printf '.')
+        dest=${dest%.}
         rm -f "$tmp"
         if [ -n "$dest" ]; then
           cd "$dest" || return 1
