@@ -281,9 +281,10 @@ func TestManifest_DungeonCommandsAgentAllowed(t *testing.T) {
 		cmdMap[cmd.Path] = cmd.AgentAllowed
 	}
 
-	// dungeon list and dungeon move should be agent_allowed
+	// dungeon list, move, and explore --json should be agent_allowed
 	assert.True(t, cmdMap["dungeon list"], "dungeon list should be agent_allowed=true")
 	assert.True(t, cmdMap["dungeon move"], "dungeon move should be agent_allowed=true")
+	assert.True(t, cmdMap["dungeon explore"], "dungeon explore should be agent_allowed=true")
 
 	// dungeon crawl should NOT be agent_allowed
 	assert.False(t, cmdMap["dungeon crawl"], "dungeon crawl should be agent_allowed=false")

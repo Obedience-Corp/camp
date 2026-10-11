@@ -12,28 +12,47 @@ import (
 // LoadGlobalConfig loads the global configuration from ~/.obey/campaign/config.json.
 // Returns default configuration if the file doesn't exist, and auto-creates the file.
 func LoadGlobalConfig(ctx context.Context) (*GlobalConfig, error) {
+	cfg, found, err := readGlobalConfig(ctx)
+	if err != nil {
+		return nil, err
+	}
+	if !found {
+		// Auto-create the config file for discoverability.
+		_ = SaveGlobalConfig(ctx, cfg) // Ignore error - may lack permissions
+	}
+	return cfg, nil
+}
+
+// ReadGlobalConfig loads the global configuration without writing. A missing
+// file returns the defaults and is not created.
+func ReadGlobalConfig(ctx context.Context) (*GlobalConfig, error) {
+	cfg, _, err := readGlobalConfig(ctx)
+	return cfg, err
+}
+
+// readGlobalConfig reports whether the file exists. Without one it returns
+// the defaults.
+func readGlobalConfig(ctx context.Context) (*GlobalConfig, bool, error) {
 	if ctx.Err() != nil {
-		return nil, ctx.Err()
+		return nil, false, ctx.Err()
 	}
 
 	path, err := GlobalConfigPath()
 	if err != nil {
-		return nil, err
+		return nil, false, err
 	}
 	data, err := os.ReadFile(path)
 	if err != nil {
 		if os.IsNotExist(err) {
-			// Return defaults and auto-create config file for discoverability
 			cfg := DefaultGlobalConfig()
-			_ = SaveGlobalConfig(ctx, &cfg) // Ignore error - may lack permissions
-			return &cfg, nil
+			return &cfg, false, nil
 		}
-		return nil, camperrors.Wrapf(err, "failed to read global config %s", path)
+		return nil, false, camperrors.Wrapf(err, "failed to read global config %s", path)
 	}
 
 	var cfg GlobalConfig
 	if err := json.Unmarshal(data, &cfg); err != nil {
-		return nil, camperrors.Wrapf(err, "failed to parse global config %s", path)
+		return nil, false, camperrors.Wrapf(err, "failed to parse global config %s", path)
 	}
 
 	// Apply defaults for missing fields
@@ -41,10 +60,10 @@ func LoadGlobalConfig(ctx context.Context) (*GlobalConfig, error) {
 
 	// Validate
 	if err := ValidateGlobalConfig(&cfg); err != nil {
-		return nil, camperrors.Wrapf(err, "invalid global config %s", path)
+		return nil, false, camperrors.Wrapf(err, "invalid global config %s", path)
 	}
 
-	return &cfg, nil
+	return &cfg, true, nil
 }
 
 // SaveGlobalConfig saves the global configuration to ~/.obey/campaign/config.json.

@@ -7,6 +7,7 @@ import (
 
 	"github.com/Obedience-Corp/obey-shared/brand"
 	"github.com/charmbracelet/huh"
+	"github.com/charmbracelet/lipgloss"
 )
 
 func TestIsValidTheme(t *testing.T) {
@@ -105,6 +106,26 @@ func TestResolvePaletteHonorsNoColorOverride(t *testing.T) {
 	got := resolvePalette(ThemeDark, caps)
 	if got.Mode != brand.ModePlain || got.ColorEnabled {
 		t.Fatalf("no-color palette = %#v, want plain palette", got)
+	}
+}
+
+func TestGlamourStyleFollowsThemeAndBackground(t *testing.T) {
+	wasDark := lipgloss.HasDarkBackground()
+	defer lipgloss.SetHasDarkBackground(wasDark)
+	for _, dark := range []bool{true, false} {
+		lipgloss.SetHasDarkBackground(dark)
+		adaptive := "light"
+		if dark {
+			adaptive = "dark"
+		}
+		for name, want := range map[ThemeName]string{
+			ThemeLight: "light", ThemeDark: "dark", ThemeHighContrast: "dark",
+			ThemeAdaptive: adaptive, "": adaptive, "neon": adaptive,
+		} {
+			if got := GlamourStyle(name); got != want {
+				t.Errorf("GlamourStyle(%q) on a dark=%v terminal = %q, want %q", name, dark, got, want)
+			}
+		}
 	}
 }
 

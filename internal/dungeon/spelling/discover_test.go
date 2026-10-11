@@ -3,6 +3,7 @@ package spelling
 import (
 	"context"
 	"errors"
+	"io/fs"
 	"os"
 	"path/filepath"
 	"testing"
@@ -34,6 +35,73 @@ func equalStrings(a, b []string) bool {
 		}
 	}
 	return true
+}
+
+type fakeDir struct{ name string }
+
+func (d fakeDir) Name() string               { return d.name }
+func (d fakeDir) IsDir() bool                { return true }
+func (d fakeDir) Type() fs.FileMode          { return fs.ModeDir }
+func (d fakeDir) Info() (fs.FileInfo, error) { return nil, errors.New("unused") }
+
+// unreadableThenDungeon visits a dungeon, then a directory listing failure, then
+// another dungeon. Stopping at the failure drops the second dungeon.
+func unreadableThenDungeon(root string, fn fs.WalkDirFunc) error {
+	early := filepath.Join(root, "aaa", Visible)
+	if err := fn(early, fakeDir{name: Visible}, nil); err != nil {
+		return err
+	}
+	blocked := filepath.Join(root, "blocked")
+	entry := fakeDir{name: "blocked"}
+	if err := fn(blocked, entry, nil); err != nil {
+		return err
+	}
+	if err := fn(blocked, entry, &fs.PathError{Op: "open", Path: blocked, Err: os.ErrPermission}); err != nil {
+		return err
+	}
+	later := filepath.Join(root, "festivals", Visible)
+	return fn(later, fakeDir{name: Visible}, nil)
+}
+
+func TestDiscover_UnreadableDirectoryStopsTheWalk(t *testing.T) {
+	root := t.TempDir()
+	found, err := discover(context.Background(), root, false, unreadableThenDungeon)
+	if !errors.Is(err, os.ErrPermission) {
+		t.Fatalf("Discover() error = %v, want permission denied", err)
+	}
+	if len(found.Dungeons) != 0 {
+		t.Fatalf("Discover() returned dungeons after aborting: %+v", found.Dungeons)
+	}
+}
+
+func TestDiscoverContinuing_UnreadableDirectoryKeepsLaterDungeons(t *testing.T) {
+	root := t.TempDir()
+	found, err := DiscoverContinuing(context.Background(), root, unreadableThenDungeon)
+	if err != nil {
+		t.Fatalf("DiscoverContinuing() error = %v", err)
+	}
+	abs, err := filepath.Abs(root)
+	if err != nil {
+		t.Fatal(err)
+	}
+	got := relPaths(t, abs, found.Dungeons)
+	want := []string{"aaa/dungeon", "festivals/dungeon"}
+	if !equalStrings(got, want) {
+		t.Fatalf("DiscoverContinuing() = %v, want %v", got, want)
+	}
+	if len(found.Warnings) != 1 || found.Warnings[0] != "blocked: permission denied" {
+		t.Fatalf("warnings = %#v", found.Warnings)
+	}
+}
+
+func TestDiscoverContinuing_UnreadableRootIsAnError(t *testing.T) {
+	root := t.TempDir()
+	_, err := DiscoverContinuing(context.Background(), root, func(walkRoot string, fn fs.WalkDirFunc) error {
+		return fn(walkRoot, fakeDir{name: filepath.Base(walkRoot)}, os.ErrPermission)
+	})
+	if !errors.Is(err, os.ErrPermission) {
+		t.Fatalf("DiscoverContinuing() error = %v, want permission denied", err)
+	}
 }
 
 func TestDiscover_ContextCancelled(t *testing.T) {

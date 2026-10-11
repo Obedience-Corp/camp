@@ -8,6 +8,7 @@ import (
 	"github.com/Obedience-Corp/camp/internal/commands/fresh"
 	campworkflow "github.com/Obedience-Corp/camp/internal/commands/workflow"
 	"github.com/Obedience-Corp/camp/internal/config"
+	"github.com/Obedience-Corp/camp/internal/dungeon/explore"
 	"github.com/Obedience-Corp/camp/internal/quest"
 	"github.com/Obedience-Corp/camp/internal/version"
 	"github.com/Obedience-Corp/camp/internal/workitem"
@@ -32,6 +33,7 @@ func TestPublishedSchemaVersionsAreFrozen(t *testing.T) {
 		{"camp flow items", flow.WorkflowItemsSchemaVersion, "workflow-items/v1alpha1"},
 		{"camp version --json", version.SchemaVersion, "version/v1alpha1"},
 		{"quest checklist", quest.ChecklistSchemaV1, "quest-checklist/v1alpha1"},
+		{"camp dungeon explore --json", explore.SchemaVersion, "camp-dungeon-explore/v1"},
 	}
 
 	for _, tt := range tests {

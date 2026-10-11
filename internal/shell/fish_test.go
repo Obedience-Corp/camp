@@ -106,6 +106,21 @@ func TestGenerateFish_FestivalsArm(t *testing.T) {
 	}
 }
 
+func TestGenerateFish_DungeonExploreArm(t *testing.T) {
+	section := shellWrapperSection(t, generateFish(), "        case dungeon", "        case festivals")
+	if !strings.Contains(section, `command camp dungeon explore --path-output "$tmp" $rest`) {
+		t.Fatal("fish dungeon arm missing path output")
+	}
+	if strings.Contains(section, "--status '--status=*'") {
+		t.Error("dungeon explore arm must keep status filters on the hop path")
+	}
+	assertJSONFalseKeepsExploreHandoff(t, section)
+}
+
+func TestGenerateFish_ExplorePassthrough(t *testing.T) {
+	runExplorePassthroughCases(t, "fish", generateFish())
+}
+
 func TestGenerateFish_ProjectListArm(t *testing.T) {
 	output := generateFish()
 	section := shellWrapperSection(t, output, "        case project p", "        case festivals")

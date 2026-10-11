@@ -93,6 +93,21 @@ func TestGenerateZsh_FestivalsArm(t *testing.T) {
 	}
 }
 
+func TestGenerateZsh_DungeonExploreArm(t *testing.T) {
+	section := shellWrapperSection(t, generateZsh(), "    dungeon)", "    festivals)")
+	if !strings.Contains(section, `command camp dungeon explore --path-output "$tmp" "$@"`) {
+		t.Fatal("zsh dungeon arm missing path output")
+	}
+	if strings.Contains(section, `--status|--status=*`) {
+		t.Error("dungeon explore arm must keep status filters on the hop path")
+	}
+	assertJSONFalseKeepsExploreHandoff(t, section)
+}
+
+func TestGenerateZsh_ExplorePassthrough(t *testing.T) {
+	runExplorePassthroughCases(t, "zsh", generateZsh())
+}
+
 func TestGenerateZsh_ProjectListArm(t *testing.T) {
 	output := generateZsh()
 	section := shellWrapperSection(t, output, "    project|p)", "    festivals)")

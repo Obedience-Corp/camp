@@ -1,6 +1,9 @@
 package dungeon
 
-import "github.com/spf13/cobra"
+import (
+	dungeonexplore "github.com/Obedience-Corp/camp/cmd/camp/dungeon/explore"
+	"github.com/spf13/cobra"
+)
 
 // Cmd is the scaffold root for the dungeon command family.
 var Cmd = &cobra.Command{
@@ -15,11 +18,13 @@ It keeps items visible without them competing for your attention.
 Commands:
   add     Initialize dungeon structure with documentation
   crawl   Interactive review and archival of dungeon contents
+  explore Browse finished work across every dungeon
   list    List dungeon items (agent-friendly)
   move    Move items between dungeon statuses (agent-friendly)
 
 Examples:
   camp dungeon add                        Initialize the dungeon
+  camp dungeon explore                    Browse finished work in every dungeon
   camp dungeon crawl                      Review and archive dungeon items
   camp dungeon list                       List dungeon root items
   camp dungeon list --triage              List parent items eligible for triage
@@ -27,4 +32,8 @@ Examples:
 	RunE: func(cmd *cobra.Command, args []string) error {
 		return cmd.Help()
 	},
+}
+
+func init() {
+	Cmd.AddCommand(dungeonexplore.Cmd)
 }

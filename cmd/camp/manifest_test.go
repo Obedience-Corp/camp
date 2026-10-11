@@ -260,14 +260,15 @@ func TestManifestCommand_InteractiveFlags(t *testing.T) {
 	}
 
 	interactiveCommands := map[string]bool{
-		"init":          true,
-		"create":        true,
-		"idea add":      true,
-		"switch":        true,
-		"settings":      true,
-		"move":          true,
-		"dungeon crawl": true,
-		"idea crawl":    true,
+		"init":            true,
+		"create":          true,
+		"idea add":        true,
+		"switch":          true,
+		"settings":        true,
+		"move":            true,
+		"dungeon crawl":   true,
+		"dungeon explore": true,
+		"idea crawl":      true,
 	}
 	if questCommandsRegistered() {
 		interactiveCommands["quest edit"] = true

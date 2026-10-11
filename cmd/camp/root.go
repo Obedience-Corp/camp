@@ -165,8 +165,9 @@ func loadShortcutsForExpansion() map[string]config.ShortcutConfig {
 		return defaults
 	}
 
-	// Load campaign config
-	cfg, err := config.LoadCampaignConfig(ctx, campRoot)
+	// Shortcut expansion runs before every command. Read the camp without
+	// writing a generated id or creating jumps.yaml.
+	cfg, err := config.ReadCampaignConfig(ctx, campRoot)
 	if err != nil {
 		// Fall back to defaults
 		return defaults
