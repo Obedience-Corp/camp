@@ -780,3 +780,37 @@ func TestExploreReaderKeepsItsLinesWhenOnlyTheHeightChanges(t *testing.T) {
 		}
 	}
 }
+
+// A header too narrow for all of its parts cuts the lens, not the filter:
+// the filter is the only thing on screen that says why rows are missing.
+func TestExploreCutHeaderStillNamesTheFilter(t *testing.T) {
+	for _, width := range []int{20, 24, 30, 40, 60, 100} {
+		for _, filter := range []string{"q", "fest", "a filter much longer than the header has room for"} {
+			m := screenFeed(t, width, 12, explore.ProtocolOff, 6)
+			m.visible.DungeonLabel = "A dungeon with a long label"
+			m.query.Text = filter
+			header := viewText(strings.Split(m.View(), "\n")[0])
+			if w := cellWidth(header); w > width {
+				t.Fatalf("%d columns, filter %q: header is %d wide: %q", width, filter, w, header)
+			}
+			// The quoted filter in full, or its start and the mark of a cut.
+			at := strings.Index(header, " · \""+filter[:1])
+			if at < 0 {
+				t.Errorf("%d columns: the header %q does not name the filter %q", width, header, filter)
+				continue
+			}
+			if shown := header[at+len(" · "):]; !strings.HasPrefix(shown, `"`+filter+`"`) && !strings.HasSuffix(shown, "…") {
+				t.Errorf("%d columns: the header %q cuts the filter %q without a mark", width, header, filter)
+			}
+			if problems := checkLayout(m); len(problems) > 0 {
+				t.Errorf("%d columns, filter %q: %v", width, filter, problems)
+			}
+		}
+	}
+	// Room for everything: the header reads in full, sort order last.
+	m := screenFeed(t, 100, 12, explore.ProtocolOff, 6)
+	m.query.Text = "fest"
+	if header := viewText(strings.Split(m.View(), "\n")[0]); header != `All dungeons · Finished · "fest" · newest first` {
+		t.Fatalf("full header = %q", header)
+	}
+}

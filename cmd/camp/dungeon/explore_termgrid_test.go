@@ -709,3 +709,23 @@ func screenFeed(t *testing.T, w, h int, protocol string, n int) exploreModel {
 	}
 	return m
 }
+
+// emojiTitles gives three rows in four a title with an emoji sequence: a ZWJ
+// sequence, a skin tone modifier, a flag. A terminal that joins the sequence
+// draws two cells and one that does not draws each code point, so these are
+// the rows whose width a layout gets wrong.
+func emojiTitles(t *testing.T, m exploreModel) exploreModel {
+	t.Helper()
+	sequences := []string{"", "👨\u200d💻", "👍🏽", "🇺🇸"}
+	m.index.Items = append([]explore.Item(nil), m.index.Items...)
+	for i := range m.index.Items {
+		if seq := sequences[i%len(sequences)]; seq != "" {
+			m.index.Items[i].Title += " " + seq
+			m.index.Items[i].Summary = seq + " " + m.index.Items[i].Summary
+		}
+	}
+	if err := m.applyQuery(); err != nil {
+		t.Fatal(err)
+	}
+	return m
+}

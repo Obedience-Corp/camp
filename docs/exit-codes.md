@@ -18,6 +18,12 @@ handle failures consistently.
 | `camp sync` | 3 | Post-sync validation failed after sync/update work ran. |
 | `camp clone` | 3 | The camp was partially cloned, or post-clone validation failed. |
 
+## Signals
+
+| Command | Code | Meaning |
+| --- | --- | --- |
+| `camp dungeon explore` | 130, 143 | SIGINT or SIGTERM stopped the terminal UI from outside: 128 plus the signal number, with nothing printed. Quitting with a key exits 0. |
+
 ## Migration Notes
 
 Camp is not yet publicly released, so CH0001 intentionally collapses the old

@@ -146,7 +146,7 @@ func TestExploreReplayOnTheTerminal(t *testing.T) {
 	for _, protocol := range []string{explore.ProtocolITerm, explore.ProtocolKitty} {
 		for _, script := range screenScripts {
 			t.Run(protocol+"/"+script.name, func(t *testing.T) {
-				m := screenFeed(t, script.w, script.h, protocol, script.n)
+				m := emojiTitles(t, screenFeed(t, script.w, script.h, protocol, script.n))
 				m.index.Warnings = script.warnings
 				m.cursor = min(script.start, len(m.visible.Items)-1)
 				for m.visible.Items[m.cursor].Replay == "" {
@@ -217,6 +217,11 @@ func TestExploreITermImageRowFollowsCoveredRows(t *testing.T) {
 	before := last(m)
 	if again := last(m); again != before {
 		t.Fatal("an unchanged frame changed the image row, so the replay would flicker")
+	}
+	// The digest rides in the image's own file name field. Nothing is set in
+	// the terminal session to carry it.
+	if !strings.Contains(before, "\x1b]1337;File=name=") || strings.Contains(m.View(), "SetUserVar") {
+		t.Fatal("the covered-rows digest is not in the image's name field")
 	}
 	// The help text is the same; only the feed rows under the image moved.
 	shifted := m

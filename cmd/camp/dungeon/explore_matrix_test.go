@@ -136,7 +136,7 @@ func TestExploreLayoutMatrix(t *testing.T) {
 			for _, n := range []int{0, 1, 3, 40} {
 				for _, notices := range []int{0, 1, 2} {
 					for _, status := range []string{"", "copied"} {
-						base := screenFeed(t, size[0], size[1], protocol, n)
+						base := emojiTitles(t, screenFeed(t, size[0], size[1], protocol, n))
 						if notices >= 1 {
 							base.index.Warnings = []string{"festivals/.dungeon/archived: permission denied"}
 						}

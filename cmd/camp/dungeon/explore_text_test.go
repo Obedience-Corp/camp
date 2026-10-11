@@ -185,15 +185,18 @@ func TestExploreReaderCleansWhatEntitiesDecodeTo(t *testing.T) {
 }
 
 func TestExploreCutNoticeFitsANarrowReader(t *testing.T) {
-	for _, width := range []int{18, 30, 38, 78} {
+	notice := cutNotice(true)[0]
+	for _, width := range []int{18, 30, 38, 39, 78} {
 		lines := readerBody{text: "x", lead: cutNotice(true)}.render(width, true)
-		for _, line := range lines {
-			if w := cellWidth(line); w > width {
-				t.Fatalf("at %d columns a notice row is %d wide: %q", width, w, line)
-			}
+		got := lines[0]
+		if w := cellWidth(got); w > width {
+			t.Fatalf("at %d columns the notice row is %d wide: %q", width, w, got)
 		}
-		if joined := strings.Join(strings.Fields(strings.Join(lines, " ")), ""); !strings.Contains(joined, "Showingthefirst256KiBofthisfile.") {
-			t.Fatalf("at %d columns the notice lost text: %q", width, lines)
+		switch {
+		case width >= cellWidth(notice) && got != notice:
+			t.Fatalf("at %d columns the notice is %q", width, got)
+		case width < cellWidth(notice) && (!strings.HasSuffix(got, "…") || !strings.HasPrefix(notice, strings.TrimSuffix(got, "…"))):
+			t.Fatalf("at %d columns the notice is cut without a mark: %q", width, got)
 		}
 	}
 }

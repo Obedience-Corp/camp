@@ -2,7 +2,6 @@ package dungeon
 
 import (
 	"bytes"
-	"encoding/base64"
 	"fmt"
 	"hash/fnv"
 	"image/png"
@@ -113,23 +112,22 @@ func (m exploreModel) placeReplay(view string) string {
 	view = view[:at] + view[at+len(seq):]
 	// The feed window can clip reservation rows. Paint only the rows that
 	// remain in the body so the image cannot cover the status or help line.
-	rows := m.drawRows()
-	if room := m.bodyRowsFrom(row); room < rows {
-		rows = room
-		seq = m.imageSequenceLimited(width, rows)
-		if seq == "" {
-			return view
-		}
+	rows := min(m.drawRows(), m.bodyRowsFrom(row))
+	if rows < 1 {
+		return view
 	}
-	key := ""
+	name := ""
 	if m.protocol == explore.ProtocolITerm {
 		view = markReplayRows(view, row, rows, col, min(width, 48), m.replayTag(min(width, 48), rows))
-		key = replayRowsKey(view, row, rows)
+		name = replayRowsKey(view, row, rows)
+	}
+	if name != "" || rows != m.drawRows() {
+		seq = m.imageSequenceNamed(width, rows, name)
 	}
 	// imageSequence itself saves/restores at its origin. Strip that inner
 	// pair so the single saved cursor remains on the help row.
 	seq = strings.TrimSuffix(strings.TrimPrefix(seq, "\x1b7"), "\x1b8")
-	return view + key + fmt.Sprintf("\x1b7\x1b[%d;%dH", row, col) + seq + "\x1b8"
+	return view + fmt.Sprintf("\x1b7\x1b[%d;%dH", row, col) + seq + "\x1b8"
 }
 
 // iTerm has no command that deletes an image. Its cells clear only when their
@@ -153,7 +151,8 @@ func markReplayRows(view string, row, rows, col, cols int, tag string) string {
 // repaints a changed row and erases to its end, which clears the image cells
 // there, and skips the row that draws the image unless that row changed too.
 // The image row therefore carries a digest of the rows it covers, so the two
-// are always painted together. SetUserVar is an iTerm sequence with no width.
+// are always painted together. The digest rides in the image's own file name
+// field, which sets nothing in the terminal.
 func replayRowsKey(view string, row, rows int) string {
 	lines := strings.Split(view, "\n")
 	digest := fnv.New64a()
@@ -161,8 +160,7 @@ func replayRowsKey(view string, row, rows int) string {
 		_, _ = digest.Write([]byte(lines[i]))
 		_, _ = digest.Write([]byte{'\n'})
 	}
-	sum := strconv.FormatUint(digest.Sum64(), 36)
-	return "\x1b]1337;SetUserVar=campReplayRows=" + base64.StdEncoding.EncodeToString([]byte(sum)) + "\a"
+	return strconv.FormatUint(digest.Sum64(), 36)
 }
 
 // replayTag names the drawn replay in bytes a terminal shows nothing for:
@@ -241,17 +239,29 @@ func (m exploreModel) renderHeader() string {
 	if m.filtering {
 		return m.styles.header.Render(keepEnd("/ ", m.filter, m.width))
 	}
-	return m.styles.header.Render(fit(m.headerText(), m.width))
+	text := m.headerText()
+	if filter := m.query.Text; filter != "" && !m.reading && cellWidth(explore.CleanText(text)) > m.width {
+		// A cut header still names the filter in force: without it nothing
+		// on screen says why rows are missing. The lens gives up the room.
+		mark := fit(`"`+filter+`"`, max(m.width/2, 1))
+		return m.styles.header.Render(keepTail(strings.Join(m.lensParts(), " · "), " · "+mark, m.width))
+	}
+	return m.styles.header.Render(fit(text, m.width))
+}
+
+func (m exploreModel) lensParts() []string {
+	label := m.visible.DungeonLabel
+	if label == "" {
+		label = "All dungeons"
+	}
+	return []string{label, statusTitle(m.query.Status)}
 }
 
 func (m exploreModel) headerText() string {
 	if m.reading {
 		return m.reader.title
 	}
-	parts := []string{m.visible.DungeonLabel, statusTitle(m.query.Status)}
-	if m.visible.DungeonLabel == "" {
-		parts[0] = "All dungeons"
-	}
+	parts := m.lensParts()
 	if m.query.Text != "" {
 		parts = append(parts, `"`+m.query.Text+`"`)
 	}
@@ -606,10 +616,12 @@ func (m exploreModel) drawRows() int {
 }
 
 func (m exploreModel) imageSequence(width int) string {
-	return m.imageSequenceLimited(width, m.drawRows())
+	return m.imageSequenceNamed(width, m.drawRows(), "")
 }
 
-func (m exploreModel) imageSequenceLimited(width, rows int) string {
+// imageSequenceNamed is the image sequence for a box of rows rows, with name
+// in the iTerm file name field. Kitty has no use for a name.
+func (m exploreModel) imageSequenceNamed(width, rows int, name string) string {
 	item, ok := m.focused()
 	if !ok || m.poster == nil || m.mediaFor != item.Path || m.protocol == explore.ProtocolOff {
 		return ""
@@ -627,7 +639,7 @@ func (m exploreModel) imageSequenceLimited(width, rows int) string {
 		cols, rows = kittyPlacement(m.poster, cols, rows)
 		return "\x1b7" + explore.KittyDelete(exploreImageID) + explore.KittyPNG(exploreImageID, m.poster, cols, rows) + "\x1b8"
 	case explore.ProtocolITerm:
-		return "\x1b7" + explore.ITermPNG(m.poster, cols, rows) + "\x1b8"
+		return "\x1b7" + explore.ITermPNG(name, m.poster, cols, rows) + "\x1b8"
 	default:
 		return ""
 	}

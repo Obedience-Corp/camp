@@ -144,10 +144,15 @@ func runExploreTUI(cmd *cobra.Command, root, cacheDir string, query explore.Quer
 		}
 	}
 	prog := tea.NewProgram(model, tea.WithContext(ctx), tea.WithAltScreen())
+	signals := watchExploreSignals()
 	final, err := prog.Run()
+	stopped := signals.stop()
 	done, ok := final.(exploreModel)
 	if ok {
 		done.cancelDecode()
+	}
+	if exit := exploreSignalExit(cmd.CommandPath(), stopped, err); exit != nil {
+		return exit
 	}
 	if err != nil {
 		return camperrors.Wrap(err, "running dungeon explorer")

@@ -131,15 +131,21 @@ func KittyDelete(id int) string {
 	return "\033_Ga=d,d=i,q=2,i=" + itoa(id) + "\033\\"
 }
 
-// ITermPNG transmits png with the iTerm2 inline image protocol.
-func ITermPNG(png []byte, cols, rows int) string {
+// ITermPNG transmits png with the iTerm2 inline image protocol. name fills
+// the protocol's file name field, which iTerm draws nowhere for an inline
+// image; an empty name leaves the field out.
+func ITermPNG(name string, png []byte, cols, rows int) string {
 	if cols < 1 {
 		cols = 1
 	}
 	if rows < 1 {
 		rows = 1
 	}
-	return "\033]1337;File=inline=1;preserveAspectRatio=1;width=" + itoa(cols) + ";height=" + itoa(rows) + ":" + base64.StdEncoding.EncodeToString(png) + "\a"
+	args := "inline=1;preserveAspectRatio=1;width=" + itoa(cols) + ";height=" + itoa(rows)
+	if name != "" {
+		args = "name=" + base64.StdEncoding.EncodeToString([]byte(name)) + ";" + args
+	}
+	return "\033]1337;File=" + args + ":" + base64.StdEncoding.EncodeToString(png) + "\a"
 }
 
 func itoa(n int) string {

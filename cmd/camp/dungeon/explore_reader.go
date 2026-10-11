@@ -51,9 +51,9 @@ func (b readerBody) render(width int, plain bool) []string {
 	} else {
 		lines = wrapPlain(text, width)
 	}
-	var lead []string
-	for _, line := range b.lead {
-		lead = append(lead, wrapPlain(line, width)...)
+	lead := make([]string, len(b.lead))
+	for i, line := range b.lead {
+		lead[i] = fit(line, width)
 	}
 	return append(lead, lines...)
 }
