@@ -41,6 +41,7 @@ func TestScanJSONFlagReadsArgvTheWayPflagDoes(t *testing.T) {
 		{"bare --json", []string{"--json"}, true, true},
 		{"--json=true", []string{"--json=true"}, true, true},
 		{"--json=1", []string{"--json=1"}, true, true},
+		{"--json=yes", []string{"--json=yes"}, true, true},
 		{"--json=t", []string{"--json=t"}, true, true},
 		{"--json=false", []string{"--json=false"}, false, true},
 		{"--json=0", []string{"--json=0"}, false, true},
@@ -73,6 +74,43 @@ func TestScanJSONFlagReadsArgvTheWayPflagDoes(t *testing.T) {
 			got, found := scanJSONFlag(probeCommand().Flags(), tc.argv)
 			if got != tc.want || found != tc.found {
 				t.Errorf("scanJSONFlag(%q) = %v, found %v; want %v, found %v", tc.argv, got, found, tc.want, tc.found)
+			}
+		})
+	}
+}
+
+// BoolArg is the argv scan a flag-parse hook uses when parsing stops before
+// the bool is bound. The last occurrence wins, and an unparseable value such
+// as --json=yes or --json=pretty counts as enabled.
+func TestBoolArg(t *testing.T) {
+	cases := []struct {
+		name string
+		argv []string
+		want bool
+	}{
+		{"bare --json", []string{"camp", "--json"}, true},
+		{"--json=true", []string{"camp", "--json=true"}, true},
+		{"--json=1", []string{"camp", "--json=1"}, true},
+		{"--json=yes", []string{"camp", "--json=yes"}, true},
+		{"--json=t", []string{"camp", "--json=t"}, true},
+		{"--json=false", []string{"camp", "--json=false"}, false},
+		{"--json=0", []string{"camp", "--json=0"}, false},
+		{"--json=False", []string{"camp", "--json=False"}, false},
+		{"--json=FALSE", []string{"camp", "--json=FALSE"}, false},
+		{"--json=f", []string{"camp", "--json=f"}, false},
+		{"no json flag at all", []string{"camp", "workitem", "commit"}, false},
+		{"last value wins when enabled again", []string{"camp", "--json=false", "--json"}, true},
+		{"last value wins when disabled again", []string{"camp", "--json", "--json=false"}, false},
+		{"--json=pretty (unparseable falls back to enabled)",
+			[]string{"camp", "--json=pretty"}, true},
+	}
+	origArgs := os.Args
+	defer func() { os.Args = origArgs }()
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			os.Args = tc.argv
+			if got := BoolArg("json"); got != tc.want {
+				t.Errorf("BoolArg(\"json\") with argv=%v = %v, want %v", tc.argv, got, tc.want)
 			}
 		})
 	}

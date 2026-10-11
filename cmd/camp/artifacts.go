@@ -20,8 +20,15 @@ import (
 
 var artifactsCmd = &cobra.Command{
 	Use:   "artifacts",
-	Short: "Manage declared artifact roots (.campaign/artifacts.yaml)",
-	Long: `Manage the camp's declared artifact roots: directories of heavy non-git
+	Short: "Explore artifact files and manage declared roots",
+	Args:  cobra.NoArgs,
+	RunE:  runArtifactsExplorer,
+	Long: `Open the artifact explorer: search files, open them with Enter, copy paths
+with y, or go to their folder with g (requires camp shell-init).
+The explorer lists files outside git in declared roots, including ignored
+files. Tracked files are excluded. --plain and --json work without a terminal.
+
+Manage the camp's declared artifact roots: directories of heavy non-git
 payloads (media, renders, datasets) that 'camp sync --from <machine>' moves
 between your machines with rsync instead of git.
 
@@ -30,7 +37,10 @@ machine knows what belongs to the camp. Declared roots should be
 gitignored: a root that is also git-tracked would make the same bytes both
 git content and artifact content. Manifests and per-peer sync snapshots are
 machine-local derived state under .campaign/cache (gitignored).`,
-	Example: `  camp artifacts list
+	Example: `  camp artifacts              # interactive explorer
+  camp artifacts --plain      # file list
+  camp artifacts --json       # file inventory for scripts
+  camp artifacts list         # declared roots
   camp artifacts add media/renders
   camp artifacts add datasets --policy on-demand
   camp artifacts remove media/renders
@@ -83,6 +93,10 @@ var artifactsOpts struct {
 }
 
 func init() {
+	artifactsCmd.Flags().Bool("plain", false, "Print artifact files instead of opening the explorer")
+	artifactsCmd.Flags().Bool("json", false, "Print artifact files as JSON")
+	artifactsCmd.Flags().String("path-output", "", "Write selected directory for shell integration")
+	_ = artifactsCmd.Flags().MarkHidden("path-output")
 	artifactsListCmd.Flags().BoolVar(&artifactsOpts.json, "json", false,
 		"Output as JSON for scripting")
 	artifactsAddCmd.Flags().StringVar(&artifactsOpts.policy, "policy", artifacts.PolicyAlways,

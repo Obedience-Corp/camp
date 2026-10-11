@@ -399,9 +399,13 @@ func executeFresh(ctx context.Context, name, path string, opts freshOptions) err
 			Force:         true,  // Skip confirmation — fresh is deliberate
 			DiscardDirty:  false, // preserve dirty worktrees (new guard); fresh should not destroy uncommitted work
 			Remote:        opts.pruneRemote,
-			BaseRef:       syncState.baseRef,
+			BaseRef:       syncState.pruneBaseRef(opts.dryRun),
 			RefreshRemote: false,
 		}
+		// A dry-run has not checked out or synced the default branch. Preview
+		// the pass from where the sync step would leave this project, so the
+		// plan names exactly what the real run removes.
+		pruneOpts.PreviewPrimaryAtBase = opts.dryRun
 		// Reclaiming the default branch detaches its former worktree. Preserve
 		// that exact worktree during this prune pass: fresh created the detached
 		// state as a safe branch handoff, so it must not immediately classify

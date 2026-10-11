@@ -46,7 +46,7 @@ camp [flags]
 
 ### SEE ALSO
 
-* [camp artifacts](camp_artifacts.md)	 - Manage declared artifact roots (.campaign/artifacts.yaml)
+* [camp artifacts](camp_artifacts.md)	 - Explore artifact files and manage declared roots
 * [camp attach](camp_attach.md)	 - Attach an external directory to a camp
 * [camp cache](camp_cache.md)	 - Manage the navigation index cache
 * [camp clone](camp_clone.md)	 - Clone a camp with full submodule setup

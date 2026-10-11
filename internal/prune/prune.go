@@ -62,6 +62,22 @@ type Options struct {
 	// used when a caller detached a worktree as part of the surrounding
 	// operation and must not immediately undo that work by deleting it.
 	PreserveDetachedWorktrees []string
+
+	// PreviewPrimaryAtBase applies only together with DryRun. Set it when the
+	// real pass runs after the caller has moved the primary worktree to
+	// BaseRef, as camp fresh does: it checks out the default branch, or
+	// detaches at origin/<default>, and syncs before it prunes. A dry-run has
+	// done none of that, so without this the preview protects the branch the
+	// primary worktree still sits on and under-reports what the real pass
+	// deletes. With it, that branch is judged like any other and the primary
+	// worktree is never reported as a worktree to remove for it.
+	PreviewPrimaryAtBase bool
+}
+
+// previewsPrimaryAtBase reports whether this pass is a preview taken from the
+// primary worktree's post-sync position rather than its current one.
+func (o Options) previewsPrimaryAtBase() bool {
+	return o.DryRun && o.PreviewPrimaryAtBase
 }
 
 // Result holds the outcome for a single branch.
@@ -113,7 +129,12 @@ func Execute(ctx context.Context, name, path string, opts Options) ProjectResult
 		}
 	}
 
-	merged, err := git.MergedBranchesFromRef(ctx, path, baseRef)
+	listMerged, listGone := git.MergedBranchesFromRef, git.GoneBranches
+	if opts.previewsPrimaryAtBase() {
+		listMerged, listGone = git.MergedBranchesFromRefIncludingCurrent, git.GoneBranchesIncludingCurrent
+	}
+
+	merged, err := listMerged(ctx, path, baseRef)
 	if err != nil {
 		pr.Error = err.Error()
 		return pr
@@ -124,7 +145,7 @@ func Execute(ctx context.Context, name, path string, opts Options) ProjectResult
 	// deleted the remote branch without merging produces the same signal.
 	// Filter through a merge-equivalence check (cumulative patch-id of the
 	// branch matches a commit's self-diff on baseRef) before force-deleting.
-	gone, err := git.GoneBranches(ctx, path)
+	gone, err := listGone(ctx, path)
 	if err != nil {
 		pr.Results = append(pr.Results, Result{
 			Branch: "(gone upstream)",
@@ -426,6 +447,12 @@ func deleteLocalBranches(ctx context.Context, path string, merged []string, forc
 	}
 
 	wtMap := detectWorktreesForBranches(ctx, path, merged)
+	if opts.previewsPrimaryAtBase() {
+		// The worktree holding the current branch is the primary worktree
+		// itself. The real pass runs after it has left that branch, so it is
+		// not a worktree to remove.
+		delete(wtMap, git.CurrentBranch(ctx, path))
+	}
 	branchesToDelete := make([]string, 0, len(merged))
 	worktreesToRemove := make(map[string]worktree.GitWorktreeEntry)
 

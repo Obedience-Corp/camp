@@ -11,10 +11,6 @@ import (
 	"github.com/Obedience-Corp/camp/internal/ui"
 )
 
-// statusArtifactListLimit is how many artifact files the long format names
-// individually before it falls back to one line per root.
-const statusArtifactListLimit = 10
-
 // Keep generated arguments comfortably below supported platforms' exec limits.
 // Beyond this budget the CLI reports plain git status with an explicit notice.
 const statusExclusionBudget = 16 * 1024
@@ -65,9 +61,17 @@ func withStatusOptions(args []string, options ...string) []string {
 
 // Ask Git to apply the user's pathspecs, including glob and exclude magic.
 // Only untracked paths selected by that same request belong in our section.
+//
+// A request with no pathspec already selected every candidate. UntrackedContent
+// found them with a status limited to the declared roots. Running a second
+// status of the whole camp here only repeats the scan the printed status is
+// about to do.
 func scopedStatusArtifacts(ctx context.Context, repo string, args []string, roots []artifacts.UntrackedRoot) ([]artifacts.UntrackedRoot, error) {
 	if len(roots) == 0 {
 		return nil, nil
+	}
+	if !statusHasPathspec(args) {
+		return roots, nil
 	}
 	scopeArgs := withStatusOptions(args, "--porcelain=v1", "-z", "--untracked-files=all")
 	output, err := git.StatusPorcelain(ctx, repo, scopeArgs...)
@@ -94,6 +98,29 @@ func scopedStatusArtifacts(ctx context.Context, repo string, args []string, root
 		}
 	}
 	return scoped, nil
+}
+
+// statusHasPathspec reports whether args limit the status to paths.
+//
+// Flags before the separator are options, including the ones camp adds
+// (--ignore-submodules=all, --short). Anything after the separator is a
+// pathspec, even when it looks like a flag. A non-option before the
+// separator is a pathspec too.
+func statusHasPathspec(args []string) bool {
+	afterSeparator := false
+	for _, arg := range args {
+		if afterSeparator {
+			return true
+		}
+		if arg == "--" {
+			afterSeparator = true
+			continue
+		}
+		if arg == "-" || !strings.HasPrefix(arg, "-") {
+			return true
+		}
+	}
+	return false
 }
 
 // statusFormat is the git status output form a camp status call asked for.
@@ -139,33 +166,23 @@ func renderStatusArtifacts(out io.Writer, roots []artifacts.UntrackedRoot, forma
 	if len(roots) == 0 {
 		return
 	}
-	if format != statusFormatLong {
-		for _, r := range roots {
-			_, _ = fmt.Fprintf(out, "artifact content kept out of git: %s/ (%s)\n", r.Root, fileTally(r))
-		}
+	count := 0
+	var size int64
+	for _, root := range roots {
+		count += len(root.Files)
+		size += root.Bytes
+	}
+	if count == 0 {
 		return
 	}
-
-	_, _ = fmt.Fprintln(out)
-	_, _ = fmt.Fprintln(out, "Artifact content:")
-	_, _ = fmt.Fprintln(out, `  (kept out of git; "camp sync --from <machine>" copies it between machines)`)
-	if len(artifacts.UntrackedPaths(roots)) <= statusArtifactListLimit {
-		for _, r := range roots {
-			for _, f := range r.Files {
-				_, _ = fmt.Fprintf(out, "\t%s (%s)\n", f.Path, ui.FormatBytes(f.Size))
-			}
-		}
-		return
+	noun := "artifacts"
+	if count == 1 {
+		noun = "artifact"
 	}
-	for _, r := range roots {
-		_, _ = fmt.Fprintf(out, "\t%s/ (%s)\n", r.Root, fileTally(r))
+	summary := fmt.Sprintf("%s %s · %s kept out of git", ui.FormatCount(count), noun, ui.FormatBytes(size))
+	if format == statusFormatLong {
+		_, _ = fmt.Fprintf(out, "\n%s  %s\n", ui.Accent(summary), ui.Dim("→ camp artifacts"))
+	} else {
+		_, _ = fmt.Fprintf(out, "%s → camp artifacts\n", summary)
 	}
-}
-
-func fileTally(r artifacts.UntrackedRoot) string {
-	noun := "files"
-	if len(r.Files) == 1 {
-		noun = "file"
-	}
-	return fmt.Sprintf("%s %s, %s", ui.FormatCount(len(r.Files)), noun, ui.FormatBytes(r.Bytes))
 }

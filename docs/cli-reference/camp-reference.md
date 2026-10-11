@@ -56,9 +56,14 @@ camp [flags]
 
 ## camp artifacts
 
-Manage declared artifact roots (.campaign/artifacts.yaml)
+Explore artifact files and manage declared roots
 
 ### Synopsis
+
+Open the artifact explorer: search files, open them with Enter, copy paths
+with y, or go to their folder with g (requires camp shell-init).
+The explorer lists files outside git in declared roots, including ignored
+files. Tracked files are excluded. --plain and --json work without a terminal.
 
 Manage the camp's declared artifact roots: directories of heavy non-git
 payloads (media, renders, datasets) that 'camp sync --from <machine>' moves
@@ -70,10 +75,17 @@ gitignored: a root that is also git-tracked would make the same bytes both
 git content and artifact content. Manifests and per-peer sync snapshots are
 machine-local derived state under .campaign/cache (gitignored).
 
+```
+camp artifacts [flags]
+```
+
 ### Examples
 
 ```
-  camp artifacts list
+  camp artifacts              # interactive explorer
+  camp artifacts --plain      # file list
+  camp artifacts --json       # file inventory for scripts
+  camp artifacts list         # declared roots
   camp artifacts add media/renders
   camp artifacts add datasets --policy on-demand
   camp artifacts remove media/renders
@@ -83,7 +95,9 @@ machine-local derived state under .campaign/cache (gitignored).
 ### Options
 
 ```
-  -h, --help   help for artifacts
+  -h, --help    help for artifacts
+      --json    Print artifact files as JSON
+      --plain   Print artifact files instead of opening the explorer
 ```
 
 ### Options inherited from parent commands
@@ -506,6 +520,10 @@ At the camp root, submodule ref changes (projects/*) are excluded
 from staging by default to prevent accidental ref conflicts across
 machines. Use --include-refs to stage them explicitly.
 
+Use --auto-write --background to require a queued commit. Add --json to return
+a job receipt immediately after staging and snapshotting. Without --background,
+--json continues to wait for a completed commit hash.
+
 Use --sub to commit in the submodule detected from your current directory.
 Use -p/--project to commit in a specific project (e.g., -p projects/camp).
 
@@ -514,6 +532,7 @@ Commit tags use explicit --workitem or context from the current path
 
 Examples:
   camp commit -m "Add new feature"
+  camp commit --auto-write --background --json
   camp commit --amend -m "Fix typo"
   camp commit -a -m "Stage and commit all"
   camp commit --include-refs -m "Sync all submodule refs"
@@ -530,6 +549,7 @@ camp commit [flags]
   -a, --all                   Stage all changes before committing (default true)
       --amend                 Amend the previous commit
       --auto-write            Run configured commit message writer
+      --background            Queue an auto-write commit; with --json return a job receipt instead of a commit hash
       --commit-large          Commit over-threshold files instead of keeping them out of git
       --commit-nested         Commit undeclared nested git repositories as gitlinks instead of keeping them out of git
   -h, --help                  help for commit
@@ -7488,8 +7508,8 @@ Works from anywhere within the camp - always shows the status
 of the camp root repository.
 
 Untracked files that camp commit keeps out of git as artifact content
-(over-threshold files inside a declared artifact root) are listed in their
-own section instead of under git's untracked files.
+(over-threshold files inside a declared artifact root) are summarized by
+count and size. Run camp artifacts to explore files outside git.
 
 Use --sub to show status of the submodule detected from your current directory.
 Use --project/-p to show status of a specific project.

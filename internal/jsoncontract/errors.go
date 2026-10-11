@@ -201,6 +201,33 @@ func takesValue(flag *pflag.Flag) bool {
 	return flag != nil && flag.NoOptDefVal == ""
 }
 
+// BoolArg reports whether the process argv enables the named boolean flag.
+// The last occurrence wins, as it does when pflag parses repeated flags. An
+// explicit value strconv.ParseBool reads as false (--flag=false, =0, =f) is
+// false. An unparseable value is treated as enabled, so a later form such as
+// --json=pretty still counts as opting in.
+//
+// A flag-parse hook that runs before the bool is bound uses this. Requested
+// does not: once cobra has parsed the command, the command's own answer
+// decides, and a --json in argv can be another flag's value.
+func BoolArg(name string) bool {
+	flag := "--" + name
+	enabled := false
+	for _, arg := range os.Args[1:] {
+		if arg == flag {
+			enabled = true
+			continue
+		}
+		rest, ok := strings.CutPrefix(arg, flag+"=")
+		if !ok {
+			continue
+		}
+		v, err := strconv.ParseBool(rest)
+		enabled = err != nil || v
+	}
+	return enabled
+}
+
 // RenderError writes the envelope to stderr and returns a CommandError so the
 // main package preserves the intended exit code without printing a second line.
 func RenderError(cmd *cobra.Command, schemaVersion string, err error) error {

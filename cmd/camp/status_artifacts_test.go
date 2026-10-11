@@ -2,6 +2,7 @@ package main
 
 import (
 	"bytes"
+	"context"
 	"fmt"
 	"reflect"
 	"strings"
@@ -56,47 +57,34 @@ func TestWithArtifactExclusions(t *testing.T) {
 }
 
 func TestRenderStatusArtifacts(t *testing.T) {
-	roots := []artifacts.UntrackedRoot{{
-		Root:  "videos/cut",
-		Files: []artifacts.UntrackedFile{{Path: "videos/cut/a.mp4", Size: 3 << 20}, {Path: "videos/cut/b.mp4", Size: 1 << 20}},
-		Bytes: 4 << 20,
-	}}
-
-	var long bytes.Buffer
-	renderStatusArtifacts(&long, roots, statusFormatLong)
-	for _, want := range []string{"Artifact content:\n", "\tvideos/cut/a.mp4 (3.0 MB)\n", "\tvideos/cut/b.mp4 (1.0 MB)\n", "camp sync --from <machine>"} {
-		if !strings.Contains(long.String(), want) {
-			t.Errorf("long output missing %q:\n%s", want, long.String())
+	for _, count := range []int{0, 1, 2, 1500} {
+		roots := []artifacts.UntrackedRoot{}
+		for i := 0; i < count; i++ {
+			roots = append(roots, artifacts.UntrackedRoot{Root: fmt.Sprintf("renders/%d", i), Files: []artifacts.UntrackedFile{{Path: fmt.Sprintf("renders/%d/clip.mp4", i), Size: 1 << 20}}, Bytes: 1 << 20})
 		}
-	}
-
-	var short bytes.Buffer
-	renderStatusArtifacts(&short, roots, statusFormatShort)
-	if got, want := short.String(), "artifact content kept out of git: videos/cut/ (2 files, 4.0 MB)\n"; got != want {
-		t.Errorf("short output = %q, want %q", got, want)
-	}
-
-	var none bytes.Buffer
-	renderStatusArtifacts(&none, nil, statusFormatLong)
-	if none.Len() != 0 {
-		t.Errorf("no artifact content must print nothing, got %q", none.String())
-	}
-}
-
-func TestRenderStatusArtifactsSummarizesLongLists(t *testing.T) {
-	root := artifacts.UntrackedRoot{Root: "renders"}
-	for i := 0; i <= statusArtifactListLimit; i++ {
-		root.Files = append(root.Files, artifacts.UntrackedFile{Path: fmt.Sprintf("renders/%02d.mov", i), Size: 1 << 20})
-		root.Bytes += 1 << 20
-	}
-
-	var out bytes.Buffer
-	renderStatusArtifacts(&out, []artifacts.UntrackedRoot{root}, statusFormatLong)
-	if strings.Contains(out.String(), "renders/00.mov") {
-		t.Errorf("past the list limit files must be summarized per root:\n%s", out.String())
-	}
-	if !strings.Contains(out.String(), "\trenders/ (11 files, 11.0 MB)\n") {
-		t.Errorf("missing per-root summary:\n%s", out.String())
+		for _, format := range []statusFormat{statusFormatLong, statusFormatShort, statusFormatMachine} {
+			var out bytes.Buffer
+			renderStatusArtifacts(&out, roots, format)
+			got := out.String()
+			if count == 0 {
+				if got != "" {
+					t.Errorf("empty artifacts: %q", got)
+				}
+				continue
+			}
+			if !strings.Contains(got, "camp artifacts") || !strings.Contains(got, "kept out of git") {
+				t.Errorf("missing discovery hint: %q", got)
+			}
+			if strings.Contains(got, "renders/") || strings.Count(strings.TrimSpace(got), "\n") != 0 {
+				t.Errorf("status must stay one summary line: %q", got)
+			}
+			if count == 1 && !strings.Contains(got, "1 artifact · 1.0 MB") {
+				t.Errorf("singular count: %q", got)
+			}
+			if count == 1500 && !strings.Contains(got, "1,500 artifacts") {
+				t.Errorf("aggregate count: %q", got)
+			}
+		}
 	}
 }
 
@@ -106,6 +94,70 @@ func TestArtifactExclusionsBoundedFallback(t *testing.T) {
 	got, separated := withArtifactExclusions(args, paths)
 	if separated || !reflect.DeepEqual(got, args) {
 		t.Fatalf("fallback = %q, %v; want original args", got, separated)
+	}
+}
+
+func TestStatusHasPathspec(t *testing.T) {
+	roots := []artifacts.UntrackedRoot{{
+		Root:  "videos",
+		Files: []artifacts.UntrackedFile{{Path: "videos/a.mp4", Size: 10}},
+		Bytes: 10,
+	}}
+	skip := [][]string{
+		nil,
+		{"--ignore-submodules=all"},
+		{"--short", "--ignore-submodules=all"},
+		{"-uno"},
+		{"--untracked-files=no"},
+		{"--porcelain"},
+		{"--porcelain=v2"},
+		{"--"},
+	}
+	for _, args := range skip {
+		if statusHasPathspec(args) {
+			t.Errorf("statusHasPathspec(%q) = true, want false", args)
+		}
+		ctx, cancel := context.WithCancel(t.Context())
+		cancel()
+		got, err := scopedStatusArtifacts(ctx, t.TempDir(), args, roots)
+		if err != nil {
+			t.Errorf("scopedStatusArtifacts(%q) error = %v, want the candidate list", args, err)
+		}
+		if !reflect.DeepEqual(got, roots) {
+			t.Errorf("scopedStatusArtifacts(%q) = %#v, want the candidate list", args, got)
+		}
+	}
+
+	keep := [][]string{
+		{"docs"},
+		{"--", "docs"},
+		{"--", ":(glob)videos/**/*.mp4"},
+		{"--", "videos", ":(exclude)videos/my-video/takes"},
+		{"--porcelain=v2", "-z", "videos/my-video/takes"},
+		{"-s", "--", "docs"},
+		{"--", "-z"},
+		{"--", "--"},
+		{"--ignore-submodules=all", "--", "--"},
+		{"-"},
+		{"-", "--ignore-submodules=all"},
+	}
+	for _, args := range keep {
+		if !statusHasPathspec(args) {
+			t.Errorf("statusHasPathspec(%q) = false, want true", args)
+		}
+		ctx, cancel := context.WithCancel(t.Context())
+		cancel()
+		_, err := scopedStatusArtifacts(ctx, t.TempDir(), args, roots)
+		if err == nil {
+			t.Errorf("scopedStatusArtifacts(%q) skipped git, want a status of the pathspec", args)
+		}
+	}
+
+	ctx, cancel := context.WithCancel(t.Context())
+	cancel()
+	got, err := scopedStatusArtifacts(ctx, t.TempDir(), nil, nil)
+	if err != nil || got != nil {
+		t.Errorf("empty candidates = %#v, %v; want nil, nil", got, err)
 	}
 }
 

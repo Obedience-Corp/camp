@@ -44,4 +44,4 @@ camp artifacts resolve [path] [flags]
 
 ### SEE ALSO
 
-* [camp artifacts](camp_artifacts.md)	 - Manage declared artifact roots (.campaign/artifacts.yaml)
+* [camp artifacts](camp_artifacts.md)	 - Explore artifact files and manage declared roots

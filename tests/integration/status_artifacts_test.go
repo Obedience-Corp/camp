@@ -37,7 +37,7 @@ func setupCommittedMixedRoot(t *testing.T, tc *TestContainer, name string) strin
 // splitArtifactSection separates git's own output from camp's section.
 func splitArtifactSection(t *testing.T, stdout string) (gitPart, artifactPart string) {
 	t.Helper()
-	gitPart, artifactPart, found := strings.Cut(stdout, "Artifact content:")
+	gitPart, artifactPart, found := strings.Cut(stdout, "2 artifacts ·")
 	require.True(t, found, "camp status must report artifact content; stdout:\n%s", stdout)
 	return gitPart, artifactPart
 }
@@ -63,9 +63,9 @@ func TestIntegration_StatusMovesMixedRootArtifactsOutOfUntracked(t *testing.T) {
 	assert.Contains(t, gitPart, "renders/",
 		"an over-threshold file outside any declared root is still undecided and stays untracked")
 
-	assert.Contains(t, artifactPart, "videos/my-video/footage.mp4 (3.0 MB)")
-	assert.Contains(t, artifactPart, "videos/my-video/takes/take1.mp4 (2.0 MB)")
-	assert.Contains(t, artifactPart, "camp sync --from <machine>")
+	assert.Contains(t, artifactPart, "5.0 MB kept out of git")
+	assert.Contains(t, artifactPart, "camp artifacts")
+	assert.NotContains(t, artifactPart, "footage.mp4")
 	assert.NotContains(t, artifactPart, "renders/final.mov")
 	assert.NotContains(t, artifactPart, "todo.md")
 }
@@ -73,7 +73,7 @@ func TestIntegration_StatusMovesMixedRootArtifactsOutOfUntracked(t *testing.T) {
 func TestIntegration_StatusShortAndPorcelainReportArtifacts(t *testing.T) {
 	tc := GetSharedContainer(t)
 	campPath := setupCommittedMixedRoot(t, tc, "status-artifacts-short")
-	summary := "artifact content kept out of git: videos/my-video/ (2 files, 5.0 MB)"
+	summary := "2 artifacts · 5.0 MB kept out of git → camp artifacts"
 
 	stdout, stderr, exitCode, err := tc.RunCampSplitInDir(campPath, "status", "-s")
 	require.NoError(t, err)
@@ -191,11 +191,11 @@ func TestIntegration_StatusArtifactsRespectPathspecs(t *testing.T) {
 		args         []string
 		want, absent string
 	}{
-		{"unrelated directory", []string{"--", "docs"}, "", "Artifact content:"},
-		{"one artifact directory", []string{"--", "videos/my-video/takes"}, "videos/my-video/takes/take1.mp4", "videos/my-video/footage.mp4"},
-		{"glob", []string{"--", ":(glob)videos/**/*.mp4"}, "videos/my-video/footage.mp4", "todo.md"},
-		{"exclude", []string{"--", "videos", ":(exclude)videos/my-video/takes"}, "videos/my-video/footage.mp4", "take1.mp4"},
-		{"explicit separator", []string{"--", "--", "docs"}, "docs/new.md", "Artifact content:"},
+		{"unrelated directory", []string{"--", "docs"}, "", "kept out of git"},
+		{"one artifact directory", []string{"--", "videos/my-video/takes"}, "1 artifact · 2.0 MB", "videos/my-video/footage.mp4"},
+		{"glob", []string{"--", ":(glob)videos/**/*.mp4"}, "2 artifacts · 5.0 MB", "todo.md"},
+		{"exclude", []string{"--", "videos", ":(exclude)videos/my-video/takes"}, "1 artifact · 3.0 MB", "take1.mp4"},
+		{"explicit separator", []string{"--", "--", "docs"}, "docs/new.md", "kept out of git"},
 		{"short explicit separator", []string{"-s", "--", "--", "docs"}, "?? docs/new.md", "artifact content"},
 	}
 	for _, tt := range cases {
@@ -214,7 +214,7 @@ func TestIntegration_StatusArtifactsRespectPathspecs(t *testing.T) {
 	require.NoError(t, err)
 	require.Zero(t, code, "stderr: %s", stderr)
 	assert.Empty(t, stdout)
-	assert.Contains(t, stderr, "videos/my-video/ (1 file, 2.0 MB)")
+	assert.Contains(t, stderr, "1 artifact · 2.0 MB")
 }
 
 func TestIntegration_StatusLargeArtifactCollection(t *testing.T) {
