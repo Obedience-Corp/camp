@@ -77,8 +77,8 @@ func TestPrepareResumeSSHInjectsSocket(t *testing.T) {
 	if !strings.Contains(joined, "/tmp/camp-hr-r.sock:/tmp/camp-hr-l.sock") {
 		t.Fatalf("missing forward:\n%s", joined)
 	}
-	if !strings.Contains(joined, "-R\n127.0.0.1:50123:/tmp/camp-hr-t.sock") {
-		t.Fatalf("missing loopback forward:\n%s", joined)
+	if strings.Contains(joined, "127.0.0.1:50123:") {
+		t.Fatalf("the loopback forward belongs to the ControlMaster, not the interactive ssh:\n%s", joined)
 	}
 	remoteCmd := argv[len(argv)-1]
 	for _, export := range []string{
@@ -93,13 +93,35 @@ func TestPrepareResumeSSHInjectsSocket(t *testing.T) {
 	if strings.Contains(joined, forward.token) {
 		t.Fatalf("the token must never appear in a command line:\n%s", joined)
 	}
-	forward.tokenFile = ""
-	withheld := strings.Join(hop.resumeArgv(forward), "\n")
-	if strings.Contains(withheld, "127.0.0.1:50123") || strings.Contains(withheld, hopResumeAddrEnv) {
-		t.Fatalf("no token file on the far side must withhold the loopback route:\n%s", withheld)
+	for name, withhold := range map[string]func(*hopResumeForward){
+		"no token file":       func(f *hopResumeForward) { f.tokenFile = "" },
+		"no verified forward": func(f *hopResumeForward) { f.loopAddr = "" },
+	} {
+		partial := forward
+		withhold(&partial)
+		withheld := strings.Join(hop.resumeArgv(partial), "\n")
+		if strings.Contains(withheld, hopResumeAddrEnv) || strings.Contains(withheld, hopResumeTokenFileEnv) {
+			t.Fatalf("%s must withhold the loopback route:\n%s", name, withheld)
+		}
+		if !strings.Contains(withheld, "/tmp/camp-hr-r.sock:/tmp/camp-hr-l.sock") {
+			t.Fatalf("%s: the socket forward must stay:\n%s", name, withheld)
+		}
 	}
-	if !strings.Contains(withheld, "/tmp/camp-hr-r.sock:/tmp/camp-hr-l.sock") {
-		t.Fatalf("the socket forward must stay:\n%s", withheld)
+
+	open := loopForwardArgv(hop, "forward", forward.loopLocalSock)
+	if got := strings.Join(open[len(open)-5:], " "); got != "-O forward -R 127.0.0.1:0:/tmp/camp-hr-t.sock lance@devbox.ts.net" {
+		t.Fatalf("the server must pick the loopback port (port 0) on the hop's ControlMaster: %q", got)
+	}
+	if !strings.Contains(strings.Join(open, "\n"), "ControlPath=") {
+		t.Fatalf("forward request lost the ControlMaster options: %q", open)
+	}
+
+	upload := hopTokenArgv(hop)
+	if upload[0] != "-T" {
+		t.Fatalf("token upload must refuse a pty so a forced-tty ssh config cannot swallow the end of input: %q", upload)
+	}
+	if strings.Contains(strings.Join(upload, "\n"), forward.token) {
+		t.Fatalf("the token must never appear in a command line: %q", upload)
 	}
 	if !strings.Contains(remoteCmd, "cd '/srv/campaigns/obey' && exec $SHELL -l") &&
 		!strings.Contains(remoteCmd, `cd '"'"'/srv/campaigns/obey'"'"'`) &&

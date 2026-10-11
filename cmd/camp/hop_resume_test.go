@@ -235,3 +235,106 @@ func TestHopResumeLoopbackRequiresHopToken(t *testing.T) {
 		})
 	}
 }
+
+func TestHopResumeLoopbackAddrComesFromTheServer(t *testing.T) {
+	if spec := loopForwardSpec("/tmp/camp-hr-t.sock"); spec != "127.0.0.1:0:/tmp/camp-hr-t.sock" {
+		t.Fatalf("forward must bind loopback and leave the port to the server: %q", spec)
+	}
+	addr, err := allocatedLoopAddr("37979\n")
+	if err != nil || addr != "127.0.0.1:37979" {
+		t.Fatalf("allocated port: %q %v", addr, err)
+	}
+	for _, out := range []string{"", "0", "70000", "-1", "Allocated port 37979 for remote forward"} {
+		if addr, err := allocatedLoopAddr(out); err == nil {
+			t.Errorf("%q must not yield an address to advertise, got %q", out, addr)
+		}
+	}
+}
+
+// serveLoopback runs the hop's loopback listener and returns its address and
+// the channel the accepted follow-up line arrives on.
+func serveLoopback(t *testing.T, token string) (string, <-chan string) {
+	t.Helper()
+	ln, err := net.Listen("tcp", "127.0.0.1:0")
+	if err != nil {
+		t.Fatal(err)
+	}
+	ctx, cancel := context.WithCancel(context.Background())
+	t.Cleanup(func() { cancel(); _ = ln.Close() })
+	follow := make(chan string, 1)
+	go func() {
+		line, _ := serveHopResume(ctx, ln, token, func(context.Context, hopResumeRequest) (string, error) {
+			return "ssh prepared-parent-route", nil
+		})
+		follow <- line
+	}()
+	return ln.Addr().String(), follow
+}
+
+func dialSilent(t *testing.T, addr string) net.Conn {
+	t.Helper()
+	conn, err := net.DialTimeout("tcp", addr, 2*time.Second)
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = conn.Close() })
+	return conn
+}
+
+func requestSwitch(t *testing.T, addr, token string) (hopResumeResponse, error) {
+	t.Helper()
+	conn := dialSilent(t, addr)
+	_ = conn.SetDeadline(time.Now().Add(2 * time.Second))
+	envelope := hopResumeEnvelope{Version: 1, Token: token, Request: hopResumeRequest{Selector: "thirdbox:notes", Host: "c.example"}}
+	if err := json.NewEncoder(conn).Encode(envelope); err != nil {
+		return hopResumeResponse{}, err
+	}
+	var response hopResumeResponse
+	err := json.NewDecoder(conn).Decode(&response)
+	return response, err
+}
+
+func TestHopResumeSilentConnectionsCannotStarveTheHop(t *testing.T) {
+	const token = "0123456789abcdef0123456789abcdef"
+	addr, follow := serveLoopback(t, token)
+	// Connections that never send a request, as any far-side user can open.
+	for range hopResumeMaxConns - 1 {
+		dialSilent(t, addr)
+	}
+	response, err := requestSwitch(t, addr, token)
+	if err != nil || !response.Accepted {
+		t.Fatalf("the hop's own request must be answered while silent connections are open: %+v %v", response, err)
+	}
+	select {
+	case line := <-follow:
+		if line != "ssh prepared-parent-route" {
+			t.Fatalf("follow %q", line)
+		}
+	case <-time.After(2 * time.Second):
+		t.Fatal("accepted request did not complete the hop")
+	}
+}
+
+func TestHopResumeShedsConnectionsBeyondItsLimit(t *testing.T) {
+	addr, _ := serveLoopback(t, "0123456789abcdef0123456789abcdef")
+	for range hopResumeMaxConns {
+		dialSilent(t, addr)
+	}
+	extra := dialSilent(t, addr)
+	_ = extra.SetReadDeadline(time.Now().Add(2 * time.Second))
+	if _, err := extra.Read(make([]byte, 1)); err == nil || errors.Is(err, os.ErrDeadlineExceeded) {
+		t.Fatalf("a connection beyond the limit must be closed at once, not held: %v", err)
+	}
+}
+
+func TestHopResumeAcceptsOneSwitchPerHop(t *testing.T) {
+	const token = "0123456789abcdef0123456789abcdef"
+	addr, _ := serveLoopback(t, token)
+	if response, err := requestSwitch(t, addr, token); err != nil || !response.Accepted {
+		t.Fatalf("first switch: %+v %v", response, err)
+	}
+	response, err := requestSwitch(t, addr, token)
+	if err != nil || response.Accepted || !strings.Contains(response.Error, "already switching") {
+		t.Fatalf("a second switch must be refused, the hop is already unwinding: %+v %v", response, err)
+	}
+}
