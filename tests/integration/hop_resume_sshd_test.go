@@ -41,6 +41,10 @@ done
 // the far shell is told to go, and when the hop ends the opening shell is left
 // with the ssh line for that destination.
 //
+// The hop line carries the multiplexing options camp's own lines carry, so the
+// relay runs as a second session on the hop's ControlMaster, whether the hop
+// creates that master or finds one up.
+//
 // What a hopped shell may trust depends on who it is and on what the ssh
 // server did with the forwarded socket, and only a real sshd shows the latter:
 //   - where the server forwards it, an ordinary user owns the socket in /tmp,
@@ -94,27 +98,41 @@ machines:
 		`echo RELAY_SOCKETS=$(ls "$HOME/.obey/hop-resume"/*.sock 2>/dev/null | wc -l); ` +
 		`echo SOCK_OWNER=$(stat -c %U "$CAMP_HOP_RESUME_SOCK" 2>/dev/null || echo none)`
 
-	for _, hop := range []struct {
+	tc.Shell(t, "mkdir -p /root/.obey/ssh-ctl")
+	for i, hop := range []struct {
 		name       string
 		forwarding string
 		user       string
 		relays     string
 		sockOwner  string
+		masterUp   bool // a ControlMaster is already up when the hop starts
 	}{
-		{"forward refused, ordinary user over the relay", "no", peerUser, "RELAY_SOCKETS=1", "SOCK_OWNER=none"},
-		{"ordinary user over the forwarded socket", "yes", peerUser, "RELAY_SOCKETS=0", "SOCK_OWNER=" + peerUser},
-		{"root over the relay", "yes", "root", "RELAY_SOCKETS=1", "SOCK_OWNER=root"},
+		{"forward refused, ordinary user over the relay", "no", peerUser, "RELAY_SOCKETS=1", "SOCK_OWNER=none", false},
+		{"ordinary user over the forwarded socket", "yes", peerUser, "RELAY_SOCKETS=0", "SOCK_OWNER=" + peerUser, false},
+		{"ordinary user over the forwarded socket, master already up", "yes", peerUser, "RELAY_SOCKETS=0", "SOCK_OWNER=" + peerUser, true},
+		{"root over the relay", "yes", "root", "RELAY_SOCKETS=1", "SOCK_OWNER=root", false},
+		{"root over the relay, master already up", "yes", "root", "RELAY_SOCKETS=1", "SOCK_OWNER=root", true},
 	} {
 		t.Run(hop.name, func(t *testing.T) {
 			setSSHDForwarding(t, tc, hop.forwarding)
-			tokens := []string{
-				"-o", "StrictHostKeyChecking=accept-new", "-o", "BatchMode=yes", "-o", "IdentitiesOnly=yes",
-				"-i", rootIdentity, hop.user + "@localhost", farShell,
+			// A master of its own per case: one that outlived an earlier case
+			// would carry that case's server settings into this one.
+			options := ""
+			for _, token := range []string{
+				"-o", "StrictHostKeyChecking=accept-new", "-o", "ConnectTimeout=8",
+				"-o", "ControlMaster=auto", "-o", fmt.Sprintf("ControlPath=/root/.obey/ssh-ctl/hop-resume-test-%d.sock", i),
+				"-o", "ControlPersist=30s", "-o", "BatchMode=yes", "-o", "IdentitiesOnly=yes", "-i", rootIdentity,
+			} {
+				options += " " + shQuote(token)
 			}
-			line := "ssh -t"
-			for _, token := range tokens {
-				line += " " + shQuote(token)
+			target := shQuote(hop.user + "@localhost")
+			t.Cleanup(func() { tc.Shell(t, "ssh"+options+" -O exit "+target+" 2>/dev/null || true") })
+			if hop.masterUp {
+				up := tc.Shell(t, "ssh"+options+" "+target+" 'echo MASTEROK' 2>&1; ssh"+options+" -O check "+target+" 2>&1 || true")
+				require.Contains(t, up, "MASTEROK", "could not bring a master up: %s", up)
+				require.Contains(t, up, "Master running", "the master did not persist: %s", up)
 			}
+			line := "ssh -t" + options + " " + target + " " + shQuote(farShell)
 			out, err := tc.RunCampInteractiveStepsInDirTimeout("/root", 90*time.Second,
 				[]InteractiveStep{{WaitFor: "SOCK_OWNER=", WaitTimeout: 60 * time.Second}},
 				"hop-resume", "run", "--", line)

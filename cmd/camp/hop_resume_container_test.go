@@ -152,6 +152,45 @@ func TestHopResumeFSSendRejectsMissingOrMalformedAcknowledgement(t *testing.T) {
 	}
 }
 
+// What the opening shell says when it refuses a route is shown in the far
+// terminal, on the forwarded-socket route too, so it must not drive it.
+func TestHopResumeFSSendShowsARefusalWithoutItsControlCharacters(t *testing.T) {
+	if asOrdinaryUser(t) {
+		return
+	}
+	local, _, err := resumeSocketPaths()
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = os.Remove(local) })
+	ln, err := net.Listen("unix", local)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer func() { _ = ln.Close() }()
+	refusal, err := json.Marshal(hopResumeResponse{Version: 1, Error: "\x1b]0;owned\x07parent has no route"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	go func() {
+		conn, err := ln.Accept()
+		if err != nil {
+			return
+		}
+		defer func() { _ = conn.Close() }()
+		var request hopResumeEnvelope
+		_ = json.NewDecoder(conn).Decode(&request)
+		_, _ = conn.Write(refusal)
+	}()
+	t.Setenv(hopResumeSockEnv, local)
+	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
+	defer cancel()
+	err = sendHopResume(ctx, "thirdbox:notes", cmdutil.CampaignScope{}, "c.example")
+	if err == nil || strings.ContainsAny(err.Error(), "\x1b\x07") || !strings.Contains(err.Error(), "parent has no route") {
+		t.Fatalf("a refusal must be shown without its control characters: %q", err)
+	}
+}
+
 func TestHopResumeFSUsesParentAuthenticationAndScope(t *testing.T) {
 	t.Setenv("CAMP_MACHINES_PATH", filepath.Join(t.TempDir(), "machines.yaml"))
 	parent := machines.Machine{ID: "parent-alias", Host: "192.0.2.3", AuthMethod: machines.AuthSSHAgent, SSHUser: "parent-user", IdentityFile: "parent.key"}
@@ -808,6 +847,27 @@ func TestHopResumeFSRelayRefusesADirectoryItDoesNotOwn(t *testing.T) {
 	if entries, readErr := os.ReadDir(dir); readErr != nil || len(entries) != 0 {
 		t.Fatalf("no socket may be left behind: %v %v", entries, readErr)
 	}
+
+	// Nor through a link, even to a directory of this user's own: where a
+	// link leads can change.
+	home = shortHome(t)
+	elsewhere := filepath.Join(home, "elsewhere")
+	if err := os.MkdirAll(elsewhere, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.MkdirAll(filepath.Join(home, ".obey"), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Symlink(elsewhere, filepath.Join(home, ".obey", "hop-resume")); err != nil {
+		t.Fatal(err)
+	}
+	err = runHopRelay(context.Background(), "0123456789abcdef", "", strings.NewReader(""), io.Discard)
+	if err == nil || !strings.Contains(err.Error(), "not this user's own directory") {
+		t.Fatalf("a relay must not listen through a link: %v", err)
+	}
+	if entries, readErr := os.ReadDir(elsewhere); readErr != nil || len(entries) != 0 {
+		t.Fatalf("no socket may be left behind where the link led: %v %v", entries, readErr)
+	}
 }
 
 // Where the forwarded socket already serves this user, the relay must not
@@ -955,6 +1015,7 @@ case " $* " in
 	starts=$(grep -c '^relay$' "$FAKE_SSH_LOG")
 	echo "$$" > "$FAKE_SSH_LOG.relay-pid"
 	printf '%s\n' "$@" > "$FAKE_SSH_LOG.relay-argv"
+	readlink "/proc/$$/fd/2" > "$FAKE_SSH_LOG.relay-stderr"
 	id=$(printf '%s' "$*" | sed -n 's/.*hop-resume relay \([0-9a-f]\{16\}\).*/\1/p')
 	case "$FAKE_SSH_RELAY:$starts" in
 	aside:*) exit 0 ;;
@@ -983,11 +1044,27 @@ case " $* " in
 		fi
 		CAMP_HOP_RESUME_SOCK="$sock" CAMP_HOP_RESUME_RELAY="$relay" "$FAKE_SSH_SELF" -test.run '^TestHopResumeFSFarShellHelper$' > "$FAKE_SSH_LOG.far" 2>&1 || echo far-shell-failed >> "$FAKE_SSH_LOG"
 	fi
+	# A hop that is killed must leave nothing running, so where the wait can
+	# be this process itself, it is.
+	if [ "$FAKE_SSH_HOP_EXIT" = 0 ]; then exec sleep "$FAKE_SSH_HOP_SECONDS"; fi
 	sleep "$FAKE_SSH_HOP_SECONDS"
 	exit "$FAKE_SSH_HOP_EXIT"
 	;;
 esac
 `
+
+// sleeping reports whether a `sleep <seconds>` is running, which is how the
+// fake ssh waits out a hop. Only the end of the command line is compared: an
+// image run under emulation has the emulator's own arguments in front.
+func sleeping(seconds string) bool {
+	entries, _ := filepath.Glob("/proc/[0-9]*/cmdline")
+	for _, entry := range entries {
+		if cmdline, err := os.ReadFile(entry); err == nil && strings.HasSuffix(string(cmdline), "sleep\x00"+seconds+"\x00") {
+			return true
+		}
+	}
+	return false
+}
 
 // The hop from start to finish, with ssh replaced by a script: what the
 // opening shell is left with, how long it is held, and what is left running.
@@ -1049,7 +1126,7 @@ func TestHopResumeFSRunCarriesAHopFromStartToFinish(t *testing.T) {
 		"a switch over a relay started again after its ssh failed":    {hopSeconds: "0.1", hopExit: "0", farShell: "thirdbox:notes", farRoute: "relay", farDelay: "4.5", relay: "unreachable-once", wantFollow: next, wantRelays: 2},
 		// One start and hopRelayRestarts more, then no further attempts.
 		"a relay whose ssh keeps failing is given up on": {hopSeconds: "10", hopExit: "0", relay: "unreachable", wantRelays: 1 + hopRelayRestarts},
-		"a hop cancelled with its relay running":         {hopSeconds: "30", hopExit: "0", cancelAfter: 2500 * time.Millisecond, wantErr: true, wantRelays: 1},
+		"a hop cancelled with its relay running":         {hopSeconds: "31.7", hopExit: "0", cancelAfter: 2500 * time.Millisecond, wantErr: true, wantRelays: 1},
 	} {
 		t.Run(name, func(t *testing.T) {
 			log := filepath.Join(t.TempDir(), "ssh.log")
@@ -1103,6 +1180,11 @@ func TestHopResumeFSRunCarriesAHopFromStartToFinish(t *testing.T) {
 				if !strings.HasPrefix(string(argv), "-T\n") || !strings.Contains(string(argv), "far.example\n") || !strings.Contains(string(argv), "hop-resume relay ") {
 					t.Fatalf("relay ssh call: %q", argv)
 				}
+				// What the far side prints on the relay's stderr is its to
+				// choose, and must not reach this terminal.
+				if stderr, _ := os.ReadFile(log + ".relay-stderr"); string(stderr) != os.DevNull+"\n" {
+					t.Fatalf("the relay's ssh was given %q for its stderr, want %s", stderr, os.DevNull)
+				}
 				pid, _ := os.ReadFile(log + ".relay-pid")
 				var relayPID int
 				if _, err := fmt.Sscan(string(pid), &relayPID); err != nil {
@@ -1118,6 +1200,14 @@ func TestHopResumeFSRunCarriesAHopFromStartToFinish(t *testing.T) {
 				if !gone {
 					t.Fatal("the relay's ssh outlived the hop")
 				}
+			}
+			// The hop's own wait is the last thing it could leave running.
+			waiting := true
+			for deadline := time.Now().Add(2 * time.Second); waiting && time.Now().Before(deadline); time.Sleep(20 * time.Millisecond) {
+				waiting = sleeping(tc.hopSeconds)
+			}
+			if waiting {
+				t.Fatalf("the hop's ssh left its wait of %ss running", tc.hopSeconds)
 			}
 			after, _ := filepath.Glob("/tmp/camp-hr-*")
 			if left := slices.DeleteFunc(after, func(path string) bool { return slices.Contains(before, path) }); len(left) != 0 {

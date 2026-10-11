@@ -646,9 +646,12 @@ func TestHopRelayUnconfirmedSwitchCountsOnlyIfTheHopEnds(t *testing.T) {
 			if err := json.NewDecoder(toRelayR).Decode(&answer); err != nil || answer.Response == nil {
 				t.Fatalf("acknowledgement %+v %v", answer, err)
 			}
-			// The relay link dies before any confirmation.
+			// The relay link dies before any confirmation. The hop ends a
+			// moment later, inside the grace: ending it at once would let the
+			// switch stand without the grace being what kept it.
 			_ = toOpenerW.Close()
 			if tc.hopEnds {
+				time.Sleep(hopAckGrace / 3)
 				endHop()
 			}
 			select {
@@ -784,7 +787,7 @@ func TestHopRelayIDIsOnlyEverAFileName(t *testing.T) {
 	}
 }
 
-func TestHopRelayAnswersARequestItCannotServe(t *testing.T) {
+func TestHopRelayTurnsAwayARequestTooLongToCarry(t *testing.T) {
 	rig := newHopRelayRig(t, func(context.Context, hopResumeRequest) (string, error) {
 		t.Error("an unserviceable request reached preparation")
 		return "", nil
@@ -1163,4 +1166,91 @@ func TestHopRelayAnswersARequestHeldBehindAPreparationThatWillNotEnd(t *testing.
 		t.Fatalf("the request was given up on after %v, before the cancelled preparation had its time", waited)
 	}
 	rig.freed()
+}
+
+// A relay that was listening and can no longer be answered has lost its link,
+// just as one whose stream ended has: either way it is started again.
+func TestHopRelayThatCannotBeAnsweredIsALostLink(t *testing.T) {
+	toOpenerR, toOpenerW := io.Pipe()
+	toRelayR, toRelayW := io.Pipe()
+	defer func() { _ = toOpenerW.Close(); _ = toRelayW.Close() }()
+	hop := new(hopSwitch)
+	done := make(chan error, 1)
+	go func() {
+		_, err := serveHopRelay(context.Background(), toOpenerR, toRelayW, hop, prepareBySelector)
+		done <- err
+	}()
+	request, err := json.Marshal(hopResumeEnvelope{Version: hopRelayVersion, Request: hopResumeRequest{Selector: "thirdbox:notes", Host: "c.example"}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	_ = toRelayR.Close()
+	out := hopLineWriter{w: toOpenerW}
+	if err := out.write(hopRelayFrame{Version: hopRelayVersion, Ready: true}); err != nil {
+		t.Fatal(err)
+	}
+	if err := out.write(hopRelayFrame{Version: hopRelayVersion, Seq: 1, Request: request}); err != nil {
+		t.Fatal(err)
+	}
+	select {
+	case err := <-done:
+		if !errors.Is(err, errHopRelayLost) {
+			t.Fatalf("a listening relay that cannot be answered must count as lost: %v", err)
+		}
+	case <-time.After(2 * time.Second):
+		t.Fatal("serving did not end with the link")
+	}
+	if !hop.reserve() {
+		t.Fatal("the unanswered request left the hop reserved")
+	}
+}
+
+// A relay that never says how an acknowledged exchange ended must not hold
+// the hop's one switch for good.
+func TestHopRelayTakesBackASwitchItsRelayNeverSettled(t *testing.T) {
+	backstop := hopAckBackstop
+	t.Cleanup(func() { hopAckBackstop = backstop })
+	hopAckBackstop = 100 * time.Millisecond
+
+	ctx, endHop := context.WithCancel(context.Background())
+	defer endHop()
+	toOpenerR, toOpenerW := io.Pipe()
+	toRelayR, toRelayW := io.Pipe()
+	defer func() { _ = toOpenerW.Close(); _ = toRelayW.Close() }()
+	hop := new(hopSwitch)
+	follow := make(chan string, 1)
+	go func() {
+		line, _ := serveHopRelay(ctx, toOpenerR, toRelayW, hop, prepareBySelector)
+		follow <- line
+	}()
+	request, err := json.Marshal(hopResumeEnvelope{Version: hopRelayVersion, Request: hopResumeRequest{Selector: "thirdbox:notes", Host: "c.example"}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	out := hopLineWriter{w: toOpenerW}
+	if err := out.write(hopRelayFrame{Version: hopRelayVersion, Seq: 1, Request: request}); err != nil {
+		t.Fatal(err)
+	}
+	var answer hopRelayFrame
+	if err := json.NewDecoder(toRelayR).Decode(&answer); err != nil || answer.Response == nil {
+		t.Fatalf("acknowledgement %+v %v", answer, err)
+	}
+	// Neither a confirmation nor a hang-up follows, and the link stays up.
+	deadline := time.Now().Add(2 * time.Second)
+	for !hop.reserve() {
+		if time.Now().After(deadline) {
+			t.Fatal("a switch nothing was ever said about kept the hop reserved")
+		}
+		time.Sleep(5 * time.Millisecond)
+	}
+	hop.release()
+	endHop()
+	select {
+	case line := <-follow:
+		if line != "" {
+			t.Fatalf("a switch that was taken back was followed: %q", line)
+		}
+	case <-time.After(2 * time.Second):
+		t.Fatal("serving did not end with the hop")
+	}
 }

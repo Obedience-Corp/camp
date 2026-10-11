@@ -68,10 +68,6 @@ const (
 	// creating its socket and listening on it.
 	hopRelayPruneAge = 10 * time.Second
 
-	// hopAckBackstop outlasts every bound the relay itself keeps, for a relay
-	// that never reports how an acknowledged exchange ended.
-	hopAckBackstop = hopResumeTimeout + hopRelayConfirmWait + 5*time.Second
-
 	// A relay whose link is lost while the hop lives is started again, a few
 	// times, so one dropped connection does not end onward switching.
 	hopRelayRestarts     = 3
@@ -85,6 +81,11 @@ const (
 // hopAckGrace is how long an acknowledged switch waits for the hop to end once
 // its relay link is lost. A variable so tests need not wait it out.
 var hopAckGrace = 5 * time.Second
+
+// hopAckBackstop outlasts every bound the relay itself keeps, for a relay that
+// never reports how an acknowledged exchange ended. A variable for the same
+// reason.
+var hopAckBackstop = hopResumeTimeout + hopRelayConfirmWait + 5*time.Second
 
 // errHopRelayLost marks a relay that was listening and whose link then ended.
 var errHopRelayLost = camperrors.New("hop-resume: relay link lost")
@@ -494,12 +495,16 @@ func serveHopRelay(ctx context.Context, fromFar io.Reader, toFar io.Writer, hop 
 		return out.write(hopRelayFrame{Version: hopRelayVersion, Seq: to, Response: bytes.TrimSpace(raw)})
 	}
 	// broken ends serving when the relay can no longer be written to. A switch
-	// the far shell confirmed stands all the same.
+	// the far shell confirmed stands all the same. Otherwise a relay that was
+	// listening has lost its link, as when reading from it ends.
 	broken := func(err error) (string, error) {
 		if confirmed {
 			return follow, nil
 		}
 		abandon()
+		if ready {
+			err = errHopRelayLost
+		}
 		return "", err
 	}
 	// drop forgets the held request.
@@ -584,8 +589,7 @@ func serveHopRelay(ctx context.Context, fromFar io.Reader, toFar io.Writer, hop 
 		case result := <-prepared:
 			prepared = nil
 			if err := respond(seq, result.err); err != nil {
-				abandon()
-				return "", err
+				return broken(err)
 			}
 			if result.err != nil {
 				abandon()
