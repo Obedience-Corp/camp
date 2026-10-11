@@ -235,18 +235,31 @@ func (l *pipeListener) Addr() net.Addr { return &net.UnixAddr{Name: "pipe", Net:
 
 func newHopRelayRig(t *testing.T, prepare func(context.Context, hopResumeRequest) (string, error)) *hopRelayRig {
 	t.Helper()
+	return newSpacedHopRelayRig(t, 0, prepare)
+}
+
+// newSpacedHopRelayRig is the rig with the given hopPrepareSpacing, which the
+// other tests do without so that none of them waits it out.
+func newSpacedHopRelayRig(t *testing.T, spacing time.Duration, prepare func(context.Context, hopResumeRequest) (string, error)) *hopRelayRig {
+	t.Helper()
+	before := hopPrepareSpacing
+	hopPrepareSpacing = spacing
 	ctx, cancel := context.WithCancel(context.Background())
 	rig := &hopRelayRig{t: t, conns: make(chan net.Conn), hop: new(hopSwitch), follow: make(chan string, 1), endHop: cancel}
 	toOpenerR, toOpenerW := io.Pipe()
 	toRelayR, toRelayW := io.Pipe()
 	ln := &pipeListener{conns: rig.conns, closed: make(chan struct{})}
+	served := make(chan struct{})
 	t.Cleanup(func() {
 		cancel()
 		_ = toRelayW.Close()
 		_ = toOpenerW.Close()
+		<-served
+		hopPrepareSpacing = before
 	})
 	go func() { _ = relayHopExchanges(ctx, ln, toRelayR, toOpenerW) }()
 	go func() {
+		defer close(served)
 		line, _ := serveHopRelay(ctx, toOpenerR, toRelayW, rig.hop, prepare)
 		rig.follow <- line
 	}()
@@ -363,7 +376,7 @@ func TestHopRelayHangUpWhilePreparingCancelsAndFrees(t *testing.T) {
 	}
 	rig.freed()
 	if err := rig.send("thirdbox:notes"); err != nil {
-		t.Fatalf("the retry must be served at once: %v", err)
+		t.Fatalf("the retry must be served: %v", err)
 	}
 	rig.endsWith("ssh thirdbox:notes")
 }
@@ -742,12 +755,21 @@ func TestHopTextFromTheOtherSideCannotDriveTheTerminal(t *testing.T) {
 func TestHopRelayIDIsOnlyEverAFileName(t *testing.T) {
 	t.Setenv("HOME", "/home/alex")
 	path, err := hopRelaySocketPath("0123456789abcdef")
-	if err != nil || path != "/home/alex/.obey/hop-resume/"+hopHostTag()+"-0123456789abcdef.sock" {
+	if err != nil || path != "/home/alex/.obey/hop-resume/0123456789abcdef.sock" {
 		t.Fatalf("relay socket path: %q %v", path, err)
 	}
-	if tag := hopHostTag(); len(tag) != 6 || strings.Trim(tag, "0123456789abcdef") != "" {
-		t.Fatalf("host tag %q must be a short fixed-width file-name part", tag)
+	// A home directory so deep that no socket fits beneath it: said, rather
+	// than left to fail as a relay that never starts.
+	longest := "/home/" + strings.Repeat("a", hopSocketPathMax-len("/home//.obey/hop-resume/0123456789abcdef.sock")-1)
+	t.Setenv("HOME", longest)
+	if path, err := hopRelaySocketPath("0123456789abcdef"); err != nil || len(path) != hopSocketPathMax-1 {
+		t.Fatalf("the longest path a socket can have must be allowed: %d %v", len(path), err)
 	}
+	t.Setenv("HOME", longest+"a")
+	if _, err := hopRelaySocketPath("0123456789abcdef"); err == nil || !strings.Contains(err.Error(), "too long a path") {
+		t.Fatalf("a path no socket can have must be refused with the reason: %v", err)
+	}
+	t.Setenv("HOME", "/home/alex")
 	for _, id := range []string{"", "../../tmp/evil", "0123456789abcde", "0123456789abcdef00", "0123456789abcdeg", "/tmp/0123456789abcdef"} {
 		if path, err := hopRelaySocketPath(id); err == nil {
 			t.Errorf("id %q must be refused, got %q", id, path)
@@ -965,4 +987,180 @@ func TestHopRelayCarriesARequestAtItsFullLength(t *testing.T) {
 		t.Fatalf("a request within the limit must be carried: %v", err)
 	}
 	rig.endsWith("ssh " + selector)
+}
+
+// A far process that asks and is refused, or hangs up, over and over must not
+// start preparations on the opening machine as fast as it can ask.
+func TestHopRelaySpacesPreparationsAfterAnExchangeThatDidNotSwitch(t *testing.T) {
+	var mu sync.Mutex
+	var started []time.Time
+	const spacing = 300 * time.Millisecond
+	rig := newSpacedHopRelayRig(t, spacing, func(ctx context.Context, request hopResumeRequest) (string, error) {
+		mu.Lock()
+		started = append(started, time.Now())
+		mu.Unlock()
+		return prepareBySelector(ctx, request)
+	})
+	if err := rig.send("nowhere:notes"); err == nil {
+		t.Fatal("the first request must be refused")
+	}
+	refused := time.Now()
+	if err := rig.send("thirdbox:notes"); err != nil {
+		t.Fatalf("the request after a refused one must be served: %v", err)
+	}
+	mu.Lock()
+	defer mu.Unlock()
+	if len(started) != 2 {
+		t.Fatalf("%d preparations ran, want 2", len(started))
+	}
+	// Measured from when the far shell had its refusal, which is after the
+	// opening shell ended that exchange.
+	if gap := started[1].Sub(refused); gap < spacing-50*time.Millisecond {
+		t.Fatalf("the next preparation started %v after a refused one, want at least %v", gap, spacing)
+	}
+}
+
+// The far shell acts on having sent its confirmation. One that arrives as the
+// relay's wait for it runs out must not be reported as a hang-up.
+func TestHopRelayLineThatArrivesWithTheDeadlineStillCounts(t *testing.T) {
+	passed := make(chan time.Time, 1)
+	for range 200 {
+		// Both the line and the deadline are there before the wait looks.
+		next := make(chan []byte, 1)
+		next <- []byte("confirmation")
+		passed <- time.Now()
+		line, ok := awaitHopLine(context.Background(), next, passed)
+		if !ok || string(line) != "confirmation" {
+			t.Fatalf("a line that was already there was dropped: %q ok=%v", line, ok)
+		}
+		select {
+		case <-passed:
+		default:
+		}
+	}
+	passed <- time.Now()
+	if line, ok := awaitHopLine(context.Background(), make(chan []byte), passed); line != nil || !ok {
+		t.Fatalf("no line by the deadline must be reported as none: %q ok=%v", line, ok)
+	}
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+	if _, ok := awaitHopLine(ctx, make(chan []byte), nil); ok {
+		t.Fatal("the end of the hop must end the wait")
+	}
+}
+
+// A request held back by the spacing is still only a request: if its sender
+// hangs up meanwhile, nothing is prepared for it.
+func TestHopRelayPreparesNothingForASenderGoneDuringTheSpacing(t *testing.T) {
+	var mu sync.Mutex
+	var prepared []string
+	const spacing = 300 * time.Millisecond
+	rig := newSpacedHopRelayRig(t, spacing, func(ctx context.Context, request hopResumeRequest) (string, error) {
+		mu.Lock()
+		prepared = append(prepared, request.Selector)
+		mu.Unlock()
+		return prepareBySelector(ctx, request)
+	})
+	if err := rig.send("nowhere:notes"); err == nil {
+		t.Fatal("the first request must be refused")
+	}
+	conn := rig.dial()
+	out := hopLineWriter{w: conn}
+	if err := out.write(hopResumeEnvelope{Version: hopRelayVersion, Request: hopResumeRequest{Selector: "gone:notes", Host: "c.example"}}); err != nil {
+		t.Fatal(err)
+	}
+	_ = conn.Close()
+	time.Sleep(2 * spacing)
+	if err := rig.send("thirdbox:notes"); err != nil {
+		t.Fatalf("the request after one that was withdrawn must be served: %v", err)
+	}
+	mu.Lock()
+	defer mu.Unlock()
+	if want := []string{"nowhere:notes", "thirdbox:notes"}; !slices.Equal(prepared, want) {
+		t.Fatalf("prepared %q, want %q", prepared, want)
+	}
+}
+
+// A switch the far shell confirmed stands when the relay can no longer be
+// written to, as when its link breaks while a later request is being refused.
+func TestHopRelayConfirmedSwitchSurvivesALinkItCannotAnswer(t *testing.T) {
+	toOpenerR, toOpenerW := io.Pipe()
+	toRelayR, toRelayW := io.Pipe()
+	defer func() { _ = toOpenerW.Close(); _ = toRelayW.Close() }()
+	type served struct {
+		follow string
+		err    error
+	}
+	done := make(chan served, 1)
+	go func() {
+		follow, err := serveHopRelay(context.Background(), toOpenerR, toRelayW, new(hopSwitch), prepareBySelector)
+		done <- served{follow, err}
+	}()
+	request := func(selector string) json.RawMessage {
+		raw, err := json.Marshal(hopResumeEnvelope{Version: hopRelayVersion, Request: hopResumeRequest{Selector: selector, Host: "c.example"}})
+		if err != nil {
+			t.Fatal(err)
+		}
+		return raw
+	}
+	out := hopLineWriter{w: toOpenerW}
+	if err := out.write(hopRelayFrame{Version: hopRelayVersion, Seq: 1, Request: request("thirdbox:notes")}); err != nil {
+		t.Fatal(err)
+	}
+	var answer hopRelayFrame
+	if err := json.NewDecoder(toRelayR).Decode(&answer); err != nil || answer.Response == nil {
+		t.Fatalf("acknowledgement %+v %v", answer, err)
+	}
+	if err := out.write(hopRelayFrame{Version: hopRelayVersion, Seq: 1, Confirm: true}); err != nil {
+		t.Fatal(err)
+	}
+	// The far shell asks again while the link is going: the refusal cannot be
+	// written.
+	_ = toRelayR.Close()
+	if err := out.write(hopRelayFrame{Version: hopRelayVersion, Seq: 2, Request: request("fourthbox:notes")}); err != nil {
+		t.Fatal(err)
+	}
+	select {
+	case got := <-done:
+		if got.follow != "ssh thirdbox:notes" || got.err != nil {
+			t.Fatalf("a confirmed switch was dropped: %q %v", got.follow, got.err)
+		}
+	case <-time.After(2 * time.Second):
+		t.Fatal("serving did not end with the link")
+	}
+}
+
+// A cancelled preparation that will not end must not hold the next request
+// until the far shell gives up on it without a word.
+func TestHopRelayAnswersARequestHeldBehindAPreparationThatWillNotEnd(t *testing.T) {
+	preparing := make(chan struct{}, 1)
+	release := make(chan struct{})
+	defer close(release)
+	rig := newHopRelayRig(t, func(_ context.Context, request hopResumeRequest) (string, error) {
+		if request.Selector != "stubborn:notes" {
+			return "ssh " + request.Selector, nil
+		}
+		preparing <- struct{}{}
+		<-release
+		return "", errors.New("cancelled")
+	})
+	conn := rig.dial()
+	out := hopLineWriter{w: conn}
+	if err := out.write(hopResumeEnvelope{Version: hopRelayVersion, Request: hopResumeRequest{Selector: "stubborn:notes", Host: "c.example"}}); err != nil {
+		t.Fatal(err)
+	}
+	<-preparing
+	_ = conn.Close()
+
+	next := rig.dial()
+	_ = next.SetDeadline(time.Now().Add(hopRelayRequestWait + 3*time.Second))
+	asked := time.Now()
+	err := sendOverHopRelay(next, hopResumeRequest{Selector: "thirdbox:notes", Host: "c.example"})
+	if err == nil || !strings.Contains(err.Error(), "still being cancelled; try again") {
+		t.Fatalf("the far shell must be told why it is not being served: %v", err)
+	}
+	if waited := time.Since(asked); waited < hopRelayRequestWait-time.Second {
+		t.Fatalf("the request was given up on after %v, before the cancelled preparation had its time", waited)
+	}
+	rig.freed()
 }

@@ -35,9 +35,11 @@ done
 }
 
 // TestHopResumeOverRealSSHD drives a real hop through OpenSSH, with a tty on
-// the opening side, and has the far shell ask to switch onward. The opening
-// shell has no route to the host named, so it must refuse, and the far shell
-// must show that refusal: proof the request crossed and the answer came back.
+// the opening side, and has the far shell ask to switch onward twice. The
+// opening shell has no route to the first host named, so it must refuse, and
+// the far shell must show that refusal and stay. It has a route to the second:
+// the far shell is told to go, and when the hop ends the opening shell is left
+// with the ssh line for that destination.
 //
 // What a hopped shell may trust depends on who it is and on what the ssh
 // server did with the forwarded socket, and only a real sshd shows the latter:
@@ -51,13 +53,45 @@ done
 func TestHopResumeOverRealSSHD(t *testing.T) {
 	tc := GetSharedContainer(t)
 	ensurePeerAccount(t, tc)
-	t.Cleanup(func() { setSSHDForwarding(t, tc, "no") })
+	const relayDirs = "/root/.obey/hop-resume " + peerHome + "/.obey/hop-resume"
+	t.Cleanup(func() {
+		setSSHDForwarding(t, tc, "no")
+		// sshd leaves the sockets it forwarded behind.
+		tc.Shell(t, "rm -rf /tmp/camp-hr-* "+relayDirs)
+	})
+
+	// Where the onward switch goes: a campaign the opening shell reaches on a
+	// machine it knows by the host the far shell will name.
+	const onward = "hop-onward-campaign"
+	createOut, err := tc.RunCamp("create", onward,
+		"-d", "hop resume onward switch",
+		"-m", "prove a switch is carried back across a hop",
+		"--no-git",
+		"--path", "/campaigns",
+	)
+	require.NoError(t, err, "camp create: %s", createOut)
+	printOut, err := tc.RunCamp("switch", onward, "--print")
+	require.NoError(t, err, "camp switch --print: %s", printOut)
+	onwardRoot := strings.TrimSpace(printOut)
+	require.NotEmpty(t, onwardRoot)
+	require.NoError(t, tc.WriteFile("/root/.obey/machines.yaml", fmt.Sprintf(`version: 1
+machines:
+  - id: onwardbox
+    label: Onward destination (hop resume test)
+    host: localhost
+    auth_method: ssh-agent
+    ssh_user: root
+    identity_file: %s
+`, rootIdentity)))
 
 	// Long enough for the relay, which starts a moment after the hop, to be
-	// listening or to have stepped aside.
+	// listening or to have stepped aside. The far shell knows the destination
+	// by an alias of its own; the host is what the opening shell goes by.
 	const farShell = `sleep 3; camp hop-resume send --host elsewhere.example thirdbox:notes; ` +
 		`echo SEND_EXIT=$?; ` +
-		`echo RELAY_SOCKETS=$(ls -A "$HOME/.obey/hop-resume" 2>/dev/null | wc -l); ` +
+		`camp hop-resume send --host localhost thirdbox:` + onward + `; ` +
+		`echo ONWARD_EXIT=$?; ` +
+		`echo RELAY_SOCKETS=$(ls "$HOME/.obey/hop-resume"/*.sock 2>/dev/null | wc -l); ` +
 		`echo SOCK_OWNER=$(stat -c %U "$CAMP_HOP_RESUME_SOCK" 2>/dev/null || echo none)`
 
 	for _, hop := range []struct {
@@ -89,11 +123,24 @@ func TestHopResumeOverRealSSHD(t *testing.T) {
 			require.Contains(t, out, "parent has no route to elsewhere.example",
 				"the far shell must show the opening shell's answer:\n%s", out)
 			require.Contains(t, out, "SEND_EXIT=1", "a refused switch must leave the far shell running:\n%s", out)
+			require.Contains(t, out, "ONWARD_EXIT=0", "a switch the opening shell can make must be accepted:\n%s", out)
 			require.Contains(t, out, hop.sockOwner, "forwarded socket:\n%s", out)
 			require.Contains(t, out, hop.relays, "relay presence:\n%s", out)
 			for _, refused := range []string{"only this user could have put there", "runs as another user", "relay for this hop is not running"} {
 				require.False(t, strings.Contains(out, refused), "the route was refused (%q):\n%s", refused, out)
 			}
+			// What the hop leaves the opening shell to run once it has ended.
+			_, afterHop, _ := strings.Cut(out, "SOCK_OWNER=")
+			require.Contains(t, afterHop, "ssh -t ", "the opening shell must be left with the onward switch:\n%s", out)
+			require.Contains(t, afterHop, onwardRoot, "the onward switch must go to the campaign asked for:\n%s", out)
+
+			left := tc.Shell(t, `for i in 1 2 3 4 5 6 7 8 9 10; do
+  n=$(find `+relayDirs+` -mindepth 1 2>/dev/null | grep -c .)
+  [ "$n" = 0 ] && break
+  sleep 0.5
+done
+echo LEFT=$n`)
+			require.Contains(t, left, "LEFT=0", "an ended hop must leave nothing in the relay directory: %s", left)
 		})
 	}
 }

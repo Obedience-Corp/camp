@@ -1,6 +1,7 @@
 package main
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"errors"
@@ -171,7 +172,7 @@ func dialHopResume(ctx context.Context) (conn net.Conn, overRelay bool, err erro
 	var failed []error
 	if relayID != "" {
 		if relayAbsent() {
-			relayErr = camperrors.New("the relay for this hop is not running here: the hop has ended, or its relay could not start on this machine ('camp machine diagnose' on the machine that opened the hop shows which camp ssh finds here)")
+			relayErr = camperrors.New("the relay for this hop is not running here: if the hop has only just started, try again; otherwise the hop has ended, or its relay could not start on this machine ('camp machine diagnose' on the machine that opened the hop shows which camp ssh finds here)")
 		}
 		failed = append(failed, relayErr)
 	}
@@ -283,13 +284,14 @@ func runHop(ctx context.Context, line string, around hopSurroundings) (string, e
 // passes on the shell's own status and keeps 255 for its own failures.
 func hopShellExited(runErr error) bool {
 	var exit *exec.ExitError
-	return errors.As(runErr, &exit) && exit.ExitCode() > 0 && exit.ExitCode() != 255
+	return errors.As(runErr, &exit) && exit.ExitCode() > 0 && !hopSSHFailed(runErr)
 }
 
 // runHopRelayLink keeps this hop's relay running and returns the follow-up
-// line of a switch it carried. A relay that never listens (it stepped aside,
-// or the far camp predates relays) is left alone; one that was listening and
-// lost its link is started again a few times.
+// line of a switch it carried. A relay that ended on its own without ever
+// listening (it stepped aside, or the far camp predates relays) is left
+// alone. One whose ssh failed, or that was listening and lost its link, is
+// started again a few times.
 func runHopRelayLink(ctx context.Context, hop hopLine, relayID, forwardedSock string, onward *hopSwitch, prepare func(context.Context, hopResumeRequest) (string, error)) string {
 	wait := hopRelayStartDelay
 	for attempt := 0; attempt <= hopRelayRestarts; attempt++ {
@@ -300,13 +302,21 @@ func runHopRelayLink(ctx context.Context, hop hopLine, relayID, forwardedSock st
 		}
 		relay := startHopRelay(ctx, hop, relayID, forwardedSock)
 		follow, err := serveHopRelay(ctx, relay.fromFar, relay.toFar, onward, prepare)
-		relay.stop()
-		if follow != "" || !errors.Is(err, errHopRelayLost) {
+		ended := relay.stop()
+		lost := errors.Is(err, errHopRelayLost) || hopSSHFailed(ended)
+		if follow != "" || ctx.Err() != nil || !lost {
 			return follow
 		}
 		wait = hopRelayRestartDelay
 	}
 	return ""
+}
+
+// hopSSHFailed reports whether ssh ended on a failure of its own, for which it
+// keeps status 255, rather than passing on the far command's status.
+func hopSSHFailed(ended error) bool {
+	var exit *exec.ExitError
+	return errors.As(ended, &exit) && exit.ExitCode() == 255
 }
 
 // openHopTerminal returns the terminal the interactive ssh attaches to: the
@@ -588,9 +598,25 @@ func switchFollowUpContext(ctx context.Context, request hopResumeRequest) (strin
 	if err != nil || exe == "" {
 		exe = "camp"
 	}
-	cmd := exec.CommandContext(ctx, exe, resumeSwitchArgs(request)...)
-	cmd.Stderr = os.Stderr
+	return runHopPreparation(ctx, exec.CommandContext(ctx, exe, resumeSwitchArgs(request)...), os.Stderr)
+}
+
+// runHopPreparation runs a preparation for its output. What it says on stderr,
+// which is why it failed, is passed on to said once it has ended.
+//
+// A cancelled preparation is interrupted rather than killed, so it can end
+// what it started: `camp switch` runs ssh, and a kill would leave that
+// running. One that does not end is killed after all. What it says about
+// having been cancelled is dropped, because nobody is waiting to read it.
+func runHopPreparation(ctx context.Context, cmd *exec.Cmd, said io.Writer) (string, error) {
+	var stderr bytes.Buffer
+	cmd.Stderr = &stderr
+	cmd.Cancel = func() error { return cmd.Process.Signal(os.Interrupt) }
+	cmd.WaitDelay = 2 * time.Second
 	out, err := cmd.Output()
+	if !errors.Is(ctx.Err(), context.Canceled) {
+		_, _ = said.Write(stderr.Bytes())
+	}
 	if err != nil {
 		return "", err
 	}

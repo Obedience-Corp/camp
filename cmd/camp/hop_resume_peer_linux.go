@@ -6,6 +6,9 @@ import (
 	"golang.org/x/sys/unix"
 )
 
+// hopSocketPathMax is the length a unix socket's path must stay under.
+var hopSocketPathMax = len(unix.RawSockaddrUnix{}.Path)
+
 // hopPeerUID returns the uid of the process listening on the other end of a
 // unix connection.
 func hopPeerUID(conn net.Conn) (int, bool) {
