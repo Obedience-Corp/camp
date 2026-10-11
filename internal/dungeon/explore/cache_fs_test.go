@@ -305,7 +305,7 @@ func TestCacheDiscardsEarlierSchemas(t *testing.T) {
 	if cached, ok, err := LoadCache(ctx, dir); err != nil || !ok || len(cached.Items) != 1 {
 		t.Fatalf("current cache: ok %v, err %v, items %d", ok, err, len(cached.Items))
 	}
-	for _, version := range []string{"v1", "v2", "v3", "v4"} {
+	for _, version := range []string{"v1", "v2", "v3", "v4", "v5"} {
 		stale := `{"schema_version":"camp-dungeon-explore-cache/` + version + `","index":{"items":[{"title":"stale"}],"dungeons":[]}}`
 		mustWrite(t, filepath.Join(dir, "index.json"), stale)
 		if cached, ok, err := LoadCache(ctx, dir); err != nil || ok {
@@ -438,5 +438,63 @@ func TestSaveCacheSweepsStaleTempFiles(t *testing.T) {
 	}
 	if len(left) != 0 {
 		t.Fatalf("a cancelled save left %d files behind, first %s", len(left), left[0].Name())
+	}
+}
+
+// A row dated by its file time holds the calendar day of the zone it was
+// read in. The same instant is another day elsewhere, and nothing on disk
+// changes when the viewer does, so the cache is good for one zone.
+func TestCacheIsReadAgainInAnotherTimeZone(t *testing.T) {
+	ctx := context.Background()
+	local := time.Local
+	t.Cleanup(func() { time.Local = local })
+
+	root := t.TempDir()
+	const rel = ".campaign/intents/.dungeon/done/late-night.md"
+	note := filepath.Join(root, filepath.FromSlash(rel))
+	mustWrite(t, note, "No frontmatter, so the file time dates it.\n")
+	// 23:30 on the 5th in UTC is already the 6th fourteen hours east.
+	instant := time.Date(2026, 10, 5, 23, 30, 0, 0, time.UTC)
+	if err := os.Chtimes(note, instant, instant); err != nil {
+		t.Fatal(err)
+	}
+
+	time.Local = time.UTC
+	built, err := Build(ctx, root)
+	if err != nil {
+		t.Fatalf("Build() error = %v", err)
+	}
+	if got := itemAt(t, built, rel); got.DoneDate != "2026-10-05" || got.DateSource != DateFileTime {
+		t.Fatalf("row built in UTC = %+v", got)
+	}
+	cacheDir := filepath.Join(t.TempDir(), "dungeon-feed")
+	if err := SaveCache(ctx, cacheDir, built); err != nil {
+		t.Fatalf("SaveCache() error = %v", err)
+	}
+	if _, ok, err := LoadCache(ctx, cacheDir); err != nil || !ok {
+		t.Fatalf("same zone: ok %v, err %v; want the cache used", ok, err)
+	}
+
+	time.Local = time.FixedZone("UTC+14", 14*60*60)
+	if cached, ok, err := LoadCache(ctx, cacheDir); err != nil || ok {
+		t.Fatalf("fourteen hours east: cache trusted with %+v (err %v)", cached.Items, err)
+	}
+	rebuilt, err := Build(ctx, root)
+	if err != nil {
+		t.Fatalf("Build() error = %v", err)
+	}
+	if got := itemAt(t, rebuilt, rel); got.DoneDate != "2026-10-06" {
+		t.Fatalf("row built fourteen hours east = %+v, want the next day", got)
+	}
+	if err := SaveCache(ctx, cacheDir, rebuilt); err != nil {
+		t.Fatalf("SaveCache() error = %v", err)
+	}
+	if cached, ok, err := LoadCache(ctx, cacheDir); err != nil || !ok || itemAt(t, cached, rel).DoneDate != "2026-10-06" {
+		t.Fatalf("the cache written there: ok %v, err %v", ok, err)
+	}
+
+	time.Local = time.UTC
+	if _, ok, err := LoadCache(ctx, cacheDir); err != nil || ok {
+		t.Fatalf("back in UTC with the eastern cache: ok %v, err %v; want a miss", ok, err)
 	}
 }

@@ -65,3 +65,30 @@ var (
 	errFrontmatterShape = camperrors.New("frontmatter is not a list of key: value lines")
 	errFrontmatterOpen  = camperrors.New("frontmatter has no closing --- line")
 )
+
+// What is wrong with a fest.yaml or a .workitem that still parsed. Each is
+// the text after the file name in a row's warning.
+var (
+	errYAMLParse   = camperrors.New("could not be parsed")
+	errYAMLKey     = camperrors.New("a key is not a plain name")
+	errYAMLTooMany = camperrors.New("aliases repeat more entries than a file can hold")
+)
+
+func errNotMapping(name string) error {
+	if name == "" {
+		return camperrors.New("not a list of key: value lines")
+	}
+	return camperrors.Newf("%s is not a list of key: value lines", name)
+}
+
+func errRepeatedKey(key string) error {
+	return camperrors.Newf("key %q is repeated", capRunes(key, 40))
+}
+
+func errNotValue(key string) error {
+	return camperrors.Newf("%s is not a single value", key)
+}
+
+func errNotList(key string) error {
+	return camperrors.Newf("%s is not a list", key)
+}

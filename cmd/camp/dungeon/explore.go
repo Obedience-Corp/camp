@@ -157,7 +157,33 @@ func runDungeonExplore(cmd *cobra.Command, _ []string) error {
 	if err != nil {
 		cacheDir = ""
 	}
-	return runExploreTUI(cmd, root, cacheDir, query, images, pathOutput, plainExplore(cmd))
+	start, err := exploreStartIndex(cmd, root, query)
+	if err != nil {
+		return err
+	}
+	return startExploreTUI(cmd, root, cacheDir, query, images, pathOutput, plainExplore(cmd), start)
+}
+
+// startExploreTUI opens the feed. Tests replace it to see what it is given.
+var startExploreTUI = runExploreTUI
+
+// exploreStartIndex checks a lens named on the command line before the feed
+// opens. A status directory or a dungeon exists only in the camp, so the
+// camp is read first, and the index that read produced opens the feed: the
+// camp is not read a second time. With neither flag it returns nil and the
+// feed paints from its cache.
+func exploreStartIndex(cmd *cobra.Command, root string, query explore.Query) (*explore.Index, error) {
+	if !cmd.Flags().Changed("status") && !cmd.Flags().Changed("dungeon") {
+		return nil, nil
+	}
+	idx, err := explore.Build(cmd.Context(), root)
+	if err != nil {
+		return nil, err
+	}
+	if _, err := explore.Apply(idx, query); err != nil {
+		return nil, err
+	}
+	return &idx, nil
 }
 
 func exploreQuery(cmd *cobra.Command) (explore.Query, error) {

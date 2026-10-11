@@ -79,6 +79,9 @@ func TestExploreExecuteRefusesInvalidFlags(t *testing.T) {
 		{"dungeon", []string{"--dungeon", "nope"}, `unknown dungeon "nope"; use all, a dungeon label, or a camp-relative dungeon path`},
 		{"images", []string{"--images", "bogus"}, `unknown --images "bogus"; use auto, kitty, iterm, or off`},
 		{"unknown flag", []string{"--bogus"}, "unknown flag: --bogus"},
+		{"flag without its value", []string{"--status"}, "flag needs an argument: --status"},
+		{"unknown shorthand", []string{"-x"}, "unknown shorthand flag: 'x' in -x"},
+		{"dungeon below a dungeon", []string{"--dungeon", "festivals/.dungeon/completed/"}, `unknown dungeon "festivals/.dungeon/completed/"; use all, a dungeon label, or a camp-relative dungeon path`},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			stdout, stderr, code := executeExplore(t, append([]string{"--json"}, tc.args...)...)
@@ -101,7 +104,8 @@ func TestExploreExecuteRefusesInvalidFlags(t *testing.T) {
 		})
 	}
 
-	stdout, stderr, code := executeExplore(t, "--json", "--status", "completed")
+	// The dungeon is spelled the way a shell completes its path.
+	stdout, stderr, code := executeExplore(t, "--json", "--status", "completed", "--dungeon", "./festivals/.dungeon/")
 	if code != 0 {
 		t.Fatalf("valid flags exited %d: %s", code, stderr)
 	}

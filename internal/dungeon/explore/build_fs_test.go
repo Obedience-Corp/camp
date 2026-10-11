@@ -435,8 +435,8 @@ func TestBuildBoundsHostileMetadata(t *testing.T) {
 	for i := range files {
 		mustWrite(t, filepath.Join(done, fmt.Sprintf("n%03d.md", i)), body)
 	}
-	// Every line repeats one 1,000-character key, and the decoder quotes it in
-	// each complaint.
+	// Every line repeats one 1,000-character key. The warning names it once,
+	// cut short.
 	repeated := strings.Repeat("k"+strings.Repeat("a", 1_000)+": v\n", 200)
 	mustWrite(t, filepath.Join(done, "noisy-festival", "fest.yaml"), repeated)
 
@@ -467,8 +467,8 @@ func TestBuildBoundsHostileMetadata(t *testing.T) {
 		t.Fatalf("oversized row was not cut to its limits: title %d, id %d, summary %d", len(first.Title), len(first.ID), len(first.Summary))
 	}
 	noisy := itemAt(t, idx, ".dungeon/done/noisy-festival")
-	if utf8.RuneCountInString(noisy.Warning) != warningLimit || !strings.HasPrefix(noisy.Warning, "fest.yaml: ") {
-		t.Fatalf("noisy warning holds %d runes: %.60q", utf8.RuneCountInString(noisy.Warning), noisy.Warning)
+	if want := `fest.yaml: key "k` + strings.Repeat("a", 39) + `" is repeated`; noisy.Warning != want {
+		t.Fatalf("noisy warning holds %d runes: %.80q, want %q", utf8.RuneCountInString(noisy.Warning), noisy.Warning, want)
 	}
 
 	// 4 KB a row is generous for the limits above and 60 times under what the
@@ -491,5 +491,98 @@ func TestBuildBoundsHostileMetadata(t *testing.T) {
 	}
 	if info.Size() > bound {
 		t.Fatalf("cache file is %d bytes, want at most %d", info.Size(), bound)
+	}
+}
+
+// A dungeon inside another dungeon is read under its own path. It is not
+// also a row, or a status, of the dungeon that holds it.
+func TestBuildReadsANestedDungeonOnce(t *testing.T) {
+	root := t.TempDir()
+	outer := filepath.Join(root, "festivals", ".dungeon")
+	mustWrite(t, filepath.Join(outer, "archived", "dungeon", "completed", "under-a-status.md"), "a\n")
+	mustWrite(t, filepath.Join(outer, "archived", "2026-10-05", "dungeon", "completed", "under-a-bucket.md"), "b\n")
+	mustWrite(t, filepath.Join(outer, "dungeon", "completed", "at-the-root.md"), "c\n")
+	mustWrite(t, filepath.Join(outer, "archived", "plain.md"), "d\n")
+	// A repository that only shares the name. The sweep leaves a nested
+	// repository alone, so this is no dungeon and stays the row it was.
+	mustWrite(t, filepath.Join(outer, "archived", "2026-10-04", "dungeon", ".git", "HEAD"), "ref: refs/heads/main\n")
+	mustWrite(t, filepath.Join(outer, "archived", "2026-10-04", "dungeon", "level-one.md"), "e\n")
+	// A file with the name is a row like any other file.
+	mustWrite(t, filepath.Join(outer, "completed", "dungeon"), "f\n")
+
+	idx, err := Build(context.Background(), root)
+	if err != nil {
+		t.Fatalf("Build() error = %v", err)
+	}
+	got := map[string]string{}
+	for _, item := range idx.Items {
+		got[item.Path] = item.DungeonPath + " " + item.Status
+	}
+	want := map[string]string{
+		"festivals/.dungeon/archived/dungeon/completed/under-a-status.md":            "festivals/.dungeon/archived/dungeon completed",
+		"festivals/.dungeon/archived/2026-10-05/dungeon/completed/under-a-bucket.md": "festivals/.dungeon/archived/2026-10-05/dungeon completed",
+		"festivals/.dungeon/dungeon/completed/at-the-root.md":                        "festivals/.dungeon/dungeon completed",
+		"festivals/.dungeon/archived/plain.md":                                       "festivals/.dungeon archived",
+		"festivals/.dungeon/archived/2026-10-04/dungeon":                             "festivals/.dungeon archived",
+		"festivals/.dungeon/completed/dungeon":                                       "festivals/.dungeon completed",
+	}
+	if len(got) != len(want) {
+		t.Fatalf("rows = %v, want exactly %v", got, want)
+	}
+	for path, where := range want {
+		if got[path] != where {
+			t.Errorf("row %s is in %q, want %q", path, got[path], where)
+		}
+	}
+	if len(idx.Dungeons) != 4 {
+		t.Fatalf("dungeons = %+v, want the outer one and the three inside it", idx.Dungeons)
+	}
+}
+
+// The walk lists a directory and does not follow links. A camp root that is
+// itself a link is followed first, so it reads as the camp it points at.
+func TestBuildFollowsACampRootThatIsALink(t *testing.T) {
+	ctx := context.Background()
+	root, festRel, workRel := stageExploreCamp(t)
+	link := filepath.Join(t.TempDir(), "camp-link")
+	if err := os.Symlink(root, link); err != nil {
+		t.Fatal(err)
+	}
+
+	direct, err := Build(ctx, root)
+	if err != nil {
+		t.Fatalf("Build() error = %v", err)
+	}
+	linked, err := Build(ctx, link)
+	if err != nil {
+		t.Fatalf("Build(link) error = %v", err)
+	}
+	if len(linked.Items) != len(direct.Items) || len(linked.Items) == 0 || len(linked.Warnings) != 0 {
+		t.Fatalf("through the link: %d rows and warnings %v, want the %d rows read directly", len(linked.Items), linked.Warnings, len(direct.Items))
+	}
+	for i, item := range direct.Items {
+		if linked.Items[i] != item {
+			t.Fatalf("row %d through the link = %+v, want %+v", i, linked.Items[i], item)
+		}
+	}
+	for i, dungeon := range direct.Dungeons {
+		if linked.Dungeons[i] != dungeon {
+			t.Fatalf("dungeon %d through the link = %+v, want %+v", i, linked.Dungeons[i], dungeon)
+		}
+	}
+	if got := itemAt(t, linked, festRel); got.ID != "FA0024" {
+		t.Fatalf("festival row through the link = %+v", got)
+	}
+
+	if _, changed, err := Refresh(ctx, link, direct); err != nil || changed {
+		t.Fatalf("Refresh through the link: changed = %v, err = %v; want the index kept", changed, err)
+	}
+	mustWrite(t, filepath.Join(root, filepath.FromSlash(workRel), ".workitem"), "title: Renamed through the link\nref: WI-abc\n")
+	refreshed, changed, err := Refresh(ctx, link, direct)
+	if err != nil || !changed {
+		t.Fatalf("Refresh after an edit: changed = %v, err = %v", changed, err)
+	}
+	if got := itemAt(t, refreshed, workRel); got.Title != "Renamed through the link" {
+		t.Fatalf("row after the edit = %+v", got)
 	}
 }

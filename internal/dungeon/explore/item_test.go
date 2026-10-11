@@ -112,3 +112,80 @@ func TestStatusDirectoryNamedLikeALens(t *testing.T) {
 		t.Errorf("Presets without such directories = %v", got)
 	}
 }
+
+// A shell completes a directory with a trailing slash and may open a path
+// with ./; both name the dungeon the stored path does.
+func TestApplyAcceptsADungeonPathAsAShellWritesIt(t *testing.T) {
+	idx := Index{
+		Dungeons: []DungeonPrint{
+			{Path: "festivals/.dungeon", Name: ".dungeon", Label: "Festivals"},
+			{Path: "workflow/pitch/.dungeon", Name: ".dungeon", Label: "workflow/pitch"},
+			{Path: ".dungeon", Name: ".dungeon", Label: "Camp"},
+		},
+		Items: []Item{
+			{DoneDate: "2026-10-01", Title: "a", DungeonPath: "festivals/.dungeon", DungeonLabel: "Festivals", Status: "completed"},
+			{DoneDate: "2026-10-02", Title: "b", DungeonPath: "workflow/pitch/.dungeon", DungeonLabel: "workflow/pitch", Status: "completed"},
+			{DoneDate: "2026-10-03", Title: "c", DungeonPath: ".dungeon", DungeonLabel: "Camp", Status: "completed"},
+		},
+	}
+	for raw, want := range map[string]string{
+		"festivals/.dungeon":       "festivals/.dungeon",
+		"festivals/.dungeon/":      "festivals/.dungeon",
+		"./festivals/.dungeon":     "festivals/.dungeon",
+		"./festivals//.dungeon/":   "festivals/.dungeon",
+		" festivals/.dungeon/ ":    "festivals/.dungeon",
+		"workflow/pitch/.dungeon/": "workflow/pitch/.dungeon",
+		"workflow/pitch/":          "workflow/pitch/.dungeon",
+		"./workflow/pitch":         "workflow/pitch/.dungeon",
+		"./.dungeon/":              ".dungeon",
+		"Festivals":                "festivals/.dungeon",
+	} {
+		got, err := Apply(idx, Query{Dungeon: raw})
+		if err != nil {
+			t.Errorf("Apply(dungeon %q) error = %v", raw, err)
+			continue
+		}
+		if got.DungeonLens != want || len(got.Items) != 1 || got.Items[0].DungeonPath != want {
+			t.Errorf("Apply(dungeon %q) = lens %q, %+v; want the one row in %s", raw, got.DungeonLens, got.Items, want)
+		}
+	}
+	for _, raw := range []string{"./", "..", "festival/", "festivals/.dungeon/completed", "/festivals/.dungeon"} {
+		if got, err := Apply(idx, Query{Dungeon: raw}); err == nil || err.Error() != errUnknownDungeon(raw).Error() {
+			t.Errorf("Apply(dungeon %q) = %+v, %v; want it refused as written", raw, got, err)
+		}
+	}
+}
+
+// A directory spelled exactly as asked wins over a lens that matches only
+// when case is ignored.
+func TestApplyPrefersTheStatusDirectorySpelledAsAsked(t *testing.T) {
+	items := []Item{
+		{DoneDate: "2026-10-01", Title: "lower", DungeonPath: ".dungeon", DungeonLabel: "Camp", Status: "completed"},
+		{DoneDate: "2026-10-02", Title: "upper", DungeonPath: ".dungeon", DungeonLabel: "Camp", Status: "Completed"},
+		{DoneDate: "2026-10-03", Title: "in Finished", DungeonPath: ".dungeon", DungeonLabel: "Camp", Status: "Finished"},
+	}
+	for status, want := range map[string]struct {
+		lens  string
+		title string
+	}{
+		"completed":  {"completed", "lower"},
+		"Completed":  {"Completed", "upper"},
+		"COMPLETED":  {"completed", "lower"},
+		"Completed/": {"Completed", "upper"},
+		"completed/": {"completed", "lower"},
+		"Finished":   {"Finished", "in Finished"},
+		"finished":   {"finished", "lower"},
+	} {
+		got, err := Apply(Index{Items: items}, Query{Status: status})
+		if err != nil {
+			t.Errorf("Apply(%q) error = %v", status, err)
+			continue
+		}
+		if got.StatusLens != want.lens || len(got.Items) != 1 || got.Items[0].Title != want.title {
+			t.Errorf("Apply(%q) = lens %q, %+v; want lens %q and the row %q", status, got.StatusLens, got.Items, want.lens, want.title)
+		}
+	}
+	if next := NextPreset(items, "Completed"); next != "Finished" {
+		t.Errorf("NextPreset(Completed) = %q, want the next directory", next)
+	}
+}

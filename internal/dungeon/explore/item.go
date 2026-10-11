@@ -3,6 +3,7 @@ package explore
 
 import (
 	"cmp"
+	"path"
 	"slices"
 	"strings"
 	"time"
@@ -353,8 +354,9 @@ func resolveDungeon(idx Index, raw string) (path, label string, err error) {
 	if raw == "" || strings.EqualFold(raw, LensAll) {
 		return LensAll, "All dungeons", nil
 	}
+	name := storedPath(raw)
 	for _, d := range idx.Dungeons {
-		if d.Path != raw && !strings.EqualFold(d.Label, raw) {
+		if d.Path != name && !strings.EqualFold(d.Label, raw) && !strings.EqualFold(d.Label, name) {
 			continue
 		}
 		if path != "" && path != d.Path {
@@ -363,7 +365,7 @@ func resolveDungeon(idx Index, raw string) (path, label string, err error) {
 		path, label = d.Path, d.Label
 	}
 	for _, item := range idx.Items {
-		if item.DungeonPath != raw && !strings.EqualFold(item.DungeonLabel, raw) {
+		if item.DungeonPath != name && !strings.EqualFold(item.DungeonLabel, raw) && !strings.EqualFold(item.DungeonLabel, name) {
 			continue
 		}
 		if path != "" && path != item.DungeonPath {
@@ -378,6 +380,13 @@ func resolveDungeon(idx Index, raw string) (path, label string, err error) {
 		return "", "", errUnknownDungeon(raw)
 	}
 	return path, label, nil
+}
+
+// storedPath is a path as the index spells it. One typed or completed by a
+// shell may open with ./ or end in a slash. A label that is itself a path,
+// such as workflow/pitch, is given the same room.
+func storedPath(raw string) string {
+	return path.Clean(raw)
 }
 
 func matchesText(item Item, text string) bool {

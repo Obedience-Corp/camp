@@ -6,9 +6,11 @@ import (
 	"context"
 	"io/fs"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"syscall"
 	"testing"
+	"time"
 
 	"golang.org/x/sys/unix"
 )
@@ -249,5 +251,88 @@ func TestBuildReportsAnUnreadableDirectoryOnce(t *testing.T) {
 	}
 	if len(idx.Warnings) != 1 || idx.Warnings[0] != "festivals/.dungeon/archived: permission denied" {
 		t.Fatalf("warnings = %#v, want the directory named once by its camp-relative path", idx.Warnings)
+	}
+}
+
+// fest.yaml and .workitem are files a camp can carry from anywhere. Three
+// lines of YAML used to end the command with a panic, and nine kilobytes of
+// repeated keys used to cost it three seconds and three gigabytes. Each is
+// now one warned row, read in one pass, with every other row intact.
+func TestBuildSurvivesMetadataTheYAMLDecoderCannotRead(t *testing.T) {
+	const repeated = 3000
+	for name, tc := range map[string]struct {
+		marker   string
+		festYAML string
+		warning  string
+	}{
+		"merge key beside a mapping key": {
+			marker:   mergeBesideMappingKey,
+			festYAML: "metadata:\n  <<: {x: y}\n  ? {a: b}\n  : v\n",
+			warning:  "a key is not a plain name",
+		},
+		"merge key beside a mapping key in the document": {
+			marker:   mergeBesideMappingKey,
+			festYAML: mergeBesideMappingKey,
+			warning:  "a key is not a plain name",
+		},
+		"repeated keys": {
+			marker:   strings.Repeat("a:\n", repeated),
+			festYAML: "metadata:\n" + strings.Repeat("  a:\n", repeated),
+			warning:  `key "a" is repeated`,
+		},
+	} {
+		t.Run(name, func(t *testing.T) {
+			root := t.TempDir()
+			const workRel = "workflow/design/.dungeon/completed/2026-10-03/odd-marker"
+			work := filepath.Join(root, filepath.FromSlash(workRel))
+			mustWrite(t, filepath.Join(work, ".workitem"), tc.marker)
+			mustWrite(t, filepath.Join(work, "README.md"), "# Odd marker\n\nThe README still says what this was.\n")
+			const festRel = "festivals/.dungeon/completed/2026-10-05/odd-festival"
+			fest := filepath.Join(root, filepath.FromSlash(festRel))
+			mustWrite(t, filepath.Join(fest, "fest.yaml"), tc.festYAML)
+			mustWrite(t, filepath.Join(fest, "FESTIVAL_GOAL.md"), goalFixture)
+			const plainRel = ".campaign/intents/.dungeon/done/plain.md"
+			mustWrite(t, filepath.Join(root, filepath.FromSlash(plainRel)), "---\ntitle: Plain\n---\n\nUntouched.\n")
+
+			var before, after runtime.MemStats
+			runtime.ReadMemStats(&before)
+			start := time.Now()
+			idx, err := Build(context.Background(), root)
+			took := time.Since(start)
+			runtime.ReadMemStats(&after)
+			if err != nil {
+				t.Fatalf("Build() error = %v", err)
+			}
+			if len(idx.Items) != 3 {
+				t.Fatalf("items = %+v, want the two odd rows and the plain one", idx.Items)
+			}
+
+			workitem := itemAt(t, idx, workRel)
+			if workitem.Kind != KindWorkitem || workitem.Title != "odd-marker" || workitem.Summary != "The README still says what this was." {
+				t.Fatalf("workitem row = %+v, want the directory name and the README summary", workitem)
+			}
+			if workitem.Warning != ".workitem: "+tc.warning {
+				t.Fatalf("workitem warning = %q, want %q", workitem.Warning, ".workitem: "+tc.warning)
+			}
+			festival := itemAt(t, idx, festRel)
+			if festival.Kind != KindFestival || festival.ID != "FA0042" || festival.Title != "goal-named-festival" || festival.Summary != "Ship the goal-file fallback." {
+				t.Fatalf("festival row = %+v, want id, title, and summary from FESTIVAL_GOAL.md", festival)
+			}
+			if festival.Warning != "fest.yaml: "+tc.warning {
+				t.Fatalf("festival warning = %q, want %q", festival.Warning, "fest.yaml: "+tc.warning)
+			}
+			if plain := itemAt(t, idx, plainRel); plain.Title != "Plain" || plain.Warning != "" {
+				t.Fatalf("plain row = %+v", plain)
+			}
+
+			// The whole camp is under 20 KB. The decoder allocated gigabytes
+			// for the repeated keys; one pass stays within a few megabytes.
+			if grew := after.TotalAlloc - before.TotalAlloc; grew > 64<<20 {
+				t.Fatalf("Build allocated %d MB", grew>>20)
+			}
+			if took > 5*time.Second {
+				t.Fatalf("Build took %s", took)
+			}
+		})
 	}
 }

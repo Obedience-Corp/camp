@@ -249,6 +249,9 @@ func isCobraUsageError(err error) bool {
 	msg := err.Error()
 	return strings.Contains(msg, "arg(s)") ||
 		strings.Contains(msg, "unknown flag") ||
+		strings.Contains(msg, "unknown shorthand flag") ||
+		strings.Contains(msg, "flag needs an argument") ||
+		strings.Contains(msg, "bad flag syntax") ||
 		strings.Contains(msg, "invalid argument") ||
 		strings.Contains(msg, "required flag")
 }

@@ -95,6 +95,10 @@ type exploreModel struct {
 	gotoEnabled bool
 	gotoPath    string
 	quitting    bool
+
+	// fresh says the index was built for this start. Init saves it and does
+	// not read the camp again.
+	fresh bool
 }
 
 type exploreLoaded struct {
@@ -119,7 +123,9 @@ type exploreTick struct{ gen int }
 
 type exploreDecode struct{ gen int }
 
-func runExploreTUI(cmd *cobra.Command, root, cacheDir string, query explore.Query, protocol, pathOutput string, plain bool) error {
+// runExploreTUI runs the feed. start is an index built for this run, or nil
+// to paint from the cache and then read the camp.
+func runExploreTUI(cmd *cobra.Command, root, cacheDir string, query explore.Query, protocol, pathOutput string, plain bool, start *explore.Index) error {
 	ctx := cmd.Context()
 	model := exploreModel{
 		ctx:         ctx,
@@ -136,7 +142,12 @@ func runExploreTUI(cmd *cobra.Command, root, cacheDir string, query explore.Quer
 		reduced:     brand.ReducedMotion(),
 		gotoEnabled: pathOutput != "",
 	}
-	if cacheDir != "" {
+	if start != nil {
+		model.index = *start
+		model.loading = false
+		model.fresh = true
+		_ = model.applyQuery()
+	} else if cacheDir != "" {
 		if idx, ok, _ := explore.LoadCache(ctx, cacheDir); ok {
 			model.index = idx
 			model.loading = false
@@ -167,6 +178,9 @@ func runExploreTUI(cmd *cobra.Command, root, cacheDir string, query explore.Quer
 }
 
 func (m exploreModel) Init() tea.Cmd {
+	if m.fresh {
+		return m.saveCacheCmd()
+	}
 	return m.loadCmd()
 }
 

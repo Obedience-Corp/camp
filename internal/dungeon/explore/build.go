@@ -29,16 +29,21 @@ func Build(ctx context.Context, root string) (Index, error) {
 	if err := ctx.Err(); err != nil {
 		return Index{}, camperrors.Wrap(err, "context cancelled")
 	}
+	root = resolveRoot(root)
 	found, err := spelling.DiscoverContinuing(ctx, root, walkDir)
 	if err != nil {
 		return Index{}, err
 	}
 	idx := Index{BuiltAt: time.Now().UTC(), Warnings: addWarnings(nil, found.Warnings...)}
+	dungeons := make(map[string]bool, len(found.Dungeons))
+	for _, dungeon := range found.Dungeons {
+		dungeons[dungeon.Path] = true
+	}
 	for _, dungeon := range found.Dungeons {
 		if err := ctx.Err(); err != nil {
 			return Index{}, camperrors.Wrap(err, "context cancelled")
 		}
-		print, items, warnings, err := scanDungeon(ctx, root, dungeon)
+		print, items, warnings, err := scanDungeon(ctx, root, dungeon, dungeons)
 		if err != nil {
 			return Index{}, err
 		}
@@ -53,7 +58,22 @@ func Build(ctx context.Context, root string) (Index, error) {
 	return idx, nil
 }
 
-func scanDungeon(ctx context.Context, root string, dungeon spelling.Dungeon) (DungeonPrint, []Item, []string, error) {
+// resolveRoot follows a camp root that is a symbolic link. The walk lists a
+// directory and does not follow links, so a linked root would read as empty.
+func resolveRoot(root string) string {
+	abs, err := filepath.Abs(root)
+	if err != nil {
+		return root
+	}
+	if resolved, err := filepath.EvalSymlinks(abs); err == nil {
+		return resolved
+	}
+	return abs
+}
+
+// scanDungeon reads one dungeon. dungeons holds the path of every dungeon in
+// the camp: one nested here is read under its own path and is not a row.
+func scanDungeon(ctx context.Context, root string, dungeon spelling.Dungeon, dungeons map[string]bool) (DungeonPrint, []Item, []string, error) {
 	relDungeon, err := relSlash(root, dungeon.Path)
 	if err != nil {
 		return DungeonPrint{}, nil, nil, err
@@ -84,19 +104,21 @@ func scanDungeon(ctx context.Context, root string, dungeon spelling.Dungeon) (Du
 			return DungeonPrint{}, nil, nil, camperrors.Wrap(err, "context cancelled")
 		}
 		name := entry.Name()
-		if skipName(name) || isSymlink(entry) {
+		path := filepath.Join(dungeon.Path, name)
+		if skipName(name) || isSymlink(entry) || dungeons[path] {
 			continue
 		}
-		path := filepath.Join(dungeon.Path, name)
 		if !entry.IsDir() || markedItemDirectory(path) {
-			item, w := readItem(ctx, root, relDungeon, label, StatusHolding, "", path, entry)
+			item, w, ok := readItem(ctx, root, relDungeon, label, StatusHolding, "", path, entry)
 			if w != "" {
 				warnings = append(warnings, w)
 			}
-			items = append(items, item)
+			if ok {
+				items = append(items, item)
+			}
 			continue
 		}
-		children, w, err := scanStatus(ctx, root, relDungeon, label, name, path)
+		children, w, err := scanStatus(ctx, root, relDungeon, label, name, path, dungeons)
 		if err != nil {
 			return DungeonPrint{}, nil, nil, err
 		}
@@ -106,7 +128,7 @@ func scanDungeon(ctx context.Context, root string, dungeon spelling.Dungeon) (Du
 	return print, items, warnings, nil
 }
 
-func scanStatus(ctx context.Context, root, relDungeon, label, status, statusPath string) ([]Item, []string, error) {
+func scanStatus(ctx context.Context, root, relDungeon, label, status, statusPath string, dungeons map[string]bool) ([]Item, []string, error) {
 	entries, err := os.ReadDir(statusPath)
 	if err != nil {
 		return nil, []string{warn(root, relDungeon+"/"+status, err)}, nil
@@ -118,12 +140,12 @@ func scanStatus(ctx context.Context, root, relDungeon, label, status, statusPath
 			return nil, nil, camperrors.Wrap(err, "context cancelled")
 		}
 		name := entry.Name()
-		if skipName(name) || isSymlink(entry) {
+		path := filepath.Join(statusPath, name)
+		if skipName(name) || isSymlink(entry) || dungeons[path] {
 			continue
 		}
-		path := filepath.Join(statusPath, name)
 		if entry.IsDir() && statuspath.IsDateDir(name) {
-			nested, w, err := scanBucket(ctx, root, relDungeon, label, status, name, path)
+			nested, w, err := scanBucket(ctx, root, relDungeon, label, status, name, path, dungeons)
 			if err != nil {
 				return nil, nil, err
 			}
@@ -131,16 +153,18 @@ func scanStatus(ctx context.Context, root, relDungeon, label, status, statusPath
 			items = append(items, nested...)
 			continue
 		}
-		item, w := readItem(ctx, root, relDungeon, label, status, "", path, entry)
+		item, w, ok := readItem(ctx, root, relDungeon, label, status, "", path, entry)
 		if w != "" {
 			warnings = append(warnings, w)
 		}
-		items = append(items, item)
+		if ok {
+			items = append(items, item)
+		}
 	}
 	return items, warnings, nil
 }
 
-func scanBucket(ctx context.Context, root, relDungeon, label, status, day, bucketPath string) ([]Item, []string, error) {
+func scanBucket(ctx context.Context, root, relDungeon, label, status, day, bucketPath string, dungeons map[string]bool) ([]Item, []string, error) {
 	entries, err := os.ReadDir(bucketPath)
 	if err != nil {
 		return nil, []string{warn(root, relDungeon+"/"+status+"/"+day, err)}, nil
@@ -152,28 +176,36 @@ func scanBucket(ctx context.Context, root, relDungeon, label, status, day, bucke
 			return nil, nil, camperrors.Wrap(err, "context cancelled")
 		}
 		name := entry.Name()
-		if skipName(name) || isSymlink(entry) {
+		path := filepath.Join(bucketPath, name)
+		if skipName(name) || isSymlink(entry) || dungeons[path] {
 			continue
 		}
-		item, w := readItem(ctx, root, relDungeon, label, status, day, filepath.Join(bucketPath, name), entry)
+		item, w, ok := readItem(ctx, root, relDungeon, label, status, day, path, entry)
 		if w != "" {
 			warnings = append(warnings, w)
 		}
-		items = append(items, item)
+		if ok {
+			items = append(items, item)
+		}
 	}
 	return items, warnings, nil
 }
 
-func readItem(ctx context.Context, root, relDungeon, label, status, bucketDay, path string, entry fs.DirEntry) (Item, string) {
+// readItem builds the row for one directory entry. The bool is false when
+// there is no row: the entry was removed after its directory was listed.
+func readItem(ctx context.Context, root, relDungeon, label, status, bucketDay, path string, entry fs.DirEntry) (Item, string, bool) {
 	rel, err := relSlash(root, path)
 	if err != nil {
-		return Item{}, warn(root, entry.Name(), err)
+		return Item{}, warn(root, entry.Name(), err), false
 	}
 	info, err := entry.Info()
+	if errors.Is(err, fs.ErrNotExist) {
+		return Item{}, "", false
+	}
 	if err != nil {
 		item := Item{Title: entry.Name(), Path: rel, Status: status, DungeonLabel: label, DungeonPath: relDungeon, Kind: KindOther, DateSource: DateFileTime, DoneDate: time.Now().Format("2006-01-02"), Warning: cause(err).Error()}
 		tidy(&item, entry.Name())
-		return item, warn(root, rel, err)
+		return item, warn(root, rel, err), true
 	}
 	item := Item{
 		Status:       status,
@@ -199,19 +231,26 @@ func readItem(ctx context.Context, root, relDungeon, label, status, bucketDay, p
 		item.DoneDate = info.ModTime().Format("2006-01-02")
 	}
 	tidy(&item, entry.Name())
-	return item, ""
+	return item, "", true
 }
 
 // tidy cleans and bounds the text a row took from the camp. A title with
-// nothing left to show falls back to the file or directory name.
+// nothing left to show falls back to the file or directory name, and a name
+// with nothing to show is quoted with its characters escaped.
 func tidy(item *Item, name string) {
 	item.Title = CleanText(item.Title)
 	if strings.TrimSpace(item.Title) == "" {
 		item.Title = CleanText(name)
 	}
+	if strings.TrimSpace(item.Title) == "" {
+		item.Title = strconv.Quote(name)
+	}
 	item.Title = capRunes(item.Title, titleLimit)
 	item.ID = capRunes(CleanText(item.ID), idLimit)
 	item.Summary = oneLine(CleanText(item.Summary))
+	if unfilled(item.Summary) {
+		item.Summary = ""
+	}
 	item.Warning = capRunes(CleanText(item.Warning), warningLimit)
 }
 

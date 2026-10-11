@@ -77,11 +77,18 @@ func TestExploreRefusalsExitTwoWithJSONEnvelope(t *testing.T) {
 		{"json flag", true, []string{"--json"}},
 		{"pipe", false, nil},
 	}
-	cases := append(exploreRefusals[:len(exploreRefusals):len(exploreRefusals)], struct {
+	type refusal = struct {
 		name string
 		args []string
 		want string
-	}{"unknown flag", []string{"--bogus"}, "unknown flag: --bogus"})
+	}
+	// What pflag refuses never reaches the command, so these have no text
+	// form to compare on a terminal: cobra prints them with the usage.
+	cases := append(exploreRefusals[:len(exploreRefusals):len(exploreRefusals)],
+		refusal{"unknown flag", []string{"--bogus"}, "unknown flag: --bogus"},
+		refusal{"flag without its value", []string{"--status"}, "flag needs an argument: --status"},
+		refusal{"unknown shorthand", []string{"-x"}, "unknown shorthand flag: 'x' in -x"},
+	)
 	for _, mode := range modes {
 		for _, tc := range cases {
 			t.Run(mode.name+"/"+tc.name, func(t *testing.T) {

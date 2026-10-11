@@ -211,3 +211,46 @@ func TestHistoryDayIsTheDayInTheStampsOwnOffset(t *testing.T) {
 		}
 	}
 }
+
+func TestPrimaryGoalReadsTheLineUnderItsLabel(t *testing.T) {
+	for name, tc := range map[string]struct{ body, want string }{
+		"same line":          {"# Goal\n\n**Primary Goal:** Ship it.\n\n**Vision:** More.\n", "Ship it."},
+		"label among others": {"**Festival:** x | **Primary Goal:** Ship it.\n", "Ship it."},
+		"next line":          {"## Objective\n\n**Primary Goal:**\nShip it\nacross two lines.\n\n**Vision:** More.\n", "Ship it across two lines."},
+		"after a blank line": {"**Primary Goal:**\n\nShip it.\n\nNext paragraph.\n", "Ship it."},
+		"after a prompt":     {"**Primary Goal:**\n<!-- one sentence -->\nShip it.\n", "Ship it."},
+		"next label instead": {"**Primary Goal:**\n**Vision:** More.\n", ""},
+		"heading instead":    {"**Primary Goal:**\n\n## Success Criteria\n\nIt works.\n", ""},
+		"nothing after":      {"**Primary Goal:**", ""},
+		"no label":           {"# Goal\n\nShip it.\n", "Ship it."},
+	} {
+		if got := primaryGoal(tc.body); got != tc.want {
+			t.Errorf("%s: primaryGoal = %q, want %q", name, got, tc.want)
+		}
+	}
+}
+
+// fest leaves these in a template for the author. Text that still opens with
+// one says nothing about the work.
+func TestTidyDropsATemplatePlaceholderSummary(t *testing.T) {
+	for _, summary := range []string{
+		"[REPLACE: One sentence describing what this festival accomplishes]",
+		"[FILL: the outcome]",
+		"[GUIDANCE: say why]  and more",
+		"{{ .Goal }}",
+		"\x1b[1m[REPLACE: hidden behind an escape]",
+	} {
+		item := Item{Title: "t", Summary: summary}
+		tidy(&item, "t")
+		if item.Summary != "" {
+			t.Errorf("summary %q was kept as %q", summary, item.Summary)
+		}
+	}
+	for _, summary := range []string{"Replace the old cache.", "[x] done", "See [REPLACE: later] for more.", "{{not a marker"} {
+		item := Item{Title: "t", Summary: summary}
+		tidy(&item, "t")
+		if item.Summary != summary {
+			t.Errorf("summary %q became %q", summary, item.Summary)
+		}
+	}
+}

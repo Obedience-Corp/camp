@@ -1,8 +1,16 @@
 package jsoncontract
 
 import (
+	"bytes"
+	"encoding/json"
+	"errors"
+	"io"
 	"os"
 	"testing"
+
+	"github.com/spf13/cobra"
+
+	camperrors "github.com/Obedience-Corp/camp/internal/errors"
 )
 
 // TestRequested_HonorsExplicitFalse is the regression for PR #313 review:
@@ -56,5 +64,44 @@ func TestRequested_CallbackWins(t *testing.T) {
 	}
 	if Requested(func() bool { return false }) {
 		t.Error("callback returning false must short-circuit; argv has no --json so result must be false")
+	}
+}
+
+// Every way pflag refuses an argument is a usage error: exit 2 and a
+// validation_error envelope, whichever command renders it.
+func TestFlagErrorFunc_ParseFailuresAreUsageErrors(t *testing.T) {
+	for _, tc := range []struct {
+		name string
+		args []string
+		want string
+	}{
+		{"missing value", []string{"--status"}, "flag needs an argument: --status"},
+		{"missing shorthand value", []string{"-s"}, "flag needs an argument: 's' in -s"},
+		{"unknown shorthand", []string{"-x"}, "unknown shorthand flag: 'x' in -x"},
+		{"unknown flag", []string{"--bogus"}, "unknown flag: --bogus"},
+		{"bad syntax", []string{"--=x"}, "bad flag syntax: --=x"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			cmd := &cobra.Command{Use: "probe", RunE: func(*cobra.Command, []string) error { return nil }}
+			cmd.Flags().StringP("status", "s", "", "")
+			cmd.SetFlagErrorFunc(FlagErrorFunc("probe/v1", func() bool { return true }))
+			var stderr bytes.Buffer
+			cmd.SetErr(&stderr)
+			cmd.SetOut(io.Discard)
+			cmd.SetArgs(tc.args)
+
+			err := cmd.Execute()
+			var cmdErr *camperrors.CommandError
+			if !errors.As(err, &cmdErr) || cmdErr.ExitCode != 2 {
+				t.Fatalf("Execute() = %v, want a command error with exit code 2", err)
+			}
+			var envelope ErrorEnvelope
+			if err := json.Unmarshal(stderr.Bytes(), &envelope); err != nil {
+				t.Fatalf("stderr is not one JSON envelope: %q (%v)", stderr.String(), err)
+			}
+			if envelope.Error.Code != "validation_error" || envelope.Error.ExitCode != 2 || envelope.Error.Message != tc.want {
+				t.Fatalf("error = %+v, want a validation_error with exit_code 2 and message %q", envelope.Error, tc.want)
+			}
+		})
 	}
 }

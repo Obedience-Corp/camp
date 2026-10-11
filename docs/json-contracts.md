@@ -31,7 +31,7 @@ Schema versions in this release:
 | `camp workitem commits --json` | `workitem-commits/v1alpha1` | Emits matching commits and per-repo query errors. |
 | `camp workitem priority --json` | `workitem-priority/v1alpha1` | Emits `cleared: true` when priority is cleared. |
 | `camp concepts --json` | `concepts/v1alpha1` | Emits configured camp concepts with `generated_at`, `campaign_root`, and concept metadata. |
-| `camp dungeon explore --json` | `camp-dungeon-explore/v1` | Emits `schema_version`, `campaign_root`, `dungeon_lens`, `status_lens`, and `items` with camp-relative `path`, `dungeon_path`, and `replay`. `warnings` lists directories that could not be read, at most 100 of them, and is omitted when empty. Item `title`, `id`, `summary`, and `warning` are cut at 2000, 200, 240, and 400 characters. `status_lens` ends in `/` when it names a status directory that shares a built-in lens name (`all/`). A pipe prints the same payload without `--json`. A refused `--status`, `--dungeon`, `--since`, `--until`, or `--images` value uses the JSON error envelope and exits 2. |
+| `camp dungeon explore --json` | `camp-dungeon-explore/v1` | Emits `schema_version`, `campaign_root`, `dungeon_lens`, `status_lens`, and `items` with camp-relative `path`, `dungeon_path`, and `replay`. `warnings` lists directories that could not be read, at most 100 of them, and is omitted when empty. Item `title`, `id`, `summary`, and `warning` are cut at 2000, 200, 240, and 400 characters. `status_lens` ends in `/` when it names a status directory that shares a built-in lens name (`all/`). `title` is never empty: a name with nothing printable in it is quoted with its characters escaped. `--dungeon` takes a dungeon path with a leading `./` or a trailing slash. A pipe prints the same payload without `--json`. A refused `--status`, `--dungeon`, `--since`, `--until`, or `--images` value uses the JSON error envelope and exits 2. |
 | `camp intent list/find/show --json` | `intents/v1alpha1` | `--format json` is a deprecated alias. `list --status notes` adds note items (see `notes list`). |
 | `camp intent notes list --json` | `intents/v1alpha1` | Emits note items newest first by `created_at`. Each note item has `status: "notes"` and `folder` relative to `notes/`, `""` for the notes root; lifecycle items omit `folder`. Archived notes appear only with `--folder archived`. |
 | `camp intent count --json` | `intents/v1alpha1` | Counts are emitted as status-count objects in `items[]`; `--format json` is a deprecated alias. |
@@ -119,7 +119,9 @@ domain result, it writes an error envelope to stderr and exits non-zero:
 }
 ```
 
-Validation and not-found refusals exit 2. Unexpected runtime failures exit 1
+Validation and not-found refusals exit 2. An argument the flag parser refuses
+is a validation refusal: an unknown flag or shorthand, a flag given without
+its value, or a value of the wrong type. Unexpected runtime failures exit 1
 unless the underlying command already carries a more specific exit code.
 
 Doctor commands are the exception for discovered findings: they emit their

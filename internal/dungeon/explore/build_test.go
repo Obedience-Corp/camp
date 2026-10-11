@@ -152,3 +152,74 @@ func TestUnsearchableItemDirectoryWarnsOnItsRow(t *testing.T) {
 		t.Errorf("a directory with no metadata files = %+v, want no warning", plain)
 	}
 }
+
+// A name can hold nothing a terminal shows. The row still needs something to
+// read and to select, so the name is quoted with its characters escaped.
+func TestTidyQuotesANameWithNothingToShow(t *testing.T) {
+	for name, want := range map[string]string{
+		"\x01\x02":           `"\x01\x02"`,
+		"\u200b\u202e":       `"\u200b\u202e"`,
+		"\x1b[31m":           `"\x1b[31m"`,
+		" ":                  `" "`,
+		"\u200b\x07.md":      ".md",
+		"shipped-\x1b[1mone": "shipped-one",
+	} {
+		item := Item{}
+		tidy(&item, name)
+		if item.Title != want {
+			t.Errorf("name %q: title = %q, want %q", name, item.Title, want)
+		}
+		if strings.TrimSpace(item.Title) == "" || item.Title != CleanText(item.Title) {
+			t.Errorf("name %q: title %q is blank or carries what CleanText removes", name, item.Title)
+		}
+	}
+	long := Item{}
+	tidy(&long, strings.Repeat("\x01", 10*titleLimit))
+	if n := utf8.RuneCountInString(long.Title); n != titleLimit {
+		t.Errorf("a quoted name holds %d runes, want it cut to %d", n, titleLimit)
+	}
+}
+
+type fakeEntry struct {
+	name string
+	err  error
+}
+
+func (e fakeEntry) Name() string      { return e.name }
+func (e fakeEntry) IsDir() bool       { return false }
+func (e fakeEntry) Type() fs.FileMode { return 0 }
+func (e fakeEntry) Info() (fs.FileInfo, error) {
+	if e.err != nil {
+		return nil, e.err
+	}
+	return fakeInfo{mode: 0o644, mod: time.Date(2026, 10, 5, 12, 0, 0, 0, time.Local), size: 3}, nil
+}
+
+// A directory is listed, then each entry is looked at. One removed in between
+// is not a row; one that is there and cannot be looked at still is.
+func TestReadItemSkipsAnEntryRemovedAfterItWasListed(t *testing.T) {
+	const root = "/camp"
+	read := func(entry fakeEntry) (Item, string, bool) {
+		path := root + "/festivals/.dungeon/completed/" + entry.name
+		return readItem(context.Background(), root, "festivals/.dungeon", "Festivals", "completed", "", path, entry)
+	}
+
+	gone := &fs.PathError{Op: "lstat", Path: root + "/festivals/.dungeon/completed/moved.txt", Err: syscall.ENOENT}
+	if item, warning, ok := read(fakeEntry{name: "moved.txt", err: gone}); ok || warning != "" {
+		t.Fatalf("a removed entry = %+v, warning %q, row %v; want no row and no warning", item, warning, ok)
+	}
+
+	denied := &fs.PathError{Op: "lstat", Path: root + "/festivals/.dungeon/completed/locked.txt", Err: syscall.EACCES}
+	item, warning, ok := read(fakeEntry{name: "locked.txt", err: denied})
+	if !ok || item.Path != "festivals/.dungeon/completed/locked.txt" || item.Warning != "permission denied" {
+		t.Fatalf("an entry that cannot be read = %+v, row %v; want its row with the reason", item, ok)
+	}
+	if warning != "festivals/.dungeon/completed/locked.txt: permission denied" {
+		t.Fatalf("warning = %q", warning)
+	}
+
+	item, warning, ok = read(fakeEntry{name: "kept.txt"})
+	if !ok || warning != "" || item.Title != "kept.txt" || item.DoneDate != "2026-10-05" {
+		t.Fatalf("an ordinary entry = %+v, warning %q, row %v", item, warning, ok)
+	}
+}

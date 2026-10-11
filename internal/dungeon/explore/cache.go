@@ -7,6 +7,7 @@ import (
 	"encoding/json"
 	"os"
 	"path/filepath"
+	"strconv"
 	"time"
 
 	"github.com/Obedience-Corp/camp/internal/config"
@@ -16,7 +17,7 @@ import (
 
 // cacheSchemaVersion changes whenever the cached index gains information a
 // stale cache would silently lack, so old files are rebuilt instead of trusted.
-const cacheSchemaVersion = "camp-dungeon-explore-cache/v5"
+const cacheSchemaVersion = "camp-dungeon-explore-cache/v6"
 
 const (
 	cacheTempPattern = ".index-*.tmp"
@@ -27,7 +28,20 @@ const (
 
 type cacheFile struct {
 	SchemaVersion string `json:"schema_version"`
-	Index         Index  `json:"index"`
+	// Zone is the time zone the index was built in. A row dated by its file
+	// time holds that zone's calendar day, so another zone reads it again.
+	Zone  string `json:"zone"`
+	Index Index  `json:"index"`
+}
+
+// zoneKey names the local time zone by its offsets in January and in July.
+// The pair tells apart two zones that agree today and differ across the
+// year, and it does not change when the clocks do.
+func zoneKey() string {
+	year := time.Now().Year()
+	_, winter := time.Date(year, time.January, 1, 12, 0, 0, 0, time.Local).Zone()
+	_, summer := time.Date(year, time.July, 1, 12, 0, 0, 0, time.Local).Zone()
+	return strconv.Itoa(winter) + "/" + strconv.Itoa(summer)
 }
 
 // CacheDir is the user-level directory for one checkout's feed cache. It sits
@@ -45,7 +59,8 @@ func CacheDir(campaignID, root string) (string, error) {
 }
 
 // LoadCache reads a previously saved index. The bool is false when the file
-// is missing, unreadable, or was written by a different schema.
+// is missing, unreadable, or was written by a different schema or in a
+// different time zone.
 func LoadCache(ctx context.Context, dir string) (Index, bool, error) {
 	if err := ctx.Err(); err != nil {
 		return Index{}, false, camperrors.Wrap(err, "loading dungeon feed cache")
@@ -55,7 +70,7 @@ func LoadCache(ctx context.Context, dir string) (Index, bool, error) {
 		return Index{}, false, nil
 	}
 	var file cacheFile
-	if err := json.Unmarshal(data, &file); err != nil || file.SchemaVersion != cacheSchemaVersion {
+	if err := json.Unmarshal(data, &file); err != nil || file.SchemaVersion != cacheSchemaVersion || file.Zone != zoneKey() {
 		return Index{}, false, nil
 	}
 	return file.Index, true, nil
@@ -70,7 +85,7 @@ func SaveCache(ctx context.Context, dir string, idx Index) error {
 	if err := os.MkdirAll(dir, 0o755); err != nil {
 		return camperrors.Wrap(err, "creating dungeon feed cache")
 	}
-	data, err := json.Marshal(cacheFile{SchemaVersion: cacheSchemaVersion, Index: idx})
+	data, err := json.Marshal(cacheFile{SchemaVersion: cacheSchemaVersion, Zone: zoneKey(), Index: idx})
 	if err != nil {
 		return camperrors.Wrap(err, "encoding dungeon feed cache")
 	}
@@ -125,6 +140,7 @@ func Refresh(ctx context.Context, root string, cached Index) (Index, bool, error
 	if err := ctx.Err(); err != nil {
 		return Index{}, false, camperrors.Wrap(err, "context cancelled")
 	}
+	root = resolveRoot(root)
 	found, err := spelling.DiscoverContinuing(ctx, root, walkDir)
 	if err != nil {
 		return Index{}, false, err

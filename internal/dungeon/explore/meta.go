@@ -83,38 +83,27 @@ func replayPath(dir, base string) string {
 	return ""
 }
 
-type festMeta struct {
-	Metadata struct {
-		ID            string         `yaml:"id"`
-		Name          string         `yaml:"name"`
-		Goal          string         `yaml:"goal"`
-		StatusHistory []historyEntry `yaml:"status_history"`
-	} `yaml:"metadata"`
-}
-
 func fillFestival(ctx context.Context, item *Item, festYAML, goalFile string) string {
 	named := false
 	warning := ""
 	if fileExists(festYAML) {
-		var meta festMeta
-		if err := readYAML(ctx, festYAML, &meta); err != nil {
+		// A file that reads in part keeps what it gave and its warning.
+		meta, err := readFestMeta(ctx, festYAML)
+		if err != nil {
 			warning = readWarning(festYAML, err)
-			if !wrongType(err) {
-				meta = festMeta{}
-			}
 		}
-		if meta.Metadata.Name != "" {
-			item.Title = meta.Metadata.Name
+		if meta.name != "" {
+			item.Title = meta.name
 			named = true
 		}
-		if meta.Metadata.ID != "" {
-			item.ID = meta.Metadata.ID
+		if meta.id != "" {
+			item.ID = meta.id
 		}
-		if meta.Metadata.Goal != "" {
-			item.Summary = meta.Metadata.Goal
+		if meta.goal != "" {
+			item.Summary = meta.goal
 		}
 		if item.DateSource != DateBucket {
-			if day, ok := newestDungeonDay(meta.Metadata.StatusHistory); ok {
+			if day, ok := newestDungeonDay(meta.history); ok {
 				item.DoneDate = day
 				item.DateSource = DateHistory
 			}
@@ -153,8 +142,8 @@ func fillFestival(ctx context.Context, item *Item, festYAML, goalFile string) st
 }
 
 type historyEntry struct {
-	Status    string `yaml:"status"`
-	Timestamp string `yaml:"timestamp"`
+	Status    string
+	Timestamp string
 }
 
 // newestDungeonDay reads the day in the stamp's own offset. That is the
@@ -185,28 +174,19 @@ func newestDungeonDay(history []historyEntry) (string, bool) {
 	return best.Format("2006-01-02"), true
 }
 
-type workitemMeta struct {
-	ID    string `yaml:"id"`
-	Title string `yaml:"title"`
-	Ref   string `yaml:"ref"`
-}
-
 func fillWorkitem(ctx context.Context, item *Item, marker, readme string) string {
 	warning := ""
-	var meta workitemMeta
-	if err := readYAML(ctx, marker, &meta); err != nil {
+	meta, err := readWorkitemMeta(ctx, marker)
+	if err != nil {
 		warning = readWarning(marker, err)
-		if !wrongType(err) {
-			meta = workitemMeta{}
-		}
 	}
-	if meta.Title != "" {
-		item.Title = meta.Title
+	if meta.title != "" {
+		item.Title = meta.title
 	}
-	if meta.Ref != "" {
-		item.ID = meta.Ref
-	} else if meta.ID != "" {
-		item.ID = meta.ID
+	if meta.ref != "" {
+		item.ID = meta.ref
+	} else if meta.id != "" {
+		item.ID = meta.id
 	}
 	// The README is read even when the marker could not be: it still holds
 	// the summary.
@@ -275,14 +255,56 @@ func parseStamp(value string) (string, bool) {
 	return "", false
 }
 
+// primaryGoal is the sentence a goal file gives after its Primary Goal label,
+// on that line or, when the label ends the line, in the text right under it.
 func primaryGoal(body string) string {
+	const marker = "**Primary Goal:**"
+	_, after, found := strings.Cut(body, marker)
+	if !found {
+		return firstParagraph(body)
+	}
+	line, below, _ := strings.Cut(after, "\n")
+	if goal := strings.TrimSpace(line); goal != "" {
+		return goal
+	}
+	return textBelow(below)
+}
+
+// textBelow is the paragraph that opens body, after blank lines and HTML
+// comments. A heading or another bold label there starts something else.
+func textBelow(body string) string {
+	var lines []string
+	inComment := false
 	for _, line := range strings.Split(body, "\n") {
-		const marker = "**Primary Goal:**"
-		if idx := strings.Index(line, marker); idx >= 0 {
-			return strings.TrimSpace(line[idx+len(marker):])
+		trim := strings.TrimSpace(line)
+		if len(lines) == 0 {
+			trim, inComment = skipComments(trim, inComment)
+			if trim == "" {
+				continue
+			}
+			if strings.HasPrefix(trim, "#") || strings.HasPrefix(trim, "**") {
+				return ""
+			}
+		}
+		if trim == "" {
+			break
+		}
+		lines = append(lines, trim)
+	}
+	return strings.Join(lines, " ")
+}
+
+// templateMarkers open the text fest leaves in a template for an author to
+// replace. A file that still holds one there has no summary yet.
+var templateMarkers = []string{"[REPLACE:", "[FILL:", "[GUIDANCE:", "{{ "}
+
+func unfilled(summary string) bool {
+	for _, marker := range templateMarkers {
+		if strings.HasPrefix(summary, marker) {
+			return true
 		}
 	}
-	return firstParagraph(body)
+	return false
 }
 
 // firstParagraph is the first run of text lines after any headings and HTML
@@ -383,15 +405,14 @@ func isFence(line string) bool {
 // and a date becomes a timestamp. A key with no value, a null, or a list or
 // mapping value is kept with an empty value.
 func decodeFrontmatter(raw string) (map[string]string, error) {
-	var doc yaml.Node
-	if err := yaml.Unmarshal([]byte(raw), &doc); err != nil {
+	root, err := parseYAML(raw)
+	if err != nil {
 		return nil, camperrors.Wrap(err, "frontmatter")
 	}
 	fm := map[string]string{}
-	if len(doc.Content) == 0 {
+	if root == nil {
 		return fm, nil
 	}
-	root := doc.Content[0]
 	if root.Kind != yaml.MappingNode {
 		return nil, errFrontmatterShape
 	}
@@ -428,14 +449,6 @@ func readWarning(path string, err error) string {
 	return filepath.Base(path) + ": " + cause(err).Error()
 }
 
-func readYAML(ctx context.Context, path string, dest any) error {
-	data, err := readLimited(ctx, path)
-	if err != nil {
-		return err
-	}
-	return yaml.Unmarshal([]byte(data), dest)
-}
-
 func readLimited(ctx context.Context, path string) (string, error) {
 	data, err := ReadRegular(ctx, path, metaReadLimit)
 	if err != nil {
@@ -447,11 +460,4 @@ func readLimited(ctx context.Context, path string) (string, error) {
 func fileExists(path string) bool {
 	info, err := lstat(path)
 	return err == nil && info.Mode().IsRegular()
-}
-
-// wrongType reports a YAML document that parsed and held a value of the wrong
-// kind for one field. The decoder fills every other field before it returns.
-func wrongType(err error) bool {
-	var typeErr *yaml.TypeError
-	return camperrors.As(err, &typeErr)
 }
