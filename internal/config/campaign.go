@@ -23,6 +23,32 @@ const CampaignDir = ".campaign"
 // Returns the configuration with defaults applied and validated.
 // Also loads .campaign/settings/jumps.yaml for navigation configuration.
 func LoadCampaignConfig(ctx context.Context, campaignRoot string) (*CampaignConfig, error) {
+	cfg, err := readCampaignFile(ctx, campaignRoot)
+	if err != nil {
+		return nil, err
+	}
+
+	// Generate ID for campaigns that don't have one
+	if cfg.ID == "" {
+		cfg.ID = uuid.New().String()
+		// Best-effort persistence: keep loading even if saving the generated ID fails.
+		_ = SaveCampaignConfig(ctx, campaignRoot, cfg)
+	}
+
+	// Load jumps.yaml for navigation configuration
+	if err := loadJumps(ctx, campaignRoot, cfg, true); err != nil {
+		return nil, err
+	}
+
+	if err := validateCampaignFile(campaignRoot, cfg); err != nil {
+		return nil, err
+	}
+
+	return cfg, nil
+}
+
+// readCampaignFile reads campaign.yaml and applies defaults. It does not write.
+func readCampaignFile(ctx context.Context, campaignRoot string) (*CampaignConfig, error) {
 	if ctx.Err() != nil {
 		return nil, ctx.Err()
 	}
@@ -43,29 +69,19 @@ func LoadCampaignConfig(ctx context.Context, campaignRoot string) (*CampaignConf
 
 	// Apply defaults for missing optional fields
 	cfg.ApplyDefaults()
-
-	// Generate ID for campaigns that don't have one
-	if cfg.ID == "" {
-		cfg.ID = uuid.New().String()
-		// Best-effort persistence: keep loading even if saving the generated ID fails.
-		_ = SaveCampaignConfig(ctx, campaignRoot, &cfg)
-	}
-
-	// Load jumps.yaml for navigation configuration
-	if err := loadJumps(ctx, campaignRoot, &cfg); err != nil {
-		return nil, err
-	}
-
-	// Validate required fields
-	if err := ValidateCampaignConfig(&cfg); err != nil {
-		return nil, camperrors.Wrapf(err, "invalid camp config %s", configPath)
-	}
-
 	return &cfg, nil
 }
 
-// loadJumps loads jumps.yaml or creates defaults if it doesn't exist.
-func loadJumps(ctx context.Context, campaignRoot string, cfg *CampaignConfig) error {
+func validateCampaignFile(campaignRoot string, cfg *CampaignConfig) error {
+	if err := ValidateCampaignConfig(cfg); err != nil {
+		return camperrors.Wrapf(err, "invalid camp config %s", CampaignConfigPath(campaignRoot))
+	}
+	return nil
+}
+
+// loadJumps loads jumps.yaml. When persist is set and the file is missing,
+// the defaults are written; otherwise they are kept in memory.
+func loadJumps(ctx context.Context, campaignRoot string, cfg *CampaignConfig, persist bool) error {
 	// Try to load existing jumps.yaml
 	jumps, err := LoadJumpsConfig(ctx, campaignRoot)
 	if err != nil {
@@ -78,8 +94,13 @@ func loadJumps(ctx context.Context, campaignRoot string, cfg *CampaignConfig) er
 		return nil
 	}
 
-	// No jumps.yaml exists - create defaults
 	defaultJumps := DefaultJumpsConfig()
+	if !persist {
+		cfg.Jumps = &defaultJumps
+		return nil
+	}
+
+	// No jumps.yaml exists - create defaults
 	if err := SaveJumpsConfig(ctx, campaignRoot, &defaultJumps); err != nil {
 		// Don't fail if we can't save defaults, just use them in memory
 		cfg.Jumps = &defaultJumps
@@ -107,6 +128,31 @@ func LoadCampaignConfigFromCwd(ctx context.Context) (*CampaignConfig, string, er
 		return nil, "", err
 	}
 
+	return cfg, root, nil
+}
+
+// ReadCampaignConfigFromCwd detects the camp root and reads campaign.yaml.
+// A missing campaign ID stays empty, and a missing jumps.yaml is not created.
+func ReadCampaignConfigFromCwd(ctx context.Context) (*CampaignConfig, string, error) {
+	if ctx.Err() != nil {
+		return nil, "", ctx.Err()
+	}
+
+	root, err := campaign.DetectFromCwd(ctx)
+	if err != nil {
+		return nil, "", err
+	}
+
+	cfg, err := readCampaignFile(ctx, root)
+	if err != nil {
+		return nil, "", err
+	}
+	if err := loadJumps(ctx, root, cfg, false); err != nil {
+		return nil, "", err
+	}
+	if err := validateCampaignFile(root, cfg); err != nil {
+		return nil, "", err
+	}
 	return cfg, root, nil
 }
 

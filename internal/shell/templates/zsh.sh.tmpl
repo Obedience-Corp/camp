@@ -332,6 +332,51 @@ camp() {
         rm -f "$tmp"
       fi
       ;;
+    dungeon)
+      shift
+      case "${1:-}" in
+        explore) ;;
+        *)
+          command camp dungeon "$@"
+          return
+          ;;
+      esac
+      shift
+      local arg passthrough tmp dest cmd_status
+      passthrough=0
+      for arg in "$@"; do
+        case "$arg" in
+          --help|-h|--json|--json=*)
+            passthrough=1
+            break
+            ;;
+        esac
+      done
+      if [[ "$passthrough" -eq 1 ]]; then
+        command camp dungeon explore "$@"
+        return
+      fi
+      if [[ ! -t 0 || ! -t 1 ]]; then
+        command camp dungeon explore "$@"
+        return
+      fi
+      tmp=$(mktemp "${TMPDIR:-/tmp}/camp-dungeon-explore.XXXXXX") || return 1
+      command camp dungeon explore --path-output "$tmp" "$@"
+      cmd_status=$?
+      if [[ "$cmd_status" -ne 0 ]]; then
+        rm -f "$tmp"
+        return "$cmd_status"
+      fi
+      if [[ -s "$tmp" ]]; then
+        dest=$(cat "$tmp")
+        rm -f "$tmp"
+        if [[ -n "$dest" ]]; then
+          cd "$dest"
+        fi
+      else
+        rm -f "$tmp"
+      fi
+      ;;
     festivals)
       shift
       local arg passthrough tmp dest cmd_status

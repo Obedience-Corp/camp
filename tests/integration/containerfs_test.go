@@ -85,6 +85,10 @@ var containerFSPackages = []containerFSPackage{
 	// The artifact notice detectors read declarations, committed manifests,
 	// snapshots, and dismissals staged in a campaign.
 	{ImportPath: "./internal/notice", MinTests: 21},
+	// The dungeon explorer feed, text sanitizing, cache round trip, and
+	// metadata fingerprints stage dungeons on disk and edit them in place.
+	{ImportPath: "./internal/dungeon/explore", MinTests: 11, TestPattern: "^Test(CachePathConfinement|CacheWriteSymlinks|BuildFeed|BuildSanitizesRepositoryText|CacheKeepsDirectoryItems|RefreshSeesInPlaceMetadataEdits|WorkitemMarkerWinsOverFestivalArtifacts|ReadRegularRejectsSpecialFiles|BuildSpecialMarkdownDoesNotBlock|BuildHoldingDirectoryItems|BuildFestivalGoalSuppliesMissingName)$"},
+	{ImportPath: "./cmd/camp/dungeon", MinTests: 4, TestPattern: "^TestExplore(ReadFailures|PipedInputJSON|ReaderRejectsSpecialFiles|JSONDoesNotWriteConfig)$"},
 }
 
 // containerFSTag is the build tag gating host compilation of these suites.

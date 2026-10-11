@@ -81,6 +81,31 @@ func TestGenerateBash_CrProjectShorthand(t *testing.T) {
 	}
 }
 
+func TestGenerateBash_DungeonExploreArm(t *testing.T) {
+	output := generateBash()
+	section := shellWrapperSection(t, output, "    dungeon)", "    festivals)")
+	checks := []struct {
+		name    string
+		content string
+	}{
+		{"explore path output", `command camp dungeon explore --path-output "$tmp" "$@"`},
+		{"temp file", "camp-dungeon-explore.XXXXXX"},
+		{"absolute cd", `cd "$dest"`},
+		{"json passthrough", `--json|--json=*`},
+		{"other subcommands", `command camp dungeon "$@"`},
+	}
+	for _, check := range checks {
+		t.Run(check.name, func(t *testing.T) {
+			if !strings.Contains(section, check.content) {
+				t.Errorf("bash dungeon arm missing %s: %q", check.name, check.content)
+			}
+		})
+	}
+	if strings.Contains(section, `--status|--status=*`) {
+		t.Error("dungeon explore arm must keep status filters on the hop path")
+	}
+}
+
 func TestGenerateBash_FestivalsArm(t *testing.T) {
 	output := generateBash()
 	section := shellWrapperSection(t, output, "    festivals)", "    quest)")
