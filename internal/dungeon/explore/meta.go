@@ -3,6 +3,7 @@ package explore
 import (
 	"bytes"
 	"context"
+	"io/fs"
 	"os"
 	"path/filepath"
 	"strings"
@@ -15,9 +16,19 @@ import (
 
 const metaReadLimit = 256 << 10
 
+// lstat is how a metadata file is looked for. Tests replace it to report a
+// directory the process cannot search.
+var lstat = os.Lstat
+
 func fillDirectory(ctx context.Context, item *Item, dir string) {
 	base := filepath.Base(dir)
 	workitem := filepath.Join(dir, ".workitem")
+	// A directory that cannot be searched looks empty: every file below would
+	// read as missing. The row says why it has no metadata.
+	if _, err := lstat(workitem); err != nil && !camperrors.Is(err, fs.ErrNotExist) {
+		item.Warning = readWarning(dir, err)
+		return
+	}
 	if fileExists(workitem) {
 		item.Kind = KindWorkitem
 		if warning := fillWorkitem(ctx, item, workitem, filepath.Join(dir, "README.md")); warning != "" {
@@ -88,7 +99,9 @@ func fillFestival(ctx context.Context, item *Item, festYAML, goalFile string) st
 		var meta festMeta
 		if err := readYAML(ctx, festYAML, &meta); err != nil {
 			warning = readWarning(festYAML, err)
-			meta = festMeta{}
+			if !wrongType(err) {
+				meta = festMeta{}
+			}
 		}
 		if meta.Metadata.Name != "" {
 			item.Title = meta.Metadata.Name
@@ -109,10 +122,17 @@ func fillFestival(ctx context.Context, item *Item, festYAML, goalFile string) st
 	}
 	// The goal file supplies whatever fest.yaml left out, including all of it
 	// when fest.yaml could not be read.
-	if (item.Summary == "" || item.ID == "" || !named) && fileExists(goalFile) {
+	if (item.Summary == "" || item.ID == "" || !named || item.DateSource == DateFileTime) && fileExists(goalFile) {
 		fm, body, err := readFrontmatter(ctx, goalFile)
 		if err != nil && warning == "" {
 			warning = readWarning(goalFile, err)
+		}
+		// fest stamps the goal file with the move it records in fest.yaml.
+		if item.DateSource == DateFileTime && strings.HasPrefix(fm["fest_status"], "dungeon/") {
+			if day, ok := parseStamp(fm["fest_updated"]); ok {
+				item.DoneDate = day
+				item.DateSource = DateHistory
+			}
 		}
 		if item.ID == "" {
 			item.ID = fm["fest_id"]
@@ -137,6 +157,9 @@ type historyEntry struct {
 	Timestamp string `yaml:"timestamp"`
 }
 
+// newestDungeonDay reads the day in the stamp's own offset. That is the
+// mover's calendar day, the day a date bucket is named for, in whatever zone
+// the feed is opened.
 func newestDungeonDay(history []historyEntry) (string, bool) {
 	var best time.Time
 	found := false
@@ -173,7 +196,9 @@ func fillWorkitem(ctx context.Context, item *Item, marker, readme string) string
 	var meta workitemMeta
 	if err := readYAML(ctx, marker, &meta); err != nil {
 		warning = readWarning(marker, err)
-		meta = workitemMeta{}
+		if !wrongType(err) {
+			meta = workitemMeta{}
+		}
 	}
 	if meta.Title != "" {
 		item.Title = meta.Title
@@ -260,12 +285,15 @@ func primaryGoal(body string) string {
 	return firstParagraph(body)
 }
 
+// firstParagraph is the first run of text lines after any headings and HTML
+// comments. Templates open a section with a comment that prompts the author.
 func firstParagraph(body string) string {
 	var lines []string
-	started := false
+	started, inComment := false, false
 	for _, line := range strings.Split(body, "\n") {
 		trim := strings.TrimSpace(line)
 		if !started {
+			trim, inComment = skipComments(trim, inComment)
 			if trim == "" || strings.HasPrefix(trim, "#") {
 				continue
 			}
@@ -277,6 +305,30 @@ func firstParagraph(body string) string {
 		lines = append(lines, trim)
 	}
 	return strings.Join(lines, " ")
+}
+
+const (
+	commentOpen  = "<!--"
+	commentClose = "-->"
+)
+
+// skipComments drops the HTML comments a line opens with and returns what
+// follows them. inComment carries a comment across lines.
+func skipComments(line string, inComment bool) (string, bool) {
+	for {
+		if !inComment {
+			rest, opens := strings.CutPrefix(line, commentOpen)
+			if !opens {
+				return line, false
+			}
+			line = rest
+		}
+		_, after, closed := strings.Cut(line, commentClose)
+		if !closed {
+			return "", true
+		}
+		line, inComment = strings.TrimSpace(after), false
+	}
 }
 
 // MarkdownBody returns text without a leading YAML frontmatter block. A block
@@ -297,7 +349,8 @@ const (
 // splitFrontmatter separates a leading YAML block from the body. The map is
 // nil when text does not open with a fenced block. A fenced block that is not
 // a YAML mapping returns an error and the body after it, so a caller can warn
-// without the raw block reaching a summary.
+// without the raw block reaching a summary. A block that is never closed
+// returns an error and no body: nothing says where it ends.
 func splitFrontmatter(text string) (map[string]string, string, error) {
 	text = strings.TrimPrefix(text, byteOrderMark)
 	first, rest, found := strings.Cut(text, "\n")
@@ -312,7 +365,7 @@ func splitFrontmatter(text string) (map[string]string, string, error) {
 			return fm, after, err
 		}
 		if !more {
-			return nil, text, nil
+			return nil, "", errFrontmatterOpen
 		}
 		raw.WriteString(line)
 		raw.WriteByte('\n')
@@ -392,6 +445,13 @@ func readLimited(ctx context.Context, path string) (string, error) {
 }
 
 func fileExists(path string) bool {
-	info, err := os.Lstat(path)
+	info, err := lstat(path)
 	return err == nil && info.Mode().IsRegular()
+}
+
+// wrongType reports a YAML document that parsed and held a value of the wrong
+// kind for one field. The decoder fills every other field before it returns.
+func wrongType(err error) bool {
+	var typeErr *yaml.TypeError
+	return camperrors.As(err, &typeErr)
 }

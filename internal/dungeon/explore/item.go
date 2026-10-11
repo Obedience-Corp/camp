@@ -23,7 +23,21 @@ const (
 	StatusHolding = "holding"
 	LensAll       = "all"
 
+	// A metadata file is read up to 256 KB, and any scalar in it can be that
+	// long. These bound what one row puts in the index, the JSON, and the
+	// cache. Real titles in a camp run past a thousand characters.
+	titleLimit   = 2000
+	idLimit      = 200
 	summaryLimit = 240
+	warningLimit = 400
+
+	// maxIndexWarnings bounds the index-level list in a camp where every
+	// directory fails to read.
+	maxIndexWarnings = 100
+
+	// directoryLens marks a status lens that selects one status directory by
+	// name. No directory name contains it, so it cannot collide with one.
+	directoryLens = "/"
 )
 
 // Item is one row in the feed. Paths are camp-relative and use forward slashes.
@@ -128,21 +142,18 @@ func Sort(items []Item) {
 	})
 }
 
-// Presets lists the status lenses, including any status this index actually holds.
+// Presets lists the status lenses, including any status this index actually
+// holds. A status directory whose name is already a lens with another meaning
+// (finished, all) is listed with a trailing slash.
 func Presets(items []Item) []string {
 	names := make([]string, 0, len(builtinPresets))
-	known := map[string]bool{}
 	for _, p := range builtinPresets {
 		names = append(names, p.name)
-		known[p.name] = true
-		for _, status := range p.statuses {
-			known[status] = true
-		}
 	}
 	extra := map[string]bool{}
 	for _, item := range items {
-		if item.Status != "" && !known[item.Status] && !extra[item.Status] {
-			extra[item.Status] = true
+		if item.Status != "" && !slices.Contains(names, lensFor(item.Status)) {
+			extra[lensFor(item.Status)] = true
 		}
 	}
 	custom := make([]string, 0, len(extra))
@@ -271,7 +282,22 @@ func Apply(idx Index, q Query) (Result, error) {
 	}, nil
 }
 
+// lensFor is the lens that selects exactly one status directory. It is the
+// directory name, unless a built-in lens of that name means something else.
+func lensFor(status string) string {
+	for _, p := range builtinPresets {
+		if p.name == status && !slices.Equal(p.statuses, []string{status}) {
+			return status + directoryLens
+		}
+	}
+	return status
+}
+
 func resolveStatus(raw string, items []Item) (string, bool) {
+	// A trailing slash always names a status directory, never a built-in lens.
+	if dir, ok := strings.CutSuffix(raw, directoryLens); ok {
+		return resolveDirectory(dir, items)
+	}
 	names := Presets(items)
 	if slices.Contains(names, raw) {
 		return raw, true
@@ -284,7 +310,26 @@ func resolveStatus(raw string, items []Item) (string, bool) {
 	return "", false
 }
 
+func resolveDirectory(dir string, items []Item) (string, bool) {
+	folded := ""
+	for _, item := range items {
+		if item.Status == dir {
+			return lensFor(dir), true
+		}
+		if folded == "" && strings.EqualFold(item.Status, dir) {
+			folded = item.Status
+		}
+	}
+	if folded == "" {
+		return "", false
+	}
+	return lensFor(folded), true
+}
+
 func statusesFor(name string, items []Item) []string {
+	if dir, ok := strings.CutSuffix(name, directoryLens); ok {
+		return []string{dir}
+	}
 	for _, p := range builtinPresets {
 		if p.name == name {
 			return p.statuses
@@ -351,10 +396,17 @@ func validDay(value string) bool {
 }
 
 func oneLine(s string) string {
-	s = strings.Join(strings.Fields(s), " ")
-	runes := []rune(s)
-	if len(runes) <= summaryLimit {
+	return capRunes(strings.Join(strings.Fields(s), " "), summaryLimit)
+}
+
+// capRunes cuts s to at most limit runes.
+func capRunes(s string, limit int) string {
+	if len(s) <= limit {
 		return s
 	}
-	return string(runes[:summaryLimit])
+	runes := []rune(s)
+	if len(runes) <= limit {
+		return s
+	}
+	return string(runes[:limit])
 }

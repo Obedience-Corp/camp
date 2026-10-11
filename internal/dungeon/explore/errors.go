@@ -44,8 +44,9 @@ func errUnknownImages(value string) error {
 	return invalid("images", fmt.Sprintf("unknown --images %q; use auto, kitty, iterm, or off", value))
 }
 
-// ErrReplayTooLong means the GIF must not play. A poster comes with it when
-// at least the first frame fits the decode budget.
+// ErrReplayTooLong means the GIF must not play: it is past a decode budget,
+// or the file ends before its last frame does. A poster comes with it when at
+// least one whole frame fits the decode budget.
 var ErrReplayTooLong = camperrors.New("replay is too long to play here")
 
 var errNotGIF = camperrors.New("replay is not a valid GIF")
@@ -57,4 +58,7 @@ var (
 	errFileChanged = camperrors.New("file changed while opening")
 )
 
-var errFrontmatterShape = camperrors.New("frontmatter is not a list of key: value lines")
+var (
+	errFrontmatterShape = camperrors.New("frontmatter is not a list of key: value lines")
+	errFrontmatterOpen  = camperrors.New("frontmatter has no closing --- line")
+)

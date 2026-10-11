@@ -453,3 +453,42 @@ func TestReplaySparseDisposalWorkIsBounded(t *testing.T) {
 		t.Fatal("lost first-frame poster")
 	}
 }
+
+func TestDecodeReplayThatEndsEarlyKeepsPoster(t *testing.T) {
+	whole := recorderReplay(t, 64, 8)
+	shape, err := scanGIF(whole)
+	if err != nil {
+		t.Fatal(err)
+	}
+	last := shape.frames[len(shape.frames)-1]
+	for name, data := range map[string][]byte{
+		"no trailer":         whole[:len(whole)-1],
+		"cut in a frame":     whole[:last.start+(last.end-last.start)/2],
+		"junk after a frame": append(append([]byte{}, whole[:last.start]...), 0x00, 0x01, 0x02),
+	} {
+		t.Run(name, func(t *testing.T) {
+			got, err := decodeReplay(context.Background(), data, 64, 64)
+			if !errors.Is(err, ErrReplayTooLong) {
+				t.Fatalf("decodeReplay() error = %v, want ErrReplayTooLong with a poster", err)
+			}
+			if got.Frames != nil || got.Delays != nil {
+				t.Fatalf("kept %d frames of a replay that ends early", len(got.Frames))
+			}
+			if got.Poster == nil || posterColours(got.Poster) < 2 {
+				t.Fatal("a replay that ends early lost the poster its complete frames make")
+			}
+		})
+	}
+	// Nothing complete to draw is still a file that cannot be read.
+	for name, data := range map[string][]byte{
+		"cut in the first frame": whole[:shape.frames[0].start+(shape.frames[0].end-shape.frames[0].start)/2],
+		"header only":            whole[:shape.header],
+	} {
+		t.Run(name, func(t *testing.T) {
+			got, err := decodeReplay(context.Background(), data, 64, 64)
+			if err == nil || errors.Is(err, ErrReplayTooLong) || got.Poster != nil {
+				t.Fatalf("decodeReplay() = poster %v, error %v; want a read failure", got.Poster != nil, err)
+			}
+		})
+	}
+}

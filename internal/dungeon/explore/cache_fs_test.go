@@ -305,7 +305,7 @@ func TestCacheDiscardsEarlierSchemas(t *testing.T) {
 	if cached, ok, err := LoadCache(ctx, dir); err != nil || !ok || len(cached.Items) != 1 {
 		t.Fatalf("current cache: ok %v, err %v, items %d", ok, err, len(cached.Items))
 	}
-	for _, version := range []string{"v1", "v2", "v3"} {
+	for _, version := range []string{"v1", "v2", "v3", "v4"} {
 		stale := `{"schema_version":"camp-dungeon-explore-cache/` + version + `","index":{"items":[{"title":"stale"}],"dungeons":[]}}`
 		mustWrite(t, filepath.Join(dir, "index.json"), stale)
 		if cached, ok, err := LoadCache(ctx, dir); err != nil || ok {
@@ -330,5 +330,113 @@ func TestCacheHonorsCancelledContext(t *testing.T) {
 	}
 	if _, err := os.Lstat(fresh); !os.IsNotExist(err) {
 		t.Fatalf("a cancelled save still created %s (%v)", fresh, err)
+	}
+}
+
+// A chmod changes neither a file's size nor its modification time. The mode
+// is in the fingerprint so the cached row is read again.
+func TestRefreshSeesPermissionChange(t *testing.T) {
+	ctx := context.Background()
+	root, festRel, _ := stageExploreCamp(t)
+	fest := filepath.Join(root, filepath.FromSlash(festRel))
+	yamlPath := filepath.Join(fest, "fest.yaml")
+	cached, err := Build(ctx, root)
+	if err != nil {
+		t.Fatalf("Build() error = %v", err)
+	}
+	if _, changed, err := Refresh(ctx, root, cached); err != nil || changed {
+		t.Fatalf("untouched camp: changed = %v, err = %v", changed, err)
+	}
+
+	for name, path := range map[string]string{"metadata file": yamlPath, "item directory": fest} {
+		t.Run(name, func(t *testing.T) {
+			before, err := os.Lstat(path)
+			if err != nil {
+				t.Fatal(err)
+			}
+			// Owner access stays, so the row reads the same with or without root.
+			if err := os.Chmod(path, before.Mode().Perm()&^0o077|0o001); err != nil {
+				t.Fatal(err)
+			}
+			t.Cleanup(func() { _ = os.Chmod(path, before.Mode().Perm()) })
+			after, err := os.Lstat(path)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if after.Mode() == before.Mode() {
+				t.Fatalf("chmod left the mode at %v", before.Mode())
+			}
+			if !after.ModTime().Equal(before.ModTime()) || after.Size() != before.Size() {
+				t.Fatalf("chmod moved the time or size: %v %d, then %v %d", before.ModTime(), before.Size(), after.ModTime(), after.Size())
+			}
+			refreshed, changed, err := Refresh(ctx, root, cached)
+			if err != nil {
+				t.Fatalf("Refresh() error = %v", err)
+			}
+			if !changed {
+				t.Fatal("Refresh kept the cache across a permission change")
+			}
+			if got := itemAt(t, refreshed, festRel); got.ID != "FA0024" {
+				t.Fatalf("rebuilt row = %+v", got)
+			}
+			if err := os.Chmod(path, before.Mode().Perm()); err != nil {
+				t.Fatal(err)
+			}
+			if _, changed, err := Refresh(ctx, root, cached); err != nil || changed {
+				t.Fatalf("restored mode: changed = %v, err = %v", changed, err)
+			}
+		})
+	}
+}
+
+// A save whose process exits partway cannot remove its temp file. The next
+// save does, and leaves a save still in progress alone.
+func TestSaveCacheSweepsStaleTempFiles(t *testing.T) {
+	ctx := context.Background()
+	dir := filepath.Join(t.TempDir(), "dungeon-feed")
+	stale := filepath.Join(dir, ".index-1111.tmp")
+	inProgress := filepath.Join(dir, ".index-2222.tmp")
+	unrelated := filepath.Join(dir, "notes.tmp")
+	for _, path := range []string{stale, inProgress, unrelated} {
+		mustWrite(t, path, "{")
+	}
+	staleDir := filepath.Join(dir, ".index-3333.tmp")
+	if err := os.Mkdir(staleDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	old := time.Now().Add(-10 * staleTempAge)
+	for _, path := range []string{stale, unrelated, staleDir} {
+		if err := os.Chtimes(path, old, old); err != nil {
+			t.Fatal(err)
+		}
+	}
+
+	if err := SaveCache(ctx, dir, Index{Items: []Item{{Title: "current"}}}); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := os.Lstat(stale); !os.IsNotExist(err) {
+		t.Fatalf("stale temp file survived the save: %v", err)
+	}
+	for _, path := range []string{inProgress, unrelated, staleDir} {
+		if _, err := os.Lstat(path); err != nil {
+			t.Fatalf("%s was removed: %v", filepath.Base(path), err)
+		}
+	}
+	if cached, ok, err := LoadCache(ctx, dir); err != nil || !ok || len(cached.Items) != 1 {
+		t.Fatalf("saved cache: ok %v, err %v, items %d", ok, err, len(cached.Items))
+	}
+
+	// Cancelled after the file is written and before it is published.
+	fresh := filepath.Join(t.TempDir(), "dungeon-feed")
+	cancelled := &cancelAfter{Context: ctx, after: 2}
+	if err := SaveCache(cancelled, fresh, Index{}); !errors.Is(err, context.Canceled) {
+		t.Fatalf("SaveCache cancelled partway = %v", err)
+	}
+	left, err := os.ReadDir(fresh)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(left) != 0 {
+		t.Fatalf("a cancelled save left %d files behind, first %s", len(left), left[0].Name())
 	}
 }

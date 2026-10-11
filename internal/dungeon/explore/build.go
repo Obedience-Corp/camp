@@ -171,7 +171,9 @@ func readItem(ctx context.Context, root, relDungeon, label, status, bucketDay, p
 	}
 	info, err := entry.Info()
 	if err != nil {
-		return Item{Title: CleanText(entry.Name()), Path: rel, Status: status, DungeonLabel: label, DungeonPath: relDungeon, Kind: KindOther, DateSource: DateFileTime, DoneDate: time.Now().Format("2006-01-02"), Warning: CleanText(cause(err).Error())}, warn(root, rel, err)
+		item := Item{Title: entry.Name(), Path: rel, Status: status, DungeonLabel: label, DungeonPath: relDungeon, Kind: KindOther, DateSource: DateFileTime, DoneDate: time.Now().Format("2006-01-02"), Warning: cause(err).Error()}
+		tidy(&item, entry.Name())
+		return item, warn(root, rel, err)
 	}
 	item := Item{
 		Status:       status,
@@ -196,11 +198,21 @@ func readItem(ctx context.Context, root, relDungeon, label, status, bucketDay, p
 	if item.DateSource == DateFileTime {
 		item.DoneDate = info.ModTime().Format("2006-01-02")
 	}
-	item.Title = CleanText(item.Title)
-	item.ID = CleanText(item.ID)
-	item.Summary = oneLine(CleanText(item.Summary))
-	item.Warning = CleanText(item.Warning)
+	tidy(&item, entry.Name())
 	return item, ""
+}
+
+// tidy cleans and bounds the text a row took from the camp. A title with
+// nothing left to show falls back to the file or directory name.
+func tidy(item *Item, name string) {
+	item.Title = CleanText(item.Title)
+	if strings.TrimSpace(item.Title) == "" {
+		item.Title = CleanText(name)
+	}
+	item.Title = capRunes(item.Title, titleLimit)
+	item.ID = capRunes(CleanText(item.ID), idLimit)
+	item.Summary = oneLine(CleanText(item.Summary))
+	item.Warning = capRunes(CleanText(item.Warning), warningLimit)
 }
 
 func skipName(name string) bool {
@@ -244,10 +256,13 @@ func cause(err error) error {
 
 // addWarnings appends each warning the list does not hold yet. Discovery, the
 // fingerprint walk, and the item scan all stop at the same unreadable
-// directory, and it is reported once.
+// directory, and it is reported once. The list stops at maxIndexWarnings.
 func addWarnings(have []string, more ...string) []string {
 	for _, warning := range more {
-		warning = CleanText(warning)
+		if len(have) >= maxIndexWarnings {
+			break
+		}
+		warning = capRunes(CleanText(warning), warningLimit)
 		if warning == "" || slices.Contains(have, warning) {
 			continue
 		}
@@ -258,8 +273,10 @@ func addWarnings(have []string, more ...string) []string {
 
 var itemMetaFiles = []string{"fest.yaml", "FESTIVAL_GOAL.md", ".workitem", "README.md"}
 
+// stamp carries the mode because a chmod leaves size and modification time
+// alone and still decides whether the file can be read.
 func stamp(rel string, info fs.FileInfo) string {
-	return rel + " " + info.ModTime().UTC().Format(time.RFC3339Nano) + " " + strconv.FormatInt(info.Size(), 10)
+	return rel + " " + info.Mode().String() + " " + info.ModTime().UTC().Format(time.RFC3339Nano) + " " + strconv.FormatInt(info.Size(), 10)
 }
 
 func fingerprint(ctx context.Context, dungeonPath string) (string, error) {

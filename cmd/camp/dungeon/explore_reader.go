@@ -92,7 +92,7 @@ func (m exploreModel) openReader() (tea.Model, tea.Cmd) {
 		reader.entries = entries
 	case item.Kind == "festival" && item.IsDir:
 		goal := filepath.Join(abs, "FESTIVAL_GOAL.md")
-		if _, err := os.Stat(goal); err == nil {
+		if info, err := os.Lstat(goal); err == nil && info.Mode().IsRegular() {
 			text, cut, err := readExploreText(m.readerContext(), goal)
 			if err != nil {
 				m.setStatus(exploreReadStatus, "The file could not be parsed.", true)

@@ -1175,6 +1175,10 @@ a protocol.
 
 A pipe, or --json, prints the same index and does not open the feed.
 
+--status takes a lens or the name of a status directory. A directory named
+like a lens that means something else (finished, all) is selected with a
+trailing slash: --status all/.
+
 ```
 camp dungeon explore [flags]
 ```
@@ -1189,7 +1193,7 @@ camp dungeon explore [flags]
       --no-media         Do not draw replays
       --query string     Case-insensitive substring matched against title, id, summary, dungeon, and path
       --since string     Include items put in the dungeon on or after this YYYY-MM-DD date
-      --status string    Status lens: finished, completed, done, archived, someday, killed, holding, all, or a status name (default "finished")
+      --status string    Status lens: finished, completed, done, archived, someday, killed, holding, all, or a status directory name; a trailing slash (all/) always means the directory (default "finished")
       --until string     Include items put in the dungeon on or before this YYYY-MM-DD date
 ```
 

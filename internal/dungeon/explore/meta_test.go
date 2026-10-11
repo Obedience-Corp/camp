@@ -82,10 +82,31 @@ func TestFrontmatterReportsBlockThatDoesNotParse(t *testing.T) {
 			}
 		})
 	}
+	// Without a closing fence nothing says where the block ends, so none of
+	// the document may be taken for its body.
 	for name, text := range map[string]string{
-		"no fence":       "# Title\n\nBody.",
-		"fence not shut": "---\ntitle: open\n\nBody.",
-		"longer rule":    "----\ntitle: rule\n----\nBody.",
+		"fence not shut":           "---\ntitle: open\napi_key: hunter2\n\nBody.",
+		"closed with a YAML end":   "---\ntitle: open\n...\nBody.",
+		"cut inside the block":     "---\ntitle: open\nnotes: |\n  " + strings.Repeat("a", 64),
+		"second block is not shut": "---\ntitle: open",
+	} {
+		t.Run(name, func(t *testing.T) {
+			fm, body, err := splitFrontmatter(text)
+			if err == nil {
+				t.Fatalf("no error; frontmatter = %#v, body = %q", fm, body)
+			}
+			if fm != nil || body != "" {
+				t.Fatalf("frontmatter = %#v, body = %q; an open block must not reach the body", fm, body)
+			}
+			if got := MarkdownBody(text); got != text {
+				t.Fatalf("MarkdownBody = %q, want the document left whole for the reader", got)
+			}
+		})
+	}
+	for name, text := range map[string]string{
+		"no fence":    "# Title\n\nBody.",
+		"longer rule": "----\ntitle: rule\n----\nBody.",
+		"fence alone": "---",
 	} {
 		t.Run(name, func(t *testing.T) {
 			fm, body, err := splitFrontmatter(text)
@@ -145,5 +166,48 @@ func TestWarningsNameCampRelativePathsOnce(t *testing.T) {
 	got = addWarnings(got, warn(root, "festivals/.dungeon", denied), warn(root, "festivals/.dungeon/archived", denied), "")
 	if len(got) != 1 || got[0] != discovered {
 		t.Fatalf("warnings = %#v, want the directory reported once", got)
+	}
+}
+
+func TestFirstParagraphSkipsLeadingComments(t *testing.T) {
+	for name, tc := range map[string]struct{ body, want string }{
+		"template prompt":         {"# Title\n\n<!-- Why is this needed? -->\n\nBecause it broke.\n", "Because it broke."},
+		"comment over many lines": {"<!--\nWhy is this needed?\nWhat triggered it?\n-->\n\nBecause it broke.\n", "Because it broke."},
+		"two comments":            {"<!-- one -->\n<!-- two -->\nBecause it broke.\n", "Because it broke."},
+		"text after the comment":  {"<!-- note --> Because it broke.\nSecond line.\n", "Because it broke. Second line."},
+		"comment never closed":    {"# Title\n\n<!-- Why is this needed?\n\nBecause it broke.\n", ""},
+		"only a comment":          {"<!-- Why is this needed? -->\n", ""},
+		"comment inside the text": {"Because <!-- aside --> it broke.\n", "Because <!-- aside --> it broke."},
+		"no comment":              {"# Title\n\nBecause it broke.\nSecond line.\n\nNext.\n", "Because it broke. Second line."},
+	} {
+		if got := firstParagraph(tc.body); got != tc.want {
+			t.Errorf("%s: firstParagraph = %q, want %q", name, got, tc.want)
+		}
+	}
+	const goal = "<!-- fill this in -->\n\n**Primary Goal:** Ship it.\n"
+	if got := primaryGoal(goal); got != "Ship it." {
+		t.Errorf("primaryGoal = %q", got)
+	}
+}
+
+// A date bucket is named for the mover's calendar day. A recorded move reads
+// as the same day when it keeps the offset it was written with, whatever zone
+// the feed is opened in.
+func TestHistoryDayIsTheDayInTheStampsOwnOffset(t *testing.T) {
+	for value, want := range map[string]string{
+		"2026-10-05T23:30:00-06:00": "2026-10-05",
+		"2026-10-05T00:30:00+09:00": "2026-10-05",
+		"2026-10-06T05:30:00Z":      "2026-10-06",
+	} {
+		if got, ok := parseStamp(value); !ok || got != want {
+			t.Errorf("parseStamp(%q) = %q, %v; want %q", value, got, ok, want)
+		}
+		got, ok := newestDungeonDay([]historyEntry{
+			{Status: "active", Timestamp: "2030-01-01T00:00:00Z"},
+			{Status: "dungeon/completed", Timestamp: value},
+		})
+		if !ok || got != want {
+			t.Errorf("newestDungeonDay(%q) = %q, %v; want %q", value, got, ok, want)
+		}
 	}
 }

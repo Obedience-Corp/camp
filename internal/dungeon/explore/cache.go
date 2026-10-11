@@ -7,6 +7,7 @@ import (
 	"encoding/json"
 	"os"
 	"path/filepath"
+	"time"
 
 	"github.com/Obedience-Corp/camp/internal/config"
 	"github.com/Obedience-Corp/camp/internal/dungeon/spelling"
@@ -15,7 +16,14 @@ import (
 
 // cacheSchemaVersion changes whenever the cached index gains information a
 // stale cache would silently lack, so old files are rebuilt instead of trusted.
-const cacheSchemaVersion = "camp-dungeon-explore-cache/v4"
+const cacheSchemaVersion = "camp-dungeon-explore-cache/v5"
+
+const (
+	cacheTempPattern = ".index-*.tmp"
+	// staleTempAge is longer than any save takes, so a file this old belongs
+	// to a process that exited before it could publish or remove it.
+	staleTempAge = time.Minute
+)
 
 type cacheFile struct {
 	SchemaVersion string `json:"schema_version"`
@@ -67,8 +75,9 @@ func SaveCache(ctx context.Context, dir string, idx Index) error {
 		return camperrors.Wrap(err, "encoding dungeon feed cache")
 	}
 	path := filepath.Join(dir, "index.json")
+	sweepStaleTemps(dir)
 	// A unique, exclusively created file cannot follow a pre-existing symlink.
-	f, err := os.CreateTemp(dir, ".index-*.tmp")
+	f, err := os.CreateTemp(dir, cacheTempPattern)
 	if err != nil {
 		return camperrors.Wrap(err, "creating dungeon feed cache file")
 	}
@@ -81,10 +90,32 @@ func SaveCache(ctx context.Context, dir string, idx Index) error {
 	if err := f.Close(); err != nil {
 		return camperrors.Wrap(err, "closing dungeon feed cache")
 	}
+	if err := ctx.Err(); err != nil {
+		return camperrors.Wrap(err, "saving dungeon feed cache")
+	}
 	if err := os.Rename(tmp, path); err != nil {
 		return camperrors.Wrap(err, "publishing dungeon feed cache")
 	}
 	return nil
+}
+
+// sweepStaleTemps removes temp files an earlier save left behind. A save that
+// returns removes its own; one whose process exits partway cannot.
+func sweepStaleTemps(dir string) {
+	entries, err := os.ReadDir(dir)
+	if err != nil {
+		return
+	}
+	for _, entry := range entries {
+		if match, _ := filepath.Match(cacheTempPattern, entry.Name()); !match || !entry.Type().IsRegular() {
+			continue
+		}
+		info, err := entry.Info()
+		if err != nil || time.Since(info.ModTime()) < staleTempAge {
+			continue
+		}
+		_ = os.Remove(filepath.Join(dir, entry.Name()))
+	}
 }
 
 // Refresh returns cached when the dungeon set and fingerprints still match.

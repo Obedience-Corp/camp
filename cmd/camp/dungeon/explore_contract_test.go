@@ -64,6 +64,7 @@ var exploreRefusals = []struct {
 	{"until is not a date", []string{"--until", "soon"}, `--until must be YYYY-MM-DD, got "soon"`},
 	{"since after until", []string{"--since", "2026-10-02", "--until", "2026-10-01"}, "--since is after --until"},
 	{"unknown images", []string{"--images", "bogus"}, `unknown --images "bogus"; use auto, kitty, iterm, or off`},
+	{"unknown images with no media", []string{"--no-media", "--images", "bogus"}, `unknown --images "bogus"; use auto, kitty, iterm, or off`},
 	{"extra argument", []string{"extra"}, `unknown command "extra" for "dungeon explore"`},
 }
 

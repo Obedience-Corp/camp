@@ -5,11 +5,13 @@ package explore
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 	"io/fs"
 	"os"
 	"path/filepath"
 	"strings"
 	"testing"
+	"unicode/utf8"
 )
 
 func TestBuildFeed(t *testing.T) {
@@ -419,5 +421,75 @@ ref: WI-abc123
 	}
 	if len(byMarkerID.Items) != 0 {
 		t.Fatalf("marker id replaced the ref: %+v", byMarkerID.Items)
+	}
+}
+
+// Each metadata file is read up to 256 KB. Without a bound on what a row
+// keeps, 200 such files put 50 MB in the JSON and in the cache file.
+func TestBuildBoundsHostileMetadata(t *testing.T) {
+	ctx := context.Background()
+	root := t.TempDir()
+	done := filepath.Join(root, ".dungeon", "done")
+	const files = 200
+	body := "---\ntitle: " + strings.Repeat("A", 200_000) + "\nid: " + strings.Repeat("B", 40_000) + "\n---\n\n" + strings.Repeat("C", 4_000) + "\n"
+	for i := range files {
+		mustWrite(t, filepath.Join(done, fmt.Sprintf("n%03d.md", i)), body)
+	}
+	// Every line repeats one 1,000-character key, and the decoder quotes it in
+	// each complaint.
+	repeated := strings.Repeat("k"+strings.Repeat("a", 1_000)+": v\n", 200)
+	mustWrite(t, filepath.Join(done, "noisy-festival", "fest.yaml"), repeated)
+
+	idx, err := Build(ctx, root)
+	if err != nil {
+		t.Fatalf("Build() error = %v", err)
+	}
+	if len(idx.Items) != files+1 {
+		t.Fatalf("indexed %d rows, want %d", len(idx.Items), files+1)
+	}
+	for _, item := range idx.Items {
+		for field, got := range map[string]struct {
+			text  string
+			limit int
+		}{
+			"title":   {item.Title, titleLimit},
+			"id":      {item.ID, idLimit},
+			"summary": {item.Summary, summaryLimit},
+			"warning": {item.Warning, warningLimit},
+		} {
+			if n := utf8.RuneCountInString(got.text); n > got.limit {
+				t.Fatalf("%s: %s holds %d runes, limit %d", item.Path, field, n, got.limit)
+			}
+		}
+	}
+	first := itemAt(t, idx, ".dungeon/done/n000.md")
+	if first.Title != strings.Repeat("A", titleLimit) || first.ID != strings.Repeat("B", idLimit) || first.Summary != strings.Repeat("C", summaryLimit) {
+		t.Fatalf("oversized row was not cut to its limits: title %d, id %d, summary %d", len(first.Title), len(first.ID), len(first.Summary))
+	}
+	noisy := itemAt(t, idx, ".dungeon/done/noisy-festival")
+	if utf8.RuneCountInString(noisy.Warning) != warningLimit || !strings.HasPrefix(noisy.Warning, "fest.yaml: ") {
+		t.Fatalf("noisy warning holds %d runes: %.60q", utf8.RuneCountInString(noisy.Warning), noisy.Warning)
+	}
+
+	// 4 KB a row is generous for the limits above and 60 times under what the
+	// files hold.
+	const bound = (files + 1) * 4096
+	payload, err := json.Marshal(idx.Items)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(payload) > bound {
+		t.Fatalf("items encode to %d bytes of JSON, want at most %d", len(payload), bound)
+	}
+	cacheDir := filepath.Join(t.TempDir(), "dungeon-feed")
+	if err := SaveCache(ctx, cacheDir, idx); err != nil {
+		t.Fatal(err)
+	}
+	info, err := os.Stat(filepath.Join(cacheDir, "index.json"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if info.Size() > bound {
+		t.Fatalf("cache file is %d bytes, want at most %d", info.Size(), bound)
 	}
 }

@@ -38,9 +38,13 @@ func TestExploreReadFailures(t *testing.T) {
 	m.root = root
 	m.visible.Items[0].Path = "."
 	m.visible.Items[0].IsDir = true
-	if err := os.Mkdir(filepath.Join(root, "FESTIVAL_GOAL.md"), 0700); err != nil {
+	if err := os.WriteFile(filepath.Join(root, "FESTIVAL_GOAL.md"), []byte("# Goal\n"), 0600); err != nil {
 		t.Fatal(err)
 	}
+	// A goal file that is there and cannot be read: the read is cancelled.
+	stopped, stop := context.WithCancel(context.Background())
+	stop()
+	m.ctx = stopped
 	next, _ := m.openReader()
 	m = next.(exploreModel)
 	if m.reading || !m.statusErr {

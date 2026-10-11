@@ -62,7 +62,11 @@ a protocol.
   camp dungeon explore --dungeon Festivals --query FA0024
   camp dungeon explore --json --since 2026-09-01
 
-A pipe, or --json, prints the same index and does not open the feed.`,
+A pipe, or --json, prints the same index and does not open the feed.
+
+--status takes a lens or the name of a status directory. A directory named
+like a lens that means something else (finished, all) is selected with a
+trailing slash: --status all/.`,
 	Annotations: map[string]string{
 		"agent_allowed": "true",
 		"agent_reason":  "Read-only dungeon feed; agents use --json and must not drive the TUI",
@@ -74,7 +78,7 @@ func init() {
 	Cmd.AddCommand(dungeonExploreCmd)
 	flags := dungeonExploreCmd.Flags()
 	flags.Bool("json", false, "Print the feed as JSON")
-	flags.String("status", "finished", "Status lens: finished, completed, done, archived, someday, killed, holding, all, or a status name")
+	flags.String("status", "finished", "Status lens: finished, completed, done, archived, someday, killed, holding, all, or a status directory name; a trailing slash (all/) always means the directory")
 	flags.String("dungeon", "all", "Dungeon lens: all, a label, or a camp-relative dungeon path")
 	flags.String("since", "", "Include items put in the dungeon on or after this YYYY-MM-DD date")
 	flags.String("until", "", "Include items put in the dungeon on or before this YYYY-MM-DD date")
@@ -169,12 +173,16 @@ func exploreQuery(cmd *cobra.Command) (explore.Query, error) {
 }
 
 func exploreImages(cmd *cobra.Command) (string, error) {
-	noMedia, _ := cmd.Flags().GetBool("no-media")
 	flag, _ := cmd.Flags().GetString("images")
-	if noMedia {
-		flag = explore.ProtocolOff
+	// --no-media does not excuse a value --images would refuse on its own.
+	protocol, err := explore.ChooseProtocol(flag, os.Getenv, plainExplore(cmd))
+	if err != nil {
+		return "", err
 	}
-	return explore.ChooseProtocol(flag, os.Getenv, plainExplore(cmd))
+	if noMedia, _ := cmd.Flags().GetBool("no-media"); noMedia {
+		return explore.ProtocolOff, nil
+	}
+	return protocol, nil
 }
 
 func plainExplore(cmd *cobra.Command) bool {

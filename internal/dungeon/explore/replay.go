@@ -33,9 +33,9 @@ type Frames struct {
 }
 
 // DecodeReplay composites a GIF and scales it to fit maxW by maxH.
-// A replay past the size, frame, or work budget returns ErrReplayTooLong and
-// no frames. Its poster is the canvas built from the frames inside the budget,
-// and is nil only when not even the first frame fits.
+// A replay past the size, frame, or work budget, or one whose file ends early,
+// returns ErrReplayTooLong and no frames. Its poster is the canvas built from
+// the whole frames inside the budget, and is nil only when there is none.
 // Cancelling ctx stops the decode between frames and returns ctx's error.
 func DecodeReplay(ctx context.Context, path string, maxW, maxH int) (Frames, error) {
 	if err := ctx.Err(); err != nil {
@@ -67,7 +67,10 @@ func decodeReplay(ctx context.Context, data []byte, maxW, maxH int) (Frames, err
 	if oversize && len(shape.frames) == 0 {
 		return Frames{}, ErrReplayTooLong
 	}
-	if err != nil && !oversize {
+	// A stream that breaks after a whole frame is drawn like one cut by the
+	// size budget: the frames before the break make the poster.
+	cut := err != nil && len(shape.frames) > 0
+	if err != nil && !cut {
 		return Frames{}, camperrors.Wrap(err, "decoding replay")
 	}
 	if len(shape.frames) == 0 || shape.width <= 0 || shape.height <= 0 {
@@ -77,7 +80,7 @@ func decodeReplay(ctx context.Context, data []byte, maxW, maxH int) (Frames, err
 		return Frames{}, ErrReplayTooLong
 	}
 	spans := shape.frames
-	tooLong := oversize || shape.overWork || len(spans) > maxReplayFrames
+	tooLong := oversize || cut || shape.overWork || len(spans) > maxReplayFrames
 	if shape.overWork && len(spans) > 1 {
 		// The last frame scanned is the one that crossed the work budget.
 		// The poster is the canvas up to it: the recorder's first frame is a
