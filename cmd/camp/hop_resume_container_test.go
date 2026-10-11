@@ -9,8 +9,10 @@ import (
 	"io"
 	"net"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"strings"
+	"syscall"
 	"testing"
 	"time"
 
@@ -20,6 +22,9 @@ import (
 )
 
 func TestHopResumeFSSocketRoundTrip(t *testing.T) {
+	if asOrdinaryUser(t) {
+		return
+	}
 	local, _, err := resumeSocketPaths()
 	if err != nil {
 		t.Fatal(err)
@@ -106,6 +111,9 @@ func TestHopResumeFSOriginAdvisoryAliasCollision(t *testing.T) {
 }
 
 func TestHopResumeFSSendRejectsMissingOrMalformedAcknowledgement(t *testing.T) {
+	if asOrdinaryUser(t) {
+		return
+	}
 	for _, reply := range []string{"", "{}", `{ "version":2,"accepted":true }`, `{ "version":1,"accepted":false }`, "invalid"} {
 		t.Run(reply, func(t *testing.T) {
 			local, _, err := resumeSocketPaths()
@@ -174,6 +182,42 @@ func TestHopResumeFSUsesParentAuthenticationAndScope(t *testing.T) {
 	}
 }
 
+// ordinaryUID is a user that is neither root nor anyone the image knows.
+const ordinaryUID = 54321
+
+// asOrdinaryUser reruns the calling test in a child process that is not root,
+// and reports whether it did. The suite runs as root, and what a hopped shell
+// trusts depends on who it is: root must not trust a shared directory at all,
+// so the forwarded socket in /tmp can only be exercised as an ordinary user.
+// env carries fixtures only root could prepare.
+func asOrdinaryUser(t *testing.T, env ...string) bool {
+	t.Helper()
+	if os.Geteuid() != 0 {
+		return false
+	}
+	self, err := os.Executable()
+	if err != nil {
+		t.Fatal(err)
+	}
+	home, err := os.MkdirTemp("/tmp", "hu")
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = os.RemoveAll(home) })
+	if err := os.Chown(home, ordinaryUID, ordinaryUID); err != nil {
+		t.Fatal(err)
+	}
+	cmd := exec.Command(self, "-test.run=^"+strings.SplitN(t.Name(), "/", 2)[0]+"$", "-test.count=1", "-test.v")
+	cmd.Dir = home
+	cmd.Env = append(append(os.Environ(), "HOME="+home, "TMPDIR="+home), env...)
+	cmd.SysProcAttr = &syscall.SysProcAttr{Credential: &syscall.Credential{Uid: ordinaryUID, Gid: ordinaryUID}}
+	out, err := cmd.CombinedOutput()
+	if err != nil || !strings.Contains(string(out), "--- PASS: ") {
+		t.Fatalf("as an ordinary user: %v\n%s", err, out)
+	}
+	return true
+}
+
 // shortHome gives a test its own home directory with a path short enough for
 // a unix socket beneath it.
 func shortHome(t *testing.T) string {
@@ -238,6 +282,7 @@ func TestHopResumeFSRelayKeepsItsSocketPrivateAndRemovesIt(t *testing.T) {
 	}
 	const id = "0123456789abcdef"
 	relay := startTestHopRelay(t, id)
+	go func() { _, _ = io.Copy(io.Discard, relay.fromFar) }()
 	path := filepath.Join(dir, id+".sock")
 	if info, err := os.Stat(dir); err != nil || info.Mode().Perm() != 0o700 {
 		t.Fatalf("relay directory must be closed to other users: %v %v", info.Mode().Perm(), err)
@@ -269,20 +314,33 @@ func TestHopResumeFSRelayPrunesSocketsNothingListensOn(t *testing.T) {
 	if err := os.MkdirAll(dir, 0o700); err != nil {
 		t.Fatal(err)
 	}
-	// One relay that was killed before it could clean up, one still serving.
-	dead := filepath.Join(dir, "aaaaaaaaaaaaaaaa.sock")
-	killed, err := net.Listen("unix", dead)
-	if err != nil {
+	abandon := func(name string) string {
+		path := filepath.Join(dir, name)
+		ln, err := net.Listen("unix", path)
+		if err != nil {
+			t.Fatal(err)
+		}
+		ln.(*net.UnixListener).SetUnlinkOnClose(false)
+		_ = ln.Close()
+		return path
+	}
+	// A relay killed long ago, one whose socket is seconds old and may be
+	// about to listen, and one still serving.
+	dead := abandon("aaaaaaaaaaaaaaaa.sock")
+	longAgo := time.Now().Add(-time.Hour)
+	if err := os.Chtimes(dead, longAgo, longAgo); err != nil {
 		t.Fatal(err)
 	}
-	killed.(*net.UnixListener).SetUnlinkOnClose(false)
-	_ = killed.Close()
+	starting := abandon("cccccccccccccccc.sock")
 	live := filepath.Join(dir, "bbbbbbbbbbbbbbbb.sock")
 	serving, err := net.Listen("unix", live)
 	if err != nil {
 		t.Fatal(err)
 	}
 	defer func() { _ = serving.Close() }()
+	if err := os.Chtimes(live, longAgo, longAgo); err != nil {
+		t.Fatal(err)
+	}
 	go func() {
 		for {
 			conn, err := serving.Accept()
@@ -293,9 +351,13 @@ func TestHopResumeFSRelayPrunesSocketsNothingListensOn(t *testing.T) {
 		}
 	}()
 
-	startTestHopRelay(t, "0123456789abcdef")
+	relay := startTestHopRelay(t, "0123456789abcdef")
+	go func() { _, _ = io.Copy(io.Discard, relay.fromFar) }()
 	if _, err := os.Lstat(dead); !os.IsNotExist(err) {
-		t.Fatalf("a socket nothing listens on must be pruned: %v", err)
+		t.Fatalf("an old socket nothing listens on must be pruned: %v", err)
+	}
+	if _, err := os.Lstat(starting); err != nil {
+		t.Fatalf("a socket created moments ago may belong to a relay still starting: %v", err)
 	}
 	if _, err := os.Lstat(live); err != nil {
 		t.Fatalf("another hop's live relay must be left alone: %v", err)
@@ -343,7 +405,10 @@ func TestHopResumeFSSendSwitchesOverARelay(t *testing.T) {
 }
 
 func TestHopResumeFSSendFallsBackToTheForwardedSocket(t *testing.T) {
-	shortHome(t)
+	if asOrdinaryUser(t) {
+		return
+	}
+	home := shortHome(t)
 	local, _, err := resumeSocketPaths()
 	if err != nil {
 		t.Fatal(err)
@@ -354,30 +419,122 @@ func TestHopResumeFSSendFallsBackToTheForwardedSocket(t *testing.T) {
 		t.Fatal(err)
 	}
 	defer func() { _ = ln.Close() }()
-	follow := make(chan string, 1)
-	go func() {
-		line, _ := serveHopResume(context.Background(), ln, new(hopSwitch), func(_ context.Context, request hopResumeRequest) (string, error) {
-			return "ssh " + request.Selector, nil
-		})
-		follow <- line
-	}()
-	// The opening shell offered a relay, but the camp ssh found on this side
-	// predates relays, so none is running. sshd bound the socket as this user.
-	t.Setenv(hopResumeRelayEnv, "0123456789abcdef")
+	hop := new(hopSwitch)
+	served := func() <-chan string {
+		follow := make(chan string, 1)
+		go func() {
+			line, _ := serveHopResume(context.Background(), ln, hop, func(_ context.Context, request hopResumeRequest) (string, error) {
+				return "ssh " + request.Selector, nil
+			})
+			follow <- line
+		}()
+		return follow
+	}
+	// sshd bound the socket as this user. The opening shell offered a relay,
+	// but none is running: the camp ssh found on this side predates relays.
+	const id = "0123456789abcdef"
+	t.Setenv(hopResumeRelayEnv, id)
 	t.Setenv(hopResumeSockEnv, local)
+	follow := served()
 	if err := sendHopResume(context.Background(), "thirdbox:notes", cmdutil.CampaignScope{}, "c.example"); err != nil {
 		t.Fatalf("the released socket route must keep working: %v", err)
 	}
 	if line := <-follow; line != "ssh thirdbox:notes" {
 		t.Fatalf("follow-up %q", line)
 	}
+
+	// The same when a relay was killed and left its socket behind.
+	dir := filepath.Join(home, ".obey", "hop-resume")
+	if err := os.MkdirAll(dir, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	killed, err := net.Listen("unix", filepath.Join(dir, id+".sock"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	killed.(*net.UnixListener).SetUnlinkOnClose(false)
+	_ = killed.Close()
+	hop.release()
+	follow = served()
+	if err := sendHopResume(context.Background(), "fourthbox:notes", cmdutil.CampaignScope{}, "c.example"); err != nil {
+		t.Fatalf("a dead relay socket must not block the socket route: %v", err)
+	}
+	if line := <-follow; line != "ssh fourthbox:notes" {
+		t.Fatalf("follow-up %q", line)
+	}
+}
+
+// acknowledging accepts on ln and answers every connection at once, the way a
+// listener that wants a hopped shell gone would. It reports each connection.
+func acknowledging(ln net.Listener) <-chan struct{} {
+	reached := make(chan struct{}, 8)
+	go func() {
+		for {
+			conn, err := ln.Accept()
+			if err != nil {
+				return
+			}
+			reached <- struct{}{}
+			_, _ = io.WriteString(conn, `{"version":1,"accepted":true}`+"\n")
+			_ = conn.Close()
+		}
+	}()
+	return reached
 }
 
 // A hopped shell can outlive its hop and still holds the names its environment
-// gave it. The suite runs as root, which can hand a file to another user the
-// way that user would have created it.
-func TestHopResumeFSTrustsOnlySocketsThisUserOwns(t *testing.T) {
-	const stranger = 54321
+// gave it. Root prepares what another user or a root-binding ssh server would
+// leave in a shared directory; the ordinary user's shell must refuse it.
+func TestHopResumeFSUserTrustsOnlyItsOwnSockets(t *testing.T) {
+	const stickyEnv, plantedEnv, borrowedEnv = "CAMP_TEST_STICKY", "CAMP_TEST_PLANTED", "CAMP_TEST_BORROWED"
+	if os.Geteuid() == 0 {
+		sticky, err := os.MkdirTemp("/tmp", "hs")
+		if err != nil {
+			t.Fatal(err)
+		}
+		t.Cleanup(func() { _ = os.RemoveAll(sticky) })
+		if err := os.Chmod(sticky, 0o777|os.ModeSticky); err != nil {
+			t.Fatal(err)
+		}
+		// Bound by root at a path of someone's choosing, open to all.
+		planted := filepath.Join(sticky, "planted.sock")
+		plantedLn, err := net.Listen("unix", planted)
+		if err != nil {
+			t.Fatal(err)
+		}
+		defer func() { _ = plantedLn.Close() }()
+		if err := os.Chmod(planted, 0o666); err != nil {
+			t.Fatal(err)
+		}
+		plantedReached := acknowledging(plantedLn)
+		// A name that is the user's, answered by somebody else's process.
+		borrowed := filepath.Join(sticky, "borrowed.sock")
+		borrowedLn, err := net.Listen("unix", borrowed)
+		if err != nil {
+			t.Fatal(err)
+		}
+		defer func() { _ = borrowedLn.Close() }()
+		if err := os.Chown(borrowed, ordinaryUID, ordinaryUID); err != nil {
+			t.Fatal(err)
+		}
+		borrowedReached := acknowledging(borrowedLn)
+
+		asOrdinaryUser(t, stickyEnv+"="+sticky, plantedEnv+"="+planted, borrowedEnv+"="+borrowed)
+		select {
+		case <-plantedReached:
+			t.Fatal("the user's shell connected to a socket it does not own")
+		default:
+		}
+		select {
+		case <-borrowedReached:
+		default:
+			t.Fatal("the borrowed socket was never dialed, so the peer check was not what refused it")
+		}
+		return
+	}
+
+	sticky, planted, borrowed := os.Getenv(stickyEnv), os.Getenv(plantedEnv), os.Getenv(borrowedEnv)
+	home := shortHome(t)
 	listen := func(dir, name string) string {
 		path := filepath.Join(dir, name)
 		ln, err := net.Listen("unix", path)
@@ -386,6 +543,68 @@ func TestHopResumeFSTrustsOnlySocketsThisUserOwns(t *testing.T) {
 		}
 		t.Cleanup(func() { _ = ln.Close() })
 		return path
+	}
+	open, err := os.MkdirTemp(home, "open")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Chmod(open, 0o777); err != nil {
+		t.Fatal(err)
+	}
+	for name, path := range map[string]string{
+		"own socket in the user's own directory":  listen(home, "own.sock"),
+		"own socket in a sticky shared directory": listen(sticky, "own.sock"),
+	} {
+		if err := trustedHopSocket(path); err != nil {
+			t.Errorf("%s must be trusted: %v", name, err)
+		}
+	}
+	file := filepath.Join(home, "file.sock")
+	if err := os.WriteFile(file, nil, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	link := filepath.Join(home, "link.sock")
+	if err := os.Symlink(filepath.Join(home, "own.sock"), link); err != nil {
+		t.Fatal(err)
+	}
+	for name, path := range map[string]string{
+		"a socket another user owns":                planted,
+		"a socket where others can replace entries": listen(open, "own.sock"),
+		"a regular file":                            file,
+		"a symlink to a socket":                     link,
+		"a missing path":                            filepath.Join(home, "gone.sock"),
+	} {
+		if err := trustedHopSocket(path); err == nil {
+			t.Errorf("%s must not be trusted", name)
+		}
+	}
+
+	// End to end, with no relay running: neither the planted socket nor the
+	// borrowed one may end this shell, though both acknowledge at once.
+	t.Setenv(hopResumeRelayEnv, "0123456789abcdef")
+	t.Setenv(hopResumeSockEnv, planted)
+	err = sendHopResume(context.Background(), "thirdbox:notes", cmdutil.CampaignScope{}, "c.example")
+	if err == nil || !strings.Contains(err.Error(), "relay for this hop is not running") || !strings.Contains(err.Error(), "only this user could have put there") {
+		t.Fatalf("the far shell must refuse both routes and name each reason: %v", err)
+	}
+	t.Setenv(hopResumeSockEnv, borrowed)
+	err = sendHopResume(context.Background(), "thirdbox:notes", cmdutil.CampaignScope{}, "c.example")
+	if err == nil || !strings.Contains(err.Error(), "runs as another user") {
+		t.Fatalf("a socket answered by another user's process must be refused after connecting: %v", err)
+	}
+}
+
+// A root-binding ssh server creates root-owned sockets in /tmp for any user,
+// so to a root shell "a socket I own there" proves nothing.
+func TestHopResumeFSRootNeverTrustsASharedDirectory(t *testing.T) {
+	listen := func(dir, name string) (string, net.Listener) {
+		path := filepath.Join(dir, name)
+		ln, err := net.Listen("unix", path)
+		if err != nil {
+			t.Fatal(err)
+		}
+		t.Cleanup(func() { _ = ln.Close() })
+		return path, ln
 	}
 	mkdir := func(mode os.FileMode) string {
 		dir, err := os.MkdirTemp("/tmp", "hr")
@@ -398,81 +617,44 @@ func TestHopResumeFSTrustsOnlySocketsThisUserOwns(t *testing.T) {
 		}
 		return dir
 	}
-	private, sticky, open := mkdir(0o700), mkdir(0o777|os.ModeSticky), mkdir(0o777)
-
-	for name, path := range map[string]string{
-		"own socket in the user's own directory":  listen(private, "own.sock"),
-		"own socket in a sticky shared directory": listen(sticky, "own.sock"),
-	} {
-		if err := trustedHopSocket(path); err != nil {
-			t.Errorf("%s must be trusted: %v", name, err)
-		}
+	private, sticky := mkdir(0o700), mkdir(0o777|os.ModeSticky)
+	own, _ := listen(private, "own.sock")
+	if err := trustedHopSocket(own); err != nil {
+		t.Fatalf("root's socket in root's own directory must be trusted: %v", err)
 	}
-
-	planted := listen(sticky, "planted.sock")
-	if err := os.Chown(planted, stranger, stranger); err != nil {
+	forwarded, forwardedLn := listen(sticky, "camp-hr-r.sock")
+	if err := trustedHopSocket(forwarded); err == nil {
+		t.Fatal("root must not trust a root-owned socket in a shared directory")
+	}
+	foreign, _ := listen(private, "foreign.sock")
+	if err := os.Chown(foreign, ordinaryUID, ordinaryUID); err != nil {
 		t.Fatal(err)
+	}
+	if err := trustedHopSocket(foreign); err == nil {
+		t.Fatal("a socket another user owns must not be trusted")
 	}
 	theirs := mkdir(0o755)
-	inTheirs := listen(theirs, "own.sock")
-	if err := os.Chown(theirs, stranger, stranger); err != nil {
+	inTheirs, _ := listen(theirs, "own.sock")
+	if err := os.Chown(theirs, ordinaryUID, ordinaryUID); err != nil {
 		t.Fatal(err)
 	}
-	file := filepath.Join(private, "file.sock")
-	if err := os.WriteFile(file, nil, 0o600); err != nil {
-		t.Fatal(err)
-	}
-	link := filepath.Join(private, "link.sock")
-	if err := os.Symlink(filepath.Join(private, "own.sock"), link); err != nil {
-		t.Fatal(err)
-	}
-	for name, path := range map[string]string{
-		"a socket another user owns":                planted,
-		"a socket where others can replace entries": listen(open, "own.sock"),
-		"a socket in another user's directory":      inTheirs,
-		"a regular file":                            file,
-		"a symlink to a socket":                     link,
-		"a missing path":                            filepath.Join(private, "gone.sock"),
-	} {
-		if err := trustedHopSocket(path); err == nil {
-			t.Errorf("%s must not be trusted", name)
-		}
+	if err := trustedHopSocket(inTheirs); err == nil {
+		t.Fatal("a socket in another user's directory must not be trusted")
 	}
 
-	// End to end: the stranger's socket answers at the forwarded path and
-	// acknowledges at once, as a listener that wants the shell gone would.
+	// End to end: a root shell that outlived its hop, with only the forwarded
+	// name left, must not be ended by whatever answers there.
 	shortHome(t)
-	reached := make(chan struct{}, 1)
-	ln, err := net.Listen("unix", filepath.Join(sticky, "camp-hr-r.sock"))
-	if err != nil {
-		t.Fatal(err)
-	}
-	defer func() { _ = ln.Close() }()
-	go func() {
-		conn, err := ln.Accept()
-		if err != nil {
-			return
-		}
-		reached <- struct{}{}
-		_, _ = io.WriteString(conn, `{"version":1,"accepted":true}`+"\n")
-		_ = conn.Close()
-	}()
-	forwarded := filepath.Join(sticky, "camp-hr-r.sock")
-	if err := os.Chown(forwarded, stranger, stranger); err != nil {
-		t.Fatal(err)
-	}
-	if err := os.Chmod(forwarded, 0o666); err != nil {
-		t.Fatal(err)
-	}
-	t.Setenv(hopResumeSockEnv, forwarded)
+	reached := acknowledging(forwardedLn)
 	t.Setenv(hopResumeRelayEnv, "0123456789abcdef")
-	err = sendHopResume(context.Background(), "thirdbox:notes", cmdutil.CampaignScope{}, "c.example")
-	if err == nil || !strings.Contains(err.Error(), "relay for this hop is not running") || !strings.Contains(err.Error(), "only this user could have put there") {
-		t.Fatalf("the far shell must refuse both routes and name each reason: %v", err)
+	t.Setenv(hopResumeSockEnv, forwarded)
+	err := sendHopResume(context.Background(), "thirdbox:notes", cmdutil.CampaignScope{}, "c.example")
+	if err == nil || !strings.Contains(err.Error(), "only this user could have put there") {
+		t.Fatalf("root must stay in its shell: %v", err)
 	}
 	select {
 	case <-reached:
-		t.Fatal("the far shell connected to another user's socket")
+		t.Fatal("root connected to a socket in a shared directory")
 	case <-time.After(100 * time.Millisecond):
 	}
 }

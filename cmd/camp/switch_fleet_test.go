@@ -95,6 +95,12 @@ func TestHopLineForwardsTheSocketAndNamesBothRoutes(t *testing.T) {
 	if relay[0] != "-T" {
 		t.Fatalf("the relay's ssh must refuse a pty, or a forced-tty ssh config turns its stream into a terminal: %q", relay)
 	}
+	firstOpt := slices.Index(relay, "StrictHostKeyChecking=accept-new")
+	for _, own := range []string{"-a", "-x", "ClearAllForwardings=yes"} {
+		if at := slices.Index(relay, own); at < 0 || at > firstOpt {
+			t.Fatalf("the relay carries only its stdio and must set %s ahead of the hop's options, so the user's configured forwards stay with the interactive ssh: %q", own, relay)
+		}
+	}
 	own, hops := slices.Index(relay, "ControlMaster=no"), slices.Index(relay, "ControlMaster=auto")
 	if own < 0 || hops < 0 || own > hops {
 		t.Fatalf("the relay must never create the ControlMaster the interactive ssh is about to; ssh keeps the first value: %q", relay)

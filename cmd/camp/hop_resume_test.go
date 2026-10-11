@@ -1,6 +1,7 @@
 package main
 
 import (
+	"bufio"
 	"context"
 	"encoding/json"
 	"errors"
@@ -271,15 +272,17 @@ func (r *hopRelayRig) send(selector string) error {
 	return sendOverHopRelay(conn, hopResumeRequest{Selector: selector, Host: "c.example"})
 }
 
+// freed waits until the hop can be reserved again and leaves it free.
 func (r *hopRelayRig) freed() {
 	r.t.Helper()
 	deadline := time.Now().Add(2 * time.Second)
-	for r.hop.held() {
+	for !r.hop.reserve() {
 		if time.Now().After(deadline) {
 			r.t.Fatal("the hop stayed reserved for a switch that never completed")
 		}
 		time.Sleep(5 * time.Millisecond)
 	}
+	r.hop.release()
 }
 
 func (r *hopRelayRig) queued(want string) {
@@ -310,7 +313,7 @@ func prepareBySelector(_ context.Context, request hopResumeRequest) (string, err
 	return "ssh " + request.Selector, nil
 }
 
-func TestHopRelayQueuesOnlyAConfirmedSwitch(t *testing.T) {
+func TestHopRelayCarriesASwitchToTheOpeningShell(t *testing.T) {
 	rig := newHopRelayRig(t, prepareBySelector)
 	if err := rig.send("thirdbox:notes"); err != nil {
 		t.Fatalf("switch over the relay: %v", err)
@@ -395,7 +398,7 @@ func TestHopRelayAdmitsOneSwitchPerHop(t *testing.T) {
 	if err == nil || !strings.Contains(err.Error(), "already switching") {
 		t.Fatalf("a second destination must be refused while the hop is switching: %v", err)
 	}
-	if !rig.hop.held() {
+	if rig.hop.reserve() {
 		t.Fatal("a refused request released a reservation it did not hold")
 	}
 	rig.nothingQueued()
@@ -434,7 +437,6 @@ func TestHopRelayIgnoresWhatIsNotAFrame(t *testing.T) {
 	toOpenerR, toOpenerW := io.Pipe()
 	toRelayR, toRelayW := io.Pipe()
 	defer func() { _ = toOpenerW.Close(); _ = toRelayW.Close() }()
-	go func() { _, _ = io.Copy(io.Discard, toRelayR) }()
 	hop := new(hopSwitch)
 	follow := make(chan string, 1)
 	go func() {
@@ -454,12 +456,20 @@ func TestHopRelayIgnoresWhatIsNotAFrame(t *testing.T) {
 	if err := out.write(hopRelayFrame{Version: hopRelayVersion, Seq: 1, Request: request}); err != nil {
 		t.Fatal(err)
 	}
-	deadline := time.Now().Add(2 * time.Second)
-	for !hop.held() {
-		if time.Now().After(deadline) {
-			t.Fatal("the request after the noise was never heard")
+	// The answer is proof the request after the noise was heard.
+	answer := make(chan hopRelayFrame, 1)
+	go func() {
+		var frame hopRelayFrame
+		_ = json.NewDecoder(toRelayR).Decode(&frame)
+		answer <- frame
+	}()
+	select {
+	case frame := <-answer:
+		if frame.Seq != 1 || frame.Response == nil {
+			t.Fatalf("answer %+v", frame)
 		}
-		time.Sleep(5 * time.Millisecond)
+	case <-time.After(2 * time.Second):
+		t.Fatal("the request after the noise was never heard")
 	}
 	// A confirmation for another exchange must not commit this one.
 	if err := out.write(hopRelayFrame{Version: hopRelayVersion, Seq: 7, Confirm: true}); err != nil {
@@ -489,18 +499,26 @@ func TestHopRelayDropsAnAnswerToAnAbandonedExchange(t *testing.T) {
 	_ = far.SetDeadline(time.Now().Add(3 * time.Second))
 	toOpenerR, toOpenerW := io.Pipe()
 	defer func() { _ = toOpenerW.Close() }()
-	go func() { _, _ = io.Copy(io.Discard, toOpenerR) }()
-	answers := make(chan hopRelayFrame, 2)
+	forwarded := make(chan struct{}, 1)
+	go func() {
+		reader := bufio.NewReader(toOpenerR)
+		if _, err := reader.ReadBytes('\n'); err == nil {
+			forwarded <- struct{}{}
+		}
+		_, _ = io.Copy(io.Discard, reader)
+	}()
+	var answers hopRelayAnswers
 	toOpener := hopLineWriter{w: toOpenerW}
 	done := make(chan error, 1)
-	go func() { done <- relayHopExchange(context.Background(), near, 2, &toOpener, answers) }()
+	go func() { done <- relayHopExchange(context.Background(), near, 2, &toOpener, &answers) }()
 	if _, err := far.Write([]byte(`{"version":2,"request":{"selector":"thirdbox:notes"}}` + "\n")); err != nil {
 		t.Fatal(err)
 	}
+	<-forwarded
 	// The opening shell answers exchange 1, which its far shell abandoned,
 	// and then this one.
-	answers <- hopRelayFrame{Version: hopRelayVersion, Seq: 1, Response: json.RawMessage(`{"version":2,"accepted":true,"error":"stale"}`)}
-	answers <- hopRelayFrame{Version: hopRelayVersion, Seq: 2, Response: json.RawMessage(`{"version":2,"accepted":false,"error":"current"}`)}
+	answers.deliver(hopRelayFrame{Version: hopRelayVersion, Seq: 1, Response: json.RawMessage(`{"version":2,"accepted":true,"error":"stale"}`)})
+	answers.deliver(hopRelayFrame{Version: hopRelayVersion, Seq: 2, Response: json.RawMessage(`{"version":2,"accepted":false,"error":"current"}`)})
 	var response hopResumeResponse
 	if err := json.NewDecoder(far).Decode(&response); err != nil {
 		t.Fatal(err)
@@ -511,6 +529,185 @@ func TestHopRelayDropsAnAnswerToAnAbandonedExchange(t *testing.T) {
 	_ = far.Close()
 	if err := <-done; err != nil {
 		t.Fatalf("exchange: %v", err)
+	}
+}
+
+// The opening shell closing the relay's input is how the relay learns its hop
+// is over. An answer that arrives after its exchange was abandoned must not
+// keep the relay from noticing.
+func TestHopRelayEndsWithItsHopAfterALateAnswer(t *testing.T) {
+	conns := make(chan net.Conn)
+	ln := &pipeListener{conns: conns, closed: make(chan struct{})}
+	inR, inW := io.Pipe()
+	outR, outW := io.Pipe()
+	defer func() { _ = outW.Close() }()
+	frames := make(chan hopRelayFrame, 4)
+	go func() {
+		reader := bufio.NewReader(outR)
+		for {
+			line, err := reader.ReadBytes('\n')
+			if err != nil {
+				return
+			}
+			var frame hopRelayFrame
+			if json.Unmarshal(line, &frame) == nil && frame.Version == hopRelayVersion {
+				frames <- frame
+			}
+		}
+	}()
+	done := make(chan error, 1)
+	go func() { done <- relayHopExchanges(context.Background(), ln, inR, outW) }()
+
+	// A far shell asks and is interrupted before it is answered.
+	far, near := net.Pipe()
+	conns <- near
+	if _, err := far.Write([]byte(`{"version":2,"request":{"selector":"thirdbox:notes"}}` + "\n")); err != nil {
+		t.Fatal(err)
+	}
+	if frame := <-frames; frame.Request == nil || frame.Seq != 1 {
+		t.Fatalf("request frame %+v", frame)
+	}
+	_ = far.Close()
+	if frame := <-frames; !frame.Gone || frame.Seq != 1 {
+		t.Fatalf("hang-up frame %+v", frame)
+	}
+	// The opening shell's answer was already on its way.
+	late := hopLineWriter{w: inW}
+	for range 3 {
+		if err := late.write(hopRelayFrame{Version: hopRelayVersion, Seq: 1, Response: json.RawMessage(`{"version":2,"accepted":true}`)}); err != nil {
+			t.Fatal(err)
+		}
+	}
+	_ = inW.Close()
+	select {
+	case err := <-done:
+		if err != nil {
+			t.Fatalf("relay: %v", err)
+		}
+	case <-time.After(2 * time.Second):
+		t.Fatal("the relay outlived its hop: a late answer kept it from seeing its input end")
+	}
+}
+
+// The far shell exits on its acknowledgement. Its confirmation travels a
+// separate way and may never arrive.
+func TestHopRelayAcknowledgedSwitchSurvivesALostLink(t *testing.T) {
+	toOpenerR, toOpenerW := io.Pipe()
+	toRelayR, toRelayW := io.Pipe()
+	defer func() { _ = toRelayW.Close() }()
+	hop := new(hopSwitch)
+	follow := make(chan string, 1)
+	go func() {
+		line, _ := serveHopRelay(context.Background(), toOpenerR, toRelayW, hop, prepareBySelector)
+		follow <- line
+	}()
+	request, err := json.Marshal(hopResumeEnvelope{Version: hopRelayVersion, Request: hopResumeRequest{Selector: "thirdbox:notes", Host: "c.example"}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	out := hopLineWriter{w: toOpenerW}
+	if err := out.write(hopRelayFrame{Version: hopRelayVersion, Seq: 1, Request: request}); err != nil {
+		t.Fatal(err)
+	}
+	var answer hopRelayFrame
+	if err := json.NewDecoder(toRelayR).Decode(&answer); err != nil || answer.Response == nil {
+		t.Fatalf("acknowledgement %+v %v", answer, err)
+	}
+	// The relay link dies before any confirmation.
+	_ = toOpenerW.Close()
+	select {
+	case line := <-follow:
+		if line != "ssh thirdbox:notes" {
+			t.Fatalf("an acknowledged switch was lost with its relay link: %q", line)
+		}
+	case <-time.After(2 * time.Second):
+		t.Fatal("serving did not end with the relay link")
+	}
+}
+
+func TestHopRelayIgnoresFramesNoRelayWouldNumber(t *testing.T) {
+	toOpenerR, toOpenerW := io.Pipe()
+	toRelayR, toRelayW := io.Pipe()
+	defer func() { _ = toOpenerW.Close(); _ = toRelayW.Close() }()
+	answered := make(chan hopRelayFrame, 1)
+	go func() {
+		var frame hopRelayFrame
+		if json.NewDecoder(toRelayR).Decode(&frame) == nil {
+			answered <- frame
+		}
+	}()
+	hop := new(hopSwitch)
+	go func() { _, _ = serveHopRelay(context.Background(), toOpenerR, toRelayW, hop, prepareBySelector) }()
+	request, err := json.Marshal(hopResumeEnvelope{Version: hopRelayVersion, Request: hopResumeRequest{Selector: "thirdbox:notes", Host: "c.example"}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	out := hopLineWriter{w: toOpenerW}
+	for _, seq := range []int{0, -3} {
+		if err := out.write(hopRelayFrame{Version: hopRelayVersion, Seq: seq, Request: request}); err != nil {
+			t.Fatal(err)
+		}
+	}
+	select {
+	case frame := <-answered:
+		t.Fatalf("a frame with no exchange number was acted on: %+v", frame)
+	case <-time.After(100 * time.Millisecond):
+	}
+	if !hop.reserve() {
+		t.Fatal("a frame with no exchange number reserved the hop")
+	}
+}
+
+// Both routes of one hop answer to the same reservation.
+func TestHopResumeSocketRouteRefusesWhileTheRelayHoldsTheSwitch(t *testing.T) {
+	conns := make(chan net.Conn)
+	ln := &pipeListener{conns: conns, closed: make(chan struct{})}
+	defer func() { _ = ln.Close() }()
+	hop := new(hopSwitch)
+	if !hop.reserve() {
+		t.Fatal("fresh hop already reserved")
+	}
+	go func() {
+		_, _ = serveHopResume(context.Background(), ln, hop, func(context.Context, hopResumeRequest) (string, error) {
+			t.Error("a second destination reached preparation")
+			return "", nil
+		})
+	}()
+	far, near := net.Pipe()
+	defer func() { _ = far.Close() }()
+	_ = far.SetDeadline(time.Now().Add(3 * time.Second))
+	conns <- near
+	envelope := hopResumeEnvelope{Version: 1, Request: hopResumeRequest{Selector: "thirdbox:notes", Host: "c.example"}}
+	if err := json.NewEncoder(far).Encode(envelope); err != nil {
+		t.Fatal(err)
+	}
+	var response hopResumeResponse
+	if err := json.NewDecoder(far).Decode(&response); err != nil {
+		t.Fatal(err)
+	}
+	if response.Accepted || !strings.Contains(response.Error, "already switching") {
+		t.Fatalf("the socket route must refuse while the hop is switching: %+v", response)
+	}
+	if hop.reserve() {
+		t.Fatal("a refused request released a reservation it did not hold")
+	}
+}
+
+func TestHopTextFromTheOtherSideCannotDriveTheTerminal(t *testing.T) {
+	if got := printableHopText("no route\x1b[2J\x07 to \u009bhost\r\n"); strings.ContainsAny(got, "\x1b\x07\u009b\r\n") || !strings.Contains(got, "no route") {
+		t.Fatalf("control characters survived: %q", got)
+	}
+	far, near := net.Pipe()
+	defer func() { _ = far.Close(); _ = near.Close() }()
+	_ = far.SetDeadline(time.Now().Add(3 * time.Second))
+	go func() {
+		reader := bufio.NewReader(near)
+		_, _ = reader.ReadBytes('\n')
+		_, _ = near.Write([]byte(`{"version":2,"accepted":false,"error":"\u001b]0;owned\u0007refused"}` + "\n"))
+	}()
+	err := sendOverHopRelay(far, hopResumeRequest{Selector: "thirdbox:notes", Host: "c.example"})
+	if err == nil || strings.ContainsAny(err.Error(), "\x1b\x07") || !strings.Contains(err.Error(), "refused") {
+		t.Fatalf("an error from the other side must be shown without its control characters: %q", err)
 	}
 }
 

@@ -125,7 +125,7 @@ func sendHopResume(ctx context.Context, selector string, scope cmdutil.CampaignS
 		return camperrors.New("hop-resume: unsupported parent acknowledgement; staying in this shell")
 	}
 	if response.Error != "" {
-		return camperrors.New(response.Error)
+		return camperrors.New(printableHopText(response.Error))
 	}
 	if !response.Accepted {
 		return camperrors.New("hop-resume: parent rejected the route; staying in this shell")
@@ -147,7 +147,15 @@ func dialHopResume(ctx context.Context) (conn net.Conn, overRelay bool, err erro
 			return nil, err
 		}
 		dialer := net.Dialer{Timeout: 2 * time.Second}
-		return dialer.DialContext(ctx, "unix", path)
+		conn, err := dialer.DialContext(ctx, "unix", path)
+		if err != nil {
+			return nil, err
+		}
+		if err := trustedHopPeer(conn); err != nil {
+			_ = conn.Close()
+			return nil, err
+		}
+		return conn, nil
 	}
 	var failed []error
 	if relayID != "" {
@@ -158,7 +166,7 @@ func dialHopResume(ctx context.Context) (conn net.Conn, overRelay bool, err erro
 			}
 		}
 		if errors.Is(err, fs.ErrNotExist) {
-			err = camperrors.New("the relay for this hop is not running here: the hop may have ended, or the camp that ssh finds on this machine may predate relays")
+			err = camperrors.New("the relay for this hop is not running here: the hop may have ended, or its relay could not start on this machine")
 		}
 		failed = append(failed, err)
 	}
@@ -218,12 +226,17 @@ func runHopResume(ctx context.Context, line string) (string, error) {
 		follow, _ := serveHopResume(resumeCtx, ln, onward, prepareHopResume)
 		got <- follow
 	}()
-	// The relay starts beside the hop, never ahead of it, and nothing waits on
-	// it: onward switching must not delay or disturb the hop itself.
-	relay := startHopRelay(resumeCtx, hop, relayID)
-	defer relay.stop()
+	// The relay starts once the hop is under way and nothing waits on it:
+	// onward switching must not delay or disturb the hop itself.
 	go func() {
-		follow, _ := serveHopRelay(resumeCtx, relay.fromFar, relay.toFar, onward, prepareHopResume)
+		follow := ""
+		select {
+		case <-time.After(hopRelayStartDelay):
+			relay := startHopRelay(resumeCtx, hop, relayID)
+			follow, _ = serveHopRelay(resumeCtx, relay.fromFar, relay.toFar, onward, prepareHopResume)
+			relay.stop()
+		case <-resumeCtx.Done():
+		}
 		got <- follow
 	}()
 
@@ -243,24 +256,12 @@ func runHopResume(ctx context.Context, line string) (string, error) {
 	sshCmd.Stdout = out
 	sshCmd.Stderr = out
 	runErr := sshCmd.Run()
-	follow, results := "", 2
-	if onward.held() {
-		// The far shell exits on its acknowledgement, and its confirmation
-		// travels on another channel of the same connection: let it land.
-		select {
-		case follow = <-got:
-			results--
-		case <-time.After(hopResumeSettle):
-		}
-	}
 	cancelResume()
 	_ = ln.Close()
-	for ; results > 0; results-- {
-		if other := <-got; follow == "" {
-			follow = other
-		}
+	follow := <-got
+	if other := <-got; follow == "" {
+		follow = other
 	}
-	relay.stop()
 	if runErr != nil {
 		return "", runErr
 	}
