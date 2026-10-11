@@ -437,6 +437,60 @@ func TestHopResumeFSRelayPrunesSocketsNothingListensOn(t *testing.T) {
 	if _, err := os.Lstat(unnoted); err != nil {
 		t.Fatalf("a socket nothing says belongs to this machine must be left alone: %v", err)
 	}
+	// A note that is a link names whatever the link leads to, which can
+	// change, so it is not a note. The file it leads to must be untouched.
+	decoyTarget := filepath.Join(dir, "decoy-tag")
+	if err := os.WriteFile(decoyTarget, []byte(here), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	decoy := abandon("ffffffffffffffff", "", longAgo)
+	if err := os.Symlink(decoyTarget, hopRelayHostPath(decoy)); err != nil {
+		t.Fatal(err)
+	}
+	relay = startTestHopRelay(t, "0123456789abcdee", "")
+	go func() { _, _ = io.Copy(io.Discard, relay.fromFar) }()
+	if _, err := os.Lstat(decoy); err != nil {
+		t.Fatalf("a socket whose note is a symlink must be left alone: %v", err)
+	}
+	if got, err := os.ReadFile(decoyTarget); err != nil || string(got) != here {
+		t.Fatalf("a symlink note must not be followed: %q %v", got, err)
+	}
+}
+
+// A directory left open to others can be given a file where the socket goes
+// and a symlink where the note goes, named for a relay id read off the
+// process list. Neither may be followed or deferred to.
+func TestHopResumeFSRelayReplacesAPlantedPathAndDoesNotFollowItsNote(t *testing.T) {
+	home := shortHome(t)
+	dir := filepath.Join(home, ".obey", "hop-resume")
+	if err := os.MkdirAll(dir, 0o777); err != nil {
+		t.Fatal(err)
+	}
+	const id = "0123456789abcdef"
+	path := filepath.Join(dir, id+".sock")
+	if err := os.WriteFile(path, []byte("not a socket"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	target := filepath.Join(home, "note-target")
+	const sentinel = "sentinel"
+	if err := os.WriteFile(target, []byte(sentinel), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Symlink(target, hopRelayHostPath(path)); err != nil {
+		t.Fatal(err)
+	}
+
+	relay := startTestHopRelay(t, id, "")
+	go func() { _, _ = io.Copy(io.Discard, relay.fromFar) }()
+	if info, err := os.Lstat(path); err != nil || info.Mode()&os.ModeSocket == 0 {
+		t.Fatalf("a planted file must not keep the relay from listening: %v %v", info, err)
+	}
+	if got, err := os.ReadFile(target); err != nil || string(got) != sentinel {
+		t.Fatalf("the relay followed its note symlink and wrote %q: %v", got, err)
+	}
+	if info, err := os.Lstat(hopRelayHostPath(path)); err != nil || info.Mode()&os.ModeSymlink == 0 {
+		t.Fatalf("the note symlink must still be a symlink: %v %v", info, err)
+	}
 }
 
 // A relay that is started again for the same hop replaces one the opening

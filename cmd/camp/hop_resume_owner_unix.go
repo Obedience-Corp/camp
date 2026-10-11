@@ -15,3 +15,7 @@ func hopFileOwner(info os.FileInfo) (int, bool) {
 	}
 	return int(stat.Uid), true
 }
+
+// hopNoFollowFlag is or'd into OpenFile so a symlink at the final path
+// component is an error instead of a file the caller did not name.
+func hopNoFollowFlag() int { return syscall.O_NOFOLLOW }

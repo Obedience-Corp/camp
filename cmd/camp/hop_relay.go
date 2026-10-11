@@ -677,6 +677,13 @@ func runHopRelay(ctx context.Context, id, forwardedSock string, in io.Reader, ou
 	if err != nil {
 		return err
 	}
+	dir := filepath.Dir(path)
+	// Before the forwarded-socket dial, which can take seconds. The relay's id
+	// is already on the process list, and a directory an earlier tool left
+	// open to others must not stay that way while someone can still create
+	// entries in it. Failure is reported below, after a relay that can step
+	// aside has done so.
+	tightenHopRelayDir(dir)
 	if forwardedSock != "" {
 		// The same test the far shell will apply when it dials.
 		if conn, err := dialHopSocket(ctx, forwardedSock); err == nil {
@@ -684,7 +691,6 @@ func runHopRelay(ctx context.Context, id, forwardedSock string, in io.Reader, ou
 			return nil
 		}
 	}
-	dir := filepath.Dir(path)
 	if err := os.MkdirAll(dir, 0o700); err != nil {
 		return camperrors.Wrap(err, "hop-resume: relay directory")
 	}
@@ -696,11 +702,13 @@ func runHopRelay(ctx context.Context, id, forwardedSock string, in io.Reader, ou
 		return camperrors.Wrap(err, "hop-resume: relay directory")
 	}
 	pruneHopRelays(dir)
-	// Only this hop's opening shell starts a relay with this id, so a socket
-	// already at this path is a predecessor it gave up on. That one may still
-	// be running, its link dead but its input not yet closed, and would answer
-	// nobody: take the path over rather than defer to it.
-	if info, err := os.Lstat(path); err == nil && info.Mode()&os.ModeSocket != 0 {
+	// Only this hop's opening shell starts a relay with this id. Whatever is
+	// already at this path is a predecessor it gave up on, or something
+	// planted while the directory was open to others. A socket there may
+	// still be running, its link dead but its input not yet closed, and
+	// would answer nobody. A file or a link would make Listen fail and this
+	// hop would have no relay. Take the path over rather than defer to it.
+	if _, err := os.Lstat(path); err == nil {
 		_ = os.Remove(path)
 	}
 	ln, err := net.Listen("unix", path)
@@ -725,8 +733,50 @@ func runHopRelay(ctx context.Context, id, forwardedSock string, in io.Reader, ou
 		return camperrors.Wrap(err, "hop-resume: relay socket")
 	}
 	// Without its note the socket still serves; it is only never pruned.
-	_ = os.WriteFile(hopRelayHostPath(path), []byte(hopHostTag()), 0o600)
+	// A symlink is not a note: WriteFile would follow it into whatever file
+	// another user put there while this directory was still open.
+	_ = writeHopRelayHost(hopRelayHostPath(path))
 	return relayHopExchanges(ctx, ln, in, out)
+}
+
+// tightenHopRelayDir closes dir to other users when this user owns it.
+// It does not report failure; runHopRelay reports the same conditions once
+// it knows the relay is not stepping aside.
+func tightenHopRelayDir(dir string) {
+	if err := os.MkdirAll(dir, 0o700); err != nil {
+		return
+	}
+	info, err := os.Lstat(dir)
+	if err != nil || !info.IsDir() || !ownedByThisUser(info) {
+		return
+	}
+	_ = os.Chmod(dir, 0o700)
+}
+
+// writeHopRelayHost records which machine this socket belongs to. The final
+// path component is not followed.
+func writeHopRelayHost(path string) error {
+	f, err := os.OpenFile(path, os.O_WRONLY|os.O_CREATE|os.O_TRUNC|hopNoFollowFlag(), 0o600)
+	if err != nil {
+		return err
+	}
+	_, err = f.Write([]byte(hopHostTag()))
+	if cerr := f.Close(); err == nil {
+		err = cerr
+	}
+	return err
+}
+
+// readHopRelayHost reads the note beside a relay socket, and only that file.
+// A symlink is not a note. The note is a short host tag; anything longer is
+// not one either, and is not read in full.
+func readHopRelayHost(path string) ([]byte, error) {
+	f, err := os.OpenFile(path, os.O_RDONLY|hopNoFollowFlag(), 0)
+	if err != nil {
+		return nil, err
+	}
+	defer func() { _ = f.Close() }()
+	return io.ReadAll(io.LimitReader(f, 64))
 }
 
 // pruneHopRelays removes sockets left by relays on this machine that were
@@ -745,7 +795,7 @@ func pruneHopRelays(dir string) {
 			continue
 		}
 		path := filepath.Join(dir, entry.Name())
-		if note, err := os.ReadFile(hopRelayHostPath(path)); err != nil || string(note) != here {
+		if note, err := readHopRelayHost(hopRelayHostPath(path)); err != nil || string(note) != here {
 			continue
 		}
 		conn, err := net.DialTimeout("unix", path, 200*time.Millisecond)
