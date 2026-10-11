@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"io"
 	"net"
 	"os"
 	"slices"
@@ -193,16 +194,45 @@ func TestHopTerminalNeverCrossesToControlMasterAsDevTTY(t *testing.T) {
 	}
 }
 
-func TestHopResumeLoopbackRequiresHopToken(t *testing.T) {
+// loopHello opens the loopback exchange by hand and returns both nonces, for
+// tests that must send something a real far shell never would.
+func loopHello(t *testing.T, conn net.Conn, dec *json.Decoder) (childNonce, parentNonce string) {
+	t.Helper()
+	childNonce, err := newHopNonce()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := json.NewEncoder(conn).Encode(hopProofMessage{Version: hopResumeLoopVersion, Nonce: childNonce}); err != nil {
+		t.Fatal(err)
+	}
+	var parent hopProofMessage
+	if err := dec.Decode(&parent); err != nil {
+		t.Fatal(err)
+	}
+	return childNonce, parent.Nonce
+}
+
+func TestHopResumeLoopbackRequestMustProveTheHopToken(t *testing.T) {
 	const token = "0123456789abcdef0123456789abcdef"
-	request := hopResumeRequest{Selector: "thirdbox:notes", Host: "c.example"}
+	raw, err := json.Marshal(hopResumeRequest{Selector: "thirdbox:notes", Host: "c.example"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	otherNonce, err := newHopNonce()
+	if err != nil {
+		t.Fatal(err)
+	}
 	for name, tc := range map[string]struct {
-		sent   string
+		seal   func(childNonce, parentNonce string) string
 		accept bool
 	}{
-		"this hop's token": {token, true},
-		"another token":    {"ffffffffffffffffffffffffffffffff", false},
-		"no token":         {"", false},
+		"sealed with this hop's token": {func(c, p string) string { return hopProof(token, hopChildProofLabel, c, p, raw) }, true},
+		"sealed with another token": {func(c, p string) string {
+			return hopProof("ffffffffffffffffffffffffffffffff", hopChildProofLabel, c, p, raw)
+		}, false},
+		"sealed for another exchange":             {func(c, _ string) string { return hopProof(token, hopChildProofLabel, c, otherNonce, raw) }, false},
+		"the opening shell's own proof sent back": {func(c, p string) string { return hopProof(token, hopParentProofLabel, c, p, nil) }, false},
+		"no proof": {func(string, string) string { return "" }, false},
 	} {
 		t.Run(name, func(t *testing.T) {
 			client, server := net.Pipe()
@@ -218,21 +248,136 @@ func TestHopResumeLoopbackRequiresHopToken(t *testing.T) {
 				})
 				done <- err
 			}()
-			if err := json.NewEncoder(client).Encode(hopResumeEnvelope{Version: 1, Token: tc.sent, Request: request}); err != nil {
+			dec := json.NewDecoder(client)
+			childNonce, parentNonce := loopHello(t, client, dec)
+			sealed := hopProvenRequest{Version: hopResumeLoopVersion, Proof: tc.seal(childNonce, parentNonce), Request: raw}
+			if err := json.NewEncoder(client).Encode(sealed); err != nil {
 				t.Fatal(err)
 			}
 			var response hopResumeResponse
-			if err := json.NewDecoder(client).Decode(&response); err != nil {
+			if err := dec.Decode(&response); err != nil {
 				t.Fatal(err)
 			}
 			err := <-done
 			if response.Accepted != tc.accept || (err == nil) != tc.accept || prepared != tc.accept {
 				t.Fatalf("accepted=%v err=%v route prepared=%v, want accepted=%v", response.Accepted, err, prepared, tc.accept)
 			}
-			if !tc.accept && !strings.Contains(response.Error, "token") {
-				t.Fatalf("rejection must name the token: %+v", response)
+		})
+	}
+}
+
+func TestHopResumeLoopbackRefusesTheSocketProtocol(t *testing.T) {
+	client, server := net.Pipe()
+	defer func() { _ = client.Close() }()
+	defer func() { _ = server.Close() }()
+	_ = client.SetDeadline(time.Now().Add(3 * time.Second))
+	done := make(chan error, 1)
+	go func() {
+		_, err := acceptHopResume(context.Background(), server, "0123456789abcdef0123456789abcdef", func(context.Context, hopResumeRequest) (string, error) {
+			t.Error("an unproven request reached preparation")
+			return "", nil
+		})
+		done <- err
+	}()
+	envelope := hopResumeEnvelope{Version: hopResumeSocketVersion, Request: hopResumeRequest{Selector: "thirdbox:notes", Host: "c.example"}}
+	if err := json.NewEncoder(client).Encode(envelope); err != nil {
+		t.Fatal(err)
+	}
+	var response hopResumeResponse
+	if err := json.NewDecoder(client).Decode(&response); err != nil {
+		t.Fatal(err)
+	}
+	if response.Accepted || !strings.Contains(response.Error, "unsupported request version") {
+		t.Fatalf("response %+v", response)
+	}
+	if err := <-done; err == nil {
+		t.Fatal("accepted a request that proved nothing")
+	}
+}
+
+// A long-lived shell can outlive its hop, and the freed loopback port can then
+// be bound by anyone on that machine. Such a listener must learn nothing but a
+// nonce, and its acknowledgement must not be believed.
+func TestHopResumeFarShellTrustsOnlyAListenerThatProvesTheToken(t *testing.T) {
+	const token = "0123456789abcdef0123456789abcdef"
+	wrongProof := func(hello hopProofMessage) any {
+		nonce, _ := newHopNonce()
+		return hopProofMessage{Version: hopResumeLoopVersion, Nonce: nonce,
+			Proof: hopProof("ffffffffffffffffffffffffffffffff", hopParentProofLabel, hello.Nonce, nonce, nil)}
+	}
+	for name, answer := range map[string]func(hopProofMessage) any{
+		"answers with a proof for another token": wrongProof,
+		"answers with a bare acknowledgement": func(hopProofMessage) any {
+			return hopResumeResponse{Version: hopResumeLoopVersion, Accepted: true}
+		},
+		"answers with the socket protocol's acknowledgement": func(hopProofMessage) any {
+			return hopResumeResponse{Version: hopResumeSocketVersion, Accepted: true}
+		},
+	} {
+		t.Run(name, func(t *testing.T) {
+			ln, err := net.Listen("tcp", "127.0.0.1:0")
+			if err != nil {
+				t.Fatal(err)
+			}
+			defer func() { _ = ln.Close() }()
+			received := make(chan []byte, 1)
+			go func() {
+				conn, err := ln.Accept()
+				if err != nil {
+					return
+				}
+				defer func() { _ = conn.Close() }()
+				_ = conn.SetDeadline(time.Now().Add(2 * time.Second))
+				dec := json.NewDecoder(conn)
+				var hello hopProofMessage
+				_ = dec.Decode(&hello)
+				_ = json.NewEncoder(conn).Encode(answer(hello))
+				// Everything the far shell sends after the answer, until it hangs up.
+				rest, _ := io.ReadAll(io.MultiReader(dec.Buffered(), conn))
+				helloBytes, _ := json.Marshal(hello)
+				received <- append(helloBytes, rest...)
+			}()
+			conn := dialSilent(t, ln.Addr().String())
+			_ = conn.SetDeadline(time.Now().Add(2 * time.Second))
+			dec := json.NewDecoder(conn)
+			request := hopResumeRequest{Selector: "thirdbox:notes", Host: "c.example"}
+			err = sendProvenHopRequest(conn, dec, token, request)
+			if err == nil || !strings.Contains(err.Error(), "not the shell that opened this hop") {
+				t.Fatalf("an unproven listener must be refused: %v", err)
+			}
+			_ = conn.Close()
+			got := string(<-received)
+			if strings.Contains(got, token) || strings.Contains(got, "thirdbox") || strings.Contains(got, "proof") {
+				t.Fatalf("the far shell disclosed more than its hello to an unproven listener: %s", got)
 			}
 		})
+	}
+}
+
+func TestHopResumeProofCoversTheRequestAsSent(t *testing.T) {
+	const token = "0123456789abcdef0123456789abcdef"
+	request := hopResumeRequest{Selector: "third<&>box:notes \u2028 caf\u00e9", Host: "c.example", Scope: cmdutil.CampaignScope{Org: "r&d"}}
+	client, server := net.Pipe()
+	defer func() { _ = client.Close() }()
+	defer func() { _ = server.Close() }()
+	_ = client.SetDeadline(time.Now().Add(3 * time.Second))
+	got := make(chan hopResumeRequest, 1)
+	go func() {
+		_, _ = acceptHopResume(context.Background(), server, token, func(_ context.Context, request hopResumeRequest) (string, error) {
+			got <- request
+			return "ssh prepared-parent-route", nil
+		})
+	}()
+	dec := json.NewDecoder(client)
+	if err := sendProvenHopRequest(client, dec, token, request); err != nil {
+		t.Fatal(err)
+	}
+	var response hopResumeResponse
+	if err := dec.Decode(&response); err != nil || !response.Accepted {
+		t.Fatalf("a request with characters json escapes must still verify: %+v %v", response, err)
+	}
+	if arrived := <-got; arrived != request {
+		t.Fatalf("request changed in transit: %+v", arrived)
 	}
 }
 
@@ -296,12 +441,12 @@ func requestSwitchTo(t *testing.T, addr, token, selector string) (hopResumeRespo
 	t.Helper()
 	conn := dialSilent(t, addr)
 	_ = conn.SetDeadline(time.Now().Add(2 * time.Second))
-	envelope := hopResumeEnvelope{Version: 1, Token: token, Request: hopResumeRequest{Selector: selector, Host: "c.example"}}
-	if err := json.NewEncoder(conn).Encode(envelope); err != nil {
+	dec := json.NewDecoder(conn)
+	if err := sendProvenHopRequest(conn, dec, token, hopResumeRequest{Selector: selector, Host: "c.example"}); err != nil {
 		return hopResumeResponse{}, err
 	}
 	var response hopResumeResponse
-	err := json.NewDecoder(conn).Decode(&response)
+	err := dec.Decode(&response)
 	return response, err
 }
 
@@ -434,8 +579,8 @@ func TestHopResumeInterruptedSenderDoesNotHoldTheSwitch(t *testing.T) {
 
 	// The sender is interrupted while this side is still preparing its route.
 	first := dialSilent(t, ln.Addr().String())
-	envelope := hopResumeEnvelope{Version: 1, Token: token, Request: hopResumeRequest{Selector: "first:notes", Host: "c.example"}}
-	if err := json.NewEncoder(first).Encode(envelope); err != nil {
+	_ = first.SetDeadline(time.Now().Add(2 * time.Second))
+	if err := sendProvenHopRequest(first, json.NewDecoder(first), token, hopResumeRequest{Selector: "first:notes", Host: "c.example"}); err != nil {
 		t.Fatal(err)
 	}
 	<-preparing

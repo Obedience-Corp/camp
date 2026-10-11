@@ -115,6 +115,17 @@ func TestPrepareResumeSSHInjectsSocket(t *testing.T) {
 	if !strings.Contains(strings.Join(open, "\n"), "ControlPath=") {
 		t.Fatalf("forward request lost the ControlMaster options: %q", open)
 	}
+	for _, action := range []string{"forward", "cancel"} {
+		control := loopForwardArgv(hop, action, forward.loopLocalSock)
+		if control[0] != "-F" || control[1] != "/dev/null" {
+			t.Fatalf("-O %s must not read ssh config, or it also acts on every forward configured for the host: %q", action, control)
+		}
+	}
+
+	remove := hopTokenRemoveArgv(hop, forward.tokenFile)
+	if remove[0] != "-T" || remove[len(remove)-1] != "rm -f -- '/tmp/camp-ht-Ab12Cd'" || remove[len(remove)-2] != "lance@devbox.ts.net" {
+		t.Fatalf("token removal: %q", remove)
+	}
 
 	upload := hopTokenArgv(hop)
 	if upload[0] != "-T" {

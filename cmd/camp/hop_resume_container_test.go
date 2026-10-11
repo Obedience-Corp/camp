@@ -230,6 +230,48 @@ func TestHopResumeSendFallsBackToLoopbackWithToken(t *testing.T) {
 	}
 }
 
+// The reviewer's scenario end to end: a shell that outlived its hop still has
+// the address and the token file, and someone else now holds the port.
+func TestHopResumeSendRefusesAListenerWithoutTheToken(t *testing.T) {
+	ln, err := net.Listen("tcp", "127.0.0.1:0")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer func() { _ = ln.Close() }()
+	const token = "0123456789abcdef0123456789abcdef"
+	tokenFile := filepath.Join(t.TempDir(), "camp-ht-test")
+	if err := os.WriteFile(tokenFile, []byte(token), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv(hopResumeSockEnv, filepath.Join(t.TempDir(), "camp-hr-r.sock"))
+	t.Setenv(hopResumeAddrEnv, ln.Addr().String())
+	t.Setenv(hopResumeTokenFileEnv, tokenFile)
+	received := make(chan string, 1)
+	go func() {
+		conn, err := ln.Accept()
+		if err != nil {
+			return
+		}
+		defer func() { _ = conn.Close() }()
+		_ = conn.SetDeadline(time.Now().Add(3 * time.Second))
+		// Acknowledge at once, as a listener that wants the shell gone would.
+		_, _ = io.WriteString(conn, `{"version":2,"accepted":true}`+"\n"+`{"version":1,"accepted":true}`+"\n")
+		all, _ := io.ReadAll(conn)
+		received <- string(all)
+	}()
+
+	err = sendHopResume(context.Background(), "thirdbox:notes", cmdutil.CampaignScope{}, "c.example")
+	if err == nil || !strings.Contains(err.Error(), "not the shell that opened this hop") {
+		t.Fatalf("a forged acknowledgement must not end the shell: %v", err)
+	}
+	if _, statErr := os.Stat(tokenFile); statErr != nil {
+		t.Fatalf("the token file must survive a forged acknowledgement: %v", statErr)
+	}
+	if got := <-received; strings.Contains(got, token) || strings.Contains(got, "thirdbox") {
+		t.Fatalf("the far shell disclosed its token or request to an unproven listener: %s", got)
+	}
+}
+
 func TestHopResumeTokenScriptKeepsTokenPrivate(t *testing.T) {
 	const token = "0123456789abcdef0123456789abcdef"
 	dir := t.TempDir()

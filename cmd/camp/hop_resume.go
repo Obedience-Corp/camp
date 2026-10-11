@@ -2,7 +2,9 @@ package main
 
 import (
 	"context"
+	"crypto/hmac"
 	"crypto/rand"
+	"crypto/sha256"
 	"crypto/subtle"
 	"encoding/hex"
 	"encoding/json"
@@ -35,9 +37,10 @@ const hopResumeSockEnv = "CAMP_HOP_RESUME_SOCK"
 // hopResumeAddrEnv and hopResumeTokenFileEnv name a second route to the same
 // shell: a loopback port on the far side. An ssh server that binds the
 // forwarded unix socket as another user leaves it closed to the hopped shell
-// (Tailscale SSH binds it as root). Every local user can reach a loopback
-// port, so a request arriving there must carry this hop's token, which the
-// far side reads from a file only the hopped user can open.
+// (Tailscale SSH binds it as root). Every local user can reach or, once it is
+// free, bind a loopback port, so both ends first prove they hold this hop's
+// token, which the far side reads from a file only the hopped user can open.
+// The token itself never crosses the connection.
 const (
 	hopResumeAddrEnv      = "CAMP_HOP_RESUME_ADDR"
 	hopResumeTokenFileEnv = "CAMP_HOP_RESUME_TOKEN_FILE"
@@ -46,8 +49,9 @@ const (
 // hopTokenScript stores stdin in a private file on the far side and prints the
 // file's path. The token travels on stdin and never in a command line: an ssh
 // server can keep the remote command in a process title for the whole session
-// and write it to its log. A hop that ends without an onward switch leaves the
-// file behind for the far side's temp cleanup.
+// and write it to its log. The opening shell removes the file when the hop
+// ends cleanly; after a broken connection it stays for the far side's temp
+// cleanup.
 const hopTokenScript = `umask 077 && f=$(mktemp "${TMPDIR:-/tmp}/camp-ht-XXXXXX") && cat >"$f" && printf %s "$f"`
 
 func init() {
@@ -126,14 +130,24 @@ func sendHopResume(ctx context.Context, selector string, scope cmdutil.CampaignS
 	stopClose := context.AfterFunc(ctx, func() { _ = conn.Close() })
 	defer stopClose()
 	_ = conn.SetDeadline(time.Now().Add(hopResumeTimeout))
-	if err := json.NewEncoder(conn).Encode(hopResumeEnvelope{Version: 1, Token: token, Request: request}); err != nil {
+	// One decoder for the whole connection: a second one could lose bytes the
+	// first had already buffered.
+	dec := json.NewDecoder(io.LimitReader(conn, hopResumeMaxBytes))
+	version := hopResumeSocketVersion
+	if token == "" {
+		err = json.NewEncoder(conn).Encode(hopResumeEnvelope{Version: version, Request: request})
+	} else {
+		version = hopResumeLoopVersion
+		err = sendProvenHopRequest(conn, dec, token, request)
+	}
+	if err != nil {
 		return err
 	}
 	var response hopResumeResponse
-	if err := json.NewDecoder(io.LimitReader(conn, 4096)).Decode(&response); err != nil {
+	if err := dec.Decode(&response); err != nil {
 		return camperrors.Wrap(err, "hop-resume: parent did not acknowledge the route; staying in this shell")
 	}
-	if response.Version != 1 {
+	if response.Version != version {
 		return camperrors.New("hop-resume: unsupported parent acknowledgement; staying in this shell")
 	}
 	if response.Error != "" {
@@ -232,10 +246,11 @@ func runHopResume(ctx context.Context, line string) (string, error) {
 		return "", err
 	}
 	in, out, inherited := inheritedHopTerminal(os.Stdin, os.Stderr, isTerminalFile)
+	closeLoopRoute := func(bool) {}
 	if inherited {
 		// The loopback forward lives on the ControlMaster, which only a
 		// multiplexed hop keeps alive.
-		defer offerLoopRoute(ctx, hop, &forward)()
+		closeLoopRoute = offerLoopRoute(ctx, hop, &forward)
 	}
 	argv := hop.resumeArgv(forward)
 	if !inherited {
@@ -252,6 +267,7 @@ func runHopResume(ctx context.Context, line string) (string, error) {
 	sshCmd.Stdout = out
 	sshCmd.Stderr = out
 	runErr := sshCmd.Run()
+	closeLoopRoute(hopEndedReachable(runErr))
 	cancelResume()
 	_ = ln.Close()
 	_ = loopLn.Close()
@@ -324,18 +340,50 @@ func newHopResumeForward() (hopResumeForward, error) {
 
 // offerLoopRoute sets the loopback route up before the hop starts and returns
 // its teardown. Onward switching is secondary to the hop: when any step fails
-// the route is simply not offered.
-func offerLoopRoute(ctx context.Context, hop hopLine, forward *hopResumeForward) func() {
+// the route is simply not offered.//
+// The teardown takes whether the hop's ssh ended cleanly. Only then is the far
+// side asked to drop the token file: after a broken connection that call would
+// hold the terminal until it timed out. The file goes before the port is
+// freed, so the address is never bindable while a token for it exists.
+func offerLoopRoute(ctx context.Context, hop hopLine, forward *hopResumeForward) func(reachable bool) {
 	tokenFile, err := placeHopToken(ctx, hop, forward.token)
 	if err != nil {
-		return func() {}
+		return func(bool) {}
 	}
 	addr, err := openLoopForward(ctx, hop, forward.loopLocalSock)
 	if err != nil {
-		return func() {}
+		removeHopToken(hop, tokenFile)
+		return func(bool) {}
 	}
 	forward.tokenFile, forward.loopAddr = tokenFile, addr
-	return func() { closeLoopForward(hop, forward.loopLocalSock) }
+	return func(reachable bool) {
+		if reachable {
+			removeHopToken(hop, tokenFile)
+		}
+		closeLoopForward(hop, forward.loopLocalSock)
+	}
+}
+
+// hopEndedReachable reports whether the hop's ssh ended with the connection
+// intact. ssh exits 255 for its own failures and otherwise passes on the far
+// shell's status, which is whatever the last command there returned.
+func hopEndedReachable(runErr error) bool {
+	if runErr == nil {
+		return true
+	}
+	var exit *exec.ExitError
+	return errors.As(runErr, &exit) && exit.ExitCode() > 0 && exit.ExitCode() != 255
+}
+
+func hopTokenRemoveArgv(hop hopLine, tokenFile string) []string {
+	argv := append([]string{"-T"}, hop.opts...)
+	return append(argv, hop.target, "rm -f -- "+remote.ShellQuote(tokenFile))
+}
+
+func removeHopToken(hop hopLine, tokenFile string) {
+	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+	defer cancel()
+	_ = exec.CommandContext(ctx, "ssh", hopTokenRemoveArgv(hop, tokenFile)...).Run()
 }
 
 // loopForwardSpec asks for port 0: the server binds a free loopback port and
@@ -344,8 +392,14 @@ func offerLoopRoute(ctx context.Context, hop hopLine, forward *hopResumeForward)
 // would receive the token and could forge an acknowledgement.
 func loopForwardSpec(localSock string) string { return "127.0.0.1:0:" + localSock }
 
+// loopForwardArgv is a control call to the hop's ControlMaster. -F /dev/null
+// keeps ssh config out of it: `-O forward` and `-O cancel` act on every
+// LocalForward, RemoteForward and DynamicForward configured for the host as
+// well as the one named here, and cancelling would tear those down for every
+// session sharing the master. Everything the call needs is in hop.opts.
 func loopForwardArgv(hop hopLine, action, localSock string) []string {
-	return append(append([]string{}, hop.opts...), "-O", action, "-R", loopForwardSpec(localSock), hop.target)
+	argv := append([]string{"-F", "/dev/null"}, hop.opts...)
+	return append(argv, "-O", action, "-R", loopForwardSpec(localSock), hop.target)
 }
 
 // openLoopForward adds the forward to the hop's ControlMaster and returns the
@@ -438,8 +492,138 @@ const hopResumeTimeout = 30 * time.Second
 // and cannot queue a misdirected switch when this client rejects its missing ACK.
 type hopResumeEnvelope struct {
 	Version int              `json:"version"`
-	Token   string           `json:"token,omitempty"`
 	Request hopResumeRequest `json:"request"`
+}
+
+// The forwarded unix socket speaks version 1, unchanged since it shipped. The
+// loopback route speaks version 2: the far shell says hello with a nonce, the
+// opening shell answers with its own nonce and a proof that it holds the
+// token, and only then does the far shell send its request, sealed with a
+// proof of its own. Whoever answers a loopback port without the token learns a
+// random nonce and nothing else, and cannot make the far shell act.
+const (
+	hopResumeSocketVersion = 1
+	hopResumeLoopVersion   = 2
+	hopResumeMaxBytes      = 8192
+
+	hopParentProofLabel = "camp hop-resume parent"
+	hopChildProofLabel  = "camp hop-resume child"
+)
+
+// hopProofMessage is the hello (nonce only) and its answer (nonce and proof).
+type hopProofMessage struct {
+	Version int    `json:"version"`
+	Nonce   string `json:"nonce"`
+	Proof   string `json:"proof,omitempty"`
+}
+
+// hopProvenRequest carries the request as the bytes its proof covers, so a
+// camp that encodes a request differently still verifies what was sent.
+type hopProvenRequest struct {
+	Version int             `json:"version"`
+	Proof   string          `json:"proof"`
+	Request json.RawMessage `json:"request"`
+}
+
+func newHopNonce() (string, error) {
+	var raw [16]byte
+	if _, err := rand.Read(raw[:]); err != nil {
+		return "", camperrors.Wrap(err, "hop-resume: nonce")
+	}
+	return hex.EncodeToString(raw[:]), nil
+}
+
+// validHopNonce keeps the proof input unambiguous: both nonces are a fixed
+// width, so label, nonces and payload cannot run into one another.
+func validHopNonce(nonce string) bool {
+	raw, err := hex.DecodeString(nonce)
+	return err == nil && len(raw) == 16
+}
+
+func hopProof(token, label, childNonce, parentNonce string, payload []byte) string {
+	mac := hmac.New(sha256.New, []byte(token))
+	mac.Write([]byte(label))
+	mac.Write([]byte(childNonce))
+	mac.Write([]byte(parentNonce))
+	mac.Write(payload)
+	return hex.EncodeToString(mac.Sum(nil))
+}
+
+func sameHopProof(got, want string) bool {
+	return subtle.ConstantTimeCompare([]byte(got), []byte(want)) == 1
+}
+
+// sendProvenHopRequest is the far shell's side of the loopback exchange. It
+// sends nothing derived from the token until the listener has proven that it
+// holds it: the port in a long-lived shell's environment can outlive its hop
+// and be bound by someone else.
+func sendProvenHopRequest(conn net.Conn, dec *json.Decoder, token string, request hopResumeRequest) error {
+	stranger := camperrors.New("hop-resume: the listener at " + conn.RemoteAddr().String() +
+		" is not the shell that opened this hop; staying in this shell")
+	nonce, err := newHopNonce()
+	if err != nil {
+		return err
+	}
+	enc := json.NewEncoder(conn)
+	if err := enc.Encode(hopProofMessage{Version: hopResumeLoopVersion, Nonce: nonce}); err != nil {
+		return err
+	}
+	var parent hopProofMessage
+	if err := dec.Decode(&parent); err != nil || parent.Version != hopResumeLoopVersion || !validHopNonce(parent.Nonce) {
+		return stranger
+	}
+	if !sameHopProof(parent.Proof, hopProof(token, hopParentProofLabel, nonce, parent.Nonce, nil)) {
+		return stranger
+	}
+	raw, err := json.Marshal(request)
+	if err != nil {
+		return err
+	}
+	return enc.Encode(hopProvenRequest{
+		Version: hopResumeLoopVersion,
+		Proof:   hopProof(token, hopChildProofLabel, nonce, parent.Nonce, raw),
+		Request: raw,
+	})
+}
+
+// readProvenHopRequest is the opening shell's side: prove first, then accept
+// only a request sealed with the same token for this exchange's nonces.
+func readProvenHopRequest(conn net.Conn, dec *json.Decoder, token string) (hopResumeRequest, error) {
+	var request hopResumeRequest
+	var hello hopProofMessage
+	if err := dec.Decode(&hello); err != nil {
+		return request, err
+	}
+	if hello.Version != hopResumeLoopVersion {
+		return request, camperrors.New("hop-resume: unsupported request version; update camp on both machines and hop again")
+	}
+	if !validHopNonce(hello.Nonce) {
+		return request, camperrors.New("hop-resume: malformed hello")
+	}
+	nonce, err := newHopNonce()
+	if err != nil {
+		return request, err
+	}
+	answer := hopProofMessage{
+		Version: hopResumeLoopVersion,
+		Nonce:   nonce,
+		Proof:   hopProof(token, hopParentProofLabel, hello.Nonce, nonce, nil),
+	}
+	if err := json.NewEncoder(conn).Encode(answer); err != nil {
+		return request, err
+	}
+	var sealed hopProvenRequest
+	if err := dec.Decode(&sealed); err != nil {
+		return request, err
+	}
+	if sealed.Version != hopResumeLoopVersion ||
+		!sameHopProof(sealed.Proof, hopProof(token, hopChildProofLabel, hello.Nonce, nonce, sealed.Request)) {
+		return request, camperrors.New("hop-resume: request is not from this hop's shell")
+	}
+	if err := json.Unmarshal(sealed.Request, &request); err != nil {
+		return request, camperrors.Wrap(err, "hop-resume: request")
+	}
+	return request, nil
 }
 
 type hopResumeResponse struct {
@@ -616,8 +800,8 @@ func (s *hopSwitch) release() {
 }
 
 // serveHopResume answers requests on one listener and returns the follow-up
-// line of the switch it acknowledged. A non-empty token is required from every
-// request arriving there. A rejected request must not disable onward switching
+// line of the switch it acknowledged. A non-empty token makes every request
+// arriving there prove it holds that token. A rejected request must not disable onward switching
 // for this shell, so serving goes on until the listener closes.
 func serveHopResume(ctx context.Context, ln net.Listener, token string, hop *hopSwitch, prepare func(context.Context, hopResumeRequest) (string, error)) (string, error) {
 	accepted := make(chan string, 1)
@@ -694,15 +878,21 @@ func acceptHopResume(ctx context.Context, conn net.Conn, token string, prepare f
 	defer cancel()
 	stopClose := context.AfterFunc(ctx, func() { _ = conn.Close() })
 	defer stopClose()
-	var envelope hopResumeEnvelope
-	err := json.NewDecoder(io.LimitReader(conn, 4096)).Decode(&envelope)
-	if err == nil && envelope.Version != 1 {
-		err = camperrors.New("hop-resume: unsupported request version; update camp on both machines and hop again")
+	dec := json.NewDecoder(io.LimitReader(conn, hopResumeMaxBytes))
+	version := hopResumeSocketVersion
+	var request hopResumeRequest
+	var err error
+	if token == "" {
+		var envelope hopResumeEnvelope
+		err = dec.Decode(&envelope)
+		if err == nil && envelope.Version != version {
+			err = camperrors.New("hop-resume: unsupported request version; update camp on both machines and hop again")
+		}
+		request = envelope.Request
+	} else {
+		version = hopResumeLoopVersion
+		request, err = readProvenHopRequest(conn, dec, token)
 	}
-	if err == nil && token != "" && subtle.ConstantTimeCompare([]byte(envelope.Token), []byte(token)) != 1 {
-		err = camperrors.New("hop-resume: request does not carry this hop's token")
-	}
-	request := envelope.Request
 	if err == nil {
 		request.Selector, err = sanitizeResumeSelector(request.Selector)
 	}
@@ -719,7 +909,10 @@ func acceptHopResume(ctx context.Context, conn net.Conn, token string, prepare f
 	if err == nil && peerGone(conn) {
 		err = camperrors.New("hop-resume: far shell hung up before its switch was acknowledged")
 	}
-	response := hopResumeResponse{Version: 1, Accepted: err == nil}
+	// The acknowledgement carries no proof of its own: on the loopback route
+	// the far shell verified this side before it sent its request, and an
+	// established connection cannot be taken over by another local user.
+	response := hopResumeResponse{Version: version, Accepted: err == nil}
 	if err != nil {
 		response.Error = err.Error()
 	}
