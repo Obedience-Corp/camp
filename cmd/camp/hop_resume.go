@@ -12,6 +12,7 @@ import (
 	"net"
 	"os"
 	"os/exec"
+	"slices"
 	"strconv"
 	"strings"
 	"sync"
@@ -538,13 +539,56 @@ func prepareHopResume(ctx context.Context, request hopResumeRequest) (string, er
 }
 
 // A connection must deliver its request within hopResumeRequestWait, and at
-// most hopResumeMaxConns are served at once. The loopback listener is open to
-// every user on the far side: one that connects and stays silent, or opens
-// many connections, must not keep the hop's own request from being heard.
+// most hopResumeMaxWaiting may be waiting to deliver one. The loopback
+// listener is open to every user on the far side: one that connects and stays
+// silent, or opens many connections, must not keep the hop's own request from
+// being heard.
 const (
 	hopResumeRequestWait = 3 * time.Second
-	hopResumeMaxConns    = 8
+	hopResumeMaxWaiting  = 8
 )
+
+// waitingConns holds the connections that have not delivered a valid request
+// yet, oldest first. It is bounded so a flood cannot exhaust descriptors here
+// or in the ssh client that carries the forward. When it is full the
+// connection that has waited longest gives way to the newcomer: turning the
+// newcomer away would let silent connections hold every place and shut the
+// hop's own request out before its token was read.
+type waitingConns struct {
+	mu      sync.Mutex
+	waiting []*waitingConn
+}
+
+type waitingConn struct{ conn net.Conn }
+
+func (w *waitingConns) admit(conn net.Conn) *waitingConn {
+	entry := &waitingConn{conn: conn}
+	w.mu.Lock()
+	var evicted *waitingConn
+	if len(w.waiting) >= hopResumeMaxWaiting {
+		evicted = w.waiting[0]
+		w.waiting = slices.Delete(w.waiting, 0, 1)
+	}
+	w.waiting = append(w.waiting, entry)
+	w.mu.Unlock()
+	if evicted != nil {
+		_ = evicted.conn.Close()
+	}
+	return entry
+}
+
+// heard takes entry out once its request has arrived, and reports whether it
+// was still waiting. A connection that was evicted is already closed.
+func (w *waitingConns) heard(entry *waitingConn) bool {
+	w.mu.Lock()
+	defer w.mu.Unlock()
+	i := slices.Index(w.waiting, entry)
+	if i < 0 {
+		return false
+	}
+	w.waiting = slices.Delete(w.waiting, i, i+1)
+	return true
+}
 
 // hopSwitch admits one onward switch per hop, whichever route carries it. A
 // request holds it while its route is prepared and acknowledged, and gives it
@@ -578,7 +622,7 @@ func (s *hopSwitch) release() {
 func serveHopResume(ctx context.Context, ln net.Listener, token string, hop *hopSwitch, prepare func(context.Context, hopResumeRequest) (string, error)) (string, error) {
 	accepted := make(chan string, 1)
 	stopped := make(chan error, 1)
-	slots := make(chan struct{}, hopResumeMaxConns)
+	var waiting waitingConns
 	var handlers sync.WaitGroup
 	go func() {
 		for {
@@ -587,19 +631,16 @@ func serveHopResume(ctx context.Context, ln net.Listener, token string, hop *hop
 				stopped <- err
 				return
 			}
-			select {
-			case slots <- struct{}{}:
-			default:
-				// Shed rather than queue: a queued request would only time out.
-				_ = conn.Close()
-				continue
-			}
+			entry := waiting.admit(conn)
 			handlers.Add(1)
 			go func() {
 				defer handlers.Done()
-				defer func() { <-slots }()
+				defer waiting.heard(entry)
 				reserved := false
 				follow, err := acceptHopResume(ctx, conn, token, func(ctx context.Context, request hopResumeRequest) (string, error) {
+					if !waiting.heard(entry) {
+						return "", camperrors.New("hop-resume: connection gave way to a newer one")
+					}
 					if !hop.reserve() {
 						return "", camperrors.New("hop-resume: this hop is already switching")
 					}

@@ -308,8 +308,9 @@ func requestSwitchTo(t *testing.T, addr, token, selector string) (hopResumeRespo
 func TestHopResumeSilentConnectionsCannotStarveTheHop(t *testing.T) {
 	const token = "0123456789abcdef0123456789abcdef"
 	addr, follow := serveLoopback(t, token)
-	// Connections that never send a request, as any far-side user can open.
-	for range hopResumeMaxConns - 1 {
+	// Connections that never send a request, as any far-side user can open:
+	// enough to take every waiting place several times over.
+	for range 3 * hopResumeMaxWaiting {
 		dialSilent(t, addr)
 	}
 	response, err := requestSwitch(t, addr, token)
@@ -326,15 +327,22 @@ func TestHopResumeSilentConnectionsCannotStarveTheHop(t *testing.T) {
 	}
 }
 
-func TestHopResumeShedsConnectionsBeyondItsLimit(t *testing.T) {
+func TestHopResumeLongestWaitingConnectionGivesWay(t *testing.T) {
 	addr, _ := serveLoopback(t, "0123456789abcdef0123456789abcdef")
-	for range hopResumeMaxConns {
-		dialSilent(t, addr)
+	oldest := dialSilent(t, addr)
+	// Let the listener take it before the rest arrive, so arrival order is fixed.
+	time.Sleep(50 * time.Millisecond)
+	var newest net.Conn
+	for range hopResumeMaxWaiting {
+		newest = dialSilent(t, addr)
 	}
-	extra := dialSilent(t, addr)
-	_ = extra.SetReadDeadline(time.Now().Add(2 * time.Second))
-	if _, err := extra.Read(make([]byte, 1)); err == nil || errors.Is(err, os.ErrDeadlineExceeded) {
-		t.Fatalf("a connection beyond the limit must be closed at once, not held: %v", err)
+	_ = oldest.SetReadDeadline(time.Now().Add(2 * time.Second))
+	if _, err := oldest.Read(make([]byte, 1)); err == nil || errors.Is(err, os.ErrDeadlineExceeded) {
+		t.Fatalf("the longest-waiting connection must be closed to make room: %v", err)
+	}
+	_ = newest.SetReadDeadline(time.Now().Add(200 * time.Millisecond))
+	if _, err := newest.Read(make([]byte, 1)); !errors.Is(err, os.ErrDeadlineExceeded) {
+		t.Fatalf("the newcomer must be admitted, not turned away: %v", err)
 	}
 }
 
