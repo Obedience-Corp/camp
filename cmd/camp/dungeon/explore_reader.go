@@ -85,7 +85,7 @@ func (m exploreModel) openReader() (tea.Model, tea.Cmd) {
 	case item.Kind == "workitem" && item.IsDir:
 		entries, err := markdownEntries(abs)
 		if err != nil {
-			m.setStatus(exploreActionStatus, err.Error(), true)
+			m.setStatus(exploreReadStatus, err.Error(), true)
 			return m, nil
 		}
 		reader.listing = true
@@ -95,7 +95,7 @@ func (m exploreModel) openReader() (tea.Model, tea.Cmd) {
 		if _, err := os.Stat(goal); err == nil {
 			text, err := readExploreText(m.readerContext(), goal)
 			if err != nil {
-				m.setStatus(exploreActionStatus, "The file could not be parsed.", true)
+				m.setStatus(exploreReadStatus, "The file could not be parsed.", true)
 				return m, nil
 			}
 			reader.path = goal
@@ -111,7 +111,7 @@ func (m exploreModel) openReader() (tea.Model, tea.Cmd) {
 	case !item.IsDir && strings.HasSuffix(strings.ToLower(item.Path), ".md"):
 		text, err := readExploreText(m.readerContext(), abs)
 		if err != nil {
-			m.setStatus(exploreActionStatus, "The file could not be parsed.", true)
+			m.setStatus(exploreReadStatus, "The file could not be parsed.", true)
 			return m, nil
 		}
 		reader.body = readerBody{text: text, markdown: true}
@@ -129,6 +129,7 @@ func (m exploreModel) openReader() (tea.Model, tea.Cmd) {
 	m.reading = true
 	m.reader = reader
 	m.help = false
+	m.clearReadStatus()
 	return m, nil
 }
 
@@ -175,9 +176,10 @@ func (m exploreModel) onReaderKey(key tea.KeyMsg) (tea.Model, tea.Cmd) {
 		picked := m.reader.entries[m.reader.entry]
 		text, err := readExploreText(m.readerContext(), picked.path)
 		if err != nil {
-			m.setStatus(exploreActionStatus, "The file could not be parsed.", true)
+			m.setStatus(exploreReadStatus, "The file could not be parsed.", true)
 			return m, nil
 		}
+		m.clearReadStatus()
 		m.reader.listing = false
 		m.reader.path = picked.path
 		m.reader.title = picked.name
@@ -199,7 +201,13 @@ func (m exploreModel) moveEntry(delta int) (tea.Model, tea.Cmd) {
 	if len(m.reader.entries) == 0 {
 		return m, nil
 	}
-	m.reader.entry = min(max(m.reader.entry+delta, 0), len(m.reader.entries)-1)
+	next := min(max(m.reader.entry+delta, 0), len(m.reader.entries)-1)
+	if next != m.reader.entry {
+		// The same rule as the feed: a failure about one entry does not follow
+		// the cursor to another.
+		m.clearReadStatus()
+	}
+	m.reader.entry = next
 	m.reader.follow(m.bodyHeight())
 	return m, nil
 }

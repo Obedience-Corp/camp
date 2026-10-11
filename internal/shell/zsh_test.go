@@ -104,6 +104,10 @@ func TestGenerateZsh_DungeonExploreArm(t *testing.T) {
 	assertJSONFalseKeepsExploreHandoff(t, section)
 }
 
+func TestGenerateZsh_ExplorePassthrough(t *testing.T) {
+	runExplorePassthroughCases(t, "zsh", generateZsh())
+}
+
 func TestGenerateZsh_ProjectListArm(t *testing.T) {
 	output := generateZsh()
 	section := shellWrapperSection(t, output, "    project|p)", "    festivals)")

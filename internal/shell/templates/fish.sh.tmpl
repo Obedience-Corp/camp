@@ -346,16 +346,32 @@ function camp --description "Camp CLI wrapper with directory-changing support"
             end
             set -e rest[1]
             set -l passthrough 0
+            set -l json 0
+            set -l skip 0
             for arg in $rest
-                switch "$arg"
-                    case --help -h --json
-                        set passthrough 1
-                        break
-                    case --json=false --json=FALSE --json=False --json=f --json=F --json=0
-                    case '--json=*'
-                        set passthrough 1
-                        break
+                if test "$skip" -eq 1
+                    set skip 0
+                    continue
                 end
+                switch "$arg"
+                    case '--'
+                        break
+                    case --help -h
+                        set passthrough 1
+                        break
+                    case --json
+                        set json 1
+                    case --json=false --json=FALSE --json=False --json=f --json=F --json=0
+                        set json 0
+                    case '--json=*'
+                        set json 1
+                    case --status --dungeon --since --until --query --images --path-output
+                        set skip 1
+                    case '--status=*' '--dungeon=*' '--since=*' '--until=*' '--query=*' '--images=*' '--path-output=*'
+                end
+            end
+            if test "$json" -eq 1
+                set passthrough 1
             end
             if test "$passthrough" -eq 1
                 command camp dungeon explore $rest

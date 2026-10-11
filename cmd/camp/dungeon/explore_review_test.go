@@ -6,6 +6,8 @@ import (
 	"errors"
 	"image"
 	"image/color"
+	"regexp"
+	"slices"
 	"strings"
 	"testing"
 	"time"
@@ -186,6 +188,51 @@ func TestExploreReplayStaysInsideVisibleBody(t *testing.T) {
 	}
 	if row+7-1 >= 21 {
 		t.Fatalf("replay rows %d-%d cover the status row", row, row+6)
+	}
+}
+
+func TestExploreITermRowsRepaintWhenTheImageChanges(t *testing.T) {
+	mark := regexp.MustCompile(`\x1b\[\d+G\x1b\[\d+X`)
+	m := replayModel(explore.ProtocolITerm)
+	if !m.wide() {
+		t.Fatal("fixture is not the wide layout")
+	}
+	before := strings.Split(m.View(), "\n")
+	var under []int
+	for i, line := range before {
+		if mark.MatchString(line) {
+			under = append(under, i)
+		}
+	}
+	if len(under) < 2 || !strings.Contains(strings.Join(before, "\n"), "1337;File=") {
+		t.Fatalf("replay was not placed over marked rows: %v", under)
+	}
+	if again := strings.Split(m.View(), "\n"); !slices.Equal(again, before) {
+		t.Fatal("an unchanged image changed the frame, so it would flicker")
+	}
+
+	moved, _ := press(t, m, runes("j"))
+	view := moved.View()
+	if moved.poster != nil || strings.Contains(view, "1337;File=") || mark.MatchString(view) {
+		t.Fatal("item without a replay still drew or reserved an image")
+	}
+	after := strings.Split(view, "\n")
+	for _, i := range under {
+		if i >= len(after) || after[i] == before[i] {
+			t.Fatalf("row %d is unchanged, so Bubble Tea would leave the iTerm image on it", i+1)
+		}
+	}
+	if !strings.Contains(view, "Add blog sections") {
+		t.Fatal("the newly focused item is missing")
+	}
+
+	// A different placement has a different mark, so a replay that moves or
+	// shrinks also repaints the rows it shares with the last one.
+	if a, b := markReplayRows("x", 1, 1, 41, 48), markReplayRows("x", 1, 1, 41, 14); a == b {
+		t.Fatal("a narrower placement left the row identical")
+	}
+	if a, b := markReplayRows("x", 1, 1, 41, 48), markReplayRows("x", 1, 1, 51, 48); a == b {
+		t.Fatal("a shifted placement left the row identical")
 	}
 }
 

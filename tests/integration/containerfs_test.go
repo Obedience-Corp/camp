@@ -88,7 +88,7 @@ var containerFSPackages = []containerFSPackage{
 	// The dungeon explorer feed, text sanitizing, cache round trip, and
 	// metadata fingerprints stage dungeons on disk and edit them in place.
 	{ImportPath: "./internal/dungeon/explore", MinTests: 15, TestPattern: "^Test(CachePathConfinement|CacheWriteSymlinks|BuildFeed|BuildSanitizesRepositoryText|CacheKeepsDirectoryItems|RefreshSeesInPlaceMetadataEdits|RefreshRetriesCachedMetadataFailure|WorkitemMarkerWinsOverFestivalArtifacts|ReadRegularRejectsSpecialFiles|BuildSpecialMarkdownDoesNotBlock|BuildHoldingDirectoryItems|BuildFestivalGoalSuppliesMissingName|BuildContinuesPastUnreadableDirectory|BuildKeepsReadableItemsWhenFingerprintFails|BuildWorkitemIDWithoutRef)$"},
-	{ImportPath: "./cmd/camp/dungeon", MinTests: 4, TestPattern: "^TestExplore(ReadFailures|PipedInputJSON|ReaderRejectsSpecialFiles|JSONDoesNotWriteConfig)$"},
+	{ImportPath: "./cmd/camp/dungeon", MinTests: 5, TestPattern: "^TestExplore(ReadFailures|PipedInputJSON|ReaderRejectsSpecialFiles|ReaderClearsParseError|JSONDoesNotWriteConfig)$"},
 }
 
 // containerFSTag is the build tag gating host compilation of these suites.

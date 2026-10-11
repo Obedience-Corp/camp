@@ -307,22 +307,42 @@ camp() {
           ;;
       esac
       shift
-      local arg passthrough tmp dest cmd_status
+      local arg passthrough tmp dest cmd_status json skip
       passthrough=0
+      json=0
+      skip=0
       for arg in "$@"; do
+        if [[ "$skip" -eq 1 ]]; then
+          skip=0
+          continue
+        fi
         case "$arg" in
-          --help|-h|--json)
+          --)
+            break
+            ;;
+          --help|-h)
             passthrough=1
             break
+            ;;
+          --json)
+            json=1
             ;;
           --json=false|--json=FALSE|--json=False|--json=f|--json=F|--json=0)
+            json=0
             ;;
           --json=*)
-            passthrough=1
-            break
+            json=1
+            ;;
+          --status|--dungeon|--since|--until|--query|--images|--path-output)
+            skip=1
+            ;;
+          --status=*|--dungeon=*|--since=*|--until=*|--query=*|--images=*|--path-output=*)
             ;;
         esac
       done
+      if [[ "$json" -eq 1 ]]; then
+        passthrough=1
+      fi
       if [[ "$passthrough" -eq 1 ]]; then
         command camp dungeon explore "$@"
         return

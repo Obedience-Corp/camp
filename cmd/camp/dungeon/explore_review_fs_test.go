@@ -156,6 +156,63 @@ func TestExploreJSONDoesNotWriteConfig(t *testing.T) {
 	}
 }
 
+func TestExploreReaderClearsParseError(t *testing.T) {
+	root := t.TempDir()
+	good := filepath.Join(root, "readme.md")
+	if err := os.WriteFile(good, []byte("# Hello\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	m := replayModel(explore.ProtocolOff)
+	m.reading = true
+	m.reader = exploreReader{
+		listing: true,
+		entries: []readerEntry{
+			{name: "missing.md", path: filepath.Join(root, "missing.md")},
+			{name: "readme.md", path: good},
+		},
+	}
+	m, _ = press(t, m, tea.KeyMsg{Type: tea.KeyEnter})
+	if !m.statusErr || m.status != "The file could not be parsed." || !m.reader.listing {
+		t.Fatalf("unreadable entry status=%q err=%v listing=%v", m.status, m.statusErr, m.reader.listing)
+	}
+	stuck := m
+	m, _ = press(t, m, runes("j"))
+	if m.statusErr || m.status != "" || m.reader.entry != 1 {
+		t.Fatalf("the failure followed the cursor: status=%q entry=%d", m.status, m.reader.entry)
+	}
+	m, _ = press(t, m, tea.KeyMsg{Type: tea.KeyEnter})
+	if m.statusErr || m.status != "" || m.reader.listing {
+		t.Fatalf("readable document still shows %q err=%v listing=%v", m.status, m.statusErr, m.reader.listing)
+	}
+	// Opening a readable entry clears the failure even when the cursor did
+	// not move, as when the file is fixed and opened again.
+	stuck.reader.entries[0].path = good
+	stuck, _ = press(t, stuck, tea.KeyMsg{Type: tea.KeyEnter})
+	if stuck.statusErr || stuck.status != "" || stuck.reader.listing {
+		t.Fatalf("reopened document still shows %q err=%v listing=%v", stuck.status, stuck.statusErr, stuck.reader.listing)
+	}
+	if strings.Contains(m.View(), "could not be parsed") || !strings.Contains(m.View(), "Hello") {
+		t.Fatal("the reader kept the parse error or dropped the document")
+	}
+
+	kept := replayModel(explore.ProtocolOff)
+	kept.reading = true
+	kept.reader = exploreReader{listing: true, entries: []readerEntry{{name: "readme.md", path: good}}}
+	kept.setStatus(exploreActionStatus, "copied", false)
+	kept, _ = press(t, kept, tea.KeyMsg{Type: tea.KeyEnter})
+	if kept.statusErr || kept.status != "copied" || kept.reader.listing {
+		t.Fatalf("successful open cleared an unrelated status: %q err=%v listing=%v", kept.status, kept.statusErr, kept.reader.listing)
+	}
+	kept = replayModel(explore.ProtocolOff)
+	kept.reading = true
+	kept.reader = exploreReader{listing: true, entries: []readerEntry{{name: "readme.md", path: good}}}
+	kept.setStatus(exploreActionStatus, "copy failed: denied", true)
+	kept, _ = press(t, kept, tea.KeyMsg{Type: tea.KeyEnter})
+	if !kept.statusErr || kept.status != "copy failed: denied" || kept.reader.listing {
+		t.Fatalf("successful open cleared an unrelated error: %q err=%v listing=%v", kept.status, kept.statusErr, kept.reader.listing)
+	}
+}
+
 func TestExploreReaderRejectsSpecialFiles(t *testing.T) {
 	root := t.TempDir()
 	normal := filepath.Join(root, "README.md")

@@ -94,16 +94,35 @@ func (m exploreModel) placeReplay(view string) string {
 	view = view[:at] + view[at+len(seq):]
 	// The feed window can clip reservation rows. Paint only the rows that
 	// remain in the body so the image cannot cover the status or help line.
-	if room := m.bodyRowsFrom(row); room < m.stageRows() {
-		seq = m.imageSequenceLimited(width, room)
+	rows := m.stageRows()
+	if room := m.bodyRowsFrom(row); room < rows {
+		rows = room
+		seq = m.imageSequenceLimited(width, rows)
 		if seq == "" {
 			return view
 		}
+	}
+	if m.protocol == explore.ProtocolITerm {
+		view = markReplayRows(view, row, rows, col, min(width, 48))
 	}
 	// imageSequence itself saves/restores at its origin. Strip that inner
 	// pair so the single saved cursor remains on the help row.
 	seq = strings.TrimSuffix(strings.TrimPrefix(seq, "\x1b7"), "\x1b8")
 	return view + fmt.Sprintf("\x1b7\x1b[%d;%dH", row, col) + seq + "\x1b8"
+}
+
+// iTerm has no command that deletes an image. Its cells clear only when their
+// rows are repainted, and Bubble Tea skips a row that did not change. Every
+// row under the image therefore carries the image's own geometry, so when the
+// image goes away, moves, or changes size those rows differ from the last
+// frame and are painted again.
+func markReplayRows(view string, row, rows, col, cols int) string {
+	lines := strings.Split(view, "\n")
+	mark := fmt.Sprintf("\x1b[%dG\x1b[%dX", col, cols)
+	for i := max(row-1, 0); i < row-1+rows && i < len(lines); i++ {
+		lines[i] += mark
+	}
+	return strings.Join(lines, "\n")
 }
 
 func (m exploreModel) bodyRowsFrom(row int) int {

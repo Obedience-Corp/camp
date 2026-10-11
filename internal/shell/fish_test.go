@@ -117,6 +117,10 @@ func TestGenerateFish_DungeonExploreArm(t *testing.T) {
 	assertJSONFalseKeepsExploreHandoff(t, section)
 }
 
+func TestGenerateFish_ExplorePassthrough(t *testing.T) {
+	runExplorePassthroughCases(t, "fish", generateFish())
+}
+
 func TestGenerateFish_ProjectListArm(t *testing.T) {
 	output := generateFish()
 	section := shellWrapperSection(t, output, "        case project p", "        case festivals")

@@ -26,6 +26,9 @@ type exploreStatusSource uint8
 
 const (
 	exploreActionStatus exploreStatusSource = iota
+	// exploreReadStatus is a document that could not be opened. It belongs to
+	// one entry, so it goes when another entry is opened or focused.
+	exploreReadStatus
 	exploreQueryStatus
 	exploreLoadStatus
 	exploreReplayStatus
@@ -581,8 +584,14 @@ func (m exploreModel) copyPath(path string) (tea.Model, tea.Cmd) {
 }
 
 func (m *exploreModel) clearStatus() {
-	if m.statusSource == exploreActionStatus || m.statusSource == exploreReplayStatus {
+	if m.statusSource == exploreActionStatus || m.statusSource == exploreReplayStatus || m.statusSource == exploreReadStatus {
 		m.setStatus(m.statusSource, "", false)
+	}
+}
+
+func (m *exploreModel) clearReadStatus() {
+	if m.statusSource == exploreReadStatus {
+		m.setStatus(exploreReadStatus, "", false)
 	}
 }
 

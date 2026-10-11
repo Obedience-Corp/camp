@@ -1,0 +1,276 @@
+package shell
+
+import (
+	"bytes"
+	"go/ast"
+	"go/parser"
+	"go/token"
+	"io"
+	"os"
+	"os/exec"
+	"path/filepath"
+	"runtime"
+	"strconv"
+	"strings"
+	"testing"
+
+	"github.com/creack/pty"
+)
+
+func TestDungeonExploreValueFlagsMatchShells(t *testing.T) {
+	flags := dungeonExploreValueFlags(t)
+	shells := []struct {
+		name, script, start, end, skip string
+	}{
+		{"bash", generateBash(), "    dungeon)", "    festivals)", "skip=1"},
+		{"sh", generateSh(), "    dungeon)", "    festivals)", "skip=1"},
+		{"zsh", generateZsh(), "    dungeon)", "    festivals)", "skip=1"},
+		{"fish", generateFish(), "        case dungeon", "        case festivals", "set skip 1"},
+	}
+	for _, sh := range shells {
+		section := shellWrapperSection(t, sh.script, sh.start, sh.end)
+		arm := lineBeforeMarker(t, section, sh.skip)
+		for _, flag := range flags {
+			if !strings.Contains(arm, "--"+flag) {
+				t.Errorf("%s does not consume a separate --%s value (arm %q)", sh.name, flag, strings.TrimSpace(arm))
+			}
+			if !strings.Contains(section, "--"+flag+"=*") {
+				t.Errorf("%s does not accept --%s=value", sh.name, flag)
+			}
+		}
+	}
+}
+
+func lineBeforeMarker(t *testing.T, section, marker string) string {
+	t.Helper()
+	lines := strings.Split(section, "\n")
+	for i, line := range lines {
+		if strings.TrimSpace(line) == marker && i > 0 {
+			return lines[i-1]
+		}
+	}
+	t.Fatalf("missing %q", marker)
+	return ""
+}
+
+func dungeonExploreValueFlags(t *testing.T) []string {
+	t.Helper()
+	_, here, _, ok := runtime.Caller(0)
+	if !ok {
+		t.Fatal("no caller")
+	}
+	path := filepath.Join(filepath.Dir(here), "..", "..", "cmd", "camp", "dungeon", "explore.go")
+	fset := token.NewFileSet()
+	file, err := parser.ParseFile(fset, path, nil, 0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var flags []string
+	ast.Inspect(file, func(n ast.Node) bool {
+		call, ok := n.(*ast.CallExpr)
+		if !ok {
+			return true
+		}
+		sel, ok := call.Fun.(*ast.SelectorExpr)
+		if !ok {
+			return true
+		}
+		recv, ok := sel.X.(*ast.Ident)
+		if !ok || recv.Name != "flags" {
+			return true
+		}
+		switch sel.Sel.Name {
+		case "Bool", "BoolP", "BoolVar", "BoolVarP", "MarkHidden":
+			return true
+		case "String", "StringP":
+			name, found := callString(call, 0)
+			if !found {
+				t.Errorf("flags.%s has no name", sel.Sel.Name)
+				return true
+			}
+			flags = append(flags, name)
+		case "StringVar", "StringVarP":
+			name, found := callString(call, 1)
+			if !found {
+				t.Errorf("flags.%s has no name", sel.Sel.Name)
+				return true
+			}
+			flags = append(flags, name)
+		default:
+			t.Errorf("flags.%s is not classified as bool or value-taking", sel.Sel.Name)
+		}
+		return true
+	})
+	seen := map[string]bool{}
+	for _, flag := range flags {
+		seen[flag] = true
+	}
+	if !seen["query"] || !seen["path-output"] || seen["json"] {
+		t.Fatalf("parsed %v from %s", flags, path)
+	}
+	return flags
+}
+
+func callString(call *ast.CallExpr, n int) (string, bool) {
+	if n >= len(call.Args) {
+		return "", false
+	}
+	lit, ok := call.Args[n].(*ast.BasicLit)
+	if !ok || lit.Kind != token.STRING {
+		return "", false
+	}
+	value, err := strconv.Unquote(lit.Value)
+	return value, err == nil
+}
+
+func runExplorePassthroughCases(t *testing.T, shellName, script string) {
+	t.Helper()
+	cases := []struct {
+		name    string
+		args    []string
+		handoff bool
+	}{
+		{name: "query value is not json", args: []string{"--query", "--json"}, handoff: true},
+		{name: "last json false keeps handoff", args: []string{"--json", "--json=false"}, handoff: true},
+		{name: "last json true passes through", args: []string{"--json=false", "--json"}, handoff: false},
+		{name: "help passes through", args: []string{"--help"}, handoff: false},
+		{name: "short help passes through", args: []string{"-h"}, handoff: false},
+		{name: "end of options stops json", args: []string{"--", "--json"}, handoff: true},
+		{name: "status value is not json", args: []string{"--status", "--json"}, handoff: true},
+		{name: "equals query is not json", args: []string{"--query=--json"}, handoff: true},
+		{name: "json alone passes through", args: []string{"--json"}, handoff: false},
+		{name: "json false keeps handoff", args: []string{"--json=false"}, handoff: true},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			invoked := invokeExploreWrapper(t, shellName, script, tc.args)
+			got := strings.Contains(invoked, "--path-output")
+			if got != tc.handoff {
+				t.Fatalf("handoff=%v, wrapper ran %q", got, invoked)
+			}
+		})
+	}
+}
+
+func invokeExploreWrapper(t *testing.T, shellName, script string, args []string) string {
+	t.Helper()
+	bin, initScript := exploreWrapperCommand(t, shellName, script, args)
+	if _, err := exec.LookPath(bin[0]); err != nil {
+		t.Skip(bin[0] + " not available")
+	}
+	cmd := exec.Command(bin[0], bin[1:]...)
+	cmd.Env = []string{
+		"PATH=" + os.Getenv("PATH"),
+		"HOME=" + os.Getenv("HOME"),
+		"TERM=xterm-256color",
+		"CAMP_INIT=" + initScript,
+	}
+	ptmx, err := pty.Start(cmd)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer func() { _ = ptmx.Close() }()
+	var buf bytes.Buffer
+	readDone := make(chan struct{})
+	go func() {
+		_, _ = io.Copy(&buf, ptmx)
+		close(readDone)
+	}()
+	waitErr := cmd.Wait()
+	_ = ptmx.Close()
+	<-readDone
+	out := strings.ReplaceAll(buf.String(), "\r", "")
+	if waitErr != nil {
+		t.Fatalf("%s: %v\n%s", shellName, waitErr, out)
+	}
+	var invoked []string
+	for _, line := range strings.Split(out, "\n") {
+		if rest, ok := strings.CutPrefix(strings.TrimSpace(line), "INVOKE "); ok {
+			invoked = append(invoked, rest)
+		}
+	}
+	if len(invoked) != 1 {
+		t.Fatalf("%s %v invoked camp %d times:\n%s", shellName, args, len(invoked), out)
+	}
+	return invoked[0]
+}
+
+func exploreWrapperCommand(t *testing.T, shellName, script string, args []string) ([]string, string) {
+	t.Helper()
+	quoted := quoteShellArgs(args)
+	switch shellName {
+	case "bash":
+		return []string{"bash", "--noprofile", "--norc", "-c", bashExploreRunner(quoted)}, script
+	case "zsh":
+		return []string{"zsh", "-f", "-c", zshExploreRunner(quoted)}, script
+	case "fish":
+		return []string{"fish", "--no-config", "-c", fishExploreRunner(quoted)}, prepareFishExploreScript(t, script)
+	default:
+		t.Fatalf("unknown shell %s", shellName)
+		return nil, ""
+	}
+}
+
+func bashExploreRunner(args string) string {
+	return `
+camp() { :; }
+eval "$CAMP_INIT"
+command() { printf 'INVOKE %s\n' "$*"; }
+enable -n command || exit 1
+mktemp() { printf '%s\n' /no/such/camp-explore; }
+rm() { return 0; }
+cd() { return 0; }
+camp dungeon explore ` + args + `
+exit 0
+`
+}
+
+func zshExploreRunner(args string) string {
+	return `
+camp() { :; }
+eval "$CAMP_INIT"
+command() { printf 'INVOKE %s\n' "$*"; }
+disable command || exit 1
+mktemp() { printf '%s\n' /no/such/camp-explore; }
+rm() { return 0; }
+cd() { return 0; }
+camp dungeon explore ` + args + `
+exit 0
+`
+}
+
+func fishExploreRunner(args string) string {
+	return `
+function camp_stub
+    printf 'INVOKE %s\n' "$argv"
+end
+function mktemp
+    echo /no/such/camp-explore
+end
+function rm
+end
+function cd
+end
+eval $CAMP_INIT
+camp dungeon explore ` + args + `
+exit 0
+`
+}
+
+func prepareFishExploreScript(t *testing.T, script string) string {
+	t.Helper()
+	const guard = "if not command -v camp &>/dev/null\n    exit 0\nend\n"
+	if !strings.Contains(script, guard) {
+		t.Fatal("fish shell-init guard changed")
+	}
+	script = strings.Replace(script, guard, "", 1)
+	return strings.ReplaceAll(script, "command camp", "camp_stub")
+}
+
+func quoteShellArgs(args []string) string {
+	parts := make([]string, len(args))
+	for i, arg := range args {
+		parts[i] = "'" + strings.ReplaceAll(arg, "'", `'\''`) + "'"
+	}
+	return strings.Join(parts, " ")
+}

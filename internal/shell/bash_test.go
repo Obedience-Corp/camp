@@ -107,6 +107,10 @@ func TestGenerateBash_DungeonExploreArm(t *testing.T) {
 	assertJSONFalseKeepsExploreHandoff(t, section)
 }
 
+func TestGenerateBash_ExplorePassthrough(t *testing.T) {
+	runExplorePassthroughCases(t, "bash", generateBash())
+}
+
 func TestGenerateBash_FestivalsArm(t *testing.T) {
 	output := generateBash()
 	section := shellWrapperSection(t, output, "    festivals)", "    quest)")
