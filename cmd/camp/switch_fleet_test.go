@@ -2,6 +2,7 @@ package main
 
 import (
 	"errors"
+	"slices"
 	"strings"
 	"testing"
 
@@ -51,16 +52,17 @@ func TestMatchFleetCampsNormalizedAndAmbiguous(t *testing.T) {
 	}
 }
 
-func TestPrepareResumeSSHInjectsSocket(t *testing.T) {
+func TestHopLineForwardsTheSocketAndNamesBothRoutes(t *testing.T) {
 	var buf strings.Builder
 	m := &machines.Machine{ID: "devbox", Host: "devbox.ts.net", SSHUser: "lance", AuthMethod: machines.AuthSSHAgent}
 	if err := emitShellConnect(&buf, true, "/srv/campaigns/obey", remote.Direct(m), "v1;host=example"); err != nil {
 		t.Fatal(err)
 	}
-	argv, err := prepareResumeSSH(buf.String(), "/tmp/camp-hr-l.sock", "/tmp/camp-hr-r.sock")
+	hop, err := splitHopLine(buf.String())
 	if err != nil {
 		t.Fatal(err)
 	}
+	argv := hop.resumeArgv("/tmp/camp-hr-l.sock", "/tmp/camp-hr-r.sock", "0123456789abcdef")
 	joined := strings.Join(argv, "\n")
 	if argv[0] != "ssh" || argv[1] != "-t" {
 		t.Fatalf("argv head = %q %q", argv[0], argv[1])
@@ -72,8 +74,13 @@ func TestPrepareResumeSSHInjectsSocket(t *testing.T) {
 		t.Fatalf("missing forward:\n%s", joined)
 	}
 	remoteCmd := argv[len(argv)-1]
-	if !strings.Contains(remoteCmd, "export "+hopResumeSockEnv+"=") {
-		t.Fatalf("remote command missing resume export: %s", remoteCmd)
+	for _, export := range []string{
+		"export " + hopResumeSockEnv + "='/tmp/camp-hr-r.sock'",
+		"export " + hopResumeRelayEnv + "='0123456789abcdef'",
+	} {
+		if !strings.Contains(remoteCmd, export) {
+			t.Fatalf("remote command missing %q: %s", export, remoteCmd)
+		}
 	}
 	if !strings.Contains(remoteCmd, "cd '/srv/campaigns/obey' && exec $SHELL -l") &&
 		!strings.Contains(remoteCmd, `cd '"'"'/srv/campaigns/obey'"'"'`) &&
@@ -82,6 +89,31 @@ func TestPrepareResumeSSHInjectsSocket(t *testing.T) {
 	}
 	if !strings.Contains(remoteCmd, "CAMP_HOP_ORIGIN") {
 		t.Fatalf("remote command dropped the origin export: %s", remoteCmd)
+	}
+
+	relay := hopRelayArgv(hop, "0123456789abcdef", "/tmp/camp-hr-r.sock")
+	if relay[0] != "-T" {
+		t.Fatalf("the relay's ssh must refuse a pty, or a forced-tty ssh config turns its stream into a terminal: %q", relay)
+	}
+	firstOpt := slices.Index(relay, "StrictHostKeyChecking=accept-new")
+	for _, own := range []string{"-a", "-x", "ClearAllForwardings=yes"} {
+		if at := slices.Index(relay, own); at < 0 || at > firstOpt {
+			t.Fatalf("the relay carries only its stdio and must set %s ahead of the hop's options, so the user's configured forwards stay with the interactive ssh: %q", own, relay)
+		}
+	}
+	own, hops := slices.Index(relay, "ControlMaster=no"), slices.Index(relay, "ControlMaster=auto")
+	if own < 0 || hops < 0 || own > hops {
+		t.Fatalf("the relay must never create the ControlMaster the interactive ssh is about to; ssh keeps the first value: %q", relay)
+	}
+	if !slices.ContainsFunc(relay, func(arg string) bool { return strings.HasPrefix(arg, "ControlPath=") }) {
+		t.Fatalf("the relay should ride the hop's ControlMaster when one is up: %q", relay)
+	}
+	farCommand := relay[len(relay)-1]
+	if relay[len(relay)-2] != "lance@devbox.ts.net" || !strings.Contains(farCommand, " hop-resume relay 0123456789abcdef ") || !strings.Contains(farCommand, "/tmp/camp-hr-r.sock") {
+		t.Fatalf("the relay must run the far machine's camp on the hop's target and be told where the forwarded socket is: %q", relay[len(relay)-2:])
+	}
+	if slices.Contains(relay, "-t") || strings.Contains(strings.Join(relay, "\n"), "exec $SHELL -l") {
+		t.Fatalf("the relay is not an interactive session: %q", relay)
 	}
 }
 

@@ -144,6 +144,13 @@ func campRemoteCommandLine(override, args string) string {
 	return campRemoteCommandLineWith(campInstallDirs, override, args)
 }
 
+// CampCommandLine is the remote command line that runs the far machine's own
+// camp with args, for a caller that drives ssh itself because it needs the
+// session's stdin and stdout. RunCampCommand resolves camp the same way.
+func CampCommandLine(args string) string {
+	return campRemoteCommandLine(remoteCampOverride(), args)
+}
+
 // campRemoteCommandLineWith is campRemoteCommandLine with an explicit
 // fallback list, the seam the shell round-trip tests use.
 func campRemoteCommandLineWith(dirs []campInstallDir, override, args string) string {
