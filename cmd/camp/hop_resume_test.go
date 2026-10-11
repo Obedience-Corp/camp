@@ -5,12 +5,16 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"io"
+	"math/rand"
 	"net"
 	"os"
 	"slices"
+	"strconv"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -613,16 +617,20 @@ func TestHopRelayEndsWithItsHopAfterALateAnswer(t *testing.T) {
 func TestHopRelayUnconfirmedSwitchCountsOnlyIfTheHopEnds(t *testing.T) {
 	grace := hopAckGrace
 	t.Cleanup(func() { hopAckGrace = grace })
-	hopAckGrace = 150 * time.Millisecond
 
+	// Nothing tells the test that serving has seen the link go, so where the
+	// hop ends inside the grace, the grace is long and the hop ends early in
+	// it: the margin between the two is deliberate.
 	for name, tc := range map[string]struct {
+		grace   time.Duration
 		hopEnds bool
 		want    string
 	}{
-		"the far shell got its acknowledgement and exited": {true, "ssh thirdbox:notes"},
-		"the far shell never got it and stayed":            {false, ""},
+		"the far shell got its acknowledgement and exited": {3 * time.Second, true, "ssh thirdbox:notes"},
+		"the far shell never got it and stayed":            {150 * time.Millisecond, false, ""},
 	} {
 		t.Run(name, func(t *testing.T) {
+			hopAckGrace = tc.grace
 			ctx, endHop := context.WithCancel(context.Background())
 			defer endHop()
 			toOpenerR, toOpenerW := io.Pipe()
@@ -651,7 +659,7 @@ func TestHopRelayUnconfirmedSwitchCountsOnlyIfTheHopEnds(t *testing.T) {
 			// switch stand without the grace being what kept it.
 			_ = toOpenerW.Close()
 			if tc.hopEnds {
-				time.Sleep(hopAckGrace / 3)
+				time.Sleep(100 * time.Millisecond)
 				endHop()
 			}
 			select {
@@ -1253,4 +1261,236 @@ func TestHopRelayTakesBackASwitchItsRelayNeverSettled(t *testing.T) {
 	case <-time.After(2 * time.Second):
 		t.Fatal("serving did not end with the hop")
 	}
+}
+
+// A relay can put its frames in more orders than the tests above spell out.
+// This drives serving through random ones and holds it to what must be true
+// after any of them: the follow-up it returns, the hop reserved exactly when a
+// switch stands, never two preparations at once, never two answers to one
+// request. The orderings are the same on every run; CAMP_HOP_ORDERINGS runs
+// more of them.
+func TestHopRelayServingHoldsUnderRandomOrderings(t *testing.T) {
+	orderings := 60
+	if more, err := strconv.Atoi(os.Getenv("CAMP_HOP_ORDERINGS")); err == nil && more > 0 {
+		orderings = more
+	}
+	grace, spacing := hopAckGrace, hopPrepareSpacing
+	t.Cleanup(func() { hopAckGrace, hopPrepareSpacing = grace, spacing })
+	for seed := int64(1); seed <= int64(orderings); seed++ {
+		if problem := serveOneRandomOrdering(seed); problem != "" {
+			t.Fatalf("ordering %d: %s", seed, problem)
+		}
+	}
+}
+
+// serveOneRandomOrdering plays one hop's worth of exchanges against
+// serveHopRelay and returns what went wrong, with the frames that led to it.
+func serveOneRandomOrdering(seed int64) string {
+	rng := rand.New(rand.NewSource(seed))
+	const (
+		hopEnds = iota
+		linkLostThenHopEnds
+		linkLostAndHopStays
+	)
+	ending := rng.Intn(3)
+	// Where the hop is to end inside the grace, the grace is long and the hop
+	// ends early in it, as in the test of the grace itself.
+	hopAckGrace = 150 * time.Millisecond
+	if ending == linkLostThenHopEnds {
+		hopAckGrace = 3 * time.Second
+	}
+	hopPrepareSpacing = time.Duration(rng.Intn(4)) * time.Millisecond
+
+	var trace []string
+	note := func(format string, args ...any) { trace = append(trace, fmt.Sprintf(format, args...)) }
+	problem := func(format string, args ...any) string {
+		return fmt.Sprintf(format, args...) + "\n  " + strings.Join(trace, "\n  ")
+	}
+
+	// A selector says how its preparation goes: "ok", "fail", or "stubborn"
+	// (ends only some time after it is cancelled), then the request's number
+	// and a delay in milliseconds.
+	var running, most atomic.Int32
+	prepare := func(ctx context.Context, request hopResumeRequest) (string, error) {
+		now := running.Add(1)
+		defer running.Add(-1)
+		for seen := most.Load(); now > seen && !most.CompareAndSwap(seen, now); seen = most.Load() {
+		}
+		parts := strings.Split(request.Selector, ":")
+		ms, _ := strconv.Atoi(parts[2])
+		delay := time.Duration(ms) * time.Millisecond
+		if parts[0] == "stubborn" {
+			<-ctx.Done()
+			time.Sleep(3 * delay)
+			return "", ctx.Err()
+		}
+		select {
+		case <-time.After(delay):
+		case <-ctx.Done():
+			time.Sleep(delay)
+			return "", ctx.Err()
+		}
+		if parts[0] == "fail" {
+			return "", errors.New("no route")
+		}
+		return "follow " + parts[1], nil
+	}
+
+	ctx, endHop := context.WithCancel(context.Background())
+	defer endHop()
+	toOpenerR, toOpenerW := io.Pipe()
+	toRelayR, toRelayW := io.Pipe()
+	defer func() { _ = toOpenerW.Close(); _ = toRelayW.Close(); _ = toRelayR.Close() }()
+	hop := new(hopSwitch)
+	type served struct {
+		follow string
+		err    error
+	}
+	done := make(chan served, 1)
+	go func() {
+		follow, err := serveHopRelay(ctx, toOpenerR, toRelayW, hop, prepare)
+		done <- served{follow, err}
+	}()
+	answers := make(chan hopRelayFrame, 64)
+	go func() {
+		reader := bufio.NewReader(toRelayR)
+		for {
+			line, err := reader.ReadBytes('\n')
+			if err != nil {
+				return
+			}
+			var frame hopRelayFrame
+			if json.Unmarshal(line, &frame) == nil {
+				answers <- frame
+			}
+		}
+	}()
+	out := hopLineWriter{w: toOpenerW}
+	send := func(frame hopRelayFrame) {
+		frame.Version = hopRelayVersion
+		_ = out.write(frame)
+	}
+	answered := map[int]int{}
+	await := func(seq int) (hopResumeResponse, bool) {
+		for {
+			select {
+			case frame := <-answers:
+				answered[frame.Seq]++
+				if frame.Seq != seq {
+					continue
+				}
+				var response hopResumeResponse
+				_ = json.Unmarshal(frame.Response, &response)
+				return response, true
+			case <-time.After(10 * time.Second):
+				return hopResumeResponse{}, false
+			}
+		}
+	}
+	nap := func() { time.Sleep(time.Duration(rng.Intn(3)) * time.Millisecond) }
+
+	send(hopRelayFrame{Ready: true})
+	seq, confirmed, pending := 0, 0, 0
+	for exchanges := 1 + rng.Intn(8); exchanges > 0 && pending == 0; exchanges-- {
+		seq++
+		kind := []string{"ok", "ok", "ok", "fail", "stubborn"}[rng.Intn(5)]
+		request, _ := json.Marshal(hopResumeEnvelope{Version: hopRelayVersion, Request: hopResumeRequest{
+			Selector: fmt.Sprintf("%s:%d:%d", kind, seq, rng.Intn(4)), Host: "c.example",
+		}})
+		note("request %d %s", seq, kind)
+		send(hopRelayFrame{Seq: seq, Request: request})
+		if kind == "stubborn" || rng.Intn(4) == 0 {
+			nap()
+			note("gone %d before its answer", seq)
+			send(hopRelayFrame{Seq: seq, Gone: true})
+			continue
+		}
+		response, ok := await(seq)
+		if !ok {
+			return problem("request %d (%s) was never answered", seq, kind)
+		}
+		note("answer %d accepted=%v %q", seq, response.Accepted, response.Error)
+		switch {
+		case confirmed != 0 && response.Accepted:
+			return problem("request %d was accepted after %d was confirmed", seq, confirmed)
+		case confirmed == 0 && kind == "ok" && !response.Accepted:
+			return problem("request %d could have been served and was refused: %s", seq, response.Error)
+		case !response.Accepted:
+			send(hopRelayFrame{Seq: seq, Gone: true})
+			continue
+		}
+		how := rng.Intn(4)
+		if how < 2 && rng.Intn(2) == 0 {
+			// A confirmation that names another exchange settles nothing.
+			note("confirm %d, which is not in flight", seq+100)
+			send(hopRelayFrame{Seq: seq + 100, Confirm: true})
+		}
+		switch how {
+		case 0:
+			nap()
+			note("gone %d after its acknowledgement", seq)
+			send(hopRelayFrame{Seq: seq, Gone: true})
+		case 1:
+			note("%d left acknowledged and unconfirmed", seq)
+			pending = seq
+		default:
+			nap()
+			note("confirm %d", seq)
+			send(hopRelayFrame{Seq: seq, Confirm: true})
+			confirmed = seq
+		}
+	}
+	// Frames are taken in order, so the answer to one more means every frame
+	// above has been taken in before the ending. A frame of another version
+	// is answered without touching the exchange in flight.
+	seq++
+	flush, _ := json.Marshal(hopResumeEnvelope{Version: hopRelayVersion + 1})
+	_ = out.write(hopRelayFrame{Version: hopRelayVersion + 1, Seq: seq, Request: flush})
+	if _, ok := await(seq); !ok {
+		return problem("the frame of another version, %d, was never answered", seq)
+	}
+
+	want := ""
+	if confirmed != 0 {
+		want = "follow " + strconv.Itoa(confirmed)
+	}
+	switch ending {
+	case hopEnds:
+		note("the hop ends")
+		if pending != 0 {
+			want = "follow " + strconv.Itoa(pending)
+		}
+		endHop()
+	case linkLostThenHopEnds:
+		note("the link is lost, then the hop ends inside the grace")
+		if pending != 0 {
+			want = "follow " + strconv.Itoa(pending)
+		}
+		_ = toOpenerW.Close()
+		time.Sleep(100 * time.Millisecond)
+		endHop()
+	case linkLostAndHopStays:
+		note("the link is lost and the hop stays")
+		_ = toOpenerW.Close()
+	}
+	select {
+	case got := <-done:
+		if got.follow != want {
+			return problem("follow-up %q (%v), want %q", got.follow, got.err, want)
+		}
+	case <-time.After(10 * time.Second):
+		return problem("serving did not end")
+	}
+	if reserved := !hop.reserve(); reserved != (want != "") {
+		return problem("hop reserved=%v with follow-up %q", reserved, want)
+	}
+	if most.Load() > 1 {
+		return problem("%d preparations ran at once", most.Load())
+	}
+	for seq, times := range answered {
+		if times > 1 {
+			return problem("request %d was answered %d times", seq, times)
+		}
+	}
+	return ""
 }
