@@ -8,44 +8,42 @@ import (
 	"os"
 	"path/filepath"
 
+	"github.com/Obedience-Corp/camp/internal/config"
 	"github.com/Obedience-Corp/camp/internal/dungeon/spelling"
 	camperrors "github.com/Obedience-Corp/camp/internal/errors"
-	"github.com/Obedience-Corp/camp/internal/pathutil"
 )
 
 // cacheSchemaVersion changes whenever the cached index gains information a
 // stale cache would silently lack, so old files are rebuilt instead of trusted.
-const cacheSchemaVersion = "camp-dungeon-explore-cache/v3"
+const cacheSchemaVersion = "camp-dungeon-explore-cache/v4"
 
 type cacheFile struct {
 	SchemaVersion string `json:"schema_version"`
 	Index         Index  `json:"index"`
 }
 
-// CacheDir is the user-level directory for this camp's feed cache.
+// CacheDir is the user-level directory for one checkout's feed cache. It sits
+// under the camp config directory, so XDG_CONFIG_HOME moves it with the rest.
 func CacheDir(campaignID, root string) (string, error) {
-	home, err := pathutil.Home()
+	base, err := config.ConfigDir()
 	if err != nil {
 		return "", err
 	}
 	// Repository-controlled IDs are opaque identifiers, never path components.
-	key := "id:" + campaignID
-	if campaignID == "" {
-		key = "root:" + root
-	}
-	sum := sha256.Sum256([]byte(key))
-	id := hex.EncodeToString(sum[:])
-	return filepath.Join(home, ".obey", "campaign", "caches", id, "dungeon-feed"), nil
+	// Two checkouts of one camp share an ID, so the root is part of the key:
+	// neither may open on the other's rows.
+	sum := sha256.Sum256([]byte("id:" + campaignID + "\x00root:" + filepath.Clean(root)))
+	return filepath.Join(base, "caches", hex.EncodeToString(sum[:]), "dungeon-feed"), nil
 }
 
 // LoadCache reads a previously saved index. The bool is false when the file
-// is missing or was written by a different schema.
-func LoadCache(dir string) (Index, bool, error) {
+// is missing, unreadable, or was written by a different schema.
+func LoadCache(ctx context.Context, dir string) (Index, bool, error) {
+	if err := ctx.Err(); err != nil {
+		return Index{}, false, camperrors.Wrap(err, "loading dungeon feed cache")
+	}
 	data, err := os.ReadFile(filepath.Join(dir, "index.json"))
 	if err != nil {
-		if os.IsNotExist(err) {
-			return Index{}, false, nil
-		}
 		return Index{}, false, nil
 	}
 	var file cacheFile
@@ -57,7 +55,10 @@ func LoadCache(dir string) (Index, bool, error) {
 
 // SaveCache writes the index. A failure is returned to the caller, which
 // should keep the in-memory feed.
-func SaveCache(dir string, idx Index) error {
+func SaveCache(ctx context.Context, dir string, idx Index) error {
+	if err := ctx.Err(); err != nil {
+		return camperrors.Wrap(err, "saving dungeon feed cache")
+	}
 	if err := os.MkdirAll(dir, 0o755); err != nil {
 		return camperrors.Wrap(err, "creating dungeon feed cache")
 	}

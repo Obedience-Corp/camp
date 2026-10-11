@@ -4,9 +4,11 @@ import (
 	"context"
 	"crypto/sha256"
 	"encoding/hex"
+	"errors"
 	"io/fs"
 	"os"
 	"path/filepath"
+	"slices"
 	"sort"
 	"strconv"
 	"strings"
@@ -31,7 +33,7 @@ func Build(ctx context.Context, root string) (Index, error) {
 	if err != nil {
 		return Index{}, err
 	}
-	idx := Index{BuiltAt: time.Now().UTC(), Warnings: cleanWarnings(found.Warnings)}
+	idx := Index{BuiltAt: time.Now().UTC(), Warnings: addWarnings(nil, found.Warnings...)}
 	for _, dungeon := range found.Dungeons {
 		if err := ctx.Err(); err != nil {
 			return Index{}, camperrors.Wrap(err, "context cancelled")
@@ -42,7 +44,7 @@ func Build(ctx context.Context, root string) (Index, error) {
 		}
 		idx.Dungeons = append(idx.Dungeons, print)
 		idx.Items = append(idx.Items, items...)
-		idx.Warnings = append(idx.Warnings, warnings...)
+		idx.Warnings = addWarnings(idx.Warnings, warnings...)
 	}
 	if err := ctx.Err(); err != nil {
 		return Index{}, camperrors.Wrap(err, "context cancelled")
@@ -67,14 +69,14 @@ func scanDungeon(ctx context.Context, root string, dungeon spelling.Dungeon) (Du
 		if ctx.Err() != nil {
 			return DungeonPrint{}, nil, nil, camperrors.Wrap(err, "context cancelled")
 		}
-		warnings = append(warnings, warn(relDungeon, err))
+		warnings = append(warnings, warn(root, relDungeon, err))
 		fp = ""
 	}
 	print := DungeonPrint{Path: relDungeon, Name: dungeon.Name, Label: label, Fingerprint: fp}
 
 	entries, err := os.ReadDir(dungeon.Path)
 	if err != nil {
-		return print, nil, append(warnings, warn(relDungeon, err)), nil
+		return print, nil, append(warnings, warn(root, relDungeon, err)), nil
 	}
 	var items []Item
 	for _, entry := range entries {
@@ -107,7 +109,7 @@ func scanDungeon(ctx context.Context, root string, dungeon spelling.Dungeon) (Du
 func scanStatus(ctx context.Context, root, relDungeon, label, status, statusPath string) ([]Item, []string, error) {
 	entries, err := os.ReadDir(statusPath)
 	if err != nil {
-		return nil, []string{warn(relDungeon+"/"+status, err)}, nil
+		return nil, []string{warn(root, relDungeon+"/"+status, err)}, nil
 	}
 	var items []Item
 	var warnings []string
@@ -141,7 +143,7 @@ func scanStatus(ctx context.Context, root, relDungeon, label, status, statusPath
 func scanBucket(ctx context.Context, root, relDungeon, label, status, day, bucketPath string) ([]Item, []string, error) {
 	entries, err := os.ReadDir(bucketPath)
 	if err != nil {
-		return nil, []string{warn(relDungeon+"/"+status+"/"+day, err)}, nil
+		return nil, []string{warn(root, relDungeon+"/"+status+"/"+day, err)}, nil
 	}
 	var items []Item
 	var warnings []string
@@ -165,11 +167,11 @@ func scanBucket(ctx context.Context, root, relDungeon, label, status, day, bucke
 func readItem(ctx context.Context, root, relDungeon, label, status, bucketDay, path string, entry fs.DirEntry) (Item, string) {
 	rel, err := relSlash(root, path)
 	if err != nil {
-		return Item{}, warn(path, err)
+		return Item{}, warn(root, entry.Name(), err)
 	}
 	info, err := entry.Info()
 	if err != nil {
-		return Item{Title: CleanText(entry.Name()), Path: rel, Status: status, DungeonLabel: label, DungeonPath: relDungeon, Kind: KindOther, DateSource: DateFileTime, DoneDate: time.Now().Format("2006-01-02"), Warning: CleanText(err.Error())}, warn(rel, err)
+		return Item{Title: CleanText(entry.Name()), Path: rel, Status: status, DungeonLabel: label, DungeonPath: relDungeon, Kind: KindOther, DateSource: DateFileTime, DoneDate: time.Now().Format("2006-01-02"), Warning: CleanText(cause(err).Error())}, warn(root, rel, err)
 	}
 	item := Item{
 		Status:       status,
@@ -217,22 +219,41 @@ func relSlash(root, path string) (string, error) {
 	return filepath.ToSlash(rel), nil
 }
 
-func warn(path string, err error) string {
-	return CleanText(path + ": " + err.Error())
-}
-
-func cleanWarnings(warnings []string) []string {
-	if len(warnings) == 0 {
-		return nil
-	}
-	out := make([]string, 0, len(warnings))
-	for _, warning := range warnings {
-		warning = CleanText(warning)
-		if warning != "" {
-			out = append(out, warning)
+// warn names what could not be read by its camp-relative path. A filesystem
+// error names the absolute path it failed on, which may be below fallback;
+// the warning carries that path once, relative to the camp.
+func warn(root, fallback string, err error) string {
+	rel := fallback
+	var pathErr *fs.PathError
+	if errors.As(err, &pathErr) {
+		if under, relErr := filepath.Rel(root, pathErr.Path); relErr == nil && filepath.IsLocal(under) {
+			rel = filepath.ToSlash(under)
 		}
 	}
-	return out
+	return CleanText(rel + ": " + cause(err).Error())
+}
+
+// cause is err without the absolute path a filesystem error repeats.
+func cause(err error) error {
+	var pathErr *fs.PathError
+	if errors.As(err, &pathErr) {
+		return pathErr.Err
+	}
+	return err
+}
+
+// addWarnings appends each warning the list does not hold yet. Discovery, the
+// fingerprint walk, and the item scan all stop at the same unreadable
+// directory, and it is reported once.
+func addWarnings(have []string, more ...string) []string {
+	for _, warning := range more {
+		warning = CleanText(warning)
+		if warning == "" || slices.Contains(have, warning) {
+			continue
+		}
+		have = append(have, warning)
+	}
+	return have
 }
 
 var itemMetaFiles = []string{"fest.yaml", "FESTIVAL_GOAL.md", ".workitem", "README.md"}

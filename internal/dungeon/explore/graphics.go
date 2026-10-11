@@ -4,8 +4,6 @@ import (
 	"encoding/base64"
 	"os"
 	"strings"
-
-	camperrors "github.com/Obedience-Corp/camp/internal/errors"
 )
 
 const (
@@ -27,7 +25,7 @@ func ChooseProtocol(flag string, getenv func(string) string, plain bool) (string
 	switch flag {
 	case ProtocolAuto, ProtocolKitty, ProtocolITerm, ProtocolOff:
 	default:
-		return "", camperrors.Newf("unknown --images %q; use auto, kitty, iterm, or off", flag)
+		return "", errUnknownImages(flag)
 	}
 	if plain || flag == ProtocolOff {
 		return ProtocolOff, nil

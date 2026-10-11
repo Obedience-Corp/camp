@@ -4,6 +4,7 @@ package explore
 
 import (
 	"context"
+	"errors"
 	"os"
 	"path/filepath"
 	"strings"
@@ -45,10 +46,10 @@ func TestCacheKeepsDirectoryItems(t *testing.T) {
 		t.Fatalf("Build() error = %v", err)
 	}
 	cacheDir := filepath.Join(t.TempDir(), "dungeon-feed")
-	if err := SaveCache(cacheDir, built); err != nil {
+	if err := SaveCache(ctx, cacheDir, built); err != nil {
 		t.Fatalf("SaveCache() error = %v", err)
 	}
-	loaded, ok, err := LoadCache(cacheDir)
+	loaded, ok, err := LoadCache(ctx, cacheDir)
 	if err != nil || !ok {
 		t.Fatalf("LoadCache() = ok %v, err %v", ok, err)
 	}
@@ -257,6 +258,7 @@ func TestWorkitemMarkerWinsOverFestivalArtifacts(t *testing.T) {
 func TestCachePathConfinement(t *testing.T) {
 	home := t.TempDir()
 	t.Setenv("HOME", home)
+	t.Setenv("XDG_CONFIG_HOME", "")
 	base := filepath.Join(home, ".obey", "campaign", "caches")
 	for _, id := range []string{"normal", "../../../../checkout", "/absolute", "", `..\escape`} {
 		dir, err := CacheDir(id, "/camp")
@@ -267,7 +269,7 @@ func TestCachePathConfinement(t *testing.T) {
 		if err != nil || !filepath.IsLocal(rel) {
 			t.Fatalf("cache escaped for %q: %s", id, dir)
 		}
-		if err := SaveCache(dir, Index{}); err != nil {
+		if err := SaveCache(context.Background(), dir, Index{}); err != nil {
 			t.Fatal(err)
 		}
 	}
@@ -282,14 +284,51 @@ func TestCacheWriteSymlinks(t *testing.T) {
 			t.Fatal(err)
 		}
 	}
-	if err := SaveCache(dir, Index{}); err != nil {
+	if err := SaveCache(context.Background(), dir, Index{}); err != nil {
 		t.Fatal(err)
 	}
 	data, err := os.ReadFile(target)
 	if err != nil || string(data) != "untouched" {
 		t.Fatalf("cache write followed symlink: %q, %v", data, err)
 	}
-	if _, ok, err := LoadCache(dir); err != nil || !ok {
+	if _, ok, err := LoadCache(context.Background(), dir); err != nil || !ok {
 		t.Fatalf("cache not published: %v %v", ok, err)
+	}
+}
+
+func TestCacheDiscardsEarlierSchemas(t *testing.T) {
+	ctx := context.Background()
+	dir := t.TempDir()
+	if err := SaveCache(ctx, dir, Index{Items: []Item{{Title: "current"}}}); err != nil {
+		t.Fatal(err)
+	}
+	if cached, ok, err := LoadCache(ctx, dir); err != nil || !ok || len(cached.Items) != 1 {
+		t.Fatalf("current cache: ok %v, err %v, items %d", ok, err, len(cached.Items))
+	}
+	for _, version := range []string{"v1", "v2", "v3"} {
+		stale := `{"schema_version":"camp-dungeon-explore-cache/` + version + `","index":{"items":[{"title":"stale"}],"dungeons":[]}}`
+		mustWrite(t, filepath.Join(dir, "index.json"), stale)
+		if cached, ok, err := LoadCache(ctx, dir); err != nil || ok {
+			t.Fatalf("cache written by schema %s was trusted: %+v (err %v)", version, cached, err)
+		}
+	}
+}
+
+func TestCacheHonorsCancelledContext(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+	dir := filepath.Join(t.TempDir(), "dungeon-feed")
+	if err := SaveCache(ctx, dir, Index{}); err != nil {
+		t.Fatal(err)
+	}
+	cancel()
+	if _, ok, err := LoadCache(ctx, dir); !errors.Is(err, context.Canceled) || ok {
+		t.Fatalf("LoadCache with a cancelled context = ok %v, err %v", ok, err)
+	}
+	fresh := filepath.Join(t.TempDir(), "dungeon-feed")
+	if err := SaveCache(ctx, fresh, Index{}); !errors.Is(err, context.Canceled) {
+		t.Fatalf("SaveCache with a cancelled context = %v", err)
+	}
+	if _, err := os.Lstat(fresh); !os.IsNotExist(err) {
+		t.Fatalf("a cancelled save still created %s (%v)", fresh, err)
 	}
 }

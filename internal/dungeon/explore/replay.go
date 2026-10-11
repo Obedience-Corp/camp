@@ -33,7 +33,9 @@ type Frames struct {
 }
 
 // DecodeReplay composites a GIF and scales it to fit maxW by maxH.
-// A file past the size or frame budget returns a poster and ErrReplayTooLong.
+// A replay past the size, frame, or work budget returns ErrReplayTooLong and
+// no frames. Its poster is the canvas built from the frames inside the budget,
+// and is nil only when not even the first frame fits.
 // Cancelling ctx stops the decode between frames and returns ctx's error.
 func DecodeReplay(ctx context.Context, path string, maxW, maxH int) (Frames, error) {
 	if err := ctx.Err(); err != nil {
@@ -46,22 +48,26 @@ func DecodeReplay(ctx context.Context, path string, maxW, maxH int) (Frames, err
 	if !info.Mode().IsRegular() {
 		return Frames{}, camperrors.New("replay is not a regular file")
 	}
-	if info.Size() > maxReplayBytes {
-		return Frames{}, ErrReplayTooLong
-	}
+	// One byte past the budget tells decodeReplay the file was cut short.
 	data, err := ReadRegular(ctx, path, maxReplayBytes+1)
 	if err != nil {
 		return Frames{}, camperrors.Wrap(err, "reading replay")
-	}
-	if len(data) > maxReplayBytes {
-		return Frames{}, ErrReplayTooLong
 	}
 	return decodeReplay(ctx, data, maxW, maxH)
 }
 
 func decodeReplay(ctx context.Context, data []byte, maxW, maxH int) (Frames, error) {
+	// A file past the size budget is read only up to it. The frames that end
+	// inside the budget still make the poster.
+	oversize := len(data) > maxReplayBytes
+	if oversize {
+		data = data[:maxReplayBytes]
+	}
 	shape, err := scanGIF(data)
-	if err != nil {
+	if oversize && len(shape.frames) == 0 {
+		return Frames{}, ErrReplayTooLong
+	}
+	if err != nil && !oversize {
 		return Frames{}, camperrors.Wrap(err, "decoding replay")
 	}
 	if len(shape.frames) == 0 || shape.width <= 0 || shape.height <= 0 {
@@ -71,9 +77,12 @@ func decodeReplay(ctx context.Context, data []byte, maxW, maxH int) (Frames, err
 		return Frames{}, ErrReplayTooLong
 	}
 	spans := shape.frames
-	tooLong := shape.overWork || len(spans) > maxReplayFrames
-	if shape.overWork {
-		spans = spans[:1]
+	tooLong := oversize || shape.overWork || len(spans) > maxReplayFrames
+	if shape.overWork && len(spans) > 1 {
+		// The last frame scanned is the one that crossed the work budget.
+		// The poster is the canvas up to it: the recorder's first frame is a
+		// solid fill, so stopping there would show one colour.
+		spans = spans[:len(spans)-1]
 	}
 	out, tooLong, err := composite(ctx, data, shape, spans, tooLong, maxW, maxH)
 	if err != nil {
@@ -106,6 +115,9 @@ func (s gifShape) memoryBytes() int64 {
 	return 2*4*int64(s.width)*int64(s.height) + s.largest + frameOverhead
 }
 
+// scanGIF walks the block structure without decoding pixels. When the stream
+// breaks after the header, the shape still holds the frames that ended before
+// the break.
 func scanGIF(data []byte) (gifShape, error) {
 	if len(data) < 13 || (string(data[:6]) != "GIF87a" && string(data[:6]) != "GIF89a") {
 		return gifShape{}, errNotGIF
@@ -138,29 +150,29 @@ func scanGIF(data []byte) (gifShape, error) {
 		switch data[pos] {
 		case 0x21:
 			if pos+2 >= len(data) {
-				return gifShape{}, errNotGIF
+				return shape, errNotGIF
 			}
 			if data[pos+1] == 0xf9 {
 				if pos+8 > len(data) || data[pos+2] != 4 || data[pos+7] != 0 {
-					return gifShape{}, errNotGIF
+					return shape, errNotGIF
 				}
 				disposal = (data[pos+3] >> 2) & 7
 			}
 			next, err := skipSubBlocks(data, pos+2)
 			if err != nil {
-				return gifShape{}, err
+				return shape, err
 			}
 			pos = next
 		case 0x2C:
 			if pos+10 > len(data) {
-				return gifShape{}, errNotGIF
+				return shape, errNotGIF
 			}
 			w := int(data[pos+5]) | int(data[pos+6])<<8
 			h := int(data[pos+7]) | int(data[pos+8])<<8
 			table := colorTableLen(data[pos+9])
 			next, err := skipSubBlocks(data, pos+10+table+1)
 			if err != nil {
-				return gifShape{}, err
+				return shape, err
 			}
 			pixels := int64(w) * int64(h)
 			cost := pixels + int64(table/3*paletteEntryCost)
@@ -191,10 +203,10 @@ func scanGIF(data []byte) (gifShape, error) {
 		case 0x3B:
 			return shape, nil
 		default:
-			return gifShape{}, errNotGIF
+			return shape, errNotGIF
 		}
 	}
-	return gifShape{}, errNotGIF
+	return shape, errNotGIF
 }
 
 func colorTableLen(fields byte) int {

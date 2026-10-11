@@ -2,9 +2,9 @@ package dungeon
 
 import (
 	"encoding/json"
+	"fmt"
 	"os"
 	"path/filepath"
-	"time"
 
 	"github.com/spf13/cobra"
 	"golang.org/x/term"
@@ -12,6 +12,7 @@ import (
 	"github.com/Obedience-Corp/camp/internal/config"
 	"github.com/Obedience-Corp/camp/internal/dungeon/explore"
 	camperrors "github.com/Obedience-Corp/camp/internal/errors"
+	"github.com/Obedience-Corp/camp/internal/jsoncontract"
 )
 
 var exploreTerminal = func() bool {
@@ -37,13 +38,11 @@ finished work: completed and done.
   camp dungeon explore --json --since 2026-09-01
 
 A pipe, or --json, prints the same index and does not open the feed.`,
-	Args: cobra.NoArgs,
 	Annotations: map[string]string{
 		"agent_allowed": "true",
 		"agent_reason":  "Read-only dungeon feed; agents use --json and must not drive the TUI",
 		"interactive":   "true",
 	},
-	RunE: runDungeonExplore,
 }
 
 func init() {
@@ -59,14 +58,47 @@ func init() {
 	flags.Bool("no-media", false, "Do not draw replays")
 	flags.String("path-output", "", "Write the selected item directory to a file (shell integration)")
 	_ = flags.MarkHidden("path-output")
+
+	// Set here, not in the literal: each closes over the command it is set on.
+	jsonMode := func() bool { return exploreJSONMode(dungeonExploreCmd) }
+	dungeonExploreCmd.Args = jsoncontract.Args(explore.SchemaVersion, jsonMode, exploreNoArgs)
+	dungeonExploreCmd.RunE = jsoncontract.RunE(explore.SchemaVersion, jsonMode, func(cmd *cobra.Command, args []string) error {
+		return exploreRefusal(cmd, runDungeonExplore(cmd, args))
+	})
+	dungeonExploreCmd.SetFlagErrorFunc(jsoncontract.FlagErrorFunc(explore.SchemaVersion, jsonMode))
+}
+
+// exploreJSONMode reports whether this run prints JSON. A pipe prints the
+// index as JSON without --json, so a refusal on a pipe is the JSON envelope
+// too: a caller parsing one must be able to parse the other.
+func exploreJSONMode(cmd *cobra.Command) bool {
+	asJSON, _ := cmd.Flags().GetBool("json")
+	return asJSON || !exploreTerminal()
+}
+
+func exploreNoArgs(cmd *cobra.Command, args []string) error {
+	if err := cobra.NoArgs(cmd, args); err != nil {
+		return exploreRefusal(cmd, camperrors.NewValidation("args", err.Error(), nil))
+	}
+	return nil
+}
+
+// exploreRefusal gives a refused flag or argument exit 2 (docs/exit-codes.md).
+// The feed prints the reason here because main exits silently on a
+// CommandError. In JSON mode the error envelope carries it instead.
+func exploreRefusal(cmd *cobra.Command, err error) error {
+	var refused *camperrors.ValidationError
+	if !camperrors.As(err, &refused) || exploreJSONMode(cmd) {
+		return err
+	}
+	_, _ = fmt.Fprintf(cmd.ErrOrStderr(), "Error: %s\n", refused.Message)
+	return camperrors.NewCommand(cmd.CommandPath(), 2, refused.Message, err)
 }
 
 func runDungeonExplore(cmd *cobra.Command, _ []string) error {
 	ctx := cmd.Context()
-	cfg, root, err := config.ReadCampaignConfigFromCwd(ctx)
-	if err != nil {
-		return camperrors.Wrap(err, "not in a camp directory")
-	}
+	// Flag values are checked before the camp is read: a bad invocation is a
+	// usage error wherever it is run.
 	query, err := exploreQuery(cmd)
 	if err != nil {
 		return err
@@ -75,8 +107,11 @@ func runDungeonExplore(cmd *cobra.Command, _ []string) error {
 	if err != nil {
 		return err
 	}
-	asJSON, _ := cmd.Flags().GetBool("json")
-	if asJSON || !exploreTerminal() {
+	cfg, root, err := config.ReadCampaignConfigFromCwd(ctx)
+	if err != nil {
+		return camperrors.Wrap(err, "not in a camp directory")
+	}
+	if exploreJSONMode(cmd) {
 		idx, err := explore.Build(ctx, root)
 		if err != nil {
 			return err
@@ -85,7 +120,7 @@ func runDungeonExplore(cmd *cobra.Command, _ []string) error {
 		if err != nil {
 			return err
 		}
-		return writeExploreJSON(cmd, idx, result)
+		return writeExploreJSON(cmd, root, idx, result)
 	}
 	pathOutput, _ := cmd.Flags().GetString("path-output")
 	cacheDir, err := explore.CacheDir(cfg.ID, root)
@@ -101,20 +136,11 @@ func exploreQuery(cmd *cobra.Command) (explore.Query, error) {
 	since, _ := cmd.Flags().GetString("since")
 	until, _ := cmd.Flags().GetString("until")
 	text, _ := cmd.Flags().GetString("query")
-	if since != "" {
-		if _, err := time.Parse("2006-01-02", since); err != nil {
-			return explore.Query{}, camperrors.Newf("--since must be YYYY-MM-DD, got %q", since)
-		}
+	query := explore.Query{Status: status, Dungeon: dungeon, Since: since, Until: until, Text: text}
+	if err := query.Validate(); err != nil {
+		return explore.Query{}, err
 	}
-	if until != "" {
-		if _, err := time.Parse("2006-01-02", until); err != nil {
-			return explore.Query{}, camperrors.Newf("--until must be YYYY-MM-DD, got %q", until)
-		}
-	}
-	if since != "" && until != "" && since > until {
-		return explore.Query{}, camperrors.New("--since is after --until")
-	}
-	return explore.Query{Status: status, Dungeon: dungeon, Since: since, Until: until, Text: text}, nil
+	return query, nil
 }
 
 func exploreImages(cmd *cobra.Command) (string, error) {
@@ -137,19 +163,31 @@ func plainExplore(cmd *cobra.Command) bool {
 	return err == nil && v
 }
 
-func writeExploreJSON(cmd *cobra.Command, idx explore.Index, result explore.Result) error {
+func writeExploreJSON(cmd *cobra.Command, root string, idx explore.Index, result explore.Result) error {
+	// Item paths are camp-relative. Consumers join them onto this root, which
+	// docs/json-contracts.md requires to be symlink-resolved.
+	campaignRoot, err := filepath.EvalSymlinks(root)
+	if err != nil {
+		return camperrors.Wrap(err, "resolve camp root")
+	}
+	campaignRoot, err = filepath.Abs(campaignRoot)
+	if err != nil {
+		return camperrors.Wrap(err, "resolve camp root")
+	}
 	items := result.Items
 	if items == nil {
 		items = []explore.Item{}
 	}
 	doc := struct {
 		SchemaVersion string         `json:"schema_version"`
+		CampaignRoot  string         `json:"campaign_root"`
 		DungeonLens   string         `json:"dungeon_lens"`
 		StatusLens    string         `json:"status_lens"`
 		Warnings      []string       `json:"warnings,omitempty"`
 		Items         []explore.Item `json:"items"`
 	}{
 		SchemaVersion: explore.SchemaVersion,
+		CampaignRoot:  campaignRoot,
 		DungeonLens:   result.DungeonLens,
 		StatusLens:    result.StatusLens,
 		Warnings:      idx.Warnings,

@@ -7,8 +7,8 @@ import (
 	"image"
 	"image/color"
 	"image/gif"
+	"math"
 	"os"
-	"runtime"
 	"testing"
 )
 
@@ -198,27 +198,152 @@ func transparentFrames(t *testing.T, n int) []byte {
 }
 
 func TestDecodeReplayStopsAtFirstFramePastTheWorkBudget(t *testing.T) {
-	frames := maxDecodeWork/(frameOverhead+1) + 1000
+	// Twice the frames the budget admits, so stopping at the budget and
+	// decoding the whole file are far apart.
+	frames := 2 * (maxDecodeWork / (frameOverhead + 1))
 	data := transparentFrames(t, frames)
 	if len(data) > maxReplayBytes {
 		t.Fatalf("fixture is %d bytes, over the file cap", len(data))
 	}
-	runtime.GC()
-	var before, after runtime.MemStats
-	runtime.ReadMemStats(&before)
-	got, err := decodeReplay(context.Background(), data, 8, 8)
-	runtime.ReadMemStats(&after)
+	shape, err := scanGIF(data)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !shape.overWork || len(shape.frames) >= frames {
+		t.Fatalf("scan read %d of %d frames, overWork = %v", len(shape.frames), frames, shape.overWork)
+	}
+	ctx := &cancelAfter{Context: context.Background(), after: math.MaxInt}
+	got, err := decodeReplay(ctx, data, 8, 8)
 	if !errors.Is(err, ErrReplayTooLong) {
-		t.Fatalf("decodeReplay(context.Background(), ) error = %v, want ErrReplayTooLong", err)
+		t.Fatalf("decodeReplay() error = %v, want ErrReplayTooLong", err)
 	}
 	if got.Poster == nil || got.Frames != nil {
 		t.Fatalf("poster %v, %d frames; want a poster and no frames", got.Poster != nil, len(got.Frames))
 	}
 	if r, _, _, _ := got.Poster.At(0, 0).RGBA(); r>>8 != 255 {
-		t.Fatal("poster is not the first frame")
+		t.Fatal("poster lost the composited pixel")
 	}
-	if allocated := after.TotalAlloc - before.TotalAlloc; allocated > 64<<20 {
-		t.Fatalf("decoding %d tiny frames allocated %d MiB; the frames were decoded", frames, allocated>>20)
+	// The context is checked once per composited frame. The last frame
+	// scanned is the one that crossed the budget and is left out.
+	if want := len(shape.frames) - 1; ctx.checks != want {
+		t.Fatalf("composited %d frames, want the %d inside the work budget (file has %d)", ctx.checks, want, frames)
+	}
+}
+
+func bandFrame(w, top, bottom int, pal color.Palette, index uint8) *image.Paletted {
+	frame := image.NewPaletted(image.Rect(0, top, w, bottom), pal)
+	for i := range frame.Pix {
+		frame.Pix[i] = index
+	}
+	return frame
+}
+
+// recorderReplay is the shape fest writes: one solid full-canvas frame, then
+// partial frames. Each partial frame paints the next band of rows.
+func recorderReplay(t *testing.T, side, partial int) []byte {
+	t.Helper()
+	pal := color.Palette{color.RGBA{0, 0, 0, 255}, color.RGBA{255, 0, 0, 255}, color.RGBA{0, 255, 0, 255}}
+	frames := []*image.Paletted{bandFrame(side, 0, side, pal, 1)}
+	const band = 4
+	for i := range partial {
+		frames = append(frames, bandFrame(side, i*band, (i+1)*band, pal, 2))
+	}
+	return encodeReplay(t, frames, side, side)
+}
+
+func posterColours(poster image.Image) int {
+	seen := map[color.RGBA]bool{}
+	b := poster.Bounds()
+	for y := b.Min.Y; y < b.Max.Y; y++ {
+		for x := b.Min.X; x < b.Max.X; x++ {
+			seen[color.RGBAModel.Convert(poster.At(x, y)).(color.RGBA)] = true
+		}
+	}
+	return len(seen)
+}
+
+func TestDecodeReplayOverWorkBudgetKeepsCompositedPoster(t *testing.T) {
+	const side, partial = 1200, maxReplayFrames + 60
+	data := recorderReplay(t, side, partial)
+	if len(data) > maxReplayBytes {
+		t.Fatalf("fixture is %d bytes, over the file cap", len(data))
+	}
+	shape, err := scanGIF(data)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !shape.overWork || len(shape.frames) < 3 {
+		t.Fatalf("fixture did not trip the work budget: %d frames scanned, overWork = %v", len(shape.frames), shape.overWork)
+	}
+	got, err := decodeReplay(context.Background(), data, 120, 120)
+	if !errors.Is(err, ErrReplayTooLong) {
+		t.Fatalf("decodeReplay() error = %v, want ErrReplayTooLong", err)
+	}
+	if got.Frames != nil || got.Delays != nil {
+		t.Fatalf("kept %d frames for a replay that is too long", len(got.Frames))
+	}
+	if got.Poster == nil {
+		t.Fatal("over-budget replay has no poster")
+	}
+	if n := posterColours(got.Poster); n < 2 {
+		t.Fatalf("poster has %d colour; the solid first frame was used instead of the composited canvas", n)
+	}
+}
+
+// padPastSizeBudget grows a GIF beyond the file cap with a comment extension
+// placed after its last frame, so every frame ends inside the cap.
+func padPastSizeBudget(t *testing.T, data []byte) []byte {
+	t.Helper()
+	if data[len(data)-1] != 0x3B {
+		t.Fatal("fixture does not end with a GIF trailer")
+	}
+	out := append([]byte{}, data[:len(data)-1]...)
+	out = append(out, 0x21, 0xFE)
+	block := append([]byte{255}, bytes.Repeat([]byte{'.'}, 255)...)
+	for len(out) <= maxReplayBytes {
+		out = append(out, block...)
+	}
+	return append(out, 0x00, 0x3B)
+}
+
+func TestDecodeReplayPastSizeBudgetKeepsPoster(t *testing.T) {
+	data := padPastSizeBudget(t, recorderReplay(t, 64, 8))
+	got, err := decodeReplay(context.Background(), data, 64, 64)
+	if !errors.Is(err, ErrReplayTooLong) {
+		t.Fatalf("decodeReplay() error = %v, want ErrReplayTooLong", err)
+	}
+	if got.Frames != nil || got.Delays != nil {
+		t.Fatalf("kept %d frames for a file past the size budget", len(got.Frames))
+	}
+	if got.Poster == nil || posterColours(got.Poster) < 2 {
+		t.Fatal("a file past the size budget lost the poster its first frames make")
+	}
+
+	small := recorderReplay(t, 64, 0)
+	shape, err := scanGIF(small)
+	if err != nil {
+		t.Fatal(err)
+	}
+	// A first frame whose pixel data runs past the cap: nothing complete to draw.
+	cut := append([]byte{}, small[:shape.header]...)
+	cut = append(cut, 0x2C, 0, 0, 0, 0, 64, 0, 64, 0, 0x00, 0x02)
+	block := append([]byte{255}, bytes.Repeat([]byte{0}, 255)...)
+	for len(cut) <= maxReplayBytes {
+		cut = append(cut, block...)
+	}
+	for name, data := range map[string][]byte{
+		"not a GIF":       bytes.Repeat([]byte{'x'}, maxReplayBytes+1),
+		"first frame cut": cut,
+	} {
+		t.Run(name, func(t *testing.T) {
+			got, err := decodeReplay(context.Background(), data, 64, 64)
+			if !errors.Is(err, ErrReplayTooLong) {
+				t.Fatalf("decodeReplay() error = %v, want ErrReplayTooLong", err)
+			}
+			if got.Poster != nil || got.Frames != nil {
+				t.Fatal("a file with no complete frame inside the size budget produced pixels")
+			}
+		})
 	}
 }
 

@@ -117,7 +117,7 @@ func runExploreTUI(cmd *cobra.Command, root, cacheDir string, query explore.Quer
 		gotoEnabled: pathOutput != "",
 	}
 	if cacheDir != "" {
-		if idx, ok, _ := explore.LoadCache(cacheDir); ok {
+		if idx, ok, _ := explore.LoadCache(ctx, cacheDir); ok {
 			model.index = idx
 			model.loading = false
 			_ = model.applyQuery()
@@ -161,6 +161,19 @@ func (m exploreModel) loadCmd() tea.Cmd {
 	}
 }
 
+// saveCacheCmd writes the index off the update loop. A failed write costs
+// only the next start's first paint, so it is not reported.
+func (m exploreModel) saveCacheCmd() tea.Cmd {
+	if m.cacheDir == "" {
+		return nil
+	}
+	ctx, dir, idx := m.ctx, m.cacheDir, m.index
+	return func() tea.Msg {
+		_ = explore.SaveCache(ctx, dir, idx)
+		return nil
+	}
+}
+
 func (m exploreModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	switch msg := msg.(type) {
 	case tea.WindowSizeMsg:
@@ -187,11 +200,10 @@ func (m exploreModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.setStatus(exploreLoadStatus, "", false)
 		}
 		selected, hadSelection := m.focused()
+		var save tea.Cmd
 		if msg.changed {
 			m.index = msg.index
-			if m.cacheDir != "" {
-				_ = explore.SaveCache(m.cacheDir, m.index)
-			}
+			save = m.saveCacheCmd()
 		}
 		_ = m.applyQuery()
 		// A refresh may insert or reorder rows. Keep the selected path, not
@@ -206,7 +218,7 @@ func (m exploreModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			}
 		}
 		m, cmd := m.schedulePoster()
-		return m, cmd
+		return m, tea.Batch(save, cmd)
 	case exploreDecode:
 		if msg.gen != m.loadGen {
 			return m, nil

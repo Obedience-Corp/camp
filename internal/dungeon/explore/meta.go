@@ -9,6 +9,8 @@ import (
 	"time"
 
 	"gopkg.in/yaml.v3"
+
+	camperrors "github.com/Obedience-Corp/camp/internal/errors"
 )
 
 const metaReadLimit = 256 << 10
@@ -81,11 +83,12 @@ type festMeta struct {
 
 func fillFestival(ctx context.Context, item *Item, festYAML, goalFile string) string {
 	named := false
+	warning := ""
 	if fileExists(festYAML) {
 		var meta festMeta
 		if err := readYAML(ctx, festYAML, &meta); err != nil {
-			item.Title = filepath.Base(filepath.Dir(festYAML))
-			return err.Error()
+			warning = readWarning(festYAML, err)
+			meta = festMeta{}
 		}
 		if meta.Metadata.Name != "" {
 			item.Title = meta.Metadata.Name
@@ -104,30 +107,29 @@ func fillFestival(ctx context.Context, item *Item, festYAML, goalFile string) st
 			}
 		}
 	}
-	if item.Summary == "" || item.ID == "" || !named {
-		if fileExists(goalFile) {
-			text, err := readLimited(ctx, goalFile)
-			if err != nil {
-				return err.Error()
+	// The goal file supplies whatever fest.yaml left out, including all of it
+	// when fest.yaml could not be read.
+	if (item.Summary == "" || item.ID == "" || !named) && fileExists(goalFile) {
+		fm, body, err := readFrontmatter(ctx, goalFile)
+		if err != nil && warning == "" {
+			warning = readWarning(goalFile, err)
+		}
+		if item.ID == "" {
+			item.ID = fm["fest_id"]
+		}
+		if !named {
+			if name := fm["fest_name"]; name != "" {
+				item.Title = name
 			}
-			fm, body := splitFrontmatter(text)
-			if item.ID == "" {
-				item.ID = fm["fest_id"]
-			}
-			if !named {
-				if name := fm["fest_name"]; name != "" {
-					item.Title = name
-				}
-			}
-			if item.Summary == "" {
-				item.Summary = primaryGoal(body)
-			}
+		}
+		if item.Summary == "" {
+			item.Summary = primaryGoal(body)
 		}
 	}
 	if item.Title == "" {
 		item.Title = filepath.Base(filepath.Dir(festYAML))
 	}
-	return ""
+	return warning
 }
 
 type historyEntry struct {
@@ -167,9 +169,11 @@ type workitemMeta struct {
 }
 
 func fillWorkitem(ctx context.Context, item *Item, marker, readme string) string {
+	warning := ""
 	var meta workitemMeta
 	if err := readYAML(ctx, marker, &meta); err != nil {
-		return err.Error()
+		warning = readWarning(marker, err)
+		meta = workitemMeta{}
 	}
 	if meta.Title != "" {
 		item.Title = meta.Title
@@ -179,26 +183,26 @@ func fillWorkitem(ctx context.Context, item *Item, marker, readme string) string
 	} else if meta.ID != "" {
 		item.ID = meta.ID
 	}
+	// The README is read even when the marker could not be: it still holds
+	// the summary.
 	if fileExists(readme) {
-		text, err := readLimited(ctx, readme)
-		if err != nil {
-			return err.Error()
+		_, body, err := readFrontmatter(ctx, readme)
+		if err != nil && warning == "" {
+			warning = readWarning(readme, err)
 		}
-		_, body := splitFrontmatter(text)
 		item.Summary = firstParagraph(body)
 	}
-	return ""
+	return warning
 }
 
 func fillMarkdown(ctx context.Context, item *Item, path string) {
-	text, err := readLimited(ctx, path)
+	fm, body, err := readFrontmatter(ctx, path)
 	if err != nil {
-		item.Kind = KindMarkdown
-		item.Warning = err.Error()
-		return
+		item.Warning = readWarning(path, err)
 	}
-	fm, body := splitFrontmatter(text)
-	if len(fm) == 0 && item.Kind != KindFestival && item.Kind != KindWorkitem {
+	// A file that could not be read, or whose frontmatter would not parse,
+	// stays a markdown row and carries the warning.
+	if len(fm) == 0 && err == nil && item.Kind != KindFestival && item.Kind != KindWorkitem {
 		item.Kind = KindOther
 		item.Summary = firstParagraph(body)
 		return
@@ -227,18 +231,23 @@ func fillMarkdown(ctx context.Context, item *Item, path string) {
 	}
 }
 
+// stampLayouts are the timestamp spellings YAML accepts for a plain scalar.
+// Frontmatter is read as written, so updated_at is parsed here instead.
+var stampLayouts = []string{
+	time.RFC3339Nano,
+	"2006-1-2T15:4:5.999999999Z07:00",
+	"2006-1-2t15:4:5.999999999Z07:00",
+	"2006-1-2 15:4:5.999999999",
+	"2006-1-2",
+}
+
 func parseStamp(value string) (string, bool) {
-	if value == "" {
-		return "", false
+	for _, layout := range stampLayouts {
+		if stamp, err := time.Parse(layout, value); err == nil {
+			return stamp.Format("2006-01-02"), true
+		}
 	}
-	stamp, err := time.Parse(time.RFC3339, value)
-	if err != nil {
-		stamp, err = time.Parse(time.RFC3339Nano, value)
-	}
-	if err != nil {
-		return "", false
-	}
-	return stamp.Format("2006-01-02"), true
+	return "", false
 }
 
 func primaryGoal(body string) string {
@@ -270,52 +279,100 @@ func firstParagraph(body string) string {
 	return strings.Join(lines, " ")
 }
 
-// MarkdownBody returns text without a leading YAML frontmatter block.
+// MarkdownBody returns text without a leading YAML frontmatter block. A block
+// that does not parse is left in place for the reader to show.
 func MarkdownBody(text string) string {
-	_, body := splitFrontmatter(text)
+	_, body, err := splitFrontmatter(text)
+	if err != nil {
+		return text
+	}
 	return body
 }
 
-func splitFrontmatter(text string) (map[string]string, string) {
-	if !strings.HasPrefix(text, "---\n") && !strings.HasPrefix(text, "---\r\n") {
-		return nil, text
+const (
+	byteOrderMark    = "\U0000FEFF"
+	frontmatterFence = "---"
+)
+
+// splitFrontmatter separates a leading YAML block from the body. The map is
+// nil when text does not open with a fenced block. A fenced block that is not
+// a YAML mapping returns an error and the body after it, so a caller can warn
+// without the raw block reaching a summary.
+func splitFrontmatter(text string) (map[string]string, string, error) {
+	text = strings.TrimPrefix(text, byteOrderMark)
+	first, rest, found := strings.Cut(text, "\n")
+	if !found || !isFence(first) {
+		return nil, text, nil
 	}
-	rest := text[4:]
-	end := strings.Index(rest, "\n---")
-	if end < 0 {
-		return nil, text
+	var raw strings.Builder
+	for {
+		line, after, more := strings.Cut(rest, "\n")
+		if isFence(line) {
+			fm, err := decodeFrontmatter(raw.String())
+			return fm, after, err
+		}
+		if !more {
+			return nil, text, nil
+		}
+		raw.WriteString(line)
+		raw.WriteByte('\n')
+		rest = after
 	}
-	raw := rest[:end]
-	body := rest[end+4:]
-	body = strings.TrimPrefix(body, "\n")
-	var decoded map[string]any
-	if err := yaml.Unmarshal([]byte(raw), &decoded); err != nil || decoded == nil {
-		return nil, text
+}
+
+// isFence accepts trailing spaces, tabs, and a carriage return after the dashes.
+func isFence(line string) bool {
+	return strings.TrimRight(line, " \t\r") == frontmatterFence
+}
+
+// decodeFrontmatter reads each scalar value as the text the author wrote.
+// Decoding into Go types would rewrite it: 0012 becomes 10, 1e3 becomes 1000,
+// and a date becomes a timestamp. A key with no value, a null, or a list or
+// mapping value is kept with an empty value.
+func decodeFrontmatter(raw string) (map[string]string, error) {
+	var doc yaml.Node
+	if err := yaml.Unmarshal([]byte(raw), &doc); err != nil {
+		return nil, camperrors.Wrap(err, "frontmatter")
 	}
-	fm := make(map[string]string, len(decoded))
-	for key, value := range decoded {
-		switch typed := value.(type) {
-		case string:
-			fm[key] = typed
-		case time.Time:
-			fm[key] = typed.Format(time.RFC3339)
-		default:
-			fm[key] = strings.TrimSpace(strings.ReplaceAll(strings.ReplaceAll(fmtScalar(typed), "\n", " "), "\t", " "))
+	fm := map[string]string{}
+	if len(doc.Content) == 0 {
+		return fm, nil
+	}
+	root := doc.Content[0]
+	if root.Kind != yaml.MappingNode {
+		return nil, errFrontmatterShape
+	}
+	for i := 0; i+1 < len(root.Content); i += 2 {
+		key, value := root.Content[i], root.Content[i+1]
+		if key.Kind != yaml.ScalarNode {
+			continue
+		}
+		if value.Kind == yaml.AliasNode && value.Alias != nil {
+			value = value.Alias
+		}
+		fm[key.Value] = ""
+		if value.Kind == yaml.ScalarNode && value.ShortTag() != "!!null" {
+			fm[key.Value] = strings.TrimSpace(value.Value)
 		}
 	}
-	return fm, body
+	return fm, nil
 }
 
-func fmtScalar(value any) string {
-	return strings.TrimSpace(yamlScalar(value))
-}
-
-func yamlScalar(value any) string {
-	data, err := yaml.Marshal(value)
+// readFrontmatter reads a markdown file and splits it. On a read error the
+// map and body are empty.
+func readFrontmatter(ctx context.Context, path string) (map[string]string, string, error) {
+	text, err := readLimited(ctx, path)
 	if err != nil {
-		return ""
+		return nil, "", err
 	}
-	return string(data)
+	return splitFrontmatter(text)
+}
+
+// readWarning says which metadata file could not be used. It names the file
+// alone: the row already carries the camp-relative path, and the error's
+// absolute one must not reach the feed or its JSON.
+func readWarning(path string, err error) string {
+	return filepath.Base(path) + ": " + cause(err).Error()
 }
 
 func readYAML(ctx context.Context, path string, dest any) error {

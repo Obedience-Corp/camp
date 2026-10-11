@@ -125,13 +125,13 @@ func TestBuildHoldingDirectoryItems(t *testing.T) {
 	// rebuild on upgrade even when the dungeon fingerprint has not changed.
 	cache := filepath.Join(root, ".cache")
 	mustWrite(t, filepath.Join(cache, "index.json"), `{"schema_version":"camp-dungeon-explore-cache/v2","index":{"items":[]}}`)
-	if _, hit, err := LoadCache(cache); err != nil || hit {
+	if _, hit, err := LoadCache(context.Background(), cache); err != nil || hit {
 		t.Fatalf("old holding layout cache accepted: %v", err)
 	}
-	if err := SaveCache(cache, idx); err != nil {
+	if err := SaveCache(context.Background(), cache, idx); err != nil {
 		t.Fatal(err)
 	}
-	if cached, hit, err := LoadCache(cache); err != nil || !hit || len(cached.Items) != len(idx.Items) {
+	if cached, hit, err := LoadCache(context.Background(), cache); err != nil || !hit || len(cached.Items) != len(idx.Items) {
 		t.Fatalf("current cache failed roundtrip: %v", err)
 	}
 	item := holding.Items[0]

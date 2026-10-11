@@ -204,6 +204,21 @@ func StepDungeon(items []Item, status, current string, delta int) string {
 	return lenses[next]
 }
 
+// Validate reports a date bound that is not YYYY-MM-DD, or a range that ends
+// before it starts. Unlike the lenses, the dates need no index to check.
+func (q Query) Validate() error {
+	if q.Since != "" && !validDay(q.Since) {
+		return errBadDay("since", q.Since)
+	}
+	if q.Until != "" && !validDay(q.Until) {
+		return errBadDay("until", q.Until)
+	}
+	if q.Since != "" && q.Until != "" && q.Since > q.Until {
+		return errSinceAfterUntil()
+	}
+	return nil
+}
+
 // Apply filters the index items. Status names and dungeon labels are matched
 // case-insensitively. Dungeon paths match as stored. A dungeon resolves when
 // the index discovered it, even if it holds no items.
@@ -223,16 +238,10 @@ func Apply(idx Index, q Query) (Result, error) {
 	if err != nil {
 		return Result{}, err
 	}
+	if err := q.Validate(); err != nil {
+		return Result{}, err
+	}
 	since, until := q.Since, q.Until
-	if since != "" && !validDay(since) {
-		return Result{}, errBadDay("--since", since)
-	}
-	if until != "" && !validDay(until) {
-		return Result{}, errBadDay("--until", until)
-	}
-	if since != "" && until != "" && since > until {
-		return Result{}, errSinceAfterUntil()
-	}
 	text := strings.ToLower(strings.TrimSpace(q.Text))
 
 	out := make([]Item, 0, len(items))

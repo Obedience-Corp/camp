@@ -31,6 +31,7 @@ Schema versions in this release:
 | `camp workitem commits --json` | `workitem-commits/v1alpha1` | Emits matching commits and per-repo query errors. |
 | `camp workitem priority --json` | `workitem-priority/v1alpha1` | Emits `cleared: true` when priority is cleared. |
 | `camp concepts --json` | `concepts/v1alpha1` | Emits configured camp concepts with `generated_at`, `campaign_root`, and concept metadata. |
+| `camp dungeon explore --json` | `camp-dungeon-explore/v1` | Emits `schema_version`, `campaign_root`, `dungeon_lens`, `status_lens`, and `items` with camp-relative `path`, `dungeon_path`, and `replay`. `warnings` lists directories that could not be read and is omitted when empty. A pipe prints the same payload without `--json`. A refused `--status`, `--dungeon`, `--since`, `--until`, or `--images` value uses the JSON error envelope and exits 2. |
 | `camp intent list/find/show --json` | `intents/v1alpha1` | `--format json` is a deprecated alias. `list --status notes` adds note items (see `notes list`). |
 | `camp intent notes list --json` | `intents/v1alpha1` | Emits note items newest first by `created_at`. Each note item has `status: "notes"` and `folder` relative to `notes/`, `""` for the notes root; lifecycle items omit `folder`. Archived notes appear only with `--folder archived`. |
 | `camp intent count --json` | `intents/v1alpha1` | Counts are emitted as status-count objects in `items[]`; `--format json` is a deprecated alias. |

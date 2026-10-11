@@ -3,6 +3,7 @@ package explore
 import (
 	"context"
 	"io"
+	"io/fs"
 	"os"
 
 	camperrors "github.com/Obedience-Corp/camp/internal/errors"
@@ -20,7 +21,7 @@ func ReadRegular(ctx context.Context, path string, limit int64) ([]byte, error) 
 		return nil, camperrors.Wrapf(err, "reading %s", path)
 	}
 	if !before.Mode().IsRegular() {
-		return nil, camperrors.New("not a regular file: " + path)
+		return nil, &fs.PathError{Op: "read", Path: path, Err: errNotRegular}
 	}
 	f, err := openRegular(path)
 	if err != nil {
@@ -32,7 +33,7 @@ func ReadRegular(ctx context.Context, path string, limit int64) ([]byte, error) 
 		return nil, camperrors.Wrapf(err, "checking %s", path)
 	}
 	if !after.Mode().IsRegular() || !os.SameFile(before, after) {
-		return nil, camperrors.New("file changed while opening: " + path)
+		return nil, &fs.PathError{Op: "read", Path: path, Err: errFileChanged}
 	}
 	if err := ctx.Err(); err != nil {
 		return nil, camperrors.Wrap(err, "reading file")
