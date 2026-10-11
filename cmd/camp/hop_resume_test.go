@@ -69,7 +69,7 @@ func TestHopResumeAcknowledgesOnlyPreparedRoute(t *testing.T) {
 			release := make(chan struct{})
 			done := make(chan error, 1)
 			go func() {
-				follow, err := acceptHopResume(context.Background(), server, func(_ context.Context, got hopResumeRequest) (string, error) {
+				follow, err := acceptHopResume(context.Background(), server, "", func(_ context.Context, got hopResumeRequest) (string, error) {
 					if got != request {
 						return "", errors.New("request changed")
 					}
@@ -122,7 +122,7 @@ func TestHopResumeProtocolFailsClosed(t *testing.T) {
 			_ = client.SetDeadline(time.Now().Add(3 * time.Second))
 			done := make(chan error, 1)
 			go func() {
-				_, err := acceptHopResume(context.Background(), server, func(context.Context, hopResumeRequest) (string, error) {
+				_, err := acceptHopResume(context.Background(), server, "", func(context.Context, hopResumeRequest) (string, error) {
 					t.Error("invalid request reached preparation")
 					return "", nil
 				})
@@ -152,7 +152,7 @@ func TestHopResumeCancellationClosesPendingRequest(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	done := make(chan error, 1)
 	go func() {
-		_, err := acceptHopResume(ctx, server, func(context.Context, hopResumeRequest) (string, error) {
+		_, err := acceptHopResume(ctx, server, "", func(context.Context, hopResumeRequest) (string, error) {
 			t.Error("unexpected preparation")
 			return "", nil
 		})
@@ -190,5 +190,48 @@ func TestHopTerminalNeverCrossesToControlMasterAsDevTTY(t *testing.T) {
 	}
 	if argv[0] != "ssh" || argv[1] != "-t" || argv[len(argv)-2] != "devbox" || argv[len(argv)-1] != "exec $SHELL -l" {
 		t.Fatalf("fallback rewrote the hop itself: %q", argv)
+	}
+}
+
+func TestHopResumeLoopbackRequiresHopToken(t *testing.T) {
+	const token = "0123456789abcdef0123456789abcdef"
+	request := hopResumeRequest{Selector: "thirdbox:notes", Host: "c.example"}
+	for name, tc := range map[string]struct {
+		sent   string
+		accept bool
+	}{
+		"this hop's token": {token, true},
+		"another token":    {"ffffffffffffffffffffffffffffffff", false},
+		"no token":         {"", false},
+	} {
+		t.Run(name, func(t *testing.T) {
+			client, server := net.Pipe()
+			defer func() { _ = client.Close() }()
+			defer func() { _ = server.Close() }()
+			_ = client.SetDeadline(time.Now().Add(3 * time.Second))
+			prepared := false
+			done := make(chan error, 1)
+			go func() {
+				_, err := acceptHopResume(context.Background(), server, token, func(context.Context, hopResumeRequest) (string, error) {
+					prepared = true
+					return "ssh prepared-parent-route", nil
+				})
+				done <- err
+			}()
+			if err := json.NewEncoder(client).Encode(hopResumeEnvelope{Version: 1, Token: tc.sent, Request: request}); err != nil {
+				t.Fatal(err)
+			}
+			var response hopResumeResponse
+			if err := json.NewDecoder(client).Decode(&response); err != nil {
+				t.Fatal(err)
+			}
+			err := <-done
+			if response.Accepted != tc.accept || (err == nil) != tc.accept || prepared != tc.accept {
+				t.Fatalf("accepted=%v err=%v route prepared=%v, want accepted=%v", response.Accepted, err, prepared, tc.accept)
+			}
+			if !tc.accept && !strings.Contains(response.Error, "token") {
+				t.Fatalf("rejection must name the token: %+v", response)
+			}
+		})
 	}
 }
