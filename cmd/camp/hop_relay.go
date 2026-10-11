@@ -2,6 +2,7 @@ package main
 
 import (
 	"bufio"
+	"bytes"
 	"context"
 	"crypto/rand"
 	"crypto/sha256"
@@ -39,12 +40,13 @@ import (
 //	opening shell -> relay -> far shell   response
 //	far shell -> relay -> opening shell   confirm
 //
-// An acknowledged switch is provisional until that confirmation arrives. The
-// confirmation travels separately from the hop and can be lost with the relay
-// link, so the hop itself settles the doubt: a far shell that got its
-// acknowledgement exits at once. An unconfirmed switch therefore counts only
-// if the hop ends within hopAckGrace of it; otherwise the far shell evidently
-// stayed, and the switch is taken back and the hop freed for another.
+// An acknowledged switch is provisional until that confirmation arrives. While
+// the relay link is up the relay always ends an exchange by reporting the
+// confirmation or the hang-up, however slow the link, so the opening shell
+// waits for one of them. Only when the link itself is lost does the hop settle
+// the doubt: a far shell that got its acknowledgement exits at once, so the
+// switch counts if the hop ends within hopAckGrace of the loss, and is
+// otherwise taken back and the hop freed for another.
 const (
 	hopRelayVersion     = 2
 	hopRelayMaxLine     = 8192
@@ -61,11 +63,27 @@ const (
 	// hopRelayPruneAge keeps pruning away from a relay that is still between
 	// creating its socket and listening on it.
 	hopRelayPruneAge = 10 * time.Second
+
+	// hopAckBackstop outlasts every bound the relay itself keeps, for a relay
+	// that never reports how an acknowledged exchange ended.
+	hopAckBackstop = hopResumeTimeout + hopRelayConfirmWait + 5*time.Second
+
+	// A relay whose link is lost while the hop lives is started again, a few
+	// times, so one dropped connection does not end onward switching.
+	hopRelayRestarts     = 3
+	hopRelayRestartDelay = 2 * time.Second
+
+	// hopRelayAwait is how long a far shell waits for a relay that is not up
+	// yet, since it starts a moment after the hop does.
+	hopRelayAwait = 2 * time.Second
 )
 
-// hopAckGrace is how long an acknowledged switch waits for its confirmation
-// or for the hop to end. A variable so tests need not wait it out.
+// hopAckGrace is how long an acknowledged switch waits for the hop to end once
+// its relay link is lost. A variable so tests need not wait it out.
 var hopAckGrace = 5 * time.Second
+
+// errHopRelayLost marks a relay that was listening and whose link then ended.
+var errHopRelayLost = camperrors.New("hop-resume: relay link lost")
 
 var errHopAlreadySwitching = camperrors.New("hop-resume: this hop is already switching; exit this shell to complete it")
 
@@ -92,6 +110,8 @@ type hopRelayFrame struct {
 	Response json.RawMessage `json:"response,omitempty"`
 	Confirm  bool            `json:"confirm,omitempty"`
 	Gone     bool            `json:"gone,omitempty"`
+	// Ready is the relay's first frame: it is listening for the far shell.
+	Ready bool `json:"ready,omitempty"`
 }
 
 type hopRelayConfirm struct {
@@ -169,10 +189,39 @@ func trustedHopSocket(path string) error {
 	if err != nil {
 		return err
 	}
-	if info.Mode()&os.ModeSocket == 0 || !ownedByThisUser(info) || !keepsOwnEntries(dir) {
-		return camperrors.New(path + " is not a socket only this user could have put there")
+	reason := ""
+	switch {
+	case info.Mode()&os.ModeSocket == 0:
+		reason = "it is not a socket"
+	case !ownedByThisUser(info):
+		reason = "it belongs to another user, as when the ssh server bound it as root or this shell changed user inside the hop"
+	case !keepsOwnEntries(dir):
+		reason = "others can replace what is in its directory"
+		if os.Geteuid() == 0 {
+			reason = "root does not trust a shared directory, where an ssh server may bind sockets as root for any user"
+		}
+	default:
+		return nil
 	}
-	return nil
+	return camperrors.New(path + " is not a socket only this user could have put there: " + reason)
+}
+
+// dialHopSocket connects to a socket a hop named, under the whole rule: the
+// path must be trusted, and so must the process that answers.
+func dialHopSocket(ctx context.Context, path string) (net.Conn, error) {
+	if err := trustedHopSocket(path); err != nil {
+		return nil, err
+	}
+	dialer := net.Dialer{Timeout: 2 * time.Second}
+	conn, err := dialer.DialContext(ctx, "unix", path)
+	if err != nil {
+		return nil, err
+	}
+	if err := trustedHopPeer(conn); err != nil {
+		_ = conn.Close()
+		return nil, err
+	}
+	return conn, nil
 }
 
 func ownedByThisUser(info os.FileInfo) bool {
@@ -259,14 +308,27 @@ type hopLineWriter struct {
 }
 
 func (l *hopLineWriter) write(value any) error {
-	line, err := json.Marshal(value)
+	line, err := marshalHopLine(value)
 	if err != nil {
 		return err
 	}
 	l.mu.Lock()
 	defer l.mu.Unlock()
-	_, err = l.w.Write(append(line, '\n'))
+	_, err = l.w.Write(line)
 	return err
+}
+
+// marshalHopLine encodes value as one line. HTML escaping is off: it can make
+// a line several times longer than what it carries, past the length a reader
+// accepts.
+func marshalHopLine(value any) ([]byte, error) {
+	var line bytes.Buffer
+	enc := json.NewEncoder(&line)
+	enc.SetEscapeHTML(false)
+	if err := enc.Encode(value); err != nil {
+		return nil, err
+	}
+	return line.Bytes(), nil
 }
 
 // --- the shell that opened the hop ---
@@ -329,8 +391,9 @@ func startHopRelay(ctx context.Context, hop hopLine, id, forwardedSock string) h
 
 // serveHopRelay answers the requests a relay carries, for as long as the hop
 // and the relay last, and returns the follow-up line of the switch that
-// stands when they end: one the far shell confirmed, or one acknowledged
-// within hopAckGrace of the hop ending.
+// stands when they end: one the far shell confirmed, or one acknowledged and
+// still unsettled when the hop ended. It returns errHopRelayLost when a relay
+// that was listening lost its link with no switch standing.
 func serveHopRelay(ctx context.Context, fromFar io.Reader, toFar io.Writer, hop *hopSwitch, prepare func(context.Context, hopResumeRequest) (string, error)) (string, error) {
 	frames := make(chan hopRelayFrame)
 	ended := make(chan error, 1)
@@ -365,9 +428,11 @@ func serveHopRelay(ctx context.Context, fromFar io.Reader, toFar io.Writer, hop 
 	}
 	out := hopLineWriter{w: toFar}
 	var (
-		seq         int // the exchange in flight, 0 when idle
+		ready       bool // the relay reported that it is listening
+		seq         int  // the exchange in flight, 0 when idle
 		stop        = func() {}
 		prepared    chan outcome
+		winding     chan outcome // a cancelled preparation that has not returned yet
 		follow      string
 		acked       bool             // acknowledged: provisional until confirmed
 		confirmed   bool             // the far shell confirmed: final
@@ -375,13 +440,16 @@ func serveHopRelay(ctx context.Context, fromFar io.Reader, toFar io.Writer, hop 
 	)
 	defer func() { stop() }()
 	// abandon ends the exchange in flight without a switch. Its preparation,
-	// if still running, is cancelled and its result never read.
+	// if still running, is cancelled.
 	abandon := func() {
 		if seq == 0 || confirmed {
 			return
 		}
 		stop()
 		hop.release()
+		if prepared != nil {
+			winding = prepared
+		}
 		seq, prepared, follow, acked, unconfirmed = 0, nil, "", false, nil
 	}
 	respond := func(to int, err error) error {
@@ -389,11 +457,11 @@ func serveHopRelay(ctx context.Context, fromFar io.Reader, toFar io.Writer, hop 
 		if err != nil {
 			response.Error = err.Error()
 		}
-		raw, marshalErr := json.Marshal(response)
+		raw, marshalErr := marshalHopLine(response)
 		if marshalErr != nil {
 			return marshalErr
 		}
-		return out.write(hopRelayFrame{Version: hopRelayVersion, Seq: to, Response: raw})
+		return out.write(hopRelayFrame{Version: hopRelayVersion, Seq: to, Response: bytes.TrimSpace(raw)})
 	}
 	for {
 		select {
@@ -411,17 +479,23 @@ func serveHopRelay(ctx context.Context, fromFar io.Reader, toFar io.Writer, hop 
 			}
 			if !acked {
 				abandon()
+				if ready {
+					err = errHopRelayLost
+				}
 				return "", err
 			}
 			// The link went before the confirmation. Whether the far shell
 			// acted shows in the hop: wait for it to end, or for the grace
 			// to run out.
 			ended, frames = nil, nil
+			unconfirmed = time.After(hopAckGrace)
 		case <-unconfirmed:
 			abandon()
 			if frames == nil {
-				return "", io.ErrUnexpectedEOF
+				return "", errHopRelayLost
 			}
+		case <-winding:
+			winding = nil
 		case result := <-prepared:
 			prepared = nil
 			if err := respond(seq, result.err); err != nil {
@@ -432,15 +506,18 @@ func serveHopRelay(ctx context.Context, fromFar io.Reader, toFar io.Writer, hop 
 				abandon()
 				continue
 			}
-			follow, acked, unconfirmed = result.follow, true, time.After(hopAckGrace)
+			follow, acked, unconfirmed = result.follow, true, time.After(hopAckBackstop)
 		case frame := <-frames:
 			switch {
+			case frame.Ready && frame.Version == hopRelayVersion:
+				ready = true
 			case frame.Seq <= 0:
 				// Not an exchange a relay would number.
 			case frame.Version != hopRelayVersion:
 				// Say so, or the far shell waits out its deadline.
 				if frame.Request != nil {
 					if err := respond(frame.Seq, errHopRelayVersion); err != nil {
+						abandon()
 						return "", err
 					}
 				}
@@ -448,6 +525,17 @@ func serveHopRelay(ctx context.Context, fromFar io.Reader, toFar io.Writer, hop 
 				// The relay moves on only once an exchange is over.
 				abandon()
 				request, err := hopRelayRequest(frame.Request)
+				if err == nil && winding != nil {
+					// One preparation at a time: let the cancelled one end.
+					select {
+					case <-winding:
+						winding = nil
+					case <-time.After(hopRelayRequestWait):
+						err = camperrors.New("hop-resume: the previous request is still being cancelled; try again")
+					case <-ctx.Done():
+						err = ctx.Err()
+					}
+				}
 				if err == nil && !hop.reserve() {
 					err = errHopAlreadySwitching
 				}
@@ -510,8 +598,12 @@ func runHopRelay(ctx context.Context, id, forwardedSock string, in io.Reader, ou
 	if err != nil {
 		return err
 	}
-	if forwardedSock != "" && trustedHopSocket(forwardedSock) == nil {
-		return nil
+	if forwardedSock != "" {
+		// The same test the far shell will apply when it dials.
+		if conn, err := dialHopSocket(ctx, forwardedSock); err == nil {
+			_ = conn.Close()
+			return nil
+		}
 	}
 	dir := filepath.Dir(path)
 	if err := os.MkdirAll(dir, 0o700); err != nil {
@@ -525,6 +617,14 @@ func runHopRelay(ctx context.Context, id, forwardedSock string, in io.Reader, ou
 		return camperrors.Wrap(err, "hop-resume: relay directory")
 	}
 	pruneHopRelays(dir)
+	// A relay started again for the same hop finds its predecessor's socket
+	// when that one was killed. If something still answers there, leave it.
+	if conn, err := net.DialTimeout("unix", path, 200*time.Millisecond); err == nil {
+		_ = conn.Close()
+		return nil
+	} else if errors.Is(err, syscall.ECONNREFUSED) {
+		_ = os.Remove(path)
+	}
 	ln, err := net.Listen("unix", path)
 	if err != nil {
 		return camperrors.Wrap(err, "hop-resume: relay listen")
@@ -595,6 +695,9 @@ func relayHopExchanges(ctx context.Context, ln net.Listener, in io.Reader, out i
 	// A far login shell may have printed without ending its line; start ours
 	// on a fresh one so the first frame is not glued to that.
 	if _, err := io.WriteString(out, "\n"); err != nil {
+		return camperrors.Wrap(err, "hop-resume: relay stream")
+	}
+	if err := toOpener.write(hopRelayFrame{Version: hopRelayVersion, Ready: true}); err != nil {
 		return camperrors.Wrap(err, "hop-resume: relay stream")
 	}
 	for seq := 1; ; seq++ {

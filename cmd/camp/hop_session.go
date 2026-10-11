@@ -117,9 +117,9 @@ func unwindInsteadOfHop(msel cmdutil.ParsedMachineSelector) (resume string, unwi
 }
 
 // emitHopUnwind writes the shell line that pops this hop. A non-empty resume
-// is delivered to the shell underneath through the resume socket that the
-// outbound hop forwarded; without that socket (a hop opened before the
-// wrapper knew how) we refuse rather than exit into the wrong camp.
+// is delivered to the shell underneath through the route the outbound hop
+// offered, its forwarded socket or its relay; without either (a hop opened
+// before the wrapper knew how) we refuse rather than exit into the wrong camp.
 func emitHopUnwind(cmd *cobra.Command, resume string, printOnly, shellConnect, jsonOut bool) error {
 	origin, hasOrigin := sessionHopOrigin()
 	label := "the machine that opened this hop"

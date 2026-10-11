@@ -10,6 +10,7 @@ import (
 	"os"
 	"slices"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 
@@ -559,6 +560,9 @@ func TestHopRelayEndsWithItsHopAfterALateAnswer(t *testing.T) {
 	done := make(chan error, 1)
 	go func() { done <- relayHopExchanges(context.Background(), ln, inR, outW) }()
 
+	if frame := <-frames; !frame.Ready {
+		t.Fatalf("a relay's first frame must say it is listening: %+v", frame)
+	}
 	// A far shell asks and is interrupted before it is answered.
 	far, near := net.Pipe()
 	conns <- near
@@ -820,4 +824,145 @@ func TestHopResumeRefusesRequestsThatCarryControlCharacters(t *testing.T) {
 	if err := printableHopRequest(hopResumeRequest{Selector: "thirdbox:Festival Method Kit", Host: "c.example", Scope: cmdutil.CampaignScope{Org: "r&d"}}); err != nil {
 		t.Fatalf("an ordinary request must pass: %v", err)
 	}
+}
+
+// While its link is up the relay always reports how an exchange ended, so a
+// slow link must not cost a switch the far shell is still completing.
+func TestHopRelayLateConfirmationStillCounts(t *testing.T) {
+	grace := hopAckGrace
+	t.Cleanup(func() { hopAckGrace = grace })
+	hopAckGrace = 20 * time.Millisecond
+
+	ctx, endHop := context.WithCancel(context.Background())
+	defer endHop()
+	toOpenerR, toOpenerW := io.Pipe()
+	toRelayR, toRelayW := io.Pipe()
+	defer func() { _ = toOpenerW.Close(); _ = toRelayW.Close() }()
+	hop := new(hopSwitch)
+	follow := make(chan string, 1)
+	go func() {
+		line, _ := serveHopRelay(ctx, toOpenerR, toRelayW, hop, prepareBySelector)
+		follow <- line
+	}()
+	request, err := json.Marshal(hopResumeEnvelope{Version: hopRelayVersion, Request: hopResumeRequest{Selector: "thirdbox:notes", Host: "c.example"}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	out := hopLineWriter{w: toOpenerW}
+	if err := out.write(hopRelayFrame{Version: hopRelayVersion, Seq: 1, Request: request}); err != nil {
+		t.Fatal(err)
+	}
+	var answer hopRelayFrame
+	if err := json.NewDecoder(toRelayR).Decode(&answer); err != nil || answer.Response == nil {
+		t.Fatalf("acknowledgement %+v %v", answer, err)
+	}
+	// The acknowledgement is slow to reach the far shell; its confirmation
+	// arrives long after the grace that applies to a lost link.
+	time.Sleep(10 * hopAckGrace)
+	if hop.reserve() {
+		t.Fatal("the switch was taken back while its relay link was still up")
+	}
+	if err := out.write(hopRelayFrame{Version: hopRelayVersion, Seq: 1, Confirm: true}); err != nil {
+		t.Fatal(err)
+	}
+	// Long after that, the far shell is gone and the hop ends.
+	time.Sleep(10 * hopAckGrace)
+	endHop()
+	select {
+	case line := <-follow:
+		if line != "ssh thirdbox:notes" {
+			t.Fatalf("a confirmed switch was dropped: %q", line)
+		}
+	case <-time.After(2 * time.Second):
+		t.Fatal("serving did not end with the hop")
+	}
+}
+
+func TestHopRelayTellsALostLinkFromARelayThatNeverListened(t *testing.T) {
+	for name, tc := range map[string]struct {
+		frames []hopRelayFrame
+		lost   bool
+	}{
+		"listening, then gone":                   {[]hopRelayFrame{{Version: hopRelayVersion, Ready: true}}, true},
+		"never listened (stepped aside, or old)": {nil, false},
+	} {
+		t.Run(name, func(t *testing.T) {
+			toOpenerR, toOpenerW := io.Pipe()
+			_, toRelayW := io.Pipe()
+			defer func() { _ = toRelayW.Close() }()
+			done := make(chan error, 1)
+			go func() {
+				_, err := serveHopRelay(context.Background(), toOpenerR, toRelayW, new(hopSwitch), prepareBySelector)
+				done <- err
+			}()
+			out := hopLineWriter{w: toOpenerW}
+			for _, frame := range tc.frames {
+				if err := out.write(frame); err != nil {
+					t.Fatal(err)
+				}
+			}
+			_ = toOpenerW.Close()
+			select {
+			case err := <-done:
+				if errors.Is(err, errHopRelayLost) != tc.lost {
+					t.Fatalf("lost=%v, want %v (%v)", errors.Is(err, errHopRelayLost), tc.lost, err)
+				}
+			case <-time.After(2 * time.Second):
+				t.Fatal("serving did not end with the relay link")
+			}
+		})
+	}
+}
+
+// A far process that asks and hangs up over and over must not make the
+// opening shell run more than one preparation at a time.
+func TestHopRelayRunsOnePreparationAtATime(t *testing.T) {
+	var mu sync.Mutex
+	running, most := 0, 0
+	release := make(chan struct{})
+	rig := newHopRelayRig(t, func(_ context.Context, request hopResumeRequest) (string, error) {
+		mu.Lock()
+		running++
+		most = max(most, running)
+		mu.Unlock()
+		defer func() {
+			mu.Lock()
+			running--
+			mu.Unlock()
+		}()
+		if request.Selector == "stubborn:notes" {
+			// A preparation that takes its time to notice it was cancelled.
+			<-release
+			return "", errors.New("cancelled")
+		}
+		return "ssh " + request.Selector, nil
+	})
+	for range 3 {
+		conn := rig.dial()
+		out := hopLineWriter{w: conn}
+		if err := out.write(hopResumeEnvelope{Version: hopRelayVersion, Request: hopResumeRequest{Selector: "stubborn:notes", Host: "c.example"}}); err != nil {
+			t.Fatal(err)
+		}
+		_ = conn.Close()
+	}
+	time.AfterFunc(100*time.Millisecond, func() { close(release) })
+	if err := rig.send("thirdbox:notes"); err != nil {
+		t.Fatalf("the request after the abandoned ones must be served: %v", err)
+	}
+	mu.Lock()
+	defer mu.Unlock()
+	if most != 1 {
+		t.Fatalf("%d preparations ran at once", most)
+	}
+}
+
+// A request whose names need escaping in HTML must not grow past what a frame
+// carries on its way through the relay.
+func TestHopRelayCarriesARequestAtItsFullLength(t *testing.T) {
+	rig := newHopRelayRig(t, prepareBySelector)
+	selector := "thirdbox:" + strings.Repeat("<&>", (hopRelayMaxRequest-200)/3)
+	if err := rig.send(selector); err != nil {
+		t.Fatalf("a request within the limit must be carried: %v", err)
+	}
+	rig.endsWith("ssh " + selector)
 }

@@ -1,0 +1,99 @@
+//go:build integration
+// +build integration
+
+package integration
+
+import (
+	"fmt"
+	"strings"
+	"testing"
+	"time"
+
+	"github.com/stretchr/testify/require"
+)
+
+// setSSHDForwarding sets AllowTcpForwarding on the loopback sshd, which also
+// governs remote unix-socket forwards, and waits for the reloaded server.
+func setSSHDForwarding(t *testing.T, tc *TestContainer, allow string) {
+	t.Helper()
+	out := tc.Shell(t, fmt.Sprintf(`
+set -e
+if grep -q '^AllowTcpForwarding' /etc/ssh/sshd_config; then
+  sed -i 's/^AllowTcpForwarding.*/AllowTcpForwarding %[1]s/' /etc/ssh/sshd_config
+else
+  printf '%%s\n' 'AllowTcpForwarding %[1]s' >> /etc/ssh/sshd_config
+fi
+kill -HUP "$(cat /run/sshd.pid)"
+for i in 1 2 3 4 5 6 7 8 9 10; do
+  ssh -i %[2]s -o StrictHostKeyChecking=accept-new -o BatchMode=yes root@localhost 'echo SSHOK' 2>/dev/null && break
+  sleep 0.5
+done
+/usr/sbin/sshd -T 2>/dev/null | grep -i '^allowtcpforwarding'
+`, allow, rootIdentity))
+	require.Contains(t, out, "SSHOK", "sshd did not come back after reload: %s", out)
+	require.Contains(t, out, "allowtcpforwarding "+allow, "sshd did not take the setting: %s", out)
+}
+
+// TestHopResumeOverRealSSHD drives a real hop through OpenSSH, with a tty on
+// the opening side, and has the far shell ask to switch onward. The opening
+// shell has no route to the host named, so it must refuse, and the far shell
+// must show that refusal: proof the request crossed and the answer came back.
+//
+// What a hopped shell may trust depends on who it is and on what the ssh
+// server did with the forwarded socket, and only a real sshd shows the latter:
+//   - where the server forwards it, an ordinary user owns the socket in /tmp,
+//     so the released socket route carries the request and the relay steps
+//     aside;
+//   - root does not trust a shared directory, so its request goes over the
+//     relay, started on a second session of the same server;
+//   - where the server refuses the forward (Alpine's default configuration
+//     does), there is no socket at all and the relay is the only route.
+func TestHopResumeOverRealSSHD(t *testing.T) {
+	tc := GetSharedContainer(t)
+	ensurePeerAccount(t, tc)
+	t.Cleanup(func() { setSSHDForwarding(t, tc, "no") })
+
+	// Long enough for the relay, which starts a moment after the hop, to be
+	// listening or to have stepped aside.
+	const farShell = `sleep 3; camp hop-resume send --host elsewhere.example thirdbox:notes; ` +
+		`echo SEND_EXIT=$?; ` +
+		`echo RELAY_SOCKETS=$(ls -A "$HOME/.obey/hop-resume" 2>/dev/null | wc -l); ` +
+		`echo SOCK_OWNER=$(stat -c %U "$CAMP_HOP_RESUME_SOCK" 2>/dev/null || echo none)`
+
+	for _, hop := range []struct {
+		name       string
+		forwarding string
+		user       string
+		relays     string
+		sockOwner  string
+	}{
+		{"forward refused, ordinary user over the relay", "no", peerUser, "RELAY_SOCKETS=1", "SOCK_OWNER=none"},
+		{"ordinary user over the forwarded socket", "yes", peerUser, "RELAY_SOCKETS=0", "SOCK_OWNER=" + peerUser},
+		{"root over the relay", "yes", "root", "RELAY_SOCKETS=1", "SOCK_OWNER=root"},
+	} {
+		t.Run(hop.name, func(t *testing.T) {
+			setSSHDForwarding(t, tc, hop.forwarding)
+			tokens := []string{
+				"-o", "StrictHostKeyChecking=accept-new", "-o", "BatchMode=yes", "-o", "IdentitiesOnly=yes",
+				"-i", rootIdentity, hop.user + "@localhost", farShell,
+			}
+			line := "ssh -t"
+			for _, token := range tokens {
+				line += " " + shQuote(token)
+			}
+			out, err := tc.RunCampInteractiveStepsInDirTimeout("/root", 90*time.Second,
+				[]InteractiveStep{{WaitFor: "SOCK_OWNER=", WaitTimeout: 60 * time.Second}},
+				"hop-resume", "run", "--", line)
+			require.NoError(t, err, "hop failed:\n%s", out)
+
+			require.Contains(t, out, "parent has no route to elsewhere.example",
+				"the far shell must show the opening shell's answer:\n%s", out)
+			require.Contains(t, out, "SEND_EXIT=1", "a refused switch must leave the far shell running:\n%s", out)
+			require.Contains(t, out, hop.sockOwner, "forwarded socket:\n%s", out)
+			require.Contains(t, out, hop.relays, "relay presence:\n%s", out)
+			for _, refused := range []string{"only this user could have put there", "runs as another user", "relay for this hop is not running"} {
+				require.False(t, strings.Contains(out, refused), "the route was refused (%q):\n%s", refused, out)
+			}
+		})
+	}
+}

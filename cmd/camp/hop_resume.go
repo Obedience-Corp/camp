@@ -135,48 +135,48 @@ func sendHopResume(ctx context.Context, selector string, scope cmdutil.CampaignS
 }
 
 // dialHopResume reaches the shell that opened this hop, by its relay when one
-// was offered and otherwise by the forwarded socket. Either is used only while
-// it passes trustedHopSocket.
+// is running and otherwise by the forwarded socket. Either is used only under
+// dialHopSocket's rule.
 func dialHopResume(ctx context.Context) (conn net.Conn, overRelay bool, err error) {
 	relayID := strings.TrimSpace(os.Getenv(hopResumeRelayEnv))
 	sock := strings.TrimSpace(os.Getenv(hopResumeSockEnv))
 	if relayID == "" && sock == "" {
 		return nil, false, camperrors.New("hop-resume: " + hopResumeSockEnv + " is not set\nHint: re-source shell init and hop again")
 	}
-	dial := func(path string) (net.Conn, error) {
-		if err := trustedHopSocket(path); err != nil {
-			return nil, err
-		}
-		dialer := net.Dialer{Timeout: 2 * time.Second}
-		conn, err := dialer.DialContext(ctx, "unix", path)
-		if err != nil {
-			return nil, err
-		}
-		if err := trustedHopPeer(conn); err != nil {
-			_ = conn.Close()
-			return nil, err
-		}
-		return conn, nil
+	relayPath, relayErr := "", error(nil)
+	relayAbsent := func() bool {
+		return errors.Is(relayErr, fs.ErrNotExist) || errors.Is(relayErr, syscall.ECONNREFUSED)
 	}
-	var failed []error
 	if relayID != "" {
-		path, err := hopRelaySocketPath(relayID)
-		if err == nil {
-			if conn, err = dial(path); err == nil {
+		if relayPath, relayErr = hopRelaySocketPath(relayID); relayErr == nil {
+			if conn, relayErr = dialHopSocket(ctx, relayPath); relayErr == nil {
 				return conn, true, nil
 			}
 		}
-		if errors.Is(err, fs.ErrNotExist) || errors.Is(err, syscall.ECONNREFUSED) {
-			err = camperrors.New("the relay for this hop is not running here: it starts a moment after the hop does, so try again; otherwise the hop has ended, or its relay could not start on this machine")
-		}
-		failed = append(failed, err)
 	}
+	var sockErr error
 	if sock != "" {
-		conn, err := dial(sock)
-		if err == nil {
+		if conn, sockErr = dialHopSocket(ctx, sock); sockErr == nil {
 			return conn, false, nil
 		}
-		failed = append(failed, err)
+	}
+	// The relay starts a moment after the hop does. With no other route,
+	// give it that moment rather than ask the user to try again.
+	for waited := time.Duration(0); relayPath != "" && relayAbsent() && waited < hopRelayAwait && ctx.Err() == nil; waited += 100 * time.Millisecond {
+		time.Sleep(100 * time.Millisecond)
+		if conn, relayErr = dialHopSocket(ctx, relayPath); relayErr == nil {
+			return conn, true, nil
+		}
+	}
+	var failed []error
+	if relayID != "" {
+		if relayAbsent() {
+			relayErr = camperrors.New("the relay for this hop is not running here: the hop has ended, or its relay could not start on this machine ('camp machine diagnose' on the machine that opened the hop shows which camp ssh finds here)")
+		}
+		failed = append(failed, relayErr)
+	}
+	if sock != "" {
+		failed = append(failed, sockErr)
 	}
 	if relayID == "" {
 		// A camp without relays opened this hop, so this socket was the only
@@ -252,15 +252,7 @@ func runHop(ctx context.Context, line string, around hopSurroundings) (string, e
 	// The relay starts once the hop is under way and nothing waits on it:
 	// onward switching must not delay or disturb the hop itself.
 	go func() {
-		follow := ""
-		select {
-		case <-time.After(hopRelayStartDelay):
-			relay := startHopRelay(resumeCtx, hop, relayID, remoteSock)
-			follow, _ = serveHopRelay(resumeCtx, relay.fromFar, relay.toFar, onward, around.prepare)
-			relay.stop()
-		case <-resumeCtx.Done():
-		}
-		got <- follow
+		got <- runHopRelayLink(resumeCtx, hop, relayID, remoteSock, onward, around.prepare)
 	}()
 
 	argv := hop.resumeArgv(local, remoteSock, relayID)
@@ -278,10 +270,43 @@ func runHop(ctx context.Context, line string, around hopSurroundings) (string, e
 	if other := <-got; follow == "" {
 		follow = other
 	}
-	if runErr != nil {
+	// A switch that stands is followed even when the far shell's last command
+	// failed, which is all a non-zero status from ssh means unless ssh itself
+	// failed or this hop was cancelled.
+	if runErr != nil && (follow == "" || ctx.Err() != nil || !hopShellExited(runErr)) {
 		return "", runErr
 	}
 	return follow, nil
+}
+
+// hopShellExited reports whether ssh ended because the far shell did: ssh
+// passes on the shell's own status and keeps 255 for its own failures.
+func hopShellExited(runErr error) bool {
+	var exit *exec.ExitError
+	return errors.As(runErr, &exit) && exit.ExitCode() > 0 && exit.ExitCode() != 255
+}
+
+// runHopRelayLink keeps this hop's relay running and returns the follow-up
+// line of a switch it carried. A relay that never listens (it stepped aside,
+// or the far camp predates relays) is left alone; one that was listening and
+// lost its link is started again a few times.
+func runHopRelayLink(ctx context.Context, hop hopLine, relayID, forwardedSock string, onward *hopSwitch, prepare func(context.Context, hopResumeRequest) (string, error)) string {
+	wait := hopRelayStartDelay
+	for attempt := 0; attempt <= hopRelayRestarts; attempt++ {
+		select {
+		case <-time.After(wait):
+		case <-ctx.Done():
+			return ""
+		}
+		relay := startHopRelay(ctx, hop, relayID, forwardedSock)
+		follow, err := serveHopRelay(ctx, relay.fromFar, relay.toFar, onward, prepare)
+		relay.stop()
+		if follow != "" || !errors.Is(err, errHopRelayLost) {
+			return follow
+		}
+		wait = hopRelayRestartDelay
+	}
+	return ""
 }
 
 // openHopTerminal returns the terminal the interactive ssh attaches to: the

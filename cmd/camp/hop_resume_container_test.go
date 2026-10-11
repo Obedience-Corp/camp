@@ -3,6 +3,7 @@
 package main
 
 import (
+	"cmp"
 	"context"
 	"encoding/json"
 	"errors"
@@ -813,7 +814,7 @@ func TestHopResumeFSSendPrefersTheRelayWhenBothRoutesAreUp(t *testing.T) {
 }
 
 // TestHopResumeFSFarShellHelper is the far shell in the lifecycle test below:
-// the fake ssh runs this binary with the forwarded socket in its environment.
+// the fake ssh runs this binary with the hop's routes in its environment.
 func TestHopResumeFSFarShellHelper(t *testing.T) {
 	selector := os.Getenv("CAMP_TEST_FAR_SHELL")
 	if selector == "" {
@@ -824,6 +825,19 @@ func TestHopResumeFSFarShellHelper(t *testing.T) {
 	}
 }
 
+// TestHopResumeFSRelayHelper is the far relay in the lifecycle test below: the
+// fake ssh runs this binary in place of `camp hop-resume relay <id>`. What the
+// test framework prints around the frames stands in for a noisy login shell.
+func TestHopResumeFSRelayHelper(t *testing.T) {
+	id := os.Getenv("CAMP_TEST_RELAY_ID")
+	if id == "" {
+		return
+	}
+	if err := runHopRelay(context.Background(), id, "", os.Stdin, os.Stdout); err != nil {
+		t.Fatalf("relay: %v", err)
+	}
+}
+
 const fakeHopSSH = `#!/bin/sh
 # Stands in for ssh: records how it was called, then plays the hop or the relay.
 case " $* " in
@@ -831,7 +845,13 @@ case " $* " in
 	echo relay >> "$FAKE_SSH_LOG"
 	echo "$$" > "$FAKE_SSH_LOG.relay-pid"
 	printf '%s\n' "$@" > "$FAKE_SSH_LOG.relay-argv"
-	exec cat > /dev/null
+	id=$(printf '%s' "$*" | sed -n 's/.*hop-resume relay \([0-9a-f]\{16\}\).*/\1/p')
+	case "$FAKE_SSH_RELAY" in
+	real) CAMP_TEST_RELAY_ID="$id" exec "$FAKE_SSH_SELF" -test.run '^TestHopResumeFSRelayHelper$' -test.v ;;
+	aside) exit 0 ;;
+	dies) printf '\n{"version":2,"ready":true}\n'; sleep 0.2; exit 1 ;;
+	*) exec cat > /dev/null ;;
+	esac
 	;;
 *)
 	echo hop >> "$FAKE_SSH_LOG"
@@ -841,7 +861,15 @@ case " $* " in
 		prev=$arg
 	done
 	if [ -n "$CAMP_TEST_FAR_SHELL" ]; then
-		CAMP_HOP_RESUME_SOCK="${spec#*:}" CAMP_HOP_RESUME_RELAY="" "$FAKE_SSH_SELF" -test.run '^TestHopResumeFSFarShellHelper$' > "$FAKE_SSH_LOG.far" 2>&1 || echo far-shell-failed >> "$FAKE_SSH_LOG"
+		sleep "$FAKE_SSH_FAR_DELAY"
+		if [ "$FAKE_SSH_FAR_ROUTE" = relay ]; then
+			sock=""
+			relay=$(printf '%s' "$*" | sed -n "s/.*CAMP_HOP_RESUME_RELAY='\([0-9a-f]*\)'.*/\1/p")
+		else
+			sock=${spec#*:}
+			relay=""
+		fi
+		CAMP_HOP_RESUME_SOCK="$sock" CAMP_HOP_RESUME_RELAY="$relay" "$FAKE_SSH_SELF" -test.run '^TestHopResumeFSFarShellHelper$' > "$FAKE_SSH_LOG.far" 2>&1 || echo far-shell-failed >> "$FAKE_SSH_LOG"
 	fi
 	sleep "$FAKE_SSH_HOP_SECONDS"
 	exit "$FAKE_SSH_HOP_EXIT"
@@ -883,19 +911,28 @@ func TestHopResumeFSRunCarriesAHopFromStartToFinish(t *testing.T) {
 		},
 	}
 	const line = "ssh -t '-o' 'BatchMode=yes' 'far.example' 'exec $SHELL -l'"
-	leftovers := func() []string {
-		socks, _ := filepath.Glob("/tmp/camp-hr-*")
-		return socks
+	const next = "cd -- '/next/thirdbox:notes'\n"
+	type hopCase struct {
+		hopSeconds, hopExit string
+		farShell, farRoute  string // a far shell that asks to switch, and by which route
+		farDelay            string
+		relay               string // how the far relay behaves
+		cancelAfter         time.Duration
+		wantFollow          string
+		wantErr             bool
+		wantRelays          int // relay starts expected; -1 for "none unless the hop ran long"
 	}
-	for name, tc := range map[string]struct {
-		hopSeconds, hopExit, farShell string
-		wantFollow                    string
-		wantErr, wantRelay            bool
-	}{
-		"a hop that ends before its relay would start": {hopSeconds: "0.1", hopExit: "0"},
-		"a switch over the forwarded socket":           {hopSeconds: "0.1", hopExit: "0", farShell: "thirdbox:notes", wantFollow: "cd -- '/next/thirdbox:notes'\n"},
-		"a hop long enough for its relay":              {hopSeconds: "1.6", hopExit: "0", wantRelay: true},
-		"a hop whose connection failed":                {hopSeconds: "0.1", hopExit: "255", wantErr: true},
+	for name, tc := range map[string]hopCase{
+		"a hop that ends before its relay would start":   {hopSeconds: "0.1", hopExit: "0", wantRelays: -1},
+		"a switch over the forwarded socket":             {hopSeconds: "0.1", hopExit: "0", farShell: "thirdbox:notes", wantFollow: next, wantRelays: -1},
+		"a switch that stands when the shell exits 1":    {hopSeconds: "0.1", hopExit: "1", farShell: "thirdbox:notes", wantFollow: next, wantRelays: -1},
+		"a hop whose connection failed":                  {hopSeconds: "0.1", hopExit: "255", wantErr: true, wantRelays: -1},
+		"a switch lost with the connection":              {hopSeconds: "0.1", hopExit: "255", farShell: "thirdbox:notes", wantErr: true, wantRelays: -1},
+		"a relay that stays silent":                      {hopSeconds: "2.5", hopExit: "0", wantRelays: 1},
+		"a relay that steps aside while the hop goes on": {hopSeconds: "2.5", hopExit: "0", relay: "aside", wantRelays: 1},
+		"a switch over the relay":                        {hopSeconds: "0.1", hopExit: "0", farShell: "thirdbox:notes", farRoute: "relay", farDelay: "2.5", relay: "real", wantFollow: next, wantRelays: 1},
+		"a relay whose link is lost is started again":    {hopSeconds: "4.5", hopExit: "0", relay: "dies", wantRelays: 2},
+		"a hop cancelled with its relay running":         {hopSeconds: "30", hopExit: "0", cancelAfter: 2500 * time.Millisecond, wantErr: true, wantRelays: 1},
 	} {
 		t.Run(name, func(t *testing.T) {
 			log := filepath.Join(t.TempDir(), "ssh.log")
@@ -903,28 +940,45 @@ func TestHopResumeFSRunCarriesAHopFromStartToFinish(t *testing.T) {
 			t.Setenv("FAKE_SSH_HOP_SECONDS", tc.hopSeconds)
 			t.Setenv("FAKE_SSH_HOP_EXIT", tc.hopExit)
 			t.Setenv("CAMP_TEST_FAR_SHELL", tc.farShell)
+			t.Setenv("FAKE_SSH_FAR_ROUTE", tc.farRoute)
+			t.Setenv("FAKE_SSH_FAR_DELAY", cmp.Or(tc.farDelay, "0"))
+			t.Setenv("FAKE_SSH_RELAY", tc.relay)
 			hopTime, _ := time.ParseDuration(tc.hopSeconds + "s")
+			farDelay, _ := time.ParseDuration(cmp.Or(tc.farDelay, "0") + "s")
+			expected := hopTime + farDelay
+			ctx := context.Background()
+			if tc.cancelAfter > 0 {
+				var cancel context.CancelFunc
+				ctx, cancel = context.WithTimeout(ctx, tc.cancelAfter)
+				defer cancel()
+				expected = tc.cancelAfter
+			}
 
 			started := time.Now()
-			follow, err := runHop(context.Background(), line, around)
+			follow, err := runHop(ctx, line, around)
 			held := time.Since(started)
 
 			if (err != nil) != tc.wantErr || follow != tc.wantFollow {
 				far, _ := os.ReadFile(log + ".far")
 				t.Fatalf("follow-up %q err %v, want %q err=%v\n%s", follow, err, tc.wantFollow, tc.wantErr, far)
 			}
-			if held > hopTime+time.Second {
-				t.Fatalf("the opening shell was held %v for a %v hop", held, hopTime)
+			// Nothing but the hop itself may hold the opening shell.
+			if held > expected+3*time.Second {
+				t.Fatalf("the opening shell was held %v for a hop of %v", held, expected)
 			}
 			calls, _ := os.ReadFile(log)
-			if got := strings.Contains(string(calls), "relay"); got != tc.wantRelay {
-				t.Fatalf("relay started=%v, want %v (calls: %q)", got, tc.wantRelay, calls)
-			}
 			if strings.Contains(string(calls), "far-shell-failed") {
 				far, _ := os.ReadFile(log + ".far")
 				t.Fatalf("the far shell's switch failed:\n%s", far)
 			}
-			if tc.wantRelay {
+			relays := strings.Count(string(calls), "relay")
+			switch {
+			case tc.wantRelays >= 0 && relays != tc.wantRelays:
+				t.Fatalf("relay started %d times, want %d (calls: %q)", relays, tc.wantRelays, calls)
+			case tc.wantRelays < 0 && relays != 0 && held < hopRelayStartDelay:
+				t.Fatalf("the relay started ahead of its delay (hop held %v; calls: %q)", held, calls)
+			}
+			if relays > 0 {
 				argv, _ := os.ReadFile(log + ".relay-argv")
 				if !strings.HasPrefix(string(argv), "-T\n") || !strings.Contains(string(argv), "far.example\n") || !strings.Contains(string(argv), "hop-resume relay ") {
 					t.Fatalf("relay ssh call: %q", argv)
@@ -934,11 +988,18 @@ func TestHopResumeFSRunCarriesAHopFromStartToFinish(t *testing.T) {
 				if _, err := fmt.Sscan(string(pid), &relayPID); err != nil {
 					t.Fatalf("relay pid %q: %v", pid, err)
 				}
-				if err := syscall.Kill(relayPID, 0); err == nil {
+				gone := false
+				for deadline := time.Now().Add(2 * time.Second); time.Now().Before(deadline); time.Sleep(20 * time.Millisecond) {
+					if syscall.Kill(relayPID, 0) != nil {
+						gone = true
+						break
+					}
+				}
+				if !gone {
 					t.Fatal("the relay's ssh outlived the hop")
 				}
 			}
-			if left := leftovers(); len(left) != 0 {
+			if left, _ := filepath.Glob("/tmp/camp-hr-*"); len(left) != 0 {
 				t.Fatalf("the hop left sockets behind: %v", left)
 			}
 		})
