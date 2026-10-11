@@ -543,11 +543,20 @@ func serveHopRelay(ctx context.Context, fromFar io.Reader, toFar io.Writer, hop 
 		select {
 		case <-ctx.Done():
 			// The hop is over. A far shell that was acknowledged moments
-			// ago and is gone now acted on it.
+			// ago and is gone now acted on it, so its follow-up stands.
+			// abandon would clear an acknowledgement that is not confirmed
+			// yet, and a confirmed switch must keep its follow-up too.
 			if acked {
 				return follow, nil
 			}
 			abandon()
+			// Cancel asks the preparation to end what it started. Wait for
+			// that goroutine: it interrupts the switch child and only kills
+			// it after WaitDelay. Returning first lets the process exit
+			// before either happens.
+			if winding != nil {
+				<-winding
+			}
 			return "", ctx.Err()
 		case err := <-ended:
 			if confirmed {
