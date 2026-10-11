@@ -319,6 +319,57 @@ func TestBuildContinuesPastUnreadableDirectory(t *testing.T) {
 	}
 }
 
+func TestBuildKeepsReadableItemsWhenFingerprintFails(t *testing.T) {
+	root := t.TempDir()
+	const completed = "festivals/.dungeon/completed/note.md"
+	const archived = "festivals/.dungeon/archived/old.md"
+	mustWrite(t, filepath.Join(root, filepath.FromSlash(completed)), "# Note\n\nShipped the note.\n")
+	mustWrite(t, filepath.Join(root, filepath.FromSlash(archived)), "# Old\n\nArchived note.\n")
+
+	orig := walkDir
+	walkDir = func(walkRoot string, fn fs.WalkDirFunc) error {
+		fingerprintWalk := filepath.Base(walkRoot) == ".dungeon"
+		return orig(walkRoot, func(path string, entry fs.DirEntry, err error) error {
+			if fingerprintWalk && err == nil && entry != nil && entry.IsDir() && entry.Name() == "archived" {
+				return fn(path, entry, os.ErrPermission)
+			}
+			return fn(path, entry, err)
+		})
+	}
+	t.Cleanup(func() { walkDir = orig })
+
+	idx, err := Build(context.Background(), root)
+	if err != nil {
+		t.Fatalf("Build() error = %v", err)
+	}
+	if itemAt(t, idx, completed).Status != "completed" {
+		t.Fatal("readable completed item was dropped")
+	}
+	if itemAt(t, idx, archived).Status != "archived" {
+		t.Fatal("readable archived item was dropped")
+	}
+	if len(idx.Dungeons) != 1 || idx.Dungeons[0].Fingerprint != "" {
+		t.Fatalf("dungeons = %+v, want one dungeon with an empty fingerprint", idx.Dungeons)
+	}
+	if len(idx.Warnings) != 1 || idx.Warnings[0] != "festivals/.dungeon: permission denied" {
+		t.Fatalf("warnings = %#v", idx.Warnings)
+	}
+
+	walkDir = orig
+	cleared := idx
+	cleared.Warnings = nil
+	refreshed, changed, err := Refresh(context.Background(), root, cleared)
+	if err != nil {
+		t.Fatalf("Refresh() error = %v", err)
+	}
+	if !changed || refreshed.Dungeons[0].Fingerprint == "" {
+		t.Fatal("Refresh accepted the incomplete fingerprint")
+	}
+	if itemAt(t, refreshed, completed).Status != "completed" {
+		t.Fatal("Refresh dropped the readable completed item")
+	}
+}
+
 func TestBuildWorkitemIDWithoutRef(t *testing.T) {
 	root := t.TempDir()
 	legacy := "workflow/design/.dungeon/completed/legacy-notes"

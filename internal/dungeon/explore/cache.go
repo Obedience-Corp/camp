@@ -97,13 +97,26 @@ func Refresh(ctx context.Context, root string, cached Index) (Index, bool, error
 	if err != nil {
 		return Index{}, false, err
 	}
-	// An unreadable directory does not change dungeon fingerprints, so a
-	// matching cache would hide the warning. Rebuild to record it.
-	if len(found.Warnings) == 0 && fingerprintsMatch(ctx, root, cached, found.Dungeons) {
+	// An unreadable directory or a failed metadata read does not change
+	// dungeon fingerprints, so a matching cache would keep the stale warning.
+	// Rebuild to retry it.
+	if len(found.Warnings) == 0 && !cachedHasWarning(cached) && fingerprintsMatch(ctx, root, cached, found.Dungeons) {
 		return cached, false, nil
 	}
 	idx, err := Build(ctx, root)
 	return idx, true, err
+}
+
+func cachedHasWarning(idx Index) bool {
+	if len(idx.Warnings) > 0 {
+		return true
+	}
+	for _, item := range idx.Items {
+		if item.Warning != "" {
+			return true
+		}
+	}
+	return false
 }
 
 func fingerprintsMatch(ctx context.Context, root string, cached Index, found []spelling.Dungeon) bool {

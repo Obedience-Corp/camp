@@ -6,6 +6,7 @@ import (
 	"context"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 	"time"
 )
@@ -142,6 +143,85 @@ func TestRefreshSeesInPlaceMetadataEdits(t *testing.T) {
 			}
 			tc.check(t, refreshed, festRel, workRel)
 		})
+	}
+}
+
+func TestRefreshRetriesCachedMetadataFailure(t *testing.T) {
+	ctx := context.Background()
+	root := t.TempDir()
+	festRel := "festivals/.dungeon/completed/2026-10-05/festival-activity-desktop-FA0024"
+	fest := filepath.Join(root, filepath.FromSlash(festRel))
+	good := "metadata:\n  id: FA0024\n  name: festival-activity-desktop\n  goal: Ship it\n"
+	bad := strings.Replace(good, "metadata:", "metadata[", 1)
+	if len(bad) != len(good) {
+		t.Fatalf("bad yaml len = %d, good len = %d", len(bad), len(good))
+	}
+	yamlPath := filepath.Join(fest, "fest.yaml")
+	mustWrite(t, yamlPath, bad)
+
+	cached, err := Build(ctx, root)
+	if err != nil {
+		t.Fatalf("Build() error = %v", err)
+	}
+	incomplete := itemAt(t, cached, festRel)
+	if len(cached.Warnings) != 0 || incomplete.Warning == "" || incomplete.Title == "festival-activity-desktop" {
+		t.Fatalf("cached item = %+v, warnings = %#v", incomplete, cached.Warnings)
+	}
+
+	paths := []string{
+		yamlPath,
+		fest,
+		filepath.Dir(fest),
+		filepath.Dir(filepath.Dir(fest)),
+		filepath.Dir(filepath.Dir(filepath.Dir(fest))),
+	}
+	mods := make([]time.Time, len(paths))
+	for i, path := range paths {
+		info, err := os.Stat(path)
+		if err != nil {
+			t.Fatal(err)
+		}
+		mods[i] = info.ModTime()
+	}
+	if err := os.WriteFile(yamlPath, []byte(good), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	for i, path := range paths {
+		if err := os.Chtimes(path, mods[i], mods[i]); err != nil {
+			t.Fatal(err)
+		}
+	}
+	fp, err := fingerprint(ctx, filepath.Join(root, "festivals", ".dungeon"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if fp != cached.Dungeons[0].Fingerprint {
+		t.Fatalf("restored file changed the fingerprint: %s vs %s", fp, cached.Dungeons[0].Fingerprint)
+	}
+
+	refreshed, changed, err := Refresh(ctx, root, cached)
+	if err != nil {
+		t.Fatalf("Refresh() error = %v", err)
+	}
+	if !changed {
+		t.Fatal("Refresh kept the incomplete cached item")
+	}
+	got := itemAt(t, refreshed, festRel)
+	if got.Warning != "" || got.Title != "festival-activity-desktop" || got.ID != "FA0024" || got.Summary != "Ship it" {
+		t.Fatalf("retried item = %+v", got)
+	}
+
+	again, changed, err := Refresh(ctx, root, refreshed)
+	if err != nil {
+		t.Fatalf("Refresh() error = %v", err)
+	}
+	if changed {
+		t.Fatal("warning-free cache was rebuilt")
+	}
+	warned := again
+	warned.Warnings = []string{"festivals/.dungeon: permission denied"}
+	if _, changed, err = Refresh(ctx, root, warned); err != nil || !changed {
+		t.Fatalf("index warning refresh changed=%v err=%v", changed, err)
 	}
 }
 

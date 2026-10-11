@@ -92,10 +92,23 @@ func (m exploreModel) placeReplay(view string) string {
 	lineStart := strings.LastIndex(view[:at], "\n") + 1
 	col := lipgloss.Width(view[lineStart:at]) + 1
 	view = view[:at] + view[at+len(seq):]
+	// The feed window can clip reservation rows. Paint only the rows that
+	// remain in the body so the image cannot cover the status or help line.
+	if room := m.bodyRowsFrom(row); room < m.stageRows() {
+		seq = m.imageSequenceLimited(width, room)
+		if seq == "" {
+			return view
+		}
+	}
 	// imageSequence itself saves/restores at its origin. Strip that inner
 	// pair so the single saved cursor remains on the help row.
 	seq = strings.TrimSuffix(strings.TrimPrefix(seq, "\x1b7"), "\x1b8")
 	return view + fmt.Sprintf("\x1b7\x1b[%d;%dH", row, col) + seq + "\x1b8"
+}
+
+func (m exploreModel) bodyRowsFrom(row int) int {
+	last := m.height - (m.chromeLines() - 1)
+	return last - row + 1
 }
 
 func (m exploreModel) view() string {
@@ -397,11 +410,14 @@ func (m exploreModel) stageBlock(width int) []string {
 }
 
 func (m exploreModel) imageSequence(width int) string {
+	return m.imageSequenceLimited(width, m.stageRows())
+}
+
+func (m exploreModel) imageSequenceLimited(width, rows int) string {
 	item, ok := m.focused()
 	if !ok || m.poster == nil || m.mediaFor != item.Path || m.protocol == explore.ProtocolOff {
 		return ""
 	}
-	rows := m.stageRows()
 	if rows < 1 {
 		return ""
 	}

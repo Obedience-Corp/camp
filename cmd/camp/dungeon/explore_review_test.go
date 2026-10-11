@@ -120,6 +120,96 @@ func TestExploreKittyPlacementKeepsAspect(t *testing.T) {
 	}
 }
 
+func TestExploreReplayStaysInsideVisibleBody(t *testing.T) {
+	png, err := explore.EncodePNG(image.NewRGBA(image.Rect(0, 0, 192, 192)))
+	if err != nil {
+		t.Fatal(err)
+	}
+	items := make([]explore.Item, 12)
+	for i := range items {
+		day := time.Date(2026, time.January, i+1, 0, 0, 0, 0, time.UTC).Format("2006-01-02")
+		items[i] = explore.Item{
+			DoneDate: day, DateSource: explore.DateBucket, Status: "completed",
+			DungeonLabel: "Festivals", DungeonPath: "festivals/.dungeon", Kind: explore.KindFestival,
+			Title: "Item " + day, Summary: "A finished summary",
+			Path: "festivals/.dungeon/completed/" + day + "/item", IsDir: true,
+		}
+	}
+	const focus = "festivals/.dungeon/completed/2026-01-07/item"
+	m := replayModel(explore.ProtocolKitty)
+	m.width = 80
+	m.height = 22
+	m.status = "Copied the path"
+	m.poster = png
+	m.mediaFor = focus
+	m.index.Items = items
+	m.index.Warnings = []string{"festivals/.dungeon/archived: permission denied"}
+	if err := m.applyQuery(); err != nil {
+		t.Fatal(err)
+	}
+	m.cursor = -1
+	for i, item := range m.visible.Items {
+		if item.Path == focus {
+			m.cursor = i
+		}
+	}
+	if m.cursor < 0 {
+		t.Fatal("focused item missing from the feed")
+	}
+
+	view := m.View()
+	lines := strings.Split(view, "\n")
+	if len(lines) != 22 {
+		t.Fatalf("view lines = %d, want 22", len(lines))
+	}
+	status := lines[20]
+	if !strings.Contains(status, "Copied the path") || strings.Contains(status, "a=T") {
+		t.Fatalf("status row = %q", status)
+	}
+	if !strings.Contains(lines[21], "q quit") {
+		t.Fatalf("help row = %q", lines[21])
+	}
+	if !strings.Contains(view, ",c=14,r=7,") {
+		at := strings.Index(view, ",c=")
+		got := view
+		if at >= 0 && at+16 <= len(view) {
+			got = view[at : at+16]
+		}
+		t.Fatalf("placement %q, want ,c=14,r=7,", got)
+	}
+	if strings.Contains(view, ",r=8,") {
+		t.Fatal("replay kept the full eight rows")
+	}
+	row, ok := replayCupRow(view)
+	if !ok || row != 14 {
+		t.Fatalf("image row = %d, ok %v, want 14", row, ok)
+	}
+	if row+7-1 >= 21 {
+		t.Fatalf("replay rows %d-%d cover the status row", row, row+6)
+	}
+}
+
+func replayCupRow(view string) (int, bool) {
+	const mark = "\x1b7\x1b["
+	at := strings.LastIndex(view, mark)
+	if at < 0 {
+		return 0, false
+	}
+	rest := view[at+len(mark):]
+	semi := strings.IndexByte(rest, ';')
+	if semi <= 0 {
+		return 0, false
+	}
+	row := 0
+	for _, r := range rest[:semi] {
+		if r < '0' || r > '9' {
+			return 0, false
+		}
+		row = row*10 + int(r-'0')
+	}
+	return row, row > 0
+}
+
 func TestExploreReplayPaintsAfterBody(t *testing.T) {
 	for _, protocol := range []string{explore.ProtocolKitty, explore.ProtocolITerm} {
 		for _, width := range []int{64, 88, 120} {

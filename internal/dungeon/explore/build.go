@@ -17,8 +17,8 @@ import (
 	camperrors "github.com/Obedience-Corp/camp/internal/errors"
 )
 
-// walkDir lists the camp for Build and Refresh. Tests replace it to report
-// a directory the process cannot read.
+// walkDir lists the camp and fingerprints each dungeon. Tests replace it to
+// report a directory the process cannot read.
 var walkDir = filepath.WalkDir
 
 // Build walks every dungeon under root and returns the feed index.
@@ -62,17 +62,21 @@ func scanDungeon(ctx context.Context, root string, dungeon spelling.Dungeon) (Du
 	}
 	label := CleanText(Label(parentRel))
 	fp, err := fingerprint(ctx, dungeon.Path)
+	var warnings []string
 	if err != nil {
-		return DungeonPrint{}, nil, []string{warn(relDungeon, err)}, nil
+		if ctx.Err() != nil {
+			return DungeonPrint{}, nil, nil, camperrors.Wrap(err, "context cancelled")
+		}
+		warnings = append(warnings, warn(relDungeon, err))
+		fp = ""
 	}
 	print := DungeonPrint{Path: relDungeon, Name: dungeon.Name, Label: label, Fingerprint: fp}
 
 	entries, err := os.ReadDir(dungeon.Path)
 	if err != nil {
-		return print, nil, []string{warn(relDungeon, err)}, nil
+		return print, nil, append(warnings, warn(relDungeon, err)), nil
 	}
 	var items []Item
-	var warnings []string
 	for _, entry := range entries {
 		if err := ctx.Err(); err != nil {
 			return DungeonPrint{}, nil, nil, camperrors.Wrap(err, "context cancelled")
@@ -239,7 +243,7 @@ func stamp(rel string, info fs.FileInfo) string {
 
 func fingerprint(ctx context.Context, dungeonPath string) (string, error) {
 	var lines []string
-	err := filepath.WalkDir(dungeonPath, func(path string, entry fs.DirEntry, err error) error {
+	err := walkDir(dungeonPath, func(path string, entry fs.DirEntry, err error) error {
 		if err != nil {
 			return err
 		}
