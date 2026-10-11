@@ -208,6 +208,12 @@ func reportGuardRefusalJSON(cmd *cobra.Command, result *commitJSONResult, err er
 		return err
 	}
 	result.applyGuardRefusal(blocked)
+	if commitBackground {
+		if emitErr := emitBackgroundCommit(cmd.OutOrStdout(), result, backgroundRefused, nil); emitErr != nil {
+			return emitErr
+		}
+		return err
+	}
 	if emitErr := result.emit(cmd.OutOrStdout()); emitErr != nil {
 		return emitErr
 	}
