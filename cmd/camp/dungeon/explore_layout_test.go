@@ -198,6 +198,85 @@ func TestExploreViewShowsScanAndItemWarnings(t *testing.T) {
 	}
 }
 
+func feedModel(t *testing.T, items []explore.Item, query explore.Query) exploreModel {
+	t.Helper()
+	m := exploreModel{
+		width:    80,
+		height:   24,
+		protocol: explore.ProtocolOff,
+		query:    query,
+		index: explore.Index{
+			Dungeons: []explore.DungeonPrint{
+				{Path: "festivals/.dungeon", Label: "Festivals"},
+				{Path: "notes/.dungeon", Label: "Notes"},
+			},
+			Items: items,
+		},
+	}
+	if err := m.applyQuery(); err != nil {
+		t.Fatalf("apply: %v", err)
+	}
+	return m
+}
+
+func TestExploreEmptyFinishedLens(t *testing.T) {
+	m := feedModel(t, []explore.Item{{
+		DoneDate: "2026-10-05", Status: "holding",
+		DungeonLabel: "Festivals", DungeonPath: "festivals/.dungeon",
+		Title: "later", Path: "festivals/.dungeon/later.md",
+	}}, explore.Query{})
+	if len(m.visible.Items) != 0 {
+		t.Fatalf("finished lens kept holding work: %+v", m.visible.Items)
+	}
+	view := m.View()
+	if !strings.Contains(view, "No finished work in this camp.") {
+		t.Fatalf("view = %s", view)
+	}
+}
+
+func TestExploreEmptyStateUsesFilters(t *testing.T) {
+	items := []explore.Item{
+		{
+			DoneDate: "2026-10-05", Status: "completed",
+			DungeonLabel: "Festivals", DungeonPath: "festivals/.dungeon",
+			Title: "shipped", ID: "SHIP-1", Path: "festivals/.dungeon/completed/shipped",
+		},
+		{
+			DoneDate: "2026-04-01", Status: "reviewed",
+			DungeonLabel: "Festivals", DungeonPath: "festivals/.dungeon",
+			Title: "notes", Path: "festivals/.dungeon/reviewed/notes",
+		},
+	}
+	cases := []struct {
+		name  string
+		query explore.Query
+	}{
+		{name: "archived", query: explore.Query{Status: "archived", Dungeon: explore.LensAll}},
+		{name: "holding", query: explore.Query{Status: "holding", Dungeon: explore.LensAll}},
+		{name: "done", query: explore.Query{Status: "done", Dungeon: explore.LensAll}},
+		{name: "custom status", query: explore.Query{Status: "reviewed", Dungeon: explore.LensAll, Text: "missing"}},
+		{name: "text", query: explore.Query{Status: "finished", Dungeon: explore.LensAll, Text: "missing"}},
+		{name: "since", query: explore.Query{Status: "finished", Dungeon: explore.LensAll, Since: "2027-01-01"}},
+		{name: "until", query: explore.Query{Status: "finished", Dungeon: explore.LensAll, Until: "2020-01-01"}},
+		{name: "dungeon", query: explore.Query{Status: "finished", Dungeon: "Notes"}},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			m := feedModel(t, items, tc.query)
+			if len(m.visible.Items) != 0 {
+				t.Fatalf("expected an empty feed, got %+v", m.visible.Items)
+			}
+			view := m.View()
+			if strings.Contains(view, "No finished work") {
+				t.Fatalf("empty %s feed claimed there is no finished work:\n%s", tc.name, view)
+			}
+			if !strings.Contains(view, "No items match the current filters.") {
+				t.Fatalf("empty %s feed:\n%s", tc.name, view)
+			}
+		})
+	}
+}
+
 func TestExploreLongIDKeepsDungeonLabel(t *testing.T) {
 	for _, width := range []int{64, 100} {
 		m := longIDModel(width, 30)

@@ -161,6 +161,7 @@ func newestDungeonDay(history []historyEntry) (string, bool) {
 }
 
 type workitemMeta struct {
+	ID    string `yaml:"id"`
 	Title string `yaml:"title"`
 	Ref   string `yaml:"ref"`
 }
@@ -175,6 +176,8 @@ func fillWorkitem(ctx context.Context, item *Item, marker, readme string) string
 	}
 	if meta.Ref != "" {
 		item.ID = meta.Ref
+	} else if meta.ID != "" {
+		item.ID = meta.ID
 	}
 	if fileExists(readme) {
 		text, err := readLimited(ctx, readme)

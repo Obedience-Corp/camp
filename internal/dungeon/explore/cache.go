@@ -93,11 +93,13 @@ func Refresh(ctx context.Context, root string, cached Index) (Index, bool, error
 	if err := ctx.Err(); err != nil {
 		return Index{}, false, camperrors.Wrap(err, "context cancelled")
 	}
-	found, err := spelling.Discover(ctx, root)
+	found, err := spelling.DiscoverContinuing(ctx, root, walkDir)
 	if err != nil {
 		return Index{}, false, err
 	}
-	if fingerprintsMatch(ctx, root, cached, found) {
+	// An unreadable directory does not change dungeon fingerprints, so a
+	// matching cache would hide the warning. Rebuild to record it.
+	if len(found.Warnings) == 0 && fingerprintsMatch(ctx, root, cached, found.Dungeons) {
 		return cached, false, nil
 	}
 	idx, err := Build(ctx, root)

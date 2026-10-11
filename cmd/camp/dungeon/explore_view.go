@@ -189,6 +189,28 @@ func fitHelp(hints []helpHint, sep string, width int) string {
 	}
 }
 
+func (m exploreModel) emptyFeed() string {
+	if m.unfilteredFinished() {
+		label := m.visible.DungeonLabel
+		if label == "" || label == "All dungeons" {
+			label = "this camp"
+		}
+		return "No finished work in " + label + "."
+	}
+	return "No items match the current filters."
+}
+
+func (m exploreModel) unfilteredFinished() bool {
+	if m.query.Status != "" && !strings.EqualFold(m.query.Status, "finished") {
+		return false
+	}
+	if m.query.Since != "" || m.query.Until != "" || strings.TrimSpace(m.query.Text) != "" {
+		return false
+	}
+	dungeon := strings.TrimSpace(m.query.Dungeon)
+	return dungeon == "" || strings.EqualFold(dungeon, explore.LensAll)
+}
+
 func (m exploreModel) renderBody() string {
 	if m.loading && len(m.index.Items) == 0 && len(m.index.Dungeons) == 0 {
 		return exploreReadingStatus
@@ -200,11 +222,7 @@ func (m exploreModel) renderBody() string {
 		return "No dungeons in this camp."
 	}
 	if len(m.visible.Items) == 0 {
-		label := m.visible.DungeonLabel
-		if label == "" || label == "All dungeons" {
-			label = "this camp"
-		}
-		return "No finished work in " + label + "."
+		return m.emptyFeed()
 	}
 	if m.wide() {
 		return m.renderWide()

@@ -87,7 +87,7 @@ var containerFSPackages = []containerFSPackage{
 	{ImportPath: "./internal/notice", MinTests: 21},
 	// The dungeon explorer feed, text sanitizing, cache round trip, and
 	// metadata fingerprints stage dungeons on disk and edit them in place.
-	{ImportPath: "./internal/dungeon/explore", MinTests: 11, TestPattern: "^Test(CachePathConfinement|CacheWriteSymlinks|BuildFeed|BuildSanitizesRepositoryText|CacheKeepsDirectoryItems|RefreshSeesInPlaceMetadataEdits|WorkitemMarkerWinsOverFestivalArtifacts|ReadRegularRejectsSpecialFiles|BuildSpecialMarkdownDoesNotBlock|BuildHoldingDirectoryItems|BuildFestivalGoalSuppliesMissingName)$"},
+	{ImportPath: "./internal/dungeon/explore", MinTests: 13, TestPattern: "^Test(CachePathConfinement|CacheWriteSymlinks|BuildFeed|BuildSanitizesRepositoryText|CacheKeepsDirectoryItems|RefreshSeesInPlaceMetadataEdits|WorkitemMarkerWinsOverFestivalArtifacts|ReadRegularRejectsSpecialFiles|BuildSpecialMarkdownDoesNotBlock|BuildHoldingDirectoryItems|BuildFestivalGoalSuppliesMissingName|BuildContinuesPastUnreadableDirectory|BuildWorkitemIDWithoutRef)$"},
 	{ImportPath: "./cmd/camp/dungeon", MinTests: 4, TestPattern: "^TestExplore(ReadFailures|PipedInputJSON|ReaderRejectsSpecialFiles|JSONDoesNotWriteConfig)$"},
 }
 

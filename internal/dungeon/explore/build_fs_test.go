@@ -5,6 +5,7 @@ package explore
 import (
 	"context"
 	"encoding/json"
+	"io/fs"
 	"os"
 	"path/filepath"
 	"strings"
@@ -265,5 +266,107 @@ func TestBuildSanitizesRepositoryText(t *testing.T) {
 		if strings.Contains(string(encoded), raw) {
 			t.Fatalf("index JSON carries %q: %s", raw, encoded)
 		}
+	}
+}
+
+func TestBuildContinuesPastUnreadableDirectory(t *testing.T) {
+	root := t.TempDir()
+	const rel = "festivals/.dungeon/completed/note.md"
+	mustWrite(t, filepath.Join(root, filepath.FromSlash(rel)), "# Note\n\nShipped the note.\n")
+	if err := os.MkdirAll(filepath.Join(root, "blocked", "hidden"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+
+	orig := walkDir
+	walkDir = func(walkRoot string, fn fs.WalkDirFunc) error {
+		return orig(walkRoot, func(path string, entry fs.DirEntry, err error) error {
+			if err == nil && entry != nil && entry.IsDir() && entry.Name() == "blocked" {
+				if callErr := fn(path, entry, nil); callErr != nil {
+					return callErr
+				}
+				if callErr := fn(path, entry, os.ErrPermission); callErr != nil {
+					return callErr
+				}
+				return fs.SkipDir
+			}
+			return fn(path, entry, err)
+		})
+	}
+	t.Cleanup(func() { walkDir = orig })
+
+	idx, err := Build(context.Background(), root)
+	if err != nil {
+		t.Fatalf("Build() error = %v", err)
+	}
+	if itemAt(t, idx, rel).Status != "completed" {
+		t.Fatal("readable dungeon was not indexed")
+	}
+	if len(idx.Warnings) != 1 || idx.Warnings[0] != "blocked: permission denied" {
+		t.Fatalf("warnings = %#v", idx.Warnings)
+	}
+
+	cached := idx
+	cached.Warnings = nil
+	refreshed, _, err := Refresh(context.Background(), root, cached)
+	if err != nil {
+		t.Fatalf("Refresh() error = %v", err)
+	}
+	if itemAt(t, refreshed, rel).Status != "completed" {
+		t.Fatal("Refresh dropped the readable dungeon")
+	}
+	if len(refreshed.Warnings) != 1 || refreshed.Warnings[0] != "blocked: permission denied" {
+		t.Fatalf("refresh warnings = %#v", refreshed.Warnings)
+	}
+}
+
+func TestBuildWorkitemIDWithoutRef(t *testing.T) {
+	root := t.TempDir()
+	legacy := "workflow/design/.dungeon/completed/legacy-notes"
+	mustWrite(t, filepath.Join(root, filepath.FromSlash(legacy), ".workitem"), `version: v1alpha4
+kind: workitem
+id: design-legacy-checklist
+type: design
+title: Legacy checklist
+`)
+	both := "workflow/design/.dungeon/completed/current-notes"
+	mustWrite(t, filepath.Join(root, filepath.FromSlash(both), ".workitem"), `version: v1alpha9
+kind: workitem
+id: design-current-checklist
+type: design
+title: Current checklist
+ref: WI-abc123
+`)
+
+	idx, err := Build(context.Background(), root)
+	if err != nil {
+		t.Fatalf("Build() error = %v", err)
+	}
+	if got := itemAt(t, idx, legacy); got.ID != "design-legacy-checklist" || got.Kind != KindWorkitem {
+		t.Fatalf("legacy row = %+v", got)
+	}
+	found, err := Apply(idx, Query{Text: "design-legacy-checklist"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(found.Items) != 1 || found.Items[0].Path != legacy {
+		t.Fatalf("query by marker id = %+v", found.Items)
+	}
+
+	if got := itemAt(t, idx, both); got.ID != "WI-abc123" {
+		t.Fatalf("id = %q, want the ref", got.ID)
+	}
+	byRef, err := Apply(idx, Query{Text: "WI-abc123"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(byRef.Items) != 1 || byRef.Items[0].Path != both {
+		t.Fatalf("query by ref = %+v", byRef.Items)
+	}
+	byMarkerID, err := Apply(idx, Query{Text: "design-current-checklist"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(byMarkerID.Items) != 0 {
+		t.Fatalf("marker id replaced the ref: %+v", byMarkerID.Items)
 	}
 }

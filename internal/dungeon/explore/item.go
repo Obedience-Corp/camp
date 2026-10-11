@@ -51,7 +51,7 @@ type DungeonPrint struct {
 	Fingerprint string `json:"fingerprint"`
 }
 
-// Index is every item Discover can see, plus the warnings from dungeons that
+// Index is every item the sweep can see, plus warnings for directories that
 // could not be read completely.
 type Index struct {
 	Items    []Item         `json:"items"`

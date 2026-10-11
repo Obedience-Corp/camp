@@ -17,18 +17,22 @@ import (
 	camperrors "github.com/Obedience-Corp/camp/internal/errors"
 )
 
+// walkDir lists the camp for Build and Refresh. Tests replace it to report
+// a directory the process cannot read.
+var walkDir = filepath.WalkDir
+
 // Build walks every dungeon under root and returns the feed index.
 // It stats replay files and reads small metadata files. It does not decode GIFs.
 func Build(ctx context.Context, root string) (Index, error) {
 	if err := ctx.Err(); err != nil {
 		return Index{}, camperrors.Wrap(err, "context cancelled")
 	}
-	found, err := spelling.Discover(ctx, root)
+	found, err := spelling.DiscoverContinuing(ctx, root, walkDir)
 	if err != nil {
 		return Index{}, err
 	}
-	idx := Index{BuiltAt: time.Now().UTC()}
-	for _, dungeon := range found {
+	idx := Index{BuiltAt: time.Now().UTC(), Warnings: cleanWarnings(found.Warnings)}
+	for _, dungeon := range found.Dungeons {
 		if err := ctx.Err(); err != nil {
 			return Index{}, camperrors.Wrap(err, "context cancelled")
 		}
@@ -211,6 +215,20 @@ func relSlash(root, path string) (string, error) {
 
 func warn(path string, err error) string {
 	return CleanText(path + ": " + err.Error())
+}
+
+func cleanWarnings(warnings []string) []string {
+	if len(warnings) == 0 {
+		return nil
+	}
+	out := make([]string, 0, len(warnings))
+	for _, warning := range warnings {
+		warning = CleanText(warning)
+		if warning != "" {
+			out = append(out, warning)
+		}
+	}
+	return out
 }
 
 var itemMetaFiles = []string{"fest.yaml", "FESTIVAL_GOAL.md", ".workitem", "README.md"}
