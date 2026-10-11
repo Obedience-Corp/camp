@@ -12,26 +12,40 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-// setSSHDForwarding sets AllowTcpForwarding on the loopback sshd, which also
-// governs remote unix-socket forwards, and waits for the reloaded server.
+// setSSHDForwarding sets AllowStreamLocalForwarding on the loopback sshd and
+// waits for the reloaded server. The forward this hop uses is a unix socket
+// (StreamLocal). AllowTcpForwarding does not name that forward.
+//
+// OpenSSH still refuses it when AllowTcpForwarding is no, which is this
+// image's default: remote forwarding is turned off before
+// AllowStreamLocalForwarding is consulted (OpenSSH bug 3686, present in
+// the image's OpenSSH 9.9). AllowTcpForwarding is pinned to yes so the
+// cases differ only by the streamlocal setting.
 func setSSHDForwarding(t *testing.T, tc *TestContainer, allow string) {
 	t.Helper()
 	out := tc.Shell(t, fmt.Sprintf(`
 set -e
-if grep -q '^AllowTcpForwarding' /etc/ssh/sshd_config; then
-  sed -i 's/^AllowTcpForwarding.*/AllowTcpForwarding %[1]s/' /etc/ssh/sshd_config
-else
-  printf '%%s\n' 'AllowTcpForwarding %[1]s' >> /etc/ssh/sshd_config
-fi
+setkv() {
+  key="$1"
+  val="$2"
+  if grep -q "^${key}" /etc/ssh/sshd_config; then
+    sed -i "s/^${key}.*/${key} ${val}/" /etc/ssh/sshd_config
+  else
+    printf '%%s\n' "${key} ${val}" >> /etc/ssh/sshd_config
+  fi
+}
+setkv AllowTcpForwarding yes
+setkv AllowStreamLocalForwarding %[1]s
 kill -HUP "$(cat /run/sshd.pid)"
 for i in 1 2 3 4 5 6 7 8 9 10; do
   ssh -i %[2]s -o StrictHostKeyChecking=accept-new -o BatchMode=yes root@localhost 'echo SSHOK' 2>/dev/null && break
   sleep 0.5
 done
-/usr/sbin/sshd -T 2>/dev/null | grep -i '^allowtcpforwarding'
+/usr/sbin/sshd -T 2>/dev/null | grep -Ei '^(allowtcpforwarding|allowstreamlocalforwarding) '
 `, allow, rootIdentity))
 	require.Contains(t, out, "SSHOK", "sshd did not come back after reload: %s", out)
-	require.Contains(t, out, "allowtcpforwarding "+allow, "sshd did not take the setting: %s", out)
+	require.Contains(t, out, "allowstreamlocalforwarding "+allow, "sshd did not take the setting: %s", out)
+	require.Contains(t, out, "allowtcpforwarding yes", "sshd left remote forwarding disabled: %s", out)
 }
 
 // TestHopResumeOverRealSSHD drives a real hop through OpenSSH, with a tty on
@@ -52,8 +66,8 @@ done
 //     aside;
 //   - root does not trust a shared directory, so its request goes over the
 //     relay, started on a second session of the same server;
-//   - where the server refuses the forward (Alpine's default configuration
-//     does), there is no socket at all and the relay is the only route.
+//   - where the server refuses the streamlocal forward, there is no socket
+//     at all and the relay is the only route.
 func TestHopResumeOverRealSSHD(t *testing.T) {
 	tc := GetSharedContainer(t)
 	ensurePeerAccount(t, tc)
