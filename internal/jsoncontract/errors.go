@@ -98,20 +98,27 @@ func Requested(jsonRequested func() bool) bool {
 	if jsonRequested != nil && jsonRequested() {
 		return true
 	}
+	return BoolArg("json")
+}
+
+// BoolArg reports whether the process argv enables the named boolean flag.
+// An explicit value strconv.ParseBool reads as false (--flag=false, =0, =f)
+// is false. An unparseable value is treated as enabled, so a later form such
+// as --json=pretty still counts as opting in.
+func BoolArg(name string) bool {
+	flag := "--" + name
 	for _, arg := range os.Args[1:] {
-		if arg == "--json" {
+		if arg == flag {
 			return true
 		}
-		if rest, ok := strings.CutPrefix(arg, "--json="); ok {
-			// Parse the explicit value. Anything strconv.ParseBool
-			// accepts is honored; an unparseable value falls back to
-			// "treat as enabled" to preserve the prior behavior for
-			// values like `--json=pretty` that may be added later.
-			if v, err := strconv.ParseBool(rest); err == nil {
-				return v
-			}
-			return true
+		rest, ok := strings.CutPrefix(arg, flag+"=")
+		if !ok {
+			continue
 		}
+		if v, err := strconv.ParseBool(rest); err == nil {
+			return v
+		}
+		return true
 	}
 	return false
 }

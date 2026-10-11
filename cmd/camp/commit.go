@@ -90,6 +90,7 @@ func init() {
 
 	rootCmd.AddCommand(commitCmd)
 	commitCmd.GroupID = "git"
+	commitCmd.SetFlagErrorFunc(backgroundCommitFlagError)
 
 	// Register completion for --project flag
 	commitCmd.RegisterFlagCompletionFunc("project", completeProjectFlag)

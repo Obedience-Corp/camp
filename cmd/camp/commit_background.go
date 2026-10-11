@@ -40,6 +40,20 @@ type backgroundCommitResult struct {
 	DrainWaitedMs         int64                   `json:"drain_waited_ms"`
 }
 
+// backgroundCommitFlagError renders flag-parse failures through the
+// background receipt contract. Cobra raises them before RunE, and parsing
+// can stop before either bool is bound, so the process argv decides.
+func backgroundCommitFlagError(cmd *cobra.Command, err error) error {
+	if err != nil && jsoncontract.Requested(nil) && jsoncontract.BoolArg("background") {
+		return jsoncontract.RenderError(cmd, CommitBackgroundJSONVersion, err)
+	}
+	cmd.SilenceUsage = false
+	if root := cmd.Root(); root != nil {
+		root.SilenceUsage = false
+	}
+	return camperrors.NewCommand(cmd.CommandPath(), 2, "", err)
+}
+
 // Only the opt-in mode adopts structured errors; legacy commit --json keeps
 // its existing success and error contracts.
 func runCommitCommand(cmd *cobra.Command, args []string) error {
