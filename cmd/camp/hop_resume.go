@@ -14,6 +14,7 @@ import (
 	"net"
 	"os"
 	"os/exec"
+	"path/filepath"
 	"slices"
 	"strconv"
 	"strings"
@@ -49,10 +50,16 @@ const (
 // hopTokenScript stores stdin in a private file on the far side and prints the
 // file's path. The token travels on stdin and never in a command line: an ssh
 // server can keep the remote command in a process title for the whole session
-// and write it to its log. The opening shell removes the file when the hop
-// ends cleanly; after a broken connection it stays for the far side's temp
-// cleanup.
-const hopTokenScript = `umask 077 && f=$(mktemp "${TMPDIR:-/tmp}/camp-ht-XXXXXX") && cat >"$f" && printf %s "$f"`
+// and write it to its log.
+//
+// The file lives in a directory only the hopped user can write. A shell that
+// outlives its hop keeps the path, and in a shared directory such as /tmp
+// anyone could recreate a removed file there with a token of their choosing.
+// The opening shell removes the file when the hop ends cleanly; one left by a
+// broken connection is pruned by a later hop once it is a month old.
+const hopTokenScript = `umask 077 && d="$HOME/.obey/hop-resume" && mkdir -p "$d" && chmod 700 "$d" && ` +
+	`{ find "$d" -type f -name 'ht-*' -mtime +30 -exec rm -f {} + 2>/dev/null; f=$(mktemp "$d/ht-XXXXXX"); } && ` +
+	`cat >"$f" && printf %s "$f"`
 
 func init() {
 	rootCmd.AddCommand(hopResumeCmd)
@@ -170,9 +177,7 @@ func dialHopResume(ctx context.Context) (net.Conn, string, error) {
 	addr := strings.TrimSpace(os.Getenv(hopResumeAddrEnv))
 	token := ""
 	if addr != "" {
-		if data, err := os.ReadFile(strings.TrimSpace(os.Getenv(hopResumeTokenFileEnv))); err == nil {
-			token = strings.TrimSpace(string(data))
-		}
+		token = readHopToken(strings.TrimSpace(os.Getenv(hopResumeTokenFileEnv)))
 	}
 	if token == "" {
 		addr = ""
@@ -183,9 +188,12 @@ func dialHopResume(ctx context.Context) (net.Conn, string, error) {
 	dialer := net.Dialer{Timeout: 2 * time.Second}
 	var failed []error
 	if sock != "" {
-		conn, err := dialer.DialContext(ctx, "unix", sock)
+		err := trustedHopSocket(sock)
 		if err == nil {
-			return conn, "", nil
+			var conn net.Conn
+			if conn, err = dialer.DialContext(ctx, "unix", sock); err == nil {
+				return conn, "", nil
+			}
 		}
 		failed = append(failed, err)
 	}
@@ -197,6 +205,57 @@ func dialHopResume(ctx context.Context) (net.Conn, string, error) {
 		failed = append(failed, err)
 	}
 	return nil, "", camperrors.Wrap(errors.Join(failed...), "hop-resume: tell the shell that opened this hop")
+}
+
+// A hopped shell learns how to reach the shell that opened it from paths in
+// its environment, and it can outlive the hop that set them. One rule covers
+// every such path: it is trusted only while it is something no other
+// unprivileged user could have put there, because whoever answers for a
+// trusted path can end this shell with an acknowledgement.
+
+// ownedByHopUser reports whether info's file belongs to this user, or to root
+// when root may own it.
+func ownedByHopUser(info os.FileInfo, rootToo bool) bool {
+	uid, ok := hopFileOwner(info)
+	return ok && (uid == os.Geteuid() || (rootToo && uid == 0))
+}
+
+// trustedHopSocket accepts the forwarded socket only as the ssh server left
+// it: a socket owned by this user (sshd binds it as the login user) or by root
+// (Tailscale SSH). The path sits in a shared, sticky directory, where anyone
+// can create a socket of their own once the server has removed its own, but
+// nobody can replace one they do not own.
+func trustedHopSocket(path string) error {
+	info, err := os.Lstat(path)
+	if err != nil {
+		return err
+	}
+	if info.Mode()&os.ModeSocket == 0 || !ownedByHopUser(info, true) {
+		return camperrors.New("hop-resume: " + path + " does not belong to the shell that opened this hop")
+	}
+	return nil
+}
+
+// readHopToken returns the token at path only as the opening shell left it: a
+// regular file owned by this user that no one else can read, in a directory
+// no one else can write. A file that fails this is treated as no token at all.
+func readHopToken(path string) string {
+	if path == "" {
+		return ""
+	}
+	dir, err := os.Stat(filepath.Dir(path))
+	if err != nil || dir.Mode().Perm()&0o022 != 0 || !ownedByHopUser(dir, true) {
+		return ""
+	}
+	file, err := os.Lstat(path)
+	if err != nil || !file.Mode().IsRegular() || file.Mode().Perm()&0o077 != 0 || !ownedByHopUser(file, false) {
+		return ""
+	}
+	data, err := os.ReadFile(path)
+	if err != nil {
+		return ""
+	}
+	return strings.TrimSpace(string(data))
 }
 
 func sanitizeResumeSelector(raw string) (string, error) {

@@ -274,9 +274,29 @@ func TestHopResumeSendRefusesAListenerWithoutTheToken(t *testing.T) {
 
 func TestHopResumeTokenScriptKeepsTokenPrivate(t *testing.T) {
 	const token = "0123456789abcdef0123456789abcdef"
-	dir := t.TempDir()
+	home := t.TempDir()
+	dir := filepath.Join(home, ".obey", "hop-resume")
+	// A directory left open to others, a token from a hop that died long ago,
+	// and one from a hop that may still be alive.
+	if err := os.MkdirAll(dir, 0o777); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Chmod(dir, 0o777); err != nil {
+		t.Fatal(err)
+	}
+	stale, live := filepath.Join(dir, "ht-stale1"), filepath.Join(dir, "ht-alive1")
+	for _, path := range []string{stale, live} {
+		if err := os.WriteFile(path, []byte("old"), 0o600); err != nil {
+			t.Fatal(err)
+		}
+	}
+	longAgo := time.Now().Add(-40 * 24 * time.Hour)
+	if err := os.Chtimes(stale, longAgo, longAgo); err != nil {
+		t.Fatal(err)
+	}
+
 	cmd := exec.Command("/bin/sh", "-c", hopTokenScript)
-	cmd.Env = append(os.Environ(), "TMPDIR="+dir)
+	cmd.Env = append(os.Environ(), "HOME="+home, "TMPDIR="+t.TempDir())
 	cmd.Stdin = strings.NewReader(token)
 	out, err := cmd.Output()
 	if err != nil {
@@ -284,7 +304,10 @@ func TestHopResumeTokenScriptKeepsTokenPrivate(t *testing.T) {
 	}
 	path := string(out)
 	if filepath.Dir(path) != dir {
-		t.Fatalf("script must print the path it wrote under TMPDIR, got %q", path)
+		t.Fatalf("the token must be stored under the user's own %s, got %q", dir, path)
+	}
+	if info, err := os.Stat(dir); err != nil || info.Mode().Perm() != 0o700 {
+		t.Fatalf("token directory must be closed to other users: %v %v", info.Mode().Perm(), err)
 	}
 	info, err := os.Stat(path)
 	if err != nil {
@@ -293,8 +316,152 @@ func TestHopResumeTokenScriptKeepsTokenPrivate(t *testing.T) {
 	if info.Mode().Perm() != 0o600 {
 		t.Fatalf("token file mode %v, want 0600", info.Mode().Perm())
 	}
-	data, err := os.ReadFile(path)
-	if err != nil || string(data) != token {
-		t.Fatalf("token file holds %q (%v)", data, err)
+	if got := readHopToken(path); got != token {
+		t.Fatalf("the far shell must accept the file the script wrote: %q", got)
+	}
+	if _, err := os.Stat(stale); !os.IsNotExist(err) {
+		t.Fatalf("a month-old token must be pruned: %v", err)
+	}
+	if _, err := os.Stat(live); err != nil {
+		t.Fatalf("a recent token may belong to a live hop and must stay: %v", err)
+	}
+}
+
+// A shell that outlives its hop keeps the token path. Wherever another user
+// could have written that path, its contents are theirs to choose, and with
+// them a valid proof.
+func TestHopResumeRefusesATokenFileOthersCouldHaveWritten(t *testing.T) {
+	const token = "0123456789abcdef0123456789abcdef"
+	private := t.TempDir()
+	shared := t.TempDir()
+	if err := os.Chmod(shared, 0o777|os.ModeSticky); err != nil {
+		t.Fatal(err)
+	}
+	write := func(dir, name string, mode os.FileMode) string {
+		path := filepath.Join(dir, name)
+		if err := os.WriteFile(path, []byte(token), mode); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.Chmod(path, mode); err != nil {
+			t.Fatal(err)
+		}
+		return path
+	}
+	trusted := write(private, "ht-own", 0o600)
+	link := filepath.Join(private, "ht-link")
+	if err := os.Symlink(trusted, link); err != nil {
+		t.Fatal(err)
+	}
+	if got := readHopToken(trusted); got != token {
+		t.Fatalf("a private file in a private directory is the hop's token: %q", got)
+	}
+	// The suite runs as root, which can hand a file to another user.
+	const stranger = 54321
+	foreign := write(private, "ht-foreign", 0o600)
+	if err := os.Chown(foreign, stranger, stranger); err != nil {
+		t.Fatal(err)
+	}
+	foreignDir := t.TempDir()
+	inForeignDir := write(foreignDir, "ht-own", 0o600)
+	if err := os.Chown(foreignDir, stranger, stranger); err != nil {
+		t.Fatal(err)
+	}
+	for name, path := range map[string]string{
+		"owned by another user":              foreign,
+		"in another user's directory":        inForeignDir,
+		"recreated in a shared directory":    write(shared, "ht-recreated", 0o644),
+		"private file in a shared directory": write(shared, "ht-private", 0o600),
+		"readable by others":                 write(private, "ht-open", 0o644),
+		"a symlink":                          link,
+		"missing":                            filepath.Join(private, "ht-gone"),
+	} {
+		if got := readHopToken(path); got != "" {
+			t.Errorf("%s: token file must not be trusted, got %q", name, got)
+		}
+	}
+
+	// End to end: the stranger holds the port and knows the token in the file
+	// they recreated, so their proof would verify.
+	ln, err := net.Listen("tcp", "127.0.0.1:0")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer func() { _ = ln.Close() }()
+	reached := make(chan struct{}, 1)
+	go func() {
+		_, _ = serveHopResume(context.Background(), ln, token, new(hopSwitch), func(context.Context, hopResumeRequest) (string, error) {
+			reached <- struct{}{}
+			return "ssh strangers-route", nil
+		})
+	}()
+	t.Setenv(hopResumeSockEnv, filepath.Join(private, "camp-hr-r.sock"))
+	t.Setenv(hopResumeAddrEnv, ln.Addr().String())
+	t.Setenv(hopResumeTokenFileEnv, filepath.Join(shared, "ht-recreated"))
+	err = sendHopResume(context.Background(), "thirdbox:notes", cmdutil.CampaignScope{}, "c.example")
+	if err == nil || !strings.Contains(err.Error(), "camp-hr-r.sock") {
+		t.Fatalf("with an untrusted token file the loopback route must not be used at all: %v", err)
+	}
+	select {
+	case <-reached:
+		t.Fatal("the far shell proved itself to a stranger's listener")
+	default:
+	}
+}
+
+// The forwarded socket lives in a shared directory. After the hop ends and the
+// ssh server removes it, anyone can put a socket of their own at that path.
+func TestHopResumeRefusesASocketAnotherUserOwns(t *testing.T) {
+	shared := t.TempDir()
+	if err := os.Chmod(shared, 0o777|os.ModeSticky); err != nil {
+		t.Fatal(err)
+	}
+	sock := filepath.Join(shared, "camp-hr-r.sock")
+	ln, err := net.Listen("unix", sock)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer func() { _ = ln.Close() }()
+	if err := os.Chmod(sock, 0o666); err != nil {
+		t.Fatal(err)
+	}
+	reached := make(chan struct{}, 1)
+	go func() {
+		conn, err := ln.Accept()
+		if err != nil {
+			return
+		}
+		reached <- struct{}{}
+		// Acknowledge at once, as a listener that wants the shell gone would.
+		_, _ = io.WriteString(conn, `{"version":1,"accepted":true}`+"\n")
+		_ = conn.Close()
+	}()
+	t.Setenv(hopResumeSockEnv, sock)
+	t.Setenv(hopResumeAddrEnv, "")
+	t.Setenv(hopResumeTokenFileEnv, "")
+
+	// As the ssh server leaves it, owned by this user, the socket is the route.
+	if err := trustedHopSocket(sock); err != nil {
+		t.Fatalf("a socket this user owns must be trusted: %v", err)
+	}
+	// The suite runs as root, which can hand the socket to another user.
+	if err := os.Chown(sock, 54321, 54321); err != nil {
+		t.Fatal(err)
+	}
+	err = sendHopResume(context.Background(), "thirdbox:notes", cmdutil.CampaignScope{}, "c.example")
+	if err == nil || !strings.Contains(err.Error(), "does not belong to the shell that opened this hop") {
+		t.Fatalf("a socket another user owns must not be dialed: %v", err)
+	}
+	select {
+	case <-reached:
+		t.Fatal("the far shell connected to another user's socket")
+	case <-time.After(100 * time.Millisecond):
+	}
+
+	file := filepath.Join(shared, "camp-hr-file.sock")
+	if err := os.WriteFile(file, nil, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if err := trustedHopSocket(file); err == nil {
+		t.Fatal("a path that is not a socket must not be trusted")
 	}
 }
