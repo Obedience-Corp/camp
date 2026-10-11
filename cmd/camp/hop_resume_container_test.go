@@ -9,7 +9,6 @@ import (
 	"io"
 	"net"
 	"os"
-	"os/exec"
 	"path/filepath"
 	"strings"
 	"testing"
@@ -20,7 +19,7 @@ import (
 	"github.com/Obedience-Corp/camp/internal/remote"
 )
 
-func TestHopResumeSocketRoundTrip(t *testing.T) {
+func TestHopResumeFSSocketRoundTrip(t *testing.T) {
 	local, _, err := resumeSocketPaths()
 	if err != nil {
 		t.Fatal(err)
@@ -35,7 +34,7 @@ func TestHopResumeSocketRoundTrip(t *testing.T) {
 	scope := cmdutil.CampaignScope{Org: "obey", Status: "inactive", All: true}
 	done := make(chan string, 1)
 	go func() {
-		follow, _ := serveHopResume(context.Background(), ln, "", new(hopSwitch), func(_ context.Context, request hopResumeRequest) (string, error) {
+		follow, _ := serveHopResume(context.Background(), ln, new(hopSwitch), func(_ context.Context, request hopResumeRequest) (string, error) {
 			if request.Scope != scope {
 				t.Errorf("scope %+v", request.Scope)
 			}
@@ -56,7 +55,7 @@ func TestHopResumeSocketRoundTrip(t *testing.T) {
 	}
 }
 
-func TestHopResumeCapturesHostBeforeShellEval(t *testing.T) {
+func TestHopResumeFSCapturesHostBeforeShellEval(t *testing.T) {
 	registry := filepath.Join(t.TempDir(), "machines.yaml")
 	t.Setenv("CAMP_MACHINES_PATH", registry)
 	save := func(host string) {
@@ -81,7 +80,7 @@ func TestHopResumeCapturesHostBeforeShellEval(t *testing.T) {
 	}
 }
 
-func TestHopResumeOriginAdvisoryAliasCollision(t *testing.T) {
+func TestHopResumeFSOriginAdvisoryAliasCollision(t *testing.T) {
 	t.Setenv("CAMP_MACHINES_PATH", filepath.Join(t.TempDir(), "machines.yaml"))
 	origin := HopOrigin{Host: "origin.example", ID: "thirdbox", User: "origin"}
 	file := &machines.File{Machines: []machines.Machine{{ID: "thirdbox", Host: "c.example", AuthMethod: machines.AuthSSHAgent}}}
@@ -106,7 +105,7 @@ func TestHopResumeOriginAdvisoryAliasCollision(t *testing.T) {
 	}
 }
 
-func TestHopResumeSendRejectsMissingOrMalformedAcknowledgement(t *testing.T) {
+func TestHopResumeFSSendRejectsMissingOrMalformedAcknowledgement(t *testing.T) {
 	for _, reply := range []string{"", "{}", `{ "version":2,"accepted":true }`, `{ "version":1,"accepted":false }`, "invalid"} {
 		t.Run(reply, func(t *testing.T) {
 			local, _, err := resumeSocketPaths()
@@ -142,7 +141,7 @@ func TestHopResumeSendRejectsMissingOrMalformedAcknowledgement(t *testing.T) {
 	}
 }
 
-func TestHopResumeUsesParentAuthenticationAndScope(t *testing.T) {
+func TestHopResumeFSUsesParentAuthenticationAndScope(t *testing.T) {
 	t.Setenv("CAMP_MACHINES_PATH", filepath.Join(t.TempDir(), "machines.yaml"))
 	parent := machines.Machine{ID: "parent-alias", Host: "192.0.2.3", AuthMethod: machines.AuthSSHAgent, SSHUser: "parent-user", IdentityFile: "parent.key"}
 	registry := &machines.File{Machines: []machines.Machine{{ID: "thirdbox", Host: "192.0.2.4", AuthMethod: machines.AuthTailscaleSSH}, parent}}
@@ -175,293 +174,324 @@ func TestHopResumeUsesParentAuthenticationAndScope(t *testing.T) {
 	}
 }
 
-func TestHopResumeSendFallsBackToLoopbackWithToken(t *testing.T) {
-	ln, err := net.Listen("tcp", "127.0.0.1:0")
+// shortHome gives a test its own home directory with a path short enough for
+// a unix socket beneath it.
+func shortHome(t *testing.T) string {
+	t.Helper()
+	home, err := os.MkdirTemp("/tmp", "hr")
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer func() { _ = ln.Close() }()
-	const token = "0123456789abcdef0123456789abcdef"
-	tokenFile := filepath.Join(t.TempDir(), "camp-ht-test")
-	if err := os.WriteFile(tokenFile, []byte(token), 0o600); err != nil {
-		t.Fatal(err)
-	}
-	// The forwarded socket an ssh server bound as another user: named in the
-	// environment, closed to this shell.
-	t.Setenv(hopResumeSockEnv, filepath.Join(t.TempDir(), "camp-hr-r.sock"))
-	t.Setenv(hopResumeAddrEnv, ln.Addr().String())
-	t.Setenv(hopResumeTokenFileEnv, tokenFile)
-	reject := true
-	served := make(chan error, 1)
-	go func() {
-		_, err := serveHopResume(context.Background(), ln, token, new(hopSwitch), func(_ context.Context, request hopResumeRequest) (string, error) {
-			if request.Selector != "thirdbox:notes" || request.Host != "c.example" {
-				return "", errors.New("request changed in transit")
-			}
-			if reject {
-				reject = false
-				return "", errors.New("parent route unavailable")
-			}
-			return "ssh prepared-parent-route", nil
-		})
-		served <- err
-	}()
-
-	err = sendHopResume(context.Background(), "thirdbox:notes", cmdutil.CampaignScope{}, "c.example")
-	if err == nil || !strings.Contains(err.Error(), "unavailable") {
-		t.Fatalf("rejected route: %v", err)
-	}
-	if _, statErr := os.Stat(tokenFile); statErr != nil {
-		t.Fatalf("a rejected request must leave the token for the next attempt: %v", statErr)
-	}
-	if err := sendHopResume(context.Background(), "thirdbox:notes", cmdutil.CampaignScope{}, "c.example"); err != nil {
-		t.Fatalf("send over loopback: %v", err)
-	}
-	if err := <-served; err != nil {
-		t.Fatalf("parent: %v", err)
-	}
-	if _, statErr := os.Stat(tokenFile); !os.IsNotExist(statErr) {
-		t.Fatalf("an accepted request must remove the token file: %v", statErr)
-	}
-
-	err = sendHopResume(context.Background(), "thirdbox:notes", cmdutil.CampaignScope{}, "c.example")
-	if err == nil || !strings.Contains(err.Error(), "camp-hr-r.sock") {
-		t.Fatalf("without a token the loopback route must stay unused and the socket failure surface: %v", err)
-	}
+	t.Cleanup(func() { _ = os.RemoveAll(home) })
+	t.Setenv("HOME", home)
+	return home
 }
 
-// The reviewer's scenario end to end: a shell that outlived its hop still has
-// the address and the token file, and someone else now holds the port.
-func TestHopResumeSendRefusesAListenerWithoutTheToken(t *testing.T) {
-	ln, err := net.Listen("tcp", "127.0.0.1:0")
+// runningHopRelay starts a relay as the far side of a hop would run it and
+// returns its stream to the opening shell plus the function that ends the hop.
+type runningHopRelay struct {
+	fromFar io.Reader
+	toFar   io.WriteCloser
+	done    chan error
+}
+
+func startTestHopRelay(t *testing.T, id string) runningHopRelay {
+	t.Helper()
+	inR, inW := io.Pipe()
+	outR, outW := io.Pipe()
+	relay := runningHopRelay{fromFar: outR, toFar: inW, done: make(chan error, 1)}
+	go func() {
+		relay.done <- runHopRelay(context.Background(), id, inR, outW)
+		_ = outW.Close()
+	}()
+	t.Cleanup(func() { _ = inW.Close() })
+	path, err := hopRelaySocketPath(id)
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer func() { _ = ln.Close() }()
-	const token = "0123456789abcdef0123456789abcdef"
-	tokenFile := filepath.Join(t.TempDir(), "camp-ht-test")
-	if err := os.WriteFile(tokenFile, []byte(token), 0o600); err != nil {
-		t.Fatal(err)
-	}
-	t.Setenv(hopResumeSockEnv, filepath.Join(t.TempDir(), "camp-hr-r.sock"))
-	t.Setenv(hopResumeAddrEnv, ln.Addr().String())
-	t.Setenv(hopResumeTokenFileEnv, tokenFile)
-	received := make(chan string, 1)
-	go func() {
-		conn, err := ln.Accept()
-		if err != nil {
-			return
+	deadline := time.Now().Add(3 * time.Second)
+	for {
+		if info, err := os.Lstat(path); err == nil && info.Mode()&os.ModeSocket != 0 && info.Mode().Perm() == 0o600 {
+			return relay
 		}
-		defer func() { _ = conn.Close() }()
-		_ = conn.SetDeadline(time.Now().Add(3 * time.Second))
-		// Acknowledge at once, as a listener that wants the shell gone would.
-		_, _ = io.WriteString(conn, `{"version":2,"accepted":true}`+"\n"+`{"version":1,"accepted":true}`+"\n")
-		all, _ := io.ReadAll(conn)
-		received <- string(all)
-	}()
-
-	err = sendHopResume(context.Background(), "thirdbox:notes", cmdutil.CampaignScope{}, "c.example")
-	if err == nil || !strings.Contains(err.Error(), "not the shell that opened this hop") {
-		t.Fatalf("a forged acknowledgement must not end the shell: %v", err)
-	}
-	if _, statErr := os.Stat(tokenFile); statErr != nil {
-		t.Fatalf("the token file must survive a forged acknowledgement: %v", statErr)
-	}
-	if got := <-received; strings.Contains(got, token) || strings.Contains(got, "thirdbox") {
-		t.Fatalf("the far shell disclosed its token or request to an unproven listener: %s", got)
+		select {
+		case err := <-relay.done:
+			t.Fatalf("relay ended before it listened: %v", err)
+		default:
+		}
+		if time.Now().After(deadline) {
+			t.Fatal("relay never listened")
+		}
+		time.Sleep(5 * time.Millisecond)
 	}
 }
 
-func TestHopResumeTokenScriptKeepsTokenPrivate(t *testing.T) {
-	const token = "0123456789abcdef0123456789abcdef"
-	home := t.TempDir()
+func TestHopResumeFSRelayKeepsItsSocketPrivateAndRemovesIt(t *testing.T) {
+	home := shortHome(t)
 	dir := filepath.Join(home, ".obey", "hop-resume")
-	// A directory left open to others, a token from a hop that died long ago,
-	// and one from a hop that may still be alive.
+	// A directory an earlier tool left open to others must be closed again.
 	if err := os.MkdirAll(dir, 0o777); err != nil {
 		t.Fatal(err)
 	}
 	if err := os.Chmod(dir, 0o777); err != nil {
 		t.Fatal(err)
 	}
-	stale, live := filepath.Join(dir, "ht-stale1"), filepath.Join(dir, "ht-alive1")
-	for _, path := range []string{stale, live} {
-		if err := os.WriteFile(path, []byte("old"), 0o600); err != nil {
-			t.Fatal(err)
-		}
-	}
-	longAgo := time.Now().Add(-40 * 24 * time.Hour)
-	if err := os.Chtimes(stale, longAgo, longAgo); err != nil {
-		t.Fatal(err)
-	}
-
-	cmd := exec.Command("/bin/sh", "-c", hopTokenScript)
-	cmd.Env = append(os.Environ(), "HOME="+home, "TMPDIR="+t.TempDir())
-	cmd.Stdin = strings.NewReader(token)
-	out, err := cmd.Output()
-	if err != nil {
-		t.Fatalf("token script: %v", err)
-	}
-	path := string(out)
-	if filepath.Dir(path) != dir {
-		t.Fatalf("the token must be stored under the user's own %s, got %q", dir, path)
-	}
+	const id = "0123456789abcdef"
+	relay := startTestHopRelay(t, id)
+	path := filepath.Join(dir, id+".sock")
 	if info, err := os.Stat(dir); err != nil || info.Mode().Perm() != 0o700 {
-		t.Fatalf("token directory must be closed to other users: %v %v", info.Mode().Perm(), err)
+		t.Fatalf("relay directory must be closed to other users: %v %v", info.Mode().Perm(), err)
 	}
-	info, err := os.Stat(path)
-	if err != nil {
-		t.Fatal(err)
+	if info, err := os.Lstat(path); err != nil || info.Mode().Perm() != 0o600 {
+		t.Fatalf("relay socket must be closed to other users: %v %v", info.Mode().Perm(), err)
 	}
-	if info.Mode().Perm() != 0o600 {
-		t.Fatalf("token file mode %v, want 0600", info.Mode().Perm())
+	if err := trustedHopSocket(path); err != nil {
+		t.Fatalf("the far shell must trust its own hop's relay: %v", err)
 	}
-	if got := readHopToken(path); got != token {
-		t.Fatalf("the far shell must accept the file the script wrote: %q", got)
+	// The opening shell closing the stream is the end of the hop.
+	_ = relay.toFar.Close()
+	select {
+	case err := <-relay.done:
+		if err != nil {
+			t.Fatalf("relay: %v", err)
+		}
+	case <-time.After(3 * time.Second):
+		t.Fatal("the relay outlived its hop")
 	}
-	if _, err := os.Stat(stale); !os.IsNotExist(err) {
-		t.Fatalf("a month-old token must be pruned: %v", err)
-	}
-	if _, err := os.Stat(live); err != nil {
-		t.Fatalf("a recent token may belong to a live hop and must stay: %v", err)
+	if _, err := os.Lstat(path); !os.IsNotExist(err) {
+		t.Fatalf("an ended relay must remove its socket: %v", err)
 	}
 }
 
-// A shell that outlives its hop keeps the token path. Wherever another user
-// could have written that path, its contents are theirs to choose, and with
-// them a valid proof.
-func TestHopResumeRefusesATokenFileOthersCouldHaveWritten(t *testing.T) {
-	const token = "0123456789abcdef0123456789abcdef"
-	private := t.TempDir()
-	shared := t.TempDir()
-	if err := os.Chmod(shared, 0o777|os.ModeSticky); err != nil {
+func TestHopResumeFSRelayPrunesSocketsNothingListensOn(t *testing.T) {
+	home := shortHome(t)
+	dir := filepath.Join(home, ".obey", "hop-resume")
+	if err := os.MkdirAll(dir, 0o700); err != nil {
 		t.Fatal(err)
 	}
-	write := func(dir, name string, mode os.FileMode) string {
+	// One relay that was killed before it could clean up, one still serving.
+	dead := filepath.Join(dir, "aaaaaaaaaaaaaaaa.sock")
+	killed, err := net.Listen("unix", dead)
+	if err != nil {
+		t.Fatal(err)
+	}
+	killed.(*net.UnixListener).SetUnlinkOnClose(false)
+	_ = killed.Close()
+	live := filepath.Join(dir, "bbbbbbbbbbbbbbbb.sock")
+	serving, err := net.Listen("unix", live)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer func() { _ = serving.Close() }()
+	go func() {
+		for {
+			conn, err := serving.Accept()
+			if err != nil {
+				return
+			}
+			_ = conn.Close()
+		}
+	}()
+
+	startTestHopRelay(t, "0123456789abcdef")
+	if _, err := os.Lstat(dead); !os.IsNotExist(err) {
+		t.Fatalf("a socket nothing listens on must be pruned: %v", err)
+	}
+	if _, err := os.Lstat(live); err != nil {
+		t.Fatalf("another hop's live relay must be left alone: %v", err)
+	}
+}
+
+func TestHopResumeFSSendSwitchesOverARelay(t *testing.T) {
+	shortHome(t)
+	const id = "0123456789abcdef"
+	relay := startTestHopRelay(t, id)
+	hop := new(hopSwitch)
+	follow := make(chan string, 1)
+	go func() {
+		line, _ := serveHopRelay(context.Background(), relay.fromFar, relay.toFar, hop, func(_ context.Context, request hopResumeRequest) (string, error) {
+			if request.Selector != "thirdbox:notes" || request.Host != "c.example" || request.Scope.Org != "work" {
+				return "", errors.New("request changed in transit")
+			}
+			return "ssh prepared-parent-route", nil
+		})
+		follow <- line
+	}()
+	// The forwarded socket as a root-binding ssh server leaves it: named in
+	// the environment, closed to this shell.
+	t.Setenv(hopResumeSockEnv, filepath.Join(t.TempDir(), "camp-hr-r.sock"))
+	t.Setenv(hopResumeRelayEnv, id)
+	if err := sendHopResume(context.Background(), "thirdbox:notes", cmdutil.CampaignScope{Org: "work"}, "c.example"); err != nil {
+		t.Fatalf("switch over the relay: %v", err)
+	}
+	select {
+	case line := <-follow:
+		if line != "ssh prepared-parent-route" {
+			t.Fatalf("follow-up %q", line)
+		}
+	case <-time.After(3 * time.Second):
+		t.Fatal("the confirmed switch was not queued")
+	}
+
+	// A shell that outlives its hop keeps the relay id and nothing else works.
+	_ = relay.toFar.Close()
+	<-relay.done
+	err := sendHopResume(context.Background(), "thirdbox:notes", cmdutil.CampaignScope{}, "c.example")
+	if err == nil || !strings.Contains(err.Error(), "relay for this hop is not running") {
+		t.Fatalf("after the hop ended the far shell must stay put and say why: %v", err)
+	}
+}
+
+func TestHopResumeFSSendFallsBackToTheForwardedSocket(t *testing.T) {
+	shortHome(t)
+	local, _, err := resumeSocketPaths()
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = os.Remove(local) })
+	ln, err := net.Listen("unix", local)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer func() { _ = ln.Close() }()
+	follow := make(chan string, 1)
+	go func() {
+		line, _ := serveHopResume(context.Background(), ln, new(hopSwitch), func(_ context.Context, request hopResumeRequest) (string, error) {
+			return "ssh " + request.Selector, nil
+		})
+		follow <- line
+	}()
+	// The opening shell offered a relay, but the camp ssh found on this side
+	// predates relays, so none is running. sshd bound the socket as this user.
+	t.Setenv(hopResumeRelayEnv, "0123456789abcdef")
+	t.Setenv(hopResumeSockEnv, local)
+	if err := sendHopResume(context.Background(), "thirdbox:notes", cmdutil.CampaignScope{}, "c.example"); err != nil {
+		t.Fatalf("the released socket route must keep working: %v", err)
+	}
+	if line := <-follow; line != "ssh thirdbox:notes" {
+		t.Fatalf("follow-up %q", line)
+	}
+}
+
+// A hopped shell can outlive its hop and still holds the names its environment
+// gave it. The suite runs as root, which can hand a file to another user the
+// way that user would have created it.
+func TestHopResumeFSTrustsOnlySocketsThisUserOwns(t *testing.T) {
+	const stranger = 54321
+	listen := func(dir, name string) string {
 		path := filepath.Join(dir, name)
-		if err := os.WriteFile(path, []byte(token), mode); err != nil {
+		ln, err := net.Listen("unix", path)
+		if err != nil {
 			t.Fatal(err)
 		}
-		if err := os.Chmod(path, mode); err != nil {
-			t.Fatal(err)
-		}
+		t.Cleanup(func() { _ = ln.Close() })
 		return path
 	}
-	trusted := write(private, "ht-own", 0o600)
-	link := filepath.Join(private, "ht-link")
-	if err := os.Symlink(trusted, link); err != nil {
+	mkdir := func(mode os.FileMode) string {
+		dir, err := os.MkdirTemp("/tmp", "hr")
+		if err != nil {
+			t.Fatal(err)
+		}
+		t.Cleanup(func() { _ = os.RemoveAll(dir) })
+		if err := os.Chmod(dir, mode); err != nil {
+			t.Fatal(err)
+		}
+		return dir
+	}
+	private, sticky, open := mkdir(0o700), mkdir(0o777|os.ModeSticky), mkdir(0o777)
+
+	for name, path := range map[string]string{
+		"own socket in the user's own directory":  listen(private, "own.sock"),
+		"own socket in a sticky shared directory": listen(sticky, "own.sock"),
+	} {
+		if err := trustedHopSocket(path); err != nil {
+			t.Errorf("%s must be trusted: %v", name, err)
+		}
+	}
+
+	planted := listen(sticky, "planted.sock")
+	if err := os.Chown(planted, stranger, stranger); err != nil {
 		t.Fatal(err)
 	}
-	if got := readHopToken(trusted); got != token {
-		t.Fatalf("a private file in a private directory is the hop's token: %q", got)
-	}
-	// The suite runs as root, which can hand a file to another user.
-	const stranger = 54321
-	foreign := write(private, "ht-foreign", 0o600)
-	if err := os.Chown(foreign, stranger, stranger); err != nil {
+	theirs := mkdir(0o755)
+	inTheirs := listen(theirs, "own.sock")
+	if err := os.Chown(theirs, stranger, stranger); err != nil {
 		t.Fatal(err)
 	}
-	foreignDir := t.TempDir()
-	inForeignDir := write(foreignDir, "ht-own", 0o600)
-	if err := os.Chown(foreignDir, stranger, stranger); err != nil {
+	file := filepath.Join(private, "file.sock")
+	if err := os.WriteFile(file, nil, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	link := filepath.Join(private, "link.sock")
+	if err := os.Symlink(filepath.Join(private, "own.sock"), link); err != nil {
 		t.Fatal(err)
 	}
 	for name, path := range map[string]string{
-		"owned by another user":              foreign,
-		"in another user's directory":        inForeignDir,
-		"recreated in a shared directory":    write(shared, "ht-recreated", 0o644),
-		"private file in a shared directory": write(shared, "ht-private", 0o600),
-		"readable by others":                 write(private, "ht-open", 0o644),
-		"a symlink":                          link,
-		"missing":                            filepath.Join(private, "ht-gone"),
+		"a socket another user owns":                planted,
+		"a socket where others can replace entries": listen(open, "own.sock"),
+		"a socket in another user's directory":      inTheirs,
+		"a regular file":                            file,
+		"a symlink to a socket":                     link,
+		"a missing path":                            filepath.Join(private, "gone.sock"),
 	} {
-		if got := readHopToken(path); got != "" {
-			t.Errorf("%s: token file must not be trusted, got %q", name, got)
+		if err := trustedHopSocket(path); err == nil {
+			t.Errorf("%s must not be trusted", name)
 		}
 	}
 
-	// End to end: the stranger holds the port and knows the token in the file
-	// they recreated, so their proof would verify.
-	ln, err := net.Listen("tcp", "127.0.0.1:0")
+	// End to end: the stranger's socket answers at the forwarded path and
+	// acknowledges at once, as a listener that wants the shell gone would.
+	shortHome(t)
+	reached := make(chan struct{}, 1)
+	ln, err := net.Listen("unix", filepath.Join(sticky, "camp-hr-r.sock"))
 	if err != nil {
 		t.Fatal(err)
 	}
 	defer func() { _ = ln.Close() }()
-	reached := make(chan struct{}, 1)
-	go func() {
-		_, _ = serveHopResume(context.Background(), ln, token, new(hopSwitch), func(context.Context, hopResumeRequest) (string, error) {
-			reached <- struct{}{}
-			return "ssh strangers-route", nil
-		})
-	}()
-	t.Setenv(hopResumeSockEnv, filepath.Join(private, "camp-hr-r.sock"))
-	t.Setenv(hopResumeAddrEnv, ln.Addr().String())
-	t.Setenv(hopResumeTokenFileEnv, filepath.Join(shared, "ht-recreated"))
-	err = sendHopResume(context.Background(), "thirdbox:notes", cmdutil.CampaignScope{}, "c.example")
-	if err == nil || !strings.Contains(err.Error(), "camp-hr-r.sock") {
-		t.Fatalf("with an untrusted token file the loopback route must not be used at all: %v", err)
-	}
-	select {
-	case <-reached:
-		t.Fatal("the far shell proved itself to a stranger's listener")
-	default:
-	}
-}
-
-// The forwarded socket lives in a shared directory. After the hop ends and the
-// ssh server removes it, anyone can put a socket of their own at that path.
-func TestHopResumeRefusesASocketAnotherUserOwns(t *testing.T) {
-	shared := t.TempDir()
-	if err := os.Chmod(shared, 0o777|os.ModeSticky); err != nil {
-		t.Fatal(err)
-	}
-	sock := filepath.Join(shared, "camp-hr-r.sock")
-	ln, err := net.Listen("unix", sock)
-	if err != nil {
-		t.Fatal(err)
-	}
-	defer func() { _ = ln.Close() }()
-	if err := os.Chmod(sock, 0o666); err != nil {
-		t.Fatal(err)
-	}
-	reached := make(chan struct{}, 1)
 	go func() {
 		conn, err := ln.Accept()
 		if err != nil {
 			return
 		}
 		reached <- struct{}{}
-		// Acknowledge at once, as a listener that wants the shell gone would.
 		_, _ = io.WriteString(conn, `{"version":1,"accepted":true}`+"\n")
 		_ = conn.Close()
 	}()
-	t.Setenv(hopResumeSockEnv, sock)
-	t.Setenv(hopResumeAddrEnv, "")
-	t.Setenv(hopResumeTokenFileEnv, "")
-
-	// As the ssh server leaves it, owned by this user, the socket is the route.
-	if err := trustedHopSocket(sock); err != nil {
-		t.Fatalf("a socket this user owns must be trusted: %v", err)
-	}
-	// The suite runs as root, which can hand the socket to another user.
-	if err := os.Chown(sock, 54321, 54321); err != nil {
+	forwarded := filepath.Join(sticky, "camp-hr-r.sock")
+	if err := os.Chown(forwarded, stranger, stranger); err != nil {
 		t.Fatal(err)
 	}
+	if err := os.Chmod(forwarded, 0o666); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv(hopResumeSockEnv, forwarded)
+	t.Setenv(hopResumeRelayEnv, "0123456789abcdef")
 	err = sendHopResume(context.Background(), "thirdbox:notes", cmdutil.CampaignScope{}, "c.example")
-	if err == nil || !strings.Contains(err.Error(), "does not belong to the shell that opened this hop") {
-		t.Fatalf("a socket another user owns must not be dialed: %v", err)
+	if err == nil || !strings.Contains(err.Error(), "relay for this hop is not running") || !strings.Contains(err.Error(), "only this user could have put there") {
+		t.Fatalf("the far shell must refuse both routes and name each reason: %v", err)
 	}
 	select {
 	case <-reached:
 		t.Fatal("the far shell connected to another user's socket")
 	case <-time.After(100 * time.Millisecond):
 	}
+}
 
-	file := filepath.Join(shared, "camp-hr-file.sock")
-	if err := os.WriteFile(file, nil, 0o600); err != nil {
+func TestHopResumeFSRelayRefusesADirectoryItDoesNotOwn(t *testing.T) {
+	home := shortHome(t)
+	dir := filepath.Join(home, ".obey", "hop-resume")
+	if err := os.MkdirAll(dir, 0o700); err != nil {
 		t.Fatal(err)
 	}
-	if err := trustedHopSocket(file); err == nil {
-		t.Fatal("a path that is not a socket must not be trusted")
+	// The suite runs as root, which can hand the directory to another user.
+	if err := os.Chown(dir, 54321, 54321); err != nil {
+		t.Fatal(err)
+	}
+	err := runHopRelay(context.Background(), "0123456789abcdef", strings.NewReader(""), io.Discard)
+	if err == nil || !strings.Contains(err.Error(), "not this user's own directory") {
+		t.Fatalf("a relay must not listen where another user owns the directory: %v", err)
+	}
+	if _, statErr := os.Lstat(filepath.Join(dir, "0123456789abcdef.sock")); !os.IsNotExist(statErr) {
+		t.Fatalf("no socket may be left behind: %v", statErr)
 	}
 }

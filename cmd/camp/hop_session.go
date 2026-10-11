@@ -145,7 +145,7 @@ func emitHopUnwind(cmd *cobra.Command, resume string, printOnly, shellConnect, j
 			" — unwinding this ssh session, no new connection"))
 		return emitUnwind(cmd.OutOrStdout())
 	}
-	if strings.TrimSpace(os.Getenv(hopResumeSockEnv)) == "" {
+	if strings.TrimSpace(os.Getenv(hopResumeSockEnv)) == "" && strings.TrimSpace(os.Getenv(hopResumeRelayEnv)) == "" {
 		return camperrors.New("this hop can return to " + back + ", but it cannot switch onward to \"" + resume + "\"\n" +
 			"Hint: 'csw -' returns to " + back + ". Re-source shell init (eval \"$(camp shell-init zsh)\") and hop again so a switch can continue on that machine")
 	}

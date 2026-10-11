@@ -2,6 +2,7 @@ package main
 
 import (
 	"errors"
+	"slices"
 	"strings"
 	"testing"
 
@@ -51,7 +52,7 @@ func TestMatchFleetCampsNormalizedAndAmbiguous(t *testing.T) {
 	}
 }
 
-func TestPrepareResumeSSHInjectsSocket(t *testing.T) {
+func TestHopLineForwardsTheSocketAndNamesBothRoutes(t *testing.T) {
 	var buf strings.Builder
 	m := &machines.Machine{ID: "devbox", Host: "devbox.ts.net", SSHUser: "lance", AuthMethod: machines.AuthSSHAgent}
 	if err := emitShellConnect(&buf, true, "/srv/campaigns/obey", remote.Direct(m), "v1;host=example"); err != nil {
@@ -61,12 +62,7 @@ func TestPrepareResumeSSHInjectsSocket(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	forward := hopResumeForward{
-		localSock: "/tmp/camp-hr-l.sock", remoteSock: "/tmp/camp-hr-r.sock",
-		loopLocalSock: "/tmp/camp-hr-t.sock", loopAddr: "127.0.0.1:50123",
-		token: "c0ffee", tokenFile: "/tmp/camp-ht-Ab12Cd",
-	}
-	argv := hop.resumeArgv(forward)
+	argv := hop.resumeArgv("/tmp/camp-hr-l.sock", "/tmp/camp-hr-r.sock", "0123456789abcdef")
 	joined := strings.Join(argv, "\n")
 	if argv[0] != "ssh" || argv[1] != "-t" {
 		t.Fatalf("argv head = %q %q", argv[0], argv[1])
@@ -77,62 +73,14 @@ func TestPrepareResumeSSHInjectsSocket(t *testing.T) {
 	if !strings.Contains(joined, "/tmp/camp-hr-r.sock:/tmp/camp-hr-l.sock") {
 		t.Fatalf("missing forward:\n%s", joined)
 	}
-	if strings.Contains(joined, "127.0.0.1:50123:") {
-		t.Fatalf("the loopback forward belongs to the ControlMaster, not the interactive ssh:\n%s", joined)
-	}
 	remoteCmd := argv[len(argv)-1]
 	for _, export := range []string{
 		"export " + hopResumeSockEnv + "='/tmp/camp-hr-r.sock'",
-		"export " + hopResumeAddrEnv + "='127.0.0.1:50123'",
-		"export " + hopResumeTokenFileEnv + "='/tmp/camp-ht-Ab12Cd'",
+		"export " + hopResumeRelayEnv + "='0123456789abcdef'",
 	} {
 		if !strings.Contains(remoteCmd, export) {
 			t.Fatalf("remote command missing %q: %s", export, remoteCmd)
 		}
-	}
-	if strings.Contains(joined, forward.token) {
-		t.Fatalf("the token must never appear in a command line:\n%s", joined)
-	}
-	for name, withhold := range map[string]func(*hopResumeForward){
-		"no token file":       func(f *hopResumeForward) { f.tokenFile = "" },
-		"no verified forward": func(f *hopResumeForward) { f.loopAddr = "" },
-	} {
-		partial := forward
-		withhold(&partial)
-		withheld := strings.Join(hop.resumeArgv(partial), "\n")
-		if strings.Contains(withheld, hopResumeAddrEnv) || strings.Contains(withheld, hopResumeTokenFileEnv) {
-			t.Fatalf("%s must withhold the loopback route:\n%s", name, withheld)
-		}
-		if !strings.Contains(withheld, "/tmp/camp-hr-r.sock:/tmp/camp-hr-l.sock") {
-			t.Fatalf("%s: the socket forward must stay:\n%s", name, withheld)
-		}
-	}
-
-	open := loopForwardArgv(hop, "forward", forward.loopLocalSock)
-	if got := strings.Join(open[len(open)-5:], " "); got != "-O forward -R 127.0.0.1:0:/tmp/camp-hr-t.sock lance@devbox.ts.net" {
-		t.Fatalf("the server must pick the loopback port (port 0) on the hop's ControlMaster: %q", got)
-	}
-	if !strings.Contains(strings.Join(open, "\n"), "ControlPath=") {
-		t.Fatalf("forward request lost the ControlMaster options: %q", open)
-	}
-	for _, action := range []string{"forward", "cancel"} {
-		control := loopForwardArgv(hop, action, forward.loopLocalSock)
-		if control[0] != "-F" || control[1] != "/dev/null" {
-			t.Fatalf("-O %s must not read ssh config, or it also acts on every forward configured for the host: %q", action, control)
-		}
-	}
-
-	remove := hopTokenRemoveArgv(hop, forward.tokenFile)
-	if remove[0] != "-T" || remove[len(remove)-1] != "rm -f -- '/tmp/camp-ht-Ab12Cd'" || remove[len(remove)-2] != "lance@devbox.ts.net" {
-		t.Fatalf("token removal: %q", remove)
-	}
-
-	upload := hopTokenArgv(hop)
-	if upload[0] != "-T" {
-		t.Fatalf("token upload must refuse a pty so a forced-tty ssh config cannot swallow the end of input: %q", upload)
-	}
-	if strings.Contains(strings.Join(upload, "\n"), forward.token) {
-		t.Fatalf("the token must never appear in a command line: %q", upload)
 	}
 	if !strings.Contains(remoteCmd, "cd '/srv/campaigns/obey' && exec $SHELL -l") &&
 		!strings.Contains(remoteCmd, `cd '"'"'/srv/campaigns/obey'"'"'`) &&
@@ -141,6 +89,24 @@ func TestPrepareResumeSSHInjectsSocket(t *testing.T) {
 	}
 	if !strings.Contains(remoteCmd, "CAMP_HOP_ORIGIN") {
 		t.Fatalf("remote command dropped the origin export: %s", remoteCmd)
+	}
+
+	relay := hopRelayArgv(hop, "0123456789abcdef")
+	if relay[0] != "-T" {
+		t.Fatalf("the relay's ssh must refuse a pty, or a forced-tty ssh config turns its stream into a terminal: %q", relay)
+	}
+	own, hops := slices.Index(relay, "ControlMaster=no"), slices.Index(relay, "ControlMaster=auto")
+	if own < 0 || hops < 0 || own > hops {
+		t.Fatalf("the relay must never create the ControlMaster the interactive ssh is about to; ssh keeps the first value: %q", relay)
+	}
+	if !slices.ContainsFunc(relay, func(arg string) bool { return strings.HasPrefix(arg, "ControlPath=") }) {
+		t.Fatalf("the relay should ride the hop's ControlMaster when one is up: %q", relay)
+	}
+	if relay[len(relay)-2] != "lance@devbox.ts.net" || !strings.Contains(relay[len(relay)-1], "hop-resume relay 0123456789abcdef") {
+		t.Fatalf("the relay must run the far machine's camp on the hop's target: %q", relay[len(relay)-2:])
+	}
+	if slices.Contains(relay, "-t") || strings.Contains(strings.Join(relay, "\n"), "exec $SHELL -l") {
+		t.Fatalf("the relay is not an interactive session: %q", relay)
 	}
 }
 

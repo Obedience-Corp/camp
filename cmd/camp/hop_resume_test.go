@@ -70,7 +70,7 @@ func TestHopResumeAcknowledgesOnlyPreparedRoute(t *testing.T) {
 			release := make(chan struct{})
 			done := make(chan error, 1)
 			go func() {
-				follow, err := acceptHopResume(context.Background(), server, "", func(_ context.Context, got hopResumeRequest) (string, error) {
+				follow, err := acceptHopResume(context.Background(), server, func(_ context.Context, got hopResumeRequest) (string, error) {
 					if got != request {
 						return "", errors.New("request changed")
 					}
@@ -123,7 +123,7 @@ func TestHopResumeProtocolFailsClosed(t *testing.T) {
 			_ = client.SetDeadline(time.Now().Add(3 * time.Second))
 			done := make(chan error, 1)
 			go func() {
-				_, err := acceptHopResume(context.Background(), server, "", func(context.Context, hopResumeRequest) (string, error) {
+				_, err := acceptHopResume(context.Background(), server, func(context.Context, hopResumeRequest) (string, error) {
 					t.Error("invalid request reached preparation")
 					return "", nil
 				})
@@ -153,7 +153,7 @@ func TestHopResumeCancellationClosesPendingRequest(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	done := make(chan error, 1)
 	go func() {
-		_, err := acceptHopResume(ctx, server, "", func(context.Context, hopResumeRequest) (string, error) {
+		_, err := acceptHopResume(ctx, server, func(context.Context, hopResumeRequest) (string, error) {
 			t.Error("unexpected preparation")
 			return "", nil
 		})
@@ -194,440 +194,342 @@ func TestHopTerminalNeverCrossesToControlMasterAsDevTTY(t *testing.T) {
 	}
 }
 
-// loopHello opens the loopback exchange by hand and returns both nonces, for
-// tests that must send something a real far shell never would.
-func loopHello(t *testing.T, conn net.Conn, dec *json.Decoder) (childNonce, parentNonce string) {
+// hopRelayRig wires the three parties of the relay route in memory: far shells
+// (sendOverHopRelay over net.Pipe), the relay loop, and the opening shell's
+// serveHopRelay.
+type hopRelayRig struct {
+	t      *testing.T
+	conns  chan net.Conn
+	hop    *hopSwitch
+	follow chan string
+}
+
+// pipeListener hands the relay connections the test dials.
+type pipeListener struct {
+	conns  chan net.Conn
+	closed chan struct{}
+}
+
+func (l *pipeListener) Accept() (net.Conn, error) {
+	select {
+	case conn := <-l.conns:
+		return conn, nil
+	case <-l.closed:
+		return nil, net.ErrClosed
+	}
+}
+
+func (l *pipeListener) Close() error {
+	select {
+	case <-l.closed:
+	default:
+		close(l.closed)
+	}
+	return nil
+}
+
+func (l *pipeListener) Addr() net.Addr { return &net.UnixAddr{Name: "pipe", Net: "unix"} }
+
+func newHopRelayRig(t *testing.T, prepare func(context.Context, hopResumeRequest) (string, error)) *hopRelayRig {
 	t.Helper()
-	childNonce, err := newHopNonce()
-	if err != nil {
-		t.Fatal(err)
-	}
-	if err := json.NewEncoder(conn).Encode(hopProofMessage{Version: hopResumeLoopVersion, Nonce: childNonce}); err != nil {
-		t.Fatal(err)
-	}
-	var parent hopProofMessage
-	if err := dec.Decode(&parent); err != nil {
-		t.Fatal(err)
-	}
-	return childNonce, parent.Nonce
-}
-
-func TestHopResumeLoopbackRequestMustProveTheHopToken(t *testing.T) {
-	const token = "0123456789abcdef0123456789abcdef"
-	raw, err := json.Marshal(hopResumeRequest{Selector: "thirdbox:notes", Host: "c.example"})
-	if err != nil {
-		t.Fatal(err)
-	}
-	otherNonce, err := newHopNonce()
-	if err != nil {
-		t.Fatal(err)
-	}
-	for name, tc := range map[string]struct {
-		seal   func(childNonce, parentNonce string) string
-		accept bool
-	}{
-		"sealed with this hop's token": {func(c, p string) string { return hopProof(token, hopChildProofLabel, c, p, raw) }, true},
-		"sealed with another token": {func(c, p string) string {
-			return hopProof("ffffffffffffffffffffffffffffffff", hopChildProofLabel, c, p, raw)
-		}, false},
-		"sealed for another exchange":             {func(c, _ string) string { return hopProof(token, hopChildProofLabel, c, otherNonce, raw) }, false},
-		"the opening shell's own proof sent back": {func(c, p string) string { return hopProof(token, hopParentProofLabel, c, p, nil) }, false},
-		"no proof": {func(string, string) string { return "" }, false},
-	} {
-		t.Run(name, func(t *testing.T) {
-			client, server := net.Pipe()
-			defer func() { _ = client.Close() }()
-			defer func() { _ = server.Close() }()
-			_ = client.SetDeadline(time.Now().Add(3 * time.Second))
-			prepared := false
-			done := make(chan error, 1)
-			go func() {
-				_, err := acceptHopResume(context.Background(), server, token, func(context.Context, hopResumeRequest) (string, error) {
-					prepared = true
-					return "ssh prepared-parent-route", nil
-				})
-				done <- err
-			}()
-			dec := json.NewDecoder(client)
-			childNonce, parentNonce := loopHello(t, client, dec)
-			sealed := hopProvenRequest{Version: hopResumeLoopVersion, Proof: tc.seal(childNonce, parentNonce), Request: raw}
-			if err := json.NewEncoder(client).Encode(sealed); err != nil {
-				t.Fatal(err)
-			}
-			var response hopResumeResponse
-			if err := dec.Decode(&response); err != nil {
-				t.Fatal(err)
-			}
-			err := <-done
-			if response.Accepted != tc.accept || (err == nil) != tc.accept || prepared != tc.accept {
-				t.Fatalf("accepted=%v err=%v route prepared=%v, want accepted=%v", response.Accepted, err, prepared, tc.accept)
-			}
-		})
-	}
-}
-
-func TestHopResumeLoopbackRefusesTheSocketProtocol(t *testing.T) {
-	client, server := net.Pipe()
-	defer func() { _ = client.Close() }()
-	defer func() { _ = server.Close() }()
-	_ = client.SetDeadline(time.Now().Add(3 * time.Second))
-	done := make(chan error, 1)
-	go func() {
-		_, err := acceptHopResume(context.Background(), server, "0123456789abcdef0123456789abcdef", func(context.Context, hopResumeRequest) (string, error) {
-			t.Error("an unproven request reached preparation")
-			return "", nil
-		})
-		done <- err
-	}()
-	envelope := hopResumeEnvelope{Version: hopResumeSocketVersion, Request: hopResumeRequest{Selector: "thirdbox:notes", Host: "c.example"}}
-	if err := json.NewEncoder(client).Encode(envelope); err != nil {
-		t.Fatal(err)
-	}
-	var response hopResumeResponse
-	if err := json.NewDecoder(client).Decode(&response); err != nil {
-		t.Fatal(err)
-	}
-	if response.Accepted || !strings.Contains(response.Error, "unsupported request version") {
-		t.Fatalf("response %+v", response)
-	}
-	if err := <-done; err == nil {
-		t.Fatal("accepted a request that proved nothing")
-	}
-}
-
-// A long-lived shell can outlive its hop, and the freed loopback port can then
-// be bound by anyone on that machine. Such a listener must learn nothing but a
-// nonce, and its acknowledgement must not be believed.
-func TestHopResumeFarShellTrustsOnlyAListenerThatProvesTheToken(t *testing.T) {
-	const token = "0123456789abcdef0123456789abcdef"
-	wrongProof := func(hello hopProofMessage) any {
-		nonce, _ := newHopNonce()
-		return hopProofMessage{Version: hopResumeLoopVersion, Nonce: nonce,
-			Proof: hopProof("ffffffffffffffffffffffffffffffff", hopParentProofLabel, hello.Nonce, nonce, nil)}
-	}
-	for name, answer := range map[string]func(hopProofMessage) any{
-		"answers with a proof for another token": wrongProof,
-		"answers with a bare acknowledgement": func(hopProofMessage) any {
-			return hopResumeResponse{Version: hopResumeLoopVersion, Accepted: true}
-		},
-		"answers with the socket protocol's acknowledgement": func(hopProofMessage) any {
-			return hopResumeResponse{Version: hopResumeSocketVersion, Accepted: true}
-		},
-	} {
-		t.Run(name, func(t *testing.T) {
-			ln, err := net.Listen("tcp", "127.0.0.1:0")
-			if err != nil {
-				t.Fatal(err)
-			}
-			defer func() { _ = ln.Close() }()
-			received := make(chan []byte, 1)
-			go func() {
-				conn, err := ln.Accept()
-				if err != nil {
-					return
-				}
-				defer func() { _ = conn.Close() }()
-				_ = conn.SetDeadline(time.Now().Add(2 * time.Second))
-				dec := json.NewDecoder(conn)
-				var hello hopProofMessage
-				_ = dec.Decode(&hello)
-				_ = json.NewEncoder(conn).Encode(answer(hello))
-				// Everything the far shell sends after the answer, until it hangs up.
-				rest, _ := io.ReadAll(io.MultiReader(dec.Buffered(), conn))
-				helloBytes, _ := json.Marshal(hello)
-				received <- append(helloBytes, rest...)
-			}()
-			conn := dialSilent(t, ln.Addr().String())
-			_ = conn.SetDeadline(time.Now().Add(2 * time.Second))
-			dec := json.NewDecoder(conn)
-			request := hopResumeRequest{Selector: "thirdbox:notes", Host: "c.example"}
-			err = sendProvenHopRequest(conn, dec, token, request)
-			if err == nil || !strings.Contains(err.Error(), "not the shell that opened this hop") {
-				t.Fatalf("an unproven listener must be refused: %v", err)
-			}
-			_ = conn.Close()
-			got := string(<-received)
-			if strings.Contains(got, token) || strings.Contains(got, "thirdbox") || strings.Contains(got, "proof") {
-				t.Fatalf("the far shell disclosed more than its hello to an unproven listener: %s", got)
-			}
-		})
-	}
-}
-
-func TestHopResumeProofCoversTheRequestAsSent(t *testing.T) {
-	const token = "0123456789abcdef0123456789abcdef"
-	request := hopResumeRequest{Selector: "third<&>box:notes \u2028 caf\u00e9", Host: "c.example", Scope: cmdutil.CampaignScope{Org: "r&d"}}
-	client, server := net.Pipe()
-	defer func() { _ = client.Close() }()
-	defer func() { _ = server.Close() }()
-	_ = client.SetDeadline(time.Now().Add(3 * time.Second))
-	got := make(chan hopResumeRequest, 1)
-	go func() {
-		_, _ = acceptHopResume(context.Background(), server, token, func(_ context.Context, request hopResumeRequest) (string, error) {
-			got <- request
-			return "ssh prepared-parent-route", nil
-		})
-	}()
-	dec := json.NewDecoder(client)
-	if err := sendProvenHopRequest(client, dec, token, request); err != nil {
-		t.Fatal(err)
-	}
-	var response hopResumeResponse
-	if err := dec.Decode(&response); err != nil || !response.Accepted {
-		t.Fatalf("a request with characters json escapes must still verify: %+v %v", response, err)
-	}
-	if arrived := <-got; arrived != request {
-		t.Fatalf("request changed in transit: %+v", arrived)
-	}
-}
-
-func TestHopResumeLoopbackAddrComesFromTheServer(t *testing.T) {
-	if spec := loopForwardSpec("/tmp/camp-hr-t.sock"); spec != "127.0.0.1:0:/tmp/camp-hr-t.sock" {
-		t.Fatalf("forward must bind loopback and leave the port to the server: %q", spec)
-	}
-	addr, err := allocatedLoopAddr("37979\n")
-	if err != nil || addr != "127.0.0.1:37979" {
-		t.Fatalf("allocated port: %q %v", addr, err)
-	}
-	for _, out := range []string{"", "0", "70000", "-1", "Allocated port 37979 for remote forward"} {
-		if addr, err := allocatedLoopAddr(out); err == nil {
-			t.Errorf("%q must not yield an address to advertise, got %q", out, addr)
-		}
-	}
-}
-
-// serveLoopback runs the hop's loopback listener and returns its address and
-// the channel the accepted follow-up line arrives on.
-func serveLoopback(t *testing.T, token string) (string, <-chan string) {
-	t.Helper()
-	ln, err := net.Listen("tcp", "127.0.0.1:0")
-	if err != nil {
-		t.Fatal(err)
-	}
-	return ln.Addr().String(), serveRoute(t, ln, token, new(hopSwitch), func(context.Context, hopResumeRequest) (string, error) {
-		return "ssh prepared-parent-route", nil
-	})
-}
-
-// serveRoute serves one of a hop's listeners until the test ends.
-func serveRoute(t *testing.T, ln net.Listener, token string, hop *hopSwitch, prepare func(context.Context, hopResumeRequest) (string, error)) <-chan string {
-	t.Helper()
+	rig := &hopRelayRig{t: t, conns: make(chan net.Conn), hop: new(hopSwitch), follow: make(chan string, 1)}
 	ctx, cancel := context.WithCancel(context.Background())
-	t.Cleanup(func() { cancel(); _ = ln.Close() })
-	follow := make(chan string, 1)
+	toOpenerR, toOpenerW := io.Pipe()
+	toRelayR, toRelayW := io.Pipe()
+	ln := &pipeListener{conns: rig.conns, closed: make(chan struct{})}
+	t.Cleanup(func() {
+		cancel()
+		_ = toRelayW.Close()
+		_ = toOpenerW.Close()
+	})
+	go func() { _ = relayHopExchanges(ctx, ln, toRelayR, toOpenerW) }()
 	go func() {
-		line, _ := serveHopResume(ctx, ln, token, hop, prepare)
-		follow <- line
+		line, _ := serveHopRelay(ctx, toOpenerR, toRelayW, rig.hop, prepare)
+		rig.follow <- line
 	}()
-	return follow
+	return rig
 }
 
-func dialSilent(t *testing.T, addr string) net.Conn {
-	t.Helper()
-	conn, err := net.DialTimeout("tcp", addr, 2*time.Second)
-	if err != nil {
-		t.Fatal(err)
-	}
-	t.Cleanup(func() { _ = conn.Close() })
-	return conn
-}
-
-func requestSwitch(t *testing.T, addr, token string) (hopResumeResponse, error) {
-	t.Helper()
-	return requestSwitchTo(t, addr, token, "thirdbox:notes")
-}
-
-func requestSwitchTo(t *testing.T, addr, token, selector string) (hopResumeResponse, error) {
-	t.Helper()
-	conn := dialSilent(t, addr)
-	_ = conn.SetDeadline(time.Now().Add(2 * time.Second))
-	dec := json.NewDecoder(conn)
-	if err := sendProvenHopRequest(conn, dec, token, hopResumeRequest{Selector: selector, Host: "c.example"}); err != nil {
-		return hopResumeResponse{}, err
-	}
-	var response hopResumeResponse
-	err := dec.Decode(&response)
-	return response, err
-}
-
-func TestHopResumeSilentConnectionsCannotStarveTheHop(t *testing.T) {
-	const token = "0123456789abcdef0123456789abcdef"
-	addr, follow := serveLoopback(t, token)
-	// Connections that never send a request, as any far-side user can open:
-	// enough to take every waiting place several times over.
-	for range 3 * hopResumeMaxWaiting {
-		dialSilent(t, addr)
-	}
-	response, err := requestSwitch(t, addr, token)
-	if err != nil || !response.Accepted {
-		t.Fatalf("the hop's own request must be answered while silent connections are open: %+v %v", response, err)
-	}
+// dial opens one far-shell connection to the relay.
+func (r *hopRelayRig) dial() net.Conn {
+	r.t.Helper()
+	far, near := net.Pipe()
+	r.t.Cleanup(func() { _ = far.Close() })
+	_ = far.SetDeadline(time.Now().Add(3 * time.Second))
 	select {
-	case line := <-follow:
-		if line != "ssh prepared-parent-route" {
-			t.Fatalf("follow %q", line)
-		}
-	case <-time.After(2 * time.Second):
-		t.Fatal("accepted request did not complete the hop")
+	case r.conns <- near:
+	case <-time.After(3 * time.Second):
+		r.t.Fatal("the relay is not accepting connections")
 	}
+	return far
 }
 
-func TestHopResumeLongestWaitingConnectionGivesWay(t *testing.T) {
-	addr, _ := serveLoopback(t, "0123456789abcdef0123456789abcdef")
-	oldest := dialSilent(t, addr)
-	// Let the listener take it before the rest arrive, so arrival order is fixed.
-	time.Sleep(50 * time.Millisecond)
-	var newest net.Conn
-	for range hopResumeMaxWaiting {
-		newest = dialSilent(t, addr)
-	}
-	_ = oldest.SetReadDeadline(time.Now().Add(2 * time.Second))
-	if _, err := oldest.Read(make([]byte, 1)); err == nil || errors.Is(err, os.ErrDeadlineExceeded) {
-		t.Fatalf("the longest-waiting connection must be closed to make room: %v", err)
-	}
-	_ = newest.SetReadDeadline(time.Now().Add(200 * time.Millisecond))
-	if _, err := newest.Read(make([]byte, 1)); !errors.Is(err, os.ErrDeadlineExceeded) {
-		t.Fatalf("the newcomer must be admitted, not turned away: %v", err)
-	}
+func (r *hopRelayRig) send(selector string) error {
+	r.t.Helper()
+	conn := r.dial()
+	defer func() { _ = conn.Close() }()
+	return sendOverHopRelay(conn, hopResumeRequest{Selector: selector, Host: "c.example"})
 }
 
-func TestHopResumeAcceptsOneSwitchPerHop(t *testing.T) {
-	const token = "0123456789abcdef0123456789abcdef"
-	addr, _ := serveLoopback(t, token)
-	if response, err := requestSwitch(t, addr, token); err != nil || !response.Accepted {
-		t.Fatalf("first switch: %+v %v", response, err)
-	}
-	response, err := requestSwitch(t, addr, token)
-	if err != nil || response.Accepted || !strings.Contains(response.Error, "already switching") {
-		t.Fatalf("a second switch must be refused, the hop is already unwinding: %+v %v", response, err)
-	}
-}
-
-// heldCloseListener hands out connections whose Close blocks until released,
-// holding a handler between its acknowledgement and its hand-off.
-type heldCloseListener struct {
-	net.Listener
-	release chan struct{}
-}
-
-func (l heldCloseListener) Accept() (net.Conn, error) {
-	conn, err := l.Listener.Accept()
-	if err != nil {
-		return nil, err
-	}
-	return heldCloseConn{Conn: conn, release: l.release}, nil
-}
-
-type heldCloseConn struct {
-	net.Conn
-	release chan struct{}
-}
-
-func (c heldCloseConn) Close() error {
-	<-c.release
-	return c.Conn.Close()
-}
-
-func TestHopResumeKeepsAnAcknowledgedSwitchWhenTheHopEndsFirst(t *testing.T) {
-	const token = "0123456789abcdef0123456789abcdef"
-	ln, err := net.Listen("tcp", "127.0.0.1:0")
-	if err != nil {
-		t.Fatal(err)
-	}
-	held := heldCloseListener{Listener: ln, release: make(chan struct{})}
-	follow := serveRoute(t, held, token, new(hopSwitch), func(context.Context, hopResumeRequest) (string, error) {
-		return "ssh prepared-parent-route", nil
-	})
-	if response, err := requestSwitch(t, ln.Addr().String(), token); err != nil || !response.Accepted {
-		t.Fatalf("switch: %+v %v", response, err)
-	}
-	// The far shell exits on that acknowledgement and the hop closes its
-	// listener while the handler has not handed the line over yet.
-	_ = ln.Close()
-	select {
-	case line := <-follow:
-		t.Fatalf("serving ended before the acknowledged handler finished, returning %q", line)
-	case <-time.After(200 * time.Millisecond):
-	}
-	close(held.release)
-	select {
-	case line := <-follow:
-		if line != "ssh prepared-parent-route" {
-			t.Fatalf("the acknowledged switch was lost: %q", line)
-		}
-	case <-time.After(2 * time.Second):
-		t.Fatal("serving never returned")
-	}
-}
-
-func TestHopResumeInterruptedSenderDoesNotHoldTheSwitch(t *testing.T) {
-	const token = "0123456789abcdef0123456789abcdef"
-	ln, err := net.Listen("tcp", "127.0.0.1:0")
-	if err != nil {
-		t.Fatal(err)
-	}
-	hop := new(hopSwitch)
-	preparing := make(chan struct{}, 1)
-	proceed := make(chan struct{})
-	follow := serveRoute(t, ln, token, hop, func(_ context.Context, request hopResumeRequest) (string, error) {
-		if request.Selector == "first:notes" {
-			preparing <- struct{}{}
-			<-proceed
-		}
-		return "ssh " + request.Selector, nil
-	})
-
-	// The sender is interrupted while this side is still preparing its route.
-	first := dialSilent(t, ln.Addr().String())
-	_ = first.SetDeadline(time.Now().Add(2 * time.Second))
-	if err := sendProvenHopRequest(first, json.NewDecoder(first), token, hopResumeRequest{Selector: "first:notes", Host: "c.example"}); err != nil {
-		t.Fatal(err)
-	}
-	<-preparing
-	_ = first.Close()
-	close(proceed)
+func (r *hopRelayRig) freed() {
+	r.t.Helper()
 	deadline := time.Now().Add(2 * time.Second)
-	for !hop.reserve() {
+	for r.hop.held() {
 		if time.Now().After(deadline) {
-			t.Fatal("a switch whose sender hung up kept the hop reserved")
+			r.t.Fatal("the hop stayed reserved for a switch that never completed")
 		}
 		time.Sleep(5 * time.Millisecond)
 	}
-	hop.release()
+}
 
-	response, err := requestSwitchTo(t, ln.Addr().String(), token, "second:notes")
-	if err != nil || !response.Accepted {
-		t.Fatalf("the retry must be accepted: %+v %v", response, err)
-	}
+func (r *hopRelayRig) queued(want string) {
+	r.t.Helper()
 	select {
-	case line := <-follow:
-		if line != "ssh second:notes" {
-			t.Fatalf("follow-up %q, want the retry's; the interrupted switch must not be queued", line)
+	case line := <-r.follow:
+		if line != want {
+			r.t.Fatalf("follow-up %q, want %q", line, want)
 		}
 	case <-time.After(2 * time.Second):
-		t.Fatal("the retry did not complete the hop")
+		r.t.Fatalf("no follow-up queued, want %q", want)
 	}
 }
 
-func TestHopResumeRoutesShareOneSwitch(t *testing.T) {
-	const token = "0123456789abcdef0123456789abcdef"
-	hop := new(hopSwitch)
-	var addrs []string
-	for range 2 {
-		ln, err := net.Listen("tcp", "127.0.0.1:0")
-		if err != nil {
+func (r *hopRelayRig) nothingQueued() {
+	r.t.Helper()
+	select {
+	case line := <-r.follow:
+		r.t.Fatalf("a switch the far shell never confirmed was queued: %q", line)
+	case <-time.After(100 * time.Millisecond):
+	}
+}
+
+func prepareBySelector(_ context.Context, request hopResumeRequest) (string, error) {
+	if strings.HasPrefix(request.Selector, "nowhere:") {
+		return "", errors.New("parent route unavailable")
+	}
+	return "ssh " + request.Selector, nil
+}
+
+func TestHopRelayQueuesOnlyAConfirmedSwitch(t *testing.T) {
+	rig := newHopRelayRig(t, prepareBySelector)
+	if err := rig.send("thirdbox:notes"); err != nil {
+		t.Fatalf("switch over the relay: %v", err)
+	}
+	rig.queued("ssh thirdbox:notes")
+}
+
+func TestHopRelayRejectedRequestLeavesTheHopFree(t *testing.T) {
+	rig := newHopRelayRig(t, prepareBySelector)
+	err := rig.send("nowhere:notes")
+	if err == nil || !strings.Contains(err.Error(), "parent route unavailable") {
+		t.Fatalf("the far shell must hear why its route was refused: %v", err)
+	}
+	rig.freed()
+	rig.nothingQueued()
+	if err := rig.send("thirdbox:notes"); err != nil {
+		t.Fatalf("a rejected request must not disable onward switching: %v", err)
+	}
+	rig.queued("ssh thirdbox:notes")
+}
+
+func TestHopRelayHangUpWhilePreparingCancelsAndFrees(t *testing.T) {
+	preparing := make(chan struct{}, 1)
+	cancelled := make(chan struct{}, 1)
+	rig := newHopRelayRig(t, func(ctx context.Context, request hopResumeRequest) (string, error) {
+		if request.Selector != "slow:notes" {
+			return "ssh " + request.Selector, nil
+		}
+		preparing <- struct{}{}
+		<-ctx.Done()
+		cancelled <- struct{}{}
+		return "", ctx.Err()
+	})
+	// The far shell is interrupted while the opening shell prepares its route.
+	conn := rig.dial()
+	out := hopLineWriter{w: conn}
+	if err := out.write(hopResumeEnvelope{Version: hopRelayVersion, Request: hopResumeRequest{Selector: "slow:notes", Host: "c.example"}}); err != nil {
+		t.Fatal(err)
+	}
+	<-preparing
+	_ = conn.Close()
+	select {
+	case <-cancelled:
+	case <-time.After(2 * time.Second):
+		t.Fatal("a preparation nobody is waiting for kept running")
+	}
+	rig.freed()
+	if err := rig.send("thirdbox:notes"); err != nil {
+		t.Fatalf("the retry must be served at once: %v", err)
+	}
+	rig.queued("ssh thirdbox:notes")
+}
+
+func TestHopRelayUnconfirmedAcknowledgementQueuesNothing(t *testing.T) {
+	rig := newHopRelayRig(t, prepareBySelector)
+	// The far shell reads its acknowledgement and dies before confirming.
+	conn := rig.dial()
+	out := hopLineWriter{w: conn}
+	if err := out.write(hopResumeEnvelope{Version: hopRelayVersion, Request: hopResumeRequest{Selector: "first:notes", Host: "c.example"}}); err != nil {
+		t.Fatal(err)
+	}
+	var response hopResumeResponse
+	if err := json.NewDecoder(conn).Decode(&response); err != nil || !response.Accepted {
+		t.Fatalf("acknowledgement: %+v %v", response, err)
+	}
+	_ = conn.Close()
+	rig.freed()
+	rig.nothingQueued()
+	if err := rig.send("second:notes"); err != nil {
+		t.Fatalf("the retry must be accepted: %v", err)
+	}
+	rig.queued("ssh second:notes")
+}
+
+func TestHopRelayAdmitsOneSwitchPerHop(t *testing.T) {
+	rig := newHopRelayRig(t, prepareBySelector)
+	// The hop's other route already holds the switch.
+	if !rig.hop.reserve() {
+		t.Fatal("fresh hop already reserved")
+	}
+	err := rig.send("thirdbox:notes")
+	if err == nil || !strings.Contains(err.Error(), "already switching") {
+		t.Fatalf("a second destination must be refused while the hop is switching: %v", err)
+	}
+	if !rig.hop.held() {
+		t.Fatal("a refused request released a reservation it did not hold")
+	}
+	rig.nothingQueued()
+}
+
+func TestHopRelayRefusesMalformedRequests(t *testing.T) {
+	rig := newHopRelayRig(t, func(context.Context, hopResumeRequest) (string, error) {
+		t.Error("a malformed request reached preparation")
+		return "", nil
+	})
+	for name, line := range map[string]string{
+		"the socket route's version": `{"version":1,"request":{"selector":"thirdbox:notes"}}`,
+		"an empty selector":          `{"version":2,"request":{"selector":""}}`,
+		"hop-back as a selector":     `{"version":2,"request":{"selector":"-"}}`,
+		"a bare request":             `{"selector":"thirdbox:notes"}`,
+	} {
+		conn := rig.dial()
+		if _, err := conn.Write([]byte(line + "\n")); err != nil {
 			t.Fatal(err)
 		}
-		serveRoute(t, ln, token, hop, func(_ context.Context, request hopResumeRequest) (string, error) {
-			return "ssh " + request.Selector, nil
-		})
-		addrs = append(addrs, ln.Addr().String())
+		var response hopResumeResponse
+		if err := json.NewDecoder(conn).Decode(&response); err != nil {
+			t.Fatalf("%s: %v", name, err)
+		}
+		if response.Accepted || response.Error == "" {
+			t.Errorf("%s: response %+v", name, response)
+		}
+		_ = conn.Close()
+		rig.freed()
 	}
-	if response, err := requestSwitchTo(t, addrs[0], token, "first:notes"); err != nil || !response.Accepted {
-		t.Fatalf("first route: %+v %v", response, err)
+}
+
+func TestHopRelayIgnoresWhatIsNotAFrame(t *testing.T) {
+	// A login shell can print before camp starts, and a line can be longer
+	// than any frame.
+	toOpenerR, toOpenerW := io.Pipe()
+	toRelayR, toRelayW := io.Pipe()
+	defer func() { _ = toOpenerW.Close(); _ = toRelayW.Close() }()
+	go func() { _, _ = io.Copy(io.Discard, toRelayR) }()
+	hop := new(hopSwitch)
+	follow := make(chan string, 1)
+	go func() {
+		line, _ := serveHopRelay(context.Background(), toOpenerR, toRelayW, hop, prepareBySelector)
+		follow <- line
+	}()
+	request, err := json.Marshal(hopResumeEnvelope{Version: hopRelayVersion, Request: hopResumeRequest{Selector: "thirdbox:notes", Host: "c.example"}})
+	if err != nil {
+		t.Fatal(err)
 	}
-	response, err := requestSwitchTo(t, addrs[1], token, "second:notes")
-	if err != nil || response.Accepted || !strings.Contains(response.Error, "already switching") {
-		t.Fatalf("the hop's other route must refuse a second destination: %+v %v", response, err)
+	out := hopLineWriter{w: toOpenerW}
+	for _, noise := range []string{"Welcome to devbox", `{"motd":true}`, strings.Repeat("x", 3*hopRelayMaxLine)} {
+		if _, err := io.WriteString(toOpenerW, noise+"\n"); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if err := out.write(hopRelayFrame{Version: hopRelayVersion, Seq: 1, Request: request}); err != nil {
+		t.Fatal(err)
+	}
+	deadline := time.Now().Add(2 * time.Second)
+	for !hop.held() {
+		if time.Now().After(deadline) {
+			t.Fatal("the request after the noise was never heard")
+		}
+		time.Sleep(5 * time.Millisecond)
+	}
+	// A confirmation for another exchange must not commit this one.
+	if err := out.write(hopRelayFrame{Version: hopRelayVersion, Seq: 7, Confirm: true}); err != nil {
+		t.Fatal(err)
+	}
+	select {
+	case line := <-follow:
+		t.Fatalf("a confirmation for another exchange queued %q", line)
+	case <-time.After(100 * time.Millisecond):
+	}
+	if err := out.write(hopRelayFrame{Version: hopRelayVersion, Seq: 1, Confirm: true}); err != nil {
+		t.Fatal(err)
+	}
+	select {
+	case line := <-follow:
+		if line != "ssh thirdbox:notes" {
+			t.Fatalf("follow-up %q", line)
+		}
+	case <-time.After(2 * time.Second):
+		t.Fatal("the confirmed switch was not queued")
+	}
+}
+
+func TestHopRelayDropsAnAnswerToAnAbandonedExchange(t *testing.T) {
+	far, near := net.Pipe()
+	defer func() { _ = far.Close(); _ = near.Close() }()
+	_ = far.SetDeadline(time.Now().Add(3 * time.Second))
+	toOpenerR, toOpenerW := io.Pipe()
+	defer func() { _ = toOpenerW.Close() }()
+	go func() { _, _ = io.Copy(io.Discard, toOpenerR) }()
+	answers := make(chan hopRelayFrame, 2)
+	toOpener := hopLineWriter{w: toOpenerW}
+	done := make(chan error, 1)
+	go func() { done <- relayHopExchange(context.Background(), near, 2, &toOpener, answers) }()
+	if _, err := far.Write([]byte(`{"version":2,"request":{"selector":"thirdbox:notes"}}` + "\n")); err != nil {
+		t.Fatal(err)
+	}
+	// The opening shell answers exchange 1, which its far shell abandoned,
+	// and then this one.
+	answers <- hopRelayFrame{Version: hopRelayVersion, Seq: 1, Response: json.RawMessage(`{"version":2,"accepted":true,"error":"stale"}`)}
+	answers <- hopRelayFrame{Version: hopRelayVersion, Seq: 2, Response: json.RawMessage(`{"version":2,"accepted":false,"error":"current"}`)}
+	var response hopResumeResponse
+	if err := json.NewDecoder(far).Decode(&response); err != nil {
+		t.Fatal(err)
+	}
+	if response.Error != "current" {
+		t.Fatalf("the far shell received another exchange's answer: %+v", response)
+	}
+	_ = far.Close()
+	if err := <-done; err != nil {
+		t.Fatalf("exchange: %v", err)
+	}
+}
+
+func TestHopRelayIDIsOnlyEverAFileName(t *testing.T) {
+	t.Setenv("HOME", "/home/alex")
+	path, err := hopRelaySocketPath("0123456789abcdef")
+	if err != nil || path != "/home/alex/.obey/hop-resume/0123456789abcdef.sock" {
+		t.Fatalf("relay socket path: %q %v", path, err)
+	}
+	for _, id := range []string{"", "../../tmp/evil", "0123456789abcde", "0123456789abcdef00", "0123456789abcdeg", "/tmp/0123456789abcdef"} {
+		if path, err := hopRelaySocketPath(id); err == nil {
+			t.Errorf("id %q must be refused, got %q", id, path)
+		}
+	}
+	id, err := newHopRelayID()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := hopRelaySocketPath(id); err != nil {
+		t.Fatalf("a fresh id must be usable: %q %v", id, err)
 	}
 }
