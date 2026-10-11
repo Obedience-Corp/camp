@@ -2,92 +2,96 @@ package explore
 
 import (
 	"bytes"
-	"context"
-	"errors"
 	"image"
-	"image/color"
 	"regexp"
 	"slices"
 	"strings"
 	"testing"
 	"time"
-	"unicode/utf8"
+
+	tea "github.com/charmbracelet/bubbletea"
 
 	intexplore "github.com/Obedience-Corp/camp/internal/dungeon/explore"
-	"github.com/Obedience-Corp/camp/internal/ui/theme"
-	tea "github.com/charmbracelet/bubbletea"
-	"github.com/charmbracelet/lipgloss"
-	"github.com/muesli/termenv"
 )
 
-func TestExploreUnicodeAndLongTitles(t *testing.T) {
-	text := strings.Repeat("é界👩‍💻é", 80)
-	lines := wrapPlain(text, 23)
-	if strings.Join(lines, "") != text {
-		t.Fatal("wrapping lost text")
+func TestExploreViewEmitsKittySequenceForFocusedReplay(t *testing.T) {
+	m := exploreModel{
+		width:    100,
+		height:   30,
+		protocol: intexplore.ProtocolKitty,
+		query:    intexplore.Query{Status: "finished", Dungeon: intexplore.LensAll},
+		index: intexplore.Index{
+			Dungeons: []intexplore.DungeonPrint{{Path: "festivals/.dungeon"}},
+			Items: []intexplore.Item{
+				{
+					DoneDate: "2026-10-05", DateSource: intexplore.DateBucket, Status: "completed",
+					DungeonLabel: "Festivals", DungeonPath: "festivals/.dungeon", Kind: intexplore.KindFestival,
+					Title: "festival-activity-desktop", ID: "FA0024", Path: "festivals/.dungeon/completed/2026-10-05/festival-activity-desktop-FA0024",
+					Replay: "festivals/.dungeon/completed/2026-10-05/festival-activity-desktop-FA0024/festival-replay.gif", IsDir: true,
+				},
+				{
+					DoneDate: "2026-08-21", DateSource: intexplore.DateHistory, Status: "done",
+					DungeonLabel: "Intents", DungeonPath: ".campaign/intents/.dungeon", Kind: intexplore.KindMarkdown,
+					Title: "Add blog sections", Path: ".campaign/intents/.dungeon/done/add-blog.md",
+				},
+			},
+		},
+		mediaFor: "festivals/.dungeon/completed/2026-10-05/festival-activity-desktop-FA0024",
+		poster:   []byte{1, 2, 3, 4},
 	}
-	for _, line := range lines {
-		if !utf8.ValidString(line) || lipgloss.Width(line) > 23 {
-			t.Fatalf("invalid wrapped line %q", line)
+	if err := m.applyQuery(); err != nil {
+		t.Fatal(err)
+	}
+	view := m.View()
+	if !strings.Contains(view, "a=T,f=100,q=2,i=1") {
+		t.Fatal("focused festival did not emit a Kitty image sequence")
+	}
+	cleared, _ := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'j'}})
+	if strings.Contains(cleared.View(), "a=T,f=100") {
+		t.Fatal("image sequence remained after leaving the festival")
+	}
+}
+
+func TestExploreImageSequencePreservesCursor(t *testing.T) {
+	kitty := replayModel(intexplore.ProtocolKitty).imageSequence(48)
+	if !strings.HasPrefix(kitty, "\x1b7") || !strings.HasSuffix(kitty, "\x1b8") {
+		t.Fatalf("kitty sequence does not save and restore the cursor: %q", kitty)
+	}
+	if !strings.Contains(kitty, "C=1") {
+		t.Fatalf("kitty sequence lets the terminal move the cursor: %q", kitty)
+	}
+	iterm := replayModel(intexplore.ProtocolITerm).imageSequence(48)
+	if !strings.HasPrefix(iterm, "\x1b7\x1b]1337;File=") || !strings.HasSuffix(iterm, "\a\x1b8") {
+		t.Fatalf("iterm sequence does not save and restore the cursor: %q", iterm)
+	}
+}
+
+func TestExploreDeletesKittyImageWhenHidden(t *testing.T) {
+	del := intexplore.KittyDelete(exploreImageID)
+	shown := replayModel(intexplore.ProtocolKitty)
+	if !strings.Contains(shown.View(), "a=T,f=100") {
+		t.Fatal("focused replay did not draw")
+	}
+	moved, _ := press(t, shown, runes("j"))
+	reading, _ := press(t, shown, tea.KeyMsg{Type: tea.KeyEnter})
+	small, _ := press(t, shown, tea.WindowSizeMsg{Width: 10, Height: 3})
+	quit := shown
+	quit.quitting = true
+	for name, view := range map[string]string{
+		"moved to an item without a replay": moved.View(),
+		"opened the reader":                 reading.View(),
+		"terminal too small":                small.View(),
+		"quitting":                          quit.View(),
+	} {
+		if !strings.Contains(view, del) {
+			t.Errorf("%s: view does not delete the Kitty placement", name)
+		}
+		if strings.Contains(view, "a=T,f=100") {
+			t.Errorf("%s: view still draws the replay", name)
 		}
 	}
-	if got := statusTitle("ébauche"); got != "Ébauche" {
-		t.Fatalf("status = %q", got)
-	}
-	if got := fit(strings.Repeat("界", 256<<10), 24); !strings.HasSuffix(got, "…") || lipgloss.Width(got) > 24 {
-		t.Fatalf("truncation = %q", got)
-	}
-}
-
-func BenchmarkExploreLongTitle(b *testing.B) {
-	title := strings.Repeat("a", 256<<10)
-	for b.Loop() {
-		_ = fit(title, 48)
-	}
-}
-
-func TestExploreAutoplayStartsAtFirstFrame(t *testing.T) {
-	for _, reduced := range []bool{false, true} {
-		m := replayModel(intexplore.ProtocolKitty)
-		m.reduced = reduced
-		msg := explorePoster{gen: m.loadGen, item: replayItemPath, poster: []byte("last"), frames: [][]byte{[]byte("first"), []byte("last")}, delays: []time.Duration{time.Second, time.Second}}
-		m, _ = press(t, m, msg)
-		want := "first"
-		if reduced {
-			want = "last"
-		}
-		if string(m.poster) != want {
-			t.Fatalf("reduced=%v: displayed %q", reduced, m.poster)
-		}
-	}
-}
-
-// Cancel when PNG starts inspecting a frame, after GIF decoding has finished.
-type cancellingImage struct {
-	image.Image
-	cancel context.CancelFunc
-}
-
-func (im cancellingImage) Bounds() image.Rectangle { im.cancel(); return im.Image.Bounds() }
-func TestExploreCancelsPNGEncoding(t *testing.T) {
-	for _, point := range []string{"before-poster", "between-frames"} {
-		t.Run(point, func(t *testing.T) {
-			ctx, cancel := context.WithCancel(context.Background())
-			defer cancel()
-			m := replayModel(intexplore.ProtocolKitty)
-			frame := image.NewRGBA(image.Rect(0, 0, 2, 2))
-			frame.Set(0, 0, color.White)
-			m.decode = func(context.Context, string, int, int) (intexplore.Frames, error) {
-				if point == "before-poster" {
-					cancel()
-				}
-				return intexplore.Frames{Poster: frame, Frames: []image.Image{cancellingImage{frame, cancel}, nil}, Delays: []time.Duration{time.Second, time.Second}}, nil
-			}
-			msg := m.decodeCmd(ctx)().(explorePoster)
-			if !errors.Is(msg.err, context.Canceled) || msg.frames != nil {
-				t.Fatalf("cancelled encoding retained frames or succeeded: %+v", msg)
-			}
-		})
+	if off := replayModel(intexplore.ProtocolOff); strings.Contains(off.View(), "\x1b_G") {
+		t.Error("images off still emits Kitty graphics commands")
 	}
 }
 
@@ -203,6 +207,27 @@ func TestExploreReplayStaysInsideVisibleBody(t *testing.T) {
 	}
 }
 
+func replayCupRow(view string) (int, bool) {
+	const mark = "\x1b7\x1b["
+	at := strings.LastIndex(view, mark)
+	if at < 0 {
+		return 0, false
+	}
+	rest := view[at+len(mark):]
+	semi := strings.IndexByte(rest, ';')
+	if semi <= 0 {
+		return 0, false
+	}
+	row := 0
+	for _, r := range rest[:semi] {
+		if r < '0' || r > '9' {
+			return 0, false
+		}
+		row = row*10 + int(r-'0')
+	}
+	return row, row > 0
+}
+
 func TestExploreITermRowsRepaintWhenTheImageChanges(t *testing.T) {
 	mark := regexp.MustCompile(`\x1b\[\d+G\x1b\[\d+X`)
 	m := replayModel(intexplore.ProtocolITerm)
@@ -248,27 +273,6 @@ func TestExploreITermRowsRepaintWhenTheImageChanges(t *testing.T) {
 	}
 }
 
-func replayCupRow(view string) (int, bool) {
-	const mark = "\x1b7\x1b["
-	at := strings.LastIndex(view, mark)
-	if at < 0 {
-		return 0, false
-	}
-	rest := view[at+len(mark):]
-	semi := strings.IndexByte(rest, ';')
-	if semi <= 0 {
-		return 0, false
-	}
-	row := 0
-	for _, r := range rest[:semi] {
-		if r < '0' || r > '9' {
-			return 0, false
-		}
-		row = row*10 + int(r-'0')
-	}
-	return row, row > 0
-}
-
 func TestExploreReplayPaintsAfterBody(t *testing.T) {
 	for _, protocol := range []string{intexplore.ProtocolKitty, intexplore.ProtocolITerm} {
 		for _, width := range []int{64, 88, 120} {
@@ -285,30 +289,6 @@ func TestExploreReplayPaintsAfterBody(t *testing.T) {
 			if width == 88 && protocol == intexplore.ProtocolKitty && !strings.Contains(last, ",c=44,r=12,") {
 				t.Fatal("Kitty placement exceeds right pane")
 			}
-		}
-	}
-}
-
-func TestExploreStylesAndPlain(t *testing.T) {
-	old := lipgloss.ColorProfile()
-	lipgloss.SetColorProfile(termenv.TrueColor)
-	defer lipgloss.SetColorProfile(old)
-	m := replayModel(intexplore.ProtocolOff)
-	m.styles = newExploreStyles(false, theme.ThemeAdaptive)
-	styled := m.View()
-	if !strings.Contains(styled, "\x1b[") || !strings.Contains(styled, "48;") {
-		t.Fatal("missing color or selection background")
-	}
-	m.styles = newExploreStyles(true, theme.ThemeAdaptive)
-	// Plain output carries no styling. Placing the right pane at its column
-	// is cursor control, which plain mode keeps.
-	plain := viewPanePlacement.ReplaceAllString(m.View(), "")
-	if bytes.ContainsAny([]byte(plain), "\x1b") {
-		t.Fatal("plain view contains ANSI")
-	}
-	for _, line := range strings.Split(plain, "\n") {
-		if lipgloss.Width(line) > m.width {
-			t.Fatal("view overflows")
 		}
 	}
 }

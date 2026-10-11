@@ -1,11 +1,14 @@
 package explore
 
 import (
+	"bytes"
 	"fmt"
 	"regexp"
 	"strings"
 	"testing"
+	"unicode/utf8"
 
+	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
 	"github.com/charmbracelet/x/ansi"
 	"github.com/muesli/termenv"
@@ -315,5 +318,90 @@ func TestExploreCutNoticeFitsANarrowReader(t *testing.T) {
 		case width < cellWidth(notice) && (!strings.HasSuffix(got, "…") || !strings.HasPrefix(notice, strings.TrimSuffix(got, "…"))):
 			t.Fatalf("at %d columns the notice is cut without a mark: %q", width, got)
 		}
+	}
+}
+
+func TestExploreUnicodeAndLongTitles(t *testing.T) {
+	text := strings.Repeat("é界👩‍💻é", 80)
+	lines := wrapPlain(text, 23)
+	if strings.Join(lines, "") != text {
+		t.Fatal("wrapping lost text")
+	}
+	for _, line := range lines {
+		if !utf8.ValidString(line) || lipgloss.Width(line) > 23 {
+			t.Fatalf("invalid wrapped line %q", line)
+		}
+	}
+	if got := statusTitle("ébauche"); got != "Ébauche" {
+		t.Fatalf("status = %q", got)
+	}
+	if got := fit(strings.Repeat("界", 256<<10), 24); !strings.HasSuffix(got, "…") || lipgloss.Width(got) > 24 {
+		t.Fatalf("truncation = %q", got)
+	}
+}
+
+func BenchmarkExploreLongTitle(b *testing.B) {
+	title := strings.Repeat("a", 256<<10)
+	for b.Loop() {
+		_ = fit(title, 48)
+	}
+}
+
+func TestExploreStylesAndPlain(t *testing.T) {
+	old := lipgloss.ColorProfile()
+	lipgloss.SetColorProfile(termenv.TrueColor)
+	defer lipgloss.SetColorProfile(old)
+	m := replayModel(intexplore.ProtocolOff)
+	m.styles = newExploreStyles(false, theme.ThemeAdaptive)
+	styled := m.View()
+	if !strings.Contains(styled, "\x1b[") || !strings.Contains(styled, "48;") {
+		t.Fatal("missing color or selection background")
+	}
+	m.styles = newExploreStyles(true, theme.ThemeAdaptive)
+	// Plain output carries no styling. Placing the right pane at its column
+	// is cursor control, which plain mode keeps.
+	plain := viewPanePlacement.ReplaceAllString(m.View(), "")
+	if bytes.ContainsAny([]byte(plain), "\x1b") {
+		t.Fatal("plain view contains ANSI")
+	}
+	for _, line := range strings.Split(plain, "\n") {
+		if lipgloss.Width(line) > m.width {
+			t.Fatal("view overflows")
+		}
+	}
+}
+
+func TestExploreViewStripsTerminalControlsFromRepoText(t *testing.T) {
+	m := exploreModel{
+		width:    100,
+		height:   30,
+		protocol: intexplore.ProtocolOff,
+		query:    intexplore.Query{Status: "finished", Dungeon: intexplore.LensAll},
+		index: intexplore.Index{
+			Dungeons: []intexplore.DungeonPrint{{Path: "festivals/.dungeon"}},
+			Items: []intexplore.Item{{
+				DoneDate: "2026-10-05", DateSource: intexplore.DateBucket, Status: "completed",
+				DungeonLabel: "Festivals", DungeonPath: "festivals/.dungeon", Kind: intexplore.KindOther,
+				Title:   "evil\x1b]52;c;ZXZpbA==\x07title",
+				ID:      "FA\x1b[31m01",
+				Summary: "sum\x1b]0;pwned\x07mary\rline",
+				Path:    "festivals/.dungeon/completed/evil\x1b[2Jpath",
+			}},
+		},
+	}
+	if err := m.applyQuery(); err != nil {
+		t.Fatal(err)
+	}
+	reading, _ := press(t, m, tea.KeyMsg{Type: tea.KeyEnter})
+	for name, view := range map[string]string{"feed": m.View(), "reader": reading.View()} {
+		// The wide layout places its right pane with cursor control of its
+		// own. Nothing else may reach the terminal as a control.
+		view = viewPanePlacement.ReplaceAllString(view, "")
+		if strings.ContainsAny(view, "\x1b\x07\r") {
+			t.Fatalf("%s view carries terminal controls: %q", name, view)
+		}
+	}
+	if view := m.View(); !strings.Contains(view, "eviltitle") || !strings.Contains(view, "summary") {
+		t.Fatalf("sanitizing dropped printable text:\n%s", view)
 	}
 }

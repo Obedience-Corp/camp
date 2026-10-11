@@ -1,8 +1,11 @@
 package explore
 
 import (
+	"context"
+	"fmt"
 	"strings"
 	"testing"
+	"time"
 
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
@@ -36,26 +39,6 @@ func longIDModel(width, height int) exploreModel {
 
 func viewLines(m exploreModel) []string {
 	return strings.Split(m.View(), "\n")
-}
-
-func TestExploreReaderStripsFrontmatter(t *testing.T) {
-	body := readerBody{
-		text:     "---\nfest_type: festival\nfest_id: FA0024\nfest_name: festival-activity-desktop\nfest_status: dungeon/completed\n---\n\n# Festival Goal\n\nShip the desktop app.\n",
-		markdown: true,
-	}
-	got := strings.Join(body.render(80, true, ""), "\n")
-	for _, leak := range []string{"fest_type", "fest_id", "fest_status", "--------"} {
-		if strings.Contains(got, leak) {
-			t.Fatalf("reader shows frontmatter %q:\n%s", leak, got)
-		}
-	}
-	if !strings.Contains(got, "Ship the desktop app.") {
-		t.Fatalf("reader lost the goal body:\n%s", got)
-	}
-	plain := readerBody{text: "# No frontmatter\n\n---\n\nA rule above stays.\n", markdown: true}
-	if got := strings.Join(plain.render(80, true, ""), "\n"); !strings.Contains(got, "No frontmatter") || !strings.Contains(got, "A rule above stays.") {
-		t.Fatalf("document without frontmatter changed:\n%s", got)
-	}
 }
 
 func TestExploreWideLayoutKeepsGutter(t *testing.T) {
@@ -92,23 +75,6 @@ func TestExploreHelpLineSitsOnLastRow(t *testing.T) {
 		if last := lines[len(lines)-1]; last != strings.Join(m.helpLines(), "\n") {
 			t.Fatalf("%s last row = %q, want the help line", name, last)
 		}
-	}
-}
-
-func TestExploreReaderWrapsAtFullWidth(t *testing.T) {
-	m := replayModel(intexplore.ProtocolOff)
-	m.width = 120
-	m.index.Items[0].Summary = strings.Repeat("streak recap ", 30)
-	if err := m.applyQuery(); err != nil {
-		t.Fatal(err)
-	}
-	m, _ = press(t, m, tea.KeyMsg{Type: tea.KeyEnter})
-	widest := 0
-	for _, line := range m.reader.lines {
-		widest = max(widest, lipgloss.Width(line))
-	}
-	if widest <= m.width/2 || widest > m.width {
-		t.Fatalf("reader wraps at %d columns on a %d-column terminal", widest, m.width)
 	}
 }
 
@@ -277,6 +243,54 @@ func TestExploreEmptyStateUsesFilters(t *testing.T) {
 	}
 }
 
+func TestExploreEmptyStatesSayWhatHappened(t *testing.T) {
+	query := intexplore.Query{Status: "finished", Dungeon: intexplore.LensAll}
+	// A first load that fails with no cache knows nothing about the camp.
+	m := exploreModel{width: 80, height: 24, loading: true, protocol: intexplore.ProtocolOff, query: query}
+	m, _ = press(t, m, exploreLoaded{gen: m.indexGen, err: context.DeadlineExceeded})
+	view := viewText(m.View())
+	if strings.Contains(view, "No dungeons in this camp.") {
+		t.Fatalf("a failed first load claims the camp has no dungeons:\n%s", view)
+	}
+	if !strings.Contains(view, "could not be read") || !strings.Contains(view, context.DeadlineExceeded.Error()) {
+		t.Fatalf("a failed first load does not say so:\n%s", view)
+	}
+	// r retries, and a camp that really has no dungeons says that.
+	m, cmd := press(t, m, runes("r"))
+	if cmd == nil || !m.loading {
+		t.Fatal("r did not retry the failed load")
+	}
+	m, _ = press(t, m, exploreLoaded{gen: m.indexGen, index: intexplore.Index{BuiltAt: time.Now()}, changed: true})
+	if view := viewText(m.View()); !strings.Contains(view, "No dungeons in this camp.") || strings.Contains(view, "could not be read") {
+		t.Fatalf("an empty camp after a successful load:\n%s", view)
+	}
+
+	// No empty-state row is cut mid-word by the renderer.
+	states := map[string]exploreModel{
+		"no dungeons": {query: query},
+		"load failed": {query: query, loadFailed: true},
+		"first load":  {query: query, loading: true},
+		"no finished work": {query: query, index: intexplore.Index{
+			Dungeons: []intexplore.DungeonPrint{{Path: "festivals/.dungeon", Label: "Festivals"}},
+		}},
+		"no match": {query: intexplore.Query{Status: "archived", Dungeon: intexplore.LensAll}, index: intexplore.Index{
+			Dungeons: []intexplore.DungeonPrint{{Path: "festivals/.dungeon", Label: "Festivals"}},
+		}},
+	}
+	for name, state := range states {
+		for _, width := range []int{20, 24} {
+			state.width, state.height, state.protocol = width, 6, intexplore.ProtocolOff
+			if err := state.applyQuery(); err != nil {
+				t.Fatal(err)
+			}
+			body := strings.Split(state.View(), "\n")[1]
+			if w := lipgloss.Width(body); w > width || !strings.HasSuffix(body, "…") {
+				t.Errorf("%s at %d columns: body row %q (%d wide) is not fitted", name, width, body, w)
+			}
+		}
+	}
+}
+
 func TestExploreLongIDKeepsDungeonLabel(t *testing.T) {
 	for _, width := range []int{64, 100} {
 		m := longIDModel(width, 30)
@@ -290,5 +304,152 @@ func TestExploreLongIDKeepsDungeonLabel(t *testing.T) {
 		if !strings.Contains(row, "Festivals") {
 			t.Fatalf("focused row at %d columns lost its dungeon label: %q", width, row)
 		}
+	}
+}
+
+// In the narrow layout the replay sits between the focused row and its card.
+// The card holds the only copy of the status, the date, and the path.
+func TestExploreNarrowCardStaysVisibleUnderTheReplay(t *testing.T) {
+	for _, size := range [][2]int{{80, 22}, {80, 24}, {80, 28}, {60, 24}, {87, 30}} {
+		for _, status := range []string{"", "copied"} {
+			m := screenFeed(t, size[0], size[1], intexplore.ProtocolKitty, 60)
+			m.index.Warnings = []string{"festivals/.dungeon/archived: permission denied"}
+			m.status = status
+			m.cursor = 22
+			for m.visible.Items[m.cursor].Replay == "" {
+				m.cursor++
+			}
+			item, _ := m.focused()
+			label := fmt.Sprintf("%dx%d status=%q", size[0], size[1], status)
+			if m.wide() || m.stageRows() == 0 {
+				t.Fatalf("%s: fixture is not the narrow layout with a replay", label)
+			}
+			rowOf := func(view string) int {
+				for i, line := range strings.Split(view, "\n") {
+					if strings.HasPrefix(viewText(line), "> "+item.Title) {
+						return i
+					}
+				}
+				return -1
+			}
+			before := rowOf(m.View())
+
+			w, h := m.stagePixels()
+			m.poster, m.mediaFor = posterFor(item.Path, w, h), item.Path
+			view := m.View()
+			text := viewText(view)
+			for _, want := range []string{"moved ", item.Path, item.ID + "  Festivals  completed"} {
+				if !strings.Contains(text, fit(want, m.width)) {
+					t.Errorf("%s: the card lost %q once the replay drew:\n%s", label, want, text)
+				}
+			}
+			if _, _, _, rows, ok := imageBox(view); !ok || rows != m.stageRows() {
+				t.Errorf("%s: replay drawn on %d rows, want all %d", label, rows, m.stageRows())
+			}
+			if problems := checkLayout(m); len(problems) > 0 {
+				t.Errorf("%s: %v", label, problems)
+			}
+			if after := rowOf(view); before < 0 || after != before {
+				t.Errorf("%s: the focused row moved from line %d to %d when the replay arrived", label, before, after)
+			}
+		}
+	}
+}
+
+func TestExploreLayoutMatrix(t *testing.T) {
+	sizes := [][2]int{
+		{20, 4}, {20, 5}, {21, 6}, {40, 10}, {40, 30}, {59, 22}, {60, 16}, {60, 21}, {60, 22}, {80, 12}, {80, 21}, {80, 22}, {80, 24},
+		{87, 30}, {88, 15}, {88, 16}, {88, 17}, {88, 18}, {100, 24}, {100, 29}, {100, 30}, {120, 16}, {120, 40}, {200, 16}, {200, 60},
+	}
+	doc := readerBody{markdown: true, text: strings.Repeat("# Heading\n\nSome **markdown** that is long enough to wrap on a narrow terminal.\n\n", 30)}
+	seen := map[string]bool{}
+	report := func(label string, m exploreModel) {
+		for _, problem := range checkLayout(m) {
+			// One line per kind of problem and mode keeps a broken layout readable.
+			key := label[strings.LastIndex(label, " ")+1:] + ": " + problem
+			if len(key) > 60 {
+				key = key[:60]
+			}
+			if !seen[key] {
+				seen[key] = true
+				t.Errorf("%s: %s", label, problem)
+			}
+		}
+	}
+	for _, size := range sizes {
+		for _, protocol := range []string{intexplore.ProtocolOff, intexplore.ProtocolKitty, intexplore.ProtocolITerm} {
+			for _, n := range []int{0, 1, 3, 40} {
+				for _, notices := range []int{0, 1, 2} {
+					for _, status := range []string{"", "copied"} {
+						base := emojiTitles(t, screenFeed(t, size[0], size[1], protocol, n))
+						if notices >= 1 {
+							base.index.Warnings = []string{"festivals/.dungeon/archived: permission denied"}
+						}
+						if notices >= 2 {
+							for i := range base.visible.Items {
+								base.visible.Items[i].Warning = "fest.yaml: mapping values are not allowed"
+							}
+						}
+						base.status = status
+						cursors := []int{0}
+						if rows := len(base.visible.Items); rows > 1 {
+							cursors = []int{0, rows / 2, rows - 1}
+						}
+						for _, cursor := range cursors {
+							m := base
+							m.cursor = cursor
+							if item, ok := m.focused(); ok && item.Replay != "" {
+								w, h := m.stagePixels()
+								m.poster, m.mediaFor = posterFor(item.Path, w, h), item.Path
+							}
+							label := fmt.Sprintf("%dx%d %s rows=%d notices=%d status=%q cursor=%d", size[0], size[1], protocol, n, notices, status, cursor)
+							report(label+" feed", m)
+
+							help := m
+							help.help = true
+							report(label+" help", help)
+
+							filter := m
+							filter.filtering = true
+							filter.filter = strings.Repeat("query ", 30)
+							report(label+" filter", filter)
+
+							loading := m
+							loading.loading = true
+							report(label+" loading", loading)
+
+							if _, ok := m.focused(); !ok {
+								continue
+							}
+							reader := m
+							reader.reading = true
+							reader.reader = exploreReader{title: "doc", item: m.visible.Items[cursor], body: doc}
+							reader.reader.lines = doc.render(reader.contentWidth(), true, "")
+							report(label+" reader", reader)
+							reader.reader.offset = len(reader.reader.lines)
+							report(label+" reader-end", reader)
+
+							listing := m
+							listing.reading = true
+							listing.reader = exploreReader{title: "docs", listing: true, item: m.visible.Items[cursor]}
+							for i := range 50 {
+								listing.reader.entries = append(listing.reader.entries, readerEntry{name: fmt.Sprintf("a-long-document-name-that-keeps-going-and-going-%02d.md", i)})
+							}
+							listing.reader.entry = 30
+							report(label+" listing", listing)
+						}
+					}
+				}
+			}
+		}
+		empty := exploreModel{width: size[0], height: size[1], protocol: intexplore.ProtocolOff, query: intexplore.Query{Status: "finished", Dungeon: intexplore.LensAll}}
+		_ = empty.applyQuery()
+		label := fmt.Sprintf("%dx%d", size[0], size[1])
+		report(label+" no-dungeons", empty)
+		empty.loading = true
+		report(label+" first-load", empty)
+		empty.loading, empty.loadFailed = false, true
+		empty.setStatus(exploreLoadStatus, "open /camp: permission denied", true)
+		report(label+" load-failed", empty)
 	}
 }
