@@ -1,4 +1,4 @@
-package dungeon
+package explore
 
 import (
 	"strings"
@@ -7,7 +7,7 @@ import (
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
 
-	"github.com/Obedience-Corp/camp/internal/dungeon/explore"
+	intexplore "github.com/Obedience-Corp/camp/internal/dungeon/explore"
 )
 
 const longFestID = "add-weekly-streak-recap-20260902-091500"
@@ -16,13 +16,13 @@ func longIDModel(width, height int) exploreModel {
 	m := exploreModel{
 		width:    width,
 		height:   height,
-		protocol: explore.ProtocolOff,
-		query:    explore.Query{Status: "finished", Dungeon: explore.LensAll},
-		index: explore.Index{
-			Dungeons: []explore.DungeonPrint{{Path: "festivals/.dungeon", Label: "Festivals"}},
-			Items: []explore.Item{{
-				DoneDate: "2026-09-02", DateSource: explore.DateBucket, Status: "completed",
-				DungeonLabel: "Festivals", DungeonPath: "festivals/.dungeon", Kind: explore.KindFestival,
+		protocol: intexplore.ProtocolOff,
+		query:    intexplore.Query{Status: "finished", Dungeon: intexplore.LensAll},
+		index: intexplore.Index{
+			Dungeons: []intexplore.DungeonPrint{{Path: "festivals/.dungeon", Label: "Festivals"}},
+			Items: []intexplore.Item{{
+				DoneDate: "2026-09-02", DateSource: intexplore.DateBucket, Status: "completed",
+				DungeonLabel: "Festivals", DungeonPath: "festivals/.dungeon", Kind: intexplore.KindFestival,
 				Title: longFestID, ID: longFestID, Summary: "Recap the weekly streak for every member of the camp",
 				Path: "festivals/.dungeon/completed/2026-09-02/" + longFestID, IsDir: true,
 			}},
@@ -96,7 +96,7 @@ func TestExploreHelpLineSitsOnLastRow(t *testing.T) {
 }
 
 func TestExploreReaderWrapsAtFullWidth(t *testing.T) {
-	m := replayModel(explore.ProtocolOff)
+	m := replayModel(intexplore.ProtocolOff)
 	m.width = 120
 	m.index.Items[0].Summary = strings.Repeat("streak recap ", 30)
 	if err := m.applyQuery(); err != nil {
@@ -135,19 +135,19 @@ func TestExploreViewShowsScanAndItemWarnings(t *testing.T) {
 	m := exploreModel{
 		width:    100,
 		height:   30,
-		protocol: explore.ProtocolOff,
-		query:    explore.Query{Status: "finished", Dungeon: explore.LensAll},
-		index: explore.Index{
-			Dungeons: []explore.DungeonPrint{{Path: "festivals/.dungeon", Label: "Festivals"}},
-			Items: []explore.Item{
+		protocol: intexplore.ProtocolOff,
+		query:    intexplore.Query{Status: "finished", Dungeon: intexplore.LensAll},
+		index: intexplore.Index{
+			Dungeons: []intexplore.DungeonPrint{{Path: "festivals/.dungeon", Label: "Festivals"}},
+			Items: []intexplore.Item{
 				{
-					DoneDate: "2026-10-05", DateSource: explore.DateBucket, Status: "completed",
-					DungeonLabel: "Festivals", DungeonPath: "festivals/.dungeon", Kind: explore.KindFestival,
+					DoneDate: "2026-10-05", DateSource: intexplore.DateBucket, Status: "completed",
+					DungeonLabel: "Festivals", DungeonPath: "festivals/.dungeon", Kind: intexplore.KindFestival,
 					Title: "festival-activity-desktop", ID: "FA0024", Path: "festivals/.dungeon/completed/clean", IsDir: true,
 				},
 				{
-					DoneDate: "2026-09-02", DateSource: explore.DateBucket, Status: "completed",
-					DungeonLabel: "Festivals", DungeonPath: "festivals/.dungeon", Kind: explore.KindFestival,
+					DoneDate: "2026-09-02", DateSource: intexplore.DateBucket, Status: "completed",
+					DungeonLabel: "Festivals", DungeonPath: "festivals/.dungeon", Kind: intexplore.KindFestival,
 					Title: "broken-festival", Path: "festivals/.dungeon/completed/broken", IsDir: true,
 				},
 			},
@@ -198,15 +198,15 @@ func TestExploreViewShowsScanAndItemWarnings(t *testing.T) {
 	}
 }
 
-func feedModel(t *testing.T, items []explore.Item, query explore.Query) exploreModel {
+func feedModel(t *testing.T, items []intexplore.Item, query intexplore.Query) exploreModel {
 	t.Helper()
 	m := exploreModel{
 		width:    80,
 		height:   24,
-		protocol: explore.ProtocolOff,
+		protocol: intexplore.ProtocolOff,
 		query:    query,
-		index: explore.Index{
-			Dungeons: []explore.DungeonPrint{
+		index: intexplore.Index{
+			Dungeons: []intexplore.DungeonPrint{
 				{Path: "festivals/.dungeon", Label: "Festivals"},
 				{Path: "notes/.dungeon", Label: "Notes"},
 			},
@@ -220,11 +220,11 @@ func feedModel(t *testing.T, items []explore.Item, query explore.Query) exploreM
 }
 
 func TestExploreEmptyFinishedLens(t *testing.T) {
-	m := feedModel(t, []explore.Item{{
+	m := feedModel(t, []intexplore.Item{{
 		DoneDate: "2026-10-05", Status: "holding",
 		DungeonLabel: "Festivals", DungeonPath: "festivals/.dungeon",
 		Title: "later", Path: "festivals/.dungeon/later.md",
-	}}, explore.Query{})
+	}}, intexplore.Query{})
 	if len(m.visible.Items) != 0 {
 		t.Fatalf("finished lens kept holding work: %+v", m.visible.Items)
 	}
@@ -235,7 +235,7 @@ func TestExploreEmptyFinishedLens(t *testing.T) {
 }
 
 func TestExploreEmptyStateUsesFilters(t *testing.T) {
-	items := []explore.Item{
+	items := []intexplore.Item{
 		{
 			DoneDate: "2026-10-05", Status: "completed",
 			DungeonLabel: "Festivals", DungeonPath: "festivals/.dungeon",
@@ -249,16 +249,16 @@ func TestExploreEmptyStateUsesFilters(t *testing.T) {
 	}
 	cases := []struct {
 		name  string
-		query explore.Query
+		query intexplore.Query
 	}{
-		{name: "archived", query: explore.Query{Status: "archived", Dungeon: explore.LensAll}},
-		{name: "holding", query: explore.Query{Status: "holding", Dungeon: explore.LensAll}},
-		{name: "done", query: explore.Query{Status: "done", Dungeon: explore.LensAll}},
-		{name: "custom status", query: explore.Query{Status: "reviewed", Dungeon: explore.LensAll, Text: "missing"}},
-		{name: "text", query: explore.Query{Status: "finished", Dungeon: explore.LensAll, Text: "missing"}},
-		{name: "since", query: explore.Query{Status: "finished", Dungeon: explore.LensAll, Since: "2027-01-01"}},
-		{name: "until", query: explore.Query{Status: "finished", Dungeon: explore.LensAll, Until: "2020-01-01"}},
-		{name: "dungeon", query: explore.Query{Status: "finished", Dungeon: "Notes"}},
+		{name: "archived", query: intexplore.Query{Status: "archived", Dungeon: intexplore.LensAll}},
+		{name: "holding", query: intexplore.Query{Status: "holding", Dungeon: intexplore.LensAll}},
+		{name: "done", query: intexplore.Query{Status: "done", Dungeon: intexplore.LensAll}},
+		{name: "custom status", query: intexplore.Query{Status: "reviewed", Dungeon: intexplore.LensAll, Text: "missing"}},
+		{name: "text", query: intexplore.Query{Status: "finished", Dungeon: intexplore.LensAll, Text: "missing"}},
+		{name: "since", query: intexplore.Query{Status: "finished", Dungeon: intexplore.LensAll, Since: "2027-01-01"}},
+		{name: "until", query: intexplore.Query{Status: "finished", Dungeon: intexplore.LensAll, Until: "2020-01-01"}},
+		{name: "dungeon", query: intexplore.Query{Status: "finished", Dungeon: "Notes"}},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {

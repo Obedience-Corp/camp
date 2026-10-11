@@ -1,4 +1,4 @@
-package dungeon
+package explore
 
 import (
 	"bytes"
@@ -7,12 +7,19 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/spf13/cobra"
 	"github.com/spf13/pflag"
 
-	"github.com/Obedience-Corp/camp/internal/dungeon/explore"
+	intexplore "github.com/Obedience-Corp/camp/internal/dungeon/explore"
 	camperrors "github.com/Obedience-Corp/camp/internal/errors"
 	"github.com/Obedience-Corp/camp/internal/jsoncontract"
 )
+
+var exploreParent = func() *cobra.Command {
+	parent := &cobra.Command{Use: "dungeon"}
+	parent.AddCommand(Cmd)
+	return parent
+}()
 
 // runExploreCommand runs `camp dungeon explore` through cobra, with the output
 // settings the real root command has, and returns what main would see.
@@ -21,25 +28,25 @@ func runExploreCommand(t *testing.T, terminal bool, args ...string) (stdout, std
 	var out, errOut bytes.Buffer
 	origTerminal := exploreTerminal
 	exploreTerminal = func() bool { return terminal }
-	rootErrors, rootUsage := Cmd.SilenceErrors, Cmd.SilenceUsage
-	cmdErrors, cmdUsage := dungeonExploreCmd.SilenceErrors, dungeonExploreCmd.SilenceUsage
-	Cmd.SilenceErrors, Cmd.SilenceUsage = true, true
-	Cmd.SetOut(&out)
-	Cmd.SetErr(&errOut)
-	Cmd.SetArgs(append([]string{"explore"}, args...))
+	rootErrors, rootUsage := exploreParent.SilenceErrors, exploreParent.SilenceUsage
+	cmdErrors, cmdUsage := Cmd.SilenceErrors, Cmd.SilenceUsage
+	exploreParent.SilenceErrors, exploreParent.SilenceUsage = true, true
+	exploreParent.SetOut(&out)
+	exploreParent.SetErr(&errOut)
+	exploreParent.SetArgs(append([]string{"explore"}, args...))
 	defer func() {
 		exploreTerminal = origTerminal
-		Cmd.SilenceErrors, Cmd.SilenceUsage = rootErrors, rootUsage
-		dungeonExploreCmd.SilenceErrors, dungeonExploreCmd.SilenceUsage = cmdErrors, cmdUsage
-		Cmd.SetOut(nil)
-		Cmd.SetErr(nil)
-		Cmd.SetArgs(nil)
-		dungeonExploreCmd.Flags().VisitAll(func(f *pflag.Flag) {
+		exploreParent.SilenceErrors, exploreParent.SilenceUsage = rootErrors, rootUsage
+		Cmd.SilenceErrors, Cmd.SilenceUsage = cmdErrors, cmdUsage
+		exploreParent.SetOut(nil)
+		exploreParent.SetErr(nil)
+		exploreParent.SetArgs(nil)
+		Cmd.Flags().VisitAll(func(f *pflag.Flag) {
 			_ = f.Value.Set(f.DefValue)
 			f.Changed = false
 		})
 	}()
-	err = Cmd.ExecuteContext(context.Background())
+	err = exploreParent.ExecuteContext(context.Background())
 	return out.String(), errOut.String(), err
 }
 
@@ -103,8 +110,8 @@ func TestExploreRefusalsExitTwoWithJSONEnvelope(t *testing.T) {
 				if err := json.Unmarshal([]byte(stderr), &envelope); err != nil {
 					t.Fatalf("stderr is not one JSON envelope: %q (%v)", stderr, err)
 				}
-				if envelope.SchemaVersion != explore.SchemaVersion {
-					t.Fatalf("schema_version = %q, want %q", envelope.SchemaVersion, explore.SchemaVersion)
+				if envelope.SchemaVersion != intexplore.SchemaVersion {
+					t.Fatalf("schema_version = %q, want %q", envelope.SchemaVersion, intexplore.SchemaVersion)
 				}
 				if envelope.Error.Code != "validation_error" || envelope.Error.ExitCode != 2 || envelope.Error.Message != tc.want {
 					t.Fatalf("error = %+v, want a validation_error with exit_code 2 and message %q", envelope.Error, tc.want)

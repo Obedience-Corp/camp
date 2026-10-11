@@ -1,4 +1,6 @@
-package dungeon
+// Package explore is the `camp dungeon explore` command: the feed of finished
+// work across every dungeon in a camp, its reader, and its JSON output.
+package explore
 
 import (
 	"encoding/json"
@@ -10,7 +12,7 @@ import (
 	"golang.org/x/term"
 
 	"github.com/Obedience-Corp/camp/internal/config"
-	"github.com/Obedience-Corp/camp/internal/dungeon/explore"
+	intexplore "github.com/Obedience-Corp/camp/internal/dungeon/explore"
 	camperrors "github.com/Obedience-Corp/camp/internal/errors"
 	"github.com/Obedience-Corp/camp/internal/jsoncontract"
 )
@@ -19,7 +21,7 @@ var exploreTerminal = func() bool {
 	return term.IsTerminal(int(os.Stdin.Fd())) && term.IsTerminal(int(os.Stdout.Fd()))
 }
 
-var dungeonExploreCmd = &cobra.Command{
+var Cmd = &cobra.Command{
 	Use:   "explore",
 	Short: "Browse finished work across every dungeon",
 	Long: `Browse finished work across every dungeon in this camp.
@@ -77,26 +79,25 @@ trailing slash: --status all/.`,
 }
 
 func init() {
-	Cmd.AddCommand(dungeonExploreCmd)
-	flags := dungeonExploreCmd.Flags()
+	flags := Cmd.Flags()
 	flags.Bool("json", false, "Print the feed as JSON")
 	flags.String("status", "finished", "Status lens: finished, completed, done, archived, someday, killed, holding, all, or a status directory name; a trailing slash (all/) always means the directory")
 	flags.String("dungeon", "all", "Dungeon lens: all, a label, or a camp-relative dungeon path")
 	flags.String("since", "", "Include items put in the dungeon on or after this YYYY-MM-DD date")
 	flags.String("until", "", "Include items put in the dungeon on or before this YYYY-MM-DD date")
 	flags.String("query", "", "Case-insensitive substring matched against title, id, summary, dungeon, and path")
-	flags.String("images", explore.ProtocolAuto, "Replay rendering: auto, kitty, iterm, or off; always off with NO_COLOR or --no-color")
+	flags.String("images", intexplore.ProtocolAuto, "Replay rendering: auto, kitty, iterm, or off; always off with NO_COLOR or --no-color")
 	flags.Bool("no-media", false, "Do not draw replays")
 	flags.String("path-output", "", "Write the selected item directory to a file (shell integration)")
 	_ = flags.MarkHidden("path-output")
 
 	// Set here, not in the literal: each closes over the command it is set on.
-	jsonMode := func() bool { return exploreJSONMode(dungeonExploreCmd) }
-	dungeonExploreCmd.Args = jsoncontract.Args(explore.SchemaVersion, jsonMode, exploreNoArgs)
-	dungeonExploreCmd.RunE = jsoncontract.RunE(explore.SchemaVersion, jsonMode, func(cmd *cobra.Command, args []string) error {
+	jsonMode := func() bool { return exploreJSONMode(Cmd) }
+	Cmd.Args = jsoncontract.Args(intexplore.SchemaVersion, jsonMode, exploreNoArgs)
+	Cmd.RunE = jsoncontract.RunE(intexplore.SchemaVersion, jsonMode, func(cmd *cobra.Command, args []string) error {
 		return exploreRefusal(cmd, exploreUnderSignals(cmd, func() error { return runDungeonExplore(cmd, args) }))
 	})
-	dungeonExploreCmd.SetFlagErrorFunc(jsoncontract.FlagErrorFunc(explore.SchemaVersion, jsonMode))
+	Cmd.SetFlagErrorFunc(jsoncontract.FlagErrorFunc(intexplore.SchemaVersion, jsonMode))
 }
 
 // exploreJSONMode reports whether this run prints JSON. A pipe prints the
@@ -143,18 +144,18 @@ func runDungeonExplore(cmd *cobra.Command, _ []string) error {
 		return camperrors.Wrap(err, "not in a camp directory")
 	}
 	if exploreJSONMode(cmd) {
-		idx, err := explore.Build(ctx, root)
+		idx, err := intexplore.Build(ctx, root)
 		if err != nil {
 			return err
 		}
-		result, err := explore.Apply(idx, query)
+		result, err := intexplore.Apply(idx, query)
 		if err != nil {
 			return err
 		}
 		return writeExploreJSON(cmd, root, idx, result)
 	}
 	pathOutput, _ := cmd.Flags().GetString("path-output")
-	cacheDir, err := explore.CacheDir(cfg.ID, root)
+	cacheDir, err := intexplore.CacheDir(cfg.ID, root)
 	if err != nil {
 		cacheDir = ""
 	}
@@ -173,29 +174,29 @@ var startExploreTUI = runExploreTUI
 // camp is read first, and the index that read produced opens the feed: the
 // camp is not read a second time. With neither flag it returns nil and the
 // feed paints from its cache.
-func exploreStartIndex(cmd *cobra.Command, root string, query explore.Query) (*explore.Index, error) {
+func exploreStartIndex(cmd *cobra.Command, root string, query intexplore.Query) (*intexplore.Index, error) {
 	if !cmd.Flags().Changed("status") && !cmd.Flags().Changed("dungeon") {
 		return nil, nil
 	}
-	idx, err := explore.Build(cmd.Context(), root)
+	idx, err := intexplore.Build(cmd.Context(), root)
 	if err != nil {
 		return nil, err
 	}
-	if _, err := explore.Apply(idx, query); err != nil {
+	if _, err := intexplore.Apply(idx, query); err != nil {
 		return nil, err
 	}
 	return &idx, nil
 }
 
-func exploreQuery(cmd *cobra.Command) (explore.Query, error) {
+func exploreQuery(cmd *cobra.Command) (intexplore.Query, error) {
 	status, _ := cmd.Flags().GetString("status")
 	dungeon, _ := cmd.Flags().GetString("dungeon")
 	since, _ := cmd.Flags().GetString("since")
 	until, _ := cmd.Flags().GetString("until")
 	text, _ := cmd.Flags().GetString("query")
-	query := explore.Query{Status: status, Dungeon: dungeon, Since: since, Until: until, Text: text}
+	query := intexplore.Query{Status: status, Dungeon: dungeon, Since: since, Until: until, Text: text}
 	if err := query.Validate(); err != nil {
-		return explore.Query{}, err
+		return intexplore.Query{}, err
 	}
 	return query, nil
 }
@@ -203,12 +204,12 @@ func exploreQuery(cmd *cobra.Command) (explore.Query, error) {
 func exploreImages(cmd *cobra.Command) (string, error) {
 	flag, _ := cmd.Flags().GetString("images")
 	// --no-media does not excuse a value --images would refuse on its own.
-	protocol, err := explore.ChooseProtocol(flag, os.Getenv, plainExplore(cmd))
+	protocol, err := intexplore.ChooseProtocol(flag, os.Getenv, plainExplore(cmd))
 	if err != nil {
 		return "", err
 	}
 	if noMedia, _ := cmd.Flags().GetBool("no-media"); noMedia {
-		return explore.ProtocolOff, nil
+		return intexplore.ProtocolOff, nil
 	}
 	return protocol, nil
 }
@@ -224,7 +225,7 @@ func plainExplore(cmd *cobra.Command) bool {
 	return err == nil && v
 }
 
-func writeExploreJSON(cmd *cobra.Command, root string, idx explore.Index, result explore.Result) error {
+func writeExploreJSON(cmd *cobra.Command, root string, idx intexplore.Index, result intexplore.Result) error {
 	// Item paths are camp-relative. Consumers join them onto this root, which
 	// docs/json-contracts.md requires to be symlink-resolved.
 	campaignRoot, err := filepath.EvalSymlinks(root)
@@ -237,17 +238,17 @@ func writeExploreJSON(cmd *cobra.Command, root string, idx explore.Index, result
 	}
 	items := result.Items
 	if items == nil {
-		items = []explore.Item{}
+		items = []intexplore.Item{}
 	}
 	doc := struct {
-		SchemaVersion string         `json:"schema_version"`
-		CampaignRoot  string         `json:"campaign_root"`
-		DungeonLens   string         `json:"dungeon_lens"`
-		StatusLens    string         `json:"status_lens"`
-		Warnings      []string       `json:"warnings,omitempty"`
-		Items         []explore.Item `json:"items"`
+		SchemaVersion string            `json:"schema_version"`
+		CampaignRoot  string            `json:"campaign_root"`
+		DungeonLens   string            `json:"dungeon_lens"`
+		StatusLens    string            `json:"status_lens"`
+		Warnings      []string          `json:"warnings,omitempty"`
+		Items         []intexplore.Item `json:"items"`
 	}{
-		SchemaVersion: explore.SchemaVersion,
+		SchemaVersion: intexplore.SchemaVersion,
 		CampaignRoot:  campaignRoot,
 		DungeonLens:   result.DungeonLens,
 		StatusLens:    result.StatusLens,
@@ -262,7 +263,7 @@ func writeExploreJSON(cmd *cobra.Command, root string, idx explore.Index, result
 	return nil
 }
 
-func exploreJump(root string, item explore.Item) string {
+func exploreJump(root string, item intexplore.Item) string {
 	path := item.Path
 	if !item.IsDir {
 		path = parentSlash(path)

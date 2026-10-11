@@ -1,4 +1,4 @@
-package dungeon
+package explore
 
 import (
 	"fmt"
@@ -10,7 +10,7 @@ import (
 	"github.com/charmbracelet/lipgloss"
 	"github.com/muesli/termenv"
 
-	"github.com/Obedience-Corp/camp/internal/dungeon/explore"
+	intexplore "github.com/Obedience-Corp/camp/internal/dungeon/explore"
 	"github.com/Obedience-Corp/camp/internal/ui/theme"
 )
 
@@ -144,7 +144,7 @@ var screenScripts = []screenScript{
 }
 
 func TestExploreReplayOnTheTerminal(t *testing.T) {
-	for _, protocol := range []string{explore.ProtocolITerm, explore.ProtocolKitty} {
+	for _, protocol := range []string{intexplore.ProtocolITerm, intexplore.ProtocolKitty} {
 		for _, kind := range screenKinds {
 			for _, script := range screenScripts {
 				t.Run(protocol+"/"+kind.name+"/"+script.name, func(t *testing.T) {
@@ -202,7 +202,7 @@ func walkReplayScript(t *testing.T, protocol string, script screenScript, open f
 func TestExploreWidePaneKeepsItsColumn(t *testing.T) {
 	for _, kind := range screenKinds {
 		for cursor := range 4 {
-			m := emojiTitles(t, screenFeed(t, 120, 40, explore.ProtocolOff, 12))
+			m := emojiTitles(t, screenFeed(t, 120, 40, intexplore.ProtocolOff, 12))
 			m.cursor = cursor
 			s := kind.open(t, m)
 			got := s.send(nil)
@@ -237,8 +237,8 @@ func TestExploreWidePaneKeepsItsColumn(t *testing.T) {
 func TestExploreWidePaneLeavesNothingBesideAShorterRow(t *testing.T) {
 	family := emojiSequences["family"]
 	for _, kind := range screenKinds {
-		m := screenFeed(t, 120, 40, explore.ProtocolOff, 40)
-		m.index.Items = append([]explore.Item(nil), m.index.Items...)
+		m := screenFeed(t, 120, 40, intexplore.ProtocolOff, 40)
+		m.index.Items = append([]intexplore.Item(nil), m.index.Items...)
 		for i := range m.index.Items {
 			item := &m.index.Items[i]
 			item.Title, item.Summary = strings.Repeat("a long title ", 8), strings.Repeat("a long summary ", 8)
@@ -266,10 +266,10 @@ func TestExploreWidePaneLeavesNothingBesideAShorterRow(t *testing.T) {
 // reach it.
 func TestExploreKittyViewCarriesNoITermRepaintMarks(t *testing.T) {
 	for _, size := range [][2]int{{120, 40}, {80, 24}} {
-		m := screenFeed(t, size[0], size[1], explore.ProtocolKitty, 6)
+		m := screenFeed(t, size[0], size[1], intexplore.ProtocolKitty, 6)
 		m.poster, m.mediaFor = posterFor(m.visible.Items[0].Path, 64, 64), m.visible.Items[0].Path
 		view := m.View()
-		if !explore.HasKittyImage(view) {
+		if !intexplore.HasKittyImage(view) {
 			t.Fatalf("%dx%d: no Kitty image in the view", size[0], size[1])
 		}
 		if strings.Contains(view, "\x1b]1337") || viewCSIErase.MatchString(view) {
@@ -280,7 +280,7 @@ func TestExploreKittyViewCarriesNoITermRepaintMarks(t *testing.T) {
 
 // The image row must change when, and only when, a row under the image does.
 func TestExploreITermImageRowFollowsCoveredRows(t *testing.T) {
-	m := screenFeed(t, 120, 40, explore.ProtocolITerm, 60)
+	m := screenFeed(t, 120, 40, intexplore.ProtocolITerm, 60)
 	m.cursor = 21
 	item, _ := m.focused()
 	m.poster, m.mediaFor = posterFor(item.Path, 384, 192), item.Path
@@ -319,7 +319,7 @@ func TestExploreReaderTabsOnTheTerminal(t *testing.T) {
 	}
 	for name, body := range bodies {
 		for _, plain := range []bool{true, false} {
-			m := screenFeed(t, 80, 24, explore.ProtocolOff, 3)
+			m := screenFeed(t, 80, 24, intexplore.ProtocolOff, 3)
 			m.plain = plain
 			m.reading = true
 			m.reader = exploreReader{title: "design.md", item: m.visible.Items[0], body: body}
@@ -407,7 +407,7 @@ func TestExploreReaderClosesStylesAtHardBreaks(t *testing.T) {
 
 	// On the terminal: with the styled token cut by the bottom of the body,
 	// nothing is erased while a style is open.
-	m := screenFeed(t, 40, 12, explore.ProtocolOff, 3)
+	m := screenFeed(t, 40, 12, intexplore.ProtocolOff, 3)
 	m.styles = newExploreStyles(false, theme.ThemeAdaptive)
 	m.reading = true
 	m.reader = exploreReader{title: "notes.md", item: m.visible.Items[0], body: readerBody{text: doc, markdown: true}}
@@ -445,7 +445,7 @@ func openStyleAtEnd(line string) string {
 // The frame between a key press and the next must not depend on timing. This
 // guards the harness itself: a step is on the grid when send returns.
 func TestExploreScreenStepsAreFlushedInOrder(t *testing.T) {
-	m := screenFeed(t, 80, 24, explore.ProtocolOff, 10)
+	m := screenFeed(t, 80, 24, intexplore.ProtocolOff, 10)
 	s := openExploreScreen(t, m)
 	start := time.Now()
 	for i := range 5 {
@@ -470,7 +470,7 @@ func TestExploreScreenStepsAreFlushedInOrder(t *testing.T) {
 // byte-for-byte what they were, and only the replay's name in the row mark
 // makes the renderer paint them.
 func TestExploreITermRepaintsTheBoxForAnotherReplay(t *testing.T) {
-	for _, protocol := range []string{explore.ProtocolITerm, explore.ProtocolKitty} {
+	for _, protocol := range []string{intexplore.ProtocolITerm, intexplore.ProtocolKitty} {
 		m := screenFeed(t, 120, 40, protocol, 60)
 		first, _ := m.focused()
 		w, h := m.stagePixels()
@@ -491,7 +491,7 @@ func TestExploreITermRepaintsTheBoxForAnotherReplay(t *testing.T) {
 		second, _ := next.focused()
 		_, _, boxCols, _, _ := imageBox(next.View())
 		_, _, cols, _, ok := drawnBox(next)
-		if !ok || second.Path == first.Path || (protocol == explore.ProtocolITerm && cols >= boxCols) {
+		if !ok || second.Path == first.Path || (protocol == intexplore.ProtocolITerm && cols >= boxCols) {
 			t.Fatalf("%s fixture: the second replay does not leave part of the box unpainted (%d of %d columns)", protocol, cols, boxCols)
 		}
 		if problems := checkScreen(s.grid, next); len(problems) > 0 {
@@ -514,7 +514,7 @@ func TestExploreITermRepaintsTheBoxForAnotherReplay(t *testing.T) {
 // gives up rows; the card keeps all of its lines.
 func TestExploreWideCardFitsUnderTheReplay(t *testing.T) {
 	for _, size := range [][2]int{{88, 16}, {88, 17}, {88, 18}, {120, 16}, {200, 16}, {100, 24}, {120, 40}} {
-		for _, protocol := range []string{explore.ProtocolKitty, explore.ProtocolITerm} {
+		for _, protocol := range []string{intexplore.ProtocolKitty, intexplore.ProtocolITerm} {
 			for _, chrome := range []struct {
 				name            string
 				status, help    bool
@@ -574,7 +574,7 @@ func TestExploreWideCardFitsUnderTheReplay(t *testing.T) {
 // It needs no room for a replay.
 func TestExploreNarrowCardNeedsNoReplayRoom(t *testing.T) {
 	for _, size := range [][2]int{{80, 21}, {80, 12}, {40, 30}, {59, 40}, {120, 15}, {40, 10}} {
-		for _, protocol := range []string{explore.ProtocolOff, explore.ProtocolKitty} {
+		for _, protocol := range []string{intexplore.ProtocolOff, intexplore.ProtocolKitty} {
 			m := screenFeed(t, size[0], size[1], protocol, 40)
 			m.cursor = 11
 			item, _ := m.focused()
@@ -594,7 +594,7 @@ func TestExploreNarrowCardNeedsNoReplayRoom(t *testing.T) {
 		}
 	}
 	// Four rows hold the focused row and nothing else of it; that still draws.
-	tiny := screenFeed(t, 20, 4, explore.ProtocolOff, 40)
+	tiny := screenFeed(t, 20, 4, intexplore.ProtocolOff, 40)
 	tiny.cursor = 11
 	if problems := checkLayout(tiny); len(problems) > 0 {
 		t.Fatal(problems)

@@ -1,6 +1,6 @@
 //go:build container_fs
 
-package dungeon
+package explore
 
 import (
 	"os"
@@ -10,7 +10,7 @@ import (
 
 	"golang.org/x/sys/unix"
 
-	"github.com/Obedience-Corp/camp/internal/dungeon/explore"
+	intexplore "github.com/Obedience-Corp/camp/internal/dungeon/explore"
 )
 
 // The index reads FESTIVAL_GOAL.md only when it is a regular file. The reader
@@ -47,7 +47,7 @@ func TestExploreReaderOpensFestivalWithoutARegularGoalFile(t *testing.T) {
 			}
 			put(t, filepath.Join(festival, "FESTIVAL_GOAL.md"))
 
-			m := replayModel(explore.ProtocolOff)
+			m := replayModel(intexplore.ProtocolOff)
 			m.root = root
 			m.visible.Items[0].Path = "festival"
 			m.visible.Items[0].IsDir = true

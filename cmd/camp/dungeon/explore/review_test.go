@@ -1,4 +1,4 @@
-package dungeon
+package explore
 
 import (
 	"bytes"
@@ -13,7 +13,7 @@ import (
 	"time"
 	"unicode/utf8"
 
-	"github.com/Obedience-Corp/camp/internal/dungeon/explore"
+	intexplore "github.com/Obedience-Corp/camp/internal/dungeon/explore"
 	"github.com/Obedience-Corp/camp/internal/ui/theme"
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
@@ -48,7 +48,7 @@ func BenchmarkExploreLongTitle(b *testing.B) {
 
 func TestExploreAutoplayStartsAtFirstFrame(t *testing.T) {
 	for _, reduced := range []bool{false, true} {
-		m := replayModel(explore.ProtocolKitty)
+		m := replayModel(intexplore.ProtocolKitty)
 		m.reduced = reduced
 		msg := explorePoster{gen: m.loadGen, item: replayItemPath, poster: []byte("last"), frames: [][]byte{[]byte("first"), []byte("last")}, delays: []time.Duration{time.Second, time.Second}}
 		m, _ = press(t, m, msg)
@@ -74,14 +74,14 @@ func TestExploreCancelsPNGEncoding(t *testing.T) {
 		t.Run(point, func(t *testing.T) {
 			ctx, cancel := context.WithCancel(context.Background())
 			defer cancel()
-			m := replayModel(explore.ProtocolKitty)
+			m := replayModel(intexplore.ProtocolKitty)
 			frame := image.NewRGBA(image.Rect(0, 0, 2, 2))
 			frame.Set(0, 0, color.White)
-			m.decode = func(context.Context, string, int, int) (explore.Frames, error) {
+			m.decode = func(context.Context, string, int, int) (intexplore.Frames, error) {
 				if point == "before-poster" {
 					cancel()
 				}
-				return explore.Frames{Poster: frame, Frames: []image.Image{cancellingImage{frame, cancel}, nil}, Delays: []time.Duration{time.Second, time.Second}}, nil
+				return intexplore.Frames{Poster: frame, Frames: []image.Image{cancellingImage{frame, cancel}, nil}, Delays: []time.Duration{time.Second, time.Second}}, nil
 			}
 			msg := m.decodeCmd(ctx)().(explorePoster)
 			if !errors.Is(msg.err, context.Canceled) || msg.frames != nil {
@@ -101,8 +101,8 @@ func TestExploreKittyPlacementKeepsAspect(t *testing.T) {
 		{name: "portrait", w: 96, h: 192, want: ",c=12,r=12,"},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
-			m := replayModel(explore.ProtocolKitty)
-			png, err := explore.EncodePNG(image.NewRGBA(image.Rect(0, 0, tc.w, tc.h)))
+			m := replayModel(intexplore.ProtocolKitty)
+			png, err := intexplore.EncodePNG(image.NewRGBA(image.Rect(0, 0, tc.w, tc.h)))
 			if err != nil {
 				t.Fatal(err)
 			}
@@ -124,22 +124,22 @@ func TestExploreKittyPlacementKeepsAspect(t *testing.T) {
 }
 
 func TestExploreReplayStaysInsideVisibleBody(t *testing.T) {
-	png, err := explore.EncodePNG(image.NewRGBA(image.Rect(0, 0, 192, 192)))
+	png, err := intexplore.EncodePNG(image.NewRGBA(image.Rect(0, 0, 192, 192)))
 	if err != nil {
 		t.Fatal(err)
 	}
-	items := make([]explore.Item, 12)
+	items := make([]intexplore.Item, 12)
 	for i := range items {
 		day := time.Date(2026, time.January, i+1, 0, 0, 0, 0, time.UTC).Format("2006-01-02")
-		items[i] = explore.Item{
-			DoneDate: day, DateSource: explore.DateBucket, Status: "completed",
-			DungeonLabel: "Festivals", DungeonPath: "festivals/.dungeon", Kind: explore.KindFestival,
+		items[i] = intexplore.Item{
+			DoneDate: day, DateSource: intexplore.DateBucket, Status: "completed",
+			DungeonLabel: "Festivals", DungeonPath: "festivals/.dungeon", Kind: intexplore.KindFestival,
 			Title: "Item " + day, Summary: "A finished summary",
 			Path: "festivals/.dungeon/completed/" + day + "/item", IsDir: true,
 		}
 	}
 	const focus = "festivals/.dungeon/completed/2026-01-07/item"
-	m := replayModel(explore.ProtocolKitty)
+	m := replayModel(intexplore.ProtocolKitty)
 	m.width = 80
 	m.height = 22
 	m.status = "Copied the path"
@@ -205,7 +205,7 @@ func TestExploreReplayStaysInsideVisibleBody(t *testing.T) {
 
 func TestExploreITermRowsRepaintWhenTheImageChanges(t *testing.T) {
 	mark := regexp.MustCompile(`\x1b\[\d+G\x1b\[\d+X`)
-	m := replayModel(explore.ProtocolITerm)
+	m := replayModel(intexplore.ProtocolITerm)
 	if !m.wide() {
 		t.Fatal("fixture is not the wide layout")
 	}
@@ -270,7 +270,7 @@ func replayCupRow(view string) (int, bool) {
 }
 
 func TestExploreReplayPaintsAfterBody(t *testing.T) {
-	for _, protocol := range []string{explore.ProtocolKitty, explore.ProtocolITerm} {
+	for _, protocol := range []string{intexplore.ProtocolKitty, intexplore.ProtocolITerm} {
 		for _, width := range []int{64, 88, 120} {
 			m := replayModel(protocol)
 			m.width = width
@@ -282,7 +282,7 @@ func TestExploreReplayPaintsAfterBody(t *testing.T) {
 			if strings.Contains(view[:strings.LastIndex(view, "\n")], "File=inline") || strings.Contains(view[:strings.LastIndex(view, "\n")], "a=T") {
 				t.Fatal("image painted before body clearing")
 			}
-			if width == 88 && protocol == explore.ProtocolKitty && !strings.Contains(last, ",c=44,r=12,") {
+			if width == 88 && protocol == intexplore.ProtocolKitty && !strings.Contains(last, ",c=44,r=12,") {
 				t.Fatal("Kitty placement exceeds right pane")
 			}
 		}
@@ -293,7 +293,7 @@ func TestExploreStylesAndPlain(t *testing.T) {
 	old := lipgloss.ColorProfile()
 	lipgloss.SetColorProfile(termenv.TrueColor)
 	defer lipgloss.SetColorProfile(old)
-	m := replayModel(explore.ProtocolOff)
+	m := replayModel(intexplore.ProtocolOff)
 	m.styles = newExploreStyles(false, theme.ThemeAdaptive)
 	styled := m.View()
 	if !strings.Contains(styled, "\x1b[") || !strings.Contains(styled, "48;") {
@@ -322,7 +322,7 @@ func (p replayRenderProbe) Init() tea.Cmd {
 func (p replayRenderProbe) Update(tea.Msg) (tea.Model, tea.Cmd) { return p, nil }
 func (p replayRenderProbe) View() string                        { return p.view }
 func TestExploreReplaySurvivesRendererLineClearing(t *testing.T) {
-	for _, protocol := range []string{explore.ProtocolKitty, explore.ProtocolITerm} {
+	for _, protocol := range []string{intexplore.ProtocolKitty, intexplore.ProtocolITerm} {
 		m := replayModel(protocol)
 		var out bytes.Buffer
 		program := tea.NewProgram(replayRenderProbe{m.View()}, tea.WithInput(bytes.NewReader(nil)), tea.WithOutput(&out), tea.WithAltScreen(), tea.WithoutSignalHandler())
@@ -331,7 +331,7 @@ func TestExploreReplaySurvivesRendererLineClearing(t *testing.T) {
 		}
 		output := out.String()
 		marker := "\x1b]1337;File="
-		if protocol == explore.ProtocolKitty {
+		if protocol == intexplore.ProtocolKitty {
 			marker = "\x1b_Ga=T"
 		}
 		at := strings.Index(output, marker)

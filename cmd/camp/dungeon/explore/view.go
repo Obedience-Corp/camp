@@ -1,4 +1,4 @@
-package dungeon
+package explore
 
 import (
 	"bytes"
@@ -17,7 +17,7 @@ import (
 	"github.com/charmbracelet/lipgloss"
 	"github.com/charmbracelet/x/ansi"
 
-	"github.com/Obedience-Corp/camp/internal/dungeon/explore"
+	intexplore "github.com/Obedience-Corp/camp/internal/dungeon/explore"
 )
 
 const exploreGutter = 2
@@ -98,8 +98,8 @@ const exploreOpenHint = "enter open"
 
 func (m exploreModel) View() string {
 	out := m.placeReplay(m.view())
-	if m.protocol == explore.ProtocolKitty && !explore.HasKittyImage(out) {
-		out = explore.KittyDelete(exploreImageID) + out
+	if m.protocol == intexplore.ProtocolKitty && !intexplore.HasKittyImage(out) {
+		out = intexplore.KittyDelete(exploreImageID) + out
 	}
 	return out
 }
@@ -131,7 +131,7 @@ func (m exploreModel) placeReplay(view string) string {
 		return view
 	}
 	name := ""
-	if m.protocol == explore.ProtocolITerm {
+	if m.protocol == intexplore.ProtocolITerm {
 		view = markReplayRows(view, row, rows, col, min(width, 48), m.replayTag(min(width, 48), rows))
 		name = replayRowsKey(view, row, rows)
 	}
@@ -254,7 +254,7 @@ func (m exploreModel) renderHeader() string {
 		return m.styles.header.Render(keepEnd("/ ", m.filter, m.width))
 	}
 	text := m.headerText()
-	if filter := m.query.Text; filter != "" && !m.reading && cellWidth(explore.CleanText(text)) > m.width {
+	if filter := m.query.Text; filter != "" && !m.reading && cellWidth(intexplore.CleanText(text)) > m.width {
 		// A cut header still names the filter in force: without it nothing
 		// on screen says why rows are missing. The lens gives up the room.
 		mark := fit(`"`+filter+`"`, max(m.width/2, 1))
@@ -384,7 +384,7 @@ func (m exploreModel) unfilteredFinished() bool {
 		return false
 	}
 	dungeon := strings.TrimSpace(m.query.Dungeon)
-	return dungeon == "" || strings.EqualFold(dungeon, explore.LensAll)
+	return dungeon == "" || strings.EqualFold(dungeon, intexplore.LensAll)
 }
 
 func (m exploreModel) renderBody() string {
@@ -572,7 +572,7 @@ func (m exploreModel) focusBlockRows() int {
 	if m.wide() {
 		return 2
 	}
-	if m.stageRows() == 0 || m.protocol == explore.ProtocolOff {
+	if m.stageRows() == 0 || m.protocol == intexplore.ProtocolOff {
 		item, _ := m.focused()
 		return 2 + len(m.cardLines(item, m.width))
 	}
@@ -589,7 +589,7 @@ func (m exploreModel) stageBlock(width int) []string {
 	}
 	rows := m.drawRows()
 	var lines []string
-	if rows > 0 && m.poster != nil && m.mediaFor == item.Path && m.protocol != explore.ProtocolOff {
+	if rows > 0 && m.poster != nil && m.mediaFor == item.Path && m.protocol != intexplore.ProtocolOff {
 		if !m.wide() {
 			lines = append(lines, m.imageSequence(width))
 		}
@@ -600,7 +600,7 @@ func (m exploreModel) stageBlock(width int) []string {
 	return append(lines, m.cardLines(item, width)...)
 }
 
-func (m exploreModel) cardLines(item explore.Item, width int) []string {
+func (m exploreModel) cardLines(item intexplore.Item, width int) []string {
 	lines := []string{
 		m.styles.title.Render(fit(item.Title, width)),
 		m.styles.day.Render(keepTail(item.ID, "  "+item.DungeonLabel+"  "+item.Status, width)),
@@ -610,7 +610,7 @@ func (m exploreModel) cardLines(item explore.Item, width int) []string {
 	}
 	lines = append(lines, m.styles.muted.Render(fit(datePhrase(item), width)))
 	lines = append(lines, m.styles.muted.Render(fit(item.Path, width)))
-	if item.Kind == explore.KindFestival && item.Replay == "" {
+	if item.Kind == intexplore.KindFestival && item.Replay == "" {
 		lines = append(lines, m.styles.muted.Render(fit("No replay yet.", width)))
 	}
 	return lines
@@ -641,7 +641,7 @@ func (m exploreModel) imageSequence(width int) string {
 // in the iTerm file name field. Kitty has no use for a name.
 func (m exploreModel) imageSequenceNamed(width, rows int, name string) string {
 	item, ok := m.focused()
-	if !ok || m.poster == nil || m.mediaFor != item.Path || m.protocol == explore.ProtocolOff {
+	if !ok || m.poster == nil || m.mediaFor != item.Path || m.protocol == intexplore.ProtocolOff {
 		return ""
 	}
 	if rows < 1 {
@@ -651,13 +651,13 @@ func (m exploreModel) imageSequenceNamed(width, rows int, name string) string {
 	// DECSC and DECRC put the cursor back where the image started, so the
 	// renderer's next row lands where it expects on every terminal.
 	switch m.protocol {
-	case explore.ProtocolKitty:
+	case intexplore.ProtocolKitty:
 		// Kitty's c and r stretch the PNG. Place it in the cell box of the
 		// decoded image so a square or portrait replay keeps its aspect.
 		cols, rows = kittyPlacement(m.poster, cols, rows)
-		return "\x1b7" + explore.KittyDelete(exploreImageID) + explore.KittyPNG(exploreImageID, m.poster, cols, rows) + "\x1b8"
-	case explore.ProtocolITerm:
-		return "\x1b7" + explore.ITermPNG(name, m.poster, cols, rows) + "\x1b8"
+		return "\x1b7" + intexplore.KittyDelete(exploreImageID) + intexplore.KittyPNG(exploreImageID, m.poster, cols, rows) + "\x1b8"
+	case intexplore.ProtocolITerm:
+		return "\x1b7" + intexplore.ITermPNG(name, m.poster, cols, rows) + "\x1b8"
 	default:
 		return ""
 	}
@@ -809,8 +809,8 @@ func (m exploreModel) contentWidth() int {
 	return m.width - 2
 }
 
-func datePhrase(item explore.Item) string {
-	if item.DateSource == explore.DateFileTime {
+func datePhrase(item intexplore.Item) string {
+	if item.DateSource == intexplore.DateFileTime {
 		return "file time " + prettyDay(item.DoneDate)
 	}
 	return "moved " + prettyDay(item.DoneDate)
@@ -828,7 +828,7 @@ func prettyDay(day string) string {
 }
 
 func fit(s string, width int) string {
-	s = explore.CleanText(s)
+	s = intexplore.CleanText(s)
 	if width <= 0 {
 		return ""
 	}
@@ -906,7 +906,7 @@ func truncateCells(s string, width int, tail string) string {
 }
 
 func keepTail(head, tail string, width int) string {
-	tail = explore.CleanText(tail)
+	tail = intexplore.CleanText(tail)
 	if head == "" {
 		return fit(strings.TrimLeft(tail, " "), width)
 	}
@@ -920,7 +920,7 @@ func keepTail(head, tail string, width int) string {
 // keepEnd fits prefix and text into width, cutting text from the left so the
 // end being typed stays visible.
 func keepEnd(prefix, text string, width int) string {
-	text = explore.CleanText(text)
+	text = intexplore.CleanText(text)
 	room := width - cellWidth(prefix)
 	if room < 1 {
 		return fit(prefix, width)

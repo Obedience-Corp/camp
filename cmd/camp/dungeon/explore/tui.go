@@ -1,4 +1,4 @@
-package dungeon
+package explore
 
 import (
 	"context"
@@ -12,7 +12,7 @@ import (
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/spf13/cobra"
 
-	"github.com/Obedience-Corp/camp/internal/dungeon/explore"
+	intexplore "github.com/Obedience-Corp/camp/internal/dungeon/explore"
 	camperrors "github.com/Obedience-Corp/camp/internal/errors"
 	"github.com/Obedience-Corp/obey-shared/brand"
 )
@@ -44,9 +44,9 @@ type exploreModel struct {
 	ctx      context.Context
 	root     string
 	cacheDir string
-	query    explore.Query
-	index    explore.Index
-	visible  explore.Result
+	query    intexplore.Query
+	index    intexplore.Index
+	visible  intexplore.Result
 	cursor   int
 	width    int
 	height   int
@@ -89,7 +89,7 @@ type exploreModel struct {
 	posterFor    string
 	posterReplay string
 
-	decode       func(context.Context, string, int, int) (explore.Frames, error)
+	decode       func(context.Context, string, int, int) (intexplore.Frames, error)
 	decodeCancel context.CancelFunc
 
 	gotoEnabled bool
@@ -103,7 +103,7 @@ type exploreModel struct {
 
 type exploreLoaded struct {
 	gen     int
-	index   explore.Index
+	index   intexplore.Index
 	changed bool
 	err     error
 }
@@ -125,7 +125,7 @@ type exploreDecode struct{ gen int }
 
 // runExploreTUI runs the feed. start is an index built for this run, or nil
 // to paint from the cache and then read the camp.
-func runExploreTUI(cmd *cobra.Command, root, cacheDir string, query explore.Query, protocol, pathOutput string, plain bool, start *explore.Index) error {
+func runExploreTUI(cmd *cobra.Command, root, cacheDir string, query intexplore.Query, protocol, pathOutput string, plain bool, start *intexplore.Index) error {
 	ctx := cmd.Context()
 	model := exploreModel{
 		ctx:         ctx,
@@ -136,7 +136,7 @@ func runExploreTUI(cmd *cobra.Command, root, cacheDir string, query explore.Quer
 		height:      24,
 		loading:     true,
 		protocol:    protocol,
-		decode:      explore.DecodeReplay,
+		decode:      intexplore.DecodeReplay,
 		plain:       plain,
 		styles:      newExploreStyles(plain, exploreTheme(ctx)),
 		reduced:     brand.ReducedMotion(),
@@ -148,7 +148,7 @@ func runExploreTUI(cmd *cobra.Command, root, cacheDir string, query explore.Quer
 		model.fresh = true
 		_ = model.applyQuery()
 	} else if cacheDir != "" {
-		if idx, ok, _ := explore.LoadCache(ctx, cacheDir); ok {
+		if idx, ok, _ := intexplore.LoadCache(ctx, cacheDir); ok {
 			model.index = idx
 			model.loading = false
 			_ = model.applyQuery()
@@ -186,10 +186,10 @@ func (m exploreModel) loadCmd() tea.Cmd {
 	gen := m.indexGen
 	return func() tea.Msg {
 		if haveCache {
-			idx, changed, err := explore.Refresh(ctx, root, cached)
+			idx, changed, err := intexplore.Refresh(ctx, root, cached)
 			return exploreLoaded{gen: gen, index: idx, changed: changed, err: err}
 		}
-		idx, err := explore.Build(ctx, root)
+		idx, err := intexplore.Build(ctx, root)
 		return exploreLoaded{gen: gen, index: idx, changed: true, err: err}
 	}
 }
@@ -202,7 +202,7 @@ func (m exploreModel) saveCacheCmd() tea.Cmd {
 	}
 	ctx, dir, idx := m.ctx, m.cacheDir, m.index
 	return func() tea.Msg {
-		_ = explore.SaveCache(ctx, dir, idx)
+		_ = intexplore.SaveCache(ctx, dir, idx)
 		return nil
 	}
 }
@@ -282,7 +282,7 @@ func (m exploreModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		switch {
 		case msg.cut:
 			m.setStatus(exploreReplayStatus, "The replay file is incomplete. Showing a still.", false)
-		case msg.tooLong || errors.Is(msg.err, explore.ErrReplayTooLong):
+		case msg.tooLong || errors.Is(msg.err, intexplore.ErrReplayTooLong):
 			m.setStatus(exploreReplayStatus, "Replay is too long to play here.", false)
 		case msg.err != nil:
 			m.setStatus(exploreReplayStatus, "The replay could not be read.", true)
@@ -332,16 +332,16 @@ func (m exploreModel) onKey(key tea.KeyMsg) (tea.Model, tea.Cmd) {
 	case "ctrl+d":
 		return m.move(m.page())
 	case "left", "[":
-		return m.requery(func(q *explore.Query) {
-			q.Dungeon = explore.StepDungeon(m.index.Items, m.query.Status, m.visible.DungeonLens, -1)
+		return m.requery(func(q *intexplore.Query) {
+			q.Dungeon = intexplore.StepDungeon(m.index.Items, m.query.Status, m.visible.DungeonLens, -1)
 		})
 	case "right", "]":
-		return m.requery(func(q *explore.Query) {
-			q.Dungeon = explore.StepDungeon(m.index.Items, m.query.Status, m.visible.DungeonLens, 1)
+		return m.requery(func(q *intexplore.Query) {
+			q.Dungeon = intexplore.StepDungeon(m.index.Items, m.query.Status, m.visible.DungeonLens, 1)
 		})
 	case "s":
-		return m.requery(func(q *explore.Query) {
-			q.Status = explore.NextPreset(m.index.Items, m.query.Status)
+		return m.requery(func(q *intexplore.Query) {
+			q.Status = intexplore.NextPreset(m.index.Items, m.query.Status)
 		})
 	case "/":
 		m.filtering = true
@@ -391,7 +391,7 @@ func (m exploreModel) onFilterKey(key tea.KeyMsg) (tea.Model, tea.Cmd) {
 	case "enter":
 		m.filtering = false
 		text := strings.TrimSpace(m.filter)
-		return m.requery(func(q *explore.Query) { q.Text = text })
+		return m.requery(func(q *intexplore.Query) { q.Text = text })
 	case "backspace":
 		if m.filter != "" {
 			runes := []rune(m.filter)
@@ -442,11 +442,11 @@ func (m exploreModel) page() int {
 }
 
 func (m *exploreModel) applyQuery() error {
-	result, err := explore.Apply(m.index, m.query)
+	result, err := intexplore.Apply(m.index, m.query)
 	if err != nil {
 		// Rows from the previous lens must not remain actionable when the
 		// current query no longer resolves against the refreshed index.
-		m.visible = explore.Result{}
+		m.visible = intexplore.Result{}
 		m.cursor = 0
 		m.setStatus(exploreQueryStatus, err.Error(), true)
 		return err
@@ -469,7 +469,7 @@ func (m *exploreModel) applyQuery() error {
 // may all insert, drop, or reorder rows; the old position would land on an
 // unrelated one. If the item is gone the cursor starts at the first row.
 // It reports whether the focused item changed.
-func (m *exploreModel) applyQueryFollowing(selected explore.Item, hadSelection bool) bool {
+func (m *exploreModel) applyQueryFollowing(selected intexplore.Item, hadSelection bool) bool {
 	_ = m.applyQuery()
 	m.cursor = 0
 	if hadSelection {
@@ -486,7 +486,7 @@ func (m *exploreModel) applyQueryFollowing(selected explore.Item, hadSelection b
 
 // requery changes the lens or the filter. The replay of a row that stays
 // focused is kept, not decoded again.
-func (m exploreModel) requery(change func(*explore.Query)) (tea.Model, tea.Cmd) {
+func (m exploreModel) requery(change func(*intexplore.Query)) (tea.Model, tea.Cmd) {
 	m.clearActionStatus()
 	selected, hadSelection := m.focused()
 	change(&m.query)
@@ -505,7 +505,7 @@ func (m exploreModel) schedulePoster() (exploreModel, tea.Cmd) {
 	m.playing = false
 	m.mediaFor = ""
 	m.posterFor, m.posterReplay = "", ""
-	if m.protocol == explore.ProtocolOff || m.stageRows() == 0 {
+	if m.protocol == intexplore.ProtocolOff || m.stageRows() == 0 {
 		return m, nil
 	}
 	item, ok := m.focused()
@@ -536,7 +536,7 @@ func (m exploreModel) decodeCmd(ctx context.Context) tea.Cmd {
 	}
 	decode := m.decode
 	if decode == nil {
-		decode = explore.DecodeReplay
+		decode = intexplore.DecodeReplay
 	}
 	gen := m.loadGen
 	rel := item.Path
@@ -547,8 +547,8 @@ func (m exploreModel) decodeCmd(ctx context.Context) tea.Cmd {
 		msg := explorePoster{
 			gen:     gen,
 			item:    rel,
-			tooLong: errors.Is(err, explore.ErrReplayTooLong),
-			cut:     errors.Is(err, explore.ErrReplayIncomplete),
+			tooLong: errors.Is(err, intexplore.ErrReplayTooLong),
+			cut:     errors.Is(err, intexplore.ErrReplayIncomplete),
 		}
 		if err != nil && !msg.tooLong && !msg.cut {
 			msg.err = err
@@ -559,7 +559,7 @@ func (m exploreModel) decodeCmd(ctx context.Context) tea.Cmd {
 			return msg
 		}
 		if frames.Poster != nil {
-			png, encErr := explore.EncodePNG(frames.Poster)
+			png, encErr := intexplore.EncodePNG(frames.Poster)
 			if encErr != nil {
 				msg.err = encErr
 				return msg
@@ -575,7 +575,7 @@ func (m exploreModel) decodeCmd(ctx context.Context) tea.Cmd {
 					msg.frames = nil
 					return msg
 				}
-				png, encErr := explore.EncodePNG(frame)
+				png, encErr := intexplore.EncodePNG(frame)
 				if encErr != nil {
 					msg.err = encErr
 					msg.frames = nil
@@ -611,9 +611,9 @@ func (m exploreModel) togglePlay() (tea.Model, tea.Cmd) {
 	return m, nil
 }
 
-func (m exploreModel) focused() (explore.Item, bool) {
+func (m exploreModel) focused() (intexplore.Item, bool) {
 	if m.cursor < 0 || m.cursor >= len(m.visible.Items) {
-		return explore.Item{}, false
+		return intexplore.Item{}, false
 	}
 	return m.visible.Items[m.cursor], true
 }
@@ -634,7 +634,7 @@ func (m exploreModel) hop() (tea.Model, tea.Cmd) {
 	return m.hopTo(item)
 }
 
-func (m exploreModel) hopTo(item explore.Item) (tea.Model, tea.Cmd) {
+func (m exploreModel) hopTo(item intexplore.Item) (tea.Model, tea.Cmd) {
 	if !m.gotoEnabled {
 		m.setStatus(exploreActionStatus, `go needs shell integration: eval "$(camp shell-init <shell>)"`, true)
 		return m, nil

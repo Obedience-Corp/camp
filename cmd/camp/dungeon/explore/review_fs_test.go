@@ -1,6 +1,6 @@
 //go:build container_fs
 
-package dungeon
+package explore
 
 import (
 	"bytes"
@@ -15,7 +15,7 @@ import (
 	"unicode/utf8"
 
 	"github.com/Obedience-Corp/camp/internal/config"
-	"github.com/Obedience-Corp/camp/internal/dungeon/explore"
+	intexplore "github.com/Obedience-Corp/camp/internal/dungeon/explore"
 	"github.com/Obedience-Corp/camp/internal/ui/theme"
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/creack/pty"
@@ -36,7 +36,7 @@ func TestExploreReadFailures(t *testing.T) {
 	if got, cut, err := readExploreText(context.Background(), path); err != nil || !cut || got != want[:256<<10] {
 		t.Fatalf("bounded read: %d bytes, cut %v, %v", len(got), cut, err)
 	}
-	m := replayModel(explore.ProtocolOff)
+	m := replayModel(intexplore.ProtocolOff)
 	m.root = root
 	m.visible.Items[0].Path = "."
 	m.visible.Items[0].IsDir = true
@@ -82,7 +82,7 @@ func TestExplorePipedInputJSON(t *testing.T) {
 		t.Fatal("pipe stdin selected interactive mode")
 	}
 	var out bytes.Buffer
-	cmd := dungeonExploreCmd
+	cmd := Cmd
 	cmd.SetOut(&out)
 	cmd.SetContext(context.Background())
 	defer cmd.SetOut(nil)
@@ -93,7 +93,7 @@ func TestExplorePipedInputJSON(t *testing.T) {
 	if err := json.Unmarshal(out.Bytes(), &result); err != nil {
 		t.Fatalf("pipe did not emit JSON: %s (%v)", out.String(), err)
 	}
-	if result["schema_version"] != explore.SchemaVersion {
+	if result["schema_version"] != intexplore.SchemaVersion {
 		t.Fatalf("wrong result: %+v", result)
 	}
 }
@@ -113,7 +113,7 @@ func TestExploreJSONDoesNotWriteConfig(t *testing.T) {
 	}
 
 	var out bytes.Buffer
-	cmd := dungeonExploreCmd
+	cmd := Cmd
 	cmd.SetOut(&out)
 	cmd.SetContext(context.Background())
 	if err := cmd.Flags().Set("json", "true"); err != nil {
@@ -213,7 +213,7 @@ func TestExploreReaderClearsParseError(t *testing.T) {
 	if err := os.WriteFile(good, []byte("# Hello\n"), 0o600); err != nil {
 		t.Fatal(err)
 	}
-	m := replayModel(explore.ProtocolOff)
+	m := replayModel(intexplore.ProtocolOff)
 	m.reading = true
 	m.reader = exploreReader{
 		listing: true,
@@ -252,7 +252,7 @@ func TestExploreReaderClearsParseError(t *testing.T) {
 		text   string
 		failed bool
 	}{{"copied", false}, {"copy failed: denied", true}} {
-		opened := replayModel(explore.ProtocolOff)
+		opened := replayModel(intexplore.ProtocolOff)
 		opened.reading = true
 		opened.reader = exploreReader{listing: true, entries: []readerEntry{{name: "readme.md", path: good}}}
 		opened.setStatus(exploreActionStatus, earlier.text, earlier.failed)
@@ -284,8 +284,8 @@ func TestExploreReaderSaysWhenADocumentIsCut(t *testing.T) {
 		t.Fatalf("small read: %q, cut %v, %v", text, cut, err)
 	}
 
-	open := func(item explore.Item) exploreModel {
-		m := replayModel(explore.ProtocolOff)
+	open := func(item intexplore.Item) exploreModel {
+		m := replayModel(intexplore.ProtocolOff)
 		m.root = root
 		m.visible.Items[0] = item
 		m.cursor = 0
@@ -303,19 +303,19 @@ func TestExploreReaderSaysWhenADocumentIsCut(t *testing.T) {
 		}
 		return strings.Join(lines[:8], "\n")
 	}
-	file := open(explore.Item{Kind: explore.KindMarkdown, Title: "long", Path: "long.md"})
+	file := open(intexplore.Item{Kind: intexplore.KindMarkdown, Title: "long", Path: "long.md"})
 	if got := top(file); !strings.Contains(got, notice) || !strings.Contains(got, "Long") {
 		t.Fatalf("a cut document does not say so: %q", got)
 	}
-	whole := open(explore.Item{Kind: explore.KindMarkdown, Title: "small", Path: "small.md"})
+	whole := open(intexplore.Item{Kind: intexplore.KindMarkdown, Title: "small", Path: "small.md"})
 	if got := top(whole); strings.Contains(got, notice) || !strings.Contains(got, "All of it.") {
 		t.Fatalf("a whole document claims to be cut: %q", got)
 	}
-	goal := open(explore.Item{Kind: explore.KindFestival, Title: "festival", Path: ".", IsDir: true})
+	goal := open(intexplore.Item{Kind: intexplore.KindFestival, Title: "festival", Path: ".", IsDir: true})
 	if got := top(goal); !strings.Contains(got, notice) || !strings.Contains(got, "No replay yet.") {
 		t.Fatalf("a cut festival goal lost a notice: %q", got)
 	}
-	listing := open(explore.Item{Kind: explore.KindWorkitem, Title: "workitem", Path: ".", IsDir: true})
+	listing := open(intexplore.Item{Kind: intexplore.KindWorkitem, Title: "workitem", Path: ".", IsDir: true})
 	for i, entry := range listing.reader.entries {
 		if entry.name == "long.md" {
 			listing.reader.entry = i
@@ -345,7 +345,7 @@ func TestExploreReaderRejectsSpecialFiles(t *testing.T) {
 		t.Fatalf("entries: %+v, %v", entries, err)
 	}
 	// A file selected in a previous directory listing may have been replaced.
-	m := replayModel(explore.ProtocolOff)
+	m := replayModel(intexplore.ProtocolOff)
 	m.reading = true
 	m.reader = exploreReader{listing: true, entries: []readerEntry{{name: "pending.md", path: fifo}}}
 	done := make(chan exploreModel, 1)
@@ -363,7 +363,7 @@ func TestExploreReaderRejectsSpecialFiles(t *testing.T) {
 func TestExploreCacheSaveRunsOffTheUpdateLoop(t *testing.T) {
 	ctx := context.Background()
 	dir := filepath.Join(t.TempDir(), "dungeon-feed")
-	m := replayModel(explore.ProtocolOff)
+	m := replayModel(intexplore.ProtocolOff)
 	m.ctx = ctx
 	m.cacheDir = dir
 	idx := refreshIndex("Saved")
@@ -378,7 +378,7 @@ func TestExploreCacheSaveRunsOffTheUpdateLoop(t *testing.T) {
 	if msg := cmd(); msg != nil {
 		t.Fatalf("save command sent %T", msg)
 	}
-	cached, ok, err := explore.LoadCache(ctx, dir)
+	cached, ok, err := intexplore.LoadCache(ctx, dir)
 	if err != nil || !ok || len(cached.Items) != 1 || cached.Items[0].Title != "Saved" {
 		t.Fatalf("saved cache: ok %v, err %v, items %+v", ok, err, cached.Items)
 	}

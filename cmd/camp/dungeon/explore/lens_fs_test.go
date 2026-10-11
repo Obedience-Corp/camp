@@ -1,6 +1,6 @@
 //go:build container_fs
 
-package dungeon
+package explore
 
 import (
 	"context"
@@ -10,7 +10,7 @@ import (
 
 	"github.com/spf13/cobra"
 
-	"github.com/Obedience-Corp/camp/internal/dungeon/explore"
+	intexplore "github.com/Obedience-Corp/camp/internal/dungeon/explore"
 )
 
 // stageLensCamp is a camp with a festival, a status directory named like a
@@ -40,8 +40,8 @@ func stageLensCamp(t *testing.T) string {
 
 type exploreStart struct {
 	calls int
-	query explore.Query
-	index *explore.Index
+	query intexplore.Query
+	index *intexplore.Index
 }
 
 // captureExploreStart stands in for the feed and records what it was given.
@@ -49,7 +49,7 @@ func captureExploreStart(t *testing.T) *exploreStart {
 	t.Helper()
 	seen := &exploreStart{}
 	orig := startExploreTUI
-	startExploreTUI = func(_ *cobra.Command, _, _ string, query explore.Query, _, _ string, _ bool, start *explore.Index) error {
+	startExploreTUI = func(_ *cobra.Command, _, _ string, query intexplore.Query, _, _ string, _ bool, start *intexplore.Index) error {
 		seen.calls++
 		seen.query, seen.index = query, start
 		return nil
@@ -132,7 +132,7 @@ func TestExploreTerminalOpensOnTheIndexItChecked(t *testing.T) {
 			if len(started.index.Items) != 3 || len(started.index.Dungeons) != 2 {
 				t.Fatalf("index = %d rows in %d dungeons, want the whole camp: 3 rows in 2", len(started.index.Items), len(started.index.Dungeons))
 			}
-			shown, err := explore.Apply(*started.index, started.query)
+			shown, err := intexplore.Apply(*started.index, started.query)
 			if err != nil || len(shown.Items) != tc.rows {
 				t.Fatalf("the lens shows %+v (%v), want %d rows", shown.Items, err, tc.rows)
 			}
@@ -142,7 +142,7 @@ func TestExploreTerminalOpensOnTheIndexItChecked(t *testing.T) {
 	// The feed's side of the handoff: a model started on such an index saves
 	// it and does not read the camp again; one started from the cache reads.
 	ctx := context.Background()
-	built, err := explore.Build(ctx, root)
+	built, err := intexplore.Build(ctx, root)
 	if err != nil {
 		t.Fatalf("Build() error = %v", err)
 	}
@@ -155,7 +155,7 @@ func TestExploreTerminalOpensOnTheIndexItChecked(t *testing.T) {
 	if msg := cmd(); msg != nil {
 		t.Fatalf("a feed started on a built index sent %T, want only the save", msg)
 	}
-	if cached, ok, err := explore.LoadCache(ctx, cacheDir); err != nil || !ok || len(cached.Items) != len(built.Items) {
+	if cached, ok, err := intexplore.LoadCache(ctx, cacheDir); err != nil || !ok || len(cached.Items) != len(built.Items) {
 		t.Fatalf("saved cache: ok %v, err %v, %d rows", ok, err, len(cached.Items))
 	}
 	fromCache := exploreModel{ctx: ctx, root: root, index: built}

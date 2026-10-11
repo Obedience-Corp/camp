@@ -1,4 +1,4 @@
-package dungeon
+package explore
 
 import (
 	"bytes"
@@ -19,7 +19,7 @@ import (
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/x/ansi"
 
-	"github.com/Obedience-Corp/camp/internal/dungeon/explore"
+	intexplore "github.com/Obedience-Corp/camp/internal/dungeon/explore"
 )
 
 // termGrid is the part of a terminal the explorer depends on: a grid of
@@ -490,7 +490,7 @@ func posterFor(path string, w, h int) []byte {
 	for i := 0; i < len(img.Pix); i += 4 {
 		img.Pix[i], img.Pix[i+1], img.Pix[i+2], img.Pix[i+3] = fill.R, fill.G, fill.B, fill.A
 	}
-	png, err := explore.EncodePNG(img)
+	png, err := intexplore.EncodePNG(img)
 	if err != nil {
 		panic(err)
 	}
@@ -639,7 +639,7 @@ func imageBox(view string) (row, col, cols, rows int, ok bool) {
 // placement as asked for, or the part of the iTerm box the picture fills.
 func drawnBox(m exploreModel) (row, col, cols, rows int, ok bool) {
 	row, col, cols, rows, ok = imageBox(m.View())
-	if ok && m.protocol == explore.ProtocolITerm {
+	if ok && m.protocol == intexplore.ProtocolITerm {
 		cols, rows = itermCells(m.poster, cols, rows)
 	}
 	return row, col, cols, rows, ok
@@ -716,13 +716,13 @@ func rowSpan(rows map[int]bool) string {
 // both pass through rows with and without an image.
 func screenFeed(t *testing.T, w, h int, protocol string, n int) exploreModel {
 	t.Helper()
-	items := make([]explore.Item, n)
+	items := make([]intexplore.Item, n)
 	for i := range items {
 		day := time.Date(2026, time.March, 28-i/2, 0, 0, 0, 0, time.UTC).Format("2006-01-02")
 		path := fmt.Sprintf("festivals/.dungeon/completed/%s/item-%02d", day, i)
-		items[i] = explore.Item{
-			DoneDate: day, DateSource: explore.DateBucket, Status: "completed",
-			DungeonLabel: "Festivals", DungeonPath: "festivals/.dungeon", Kind: explore.KindFestival,
+		items[i] = intexplore.Item{
+			DoneDate: day, DateSource: intexplore.DateBucket, Status: "completed",
+			DungeonLabel: "Festivals", DungeonPath: "festivals/.dungeon", Kind: intexplore.KindFestival,
 			Title: fmt.Sprintf("Item %02d", i), ID: fmt.Sprintf("FA%04d", i),
 			Summary: "A finished summary long enough to be cut short in a narrow pane",
 			Path:    path, Replay: path + "/festival-replay.gif", IsDir: true,
@@ -737,9 +737,9 @@ func screenFeed(t *testing.T, w, h int, protocol string, n int) exploreModel {
 	m := exploreModel{
 		ctx: context.Background(), width: w, height: h, protocol: protocol,
 		reduced: true, // a still poster: nothing repaints the image but the view
-		query:   explore.Query{Status: "finished", Dungeon: explore.LensAll},
-		index: explore.Index{
-			Dungeons: []explore.DungeonPrint{{Path: "festivals/.dungeon", Label: "Festivals"}},
+		query:   intexplore.Query{Status: "finished", Dungeon: intexplore.LensAll},
+		index: intexplore.Index{
+			Dungeons: []intexplore.DungeonPrint{{Path: "festivals/.dungeon", Label: "Festivals"}},
 			Items:    items,
 			BuiltAt:  time.Date(2026, time.March, 29, 0, 0, 0, 0, time.UTC),
 		},
@@ -757,7 +757,7 @@ func screenFeed(t *testing.T, w, h int, protocol string, n int) exploreModel {
 func emojiTitles(t *testing.T, m exploreModel) exploreModel {
 	t.Helper()
 	sequences := []string{"", "👨\u200d💻", "👍🏽", "🇺🇸"}
-	m.index.Items = append([]explore.Item(nil), m.index.Items...)
+	m.index.Items = append([]intexplore.Item(nil), m.index.Items...)
 	for i := range m.index.Items {
 		if seq := sequences[i%len(sequences)]; seq != "" {
 			m.index.Items[i].Title += " " + seq

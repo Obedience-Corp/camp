@@ -1,4 +1,4 @@
-package dungeon
+package explore
 
 import (
 	"regexp"
@@ -7,7 +7,7 @@ import (
 	"unicode"
 	"unicode/utf8"
 
-	"github.com/Obedience-Corp/camp/internal/dungeon/explore"
+	intexplore "github.com/Obedience-Corp/camp/internal/dungeon/explore"
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/x/ansi"
 )
@@ -77,7 +77,7 @@ func TestExploreReaderWrapsLongMarkdownTokens(t *testing.T) {
 
 func TestExploreReaderGoKeepsOpenedItemAfterRefresh(t *testing.T) {
 	for _, change := range []string{"insert", "remove", "empty"} {
-		m := replayModel(explore.ProtocolOff)
+		m := replayModel(intexplore.ProtocolOff)
 		m.root = "/camp"
 		m.gotoEnabled = true
 		// A festival without a goal uses its indexed summary, requiring no filesystem fixture.
@@ -91,14 +91,14 @@ func TestExploreReaderGoKeepsOpenedItemAfterRefresh(t *testing.T) {
 		replacement.Path = "newer/item"
 		replacement.Title = "Replacement"
 		replacement.DoneDate = "2099-01-01"
-		items := []explore.Item{replacement, original}
+		items := []intexplore.Item{replacement, original}
 		if change == "remove" {
-			items = []explore.Item{replacement}
+			items = []intexplore.Item{replacement}
 		}
 		if change == "empty" {
 			items = nil
 		}
-		m, _ = press(t, m, exploreLoaded{index: explore.Index{Items: items}, changed: true})
+		m, _ = press(t, m, exploreLoaded{index: intexplore.Index{Items: items}, changed: true})
 		m, _ = press(t, m, tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'g'}})
 		if m.gotoPath != exploreJump(m.root, original) || !m.quitting {
 			t.Fatalf("%s navigated to %q", change, m.gotoPath)

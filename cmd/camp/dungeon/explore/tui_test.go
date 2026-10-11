@@ -1,4 +1,4 @@
-package dungeon
+package explore
 
 import (
 	"strings"
@@ -6,19 +6,19 @@ import (
 
 	tea "github.com/charmbracelet/bubbletea"
 
-	"github.com/Obedience-Corp/camp/internal/dungeon/explore"
+	intexplore "github.com/Obedience-Corp/camp/internal/dungeon/explore"
 )
 
 func TestExploreFeedShowsDayTitleAndDungeon(t *testing.T) {
 	m := exploreModel{
 		width:  100,
 		height: 30,
-		query:  explore.Query{Status: "finished", Dungeon: explore.LensAll},
-		index: explore.Index{Dungeons: []explore.DungeonPrint{{Path: "festivals/.dungeon"}}, Items: []explore.Item{
-			{DoneDate: "2026-10-05", DateSource: explore.DateBucket, Status: "completed", DungeonLabel: "Festivals", DungeonPath: "festivals/.dungeon", Kind: explore.KindFestival, Title: "festival-activity-desktop", ID: "FA0024", Summary: "Ship Festival Activity", Path: "festivals/.dungeon/completed/2026-10-05/festival-activity-desktop-FA0024", IsDir: true},
-			{DoneDate: "2026-08-21", DateSource: explore.DateHistory, Status: "done", DungeonLabel: "Intents", DungeonPath: ".campaign/intents/.dungeon", Kind: explore.KindMarkdown, Title: "Add blog sections", Path: ".campaign/intents/.dungeon/done/add-blog.md"},
+		query:  intexplore.Query{Status: "finished", Dungeon: intexplore.LensAll},
+		index: intexplore.Index{Dungeons: []intexplore.DungeonPrint{{Path: "festivals/.dungeon"}}, Items: []intexplore.Item{
+			{DoneDate: "2026-10-05", DateSource: intexplore.DateBucket, Status: "completed", DungeonLabel: "Festivals", DungeonPath: "festivals/.dungeon", Kind: intexplore.KindFestival, Title: "festival-activity-desktop", ID: "FA0024", Summary: "Ship Festival Activity", Path: "festivals/.dungeon/completed/2026-10-05/festival-activity-desktop-FA0024", IsDir: true},
+			{DoneDate: "2026-08-21", DateSource: intexplore.DateHistory, Status: "done", DungeonLabel: "Intents", DungeonPath: ".campaign/intents/.dungeon", Kind: intexplore.KindMarkdown, Title: "Add blog sections", Path: ".campaign/intents/.dungeon/done/add-blog.md"},
 		}},
-		protocol: explore.ProtocolOff,
+		protocol: intexplore.ProtocolOff,
 	}
 	if err := m.applyQuery(); err != nil {
 		t.Fatal(err)
@@ -48,20 +48,20 @@ func TestExploreViewEmitsKittySequenceForFocusedReplay(t *testing.T) {
 	m := exploreModel{
 		width:    100,
 		height:   30,
-		protocol: explore.ProtocolKitty,
-		query:    explore.Query{Status: "finished", Dungeon: explore.LensAll},
-		index: explore.Index{
-			Dungeons: []explore.DungeonPrint{{Path: "festivals/.dungeon"}},
-			Items: []explore.Item{
+		protocol: intexplore.ProtocolKitty,
+		query:    intexplore.Query{Status: "finished", Dungeon: intexplore.LensAll},
+		index: intexplore.Index{
+			Dungeons: []intexplore.DungeonPrint{{Path: "festivals/.dungeon"}},
+			Items: []intexplore.Item{
 				{
-					DoneDate: "2026-10-05", DateSource: explore.DateBucket, Status: "completed",
-					DungeonLabel: "Festivals", DungeonPath: "festivals/.dungeon", Kind: explore.KindFestival,
+					DoneDate: "2026-10-05", DateSource: intexplore.DateBucket, Status: "completed",
+					DungeonLabel: "Festivals", DungeonPath: "festivals/.dungeon", Kind: intexplore.KindFestival,
 					Title: "festival-activity-desktop", ID: "FA0024", Path: "festivals/.dungeon/completed/2026-10-05/festival-activity-desktop-FA0024",
 					Replay: "festivals/.dungeon/completed/2026-10-05/festival-activity-desktop-FA0024/festival-replay.gif", IsDir: true,
 				},
 				{
-					DoneDate: "2026-08-21", DateSource: explore.DateHistory, Status: "done",
-					DungeonLabel: "Intents", DungeonPath: ".campaign/intents/.dungeon", Kind: explore.KindMarkdown,
+					DoneDate: "2026-08-21", DateSource: intexplore.DateHistory, Status: "done",
+					DungeonLabel: "Intents", DungeonPath: ".campaign/intents/.dungeon", Kind: intexplore.KindMarkdown,
 					Title: "Add blog sections", Path: ".campaign/intents/.dungeon/done/add-blog.md",
 				},
 			},

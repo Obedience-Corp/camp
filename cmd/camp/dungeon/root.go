@@ -1,6 +1,9 @@
 package dungeon
 
-import "github.com/spf13/cobra"
+import (
+	dungeonexplore "github.com/Obedience-Corp/camp/cmd/camp/dungeon/explore"
+	"github.com/spf13/cobra"
+)
 
 // Cmd is the scaffold root for the dungeon command family.
 var Cmd = &cobra.Command{
@@ -29,4 +32,8 @@ Examples:
 	RunE: func(cmd *cobra.Command, args []string) error {
 		return cmd.Help()
 	},
+}
+
+func init() {
+	Cmd.AddCommand(dungeonexplore.Cmd)
 }

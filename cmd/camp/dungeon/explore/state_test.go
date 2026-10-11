@@ -1,4 +1,4 @@
-package dungeon
+package explore
 
 import (
 	"context"
@@ -11,7 +11,7 @@ import (
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
 
-	"github.com/Obedience-Corp/camp/internal/dungeon/explore"
+	intexplore "github.com/Obedience-Corp/camp/internal/dungeon/explore"
 )
 
 const goNeedsShell = "go needs shell integration"
@@ -20,7 +20,7 @@ const goNeedsShell = "go needs shell integration"
 // what is on screen. It must not sit under a different row, lens, or page.
 func TestExploreActionStatusDoesNotOutliveItsRow(t *testing.T) {
 	feed := func() exploreModel {
-		m := screenFeed(t, 100, 30, explore.ProtocolOff, 12)
+		m := screenFeed(t, 100, 30, intexplore.ProtocolOff, 12)
 		m, _ = press(t, m, runes("g"))
 		if !m.statusErr || !strings.Contains(m.status, goNeedsShell) {
 			t.Fatalf("g without shell integration set %q", m.status)
@@ -62,7 +62,7 @@ func TestExploreActionStatusDoesNotOutliveItsRow(t *testing.T) {
 	}
 
 	// The cursor has nowhere to go on a feed of one row; the key still clears.
-	one := screenFeed(t, 100, 30, explore.ProtocolOff, 1)
+	one := screenFeed(t, 100, 30, intexplore.ProtocolOff, 1)
 	one, _ = press(t, one, runes("g"))
 	for _, key := range []string{"j", "k"} {
 		moved, _ := press(t, one, runes(key))
@@ -81,7 +81,7 @@ func TestExploreActionStatusDoesNotOutliveItsRow(t *testing.T) {
 
 func TestExploreReaderStatusClearsOnTheNextKey(t *testing.T) {
 	open := func(listing bool) exploreModel {
-		m := screenFeed(t, 80, 24, explore.ProtocolOff, 6)
+		m := screenFeed(t, 80, 24, intexplore.ProtocolOff, 6)
 		m.reading = true
 		m.reader = exploreReader{title: "docs", item: m.visible.Items[0], listing: listing}
 		for i := range 30 {
@@ -118,10 +118,10 @@ func TestExploreReaderStatusClearsOnTheNextKey(t *testing.T) {
 // says why it does not play, instead of claiming it is too long.
 func TestExploreSaysWhenAReplayFileIsIncomplete(t *testing.T) {
 	const incomplete = "The replay file is incomplete. Showing a still."
-	m := screenFeed(t, 100, 30, explore.ProtocolKitty, 6)
+	m := screenFeed(t, 100, 30, intexplore.ProtocolKitty, 6)
 	item, _ := m.focused()
-	m.decode = func(context.Context, string, int, int) (explore.Frames, error) {
-		return explore.Frames{Poster: image.NewRGBA(image.Rect(0, 0, 8, 8))}, explore.ErrReplayIncomplete
+	m.decode = func(context.Context, string, int, int) (intexplore.Frames, error) {
+		return intexplore.Frames{Poster: image.NewRGBA(image.Rect(0, 0, 8, 8))}, intexplore.ErrReplayIncomplete
 	}
 	cmd := m.decodeCmd(context.Background())
 	if cmd == nil {
@@ -147,7 +147,7 @@ func TestExploreSaysWhenAReplayFileIsIncomplete(t *testing.T) {
 // shown over a document or lost.
 func TestExploreReplayStatusWaitsOutTheReader(t *testing.T) {
 	const tooLong = "Replay is too long to play here."
-	m := screenFeed(t, 100, 30, explore.ProtocolKitty, 6)
+	m := screenFeed(t, 100, 30, intexplore.ProtocolKitty, 6)
 	item, _ := m.focused()
 	m.posterFor, m.posterReplay = item.Path, item.Replay
 	m, _ = press(t, m, explorePoster{gen: m.loadGen, item: item.Path, poster: posterFor(item.Path, 64, 64), tooLong: true})
@@ -165,7 +165,7 @@ func TestExploreReplayStatusWaitsOutTheReader(t *testing.T) {
 		t.Fatalf("reader with a hidden status: %v", problems)
 	}
 	// It also lands hidden when the decode finishes after the reader opened.
-	late := screenFeed(t, 100, 30, explore.ProtocolKitty, 6)
+	late := screenFeed(t, 100, 30, intexplore.ProtocolKitty, 6)
 	late.posterFor, late.posterReplay = item.Path, item.Replay
 	late, _ = press(t, late, tea.KeyMsg{Type: tea.KeyEnter})
 	late, _ = press(t, late, explorePoster{gen: late.loadGen, item: item.Path, err: context.DeadlineExceeded})
@@ -192,10 +192,10 @@ func TestExploreReplayStatusWaitsOutTheReader(t *testing.T) {
 
 func TestExploreReplayIsAskedForOnceAndKept(t *testing.T) {
 	ready := func(w, h int) exploreModel {
-		m := screenFeed(t, w, h, explore.ProtocolKitty, 6)
+		m := screenFeed(t, w, h, intexplore.ProtocolKitty, 6)
 		m.reduced = false
-		m.decode = func(context.Context, string, int, int) (explore.Frames, error) {
-			return explore.Frames{}, context.Canceled
+		m.decode = func(context.Context, string, int, int) (intexplore.Frames, error) {
+			return intexplore.Frames{}, context.Canceled
 		}
 		return m
 	}
@@ -235,7 +235,7 @@ func TestExploreReplayIsAskedForOnceAndKept(t *testing.T) {
 	for name, changed := range map[string]bool{"unchanged refresh": false, "refresh with other rows changed": true} {
 		idx := playing.index
 		if changed {
-			idx.Items = append([]explore.Item(nil), idx.Items...)
+			idx.Items = append([]intexplore.Item(nil), idx.Items...)
 			idx.Items[len(idx.Items)-1].Title = "renamed elsewhere"
 		}
 		after, _ := press(t, playing, exploreLoaded{gen: playing.indexGen, index: idx, changed: changed})
@@ -252,7 +252,7 @@ func TestExploreReplayIsAskedForOnceAndKept(t *testing.T) {
 
 	// A different replay file for the focused row is a different replay.
 	idx := playing.index
-	idx.Items = append([]explore.Item(nil), idx.Items...)
+	idx.Items = append([]intexplore.Item(nil), idx.Items...)
 	idx.Items[0].Replay = idx.Items[0].Path + "/second-replay.gif"
 	swapped, _ := press(t, playing, exploreLoaded{gen: playing.indexGen, index: idx, changed: true})
 	if swapped.loadGen == playing.loadGen || swapped.poster != nil || swapped.posterReplay != idx.Items[0].Replay {
@@ -272,7 +272,7 @@ func TestExploreReplayIsAskedForOnceAndKept(t *testing.T) {
 func TestExploreNarrowCardStaysVisibleUnderTheReplay(t *testing.T) {
 	for _, size := range [][2]int{{80, 22}, {80, 24}, {80, 28}, {60, 24}, {87, 30}} {
 		for _, status := range []string{"", "copied"} {
-			m := screenFeed(t, size[0], size[1], explore.ProtocolKitty, 60)
+			m := screenFeed(t, size[0], size[1], intexplore.ProtocolKitty, 60)
 			m.index.Warnings = []string{"festivals/.dungeon/archived: permission denied"}
 			m.status = status
 			m.cursor = 22
@@ -317,7 +317,7 @@ func TestExploreNarrowCardStaysVisibleUnderTheReplay(t *testing.T) {
 }
 
 func TestExploreListingSelectionSurvivesTheStatusRow(t *testing.T) {
-	m := screenFeed(t, 80, 12, explore.ProtocolOff, 3)
+	m := screenFeed(t, 80, 12, intexplore.ProtocolOff, 3)
 	m.reading = true
 	m.reader = exploreReader{title: "docs", listing: true, item: m.visible.Items[0]}
 	for i := range 40 {
@@ -372,7 +372,7 @@ func TestExploreEveryKeyIsDiscoverable(t *testing.T) {
 		return false
 	}
 	for _, width := range []int{80, 88, 100, 120, 200} {
-		m := screenFeed(t, width, 24, explore.ProtocolOff, 6)
+		m := screenFeed(t, width, 24, intexplore.ProtocolOff, 6)
 		short := m.helpLines()
 		if len(short) != 1 || !has(short, "?") || !has(short, "q") {
 			t.Errorf("%d columns: the feed row %q does not point at the full help", width, short)
@@ -413,7 +413,7 @@ func TestExploreEveryKeyIsDiscoverable(t *testing.T) {
 
 	// The command help lists the same keys, feed and reader each under its
 	// own heading, spelled as the help rows spell them.
-	sections := longKeySections(dungeonExploreCmd.Long)
+	sections := longKeySections(Cmd.Long)
 	for heading, table := range map[string][]helpHint{"Keys in the feed:": exploreFullHelp, "Keys in the reader:": exploreReaderHelp} {
 		for _, hint := range table {
 			if key := hintKey(hint); !sections[heading][key] {
@@ -423,7 +423,7 @@ func TestExploreEveryKeyIsDiscoverable(t *testing.T) {
 	}
 
 	// ? opens the list and ? or esc closes it; a short terminal keeps a body row.
-	m := screenFeed(t, 80, 4, explore.ProtocolOff, 6)
+	m := screenFeed(t, 80, 4, intexplore.ProtocolOff, 6)
 	m, _ = press(t, m, runes("?"))
 	if !m.help || len(m.helpLines()) != 2 {
 		t.Fatalf("? on a four-row terminal: help=%v rows=%d", m.help, len(m.helpLines()))
@@ -464,20 +464,20 @@ func longKeySections(long string) map[string]map[string]bool {
 // --images kitty forces a protocol where the automatic choice is off, but not
 // in plain output. The help said "forces" with no exception.
 func TestExploreHelpSaysPlainOutputDrawsNoReplay(t *testing.T) {
-	long := strings.Join(strings.Fields(dungeonExploreCmd.Long), " ")
+	long := strings.Join(strings.Fields(Cmd.Long), " ")
 	for _, want := range []string{"NO_COLOR", "--no-color", "no replay is drawn, whatever --images says"} {
 		if !strings.Contains(long, want) {
 			t.Errorf("camp dungeon explore --help does not say %q", want)
 		}
 	}
-	usage := dungeonExploreCmd.Flags().Lookup("images").Usage
+	usage := Cmd.Flags().Lookup("images").Usage
 	if !strings.Contains(usage, "NO_COLOR") || !strings.Contains(usage, "--no-color") {
 		t.Errorf("--images help does not name plain output: %q", usage)
 	}
 }
 
 func TestExploreReaderIgnoresSpace(t *testing.T) {
-	m := screenFeed(t, 100, 30, explore.ProtocolKitty, 6)
+	m := screenFeed(t, 100, 30, intexplore.ProtocolKitty, 6)
 	m.reduced = false
 	item, _ := m.focused()
 	poster := posterFor(item.Path, 64, 64)
@@ -494,9 +494,9 @@ func TestExploreReaderIgnoresSpace(t *testing.T) {
 }
 
 func TestExploreEmptyStatesSayWhatHappened(t *testing.T) {
-	query := explore.Query{Status: "finished", Dungeon: explore.LensAll}
+	query := intexplore.Query{Status: "finished", Dungeon: intexplore.LensAll}
 	// A first load that fails with no cache knows nothing about the camp.
-	m := exploreModel{width: 80, height: 24, loading: true, protocol: explore.ProtocolOff, query: query}
+	m := exploreModel{width: 80, height: 24, loading: true, protocol: intexplore.ProtocolOff, query: query}
 	m, _ = press(t, m, exploreLoaded{gen: m.indexGen, err: context.DeadlineExceeded})
 	view := viewText(m.View())
 	if strings.Contains(view, "No dungeons in this camp.") {
@@ -510,7 +510,7 @@ func TestExploreEmptyStatesSayWhatHappened(t *testing.T) {
 	if cmd == nil || !m.loading {
 		t.Fatal("r did not retry the failed load")
 	}
-	m, _ = press(t, m, exploreLoaded{gen: m.indexGen, index: explore.Index{BuiltAt: time.Now()}, changed: true})
+	m, _ = press(t, m, exploreLoaded{gen: m.indexGen, index: intexplore.Index{BuiltAt: time.Now()}, changed: true})
 	if view := viewText(m.View()); !strings.Contains(view, "No dungeons in this camp.") || strings.Contains(view, "could not be read") {
 		t.Fatalf("an empty camp after a successful load:\n%s", view)
 	}
@@ -520,16 +520,16 @@ func TestExploreEmptyStatesSayWhatHappened(t *testing.T) {
 		"no dungeons": {query: query},
 		"load failed": {query: query, loadFailed: true},
 		"first load":  {query: query, loading: true},
-		"no finished work": {query: query, index: explore.Index{
-			Dungeons: []explore.DungeonPrint{{Path: "festivals/.dungeon", Label: "Festivals"}},
+		"no finished work": {query: query, index: intexplore.Index{
+			Dungeons: []intexplore.DungeonPrint{{Path: "festivals/.dungeon", Label: "Festivals"}},
 		}},
-		"no match": {query: explore.Query{Status: "archived", Dungeon: explore.LensAll}, index: explore.Index{
-			Dungeons: []explore.DungeonPrint{{Path: "festivals/.dungeon", Label: "Festivals"}},
+		"no match": {query: intexplore.Query{Status: "archived", Dungeon: intexplore.LensAll}, index: intexplore.Index{
+			Dungeons: []intexplore.DungeonPrint{{Path: "festivals/.dungeon", Label: "Festivals"}},
 		}},
 	}
 	for name, state := range states {
 		for _, width := range []int{20, 24} {
-			state.width, state.height, state.protocol = width, 6, explore.ProtocolOff
+			state.width, state.height, state.protocol = width, 6, intexplore.ProtocolOff
 			if err := state.applyQuery(); err != nil {
 				t.Fatal(err)
 			}
@@ -542,7 +542,7 @@ func TestExploreEmptyStatesSayWhatHappened(t *testing.T) {
 }
 
 func TestExploreFilterPromptKeepsTheTypedEnd(t *testing.T) {
-	m := screenFeed(t, 40, 12, explore.ProtocolOff, 6)
+	m := screenFeed(t, 40, 12, intexplore.ProtocolOff, 6)
 	m, _ = press(t, m, runes("/"))
 	typed := ""
 	for i := range 30 {
@@ -560,7 +560,7 @@ func TestExploreFilterPromptKeepsTheTypedEnd(t *testing.T) {
 	if !strings.Contains(strings.Split(m.View(), "\n")[0], "…") {
 		t.Fatal("a cut filter does not mark the cut")
 	}
-	short := screenFeed(t, 40, 12, explore.ProtocolOff, 6)
+	short := screenFeed(t, 40, 12, intexplore.ProtocolOff, 6)
 	short, _ = press(t, short, runes("/"))
 	short, _ = press(t, short, runes("FA00"))
 	if header := strings.Split(short.View(), "\n")[0]; header != "/ FA00" {
@@ -578,7 +578,7 @@ func TestExploreStateNotesOutliveOneShotStatuses(t *testing.T) {
 	}
 
 	// A failed refresh over a cached feed: the feed on screen is stale.
-	m := screenFeed(t, 100, 30, explore.ProtocolOff, 12)
+	m := screenFeed(t, 100, 30, intexplore.ProtocolOff, 12)
 	m, _ = press(t, m, exploreLoaded{gen: m.indexGen, err: context.DeadlineExceeded})
 	failure := context.DeadlineExceeded.Error()
 	if row := m.statusRow(); row.text != failure || !row.failed {
@@ -601,7 +601,7 @@ func TestExploreStateNotesOutliveOneShotStatuses(t *testing.T) {
 	}
 
 	// A rescan in progress.
-	m = screenFeed(t, 100, 30, explore.ProtocolOff, 12)
+	m = screenFeed(t, 100, 30, intexplore.ProtocolOff, 12)
 	m, _ = press(t, m, runes("r"))
 	m, _ = press(t, copyKey(m), runes("j"))
 	if m.shownStatus() != exploreReadingStatus || !m.loading {
@@ -609,7 +609,7 @@ func TestExploreStateNotesOutliveOneShotStatuses(t *testing.T) {
 	}
 
 	// A note about the focused replay, covered by g without shell integration.
-	m = screenFeed(t, 100, 30, explore.ProtocolKitty, 6)
+	m = screenFeed(t, 100, 30, intexplore.ProtocolKitty, 6)
 	item, _ := m.focused()
 	m.posterFor, m.posterReplay = item.Path, item.Replay
 	m, _ = press(t, m, explorePoster{gen: m.loadGen, item: item.Path, poster: posterFor(item.Path, 64, 64), tooLong: true})
@@ -642,7 +642,7 @@ func TestExploreStateNotesOutliveOneShotStatuses(t *testing.T) {
 	}
 
 	// A query that does not resolve outranks a load note under it.
-	m = screenFeed(t, 100, 30, explore.ProtocolOff, 12)
+	m = screenFeed(t, 100, 30, intexplore.ProtocolOff, 12)
 	m.query.Dungeon = "missing"
 	_ = m.applyQuery()
 	m, _ = press(t, m, runes("r"))
@@ -657,7 +657,7 @@ func TestExploreStateNotesOutliveOneShotStatuses(t *testing.T) {
 // A lens or a filter changes the rows. The cursor stays on the item, as it
 // does across a refresh; its old position is some other row.
 func TestExploreFilterAndLensFollowTheFocusedItem(t *testing.T) {
-	m := screenFeed(t, 100, 30, explore.ProtocolOff, 40)
+	m := screenFeed(t, 100, 30, intexplore.ProtocolOff, 40)
 	m.cursor = 7
 	before, _ := m.focused()
 	steps := map[string]func(exploreModel) exploreModel{
@@ -712,7 +712,7 @@ func TestExploreFilterAndLensFollowTheFocusedItem(t *testing.T) {
 // things. The help row says what does act, and ctrl+c quits as everywhere.
 func TestExploreFilterModeNamesItsKeys(t *testing.T) {
 	for _, width := range []int{40, 80, 120} {
-		m := screenFeed(t, width, 24, explore.ProtocolOff, 6)
+		m := screenFeed(t, width, 24, intexplore.ProtocolOff, 6)
 		m, _ = press(t, m, runes("/"))
 		help := viewText(strings.Join(m.helpLines(), " "))
 		for _, want := range []string{"enter apply", "esc cancel", "ctrl+c quit"} {
@@ -746,7 +746,7 @@ func TestExploreFilterModeNamesItsKeys(t *testing.T) {
 		}
 	}
 	// ctrl+c quits from the feed, the full help, the filter, a listing, and a document.
-	feed := screenFeed(t, 80, 24, explore.ProtocolOff, 6)
+	feed := screenFeed(t, 80, 24, intexplore.ProtocolOff, 6)
 	filter, _ := press(t, feed, runes("/"))
 	help, _ := press(t, feed, runes("?"))
 	doc, _ := press(t, feed, tea.KeyMsg{Type: tea.KeyEnter})
@@ -763,7 +763,7 @@ func TestExploreFilterModeNamesItsKeys(t *testing.T) {
 // Rendering a long document takes long enough to notice, and dragging a
 // window edge sends a size for every step. Only a new width needs new lines.
 func TestExploreReaderKeepsItsLinesWhenOnlyTheHeightChanges(t *testing.T) {
-	m := screenFeed(t, 80, 24, explore.ProtocolOff, 3)
+	m := screenFeed(t, 80, 24, intexplore.ProtocolOff, 3)
 	m, _ = press(t, m, tea.KeyMsg{Type: tea.KeyEnter})
 	if !m.reading || m.reader.wrapped != m.contentWidth() {
 		t.Fatalf("fixture: reading=%v wrapped=%d", m.reading, m.reader.wrapped)
@@ -801,7 +801,7 @@ func TestExploreReaderKeepsItsLinesWhenOnlyTheHeightChanges(t *testing.T) {
 func TestExploreCutHeaderStillNamesTheFilter(t *testing.T) {
 	for _, width := range []int{20, 24, 30, 40, 60, 100} {
 		for _, filter := range []string{"q", "fest", "a filter much longer than the header has room for"} {
-			m := screenFeed(t, width, 12, explore.ProtocolOff, 6)
+			m := screenFeed(t, width, 12, intexplore.ProtocolOff, 6)
 			m.visible.DungeonLabel = "A dungeon with a long label"
 			m.query.Text = filter
 			header := viewText(strings.Split(m.View(), "\n")[0])
@@ -823,7 +823,7 @@ func TestExploreCutHeaderStillNamesTheFilter(t *testing.T) {
 		}
 	}
 	// Room for everything: the header reads in full, sort order last.
-	m := screenFeed(t, 100, 12, explore.ProtocolOff, 6)
+	m := screenFeed(t, 100, 12, intexplore.ProtocolOff, 6)
 	m.query.Text = "fest"
 	if header := viewText(strings.Split(m.View(), "\n")[0]); header != `All dungeons · Finished · "fest" · newest first` {
 		t.Fatalf("full header = %q", header)

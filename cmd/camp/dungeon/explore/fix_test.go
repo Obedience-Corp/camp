@@ -1,4 +1,4 @@
-package dungeon
+package explore
 
 import (
 	"context"
@@ -12,7 +12,7 @@ import (
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
 
-	"github.com/Obedience-Corp/camp/internal/dungeon/explore"
+	intexplore "github.com/Obedience-Corp/camp/internal/dungeon/explore"
 )
 
 const replayItemPath = "festivals/.dungeon/completed/2026-10-05/festival-activity-desktop-FA0024"
@@ -22,19 +22,19 @@ func replayModel(protocol string) exploreModel {
 		width:    100,
 		height:   30,
 		protocol: protocol,
-		query:    explore.Query{Status: "finished", Dungeon: explore.LensAll},
-		index: explore.Index{
-			Dungeons: []explore.DungeonPrint{{Path: "festivals/.dungeon"}},
-			Items: []explore.Item{
+		query:    intexplore.Query{Status: "finished", Dungeon: intexplore.LensAll},
+		index: intexplore.Index{
+			Dungeons: []intexplore.DungeonPrint{{Path: "festivals/.dungeon"}},
+			Items: []intexplore.Item{
 				{
-					DoneDate: "2026-10-05", DateSource: explore.DateBucket, Status: "completed",
-					DungeonLabel: "Festivals", DungeonPath: "festivals/.dungeon", Kind: explore.KindFestival,
+					DoneDate: "2026-10-05", DateSource: intexplore.DateBucket, Status: "completed",
+					DungeonLabel: "Festivals", DungeonPath: "festivals/.dungeon", Kind: intexplore.KindFestival,
 					Title: "festival-activity-desktop", ID: "FA0024", Summary: "Ship Festival Activity as a signed desktop app for every platform we support today",
 					Path: replayItemPath, Replay: replayItemPath + "/festival-replay.gif", IsDir: true,
 				},
 				{
-					DoneDate: "2026-08-21", DateSource: explore.DateHistory, Status: "done",
-					DungeonLabel: "Intents", DungeonPath: ".campaign/intents/.dungeon", Kind: explore.KindMarkdown,
+					DoneDate: "2026-08-21", DateSource: intexplore.DateHistory, Status: "done",
+					DungeonLabel: "Intents", DungeonPath: ".campaign/intents/.dungeon", Kind: intexplore.KindMarkdown,
 					Title: "Add blog sections", Path: ".campaign/intents/.dungeon/done/add-blog.md",
 				},
 			},
@@ -64,13 +64,13 @@ func TestExploreViewStripsTerminalControlsFromRepoText(t *testing.T) {
 	m := exploreModel{
 		width:    100,
 		height:   30,
-		protocol: explore.ProtocolOff,
-		query:    explore.Query{Status: "finished", Dungeon: explore.LensAll},
-		index: explore.Index{
-			Dungeons: []explore.DungeonPrint{{Path: "festivals/.dungeon"}},
-			Items: []explore.Item{{
-				DoneDate: "2026-10-05", DateSource: explore.DateBucket, Status: "completed",
-				DungeonLabel: "Festivals", DungeonPath: "festivals/.dungeon", Kind: explore.KindOther,
+		protocol: intexplore.ProtocolOff,
+		query:    intexplore.Query{Status: "finished", Dungeon: intexplore.LensAll},
+		index: intexplore.Index{
+			Dungeons: []intexplore.DungeonPrint{{Path: "festivals/.dungeon"}},
+			Items: []intexplore.Item{{
+				DoneDate: "2026-10-05", DateSource: intexplore.DateBucket, Status: "completed",
+				DungeonLabel: "Festivals", DungeonPath: "festivals/.dungeon", Kind: intexplore.KindOther,
 				Title:   "evil\x1b]52;c;ZXZpbA==\x07title",
 				ID:      "FA\x1b[31m01",
 				Summary: "sum\x1b]0;pwned\x07mary\rline",
@@ -96,22 +96,22 @@ func TestExploreViewStripsTerminalControlsFromRepoText(t *testing.T) {
 }
 
 func TestExploreImageSequencePreservesCursor(t *testing.T) {
-	kitty := replayModel(explore.ProtocolKitty).imageSequence(48)
+	kitty := replayModel(intexplore.ProtocolKitty).imageSequence(48)
 	if !strings.HasPrefix(kitty, "\x1b7") || !strings.HasSuffix(kitty, "\x1b8") {
 		t.Fatalf("kitty sequence does not save and restore the cursor: %q", kitty)
 	}
 	if !strings.Contains(kitty, "C=1") {
 		t.Fatalf("kitty sequence lets the terminal move the cursor: %q", kitty)
 	}
-	iterm := replayModel(explore.ProtocolITerm).imageSequence(48)
+	iterm := replayModel(intexplore.ProtocolITerm).imageSequence(48)
 	if !strings.HasPrefix(iterm, "\x1b7\x1b]1337;File=") || !strings.HasSuffix(iterm, "\a\x1b8") {
 		t.Fatalf("iterm sequence does not save and restore the cursor: %q", iterm)
 	}
 }
 
 func TestExploreDeletesKittyImageWhenHidden(t *testing.T) {
-	del := explore.KittyDelete(exploreImageID)
-	shown := replayModel(explore.ProtocolKitty)
+	del := intexplore.KittyDelete(exploreImageID)
+	shown := replayModel(intexplore.ProtocolKitty)
 	if !strings.Contains(shown.View(), "a=T,f=100") {
 		t.Fatal("focused replay did not draw")
 	}
@@ -133,13 +133,13 @@ func TestExploreDeletesKittyImageWhenHidden(t *testing.T) {
 			t.Errorf("%s: view still draws the replay", name)
 		}
 	}
-	if off := replayModel(explore.ProtocolOff); strings.Contains(off.View(), "\x1b_G") {
+	if off := replayModel(intexplore.ProtocolOff); strings.Contains(off.View(), "\x1b_G") {
 		t.Error("images off still emits Kitty graphics commands")
 	}
 }
 
 func TestExploreFilterAcceptsRunesAndPaste(t *testing.T) {
-	m := replayModel(explore.ProtocolOff)
+	m := replayModel(intexplore.ProtocolOff)
 	m, _ = press(t, m, runes("/"))
 	m, _ = press(t, m, runes("é"))
 	m, _ = press(t, m, tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("FA00\n24"), Paste: true})
@@ -151,7 +151,7 @@ func TestExploreFilterAcceptsRunesAndPaste(t *testing.T) {
 }
 
 func TestExploreReaderListingKeepsSelectionVisible(t *testing.T) {
-	m := replayModel(explore.ProtocolOff)
+	m := replayModel(intexplore.ProtocolOff)
 	m.height = 12
 	m.reading = true
 	m.reader = exploreReader{title: "docs", listing: true}
@@ -188,7 +188,7 @@ func TestExploreReaderListingKeepsSelectionVisible(t *testing.T) {
 }
 
 func TestExploreResizeReflowsReader(t *testing.T) {
-	m := replayModel(explore.ProtocolOff)
+	m := replayModel(intexplore.ProtocolOff)
 	m.width = 120
 	m, _ = press(t, m, tea.KeyMsg{Type: tea.KeyEnter})
 	if !m.reading {
@@ -207,7 +207,7 @@ func TestExploreResizeReflowsReader(t *testing.T) {
 // one line saying the terminal is too small, with a camp's worth of rows
 // behind it.
 func TestExploreIgnoresASizeWithNoCells(t *testing.T) {
-	m := screenFeed(t, 80, 24, explore.ProtocolKitty, 6)
+	m := screenFeed(t, 80, 24, intexplore.ProtocolKitty, 6)
 	for _, size := range []tea.WindowSizeMsg{{}, {Width: 0, Height: 24}, {Width: 80, Height: 0}, {Width: -1, Height: -1}} {
 		got, cmd := press(t, m, size)
 		if got.width != 80 || got.height != 24 || got.sized || cmd != nil {
@@ -225,7 +225,7 @@ func TestExploreIgnoresASizeWithNoCells(t *testing.T) {
 }
 
 func TestExploreResizeSchedulesSkippedReplay(t *testing.T) {
-	m := replayModel(explore.ProtocolKitty)
+	m := replayModel(intexplore.ProtocolKitty)
 	m.width, m.height = 50, 12
 	m.poster, m.mediaFor = nil, ""
 	m, _ = press(t, m, tea.WindowSizeMsg{Width: 50, Height: 12})
@@ -237,7 +237,7 @@ func TestExploreResizeSchedulesSkippedReplay(t *testing.T) {
 }
 
 func TestExplorePauseInvalidatesPendingTick(t *testing.T) {
-	m := replayModel(explore.ProtocolKitty)
+	m := replayModel(intexplore.ProtocolKitty)
 	m.frames = [][]byte{{1}, {2}, {3}}
 	m.delays = []time.Duration{time.Millisecond, time.Millisecond, time.Millisecond}
 	m.playing = true
@@ -255,7 +255,7 @@ func TestExplorePauseInvalidatesPendingTick(t *testing.T) {
 }
 
 func TestExploreRescanClearsReadingStatus(t *testing.T) {
-	m := replayModel(explore.ProtocolOff)
+	m := replayModel(intexplore.ProtocolOff)
 	idx := m.index
 	m, _ = press(t, m, runes("r"))
 	if m.shownStatus() == "" {
@@ -296,16 +296,16 @@ func TestExploreMarkdownHonorsPlainOutput(t *testing.T) {
 }
 
 func TestExploreFocusChangeCancelsReplayDecode(t *testing.T) {
-	m := replayModel(explore.ProtocolKitty)
+	m := replayModel(intexplore.ProtocolKitty)
 	m.index.Items[1].Replay = m.index.Items[1].Path + "/replay.gif"
 	if err := m.applyQuery(); err != nil {
 		t.Fatal(err)
 	}
 	started := make(chan context.Context, 4)
-	m.decode = func(ctx context.Context, _ string, _, _ int) (explore.Frames, error) {
+	m.decode = func(ctx context.Context, _ string, _, _ int) (intexplore.Frames, error) {
 		started <- ctx
 		<-ctx.Done()
-		return explore.Frames{}, ctx.Err()
+		return intexplore.Frames{}, ctx.Err()
 	}
 	run := func(cmd tea.Cmd) <-chan tea.Msg {
 		out := make(chan tea.Msg, 1)

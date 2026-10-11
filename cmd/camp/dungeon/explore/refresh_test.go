@@ -1,4 +1,4 @@
-package dungeon
+package explore
 
 import (
 	"errors"
@@ -7,14 +7,14 @@ import (
 
 	tea "github.com/charmbracelet/bubbletea"
 
-	"github.com/Obedience-Corp/camp/internal/dungeon/explore"
+	intexplore "github.com/Obedience-Corp/camp/internal/dungeon/explore"
 )
 
 func TestExploreRefreshResolvesQueryError(t *testing.T) {
-	for _, query := range []explore.Query{{Dungeon: "Designs", Status: "all"}, {Status: "reviewed"}} {
+	for _, query := range []intexplore.Query{{Dungeon: "Designs", Status: "all"}, {Status: "reviewed"}} {
 		t.Run(query.Dungeon+query.Status, func(t *testing.T) {
-			m := replayModel(explore.ProtocolOff)
-			m.index = explore.Index{}
+			m := replayModel(intexplore.ProtocolOff)
+			m.index = intexplore.Index{}
 			m.query = query
 			// Startup and keyboard changes must use the same validation path.
 			if err := m.applyQuery(); err == nil {
@@ -36,10 +36,10 @@ func TestExploreRefreshResolvesQueryError(t *testing.T) {
 	}
 }
 
-func refreshIndex(titles ...string) explore.Index {
-	idx := explore.Index{Dungeons: []explore.DungeonPrint{{Path: "workflow/design/.dungeon", Label: "Designs"}}}
+func refreshIndex(titles ...string) intexplore.Index {
+	idx := intexplore.Index{Dungeons: []intexplore.DungeonPrint{{Path: "workflow/design/.dungeon", Label: "Designs"}}}
 	for _, title := range titles {
-		idx.Items = append(idx.Items, explore.Item{
+		idx.Items = append(idx.Items, intexplore.Item{
 			Title: title, Path: "workflow/design/.dungeon/reviewed/" + title,
 			DungeonPath: "workflow/design/.dungeon", DungeonLabel: "Designs", Status: "reviewed",
 		})
@@ -53,7 +53,7 @@ func TestExploreRefreshKeepsSuppliedDungeonLabel(t *testing.T) {
 
 	m := exploreModel{
 		width: 80, height: 24,
-		query: explore.Query{Status: "finished", Dungeon: "Festivals"},
+		query: intexplore.Query{Status: "finished", Dungeon: "Festivals"},
 		index: cached,
 	}
 	if err := m.applyQuery(); err != nil {
@@ -69,7 +69,7 @@ func TestExploreRefreshKeepsSuppliedDungeonLabel(t *testing.T) {
 
 	stale := exploreModel{
 		width: 80, height: 24,
-		query: explore.Query{Status: "finished", Dungeon: "festivals/dungeon"},
+		query: intexplore.Query{Status: "finished", Dungeon: "festivals/dungeon"},
 		index: cached,
 	}
 	if err := stale.applyQuery(); err != nil {
@@ -81,10 +81,10 @@ func TestExploreRefreshKeepsSuppliedDungeonLabel(t *testing.T) {
 	}
 }
 
-func migratedDungeonIndex(path, title string) explore.Index {
-	return explore.Index{
-		Dungeons: []explore.DungeonPrint{{Path: path, Label: "Festivals"}},
-		Items: []explore.Item{{
+func migratedDungeonIndex(path, title string) intexplore.Index {
+	return intexplore.Index{
+		Dungeons: []intexplore.DungeonPrint{{Path: path, Label: "Festivals"}},
+		Items: []intexplore.Item{{
 			Title: title, Path: path + "/completed/" + title, Status: "completed",
 			DungeonPath: path, DungeonLabel: "Festivals",
 		}},
@@ -92,8 +92,8 @@ func migratedDungeonIndex(path, title string) explore.Index {
 }
 
 func TestExploreRefreshPreservesFocusedItem(t *testing.T) {
-	m := replayModel(explore.ProtocolOff)
-	m.index, m.query = refreshIndex("B", "C"), explore.Query{Status: "all"}
+	m := replayModel(intexplore.ProtocolOff)
+	m.index, m.query = refreshIndex("B", "C"), intexplore.Query{Status: "all"}
 	if err := m.applyQuery(); err != nil {
 		t.Fatal(err)
 	}
@@ -109,7 +109,7 @@ func TestExploreRefreshPreservesFocusedItem(t *testing.T) {
 }
 
 func TestExploreRefreshPreservesUnrelatedError(t *testing.T) {
-	m := replayModel(explore.ProtocolOff)
+	m := replayModel(intexplore.ProtocolOff)
 	m, _ = press(t, m, runes("g"))
 	want := m.statusRow().text
 	m, _ = press(t, m, exploreLoaded{})
@@ -119,7 +119,7 @@ func TestExploreRefreshPreservesUnrelatedError(t *testing.T) {
 }
 
 func TestExploreInvalidQueryCannotActOnOldRows(t *testing.T) {
-	m := replayModel(explore.ProtocolOff)
+	m := replayModel(intexplore.ProtocolOff)
 	m.query.Dungeon = "missing"
 	if err := m.applyQuery(); err == nil {
 		t.Fatal("missing dungeon accepted")
@@ -138,7 +138,7 @@ func TestExploreInvalidQueryCannotActOnOldRows(t *testing.T) {
 }
 
 func TestExploreRefreshFailureRecovery(t *testing.T) {
-	m := replayModel(explore.ProtocolOff)
+	m := replayModel(intexplore.ProtocolOff)
 	m, _ = press(t, m, exploreLoaded{err: errors.New("scan failed")})
 	if !m.statusRow().failed || m.statusRow().text != "scan failed" {
 		t.Fatal("refresh failure not reported")
@@ -150,7 +150,7 @@ func TestExploreRefreshFailureRecovery(t *testing.T) {
 }
 
 func TestExploreRefreshIgnoresSupersededLoads(t *testing.T) {
-	m := replayModel(explore.ProtocolOff)
+	m := replayModel(intexplore.ProtocolOff)
 	old := m.index
 	m.query.Status = "all"
 	m, cmd := press(t, m, runes("r"))
@@ -174,7 +174,7 @@ func TestExploreRefreshIgnoresSupersededLoads(t *testing.T) {
 }
 
 func TestExploreFailedRescanKeepsUsableIndex(t *testing.T) {
-	m := replayModel(explore.ProtocolOff)
+	m := replayModel(intexplore.ProtocolOff)
 	before, _ := m.focused()
 	m, _ = press(t, m, runes("r"))
 	m, _ = press(t, m, exploreLoaded{gen: m.indexGen, err: errors.New("scan failed")})
@@ -192,8 +192,8 @@ func TestExploreFailedRescanKeepsUsableIndex(t *testing.T) {
 func TestExploreRefreshEmptyAndInvalidResults(t *testing.T) {
 	for _, status := range []string{"all", "reviewed"} {
 		t.Run(status, func(t *testing.T) {
-			m := replayModel(explore.ProtocolOff)
-			m.index, m.query = refreshIndex("Old"), explore.Query{Status: status}
+			m := replayModel(intexplore.ProtocolOff)
+			m.index, m.query = refreshIndex("Old"), intexplore.Query{Status: status}
 			if err := m.applyQuery(); err != nil {
 				t.Fatal(err)
 			}

@@ -1,4 +1,4 @@
-package dungeon
+package explore
 
 import (
 	"fmt"
@@ -7,7 +7,7 @@ import (
 
 	"github.com/charmbracelet/lipgloss"
 
-	"github.com/Obedience-Corp/camp/internal/dungeon/explore"
+	intexplore "github.com/Obedience-Corp/camp/internal/dungeon/explore"
 )
 
 // checkLayout holds every view to the screen it is drawn on: exactly height
@@ -132,7 +132,7 @@ func TestExploreLayoutMatrix(t *testing.T) {
 		}
 	}
 	for _, size := range sizes {
-		for _, protocol := range []string{explore.ProtocolOff, explore.ProtocolKitty, explore.ProtocolITerm} {
+		for _, protocol := range []string{intexplore.ProtocolOff, intexplore.ProtocolKitty, intexplore.ProtocolITerm} {
 			for _, n := range []int{0, 1, 3, 40} {
 				for _, notices := range []int{0, 1, 2} {
 					for _, status := range []string{"", "copied"} {
@@ -197,7 +197,7 @@ func TestExploreLayoutMatrix(t *testing.T) {
 				}
 			}
 		}
-		empty := exploreModel{width: size[0], height: size[1], protocol: explore.ProtocolOff, query: explore.Query{Status: "finished", Dungeon: explore.LensAll}}
+		empty := exploreModel{width: size[0], height: size[1], protocol: intexplore.ProtocolOff, query: intexplore.Query{Status: "finished", Dungeon: intexplore.LensAll}}
 		_ = empty.applyQuery()
 		label := fmt.Sprintf("%dx%d", size[0], size[1])
 		report(label+" no-dungeons", empty)

@@ -1,4 +1,4 @@
-package dungeon
+package explore
 
 import (
 	"fmt"
@@ -10,7 +10,7 @@ import (
 	"github.com/charmbracelet/x/ansi"
 	"github.com/muesli/termenv"
 
-	"github.com/Obedience-Corp/camp/internal/dungeon/explore"
+	intexplore "github.com/Obedience-Corp/camp/internal/dungeon/explore"
 	"github.com/Obedience-Corp/camp/internal/ui/theme"
 )
 
@@ -77,7 +77,7 @@ func TestExploreEmojiSequencesStayInsideTheScreen(t *testing.T) {
 
 func emojiSequenceStaysInside(t *testing.T, open func(*testing.T, exploreModel) *exploreScreen, label, seq string, size [2]int) {
 	t.Helper()
-	m := screenFeed(t, size[0], size[1], explore.ProtocolOff, 8)
+	m := screenFeed(t, size[0], size[1], intexplore.ProtocolOff, 8)
 	for i := range m.visible.Items {
 		item := &m.visible.Items[i]
 		item.Title = "Ship " + seq + " " + item.Title
@@ -285,7 +285,7 @@ func TestExploreReaderCleansWhatEntitiesDecodeTo(t *testing.T) {
 	for _, plain := range []bool{true, false} {
 		out := strings.Join(readerBody{text: doc, markdown: true}.render(72, plain, ""), "\n")
 		for _, r := range out {
-			if r != '\n' && r != 0x1b && explore.CleanText(string(r)) == "" {
+			if r != '\n' && r != 0x1b && intexplore.CleanText(string(r)) == "" {
 				t.Errorf("plain=%v: U+%04X reached the reader: %q", plain, r, out)
 			}
 		}

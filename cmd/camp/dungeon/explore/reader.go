@@ -1,4 +1,4 @@
-package dungeon
+package explore
 
 import (
 	"context"
@@ -13,7 +13,7 @@ import (
 	"github.com/charmbracelet/x/ansi"
 	"github.com/muesli/termenv"
 
-	"github.com/Obedience-Corp/camp/internal/dungeon/explore"
+	intexplore "github.com/Obedience-Corp/camp/internal/dungeon/explore"
 	"github.com/Obedience-Corp/camp/internal/ui"
 	"github.com/Obedience-Corp/camp/internal/ui/theme"
 )
@@ -24,7 +24,7 @@ type readerEntry struct {
 }
 
 type exploreReader struct {
-	item  explore.Item
+	item  intexplore.Item
 	title string
 	path  string
 	body  readerBody
@@ -46,10 +46,10 @@ type readerBody struct {
 // render lays the body out width cells wide. style names the Glamour style
 // for markdown, as newExploreStyles resolved it.
 func (b readerBody) render(width int, plain bool, style string) []string {
-	text := expandTabs(explore.CleanDocument(b.text))
+	text := expandTabs(intexplore.CleanDocument(b.text))
 	var lines []string
 	if b.markdown {
-		lines = renderExploreMarkdown(explore.MarkdownBody(text), width, plain, style)
+		lines = renderExploreMarkdown(intexplore.MarkdownBody(text), width, plain, style)
 	} else {
 		lines = wrapPlain(text, width)
 	}
@@ -240,7 +240,7 @@ const readerLimit = 256 << 10
 // readExploreText reads a document for the reader. cut reports a file longer
 // than readerLimit, whose remainder is not shown.
 func readExploreText(ctx context.Context, path string) (text string, cut bool, err error) {
-	data, err := explore.ReadRegular(ctx, path, readerLimit+1)
+	data, err := intexplore.ReadRegular(ctx, path, readerLimit+1)
 	if err != nil {
 		return "", false, err
 	}
@@ -434,7 +434,7 @@ func safeReaderOutput(text string, plain bool) string {
 			// The document was cleaned before Glamour saw it, but Glamour
 			// decodes entities: &#x202E; arrives here as a bidi override. The
 			// rule that cleaned the source cleans what it turned into.
-			out.WriteString(explore.CleanDocument(seq))
+			out.WriteString(intexplore.CleanDocument(seq))
 		}
 	}
 	return out.String()

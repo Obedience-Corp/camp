@@ -59,7 +59,7 @@ func dungeonExploreValueFlags(t *testing.T) []string {
 	if !ok {
 		t.Fatal("no caller")
 	}
-	path := filepath.Join(filepath.Dir(here), "..", "..", "cmd", "camp", "dungeon", "explore.go")
+	path := filepath.Join(filepath.Dir(here), "..", "..", "cmd", "camp", "dungeon", "explore", "explore.go")
 	fset := token.NewFileSet()
 	file, err := parser.ParseFile(fset, path, nil, 0)
 	if err != nil {

@@ -1,4 +1,4 @@
-package dungeon
+package explore
 
 import (
 	"context"
