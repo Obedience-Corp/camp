@@ -179,7 +179,7 @@ func TestExploreLayoutMatrix(t *testing.T) {
 							reader := m
 							reader.reading = true
 							reader.reader = exploreReader{title: "doc", item: m.visible.Items[cursor], body: doc}
-							reader.reader.lines = doc.render(reader.contentWidth(), true)
+							reader.reader.lines = doc.render(reader.contentWidth(), true, "")
 							report(label+" reader", reader)
 							reader.reader.offset = len(reader.reader.lines)
 							report(label+" reader-end", reader)

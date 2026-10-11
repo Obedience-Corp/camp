@@ -69,6 +69,16 @@ func TestChooseProtocolIgnoresAnInheritedTerminal(t *testing.T) {
 		{"vim terminal in kitty", map[string]string{"TERM": "xterm-256color", "KITTY_WINDOW_ID": "1", "VIM_TERMINAL": "901"}, ProtocolOff},
 		{"emacs terminal in iterm", map[string]string{"TERM": "xterm-256color", "TERM_PROGRAM": "iTerm.app", "INSIDE_EMACS": "29.1,vterm"}, ProtocolOff},
 		{"a terminal that says nothing", map[string]string{"TERM": "xterm-256color"}, ProtocolOff},
+
+		// These set no TERM_PROGRAM of their own, so they keep the one they
+		// were started under along with the other inherited variables.
+		{"alacritty started from kitty", map[string]string{"TERM": "alacritty", "KITTY_WINDOW_ID": "1"}, ProtocolOff},
+		{"alacritty started from iterm", map[string]string{"TERM": "alacritty-direct", "TERM_PROGRAM": "iTerm.app", "LC_TERMINAL": "iTerm2"}, ProtocolOff},
+		{"foot started from wezterm", map[string]string{"TERM": "foot", "TERM_PROGRAM": "WezTerm", "WEZTERM_PANE": "0"}, ProtocolOff},
+		{"jetbrains terminal, ide started from iterm", map[string]string{"TERM": "xterm-256color", "TERMINAL_EMULATOR": "JetBrains-JediTerm", "TERM_PROGRAM": "iTerm.app", "LC_TERMINAL": "iTerm2"}, ProtocolOff},
+		{"jetbrains terminal, ide started from kitty", map[string]string{"TERM": "xterm-256color", "TERMINAL_EMULATOR": "JetBrains-JediTerm", "KITTY_WINDOW_ID": "2"}, ProtocolOff},
+		{"linux console", map[string]string{"TERM": "linux", "LC_TERMINAL": "iTerm2"}, ProtocolOff},
+		{"kitty started from a jetbrains terminal", map[string]string{"TERM": "xterm-kitty", "KITTY_WINDOW_ID": "1", "TERMINAL_EMULATOR": "JetBrains-JediTerm"}, ProtocolKitty},
 	}
 	for _, tc := range cases {
 		getenv := func(key string) string { return tc.env[key] }
@@ -80,5 +90,21 @@ func TestChooseProtocolIgnoresAnInheritedTerminal(t *testing.T) {
 				t.Errorf("--images %s in %s = %q, %v", forced, tc.name, got, err)
 			}
 		}
+	}
+}
+
+// Plain output draws no replay. Naming a protocol does not change that: the
+// command's help says so, and a bad name is still refused.
+func TestChooseProtocolPlainOutputDrawsNoReplay(t *testing.T) {
+	kitty := func(key string) string {
+		return map[string]string{"TERM": "xterm-kitty", "KITTY_WINDOW_ID": "1"}[key]
+	}
+	for _, flag := range []string{ProtocolAuto, ProtocolKitty, ProtocolITerm, ProtocolOff, ""} {
+		if got, err := ChooseProtocol(flag, kitty, true); err != nil || got != ProtocolOff {
+			t.Errorf("--images %q with plain output = %q, %v; want off", flag, got, err)
+		}
+	}
+	if _, err := ChooseProtocol("sixel", kitty, true); err == nil {
+		t.Error("plain output accepted an unknown --images value")
 	}
 }

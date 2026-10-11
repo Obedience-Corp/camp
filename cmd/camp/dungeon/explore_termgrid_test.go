@@ -29,13 +29,17 @@ import (
 // aspect, so it covers only the part of the requested box the picture fills.
 // A Kitty image is a separate layer that only a delete command removes.
 //
-// Every code point takes its own cells, as on a terminal that does not join
-// emoji sequences: the widest a row can come out.
+// By default every code point takes its own cells, as on a terminal that does
+// not join emoji sequences: the widest a row can come out. With joins set a
+// grapheme cluster is one glyph, as Kitty, Ghostty, WezTerm, and iTerm draw
+// it: a ZWJ sequence or a flag takes two cells, so the row comes out shorter
+// than its code points, and a keycap takes two where its code points take one.
 //
 // Tests assert on what the grid holds after the real renderer has written
 // to it, which is what a person would see, not on the strings View returns.
 type termGrid struct {
 	w, h       int
+	joins      bool
 	cells      [][]termCell
 	row, col   int
 	srow, scol int
@@ -131,14 +135,20 @@ func (g *termGrid) feed(data []byte) {
 				return
 			}
 			r, n := utf8.DecodeRune(data[i:])
+			if g.joins {
+				cluster, width := ansi.FirstGraphemeCluster(data[i:], ansi.GraphemeWidth)
+				i += max(len(cluster), n)
+				g.draw(r, width)
+				continue
+			}
 			i += n
-			g.put(r)
+			g.draw(r, ansi.StringWidth(string(r)))
 		}
 	}
 }
 
-func (g *termGrid) put(r rune) {
-	width := ansi.StringWidth(string(r))
+// draw puts one glyph of width cells at the cursor. Every cell of it holds r.
+func (g *termGrid) draw(r rune, width int) {
 	if width == 0 {
 		return
 	}
@@ -489,7 +499,33 @@ func posterFor(path string, w, h int) []byte {
 
 func openExploreScreen(t *testing.T, m exploreModel) *exploreScreen {
 	t.Helper()
-	s := &exploreScreen{t: t, out: &screenOutput{}, grid: newTermGrid(m.width, m.height), done: make(chan struct{})}
+	return openExploreScreenOn(t, m, newTermGrid(m.width, m.height))
+}
+
+// openJoiningScreen is openExploreScreen on a terminal that joins emoji
+// sequences into one glyph.
+func openJoiningScreen(t *testing.T, m exploreModel) *exploreScreen {
+	t.Helper()
+	grid := newTermGrid(m.width, m.height)
+	grid.joins = true
+	return openExploreScreenOn(t, m, grid)
+}
+
+// screenKinds are the two ways a terminal draws an emoji sequence. A layout
+// has to hold on both: rows must not run past the margin where the code
+// points are drawn apart, and columns must still line up where they are
+// joined and the row comes out shorter.
+var screenKinds = []struct {
+	name string
+	open func(*testing.T, exploreModel) *exploreScreen
+}{
+	{"sequences apart", openExploreScreen},
+	{"sequences joined", openJoiningScreen},
+}
+
+func openExploreScreenOn(t *testing.T, m exploreModel, grid *termGrid) *exploreScreen {
+	t.Helper()
+	s := &exploreScreen{t: t, out: &screenOutput{}, grid: grid, done: make(chan struct{})}
 	s.prog = tea.NewProgram(screenHost{m: m},
 		tea.WithInput(bytes.NewReader(nil)), tea.WithOutput(s.out),
 		tea.WithAltScreen(), tea.WithoutSignalHandler(), tea.WithFPS(120))
@@ -565,6 +601,10 @@ func screenKey(name string) tea.KeyMsg {
 }
 
 var (
+	// viewPanePlacement is how the wide layout puts the right pane at its
+	// column: the explorer's own cursor control, never repository text.
+	viewPanePlacement = regexp.MustCompile(`\x1b\[K\x1b\[\d+G`)
+
 	viewImageAt   = regexp.MustCompile(`\x1b7\x1b\[(\d+);(\d+)H`)
 	viewKittySize = regexp.MustCompile(`,c=(\d+),r=(\d+),`)
 	viewITermSize = regexp.MustCompile(`width=(\d+);height=(\d+):`)

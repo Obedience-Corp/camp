@@ -14,7 +14,9 @@ import (
 	"time"
 	"unicode/utf8"
 
+	"github.com/Obedience-Corp/camp/internal/config"
 	"github.com/Obedience-Corp/camp/internal/dungeon/explore"
+	"github.com/Obedience-Corp/camp/internal/ui/theme"
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/creack/pty"
 )
@@ -138,6 +140,50 @@ func TestExploreJSONDoesNotWriteConfig(t *testing.T) {
 	var result map[string]any
 	if err := json.Unmarshal(out.Bytes(), &result); err != nil {
 		t.Fatalf("--json did not emit JSON: %s (%v)", out.String(), err)
+	}
+
+	// The terminal branch reads the configured theme, and that read creates
+	// nothing either. With no global config there is still none afterwards.
+	configHome := filepath.Join(t.TempDir(), "config-home")
+	t.Setenv("XDG_CONFIG_HOME", configHome)
+	if got := exploreTheme(context.Background()); got != theme.ThemeAdaptive {
+		t.Fatalf("theme with nothing configured = %q", got)
+	}
+	if _, err := os.Stat(configHome); !os.IsNotExist(err) {
+		t.Fatalf("reading the theme created the config home: %v", err)
+	}
+	globalPath, err := config.GlobalConfigPath()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.MkdirAll(filepath.Dir(globalPath), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	global := []byte(`{"tui":{"theme":"light"}}` + "\n")
+	if err := os.WriteFile(globalPath, global, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if got := exploreTheme(context.Background()); got != theme.ThemeLight {
+		t.Fatalf("theme with light configured = %q", got)
+	}
+	// The camp's own override wins over the global setting.
+	if err := config.SaveLocalSettings(context.Background(), root, &config.LocalSettings{ThemeOverride: config.ThemeNameDark}); err != nil {
+		t.Fatal(err)
+	}
+	local, err := os.ReadFile(config.LocalSettingsPath(root))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := exploreTheme(context.Background()); got != theme.ThemeDark {
+		t.Fatalf("theme with a dark override in the camp = %q", got)
+	}
+	for path, want := range map[string][]byte{globalPath: global, config.LocalSettingsPath(root): local, configPath: original} {
+		if got, err := os.ReadFile(path); err != nil || string(got) != string(want) {
+			t.Fatalf("reading the theme changed %s: %q, %v", path, got, err)
+		}
+	}
+	if entries, err := os.ReadDir(filepath.Dir(globalPath)); err != nil || len(entries) != 1 {
+		t.Fatalf("reading the theme left %d entries beside the global config: %v", len(entries), err)
 	}
 
 	// A config that cannot be loaded must still leave the tree untouched.

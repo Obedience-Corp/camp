@@ -461,6 +461,21 @@ func longKeySections(long string) map[string]map[string]bool {
 }
 
 // Space toggles a replay the reader does not draw. It is not a reader key.
+// --images kitty forces a protocol where the automatic choice is off, but not
+// in plain output. The help said "forces" with no exception.
+func TestExploreHelpSaysPlainOutputDrawsNoReplay(t *testing.T) {
+	long := strings.Join(strings.Fields(dungeonExploreCmd.Long), " ")
+	for _, want := range []string{"NO_COLOR", "--no-color", "no replay is drawn, whatever --images says"} {
+		if !strings.Contains(long, want) {
+			t.Errorf("camp dungeon explore --help does not say %q", want)
+		}
+	}
+	usage := dungeonExploreCmd.Flags().Lookup("images").Usage
+	if !strings.Contains(usage, "NO_COLOR") || !strings.Contains(usage, "--no-color") {
+		t.Errorf("--images help does not name plain output: %q", usage)
+	}
+}
+
 func TestExploreReaderIgnoresSpace(t *testing.T) {
 	m := screenFeed(t, 100, 30, explore.ProtocolKitty, 6)
 	m.reduced = false
@@ -754,7 +769,7 @@ func TestExploreReaderKeepsItsLinesWhenOnlyTheHeightChanges(t *testing.T) {
 		t.Fatalf("fixture: reading=%v wrapped=%d", m.reading, m.reader.wrapped)
 	}
 	m.reader.body = readerBody{text: strings.Repeat("a line of the document that wraps when the reader narrows\n", 60)}
-	m.reader.lines = m.reader.body.render(m.contentWidth(), true)
+	m.reader.lines = m.reader.body.render(m.contentWidth(), true, "")
 	// A sentinel no render would produce: still there means no render ran.
 	m.reader.lines[0] = "rendered once"
 	m.reader.offset = len(m.reader.lines)

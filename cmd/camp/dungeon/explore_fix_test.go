@@ -83,6 +83,9 @@ func TestExploreViewStripsTerminalControlsFromRepoText(t *testing.T) {
 	}
 	reading, _ := press(t, m, tea.KeyMsg{Type: tea.KeyEnter})
 	for name, view := range map[string]string{"feed": m.View(), "reader": reading.View()} {
+		// The wide layout places its right pane with cursor control of its
+		// own. Nothing else may reach the terminal as a control.
+		view = viewPanePlacement.ReplaceAllString(view, "")
 		if strings.ContainsAny(view, "\x1b\x07\r") {
 			t.Fatalf("%s view carries terminal controls: %q", name, view)
 		}
@@ -200,6 +203,27 @@ func TestExploreResizeReflowsReader(t *testing.T) {
 	}
 }
 
+// A pty whose size was never set reports 0x0. Laid out for that, the feed was
+// one line saying the terminal is too small, with a camp's worth of rows
+// behind it.
+func TestExploreIgnoresASizeWithNoCells(t *testing.T) {
+	m := screenFeed(t, 80, 24, explore.ProtocolKitty, 6)
+	for _, size := range []tea.WindowSizeMsg{{}, {Width: 0, Height: 24}, {Width: 80, Height: 0}, {Width: -1, Height: -1}} {
+		got, cmd := press(t, m, size)
+		if got.width != 80 || got.height != 24 || got.sized || cmd != nil {
+			t.Fatalf("size %dx%d: model is %dx%d sized=%v cmd=%v; want it left at 80x24", size.Width, size.Height, got.width, got.height, got.sized, cmd != nil)
+		}
+		if view := got.View(); strings.Contains(view, "too small") || !strings.Contains(view, "Item 00") {
+			t.Fatalf("size %dx%d: the feed is not drawn:\n%s", size.Width, size.Height, view)
+		}
+	}
+	// The first size with cells is still the first: its replay is asked for.
+	m, _ = press(t, m, tea.WindowSizeMsg{})
+	if _, cmd := press(t, m, tea.WindowSizeMsg{Width: 80, Height: 24}); cmd == nil {
+		t.Fatal("the first real size did not ask for the focused replay")
+	}
+}
+
 func TestExploreResizeSchedulesSkippedReplay(t *testing.T) {
 	m := replayModel(explore.ProtocolKitty)
 	m.width, m.height = 50, 12
@@ -259,14 +283,14 @@ func TestExploreJumpPreservesUTF8Paths(t *testing.T) {
 
 func TestExploreMarkdownHonorsPlainOutput(t *testing.T) {
 	doc := "# Festival goal\n\nShip **every** platform with `code` and a [link](https://example.com).\n"
-	plain := strings.Join(renderExploreMarkdown(doc, 60, true), "\n")
+	plain := strings.Join(renderExploreMarkdown(doc, 60, true, ""), "\n")
 	if strings.Contains(plain, "\x1b") {
 		t.Fatalf("plain Markdown carries escape sequences: %q", plain)
 	}
 	if !strings.Contains(plain, "every") || !strings.Contains(plain, "Festival goal") {
 		t.Fatalf("plain Markdown lost its text: %q", plain)
 	}
-	if styled := strings.Join(renderExploreMarkdown(doc, 60, false), "\n"); !strings.Contains(styled, "\x1b[") {
+	if styled := strings.Join(renderExploreMarkdown(doc, 60, false, ""), "\n"); !strings.Contains(styled, "\x1b[") {
 		t.Fatal("styled Markdown carries no styling; the plain check proves nothing")
 	}
 }

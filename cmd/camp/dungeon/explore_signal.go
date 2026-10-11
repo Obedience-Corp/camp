@@ -1,19 +1,50 @@
 package dungeon
 
 import (
+	"context"
 	"os"
 	"os/signal"
 	"syscall"
+
+	tea "github.com/charmbracelet/bubbletea"
+	"github.com/spf13/cobra"
 
 	camperrors "github.com/Obedience-Corp/camp/internal/errors"
 )
 
 // exploreSignals notes an interrupt or a termination sent to the process
-// while the explorer owns the terminal. Bubble Tea and the command context
-// both act on the same signal and race to end the program, one with an
-// error and one without, so neither says which signal it was.
+// while the terminal branch of the command runs. The command context ends
+// the work on either signal and does not say which one it was.
 type exploreSignals struct {
 	ch chan os.Signal
+}
+
+// exploreUnderSignals runs the terminal branch of the command under a signal
+// watch. The watch starts before the camp is read, so a signal during
+// startup ends the command the same way as one that arrives while the feed
+// is open: with the shell's code for that signal and nothing printed. JSON
+// mode keeps its own error contract and is not watched.
+func exploreUnderSignals(cmd *cobra.Command, run func() error) error {
+	if exploreJSONMode(cmd) {
+		return run()
+	}
+	signals := watchExploreSignals()
+	err := run()
+	if exit := exploreSignalExit(cmd.CommandPath(), signals.stop(), err); exit != nil {
+		return exit
+	}
+	return err
+}
+
+// exploreProgramOptions are the Bubble Tea options the explorer runs with.
+// Bubble Tea's own signal handler stays off. It hands a signal to the event
+// loop with a bare channel send, and the command context, cancelled by the
+// same signal, can end the loop first; shutdown then waits on that send for
+// good, with the terminal still in raw mode on the alternate screen. The
+// context alone ends the program. ctrl+c is unaffected: in raw mode it is a
+// key, not a signal.
+func exploreProgramOptions(ctx context.Context) []tea.ProgramOption {
+	return []tea.ProgramOption{tea.WithContext(ctx), tea.WithAltScreen(), tea.WithoutSignalHandler()}
 }
 
 func watchExploreSignals() exploreSignals {

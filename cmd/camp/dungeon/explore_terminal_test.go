@@ -11,6 +11,7 @@ import (
 	"github.com/muesli/termenv"
 
 	"github.com/Obedience-Corp/camp/internal/dungeon/explore"
+	"github.com/Obedience-Corp/camp/internal/ui/theme"
 )
 
 // screenScript is one walk through the explorer. After every step the grid
@@ -144,45 +145,118 @@ var screenScripts = []screenScript{
 
 func TestExploreReplayOnTheTerminal(t *testing.T) {
 	for _, protocol := range []string{explore.ProtocolITerm, explore.ProtocolKitty} {
-		for _, script := range screenScripts {
-			t.Run(protocol+"/"+script.name, func(t *testing.T) {
-				m := emojiTitles(t, screenFeed(t, script.w, script.h, protocol, script.n))
-				m.index.Warnings = script.warnings
-				m.cursor = min(script.start, len(m.visible.Items)-1)
-				for m.visible.Items[m.cursor].Replay == "" {
-					m.cursor++
-				}
-				s := openExploreScreen(t, m)
-				check := func(step string, m exploreModel) {
-					t.Helper()
-					for _, problem := range checkScreen(s.grid, m) {
-						t.Errorf("after %s: %s\n%s", step, problem, s.grid)
-					}
-				}
-				first := s.send(screenSettle{})
-				if _, _, _, _, ok := imageBox(first.View()); !ok {
-					t.Fatal("the walk does not start on a drawn replay, so it checks nothing")
-				}
-				check("the first replay", first)
-				for _, step := range script.steps {
-					check(step.name, step.do(s))
-					if t.Failed() {
-						return
-					}
-				}
+		for _, kind := range screenKinds {
+			for _, script := range screenScripts {
+				t.Run(protocol+"/"+kind.name+"/"+script.name, func(t *testing.T) {
+					walkReplayScript(t, protocol, script, kind.open)
+				})
+			}
+		}
+	}
+}
 
-				// The same walk with no render forced between steps: the
-				// renderer skips whatever frames its timer misses, and the
-				// screen must still end where the model does.
-				s = openExploreScreen(t, m)
-				s.send(screenSettle{})
-				s.burst = true
-				for _, step := range script.steps {
-					step.do(s)
+func walkReplayScript(t *testing.T, protocol string, script screenScript, open func(*testing.T, exploreModel) *exploreScreen) {
+	t.Helper()
+	m := emojiTitles(t, screenFeed(t, script.w, script.h, protocol, script.n))
+	m.index.Warnings = script.warnings
+	m.cursor = min(script.start, len(m.visible.Items)-1)
+	for m.visible.Items[m.cursor].Replay == "" {
+		m.cursor++
+	}
+	s := open(t, m)
+	check := func(step string, m exploreModel) {
+		t.Helper()
+		for _, problem := range checkScreen(s.grid, m) {
+			t.Errorf("after %s: %s\n%s", step, problem, s.grid)
+		}
+	}
+	first := s.send(screenSettle{})
+	if _, _, _, _, ok := imageBox(first.View()); !ok {
+		t.Fatal("the walk does not start on a drawn replay, so it checks nothing")
+	}
+	check("the first replay", first)
+	for _, step := range script.steps {
+		check(step.name, step.do(s))
+		if t.Failed() {
+			return
+		}
+	}
+
+	// The same walk with no render forced between steps: the renderer skips
+	// whatever frames its timer misses, and the screen must still end where
+	// the model does.
+	s = open(t, m)
+	s.send(screenSettle{})
+	s.burst = true
+	for _, step := range script.steps {
+		step.do(s)
+	}
+	s.burst = false
+	check("the whole walk in one burst", s.send(nil))
+}
+
+// The wide layout's right pane starts at one column on every row. The left
+// cell is padded by the most cells its text can take, so where a terminal
+// joins an emoji sequence the padding ended short and the card line beside
+// that row started as many columns to the left.
+func TestExploreWidePaneKeepsItsColumn(t *testing.T) {
+	for _, kind := range screenKinds {
+		for cursor := range 4 {
+			m := emojiTitles(t, screenFeed(t, 120, 40, explore.ProtocolOff, 12))
+			m.cursor = cursor
+			s := kind.open(t, m)
+			got := s.send(nil)
+			item, _ := got.focused()
+			leftW := got.width / 2
+			aligned := 0
+			for i, line := range got.cardLines(item, got.width-leftW) {
+				want := strings.TrimRight(viewText(line), " ")
+				if _, ascii := asciiCells(want); !ascii {
+					// A line with a sequence of its own is as many cells
+					// as the terminal makes it; its start is what counts.
+					want = want[:strings.IndexFunc(want, func(r rune) bool { return r >= 0x7f })]
 				}
-				s.burst = false
-				check("the whole walk in one burst", s.send(nil))
-			})
+				// The body starts under the header: screen row 2.
+				cells := []rune(s.grid.rowText(1 + i))
+				if len(cells) < leftW+len(want) || string(cells[leftW:leftW+len(want)]) != want {
+					t.Errorf("%s, cursor %d: card line %d does not start at column %d: want %q there\n%s", kind.name, cursor, i+1, leftW+1, want, s.grid)
+					continue
+				}
+				aligned++
+			}
+			if aligned == 0 {
+				t.Fatalf("%s, cursor %d: no card line was checked", kind.name, cursor)
+			}
+		}
+	}
+}
+
+// Where sequences are joined a left cell ends short of its padding. Moving
+// to the pane's column skips the cells in between, so they are erased first:
+// a longer row drawn there before must not show through.
+func TestExploreWidePaneLeavesNothingBesideAShorterRow(t *testing.T) {
+	family := emojiSequences["family"]
+	for _, kind := range screenKinds {
+		m := screenFeed(t, 120, 40, explore.ProtocolOff, 40)
+		m.index.Items = append([]explore.Item(nil), m.index.Items...)
+		for i := range m.index.Items {
+			item := &m.index.Items[i]
+			item.Title, item.Summary = strings.Repeat("a long title ", 8), strings.Repeat("a long summary ", 8)
+			if i%2 == 1 {
+				item.Title, item.Summary = family+" "+family+" "+family, family+" "+family
+			}
+		}
+		if err := m.applyQuery(); err != nil {
+			t.Fatal(err)
+		}
+		s := kind.open(t, m)
+		var walked exploreModel
+		for _, key := range []string{"ctrl+d", "j", "j", "j", "k", "ctrl+d", "ctrl+u", "j"} {
+			walked = s.send(screenKey(key))
+		}
+		fresh := kind.open(t, walked)
+		if got, want := s.grid.String(), fresh.grid.String(); got != want {
+			t.Errorf("%s: the screen after the walk differs from the same view painted on a clear screen\nafter the walk:\n%s\npainted fresh:\n%s", kind.name, got, want)
 		}
 	}
 }
@@ -249,7 +323,7 @@ func TestExploreReaderTabsOnTheTerminal(t *testing.T) {
 			m.plain = plain
 			m.reading = true
 			m.reader = exploreReader{title: "design.md", item: m.visible.Items[0], body: body}
-			m.reader.lines = body.render(m.contentWidth(), plain)
+			m.reader.lines = body.render(m.contentWidth(), plain, "")
 			for _, line := range m.reader.lines {
 				if strings.Contains(line, "\t") {
 					t.Fatalf("%s plain=%v: a raw tab reached the reader line %q", name, plain, line)
@@ -309,7 +383,7 @@ func TestExploreReaderClosesStylesAtHardBreaks(t *testing.T) {
 
 	doc := "# Notes\n\nSee `" + strings.Repeat("internal/dungeon/explore/", 8) + "replay.go` and https://example.com/" +
 		strings.Repeat("segment/", 16) + "end for the rest.\n"
-	lines := renderExploreMarkdown(doc, 38, false)
+	lines := renderExploreMarkdown(doc, 38, false, "")
 	continued := 0
 	for i, line := range lines {
 		open := openStyleAtEnd(line)
@@ -334,10 +408,10 @@ func TestExploreReaderClosesStylesAtHardBreaks(t *testing.T) {
 	// On the terminal: with the styled token cut by the bottom of the body,
 	// nothing is erased while a style is open.
 	m := screenFeed(t, 40, 12, explore.ProtocolOff, 3)
-	m.styles = newExploreStyles(false)
+	m.styles = newExploreStyles(false, theme.ThemeAdaptive)
 	m.reading = true
 	m.reader = exploreReader{title: "notes.md", item: m.visible.Items[0], body: readerBody{text: doc, markdown: true}}
-	m.reader.lines = m.reader.body.render(m.contentWidth(), false)
+	m.reader.lines = m.reader.body.render(m.contentWidth(), false, "")
 	s := openExploreScreen(t, m)
 	for range len(m.reader.lines) {
 		s.send(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("j")})

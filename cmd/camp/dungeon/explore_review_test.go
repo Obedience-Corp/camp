@@ -14,6 +14,7 @@ import (
 	"unicode/utf8"
 
 	"github.com/Obedience-Corp/camp/internal/dungeon/explore"
+	"github.com/Obedience-Corp/camp/internal/ui/theme"
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
 	"github.com/muesli/termenv"
@@ -293,13 +294,15 @@ func TestExploreStylesAndPlain(t *testing.T) {
 	lipgloss.SetColorProfile(termenv.TrueColor)
 	defer lipgloss.SetColorProfile(old)
 	m := replayModel(explore.ProtocolOff)
-	m.styles = newExploreStyles(false)
+	m.styles = newExploreStyles(false, theme.ThemeAdaptive)
 	styled := m.View()
 	if !strings.Contains(styled, "\x1b[") || !strings.Contains(styled, "48;") {
 		t.Fatal("missing color or selection background")
 	}
-	m.styles = newExploreStyles(true)
-	plain := m.View()
+	m.styles = newExploreStyles(true, theme.ThemeAdaptive)
+	// Plain output carries no styling. Placing the right pane at its column
+	// is cursor control, which plain mode keeps.
+	plain := viewPanePlacement.ReplaceAllString(m.View(), "")
 	if bytes.ContainsAny([]byte(plain), "\x1b") {
 		t.Fatal("plain view contains ANSI")
 	}

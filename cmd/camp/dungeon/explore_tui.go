@@ -138,7 +138,7 @@ func runExploreTUI(cmd *cobra.Command, root, cacheDir string, query explore.Quer
 		protocol:    protocol,
 		decode:      explore.DecodeReplay,
 		plain:       plain,
-		styles:      newExploreStyles(plain),
+		styles:      newExploreStyles(plain, exploreTheme(ctx)),
 		reduced:     brand.ReducedMotion(),
 		gotoEnabled: pathOutput != "",
 	}
@@ -154,16 +154,10 @@ func runExploreTUI(cmd *cobra.Command, root, cacheDir string, query explore.Quer
 			_ = model.applyQuery()
 		}
 	}
-	prog := tea.NewProgram(model, tea.WithContext(ctx), tea.WithAltScreen())
-	signals := watchExploreSignals()
-	final, err := prog.Run()
-	stopped := signals.stop()
+	final, err := tea.NewProgram(model, exploreProgramOptions(ctx)...).Run()
 	done, ok := final.(exploreModel)
 	if ok {
 		done.cancelDecode()
-	}
-	if exit := exploreSignalExit(cmd.CommandPath(), stopped, err); exit != nil {
-		return exit
 	}
 	if err != nil {
 		return camperrors.Wrap(err, "running dungeon explorer")
@@ -216,6 +210,11 @@ func (m exploreModel) saveCacheCmd() tea.Cmd {
 func (m exploreModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	switch msg := msg.(type) {
 	case tea.WindowSizeMsg:
+		if msg.Width <= 0 || msg.Height <= 0 {
+			// A pty whose size was never set reports 0x0. That is no size
+			// to lay out for; the last one known stays.
+			return m, nil
+		}
 		rows := m.stageRows()
 		pixW, pixH := m.stagePixels()
 		first := !m.sized

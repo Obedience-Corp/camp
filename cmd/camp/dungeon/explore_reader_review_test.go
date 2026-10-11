@@ -27,7 +27,7 @@ func TestExploreReaderRejectsRenderedCommands(t *testing.T) {
 	for _, payload := range payloads {
 		for _, plain := range []bool{false, true} {
 			for _, source := range []string{payload, "# " + payload, "**" + payload + "**", "[label](" + payload + ")"} {
-				out := strings.Join((readerBody{text: source, markdown: true}).render(64, plain), "\n")
+				out := strings.Join((readerBody{text: source, markdown: true}).render(64, plain, ""), "\n")
 				safe := out
 				if !plain {
 					safe = sgr.ReplaceAllString(out, "")
@@ -58,7 +58,7 @@ func TestExploreReaderWrapsLongMarkdownTokens(t *testing.T) {
 		for _, plain := range []bool{false, true} {
 			for _, token := range tokens {
 				for _, source := range []string{token, "`" + token + "`", "```\n" + token + "\n```"} {
-					lines := (readerBody{text: source, markdown: true}).render(width, plain)
+					lines := (readerBody{text: source, markdown: true}).render(width, plain, "")
 					var text strings.Builder
 					for _, line := range lines {
 						if ansi.StringWidth(line) > width {

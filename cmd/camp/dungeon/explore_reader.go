@@ -43,11 +43,13 @@ type readerBody struct {
 	markdown bool
 }
 
-func (b readerBody) render(width int, plain bool) []string {
+// render lays the body out width cells wide. style names the Glamour style
+// for markdown, as newExploreStyles resolved it.
+func (b readerBody) render(width int, plain bool, style string) []string {
 	text := expandTabs(explore.CleanDocument(b.text))
 	var lines []string
 	if b.markdown {
-		lines = renderExploreMarkdown(explore.MarkdownBody(text), width, plain)
+		lines = renderExploreMarkdown(explore.MarkdownBody(text), width, plain, style)
 	} else {
 		lines = wrapPlain(text, width)
 	}
@@ -78,7 +80,7 @@ func (m *exploreModel) reflowReader() {
 	// Rendering a long document is slow, and a drag sends a size for every
 	// step of it. A change of height alone keeps the rendered lines.
 	if width := m.contentWidth(); width != m.reader.wrapped {
-		m.reader.lines = m.reader.body.render(width, m.plain)
+		m.reader.lines = m.reader.body.render(width, m.plain, m.styles.glamour)
 		m.reader.wrapped = width
 	}
 	m.reader.offset = maxReaderOffset(m.reader.offset, len(m.reader.lines), m.bodyHeight())
@@ -135,7 +137,7 @@ func (m exploreModel) openReader() (tea.Model, tea.Cmd) {
 	}
 	if !reader.listing {
 		reader.wrapped = m.contentWidth()
-		reader.lines = reader.body.render(reader.wrapped, m.plain)
+		reader.lines = reader.body.render(reader.wrapped, m.plain, m.styles.glamour)
 	}
 	m.reading = true
 	m.reader = reader
@@ -176,7 +178,7 @@ func (m exploreModel) onReaderKey(key tea.KeyMsg) (tea.Model, tea.Cmd) {
 		m.reader.title = picked.name
 		m.reader.body = readerBody{text: text, markdown: true, lead: cutNotice(cut)}
 		m.reader.wrapped = m.contentWidth()
-		m.reader.lines = m.reader.body.render(m.reader.wrapped, m.plain)
+		m.reader.lines = m.reader.body.render(m.reader.wrapped, m.plain, m.styles.glamour)
 		m.reader.offset = 0
 		return m, nil
 	case "g":
@@ -292,11 +294,15 @@ func expandTabs(text string) string {
 	return b.String()
 }
 
-func renderExploreMarkdown(text string, width int, plain bool) []string {
+func renderExploreMarkdown(text string, width int, plain bool, style string) []string {
 	width = max(width, 1)
-	// The feed's palette follows the terminal background; so does the document.
-	// Glamour's dark style is light grey text, which a light terminal hides.
-	opts := []glamour.TermRendererOption{glamour.WithStylePath(theme.GlamourStyle(theme.ThemeAdaptive)), glamour.WithWordWrap(width)}
+	// The document follows the same theme as the feed's palette. Glamour's
+	// dark style is light grey text, which a light terminal hides. With no
+	// style named it follows the terminal background.
+	if style == "" {
+		style = theme.GlamourStyle(theme.ThemeAdaptive)
+	}
+	opts := []glamour.TermRendererOption{glamour.WithStylePath(style), glamour.WithWordWrap(width)}
 	if plain {
 		opts = []glamour.TermRendererOption{
 			glamour.WithStandardStyle(styles.NoTTYStyle),
@@ -342,6 +348,14 @@ func wrapLine(line string, width int) []string {
 	var state byte
 	for len(line) > 0 {
 		seq, clustered, n, next := ansi.DecodeSequence(line, state, nil)
+		// DecodeSequence hands back an ASCII character without the marks
+		// that follow it. A keycap is a digit, U+FE0F, and U+20E3: one cell
+		// as code points, two where the terminal joins them. Take the whole
+		// cluster so it is measured as cellWidth measures it.
+		if clustered > 0 && n == 1 && len(line) > 1 && line[1] >= utf8.RuneSelf {
+			seq, clustered = ansi.FirstGraphemeCluster(line, ansi.GraphemeWidth)
+			n = len(seq)
+		}
 		state, line = next, line[n:]
 		// Escape sequences and combining marks take no cells of their own.
 		if clustered > 0 {

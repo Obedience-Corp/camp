@@ -162,12 +162,7 @@ func invokeExploreWrapper(t *testing.T, shellName, script string, args []string)
 		t.Skip(bin[0] + " not available")
 	}
 	cmd := exec.Command(bin[0], bin[1:]...)
-	cmd.Env = []string{
-		"PATH=" + os.Getenv("PATH"),
-		"HOME=" + os.Getenv("HOME"),
-		"TERM=xterm-256color",
-		"CAMP_INIT=" + initScript,
-	}
+	cmd.Env = exploreShellEnv(initScript)
 	ptmx, err := pty.Start(cmd)
 	if err != nil {
 		t.Fatal(err)
@@ -196,6 +191,43 @@ func invokeExploreWrapper(t *testing.T, shellName, script string, args []string)
 		t.Fatalf("%s %v invoked camp %d times:\n%s", shellName, args, len(invoked), out)
 	}
 	return invoked[0]
+}
+
+// exploreShellHome is where a spawned shell is told its home and XDG
+// directories are. Nothing can be created under /dev/null, by any user, so a
+// shell that writes first-run files (fish creates ~/.config/fish, its cache,
+// and its data directory) cannot put them in the developer's home.
+const exploreShellHome = "/dev/null/camp-shell-test"
+
+func exploreShellEnv(initScript string) []string {
+	return []string{
+		"PATH=" + os.Getenv("PATH"),
+		"HOME=" + exploreShellHome,
+		"XDG_CONFIG_HOME=" + exploreShellHome + "/config",
+		"XDG_CACHE_HOME=" + exploreShellHome + "/cache",
+		"XDG_DATA_HOME=" + exploreShellHome + "/data",
+		"TERM=xterm-256color",
+		"CAMP_INIT=" + initScript,
+	}
+}
+
+// The wrapper tests run real shells. One handed the developer's HOME wrote
+// there: fish created its config, cache, and data directories on first run.
+func TestExploreWrapperShellsCannotWriteHome(t *testing.T) {
+	seen := map[string]string{}
+	for _, entry := range exploreShellEnv("") {
+		name, value, _ := strings.Cut(entry, "=")
+		seen[name] = value
+	}
+	for _, name := range []string{"HOME", "XDG_CONFIG_HOME", "XDG_CACHE_HOME", "XDG_DATA_HOME"} {
+		value, ok := seen[name]
+		if !ok || !strings.HasPrefix(value, "/dev/null/") {
+			t.Errorf("%s = %q (set: %v); want a path under /dev/null, where nothing can be created", name, value, ok)
+		}
+		if home := os.Getenv("HOME"); home != "" && strings.HasPrefix(value, home) {
+			t.Errorf("%s = %q is inside the developer's home", name, value)
+		}
+	}
 }
 
 func exploreWrapperCommand(t *testing.T, shellName, script string, args []string) ([]string, string) {

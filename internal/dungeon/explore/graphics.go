@@ -52,6 +52,9 @@ func hostProtocol(getenv func(string) string) string {
 	if strings.HasPrefix(term, "xterm-kitty") || strings.HasPrefix(term, "xterm-ghostty") {
 		return ProtocolKitty
 	}
+	if namesTerminalWithoutGraphics(term, getenv) {
+		return ProtocolOff
+	}
 	switch getenv("TERM_PROGRAM") {
 	case "iTerm.app":
 		return ProtocolITerm
@@ -69,6 +72,20 @@ func hostProtocol(getenv func(string) string) string {
 		return ProtocolITerm
 	}
 	return ProtocolOff
+}
+
+// namesTerminalWithoutGraphics reports a terminal that names itself and draws
+// neither protocol: Alacritty, foot, and the Linux console in TERM, a
+// JetBrains IDE's terminal in TERMINAL_EMULATOR. None of them sets
+// TERM_PROGRAM, so one started from a shell in iTerm or Kitty still carries
+// that terminal's TERM_PROGRAM, LC_TERMINAL, or KITTY_WINDOW_ID.
+func namesTerminalWithoutGraphics(term string, getenv func(string) string) bool {
+	for _, name := range []string{"alacritty", "foot", "linux", "dumb"} {
+		if term == name || strings.HasPrefix(term, name+"-") {
+			return true
+		}
+	}
+	return getenv("TERMINAL_EMULATOR") == "JetBrains-JediTerm"
 }
 
 // insideNestedTerminal reports tmux, GNU screen, zellij, or a terminal run by

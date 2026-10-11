@@ -2,6 +2,7 @@ package dungeon
 
 import (
 	"bytes"
+	"context"
 	"fmt"
 	"hash/fnv"
 	"image/png"
@@ -11,6 +12,7 @@ import (
 	"time"
 	"unicode/utf8"
 
+	"github.com/Obedience-Corp/camp/internal/config"
 	"github.com/Obedience-Corp/camp/internal/ui/theme"
 	"github.com/charmbracelet/lipgloss"
 	"github.com/charmbracelet/x/ansi"
@@ -27,16 +29,28 @@ const (
 )
 
 // Styles are resolved once per terminal session from Camp's shared palette.
+// glamour names the Glamour style the reader renders markdown with; empty
+// follows the terminal background.
 type exploreStyles struct {
 	header, selected, title, muted, day, help, failure lipgloss.Style
+	glamour                                            string
 }
 
-func newExploreStyles(plain bool) exploreStyles {
+// exploreTheme is the theme the user configured, read without writing: the
+// explorer creates nothing but its own cache.
+func exploreTheme(ctx context.Context) theme.ThemeName {
+	return theme.ThemeName(config.ReadEffectiveTheme(ctx))
+}
+
+// newExploreStyles resolves the feed's palette and the reader's markdown
+// style for one theme, so a configured light or dark theme reaches both.
+func newExploreStyles(plain bool, name theme.ThemeName) exploreStyles {
 	if plain {
 		return exploreStyles{}
 	}
-	p := theme.TUI()
+	p := theme.TUIForTheme(name)
 	return exploreStyles{
+		glamour:  theme.GlamourStyle(name),
 		header:   lipgloss.NewStyle().Foreground(p.Accent).Bold(true),
 		selected: lipgloss.NewStyle().Foreground(p.AccentAlt).Background(p.BgSelected).Bold(true),
 		title:    lipgloss.NewStyle().Foreground(p.TextPrimary).Bold(true),
@@ -452,19 +466,23 @@ func (m exploreModel) renderWide() string {
 	height := m.bodyHeight()
 	var b strings.Builder
 	seq := m.imageSequence(rightW)
+	// The left cell is padded by cellWidth, the most columns its text can
+	// take. A terminal that joins an emoji sequence draws it narrower, so
+	// the padding ends short of the pane. The right cell is therefore put
+	// at its column, after an erase that clears what the shorter cell left
+	// between the two.
+	toPane := fmt.Sprintf("\x1b[K\x1b[%dG", leftW+1)
 	for i := range height {
 		line := ""
 		if i < len(left) {
 			line = left[i]
 		}
-		line = padWidth(line, leftW)
-		if i == 0 && seq != "" {
-			b.WriteString(line)
-			b.WriteString(seq)
-		} else {
-			b.WriteString(line)
-		}
+		b.WriteString(padWidth(line, leftW))
 		if i < len(right) {
+			b.WriteString(toPane)
+			if i == 0 {
+				b.WriteString(seq)
+			}
 			b.WriteString(right[i])
 		}
 		if i+1 < height {
@@ -932,10 +950,21 @@ func keepEnd(prefix, text string, width int) string {
 	return prefix + "…" + strings.Join(clusters[from:], "")
 }
 
+// padWidth makes s exactly width cells wide as cellWidth measures it. ansi
+// measures some sequences wider than cellWidth does, so text that already
+// fits is never handed to ansi.Truncate, which would cut it again.
 func padWidth(s string, width int) string {
 	gap := width - cellWidth(s)
-	if gap <= 0 {
-		return ansi.Truncate(s, width, "")
+	if gap >= 0 {
+		return s + strings.Repeat(" ", gap)
 	}
-	return s + strings.Repeat(" ", gap)
+	// ansi.Truncate keeps styling whole. Its limit comes down until the
+	// result fits by the measure the rest of the layout uses.
+	for limit := width; limit > 0; limit-- {
+		cut := ansi.Truncate(s, limit, "")
+		if used := cellWidth(cut); used <= width {
+			return cut + strings.Repeat(" ", width-used)
+		}
+	}
+	return strings.Repeat(" ", max(width, 0))
 }

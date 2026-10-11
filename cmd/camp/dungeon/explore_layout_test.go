@@ -43,7 +43,7 @@ func TestExploreReaderStripsFrontmatter(t *testing.T) {
 		text:     "---\nfest_type: festival\nfest_id: FA0024\nfest_name: festival-activity-desktop\nfest_status: dungeon/completed\n---\n\n# Festival Goal\n\nShip the desktop app.\n",
 		markdown: true,
 	}
-	got := strings.Join(body.render(80, true), "\n")
+	got := strings.Join(body.render(80, true, ""), "\n")
 	for _, leak := range []string{"fest_type", "fest_id", "fest_status", "--------"} {
 		if strings.Contains(got, leak) {
 			t.Fatalf("reader shows frontmatter %q:\n%s", leak, got)
@@ -53,7 +53,7 @@ func TestExploreReaderStripsFrontmatter(t *testing.T) {
 		t.Fatalf("reader lost the goal body:\n%s", got)
 	}
 	plain := readerBody{text: "# No frontmatter\n\n---\n\nA rule above stays.\n", markdown: true}
-	if got := strings.Join(plain.render(80, true), "\n"); !strings.Contains(got, "No frontmatter") || !strings.Contains(got, "A rule above stays.") {
+	if got := strings.Join(plain.render(80, true, ""), "\n"); !strings.Contains(got, "No frontmatter") || !strings.Contains(got, "A rule above stays.") {
 		t.Fatalf("document without frontmatter changed:\n%s", got)
 	}
 }
