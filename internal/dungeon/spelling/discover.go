@@ -2,6 +2,7 @@ package spelling
 
 import (
 	"context"
+	"errors"
 	"io/fs"
 	"os"
 	"path/filepath"
@@ -27,6 +28,15 @@ type Dungeon struct {
 // Hidden reports whether d uses the hidden spelling.
 func (d Dungeon) Hidden() bool { return d.Name == Hidden }
 
+// Discovery is the dungeons under a campaign and the directories the walk
+// could not list.
+type Discovery struct {
+	Dungeons []Dungeon
+	// Warnings are camp-relative paths of directories whose contents could
+	// not be read, each followed by the error text.
+	Warnings []string
+}
+
 // Discover walks campaignRoot and reports every dungeon directory it holds,
 // ordered by path.
 //
@@ -39,14 +49,36 @@ func (d Dungeon) Hidden() bool { return d.Name == Hidden }
 // projects/ is skipped whole. Projects own their own trees, and a Go package
 // directory named "dungeon" inside one is not a campaign dungeon. Nested git
 // repositories are skipped for the same reason.
+//
+// A directory that cannot be listed fails the whole walk. Callers that can
+// keep the dungeons they did reach want DiscoverContinuing.
 func Discover(ctx context.Context, campaignRoot string) ([]Dungeon, error) {
+	found, err := discover(ctx, campaignRoot, false, filepath.WalkDir)
+	return found.Dungeons, err
+}
+
+// DiscoverContinuing walks campaignRoot like Discover. A directory that
+// cannot be listed is recorded in Warnings and the walk continues, so one
+// unreadable directory does not hide every other dungeon. Failure to read
+// campaignRoot itself, or a cancelled context, is still an error.
+//
+// walk lists the tree the way filepath.WalkDir does. A nil walk uses
+// filepath.WalkDir.
+func DiscoverContinuing(ctx context.Context, campaignRoot string, walk func(string, fs.WalkDirFunc) error) (Discovery, error) {
+	if walk == nil {
+		walk = filepath.WalkDir
+	}
+	return discover(ctx, campaignRoot, true, walk)
+}
+
+func discover(ctx context.Context, campaignRoot string, tolerate bool, walk func(string, fs.WalkDirFunc) error) (Discovery, error) {
 	if err := ctx.Err(); err != nil {
-		return nil, camperrors.Wrap(err, "context cancelled")
+		return Discovery{}, camperrors.Wrap(err, "context cancelled")
 	}
 
 	absRoot, err := filepath.Abs(campaignRoot)
 	if err != nil {
-		return nil, camperrors.Wrapf(err, "resolving camp root %s", campaignRoot)
+		return Discovery{}, camperrors.Wrapf(err, "resolving camp root %s", campaignRoot)
 	}
 
 	// A directory that does not exist yet holds no dungeons. camp init resolves
@@ -55,20 +87,24 @@ func Discover(ctx context.Context, campaignRoot string) ([]Dungeon, error) {
 	info, err := os.Stat(absRoot)
 	if err != nil {
 		if os.IsNotExist(err) {
-			return nil, nil
+			return Discovery{}, nil
 		}
-		return nil, camperrors.Wrapf(err, "stat %s", absRoot)
+		return Discovery{}, camperrors.Wrapf(err, "stat %s", absRoot)
 	}
 	if !info.IsDir() {
-		return nil, nil
+		return Discovery{}, nil
 	}
 
 	projectsPath := filepath.Join(absRoot, ProjectsDir)
 
-	var found []Dungeon
-	walkErr := filepath.WalkDir(absRoot, func(path string, entry fs.DirEntry, err error) error {
+	var found Discovery
+	walkErr := walk(absRoot, func(path string, entry fs.DirEntry, err error) error {
 		if err != nil {
-			return err
+			if !tolerate || path == absRoot {
+				return err
+			}
+			found.Warnings = append(found.Warnings, discoveryWarning(absRoot, path, err))
+			return nil
 		}
 		if !entry.IsDir() || path == absRoot {
 			return nil
@@ -80,16 +116,29 @@ func Discover(ctx context.Context, campaignRoot string) ([]Dungeon, error) {
 			return filepath.SkipDir
 		}
 		if IsDungeonName(entry.Name()) {
-			found = append(found, Dungeon{Parent: filepath.Dir(path), Name: entry.Name(), Path: path})
+			found.Dungeons = append(found.Dungeons, Dungeon{Parent: filepath.Dir(path), Name: entry.Name(), Path: path})
 		}
 		return nil
 	})
 	if walkErr != nil {
-		return nil, camperrors.Wrapf(walkErr, "walking camp %s", absRoot)
+		return Discovery{}, camperrors.Wrapf(walkErr, "walking camp %s", absRoot)
 	}
 
-	sort.Slice(found, func(i, j int) bool { return found[i].Path < found[j].Path })
+	sort.Slice(found.Dungeons, func(i, j int) bool { return found.Dungeons[i].Path < found.Dungeons[j].Path })
 	return found, nil
+}
+
+func discoveryWarning(root, path string, err error) string {
+	rel, relErr := filepath.Rel(root, path)
+	if relErr != nil || rel == "." {
+		rel = path
+	}
+	// The path error repeats the absolute path the warning already names.
+	var pathErr *fs.PathError
+	if errors.As(err, &pathErr) {
+		err = pathErr.Err
+	}
+	return filepath.ToSlash(rel) + ": " + err.Error()
 }
 
 // CampaignName reports the dungeon spelling campaignRoot has established.

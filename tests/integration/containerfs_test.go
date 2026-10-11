@@ -63,7 +63,7 @@ var containerFSPackages = []containerFSPackage{
 	{ImportPath: "./internal/jobs", MinTests: 6, TestPattern: "^Test(ExecuteCommit|CaptureDirection)"},
 	{ImportPath: "./internal/defercommit", MinTests: 2, TestPattern: "^TestAllowedForPaths(Keeps|Unreadable)"},
 	// Hop resume socket and machine registry handoff regressions.
-	{ImportPath: "./cmd/camp", MinTests: 5, TestPattern: "^TestHopResume"},
+	{ImportPath: "./cmd/camp", MinTests: 8, TestPattern: "^Test(HopResume|ExploreExecuteDoesNotWriteConfig|ExploreExecuteRefusesInvalidFlags|ExploreExecuteKeepsStderrJSONWhenAJobFailed)"},
 	{ImportPath: "./internal/starter", MinTests: 3},
 	{ImportPath: "./internal/clone", MinTests: 29},
 	{ImportPath: "./internal/sync", MinTests: 32},
@@ -85,6 +85,10 @@ var containerFSPackages = []containerFSPackage{
 	// The artifact notice detectors read declarations, committed manifests,
 	// snapshots, and dismissals staged in a campaign.
 	{ImportPath: "./internal/notice", MinTests: 21},
+	// The dungeon explorer feed, text sanitizing, cache round trip, and
+	// metadata fingerprints stage dungeons on disk and edit them in place.
+	{ImportPath: "./internal/dungeon/explore", MinTests: 36, TestPattern: "^Test(BuildEmptyStatusDirectories|BuildMetadataYAMLCompatibility|CachePathConfinement|CacheWriteSymlinks|BuildFeed|BuildSanitizesRepositoryText|CacheKeepsDirectoryItems|RefreshSeesInPlaceMetadataEdits|RefreshRetriesCachedMetadataFailure|WorkitemMarkerWinsOverFestivalArtifacts|ReadRegularRejectsSpecialFiles|BuildSpecialMarkdownDoesNotBlock|BuildHoldingDirectoryItems|BuildFestivalGoalSuppliesMissingName|BuildContinuesPastUnreadableDirectory|BuildKeepsReadableItemsWhenFingerprintFails|BuildWorkitemIDWithoutRef|CacheDiscardsEarlierSchemas|CacheHonorsCancelledContext|BuildFestivalGoalFillsInForUnusableFestYAML|BuildWorkitemReadmeFillsInForMalformedMarker|BuildMarkdownFrontmatterAsWritten|BuildReportsAnUnreadableDirectoryOnce|DecodeReplayOversizeFileKeepsPoster|BuildBoundsHostileMetadata|RefreshSeesPermissionChange|SaveCacheSweepsStaleTempFiles|BuildKeepsFieldsBesideAWronglyTypedOne|BuildFestivalGoalSuppliesMissingDate|BuildSurvivesMetadataTheYAMLDecoderCannotRead|CacheIsReadAgainInAnotherTimeZone|BuildReadsANestedDungeonOnce|BuildFollowsACampRootThatIsALink|CacheLeavesOutAnIndexJSONCannotCarry|BuildWarnsWhenMetadataPassesTheReadLimit|BuildKeepsTheFirstOfARepeatedFrontmatterKey)$"},
+	{ImportPath: "./cmd/camp/dungeon/explore", MinTests: 10, TestPattern: "^TestExplore(ReadFailures|PipedInputJSON|ReaderRejectsSpecialFiles|ReaderClearsParseError|ReaderSaysWhenADocumentIsCut|JSONDoesNotWriteConfig|CacheSaveRunsOffTheUpdateLoop|ReaderOpensFestivalWithoutARegularGoalFile|TerminalRefusesALensTheCampDoesNotHave|TerminalOpensOnTheIndexItChecked)$"},
 }
 
 // containerFSTag is the build tag gating host compilation of these suites.

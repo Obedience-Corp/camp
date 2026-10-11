@@ -131,6 +131,28 @@ func TestGenerateFish_WorkitemArmPassesSubcommands(t *testing.T) {
 	})
 }
 
+// Cobra accepts false, FALSE, False, f, F, and 0. Those must stay on the
+// interactive handoff; a blanket --json=* sends them around --path-output.
+func assertJSONFalseKeepsExploreHandoff(t *testing.T, section string) {
+	t.Helper()
+	if strings.Contains(section, "--json|--json=*") || strings.Contains(section, "--json '--json=*'") {
+		t.Fatal("dungeon explore treats --json=false as a passthrough")
+	}
+	for _, flag := range []string{"--json=false", "--json=FALSE", "--json=False", "--json=f", "--json=F", "--json=0"} {
+		if !strings.Contains(section, flag) {
+			t.Errorf("dungeon explore arm missing false value %s", flag)
+		}
+	}
+	falseAt := strings.Index(section, "--json=false")
+	globAt := strings.Index(section, "--json=*")
+	if falseAt < 0 || globAt < 0 || falseAt > globAt {
+		t.Fatal("false --json values are not excluded before the --json=* passthrough")
+	}
+	if !strings.Contains(section, "--path-output") {
+		t.Fatal("dungeon explore lost the shell handoff")
+	}
+}
+
 func shellWrapperSection(t *testing.T, output, startMarker, endMarker string) string {
 	t.Helper()
 

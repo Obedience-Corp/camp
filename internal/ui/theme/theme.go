@@ -55,6 +55,23 @@ func GetTheme(name ThemeName) *huh.Theme {
 	return buildTheme(palette)
 }
 
+// GlamourStyle names the Glamour style for rendered markdown under a theme:
+// "light" or "dark". The adaptive theme follows the terminal background that
+// bginit seeded before Bubble Tea started, so no terminal query is issued.
+func GlamourStyle(name ThemeName) string {
+	switch name {
+	case ThemeLight:
+		return "light"
+	case ThemeDark, ThemeHighContrast:
+		// High contrast builds on the dark base.
+		return "dark"
+	}
+	if lipgloss.HasDarkBackground() {
+		return "dark"
+	}
+	return "light"
+}
+
 // SetNoColor records the command-level no-color decision for shared palette
 // resolution. Lip Gloss is configured separately by the parent ui package.
 func SetNoColor(noColor bool) {

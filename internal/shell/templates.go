@@ -3,6 +3,7 @@ package shell
 import (
 	"bytes"
 	"embed"
+	"strings"
 	"text/template"
 
 	camperrors "github.com/Obedience-Corp/camp/internal/errors"
@@ -30,6 +31,31 @@ type templateData struct {
 
 	// ShellCompletions is fish complete commands for the shell-init argument.
 	ShellCompletions string
+}
+
+// rootBoolFlags are camp's root persistent flags. One may come before or
+// between the command words, as in `camp --no-color dungeon explore`, so a
+// wrapper arm that must find its command reads past them. Every one is
+// boolean: a flag that took a value would need that value skipped as well.
+var rootBoolFlags = []string{"no-color"}
+
+// RootFlagCase is the root flags as a POSIX case pattern: each flag bare and
+// with a value attached.
+func (templateData) RootFlagCase() string {
+	patterns := make([]string, 0, 2*len(rootBoolFlags))
+	for _, name := range rootBoolFlags {
+		patterns = append(patterns, "--"+name, "--"+name+"=*")
+	}
+	return strings.Join(patterns, "|")
+}
+
+// RootFlagFish is the root flags as fish case patterns.
+func (templateData) RootFlagFish() string {
+	patterns := make([]string, 0, 2*len(rootBoolFlags))
+	for _, name := range rootBoolFlags {
+		patterns = append(patterns, "--"+name, "'--"+name+"=*'")
+	}
+	return strings.Join(patterns, " ")
 }
 
 // parsedTemplates caches the parsed template tree so we parse once per process.

@@ -19,22 +19,7 @@ var (
 // This avoids the slow OSC terminal query on every render.
 func InitGlamourStyle(themeName string) {
 	glamourStyleOnce.Do(func() {
-		switch themeName {
-		case "dark":
-			glamourStyle = "dark"
-		case "light":
-			glamourStyle = "light"
-		case "high-contrast":
-			glamourStyle = "dark" // high-contrast uses dark base
-		default: // "adaptive" or empty
-			// bginit seeded this cache before bubbletea initialization, so this
-			// resolves adaptive styling without issuing an OSC terminal query.
-			if lipgloss.HasDarkBackground() {
-				glamourStyle = "dark"
-			} else {
-				glamourStyle = "light"
-			}
-		}
+		glamourStyle = theme.GlamourStyle(theme.ThemeName(themeName))
 	})
 }
 

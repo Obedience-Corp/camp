@@ -8,6 +8,7 @@ import (
 	"strings"
 
 	"github.com/spf13/cobra"
+	"github.com/spf13/pflag"
 
 	camperrors "github.com/Obedience-Corp/camp/internal/errors"
 )
@@ -44,11 +45,12 @@ func WithHint(err error, hint string) error {
 }
 
 // Args wraps a cobra positional validator so --json callers receive the same
-// structured error envelope as RunE failures.
+// structured error envelope as RunE failures. The flags are parsed by the
+// time it runs, so the command's own answer decides (Requested).
 func Args(schemaVersion string, jsonRequested func() bool, validate cobra.PositionalArgs) cobra.PositionalArgs {
 	return func(cmd *cobra.Command, args []string) error {
 		err := validate(cmd, args)
-		if err == nil || !Requested(jsonRequested) {
+		if err == nil || !Requested(cmd, jsonRequested) {
 			return err
 		}
 		return RenderError(cmd, schemaVersion, err)
@@ -56,26 +58,31 @@ func Args(schemaVersion string, jsonRequested func() bool, validate cobra.Positi
 }
 
 // RunE wraps a command implementation and renders returned errors as JSON when
-// --json was requested.
+// --json was requested. Like Args, it runs on parsed flags.
 func RunE(schemaVersion string, jsonRequested func() bool, run func(*cobra.Command, []string) error) func(*cobra.Command, []string) error {
 	return func(cmd *cobra.Command, args []string) error {
 		err := run(cmd, args)
-		if err == nil || !Requested(jsonRequested) {
+		if err == nil || !Requested(cmd, jsonRequested) {
 			return err
 		}
 		return RenderError(cmd, schemaVersion, err)
 	}
 }
 
-// FlagErrorFunc renders flag parse failures as JSON when the original argv
-// included --json. Cobra raises these before Args/RunE, so this hook is the
+// FlagErrorFunc renders flag parse failures as JSON when the command line
+// asked for JSON. Cobra raises these before Args/RunE, so this hook is the
 // only chance to keep the machine-readable contract.
+//
+// pflag stops at the argument it refuses, so a --json after that one was
+// never read. The hook reads the rest of the command line for it first
+// (finishJSONFlag) and then asks the same question Args and RunE ask.
 func FlagErrorFunc(schemaVersion string, jsonRequested func() bool) func(*cobra.Command, error) error {
 	return func(cmd *cobra.Command, err error) error {
 		if err == nil {
 			return err
 		}
-		if !Requested(jsonRequested) {
+		finishJSONFlag(cmd, os.Args[1:])
+		if !Requested(cmd, jsonRequested) {
 			cmd.SilenceUsage = false
 			if root := cmd.Root(); root != nil {
 				root.SilenceUsage = false
@@ -86,19 +93,112 @@ func FlagErrorFunc(schemaVersion string, jsonRequested func() bool) func(*cobra.
 	}
 }
 
-// Requested reports whether the current invocation asked for JSON output.
+// jsonFlag is the flag every command with a JSON contract defines.
+const jsonFlag = "json"
+
+// Requested reports whether the parsed command asked for JSON output.
 //
-// The argv fallback exists so flag-parse errors (which fire before cobra
-// has populated the bound bool flag) still render through the JSON
-// envelope. The fallback must respect explicit boolean values on the
-// flag: `--json=false`, `--json=0`, `--json=no`, `--json=off`, and the
-// uppercase variants all mean "do NOT render JSON", and must be
-// honored even though argv contains a `--json=` token.
-func Requested(jsonRequested func() bool) bool {
-	if jsonRequested != nil && jsonRequested() {
+// jsonRequested is the command's own answer. It reads what cobra bound: the
+// --json flag, and whatever else selects JSON for that command, such as a
+// --format json alias or a pipe. A nil jsonRequested is the --json flag
+// alone. argv is not consulted: a --json there can be another flag's value,
+// can follow --, or can be overridden by a later --json=false, and cobra has
+// already decided each of those.
+func Requested(cmd *cobra.Command, jsonRequested func() bool) bool {
+	if jsonRequested != nil {
+		return jsonRequested()
+	}
+	if cmd == nil {
+		return false
+	}
+	flag := cmd.Flags().Lookup(jsonFlag)
+	if flag == nil {
+		return false
+	}
+	asJSON, err := strconv.ParseBool(flag.Value.String())
+	return err == nil && asJSON
+}
+
+// finishJSONFlag gives the command's --json flag the value the whole command
+// line gives it. pflag stops at the first argument it refuses and leaves a
+// later --json unread, so a caller who asked for JSON would get the refusal
+// as text. The flag is set, not just reported, so the command's own answer
+// (Requested) sees it beside everything else it weighs.
+func finishJSONFlag(cmd *cobra.Command, argv []string) {
+	flags := cmd.Flags()
+	if flags.Lookup(jsonFlag) == nil {
+		return
+	}
+	if asJSON, found := scanJSONFlag(flags, argv); found {
+		_ = flags.Set(jsonFlag, strconv.FormatBool(asJSON))
+	}
+}
+
+// scanJSONFlag reads argv for --json the way pflag would have, had it not
+// stopped: it ends at --, steps over the value of a flag that takes one, and
+// lets the last --json or --json=<bool> win. found is false when argv holds
+// no --json flag at all.
+//
+// A value strconv.ParseBool refuses counts as a request: --json=pretty asks
+// for JSON, and the refusal of that value is itself reported as JSON. A flag
+// the command does not define is taken to have no value; it is the argument
+// pflag refused, and what follows it is read as written.
+func scanJSONFlag(flags *pflag.FlagSet, argv []string) (asJSON, found bool) {
+	for i := 0; i < len(argv); i++ {
+		arg := argv[i]
+		switch {
+		case arg == "--":
+			return asJSON, found
+		case strings.HasPrefix(arg, "--"):
+			name, value, hasValue := strings.Cut(arg[2:], "=")
+			if name == jsonFlag {
+				asJSON, found = jsonValue(value, hasValue), true
+				continue
+			}
+			if !hasValue && takesValue(flags.Lookup(name)) {
+				i++
+			}
+		case len(arg) > 1 && arg[0] == '-':
+			// A group of shorthands, -abc. One that takes a value ends the
+			// group: the rest of the argument is its value, or the next
+			// argument is when nothing is left.
+			for rest := arg[1:]; rest != ""; rest = rest[1:] {
+				flag := flags.ShorthandLookup(rest[:1])
+				if flag == nil {
+					break
+				}
+				value, hasValue := strings.CutPrefix(rest[1:], "=")
+				if flag.Name == jsonFlag {
+					asJSON, found = jsonValue(value, hasValue), true
+				}
+				if hasValue {
+					break
+				}
+				if takesValue(flag) {
+					if rest[1:] == "" {
+						i++
+					}
+					break
+				}
+			}
+		}
+	}
+	return asJSON, found
+}
+
+// jsonValue is what --json or --json=<value> asks for.
+func jsonValue(value string, hasValue bool) bool {
+	if !hasValue {
 		return true
 	}
-	return BoolArg("json")
+	asJSON, err := strconv.ParseBool(value)
+	return err != nil || asJSON
+}
+
+// takesValue reports whether the flag's value is its own argument. A boolean
+// and a flag with an optional value take none.
+func takesValue(flag *pflag.Flag) bool {
+	return flag != nil && flag.NoOptDefVal == ""
 }
 
 // BoolArg reports whether the process argv enables the named boolean flag.
@@ -106,6 +206,10 @@ func Requested(jsonRequested func() bool) bool {
 // explicit value strconv.ParseBool reads as false (--flag=false, =0, =f) is
 // false. An unparseable value is treated as enabled, so a later form such as
 // --json=pretty still counts as opting in.
+//
+// A flag-parse hook that runs before the bool is bound uses this. Requested
+// does not: once cobra has parsed the command, the command's own answer
+// decides, and a --json in argv can be another flag's value.
 func BoolArg(name string) bool {
 	flag := "--" + name
 	enabled := false
@@ -257,6 +361,9 @@ func isCobraUsageError(err error) bool {
 	msg := err.Error()
 	return strings.Contains(msg, "arg(s)") ||
 		strings.Contains(msg, "unknown flag") ||
+		strings.Contains(msg, "unknown shorthand flag") ||
+		strings.Contains(msg, "flag needs an argument") ||
+		strings.Contains(msg, "bad flag syntax") ||
 		strings.Contains(msg, "invalid argument") ||
 		strings.Contains(msg, "required flag")
 }

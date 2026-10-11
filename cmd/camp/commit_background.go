@@ -43,8 +43,9 @@ type backgroundCommitResult struct {
 // backgroundCommitFlagError renders flag-parse failures through the
 // background receipt contract. Cobra raises them before RunE, and parsing
 // can stop before either bool is bound, so the process argv decides.
+// Requested reads the parsed flag and cannot see a value parsing never bound.
 func backgroundCommitFlagError(cmd *cobra.Command, err error) error {
-	if err != nil && jsoncontract.Requested(nil) && jsoncontract.BoolArg("background") {
+	if err != nil && jsoncontract.BoolArg("json") && jsoncontract.BoolArg("background") {
 		// Every error this hook receives is a rejected argument, whatever its wording.
 		return jsoncontract.RenderError(cmd, CommitBackgroundJSONVersion, camperrors.NewValidation("flags", err.Error(), err))
 	}

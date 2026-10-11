@@ -187,6 +187,16 @@ func EffectiveTheme(ctx context.Context) string {
 	return EffectiveThemeFrom(cfg, &LocalSettings{ThemeOverride: localThemeOverride(ctx)})
 }
 
+// ReadEffectiveTheme is EffectiveTheme for a command that must not write: a
+// missing global config is not created.
+func ReadEffectiveTheme(ctx context.Context) string {
+	var cfg *GlobalConfig
+	if loaded, err := ReadGlobalConfig(ctx); err == nil {
+		cfg = loaded
+	}
+	return EffectiveThemeFrom(cfg, &LocalSettings{ThemeOverride: localThemeOverride(ctx)})
+}
+
 func EffectiveThemeFrom(cfg *GlobalConfig, local *LocalSettings) string {
 	theme := ThemeNameAdaptive
 	if cfg != nil && IsValidThemeName(cfg.TUI.Theme) {

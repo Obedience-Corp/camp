@@ -51,10 +51,63 @@ _camp_eval_connect() {
   done
 }
 
+# Reports `dungeon explore` spelled with a root flag before or between the
+# two words, as in `camp --no-color dungeon explore`.
+_camp_explore_past_root_flags() {
+  local arg words flagged
+  words=0
+  flagged=0
+  for arg in "$@"; do
+    case "$arg" in
+      {{.RootFlagCase}})
+        flagged=1
+        continue
+        ;;
+    esac
+    case "$words:$arg" in
+      0:dungeon)
+        words=1
+        ;;
+      1:explore)
+        [ "$flagged" -eq 1 ]
+        return
+        ;;
+      *)
+        return 1
+        ;;
+    esac
+  done
+  return 1
+}
+
 # Wrap camp binary so directory-changing subcommands work natively.
 # Uses "command camp" to call the real binary, avoiding recursion.
 camp() {
   local dest
+  # Root flags are valid anywhere on the line. Move the ones ahead of
+  # `dungeon explore` behind the two words, so the dungeon arm reads one
+  # spelling and the explorer still gets its handoff file. The names here are
+  # none the arms declare: zsh, which shares this shape, prints a variable
+  # declared twice in one function.
+  if _camp_explore_past_root_flags "$@"; then
+    local lead_arg lead_words lead_count
+    lead_count=$#
+    lead_words=0
+    for lead_arg in "$@"; do
+      if [ "$lead_words" -lt 2 ]; then
+        case "$lead_arg" in
+          {{.RootFlagCase}}) ;;
+          *)
+            lead_words=$((lead_words + 1))
+            continue
+            ;;
+        esac
+      fi
+      set -- "$@" "$lead_arg"
+    done
+    shift "$lead_count"
+    set -- dungeon explore "$@"
+  fi
   case "$1" in
     switch|sw)
       shift
@@ -353,6 +406,79 @@ camp() {
 
       if [ -s "$tmp" ]; then
         dest=$(cat "$tmp")
+        rm -f "$tmp"
+        if [ -n "$dest" ]; then
+          cd "$dest" || return 1
+        fi
+      else
+        rm -f "$tmp"
+      fi
+      ;;
+    dungeon)
+      shift
+      case "${1:-}" in
+        explore) ;;
+        *)
+          command camp dungeon "$@"
+          return
+          ;;
+      esac
+      shift
+      local arg passthrough cmd_status tmp dest json skip
+      passthrough=0
+      json=0
+      skip=0
+      for arg in "$@"; do
+        if [ "$skip" -eq 1 ]; then
+          skip=0
+          continue
+        fi
+        case "$arg" in
+          --)
+            break
+            ;;
+          --help|-h)
+            passthrough=1
+            break
+            ;;
+          --json)
+            json=1
+            ;;
+          --json=false|--json=FALSE|--json=False|--json=f|--json=F|--json=0)
+            json=0
+            ;;
+          --json=*)
+            json=1
+            ;;
+          --status|--dungeon|--since|--until|--query|--images|--path-output)
+            skip=1
+            ;;
+          --status=*|--dungeon=*|--since=*|--until=*|--query=*|--images=*|--path-output=*)
+            ;;
+        esac
+      done
+      if [ "$json" -eq 1 ]; then
+        passthrough=1
+      fi
+      if [ "$passthrough" -eq 1 ]; then
+        command camp dungeon explore "$@"
+        return
+      fi
+      if ! [ -t 0 ] || ! [ -t 1 ]; then
+        command camp dungeon explore "$@"
+        return
+      fi
+      tmp=$(mktemp "${TMPDIR:-/tmp}/camp-dungeon-explore.XXXXXX") || return 1
+      command camp dungeon explore --path-output "$tmp" "$@"
+      cmd_status=$?
+      if [ "$cmd_status" -ne 0 ]; then
+        rm -f "$tmp"
+        return "$cmd_status"
+      fi
+      if [ -s "$tmp" ]; then
+        # $(cat) drops trailing newlines, so a directory name that ends with one would cd elsewhere.
+        dest=$(cat "$tmp"; printf '.')
+        dest=${dest%.}
         rm -f "$tmp"
         if [ -n "$dest" ]; then
           cd "$dest" || return 1
