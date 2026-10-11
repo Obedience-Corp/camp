@@ -2,12 +2,18 @@ package main
 
 import (
 	"context"
+	"crypto/rand"
+	"crypto/subtle"
+	"encoding/binary"
+	"encoding/hex"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"net"
 	"os"
 	"os/exec"
+	"strconv"
 	"strings"
 	"time"
 
@@ -24,6 +30,24 @@ import (
 // hop is listening for a follow-up switch. Unwind writes the next selector
 // here and exits; that shell applies it, so a switch never nests a second ssh.
 const hopResumeSockEnv = "CAMP_HOP_RESUME_SOCK"
+
+// hopResumeAddrEnv and hopResumeTokenFileEnv name a second route to the same
+// shell: a loopback port on the far side. An ssh server that binds the
+// forwarded unix socket as another user leaves it closed to the hopped shell
+// (Tailscale SSH binds it as root). Every local user can reach a loopback
+// port, so a request arriving there must carry this hop's token, which the
+// far side reads from a file only the hopped user can open.
+const (
+	hopResumeAddrEnv      = "CAMP_HOP_RESUME_ADDR"
+	hopResumeTokenFileEnv = "CAMP_HOP_RESUME_TOKEN_FILE"
+)
+
+// hopTokenScript stores stdin in a private file on the far side and prints the
+// file's path. The token travels on stdin and never in a command line: an ssh
+// server can keep the remote command in a process title for the whole session
+// and write it to its log. A hop that ends without an onward switch leaves the
+// file behind for the far side's temp cleanup.
+const hopTokenScript = `umask 077 && f=$(mktemp "${TMPDIR:-/tmp}/camp-ht-XXXXXX") && cat >"$f" && printf %s "$f"`
 
 func init() {
 	rootCmd.AddCommand(hopResumeCmd)
@@ -93,20 +117,15 @@ func sendHopResume(ctx context.Context, selector string, scope cmdutil.CampaignS
 	if err != nil {
 		return err
 	}
-	sock := strings.TrimSpace(os.Getenv(hopResumeSockEnv))
-	if sock == "" {
-		return camperrors.New("hop-resume: " + hopResumeSockEnv + " is not set\nHint: re-source shell init and hop again")
-	}
-	dialer := net.Dialer{Timeout: 2 * time.Second}
-	conn, err := dialer.DialContext(ctx, "unix", sock)
+	conn, token, err := dialHopResume(ctx)
 	if err != nil {
-		return camperrors.Wrap(err, "hop-resume: tell the shell that opened this hop")
+		return err
 	}
 	defer func() { _ = conn.Close() }()
 	stopClose := context.AfterFunc(ctx, func() { _ = conn.Close() })
 	defer stopClose()
 	_ = conn.SetDeadline(time.Now().Add(hopResumeTimeout))
-	if err := json.NewEncoder(conn).Encode(hopResumeEnvelope{Version: 1, Request: request}); err != nil {
+	if err := json.NewEncoder(conn).Encode(hopResumeEnvelope{Version: 1, Token: token, Request: request}); err != nil {
 		return err
 	}
 	var response hopResumeResponse
@@ -122,7 +141,47 @@ func sendHopResume(ctx context.Context, selector string, scope cmdutil.CampaignS
 	if !response.Accepted {
 		return camperrors.New("hop-resume: parent rejected the route; staying in this shell")
 	}
+	if token != "" {
+		_ = os.Remove(strings.TrimSpace(os.Getenv(hopResumeTokenFileEnv)))
+	}
 	return nil
+}
+
+// dialHopResume reaches the shell that opened this hop and returns the token
+// that route requires. The forwarded unix socket goes first: where the ssh
+// server binds it as the login user it is private to that user.
+func dialHopResume(ctx context.Context) (net.Conn, string, error) {
+	sock := strings.TrimSpace(os.Getenv(hopResumeSockEnv))
+	addr := strings.TrimSpace(os.Getenv(hopResumeAddrEnv))
+	token := ""
+	if addr != "" {
+		if data, err := os.ReadFile(strings.TrimSpace(os.Getenv(hopResumeTokenFileEnv))); err == nil {
+			token = strings.TrimSpace(string(data))
+		}
+	}
+	if token == "" {
+		addr = ""
+	}
+	if sock == "" && addr == "" {
+		return nil, "", camperrors.New("hop-resume: " + hopResumeSockEnv + " is not set\nHint: re-source shell init and hop again")
+	}
+	dialer := net.Dialer{Timeout: 2 * time.Second}
+	var failed []error
+	if sock != "" {
+		conn, err := dialer.DialContext(ctx, "unix", sock)
+		if err == nil {
+			return conn, "", nil
+		}
+		failed = append(failed, err)
+	}
+	if addr != "" {
+		conn, err := dialer.DialContext(ctx, "tcp", addr)
+		if err == nil {
+			return conn, token, nil
+		}
+		failed = append(failed, err)
+	}
+	return nil, "", camperrors.Wrap(errors.Join(failed...), "hop-resume: tell the shell that opened this hop")
 }
 
 func sanitizeResumeSelector(raw string) (string, error) {
@@ -141,31 +200,39 @@ func sanitizeResumeSelector(raw string) (string, error) {
 // line (possibly empty), so the interactive session is attached to the
 // terminal this process inherited on stdin and stderr.
 func runHopResume(ctx context.Context, line string) (string, error) {
-	local, remoteSock, err := resumeSocketPaths()
+	forward, err := newHopResumeForward()
 	if err != nil {
 		return "", err
 	}
-	defer func() { _ = os.Remove(local) }()
-
-	ln, err := net.Listen("unix", local)
+	ln, err := listenHopResume(forward.localSock)
 	if err != nil {
-		return "", camperrors.Wrap(err, "hop-resume: listen")
+		return "", err
 	}
-	_ = os.Chmod(local, 0o700)
-	defer func() { _ = ln.Close() }()
+	defer func() { _ = ln.Close(); _ = os.Remove(forward.localSock) }()
+	loopLn, err := listenHopResume(forward.loopLocalSock)
+	if err != nil {
+		return "", err
+	}
+	defer func() { _ = loopLn.Close(); _ = os.Remove(forward.loopLocalSock) }()
 
 	resumeCtx, cancelResume := context.WithCancel(ctx)
 	defer cancelResume()
-	got := make(chan string, 1)
-	go func() {
-		follow, _ := serveHopResume(resumeCtx, ln, prepareHopResume)
+	got := make(chan string, 2)
+	serve := func(ln net.Listener, token string) {
+		follow, _ := serveHopResume(resumeCtx, ln, token, prepareHopResume)
 		got <- follow
-	}()
+	}
+	go serve(ln, "")
+	go serve(loopLn, forward.token)
 
-	argv, err := prepareResumeSSH(line, local, remoteSock)
+	hop, err := splitHopLine(line)
 	if err != nil {
 		return "", err
 	}
+	// Onward switching is secondary to the hop: without the token file the
+	// loopback route is simply not offered.
+	forward.tokenFile, _ = placeHopToken(ctx, hop, forward.token)
+	argv := hop.resumeArgv(forward)
 	in, out, inherited := inheritedHopTerminal(os.Stdin, os.Stderr, isTerminalFile)
 	if !inherited {
 		tty, err := os.OpenFile("/dev/tty", os.O_RDWR, 0)
@@ -183,7 +250,11 @@ func runHopResume(ctx context.Context, line string) (string, error) {
 	runErr := sshCmd.Run()
 	cancelResume()
 	_ = ln.Close()
+	_ = loopLn.Close()
 	follow := <-got
+	if other := <-got; follow == "" {
+		follow = other
+	}
 	if runErr != nil {
 		return "", runErr
 	}
@@ -213,6 +284,73 @@ func withoutControlMaster(argv []string) []string {
 	return append(out, argv[2:]...)
 }
 
+// hopResumeForward is everything one hop forwards so the far shell can reach
+// this one: the unix socket pair, and a loopback port on the far side that
+// leads to a second local listener guarded by token.
+type hopResumeForward struct {
+	localSock, remoteSock string
+	loopLocalSock         string
+	loopAddr              string
+	token                 string
+	// tokenFile is where the far side reads token. Empty withholds the
+	// loopback route.
+	tokenFile string
+}
+
+func newHopResumeForward() (hopResumeForward, error) {
+	local, remoteSock, err := resumeSocketPaths()
+	if err != nil {
+		return hopResumeForward{}, err
+	}
+	loopLocal, _, err := resumeSocketPaths()
+	if err != nil {
+		return hopResumeForward{}, err
+	}
+	var secret [18]byte
+	if _, err := rand.Read(secret[:]); err != nil {
+		return hopResumeForward{}, camperrors.Wrap(err, "hop-resume: token")
+	}
+	// The remote command is fixed before the server could report a port it
+	// chose, so the port is picked here, from the range no service registers.
+	port := 49152 + int(binary.BigEndian.Uint16(secret[16:]))%(65536-49152)
+	return hopResumeForward{
+		localSock:     local,
+		remoteSock:    remoteSock,
+		loopLocalSock: loopLocal,
+		loopAddr:      net.JoinHostPort("127.0.0.1", strconv.Itoa(port)),
+		token:         hex.EncodeToString(secret[:16]),
+	}, nil
+}
+
+// placeHopToken hands the far side this hop's token over ssh stdin and returns
+// the far-side path it was stored at.
+func placeHopToken(ctx context.Context, hop hopLine, token string) (string, error) {
+	ctx, cancel := context.WithTimeout(ctx, remote.DefaultTimeout)
+	defer cancel()
+	// /bin/sh runs the script so a fish or zsh login shell never parses it.
+	argv := append(append([]string{}, hop.opts...), hop.target, "exec /bin/sh -c "+remote.ShellQuote(hopTokenScript))
+	cmd := exec.CommandContext(ctx, "ssh", argv...)
+	cmd.Stdin = strings.NewReader(token)
+	out, err := cmd.Output()
+	if err != nil {
+		return "", camperrors.Wrap(err, "hop-resume: place token")
+	}
+	path := strings.TrimSpace(string(out))
+	if !strings.HasPrefix(path, "/") || strings.ContainsAny(path, "\r\n\x00") {
+		return "", camperrors.New("hop-resume: far side returned no token path")
+	}
+	return path, nil
+}
+
+func listenHopResume(path string) (net.Listener, error) {
+	ln, err := net.Listen("unix", path)
+	if err != nil {
+		return nil, camperrors.Wrap(err, "hop-resume: listen")
+	}
+	_ = os.Chmod(path, 0o700)
+	return ln, nil
+}
+
 func resumeSocketPaths() (local, remoteSock string, err error) {
 	f, err := os.CreateTemp("/tmp", "camp-hr-*.path")
 	if err != nil {
@@ -235,6 +373,7 @@ const hopResumeTimeout = 30 * time.Second
 // and cannot queue a misdirected switch when this client rejects its missing ACK.
 type hopResumeEnvelope struct {
 	Version int              `json:"version"`
+	Token   string           `json:"token,omitempty"`
 	Request hopResumeRequest `json:"request"`
 }
 
@@ -334,13 +473,15 @@ func prepareHopResume(ctx context.Context, request hopResumeRequest) (string, er
 	return switchFollowUpContext(ctx, request)
 }
 
-func serveHopResume(ctx context.Context, ln net.Listener, prepare func(context.Context, hopResumeRequest) (string, error)) (string, error) {
+// serveHopResume answers requests on one listener until one is accepted. A
+// non-empty token is required from every request arriving there.
+func serveHopResume(ctx context.Context, ln net.Listener, token string, prepare func(context.Context, hopResumeRequest) (string, error)) (string, error) {
 	for {
 		conn, err := ln.Accept()
 		if err != nil {
 			return "", err
 		}
-		follow, err := acceptHopResume(ctx, conn, prepare)
+		follow, err := acceptHopResume(ctx, conn, token, prepare)
 		_ = conn.Close()
 		if err == nil {
 			return follow, nil
@@ -352,7 +493,7 @@ func serveHopResume(ctx context.Context, ln net.Listener, prepare func(context.C
 	}
 }
 
-func acceptHopResume(ctx context.Context, conn net.Conn, prepare func(context.Context, hopResumeRequest) (string, error)) (string, error) {
+func acceptHopResume(ctx context.Context, conn net.Conn, token string, prepare func(context.Context, hopResumeRequest) (string, error)) (string, error) {
 	_ = conn.SetDeadline(time.Now().Add(hopResumeTimeout))
 	ctx, cancel := context.WithTimeout(ctx, hopResumeTimeout-time.Second)
 	defer cancel()
@@ -362,6 +503,9 @@ func acceptHopResume(ctx context.Context, conn net.Conn, prepare func(context.Co
 	err := json.NewDecoder(io.LimitReader(conn, 4096)).Decode(&envelope)
 	if err == nil && envelope.Version != 1 {
 		err = camperrors.New("hop-resume: unsupported request version; update camp on both machines and hop again")
+	}
+	if err == nil && token != "" && subtle.ConstantTimeCompare([]byte(envelope.Token), []byte(token)) != 1 {
+		err = camperrors.New("hop-resume: request does not carry this hop's token")
 	}
 	request := envelope.Request
 	if err == nil {
@@ -384,27 +528,49 @@ func acceptHopResume(ctx context.Context, conn net.Conn, prepare func(context.Co
 	return follow, err
 }
 
-// prepareResumeSSH parses the one ssh line emitShellConnect prints and adds a
-// unix-socket remote forward plus CAMP_HOP_RESUME_SOCK in the remote command.
-// Every token of that line is shell-quoted except the leading `ssh -t`.
-func prepareResumeSSH(line, localSock, remoteSock string) ([]string, error) {
+// hopLine is the one ssh line emitShellConnect prints, taken apart. Every
+// token of that line is shell-quoted except the leading `ssh -t`.
+type hopLine struct {
+	opts      []string
+	target    string
+	remoteCmd string
+}
+
+func splitHopLine(line string) (hopLine, error) {
 	tokens, err := splitShellQuoted(line)
 	if err != nil {
-		return nil, err
+		return hopLine{}, err
 	}
 	if len(tokens) < 4 || tokens[0] != "ssh" || tokens[1] != "-t" {
-		return nil, camperrors.New("hop-resume: expected an ssh -t switch line")
+		return hopLine{}, camperrors.New("hop-resume: expected an ssh -t switch line")
 	}
-	remoteCmd := tokens[len(tokens)-1]
-	target := tokens[len(tokens)-2]
-	mid := append([]string{}, tokens[2:len(tokens)-2]...)
-	argv := make([]string, 0, len(tokens)+6)
+	return hopLine{
+		opts:      append([]string{}, tokens[2:len(tokens)-2]...),
+		target:    tokens[len(tokens)-2],
+		remoteCmd: tokens[len(tokens)-1],
+	}, nil
+}
+
+// resumeArgv rebuilds the hop with the remote forwards added and the
+// variables naming them exported in the remote command.
+func (h hopLine) resumeArgv(forward hopResumeForward) []string {
+	argv := make([]string, 0, len(h.opts)+10)
 	argv = append(argv, "ssh", "-t")
-	argv = append(argv, mid...)
-	argv = append(argv, "-o", "StreamLocalBindUnlink=yes", "-R", remoteSock+":"+localSock)
-	argv = append(argv, target)
-	argv = append(argv, "export "+hopResumeSockEnv+"="+remote.ShellQuote(remoteSock)+" && "+remoteCmd)
-	return argv, nil
+	argv = append(argv, h.opts...)
+	argv = append(argv, "-o", "StreamLocalBindUnlink=yes", "-R", forward.remoteSock+":"+forward.localSock)
+	exports := [][2]string{{hopResumeSockEnv, forward.remoteSock}}
+	if forward.tokenFile != "" {
+		argv = append(argv, "-R", forward.loopAddr+":"+forward.loopLocalSock)
+		exports = append(exports,
+			[2]string{hopResumeAddrEnv, forward.loopAddr},
+			[2]string{hopResumeTokenFileEnv, forward.tokenFile})
+	}
+	argv = append(argv, h.target)
+	remoteCmd := h.remoteCmd
+	for i := len(exports) - 1; i >= 0; i-- {
+		remoteCmd = "export " + exports[i][0] + "=" + remote.ShellQuote(exports[i][1]) + " && " + remoteCmd
+	}
+	return append(argv, remoteCmd)
 }
 
 func resumeSwitchArgs(request hopResumeRequest) []string {

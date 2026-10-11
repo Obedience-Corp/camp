@@ -63,7 +63,7 @@ var containerFSPackages = []containerFSPackage{
 	{ImportPath: "./internal/jobs", MinTests: 6, TestPattern: "^Test(ExecuteCommit|CaptureDirection)"},
 	{ImportPath: "./internal/defercommit", MinTests: 2, TestPattern: "^TestAllowedForPaths(Keeps|Unreadable)"},
 	// Hop resume socket and machine registry handoff regressions.
-	{ImportPath: "./cmd/camp", MinTests: 5, TestPattern: "^TestHopResume"},
+	{ImportPath: "./cmd/camp", MinTests: 7, TestPattern: "^TestHopResume"},
 	{ImportPath: "./internal/starter", MinTests: 3},
 	{ImportPath: "./internal/clone", MinTests: 29},
 	{ImportPath: "./internal/sync", MinTests: 32},

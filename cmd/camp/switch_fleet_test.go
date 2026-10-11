@@ -57,10 +57,16 @@ func TestPrepareResumeSSHInjectsSocket(t *testing.T) {
 	if err := emitShellConnect(&buf, true, "/srv/campaigns/obey", remote.Direct(m), "v1;host=example"); err != nil {
 		t.Fatal(err)
 	}
-	argv, err := prepareResumeSSH(buf.String(), "/tmp/camp-hr-l.sock", "/tmp/camp-hr-r.sock")
+	hop, err := splitHopLine(buf.String())
 	if err != nil {
 		t.Fatal(err)
 	}
+	forward := hopResumeForward{
+		localSock: "/tmp/camp-hr-l.sock", remoteSock: "/tmp/camp-hr-r.sock",
+		loopLocalSock: "/tmp/camp-hr-t.sock", loopAddr: "127.0.0.1:50123",
+		token: "c0ffee", tokenFile: "/tmp/camp-ht-Ab12Cd",
+	}
+	argv := hop.resumeArgv(forward)
 	joined := strings.Join(argv, "\n")
 	if argv[0] != "ssh" || argv[1] != "-t" {
 		t.Fatalf("argv head = %q %q", argv[0], argv[1])
@@ -71,9 +77,29 @@ func TestPrepareResumeSSHInjectsSocket(t *testing.T) {
 	if !strings.Contains(joined, "/tmp/camp-hr-r.sock:/tmp/camp-hr-l.sock") {
 		t.Fatalf("missing forward:\n%s", joined)
 	}
+	if !strings.Contains(joined, "-R\n127.0.0.1:50123:/tmp/camp-hr-t.sock") {
+		t.Fatalf("missing loopback forward:\n%s", joined)
+	}
 	remoteCmd := argv[len(argv)-1]
-	if !strings.Contains(remoteCmd, "export "+hopResumeSockEnv+"=") {
-		t.Fatalf("remote command missing resume export: %s", remoteCmd)
+	for _, export := range []string{
+		"export " + hopResumeSockEnv + "='/tmp/camp-hr-r.sock'",
+		"export " + hopResumeAddrEnv + "='127.0.0.1:50123'",
+		"export " + hopResumeTokenFileEnv + "='/tmp/camp-ht-Ab12Cd'",
+	} {
+		if !strings.Contains(remoteCmd, export) {
+			t.Fatalf("remote command missing %q: %s", export, remoteCmd)
+		}
+	}
+	if strings.Contains(joined, forward.token) {
+		t.Fatalf("the token must never appear in a command line:\n%s", joined)
+	}
+	forward.tokenFile = ""
+	withheld := strings.Join(hop.resumeArgv(forward), "\n")
+	if strings.Contains(withheld, "127.0.0.1:50123") || strings.Contains(withheld, hopResumeAddrEnv) {
+		t.Fatalf("no token file on the far side must withhold the loopback route:\n%s", withheld)
+	}
+	if !strings.Contains(withheld, "/tmp/camp-hr-r.sock:/tmp/camp-hr-l.sock") {
+		t.Fatalf("the socket forward must stay:\n%s", withheld)
 	}
 	if !strings.Contains(remoteCmd, "cd '/srv/campaigns/obey' && exec $SHELL -l") &&
 		!strings.Contains(remoteCmd, `cd '"'"'/srv/campaigns/obey'"'"'`) &&

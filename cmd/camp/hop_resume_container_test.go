@@ -5,9 +5,11 @@ package main
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"io"
 	"net"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"strings"
 	"testing"
@@ -33,7 +35,7 @@ func TestHopResumeSocketRoundTrip(t *testing.T) {
 	scope := cmdutil.CampaignScope{Org: "obey", Status: "inactive", All: true}
 	done := make(chan string, 1)
 	go func() {
-		follow, _ := serveHopResume(context.Background(), ln, func(_ context.Context, request hopResumeRequest) (string, error) {
+		follow, _ := serveHopResume(context.Background(), ln, "", func(_ context.Context, request hopResumeRequest) (string, error) {
 			if request.Scope != scope {
 				t.Errorf("scope %+v", request.Scope)
 			}
@@ -170,5 +172,87 @@ func TestHopResumeUsesParentAuthenticationAndScope(t *testing.T) {
 	err = runRemoteSwitch(context.Background(), cmd, selector, false, false, false)
 	if !called || err == nil || !strings.Contains(err.Error(), "resolved parent-alias:work/notes@p") {
 		t.Fatalf("resolution called=%v err=%v", called, err)
+	}
+}
+
+func TestHopResumeSendFallsBackToLoopbackWithToken(t *testing.T) {
+	ln, err := net.Listen("tcp", "127.0.0.1:0")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer func() { _ = ln.Close() }()
+	const token = "0123456789abcdef0123456789abcdef"
+	tokenFile := filepath.Join(t.TempDir(), "camp-ht-test")
+	if err := os.WriteFile(tokenFile, []byte(token), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	// The forwarded socket an ssh server bound as another user: named in the
+	// environment, closed to this shell.
+	t.Setenv(hopResumeSockEnv, filepath.Join(t.TempDir(), "camp-hr-r.sock"))
+	t.Setenv(hopResumeAddrEnv, ln.Addr().String())
+	t.Setenv(hopResumeTokenFileEnv, tokenFile)
+	reject := true
+	served := make(chan error, 1)
+	go func() {
+		_, err := serveHopResume(context.Background(), ln, token, func(_ context.Context, request hopResumeRequest) (string, error) {
+			if request.Selector != "thirdbox:notes" || request.Host != "c.example" {
+				return "", errors.New("request changed in transit")
+			}
+			if reject {
+				reject = false
+				return "", errors.New("parent route unavailable")
+			}
+			return "ssh prepared-parent-route", nil
+		})
+		served <- err
+	}()
+
+	err = sendHopResume(context.Background(), "thirdbox:notes", cmdutil.CampaignScope{}, "c.example")
+	if err == nil || !strings.Contains(err.Error(), "unavailable") {
+		t.Fatalf("rejected route: %v", err)
+	}
+	if _, statErr := os.Stat(tokenFile); statErr != nil {
+		t.Fatalf("a rejected request must leave the token for the next attempt: %v", statErr)
+	}
+	if err := sendHopResume(context.Background(), "thirdbox:notes", cmdutil.CampaignScope{}, "c.example"); err != nil {
+		t.Fatalf("send over loopback: %v", err)
+	}
+	if err := <-served; err != nil {
+		t.Fatalf("parent: %v", err)
+	}
+	if _, statErr := os.Stat(tokenFile); !os.IsNotExist(statErr) {
+		t.Fatalf("an accepted request must remove the token file: %v", statErr)
+	}
+
+	err = sendHopResume(context.Background(), "thirdbox:notes", cmdutil.CampaignScope{}, "c.example")
+	if err == nil || !strings.Contains(err.Error(), "camp-hr-r.sock") {
+		t.Fatalf("without a token the loopback route must stay unused and the socket failure surface: %v", err)
+	}
+}
+
+func TestHopResumeTokenScriptKeepsTokenPrivate(t *testing.T) {
+	const token = "0123456789abcdef0123456789abcdef"
+	dir := t.TempDir()
+	cmd := exec.Command("/bin/sh", "-c", hopTokenScript)
+	cmd.Env = append(os.Environ(), "TMPDIR="+dir)
+	cmd.Stdin = strings.NewReader(token)
+	out, err := cmd.Output()
+	if err != nil {
+		t.Fatalf("token script: %v", err)
+	}
+	path := string(out)
+	if filepath.Dir(path) != dir {
+		t.Fatalf("script must print the path it wrote under TMPDIR, got %q", path)
+	}
+	info, err := os.Stat(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if info.Mode().Perm() != 0o600 {
+		t.Fatalf("token file mode %v, want 0600", info.Mode().Perm())
+	}
+	data, err := os.ReadFile(path)
+	if err != nil || string(data) != token {
+		t.Fatalf("token file holds %q (%v)", data, err)
 	}
 }
