@@ -34,6 +34,10 @@ At the camp root, submodule ref changes (projects/*) are excluded
 from staging by default to prevent accidental ref conflicts across
 machines. Use --include-refs to stage them explicitly.
 
+Use --auto-write --background to require a queued commit. Add --json to return
+a job receipt immediately after staging and snapshotting. Without --background,
+--json continues to wait for a completed commit hash.
+
 Use --sub to commit in the submodule detected from your current directory.
 Use -p/--project to commit in a specific project (e.g., -p projects/camp).
 
@@ -42,12 +46,13 @@ Commit tags use explicit --workitem or context from the current path
 
 Examples:
   camp commit -m "Add new feature"
+  camp commit --auto-write --background --json
   camp commit --amend -m "Fix typo"
   camp commit -a -m "Stage and commit all"
   camp commit --include-refs -m "Sync all submodule refs"
   camp commit --sub -m "Commit in current submodule"
   camp commit -p projects/camp -m "Commit in camp project"`,
-	RunE: runCommit,
+	RunE: runCommitCommand,
 }
 
 var (
@@ -58,6 +63,7 @@ var (
 	commitProject     string
 	commitIncludeRefs bool
 	commitAutoWrite   bool
+	commitBackground  bool
 	commitWorkitem    string
 	commitNoEdit      bool
 	commitLarge       bool
@@ -75,6 +81,7 @@ func init() {
 	commitCmd.Flags().StringVarP(&commitProject, "project", "p", "", "Operate on a specific project/submodule path")
 	commitCmd.Flags().BoolVar(&commitIncludeRefs, "include-refs", false, "Include submodule ref changes when staging at camp root")
 	commitCmd.Flags().BoolVar(&commitAutoWrite, "auto-write", false, "Run configured commit message writer")
+	commitCmd.Flags().BoolVar(&commitBackground, "background", false, "Queue an auto-write commit; with --json return a job receipt instead of a commit hash")
 	commitCmd.Flags().StringVar(&commitWorkitem, "workitem", "", "explicit workitem selector for the commit tag (overrides cwd-based resolution)")
 	commitCmd.Flags().BoolVar(&commitLarge, "commit-large", false, "Commit over-threshold files instead of keeping them out of git")
 	commitCmd.Flags().BoolVar(&commitNested, "commit-nested", false, "Commit undeclared nested git repositories as gitlinks instead of keeping them out of git")
@@ -83,6 +90,7 @@ func init() {
 
 	rootCmd.AddCommand(commitCmd)
 	commitCmd.GroupID = "git"
+	commitCmd.SetFlagErrorFunc(backgroundCommitFlagError)
 
 	// Register completion for --project flag
 	commitCmd.RegisterFlagCompletionFunc("project", completeProjectFlag)
@@ -141,6 +149,10 @@ func runCommit(cmd *cobra.Command, args []string) error {
 	// lands on the subject line.
 	commitMessage := commitkit.JoinMessages(commitMessages)
 
+	if err := validateBackgroundCommit(commitBackground, commitAutoWrite, commitAmend, commitMessage); err != nil {
+		return err
+	}
+
 	// Find campaign root
 	campRoot, err := campaign.DetectCached(ctx)
 	if err != nil {
@@ -165,6 +177,13 @@ func runCommit(cmd *cobra.Command, args []string) error {
 	}
 	if commitAmend && commitMessage == "" && !commitAutoWrite && !commitNoEdit {
 		return camperrors.New("amend without a message requires --no-edit or --message")
+	}
+
+	if commitBackground {
+		jsonResult.Repo = target.Path
+		if err := requireBackgroundCommit(ctx, campRoot, target.Path); err != nil {
+			return err
+		}
 	}
 
 	// Drain before anything is staged, so the barrier holds: everything
@@ -309,6 +328,10 @@ func runCommit(cmd *cobra.Command, args []string) error {
 		return commitJSONNoop(cmd, jsonResult)
 	}
 
+	if commitBackground {
+		return enqueueBackgroundCommit(cmd, humanOut, campRoot, target.Path, jsonResult)
+	}
+
 	// Deferral point. Everything the user watches has already happened:
 	// staging, the guard, any artifact-root declaration. Only the message
 	// writer and the commit object move to the background, which is the part
@@ -426,6 +449,9 @@ func runCommit(cmd *cobra.Command, args []string) error {
 func commitJSONNoop(cmd *cobra.Command, result *commitJSONResult) error {
 	if !commitJSONOut {
 		return nil
+	}
+	if commitBackground {
+		return emitBackgroundCommit(cmd.OutOrStdout(), result, backgroundNothingToCommit, nil)
 	}
 	return result.emit(cmd.OutOrStdout())
 }

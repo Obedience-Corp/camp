@@ -16,6 +16,8 @@ Schema versions in this release:
 
 | Command | Schema version | Notes |
 | --- | --- | --- |
+| `camp commit --json` | `commit/v1alpha1` | Synchronous result with a completed commit hash. |
+| `camp commit --auto-write --background --json` | `commit-background/v1alpha1` | Explicit queue receipt with job identity and exclusions. |
 | `camp workitem --json` | `workitems/v1alpha13` | Workitem dashboard contract. Items can carry an optional `completion` object with `policy` and `reviewed_run_id`; omitted means default review behavior with no acknowledged run. Each `projects` entry can carry `worktree` and `worktree_missing`, and `projects` can list a project the workitem reaches only through a link. |
 | `camp workitem create --json` | `workitem-create/v1alpha1` | Create response with next-step hint. Additive `workitem.tags` and `workitem.projects` arrays (empty serializes as `[]`). |
 | `camp workitem completion --json` | `workitem-completion/v1alpha1` | Emits workitem identity, before/after completion state, and changed/adopted/committed/deferred outcomes. |
@@ -132,3 +134,53 @@ for agents. JSON support is required for agent-facing structured output, but
 JSON support alone does not make every command agent-allowed. Mutating workflow
 repair surfaces remain operator-oriented unless they are explicitly annotated
 in the command manifest.
+
+## Background commit receipts
+
+`camp commit --auto-write --background --json` stages and captures the content,
+queues the existing commit-tree worker, and returns a receipt before message
+writing finishes. `--background` requires `--auto-write` and rejects `--message`
+and `--amend`. It also works with `--project` and `--sub` targeting.
+
+This is a separate, opt-in `commit-background/v1alpha1` contract. Existing
+`camp commit --auto-write --json` remains synchronous and returns
+`commit/v1alpha1` with the completed commit hash.
+
+```json
+{
+  "schema_version": "commit-background/v1alpha1",
+  "outcome": "queued",
+  "repo": "/path/to/camp",
+  "job_id": "job-20261010T180000Z-ab12",
+  "staged": 2,
+  "excluded": [],
+  "artifact_roots_declared": [],
+  "drain_waited_ms": 0
+}
+```
+
+- `queued` means the job was durably accepted, **not** that a commit landed.
+  `job_id` matches the `id` in `camp jobs --json`; the worker starts automatically.
+  `staged` counts paths captured for the job. Later worktree edits do not enter
+  this snapshot. The receipt intentionally has no `commit` or `ok` field.
+- `nothing_to_commit` means no job was needed; `job_id` is empty and `staged`
+  is zero. Check `excluded` even on this outcome: guards may have excluded all
+  changed content.
+- `refused` records a staging-guard refusal with the same exclusion reasons as
+  synchronous commit JSON. It carries no job ID and exits nonzero.
+
+Exclusions and automatically declared artifact roots remain visible in the
+receipt; human notices and undo commands go to stderr. Empty lists are `[]`.
+Preflight/runtime errors use the JSON error envelope on stderr. A guard refusal
+also emits its domain receipt on stdout. Explicit background requests never
+silently fall back to inline execution: unsupported commit hooks, a missing
+writer, `CAMP_NO_DEFER`, or queue write failures return an error. Staging and the
+normal wait for earlier queued commits still happen before enqueueing;
+`--background` moves message writing and commit creation to the worker.
+
+Inspect outstanding work with `camp jobs --json` and match `job_id`. Pending,
+running, and failed jobs remain visible for inspection. Writer exit 75 retains
+the existing retry behavior; other writer failures retain Camp's fallback
+message behavior. Completed jobs leave the queue; absence alone is not proof of a successful commit (a job can also be dropped).
+`camp jobs drain` waits for outstanding work; Git history remains the record of
+landed commits. This receipt does not add a completed-job history API.

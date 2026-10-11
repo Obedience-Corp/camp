@@ -28,6 +28,8 @@ func TestRequested_HonorsExplicitFalse(t *testing.T) {
 		{"--json=FALSE", []string{"camp", "--json=FALSE"}, false},
 		{"--json=f", []string{"camp", "--json=f"}, false},
 		{"no json flag at all", []string{"camp", "workitem", "commit"}, false},
+		{"last value wins when enabled again", []string{"camp", "--json=false", "--json"}, true},
+		{"last value wins when disabled again", []string{"camp", "--json", "--json=false"}, false},
 		{"--json=pretty (unparseable falls back to enabled)",
 			[]string{"camp", "--json=pretty"}, true},
 	}
