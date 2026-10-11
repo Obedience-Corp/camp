@@ -3,6 +3,7 @@
 package main
 
 import (
+	"bufio"
 	"cmp"
 	"context"
 	"encoding/json"
@@ -490,6 +491,100 @@ func TestHopResumeFSRelayReplacesAPlantedPathAndDoesNotFollowItsNote(t *testing.
 	}
 	if info, err := os.Lstat(hopRelayHostPath(path)); err != nil || info.Mode()&os.ModeSymlink == 0 {
 		t.Fatalf("the note symlink must still be a symlink: %v %v", info, err)
+	}
+}
+
+// A fifo is not a note. prune reads the note beside an old socket, and the
+// relay writes its own on the way out; opening either fifo would block, so
+// no later relay would start. Both are left as fifos, and nothing is written
+// into the one this relay would have used.
+func TestHopResumeFSRelayFIFONoteDoesNotBlockPruneOrWrite(t *testing.T) {
+	home := shortHome(t)
+	const id = "0123456789abcdef"
+	path, err := hopRelaySocketPath(id)
+	if err != nil {
+		t.Fatal(err)
+	}
+	dir := filepath.Join(home, ".obey", "hop-resume")
+	if filepath.Dir(path) != dir {
+		t.Fatalf("relay socket %s is not under %s", path, dir)
+	}
+	if err := os.MkdirAll(dir, 0o777); err != nil {
+		t.Fatal(err)
+	}
+	// An old socket whose note is a fifo with no writer. Reading it blocks.
+	dead := filepath.Join(dir, "aaaaaaaaaaaaaaaa.sock")
+	ln, err := net.Listen("unix", dead)
+	if err != nil {
+		t.Fatal(err)
+	}
+	ln.(*net.UnixListener).SetUnlinkOnClose(false)
+	_ = ln.Close()
+	deadNote := hopRelayHostPath(dead)
+	if err := syscall.Mkfifo(deadNote, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	longAgo := time.Now().Add(-time.Hour)
+	if err := os.Chtimes(dead, longAgo, longAgo); err != nil {
+		t.Fatal(err)
+	}
+	// This relay's own note is a fifo a reader already holds. Opening it for
+	// writing would either block or leave the host tag in the fifo. The
+	// relay must do neither, and must still report that it is listening.
+	ownNote := hopRelayHostPath(path)
+	if err := syscall.Mkfifo(ownNote, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	noteReader, err := os.OpenFile(ownNote, os.O_RDONLY|syscall.O_NONBLOCK, 0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = noteReader.Close() })
+
+	relay := startTestHopRelay(t, id, "")
+	ready := make(chan string, 1)
+	go func() {
+		reader := bufio.NewReader(relay.fromFar)
+		for {
+			line, err := reader.ReadString('\n')
+			if err != nil {
+				ready <- ""
+				return
+			}
+			if strings.Contains(line, `"ready":true`) {
+				ready <- line
+				return
+			}
+		}
+	}()
+	select {
+	case line := <-ready:
+		if !strings.Contains(line, `"ready":true`) {
+			t.Fatal("a fifo note blocked writing the relay note")
+		}
+	case err := <-relay.done:
+		t.Fatalf("relay ended before its note was written: %v", err)
+	case <-time.After(time.Second):
+		t.Fatal("a fifo note blocked writing the relay note")
+	}
+
+	if _, err := os.Lstat(dead); err != nil {
+		t.Fatalf("a socket whose note is a fifo must be left alone: %v", err)
+	}
+	for _, note := range []string{deadNote, ownNote} {
+		info, err := os.Lstat(note)
+		if err != nil || info.Mode()&os.ModeNamedPipe == 0 {
+			t.Fatalf("a fifo note must still be a fifo: %s %v %v", note, info, err)
+		}
+	}
+	buf := make([]byte, 64)
+	n, err := noteReader.Read(buf)
+	if n != 0 || (err != nil && !errors.Is(err, syscall.EAGAIN) && !errors.Is(err, io.EOF)) {
+		got := ""
+		if n > 0 {
+			got = string(buf[:n])
+		}
+		t.Fatalf("the relay wrote into a fifo note: %q %v", got, err)
 	}
 }
 

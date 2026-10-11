@@ -733,8 +733,7 @@ func runHopRelay(ctx context.Context, id, forwardedSock string, in io.Reader, ou
 		return camperrors.Wrap(err, "hop-resume: relay socket")
 	}
 	// Without its note the socket still serves; it is only never pruned.
-	// A symlink is not a note: WriteFile would follow it into whatever file
-	// another user put there while this directory was still open.
+	// A symlink or fifo is not a note, and is not opened.
 	_ = writeHopRelayHost(hopRelayHostPath(path))
 	return relayHopExchanges(ctx, ln, in, out)
 }
@@ -753,10 +752,41 @@ func tightenHopRelayDir(dir string) {
 	_ = os.Chmod(dir, 0o700)
 }
 
-// writeHopRelayHost records which machine this socket belongs to. The final
-// path component is not followed.
+// errHopRelayNote is a path that is not a regular-file note. A symlink names
+// some other file, and opening a fifo, directory, or device can block.
+var errHopRelayNote = errors.New("hop-resume: relay note is not a regular file")
+
+// openHopRelayHost opens a relay note only when it is a regular file.
+// The check comes before the open. The open is also nonblocking, so a note
+// replaced by a fifo between the two cannot stall prune or the write.
+func openHopRelayHost(path string, flag int) (*os.File, error) {
+	info, err := os.Lstat(path)
+	if err != nil {
+		if !errors.Is(err, fs.ErrNotExist) || flag&os.O_CREATE == 0 {
+			return nil, err
+		}
+	} else if !info.Mode().IsRegular() {
+		return nil, errHopRelayNote
+	}
+	f, err := os.OpenFile(path, flag|hopNoFollowFlag()|hopNonblockFlag(), 0o600)
+	if err != nil {
+		return nil, err
+	}
+	opened, statErr := f.Stat()
+	if statErr != nil || !opened.Mode().IsRegular() {
+		_ = f.Close()
+		if statErr != nil {
+			return nil, statErr
+		}
+		return nil, errHopRelayNote
+	}
+	return f, nil
+}
+
+// writeHopRelayHost records which machine this socket belongs to. Anything
+// other than a regular file is left untouched.
 func writeHopRelayHost(path string) error {
-	f, err := os.OpenFile(path, os.O_WRONLY|os.O_CREATE|os.O_TRUNC|hopNoFollowFlag(), 0o600)
+	f, err := openHopRelayHost(path, os.O_WRONLY|os.O_CREATE|os.O_TRUNC)
 	if err != nil {
 		return err
 	}
@@ -768,10 +798,10 @@ func writeHopRelayHost(path string) error {
 }
 
 // readHopRelayHost reads the note beside a relay socket, and only that file.
-// A symlink is not a note. The note is a short host tag; anything longer is
-// not one either, and is not read in full.
+// A symlink, fifo, directory, or device is not a note. The note is a short
+// host tag; anything longer is not one either, and is not read in full.
 func readHopRelayHost(path string) ([]byte, error) {
-	f, err := os.OpenFile(path, os.O_RDONLY|hopNoFollowFlag(), 0)
+	f, err := openHopRelayHost(path, os.O_RDONLY)
 	if err != nil {
 		return nil, err
 	}

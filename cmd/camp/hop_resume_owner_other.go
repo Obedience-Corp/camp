@@ -10,3 +10,6 @@ func hopFileOwner(os.FileInfo) (int, bool) { return 0, false }
 
 // hopNoFollowFlag is zero where the platform has no symlink-open flag.
 func hopNoFollowFlag() int { return 0 }
+
+// hopNonblockFlag is zero where the platform has no nonblocking open flag.
+func hopNonblockFlag() int { return 0 }
