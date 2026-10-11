@@ -5,6 +5,8 @@ import (
 	"encoding/json"
 	"errors"
 	"net"
+	"os"
+	"slices"
 	"strings"
 	"testing"
 	"time"
@@ -164,5 +166,29 @@ func TestHopResumeCancellationClosesPendingRequest(t *testing.T) {
 		}
 	case <-time.After(time.Second):
 		t.Fatal("pending request survived SSH cancellation")
+	}
+}
+
+func TestHopTerminalNeverCrossesToControlMasterAsDevTTY(t *testing.T) {
+	in, out, ok := inheritedHopTerminal(os.Stdin, os.Stderr, func(*os.File) bool { return true })
+	if !ok || in != os.Stdin || out != os.Stderr {
+		t.Fatalf("terminal stdio must be handed to ssh as-is: in=%v out=%v ok=%v", in, out, ok)
+	}
+	for name, isTerminal := range map[string]func(*os.File) bool{
+		"stdin redirected":  func(f *os.File) bool { return f != os.Stdin },
+		"stderr redirected": func(f *os.File) bool { return f != os.Stderr },
+	} {
+		if _, _, ok := inheritedHopTerminal(os.Stdin, os.Stderr, isTerminal); ok {
+			t.Errorf("%s: redirected stdio must not be treated as the terminal", name)
+		}
+	}
+
+	argv := withoutControlMaster([]string{"ssh", "-t", "-o", "ControlPath=/run/camp.sock", "devbox", "exec $SHELL -l"})
+	none, own := slices.Index(argv, "ControlPath=none"), slices.Index(argv, "ControlPath=/run/camp.sock")
+	if none < 0 || own < 0 || none > own {
+		t.Fatalf("ControlPath=none must precede the line's own ControlPath, ssh keeps the first: %q", argv)
+	}
+	if argv[0] != "ssh" || argv[1] != "-t" || argv[len(argv)-2] != "devbox" || argv[len(argv)-1] != "exec $SHELL -l" {
+		t.Fatalf("fallback rewrote the hop itself: %q", argv)
 	}
 }
