@@ -13,6 +13,7 @@ import (
 
 	"github.com/Obedience-Corp/camp/cmd/camp/cmdutil"
 	"github.com/spf13/cobra"
+	"golang.org/x/term"
 
 	camperrors "github.com/Obedience-Corp/camp/internal/errors"
 	"github.com/Obedience-Corp/camp/internal/machines"
@@ -137,8 +138,8 @@ func sanitizeResumeSelector(raw string) (string, error) {
 
 // runHopResume runs one outbound ssh line with a resume socket forwarded to
 // the far shell. stdout of this process is reserved for the follow-up shell
-// line (possibly empty); the interactive session is attached to /dev/tty
-// because the wrapper captures stdout.
+// line (possibly empty), so the interactive session is attached to the
+// terminal this process inherited on stdin and stderr.
 func runHopResume(ctx context.Context, line string) (string, error) {
 	local, remoteSock, err := resumeSocketPaths()
 	if err != nil {
@@ -165,15 +166,20 @@ func runHopResume(ctx context.Context, line string) (string, error) {
 	if err != nil {
 		return "", err
 	}
-	sshCmd := exec.CommandContext(ctx, argv[0], argv[1:]...)
-	tty, err := os.OpenFile("/dev/tty", os.O_RDWR, 0)
-	if err != nil {
-		return "", camperrors.Wrap(err, "hop-resume: open /dev/tty")
+	in, out, inherited := inheritedHopTerminal(os.Stdin, os.Stderr, isTerminalFile)
+	if !inherited {
+		tty, err := os.OpenFile("/dev/tty", os.O_RDWR, 0)
+		if err != nil {
+			return "", camperrors.Wrap(err, "hop-resume: open /dev/tty")
+		}
+		defer func() { _ = tty.Close() }()
+		in, out = tty, tty
+		argv = withoutControlMaster(argv)
 	}
-	defer func() { _ = tty.Close() }()
-	sshCmd.Stdin = tty
-	sshCmd.Stdout = tty
-	sshCmd.Stderr = tty
+	sshCmd := exec.CommandContext(ctx, argv[0], argv[1:]...)
+	sshCmd.Stdin = in
+	sshCmd.Stdout = out
+	sshCmd.Stderr = out
 	runErr := sshCmd.Run()
 	cancelResume()
 	_ = ln.Close()
@@ -182,6 +188,29 @@ func runHopResume(ctx context.Context, line string) (string, error) {
 		return "", runErr
 	}
 	return follow, nil
+}
+
+// inheritedHopTerminal returns the terminal descriptors ssh may hand to a
+// ControlMaster. A multiplexed ssh passes its stdio to the master, which is
+// detached from every terminal, so the descriptors must name the terminal
+// device itself. /dev/tty resolves against the calling process instead: on
+// macOS the master gets EIO from it and drops the session with status 255.
+func inheritedHopTerminal(stdin, stderr *os.File, isTerminal func(*os.File) bool) (in, out *os.File, ok bool) {
+	if isTerminal(stdin) && isTerminal(stderr) {
+		return stdin, stderr, true
+	}
+	return nil, nil, false
+}
+
+func isTerminalFile(f *os.File) bool { return term.IsTerminal(int(f.Fd())) }
+
+// withoutControlMaster makes ssh own its connection. ssh keeps the first value
+// it sees for an option, so this must precede the line's own ControlPath.
+func withoutControlMaster(argv []string) []string {
+	out := make([]string, 0, len(argv)+2)
+	out = append(out, argv[:2]...)
+	out = append(out, "-o", "ControlPath=none")
+	return append(out, argv[2:]...)
 }
 
 func resumeSocketPaths() (local, remoteSock string, err error) {
