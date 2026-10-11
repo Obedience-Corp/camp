@@ -85,8 +85,7 @@ func (m exploreModel) openReader() (tea.Model, tea.Cmd) {
 	case item.Kind == "workitem" && item.IsDir:
 		entries, err := markdownEntries(abs)
 		if err != nil {
-			m.statusErr = true
-			m.status = err.Error()
+			m.setStatus(exploreActionStatus, err.Error(), true)
 			return m, nil
 		}
 		reader.listing = true
@@ -96,8 +95,7 @@ func (m exploreModel) openReader() (tea.Model, tea.Cmd) {
 		if _, err := os.Stat(goal); err == nil {
 			text, err := readExploreText(m.readerContext(), goal)
 			if err != nil {
-				m.statusErr = true
-				m.status = "The file could not be parsed."
+				m.setStatus(exploreActionStatus, "The file could not be parsed.", true)
 				return m, nil
 			}
 			reader.path = goal
@@ -113,8 +111,7 @@ func (m exploreModel) openReader() (tea.Model, tea.Cmd) {
 	case !item.IsDir && strings.HasSuffix(strings.ToLower(item.Path), ".md"):
 		text, err := readExploreText(m.readerContext(), abs)
 		if err != nil {
-			m.statusErr = true
-			m.status = "The file could not be parsed."
+			m.setStatus(exploreActionStatus, "The file could not be parsed.", true)
 			return m, nil
 		}
 		reader.body = readerBody{text: text, markdown: true}
@@ -178,8 +175,7 @@ func (m exploreModel) onReaderKey(key tea.KeyMsg) (tea.Model, tea.Cmd) {
 		picked := m.reader.entries[m.reader.entry]
 		text, err := readExploreText(m.readerContext(), picked.path)
 		if err != nil {
-			m.statusErr = true
-			m.status = "The file could not be parsed."
+			m.setStatus(exploreActionStatus, "The file could not be parsed.", true)
 			return m, nil
 		}
 		m.reader.listing = false

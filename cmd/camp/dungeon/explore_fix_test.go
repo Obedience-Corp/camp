@@ -237,7 +237,7 @@ func TestExploreRescanClearsReadingStatus(t *testing.T) {
 	if m.status == "" {
 		t.Fatal("rescan did not report that it is reading")
 	}
-	m, _ = press(t, m, exploreLoaded{index: idx, changed: true})
+	m, _ = press(t, m, exploreLoaded{gen: m.indexGen, index: idx, changed: true})
 	if m.status != "" {
 		t.Fatalf("status after a successful rescan = %q", m.status)
 	}

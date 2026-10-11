@@ -22,6 +22,15 @@ const (
 	exploreReadingStatus = "Reading dungeons…"
 )
 
+type exploreStatusSource uint8
+
+const (
+	exploreActionStatus exploreStatusSource = iota
+	exploreQueryStatus
+	exploreLoadStatus
+	exploreReplayStatus
+)
+
 type exploreModel struct {
 	ctx      context.Context
 	root     string
@@ -33,14 +42,16 @@ type exploreModel struct {
 	width    int
 	height   int
 
-	loading   bool
-	status    string
-	statusErr bool
-	help      bool
-	filtering bool
-	filter    string
-	plain     bool
-	styles    exploreStyles
+	loading      bool
+	status       string
+	statusErr    bool
+	statusSource exploreStatusSource
+	indexGen     int
+	help         bool
+	filtering    bool
+	filter       string
+	plain        bool
+	styles       exploreStyles
 
 	reading bool
 	reader  exploreReader
@@ -65,6 +76,7 @@ type exploreModel struct {
 }
 
 type exploreLoaded struct {
+	gen     int
 	index   explore.Index
 	changed bool
 	err     error
@@ -105,10 +117,7 @@ func runExploreTUI(cmd *cobra.Command, root, cacheDir string, query explore.Quer
 		if idx, ok, _ := explore.LoadCache(cacheDir); ok {
 			model.index = idx
 			model.loading = false
-			if err := model.applyQuery(); err != nil {
-				model.statusErr = true
-				model.status = err.Error()
-			}
+			_ = model.applyQuery()
 		}
 	}
 	prog := tea.NewProgram(model, tea.WithContext(ctx), tea.WithAltScreen())
@@ -138,13 +147,14 @@ func (m exploreModel) loadCmd() tea.Cmd {
 	cached := m.index
 	haveCache := !m.loading
 	ctx := m.ctx
+	gen := m.indexGen
 	return func() tea.Msg {
 		if haveCache {
 			idx, changed, err := explore.Refresh(ctx, root, cached)
-			return exploreLoaded{index: idx, changed: changed, err: err}
+			return exploreLoaded{gen: gen, index: idx, changed: changed, err: err}
 		}
 		idx, err := explore.Build(ctx, root)
-		return exploreLoaded{index: idx, changed: true, err: err}
+		return exploreLoaded{gen: gen, index: idx, changed: true, err: err}
 	}
 }
 
@@ -162,24 +172,35 @@ func (m exploreModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m, cmd := m.schedulePoster()
 		return m, cmd
 	case exploreLoaded:
-		m.loading = false
-		if msg.err != nil {
-			m.statusErr = true
-			m.status = msg.err.Error()
+		if msg.gen != m.indexGen {
 			return m, nil
 		}
-		if m.status == exploreReadingStatus {
-			m.status = ""
+		m.loading = false
+		if msg.err != nil {
+			m.setStatus(exploreLoadStatus, msg.err.Error(), true)
+			return m, nil
 		}
+		if m.statusSource == exploreLoadStatus {
+			m.setStatus(exploreLoadStatus, "", false)
+		}
+		selected, hadSelection := m.focused()
 		if msg.changed {
 			m.index = msg.index
 			if m.cacheDir != "" {
 				_ = explore.SaveCache(m.cacheDir, m.index)
 			}
 		}
-		if err := m.applyQuery(); err != nil {
-			m.statusErr = true
-			m.status = err.Error()
+		_ = m.applyQuery()
+		// A refresh may insert or reorder rows. Keep the selected path, not
+		// its former position; if it disappeared, start at the first row.
+		m.cursor = 0
+		if hadSelection {
+			for i, item := range m.visible.Items {
+				if item.Path == selected.Path {
+					m.cursor = i
+					break
+				}
+			}
 		}
 		m, cmd := m.schedulePoster()
 		return m, cmd
@@ -204,11 +225,11 @@ func (m exploreModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.mediaFor = msg.item
 		m.playing = len(msg.frames) > 1 && !m.reduced && msg.err == nil
 		if msg.tooLong || errors.Is(msg.err, explore.ErrReplayTooLong) {
-			m.statusErr = false
-			m.status = "Replay is too long to play here."
+			m.setStatus(exploreReplayStatus, "Replay is too long to play here.", false)
 		} else if msg.err != nil {
-			m.statusErr = true
-			m.status = "The replay could not be read."
+			m.setStatus(exploreReplayStatus, "The replay could not be read.", true)
+		} else if m.statusSource == exploreReplayStatus {
+			m.setStatus(exploreReplayStatus, "", false)
 		}
 		if m.playing {
 			m.poster = m.frames[0]
@@ -280,10 +301,12 @@ func (m exploreModel) onKey(key tea.KeyMsg) (tea.Model, tea.Cmd) {
 	case "y":
 		return m.copyPath(m.focusedPath())
 	case "r":
+		if m.loading {
+			return m, nil
+		}
 		m.loading = true
-		m.index = explore.Index{}
-		m.status = exploreReadingStatus
-		m.statusErr = false
+		m.indexGen++
+		m.setStatus(exploreLoadStatus, exploreReadingStatus, false)
 		return m, m.loadCmd()
 	case "?":
 		m.help = !m.help
@@ -361,7 +384,15 @@ func (m exploreModel) page() int {
 func (m *exploreModel) applyQuery() error {
 	result, err := explore.Apply(m.index, m.query)
 	if err != nil {
+		// Rows from the previous lens must not remain actionable when the
+		// current query no longer resolves against the refreshed index.
+		m.visible = explore.Result{}
+		m.cursor = 0
+		m.setStatus(exploreQueryStatus, err.Error(), true)
 		return err
+	}
+	if m.statusSource == exploreQueryStatus {
+		m.setStatus(exploreQueryStatus, "", false)
 	}
 	m.visible = result
 	m.query.Status = result.StatusLens
@@ -376,6 +407,9 @@ func (m *exploreModel) applyQuery() error {
 }
 
 func (m exploreModel) schedulePoster() (exploreModel, tea.Cmd) {
+	if m.statusSource == exploreReplayStatus {
+		m.setStatus(exploreReplayStatus, "", false)
+	}
 	m.loadGen++
 	m.tickGen++
 	m.cancelDecode()
@@ -498,8 +532,7 @@ func (m exploreModel) hop() (tea.Model, tea.Cmd) {
 
 func (m exploreModel) hopTo(item explore.Item) (tea.Model, tea.Cmd) {
 	if !m.gotoEnabled {
-		m.statusErr = true
-		m.status = `go needs shell integration: eval "$(camp shell-init <shell>)"`
+		m.setStatus(exploreActionStatus, `go needs shell integration: eval "$(camp shell-init <shell>)"`, true)
 		return m, nil
 	}
 	m.gotoPath = exploreJump(m.root, item)
@@ -540,18 +573,19 @@ func (m exploreModel) copyPath(path string) (tea.Model, tea.Cmd) {
 		return m, nil
 	}
 	if err := copyExplorePath(path); err != nil {
-		m.statusErr = true
-		m.status = "copy failed: " + err.Error()
+		m.setStatus(exploreActionStatus, "copy failed: "+err.Error(), true)
 		return m, nil
 	}
-	m.statusErr = false
-	m.status = "copied"
+	m.setStatus(exploreActionStatus, "copied", false)
 	return m, nil
 }
 
 func (m *exploreModel) clearStatus() {
-	if m.status == "copied" || strings.HasPrefix(m.status, "go needs") || strings.HasPrefix(m.status, "Replay") || strings.HasPrefix(m.status, "The replay") || strings.HasPrefix(m.status, "copy failed") {
-		m.status = ""
-		m.statusErr = false
+	if m.statusSource == exploreActionStatus || m.statusSource == exploreReplayStatus {
+		m.setStatus(m.statusSource, "", false)
 	}
+}
+
+func (m *exploreModel) setStatus(source exploreStatusSource, text string, failed bool) {
+	m.statusSource, m.status, m.statusErr = source, text, failed
 }
