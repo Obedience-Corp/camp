@@ -14,8 +14,8 @@ const (
 )
 
 // ChooseProtocol picks how a replay is drawn. Plain mode always returns off.
-// Auto also returns off inside a terminal multiplexer; naming a protocol
-// still forces it there.
+// Auto also returns off inside a terminal multiplexer, an editor's terminal,
+// or any terminal it cannot name; naming a protocol still forces it there.
 func ChooseProtocol(flag string, getenv func(string) string, plain bool) (string, error) {
 	if getenv == nil {
 		getenv = os.Getenv
@@ -35,24 +35,51 @@ func ChooseProtocol(flag string, getenv func(string) string, plain bool) (string
 	if flag == ProtocolKitty || flag == ProtocolITerm {
 		return flag, nil
 	}
-	if insideMultiplexer(getenv) {
+	if insideNestedTerminal(getenv) {
 		return ProtocolOff, nil
 	}
-	if getenv("KITTY_WINDOW_ID") != "" || strings.HasPrefix(getenv("TERM"), "xterm-ghostty") || getenv("WEZTERM_PANE") != "" {
-		return ProtocolKitty, nil
-	}
-	if getenv("TERM_PROGRAM") == "iTerm.app" || getenv("LC_TERMINAL") == "iTerm2" {
-		return ProtocolITerm, nil
-	}
-	return ProtocolOff, nil
+	return hostProtocol(getenv), nil
 }
 
-// insideMultiplexer reports tmux, GNU screen, or zellij. They keep the outer
-// terminal's KITTY_WINDOW_ID and LC_TERMINAL but do not forward its image
-// sequences, so detection would reserve rows for a replay that never draws.
-func insideMultiplexer(getenv func(string) string) bool {
-	if getenv("TMUX") != "" || getenv("STY") != "" || getenv("ZELLIJ") != "" {
-		return true
+// hostProtocol names the protocol of the terminal that draws the screen.
+// KITTY_WINDOW_ID, WEZTERM_PANE, and LC_TERMINAL are inherited by whatever is
+// started from that terminal, another terminal included, where they would
+// reserve rows for a replay that never draws. TERM and TERM_PROGRAM are set by
+// each terminal for itself, so they are read first, and a TERM_PROGRAM that
+// names some other terminal turns replays off.
+func hostProtocol(getenv func(string) string) string {
+	term := getenv("TERM")
+	if strings.HasPrefix(term, "xterm-kitty") || strings.HasPrefix(term, "xterm-ghostty") {
+		return ProtocolKitty
+	}
+	switch getenv("TERM_PROGRAM") {
+	case "iTerm.app":
+		return ProtocolITerm
+	case "WezTerm", "ghostty":
+		return ProtocolKitty
+	case "":
+		// Kitty sets no TERM_PROGRAM, and none crosses an SSH hop.
+	default:
+		return ProtocolOff
+	}
+	if getenv("KITTY_WINDOW_ID") != "" || getenv("WEZTERM_PANE") != "" {
+		return ProtocolKitty
+	}
+	if getenv("LC_TERMINAL") == "iTerm2" {
+		return ProtocolITerm
+	}
+	return ProtocolOff
+}
+
+// insideNestedTerminal reports tmux, GNU screen, zellij, or a terminal run by
+// Neovim, Vim, or Emacs. They keep the outer terminal's KITTY_WINDOW_ID and
+// LC_TERMINAL but do not forward its image sequences, so detection would
+// reserve rows for a replay that never draws.
+func insideNestedTerminal(getenv func(string) string) bool {
+	for _, name := range []string{"TMUX", "STY", "ZELLIJ", "NVIM", "VIM_TERMINAL", "INSIDE_EMACS"} {
+		if getenv(name) != "" {
+			return true
+		}
 	}
 	term := getenv("TERM")
 	return strings.HasPrefix(term, "screen") || strings.HasPrefix(term, "tmux")

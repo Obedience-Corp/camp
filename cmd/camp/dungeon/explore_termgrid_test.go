@@ -3,6 +3,7 @@ package dungeon
 import (
 	"bytes"
 	"context"
+	"encoding/base64"
 	"fmt"
 	"hash/fnv"
 	"image"
@@ -24,8 +25,12 @@ import (
 // termGrid is the part of a terminal the explorer depends on: a grid of
 // cells, a cursor, autowrap, scrolling, tab stops, the erase commands Bubble
 // Tea's renderer sends, and the two image protocols. An iTerm image lives in
-// the cells it covers and goes when they are written or erased. A Kitty
-// image is a separate layer that only a delete command removes.
+// the cells it covers and goes when they are written or erased; it keeps its
+// aspect, so it covers only the part of the requested box the picture fills.
+// A Kitty image is a separate layer that only a delete command removes.
+//
+// Every code point takes its own cells, as on a terminal that does not join
+// emoji sequences: the widest a row can come out.
 //
 // Tests assert on what the grid holds after the real renderer has written
 // to it, which is what a person would see, not on the strings View returns.
@@ -261,12 +266,32 @@ func (g *termGrid) osc(body string) {
 			rows, _ = strconv.Atoi(value)
 		}
 	}
+	if png, err := base64.StdEncoding.DecodeString(payload); err == nil {
+		cols, rows = itermCells(png, cols, rows)
+	}
 	tag := termTag(payload, g.row, g.col)
 	for r := g.row; r < min(g.row+rows, g.h); r++ {
 		for c := g.col; c < min(g.col+cols, g.w); c++ {
 			g.cells[r][c] = termCell{image: tag}
 		}
 	}
+}
+
+// itermCells is the part of a cols by rows box an iTerm image covers. iTerm
+// scales the picture to fit and keeps its aspect, so a picture narrower or
+// shorter than the box leaves the rest of the box as it was.
+func itermCells(png []byte, cols, rows int) (int, int) {
+	w, h, ok := pngPixelSize(png)
+	if !ok || cols < 1 || rows < 1 {
+		return cols, rows
+	}
+	boxW, boxH := cols*exploreCellWidth, rows*exploreCellHeight
+	if w*boxH > h*boxW {
+		scaled := h * boxW / w
+		return cols, min(rows, max((scaled+exploreCellHeight-1)/exploreCellHeight, 1))
+	}
+	scaled := w * boxH / h
+	return min(cols, max((scaled+exploreCellWidth-1)/exploreCellWidth, 1)), rows
 }
 
 func (g *termGrid) apc(body string) {
@@ -392,6 +417,10 @@ type screenStep struct {
 // screenSettle delivers the focused replay, as a finished decode would.
 type screenSettle struct{}
 
+// screenApply changes the model in one step, however many messages that
+// stands for, so the renderer never sees the frames in between.
+type screenApply func(exploreModel) exploreModel
+
 type screenHost struct {
 	m    exploreModel
 	step int
@@ -411,6 +440,8 @@ func (h screenHost) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case nil:
 	case screenSettle:
 		h.m = settleReplay(h.m)
+	case screenApply:
+		h.m = inner(h.m)
 	default:
 		next, _ := h.m.Update(inner)
 		h.m = next.(exploreModel)
@@ -564,6 +595,16 @@ func imageBox(view string) (row, col, cols, rows int, ok bool) {
 	return row, col, cols, rows, true
 }
 
+// drawnBox is the cells a view's replay covers on the terminal: the Kitty
+// placement as asked for, or the part of the iTerm box the picture fills.
+func drawnBox(m exploreModel) (row, col, cols, rows int, ok bool) {
+	row, col, cols, rows, ok = imageBox(m.View())
+	if ok && m.protocol == explore.ProtocolITerm {
+		cols, rows = itermCells(m.poster, cols, rows)
+	}
+	return row, col, cols, rows, ok
+}
+
 // viewText strips image payloads and control sequences from one view line.
 func viewText(line string) string {
 	line = viewKittyAPC.ReplaceAllString(line, "")
@@ -578,7 +619,7 @@ func viewText(line string) string {
 // row that wrapped, or a screen that scrolled.
 func checkScreen(g *termGrid, m exploreModel) []string {
 	want := map[[2]int]bool{}
-	if row, col, cols, rows, ok := imageBox(m.View()); ok {
+	if row, col, cols, rows, ok := drawnBox(m); ok {
 		for r := row - 1; r < row-1+rows; r++ {
 			for c := col - 1; c < col-1+cols; c++ {
 				want[[2]int{r, c}] = true

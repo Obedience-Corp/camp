@@ -91,6 +91,9 @@ func decodeReplay(ctx context.Context, data []byte, maxW, maxH int) (Frames, err
 	if err != nil {
 		return Frames{}, camperrors.Wrap(err, "decoding replay")
 	}
+	if cut && !oversize && !shape.overWork && len(shape.frames) <= maxReplayFrames {
+		return out, ErrReplayIncomplete
+	}
 	if tooLong {
 		return out, ErrReplayTooLong
 	}

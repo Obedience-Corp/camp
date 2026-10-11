@@ -35,9 +35,10 @@ Keys in the reader:
   y                 copy the document path
   esc, q            back to the feed
 
-Replays draw in Kitty, Ghostty, WezTerm, and iTerm. Inside tmux, screen, or
-zellij the automatic choice is off; --images kitty or --images iterm forces
-a protocol.
+Replays draw in Kitty, Ghostty, WezTerm, and iTerm. The automatic choice is
+off inside tmux, screen, or zellij, inside an editor's terminal (Neovim, Vim,
+Emacs), and in any terminal it does not recognize. --images kitty or
+--images iterm forces a protocol.
 
   camp dungeon explore
   camp dungeon explore --status archived

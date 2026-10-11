@@ -42,3 +42,43 @@ func TestChooseProtocolInsideMultiplexer(t *testing.T) {
 		}
 	}
 }
+
+// A terminal started from another inherits KITTY_WINDOW_ID, WEZTERM_PANE, and
+// LC_TERMINAL. Auto must go by what the terminal on screen says of itself, or
+// it reserves rows for a replay that terminal never draws.
+func TestChooseProtocolIgnoresAnInheritedTerminal(t *testing.T) {
+	cases := []struct {
+		name string
+		env  map[string]string
+		want string
+	}{
+		{"kitty", map[string]string{"TERM": "xterm-kitty", "KITTY_WINDOW_ID": "1"}, ProtocolKitty},
+		{"kitty with its own TERM setting", map[string]string{"TERM": "xterm-256color", "KITTY_WINDOW_ID": "1"}, ProtocolKitty},
+		{"kitty across ssh", map[string]string{"TERM": "xterm-kitty"}, ProtocolKitty},
+		{"ghostty", map[string]string{"TERM": "xterm-ghostty", "TERM_PROGRAM": "ghostty"}, ProtocolKitty},
+		{"wezterm", map[string]string{"TERM": "xterm-256color", "TERM_PROGRAM": "WezTerm", "WEZTERM_PANE": "0"}, ProtocolKitty},
+		{"iterm", map[string]string{"TERM": "xterm-256color", "TERM_PROGRAM": "iTerm.app", "LC_TERMINAL": "iTerm2"}, ProtocolITerm},
+		{"iterm across ssh", map[string]string{"TERM": "xterm-256color", "LC_TERMINAL": "iTerm2"}, ProtocolITerm},
+
+		{"vscode started from iterm", map[string]string{"TERM": "xterm-256color", "TERM_PROGRAM": "vscode", "LC_TERMINAL": "iTerm2"}, ProtocolOff},
+		{"vscode started from kitty", map[string]string{"TERM": "xterm-256color", "TERM_PROGRAM": "vscode", "KITTY_WINDOW_ID": "3"}, ProtocolOff},
+		{"apple terminal started from iterm", map[string]string{"TERM": "xterm-256color", "TERM_PROGRAM": "Apple_Terminal", "LC_TERMINAL": "iTerm2"}, ProtocolOff},
+		{"zed started from wezterm", map[string]string{"TERM": "xterm-256color", "TERM_PROGRAM": "zed", "WEZTERM_PANE": "0"}, ProtocolOff},
+		{"kitty started from iterm", map[string]string{"TERM": "xterm-kitty", "KITTY_WINDOW_ID": "1", "TERM_PROGRAM": "iTerm.app", "LC_TERMINAL": "iTerm2"}, ProtocolKitty},
+		{"neovim terminal in kitty", map[string]string{"TERM": "xterm-256color", "KITTY_WINDOW_ID": "1", "NVIM": "/tmp/nvim.sock"}, ProtocolOff},
+		{"vim terminal in kitty", map[string]string{"TERM": "xterm-256color", "KITTY_WINDOW_ID": "1", "VIM_TERMINAL": "901"}, ProtocolOff},
+		{"emacs terminal in iterm", map[string]string{"TERM": "xterm-256color", "TERM_PROGRAM": "iTerm.app", "INSIDE_EMACS": "29.1,vterm"}, ProtocolOff},
+		{"a terminal that says nothing", map[string]string{"TERM": "xterm-256color"}, ProtocolOff},
+	}
+	for _, tc := range cases {
+		getenv := func(key string) string { return tc.env[key] }
+		if got, err := ChooseProtocol(ProtocolAuto, getenv, false); err != nil || got != tc.want {
+			t.Errorf("auto in %s = %q, %v; want %q", tc.name, got, err, tc.want)
+		}
+		for _, forced := range []string{ProtocolKitty, ProtocolITerm} {
+			if got, err := ChooseProtocol(forced, getenv, false); err != nil || got != forced {
+				t.Errorf("--images %s in %s = %q, %v", forced, tc.name, got, err)
+			}
+		}
+	}
+}

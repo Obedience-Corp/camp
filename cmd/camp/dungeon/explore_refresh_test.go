@@ -21,13 +21,13 @@ func TestExploreRefreshResolvesQueryError(t *testing.T) {
 				t.Fatal("outdated index unexpectedly resolved query")
 			}
 			m, _ = press(t, m, exploreLoaded{})
-			if !m.statusErr || m.status == "" {
+			if !m.statusRow().failed || m.statusRow().text == "" {
 				t.Fatal("invalid query was not reported")
 			}
 			idx := refreshIndex("New design")
 			m, _ = press(t, m, exploreLoaded{index: idx, changed: true})
-			if m.statusErr || m.status != "" || strings.Contains(m.View(), "unknown") {
-				t.Fatalf("resolved query still reports %q (error=%v)", m.status, m.statusErr)
+			if m.statusRow().failed || m.statusRow().text != "" || strings.Contains(m.View(), "unknown") {
+				t.Fatalf("resolved query still reports %q (error=%v)", m.statusRow().text, m.statusRow().failed)
 			}
 			if len(m.visible.Items) != 1 {
 				t.Fatalf("resolved query has %d rows", len(m.visible.Items))
@@ -63,8 +63,8 @@ func TestExploreRefreshKeepsSuppliedDungeonLabel(t *testing.T) {
 		t.Fatalf("startup selector %q lens %q label %q", m.query.Dungeon, m.visible.DungeonLens, m.visible.DungeonLabel)
 	}
 	m, _ = press(t, m, exploreLoaded{index: fresh, changed: true})
-	if m.statusErr || m.query.Dungeon != "Festivals" || m.visible.DungeonLens != "festivals/.dungeon" || len(m.visible.Items) != 1 || m.visible.Items[0].Title != "new" {
-		t.Fatalf("label refresh: status=%q err=%v selector=%q lens=%q items=%d", m.status, m.statusErr, m.query.Dungeon, m.visible.DungeonLens, len(m.visible.Items))
+	if m.statusRow().failed || m.query.Dungeon != "Festivals" || m.visible.DungeonLens != "festivals/.dungeon" || len(m.visible.Items) != 1 || m.visible.Items[0].Title != "new" {
+		t.Fatalf("label refresh: status=%q err=%v selector=%q lens=%q items=%d", m.statusRow().text, m.statusRow().failed, m.query.Dungeon, m.visible.DungeonLens, len(m.visible.Items))
 	}
 
 	stale := exploreModel{
@@ -76,8 +76,8 @@ func TestExploreRefreshKeepsSuppliedDungeonLabel(t *testing.T) {
 		t.Fatal(err)
 	}
 	stale, _ = press(t, stale, exploreLoaded{index: fresh, changed: true})
-	if !stale.statusErr || len(stale.visible.Items) != 0 {
-		t.Fatalf("obsolete path stayed visible: status=%q items=%d", stale.status, len(stale.visible.Items))
+	if !stale.statusRow().failed || len(stale.visible.Items) != 0 {
+		t.Fatalf("obsolete path stayed visible: status=%q items=%d", stale.statusRow().text, len(stale.visible.Items))
 	}
 }
 
@@ -111,10 +111,10 @@ func TestExploreRefreshPreservesFocusedItem(t *testing.T) {
 func TestExploreRefreshPreservesUnrelatedError(t *testing.T) {
 	m := replayModel(explore.ProtocolOff)
 	m, _ = press(t, m, runes("g"))
-	want := m.status
+	want := m.statusRow().text
 	m, _ = press(t, m, exploreLoaded{})
-	if !m.statusErr || m.status != want {
-		t.Fatalf("refresh erased shell integration error: %q", m.status)
+	if !m.statusRow().failed || m.statusRow().text != want {
+		t.Fatalf("refresh erased shell integration error: %q", m.statusRow().text)
 	}
 }
 
@@ -128,24 +128,24 @@ func TestExploreInvalidQueryCannotActOnOldRows(t *testing.T) {
 		t.Fatal("invalid lens kept an actionable row from the previous query")
 	}
 	m, _ = press(t, m, exploreLoaded{})
-	if !m.statusErr || !strings.Contains(m.status, "missing") {
-		t.Fatalf("unchanged refresh lost invalid query error: %q", m.status)
+	if !m.statusRow().failed || !strings.Contains(m.statusRow().text, "missing") {
+		t.Fatalf("unchanged refresh lost invalid query error: %q", m.statusRow().text)
 	}
 	m, _ = press(t, m, runes("]"))
-	if m.statusErr || m.status != "" || len(m.visible.Items) == 0 {
-		t.Fatalf("switching to a valid lens did not recover: %q", m.status)
+	if m.statusRow().failed || m.statusRow().text != "" || len(m.visible.Items) == 0 {
+		t.Fatalf("switching to a valid lens did not recover: %q", m.statusRow().text)
 	}
 }
 
 func TestExploreRefreshFailureRecovery(t *testing.T) {
 	m := replayModel(explore.ProtocolOff)
 	m, _ = press(t, m, exploreLoaded{err: errors.New("scan failed")})
-	if !m.statusErr || m.status != "scan failed" {
+	if !m.statusRow().failed || m.statusRow().text != "scan failed" {
 		t.Fatal("refresh failure not reported")
 	}
 	m, _ = press(t, m, exploreLoaded{})
-	if m.statusErr || m.status != "" {
-		t.Fatalf("successful refresh retained scan error: %q", m.status)
+	if m.statusRow().failed || m.statusRow().text != "" {
+		t.Fatalf("successful refresh retained scan error: %q", m.statusRow().text)
 	}
 }
 
@@ -163,7 +163,7 @@ func TestExploreRefreshIgnoresSupersededLoads(t *testing.T) {
 		t.Fatal("repeated rescan started a duplicate load")
 	}
 	m, _ = press(t, m, exploreLoaded{gen: gen - 1, err: errors.New("old scan failure")})
-	if !m.loading || m.statusErr || m.status != exploreReadingStatus {
+	if !m.loading || m.statusRow().failed || m.statusRow().text != exploreReadingStatus {
 		t.Fatal("superseded load error interrupted the active scan")
 	}
 	m, _ = press(t, m, exploreLoaded{gen: gen, index: refreshIndex("Current"), changed: true})
@@ -178,7 +178,7 @@ func TestExploreFailedRescanKeepsUsableIndex(t *testing.T) {
 	before, _ := m.focused()
 	m, _ = press(t, m, runes("r"))
 	m, _ = press(t, m, exploreLoaded{gen: m.indexGen, err: errors.New("scan failed")})
-	if !m.statusErr || m.loading || len(m.index.Items) == 0 {
+	if !m.statusRow().failed || m.loading || len(m.index.Items) == 0 {
 		t.Fatal("failed rescan discarded the previous feed")
 	}
 	m, _ = press(t, m, runes("/"))
@@ -201,8 +201,8 @@ func TestExploreRefreshEmptyAndInvalidResults(t *testing.T) {
 			if _, ok := m.focused(); ok || m.cursor != 0 {
 				t.Fatal("empty refresh retained an actionable selection")
 			}
-			if m.statusErr != (status == "reviewed") {
-				t.Fatalf("empty result has wrong error state: %q", m.status)
+			if m.statusRow().failed != (status == "reviewed") {
+				t.Fatalf("empty result has wrong error state: %q", m.statusRow().text)
 			}
 		})
 	}

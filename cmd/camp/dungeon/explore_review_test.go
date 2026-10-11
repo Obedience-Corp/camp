@@ -239,10 +239,10 @@ func TestExploreITermRowsRepaintWhenTheImageChanges(t *testing.T) {
 
 	// A different placement has a different mark, so a replay that moves or
 	// shrinks also repaints the rows it shares with the last one.
-	if a, b := markReplayRows("x", 1, 1, 41, 48), markReplayRows("x", 1, 1, 41, 14); a == b {
+	if a, b := markReplayRows("x", 1, 1, 41, 48, ""), markReplayRows("x", 1, 1, 41, 14, ""); a == b {
 		t.Fatal("a narrower placement left the row identical")
 	}
-	if a, b := markReplayRows("x", 1, 1, 41, 48), markReplayRows("x", 1, 1, 51, 48); a == b {
+	if a, b := markReplayRows("x", 1, 1, 41, 48, ""), markReplayRows("x", 1, 1, 51, 48, ""); a == b {
 		t.Fatal("a shifted placement left the row identical")
 	}
 }

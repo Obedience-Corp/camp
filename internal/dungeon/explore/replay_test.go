@@ -468,8 +468,8 @@ func TestDecodeReplayThatEndsEarlyKeepsPoster(t *testing.T) {
 	} {
 		t.Run(name, func(t *testing.T) {
 			got, err := decodeReplay(context.Background(), data, 64, 64)
-			if !errors.Is(err, ErrReplayTooLong) {
-				t.Fatalf("decodeReplay() error = %v, want ErrReplayTooLong with a poster", err)
+			if !errors.Is(err, ErrReplayIncomplete) {
+				t.Fatalf("decodeReplay() error = %v, want ErrReplayIncomplete with a poster", err)
 			}
 			if got.Frames != nil || got.Delays != nil {
 				t.Fatalf("kept %d frames of a replay that ends early", len(got.Frames))

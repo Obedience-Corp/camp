@@ -69,10 +69,19 @@ var (
 		{"s status", 7}, {"space play", 5}, {"/ filter", 9}, {"y copy", 2}, {"r rescan", 4},
 		{"? close", 98}, {"q quit", 99},
 	}
+	// The reader row for a listing. A document drops "enter open": there is
+	// nothing to open from one.
 	exploreReaderHelp = []helpHint{
 		{"j/k scroll", 5}, {"ctrl+u/d page", 1}, {"enter open", 4}, {"g go", 2}, {"y copy", 3}, {"esc back", 99},
 	}
+	// While the filter is typed every printable key is text, so the row names
+	// only the keys that still act.
+	exploreFilterHelp = []helpHint{
+		{"enter apply", 98}, {"esc cancel", 99}, {"ctrl+c quit", 1},
+	}
 )
+
+const exploreOpenHint = "enter open"
 
 func (m exploreModel) View() string {
 	out := m.placeReplay(m.view())
@@ -100,11 +109,11 @@ func (m exploreModel) placeReplay(view string) string {
 	}
 	row := strings.Count(view[:at], "\n") + 1
 	lineStart := strings.LastIndex(view[:at], "\n") + 1
-	col := lipgloss.Width(view[lineStart:at]) + 1
+	col := cellWidth(view[lineStart:at]) + 1
 	view = view[:at] + view[at+len(seq):]
 	// The feed window can clip reservation rows. Paint only the rows that
 	// remain in the body so the image cannot cover the status or help line.
-	rows := m.stageRows()
+	rows := m.drawRows()
 	if room := m.bodyRowsFrom(row); room < rows {
 		rows = room
 		seq = m.imageSequenceLimited(width, rows)
@@ -114,7 +123,7 @@ func (m exploreModel) placeReplay(view string) string {
 	}
 	key := ""
 	if m.protocol == explore.ProtocolITerm {
-		view = markReplayRows(view, row, rows, col, min(width, 48))
+		view = markReplayRows(view, row, rows, col, min(width, 48), m.replayTag(min(width, 48), rows))
 		key = replayRowsKey(view, row, rows)
 	}
 	// imageSequence itself saves/restores at its origin. Strip that inner
@@ -127,10 +136,13 @@ func (m exploreModel) placeReplay(view string) string {
 // rows are repainted, and Bubble Tea skips a row that did not change. Every
 // row under the image therefore carries the image's own geometry, so when the
 // image goes away, moves, or changes size those rows differ from the last
-// frame and are painted again.
-func markReplayRows(view string, row, rows, col, cols int) string {
+// frame and are painted again. tag names the picture and its box: iTerm
+// paints only the cells the picture covers once it is fitted into the box,
+// so another replay there, or the same one in a shorter box, can leave cells
+// of the last one unless the rows are painted again for it too.
+func markReplayRows(view string, row, rows, col, cols int, tag string) string {
 	lines := strings.Split(view, "\n")
-	mark := fmt.Sprintf("\x1b[%dG\x1b[%dX", col, cols)
+	mark := tag + fmt.Sprintf("\x1b[%dG\x1b[%dX", col, cols)
 	for i := max(row-1, 0); i < row-1+rows && i < len(lines); i++ {
 		lines[i] += mark
 	}
@@ -153,6 +165,25 @@ func replayRowsKey(view string, row, rows int) string {
 	return "\x1b]1337;SetUserVar=campReplayRows=" + base64.StdEncoding.EncodeToString([]byte(sum)) + "\a"
 }
 
+// replayTag names the drawn replay in bytes a terminal shows nothing for:
+// cursor hops along the row, spelled from the item, the picture's size, and
+// the box it is fitted into. The column move that follows them in the row
+// mark puts the cursor back. Every frame of one replay has the same tag, so
+// playing it repaints nothing.
+func (m exploreModel) replayTag(cols, rows int) string {
+	w, h, _ := pngPixelSize(m.poster)
+	sum := fnv.New32a()
+	_, _ = fmt.Fprintf(sum, "%s|%dx%d|%dx%d", m.mediaFor, w, h, cols, rows)
+	v := sum.Sum32()
+	span := uint32(max(m.width, 1))
+	var tag strings.Builder
+	for range 4 {
+		fmt.Fprintf(&tag, "\x1b[%dG", 1+v%span)
+		v /= span
+	}
+	return tag.String()
+}
+
 func (m exploreModel) bodyRowsFrom(row int) int {
 	last := m.height - (m.chromeLines() - 1)
 	return last - row + 1
@@ -172,25 +203,38 @@ func (m exploreModel) view() string {
 		body = append(body, "")
 	}
 	lines = append(lines, body...)
-	if status := m.shownStatus(); status != "" {
+	if row := m.statusRow(); row.text != "" {
 		style := m.styles.muted
-		if m.statusErr {
+		if row.failed {
 			style = m.styles.failure
 		}
-		lines = append(lines, style.Render(fit(status, m.width)))
+		lines = append(lines, style.Render(fit(row.text, m.width)))
 	}
 	lines = append(lines, m.helpLines()...)
 	return strings.Join(lines, "\n")
 }
 
-// shownStatus is the text of the status row. A replay status describes the
-// focused feed row; the reader does not draw the replay, so it waits until
-// the reader closes.
-func (m exploreModel) shownStatus() string {
-	if m.reading && m.statusSource == exploreReplayStatus {
-		return ""
+// statusRow is what the status row shows. The answer to the last key press
+// comes first and goes with the next key; what lies under it is state, which
+// stays for as long as it is true: a query that does not resolve, a rescan
+// that is running or failed, then a note about the focused replay. The reader
+// does not draw the replay, so that note waits until the reader closes.
+func (m exploreModel) statusRow() exploreNote {
+	switch {
+	case m.status != "":
+		return exploreNote{text: m.status, failed: m.statusErr}
+	case m.queryNote.text != "":
+		return m.queryNote
+	case m.loadNote.text != "":
+		return m.loadNote
+	case m.replayNote.text != "" && !m.reading:
+		return m.replayNote
 	}
-	return m.status
+	return exploreNote{}
+}
+
+func (m exploreModel) shownStatus() string {
+	return m.statusRow().text
 }
 
 func (m exploreModel) renderHeader() string {
@@ -204,9 +248,12 @@ func (m exploreModel) headerText() string {
 	if m.reading {
 		return m.reader.title
 	}
-	parts := []string{m.visible.DungeonLabel, statusTitle(m.query.Status), "newest first"}
+	parts := []string{m.visible.DungeonLabel, statusTitle(m.query.Status)}
 	if m.visible.DungeonLabel == "" {
 		parts[0] = "All dungeons"
+	}
+	if m.query.Text != "" {
+		parts = append(parts, `"`+m.query.Text+`"`)
 	}
 	if m.query.Since != "" {
 		parts = append(parts, "since "+m.query.Since)
@@ -214,10 +261,9 @@ func (m exploreModel) headerText() string {
 	if m.query.Until != "" {
 		parts = append(parts, "until "+m.query.Until)
 	}
-	if m.query.Text != "" {
-		parts = append(parts, `"`+m.query.Text+`"`)
-	}
-	return strings.Join(parts, " · ")
+	// The order never changes, so it goes last: a narrow header cuts it
+	// before it cuts the lens or the filter that is in force.
+	return strings.Join(append(parts, "newest first"), " · ")
 }
 
 func statusTitle(status string) string {
@@ -233,8 +279,13 @@ func statusTitle(status string) string {
 func (m exploreModel) helpLines() []string {
 	hints, rows := exploreFeedHelp, 1
 	switch {
+	case m.filtering:
+		hints = exploreFilterHelp
 	case m.reading:
 		hints = exploreReaderHelp
+		if !m.reader.listing {
+			hints = slices.DeleteFunc(slices.Clone(hints), func(hint helpHint) bool { return hint.text == exploreOpenHint })
+		}
 	case m.help:
 		hints = exploreFullHelp
 		// Leave the header and one body row, and the status row when shown.
@@ -416,14 +467,10 @@ func (m exploreModel) renderWide() string {
 func (m exploreModel) feedLines(width int, includeStage bool) []string {
 	var lines []string
 	var lastDay string
-	focusAt := 0
 	for i, item := range m.visible.Items {
 		if item.DoneDate != lastDay {
 			lastDay = item.DoneDate
 			lines = append(lines, m.styles.day.Render(fit(prettyDay(item.DoneDate), width)))
-		}
-		if i == m.cursor {
-			focusAt = len(lines)
 		}
 		mark := "  "
 		if i == m.cursor {
@@ -441,11 +488,10 @@ func (m exploreModel) feedLines(width int, includeStage bool) []string {
 		if item.Summary != "" {
 			lines = append(lines, m.styles.muted.Render("  "+fit(item.Summary, width-2)))
 		}
-		if includeStage && i == m.cursor && m.stageRows() > 0 {
+		if includeStage && i == m.cursor {
 			lines = append(lines, m.stageBlock(m.width)...)
 		}
 	}
-	_ = focusAt
 	return lines
 }
 
@@ -491,23 +537,29 @@ func (m exploreModel) window(lines []string) []string {
 }
 
 // focusBlockRows is the most rows the focused item takes in the feed column:
-// its row and summary, then in the narrow layout the replay reservation and
-// the five card lines. It does not depend on whether the replay has arrived,
-// so the feed does not jump when it does. Without a replay to draw, the card
-// alone already fits under a centered row.
+// its row and summary, then in the narrow layout the card, under the replay
+// reservation when a replay can be drawn. It does not depend on whether the
+// replay has arrived, so the feed does not jump when it does.
 func (m exploreModel) focusBlockRows() int {
-	if m.wide() || m.stageRows() == 0 || m.protocol == explore.ProtocolOff {
+	if m.wide() {
 		return 2
+	}
+	if m.stageRows() == 0 || m.protocol == explore.ProtocolOff {
+		item, _ := m.focused()
+		return 2 + len(m.cardLines(item, m.width))
 	}
 	return 2 + 1 + m.stageRows() + 5
 }
 
+// stageBlock is the focused item's replay reservation and its card. The card
+// holds the only copy of the status, the date, and the path, so it is drawn
+// whenever a row is focused; only the reservation needs room for a replay.
 func (m exploreModel) stageBlock(width int) []string {
 	item, ok := m.focused()
 	if !ok {
 		return nil
 	}
-	rows := m.stageRows()
+	rows := m.drawRows()
 	var lines []string
 	if rows > 0 && m.poster != nil && m.mediaFor == item.Path && m.protocol != explore.ProtocolOff {
 		if !m.wide() {
@@ -517,21 +569,44 @@ func (m exploreModel) stageBlock(width int) []string {
 			lines = append(lines, "")
 		}
 	}
-	lines = append(lines, m.styles.title.Render(fit(item.Title, width)))
-	lines = append(lines, m.styles.day.Render(keepTail(item.ID, "  "+item.DungeonLabel+"  "+item.Status, width)))
+	return append(lines, m.cardLines(item, width)...)
+}
+
+func (m exploreModel) cardLines(item explore.Item, width int) []string {
+	lines := []string{
+		m.styles.title.Render(fit(item.Title, width)),
+		m.styles.day.Render(keepTail(item.ID, "  "+item.DungeonLabel+"  "+item.Status, width)),
+	}
 	if item.Summary != "" {
 		lines = append(lines, m.styles.muted.Render(fit(item.Summary, width)))
 	}
 	lines = append(lines, m.styles.muted.Render(fit(datePhrase(item), width)))
 	lines = append(lines, m.styles.muted.Render(fit(item.Path, width)))
 	if item.Kind == explore.KindFestival && item.Replay == "" {
-		lines = append(lines, m.styles.muted.Render("No replay yet."))
+		lines = append(lines, m.styles.muted.Render(fit("No replay yet.", width)))
 	}
 	return lines
 }
 
+// drawRows is how many rows the focused replay is given. The wide layout
+// stacks the replay on the card in one column, so on a short body the replay
+// gives up rows until the card fits under it. The decoded picture keeps the
+// size stageRows asked for; the terminal scales it into the smaller box.
+func (m exploreModel) drawRows() int {
+	rows := m.stageRows()
+	if rows == 0 || !m.wide() {
+		return rows
+	}
+	item, ok := m.focused()
+	if !ok {
+		return rows
+	}
+	room := m.bodyHeight() - len(m.cardLines(item, m.width))
+	return max(min(rows, room), 0)
+}
+
 func (m exploreModel) imageSequence(width int) string {
-	return m.imageSequenceLimited(width, m.stageRows())
+	return m.imageSequenceLimited(width, m.drawRows())
 }
 
 func (m exploreModel) imageSequenceLimited(width, rows int) string {
@@ -727,7 +802,77 @@ func fit(s string, width int) string {
 	if width <= 0 {
 		return ""
 	}
-	return ansi.Truncate(s, width, "…")
+	return truncateCells(s, width, "…")
+}
+
+// cellWidth is the most columns s can take on a terminal. Terminals disagree
+// about emoji sequences: one that clusters draws a family, a flag, or a
+// skin-toned hand in two cells, and one that does not draws every code point
+// of it. Each cluster counts as the wider of the two, so a row measured here
+// stays inside the margin on both. Escape sequences count for nothing.
+func cellWidth(s string) int {
+	if width, ok := asciiCells(s); ok {
+		return width
+	}
+	s = ansi.Strip(s)
+	if width, ok := asciiCells(s); ok {
+		return width
+	}
+	width := 0
+	for len(s) > 0 {
+		cluster, clustered := ansi.FirstGraphemeCluster(s, ansi.GraphemeWidth)
+		if cluster == "" {
+			break
+		}
+		width += clusterCells(cluster, clustered)
+		s = s[len(cluster):]
+	}
+	return width
+}
+
+// asciiCells is the width of text every terminal draws one cell a byte:
+// printable ASCII, which is nearly every row of a feed.
+func asciiCells(s string) (int, bool) {
+	for i := range len(s) {
+		if s[i] < 0x20 || s[i] >= 0x7f {
+			return 0, false
+		}
+	}
+	return len(s), true
+}
+
+func clusterCells(cluster string, clustered int) int {
+	apart := 0
+	for _, r := range cluster {
+		apart += ansi.StringWidth(string(r))
+	}
+	return max(clustered, apart)
+}
+
+// truncateCells cuts unstyled text to width cells and ends a cut with tail.
+func truncateCells(s string, width int, tail string) string {
+	if cellWidth(s) <= width {
+		return s
+	}
+	room := width - cellWidth(tail)
+	if room < 0 {
+		return ""
+	}
+	if _, ok := asciiCells(s); ok {
+		return s[:room] + tail
+	}
+	var b strings.Builder
+	for used := 0; len(s) > 0; {
+		cluster, clustered := ansi.FirstGraphemeCluster(s, ansi.GraphemeWidth)
+		cells := clusterCells(cluster, clustered)
+		if cluster == "" || used+cells > room {
+			break
+		}
+		b.WriteString(cluster)
+		used += cells
+		s = s[len(cluster):]
+	}
+	return b.String() + tail
 }
 
 func keepTail(head, tail string, width int) string {
@@ -735,7 +880,7 @@ func keepTail(head, tail string, width int) string {
 	if head == "" {
 		return fit(strings.TrimLeft(tail, " "), width)
 	}
-	room := width - lipgloss.Width(tail)
+	room := width - cellWidth(tail)
 	if room < 1 {
 		return fit(head+tail, width)
 	}
@@ -746,20 +891,37 @@ func keepTail(head, tail string, width int) string {
 // end being typed stays visible.
 func keepEnd(prefix, text string, width int) string {
 	text = explore.CleanText(text)
-	room := width - lipgloss.Width(prefix)
-	over := lipgloss.Width(text) - room
+	room := width - cellWidth(prefix)
 	if room < 1 {
 		return fit(prefix, width)
 	}
-	if over <= 0 {
+	if cellWidth(text) <= room {
 		return prefix + text
 	}
-	// One more column goes to the ellipsis that marks the cut.
-	return prefix + ansi.Truncate("…"+ansi.TruncateLeft(text, over+1, ""), room, "")
+	// One column goes to the ellipsis that marks the cut.
+	var clusters []string
+	for rest := text; len(rest) > 0; {
+		cluster, _ := ansi.FirstGraphemeCluster(rest, ansi.GraphemeWidth)
+		if cluster == "" {
+			break
+		}
+		clusters = append(clusters, cluster)
+		rest = rest[len(cluster):]
+	}
+	from, used := len(clusters), 0
+	for from > 0 {
+		cells := cellWidth(clusters[from-1])
+		if used+cells > room-1 {
+			break
+		}
+		used += cells
+		from--
+	}
+	return prefix + "…" + strings.Join(clusters[from:], "")
 }
 
 func padWidth(s string, width int) string {
-	gap := width - lipgloss.Width(s)
+	gap := width - cellWidth(s)
 	if gap <= 0 {
 		return ansi.Truncate(s, width, "")
 	}

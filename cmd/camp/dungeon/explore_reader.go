@@ -4,9 +4,7 @@ import (
 	"context"
 	"os"
 	"path/filepath"
-	"slices"
 	"strings"
-	"unicode"
 	"unicode/utf8"
 
 	tea "github.com/charmbracelet/bubbletea"
@@ -17,6 +15,7 @@ import (
 
 	"github.com/Obedience-Corp/camp/internal/dungeon/explore"
 	"github.com/Obedience-Corp/camp/internal/ui"
+	"github.com/Obedience-Corp/camp/internal/ui/theme"
 )
 
 type readerEntry struct {
@@ -25,11 +24,13 @@ type readerEntry struct {
 }
 
 type exploreReader struct {
-	item    explore.Item
-	title   string
-	path    string
-	body    readerBody
-	lines   []string
+	item  explore.Item
+	title string
+	path  string
+	body  readerBody
+	lines []string
+	// wrapped is the width lines was rendered at.
+	wrapped int
 	offset  int
 	listing bool
 	entries []readerEntry
@@ -50,7 +51,11 @@ func (b readerBody) render(width int, plain bool) []string {
 	} else {
 		lines = wrapPlain(text, width)
 	}
-	return append(slices.Clone(b.lead), lines...)
+	var lead []string
+	for _, line := range b.lead {
+		lead = append(lead, wrapPlain(line, width)...)
+	}
+	return append(lead, lines...)
 }
 
 func (r *exploreReader) follow(height int) {
@@ -70,7 +75,12 @@ func (m *exploreModel) reflowReader() {
 		m.reader.follow(m.bodyHeight())
 		return
 	}
-	m.reader.lines = m.reader.body.render(m.contentWidth(), m.plain)
+	// Rendering a long document is slow, and a drag sends a size for every
+	// step of it. A change of height alone keeps the rendered lines.
+	if width := m.contentWidth(); width != m.reader.wrapped {
+		m.reader.lines = m.reader.body.render(width, m.plain)
+		m.reader.wrapped = width
+	}
 	m.reader.offset = maxReaderOffset(m.reader.offset, len(m.reader.lines), m.bodyHeight())
 }
 
@@ -124,7 +134,8 @@ func (m exploreModel) openReader() (tea.Model, tea.Cmd) {
 		}
 	}
 	if !reader.listing {
-		reader.lines = reader.body.render(m.contentWidth(), m.plain)
+		reader.wrapped = m.contentWidth()
+		reader.lines = reader.body.render(reader.wrapped, m.plain)
 	}
 	m.reading = true
 	m.reader = reader
@@ -164,7 +175,8 @@ func (m exploreModel) onReaderKey(key tea.KeyMsg) (tea.Model, tea.Cmd) {
 		m.reader.path = picked.path
 		m.reader.title = picked.name
 		m.reader.body = readerBody{text: text, markdown: true, lead: cutNotice(cut)}
-		m.reader.lines = m.reader.body.render(m.contentWidth(), m.plain)
+		m.reader.wrapped = m.contentWidth()
+		m.reader.lines = m.reader.body.render(m.reader.wrapped, m.plain)
 		m.reader.offset = 0
 		return m, nil
 	case "g":
@@ -282,7 +294,9 @@ func expandTabs(text string) string {
 
 func renderExploreMarkdown(text string, width int, plain bool) []string {
 	width = max(width, 1)
-	opts := []glamour.TermRendererOption{glamour.WithStylePath("dark"), glamour.WithWordWrap(width)}
+	// The feed's palette follows the terminal background; so does the document.
+	// Glamour's dark style is light grey text, which a light terminal hides.
+	opts := []glamour.TermRendererOption{glamour.WithStylePath(theme.GlamourStyle(theme.ThemeAdaptive)), glamour.WithWordWrap(width)}
 	if plain {
 		opts = []glamour.TermRendererOption{
 			glamour.WithStandardStyle(styles.NoTTYStyle),
@@ -304,9 +318,44 @@ func renderExploreMarkdown(text string, width int, plain bool) []string {
 	return closeStyles(wrapPlain(strings.TrimRight(out, "\n"), width))
 }
 
+// wrapPlain breaks text into rows of at most width cells, measured as
+// cellWidth measures them, and keeps escape sequences whole. Glamour pads its
+// rows with spaces by its own measure; where a break leaves only that padding
+// behind, the padding makes no row.
 func wrapPlain(text string, width int) []string {
 	width = max(width, 1)
-	return strings.Split(ansi.Hardwrap(text, width, true), "\n")
+	var rows []string
+	for _, line := range strings.Split(text, "\n") {
+		pieces := wrapLine(line, width)
+		for len(pieces) > 1 && strings.TrimSpace(ansi.Strip(pieces[len(pieces)-1])) == "" {
+			pieces = pieces[:len(pieces)-1]
+		}
+		rows = append(rows, pieces...)
+	}
+	return rows
+}
+
+func wrapLine(line string, width int) []string {
+	var pieces []string
+	var piece strings.Builder
+	used := 0
+	var state byte
+	for len(line) > 0 {
+		seq, clustered, n, next := ansi.DecodeSequence(line, state, nil)
+		state, line = next, line[n:]
+		// Escape sequences and combining marks take no cells of their own.
+		if clustered > 0 {
+			cells := clusterCells(seq, clustered)
+			if used > 0 && used+cells > width {
+				pieces = append(pieces, piece.String())
+				piece.Reset()
+				used = 0
+			}
+			used += cells
+		}
+		piece.WriteString(seq)
+	}
+	return append(pieces, piece.String())
 }
 
 func maxReaderOffset(offset, lines, height int) int {
@@ -350,7 +399,8 @@ func itoa64(n int64) string {
 }
 
 // safeReaderOutput preserves printable text and SGR styling only. In particular,
-// OSC hyperlinks/clipboard, cursor controls and incomplete sequences are dropped.
+// OSC hyperlinks/clipboard, cursor controls, incomplete sequences, and the
+// format characters CleanDocument strips are dropped.
 func safeReaderOutput(text string, plain bool) string {
 	var out strings.Builder
 	var state byte
@@ -364,8 +414,13 @@ func safeReaderOutput(text string, plain bool) string {
 		case seq == "\t":
 			// A terminal expands a tab past the width the row was measured at.
 			out.WriteByte(' ')
-		case utf8.ValidString(seq) && !strings.ContainsFunc(seq, func(r rune) bool { return unicode.IsControl(r) && r != '\n' }):
+		case len(seq) == 1 && seq[0] >= 0x20 && seq[0] < 0x7f:
 			out.WriteString(seq)
+		case utf8.ValidString(seq):
+			// The document was cleaned before Glamour saw it, but Glamour
+			// decodes entities: &#x202E; arrives here as a bidi override. The
+			// rule that cleaned the source cleans what it turned into.
+			out.WriteString(explore.CleanDocument(seq))
 		}
 	}
 	return out.String()

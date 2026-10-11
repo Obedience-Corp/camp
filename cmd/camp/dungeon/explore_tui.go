@@ -34,6 +34,12 @@ const (
 	exploreReplayStatus
 )
 
+// exploreNote is one line for the status row and whether it reports a failure.
+type exploreNote struct {
+	text   string
+	failed bool
+}
+
 type exploreModel struct {
 	ctx      context.Context
 	root     string
@@ -45,18 +51,24 @@ type exploreModel struct {
 	width    int
 	height   int
 
-	loading      bool
-	loadFailed   bool
-	sized        bool
-	status       string
-	statusErr    bool
-	statusSource exploreStatusSource
-	indexGen     int
-	help         bool
-	filtering    bool
-	filter       string
-	plain        bool
-	styles       exploreStyles
+	loading    bool
+	loadFailed bool
+	sized      bool
+	// status answers one key press: a copy, a jump that needs shell
+	// integration, a document that would not open. The notes are state. Each
+	// is set and cleared by its own source, and the status row falls back to
+	// them when the one-shot status goes (statusRow).
+	status     string
+	statusErr  bool
+	queryNote  exploreNote
+	loadNote   exploreNote
+	replayNote exploreNote
+	indexGen   int
+	help       bool
+	filtering  bool
+	filter     string
+	plain      bool
+	styles     exploreStyles
 
 	reading bool
 	reader  exploreReader
@@ -99,6 +111,7 @@ type explorePoster struct {
 	frames  [][]byte
 	delays  []time.Duration
 	tooLong bool
+	cut     bool
 	err     error
 }
 
@@ -214,28 +227,14 @@ func (m exploreModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m, cmd := m.ensurePoster()
 			return m, cmd
 		}
-		if m.statusSource == exploreLoadStatus {
-			m.setStatus(exploreLoadStatus, "", false)
-		}
+		m.setStatus(exploreLoadStatus, "", false)
 		selected, hadSelection := m.focused()
 		var save tea.Cmd
 		if msg.changed {
 			m.index = msg.index
 			save = m.saveCacheCmd()
 		}
-		_ = m.applyQuery()
-		// A refresh may insert or reorder rows. Keep the selected path, not
-		// its former position; if it disappeared, start at the first row.
-		m.cursor = 0
-		if hadSelection {
-			for i, item := range m.visible.Items {
-				if item.Path == selected.Path {
-					m.cursor = i
-					break
-				}
-			}
-		}
-		if now, ok := m.focused(); !ok || !hadSelection || now.Path != selected.Path {
+		if m.applyQueryFollowing(selected, hadSelection) {
 			// A status about the row that was focused does not follow the
 			// cursor to another one.
 			m.clearActionStatus()
@@ -262,11 +261,14 @@ func (m exploreModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.frame = 0
 		m.mediaFor = msg.item
 		m.playing = len(msg.frames) > 1 && !m.reduced && msg.err == nil
-		if msg.tooLong || errors.Is(msg.err, explore.ErrReplayTooLong) {
+		switch {
+		case msg.cut:
+			m.setStatus(exploreReplayStatus, "The replay file is incomplete. Showing a still.", false)
+		case msg.tooLong || errors.Is(msg.err, explore.ErrReplayTooLong):
 			m.setStatus(exploreReplayStatus, "Replay is too long to play here.", false)
-		} else if msg.err != nil {
+		case msg.err != nil:
 			m.setStatus(exploreReplayStatus, "The replay could not be read.", true)
-		} else if m.statusSource == exploreReplayStatus {
+		default:
 			m.setStatus(exploreReplayStatus, "", false)
 		}
 		if m.playing {
@@ -312,23 +314,17 @@ func (m exploreModel) onKey(key tea.KeyMsg) (tea.Model, tea.Cmd) {
 	case "ctrl+d":
 		return m.move(m.page())
 	case "left", "[":
-		m.clearActionStatus()
-		m.query.Dungeon = explore.StepDungeon(m.index.Items, m.query.Status, m.visible.DungeonLens, -1)
-		_ = m.applyQuery()
-		m, cmd := m.schedulePoster()
-		return m, cmd
+		return m.requery(func(q *explore.Query) {
+			q.Dungeon = explore.StepDungeon(m.index.Items, m.query.Status, m.visible.DungeonLens, -1)
+		})
 	case "right", "]":
-		m.clearActionStatus()
-		m.query.Dungeon = explore.StepDungeon(m.index.Items, m.query.Status, m.visible.DungeonLens, 1)
-		_ = m.applyQuery()
-		m, cmd := m.schedulePoster()
-		return m, cmd
+		return m.requery(func(q *explore.Query) {
+			q.Dungeon = explore.StepDungeon(m.index.Items, m.query.Status, m.visible.DungeonLens, 1)
+		})
 	case "s":
-		m.clearActionStatus()
-		m.query.Status = explore.NextPreset(m.index.Items, m.query.Status)
-		_ = m.applyQuery()
-		m, cmd := m.schedulePoster()
-		return m, cmd
+		return m.requery(func(q *explore.Query) {
+			q.Status = explore.NextPreset(m.index.Items, m.query.Status)
+		})
 	case "/":
 		m.filtering = true
 		m.filter = m.query.Text
@@ -368,16 +364,16 @@ func (m exploreModel) onFilterKey(key tea.KeyMsg) (tea.Model, tea.Cmd) {
 		return m, nil
 	}
 	switch key.String() {
-	case "esc", "ctrl+c":
+	case "ctrl+c":
+		// ctrl+c leaves the explorer from every mode.
+		return m.quit()
+	case "esc":
 		m.filtering = false
 		return m, nil
 	case "enter":
 		m.filtering = false
-		m.clearActionStatus()
-		m.query.Text = strings.TrimSpace(m.filter)
-		_ = m.applyQuery()
-		m, cmd := m.schedulePoster()
-		return m, cmd
+		text := strings.TrimSpace(m.filter)
+		return m.requery(func(q *explore.Query) { q.Text = text })
 	case "backspace":
 		if m.filter != "" {
 			runes := []rune(m.filter)
@@ -437,9 +433,7 @@ func (m *exploreModel) applyQuery() error {
 		m.setStatus(exploreQueryStatus, err.Error(), true)
 		return err
 	}
-	if m.statusSource == exploreQueryStatus {
-		m.setStatus(exploreQueryStatus, "", false)
-	}
+	m.setStatus(exploreQueryStatus, "", false)
 	m.visible = result
 	m.query.Status = result.StatusLens
 	// Keep the supplied dungeon selector so a later refresh can resolve that label.
@@ -452,10 +446,39 @@ func (m *exploreModel) applyQuery() error {
 	return nil
 }
 
-func (m exploreModel) schedulePoster() (exploreModel, tea.Cmd) {
-	if m.statusSource == exploreReplayStatus {
-		m.setStatus(exploreReplayStatus, "", false)
+// applyQueryFollowing applies the query and keeps the cursor on the item that
+// was focused, wherever the new rows put it. A refresh, a lens, and a filter
+// may all insert, drop, or reorder rows; the old position would land on an
+// unrelated one. If the item is gone the cursor starts at the first row.
+// It reports whether the focused item changed.
+func (m *exploreModel) applyQueryFollowing(selected explore.Item, hadSelection bool) bool {
+	_ = m.applyQuery()
+	m.cursor = 0
+	if hadSelection {
+		for i, item := range m.visible.Items {
+			if item.Path == selected.Path {
+				m.cursor = i
+				break
+			}
+		}
 	}
+	now, ok := m.focused()
+	return !ok || !hadSelection || now.Path != selected.Path
+}
+
+// requery changes the lens or the filter. The replay of a row that stays
+// focused is kept, not decoded again.
+func (m exploreModel) requery(change func(*explore.Query)) (tea.Model, tea.Cmd) {
+	m.clearActionStatus()
+	selected, hadSelection := m.focused()
+	change(&m.query)
+	m.applyQueryFollowing(selected, hadSelection)
+	m, cmd := m.ensurePoster()
+	return m, cmd
+}
+
+func (m exploreModel) schedulePoster() (exploreModel, tea.Cmd) {
+	m.setStatus(exploreReplayStatus, "", false)
 	m.loadGen++
 	m.tickGen++
 	m.cancelDecode()
@@ -503,8 +526,13 @@ func (m exploreModel) decodeCmd(ctx context.Context) tea.Cmd {
 	maxW, maxH := m.stagePixels()
 	return func() tea.Msg {
 		frames, err := decode(ctx, path, maxW, maxH)
-		msg := explorePoster{gen: gen, item: rel, tooLong: errors.Is(err, explore.ErrReplayTooLong)}
-		if err != nil && !msg.tooLong {
+		msg := explorePoster{
+			gen:     gen,
+			item:    rel,
+			tooLong: errors.Is(err, explore.ErrReplayTooLong),
+			cut:     errors.Is(err, explore.ErrReplayIncomplete),
+		}
+		if err != nil && !msg.tooLong && !msg.cut {
 			msg.err = err
 			return msg
 		}
@@ -641,14 +669,24 @@ func (m exploreModel) copyPath(path string) (tea.Model, tea.Cmd) {
 // clearActionStatus drops a status that answers one key press: a copy, a
 // jump that needs shell integration, or a document that would not open. It
 // goes with the next key that moves focus, changes the lens or filter, or
-// opens, scrolls, or closes the reader. Query, load, and replay statuses
-// describe state and are cleared by their own sources.
+// opens, scrolls, or closes the reader. What it covered on the status row,
+// a query, load, or replay note, shows again.
 func (m *exploreModel) clearActionStatus() {
-	if m.statusSource == exploreActionStatus || m.statusSource == exploreReadStatus {
-		m.setStatus(m.statusSource, "", false)
-	}
+	m.status, m.statusErr = "", false
 }
 
+// setStatus records text from source. Query, load, and replay notes describe
+// state and each keeps its own line; anything else is the one-shot status.
 func (m *exploreModel) setStatus(source exploreStatusSource, text string, failed bool) {
-	m.statusSource, m.status, m.statusErr = source, text, failed
+	note := exploreNote{text: text, failed: failed && text != ""}
+	switch source {
+	case exploreQueryStatus:
+		m.queryNote = note
+	case exploreLoadStatus:
+		m.loadNote = note
+	case exploreReplayStatus:
+		m.replayNote = note
+	default:
+		m.status, m.statusErr = note.text, note.failed
+	}
 }

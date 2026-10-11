@@ -3,6 +3,7 @@ package dungeon
 import (
 	"context"
 	"fmt"
+	"image"
 	"strings"
 	"testing"
 	"time"
@@ -113,6 +114,34 @@ func TestExploreReaderStatusClearsOnTheNextKey(t *testing.T) {
 	}
 }
 
+// A replay file that ends early shows the still its whole frames make and
+// says why it does not play, instead of claiming it is too long.
+func TestExploreSaysWhenAReplayFileIsIncomplete(t *testing.T) {
+	const incomplete = "The replay file is incomplete. Showing a still."
+	m := screenFeed(t, 100, 30, explore.ProtocolKitty, 6)
+	item, _ := m.focused()
+	m.decode = func(context.Context, string, int, int) (explore.Frames, error) {
+		return explore.Frames{Poster: image.NewRGBA(image.Rect(0, 0, 8, 8))}, explore.ErrReplayIncomplete
+	}
+	cmd := m.decodeCmd(context.Background())
+	if cmd == nil {
+		t.Fatal("the focused row has no replay to decode")
+	}
+	msg, ok := cmd().(explorePoster)
+	if !ok || !msg.cut || msg.tooLong || msg.err != nil || msg.poster == nil {
+		t.Fatalf("decode reported %+v, want a still marked incomplete", msg)
+	}
+	m.posterFor, m.posterReplay = item.Path, item.Replay
+	m, _ = press(t, m, msg)
+	view := m.View()
+	if !strings.Contains(view, incomplete) || strings.Contains(view, "too long") {
+		t.Fatalf("feed does not explain the incomplete replay:\n%s", view)
+	}
+	if m.poster == nil || m.playing {
+		t.Fatalf("incomplete replay: poster=%v playing=%v", m.poster != nil, m.playing)
+	}
+}
+
 // A replay status describes the focused feed row. The reader does not draw
 // the replay, so the status waits for the reader to close instead of being
 // shown over a document or lost.
@@ -145,17 +174,18 @@ func TestExploreReplayStatusWaitsOutTheReader(t *testing.T) {
 	}
 	for name, reading := range map[string]exploreModel{"drawn before": m, "failed during": late} {
 		closed, _ := press(t, reading, tea.KeyMsg{Type: tea.KeyEsc})
-		if closed.reading || closed.status == "" || !strings.Contains(closed.View(), closed.status) {
-			t.Errorf("%s: closing the reader lost the replay status (%q)", name, closed.status)
+		note := closed.shownStatus()
+		if closed.reading || note == "" || !strings.Contains(closed.View(), note) {
+			t.Errorf("%s: closing the reader lost the replay status (%q)", name, note)
 		}
 		// A movement key that cannot move focus is not a reason to drop it.
 		still, _ := press(t, closed, runes("k"))
-		if still.status != closed.status {
+		if still.shownStatus() != note {
 			t.Errorf("%s: k on the first row cleared the replay status", name)
 		}
 		moved, _ := press(t, closed, runes("j"))
-		if moved.status != "" {
-			t.Errorf("%s: the replay status followed focus to another row: %q", name, moved.status)
+		if moved.shownStatus() != "" {
+			t.Errorf("%s: the replay status followed focus to another row: %q", name, moved.shownStatus())
 		}
 	}
 }
@@ -186,8 +216,8 @@ func TestExploreReplayIsAskedForOnceAndKept(t *testing.T) {
 	// A failed refresh keeps the cached feed; its focused replay still draws.
 	failed := ready(80, 24)
 	failed, _ = press(t, failed, exploreLoaded{gen: failed.indexGen, err: context.DeadlineExceeded})
-	if failed.loadGen == 0 || failed.posterFor != item.Path || !failed.statusErr {
-		t.Fatalf("a failed refresh did not ask for the focused replay (status %q)", failed.status)
+	if failed.loadGen == 0 || failed.posterFor != item.Path || !failed.statusRow().failed {
+		t.Fatalf("a failed refresh did not ask for the focused replay (status %q)", failed.shownStatus())
 	}
 
 	// Drawn and playing: a refresh that leaves the row alone must not blank
@@ -367,10 +397,16 @@ func TestExploreEveryKeyIsDiscoverable(t *testing.T) {
 		}
 		m.help = false
 		m.reading = true
-		reader := m.helpLines()
+		document := m.helpLines()
+		m.reader.listing = true
+		listing := m.helpLines()
 		for _, key := range readerKeys {
-			if !has(reader, key) {
-				t.Errorf("%d columns: reader help does not name %q: %q", width, key, reader)
+			if !has(listing, key) {
+				t.Errorf("%d columns: listing help does not name %q: %q", width, key, listing)
+			}
+			// enter opens a listed document; a document has nothing to open.
+			if has(document, key) == (key == "enter") {
+				t.Errorf("%d columns: document help and %q: %q", width, key, document)
 			}
 		}
 	}
@@ -514,5 +550,233 @@ func TestExploreFilterPromptKeepsTheTypedEnd(t *testing.T) {
 	short, _ = press(t, short, runes("FA00"))
 	if header := strings.Split(short.View(), "\n")[0]; header != "/ FA00" {
 		t.Fatalf("short filter prompt = %q", header)
+	}
+}
+
+// A rescan that is running or failed, a query that does not resolve, and a
+// note about the focused replay are state. A one-shot status covers them for
+// one key press; it must not erase them.
+func TestExploreStateNotesOutliveOneShotStatuses(t *testing.T) {
+	copyKey := func(m exploreModel) exploreModel {
+		m.setStatus(exploreActionStatus, "copied", false)
+		return m
+	}
+
+	// A failed refresh over a cached feed: the feed on screen is stale.
+	m := screenFeed(t, 100, 30, explore.ProtocolOff, 12)
+	m, _ = press(t, m, exploreLoaded{gen: m.indexGen, err: context.DeadlineExceeded})
+	failure := context.DeadlineExceeded.Error()
+	if row := m.statusRow(); row.text != failure || !row.failed {
+		t.Fatalf("failed refresh shows %+v", row)
+	}
+	m = copyKey(m)
+	if m.shownStatus() != "copied" {
+		t.Fatalf("the answer to a key press is not shown first: %q", m.shownStatus())
+	}
+	for _, key := range []tea.Msg{runes("j"), runes("k"), runes("s"), tea.KeyMsg{Type: tea.KeyEnter}, tea.KeyMsg{Type: tea.KeyEsc}} {
+		m, _ = press(t, copyKey(m), key)
+		if row := m.statusRow(); row.text != failure || !row.failed || !strings.Contains(viewText(m.View()), failure) {
+			t.Fatalf("after %v the stale feed no longer says the refresh failed: %+v", key, row)
+		}
+	}
+	m, _ = press(t, m, runes("r"))
+	m, _ = press(t, m, exploreLoaded{gen: m.indexGen, index: m.index, changed: true})
+	if m.shownStatus() != "" {
+		t.Fatalf("a successful rescan left %q", m.shownStatus())
+	}
+
+	// A rescan in progress.
+	m = screenFeed(t, 100, 30, explore.ProtocolOff, 12)
+	m, _ = press(t, m, runes("r"))
+	m, _ = press(t, copyKey(m), runes("j"))
+	if m.shownStatus() != exploreReadingStatus || !m.loading {
+		t.Fatalf("a running rescan shows %q after a copy and a move", m.shownStatus())
+	}
+
+	// A note about the focused replay, covered by g without shell integration.
+	m = screenFeed(t, 100, 30, explore.ProtocolKitty, 6)
+	item, _ := m.focused()
+	m.posterFor, m.posterReplay = item.Path, item.Replay
+	m, _ = press(t, m, explorePoster{gen: m.loadGen, item: item.Path, poster: posterFor(item.Path, 64, 64), tooLong: true})
+	note := m.shownStatus()
+	m, _ = press(t, m, runes("g"))
+	if !strings.Contains(m.shownStatus(), goNeedsShell) {
+		t.Fatalf("g shows %q", m.shownStatus())
+	}
+	m, _ = press(t, m, runes("k"))
+	if m.shownStatus() != note || note == "" {
+		t.Fatalf("the replay note for the row still focused is %q, want %q", m.shownStatus(), note)
+	}
+	// A lens change that keeps the row keeps its replay and its note.
+	gen := m.loadGen
+	m, _ = press(t, m, runes("/"))
+	m, _ = press(t, m, runes(item.Title))
+	m, _ = press(t, m, tea.KeyMsg{Type: tea.KeyEnter})
+	if now, _ := m.focused(); now.Path != item.Path || m.loadGen != gen || m.poster == nil || m.shownStatus() != note {
+		t.Fatalf("filtering to the focused row restarted its replay or lost its note: gen %d to %d, status %q", gen, m.loadGen, m.shownStatus())
+	}
+	// A filter that drops the row moves focus, and the note goes with the row.
+	m, _ = press(t, m, runes("/"))
+	for range item.Title {
+		m, _ = press(t, m, tea.KeyMsg{Type: tea.KeyBackspace})
+	}
+	m, _ = press(t, m, runes("Item 03"))
+	m, _ = press(t, m, tea.KeyMsg{Type: tea.KeyEnter})
+	if now, ok := m.focused(); !ok || now.Path == item.Path || m.shownStatus() != "" || m.poster != nil {
+		t.Fatalf("the replay and its note followed focus to another row: %q", m.shownStatus())
+	}
+
+	// A query that does not resolve outranks a load note under it.
+	m = screenFeed(t, 100, 30, explore.ProtocolOff, 12)
+	m.query.Dungeon = "missing"
+	_ = m.applyQuery()
+	m, _ = press(t, m, runes("r"))
+	if row := m.statusRow(); !row.failed || !strings.Contains(row.text, "missing") {
+		t.Fatalf("an unresolved query is hidden by the rescan: %+v", row)
+	}
+	if problems := checkLayout(m); len(problems) > 0 {
+		t.Fatal(problems)
+	}
+}
+
+// A lens or a filter changes the rows. The cursor stays on the item, as it
+// does across a refresh; its old position is some other row.
+func TestExploreFilterAndLensFollowTheFocusedItem(t *testing.T) {
+	m := screenFeed(t, 100, 30, explore.ProtocolOff, 40)
+	m.cursor = 7
+	before, _ := m.focused()
+	steps := map[string]func(exploreModel) exploreModel{
+		"filter that keeps the item": func(m exploreModel) exploreModel {
+			m, _ = press(t, m, runes("/"))
+			m, _ = press(t, m, runes("Item"))
+			m, _ = press(t, m, tea.KeyMsg{Type: tea.KeyEnter})
+			return m
+		},
+		"filter that narrows to the item's decade": func(m exploreModel) exploreModel {
+			m, _ = press(t, m, runes("/"))
+			m, _ = press(t, m, runes(before.Title[:len(before.Title)-1]))
+			m, _ = press(t, m, tea.KeyMsg{Type: tea.KeyEnter})
+			return m
+		},
+		"status lens": func(m exploreModel) exploreModel { m, _ = press(t, m, runes("s")); return m },
+		"dungeon lens": func(m exploreModel) exploreModel {
+			m, _ = press(t, m, runes("]"))
+			return m
+		},
+	}
+	for name, step := range steps {
+		got := step(m)
+		after, ok := got.focused()
+		held := false
+		for _, item := range got.visible.Items {
+			held = held || item.Path == before.Path
+		}
+		switch {
+		case !ok:
+			t.Errorf("%s: no focused row among %d", name, len(got.visible.Items))
+		case held && after.Path != before.Path:
+			t.Errorf("%s: focus moved from %q to %q though the item is still listed", name, before.Title, after.Title)
+		case !held && got.cursor != 0:
+			t.Errorf("%s: the item is gone and the cursor is on row %d, not the first", name, got.cursor)
+		}
+		if problems := checkLayout(got); len(problems) > 0 {
+			t.Errorf("%s: %v", name, problems)
+		}
+	}
+	// The item drops out of the rows: start at the top, not at row 7.
+	gone := m
+	gone, _ = press(t, gone, runes("/"))
+	gone, _ = press(t, gone, runes("Item 1"))
+	gone, _ = press(t, gone, tea.KeyMsg{Type: tea.KeyEnter})
+	if len(gone.visible.Items) < 8 || gone.cursor != 0 {
+		t.Fatalf("filter without the focused item: cursor %d of %d", gone.cursor, len(gone.visible.Items))
+	}
+}
+
+// While the filter is typed q, enter, and the rest of the feed keys do other
+// things. The help row says what does act, and ctrl+c quits as everywhere.
+func TestExploreFilterModeNamesItsKeys(t *testing.T) {
+	for _, width := range []int{40, 80, 120} {
+		m := screenFeed(t, width, 24, explore.ProtocolOff, 6)
+		m, _ = press(t, m, runes("/"))
+		help := viewText(strings.Join(m.helpLines(), " "))
+		for _, want := range []string{"enter apply", "esc cancel", "ctrl+c quit"} {
+			if !strings.Contains(help, want) {
+				t.Errorf("%d columns: filter help %q does not name %q", width, help, want)
+			}
+		}
+		for _, wrong := range []string{"q quit", "enter read", "j/k"} {
+			if strings.Contains(help, wrong) {
+				t.Errorf("%d columns: filter help %q names %q, which types or applies here", width, help, wrong)
+			}
+		}
+		if problems := checkLayout(m); len(problems) > 0 {
+			t.Errorf("%d columns: %v", width, problems)
+		}
+		typed, _ := press(t, m, runes("q"))
+		if typed.quitting || typed.filter != "q" {
+			t.Fatalf("q in the filter: quitting=%v filter=%q", typed.quitting, typed.filter)
+		}
+		// An applied filter is named in the header even where the header is cut.
+		applied, _ := press(t, typed, tea.KeyMsg{Type: tea.KeyEnter})
+		if header := viewText(strings.Split(applied.View(), "\n")[0]); applied.query.Text != "q" || !strings.Contains(header, `"q"`) {
+			t.Errorf("%d columns: the header %q does not show the filter in force", width, header)
+		}
+		back, _ := press(t, typed, tea.KeyMsg{Type: tea.KeyEsc})
+		if back.filtering || back.quitting || back.query.Text != "" {
+			t.Fatalf("esc did not cancel the filter: %+v", back.query)
+		}
+		if help := viewText(strings.Join(back.helpLines(), " ")); !strings.Contains(help, "q quit") {
+			t.Fatalf("the feed help did not return: %q", help)
+		}
+	}
+	// ctrl+c quits from the feed, the full help, the filter, a listing, and a document.
+	feed := screenFeed(t, 80, 24, explore.ProtocolOff, 6)
+	filter, _ := press(t, feed, runes("/"))
+	help, _ := press(t, feed, runes("?"))
+	doc, _ := press(t, feed, tea.KeyMsg{Type: tea.KeyEnter})
+	listing := doc
+	listing.reader.listing = true
+	for name, m := range map[string]exploreModel{"feed": feed, "help": help, "filter": filter, "document": doc, "listing": listing} {
+		quit, cmd := press(t, m, tea.KeyMsg{Type: tea.KeyCtrlC})
+		if !quit.quitting || cmd == nil {
+			t.Errorf("ctrl+c in the %s did not quit", name)
+		}
+	}
+}
+
+// Rendering a long document takes long enough to notice, and dragging a
+// window edge sends a size for every step. Only a new width needs new lines.
+func TestExploreReaderKeepsItsLinesWhenOnlyTheHeightChanges(t *testing.T) {
+	m := screenFeed(t, 80, 24, explore.ProtocolOff, 3)
+	m, _ = press(t, m, tea.KeyMsg{Type: tea.KeyEnter})
+	if !m.reading || m.reader.wrapped != m.contentWidth() {
+		t.Fatalf("fixture: reading=%v wrapped=%d", m.reading, m.reader.wrapped)
+	}
+	m.reader.body = readerBody{text: strings.Repeat("a line of the document that wraps when the reader narrows\n", 60)}
+	m.reader.lines = m.reader.body.render(m.contentWidth(), true)
+	// A sentinel no render would produce: still there means no render ran.
+	m.reader.lines[0] = "rendered once"
+	m.reader.offset = len(m.reader.lines)
+	for _, height := range []int{30, 12, 40, 24} {
+		m, _ = press(t, m, tea.WindowSizeMsg{Width: 80, Height: height})
+		if m.reader.lines[0] != "rendered once" {
+			t.Fatalf("a resize to 80x%d rendered the document again", height)
+		}
+		if want := maxReaderOffset(len(m.reader.lines), len(m.reader.lines), m.bodyHeight()); m.reader.offset > want {
+			t.Fatalf("offset %d past the end %d at height %d", m.reader.offset, want, height)
+		}
+		if problems := checkLayout(m); len(problems) > 0 {
+			t.Fatal(problems)
+		}
+	}
+	m, _ = press(t, m, tea.WindowSizeMsg{Width: 50, Height: 24})
+	if m.reader.lines[0] == "rendered once" || m.reader.wrapped != m.contentWidth() {
+		t.Fatal("a new width did not render the document again")
+	}
+	for _, line := range m.reader.lines {
+		if cellWidth(line) > m.contentWidth() {
+			t.Fatalf("line wider than the narrowed reader: %q", line)
+		}
 	}
 }

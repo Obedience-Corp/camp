@@ -1,6 +1,7 @@
 package dungeon
 
 import (
+	"fmt"
 	"strings"
 	"testing"
 	"time"
@@ -125,6 +126,14 @@ var screenScripts = []screenScript{
 			pressKey("j"), pressKey("j"), pressKey("k"), pressKey("j"), pressKey("j"),
 			pressBare("k"), replayArrives(), pressBare("k"), replayArrives(),
 		},
+	},
+	{
+		// The wide replay gives up a row to keep the card on screen. Fitted
+		// into the shorter box the picture is narrower too, and the columns
+		// it no longer reaches still held the taller one.
+		name: "wide at 88x16: status and help rows take a row from the replay",
+		w:    88, h: 16, n: 60, start: 21,
+		steps: pressKeys("?", "g", "j", "g", "?", "g", "k", "?", "g", "?"),
 	},
 	{
 		name: "wide: the reader, the filter, and the lens over a replay",
@@ -372,5 +381,143 @@ func TestExploreScreenStepsAreFlushedInOrder(t *testing.T) {
 	}
 	if time.Since(start) > 5*time.Second {
 		t.Fatal("five steps took more than five seconds")
+	}
+}
+
+// Two replays share the wide layout's box. iTerm paints only the cells a
+// picture fills, so a square replay after a wide one leaves the wide one's
+// right-hand cells unless the rows under the box are painted again. When the
+// blank frame between the two is never flushed, most of those rows are
+// byte-for-byte what they were, and only the replay's name in the row mark
+// makes the renderer paint them.
+func TestExploreITermRepaintsTheBoxForAnotherReplay(t *testing.T) {
+	for _, protocol := range []string{explore.ProtocolITerm, explore.ProtocolKitty} {
+		m := screenFeed(t, 120, 40, protocol, 60)
+		first, _ := m.focused()
+		w, h := m.stagePixels()
+		m.posterFor, m.posterReplay = first.Path, first.Replay
+		m.poster, m.mediaFor = posterFor(first.Path, w, h), first.Path
+		s := openExploreScreen(t, m)
+		if problems := checkScreen(s.grid, s.send(nil)); len(problems) > 0 {
+			t.Fatalf("%s: the first replay: %v\n%s", protocol, problems, s.grid)
+		}
+		// The move and the next row's decode land between two renders.
+		next := s.send(screenApply(func(m exploreModel) exploreModel {
+			moved, _ := m.Update(screenKey("j"))
+			m = moved.(exploreModel)
+			item, _ := m.focused()
+			settled, _ := m.Update(explorePoster{gen: m.loadGen, item: item.Path, poster: posterFor(item.Path, h, h)})
+			return settled.(exploreModel)
+		}))
+		second, _ := next.focused()
+		_, _, boxCols, _, _ := imageBox(next.View())
+		_, _, cols, _, ok := drawnBox(next)
+		if !ok || second.Path == first.Path || (protocol == explore.ProtocolITerm && cols >= boxCols) {
+			t.Fatalf("%s fixture: the second replay does not leave part of the box unpainted (%d of %d columns)", protocol, cols, boxCols)
+		}
+		if problems := checkScreen(s.grid, next); len(problems) > 0 {
+			t.Fatalf("%s: a narrower replay in the same box: %v\n%s", protocol, problems, s.grid)
+		}
+		// Playing one replay must not repaint the rows under it every frame.
+		playing := next
+		before := strings.Split(playing.View(), "\n")
+		playing.poster = posterFor(second.Path+"#frame", h, h)
+		after := strings.Split(playing.View(), "\n")
+		for i := range before[:len(before)-1] {
+			if before[i] != after[i] {
+				t.Fatalf("%s: row %d changes with every frame of one replay", protocol, i+1)
+			}
+		}
+	}
+}
+
+// The wide layout stacks the replay on the card. On a short body the replay
+// gives up rows; the card keeps all of its lines.
+func TestExploreWideCardFitsUnderTheReplay(t *testing.T) {
+	for _, size := range [][2]int{{88, 16}, {88, 17}, {88, 18}, {120, 16}, {200, 16}, {100, 24}, {120, 40}} {
+		for _, protocol := range []string{explore.ProtocolKitty, explore.ProtocolITerm} {
+			for _, chrome := range []struct {
+				name            string
+				status, help    bool
+				scan, itemNotes bool
+			}{
+				{name: "bare"},
+				{name: "status and a scan warning", status: true, scan: true},
+				{name: "full help and a status", status: true, help: true},
+				{name: "everything", status: true, help: true, scan: true, itemNotes: true},
+			} {
+				m := screenFeed(t, size[0], size[1], protocol, 40)
+				label := fmt.Sprintf("%dx%d %s %s", size[0], size[1], protocol, chrome.name)
+				if !m.wide() {
+					t.Fatalf("%s: fixture is not the wide layout", label)
+				}
+				if chrome.status {
+					m.setStatus(exploreActionStatus, "copied", false)
+				}
+				m.help = chrome.help
+				if chrome.scan {
+					m.index.Warnings = []string{"festivals/.dungeon/archived: permission denied"}
+				}
+				if chrome.itemNotes {
+					for i := range m.visible.Items {
+						m.visible.Items[i].Warning = "fest.yaml: mapping values are not allowed"
+					}
+				}
+				item, _ := m.focused()
+				w, h := m.stagePixels()
+				m.poster, m.mediaFor = posterFor(item.Path, w, h), item.Path
+				view := viewText(m.View())
+				for _, line := range m.cardLines(item, m.width-m.width/2) {
+					if want := viewText(line); !strings.Contains(view, want) {
+						t.Errorf("%s: the card lost %q", label, want)
+					}
+				}
+				_, _, _, rows, ok := imageBox(m.View())
+				if !ok || rows < 1 || rows > m.stageRows() {
+					t.Errorf("%s: replay drawn on %d rows of %d", label, rows, m.stageRows())
+				}
+				if chrome.name == "bare" && rows != m.stageRows() {
+					t.Errorf("%s: with room to spare the replay has %d rows, want %d", label, rows, m.stageRows())
+				}
+				if problems := checkLayout(m); len(problems) > 0 {
+					t.Errorf("%s: %v", label, problems)
+				}
+				// The decoded picture is not asked for again at the smaller size.
+				if pw, ph := m.stagePixels(); pw != w || ph != h {
+					t.Errorf("%s: the stage pixels changed with the chrome", label)
+				}
+			}
+		}
+	}
+}
+
+// The card is the only place the status, the date, and the path are drawn.
+// It needs no room for a replay.
+func TestExploreNarrowCardNeedsNoReplayRoom(t *testing.T) {
+	for _, size := range [][2]int{{80, 21}, {80, 12}, {40, 30}, {59, 40}, {120, 15}, {40, 10}} {
+		for _, protocol := range []string{explore.ProtocolOff, explore.ProtocolKitty} {
+			m := screenFeed(t, size[0], size[1], protocol, 40)
+			m.cursor = 11
+			item, _ := m.focused()
+			label := fmt.Sprintf("%dx%d %s", size[0], size[1], protocol)
+			if m.wide() || m.stageRows() != 0 {
+				t.Fatalf("%s: fixture has replay room", label)
+			}
+			view := viewText(m.View())
+			for _, want := range []string{item.ID + "  Festivals  " + item.Status, "moved ", fit(item.Path, m.width)} {
+				if !strings.Contains(view, fit(want, m.width)) {
+					t.Errorf("%s: the focused item's card does not show %q:\n%s", label, want, view)
+				}
+			}
+			if problems := checkLayout(m); len(problems) > 0 {
+				t.Errorf("%s: %v", label, problems)
+			}
+		}
+	}
+	// Four rows hold the focused row and nothing else of it; that still draws.
+	tiny := screenFeed(t, 20, 4, explore.ProtocolOff, 40)
+	tiny.cursor = 11
+	if problems := checkLayout(tiny); len(problems) > 0 {
+		t.Fatal(problems)
 	}
 }

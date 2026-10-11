@@ -234,12 +234,12 @@ func TestExploreRescanClearsReadingStatus(t *testing.T) {
 	m := replayModel(explore.ProtocolOff)
 	idx := m.index
 	m, _ = press(t, m, runes("r"))
-	if m.status == "" {
+	if m.shownStatus() == "" {
 		t.Fatal("rescan did not report that it is reading")
 	}
 	m, _ = press(t, m, exploreLoaded{gen: m.indexGen, index: idx, changed: true})
-	if m.status != "" {
-		t.Fatalf("status after a successful rescan = %q", m.status)
+	if m.shownStatus() != "" {
+		t.Fatalf("status after a successful rescan = %q", m.shownStatus())
 	}
 	if strings.Contains(m.View(), exploreReadingStatus) {
 		t.Fatal("the rescan message is still on screen")
@@ -315,8 +315,8 @@ func TestExploreFocusChangeCancelsReplayDecode(t *testing.T) {
 	case <-time.After(2 * time.Second):
 		t.Fatal("the cancelled decode did not return")
 	}
-	if m.statusErr {
-		t.Fatalf("a cancelled decode reported %q", m.status)
+	if row := m.statusRow(); row.failed {
+		t.Fatalf("a cancelled decode reported %q", row.text)
 	}
 
 	m, cmd = press(t, m, exploreDecode{gen: m.loadGen})
