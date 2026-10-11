@@ -20,10 +20,10 @@ func TestApplyKeepsCustomStatusCasing(t *testing.T) {
 			t.Fatalf("Apply(%q) = %+v", status, got)
 		}
 	}
-	if next := NextPreset(items, LensAll); next != "Reviewed" {
+	if next := NextPreset(Index{Items: items}, LensAll); next != "Reviewed" {
 		t.Fatalf("NextPreset(all) = %q, want Reviewed", next)
 	}
-	if next := NextPreset(items, "Reviewed"); next != "finished" {
+	if next := NextPreset(Index{Items: items}, "Reviewed"); next != "finished" {
 		t.Fatalf("NextPreset(Reviewed) = %q, want finished", next)
 	}
 }
@@ -93,23 +93,23 @@ func TestStatusDirectoryNamedLikeALens(t *testing.T) {
 	}
 
 	// The s key walks Presets, so each such directory is one stop on it.
-	presets := Presets(items)
+	presets := Presets(Index{Items: items})
 	for _, want := range []string{"Reviewed", "all/", "finished/"} {
 		if !slices.Contains(presets, want) {
 			t.Errorf("Presets = %v, want %q in it", presets, want)
 		}
 	}
 	seen := map[string]bool{}
-	for lens := "finished"; !seen[lens]; lens = NextPreset(items, lens) {
+	for lens := "finished"; !seen[lens]; lens = NextPreset(Index{Items: items}, lens) {
 		seen[lens] = true
 	}
 	if !seen["finished/"] || !seen["all/"] || len(seen) != len(presets) {
 		t.Errorf("stepping reached %v, want every one of %v", seen, presets)
 	}
-	if got := DungeonLenses(items, "all/"); !slices.Equal(got, []string{LensAll, ".dungeon"}) {
+	if got := DungeonLenses(Index{Items: items}, "all/"); !slices.Equal(got, []string{LensAll, ".dungeon"}) {
 		t.Errorf("DungeonLenses(all/) = %v", got)
 	}
-	if got := Presets(items[:1]); slices.Contains(got, "finished/") || slices.Contains(got, "all/") {
+	if got := Presets(Index{Items: items[:1]}); slices.Contains(got, "finished/") || slices.Contains(got, "all/") {
 		t.Errorf("Presets without such directories = %v", got)
 	}
 }
@@ -186,7 +186,7 @@ func TestApplyPrefersTheStatusDirectorySpelledAsAsked(t *testing.T) {
 			t.Errorf("Apply(%q) = lens %q, %+v; want lens %q and the row %q", status, got.StatusLens, got.Items, want.lens, want.title)
 		}
 	}
-	if next := NextPreset(items, "Completed"); next != "Finished" {
+	if next := NextPreset(Index{Items: items}, "Completed"); next != "Finished" {
 		t.Errorf("NextPreset(Completed) = %q, want the next directory", next)
 	}
 }
@@ -258,12 +258,12 @@ func TestEveryLensTheFeedOffersResolvesToItsOwnRows(t *testing.T) {
 				idx.Items = append(idx.Items, Item{DoneDate: "2026-01-01", Status: status, DungeonPath: d.Path, DungeonLabel: d.Label, Title: "t", Path: d.Path + "/" + status + "/x"})
 			}
 		}
-		for _, preset := range Presets(idx.Items) {
+		for _, preset := range Presets(idx) {
 			got, err := Apply(idx, Query{Status: preset})
 			if err != nil || got.StatusLens != preset {
 				t.Fatalf("status lens %q in %+v: resolved to %q, error %v", preset, idx.Dungeons, got.StatusLens, err)
 			}
-			for _, lens := range DungeonLenses(idx.Items, preset) {
+			for _, lens := range DungeonLenses(idx, preset) {
 				got, err := Apply(idx, Query{Status: preset, Dungeon: lens})
 				if err != nil || got.DungeonLens != lens {
 					t.Fatalf("dungeon lens %q in %+v: resolved to %q, error %v", lens, idx.Dungeons, got.DungeonLens, err)
@@ -304,5 +304,24 @@ func TestUndatedRowsSortLastAndFallOutsideDateRanges(t *testing.T) {
 	}
 	if got, err := Apply(idx, Query{}); err != nil || len(got.Items) != 3 {
 		t.Fatalf("no range: rows = %+v, error %v; want all three", got.Items, err)
+	}
+}
+
+func TestEmptyStatusDirectoriesAreNavigable(t *testing.T) {
+	idx := Index{Dungeons: []DungeonPrint{{Path: "one/.dungeon", Statuses: []string{"reviewed", "all"}}, {Path: "two/.dungeon", Statuses: []string{"completed"}}}}
+	if !slices.Contains(Presets(idx), "reviewed") || !slices.Contains(Presets(idx), "all/") {
+		t.Fatalf("empty presets omitted: %v", Presets(idx))
+	}
+	if next := NextPreset(idx, "all/"); next != "reviewed" {
+		t.Fatalf("next empty status = %q", next)
+	}
+	if got := DungeonLenses(idx, "reviewed"); !slices.Equal(got, []string{LensAll, "one/.dungeon"}) {
+		t.Fatalf("reviewed dungeons = %v", got)
+	}
+	if got := DungeonLenses(idx, "finished"); !slices.Equal(got, []string{LensAll, "two/.dungeon"}) {
+		t.Fatalf("finished dungeons = %v", got)
+	}
+	if got := DungeonLenses(idx, "all"); !slices.Equal(got, []string{LensAll, "one/.dungeon", "two/.dungeon"}) {
+		t.Fatalf("all dungeons = %v", got)
 	}
 }

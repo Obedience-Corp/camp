@@ -9,6 +9,7 @@ import (
 	"io/fs"
 	"os"
 	"path/filepath"
+	"reflect"
 	"strings"
 	"testing"
 	"unicode/utf8"
@@ -566,7 +567,7 @@ func TestBuildFollowsACampRootThatIsALink(t *testing.T) {
 		}
 	}
 	for i, dungeon := range direct.Dungeons {
-		if linked.Dungeons[i] != dungeon {
+		if !reflect.DeepEqual(linked.Dungeons[i], dungeon) {
 			t.Fatalf("dungeon %d through the link = %+v, want %+v", i, linked.Dungeons[i], dungeon)
 		}
 	}

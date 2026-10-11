@@ -85,3 +85,14 @@ func TestZoneKeyNamesTheZoneAndNotTheDay(t *testing.T) {
 		t.Fatalf("zoneKey in Phoenix = %q", got)
 	}
 }
+
+func TestCachePreservesEmptyStatusNames(t *testing.T) {
+	idx := Index{Dungeons: []DungeonPrint{{Path: ".dungeon", Statuses: []string{"reviewed"}}}}
+	if !survivesJSON(idx) {
+		t.Fatal("ordinary status name cannot be cached")
+	}
+	idx.Dungeons[0].Statuses = []string{"reviewed\xff"}
+	if survivesJSON(idx) {
+		t.Fatal("non-UTF8 empty status would be silently renamed by the cache")
+	}
+}

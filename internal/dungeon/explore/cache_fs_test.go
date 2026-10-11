@@ -306,7 +306,7 @@ func TestCacheDiscardsEarlierSchemas(t *testing.T) {
 		t.Fatalf("current cache: ok %v, err %v, items %d", ok, err, len(cached.Items))
 	}
 	// The zone is the current one, so only the schema can turn these away.
-	for _, version := range []string{"v1", "v2", "v3", "v4", "v5", "v6"} {
+	for _, version := range []string{"v1", "v2", "v3", "v4", "v5", "v6", "v7"} {
 		stale := `{"schema_version":"camp-dungeon-explore-cache/` + version + `","zone":"` + zoneKey() + `","index":{"items":[{"title":"stale"}],"dungeons":[]}}`
 		mustWrite(t, filepath.Join(dir, "index.json"), stale)
 		if cached, ok, err := LoadCache(ctx, dir); err != nil || ok {

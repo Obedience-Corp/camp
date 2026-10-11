@@ -19,7 +19,7 @@ import (
 
 // cacheSchemaVersion changes whenever the cached index gains information a
 // stale cache would silently lack, so old files are rebuilt instead of trusted.
-const cacheSchemaVersion = "camp-dungeon-explore-cache/v7"
+const cacheSchemaVersion = "camp-dungeon-explore-cache/v8"
 
 const (
 	cacheFileName    = "index.json"
@@ -137,6 +137,11 @@ func survivesJSON(idx Index) bool {
 	for _, d := range idx.Dungeons {
 		if !utf8.ValidString(d.Path) {
 			return false
+		}
+		for _, status := range d.Statuses {
+			if !utf8.ValidString(status) {
+				return false
+			}
 		}
 	}
 	for _, item := range idx.Items {

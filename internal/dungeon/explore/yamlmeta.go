@@ -148,9 +148,10 @@ func (w *yamlWalk) note(err error) {
 	}
 }
 
-// fields lists the entries of the mapping at node in one pass. name says
-// which mapping it is in a warning, empty for the document itself. A
-// repeated key keeps its first value.
+// fields visits explicit keys before merged mappings. Earlier mappings in a
+// merge sequence win, and explicit keys (including nulls) win over all merges.
+// The explicit stack avoids recursive alias expansion and copying accumulated
+// maps at each merge. Every visited node consumes the shared traversal budget.
 func (w *yamlWalk) fields(name string, node *yaml.Node) yamlFields {
 	node = present(node)
 	if node == nil {
@@ -160,25 +161,98 @@ func (w *yamlWalk) fields(name string, node *yaml.Node) yamlFields {
 		w.note(errNotMapping(name))
 		return nil
 	}
-	w.budget -= len(node.Content)
-	if w.budget < 0 {
-		w.note(errYAMLTooMany)
-		return nil
+	type visit struct {
+		node    *yaml.Node
+		leaving bool
 	}
-	fields := make(yamlFields, len(node.Content)/2)
-	for i := 0; i+1 < len(node.Content); i += 2 {
-		key := node.Content[i]
-		if key.Kind != yaml.ScalarNode {
-			w.note(errYAMLKey)
+	stack := []visit{{node: node}}
+	active := map[*yaml.Node]bool{}
+	fields := yamlFields{}
+	for len(stack) > 0 {
+		task := stack[len(stack)-1]
+		stack = stack[:len(stack)-1]
+		node = task.node
+		if task.leaving {
+			delete(active, node)
 			continue
 		}
-		if _, repeated := fields[key.Value]; repeated {
-			w.note(errRepeatedKey(key.Value))
+		if active[node] {
+			w.note(errYAMLMergeCycle)
 			continue
 		}
-		fields[key.Value] = node.Content[i+1]
+		// Charge the mapping itself as well as its keys and values, so
+		// aliases of empty mappings cannot bypass the work limit.
+		if !w.spend(1 + len(node.Content)) {
+			break
+		}
+		active[node] = true
+		stack = append(stack, visit{node: node, leaving: true})
+		seen := map[string]bool{}
+		var merge *yaml.Node
+		for i := 0; i+1 < len(node.Content); i += 2 {
+			key := node.Content[i]
+			if key.Kind != yaml.ScalarNode {
+				w.note(errYAMLKey)
+				continue
+			}
+			if seen[key.Value] {
+				w.note(errRepeatedKey(key.Value))
+				continue
+			}
+			seen[key.Value] = true
+			if key.Value == "<<" && key.ShortTag() == "!!merge" {
+				merge = node.Content[i+1]
+				continue
+			}
+			if _, exists := fields[key.Value]; !exists {
+				fields[key.Value] = node.Content[i+1]
+			}
+		}
+		sources := w.mergeSources(merge)
+		// Stack order implements the YAML rule that the first source wins.
+		for i := len(sources) - 1; i >= 0; i-- {
+			stack = append(stack, visit{node: sources[i]})
+		}
 	}
 	return fields
+}
+
+func (w *yamlWalk) spend(nodes int) bool {
+	w.budget -= nodes
+	if w.budget < 0 {
+		w.note(errYAMLTooMany)
+		return false
+	}
+	return true
+}
+
+// mergeSources validates the merge shape without decoding arbitrary YAML
+// values into Go maps (which would restore the decoder's quadratic key scan).
+func (w *yamlWalk) mergeSources(raw *yaml.Node) []*yaml.Node {
+	if raw == nil {
+		return nil
+	}
+	node := present(raw)
+	if node != nil && node.Kind == yaml.MappingNode {
+		return []*yaml.Node{node}
+	}
+	if node == nil || node.Kind != yaml.SequenceNode {
+		w.note(errYAMLMerge)
+		return nil
+	}
+	if !w.spend(1 + len(node.Content)) {
+		return nil
+	}
+	sources := make([]*yaml.Node, 0, len(node.Content))
+	for _, source := range node.Content {
+		source = present(source)
+		if source == nil || source.Kind != yaml.MappingNode {
+			w.note(errYAMLMerge)
+			continue
+		}
+		sources = append(sources, source)
+	}
+	return sources
 }
 
 // text is the value under key as the author wrote it, empty when the key is

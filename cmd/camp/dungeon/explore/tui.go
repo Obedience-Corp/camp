@@ -360,15 +360,15 @@ func (m exploreModel) onKey(key tea.KeyMsg) (tea.Model, tea.Cmd) {
 		return m.move(m.page())
 	case "left", "[":
 		return m.requery(func(q *intexplore.Query) {
-			q.Dungeon = intexplore.StepDungeon(m.index.Items, m.query.Status, m.visible.DungeonLens, -1)
+			q.Dungeon = intexplore.StepDungeon(m.index, m.query.Status, m.visible.DungeonLens, -1)
 		})
 	case "right", "]":
 		return m.requery(func(q *intexplore.Query) {
-			q.Dungeon = intexplore.StepDungeon(m.index.Items, m.query.Status, m.visible.DungeonLens, 1)
+			q.Dungeon = intexplore.StepDungeon(m.index, m.query.Status, m.visible.DungeonLens, 1)
 		})
 	case "s":
 		return m.requery(func(q *intexplore.Query) {
-			q.Status = intexplore.NextPreset(m.index.Items, m.query.Status)
+			q.Status = intexplore.NextPreset(m.index, m.query.Status)
 		})
 	case "/":
 		m.filtering = true

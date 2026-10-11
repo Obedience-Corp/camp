@@ -465,7 +465,7 @@ func readLimited(ctx context.Context, path string) (text string, cut bool, err e
 			data = data[:end]
 		}
 	}
-	return string(bytes.TrimSpace(data)), cut, nil
+	return string(data), cut, nil
 }
 
 func fileExists(path string) bool {

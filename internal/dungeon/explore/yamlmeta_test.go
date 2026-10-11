@@ -194,3 +194,68 @@ func TestParseMetadataAgreesWithTheDecoderOnAWellFormedFile(t *testing.T) {
 		}
 	}
 }
+
+func TestMetadataMergeSemanticsMatchYAMLDecoder(t *testing.T) {
+	for name, doc := range map[string]string{
+		"inline":          "<<: {title: Merged, ref: WI-merged}\n",
+		"alias":           "base: &base {title: Merged, ref: WI-merged}\n<<: *base\n",
+		"explicit before": "title: Explicit\n<<: {title: Merged, ref: WI-merged}\n",
+		"explicit after":  "<<: {title: Merged, ref: WI-merged}\ntitle: Explicit\n",
+		"sequence":        "<<: [{title: First}, {title: Second, ref: WI-second}]\n",
+		"nested":          "base: &base {title: Ancestor, ref: WI-base}\n<<: [{<<: *base, title: Child}, {ref: WI-other}]\n",
+		"null override":   "<<: {title: Merged, ref: WI-merged}\ntitle: null\n",
+		"quoted key":      "'<<': {title: Not merged}\nref: WI-kept\n",
+	} {
+		t.Run(name, func(t *testing.T) {
+			var want struct {
+				Title string `yaml:"title"`
+				Ref   string `yaml:"ref"`
+			}
+			if err := yaml.Unmarshal([]byte(doc), &want); err != nil {
+				t.Fatal(err)
+			}
+			got, err := parseWorkitemMeta(doc)
+			if err != nil || got.title != want.Title || got.ref != want.Ref {
+				t.Fatalf("got %+v, %v; YAML decoder gives %+v", got, err, want)
+			}
+			fm, err := decodeFrontmatter(doc)
+			if err != nil || fm["title"] != want.Title || fm["ref"] != want.Ref {
+				t.Fatalf("frontmatter=%v, %v; want %+v", fm, err, want)
+			}
+		})
+	}
+}
+
+func TestMetadataMergeRejectsInvalidSources(t *testing.T) {
+	for _, source := range []string{"null", "not-a-map", "[null]", "[[{title: nested-list}]]"} {
+		got, err := parseWorkitemMeta("title: Kept\n<<: " + source + "\n")
+		if !errors.Is(err, errYAMLMerge) || got.title != "Kept" {
+			t.Errorf("merge %s: %+v, %v", source, got, err)
+		}
+	}
+	got, err := parseWorkitemMeta("<<: &self {<<: *self, title: Kept}\n")
+	if !errors.Is(err, errYAMLMergeCycle) || got.title != "Kept" {
+		t.Fatalf("cyclic merge: %+v, %v", got, err)
+	}
+}
+
+func TestMetadataMergeExpansionIsBounded(t *testing.T) {
+	var doc strings.Builder
+	doc.WriteString("a0: &a0 {title: Kept}\n")
+	for i := 1; i <= 20; i++ {
+		previous := strconv.Itoa(i - 1)
+		doc.WriteString("a" + strconv.Itoa(i) + ": &a" + strconv.Itoa(i) + " {<<: [*a" + previous + ", *a" + previous + "]}\n")
+	}
+	doc.WriteString("<<: *a20\n")
+	got, err := parseWorkitemMeta(doc.String())
+	if !errors.Is(err, errYAMLTooMany) || got.title != "Kept" {
+		t.Fatalf("expanded aliases: %+v, %v", got, err)
+	}
+}
+
+func TestMetadataMergeInFestivalHistory(t *testing.T) {
+	meta, err := parseFestMeta("defaults: &defaults {name: Inherited, goal: Ship it}\nmetadata:\n  <<: *defaults\n  id: YE0001\n  status_history:\n    - <<: {status: dungeon/completed, timestamp: '2026-10-10T01:02:03Z'}\n")
+	if err != nil || meta.name != "Inherited" || meta.goal != "Ship it" || len(meta.history) != 1 || meta.history[0].Status != "dungeon/completed" {
+		t.Fatalf("festival merge: %+v, %v", meta, err)
+	}
+}

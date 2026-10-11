@@ -69,10 +69,12 @@ var (
 // What is wrong with a fest.yaml, a .workitem, or a frontmatter block that
 // still gave fields. Each is the text after the file name in a row's warning.
 var (
-	errYAMLParse   = camperrors.New("could not be parsed")
-	errYAMLKey     = camperrors.New("a key is not a plain name")
-	errYAMLTooMany = camperrors.New("aliases repeat more entries than a file can hold")
-	errMetaCut     = camperrors.Newf("longer than %d KB; the rest was not read", metaReadLimit>>10)
+	errYAMLMerge      = camperrors.New("merge must contain a mapping or a list of mappings")
+	errYAMLMergeCycle = camperrors.New("merge aliases form a cycle")
+	errYAMLParse      = camperrors.New("could not be parsed")
+	errYAMLKey        = camperrors.New("a key is not a plain name")
+	errYAMLTooMany    = camperrors.New("aliases repeat more entries than a file can hold")
+	errMetaCut        = camperrors.Newf("longer than %d KB; the rest was not read", metaReadLimit>>10)
 )
 
 func errNotMapping(name string) error {

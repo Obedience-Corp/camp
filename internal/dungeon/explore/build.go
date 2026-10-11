@@ -118,6 +118,7 @@ func scanDungeon(ctx context.Context, root string, dungeon spelling.Dungeon, dun
 			}
 			continue
 		}
+		print.Statuses = append(print.Statuses, name)
 		children, w, err := scanStatus(ctx, root, relDungeon, label, name, path, dungeons)
 		if err != nil {
 			return DungeonPrint{}, nil, nil, err

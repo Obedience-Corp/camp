@@ -63,10 +63,11 @@ type Item struct {
 
 // DungeonPrint is the freshness record for one dungeon directory.
 type DungeonPrint struct {
-	Path        string `json:"path"`
-	Name        string `json:"name"`
-	Label       string `json:"label"`
-	Fingerprint string `json:"fingerprint"`
+	Path        string   `json:"path"`
+	Name        string   `json:"name"`
+	Label       string   `json:"label"`
+	Fingerprint string   `json:"fingerprint"`
+	Statuses    []string `json:"statuses,omitempty"`
 }
 
 // Index is every item the sweep can see, plus warnings for directories that
@@ -150,15 +151,15 @@ func Sort(items []Item) {
 // Presets lists the status lenses, including any status this index actually
 // holds. A status directory whose name is already a lens with another meaning
 // (finished, all) is listed with a trailing slash.
-func Presets(items []Item) []string {
+func Presets(idx Index) []string {
 	names := make([]string, 0, len(builtinPresets))
 	for _, p := range builtinPresets {
 		names = append(names, p.name)
 	}
 	extra := map[string]bool{}
-	for _, item := range items {
-		if item.Status != "" && !slices.Contains(names, lensFor(item.Status)) {
-			extra[lensFor(item.Status)] = true
+	for _, status := range statusNames(idx) {
+		if !slices.Contains(names, lensFor(status)) {
+			extra[lensFor(status)] = true
 		}
 	}
 	custom := make([]string, 0, len(extra))
@@ -170,13 +171,13 @@ func Presets(items []Item) []string {
 }
 
 // NextPreset returns the status lens after name, wrapping through Presets.
-func NextPreset(items []Item, name string) string {
-	names := Presets(items)
+func NextPreset(idx Index, name string) string {
+	names := Presets(idx)
 	if len(names) == 0 {
 		return "finished"
 	}
 	i := -1
-	if resolved, ok := resolveStatus(name, items); ok {
+	if resolved, ok := resolveStatus(name, idx); ok {
 		i = slices.Index(names, resolved)
 	}
 	if i < 0 {
@@ -185,26 +186,39 @@ func NextPreset(items []Item, name string) string {
 	return names[(i+1)%len(names)]
 }
 
-// DungeonLenses returns "all" and then each dungeon path that has a row in
-// the status lens, in path order.
-func DungeonLenses(items []Item, status string) []string {
-	want := statusesFor(status, items)
+// DungeonLenses returns "all" and then each dungeon with matching rows or
+// status directories, including empty ones, in path order.
+func DungeonLenses(idx Index, status string) []string {
+	want := statusesFor(status)
 	seen := map[string]bool{}
 	var paths []string
-	for _, item := range items {
+	for _, item := range idx.Items {
 		if !statusMatch(item.Status, want) || seen[item.DungeonPath] {
 			continue
 		}
 		seen[item.DungeonPath] = true
 		paths = append(paths, item.DungeonPath)
 	}
+	for _, dungeon := range idx.Dungeons {
+		if seen[dungeon.Path] {
+			continue
+		}
+		matches := want == nil
+		for _, status := range dungeon.Statuses {
+			matches = matches || statusMatch(status, want)
+		}
+		if matches {
+			seen[dungeon.Path] = true
+			paths = append(paths, dungeon.Path)
+		}
+	}
 	slices.Sort(paths)
 	return append([]string{LensAll}, paths...)
 }
 
 // StepDungeon moves the dungeon lens by delta through DungeonLenses.
-func StepDungeon(items []Item, status, current string, delta int) string {
-	lenses := DungeonLenses(items, status)
+func StepDungeon(idx Index, status, current string, delta int) string {
+	lenses := DungeonLenses(idx, status)
 	if len(lenses) == 0 {
 		return LensAll
 	}
@@ -245,11 +259,11 @@ func Apply(idx Index, q Query) (Result, error) {
 	if status == "" {
 		status = "finished"
 	}
-	statusKey, ok := resolveStatus(status, items)
+	statusKey, ok := resolveStatus(status, idx)
 	if !ok {
 		return Result{}, errUnknownStatus(status)
 	}
-	want := statusesFor(statusKey, items)
+	want := statusesFor(statusKey)
 
 	dungeonKey, dungeonLabel, err := resolveDungeon(idx, q.Dungeon)
 	if err != nil {
@@ -302,12 +316,12 @@ func lensFor(status string) string {
 	return status
 }
 
-func resolveStatus(raw string, items []Item) (string, bool) {
+func resolveStatus(raw string, idx Index) (string, bool) {
 	// A trailing slash always names a status directory, never a built-in lens.
 	if dir, ok := strings.CutSuffix(raw, directoryLens); ok {
-		return resolveDirectory(dir, items)
+		return resolveDirectory(dir, idx)
 	}
-	names := Presets(items)
+	names := Presets(idx)
 	if slices.Contains(names, raw) {
 		return raw, true
 	}
@@ -319,14 +333,14 @@ func resolveStatus(raw string, items []Item) (string, bool) {
 	return "", false
 }
 
-func resolveDirectory(dir string, items []Item) (string, bool) {
+func resolveDirectory(dir string, idx Index) (string, bool) {
 	folded := ""
-	for _, item := range items {
-		if item.Status == dir {
+	for _, status := range statusNames(idx) {
+		if status == dir {
 			return lensFor(dir), true
 		}
-		if folded == "" && strings.EqualFold(item.Status, dir) {
-			folded = item.Status
+		if folded == "" && strings.EqualFold(status, dir) {
+			folded = status
 		}
 	}
 	if folded == "" {
@@ -335,19 +349,43 @@ func resolveDirectory(dir string, items []Item) (string, bool) {
 	return lensFor(folded), true
 }
 
-func statusesFor(name string, items []Item) []string {
+// statusNames includes empty status directories and statuses represented by
+// rows (including holding items stored directly in a dungeon).
+func statusNames(idx Index) []string {
+	seen := map[string]bool{}
+	for _, dungeon := range idx.Dungeons {
+		for _, status := range dungeon.Statuses {
+			if status != "" {
+				seen[status] = true
+			}
+		}
+	}
+	for _, item := range idx.Items {
+		if item.Status != "" {
+			seen[item.Status] = true
+		}
+	}
+	names := make([]string, 0, len(seen))
+	for name := range seen {
+		names = append(names, name)
+	}
+	slices.Sort(names)
+	return names
+}
+
+func statusesFor(name string) []string {
 	if dir, ok := strings.CutSuffix(name, directoryLens); ok {
 		return []string{dir}
+	}
+	if name == "" {
+		name = "finished"
 	}
 	for _, p := range builtinPresets {
 		if p.name == name {
 			return p.statuses
 		}
 	}
-	if slices.Contains(Presets(items), name) {
-		return []string{name}
-	}
-	return nil
+	return []string{name}
 }
 
 func statusMatch(status string, want []string) bool {
