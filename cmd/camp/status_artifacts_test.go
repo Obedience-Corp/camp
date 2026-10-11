@@ -136,6 +136,10 @@ func TestStatusHasPathspec(t *testing.T) {
 		{"--porcelain=v2", "-z", "videos/my-video/takes"},
 		{"-s", "--", "docs"},
 		{"--", "-z"},
+		{"--", "--"},
+		{"--ignore-submodules=all", "--", "--"},
+		{"-"},
+		{"-", "--ignore-submodules=all"},
 	}
 	for _, args := range keep {
 		if !statusHasPathspec(args) {

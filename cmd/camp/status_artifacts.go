@@ -109,11 +109,14 @@ func scopedStatusArtifacts(ctx context.Context, repo string, args []string, root
 func statusHasPathspec(args []string) bool {
 	afterSeparator := false
 	for _, arg := range args {
+		if afterSeparator {
+			return true
+		}
 		if arg == "--" {
 			afterSeparator = true
 			continue
 		}
-		if afterSeparator || !strings.HasPrefix(arg, "-") {
+		if arg == "-" || !strings.HasPrefix(arg, "-") {
 			return true
 		}
 	}
