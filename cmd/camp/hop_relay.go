@@ -4,6 +4,7 @@ import (
 	"bufio"
 	"context"
 	"crypto/rand"
+	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
 	"errors"
@@ -15,6 +16,7 @@ import (
 	"path/filepath"
 	"strings"
 	"sync"
+	"syscall"
 	"time"
 
 	"github.com/spf13/cobra"
@@ -37,14 +39,16 @@ import (
 //	opening shell -> relay -> far shell   response
 //	far shell -> relay -> opening shell   confirm
 //
-// The opening shell queues the switch when it acknowledges it, exactly as on
-// the forwarded socket, so an acknowledged switch is never lost to a slow or
-// broken relay link. The relay adds what that socket cannot say: if the far
-// shell hangs up without confirming, the relay reports it and the switch is
-// taken back, because that shell did not exit.
+// An acknowledged switch is provisional until that confirmation arrives. The
+// confirmation travels separately from the hop and can be lost with the relay
+// link, so the hop itself settles the doubt: a far shell that got its
+// acknowledgement exits at once. An unconfirmed switch therefore counts only
+// if the hop ends within hopAckGrace of it; otherwise the far shell evidently
+// stayed, and the switch is taken back and the hop freed for another.
 const (
 	hopRelayVersion     = 2
 	hopRelayMaxLine     = 8192
+	hopRelayMaxRequest  = 4096 // leaves a frame room to carry any request
 	hopRelayRequestWait = 5 * time.Second
 	hopRelayConfirmWait = 5 * time.Second
 
@@ -59,14 +63,22 @@ const (
 	hopRelayPruneAge = 10 * time.Second
 )
 
-var errHopAlreadySwitching = camperrors.New("hop-resume: this hop is already switching")
+// hopAckGrace is how long an acknowledged switch waits for its confirmation
+// or for the hop to end. A variable so tests need not wait it out.
+var hopAckGrace = 5 * time.Second
+
+var errHopAlreadySwitching = camperrors.New("hop-resume: this hop is already switching; exit this shell to complete it")
 
 var hopResumeRelayCmd = &cobra.Command{
-	Use:    "relay <id>",
+	Use:    "relay <id> [forwarded-socket]",
 	Hidden: true,
-	Args:   cobra.ExactArgs(1),
+	Args:   cobra.RangeArgs(1, 2),
 	RunE: func(cmd *cobra.Command, args []string) error {
-		return runHopRelay(cmd.Context(), args[0], cmd.InOrStdin(), cmd.OutOrStdout())
+		forwarded := ""
+		if len(args) == 2 {
+			forwarded = args[1]
+		}
+		return runHopRelay(cmd.Context(), args[0], forwarded, cmd.InOrStdin(), cmd.OutOrStdout())
 	},
 }
 
@@ -121,7 +133,9 @@ func newHopRelayID() (string, error) {
 }
 
 // hopRelaySocketPath is where a hop's relay listens. The id comes from the
-// environment and is only ever a file name here.
+// environment and is only ever part of a file name here. The name also carries
+// a tag for this machine: a home directory can be mounted on several, and a
+// socket only means something on the one whose relay created it.
 func hopRelaySocketPath(id string) (string, error) {
 	if raw, err := hex.DecodeString(id); err != nil || len(raw) != 8 {
 		return "", camperrors.New("hop-resume: malformed relay id")
@@ -130,7 +144,13 @@ func hopRelaySocketPath(id string) (string, error) {
 	if err != nil {
 		return "", err
 	}
-	return filepath.Join(home, ".obey", "hop-resume", id+".sock"), nil
+	return filepath.Join(home, ".obey", "hop-resume", hopHostTag()+"-"+id+".sock"), nil
+}
+
+func hopHostTag() string {
+	host, _ := os.Hostname()
+	sum := sha256.Sum256([]byte(host))
+	return hex.EncodeToString(sum[:3])
 }
 
 // trustedHopSocket is the one rule for every socket a hopped shell is pointed
@@ -191,14 +211,27 @@ func trustedHopPeer(conn net.Conn) error {
 // driving this terminal: control characters become spaces.
 func printableHopText(text string) string {
 	return strings.Map(func(r rune) rune {
-		if r < 0x20 || (r >= 0x7f && r < 0xa0) {
+		if hopControlRune(r) {
 			return ' '
 		}
 		return r
 	}, text)
 }
 
-var errHopLineTooLong = errors.New("hop-resume: line too long")
+func hopControlRune(r rune) bool { return r < 0x20 || (r >= 0x7f && r < 0xa0) }
+
+// printableHopRequest refuses a request whose names carry control characters.
+// They end up in this shell's own messages when a destination is not found.
+func printableHopRequest(request hopResumeRequest) error {
+	for _, text := range []string{request.Selector, request.Host, request.Scope.Org, request.Scope.Status} {
+		if strings.ContainsFunc(text, hopControlRune) {
+			return camperrors.New("hop-resume: request carries control characters")
+		}
+	}
+	return nil
+}
+
+var errHopLineTooLong = camperrors.New("hop-resume: line too long")
 
 // readHopLine returns the next line without its newline. A line longer than
 // the reader's buffer is consumed and reported, never returned in part.
@@ -253,17 +286,20 @@ type hopRelayLink struct {
 //     ssh to create one, which would print a warning into the user's terminal.
 //   - ClearAllForwardings, -a, -x: it carries nothing but its stdio, so it must
 //     not bind the forwards the user configured for the interactive session.
-func hopRelayArgv(hop hopLine, id string) []string {
+//
+// The relay is told where the forwarded socket is so it can step aside where
+// that socket already serves the far shell.
+func hopRelayArgv(hop hopLine, id, forwardedSock string) []string {
 	argv := append([]string{"-T", "-a", "-x", "-o", "ControlMaster=no", "-o", "ClearAllForwardings=yes"}, hop.opts...)
-	return append(argv, hop.target, remote.CampCommandLine("hop-resume relay "+id))
+	return append(argv, hop.target, remote.CampCommandLine("hop-resume relay "+id+" "+remote.ShellQuote(forwardedSock)))
 }
 
 // startHopRelay launches the relay and returns at once. A relay that cannot
 // start, including on a far camp that predates relays, is a link that reads as
 // closed: the hop is unaffected and the forwarded socket remains.
-func startHopRelay(ctx context.Context, hop hopLine, id string) hopRelayLink {
+func startHopRelay(ctx context.Context, hop hopLine, id, forwardedSock string) hopRelayLink {
 	closed := hopRelayLink{fromFar: strings.NewReader(""), toFar: io.Discard, stop: func() {}}
-	cmd := exec.CommandContext(ctx, "ssh", hopRelayArgv(hop, id)...)
+	cmd := exec.CommandContext(ctx, "ssh", hopRelayArgv(hop, id, forwardedSock)...)
 	toFar, err := cmd.StdinPipe()
 	if err != nil {
 		return closed
@@ -291,10 +327,10 @@ func startHopRelay(ctx context.Context, hop hopLine, id string) hopRelayLink {
 	}}
 }
 
-// serveHopRelay answers the requests a relay carries and returns the follow-up
-// line of the switch it acknowledged, unless the relay reported that the far
-// shell hung up without confirming. It ends on a confirmation, or when the
-// relay or the hop does.
+// serveHopRelay answers the requests a relay carries, for as long as the hop
+// and the relay last, and returns the follow-up line of the switch that
+// stands when they end: one the far shell confirmed, or one acknowledged
+// within hopAckGrace of the hop ending.
 func serveHopRelay(ctx context.Context, fromFar io.Reader, toFar io.Writer, hop *hopSwitch, prepare func(context.Context, hopResumeRequest) (string, error)) (string, error) {
 	frames := make(chan hopRelayFrame)
 	ended := make(chan error, 1)
@@ -311,7 +347,7 @@ func serveHopRelay(ctx context.Context, fromFar io.Reader, toFar io.Writer, hop 
 			}
 			// A login shell may print before camp starts; only frames count.
 			var frame hopRelayFrame
-			if json.Unmarshal(line, &frame) != nil || frame.Version != hopRelayVersion {
+			if json.Unmarshal(line, &frame) != nil || frame.Version == 0 {
 				continue
 			}
 			select {
@@ -329,22 +365,24 @@ func serveHopRelay(ctx context.Context, fromFar io.Reader, toFar io.Writer, hop 
 	}
 	out := hopLineWriter{w: toFar}
 	var (
-		seq      int // the exchange in flight, 0 when idle
-		stop     = func() {}
-		prepared chan outcome
-		follow   string
-		acked    bool
+		seq         int // the exchange in flight, 0 when idle
+		stop        = func() {}
+		prepared    chan outcome
+		follow      string
+		acked       bool             // acknowledged: provisional until confirmed
+		confirmed   bool             // the far shell confirmed: final
+		unconfirmed <-chan time.Time // the provisional switch has waited too long
 	)
 	defer func() { stop() }()
 	// abandon ends the exchange in flight without a switch. Its preparation,
 	// if still running, is cancelled and its result never read.
 	abandon := func() {
-		if seq == 0 {
+		if seq == 0 || confirmed {
 			return
 		}
 		stop()
 		hop.release()
-		seq, prepared, follow, acked = 0, nil, "", false
+		seq, prepared, follow, acked, unconfirmed = 0, nil, "", false, nil
 	}
 	respond := func(to int, err error) error {
 		response := hopResumeResponse{Version: hopRelayVersion, Accepted: err == nil}
@@ -360,17 +398,30 @@ func serveHopRelay(ctx context.Context, fromFar io.Reader, toFar io.Writer, hop 
 	for {
 		select {
 		case <-ctx.Done():
+			// The hop is over. A far shell that was acknowledged moments
+			// ago and is gone now acted on it.
 			if acked {
 				return follow, nil
 			}
 			abandon()
 			return "", ctx.Err()
 		case err := <-ended:
-			if acked {
+			if confirmed {
 				return follow, nil
 			}
+			if !acked {
+				abandon()
+				return "", err
+			}
+			// The link went before the confirmation. Whether the far shell
+			// acted shows in the hop: wait for it to end, or for the grace
+			// to run out.
+			ended, frames = nil, nil
+		case <-unconfirmed:
 			abandon()
-			return "", err
+			if frames == nil {
+				return "", io.ErrUnexpectedEOF
+			}
 		case result := <-prepared:
 			prepared = nil
 			if err := respond(seq, result.err); err != nil {
@@ -381,11 +432,18 @@ func serveHopRelay(ctx context.Context, fromFar io.Reader, toFar io.Writer, hop 
 				abandon()
 				continue
 			}
-			follow, acked = result.follow, true
+			follow, acked, unconfirmed = result.follow, true, time.After(hopAckGrace)
 		case frame := <-frames:
 			switch {
 			case frame.Seq <= 0:
 				// Not an exchange a relay would number.
+			case frame.Version != hopRelayVersion:
+				// Say so, or the far shell waits out its deadline.
+				if frame.Request != nil {
+					if err := respond(frame.Seq, errHopRelayVersion); err != nil {
+						return "", err
+					}
+				}
 			case frame.Request != nil:
 				// The relay moves on only once an exchange is over.
 				abandon()
@@ -411,11 +469,13 @@ func serveHopRelay(ctx context.Context, fromFar io.Reader, toFar io.Writer, hop 
 			case frame.Gone && frame.Seq == seq:
 				abandon()
 			case frame.Confirm && frame.Seq == seq && acked:
-				return follow, nil
+				confirmed, unconfirmed = true, nil
 			}
 		}
 	}
 }
+
+var errHopRelayVersion = camperrors.New("hop-resume: unsupported request version; update camp on both machines and hop again")
 
 func hopRelayRequest(raw json.RawMessage) (hopResumeRequest, error) {
 	var envelope hopResumeEnvelope
@@ -423,7 +483,7 @@ func hopRelayRequest(raw json.RawMessage) (hopResumeRequest, error) {
 		return hopResumeRequest{}, camperrors.Wrap(err, "hop-resume: request")
 	}
 	if envelope.Version != hopRelayVersion {
-		return hopResumeRequest{}, camperrors.New("hop-resume: unsupported request version; update camp on both machines and hop again")
+		return hopResumeRequest{}, errHopRelayVersion
 	}
 	request := envelope.Request
 	selector, err := sanitizeResumeSelector(request.Selector)
@@ -441,10 +501,17 @@ func hopRelayRequest(raw json.RawMessage) (hopResumeRequest, error) {
 
 // runHopRelay listens for this hop's far shell and carries its exchanges over
 // in and out until in ends, which is how it learns the hop is over.
-func runHopRelay(ctx context.Context, id string, in io.Reader, out io.Writer) error {
+//
+// Where the forwarded socket already serves this user, the relay steps aside
+// at once: the far shell keeps the route it has always had, and the relay does
+// not hold one of the connection's sessions for the life of the hop.
+func runHopRelay(ctx context.Context, id, forwardedSock string, in io.Reader, out io.Writer) error {
 	path, err := hopRelaySocketPath(id)
 	if err != nil {
 		return err
+	}
+	if forwardedSock != "" && trustedHopSocket(forwardedSock) == nil {
+		return nil
 	}
 	dir := filepath.Dir(path)
 	if err := os.MkdirAll(dir, 0o700); err != nil {
@@ -472,25 +539,28 @@ func runHopRelay(ctx context.Context, id string, in io.Reader, out io.Writer) er
 	return relayHopExchanges(ctx, ln, in, out)
 }
 
-// pruneHopRelays removes sockets left by relays that were killed before they
-// could clean up. A socket nothing listens on refuses the connection.
+// pruneHopRelays removes sockets left by relays on this machine that were
+// killed before they could clean up. A socket nothing listens on refuses the
+// connection; any other outcome leaves it alone.
 func pruneHopRelays(dir string) {
 	entries, err := os.ReadDir(dir)
 	if err != nil {
 		return
 	}
+	own := hopHostTag() + "-"
 	for _, entry := range entries {
 		info, err := entry.Info()
-		if err != nil || info.Mode()&fs.ModeSocket == 0 || time.Since(info.ModTime()) < hopRelayPruneAge {
+		if err != nil || !strings.HasPrefix(entry.Name(), own) || info.Mode()&fs.ModeSocket == 0 || time.Since(info.ModTime()) < hopRelayPruneAge {
 			continue
 		}
 		path := filepath.Join(dir, entry.Name())
 		conn, err := net.DialTimeout("unix", path, 200*time.Millisecond)
-		if err != nil {
+		if errors.Is(err, syscall.ECONNREFUSED) {
 			_ = os.Remove(path)
-			continue
 		}
-		_ = conn.Close()
+		if err == nil {
+			_ = conn.Close()
+		}
 	}
 }
 
@@ -580,7 +650,9 @@ func (a *hopRelayAnswers) deliver(frame hopRelayFrame) {
 // relayHopExchange carries one far-shell connection. It returns an error only
 // when the opening shell can no longer be written to.
 func relayHopExchange(ctx context.Context, conn net.Conn, seq int, toOpener *hopLineWriter, answers *hopRelayAnswers) error {
-	reader := bufio.NewReaderSize(conn, hopRelayMaxLine)
+	stopClose := context.AfterFunc(ctx, func() { _ = conn.Close() })
+	defer stopClose()
+	reader := bufio.NewReaderSize(conn, hopRelayMaxRequest)
 	_ = conn.SetReadDeadline(time.Now().Add(hopRelayRequestWait))
 	request, err := readHopLine(reader)
 	if err != nil || !json.Valid(request) {
@@ -635,8 +707,8 @@ func relayHopExchange(ctx context.Context, conn net.Conn, seq int, toOpener *hop
 }
 
 // sendOverHopRelay is the far shell's side of an exchange: request, response,
-// and, for an accepted switch, the confirmation that lets the opening shell
-// queue it. Only after that may this shell exit.
+// and, for an accepted switch, the confirmation that makes it final. Only
+// after that may this shell exit.
 func sendOverHopRelay(conn net.Conn, request hopResumeRequest) error {
 	out := hopLineWriter{w: conn}
 	if err := out.write(hopResumeEnvelope{Version: hopRelayVersion, Request: request}); err != nil {

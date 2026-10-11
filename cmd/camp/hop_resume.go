@@ -11,6 +11,7 @@ import (
 	"os"
 	"os/exec"
 	"strings"
+	"syscall"
 	"time"
 
 	"github.com/Obedience-Corp/camp/cmd/camp/cmdutil"
@@ -165,8 +166,8 @@ func dialHopResume(ctx context.Context) (conn net.Conn, overRelay bool, err erro
 				return conn, true, nil
 			}
 		}
-		if errors.Is(err, fs.ErrNotExist) {
-			err = camperrors.New("the relay for this hop is not running here: the hop may have ended, or its relay could not start on this machine")
+		if errors.Is(err, fs.ErrNotExist) || errors.Is(err, syscall.ECONNREFUSED) {
+			err = camperrors.New("the relay for this hop is not running here: it starts a moment after the hop does, so try again; otherwise the hop has ended, or its relay could not start on this machine")
 		}
 		failed = append(failed, err)
 	}
@@ -176,6 +177,11 @@ func dialHopResume(ctx context.Context) (conn net.Conn, overRelay bool, err erro
 			return conn, false, nil
 		}
 		failed = append(failed, err)
+	}
+	if relayID == "" {
+		// A camp without relays opened this hop, so this socket was the only
+		// route it offered.
+		failed = append(failed, camperrors.New("Hint: update camp on the machine that opened this hop, then hop again"))
 	}
 	return nil, false, camperrors.Wrap(errors.Join(failed...), "hop-resume: tell the shell that opened this hop")
 }
@@ -191,12 +197,37 @@ func sanitizeResumeSelector(raw string) (string, error) {
 	return raw, nil
 }
 
+// hopSurroundings is what a hop takes from the process around it: how a
+// requested destination is prepared, and the terminal the interactive ssh
+// attaches to.
+type hopSurroundings struct {
+	prepare  func(context.Context, hopResumeRequest) (string, error)
+	terminal func() (in, out *os.File, inherited bool, release func(), err error)
+}
+
 // runHopResume runs one outbound ssh line with a resume socket forwarded to
 // the far shell and a relay started beside it. stdout of this process is
 // reserved for the follow-up shell line (possibly empty), so the interactive
 // session is attached to the terminal this process inherited on stdin and
 // stderr.
 func runHopResume(ctx context.Context, line string) (string, error) {
+	return runHop(ctx, line, hopSurroundings{prepare: prepareHopResume, terminal: openHopTerminal})
+}
+
+func runHop(ctx context.Context, line string, around hopSurroundings) (string, error) {
+	hop, err := splitHopLine(line)
+	if err != nil {
+		return "", err
+	}
+	relayID, err := newHopRelayID()
+	if err != nil {
+		return "", err
+	}
+	in, out, inherited, release, err := around.terminal()
+	if err != nil {
+		return "", err
+	}
+	defer release()
 	local, remoteSock, err := resumeSocketPaths()
 	if err != nil {
 		return "", err
@@ -212,18 +243,10 @@ func runHopResume(ctx context.Context, line string) (string, error) {
 
 	resumeCtx, cancelResume := context.WithCancel(ctx)
 	defer cancelResume()
-	hop, err := splitHopLine(line)
-	if err != nil {
-		return "", err
-	}
-	relayID, err := newHopRelayID()
-	if err != nil {
-		return "", err
-	}
 	onward := new(hopSwitch)
 	got := make(chan string, 2)
 	go func() {
-		follow, _ := serveHopResume(resumeCtx, ln, onward, prepareHopResume)
+		follow, _ := serveHopResume(resumeCtx, ln, onward, around.prepare)
 		got <- follow
 	}()
 	// The relay starts once the hop is under way and nothing waits on it:
@@ -232,8 +255,8 @@ func runHopResume(ctx context.Context, line string) (string, error) {
 		follow := ""
 		select {
 		case <-time.After(hopRelayStartDelay):
-			relay := startHopRelay(resumeCtx, hop, relayID)
-			follow, _ = serveHopRelay(resumeCtx, relay.fromFar, relay.toFar, onward, prepareHopResume)
+			relay := startHopRelay(resumeCtx, hop, relayID, remoteSock)
+			follow, _ = serveHopRelay(resumeCtx, relay.fromFar, relay.toFar, onward, around.prepare)
 			relay.stop()
 		case <-resumeCtx.Done():
 		}
@@ -241,14 +264,7 @@ func runHopResume(ctx context.Context, line string) (string, error) {
 	}()
 
 	argv := hop.resumeArgv(local, remoteSock, relayID)
-	in, out, inherited := inheritedHopTerminal(os.Stdin, os.Stderr, isTerminalFile)
 	if !inherited {
-		tty, err := os.OpenFile("/dev/tty", os.O_RDWR, 0)
-		if err != nil {
-			return "", camperrors.Wrap(err, "hop-resume: open /dev/tty")
-		}
-		defer func() { _ = tty.Close() }()
-		in, out = tty, tty
 		argv = withoutControlMaster(argv)
 	}
 	sshCmd := exec.CommandContext(ctx, argv[0], argv[1:]...)
@@ -266,6 +282,19 @@ func runHopResume(ctx context.Context, line string) (string, error) {
 		return "", runErr
 	}
 	return follow, nil
+}
+
+// openHopTerminal returns the terminal the interactive ssh attaches to: the
+// one this process inherited, or /dev/tty when stdin or stderr is redirected.
+func openHopTerminal() (in, out *os.File, inherited bool, release func(), err error) {
+	if in, out, ok := inheritedHopTerminal(os.Stdin, os.Stderr, isTerminalFile); ok {
+		return in, out, true, func() {}, nil
+	}
+	tty, err := os.OpenFile("/dev/tty", os.O_RDWR, 0)
+	if err != nil {
+		return nil, nil, false, nil, camperrors.Wrap(err, "hop-resume: open /dev/tty")
+	}
+	return tty, tty, false, func() { _ = tty.Close() }, nil
 }
 
 // inheritedHopTerminal returns the terminal descriptors ssh may hand to a
@@ -401,6 +430,9 @@ func mapHopResume(request hopResumeRequest, registry *machines.File) (hopResumeR
 }
 
 func prepareHopResume(ctx context.Context, request hopResumeRequest) (string, error) {
+	if err := printableHopRequest(request); err != nil {
+		return "", err
+	}
 	registry, err := machines.Load()
 	if err != nil {
 		return "", err

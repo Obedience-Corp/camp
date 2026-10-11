@@ -6,6 +6,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"io"
 	"net"
 	"os"
@@ -239,13 +240,13 @@ type runningHopRelay struct {
 	done    chan error
 }
 
-func startTestHopRelay(t *testing.T, id string) runningHopRelay {
+func startTestHopRelay(t *testing.T, id, forwardedSock string) runningHopRelay {
 	t.Helper()
 	inR, inW := io.Pipe()
 	outR, outW := io.Pipe()
 	relay := runningHopRelay{fromFar: outR, toFar: inW, done: make(chan error, 1)}
 	go func() {
-		relay.done <- runHopRelay(context.Background(), id, inR, outW)
+		relay.done <- runHopRelay(context.Background(), id, forwardedSock, inR, outW)
 		_ = outW.Close()
 	}()
 	t.Cleanup(func() { _ = inW.Close() })
@@ -281,9 +282,12 @@ func TestHopResumeFSRelayKeepsItsSocketPrivateAndRemovesIt(t *testing.T) {
 		t.Fatal(err)
 	}
 	const id = "0123456789abcdef"
-	relay := startTestHopRelay(t, id)
+	relay := startTestHopRelay(t, id, "")
 	go func() { _, _ = io.Copy(io.Discard, relay.fromFar) }()
-	path := filepath.Join(dir, id+".sock")
+	path, err := hopRelaySocketPath(id)
+	if err != nil {
+		t.Fatal(err)
+	}
 	if info, err := os.Stat(dir); err != nil || info.Mode().Perm() != 0o700 {
 		t.Fatalf("relay directory must be closed to other users: %v %v", info.Mode().Perm(), err)
 	}
@@ -326,13 +330,20 @@ func TestHopResumeFSRelayPrunesSocketsNothingListensOn(t *testing.T) {
 	}
 	// A relay killed long ago, one whose socket is seconds old and may be
 	// about to listen, and one still serving.
-	dead := abandon("aaaaaaaaaaaaaaaa.sock")
+	own := hopHostTag() + "-"
+	dead := abandon(own + "aaaaaaaaaaaaaaaa.sock")
 	longAgo := time.Now().Add(-time.Hour)
 	if err := os.Chtimes(dead, longAgo, longAgo); err != nil {
 		t.Fatal(err)
 	}
-	starting := abandon("cccccccccccccccc.sock")
-	live := filepath.Join(dir, "bbbbbbbbbbbbbbbb.sock")
+	starting := abandon(own + "cccccccccccccccc.sock")
+	// The same home directory can be mounted on another machine, whose live
+	// relay refuses a connection made from here.
+	elsewhere := abandon("ffffff-dddddddddddddddd.sock")
+	if err := os.Chtimes(elsewhere, longAgo, longAgo); err != nil {
+		t.Fatal(err)
+	}
+	live := filepath.Join(dir, own+"bbbbbbbbbbbbbbbb.sock")
 	serving, err := net.Listen("unix", live)
 	if err != nil {
 		t.Fatal(err)
@@ -351,7 +362,7 @@ func TestHopResumeFSRelayPrunesSocketsNothingListensOn(t *testing.T) {
 		}
 	}()
 
-	relay := startTestHopRelay(t, "0123456789abcdef")
+	relay := startTestHopRelay(t, "0123456789abcdef", "")
 	go func() { _, _ = io.Copy(io.Discard, relay.fromFar) }()
 	if _, err := os.Lstat(dead); !os.IsNotExist(err) {
 		t.Fatalf("an old socket nothing listens on must be pruned: %v", err)
@@ -362,16 +373,21 @@ func TestHopResumeFSRelayPrunesSocketsNothingListensOn(t *testing.T) {
 	if _, err := os.Lstat(live); err != nil {
 		t.Fatalf("another hop's live relay must be left alone: %v", err)
 	}
+	if _, err := os.Lstat(elsewhere); err != nil {
+		t.Fatalf("a relay socket that belongs to another machine must be left alone: %v", err)
+	}
 }
 
 func TestHopResumeFSSendSwitchesOverARelay(t *testing.T) {
 	shortHome(t)
 	const id = "0123456789abcdef"
-	relay := startTestHopRelay(t, id)
+	relay := startTestHopRelay(t, id, "")
 	hop := new(hopSwitch)
+	ctx, endHop := context.WithCancel(context.Background())
+	defer endHop()
 	follow := make(chan string, 1)
 	go func() {
-		line, _ := serveHopRelay(context.Background(), relay.fromFar, relay.toFar, hop, func(_ context.Context, request hopResumeRequest) (string, error) {
+		line, _ := serveHopRelay(ctx, relay.fromFar, relay.toFar, hop, func(_ context.Context, request hopResumeRequest) (string, error) {
 			if request.Selector != "thirdbox:notes" || request.Host != "c.example" || request.Scope.Org != "work" {
 				return "", errors.New("request changed in transit")
 			}
@@ -386,13 +402,15 @@ func TestHopResumeFSSendSwitchesOverARelay(t *testing.T) {
 	if err := sendHopResume(context.Background(), "thirdbox:notes", cmdutil.CampaignScope{Org: "work"}, "c.example"); err != nil {
 		t.Fatalf("switch over the relay: %v", err)
 	}
+	// The far shell exits, and with it the hop.
+	endHop()
 	select {
 	case line := <-follow:
 		if line != "ssh prepared-parent-route" {
 			t.Fatalf("follow-up %q", line)
 		}
 	case <-time.After(3 * time.Second):
-		t.Fatal("the confirmed switch was not queued")
+		t.Fatal("the switch was not handed to the opening shell")
 	}
 
 	// A shell that outlives its hop keeps the relay id and nothing else works.
@@ -448,7 +466,11 @@ func TestHopResumeFSSendFallsBackToTheForwardedSocket(t *testing.T) {
 	if err := os.MkdirAll(dir, 0o700); err != nil {
 		t.Fatal(err)
 	}
-	killed, err := net.Listen("unix", filepath.Join(dir, id+".sock"))
+	relayPath, err := hopRelaySocketPath(id)
+	if err != nil {
+		t.Fatal(err)
+	}
+	killed, err := net.Listen("unix", relayPath)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -666,14 +688,259 @@ func TestHopResumeFSRelayRefusesADirectoryItDoesNotOwn(t *testing.T) {
 		t.Fatal(err)
 	}
 	// The suite runs as root, which can hand the directory to another user.
-	if err := os.Chown(dir, 54321, 54321); err != nil {
+	if err := os.Chown(dir, ordinaryUID, ordinaryUID); err != nil {
 		t.Fatal(err)
 	}
-	err := runHopRelay(context.Background(), "0123456789abcdef", strings.NewReader(""), io.Discard)
+	err := runHopRelay(context.Background(), "0123456789abcdef", "", strings.NewReader(""), io.Discard)
 	if err == nil || !strings.Contains(err.Error(), "not this user's own directory") {
 		t.Fatalf("a relay must not listen where another user owns the directory: %v", err)
 	}
-	if _, statErr := os.Lstat(filepath.Join(dir, "0123456789abcdef.sock")); !os.IsNotExist(statErr) {
-		t.Fatalf("no socket may be left behind: %v", statErr)
+	if entries, readErr := os.ReadDir(dir); readErr != nil || len(entries) != 0 {
+		t.Fatalf("no socket may be left behind: %v %v", entries, readErr)
+	}
+}
+
+// Where the forwarded socket already serves this user, the relay must not
+// linger: the far shell keeps the route it has always had, and the relay does
+// not hold one of the connection's sessions for the life of the hop.
+func TestHopResumeFSRelayStepsAsideWhereTheSocketServes(t *testing.T) {
+	const plantedEnv = "CAMP_TEST_PLANTED"
+	if os.Geteuid() == 0 {
+		// What a root-binding ssh server leaves at the forwarded path.
+		sticky, err := os.MkdirTemp("/tmp", "hs")
+		if err != nil {
+			t.Fatal(err)
+		}
+		t.Cleanup(func() { _ = os.RemoveAll(sticky) })
+		if err := os.Chmod(sticky, 0o777|os.ModeSticky); err != nil {
+			t.Fatal(err)
+		}
+		planted := filepath.Join(sticky, "camp-hr-r.sock")
+		ln, err := net.Listen("unix", planted)
+		if err != nil {
+			t.Fatal(err)
+		}
+		defer func() { _ = ln.Close() }()
+		asOrdinaryUser(t, plantedEnv+"="+planted)
+		return
+	}
+	home := shortHome(t)
+	own, _, err := resumeSocketPaths()
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = os.Remove(own) })
+	ln, err := net.Listen("unix", own)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer func() { _ = ln.Close() }()
+
+	// sshd bound the socket as this user: nothing for a relay to add. Its
+	// input stays open, as it does for the life of a real hop, so only
+	// stepping aside can end it.
+	hopIn, endHop := io.Pipe()
+	defer func() { _ = endHop.Close() }()
+	done := make(chan error, 1)
+	go func() {
+		done <- runHopRelay(context.Background(), "0123456789abcdef", own, hopIn, io.Discard)
+	}()
+	select {
+	case err := <-done:
+		if err != nil {
+			t.Fatalf("relay: %v", err)
+		}
+	case <-time.After(2 * time.Second):
+		t.Fatal("the relay stayed although the forwarded socket serves this user")
+	}
+	if entries, _ := os.ReadDir(filepath.Join(home, ".obey", "hop-resume")); len(entries) != 0 {
+		t.Fatalf("a relay that stepped aside must leave nothing behind: %v", entries)
+	}
+
+	// The same call where the server bound the socket as root: the relay is
+	// the only route and must stay.
+	relay := startTestHopRelay(t, "fedcba9876543210", os.Getenv(plantedEnv))
+	go func() { _, _ = io.Copy(io.Discard, relay.fromFar) }()
+	select {
+	case err := <-relay.done:
+		t.Fatalf("the relay left although the forwarded socket is closed to this user: %v", err)
+	case <-time.After(100 * time.Millisecond):
+	}
+}
+
+func TestHopResumeFSSendPrefersTheRelayWhenBothRoutesAreUp(t *testing.T) {
+	if asOrdinaryUser(t) {
+		return
+	}
+	shortHome(t)
+	const id = "0123456789abcdef"
+	relay := startTestHopRelay(t, id, "")
+	hop := new(hopSwitch)
+	ctx, endHop := context.WithCancel(context.Background())
+	defer endHop()
+	follow := make(chan string, 1)
+	go func() {
+		line, _ := serveHopRelay(ctx, relay.fromFar, relay.toFar, hop, func(_ context.Context, request hopResumeRequest) (string, error) {
+			return "over the relay", nil
+		})
+		follow <- line
+	}()
+	local, _, err := resumeSocketPaths()
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = os.Remove(local) })
+	ln, err := net.Listen("unix", local)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer func() { _ = ln.Close() }()
+	reached := acknowledging(ln)
+	t.Setenv(hopResumeRelayEnv, id)
+	t.Setenv(hopResumeSockEnv, local)
+	if err := sendHopResume(context.Background(), "thirdbox:notes", cmdutil.CampaignScope{}, "c.example"); err != nil {
+		t.Fatalf("switch: %v", err)
+	}
+	endHop()
+	if line := <-follow; line != "over the relay" {
+		t.Fatalf("follow-up %q", line)
+	}
+	select {
+	case <-reached:
+		t.Fatal("a running relay must carry the switch, with its confirmation, rather than the socket")
+	default:
+	}
+}
+
+// TestHopResumeFSFarShellHelper is the far shell in the lifecycle test below:
+// the fake ssh runs this binary with the forwarded socket in its environment.
+func TestHopResumeFSFarShellHelper(t *testing.T) {
+	selector := os.Getenv("CAMP_TEST_FAR_SHELL")
+	if selector == "" {
+		return
+	}
+	if err := sendHopResume(context.Background(), selector, cmdutil.CampaignScope{}, "c.example"); err != nil {
+		t.Fatalf("far shell: %v", err)
+	}
+}
+
+const fakeHopSSH = `#!/bin/sh
+# Stands in for ssh: records how it was called, then plays the hop or the relay.
+case " $* " in
+*" hop-resume relay "*)
+	echo relay >> "$FAKE_SSH_LOG"
+	echo "$$" > "$FAKE_SSH_LOG.relay-pid"
+	printf '%s\n' "$@" > "$FAKE_SSH_LOG.relay-argv"
+	exec cat > /dev/null
+	;;
+*)
+	echo hop >> "$FAKE_SSH_LOG"
+	prev=""
+	for arg in "$@"; do
+		if [ "$prev" = "-R" ]; then spec=$arg; fi
+		prev=$arg
+	done
+	if [ -n "$CAMP_TEST_FAR_SHELL" ]; then
+		CAMP_HOP_RESUME_SOCK="${spec#*:}" CAMP_HOP_RESUME_RELAY="" "$FAKE_SSH_SELF" -test.run '^TestHopResumeFSFarShellHelper$' > "$FAKE_SSH_LOG.far" 2>&1 || echo far-shell-failed >> "$FAKE_SSH_LOG"
+	fi
+	sleep "$FAKE_SSH_HOP_SECONDS"
+	exit "$FAKE_SSH_HOP_EXIT"
+	;;
+esac
+`
+
+// The hop from start to finish, with ssh replaced by a script: what the
+// opening shell is left with, how long it is held, and what is left running.
+func TestHopResumeFSRunCarriesAHopFromStartToFinish(t *testing.T) {
+	if asOrdinaryUser(t) {
+		return
+	}
+	shortHome(t)
+	self, err := os.Executable()
+	if err != nil {
+		t.Fatal(err)
+	}
+	bin := t.TempDir()
+	if err := os.WriteFile(filepath.Join(bin, "ssh"), []byte(fakeHopSSH), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("PATH", bin+string(os.PathListSeparator)+os.Getenv("PATH"))
+	t.Setenv("FAKE_SSH_SELF", self)
+	around := hopSurroundings{
+		prepare: func(_ context.Context, request hopResumeRequest) (string, error) {
+			return "cd -- '/next/" + request.Selector + "'\n", nil
+		},
+		terminal: func() (*os.File, *os.File, bool, func(), error) {
+			in, err := os.Open(os.DevNull)
+			if err != nil {
+				return nil, nil, false, nil, err
+			}
+			out, err := os.OpenFile(os.DevNull, os.O_WRONLY, 0)
+			if err != nil {
+				return nil, nil, false, nil, err
+			}
+			return in, out, true, func() { _ = in.Close(); _ = out.Close() }, nil
+		},
+	}
+	const line = "ssh -t '-o' 'BatchMode=yes' 'far.example' 'exec $SHELL -l'"
+	leftovers := func() []string {
+		socks, _ := filepath.Glob("/tmp/camp-hr-*")
+		return socks
+	}
+	for name, tc := range map[string]struct {
+		hopSeconds, hopExit, farShell string
+		wantFollow                    string
+		wantErr, wantRelay            bool
+	}{
+		"a hop that ends before its relay would start": {hopSeconds: "0.1", hopExit: "0"},
+		"a switch over the forwarded socket":           {hopSeconds: "0.1", hopExit: "0", farShell: "thirdbox:notes", wantFollow: "cd -- '/next/thirdbox:notes'\n"},
+		"a hop long enough for its relay":              {hopSeconds: "1.6", hopExit: "0", wantRelay: true},
+		"a hop whose connection failed":                {hopSeconds: "0.1", hopExit: "255", wantErr: true},
+	} {
+		t.Run(name, func(t *testing.T) {
+			log := filepath.Join(t.TempDir(), "ssh.log")
+			t.Setenv("FAKE_SSH_LOG", log)
+			t.Setenv("FAKE_SSH_HOP_SECONDS", tc.hopSeconds)
+			t.Setenv("FAKE_SSH_HOP_EXIT", tc.hopExit)
+			t.Setenv("CAMP_TEST_FAR_SHELL", tc.farShell)
+			hopTime, _ := time.ParseDuration(tc.hopSeconds + "s")
+
+			started := time.Now()
+			follow, err := runHop(context.Background(), line, around)
+			held := time.Since(started)
+
+			if (err != nil) != tc.wantErr || follow != tc.wantFollow {
+				far, _ := os.ReadFile(log + ".far")
+				t.Fatalf("follow-up %q err %v, want %q err=%v\n%s", follow, err, tc.wantFollow, tc.wantErr, far)
+			}
+			if held > hopTime+time.Second {
+				t.Fatalf("the opening shell was held %v for a %v hop", held, hopTime)
+			}
+			calls, _ := os.ReadFile(log)
+			if got := strings.Contains(string(calls), "relay"); got != tc.wantRelay {
+				t.Fatalf("relay started=%v, want %v (calls: %q)", got, tc.wantRelay, calls)
+			}
+			if strings.Contains(string(calls), "far-shell-failed") {
+				far, _ := os.ReadFile(log + ".far")
+				t.Fatalf("the far shell's switch failed:\n%s", far)
+			}
+			if tc.wantRelay {
+				argv, _ := os.ReadFile(log + ".relay-argv")
+				if !strings.HasPrefix(string(argv), "-T\n") || !strings.Contains(string(argv), "far.example\n") || !strings.Contains(string(argv), "hop-resume relay ") {
+					t.Fatalf("relay ssh call: %q", argv)
+				}
+				pid, _ := os.ReadFile(log + ".relay-pid")
+				var relayPID int
+				if _, err := fmt.Sscan(string(pid), &relayPID); err != nil {
+					t.Fatalf("relay pid %q: %v", pid, err)
+				}
+				if err := syscall.Kill(relayPID, 0); err == nil {
+					t.Fatal("the relay's ssh outlived the hop")
+				}
+			}
+			if left := leftovers(); len(left) != 0 {
+				t.Fatalf("the hop left sockets behind: %v", left)
+			}
+		})
 	}
 }

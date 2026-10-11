@@ -203,6 +203,7 @@ type hopRelayRig struct {
 	conns  chan net.Conn
 	hop    *hopSwitch
 	follow chan string
+	endHop context.CancelFunc
 }
 
 // pipeListener hands the relay connections the test dials.
@@ -233,8 +234,8 @@ func (l *pipeListener) Addr() net.Addr { return &net.UnixAddr{Name: "pipe", Net:
 
 func newHopRelayRig(t *testing.T, prepare func(context.Context, hopResumeRequest) (string, error)) *hopRelayRig {
 	t.Helper()
-	rig := &hopRelayRig{t: t, conns: make(chan net.Conn), hop: new(hopSwitch), follow: make(chan string, 1)}
 	ctx, cancel := context.WithCancel(context.Background())
+	rig := &hopRelayRig{t: t, conns: make(chan net.Conn), hop: new(hopSwitch), follow: make(chan string, 1), endHop: cancel}
 	toOpenerR, toOpenerW := io.Pipe()
 	toRelayR, toRelayW := io.Pipe()
 	ln := &pipeListener{conns: rig.conns, closed: make(chan struct{})}
@@ -285,24 +286,18 @@ func (r *hopRelayRig) freed() {
 	r.hop.release()
 }
 
-func (r *hopRelayRig) queued(want string) {
+// endsWith ends the hop and checks the follow-up line it leaves the opening
+// shell with; "" for none.
+func (r *hopRelayRig) endsWith(want string) {
 	r.t.Helper()
+	r.endHop()
 	select {
 	case line := <-r.follow:
 		if line != want {
-			r.t.Fatalf("follow-up %q, want %q", line, want)
+			r.t.Fatalf("the hop ended with follow-up %q, want %q", line, want)
 		}
 	case <-time.After(2 * time.Second):
-		r.t.Fatalf("no follow-up queued, want %q", want)
-	}
-}
-
-func (r *hopRelayRig) nothingQueued() {
-	r.t.Helper()
-	select {
-	case line := <-r.follow:
-		r.t.Fatalf("a switch the far shell never confirmed was queued: %q", line)
-	case <-time.After(100 * time.Millisecond):
+		r.t.Fatal("serving did not end with the hop")
 	}
 }
 
@@ -318,7 +313,13 @@ func TestHopRelayCarriesASwitchToTheOpeningShell(t *testing.T) {
 	if err := rig.send("thirdbox:notes"); err != nil {
 		t.Fatalf("switch over the relay: %v", err)
 	}
-	rig.queued("ssh thirdbox:notes")
+	// A shell that does not exit at once (running jobs, a nested shell) can
+	// ask again, and must be told where it stands.
+	err := rig.send("fourthbox:notes")
+	if err == nil || !strings.Contains(err.Error(), "already switching; exit this shell") {
+		t.Fatalf("after a confirmed switch the relay must keep answering: %v", err)
+	}
+	rig.endsWith("ssh thirdbox:notes")
 }
 
 func TestHopRelayRejectedRequestLeavesTheHopFree(t *testing.T) {
@@ -328,11 +329,10 @@ func TestHopRelayRejectedRequestLeavesTheHopFree(t *testing.T) {
 		t.Fatalf("the far shell must hear why its route was refused: %v", err)
 	}
 	rig.freed()
-	rig.nothingQueued()
 	if err := rig.send("thirdbox:notes"); err != nil {
 		t.Fatalf("a rejected request must not disable onward switching: %v", err)
 	}
-	rig.queued("ssh thirdbox:notes")
+	rig.endsWith("ssh thirdbox:notes")
 }
 
 func TestHopRelayHangUpWhilePreparingCancelsAndFrees(t *testing.T) {
@@ -364,10 +364,10 @@ func TestHopRelayHangUpWhilePreparingCancelsAndFrees(t *testing.T) {
 	if err := rig.send("thirdbox:notes"); err != nil {
 		t.Fatalf("the retry must be served at once: %v", err)
 	}
-	rig.queued("ssh thirdbox:notes")
+	rig.endsWith("ssh thirdbox:notes")
 }
 
-func TestHopRelayUnconfirmedAcknowledgementQueuesNothing(t *testing.T) {
+func TestHopRelayTakesBackASwitchTheFarShellNeverConfirmed(t *testing.T) {
 	rig := newHopRelayRig(t, prepareBySelector)
 	// The far shell reads its acknowledgement and dies before confirming.
 	conn := rig.dial()
@@ -381,11 +381,10 @@ func TestHopRelayUnconfirmedAcknowledgementQueuesNothing(t *testing.T) {
 	}
 	_ = conn.Close()
 	rig.freed()
-	rig.nothingQueued()
 	if err := rig.send("second:notes"); err != nil {
 		t.Fatalf("the retry must be accepted: %v", err)
 	}
-	rig.queued("ssh second:notes")
+	rig.endsWith("ssh second:notes")
 }
 
 func TestHopRelayAdmitsOneSwitchPerHop(t *testing.T) {
@@ -401,7 +400,7 @@ func TestHopRelayAdmitsOneSwitchPerHop(t *testing.T) {
 	if rig.hop.reserve() {
 		t.Fatal("a refused request released a reservation it did not hold")
 	}
-	rig.nothingQueued()
+	rig.endsWith("")
 }
 
 func TestHopRelayRefusesMalformedRequests(t *testing.T) {
@@ -471,25 +470,27 @@ func TestHopRelayIgnoresWhatIsNotAFrame(t *testing.T) {
 	case <-time.After(2 * time.Second):
 		t.Fatal("the request after the noise was never heard")
 	}
-	// A confirmation for another exchange must not commit this one.
-	if err := out.write(hopRelayFrame{Version: hopRelayVersion, Seq: 7, Confirm: true}); err != nil {
-		t.Fatal(err)
+	// A confirmation for another exchange must not make this one final: the
+	// far shell hanging up afterwards still takes the switch back.
+	for _, frame := range []hopRelayFrame{
+		{Version: hopRelayVersion, Seq: 7, Confirm: true},
+		{Version: hopRelayVersion, Seq: 1, Gone: true},
+	} {
+		if err := out.write(frame); err != nil {
+			t.Fatal(err)
+		}
 	}
+	_ = toOpenerW.Close()
 	select {
 	case line := <-follow:
-		t.Fatalf("a confirmation for another exchange queued %q", line)
-	case <-time.After(100 * time.Millisecond):
-	}
-	if err := out.write(hopRelayFrame{Version: hopRelayVersion, Seq: 1, Confirm: true}); err != nil {
-		t.Fatal(err)
-	}
-	select {
-	case line := <-follow:
-		if line != "ssh thirdbox:notes" {
-			t.Fatalf("follow-up %q", line)
+		if line != "" {
+			t.Fatalf("a confirmation for another exchange kept %q queued", line)
 		}
 	case <-time.After(2 * time.Second):
-		t.Fatal("the confirmed switch was not queued")
+		t.Fatal("serving did not end with the relay link")
+	}
+	if !hop.reserve() {
+		t.Fatal("the hop stayed reserved")
 	}
 }
 
@@ -589,39 +590,62 @@ func TestHopRelayEndsWithItsHopAfterALateAnswer(t *testing.T) {
 	}
 }
 
-// The far shell exits on its acknowledgement. Its confirmation travels a
-// separate way and may never arrive.
-func TestHopRelayAcknowledgedSwitchSurvivesALostLink(t *testing.T) {
-	toOpenerR, toOpenerW := io.Pipe()
-	toRelayR, toRelayW := io.Pipe()
-	defer func() { _ = toRelayW.Close() }()
-	hop := new(hopSwitch)
-	follow := make(chan string, 1)
-	go func() {
-		line, _ := serveHopRelay(context.Background(), toOpenerR, toRelayW, hop, prepareBySelector)
-		follow <- line
-	}()
-	request, err := json.Marshal(hopResumeEnvelope{Version: hopRelayVersion, Request: hopResumeRequest{Selector: "thirdbox:notes", Host: "c.example"}})
-	if err != nil {
-		t.Fatal(err)
-	}
-	out := hopLineWriter{w: toOpenerW}
-	if err := out.write(hopRelayFrame{Version: hopRelayVersion, Seq: 1, Request: request}); err != nil {
-		t.Fatal(err)
-	}
-	var answer hopRelayFrame
-	if err := json.NewDecoder(toRelayR).Decode(&answer); err != nil || answer.Response == nil {
-		t.Fatalf("acknowledgement %+v %v", answer, err)
-	}
-	// The relay link dies before any confirmation.
-	_ = toOpenerW.Close()
-	select {
-	case line := <-follow:
-		if line != "ssh thirdbox:notes" {
-			t.Fatalf("an acknowledged switch was lost with its relay link: %q", line)
-		}
-	case <-time.After(2 * time.Second):
-		t.Fatal("serving did not end with the relay link")
+// The relay link can die between an acknowledgement and its confirmation.
+// Whether the far shell acted on the acknowledgement shows in the hop itself:
+// it exits at once if it did.
+func TestHopRelayUnconfirmedSwitchCountsOnlyIfTheHopEnds(t *testing.T) {
+	grace := hopAckGrace
+	t.Cleanup(func() { hopAckGrace = grace })
+	hopAckGrace = 150 * time.Millisecond
+
+	for name, tc := range map[string]struct {
+		hopEnds bool
+		want    string
+	}{
+		"the far shell got its acknowledgement and exited": {true, "ssh thirdbox:notes"},
+		"the far shell never got it and stayed":            {false, ""},
+	} {
+		t.Run(name, func(t *testing.T) {
+			ctx, endHop := context.WithCancel(context.Background())
+			defer endHop()
+			toOpenerR, toOpenerW := io.Pipe()
+			toRelayR, toRelayW := io.Pipe()
+			defer func() { _ = toRelayW.Close() }()
+			hop := new(hopSwitch)
+			follow := make(chan string, 1)
+			go func() {
+				line, _ := serveHopRelay(ctx, toOpenerR, toRelayW, hop, prepareBySelector)
+				follow <- line
+			}()
+			request, err := json.Marshal(hopResumeEnvelope{Version: hopRelayVersion, Request: hopResumeRequest{Selector: "thirdbox:notes", Host: "c.example"}})
+			if err != nil {
+				t.Fatal(err)
+			}
+			out := hopLineWriter{w: toOpenerW}
+			if err := out.write(hopRelayFrame{Version: hopRelayVersion, Seq: 1, Request: request}); err != nil {
+				t.Fatal(err)
+			}
+			var answer hopRelayFrame
+			if err := json.NewDecoder(toRelayR).Decode(&answer); err != nil || answer.Response == nil {
+				t.Fatalf("acknowledgement %+v %v", answer, err)
+			}
+			// The relay link dies before any confirmation.
+			_ = toOpenerW.Close()
+			if tc.hopEnds {
+				endHop()
+			}
+			select {
+			case line := <-follow:
+				if line != tc.want {
+					t.Fatalf("follow-up %q, want %q", line, tc.want)
+				}
+			case <-time.After(2 * time.Second):
+				t.Fatal("serving did not settle")
+			}
+			if !tc.hopEnds && !hop.reserve() {
+				t.Fatal("a switch the far shell never acted on left the hop reserved")
+			}
+		})
 	}
 }
 
@@ -714,8 +738,11 @@ func TestHopTextFromTheOtherSideCannotDriveTheTerminal(t *testing.T) {
 func TestHopRelayIDIsOnlyEverAFileName(t *testing.T) {
 	t.Setenv("HOME", "/home/alex")
 	path, err := hopRelaySocketPath("0123456789abcdef")
-	if err != nil || path != "/home/alex/.obey/hop-resume/0123456789abcdef.sock" {
+	if err != nil || path != "/home/alex/.obey/hop-resume/"+hopHostTag()+"-0123456789abcdef.sock" {
 		t.Fatalf("relay socket path: %q %v", path, err)
+	}
+	if tag := hopHostTag(); len(tag) != 6 || strings.Trim(tag, "0123456789abcdef") != "" {
+		t.Fatalf("host tag %q must be a short fixed-width file-name part", tag)
 	}
 	for _, id := range []string{"", "../../tmp/evil", "0123456789abcde", "0123456789abcdef00", "0123456789abcdeg", "/tmp/0123456789abcdef"} {
 		if path, err := hopRelaySocketPath(id); err == nil {
@@ -728,5 +755,69 @@ func TestHopRelayIDIsOnlyEverAFileName(t *testing.T) {
 	}
 	if _, err := hopRelaySocketPath(id); err != nil {
 		t.Fatalf("a fresh id must be usable: %q %v", id, err)
+	}
+}
+
+func TestHopRelayAnswersARequestItCannotServe(t *testing.T) {
+	rig := newHopRelayRig(t, func(context.Context, hopResumeRequest) (string, error) {
+		t.Error("an unserviceable request reached preparation")
+		return "", nil
+	})
+	// A request longer than any frame can carry must fail at once, not leave
+	// the far shell waiting out its deadline.
+	conn := rig.dial()
+	_ = conn.SetDeadline(time.Now().Add(2 * time.Second))
+	long := `{"version":2,"request":{"selector":"` + strings.Repeat("x", 2*hopRelayMaxRequest) + `"}}`
+	go func() { _, _ = conn.Write([]byte(long + "\n")) }()
+	if _, err := conn.Read(make([]byte, 1)); err == nil || errors.Is(err, os.ErrDeadlineExceeded) {
+		t.Fatalf("an over-long request must be turned away at once: %v", err)
+	}
+	_ = conn.Close()
+}
+
+func TestHopRelayOpenerAnswersAnotherVersion(t *testing.T) {
+	toOpenerR, toOpenerW := io.Pipe()
+	toRelayR, toRelayW := io.Pipe()
+	defer func() { _ = toOpenerW.Close(); _ = toRelayW.Close() }()
+	hop := new(hopSwitch)
+	go func() { _, _ = serveHopRelay(context.Background(), toOpenerR, toRelayW, hop, prepareBySelector) }()
+	out := hopLineWriter{w: toOpenerW}
+	if err := out.write(hopRelayFrame{Version: hopRelayVersion + 1, Seq: 4, Request: json.RawMessage(`{"version":3,"request":{"selector":"thirdbox:notes"}}`)}); err != nil {
+		t.Fatal(err)
+	}
+	answered := make(chan hopRelayFrame, 1)
+	go func() {
+		var frame hopRelayFrame
+		if json.NewDecoder(toRelayR).Decode(&frame) == nil {
+			answered <- frame
+		}
+	}()
+	select {
+	case frame := <-answered:
+		var response hopResumeResponse
+		if frame.Seq != 4 || json.Unmarshal(frame.Response, &response) != nil || response.Accepted || !strings.Contains(response.Error, "unsupported request version") {
+			t.Fatalf("answer %+v %+v", frame, response)
+		}
+	case <-time.After(2 * time.Second):
+		t.Fatal("a request in another version was dropped, leaving the far shell to wait out its deadline")
+	}
+	if !hop.reserve() {
+		t.Fatal("an unsupported request reserved the hop")
+	}
+}
+
+func TestHopResumeRefusesRequestsThatCarryControlCharacters(t *testing.T) {
+	for name, request := range map[string]hopResumeRequest{
+		"in the org":      {Selector: "thirdbox:notes", Host: "c.example", Scope: cmdutil.CampaignScope{Org: "work\x1b[2J"}},
+		"in the status":   {Selector: "thirdbox:notes", Host: "c.example", Scope: cmdutil.CampaignScope{Status: "act\x07ive"}},
+		"in the selector": {Selector: "thirdbox:no\x1btes", Host: "c.example"},
+		"in the host":     {Selector: "thirdbox:notes", Host: "c.exa\u009bmple"},
+	} {
+		if _, err := prepareHopResume(context.Background(), request); err == nil || !strings.Contains(err.Error(), "control characters") {
+			t.Errorf("%s: the request must be refused before it reaches this shell's own messages: %v", name, err)
+		}
+	}
+	if err := printableHopRequest(hopResumeRequest{Selector: "thirdbox:Festival Method Kit", Host: "c.example", Scope: cmdutil.CampaignScope{Org: "r&d"}}); err != nil {
+		t.Fatalf("an ordinary request must pass: %v", err)
 	}
 }

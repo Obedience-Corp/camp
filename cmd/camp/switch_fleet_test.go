@@ -91,7 +91,7 @@ func TestHopLineForwardsTheSocketAndNamesBothRoutes(t *testing.T) {
 		t.Fatalf("remote command dropped the origin export: %s", remoteCmd)
 	}
 
-	relay := hopRelayArgv(hop, "0123456789abcdef")
+	relay := hopRelayArgv(hop, "0123456789abcdef", "/tmp/camp-hr-r.sock")
 	if relay[0] != "-T" {
 		t.Fatalf("the relay's ssh must refuse a pty, or a forced-tty ssh config turns its stream into a terminal: %q", relay)
 	}
@@ -108,8 +108,9 @@ func TestHopLineForwardsTheSocketAndNamesBothRoutes(t *testing.T) {
 	if !slices.ContainsFunc(relay, func(arg string) bool { return strings.HasPrefix(arg, "ControlPath=") }) {
 		t.Fatalf("the relay should ride the hop's ControlMaster when one is up: %q", relay)
 	}
-	if relay[len(relay)-2] != "lance@devbox.ts.net" || !strings.Contains(relay[len(relay)-1], "hop-resume relay 0123456789abcdef") {
-		t.Fatalf("the relay must run the far machine's camp on the hop's target: %q", relay[len(relay)-2:])
+	farCommand := relay[len(relay)-1]
+	if relay[len(relay)-2] != "lance@devbox.ts.net" || !strings.Contains(farCommand, " hop-resume relay 0123456789abcdef ") || !strings.Contains(farCommand, "/tmp/camp-hr-r.sock") {
+		t.Fatalf("the relay must run the far machine's camp on the hop's target and be told where the forwarded socket is: %q", relay[len(relay)-2:])
 	}
 	if slices.Contains(relay, "-t") || strings.Contains(strings.Join(relay, "\n"), "exec $SHELL -l") {
 		t.Fatalf("the relay is not an interactive session: %q", relay)
