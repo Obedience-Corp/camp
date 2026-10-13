@@ -36,7 +36,10 @@ func lock(ctx context.Context, path string) (func(), error) {
 			&ol,
 		)
 		if err == nil {
-			return func() { _ = f.Close() }, nil
+			return func() {
+				_ = windows.UnlockFileEx(handle, 0, 1, 0, &ol)
+				_ = f.Close()
+			}, nil
 		}
 		if err != syscall.Errno(windows.ERROR_LOCK_VIOLATION) {
 			_ = f.Close()
