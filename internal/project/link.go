@@ -18,6 +18,8 @@ import (
 // LinkOptions configures linking an existing local directory into a campaign.
 type LinkOptions struct {
 	Name string
+	// UniqueName chooses an available suffix when Name is occupied.
+	UniqueName bool
 }
 
 // LinkResult contains information about the linked project.
@@ -121,6 +123,12 @@ func PlanLinked(ctx context.Context, campaignRoot, localPath string, opts LinkOp
 	if err := ValidateProjectName(name); err != nil {
 		return nil, err
 	}
+	if opts.UniqueName {
+		name, err = AvailableLinkName(normalizedCampaignRoot, name)
+		if err != nil {
+			return nil, err
+		}
+	}
 
 	destPath := filepath.Join("projects", name)
 	fullPath := filepath.Join(campaignRoot, destPath)
@@ -192,15 +200,31 @@ func ApplyLinked(ctx context.Context, plan *LinkPlan) (*LinkResult, error) {
 	if plan == nil || strings.TrimSpace(plan.Root) == "" || strings.TrimSpace(plan.Source) == "" || strings.TrimSpace(plan.Name) == "" {
 		return nil, camperrors.Wrap(camperrors.ErrInvalidInput, "link plan is required")
 	}
-	fresh, err := PlanLinked(ctx, plan.Root, plan.Source, LinkOptions{Name: plan.Name})
-	if err != nil {
-		return nil, err
-	}
-	return writeLinked(ctx, fresh)
+	return AddLinked(ctx, plan.Root, plan.Source, LinkOptions{Name: plan.Name})
 }
 
 // AddLinked links an existing local directory into the campaign via symlink.
 func AddLinked(ctx context.Context, campaignRoot, localPath string, opts LinkOptions) (*LinkResult, error) {
+	// Validate the camp before creating its lock directory. Serialize name
+	// selection and marker/symlink writes so concurrent callers cannot claim
+	// the same name or roll back another caller's successful marker write.
+	root, err := normalizeCampaignRoot(campaignRoot)
+	if err != nil {
+		return nil, camperrors.Wrap(err, "resolve camp root")
+	}
+	if _, err := config.ReadCampaignConfig(ctx, root); err != nil {
+		return nil, camperrors.Wrap(err, "load camp config")
+	}
+	lockDir := filepath.Join(root, ".campaign", "cache")
+	if err := os.MkdirAll(lockDir, 0o755); err != nil {
+		return nil, camperrors.Wrap(err, "create project link lock directory")
+	}
+	release, err := fsutil.AcquireFileLock(ctx, filepath.Join(lockDir, "project-link.lock"))
+	if err != nil {
+		return nil, camperrors.Wrap(err, "lock project links")
+	}
+	defer release()
+
 	plan, err := PlanLinked(ctx, campaignRoot, localPath, opts)
 	if err != nil {
 		return nil, err

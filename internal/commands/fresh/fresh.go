@@ -210,9 +210,9 @@ Examples:
 
 			var target freshTarget
 			if autoLink != nil {
-				// previewOnly: the repository is not linked and --dry-run must
-				// leave it that way, so the cycle below runs without a camp.
-				previewOnly, err := runAutoLink(ctx, autoLink, freshDryRun, cmd.ErrOrStderr())
+				// Only a preview whose camp does not exist runs without camp
+				// reports. An existing target camp is safe to read without linking.
+				previewOnly, err := runAutoLink(ctx, autoLink, flags, cmd.ErrOrStderr())
 				if err != nil {
 					return err
 				}
@@ -267,7 +267,7 @@ Examples:
 			// Campaign-root workitem sweep runs once, after the project's
 			// git-hygiene cycle, never inside executeFresh. The closing line
 			// follows it so "Fresh!" is the last thing on the screen. A preview
-			// of an unlinked repository has no camp to sweep.
+			// that would create a new camp has no camp to sweep.
 			if campRoot != "" {
 				runCampaignWorkitemSweep(ctx, cfg, freshDryRun)
 			}

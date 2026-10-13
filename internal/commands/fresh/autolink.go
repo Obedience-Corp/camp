@@ -332,11 +332,9 @@ func (p *autoLinkPlan) apply(ctx context.Context, errOut io.Writer) (string, err
 		}
 	}
 
-	name, err := project.AvailableLinkName(p.campRoot, filepath.Base(p.repo.main))
-	if err != nil {
-		return "", linkNameError(err, p.repo.main)
-	}
-	result, err := project.AddLinked(ctx, p.campRoot, p.repo.main, project.LinkOptions{Name: name})
+	result, err := project.AddLinked(ctx, p.campRoot, p.repo.main, project.LinkOptions{
+		Name: filepath.Base(p.repo.main), UniqueName: true,
+	})
 	if err != nil {
 		// The camp already has a shortcut to this checkout: a concurrent run
 		// linked it, or its .camp attachment marker was removed. It is linked
@@ -366,20 +364,24 @@ func (p *autoLinkPlan) apply(ctx context.Context, errOut io.Writer) (string, err
 }
 
 // runAutoLink carries out a plan before the fresh cycle starts. previewOnly is
-// true when --dry-run left the repository unlinked, in which case the cycle
-// runs without a camp.
-func runAutoLink(ctx context.Context, plan *autoLinkPlan, dryRun bool, errOut io.Writer) (previewOnly bool, err error) {
+// true when --dry-run would create a camp that does not exist yet. Existing
+// camps remain available for read-only workitem reports during previews.
+func runAutoLink(ctx context.Context, plan *autoLinkPlan, flags freshFlagSet, errOut io.Writer) (previewOnly bool, err error) {
 	if plan.linked {
 		adoptCampRoot(ctx, plan.campRoot)
 		return false, nil
 	}
-	if dryRun {
+	if flags.dryRun {
 		fmt.Printf("  %s\n\n", plan.previewLine())
-		return true, nil
+		if plan.createStarter {
+			return true, nil
+		}
+		adoptCampRoot(ctx, plan.campRoot)
+		return false, nil
 	}
 	// Fail on what the cycle would refuse anyway before creating a camp or
 	// writing a marker, so a run that cannot proceed leaves nothing behind.
-	if err := preflightAutoLink(ctx, plan.repo.top); err != nil {
+	if err := preflightAutoLink(ctx, plan.repo.top, flags); err != nil {
 		return false, err
 	}
 	notice, err := plan.apply(ctx, errOut)
@@ -393,13 +395,32 @@ func runAutoLink(ctx context.Context, plan *autoLinkPlan, dryRun bool, errOut io
 	return false, nil
 }
 
-// preflightAutoLink runs the read-only checks the fresh cycle would fail on.
-func preflightAutoLink(ctx context.Context, path string) error {
+// preflightAutoLink checks local refusal conditions before writing camp state.
+// DefaultBranch may refresh Git's cached origin/HEAD, as in the fresh cycle.
+func preflightAutoLink(ctx context.Context, path string, flags freshFlagSet) error {
+	if flags.cleanupStack {
+		if err := validateStackCleanupTarget(ctx, path, flags.branch, flags.allowDefaultTarget); err != nil {
+			return err
+		}
+	}
 	if err := freshSafetyChecks(ctx, path, false); err != nil {
 		return err
 	}
 	if _, err := git.Output(ctx, path, "remote", "get-url", "origin"); err != nil {
+		if ctx.Err() != nil {
+			return ctx.Err()
+		}
 		return camperrors.New("this repository has no 'origin' remote; camp fresh syncs to origin")
+	}
+	defaultBranch := git.DefaultBranch(ctx, path)
+	if err := ctx.Err(); err != nil {
+		return err
+	}
+	if defaultBranch == "" {
+		return camperrors.Newf("could not determine default branch for %s", filepath.Base(path))
+	}
+	if _, err := resolveFreshSyncState(ctx, path, defaultBranch); err != nil {
+		return camperrors.Wrap(err, "prepare fresh sync state")
 	}
 	return nil
 }

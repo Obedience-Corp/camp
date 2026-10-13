@@ -287,13 +287,60 @@ func TestFreshAutoLink_RefusedRunLinksNothing(t *testing.T) {
 	f.tc.Shell(t, "test ! -e "+repo+"/.camp && test ! -e "+f.starterCamp())
 }
 
+func TestFreshAutoLink_LocalRefusalsLeaveStarterUntouched(t *testing.T) {
+	for _, kind := range []string{"missing-stack", "default-stack", "no-default"} {
+		t.Run(kind, func(t *testing.T) {
+			f := newAutoLinkFixture(t, kind)
+			repo := f.repo(t, "w", "myapp")
+			args := []string{"fresh", "--cleanup-stack", "--branch", "missing"}
+			want := "does not exist"
+			switch kind {
+			case "default-stack":
+				args = []string{"fresh", "--cleanup-stack", "--branch", "main"}
+				want = "refuses the default branch"
+			case "no-default":
+				f.tc.Shell(t, fmt.Sprintf(`mkdir -p %[1]s/empty
+git init -q --bare %[1]s/empty.git
+git -C %[1]s/empty init -q
+git -C %[1]s/empty remote add origin %[1]s/empty.git`, repo))
+				repo += "/empty"
+				args = []string{"fresh"}
+				want = "could not determine default branch"
+			}
+			out, code := f.camp(t, repo, args...)
+			require.NotEqual(t, 0, code, out)
+			assert.Contains(t, out, want)
+			assert.Equal(t, 0, f.campCount(t))
+			f.tc.Shell(t, fmt.Sprintf(`test ! -e %[1]s/.camp && test ! -e %[2]s &&
+test ! -e %[3]s/config/obey/campaign/starter.json`, repo, f.starterCamp(), f.home))
+		})
+	}
+}
+
+func TestFreshAutoLink_DryRunReportsExistingCampWorkitems(t *testing.T) {
+	f := newAutoLinkFixture(t, "preview-sweep")
+	out, code := f.camp(t, "/tmp", "setup", "--json")
+	require.Equal(t, 0, code, out)
+	repo := f.repo(t, "w", "myapp")
+	addFreshEligibleWorkitem(t, f.tc, f.starterCamp(), "finished")
+	setCompletedRuns(t, f.tc, f.starterCamp(), "sweep")
+	out, code = f.camp(t, repo, "fresh", "--dry-run")
+	require.Equal(t, 0, code, out)
+	assert.Contains(t, out, "completed runs; run camp workitem sweep")
+	assert.Contains(t, out, "finished")
+	assert.Equal(t, 0, countSweepEvidence(t, f.tc, f.starterCamp()))
+	f.tc.Shell(t, "test -d "+f.starterCamp()+"/workflow/chore/finished")
+	assert.Empty(t, f.projectNames(t, f.starterCamp()))
+	f.assertUntouched(t, repo)
+}
+
 // Two first runs at the same moment, as when several agents start at once,
 // must both succeed and share one starter camp instead of the slower one
 // failing because the faster one registered a camp first.
-func TestFreshAutoLink_ConcurrentFirstRunsShareTheStarter(t *testing.T) {
+func TestFreshAutoLink_ConcurrentFirstRunsShareTheStarterAndSuffixNames(t *testing.T) {
 	f := newAutoLinkFixture(t, "race")
-	first := f.repo(t, "one", "api")
-	second := f.repo(t, "two", "web")
+	first := f.repo(t, "one", "app")
+	second := f.repo(t, "two", "app")
 	logs := "/test/autolink-race"
 
 	f.tc.Shell(t, fmt.Sprintf(`
@@ -310,7 +357,7 @@ wait`, first, second, f.env, logs))
 		assert.Contains(t, log, "camp project unlink", "%s run reports its link", run)
 	}
 	assert.Equal(t, 1, f.campCount(t))
-	assert.Equal(t, []string{"api", "web"}, f.projectNames(t, f.starterCamp()))
+	assert.Equal(t, []string{"app", "app-2"}, f.projectNames(t, f.starterCamp()))
 	f.assertFreshened(t, first)
 	f.assertFreshened(t, second)
 }
