@@ -124,7 +124,11 @@ func PlanLinked(ctx context.Context, campaignRoot, localPath string, opts LinkOp
 
 	destPath := filepath.Join("projects", name)
 	fullPath := filepath.Join(campaignRoot, destPath)
-	if err := pathutil.ValidateBoundary(campaignRoot, fullPath); err != nil {
+	// Validate where the shortcut will be created, not where an existing
+	// shortcut of the same name points. A linked project is a symlink out of
+	// the camp by design, so following one here reported a boundary violation
+	// for what is really a name conflict; the checks below name it correctly.
+	if err := pathutil.ValidateBoundary(campaignRoot, filepath.Dir(fullPath)); err != nil {
 		return nil, camperrors.Wrap(err, "project path boundary violation")
 	}
 	if err := ensureLinkedTargetUnique(normalizedCampaignRoot, absLocal, fullPath, name); err != nil {
@@ -149,6 +153,35 @@ func PlanLinked(ctx context.Context, campaignRoot, localPath string, opts LinkOp
 		Root:         campaignRoot,
 	}, nil
 }
+
+// AvailableLinkName returns the first project name derived from base that is
+// free under campaignRoot/projects: base itself, then base-2, base-3, and so
+// on. Callers that link on the user's behalf use it so two folders with the
+// same name both get a shortcut instead of the second one failing.
+func AvailableLinkName(campaignRoot, base string) (string, error) {
+	if err := ValidateProjectName(base); err != nil {
+		return "", err
+	}
+	projectsDir := filepath.Join(campaignRoot, "projects")
+	for suffix := 1; suffix <= maxLinkNameSuffix; suffix++ {
+		candidate := base
+		if suffix > 1 {
+			candidate = fmt.Sprintf("%s-%d", base, suffix)
+		}
+		_, err := os.Lstat(filepath.Join(projectsDir, candidate))
+		if os.IsNotExist(err) {
+			return candidate, nil
+		}
+		if err != nil {
+			return "", camperrors.Wrapf(err, "check project name %q", candidate)
+		}
+	}
+	return "", camperrors.Wrapf(camperrors.ErrAlreadyExists,
+		"no free project name for %q after %d attempts", base, maxLinkNameSuffix)
+}
+
+// maxLinkNameSuffix bounds AvailableLinkName's search for a free name.
+const maxLinkNameSuffix = 1000
 
 // ApplyLinked writes a previously checked plan. The check runs again at write
 // time so a stale review cannot link a folder that is no longer eligible.

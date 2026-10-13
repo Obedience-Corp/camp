@@ -41,6 +41,8 @@ func NewFreshCommand() *cobra.Command {
 		freshNoDrain            bool
 		freshCleanupStack       bool
 		freshAllowDefaultTarget bool
+		freshNoLink             bool
+		freshCampaign           string
 	)
 
 	freshCmd := &cobra.Command{
@@ -55,6 +57,24 @@ branches, and optionally create a new working branch.
 Auto-detects the current project from your working directory, or accepts a
 single project name. Use --list to cycle a specific set of projects in one
 run, or 'camp fresh all' to cycle every project submodule in the camp.
+
+OUTSIDE A CAMP
+
+Run with no project name inside a git repository that is not part of a camp,
+and camp fresh links that repository into a camp as a project, says so in one
+line, and runs the normal cycle. The repository stays where it is: the link is
+a shortcut at projects/<name> in the camp and a .camp attachment marker in the
+repository, kept out of git status. 'camp project unlink' reverses it.
+
+The repository is linked into the camp named festival. With no registered
+camps, that starter camp is created first, the way 'camp setup' creates it.
+With registered camps and none named festival, camp fresh stops and asks for
+--campaign rather than guessing. From a secondary git worktree, the main
+checkout is the project that gets linked.
+
+--dry-run never links and never creates a camp: it prints what would be
+linked, then the plan. --no-link turns linking off, so an unlinked repository
+is an error.
 
 Without configuration, syncs to the default branch and prunes.
 Configure .campaign/settings/fresh.yaml to set a default working branch, or
@@ -95,6 +115,8 @@ Examples:
   camp fresh --no-prune                 # Sync without pruning
   camp fresh --no-follow-up             # Sync without running configured follow-ups
   camp fresh --dry-run                  # Preview what would happen (follow-ups listed, not run)
+  camp fresh --campaign work            # In an unlinked repository: link it into the camp named work, then sync
+  camp fresh --no-link                  # In an unlinked repository: fail instead of linking
 
   camp fresh --branch feat/aggregate-CW0003 --cleanup-stack
                                         # Switch to an existing aggregate branch and
@@ -112,12 +134,26 @@ Examples:
 		RunE: func(cmd *cobra.Command, args []string) error {
 			ctx := cmd.Context()
 
+			// Outside a camp, a git repository is linked into one instead of
+			// failing. Planning writes nothing, so every flag check below still
+			// runs before the link is made.
+			var autoLink *autoLinkPlan
 			campRoot, err := campaign.DetectCached(ctx)
 			if err != nil {
-				return camperrors.Wrap(err, "not in a camp")
+				autoLink, err = planAutoLink(ctx, err, autoLinkRequest{
+					explicitTarget: len(args) > 0 || freshProjectFlag != "" || len(cleanProjectList(freshList)) > 0,
+					noLink:         freshNoLink,
+					campaign:       freshCampaign,
+					errOut:         cmd.ErrOrStderr(),
+				})
+				if err != nil {
+					return err
+				}
+				campRoot = autoLink.campRoot
 			}
 
-			// Load fresh config
+			// Load fresh config. A starter camp that does not exist yet has no
+			// fresh.yaml, which loads as the defaults.
 			cfg, err := config.LoadFreshConfig(ctx, campRoot)
 			if err != nil {
 				return camperrors.Wrap(err, "loading fresh config")
@@ -172,26 +208,47 @@ Examples:
 				projectName = args[0]
 			}
 
-			result, err := project.Resolve(ctx, campRoot, projectName)
-			if err != nil {
-				var notFound *project.ProjectNotFoundError
-				if errors.As(err, &notFound) {
-					fmt.Println(ui.Dim("\n" + project.FormatProjectList(notFound.AvailableProjects())))
+			var target freshTarget
+			if autoLink != nil {
+				// previewOnly: the repository is not linked and --dry-run must
+				// leave it that way, so the cycle below runs without a camp.
+				previewOnly, err := runAutoLink(ctx, autoLink, freshDryRun, cmd.ErrOrStderr())
+				if err != nil {
+					return err
 				}
-				return err
+				if previewOnly {
+					campRoot = ""
+				} else {
+					campRoot = autoLink.campRoot
+					// The camp may have been created just now; read its settings.
+					if cfg, err = config.LoadFreshConfig(ctx, campRoot); err != nil {
+						return camperrors.Wrap(err, "loading fresh config")
+					}
+				}
+				target = freshTarget{name: autoLink.name, path: autoLink.repo.top}
+			} else {
+				result, err := project.Resolve(ctx, campRoot, projectName)
+				if err != nil {
+					var notFound *project.ProjectNotFoundError
+					if errors.As(err, &notFound) {
+						fmt.Println(ui.Dim("\n" + project.FormatProjectList(notFound.AvailableProjects())))
+					}
+					return err
+				}
+				target = freshTarget{name: result.Name, path: result.Path}
 			}
-			if err := drainFreshTargets(ctx, []freshTarget{{name: result.Name, path: result.Path}}, freshNoDrain, freshDryRun); err != nil {
+			if err := drainFreshTargets(ctx, []freshTarget{target}, freshNoDrain, freshDryRun); err != nil {
 				return err
 			}
 
 			// Resolve settings
-			branch := cfg.ResolveFreshBranch(freshBranch, freshNoBranch, result.Name)
+			branch := cfg.ResolveFreshBranch(freshBranch, freshNoBranch, target.name)
 			doPrune := !freshNoPrune && cfg.ResolveFreshPrune()
-			doPush := !freshNoPush && cfg.ResolveFreshPushUpstream(result.Name)
-			followUps := resolveFreshFollowUps(cfg, result.Name, freshNoFollowUp)
+			doPush := !freshNoPush && cfg.ResolveFreshPushUpstream(target.name)
+			followUps := resolveFreshFollowUps(cfg, target.name, freshNoFollowUp)
 
 			var summary string
-			if err := executeFresh(ctx, result.Name, result.Path, freshOptions{
+			if err := executeFresh(ctx, target.name, target.path, freshOptions{
 				branch:             branch,
 				prune:              doPrune,
 				pruneRemote:        cfg.ResolveFreshPruneRemote(),
@@ -209,8 +266,11 @@ Examples:
 
 			// Campaign-root workitem sweep runs once, after the project's
 			// git-hygiene cycle, never inside executeFresh. The closing line
-			// follows it so "Fresh!" is the last thing on the screen.
-			runCampaignWorkitemSweep(ctx, cfg, freshDryRun)
+			// follows it so "Fresh!" is the last thing on the screen. A preview
+			// of an unlinked repository has no camp to sweep.
+			if campRoot != "" {
+				runCampaignWorkitemSweep(ctx, cfg, freshDryRun)
+			}
 			printFreshSummary(summary)
 			return nil
 		},
@@ -231,6 +291,8 @@ Examples:
 	freshCmd.RegisterFlagCompletionFunc("project", completeProjectName)
 	freshCmd.Flags().StringSliceVar(&freshList, "list", nil, "Comma-separated set of projects to cycle in one run")
 	freshCmd.Flags().BoolVar(&freshNoDrain, "no-drain", false, "Do not wait for camp's queued commits first")
+	freshCmd.Flags().BoolVar(&freshNoLink, "no-link", false, "Never link an unlinked repository into a camp; fail with 'not in a camp' instead")
+	freshCmd.Flags().StringVarP(&freshCampaign, "campaign", "c", "", "Camp to link an unlinked repository into, by name or ID (ignored when already linked or inside a camp)")
 	_ = freshCmd.RegisterFlagCompletionFunc("list", completeProjectName)
 	freshCmd.MarkFlagsMutuallyExclusive("project", "list")
 

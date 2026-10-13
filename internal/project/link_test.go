@@ -3,8 +3,10 @@ package project
 import (
 	"bytes"
 	"context"
+	"errors"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 
 	"github.com/Obedience-Corp/camp/internal/campaign"
@@ -138,5 +140,75 @@ func TestAddLinked_RestoresExistingMarkerWhenSymlinkFails(t *testing.T) {
 	}
 	if !bytes.Equal(gotMarker, wantMarker) {
 		t.Fatalf("marker changed after symlink failure:\ngot:\n%s\nwant:\n%s", gotMarker, wantMarker)
+	}
+}
+
+// A linked project is a symlink that leaves the camp by design. A second link
+// under the same name must report the name conflict, not follow that symlink
+// and call it a boundary violation.
+func TestPlanLinked_NameTakenByAnotherLinkReportsConflict(t *testing.T) {
+	root := t.TempDir()
+	root, _ = filepath.EvalSymlinks(root)
+	writeTestCampaignConfig(t, root)
+
+	first := filepath.Join(t.TempDir(), "app")
+	second := filepath.Join(t.TempDir(), "app")
+	for _, dir := range []string{first, second} {
+		if err := os.MkdirAll(dir, 0o755); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if _, err := AddLinked(t.Context(), root, first, LinkOptions{}); err != nil {
+		t.Fatalf("AddLinked(first) error = %v", err)
+	}
+
+	_, err := PlanLinked(t.Context(), root, second, LinkOptions{})
+	var exists *ErrProjectExists
+	if !errors.As(err, &exists) {
+		t.Fatalf("PlanLinked(second) error = %v; want ErrProjectExists", err)
+	}
+	if exists.Name != "app" {
+		t.Fatalf("ErrProjectExists.Name = %q; want app", exists.Name)
+	}
+	if strings.Contains(err.Error(), "boundary") {
+		t.Fatalf("PlanLinked(second) error = %q; a name conflict must not read as a boundary violation", err)
+	}
+	if _, statErr := os.Lstat(campaign.MarkerPath(second)); !os.IsNotExist(statErr) {
+		t.Fatalf("a rejected plan wrote a .camp marker: %v", statErr)
+	}
+}
+
+func TestAvailableLinkName(t *testing.T) {
+	root := t.TempDir()
+	root, _ = filepath.EvalSymlinks(root)
+	writeTestCampaignConfig(t, root)
+
+	got, err := AvailableLinkName(root, "app")
+	if err != nil || got != "app" {
+		t.Fatalf("AvailableLinkName() with nothing linked = %q, %v; want app", got, err)
+	}
+
+	link := func(name string) {
+		t.Helper()
+		source := filepath.Join(t.TempDir(), "app")
+		if err := os.MkdirAll(source, 0o755); err != nil {
+			t.Fatal(err)
+		}
+		if _, err := AddLinked(t.Context(), root, source, LinkOptions{Name: name}); err != nil {
+			t.Fatalf("AddLinked(%s) error = %v", name, err)
+		}
+	}
+
+	link("app")
+	if got, err := AvailableLinkName(root, "app"); err != nil || got != "app-2" {
+		t.Fatalf("AvailableLinkName() with app taken = %q, %v; want app-2", got, err)
+	}
+	link("app-2")
+	if got, err := AvailableLinkName(root, "app"); err != nil || got != "app-3" {
+		t.Fatalf("AvailableLinkName() with app and app-2 taken = %q, %v; want app-3", got, err)
+	}
+
+	if _, err := AvailableLinkName(root, "not a name"); !errors.Is(err, ErrInvalidProjectName) {
+		t.Fatalf("AvailableLinkName() with an invalid base error = %v; want ErrInvalidProjectName", err)
 	}
 }

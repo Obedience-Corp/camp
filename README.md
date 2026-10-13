@@ -358,6 +358,12 @@ Use `camp refs-sync` to record project revision pointers in the camp. From a pro
 skip them. Workitem completion handling is configured separately in
 `.campaign/settings/fresh.yaml`.
 
+`camp fresh` also works in a git repository that is not part of a camp yet. It
+links the repository into your `festival` camp as a project (creating that
+starter camp if you have no camps), says so in one line, and runs the cycle.
+`camp project unlink` reverses the link. `--dry-run` previews without linking,
+`--campaign <name>` picks the camp, and `--no-link` turns linking off.
+
 ### Camp Operations
 
 ```bash

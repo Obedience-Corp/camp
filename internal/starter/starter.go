@@ -179,6 +179,55 @@ func Ensure(ctx context.Context, initialize Initialize) (Result, error) {
 	return result, save(ctx, statePath, s)
 }
 
+// Pending reports where Ensure would publish the starter camp, without
+// creating, staging, or registering anything. ok is false when Ensure would
+// not create a starter: setup already completed, or a camp is registered.
+// Previews use it to describe a first run without performing one.
+func Pending(ctx context.Context) (path string, ok bool, err error) {
+	if err := ctx.Err(); err != nil {
+		return "", false, err
+	}
+	dir, err := config.ConfigDir()
+	if err != nil {
+		return "", false, err
+	}
+	s := state{Version: schemaVersion}
+	data, err := os.ReadFile(filepath.Join(dir, "starter.json"))
+	if err == nil {
+		s = state{}
+		if err := json.Unmarshal(data, &s); err != nil {
+			return "", false, camperrors.Wrap(err, "read starter state")
+		}
+		if err := validateState(s); err != nil {
+			return "", false, err
+		}
+	} else if !os.IsNotExist(err) {
+		return "", false, camperrors.Wrap(err, "read starter state")
+	}
+	if s.Completed {
+		return "", false, nil
+	}
+	reg, err := config.LoadRegistry(ctx)
+	if err != nil {
+		return "", false, err
+	}
+	if len(reg.Campaigns) > 0 {
+		return "", false, nil
+	}
+	if s.Path != "" {
+		return s.Path, true, nil
+	}
+	cfg, err := config.LoadGlobalConfig(ctx)
+	if err != nil {
+		return "", false, err
+	}
+	base, err := cfg.ResolvedCampaignsDir(ctx)
+	if err != nil {
+		return "", false, err
+	}
+	return filepath.Join(base, Name), true, nil
+}
+
 func register(ctx context.Context, statePath string, s state, cfg *config.CampaignConfig, action string) (Result, error) {
 	result := Result{SchemaVersion: schemaVersion, Action: action, Path: s.Path}
 	err := config.UpdateRegistry(ctx, func(reg *config.Registry) error {

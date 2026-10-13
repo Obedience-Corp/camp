@@ -80,3 +80,50 @@ func TestInterruptedScaffoldKeepsJournalAndRetries(t *testing.T) {
 		t.Fatalf("registry: %+v %v", reg, err)
 	}
 }
+
+func TestPendingReportsWithoutCreating(t *testing.T) {
+	dir := t.TempDir()
+	t.Setenv("XDG_CONFIG_HOME", filepath.Join(dir, "config"))
+	t.Setenv("CAMP_REGISTRY_PATH", filepath.Join(dir, "registry.json"))
+	cfg := config.DefaultGlobalConfig()
+	cfg.CampaignsDir = filepath.Join(dir, "camps")
+	if err := config.SaveGlobalConfig(t.Context(), &cfg); err != nil {
+		t.Fatal(err)
+	}
+
+	path, ok, err := Pending(t.Context())
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := filepath.Join(dir, "camps", Name)
+	if !ok || path != want {
+		t.Fatalf("Pending() = %q, %v; want %q, true", path, ok, want)
+	}
+	if _, err := os.Lstat(filepath.Join(dir, "camps")); !os.IsNotExist(err) {
+		t.Fatalf("Pending created the camps directory: %v", err)
+	}
+	stateDir, err := config.ConfigDir()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := os.Lstat(filepath.Join(stateDir, "starter.json")); !os.IsNotExist(err) {
+		t.Fatalf("Pending wrote starter state: %v", err)
+	}
+
+	result, err := Ensure(t.Context(), func(ctx context.Context, path string, _ bool) error {
+		c := config.DefaultCampaignConfig(Name)
+		c.Type = config.CampaignTypePersonal
+		c.ID = "starter-pending-id"
+		return config.SaveCampaignConfig(ctx, path, &c)
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if result.Action != "created" || result.Path != want {
+		t.Fatalf("Ensure() = %+v; want created at the path Pending reported", result)
+	}
+
+	if _, ok, err := Pending(t.Context()); err != nil || ok {
+		t.Fatalf("Pending() after setup = %v, %v; want false, nil", ok, err)
+	}
+}
