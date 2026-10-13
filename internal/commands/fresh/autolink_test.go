@@ -1,6 +1,7 @@
 package fresh
 
 import (
+	"context"
 	"errors"
 	"strings"
 	"testing"
@@ -12,6 +13,15 @@ import (
 
 func camp(id, name string) config.RegisteredCampaign {
 	return config.RegisteredCampaign{ID: id, Name: name, Path: "/camps/" + name + "-" + id}
+}
+
+func TestPlanAutoLink_CancelledContext(t *testing.T) {
+	ctx, cancel := context.WithCancel(t.Context())
+	cancel()
+	_, err := planAutoLink(ctx, campaign.ErrNotInCampaign, autoLinkRequest{})
+	if !errors.Is(err, context.Canceled) {
+		t.Fatalf("planAutoLink() error = %v; want context cancellation", err)
+	}
 }
 
 func TestDefaultLinkCamp(t *testing.T) {

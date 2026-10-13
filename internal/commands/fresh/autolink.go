@@ -70,22 +70,25 @@ type autoLinkPlan struct {
 
 // planAutoLink decides what camp fresh does when the working directory is not
 // inside a camp. It returns the original "not in a camp" error unless every
-// auto-link condition holds, so callers outside a git work tree, callers that
-// named a project, and callers that passed --no-link see exactly what they saw
-// before.
+// auto-link condition holds. --no-link still permits an existing main-checkout
+// link to be used from a secondary worktree; it only blocks creating one.
 func planAutoLink(ctx context.Context, detectErr error, req autoLinkRequest) (*autoLinkPlan, error) {
 	notInCamp := camperrors.Wrap(detectErr, "not in a camp")
-	if !errors.Is(detectErr, campaign.ErrNotInCampaign) || req.explicitTarget || req.noLink {
+	if !errors.Is(detectErr, campaign.ErrNotInCampaign) || req.explicitTarget {
 		return nil, notInCamp
 	}
 	repo, ok := detectUnlinkedRepo(ctx)
 	if !ok {
+		if err := ctx.Err(); err != nil {
+			return nil, err
+		}
 		return nil, notInCamp
 	}
 
 	// A secondary worktree sits outside its main checkout, so detection from
 	// the working directory misses a link the main checkout already has.
-	if root, err := campaign.Detect(ctx, repo.main); err == nil {
+	root, err := campaign.Detect(ctx, repo.main)
+	if err == nil {
 		name, err := projectNameForPath(ctx, root, repo.main)
 		if err != nil {
 			return nil, err
@@ -94,6 +97,12 @@ func planAutoLink(ctx context.Context, detectErr error, req autoLinkRequest) (*a
 			return nil, notInCamp
 		}
 		return &autoLinkPlan{repo: repo, name: name, campRoot: root, campName: campNameAt(ctx, root), linked: true}, nil
+	}
+	if !errors.Is(err, campaign.ErrNotInCampaign) {
+		return nil, camperrors.Wrap(err, "detect camp for main checkout")
+	}
+	if req.noLink {
+		return nil, notInCamp
 	}
 
 	plan, err := resolveLinkCamp(ctx, req)

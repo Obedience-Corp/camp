@@ -210,6 +210,12 @@ func TestFreshAutoLink_SecondaryWorktreeUsesMainCheckoutLink(t *testing.T) {
 	assert.NotContains(t, out, "Would link")
 	assert.NotContains(t, out, "camp project unlink")
 	assert.Contains(t, out, "myapp")
+	// --no-link forbids creating a link, not using the main checkout's
+	// existing link from a secondary worktree.
+	out, code = f.camp(t, worktree, "fresh", "--no-link", "--dry-run")
+	require.Equal(t, 0, code, out)
+	assert.NotContains(t, out, "not in a camp")
+	assert.NotContains(t, out, "Would link")
 	f.tc.Shell(t, "test ! -e "+worktree+"/.camp")
 	assert.Equal(t, []string{"myapp"}, f.projectNames(t, f.starterCamp()))
 }
