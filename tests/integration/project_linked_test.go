@@ -627,3 +627,39 @@ func readCampaignID(t *testing.T, tc *TestContainer, campaignPath string) string
 	t.Fatalf("campaign ID not found in %s/.campaign/campaign.yaml", campaignPath)
 	return ""
 }
+
+// TestProject_Link_NameTakenReportsNameConflict verifies that linking a second
+// directory whose folder name matches an existing linked project reports the
+// name conflict. The existing shortcut is a symlink out of the camp, and
+// following it used to surface as "path escapes boundary". Linking the same
+// directory again under its own name hit the same misleading error.
+func TestProject_Link_NameTakenReportsNameConflict(t *testing.T) {
+	tc := GetSharedContainer(t)
+	campaignPath := "/campaigns/proj-link-name-taken"
+	firstPath := "/test/name-taken-one/app"
+	secondPath := "/test/name-taken-two/app"
+
+	_, err := tc.InitCampaign(campaignPath, "proj-link-name-taken", "product")
+	require.NoError(t, err)
+	require.NoError(t, tc.CreateGitRepo(firstPath))
+	require.NoError(t, tc.CreateGitRepo(secondPath))
+
+	_, err = tc.RunCampInDir(campaignPath, "project", "link", firstPath)
+	require.NoError(t, err, "first project link should succeed")
+
+	for name, path := range map[string]string{"a different directory": secondPath, "the same directory": firstPath} {
+		output, err := tc.RunCampInDir(campaignPath, "project", "link", path)
+		require.Error(t, err, "linking %s under a taken name should fail", name)
+		assert.Contains(t, output, "project already exists: app", "linking %s", name)
+		assert.NotContains(t, output, "boundary", "linking %s", name)
+	}
+
+	exists, err := tc.CheckFileExists(secondPath + "/.camp")
+	require.NoError(t, err)
+	assert.False(t, exists, "a rejected link must not write a .camp marker")
+
+	// A distinct name is the way through, and the hint-free error left room for it.
+	output, err := tc.RunCampInDir(campaignPath, "project", "link", secondPath, "--name", "app-two")
+	require.NoError(t, err, output)
+	assert.Contains(t, output, "Linked project: app-two")
+}

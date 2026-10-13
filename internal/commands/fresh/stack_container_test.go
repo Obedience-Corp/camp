@@ -133,7 +133,7 @@ func TestRunStackCleanup_DryRunMakesNoChanges(t *testing.T) {
 		t.Fatal("fixture produced an empty remove set; dry-run would be a no-op")
 	}
 
-	if err := runStackCleanup(ctx, "proj", fx.repo, stackTarget, true, false, "  "); err != nil {
+	if err := runStackCleanup(ctx, "proj", fx.repo, stackTarget, true, false); err != nil {
 		t.Fatalf("runStackCleanup dry-run: %v", err)
 	}
 
