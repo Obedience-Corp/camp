@@ -167,11 +167,11 @@ function Get-DirectoryLinkClassification {
     }
     $kind = 'reparse-unknown'
     if ($null -ne $tag) {
-        switch ($tag) {
-            0xA0000003 { $kind = 'junction' }
-            0xA000000C { $kind = 'directory-symlink' }
-            default { $kind = "reparse-tag-0x$($tag.ToString('X'))" }
-        }
+        $junctionTag = [Convert]::ToUInt32('A0000003', 16)
+        $symlinkTag = [Convert]::ToUInt32('A000000C', 16)
+        if ($tag -eq $junctionTag) { $kind = 'junction' }
+        elseif ($tag -eq $symlinkTag) { $kind = 'directory-symlink' }
+        else { $kind = "reparse-tag-0x$($tag.ToString('X'))" }
     }
     return [pscustomobject]@{
         Kind       = $kind
@@ -465,7 +465,8 @@ if (-not (Test-Path -LiteralPath $mainMarker)) {
 }
 $class = Get-DirectoryLinkClassification -LinkPath $linkPath
 Write-ProofMarker "directory-link classification: kind=$($class.Kind) reparseTag=$($class.ReparseTag)"
-if ($class.Kind -ne 'junction' -or $class.ReparseTag -ne 0xA0000003) {
+$junctionTag = [Convert]::ToUInt32('A0000003', 16)
+if ($class.Kind -ne 'junction' -or $class.ReparseTag -ne $junctionTag) {
     throw "local project link is not a junction: $($class.Detail)"
 }
 

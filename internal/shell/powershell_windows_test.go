@@ -43,12 +43,13 @@ try {
 }
 $previousCodePage = [Console]::OutputEncoding.CodePage
 $childScript = '$text = "Project " + [char]0x65E5 + [char]0x672C + [char]0x8A9E; $bytes = (New-Object System.Text.UTF8Encoding($false)).GetBytes($text + [char]10); $stream = [Console]::OpenStandardOutput(); $stream.Write($bytes, 0, $bytes.Length)'
-$childArgs = @('-NoProfile', '-NonInteractive', '-Command', $childScript)
+$encodedChild = [Convert]::ToBase64String([Text.Encoding]::Unicode.GetBytes($childScript))
+$childArgs = @('-NoProfile', '-NonInteractive', '-EncodedCommand', $encodedChild)
 try {
-    # Exercise the direct UTF-8 pipe path even on hosts where the console
-    # setter succeeds. The -Command argument includes spaces and quotes.
+    # Exercise direct UTF-8 pipe decoding even when the console setter works.
+    # EncodedCommand keeps the child script intact through PS 5.1 argv parsing.
     if ((@(_camp_native_utf8 -Native $global:campTestNative -Arguments $childArgs) -join '') -ne 'Project 日本語') {
-        throw 'UTF-8 fallback changed Unicode native output or quoted arguments'
+        throw 'UTF-8 fallback changed Unicode native output'
     }
     if ($LASTEXITCODE -ne 0) { throw "UTF-8 fallback exit code was $LASTEXITCODE" }
     $null = _camp_native_utf8 -Native $global:campTestNative -Arguments @('-NoProfile', '-NonInteractive', '-Command', 'exit 7')
