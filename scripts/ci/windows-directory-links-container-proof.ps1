@@ -31,10 +31,17 @@ $RequiredTestNames = @(
     'TestCreateAndReadDirectoryLink',
     'TestRemoveDirectoryLinkLeavesTarget',
     'TestBrokenDirectoryLinkState',
+    'TestDirectoryLinkNamesAndSafeRemoval',
+    'TestBrokenDirectoryLinkSafeRemoval',
+    'TestCyclicDirectoryLinkSafeRemoval',
+    'TestUNCDirectoryLinkUnavailableTarget',
+    'TestCrossVolumeDirectoryLinkSafeRemoval',
     'TestAddLinked_MarkerRollbackOnLinkCollision',
+    'TestAddLinked_CaseOnlyNameCollision',
     'TestUnlinkProject_RemovesLinkOnly',
     'TestUnlinkProject_RejectsOrdinaryDirectory',
     'TestCaptureBlobsDoesNotFollowDirectoryLink',
+    'TestCommitScoped_DirectoryLinkStagesOnlySymlink',
     'TestSkillProjectionDirectoryLinkReadback',
     'TestGrokSkillsAliasDirectoryLink'
 )
@@ -353,23 +360,30 @@ try {
                 Invoke-DockerCli -DockerArgs @('cp', $bin.HostPath, "${containerId}:$($bin.ContainerPath)") | Out-Null
             }
 
-            $testCmdParts = @(
-                "set `"HOME=$ContainerWork`""
-                "set `"USERPROFILE=$ContainerWork`""
-                "set `"TEMP=$ContainerWork\tmp`""
-                "set `"TMP=$ContainerWork\tmp`""
-                "set `"PATH=$ContainerWork\Git\cmd;$ContainerWork\Git\mingw64\bin;%PATH%`""
-                "cd /d $ContainerWork"
-            )
+            $containerPath = (Invoke-DockerExec -ContainerId $containerId -CmdLine 'echo %PATH%' -User $ContainerUserName).Trim()
             $totalTargeted = 0
             $allTestOut = New-Object System.Text.StringBuilder
             foreach ($bin in $compiled) {
-                $runCmd = ($testCmdParts + @(
-                        "$($bin.ContainerPath) -test.v -test.count=1 -test.timeout=10m -test.run=`"$TestRunPattern`""
-                    )) -join ' && '
+                # Pass the regex as one argv element. cmd /c reparses parentheses and
+                # pipes in -test.run, causing a false PASS with zero tests executed.
+                $testArgs = @(
+                    'exec', '-u', $ContainerUserName, '-w', $ContainerWork,
+                    '-e', "HOME=$ContainerWork",
+                    '-e', "USERPROFILE=$ContainerWork",
+                    '-e', "TEMP=$ContainerWork\tmp",
+                    '-e', "TMP=$ContainerWork\tmp",
+                    '-e', "PATH=$ContainerWork\Git\cmd;$ContainerWork\Git\mingw64\bin;$containerPath",
+                    $containerId, $bin.ContainerPath,
+                    '-test.v', '-test.count=1', '-test.timeout=10m', "-test.run=$TestRunPattern"
+                )
                 Write-Section "Run $($bin.ImportPath) inside container as $ContainerUserName"
-                $execOut = Invoke-DockerExec -ContainerId $containerId -CmdLine $runCmd -User $ContainerUserName
+                $rawTestOut = & docker @testArgs 2>&1
+                $testExitCode = $LASTEXITCODE
+                $execOut = $rawTestOut | Out-String
                 Write-Host $execOut
+                if ($testExitCode -ne 0) {
+                    throw "$($bin.ImportPath) native test failed ($testExitCode): $execOut"
+                }
                 [void]$allTestOut.AppendLine($execOut)
                 if ($execOut -notmatch 'PASS') {
                     throw "$($bin.ImportPath) suite output did not contain PASS"

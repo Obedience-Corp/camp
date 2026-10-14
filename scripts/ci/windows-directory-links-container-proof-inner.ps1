@@ -183,13 +183,17 @@ function Assert-GitCaptureDoesNotTraverseExternal {
     $linkRel = "projects/$LinkName"
     Push-Location $CampRoot
     try {
-        & git ls-files --error-unmatch $linkRel 2>&1 | Out-Null
-        if ($LASTEXITCODE -ne 0) {
-            throw "camp git index missing linked entry $linkRel"
+        $indexEntry = (& git ls-files --stage -- $linkRel 2>&1 | Out-String).Trim()
+        if ($LASTEXITCODE -ne 0 -or $indexEntry -notmatch "^120000 [0-9a-f]{40,64} 0\t$([regex]::Escape($linkRel))$") {
+            throw "camp git index must contain exactly one mode-120000 link entry for ${linkRel}: $indexEntry"
+        }
+        $committedEntry = (& git ls-tree HEAD -- $linkRel 2>&1 | Out-String).Trim()
+        if ($LASTEXITCODE -ne 0 -or $committedEntry -notmatch "^120000 blob [0-9a-f]{40,64}\t$([regex]::Escape($linkRel))$") {
+            throw "CAMP_NO_DEFER commit must contain a mode-120000 link for ${linkRel}: $committedEntry"
         }
         $tracked = (& git ls-files 2>&1 | Out-String).Trim() -split "`n" | Where-Object { $_ }
         foreach ($line in $tracked) {
-            if ($line -match '(?i)external-only\.txt|nested\\keep\.txt|nested/keep\.txt') {
+            if ($line.StartsWith("$linkRel/") -or $line -match '(?i)external-only\.txt|nested\\keep\.txt|nested/keep\.txt') {
                 throw "git index captured external file content: $line"
             }
         }
