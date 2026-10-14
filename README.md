@@ -72,7 +72,7 @@ See [go.mod](go.mod) for the required Go version.
 
 ### Shell Integration
 
-Add the matching line to your shell config to enable navigation and tab completion.
+Add the matching line to your shell config to enable navigation.
 Load Fest’s integration too when you install the suite:
 
 **Zsh** (~/.zshrc):
@@ -96,11 +96,19 @@ camp shell-init fish | source
 fest shell-init fish | source  # Festival suite
 ```
 
+**PowerShell** (`$PROFILE`, Windows PowerShell 5.1 or PowerShell 7):
+
+```powershell
+Invoke-Expression (& camp shell-init powershell | Out-String)
+Invoke-Expression (& fest shell-init powershell | Out-String)
+```
+
 For other POSIX shells, use `eval "$(camp shell-init sh)"`; tab completion is
 available in bash, zsh, and fish.
 
-Restart your shell or reload its config, such as `source ~/.zshrc`. You can
-then use `cgo` to change directories and Tab to complete paths and commands.
+Restart your shell or reload its config (`source ~/.zshrc` in zsh, or
+`. $PROFILE` in PowerShell). You can then use `cgo` to change directories.
+Tab completion is available in bash, zsh, and fish.
 
 ## Quick Start
 

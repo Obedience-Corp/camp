@@ -21,13 +21,22 @@ eval "$(camp shell-init bash)"
 camp shell-init fish | source
 ```
 
+**PowerShell** (`$PROFILE`, Windows PowerShell 5.1 or PowerShell 7):
+```powershell
+Invoke-Expression (& camp shell-init powershell | Out-String)
+```
+
 **POSIX sh** (~/.profile) for dash, busybox ash, and the `/bin/sh` on minimal
 and embedded systems:
 ```sh
 eval "$(camp shell-init sh)"
 ```
 
-Use the script for the shell you actually run. The bash script uses bash arrays
+Use the script for the shell you actually run. In PowerShell, reload with
+`. $PROFILE` or open a new session. `cgo`, `csw`, and browser `g` navigate to
+local destinations; remote hops require a POSIX shell wrapper. The shorthand
+functions below are available in the POSIX and fish integrations. Tab
+completion is available in bash, zsh, and fish. The bash script uses bash arrays
 and programmable completion, so a shell like busybox ash rejects the whole thing
 with `syntax error: unexpected "(" (expecting "fi")` and you get no integration
 at all. The sh script gives you the `camp` wrapper, `cgo`, and every shorthand
@@ -86,7 +95,20 @@ cgo f fest    # festivals/*fest* (fuzzy match)
 files, but day-to-day intent capture and editing should go through
 `camp intent`.
 
-### Running Commands
+### Running Commands on Windows
+
+`camp run` and `camp project run` launch the named executable with distinct
+arguments on Windows. PowerShell operators are not interpreted by those
+commands; invoke `powershell.exe -Command` explicitly when you need a shell
+expression. On macOS and Linux, raw command forms keep their shell expression
+behavior.
+
+In development builds, registered `camp flow run` commands use PowerShell on
+Windows and `sh` on macOS/Linux. A stored POSIX expression can opt into Git Bash with
+`shell: sh` in `.campaign/flows/registry.yaml`. Use `shell: powershell` to
+select PowerShell explicitly.
+
+### Running Commands (POSIX and Fish)
 
 Use `-c` to run a command from a category directory without changing to it:
 

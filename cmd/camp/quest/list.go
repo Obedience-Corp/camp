@@ -29,6 +29,7 @@ the selected quest when shell integration is loaded:
 
   eval "$(camp shell-init zsh)"   # or bash / sh
   camp shell-init fish | source   # fish
+  Invoke-Expression (& camp shell-init powershell | Out-String)   # PowerShell
   camp quest list                 # interactive browser; g cds into the quest
 
 Piped or with --json it prints that format instead. --status/--all/--dungeon
