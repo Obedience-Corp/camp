@@ -138,13 +138,14 @@ try {
         $containerBin = "$containerWork\starter.test.exe"
 
         Write-Section 'Windows Server Core fixture'
-        $createOut = & docker create $ContainerImage cmd /c "ping -n 3600 127.0.0.1 > nul" 2>&1
+        Invoke-DockerCli -DockerArgs @('pull', $ContainerImage)
+        $createOut = & docker create --pull=never $ContainerImage cmd /c "ping -n 3600 127.0.0.1 > nul" 2>&1
         if ($LASTEXITCODE -ne 0) {
             throw "docker create failed: $($createOut | Out-String)"
         }
         $containerId = ($createOut | Out-String).Trim()
-        if ([string]::IsNullOrWhiteSpace($containerId)) {
-            throw "docker create returned empty container id"
+        if ($containerId -notmatch '^[0-9a-f]{64}$') {
+            throw "docker create returned an invalid container id: $containerId"
         }
         Write-Host "Container id: $containerId"
 
