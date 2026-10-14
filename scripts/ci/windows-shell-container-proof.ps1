@@ -42,6 +42,7 @@ $PeerTestSuites = @(
 )
 $ProofMarker = 'Camp PowerShell 5.1 command and dev-flow proof passed'
 $PeerProofMarker = 'Windows container peer boundary proof passed'
+$ArtifactTerminalMarker = 'Windows installed artifact ConPTY proof: PASS'
 
 function Invoke-DockerCli([string[]]$DockerArgs) {
     & docker @DockerArgs
@@ -136,6 +137,7 @@ try {
         $flowTestsHost = Join-Path $workHost 'flow.test.exe'
         $shellCommandTestsHost = Join-Path $workHost 'shellcmd.test.exe'
         $artifactTestsHost = Join-Path $workHost 'camp-artifacts.test.exe'
+        $artifactTerminalHost = Join-Path $workHost 'artifact-terminal-proof.exe'
         $env:CGO_ENABLED = '0'
         & go build -o $campHost ./cmd/camp
         if ($LASTEXITCODE -ne 0) { throw "go build ./cmd/camp failed ($LASTEXITCODE)" }
@@ -151,6 +153,9 @@ try {
         if ($LASTEXITCODE -ne 0) { throw "go test -c ./internal/shellcmd failed ($LASTEXITCODE)" }
         & go test -c -tags container_fs -o $artifactTestsHost ./cmd/camp
         if ($LASTEXITCODE -ne 0) { throw "go test -c ./cmd/camp failed ($LASTEXITCODE)" }
+        $terminalModule = Join-Path $PSScriptRoot 'windows-artifact-terminal-proof'
+        & go -C $terminalModule build -o $artifactTerminalHost .
+        if ($LASTEXITCODE -ne 0) { throw "go build Windows artifact terminal proof failed ($LASTEXITCODE)" }
         foreach ($peerSuite in $PeerTestSuites) {
             $peerTestHost = Join-Path $workHost "$($peerSuite.Package).test.exe"
             & go test -c -o $peerTestHost "./internal/$($peerSuite.Package)"
@@ -187,6 +192,8 @@ try {
             Invoke-DockerCli -DockerArgs @('cp', $flowTestsHost, "${containerId}:$ContainerWork\flow.test.exe") | Out-Null
             Invoke-DockerCli -DockerArgs @('cp', $shellCommandTestsHost, "${containerId}:$ContainerWork\shellcmd.test.exe") | Out-Null
             Invoke-DockerCli -DockerArgs @('cp', $artifactTestsHost, "${containerId}:$ContainerWork\camp-artifacts.test.exe") | Out-Null
+            Invoke-DockerCli -DockerArgs @('cp', $artifactTerminalHost, "${containerId}:$ContainerWork\bin\artifact-terminal-proof.exe") | Out-Null
+            Invoke-DockerCli -DockerArgs @('cp', $artifactTerminalHost, "${containerId}:$ContainerWork\bin\git.exe") | Out-Null
             foreach ($peerSuite in $PeerTestSuites) {
                 $peerTestHost = Join-Path $workHost "$($peerSuite.Package).test.exe"
                 Invoke-DockerCli -DockerArgs @('cp', $peerTestHost,
@@ -260,6 +267,16 @@ try {
             )
             Invoke-DockerProof -DockerArgs $proofArgs -PassMarker $ProofMarker `
                 -Label 'real camp.exe PowerShell 5.1 proof'
+
+            $artifactTerminalArgs = @(
+                'exec', '-u', $ContainerUserName, '-w', $ContainerWork,
+                '-e', "HOME=$ContainerWork", '-e', "USERPROFILE=$ContainerWork",
+                '-e', "TEMP=$ContainerWork\tmp", '-e', "TMP=$ContainerWork\tmp",
+                $containerId, "$ContainerWork\bin\artifact-terminal-proof.exe",
+                '-work-root', $ContainerWork
+            )
+            Invoke-DockerProof -DockerArgs $artifactTerminalArgs -PassMarker $ArtifactTerminalMarker `
+                -Label 'installed camp.exe artifact ConPTY proof'
 
             $peerProofArgs = @(
                 'exec', '-u', $ContainerUserName, '-w', $ContainerWork,
