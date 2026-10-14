@@ -25,6 +25,7 @@ Remove-Item Env:CAMP_ROOT -ErrorAction SilentlyContinue
 Remove-Item Env:CAMP_REGISTRY_PATH -ErrorAction SilentlyContinue
 
 $ProcessExitWaitSec = 300
+$JunctionTag = [Convert]::ToUInt32('A0000003', 16)
 
 function Write-ProofMarker([string]$Line) {
     Write-Host $Line
@@ -167,9 +168,8 @@ function Get-DirectoryLinkClassification {
     }
     $kind = 'reparse-unknown'
     if ($null -ne $tag) {
-        $junctionTag = [Convert]::ToUInt32('A0000003', 16)
         $symlinkTag = [Convert]::ToUInt32('A000000C', 16)
-        if ($tag -eq $junctionTag) { $kind = 'junction' }
+        if ($tag -eq $script:JunctionTag) { $kind = 'junction' }
         elseif ($tag -eq $symlinkTag) { $kind = 'directory-symlink' }
         else { $kind = "reparse-tag-0x$($tag.ToString('X'))" }
     }
@@ -394,7 +394,7 @@ function Assert-CrossVolumeProjectLink {
         }
         $linkPath = Join-Path $crossCamp ('projects\' + $crossName)
         $class = Get-DirectoryLinkClassification -LinkPath $linkPath
-        if ($class.Kind -ne 'junction' -or $class.ReparseTag -ne 0xA0000003) {
+        if ($class.Kind -ne 'junction' -or $class.ReparseTag -ne $script:JunctionTag) {
             throw "cross-volume project link is not a junction: $($class.Detail)"
         }
         if (-not (Test-Path -LiteralPath (Join-Path $linkPath 'external-only.txt'))) {
@@ -436,7 +436,7 @@ function Assert-UnicodeSpaceProjectLink {
         $null = Invoke-CampCli -Arguments @('project', 'link', $unicodeSource, '--name', $unicodeName, '--yes', '--no-commit')
         $linkPath = Join-Path $unicodeCamp ('projects\' + $unicodeName)
         $class = Get-DirectoryLinkClassification -LinkPath $linkPath
-        if ($class.Kind -ne 'junction' -or $class.ReparseTag -ne 0xA0000003) {
+        if ($class.Kind -ne 'junction' -or $class.ReparseTag -ne $script:JunctionTag) {
             throw "Unicode/space project link is not a junction: $($class.Detail)"
         }
     } finally {
@@ -489,8 +489,7 @@ if (-not (Test-Path -LiteralPath $mainMarker)) {
 }
 $class = Get-DirectoryLinkClassification -LinkPath $linkPath
 Write-ProofMarker "directory-link classification: kind=$($class.Kind) reparseTag=$($class.ReparseTag)"
-$junctionTag = [Convert]::ToUInt32('A0000003', 16)
-if ($class.Kind -ne 'junction' -or $class.ReparseTag -ne $junctionTag) {
+if ($class.Kind -ne 'junction' -or $class.ReparseTag -ne $script:JunctionTag) {
     throw "local project link is not a junction: $($class.Detail)"
 }
 
