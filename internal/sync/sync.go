@@ -13,6 +13,7 @@ import (
 	"github.com/Obedience-Corp/camp/internal/artifacts"
 	camperrors "github.com/Obedience-Corp/camp/internal/errors"
 	"github.com/Obedience-Corp/camp/internal/git"
+	"github.com/Obedience-Corp/camp/internal/remote"
 	"github.com/Obedience-Corp/camp/internal/rsyncprobe"
 )
 
@@ -31,6 +32,11 @@ import (
 func (s *Syncer) Sync(ctx context.Context) (*SyncResult, error) {
 	if ctx.Err() != nil {
 		return nil, ctx.Err()
+	}
+	if s.peer != nil && !s.options.VerifyArtifacts {
+		if err := remote.RequirePeerSupport(); err != nil {
+			return nil, err
+		}
 	}
 
 	result := &SyncResult{Success: true}

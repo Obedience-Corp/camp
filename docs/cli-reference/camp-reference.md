@@ -236,6 +236,9 @@ file to make the protection go away.
 There is no --all: resolving in bulk is exactly what the sticky conflict
 exists to prevent. Loop the per-path form if you really mean it.
 
+On Windows, --list and --take-local use local snapshots and remain available;
+--take-peer requires a remote transfer and is unavailable in this release.
+
 ```
 camp artifacts resolve [path] [flags]
 ```
@@ -478,6 +481,9 @@ EXAMPLES:
   # origin replica that arrived over the fast path; peer failures fall back
   # to plain origin cloning.
   camp clone git@github.com:org/repo.git --from studio-mac
+
+On Windows, --from peer seeding is unavailable in this release. Omit --from
+to clone directly from origin.
 
 ```
 camp clone <url> [directory] [flags]
@@ -4095,7 +4101,11 @@ paths display as '~'.
 Shell integration (recommended for go/hop from the browser):
   eval "$(camp shell-init zsh)"   # or bash / sh
   camp shell-init fish | source   # fish
+  Invoke-Expression (& camp shell-init powershell | Out-String)   # PowerShell
   camp list                       # interactive browser; g hops remote rows
+
+In PowerShell, g navigates local rows. Selecting a remote row reports that
+the ssh hop requires a POSIX shell wrapper.
 
 Use the shell you actually run. "sh" covers dash, busybox ash, and any other
 Bourne shell that is not bash or zsh; the bash script will not parse there.
@@ -5444,6 +5454,7 @@ to the selected project when shell integration is loaded:
 
   eval "$(camp shell-init zsh)"   # or bash / sh
   camp shell-init fish | source   # fish
+  Invoke-Expression (& camp shell-init powershell | Out-String)   # PowerShell
   camp project list               # interactive browser; g cds into the project
 
 Piped, with --json/--count, or with a non-table --format it prints that
@@ -5955,7 +5966,7 @@ Run a command inside a project directory, like cr but project-scoped
 
 ### Synopsis
 
-Run any shell command inside a project directory from anywhere in the camp.
+Run a command inside a project directory from anywhere in the camp.
 
 This is the project-scoped counterpart to 'camp run' (cr): cr runs from the
 camp root, camp project run (cr -p) runs inside a project.
@@ -5981,9 +5992,13 @@ Examples:
   # Simple commands (no -- needed when no flags)
   camp project run make build
 
-  # Shell shorthand (after 'eval "$(camp shell-init <shell>)"')
+  # POSIX/fish shell shorthand (after loading that shell's camp integration)
   cr -p fest -- just build
   cr -p camp go test ./...
+
+On Windows, the command is run directly with literal arguments. For a shell
+expression, invoke powershell.exe -Command explicitly. Outside Windows, the
+command retains its existing shell-expression behavior.
 
 ```
 camp project run [--project <name>] [--] <command> [args...] [flags]
@@ -6755,14 +6770,16 @@ If the first argument exactly matches a project name (a directory in projects/
 with a git repo), camp dispatches to 'just' in that project's directory.
 Any remaining arguments are passed as the recipe and arguments to just.
 
-If the first argument does not match a project, it is treated as a shell command
+If the first argument does not match a project, it is treated as a command
 and executed from the camp root directory.
 
 Use @shortcut prefix to run from a shortcut's directory instead of root.
 Only navigation shortcuts (those with paths) can be used.
 
-Raw command arguments after 'run' (or '@shortcut') are passed directly to the
-shell. Project just-dispatch passes recipe arguments directly to just.
+On Windows, raw commands run as an executable with each argument preserved.
+Use 'camp run powershell.exe -Command <expression>' for a PowerShell expression.
+Outside Windows, raw commands retain the existing shell-expression behavior.
+Project just-dispatch passes recipe arguments directly to just.
 
 ```
 camp run [project | @shortcut] [command | recipe] [args...] [flags]
@@ -6979,6 +6996,7 @@ Add to your shell config:
   bash: eval "$(camp shell-init bash)"
   fish: camp shell-init fish | source
   sh:   eval "$(camp shell-init sh)"
+  PowerShell: Invoke-Expression (& camp shell-init powershell | Out-String)
 
 Use 'sh' for dash, busybox ash, and any other Bourne-family shell that is
 neither bash nor zsh, including the /bin/sh on minimal and embedded systems.
@@ -6987,17 +7005,21 @@ parse under those shells. The sh script provides the wrapper, cgo, and the
 shorthand functions; it installs no tab completion, because POSIX sh has no
 completion mechanism to install into.
 
-This provides:
+Every supported shell gets:
   - A camp shell function that wraps the camp binary
   - cgo function for navigation
-  - Tab completion for camp commands
-  - Category shortcuts (p, c, f, etc.)
+  - csw shorthand for camp switch
+
+The POSIX and fish integrations also provide category shortcuts and helpers
+such as cr, cint, cnote, and cie. Tab completion is available in bash, zsh,
+and fish. PowerShell provides local navigation through cgo, csw, and browser
+go actions; remote hops require a POSIX shell wrapper.
 
 IMPORTANT: this defines a shell function named 'camp' that wraps the camp
 binary. The function intercepts 'camp switch' and 'camp go' to perform
 directory changes in the current shell session.
 
-The following shell aliases and functions are also installed:
+The POSIX and fish integrations also install:
   cr     camp run (run a just recipe in a project)
   csw    camp switch (shorthand)
   cint   camp intent add (quick idea capture)
@@ -7008,7 +7030,7 @@ The cgo function enables quick navigation:
   cgo                 Interactive picker or jump to camp root
   cgo p               Jump to projects/
   cgo p api           Fuzzy find "api" in projects/
-  cgo -c p ls         Run "ls" in projects/ directory
+  cgo -c p ls         Run "ls" in projects/ directory (POSIX/fish)
 
 ```
 camp shell-init <shell> [flags]
@@ -7028,6 +7050,9 @@ camp shell-init <shell> [flags]
 
   # Add to ~/.profile (dash, busybox ash, other POSIX shells)
   eval "$(camp shell-init sh)"
+
+  # Add to $PROFILE (Windows PowerShell 5.1 or PowerShell 7)
+  Invoke-Expression (& camp shell-init powershell | Out-String)
 ```
 
 ### Options
@@ -7620,12 +7645,16 @@ Use --org or org/campaign to resolve inside one organization.
 Use with the shell-init wrappers for instant navigation (recommended):
   eval "$(camp shell-init zsh)"   # or bash / sh, once per shell
   camp shell-init fish | source   # fish
+  Invoke-Expression (& camp shell-init powershell | Out-String)   # PowerShell
   csw                            # Interactive picker (local + remote machines)
   csw my-camp                    # Switch by name
   csw a1b2                       # Switch by ID prefix
   csw obey/platform              # Switch by org-scoped selector
   csw archdtop:lance-arch        # Hop to a remote camp over ssh
   csw -                          # Hop back to the machine/campaign this session came from
+
+PowerShell's cgo and csw helpers support local navigation. The remote csw
+hop examples require a POSIX shell wrapper.
 
 'camp switch -' (csw -) is the hop-back gesture: it returns to the origin
 encoded in CAMP_HOP_ORIGIN by the outbound hop. It is registration-independent:
@@ -7635,6 +7664,7 @@ camp query.
 
 The --print flag outputs just the path for shell integration (local only):
   cd "$(camp switch --print)"
+  Set-Location -LiteralPath (camp switch --print)   # PowerShell
 
 Use camp@target to land somewhere specific in the target camp. The part
 after @ resolves exactly like 'camp go' inside that camp: a navigation tab
@@ -7675,6 +7705,7 @@ camp switch [camp] [flags]
 
 ```
   eval "$(camp shell-init zsh)"
+  Invoke-Expression (& camp shell-init powershell | Out-String)   # PowerShell
   csw                                # Interactive picker (local + remotes)
   csw obey-campaign                  # Switch by name, on this machine or another
   csw archdtop:lance-arch            # Hop to remote camp
@@ -7772,6 +7803,10 @@ EXAMPLES:
   # Check artifact roots against last-transfer snapshots, no transfer
   camp sync --verify-artifacts
   camp sync --verify-artifacts --from studio-mac
+
+On Windows, peer transfer via --from is unavailable in this release. Use
+'camp sync' without --from for origin-backed git. --verify-artifacts --from
+still reads local snapshots and does not contact a peer.
 
 ```
 camp sync [submodule...] [flags]
@@ -7964,6 +7999,8 @@ Machine forms (one side only; both-remote is refused):
                     file on a machine registered in ~/.obey/machines.yaml
 
 See docs/transfer.md for the full grammar, transport, and skew guidance.
+On Windows, local camp-to-camp transfers work; machine endpoints are
+unavailable in this release.
 
 At least one side must reference a different camp or machine. For copies
 within the same camp on this machine, use 'camp copy' instead.

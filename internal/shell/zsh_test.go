@@ -238,6 +238,7 @@ func TestGenerate(t *testing.T) {
 		{"zsh", false},
 		{"bash", false},
 		{"fish", false},
+		{"powershell", false},
 		{"unknown", true},
 		{"", true},
 	}
@@ -265,6 +266,7 @@ func TestIsSupported(t *testing.T) {
 		{"bash", true},
 		{"fish", true},
 		{"sh", true},
+		{"powershell", true},
 		{"ksh", false},
 		{"", false},
 	}

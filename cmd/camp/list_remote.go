@@ -126,6 +126,9 @@ func enumerateRemoteFor(f listFilter) enumerateFunc {
 // per-machine errors). A missing/empty fleet returns empty slices, not an error.
 // Callers re-filter as needed; this does not re-apply the local filter backstop.
 func loadRemoteCampaigns(ctx context.Context, filter listFilter) ([]campaignEntry, []remoteResult, error) {
+	if err := remote.RequirePeerSupport(); err != nil {
+		return nil, nil, camperrors.Wrap(err, "camp list --remote")
+	}
 	mf, err := machines.Load()
 	if err != nil {
 		return nil, nil, err

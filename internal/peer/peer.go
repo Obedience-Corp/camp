@@ -49,6 +49,12 @@ var ErrPeerConfig = camperrors.New("peer configuration error")
 // ErrPeerConfig; a reachability failure from resolving the root on the peer
 // is returned as-is so callers can degrade rather than abort.
 func FromMachine(ctx context.Context, machineID, remainder string) (*Source, error) {
+	if err := ctx.Err(); err != nil {
+		return nil, err
+	}
+	if err := remote.RequirePeerSupport(); err != nil {
+		return nil, camperrors.WrapJoin(ErrPeerConfig, err, "")
+	}
 	file, err := machines.Load()
 	if err != nil {
 		return nil, camperrors.WrapJoinf(ErrPeerConfig, err, "load machines file")
@@ -180,6 +186,9 @@ func (s *Source) StreamShell(ctx context.Context, script string, w io.Writer) er
 	if ctx.Err() != nil {
 		return ctx.Err()
 	}
+	if err := remote.RequirePeerSupport(); err != nil {
+		return err
+	}
 	var cmd *exec.Cmd
 	if s.target != "" {
 		args := append(append([]string{}, s.sshOpts...), s.target, remote.LoginShellCommand(script))
@@ -229,6 +238,9 @@ func (s *Source) Fetch(ctx context.Context, dir, relPath string) error {
 	if ctx.Err() != nil {
 		return ctx.Err()
 	}
+	if err := remote.RequirePeerSupport(); err != nil {
+		return err
+	}
 	args := []string{"-C", dir, "fetch", "--no-tags", s.URL(relPath)}
 	args = append(args, s.Refspecs()...)
 	cmd := exec.CommandContext(ctx, "git", args...)
@@ -253,6 +265,9 @@ func (s *Source) Fetch(ctx context.Context, dir, relPath string) error {
 func (s *Source) RunShell(ctx context.Context, script string) ([]byte, error) {
 	if ctx.Err() != nil {
 		return nil, ctx.Err()
+	}
+	if err := remote.RequirePeerSupport(); err != nil {
+		return nil, err
 	}
 	if s.target != "" {
 		return remote.Run(ctx, s.target, s.sshOpts, remote.LoginShellCommand(script))

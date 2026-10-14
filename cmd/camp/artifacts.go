@@ -14,6 +14,7 @@ import (
 	camperrors "github.com/Obedience-Corp/camp/internal/errors"
 	"github.com/Obedience-Corp/camp/internal/fsutil"
 	"github.com/Obedience-Corp/camp/internal/peer"
+	"github.com/Obedience-Corp/camp/internal/remote"
 	"github.com/Obedience-Corp/camp/internal/ui"
 	"github.com/spf13/cobra"
 )
@@ -413,7 +414,10 @@ file to make the protection go away.
                   record it as agreed
 
 There is no --all: resolving in bulk is exactly what the sticky conflict
-exists to prevent. Loop the per-path form if you really mean it.`,
+exists to prevent. Loop the per-path form if you really mean it.
+
+On Windows, --list and --take-local use local snapshots and remain available;
+--take-peer requires a remote transfer and is unavailable in this release.`,
 	Args: cobra.MaximumNArgs(1),
 	RunE: runArtifactsResolve,
 }
@@ -443,6 +447,9 @@ func runArtifactsResolve(cmd *cobra.Command, args []string) error {
 	// only take-peer needs to reach it for bytes.
 	var src *peer.Source
 	if action == artifacts.ResolveTakePeer {
+		if err := remote.RequirePeerSupport(); err != nil {
+			return camperrors.Wrap(err, "camp artifacts resolve --take-peer")
+		}
 		src, err = peer.FromMachine(ctx, resolveOpts.from, filepath.Base(campRoot))
 		if err != nil {
 			return camperrors.Wrapf(err, "--take-peer needs machine %q", resolveOpts.from)

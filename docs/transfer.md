@@ -2,6 +2,9 @@
 
 `camp transfer` copies a file between camps, including camps on another machine.
 
+On Windows, local camp-to-camp transfers work. Machine endpoints fail before
+copying in this release; run that transfer from macOS or Linux.
+
 ```
 camp transfer <source> <destination> [--force]
 ```

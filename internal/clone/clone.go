@@ -5,6 +5,8 @@ import (
 	"errors"
 	"fmt"
 	"sync"
+
+	"github.com/Obedience-Corp/camp/internal/remote"
 )
 
 // Clone performs a full campaign clone with submodule initialization.
@@ -26,6 +28,11 @@ import (
 func (c *Cloner) Clone(ctx context.Context) (*CloneResult, error) {
 	if ctx.Err() != nil {
 		return nil, ctx.Err()
+	}
+	if c.peer != nil {
+		if err := remote.RequirePeerSupport(); err != nil {
+			return nil, err
+		}
 	}
 
 	// Initialize progress reporter if not set

@@ -9,6 +9,7 @@ import (
 	"strings"
 
 	"github.com/Obedience-Corp/camp/internal/config"
+	"github.com/Obedience-Corp/camp/internal/dirlink"
 	camperrors "github.com/Obedience-Corp/camp/internal/errors"
 	"github.com/Obedience-Corp/camp/internal/git"
 	projectsvc "github.com/Obedience-Corp/camp/internal/project"
@@ -108,7 +109,7 @@ func Plan(ctx context.Context, campaignRoot, current, newName string, opts Optio
 				return nil, err
 			}
 		}
-	case info != nil && info.Mode()&os.ModeSymlink != 0:
+	case info != nil && isLinkedProject(oldAbs):
 		plan.Kind = KindLinked
 		plan.LinkedTarget, err = filepath.EvalSymlinks(oldAbs)
 		if err != nil {
@@ -292,6 +293,11 @@ func validateSubmoduleGitDir(ctx context.Context, campaignRoot, checkout, oldRel
 		return err
 	}
 	return nil
+}
+
+func isLinkedProject(path string) bool {
+	st, err := dirlink.Lstat(path)
+	return err == nil && st.IsDirectoryLink()
 }
 
 func removeStrings(values []string, removes ...string) []string {

@@ -73,6 +73,24 @@ type StageOutcome struct {
 	Unavailable error
 }
 
+// CheckStaging evaluates the guard with directory links treated as single
+// link-target blobs, matching StageWithGuardOptions on Windows.
+func CheckStaging(ctx context.Context, repoPath string, limits stageguard.GuardLimits) ([]stageguard.GuardViolation, error) {
+	links, err := changedDirectoryLinks(ctx, repoPath)
+	if err != nil {
+		return nil, err
+	}
+	return checkStagingWithDirectoryLinks(ctx, repoPath, limits, links)
+}
+
+func checkStagingWithDirectoryLinks(ctx context.Context, repoPath string, limits stageguard.GuardLimits, links []string) ([]stageguard.GuardViolation, error) {
+	linkSizes, err := directoryLinkSizes(ctx, repoPath, links)
+	if err != nil {
+		return nil, err
+	}
+	return stageguard.CheckStagingWithDirectoryLinks(ctx, repoPath, limits, linkSizes)
+}
+
 // Empty reports whether the guard found nothing worth telling the user about.
 func (o *StageOutcome) Empty() bool {
 	return o == nil ||
@@ -203,7 +221,7 @@ func isStageEverything(files []string) bool {
 // quietly". The outcome carries Unavailable so the caller can report it; a
 // silent degradation would leave the user believing they were protected, which
 // is worse than either refusing or reporting.
-func runStageGuard(ctx context.Context, repoPath string, files []string, opts StageOptions) (*StageOutcome, []string, error) {
+func runStageGuard(ctx context.Context, repoPath string, files []string, opts StageOptions, links []string) (*StageOutcome, []string, error) {
 	if !isStageEverything(files) {
 		return nil, nil, nil
 	}
@@ -235,7 +253,7 @@ func runStageGuard(ctx context.Context, repoPath string, files []string, opts St
 		return nil, nil, nil
 	}
 
-	violations, err := stageguard.CheckStaging(ctx, repoPath, limits)
+	violations, err := checkStagingWithDirectoryLinks(ctx, repoPath, limits, links)
 	if err != nil {
 		return &StageOutcome{Limits: limits, Unavailable: camperrors.Wrapf(
 			err, "evaluate staging guard for %s", repoPath)}, nil, nil

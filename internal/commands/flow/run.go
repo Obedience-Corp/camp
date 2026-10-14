@@ -16,6 +16,11 @@ func newRunCommand() *cobra.Command {
 		Long: `Execute a registered flow from .campaign/flows/registry.yaml.
 
 Extra arguments after -- are appended to the flow's command.
+Stored commands run in PowerShell on Windows and sh on macOS/Linux. To run a
+POSIX command on Windows, set shell: sh on that entry in
+.campaign/flows/registry.yaml; this requires Git Bash (sh.exe). Set
+shell: powershell to select PowerShell explicitly. An unsupported shell
+reports the supported values instead of running the command.
 
 Examples:
   camp flow run build

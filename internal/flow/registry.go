@@ -25,6 +25,7 @@ type Registry struct {
 type Flow struct {
 	Description string            `yaml:"description"`
 	Command     string            `yaml:"command"`
+	Shell       string            `yaml:"shell,omitempty"`
 	WorkDir     string            `yaml:"workdir"`
 	Tags        []string          `yaml:"tags,omitempty"`
 	Env         map[string]string `yaml:"env,omitempty"`

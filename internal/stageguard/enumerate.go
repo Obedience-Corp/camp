@@ -39,7 +39,7 @@ type Candidate struct {
 //
 // Enumeration is stat-only. Nothing is hashed, opened, or read.
 func Enumerate(ctx context.Context, repoPath string) ([]Candidate, error) {
-	candidates, _, err := enumerate(ctx, repoPath, nil)
+	candidates, _, err := enumerate(ctx, repoPath, nil, nil)
 	return candidates, err
 }
 
@@ -49,7 +49,7 @@ func Enumerate(ctx context.Context, repoPath string) ([]Candidate, error) {
 // first call already reported.
 //
 // A non-empty scope limits the status call to those repo-relative directories.
-func enumerate(ctx context.Context, repoPath string, scope []string) ([]Candidate, []string, error) {
+func enumerate(ctx context.Context, repoPath string, scope []string, directoryLinks map[string]int64) ([]Candidate, []string, error) {
 	if ctx.Err() != nil {
 		return nil, nil, ctx.Err()
 	}
@@ -62,16 +62,22 @@ func enumerate(ctx context.Context, repoPath string, scope []string) ([]Candidat
 	entries := parseStatusPorcelainZ(out)
 	candidates := make([]Candidate, 0, len(entries))
 	var dirs []string
+	seen := make(map[string]bool, len(entries))
 	for _, entry := range entries {
 		if ctx.Err() != nil {
 			return nil, nil, ctx.Err()
 		}
-		candidate, kind := classify(repoPath, entry)
+		candidate, kind := classify(repoPath, entry, directoryLinks)
+		if kind != entryIgnored && seen[candidate.Path] {
+			continue
+		}
 		switch kind {
 		case entryFile:
 			candidates = append(candidates, candidate)
+			seen[candidate.Path] = true
 		case entryUntrackedDir:
 			dirs = append(dirs, candidate.Path)
+			seen[candidate.Path] = true
 		}
 	}
 	return candidates, dirs, nil
@@ -162,12 +168,12 @@ const (
 )
 
 // classify turns a status entry into a candidate and says which kind it is.
-func classify(repoPath string, entry statusEntry) (Candidate, entryKind) {
+func classify(repoPath string, entry statusEntry, directoryLinks map[string]int64) (Candidate, entryKind) {
 	untracked, ok := classifyEntry(entry)
 	if !ok {
 		return Candidate{}, entryIgnored
 	}
-	return statCandidate(repoPath, entry.Path, untracked)
+	return statCandidate(repoPath, entry.Path, untracked, directoryLinks)
 }
 
 // classifyEntry decides whether a status entry is something a stage-everything
@@ -211,10 +217,15 @@ func classifyEntry(entry statusEntry) (untracked, ok bool) {
 // here so the path matches the spelling every other layer uses: the pathspec
 // that excludes it, the .gitmodules declaration compared against it, and the
 // line the user reads.
-func statCandidate(repoPath, rel string, untracked bool) (Candidate, entryKind) {
+func statCandidate(repoPath, rel string, untracked bool, directoryLinks map[string]int64) (Candidate, entryKind) {
 	rel = strings.TrimSuffix(filepath.ToSlash(rel), "/")
 	if rel == "" {
 		return Candidate{}, entryIgnored
+	}
+	for link, size := range directoryLinks {
+		if rel == link || strings.HasPrefix(rel, link+"/") {
+			return Candidate{Path: link, Size: size, Untracked: untracked}, entryFile
+		}
 	}
 	abs := filepath.Join(repoPath, filepath.FromSlash(rel))
 	info, err := os.Lstat(abs)

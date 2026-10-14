@@ -74,6 +74,12 @@ func (o CopyOptions) dialEndpoint() remote.Endpoint {
 // path. Remote absence is detected from the failed attempt instead, which is
 // also free in the common case.
 func CopyRemote(ctx context.Context, opts CopyOptions) error {
+	if err := ctx.Err(); err != nil {
+		return err
+	}
+	if err := remote.RequirePeerSupport(); err != nil {
+		return err
+	}
 	if opts.Run == nil {
 		opts.Run = execRunner
 	}

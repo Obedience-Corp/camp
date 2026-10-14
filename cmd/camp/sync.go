@@ -13,6 +13,7 @@ import (
 	camperrors "github.com/Obedience-Corp/camp/internal/errors"
 	"github.com/Obedience-Corp/camp/internal/jsoncontract"
 	"github.com/Obedience-Corp/camp/internal/peer"
+	"github.com/Obedience-Corp/camp/internal/remote"
 	"github.com/Obedience-Corp/camp/internal/sync"
 	"github.com/spf13/cobra"
 )
@@ -78,7 +79,11 @@ EXAMPLES:
 
   # Check artifact roots against last-transfer snapshots, no transfer
   camp sync --verify-artifacts
-  camp sync --verify-artifacts --from studio-mac`,
+  camp sync --verify-artifacts --from studio-mac
+
+On Windows, peer transfer via --from is unavailable in this release. Use
+'camp sync' without --from for origin-backed git. --verify-artifacts --from
+still reads local snapshots and does not contact a peer.`,
 	Args: cobra.ArbitraryArgs,
 	RunE: jsoncontract.RunE(SyncJSONVersion, func() bool { return syncOpts.json }, runSync),
 }
@@ -159,6 +164,14 @@ func runSync(cmd *cobra.Command, args []string) error {
 	}
 	if err := validateSyncFlagCombos(); err != nil {
 		return err
+	}
+	// Snapshot verification is local even with --from. Every other --from
+	// form requests peer bytes and must fail before draining queued writes or
+	// falling back to origin with a misleading success result.
+	if syncOpts.from != "" && !syncOpts.verifyArtifacts {
+		if err := remote.RequirePeerSupport(); err != nil {
+			return camperrors.Wrap(err, "camp sync --from")
+		}
 	}
 
 	// Every lane: sync's preflight reads each submodule's working tree and

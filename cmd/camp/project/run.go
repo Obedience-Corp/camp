@@ -4,6 +4,7 @@ import (
 	"errors"
 	"fmt"
 	camperrors "github.com/Obedience-Corp/camp/internal/errors"
+	"runtime"
 	"strings"
 
 	"github.com/Obedience-Corp/camp/cmd/camp/cmdutil"
@@ -18,7 +19,7 @@ import (
 var projectRunCmd = &cobra.Command{
 	Use:   "run [--project <name>] [--] <command> [args...]",
 	Short: "Run a command inside a project directory, like cr but project-scoped",
-	Long: `Run any shell command inside a project directory from anywhere in the camp.
+	Long: `Run a command inside a project directory from anywhere in the camp.
 
 This is the project-scoped counterpart to 'camp run' (cr): cr runs from the
 camp root, camp project run (cr -p) runs inside a project.
@@ -44,9 +45,13 @@ Examples:
   # Simple commands (no -- needed when no flags)
   camp project run make build
 
-  # Shell shorthand (after 'eval "$(camp shell-init <shell>)"')
+  # POSIX/fish shell shorthand (after loading that shell's camp integration)
   cr -p fest -- just build
-  cr -p camp go test ./...`,
+  cr -p camp go test ./...
+
+On Windows, the command is run directly with literal arguments. For a shell
+expression, invoke powershell.exe -Command explicitly. Outside Windows, the
+command retains its existing shell-expression behavior.`,
 	DisableFlagParsing: true,
 	RunE:               runProjectRun,
 	ValidArgsFunction:  completeProjectRunArgs,
@@ -131,6 +136,9 @@ func runProjectRun(cmd *cobra.Command, args []string) error {
 	fmt.Fprintf(cmd.ErrOrStderr(), "%s %s\n", ui.Dim("project:"), ui.Value(displayPath))
 
 	// Execute command in the project directory.
+	if runtime.GOOS == "windows" {
+		return cmdutil.ExecuteDirect(ctx, commandArgs[0], commandArgs[1:], projectDir, campRoot)
+	}
 	fullCmd := strings.Join(commandArgs, " ")
 	return cmdutil.ExecuteCommand(ctx, fullCmd, projectDir, campRoot, nil)
 }

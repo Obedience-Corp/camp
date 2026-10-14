@@ -9,6 +9,7 @@ import (
 	"strings"
 
 	"github.com/Obedience-Corp/camp/internal/campaign"
+	"github.com/Obedience-Corp/camp/internal/dirlink"
 	camperrors "github.com/Obedience-Corp/camp/internal/errors"
 )
 
@@ -92,23 +93,34 @@ func RelativeSymlinkTarget(linkPath, targetPath string) (string, error) {
 }
 
 // CheckLinkState inspects the filesystem at path and returns its LinkState.
-// If expectedTarget is non-empty and the path is a symlink, the resolved
+// If expectedTarget is non-empty and the path is a directory link, the resolved
 // target is compared against expectedTarget to determine validity.
 func CheckLinkState(path, expectedTarget string) (LinkState, error) {
-	info, err := os.Lstat(path)
-	if err != nil {
+	if _, err := os.Lstat(path); err != nil {
 		if os.IsNotExist(err) {
 			return StateMissing, nil
 		}
 		return "", camperrors.Wrap(err, "check link state")
 	}
 
-	// Not a symlink
-	if info.Mode()&os.ModeSymlink == 0 {
+	st, err := dirlink.Lstat(path)
+	if err != nil {
+		return "", camperrors.Wrap(err, "check link state")
+	}
+	if !st.IsDirectoryLink() {
 		return StateNotALink, nil
 	}
 
-	// It's a symlink — resolve and compare
+	// Stat follows both symlinks and Windows junctions. EvalSymlinks alone can
+	// return the junction path on Windows, so compare file identity as well.
+	linkedInfo, err := os.Stat(path)
+	if err != nil {
+		if os.IsNotExist(err) {
+			return StateBroken, nil
+		}
+		return "", camperrors.Wrap(err, "check link state: stat link target")
+	}
+
 	resolved, err := filepath.EvalSymlinks(path)
 	if err != nil {
 		if os.IsNotExist(err) {
@@ -119,6 +131,9 @@ func CheckLinkState(path, expectedTarget string) (LinkState, error) {
 	}
 
 	if expectedTarget == "" {
+		return StateValid, nil
+	}
+	if expectedInfo, statErr := os.Stat(expectedTarget); statErr == nil && os.SameFile(linkedInfo, expectedInfo) {
 		return StateValid, nil
 	}
 
@@ -151,12 +166,14 @@ func DiscoverSkillSlugs(skillsDir string) ([]string, error) {
 		entryPath := filepath.Join(skillsDir, entry.Name())
 
 		isDir := entry.IsDir()
-		if !isDir && entry.Type()&os.ModeSymlink != 0 {
-			info, statErr := os.Stat(entryPath)
-			if statErr != nil || !info.IsDir() {
-				continue
+		if !isDir {
+			isLink, linkErr := dirlink.DirEntryIsDirectoryLink(entry, entryPath)
+			if linkErr == nil && isLink {
+				info, statErr := os.Stat(entryPath)
+				if statErr == nil && info.IsDir() {
+					isDir = true
+				}
 			}
-			isDir = true
 		}
 		if !isDir {
 			continue
@@ -318,7 +335,11 @@ func CheckPathType(path string) (PathType, error) {
 		return "", camperrors.Wrap(err, "check path type")
 	}
 
-	if info.Mode()&os.ModeSymlink != 0 {
+	st, err := dirlink.Lstat(path)
+	if err != nil {
+		return "", camperrors.Wrap(err, "check path type")
+	}
+	if st.IsDirectoryLink() {
 		return TypeSymlink, nil
 	}
 	if info.IsDir() {

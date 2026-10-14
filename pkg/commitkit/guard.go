@@ -124,7 +124,7 @@ func CheckStaging(ctx context.Context, repoPath string, limits GuardLimits) ([]G
 	if ctx.Err() != nil {
 		return nil, ctx.Err()
 	}
-	return stageguard.CheckStaging(ctx, repoPath, limits)
+	return git.CheckStaging(ctx, repoPath, limits)
 }
 
 // ResolveLimits loads the guard policy that applies to repoPath, merging

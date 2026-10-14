@@ -333,6 +333,12 @@ func ShellQuote(s string) string {
 // distinguish failure shapes (e.g. RunCampCommand's "binary not found"
 // detection) without re-parsing the error string.
 func Run(ctx context.Context, target string, opts []string, remoteCmd string) ([]byte, error) {
+	if err := ctx.Err(); err != nil {
+		return nil, err
+	}
+	if err := RequirePeerSupport(); err != nil {
+		return nil, err
+	}
 	ctx, cancel := context.WithTimeout(ctx, DefaultTimeout)
 	defer cancel()
 

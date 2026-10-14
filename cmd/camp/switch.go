@@ -37,12 +37,16 @@ Use --org or org/campaign to resolve inside one organization.
 Use with the shell-init wrappers for instant navigation (recommended):
   eval "$(camp shell-init zsh)"   # or bash / sh, once per shell
   camp shell-init fish | source   # fish
+  Invoke-Expression (& camp shell-init powershell | Out-String)   # PowerShell
   csw                            # Interactive picker (local + remote machines)
   csw my-camp                    # Switch by name
   csw a1b2                       # Switch by ID prefix
   csw obey/platform              # Switch by org-scoped selector
   csw archdtop:lance-arch        # Hop to a remote camp over ssh
   csw -                          # Hop back to the machine/campaign this session came from
+
+PowerShell's cgo and csw helpers support local navigation. The remote csw
+hop examples require a POSIX shell wrapper.
 
 'camp switch -' (csw -) is the hop-back gesture: it returns to the origin
 encoded in CAMP_HOP_ORIGIN by the outbound hop. It is registration-independent:
@@ -52,6 +56,7 @@ camp query.
 
 The --print flag outputs just the path for shell integration (local only):
   cd "$(camp switch --print)"
+  Set-Location -LiteralPath (camp switch --print)   # PowerShell
 
 Use camp@target to land somewhere specific in the target camp. The part
 after @ resolves exactly like 'camp go' inside that camp: a navigation tab
@@ -84,6 +89,7 @@ install locations (~/.local/bin, $GOBIN, $GOPATH/bin, ~/go/bin, Homebrew) before
 giving up. If camp lives somewhere else, set CAMP_REMOTE_CAMP_PATH to its exact
 path on that machine. 'camp machine diagnose' shows which binary a hop would run.`,
 	Example: `  eval "$(camp shell-init zsh)"
+  Invoke-Expression (& camp shell-init powershell | Out-String)   # PowerShell
   csw                                # Interactive picker (local + remotes)
   csw obey-campaign                  # Switch by name, on this machine or another
   csw archdtop:lance-arch            # Hop to remote camp

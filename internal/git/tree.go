@@ -9,6 +9,7 @@ import (
 	"path/filepath"
 	"strings"
 
+	"github.com/Obedience-Corp/camp/internal/dirlink"
 	camperrors "github.com/Obedience-Corp/camp/internal/errors"
 )
 
@@ -507,19 +508,27 @@ func CaptureBlobs(ctx context.Context, repoPath string, paths []string) ([]BlobR
 			}
 			return nil, camperrors.Wrapf(err, "capture %s", p)
 		}
-		if info.Mode()&os.ModeSymlink != 0 {
-			// A symlink's content is its target string, and `git hash-object
+		link, err := isCapturableDirectoryLink(abs)
+		if err != nil {
+			return nil, camperrors.Wrapf(err, "classify directory link %s", p)
+		}
+		if link {
+			// A directory link's content is its target string, and `git hash-object
 			// -w -- <path>` follows the link instead of reading it. For a link
 			// to a file that stored the file's whole content under mode
 			// 120000, so the deferred commit recorded a symlink pointing at
 			// the bytes of its own target; for a link to a directory it failed
-			// outright, which is how this was noticed. Read the link.
+			// outright, which is how this was noticed. Read the link without
+			// following into an external project tree (including junctions).
 			ref, err := captureSymlink(ctx, repoPath, p)
 			if err != nil {
 				return nil, err
 			}
 			refs = append(refs, ref)
 			continue
+		}
+		if info.Mode()&os.ModeIrregular != 0 {
+			return nil, camperrors.Newf("capture %s: unsupported irregular entry", p)
 		}
 		if info.IsDir() {
 			// A directory expands to its files. Capturing it as one object is
@@ -551,8 +560,16 @@ func CaptureBlobs(ctx context.Context, repoPath string, paths []string) ([]BlobR
 // The target is written to git hash-object over stdin rather than named as a
 // path, because naming the path is exactly what makes git read through the
 // link.
+func isCapturableDirectoryLink(abs string) (bool, error) {
+	st, err := dirlink.Lstat(abs)
+	if err != nil {
+		return false, err
+	}
+	return st.IsDirectoryLink(), nil
+}
+
 func captureSymlink(ctx context.Context, repoPath, path string) (BlobRef, error) {
-	target, err := os.Readlink(filepath.Join(repoPath, filepath.FromSlash(path)))
+	target, err := dirlink.ReadTarget(filepath.Join(repoPath, filepath.FromSlash(path)))
 	if err != nil {
 		return BlobRef{}, camperrors.Wrapf(err, "capture symlink %s", path)
 	}

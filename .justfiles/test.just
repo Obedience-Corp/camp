@@ -119,6 +119,19 @@ integration-build:
 windows-starter-container-proof:
     pwsh -NoProfile -NonInteractive -File scripts/ci/windows-starter-container-proof.ps1
 
+# container_fs directory-link tests plus real camp project link/list/readback/unlink as
+# ContainerUser inside Windows Server Core. Host only compiles; mutations run in-container.
+# Runs on windows-2025 CI (windows-directory-links-lock).
+[no-cd]
+windows-directory-links-container-proof:
+    pwsh -NoProfile -NonInteractive -File scripts/ci/windows-directory-links-container-proof.ps1
+
+# Native PowerShell 5.1 shell, flow, artifact, and peer proof in Server Core.
+# Host only compiles; fixture filesystem mutations run in the container.
+[no-cd]
+windows-shell-container-proof:
+    pwsh -NoProfile -NonInteractive -File scripts/ci/windows-shell-container-proof.ps1
+
 # Cross-compile every selected Windows test target (compile-only; no execution on Linux/macOS).
 [no-cd]
 windows-test-compile-gate:

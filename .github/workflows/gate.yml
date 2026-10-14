@@ -94,11 +94,11 @@ jobs:
       - name: Checkout camp
         uses: actions/checkout@v7
 
-      - name: Checkout fest (cf0006-windows)
+      - name: Checkout fest
         uses: actions/checkout@v7
         with:
           repository: Obedience-Corp/fest
-          ref: cf0006-windows
+          ref: main
           path: fest-src
 
       - name: Set up Go
@@ -114,3 +114,43 @@ jobs:
         env:
           CAMP_TEST_FEST_SRC: ${{ github.workspace }}/fest-src
         run: just test windows-starter-container-proof
+
+  windows-directory-links-lock:
+    name: windows-directory-links-lock
+    runs-on: windows-2025
+    timeout-minutes: 25
+    steps:
+      - name: Checkout camp
+        uses: actions/checkout@v7
+
+      - name: Set up Go
+        uses: actions/setup-go@v7
+        with:
+          go-version-file: go.mod
+
+      - name: Install just
+        uses: extractions/setup-just@v4
+
+      - name: Directory-link proof in Windows container
+        shell: pwsh
+        run: just test windows-directory-links-container-proof
+
+  windows-shell-lock:
+    name: windows-shell-lock
+    runs-on: windows-2025
+    timeout-minutes: 25
+    steps:
+      - name: Checkout camp
+        uses: actions/checkout@v7
+
+      - name: Set up Go
+        uses: actions/setup-go@v7
+        with:
+          go-version-file: go.mod
+
+      - name: Install just
+        uses: extractions/setup-just@v4
+
+      - name: PowerShell 5.1 shell, flow, artifact, and peer proof in Windows container
+        shell: pwsh
+        run: just test windows-shell-container-proof

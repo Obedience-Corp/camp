@@ -1,0 +1,237 @@
+# Camp integration for Windows PowerShell 5.1 and PowerShell 7.
+# Load in the current session: Invoke-Expression (& camp shell-init powershell | Out-String)
+
+# A function named camp takes precedence over an application. Resolve the
+# application explicitly so every other Camp command keeps its normal behavior.
+function global:_camp_native_executable {
+    $native = Get-Command -Name camp -CommandType Application -ErrorAction Stop | Select-Object -First 1
+    if ($null -eq $native) {
+        throw 'camp executable is not on PATH'
+    }
+    return $native.Source
+}
+
+function global:_camp_quote_windows_argument {
+    param([string]$Value)
+    if ([string]::IsNullOrEmpty($Value)) { return '""' }
+    if ($Value -notmatch '[\s"]') { return $Value }
+
+    # ProcessStartInfo.Arguments needs Windows command-line quoting on .NET
+    # Framework, which does not provide ProcessStartInfo.ArgumentList.
+    $quoted = '"'
+    $slashes = 0
+    foreach ($character in $Value.ToCharArray()) {
+        if ($character -eq '\') { $slashes++; continue }
+        if ($character -eq '"') {
+            $quoted += ('\' * ($slashes * 2 + 1)) + '"'
+        } else {
+            $quoted += ('\' * $slashes) + $character
+        }
+        $slashes = 0
+    }
+    return $quoted + ('\' * ($slashes * 2)) + '"'
+}
+
+function global:_camp_native_utf8 {
+    param(
+        [string]$Native,
+        [string[]]$Arguments
+    )
+    $start = New-Object System.Diagnostics.ProcessStartInfo
+    $start.FileName = $Native
+    $start.Arguments = (@($Arguments | ForEach-Object { _camp_quote_windows_argument $_ }) -join ' ')
+    $start.UseShellExecute = $false
+    $start.RedirectStandardOutput = $true
+    $start.StandardOutputEncoding = New-Object System.Text.UTF8Encoding($false, $true)
+
+    $process = New-Object System.Diagnostics.Process
+    $process.StartInfo = $start
+    try {
+        if (-not $process.Start()) { throw "could not start camp executable: $Native" }
+        # Keep stderr attached to the caller so diagnostics stream normally;
+        # only stdout needs UTF-8 decoding for navigation and JSON output.
+        while (($line = $process.StandardOutput.ReadLine()) -ne $null) { Write-Output $line }
+        $process.WaitForExit()
+        $global:LASTEXITCODE = $process.ExitCode
+    } finally {
+        $process.Dispose()
+    }
+}
+
+function global:_camp_native {
+    $native = _camp_native_executable
+    # Go writes UTF-8 to pipes. Windows PowerShell 5.1 otherwise decodes
+    # native output using the console code page, corrupting Unicode paths.
+    # Server Core can refuse OutputEncoding changes when stdout is redirected;
+    # decode the child process's UTF-8 pipes directly in that case.
+    try {
+        $previousEncoding = [Console]::OutputEncoding
+        [Console]::OutputEncoding = New-Object System.Text.UTF8Encoding($false)
+    } catch {
+        if (-not [Console]::IsOutputRedirected) { throw }
+        _camp_native_utf8 -Native $native -Arguments @($args)
+        return
+    }
+    try {
+        & $native @args
+    } finally {
+        [Console]::OutputEncoding = $previousEncoding
+    }
+}
+
+function global:_camp_set_location {
+    param(
+        [object[]]$Output,
+        [string]$Command
+    )
+    if ($Output.Count -ne 1 -or [string]::IsNullOrWhiteSpace([string]$Output[0])) {
+        throw "$Command did not return exactly one destination path; current directory unchanged"
+    }
+    $destination = [string]$Output[0]
+    if (-not (Test-Path -LiteralPath $destination -PathType Container)) {
+        throw "$Command resolved to a missing directory: $destination; current directory unchanged"
+    }
+    Set-Location -LiteralPath $destination -ErrorAction Stop
+}
+
+function global:_camp_is_interactive {
+    return -not [Console]::IsInputRedirected -and -not [Console]::IsOutputRedirected
+}
+
+function global:_camp_browse {
+    param(
+        [object[]]$CommandArgs,
+        [string]$Command
+    )
+    if (-not (_camp_is_interactive)) {
+        _camp_native @CommandArgs
+        return
+    }
+
+    $selectionFile = [System.IO.Path]::GetTempFileName()
+    try {
+        _camp_native @CommandArgs --path-output $selectionFile
+        if ($LASTEXITCODE -ne 0) {
+            throw "$Command failed (exit $LASTEXITCODE); current directory unchanged"
+        }
+        $utf8 = New-Object System.Text.UTF8Encoding($false, $true)
+        $selection = [System.IO.File]::ReadAllText($selectionFile, $utf8)
+        if ($selection.Length -eq 0) { return }
+        if ($selection.StartsWith('ssh-hop:', [System.StringComparison]::Ordinal)) {
+            throw 'Remote camp hopping is unavailable in PowerShell; current directory unchanged'
+        }
+        _camp_set_location -Output @($selection) -Command $Command
+    } finally {
+        Remove-Item -LiteralPath $selectionFile -Force -ErrorAction SilentlyContinue
+    }
+}
+
+function global:camp {
+    if ($args.Count -eq 0) {
+        _camp_native
+        return
+    }
+
+    $verb = [string]$args[0]
+    $rest = @()
+    if ($args.Count -gt 1) {
+        $rest = @($args[1..($args.Count - 1)])
+    }
+
+    if ($verb -eq 'go' -or $verb -eq 'g') {
+        foreach ($arg in $rest) {
+            if ($arg -eq '--help' -or $arg -eq '-h' -or $arg -eq '--print' -or
+                $arg -like '--print=*' -or $arg -eq '--list' -or $arg -eq '-l' -or
+                $arg -eq '-c' -or $arg -like '-c=*' -or
+                $arg -eq '--command' -or $arg -like '--command=*') {
+                _camp_native go @rest
+                return
+            }
+        }
+        $destination = @(_camp_native go @rest --print)
+        if ($LASTEXITCODE -ne 0) {
+            throw "camp go failed (exit $LASTEXITCODE); current directory unchanged"
+        }
+        _camp_set_location -Output $destination -Command 'camp go'
+        return
+    }
+
+    if ($verb -eq 'switch' -or $verb -eq 'sw') {
+        foreach ($arg in $rest) {
+            if ($arg -eq '--help' -or $arg -eq '-h' -or $arg -eq '--print' -or
+                $arg -like '--print=*' -or $arg -eq '--json' -or $arg -like '--json=*' -or
+                $arg -eq '--shell-connect') {
+                _camp_native switch @rest
+                return
+            }
+        }
+        $destination = @(_camp_native switch @rest --print)
+        if ($LASTEXITCODE -ne 0) {
+            throw "camp switch failed (exit $LASTEXITCODE); current directory unchanged"
+        }
+        _camp_set_location -Output $destination -Command 'camp switch'
+        return
+    }
+
+    if ($verb -eq 'list' -or $verb -eq 'ls') {
+        foreach ($arg in $rest) {
+            if ($arg -eq '--help' -or $arg -eq '-h' -or $arg -eq '--json' -or
+                $arg -like '--json=*' -or $arg -eq '--count' -or $arg -like '--count=*' -or
+                $arg -eq '--format' -or $arg -like '--format=*' -or $arg -eq '-f' -or
+                $arg -like '-f=*' -or $arg -eq '--path-output' -or $arg -like '--path-output=*') {
+                _camp_native list @rest
+                return
+            }
+        }
+        _camp_browse -CommandArgs (@('list') + $rest) -Command 'camp list'
+        return
+    }
+
+    if ($verb -eq 'project' -or $verb -eq 'p') {
+        if ($rest.Count -eq 0 -or ($rest[0] -ne 'list' -and $rest[0] -ne 'ls')) {
+            _camp_native project @rest
+            return
+        }
+        $listArgs = @()
+        if ($rest.Count -gt 1) { $listArgs = @($rest[1..($rest.Count - 1)]) }
+        foreach ($arg in $listArgs) {
+            if ($arg -eq '--help' -or $arg -eq '-h' -or $arg -eq '--json' -or
+                $arg -like '--json=*' -or $arg -eq '--count' -or $arg -like '--count=*' -or
+                $arg -eq '--format' -or $arg -like '--format=*' -or $arg -eq '-f' -or
+                $arg -like '-f=*' -or $arg -eq '--path-output' -or $arg -like '--path-output=*') {
+                _camp_native project list @listArgs
+                return
+            }
+        }
+        _camp_browse -CommandArgs (@('project', 'list') + $listArgs) -Command 'camp project list'
+        return
+    }
+
+    if ($verb -eq 'quest') {
+        if ($rest.Count -eq 0 -or $rest[0] -ne 'list') {
+            _camp_native quest @rest
+            return
+        }
+        $listArgs = @()
+        if ($rest.Count -gt 1) { $listArgs = @($rest[1..($rest.Count - 1)]) }
+        foreach ($arg in $listArgs) {
+            if ($arg -eq '--help' -or $arg -eq '-h' -or $arg -eq '--json' -or
+                $arg -like '--json=*' -or $arg -eq '--path-output' -or $arg -like '--path-output=*') {
+                _camp_native quest list @listArgs
+                return
+            }
+        }
+        _camp_browse -CommandArgs (@('quest', 'list') + $listArgs) -Command 'camp quest list'
+        return
+    }
+
+    _camp_native @args
+}
+
+function global:cgo {
+    camp go @args
+}
+
+function global:csw {
+    camp switch @args
+}

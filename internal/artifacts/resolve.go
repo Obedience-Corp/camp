@@ -10,6 +10,7 @@ import (
 	camperrors "github.com/Obedience-Corp/camp/internal/errors"
 	"github.com/Obedience-Corp/camp/internal/fsutil"
 	"github.com/Obedience-Corp/camp/internal/peer"
+	"github.com/Obedience-Corp/camp/internal/remote"
 )
 
 // Conflict resolution (D005).
@@ -189,6 +190,11 @@ func noConflictError(peerID, want string, all []Conflict) error {
 func Resolve(ctx context.Context, campaignRoot string, src *peer.Source, peerID, path string, action ResolveAction) (*ResolveResult, error) {
 	if ctx.Err() != nil {
 		return nil, ctx.Err()
+	}
+	if action == ResolveTakePeer {
+		if err := remote.RequirePeerSupport(); err != nil {
+			return nil, err
+		}
 	}
 	conflict, err := findConflict(ctx, campaignRoot, peerID, path)
 	if err != nil {

@@ -9,6 +9,7 @@ import (
 	"path/filepath"
 	"strings"
 
+	"github.com/Obedience-Corp/camp/internal/dirlink"
 	camperrors "github.com/Obedience-Corp/camp/internal/errors"
 	"github.com/Obedience-Corp/camp/internal/git"
 	"github.com/Obedience-Corp/camp/internal/pathutil"
@@ -219,19 +220,25 @@ func Remove(ctx context.Context, campaignRoot, name string, opts RemoveOptions) 
 }
 
 func linkedProjectTarget(projectPath string) (bool, string, error) {
-	info, err := os.Lstat(projectPath)
+	st, err := dirlink.Lstat(projectPath)
 	if err != nil {
 		return false, "", err
 	}
-	if info.Mode()&os.ModeSymlink == 0 {
+	if !st.IsDirectoryLink() {
 		return false, "", nil
 	}
-	target, err := filepath.EvalSymlinks(projectPath)
+	// Read the stored target first. On Windows, EvalSymlinks can report a
+	// junction's own path without an error, which would leave its external
+	// .camp marker behind after the junction is removed.
+	target, err := dirlink.ReadTarget(projectPath)
 	if err != nil {
-		target, err = os.Readlink(projectPath)
+		target, err = filepath.EvalSymlinks(projectPath)
 		if err != nil {
 			return true, "", nil
 		}
+	}
+	if target != "" && !filepath.IsAbs(target) {
+		target = filepath.Join(filepath.Dir(projectPath), target)
 	}
 	return true, target, nil
 }

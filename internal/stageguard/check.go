@@ -16,11 +16,18 @@ import (
 // It is exported separately from staging so a caller that stages by another
 // route, or wants to preflight without staging, can still consult the guard.
 func CheckStaging(ctx context.Context, repoPath string, limits GuardLimits) ([]GuardViolation, error) {
+	return CheckStagingWithDirectoryLinks(ctx, repoPath, limits, nil)
+}
+
+// CheckStagingWithDirectoryLinks treats discovered directory links as single
+// file candidates. The caller supplies target sizes because this leaf package
+// cannot import the platform-specific directory-link implementation.
+func CheckStagingWithDirectoryLinks(ctx context.Context, repoPath string, limits GuardLimits, directoryLinks map[string]int64) ([]GuardViolation, error) {
 	if ctx.Err() != nil {
 		return nil, ctx.Err()
 	}
 
-	candidates, dirs, err := enumerate(ctx, repoPath, nil)
+	candidates, dirs, err := enumerate(ctx, repoPath, nil, directoryLinks)
 	if err != nil {
 		return nil, err
 	}
@@ -70,7 +77,7 @@ func UntrackedOverThreshold(ctx context.Context, repoPath string, limits GuardLi
 		return nil, nil
 	}
 
-	candidates, _, err := enumerate(ctx, repoPath, dirs)
+	candidates, _, err := enumerate(ctx, repoPath, dirs, nil)
 	if err != nil {
 		return nil, err
 	}

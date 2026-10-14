@@ -5,8 +5,10 @@ import (
 	"io"
 	"os"
 	"path/filepath"
+	"runtime"
 	"strings"
 
+	"github.com/Obedience-Corp/camp/internal/dirlink"
 	camperrors "github.com/Obedience-Corp/camp/internal/errors"
 )
 
@@ -35,18 +37,21 @@ type ProjectionState struct {
 // IsManagedSkillEntryLink checks whether the symlink at linkPath was created
 // by camp skills projection (points into skillsDir or matches expectedTarget).
 func IsManagedSkillEntryLink(linkPath, expectedTarget, skillsDir string) (bool, error) {
-	info, err := os.Lstat(linkPath)
-	if err != nil {
+	if _, err := os.Lstat(linkPath); err != nil {
 		if os.IsNotExist(err) {
 			return false, nil
 		}
 		return false, camperrors.Wrap(err, "inspect skill link")
 	}
-	if info.Mode()&os.ModeSymlink == 0 {
+	st, err := dirlink.Lstat(linkPath)
+	if err != nil {
+		return false, camperrors.Wrap(err, "inspect skill link")
+	}
+	if !st.IsDirectoryLink() {
 		return false, nil
 	}
 
-	raw, err := os.Readlink(linkPath)
+	raw, err := dirlink.ReadTarget(linkPath)
 	if err != nil {
 		return false, camperrors.Wrap(err, "read skill link")
 	}
@@ -56,6 +61,15 @@ func IsManagedSkillEntryLink(linkPath, expectedTarget, skillsDir string) (bool, 
 	resolvedExpected, resolvedExpectedErr := filepath.EvalSymlinks(expectedTarget)
 	cleanSkills := filepath.Clean(skillsDir)
 	resolvedSkills, resolvedSkillsErr := filepath.EvalSymlinks(skillsDir)
+	resolvedLink, resolvedLinkErr := filepath.EvalSymlinks(linkPath)
+	if resolvedLinkErr == nil {
+		if resolvedExpectedErr == nil && isWithinOrEqual(resolvedExpected, resolvedLink) && isWithinOrEqual(resolvedLink, resolvedExpected) {
+			return true, nil
+		}
+		if resolvedSkillsErr == nil && isWithinOrEqual(resolvedSkills, resolvedLink) {
+			return true, nil
+		}
+	}
 
 	if abs == cleanExpected || isWithinOrEqual(cleanSkills, abs) {
 		return true, nil
@@ -148,12 +162,29 @@ func CreateSkillProjectionLink(linkPath, sourcePath string, dryRun bool) error {
 	if err := os.MkdirAll(filepath.Dir(linkPath), 0o755); err != nil {
 		return camperrors.Wrap(err, "create parent directories")
 	}
-	relTarget, err := RelativeSymlinkTarget(linkPath, sourcePath)
+	absLink, err := filepath.Abs(linkPath)
 	if err != nil {
-		return err
+		return camperrors.Wrap(err, "resolve skill link path")
 	}
-	if err := os.Symlink(relTarget, linkPath); err != nil {
-		return camperrors.Wrap(err, "create symlink")
+	absTarget, err := filepath.Abs(sourcePath)
+	if err != nil {
+		return camperrors.Wrap(err, "resolve skill link target")
+	}
+	relTarget, err := RelativeSymlinkTarget(absLink, absTarget)
+	if err != nil {
+		if runtime.GOOS != "windows" || strings.EqualFold(filepath.VolumeName(absLink), filepath.VolumeName(absTarget)) {
+			return err
+		}
+		// Windows junctions accept an absolute target on another volume.
+		// A network target will use a directory symlink with the same path.
+		relTarget = absTarget
+	}
+	if err := dirlink.Create(dirlink.CreateOptions{
+		LinkPath:    linkPath,
+		TargetPath:  absTarget,
+		StoreTarget: relTarget,
+	}); err != nil {
+		return camperrors.Wrap(err, "create skill directory link")
 	}
 	return nil
 }

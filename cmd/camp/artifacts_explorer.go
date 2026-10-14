@@ -82,6 +82,14 @@ func artifactAction(ctx context.Context, root, path, action string) tea.Cmd {
 				result.err = err
 				return result
 			}
+			if runtime.GOOS == "windows" {
+				// ShellExecute uses the user's file association and reports launch
+				// errors directly. There is no child process for Camp to wait on.
+				if err := artifactOpenWindows(abs); err != nil {
+					result.err = camperrors.Wrap(err, "open "+filepath.Base(abs))
+				}
+				return result
+			}
 			c, err := artifactOpenCommand(abs)
 			if err != nil {
 				result.err = err
