@@ -109,6 +109,19 @@ windows:
         GOOS=windows GOARCH=amd64 go build -ldflags '{{platform_ldflags}}' -o {{bin_dir}}/{{binary_name}}-windows-amd64.exe ./cmd/camp
     fi
 
+# Cross-compile camp.exe for CI (stable profile, compile-only gate).
+[no-cd]
+windows-x64-gate:
+    #!/usr/bin/env bash
+    set -euo pipefail
+    mkdir -p {{bin_dir}}
+    if [ -n "{{build_tags}}" ]; then
+        CGO_ENABLED=0 GOOS=windows GOARCH=amd64 go build -tags '{{build_tags}}' -ldflags '{{platform_ldflags}}' -o {{bin_dir}}/{{binary_name}}.exe ./cmd/camp
+    else
+        CGO_ENABLED=0 GOOS=windows GOARCH=amd64 go build -ldflags '{{platform_ldflags}}' -o {{bin_dir}}/{{binary_name}}.exe ./cmd/camp
+    fi
+    test -s {{bin_dir}}/{{binary_name}}.exe
+
 # Build for all platforms
 [no-cd]
 platforms: linux darwin darwin-arm64 windows

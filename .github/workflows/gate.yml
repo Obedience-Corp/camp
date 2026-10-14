@@ -49,3 +49,68 @@ jobs:
 
       - name: gate-fast
         run: just gate-fast
+
+  windows-x64:
+    name: windows-x64
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7
+
+      - name: Set up Go
+        uses: actions/setup-go@v7
+        with:
+          go-version-file: go.mod
+
+      - name: Install just
+        uses: extractions/setup-just@v4
+
+      - name: Cross-build camp.exe (stable)
+        run: BUILD_TAGS='' just build windows-x64-gate
+
+  windows-test-compile:
+    name: windows-test-compile
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7
+
+      - name: Set up Go
+        uses: actions/setup-go@v7
+        with:
+          go-version-file: go.mod
+
+      - name: Install just
+        uses: extractions/setup-just@v4
+
+      - name: Compile Windows test targets (stable, dev, container_fs, integration)
+        run: just test windows-test-compile-gate
+
+  windows-starter-lock:
+    name: windows-starter-lock
+    runs-on: windows-2025
+    timeout-minutes: 25
+    steps:
+      - name: Checkout camp
+        uses: actions/checkout@v7
+
+      - name: Checkout fest (cf0006-windows)
+        uses: actions/checkout@v7
+        with:
+          repository: Obedience-Corp/fest
+          ref: cf0006-windows
+          path: fest-src
+
+      - name: Set up Go
+        uses: actions/setup-go@v7
+        with:
+          go-version-file: go.mod
+
+      - name: Install just
+        uses: extractions/setup-just@v4
+
+      - name: Starter lock proof in Windows container
+        shell: pwsh
+        env:
+          CAMP_TEST_FEST_SRC: ${{ github.workspace }}/fest-src
+        run: just test windows-starter-container-proof
