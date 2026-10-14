@@ -19,10 +19,6 @@ $ContainerImage = 'mcr.microsoft.com/windows/servercore:ltsc2025'
 $ContainerWork = 'C:\camp-dirlink-proof'
 $ContainerUserName = 'ContainerUser'
 
-# Go -test.run regex (not .NET).
-# Matches the focused dirlink, project, Git, and skill link suites.
-$DefaultTestRunPattern = 'Test(.*DirectoryLink|AddLinked|UnlinkProject|Dirlink|CreateAndRead|RemoveDirectoryLink|GitCapture|CommitScopedParentDirectory).*'
-$TestRunPattern = if ($env:CAMP_WINDOWS_DIRLINK_TEST_RUN) { $env:CAMP_WINDOWS_DIRLINK_TEST_RUN.Trim() } else { $DefaultTestRunPattern }
 $MinTargetedTests = if ($env:CAMP_WINDOWS_DIRLINK_MIN_TESTS) { [int]$env:CAMP_WINDOWS_DIRLINK_MIN_TESTS } else { 5 }
 
 $RunLinePattern = '(?m)^=== RUN[ \t]+(Test[A-Za-z0-9_/]+)\r?$'
@@ -36,6 +32,7 @@ $RequiredTestNames = @(
     'TestCyclicDirectoryLinkSafeRemoval',
     'TestUNCDirectoryLinkUnavailableTarget',
     'TestCrossVolumeDirectoryLinkSafeRemoval',
+    'TestAddLinked_ConcurrentAutomaticNames',
     'TestAddLinked_MarkerRollbackOnLinkCollision',
     'TestAddLinked_CaseOnlyNameCollision',
     'TestUnlinkProject_RemovesLinkOnly',
@@ -48,6 +45,11 @@ $RequiredTestNames = @(
     'TestSkillProjectionDirectoryLinkReadback',
     'TestGrokSkillsAliasDirectoryLink'
 )
+# Go -test.run regex (not .NET). Run only the named proof cases: legacy
+# chmod-based tests can be selected by a broad AddLinked pattern but must skip
+# on Windows, where chmod does not deny directory creation.
+$DefaultTestRunPattern = '^(' + (($RequiredTestNames | ForEach-Object { [regex]::Escape($_) }) -join '|') + ')$'
+$TestRunPattern = if ($env:CAMP_WINDOWS_DIRLINK_TEST_RUN) { $env:CAMP_WINDOWS_DIRLINK_TEST_RUN.Trim() } else { $DefaultTestRunPattern }
 
 $TestPackages = @(
     @{ ImportPath = './internal/dirlink'; Optional = $false }
