@@ -122,15 +122,13 @@ function Wait-ProcessExit {
         [System.Diagnostics.Process]$Proc,
         [int]$TimeoutSec
     )
-    if ($Proc.HasExited) { return }
-    $deadline = [datetime]::UtcNow.AddSeconds($TimeoutSec)
-    while (-not $Proc.HasExited) {
-        if ([datetime]::UtcNow -ge $deadline) {
-            Stop-ProcessTree -RootPid $Proc.Id
-            throw "process $($Proc.Id) did not exit within ${TimeoutSec}s"
-        }
-        Start-Sleep -Milliseconds 300
+    if (-not $Proc.WaitForExit($TimeoutSec * 1000)) {
+        Stop-ProcessTree -RootPid $Proc.Id
+        throw "process $($Proc.Id) did not exit within ${TimeoutSec}s"
     }
+    # Start-Process without -Wait can leave ExitCode unset under Windows
+    # PowerShell until the Process handle is finalized.
+    $Proc.WaitForExit()
 }
 
 function Stop-ProcessTree {
