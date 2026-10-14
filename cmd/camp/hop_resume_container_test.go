@@ -1,4 +1,4 @@
-//go:build container_fs
+//go:build container_fs && !windows
 
 package main
 

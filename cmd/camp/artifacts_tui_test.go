@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"os/exec"
+	"runtime"
 	"strings"
 	"testing"
 	"time"
@@ -89,6 +90,9 @@ func TestArtifactExplorerFailureAndCancellation(t *testing.T) {
 }
 
 func TestArtifactExplorerOpenDoesNotHoldActions(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("the Windows Shell launch path is covered by Windows artifact tests")
+	}
 	ctx, cancel := context.WithCancel(context.Background())
 	t.Cleanup(cancel)
 	previous := artifactOpenCommand
