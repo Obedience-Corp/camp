@@ -126,6 +126,12 @@ windows-starter-container-proof:
 windows-directory-links-container-proof:
     pwsh -NoProfile -NonInteractive -File scripts/ci/windows-directory-links-container-proof.ps1
 
+# Native PowerShell 5.1 shell, flow, artifact, and peer proof in Server Core.
+# Host only compiles; fixture filesystem mutations run in the container.
+[no-cd]
+windows-shell-container-proof:
+    pwsh -NoProfile -NonInteractive -File scripts/ci/windows-shell-container-proof.ps1
+
 # Cross-compile every selected Windows test target (compile-only; no execution on Linux/macOS).
 [no-cd]
 windows-test-compile-gate:

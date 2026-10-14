@@ -134,3 +134,23 @@ jobs:
       - name: Directory-link proof in Windows container
         shell: pwsh
         run: just test windows-directory-links-container-proof
+
+  windows-shell-lock:
+    name: windows-shell-lock
+    runs-on: windows-2025
+    timeout-minutes: 25
+    steps:
+      - name: Checkout camp
+        uses: actions/checkout@v7
+
+      - name: Set up Go
+        uses: actions/setup-go@v7
+        with:
+          go-version-file: go.mod
+
+      - name: Install just
+        uses: extractions/setup-just@v4
+
+      - name: PowerShell 5.1 shell, flow, artifact, and peer proof in Windows container
+        shell: pwsh
+        run: just test windows-shell-container-proof

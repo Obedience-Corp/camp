@@ -43,15 +43,16 @@ func TestDetectAlwaysReturnsAGeneratableShell(t *testing.T) {
 	}
 }
 
-// fish reads the script from a pipe; the others eval it. Handing a fish user an
-// eval line is the same class of dead end as handing a dash user bash syntax.
+// Each shell receives a command it can parse. Handing a fish or PowerShell user
+// an eval line is the same class of dead end as handing dash bash syntax.
 func TestInitCommand(t *testing.T) {
 	tests := map[string]string{
-		"zsh":  `eval "$(camp shell-init zsh)"`,
-		"bash": `eval "$(camp shell-init bash)"`,
-		"sh":   `eval "$(camp shell-init sh)"`,
-		"fish": "camp shell-init fish | source",
-		"nope": `eval "$(camp shell-init sh)"`, // unknown falls back to POSIX
+		"zsh":        `eval "$(camp shell-init zsh)"`,
+		"bash":       `eval "$(camp shell-init bash)"`,
+		"sh":         `eval "$(camp shell-init sh)"`,
+		"fish":       "camp shell-init fish | source",
+		"powershell": "Invoke-Expression (& camp shell-init powershell | Out-String)",
+		"nope":       `eval "$(camp shell-init sh)"`, // unknown falls back to POSIX
 	}
 	for in, want := range tests {
 		t.Run(in, func(t *testing.T) {

@@ -14,6 +14,7 @@ import (
 
 	intexplore "github.com/Obedience-Corp/camp/internal/dungeon/explore"
 	camperrors "github.com/Obedience-Corp/camp/internal/errors"
+	"github.com/Obedience-Corp/camp/internal/shell"
 	"github.com/Obedience-Corp/obey-shared/brand"
 )
 
@@ -670,7 +671,7 @@ func (m exploreModel) hop() (tea.Model, tea.Cmd) {
 
 func (m exploreModel) hopTo(item intexplore.Item) (tea.Model, tea.Cmd) {
 	if !m.gotoEnabled {
-		m.setStatus(exploreActionStatus, `go needs shell integration: eval "$(camp shell-init <shell>)"`, true)
+		m.setStatus(exploreActionStatus, "go needs shell integration: run "+shell.InitHint(), true)
 		return m, nil
 	}
 	m.gotoPath = exploreJump(m.root, item)

@@ -1,6 +1,7 @@
 package worktrees
 
 import (
+	"github.com/Obedience-Corp/camp/internal/shell"
 	tea "github.com/charmbracelet/bubbletea"
 )
 
@@ -26,7 +27,7 @@ func (m wtListModel) updateBrowse(key tea.KeyMsg) (tea.Model, tea.Cmd) {
 			return m, nil
 		}
 		if !m.gotoEnabled {
-			m.setStatus("go needs shell integration: run eval \"$(camp shell-init <shell>)\"", true)
+			m.setStatus("go needs shell integration: run "+shell.InitHint(), true)
 			return m, nil
 		}
 		m.gotoPath = m.visible[m.cursor].Path

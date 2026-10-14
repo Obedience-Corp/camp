@@ -3,11 +3,11 @@ package flow
 import (
 	"context"
 	"os"
-	"os/exec"
 	"path/filepath"
 	"strings"
 
 	camperrors "github.com/Obedience-Corp/camp/internal/errors"
+	"github.com/Obedience-Corp/camp/internal/shellcmd"
 )
 
 // Runner executes workflow flows with proper context handling,
@@ -22,7 +22,7 @@ func NewRunner(campaignRoot string) *Runner {
 }
 
 // Run executes a flow with the given context and optional extra arguments.
-// Commands are executed via "sh -c" with inherited stdio.
+// Commands use the flow's shell with inherited stdio.
 func (r *Runner) Run(ctx context.Context, f Flow, extraArgs []string) error {
 	if err := ctx.Err(); err != nil {
 		return camperrors.Newf("context cancelled: %w", err)
@@ -30,14 +30,10 @@ func (r *Runner) Run(ctx context.Context, f Flow, extraArgs []string) error {
 
 	workDir := r.resolveWorkDir(f.WorkDir)
 
-	// f.Command is a user-controlled shell expression, like a just recipe.
-	// Extra args are passed as "$@" positionals so they are data, not shell code.
-	shArgs := []string{"-c", f.Command}
-	if len(extraArgs) > 0 {
-		shArgs = append([]string{"-c", f.Command + ` "$@"`, "sh"}, extraArgs...)
+	cmd, err := shellcmd.Command(ctx, f.Shell, f.Command, extraArgs)
+	if err != nil {
+		return camperrors.Wrap(err, "resolving flow interpreter")
 	}
-
-	cmd := exec.CommandContext(ctx, "sh", shArgs...)
 	cmd.Dir = workDir
 	cmd.Env = r.mergeEnv(f.Env)
 	cmd.Stdin = os.Stdin
@@ -45,6 +41,9 @@ func (r *Runner) Run(ctx context.Context, f Flow, extraArgs []string) error {
 	cmd.Stderr = os.Stderr
 
 	if err := cmd.Run(); err != nil {
+		if ctx.Err() != nil {
+			return camperrors.Newf("flow command cancelled: %w", ctx.Err())
+		}
 		return camperrors.Newf("executing flow command: %w", err)
 	}
 

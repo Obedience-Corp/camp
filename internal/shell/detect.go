@@ -3,6 +3,7 @@ package shell
 import (
 	"os"
 	"path/filepath"
+	"runtime"
 	"strings"
 )
 
@@ -15,9 +16,14 @@ const FallbackShell = "sh"
 // $SHELL. Bourne-family shells that are not bash or zsh (dash, ash, busybox,
 // and the plain /bin/sh on minimal and embedded systems) map to "sh" rather
 // than being reported as unsupported: they run the POSIX script correctly.
-// An unset or unrecognized $SHELL yields FallbackShell.
+// An unset $SHELL selects PowerShell on Windows; other unknown values yield
+// FallbackShell.
 func DetectFromEnv() string {
-	return detect(os.Getenv("SHELL"))
+	shellPath := os.Getenv("SHELL")
+	if runtime.GOOS == "windows" && strings.TrimSpace(shellPath) == "" {
+		return "powershell"
+	}
+	return detect(shellPath)
 }
 
 // detect maps a shell path to a supported shell name. Split out from
@@ -47,7 +53,7 @@ func detect(shellPath string) string {
 
 // InitCommand returns the exact line the user should run (or add to their
 // profile) to load camp's integration for the named shell. fish reads the
-// script from a pipe; everything else evals it.
+// script from a pipe; PowerShell uses Invoke-Expression; POSIX shells eval it.
 //
 // This exists so no surface hardcodes a shell in a hint. Telling a dash user to
 // run the bash script produces a syntax error rather than integration, which is
@@ -55,6 +61,9 @@ func detect(shellPath string) string {
 func InitCommand(shellType string) string {
 	if shellType == "fish" {
 		return "camp shell-init fish | source"
+	}
+	if shellType == "powershell" {
+		return "Invoke-Expression (& camp shell-init powershell | Out-String)"
 	}
 	if !IsSupported(shellType) {
 		shellType = FallbackShell

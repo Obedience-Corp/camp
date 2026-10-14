@@ -8,10 +8,11 @@ import (
 // shellDescriptions labels each supported shell in completion menus. A shell
 // missing from here still completes; it just shows no description.
 var shellDescriptions = map[string]string{
-	"zsh":  "Zsh shell",
-	"bash": "Bash shell",
-	"fish": "Fish shell",
-	"sh":   "POSIX sh (dash, busybox ash)",
+	"zsh":        "Zsh shell",
+	"bash":       "Bash shell",
+	"fish":       "Fish shell",
+	"sh":         "POSIX sh (dash, busybox ash)",
+	"powershell": "PowerShell",
 }
 
 // The three functions below render SupportedShells for each completion syntax.
