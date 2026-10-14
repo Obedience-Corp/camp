@@ -35,6 +35,14 @@ func TestSkillProjectionDirectoryLinkReadback(t *testing.T) {
 	if err != nil || state != StateValid {
 		t.Fatalf("CheckLinkState = %q, %v; want valid", state, err)
 	}
+	other := filepath.Join(root, "other")
+	if err := os.Mkdir(other, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	state, err = CheckLinkState(link, other)
+	if err != nil || state != StateMismatch {
+		t.Fatalf("CheckLinkState for other target = %q, %v; want mismatch", state, err)
+	}
 	managed, err := IsManagedSkillEntryLink(link, source, filepath.Dir(source))
 	if err != nil || !managed {
 		t.Fatalf("IsManagedSkillEntryLink = %v, %v; want true", managed, err)

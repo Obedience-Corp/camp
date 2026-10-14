@@ -93,7 +93,7 @@ func RelativeSymlinkTarget(linkPath, targetPath string) (string, error) {
 }
 
 // CheckLinkState inspects the filesystem at path and returns its LinkState.
-// If expectedTarget is non-empty and the path is a symlink, the resolved
+// If expectedTarget is non-empty and the path is a directory link, the resolved
 // target is compared against expectedTarget to determine validity.
 func CheckLinkState(path, expectedTarget string) (LinkState, error) {
 	if _, err := os.Lstat(path); err != nil {
@@ -111,7 +111,16 @@ func CheckLinkState(path, expectedTarget string) (LinkState, error) {
 		return StateNotALink, nil
 	}
 
-	// It's a symlink — resolve and compare
+	// Stat follows both symlinks and Windows junctions. EvalSymlinks alone can
+	// return the junction path on Windows, so compare file identity as well.
+	linkedInfo, err := os.Stat(path)
+	if err != nil {
+		if os.IsNotExist(err) {
+			return StateBroken, nil
+		}
+		return "", camperrors.Wrap(err, "check link state: stat link target")
+	}
+
 	resolved, err := filepath.EvalSymlinks(path)
 	if err != nil {
 		if os.IsNotExist(err) {
@@ -122,6 +131,9 @@ func CheckLinkState(path, expectedTarget string) (LinkState, error) {
 	}
 
 	if expectedTarget == "" {
+		return StateValid, nil
+	}
+	if expectedInfo, statErr := os.Stat(expectedTarget); statErr == nil && os.SameFile(linkedInfo, expectedInfo) {
 		return StateValid, nil
 	}
 
