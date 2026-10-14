@@ -74,7 +74,12 @@ function Invoke-CampSetupJson {
     $stamp = [guid]::NewGuid().ToString('n')
     $stdoutPath = Join-Path $env:TEMP "setup-$stamp.json"
     $stderrPath = Join-Path $env:TEMP "setup-$stamp.err"
-    $proc = Start-Process -FilePath $Camp -ArgumentList @('setup', '--json') -NoNewWindow -PassThru -Wait -RedirectStandardOutput $stdoutPath -RedirectStandardError $stderrPath
+    $proc = Start-Process -FilePath $Camp -ArgumentList @('setup', '--json') -NoNewWindow -PassThru -RedirectStandardOutput $stdoutPath -RedirectStandardError $stderrPath
+    try {
+        Wait-ProcessExit -Proc $proc -TimeoutSec $ProcessExitWaitSec
+    } finally {
+        if (-not $proc.HasExited) { Stop-ProcessTree -RootPid $proc.Id }
+    }
     $raw = if (Test-Path -LiteralPath $stdoutPath) { Get-Content -LiteralPath $stdoutPath -Raw } else { '' }
     $stderr = if (Test-Path -LiteralPath $stderrPath) { Get-Content -LiteralPath $stderrPath -Raw } else { '' }
     if (-not $AllowFailure -and $proc.ExitCode -ne 0) {
@@ -354,7 +359,12 @@ function Assert-ReadbackViaSeparateProcess([hashtable]$Layout) {
     [System.IO.File]::WriteAllLines($readbackPath, $lines)
     $proc = Start-Process -FilePath (Join-Path $PSHOME 'powershell.exe') -ArgumentList @(
         '-NoProfile', '-ExecutionPolicy', 'Bypass', '-File', $readbackPath
-    ) -WorkingDirectory $Layout.Home -Wait -PassThru -NoNewWindow
+    ) -WorkingDirectory $Layout.Home -PassThru -NoNewWindow
+    try {
+        Wait-ProcessExit -Proc $proc -TimeoutSec $ProcessExitWaitSec
+    } finally {
+        if (-not $proc.HasExited) { Stop-ProcessTree -RootPid $proc.Id }
+    }
     if ($proc.ExitCode -ne 0) {
         throw "separate-process readback failed with exit $($proc.ExitCode)"
     }
@@ -510,7 +520,14 @@ $outA = Join-Path $layoutB.Home 'first.json'
 $outB = Join-Path $layoutB.Home 'second.json'
 $p1 = Start-Process -FilePath $Camp -ArgumentList @('setup', '--json') -RedirectStandardOutput $outA -RedirectStandardError (Join-Path $layoutB.Home 'first.err') -NoNewWindow -PassThru
 $p2 = Start-Process -FilePath $Camp -ArgumentList @('setup', '--json') -RedirectStandardOutput $outB -RedirectStandardError (Join-Path $layoutB.Home 'second.err') -NoNewWindow -PassThru
-Wait-Process -Id @($p1.Id, $p2.Id)
+try {
+    Wait-ProcessExit -Proc $p1 -TimeoutSec $ProcessExitWaitSec
+    Wait-ProcessExit -Proc $p2 -TimeoutSec $ProcessExitWaitSec
+} finally {
+    foreach ($proc in @($p1, $p2)) {
+        if ($proc -and -not $proc.HasExited) { Stop-ProcessTree -RootPid $proc.Id }
+    }
+}
 foreach ($proc in @($p1, $p2)) {
     if ($proc.ExitCode -ne 0) {
         throw "concurrent camp setup exit $($proc.ExitCode)"
