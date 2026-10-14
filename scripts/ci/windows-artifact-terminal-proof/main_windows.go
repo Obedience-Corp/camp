@@ -43,7 +43,7 @@ type terminal struct {
 }
 
 func main() {
-	if strings.EqualFold(filepath.Base(os.Args[0]), "git.exe") {
+	if strings.TrimSuffix(strings.ToLower(filepath.Base(os.Args[0])), ".exe") == "git" {
 		gitFixture()
 		return
 	}
@@ -61,8 +61,11 @@ func main() {
 }
 
 func gitFixture() {
-	args := strings.Join(os.Args[1:], " ")
-	if !strings.Contains(args, " ls-files -z --others -- ") || !strings.HasSuffix(args, " :(literal)media") {
+	args := os.Args[1:]
+	if len(args) != 7 || args[0] != "-C" ||
+		!strings.EqualFold(filepath.Clean(args[1]), filepath.Clean(os.Getenv("CAMP_ROOT"))) ||
+		args[2] != "ls-files" || args[3] != "-z" || args[4] != "--others" ||
+		args[5] != "--" || args[6] != ":(literal)media" {
 		fmt.Fprintf(os.Stderr, "unexpected git fixture request: %q\n", args)
 		os.Exit(2)
 	}
