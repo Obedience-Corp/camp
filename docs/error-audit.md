@@ -28,8 +28,8 @@ These errors follow best practices: descriptive, include context, and suggest va
 
 | Location | Message | Quality |
 |----------|---------|---------|
-| `internal/shell/shell.go:19` | "unsupported shell: %s (supported: zsh, bash, fish)" | ✓ Lists valid options |
-| `cmd/camp/shell_init.go:52` | "unsupported shell: %s\nSupported: %s" | ✓ Lists valid options |
+| `internal/shell/shell.go:30` | "unsupported shell: %s (supported: %s)" | ✓ Lists valid options from `SupportedShells`, including sh and PowerShell |
+| `cmd/camp/shell_init.go:90` | "unsupported shell: %s\nSupported: %s" | ✓ Lists valid options from `SupportedShells` |
 | `cmd/camp/register.go:110` | "invalid camp type: %s (must be product, research, tools, personal)" | ✓ Lists valid types |
 | `internal/config/validate.go:34` | "%w: %q (valid: product, research, tools, personal)" | ✓ Lists valid types |
 | `internal/scaffold/init.go:195` | "invalid camp type: %s" | Acceptable (validation layer) |

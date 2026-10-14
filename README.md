@@ -151,7 +151,7 @@ to create a festival and run the `fest next` loop. See the
 - **Productivity**: Leverage scoring to identify high-impact work (`leverage`)
 - **Git Integration**: Camp and project commits, deferred commit jobs, project status, and post-merge branch cycling (`stage`, `commit`, `jobs`, `log`, `push`, `pull`, `status`, `fresh`, `refs-sync`)
 - **Camp Ops**: Health checks, attachments, artifact roots, and cross-camp or remote file transfers (`doctor`, `attach`, `artifacts`, `copy`, `move`, `sync`, `machine`, `transfer`)
-- **Shell Integration**: Native `cd` behavior with zsh, bash, fish, and POSIX sh (`shell-init`)
+- **Shell Integration**: Native `cd` behavior with zsh, bash, fish, POSIX sh, and PowerShell (`shell-init`)
 - **Tab Completion**: Smart completion for categories, projects, and paths
 - **Plugins**: Discover camp plugins on `PATH` (`plugins`)
 
