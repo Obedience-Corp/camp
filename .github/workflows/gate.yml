@@ -91,8 +91,15 @@ jobs:
     runs-on: windows-2025
     timeout-minutes: 25
     steps:
-      - name: Checkout
+      - name: Checkout camp
         uses: actions/checkout@v7
+
+      - name: Checkout fest (cf0006-windows)
+        uses: actions/checkout@v7
+        with:
+          repository: Obedience-Corp/fest
+          ref: cf0006-windows
+          path: fest-src
 
       - name: Set up Go
         uses: actions/setup-go@v7
@@ -104,4 +111,6 @@ jobs:
 
       - name: Starter lock proof in Windows container
         shell: pwsh
+        env:
+          CAMP_TEST_FEST_SRC: ${{ github.workspace }}/fest-src
         run: just test windows-starter-container-proof

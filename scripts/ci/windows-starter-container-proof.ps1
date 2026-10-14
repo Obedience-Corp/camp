@@ -1,7 +1,8 @@
 #Requires -Version 7.0
 <#
 .SYNOPSIS
-  Compiles internal/starter container_fs tests and runs them inside a Windows Server Core container.
+  Compiles internal/starter container_fs tests and runs them inside a Windows Server Core container,
+  then proves real camp setup --json with camp.exe, fest.exe, and host Git copied into the fixture.
 
   Bypasses tests/integration TestMain (Unix Colima/docker.sock probe). Intended for the
   windows-starter-lock gate on windows-2025 hosted runners.
@@ -12,7 +13,7 @@ $ErrorActionPreference = 'Stop'
 $RepoRoot = (Resolve-Path (Join-Path $PSScriptRoot '../..')).Path
 $ContainerImage = 'mcr.microsoft.com/windows/servercore:ltsc2025'
 $MinStarterTests = 7
-$RunLinePattern = '(?m)^=== RUN\s+(Test[A-Za-z0-9_]+)$'
+$RunLinePattern = '(?m)^=== RUN[ \t]+(Test[A-Za-z0-9_]+)\r?$'
 
 function Write-Section([string]$Title) {
     Write-Host ""
@@ -116,6 +117,78 @@ function Invoke-DockerExec([string]$ContainerId, [string]$CmdLine) {
     return $text
 }
 
+function Invoke-DockerExecPowerShell([string]$ContainerId, [string]$ScriptPath) {
+    $out = & docker exec $ContainerId powershell.exe -NoProfile -ExecutionPolicy Bypass -File $ScriptPath 2>&1
+    $code = $LASTEXITCODE
+    $text = $out | Out-String
+    if ($code -ne 0) {
+        throw "docker exec powershell failed ($code): $text"
+    }
+    return $text
+}
+
+function Resolve-FestSource {
+    if ($env:CAMP_TEST_FEST_SRC) {
+        $abs = (Resolve-Path -LiteralPath $env:CAMP_TEST_FEST_SRC).Path
+        if (-not (Test-Path -LiteralPath (Join-Path $abs 'cmd\fest'))) {
+            throw "CAMP_TEST_FEST_SRC=$abs has no cmd\fest"
+        }
+        return $abs
+    }
+    $searched = [System.Collections.Generic.List[string]]::new()
+    for ($dir = $RepoRoot; ; $dir = Split-Path -Parent $dir) {
+        foreach ($name in @('fest-src', 'fest')) {
+            $candidate = Join-Path $dir $name
+            $searched.Add($candidate)
+            if (Test-Path -LiteralPath (Join-Path $candidate 'cmd\fest')) {
+                return (Resolve-Path -LiteralPath $candidate).Path
+            }
+        }
+        $parent = Split-Path -Parent $dir
+        if ($parent -eq $dir) { break }
+    }
+    throw @(
+        'fest source not found for windows setup proof.',
+        "Searched: $($searched -join '; ').",
+        'Check out github.com/Obedience-Corp/fest (cf0006-windows) or set CAMP_TEST_FEST_SRC.'
+    ) -join ' '
+}
+
+function Get-HostGitRoot {
+    $gitCmd = (Get-Command git.exe -ErrorAction Stop).Source
+    $root = Resolve-Path (Join-Path (Split-Path -Parent $gitCmd) '..')
+    if (-not (Test-Path -LiteralPath (Join-Path $root 'cmd\git.exe'))) {
+        throw "host git layout unexpected at $root"
+    }
+    return $root.Path
+}
+
+function Build-SetupProofBinaries([string]$WorkDir) {
+    $campOut = Join-Path $WorkDir 'camp.exe'
+    $festOut = Join-Path $WorkDir 'fest.exe'
+    $festRoot = Resolve-FestSource
+    Write-Host "Building camp.exe from $RepoRoot"
+    $env:CGO_ENABLED = '0'
+    & go build -o $campOut ./cmd/camp
+    if ($LASTEXITCODE -ne 0) {
+        throw "go build ./cmd/camp failed with exit code $LASTEXITCODE"
+    }
+    Write-Host "Building fest.exe from $festRoot"
+    Push-Location $festRoot
+    try {
+        & go build -o $festOut ./cmd/fest
+        if ($LASTEXITCODE -ne 0) {
+            throw "go build ./cmd/fest failed with exit code $LASTEXITCODE"
+        }
+    } finally {
+        Pop-Location
+    }
+    return @{
+        Camp = $campOut
+        Fest = $festOut
+    }
+}
+
 try {
     Push-Location $RepoRoot
 
@@ -155,10 +228,10 @@ try {
             Invoke-DockerCli -DockerArgs @('cp', $binPath, "${containerId}:${containerBin}") | Out-Null
 
             $testCmd = @(
-                "set HOME=$containerWork"
-                "set USERPROFILE=$containerWork"
-                "set TEMP=$containerWork\tmp"
-                "set TMP=$containerWork\tmp"
+                "set `"HOME=$containerWork`""
+                "set `"USERPROFILE=$containerWork`""
+                "set `"TEMP=$containerWork\tmp`""
+                "set `"TMP=$containerWork\tmp`""
                 "mkdir $containerWork\tmp"
                 "cd /d $containerWork"
                 "$containerBin -test.v -test.count=1 -test.timeout=5m"
@@ -177,6 +250,37 @@ try {
             }
             Write-Host ""
             Write-Host "Windows container starter proof: $($runs.Count) tests executed in $ContainerImage"
+
+            Write-Section 'Compile camp.exe and fest.exe for setup --json proof'
+            $cliBin = Build-SetupProofBinaries -WorkDir $workHost
+            $gitRoot = Get-HostGitRoot
+            $innerScriptHost = Join-Path $PSScriptRoot 'windows-starter-setup-proof-inner.ps1'
+            if (-not (Test-Path -LiteralPath $innerScriptHost)) {
+                throw "missing inner setup proof script: $innerScriptHost"
+            }
+
+            $containerBinDir = "$containerWork\bin"
+            $containerGitDir = "$containerWork\Git"
+            $containerInner = "$containerWork\setup-proof.ps1"
+            Invoke-DockerExec $containerId "mkdir $containerBinDir" | Out-Null
+            Invoke-DockerCli -DockerArgs @(
+                'cp', $cliBin.Camp, "${containerId}:$containerBinDir\camp.exe"
+            ) | Out-Null
+            Invoke-DockerCli -DockerArgs @(
+                'cp', $cliBin.Fest, "${containerId}:$containerBinDir\fest.exe"
+            ) | Out-Null
+            Write-Host "Copying host Git from $gitRoot into container (real git for camp init)"
+            Invoke-DockerCli -DockerArgs @('cp', $gitRoot, "${containerId}:$containerGitDir") | Out-Null
+            Invoke-DockerCli -DockerArgs @('cp', $innerScriptHost, "${containerId}:$containerInner") | Out-Null
+
+            Write-Section 'Run camp setup --json proof inside container'
+            $setupOut = Invoke-DockerExecPowerShell $containerId $containerInner
+            Write-Host $setupOut
+            if ($setupOut -notmatch 'concurrent setup passed') {
+                throw "camp setup proof output missing success marker:`n$setupOut"
+            }
+            Write-Host ""
+            Write-Host 'Windows container camp setup proof: first creation, repeat setup, and concurrent setup verified'
         } finally {
             & docker rm -f $containerId 2>&1 | Out-Null
         }

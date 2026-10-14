@@ -112,8 +112,9 @@ integration-build:
     GOOS=linux GOARCH=$(go env GOARCH) go build -o bin/linux/camp ./cmd/camp
     @echo "Built bin/linux/camp"
 
-# LockFileEx starter proof: PowerShell lane bypasses tests/integration TestMain
-# (Unix docker.sock / Colima probe). Runs on windows-2025 CI only.
+# LockFileEx starter proof plus real camp setup --json (camp.exe, fest.exe, git in container).
+# PowerShell lane bypasses tests/integration TestMain (Unix docker.sock / Colima probe).
+# Runs on windows-2025 CI only.
 [no-cd]
 windows-starter-container-proof:
     pwsh -NoProfile -NonInteractive -File scripts/ci/windows-starter-container-proof.ps1
