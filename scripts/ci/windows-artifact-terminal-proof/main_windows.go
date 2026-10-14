@@ -26,7 +26,7 @@ import (
 
 const (
 	firstName  = "a open [artifact].cmd"
-	secondName = "z no-handler.cf0006-unassociated"
+	secondName = "z stale [artifact].txt"
 )
 
 type inventory struct {
@@ -90,7 +90,7 @@ func run(workRoot string) error {
 		".campaign/campaign.yaml":  "id: aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee\nname: artifact-terminal\ntype: product\n",
 		".campaign/artifacts.yaml": "version: 1\nroots:\n  - path: media\n    policy: always\n",
 		"media/" + firstName:       "@echo off\r\necho opened>\"" + filepath.Join(workRoot, "artifact-opened.txt") + "\"\r\n",
-		"media/" + secondName:      "no file association",
+		"media/" + secondName:      "remove after the explorer loads",
 	} {
 		if err := os.WriteFile(filepath.Join(root, filepath.FromSlash(name)), []byte(content), 0o600); err != nil {
 			return fmt.Errorf("write fixture %s: %w", name, err)
@@ -105,7 +105,7 @@ func run(workRoot string) error {
 	if err := os.Setenv("PATH", bin+string(os.PathListSeparator)+os.Getenv("PATH")); err != nil {
 		return err
 	}
-	if err := checkInventory(camp, root); err != nil {
+	if err := checkInventory(camp, root, []string{firstName, secondName}); err != nil {
 		return err
 	}
 
@@ -164,15 +164,19 @@ func run(workRoot string) error {
 	}); err != nil {
 		return err
 	}
+	if err := os.Remove(filepath.Join(media, secondName)); err != nil {
+		return fmt.Errorf("remove selected artifact to simulate a stale inventory row: %w", err)
+	}
 	if err := term.press("o"); err != nil {
 		return err
 	}
-	if err := term.waitFor("missing association error", 12*time.Second, func(screen string) bool {
-		return strings.Contains(screen, "no application is associated") && strings.Contains(screen, secondName)
+	if err := term.waitFor("missing artifact error", 12*time.Second, func(screen string) bool {
+		return strings.Contains(screen, secondName) && strings.Contains(screen, "artifact is unavailable") &&
+			!strings.Contains(screen, "Opened "+secondName)
 	}); err != nil {
 		return err
 	}
-	term.record("missing association")
+	term.record("missing artifact error")
 	beforeMove = term.raw.Len()
 	if err := term.press("k"); err != nil {
 		return err
@@ -203,14 +207,14 @@ func run(workRoot string) error {
 	if !bytes.Contains(term.raw.Bytes(), []byte("\x1b[")) {
 		return errors.New("ConPTY capture contained no VT control sequences")
 	}
-	if err := checkInventory(camp, root); err != nil {
+	if err := checkInventory(camp, root, []string{firstName}); err != nil {
 		return fmt.Errorf("fresh-process inventory readback: %w", err)
 	}
 	fmt.Printf("Shell marker and selected directory readback: %s\n", media)
 	return nil
 }
 
-func checkInventory(camp, root string) error {
+func checkInventory(camp, root string, want []string) error {
 	ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
 	defer cancel()
 	cmd := exec.CommandContext(ctx, camp, "artifacts", "--json")
@@ -223,8 +227,13 @@ func checkInventory(camp, root string) error {
 	if err := json.Unmarshal(out, &result); err != nil {
 		return fmt.Errorf("parse camp artifacts --json: %w: %s", err, out)
 	}
-	if len(result.Files) != 2 || result.Files[0].Path != "media/"+firstName || result.Files[1].Path != "media/"+secondName {
-		return fmt.Errorf("unexpected artifact inventory: %+v", result.Files)
+	if len(result.Files) != len(want) {
+		return fmt.Errorf("unexpected artifact inventory: %+v; want %q", result.Files, want)
+	}
+	for i, name := range want {
+		if result.Files[i].Path != "media/"+name {
+			return fmt.Errorf("unexpected artifact inventory: %+v; want %q", result.Files, want)
+		}
 	}
 	return nil
 }
