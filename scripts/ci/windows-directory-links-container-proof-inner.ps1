@@ -338,13 +338,37 @@ function Assert-CollisionAndDeniedMarkerRollback {
     }
 }
 
+Add-Type -TypeDefinition @'
+using System;
+using System.ComponentModel;
+using System.Runtime.InteropServices;
+
+public static class CampVolumeIdentity {
+    [DllImport("kernel32.dll", CharSet = CharSet.Unicode, SetLastError = true, ExactSpelling = true)]
+    private static extern bool GetVolumeInformationW(
+        string rootPath, IntPtr volumeName, uint volumeNameSize, out uint serial,
+        IntPtr maxComponentLength, IntPtr fileSystemFlags, IntPtr fileSystemName, uint fileSystemNameSize);
+
+    public static uint Serial(string rootPath) {
+        uint serial;
+        if (!GetVolumeInformationW(rootPath, IntPtr.Zero, 0, out serial,
+            IntPtr.Zero, IntPtr.Zero, IntPtr.Zero, 0)) {
+            throw new Win32Exception(Marshal.GetLastWin32Error(),
+                "GetVolumeInformationW failed for " + rootPath);
+        }
+        return serial;
+    }
+}
+'@
+
 function Get-VolumeSerialNumber {
     param([string]$Drive)
-    $output = & fsutil fsinfo volumeinfo $Drive 2>&1 | Out-String
-    if ($LASTEXITCODE -ne 0 -or $output -notmatch '(?im)Volume Serial Number\s*:\s*(0x[0-9a-f]+)') {
-        throw "cannot read volume serial for $Drive`: $output"
+    try {
+        $serial = [CampVolumeIdentity]::Serial("$Drive\")
+    } catch {
+        throw "cannot read volume serial for ${Drive}: $_"
     }
-    return $Matches[1].ToLowerInvariant()
+    return ('0x{0:x8}' -f $serial)
 }
 
 function Assert-CrossVolumeProjectLink {

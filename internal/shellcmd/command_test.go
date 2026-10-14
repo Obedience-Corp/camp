@@ -1,6 +1,7 @@
 package shellcmd
 
 import (
+	"bytes"
 	"context"
 	"os/exec"
 	"runtime"
@@ -31,9 +32,11 @@ func TestPowerShellCommandPreservesLiteralArguments(t *testing.T) {
 			if err != nil {
 				t.Fatal(err)
 			}
-			out, err := cmd.CombinedOutput()
+			var stderr bytes.Buffer
+			cmd.Stderr = &stderr
+			out, err := cmd.Output()
 			if err != nil {
-				t.Fatalf("PowerShell command failed: %v\n%s", err, out)
+				t.Fatalf("PowerShell command failed: %v\nstdout:\n%s\nstderr:\n%s", err, out, stderr.String())
 			}
 			got := strings.Split(strings.TrimSpace(string(out)), "\n")
 			for i := range got {
