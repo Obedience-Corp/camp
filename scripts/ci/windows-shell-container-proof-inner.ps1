@@ -128,7 +128,7 @@ version: 1
 flows:
   winargs:
     command: |
-      & { $result = @{ cwd = $PWD.Path; value = $env:CAMP_FLOW_VALUE; args = @($args) } | ConvertTo-Json -Compress; [IO.File]::WriteAllText($env:CAMP_FLOW_OUT, $result) }
+      & { [string[]]$received = $args; $result = @{ cwd = $PWD.Path; value = $env:CAMP_FLOW_VALUE; args = $received } | ConvertTo-Json -Compress; [IO.File]::WriteAllText($env:CAMP_FLOW_OUT, $result) }
     workdir: projects/fixture
     env:
       CAMP_FLOW_VALUE: value with spaces

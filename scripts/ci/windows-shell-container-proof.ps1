@@ -60,6 +60,41 @@ function Invoke-DockerExec([string]$ContainerId, [string]$CmdLine, [string]$User
     return $text
 }
 
+function Invoke-DockerProof([string[]]$DockerArgs, [string]$PassMarker,
+    [string]$Label, [int]$TimeoutSeconds = 300) {
+    # PowerShell's native stderr pipeline can interpret the child PS 5.1
+    # CLIXML stream as malformed XML, hiding the actual proof error.
+    $start = [System.Diagnostics.ProcessStartInfo]::new()
+    $start.FileName = (Get-Command docker.exe -ErrorAction Stop).Source
+    $start.UseShellExecute = $false
+    $start.RedirectStandardOutput = $true
+    $start.RedirectStandardError = $true
+    foreach ($arg in $DockerArgs) { [void]$start.ArgumentList.Add($arg) }
+
+    $process = [System.Diagnostics.Process]::Start($start)
+    if (-not $process) { throw "could not start docker for $Label" }
+    try {
+        $stdout = $process.StandardOutput.ReadToEndAsync()
+        $stderr = $process.StandardError.ReadToEndAsync()
+        if (-not $process.WaitForExit($TimeoutSeconds * 1000)) {
+            $process.Kill($true)
+            $process.WaitForExit()
+            Write-Host ($stdout.GetAwaiter().GetResult() + $stderr.GetAwaiter().GetResult())
+            throw "$Label timed out after $TimeoutSeconds seconds"
+        }
+        $process.WaitForExit()
+        [string]$message = $stdout.GetAwaiter().GetResult() + $stderr.GetAwaiter().GetResult()
+        $exitCode = $process.ExitCode
+        $hasMarker = $message.Contains($PassMarker)
+        Write-Host $message
+        if ($exitCode -ne 0 -or -not $hasMarker) {
+            throw "$Label failed (exit $exitCode); required marker: $PassMarker"
+        }
+    } finally {
+        $process.Dispose()
+    }
+}
+
 function Ensure-WindowsContainerEngine {
     foreach ($name in @('com.docker.service', 'docker')) {
         $service = Get-Service -Name $name -ErrorAction SilentlyContinue
@@ -222,11 +257,8 @@ try {
                 $containerId, 'powershell.exe', '-NoProfile', '-NonInteractive',
                 '-ExecutionPolicy', 'Bypass', '-File', "$ContainerWork\shell-proof.ps1"
             )
-            $proofOut = & docker @proofArgs 2>&1 | Out-String
-            if ($LASTEXITCODE -ne 0 -or $proofOut -notmatch [regex]::Escape($ProofMarker)) {
-                throw "real camp.exe PowerShell 5.1 proof failed: $proofOut"
-            }
-            Write-Host $proofOut
+            Invoke-DockerProof -DockerArgs $proofArgs -PassMarker $ProofMarker `
+                -Label 'real camp.exe PowerShell 5.1 proof'
 
             $peerProofArgs = @(
                 'exec', '-u', $ContainerUserName, '-w', $ContainerWork,
@@ -235,11 +267,8 @@ try {
                 $containerId, 'powershell.exe', '-NoProfile', '-NonInteractive',
                 '-ExecutionPolicy', 'Bypass', '-File', "$ContainerWork\peer-proof.ps1"
             )
-            $peerProofOut = & docker @peerProofArgs 2>&1 | Out-String
-            if ($LASTEXITCODE -ne 0 -or $peerProofOut -notmatch [regex]::Escape($PeerProofMarker)) {
-                throw "real camp.exe peer boundary proof failed: $peerProofOut"
-            }
-            Write-Host $peerProofOut
+            Invoke-DockerProof -DockerArgs $peerProofArgs -PassMarker $PeerProofMarker `
+                -Label 'real camp.exe peer boundary proof'
         } finally {
             & docker rm -f $containerId 2>&1 | Out-Null
         }
