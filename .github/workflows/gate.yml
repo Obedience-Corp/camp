@@ -94,11 +94,11 @@ jobs:
       - name: Checkout camp
         uses: actions/checkout@v7
 
-      - name: Checkout fest (cf0006-windows)
+      - name: Checkout fest
         uses: actions/checkout@v7
         with:
           repository: Obedience-Corp/fest
-          ref: cf0006-windows
+          ref: main
           path: fest-src
 
       - name: Set up Go
