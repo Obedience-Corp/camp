@@ -94,7 +94,8 @@ $env:CAMP_PROBE_OUT = Join-Path $Root 'run-argv.json'
 Set-Location -LiteralPath $campRoot
 & $Camp run $Probe @wantArgs
 if ($LASTEXITCODE -ne 0) { throw "camp run argv proof failed ($LASTEXITCODE)" }
-$runRecord = Get-Content -LiteralPath $env:CAMP_PROBE_OUT -Raw | ConvertFrom-Json
+# Windows PowerShell 5.1 otherwise decodes BOM-less JSON using the local ANSI code page.
+$runRecord = Get-Content -LiteralPath $env:CAMP_PROBE_OUT -Raw -Encoding UTF8 | ConvertFrom-Json
 if ($runRecord.cwd -ne $campRoot -or $runRecord.camp_root -ne $campRoot) {
     throw "camp run cwd/root mismatch: $($runRecord | ConvertTo-Json -Compress)"
 }
@@ -110,7 +111,7 @@ if ($LASTEXITCODE -ne 0 -or $help -notmatch 'Usage:' -or $help -notmatch 'Execut
 $env:CAMP_PROBE_OUT = Join-Path $Root 'project-run-argv.json'
 & $Camp project run -p fixture -- $Probe @wantArgs
 if ($LASTEXITCODE -ne 0) { throw "camp project run argv proof failed ($LASTEXITCODE)" }
-$projectRecord = Get-Content -LiteralPath $env:CAMP_PROBE_OUT -Raw | ConvertFrom-Json
+$projectRecord = Get-Content -LiteralPath $env:CAMP_PROBE_OUT -Raw -Encoding UTF8 | ConvertFrom-Json
 if ($projectRecord.cwd -ne $fixture -or $projectRecord.camp_root -ne $campRoot) {
     throw "camp project run cwd/root mismatch: $($projectRecord | ConvertTo-Json -Compress)"
 }
@@ -141,7 +142,7 @@ flows:
 $env:CAMP_FLOW_OUT = Join-Path $Root 'flow-result.json'
 & $CampDev flow run winargs -- @wantArgs
 if ($LASTEXITCODE -ne 0) { throw "camp flow run winargs failed ($LASTEXITCODE)" }
-$flowRecord = Get-Content -LiteralPath $env:CAMP_FLOW_OUT -Raw | ConvertFrom-Json
+$flowRecord = Get-Content -LiteralPath $env:CAMP_FLOW_OUT -Raw -Encoding UTF8 | ConvertFrom-Json
 if ($flowRecord.cwd -ne $fixture -or $flowRecord.value -ne 'value with spaces') {
     throw "camp flow cwd/env mismatch: $($flowRecord | ConvertTo-Json -Compress)"
 }
