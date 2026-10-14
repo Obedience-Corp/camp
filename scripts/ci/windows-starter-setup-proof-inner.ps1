@@ -305,7 +305,7 @@ function Assert-InterruptedPartialState([hashtable]$Layout) {
     if (-not (Test-Path -LiteralPath $state.staging)) {
         throw "staging workspace missing on disk: $($state.staging)"
     }
-    $stageParents = Get-StagingDirectories $Layout.CampsDir
+    $stageParents = @(Get-StagingDirectories $Layout.CampsDir)
     if ($stageParents.Count -lt 1) {
         throw 'expected .festival-setup-* staging parent after interrupted setup'
     }
