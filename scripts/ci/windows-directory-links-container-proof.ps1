@@ -231,10 +231,10 @@ function Get-ContainerUserSid([string]$ContainerId) {
 function Initialize-ContainerFixtureACL([string]$ContainerId, [string]$WorkRoot, [string]$UserSid) {
     $cmd = @(
         "mkdir $WorkRoot\tmp"
-        "icacls $WorkRoot /grant `"*${UserSid}:(OI)(CI)M`" /T /C /Q"
+        "icacls $WorkRoot /grant *${UserSid}:(OI)(CI)M /T /C /Q"
     ) -join ' && '
     Invoke-DockerExec -ContainerId $ContainerId -CmdLine $cmd | Out-Null
-    Invoke-DockerExec -ContainerId $ContainerId -CmdLine "icacls D:\ /grant `"*${UserSid}:(OI)(CI)M`" /T /C /Q" | Out-Null
+    Invoke-DockerExec -ContainerId $ContainerId -CmdLine "icacls D:\ /grant *${UserSid}:(OI)(CI)M /T /C /Q" | Out-Null
 }
 
 function Get-DistinctHostVolume {
@@ -273,7 +273,7 @@ function Initialize-DeniedCampFixture {
         "git config user.email camp-dirlink-proof@users.noreply.github.com"
         "git add .campaign"
         "git commit -m init-denied-camp"
-        "icacls $deniedCamp\projects /deny `"*${UserSid}:(OI)(CI)M`" /C /Q"
+        "icacls $deniedCamp\projects /deny *${UserSid}:(OI)(CI)M /C /Q"
     ) -join ' && '
     Invoke-DockerExec -ContainerId $ContainerId -CmdLine $initCmd | Out-Null
 }
