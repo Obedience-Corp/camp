@@ -9,6 +9,7 @@ import (
 	"strings"
 
 	"github.com/Obedience-Corp/camp/internal/campaign"
+	"github.com/Obedience-Corp/camp/internal/dirlink"
 	camperrors "github.com/Obedience-Corp/camp/internal/errors"
 )
 
@@ -95,16 +96,18 @@ func RelativeSymlinkTarget(linkPath, targetPath string) (string, error) {
 // If expectedTarget is non-empty and the path is a symlink, the resolved
 // target is compared against expectedTarget to determine validity.
 func CheckLinkState(path, expectedTarget string) (LinkState, error) {
-	info, err := os.Lstat(path)
-	if err != nil {
+	if _, err := os.Lstat(path); err != nil {
 		if os.IsNotExist(err) {
 			return StateMissing, nil
 		}
 		return "", camperrors.Wrap(err, "check link state")
 	}
 
-	// Not a symlink
-	if info.Mode()&os.ModeSymlink == 0 {
+	st, err := dirlink.Lstat(path)
+	if err != nil {
+		return "", camperrors.Wrap(err, "check link state")
+	}
+	if !st.IsDirectoryLink() {
 		return StateNotALink, nil
 	}
 
@@ -151,12 +154,14 @@ func DiscoverSkillSlugs(skillsDir string) ([]string, error) {
 		entryPath := filepath.Join(skillsDir, entry.Name())
 
 		isDir := entry.IsDir()
-		if !isDir && entry.Type()&os.ModeSymlink != 0 {
-			info, statErr := os.Stat(entryPath)
-			if statErr != nil || !info.IsDir() {
-				continue
+		if !isDir {
+			isLink, linkErr := dirlink.DirEntryIsDirectoryLink(entry, entryPath)
+			if linkErr == nil && isLink {
+				info, statErr := os.Stat(entryPath)
+				if statErr == nil && info.IsDir() {
+					isDir = true
+				}
 			}
-			isDir = true
 		}
 		if !isDir {
 			continue
@@ -318,7 +323,11 @@ func CheckPathType(path string) (PathType, error) {
 		return "", camperrors.Wrap(err, "check path type")
 	}
 
-	if info.Mode()&os.ModeSymlink != 0 {
+	st, err := dirlink.Lstat(path)
+	if err != nil {
+		return "", camperrors.Wrap(err, "check path type")
+	}
+	if st.IsDirectoryLink() {
 		return TypeSymlink, nil
 	}
 	if info.IsDir() {

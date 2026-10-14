@@ -9,6 +9,7 @@ import (
 	"path/filepath"
 	"strings"
 
+	"github.com/Obedience-Corp/camp/internal/dirlink"
 	camperrors "github.com/Obedience-Corp/camp/internal/errors"
 	"github.com/Obedience-Corp/camp/internal/git"
 	"github.com/Obedience-Corp/camp/internal/pathutil"
@@ -219,16 +220,16 @@ func Remove(ctx context.Context, campaignRoot, name string, opts RemoveOptions) 
 }
 
 func linkedProjectTarget(projectPath string) (bool, string, error) {
-	info, err := os.Lstat(projectPath)
+	st, err := dirlink.Lstat(projectPath)
 	if err != nil {
 		return false, "", err
 	}
-	if info.Mode()&os.ModeSymlink == 0 {
+	if !st.IsDirectoryLink() {
 		return false, "", nil
 	}
 	target, err := filepath.EvalSymlinks(projectPath)
 	if err != nil {
-		target, err = os.Readlink(projectPath)
+		target, err = dirlink.ReadTarget(projectPath)
 		if err != nil {
 			return true, "", nil
 		}

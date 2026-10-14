@@ -2,6 +2,7 @@ package project
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -9,6 +10,7 @@ import (
 
 	"github.com/Obedience-Corp/camp/internal/campaign"
 	"github.com/Obedience-Corp/camp/internal/config"
+	"github.com/Obedience-Corp/camp/internal/dirlink"
 	camperrors "github.com/Obedience-Corp/camp/internal/errors"
 	"github.com/Obedience-Corp/camp/internal/fsutil"
 	"github.com/Obedience-Corp/camp/internal/git"
@@ -256,12 +258,13 @@ func writeLinked(ctx context.Context, plan *LinkPlan) (*LinkResult, error) {
 		return nil, camperrors.Wrap(err, "write .camp marker")
 	}
 	if err := os.MkdirAll(filepath.Dir(fullPath), 0755); err != nil {
-		_ = restoreLinkMarker(plan.Source, previousMarker)
-		return nil, camperrors.Wrap(err, "create parent directory")
+		return nil, rollbackLinkMarker(plan.Source, previousMarker, camperrors.Wrap(err, "create parent directory"))
 	}
-	if err := os.Symlink(plan.Source, fullPath); err != nil {
-		_ = restoreLinkMarker(plan.Source, previousMarker)
-		return nil, camperrors.Wrap(err, "create symlink")
+	if err := dirlink.Create(dirlink.CreateOptions{
+		LinkPath:   fullPath,
+		TargetPath: plan.Source,
+	}); err != nil {
+		return nil, rollbackLinkMarker(plan.Source, previousMarker, camperrors.Wrap(err, "create directory link"))
 	}
 
 	if plan.IsGit {
@@ -328,7 +331,7 @@ func Unlink(ctx context.Context, campaignRoot, name string, opts UnlinkOptions) 
 // UnlinkProject removes a linked project symlink and local marker state.
 func UnlinkProject(ctx context.Context, campaignRoot, name, targetPath string) ([]string, error) {
 	projectPath := filepath.Join(campaignRoot, "projects", name)
-	if err := os.Remove(projectPath); err != nil && !os.IsNotExist(err) {
+	if err := dirlink.Remove(projectPath); err != nil {
 		return nil, err
 	}
 
@@ -383,10 +386,14 @@ func findExistingLinkToTarget(campaignRoot, absTarget, ignorePath string) (strin
 	}
 
 	for _, entry := range entries {
-		if entry.Type()&os.ModeSymlink == 0 {
+		entryPath := filepath.Join(projectsDir, entry.Name())
+		isLink, err := dirlink.DirEntryIsDirectoryLink(entry, entryPath)
+		if err != nil {
+			return "", camperrors.Wrap(err, "inspect project link")
+		}
+		if !isLink {
 			continue
 		}
-		entryPath := filepath.Join(projectsDir, entry.Name())
 		if entryPath == ignorePath {
 			continue
 		}
@@ -441,6 +448,13 @@ type linkMarkerSnapshot struct {
 	exists bool
 	data   []byte
 	mode   os.FileMode
+}
+
+func rollbackLinkMarker(projectDir string, snapshot linkMarkerSnapshot, cause error) error {
+	if err := restoreLinkMarker(projectDir, snapshot); err != nil {
+		return errors.Join(cause, camperrors.Wrap(err, "restore .camp marker after link failure"))
+	}
+	return cause
 }
 
 func snapshotLinkMarker(projectDir string) (linkMarkerSnapshot, error) {

@@ -8,6 +8,7 @@ import (
 	"path/filepath"
 	"strings"
 
+	"github.com/Obedience-Corp/camp/internal/dirlink"
 	"github.com/Obedience-Corp/camp/internal/git"
 )
 
@@ -96,7 +97,12 @@ func list(ctx context.Context, campaignRoot string, mode listMode) ([]Project, e
 		}
 		projectPath := filepath.Join(projectsDir, name)
 
-		if entry.Type()&os.ModeSymlink != 0 {
+		isLink, err := dirlink.DirEntryIsDirectoryLink(entry, projectPath)
+		if err != nil {
+			fmt.Fprintf(os.Stderr, "warning: inspect project link %q: %v\n", projectPath, err)
+			continue
+		}
+		if isLink {
 			resolvedPath, err := filepath.EvalSymlinks(projectPath)
 			if err != nil {
 				fmt.Fprintf(os.Stderr, "warning: project symlink %q is broken: %v\n", projectPath, err)

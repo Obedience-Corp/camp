@@ -69,6 +69,7 @@ var containerFSPackages = []containerFSPackage{
 	{ImportPath: "./internal/sync", MinTests: 32},
 	{ImportPath: "./internal/commands/fresh", MinTests: 6},
 	// The dungeon-move commit tests need a real repository to commit into.
+	{ImportPath: "./internal/git", MinTests: 1, TestPattern: "^TestCaptureBlobsDoesNotFollowDirectoryLink$"},
 	{ImportPath: "./internal/git/commit", MinTests: 1},
 	{ImportPath: "./internal/commands/workitem", MinTests: 10},
 	{ImportPath: "./internal/workitem", MinTests: 7},
@@ -78,7 +79,9 @@ var containerFSPackages = []containerFSPackage{
 	{ImportPath: "./internal/workitem/resolver", MinTests: 2},
 	// Project discovery and the navigation index both stage git repositories,
 	// and the index scan adds worktrees on top of them.
-	{ImportPath: "./internal/project", MinTests: 3},
+	{ImportPath: "./internal/dirlink", MinTests: 3},
+	{ImportPath: "./internal/project", MinTests: 5},
+	{ImportPath: "./internal/skills", MinTests: 2, TestPattern: "^Test(SkillProjectionDirectoryLinkReadback|GrokSkillsAliasDirectoryLink)$"},
 	{ImportPath: "./internal/nav/index", MinTests: 2},
 	// The initial-commit tests git-init a campaign and commit its scaffold.
 	{ImportPath: "./cmd/camp/init", MinTests: 3},

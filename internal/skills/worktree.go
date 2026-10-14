@@ -10,6 +10,7 @@ import (
 	"strings"
 
 	"github.com/Obedience-Corp/camp/internal/campaign"
+	"github.com/Obedience-Corp/camp/internal/dirlink"
 	camperrors "github.com/Obedience-Corp/camp/internal/errors"
 	"github.com/Obedience-Corp/camp/internal/git"
 )
@@ -277,7 +278,13 @@ func createGrokSkillsAlias(worktreeRoot string, dryRun bool) error {
 	if err := os.MkdirAll(filepath.Dir(linkPath), 0o755); err != nil {
 		return camperrors.Wrap(err, "create .grok directory")
 	}
-	if err := os.Symlink(grokAliasRelTarget, linkPath); err != nil {
+	targetPath, err := filepath.Abs(filepath.Join(filepath.Dir(linkPath), grokAliasRelTarget))
+	if err != nil {
+		return camperrors.Wrap(err, "resolve grok skills alias target")
+	}
+	if err := dirlink.Create(dirlink.CreateOptions{
+		LinkPath: linkPath, TargetPath: targetPath, StoreTarget: grokAliasRelTarget,
+	}); err != nil {
 		return camperrors.Wrap(err, "create grok skills alias")
 	}
 	return nil

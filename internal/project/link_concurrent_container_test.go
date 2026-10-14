@@ -52,9 +52,13 @@ func TestAddLinked_ConcurrentAutomaticNames(t *testing.T) {
 					}
 				} else {
 					created++
-					target, err := os.Readlink(filepath.Join(root, results[i].Path))
-					if err != nil || target != sources[i] {
-						t.Fatalf("caller %d link = %q, %v; want %q", i, target, err, sources[i])
+					linkedInfo, err := os.Stat(filepath.Join(root, results[i].Path))
+					if err != nil {
+						t.Fatalf("caller %d linked target: %v", i, err)
+					}
+					sourceInfo, err := os.Stat(sources[i])
+					if err != nil || !os.SameFile(linkedInfo, sourceInfo) {
+						t.Fatalf("caller %d link does not resolve to source %q: %v", i, sources[i], err)
 					}
 				}
 				marker, err := campaign.ReadMarker(sources[i])
