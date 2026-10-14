@@ -426,7 +426,9 @@ function Assert-UnicodeSpaceProjectLink {
     $suffix = [char]0x97F3
     $unicodeCamp = Join-Path $Root "camp main $suffix"
     $unicodeSource = Join-Path $Root "external main $suffix"
-    $unicodeName = "linked app $suffix"
+    # Project names are ASCII slugs; exercise Unicode and spaces in both
+    # physical paths while using a valid managed entry name.
+    $unicodeName = 'linked-unicode'
     New-CampGitFixture -CampRoot $unicodeCamp -CampaignId 'camp-unicode-proof'
     New-ExternalSource -SourceRoot $unicodeSource
     $before = Get-SourceInventory -SourceRoot $unicodeSource

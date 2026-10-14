@@ -99,7 +99,7 @@ try {
         $testsHost = Join-Path $workHost 'shell.test.exe'
         $flowTestsHost = Join-Path $workHost 'flow.test.exe'
         $shellCommandTestsHost = Join-Path $workHost 'shellcmd.test.exe'
-        $artifactTestsHost = Join-Path $workHost 'artifacts.test.exe'
+        $artifactTestsHost = Join-Path $workHost 'camp-artifacts.test.exe'
         $env:CGO_ENABLED = '0'
         & go build -o $campHost ./cmd/camp
         if ($LASTEXITCODE -ne 0) { throw "go build ./cmd/camp failed ($LASTEXITCODE)" }
@@ -150,7 +150,7 @@ try {
             Invoke-DockerCli -DockerArgs @('cp', $testsHost, "${containerId}:$ContainerWork\shell.test.exe") | Out-Null
             Invoke-DockerCli -DockerArgs @('cp', $flowTestsHost, "${containerId}:$ContainerWork\flow.test.exe") | Out-Null
             Invoke-DockerCli -DockerArgs @('cp', $shellCommandTestsHost, "${containerId}:$ContainerWork\shellcmd.test.exe") | Out-Null
-            Invoke-DockerCli -DockerArgs @('cp', $artifactTestsHost, "${containerId}:$ContainerWork\artifacts.test.exe") | Out-Null
+            Invoke-DockerCli -DockerArgs @('cp', $artifactTestsHost, "${containerId}:$ContainerWork\camp-artifacts.test.exe") | Out-Null
             foreach ($peerSuite in $PeerTestSuites) {
                 $peerTestHost = Join-Path $workHost "$($peerSuite.Package).test.exe"
                 Invoke-DockerCli -DockerArgs @('cp', $peerTestHost,
@@ -179,7 +179,7 @@ try {
             foreach ($suite in @(
                 @{ Exe = 'flow.test.exe'; Names = $FlowTestNames; Timeout = '5m' },
                 @{ Exe = 'shellcmd.test.exe'; Names = $ShellCommandTestNames; Timeout = '5m' },
-                @{ Exe = 'artifacts.test.exe'; Names = $ArtifactTestNames; Timeout = '2m' }
+                @{ Exe = 'camp-artifacts.test.exe'; Names = $ArtifactTestNames; Timeout = '2m' }
             )) {
                 $suiteRun = '^(' + ($suite.Names -join '|') + ')$'
                 $suiteArgs = @(
