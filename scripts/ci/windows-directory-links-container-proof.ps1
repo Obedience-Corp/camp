@@ -229,12 +229,11 @@ function Get-ContainerUserSid([string]$ContainerId) {
 }
 
 function Initialize-ContainerFixtureACL([string]$ContainerId, [string]$WorkRoot, [string]$UserSid) {
-    $cmd = @(
-        "mkdir $WorkRoot\tmp"
-        "icacls $WorkRoot /grant *${UserSid}:(OI)(CI)M /T /C /Q"
-    ) -join ' && '
-    Invoke-DockerExec -ContainerId $ContainerId -CmdLine $cmd | Out-Null
-    Invoke-DockerExec -ContainerId $ContainerId -CmdLine "icacls D:\ /grant *${UserSid}:(OI)(CI)M /T /C /Q" | Out-Null
+    Invoke-DockerExec -ContainerId $ContainerId -CmdLine "mkdir $WorkRoot\tmp" | Out-Null
+    Invoke-DockerCli -DockerArgs @('exec', $ContainerId, 'icacls.exe', $WorkRoot,
+        '/grant', "*${UserSid}:(OI)(CI)M", '/T', '/C', '/Q') | Out-Null
+    Invoke-DockerCli -DockerArgs @('exec', $ContainerId, 'icacls.exe', 'D:\',
+        '/grant', "*${UserSid}:(OI)(CI)M", '/T', '/C', '/Q') | Out-Null
 }
 
 function Get-DistinctHostVolume {
@@ -264,18 +263,19 @@ function Initialize-DeniedCampFixture {
     $containerYaml = "$deniedCamp\.campaign\campaign.yaml"
     Invoke-DockerExec -ContainerId $ContainerId -CmdLine "mkdir $deniedCamp\.campaign $deniedCamp\projects" | Out-Null
     Invoke-DockerCli -DockerArgs @('cp', $DeniedYamlHost, "${ContainerId}:$containerYaml") | Out-Null
-    $gitPath = "$WorkRoot\Git\cmd;$WorkRoot\Git\mingw64\bin"
+    $gitExe = "$WorkRoot\Git\cmd\git.exe"
+    Invoke-DockerExec -ContainerId $ContainerId -CmdLine "dir $gitExe" | Out-Null
     $initCmd = @(
-        "set `"PATH=$gitPath;%PATH%`""
         "cd /d $deniedCamp"
-        "git init -b main"
-        "git config user.name camp-dirlink-proof"
-        "git config user.email camp-dirlink-proof@users.noreply.github.com"
-        "git add .campaign"
-        "git commit -m init-denied-camp"
-        "icacls $deniedCamp\projects /deny *${UserSid}:(OI)(CI)M /C /Q"
+        "$gitExe init -b main"
+        "$gitExe config user.name camp-dirlink-proof"
+        "$gitExe config user.email camp-dirlink-proof@users.noreply.github.com"
+        "$gitExe add .campaign"
+        "$gitExe commit -m init-denied-camp"
     ) -join ' && '
     Invoke-DockerExec -ContainerId $ContainerId -CmdLine $initCmd | Out-Null
+    Invoke-DockerCli -DockerArgs @('exec', $ContainerId, 'icacls.exe', "$deniedCamp\projects",
+        '/deny', "*${UserSid}:(OI)(CI)M", '/C', '/Q') | Out-Null
 }
 
 try {
