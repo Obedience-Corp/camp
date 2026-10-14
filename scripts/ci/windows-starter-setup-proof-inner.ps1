@@ -74,16 +74,17 @@ function Invoke-CampSetupJson {
     $stamp = [guid]::NewGuid().ToString('n')
     $stdoutPath = Join-Path $env:TEMP "setup-$stamp.json"
     $stderrPath = Join-Path $env:TEMP "setup-$stamp.err"
-    $proc = Start-Process -FilePath $Camp -ArgumentList @('setup', '--json') -NoNewWindow -PassThru -RedirectStandardOutput $stdoutPath -RedirectStandardError $stderrPath
+    $run = Start-CampSetupProcess -StdoutPath $stdoutPath -StderrPath $stderrPath
     try {
-        Wait-ProcessExit -Proc $proc -TimeoutSec $ProcessExitWaitSec
+        Wait-ProcessExit -Proc $run.Process -TimeoutSec $ProcessExitWaitSec
     } finally {
-        if (-not $proc.HasExited) { Stop-ProcessTree -RootPid $proc.Id }
+        if (-not $run.Process.HasExited) { Stop-ProcessTree -RootPid $run.Process.Id }
     }
+    $exitCode = Get-CampSetupExitCode $run
     $raw = if (Test-Path -LiteralPath $stdoutPath) { Get-Content -LiteralPath $stdoutPath -Raw } else { '' }
     $stderr = if (Test-Path -LiteralPath $stderrPath) { Get-Content -LiteralPath $stderrPath -Raw } else { '' }
-    if (-not $AllowFailure -and $proc.ExitCode -ne 0) {
-        throw "camp setup --json failed ($($proc.ExitCode)): stdout=$raw stderr=$stderr"
+    if (-not $AllowFailure -and $exitCode -ne 0) {
+        throw "camp setup --json failed ($exitCode): stdout=$raw stderr=$stderr"
     }
     $parsed = $null
     if ($raw -and $raw.Trim()) {
@@ -96,11 +97,45 @@ function Invoke-CampSetupJson {
         }
     }
     return [pscustomobject]@{
-        ExitCode = $proc.ExitCode
+        ExitCode = $exitCode
         Raw      = $raw
         Stderr   = $stderr
         Result   = $parsed
     }
+}
+
+function Start-CampSetupProcess {
+    param(
+        [string]$StdoutPath,
+        [string]$StderrPath
+    )
+    # Windows PowerShell 5.1 can leave Start-Process's ExitCode unset even
+    # after WaitForExit. Capture the native status in a file from cmd.exe.
+    $batchPath = "$StdoutPath.cmd"
+    $exitPath = "$StdoutPath.exit"
+    $body = @(
+        '@echo off'
+        "`"$Camp`" setup --json 1>`"$StdoutPath`" 2>`"$StderrPath`""
+        'set "proof_exit_code=%ERRORLEVEL%"'
+        "echo %proof_exit_code%>`"$exitPath`""
+        'exit /b %proof_exit_code%'
+    ) -join "`r`n"
+    [System.IO.File]::WriteAllText($batchPath, $body, [System.Text.Encoding]::ASCII)
+    $proc = Start-Process -FilePath (Join-Path $env:SystemRoot 'System32\cmd.exe') `
+        -ArgumentList @('/d', '/c', $batchPath) -NoNewWindow -PassThru
+    return [pscustomobject]@{ Process = $proc; ExitPath = $exitPath }
+}
+
+function Get-CampSetupExitCode($Run) {
+    if (-not (Test-Path -LiteralPath $Run.ExitPath)) {
+        throw "camp setup process ended without exit status: $($Run.ExitPath)"
+    }
+    $raw = (Get-Content -LiteralPath $Run.ExitPath -Raw).Trim()
+    $code = 0
+    if (-not [int]::TryParse($raw, [ref]$code)) {
+        throw "invalid camp setup exit status '$raw' in $($Run.ExitPath)"
+    }
+    return $code
 }
 
 function Wait-Until {
@@ -126,8 +161,7 @@ function Wait-ProcessExit {
         Stop-ProcessTree -RootPid $Proc.Id
         throw "process $($Proc.Id) did not exit within ${TimeoutSec}s"
     }
-    # Start-Process without -Wait can leave ExitCode unset under Windows
-    # PowerShell until the Process handle is finalized.
+    # Finish the process wait before reading redirected output or status files.
     $Proc.WaitForExit()
 }
 
@@ -207,11 +241,9 @@ function Invoke-CompetingSetupInterruptBeforePublication([hashtable]$Layout) {
     $p1 = $null
     $p2 = $null
     try {
-        $p1 = Start-Process -FilePath $Camp -ArgumentList @('setup', '--json') `
-            -RedirectStandardOutput $out1 -RedirectStandardError $err1 -PassThru -NoNewWindow
+        $p1 = Start-CampSetupProcess -StdoutPath $out1 -StderrPath $err1
         Start-Sleep -Milliseconds 300
-        $p2 = Start-Process -FilePath $Camp -ArgumentList @('setup', '--json') `
-            -RedirectStandardOutput $out2 -RedirectStandardError $err2 -PassThru -NoNewWindow
+        $p2 = Start-CampSetupProcess -StdoutPath $out2 -StderrPath $err2
 
         Wait-Until -Condition { Test-StarterJournalWithStaging $Layout } `
             -TimeoutSec $JournalWaitSec -Label 'starter journal with staging before publication'
@@ -222,7 +254,7 @@ function Invoke-CompetingSetupInterruptBeforePublication([hashtable]$Layout) {
 
         $victim = $null
         foreach ($candidate in @($p1, $p2)) {
-            if ($candidate -and -not $candidate.HasExited) {
+            if ($candidate -and -not $candidate.Process.HasExited) {
                 $victim = $candidate
                 break
             }
@@ -231,9 +263,9 @@ function Invoke-CompetingSetupInterruptBeforePublication([hashtable]$Layout) {
             throw 'both camp setup processes exited before interrupt (fest may have timed out)'
         }
 
-        Write-Host "terminating camp setup process tree pid=$($victim.Id) while fest init is blocked and before publication"
-        Stop-ProcessTree -RootPid $victim.Id
-        Wait-ProcessExit -Proc $victim -TimeoutSec $InterruptCleanupWaitSec
+        Write-Host "terminating camp setup process tree pid=$($victim.Process.Id) while fest init is blocked and before publication"
+        Stop-ProcessTree -RootPid $victim.Process.Id
+        Wait-ProcessExit -Proc $victim.Process -TimeoutSec $InterruptCleanupWaitSec
 
         if (-not (Test-PrePublicationState $Layout)) {
             throw 'publication happened during interrupt cleanup'
@@ -242,8 +274,8 @@ function Invoke-CompetingSetupInterruptBeforePublication([hashtable]$Layout) {
 
         New-Item -ItemType File -Path $releaseFlag -Force | Out-Null
         foreach ($proc in @($p1, $p2)) {
-            if ($proc -and -not $proc.HasExited) {
-                Wait-ProcessExit -Proc $proc -TimeoutSec $ProcessExitWaitSec
+            if ($proc -and -not $proc.Process.HasExited) {
+                Wait-ProcessExit -Proc $proc.Process -TimeoutSec $ProcessExitWaitSec
             }
         }
 
@@ -362,9 +394,6 @@ function Assert-ReadbackViaSeparateProcess([hashtable]$Layout) {
         Wait-ProcessExit -Proc $proc -TimeoutSec $ProcessExitWaitSec
     } finally {
         if (-not $proc.HasExited) { Stop-ProcessTree -RootPid $proc.Id }
-    }
-    if ($proc.ExitCode -ne 0) {
-        throw "separate-process readback failed with exit $($proc.ExitCode)"
     }
     if (-not (Test-Path -LiteralPath $readbackOut)) {
         throw 'readback process did not write success marker'
@@ -516,19 +545,20 @@ Set-ToolPath $null
 & git config --global init.defaultBranch main | Out-Null
 $outA = Join-Path $layoutB.Home 'first.json'
 $outB = Join-Path $layoutB.Home 'second.json'
-$p1 = Start-Process -FilePath $Camp -ArgumentList @('setup', '--json') -RedirectStandardOutput $outA -RedirectStandardError (Join-Path $layoutB.Home 'first.err') -NoNewWindow -PassThru
-$p2 = Start-Process -FilePath $Camp -ArgumentList @('setup', '--json') -RedirectStandardOutput $outB -RedirectStandardError (Join-Path $layoutB.Home 'second.err') -NoNewWindow -PassThru
+$p1 = Start-CampSetupProcess -StdoutPath $outA -StderrPath (Join-Path $layoutB.Home 'first.err')
+$p2 = Start-CampSetupProcess -StdoutPath $outB -StderrPath (Join-Path $layoutB.Home 'second.err')
 try {
-    Wait-ProcessExit -Proc $p1 -TimeoutSec $ProcessExitWaitSec
-    Wait-ProcessExit -Proc $p2 -TimeoutSec $ProcessExitWaitSec
+    Wait-ProcessExit -Proc $p1.Process -TimeoutSec $ProcessExitWaitSec
+    Wait-ProcessExit -Proc $p2.Process -TimeoutSec $ProcessExitWaitSec
 } finally {
     foreach ($proc in @($p1, $p2)) {
-        if ($proc -and -not $proc.HasExited) { Stop-ProcessTree -RootPid $proc.Id }
+        if ($proc -and -not $proc.Process.HasExited) { Stop-ProcessTree -RootPid $proc.Process.Id }
     }
 }
 foreach ($proc in @($p1, $p2)) {
-    if ($proc.ExitCode -ne 0) {
-        throw "concurrent camp setup exit $($proc.ExitCode)"
+    $exitCode = Get-CampSetupExitCode $proc
+    if ($exitCode -ne 0) {
+        throw "concurrent camp setup exit $exitCode"
     }
 }
 $jsonA = Get-Content -LiteralPath $outA -Raw | ConvertFrom-Json
