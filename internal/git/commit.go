@@ -9,6 +9,7 @@ import (
 	"os/exec"
 	"path/filepath"
 	"runtime"
+	"sort"
 	"strings"
 
 	"github.com/Obedience-Corp/camp/internal/dirlink"
@@ -257,11 +258,15 @@ func AddPathsToTempIndex(ctx context.Context, repoPath, tmpPath string, paths []
 	if len(paths) == 0 {
 		return ErrNoFilesSpecified
 	}
+	changedLinks, err := changedDirectoryLinks(ctx, repoPath)
+	if err != nil {
+		return err
+	}
 	// Git for Windows can treat a junction as a directory (and even record an
-	// external repository as a gitlink). Capture named directory links before
-	// invoking git add, so neither staging nor hashing follows their targets.
+	// external repository as a gitlink). Keep named links out of git add and
+	// write their link-target blobs to the temp index explicitly.
 	regular := make([]string, 0, len(paths))
-	links := make([]BlobRef, 0)
+	linkSet := make(map[string]bool)
 	for _, path := range paths {
 		abs := filepath.Join(repoPath, filepath.FromSlash(path))
 		st, err := dirlink.Lstat(abs)
@@ -276,16 +281,23 @@ func AddPathsToTempIndex(ctx context.Context, repoPath, tmpPath string, paths []
 			regular = append(regular, path)
 			continue
 		}
-		captured, err := CaptureBlobs(ctx, repoPath, []string{path})
-		if err != nil {
-			return camperrors.Wrapf(err, "capture directory link for temp index %s", path)
-		}
-		links = append(links, captured...)
+		linkSet[cleanStageScope(path)] = true
 	}
+	for _, link := range scopedDirectoryLinks(changedLinks, paths) {
+		linkSet[link] = true
+	}
+	links := make([]string, 0, len(linkSet))
+	for link := range linkSet {
+		links = append(links, link)
+	}
+	sort.Strings(links)
 	if len(regular) > 0 {
 		if err := WithLockRetry(ctx, repoPath, retryProfile(retry, "add-temp-index"), func() error {
 			args := []string{"-C", repoPath, "add", "--"}
 			args = append(args, regular...)
+			for _, link := range changedLinks {
+				args = append(args, ":(exclude,literal)"+link)
+			}
 			cmd := exec.CommandContext(ctx, "git", args...)
 			cmd.Env = append(os.Environ(), "GIT_INDEX_FILE="+tmpPath)
 			out, err := cmd.CombinedOutput()
@@ -301,25 +313,7 @@ func AddPathsToTempIndex(ctx context.Context, repoPath, tmpPath string, paths []
 			return err
 		}
 	}
-	for _, ref := range links {
-		if err := WithLockRetry(ctx, repoPath, retryProfile(retry, "add-directory-link-temp-index"), func() error {
-			args := []string{"-C", repoPath, "update-index", "--add", "--cacheinfo", ref.Mode + "," + ref.SHA + "," + ref.Path}
-			cmd := exec.CommandContext(ctx, "git", args...)
-			cmd.Env = append(os.Environ(), "GIT_INDEX_FILE="+tmpPath)
-			out, err := cmd.CombinedOutput()
-			if err != nil {
-				errType := ClassifyGitError(string(out), cmd.ProcessState.ExitCode())
-				if errType == GitErrorLock {
-					return &LockError{Path: "index.lock", Err: err}
-				}
-				return camperrors.NewGit("update-index (temp index)", "", errType.String(), strings.TrimSpace(string(out)), err)
-			}
-			return nil
-		}); err != nil {
-			return camperrors.Wrapf(err, "stage directory link %s", ref.Path)
-		}
-	}
-	return nil
+	return stageDirectoryLinks(ctx, repoPath, tmpPath, links, retry)
 }
 
 // ApplyCachedDiffToTempIndex applies the real index's staged diff for paths to tmpPath.
@@ -543,11 +537,17 @@ func StageWithGuard(ctx context.Context, repoPath string, files []string) (*Stag
 // StageWithGuardOptions stages like StageWithGuard under explicit guard
 // overrides, such as --commit-large.
 func StageWithGuardOptions(ctx context.Context, repoPath string, files []string, opts StageOptions) (*StageOutcome, error) {
-	outcome, excluded, err := runStageGuard(ctx, repoPath, files, opts)
+	links, err := changedDirectoryLinks(ctx, repoPath)
+	if err != nil {
+		return nil, err
+	}
+	outcome, excluded, err := runStageGuard(ctx, repoPath, files, opts, links)
 	if err != nil {
 		return nil, err
 	}
 	staged := applyGuardExclusions(files, excluded)
+	linkScope := scopedDirectoryLinks(links, staged)
+	staged = excludeDirectoryLinks(staged, links)
 
 	cfg := DefaultRetryConfig()
 	cfg.OperationName = "stage"
@@ -555,6 +555,9 @@ func StageWithGuardOptions(ctx context.Context, repoPath string, files []string,
 	if err := WithLockRetry(ctx, repoPath, cfg, func() error {
 		return executeStage(ctx, repoPath, staged)
 	}); err != nil {
+		return nil, err
+	}
+	if err := stageDirectoryLinks(ctx, repoPath, "", linkScope, nil); err != nil {
 		return nil, err
 	}
 	return outcome, nil

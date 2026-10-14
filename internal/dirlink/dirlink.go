@@ -4,7 +4,10 @@
 package dirlink
 
 import (
+	"errors"
 	"os"
+	"path/filepath"
+	"strings"
 
 	camperrors "github.com/Obedience-Corp/camp/internal/errors"
 )
@@ -74,6 +77,36 @@ func IsDirectoryLink(path string) (bool, error) {
 		return false, err
 	}
 	return st.IsDirectoryLink(), nil
+}
+
+// FindAncestor returns the first directory link along a repository-relative
+// path, including the path itself. It checks each entry with Lstat so a path
+// reported by Git beneath a Windows junction cannot lead a caller into the
+// junction's target tree.
+func FindAncestor(root, relative string) (string, error) {
+	relative = filepath.ToSlash(relative)
+	if filepath.IsAbs(relative) || relative == "" {
+		return "", camperrors.Wrapf(camperrors.ErrInvalidInput, "invalid directory link path %q", relative)
+	}
+	parts := strings.Split(strings.TrimSuffix(relative, "/"), "/")
+	current := root
+	for i, part := range parts {
+		if part == "" || part == "." || part == ".." {
+			return "", camperrors.Wrapf(camperrors.ErrInvalidInput, "invalid directory link path %q", relative)
+		}
+		current = filepath.Join(current, part)
+		stat, err := Lstat(current)
+		if err != nil {
+			if errors.Is(err, os.ErrNotExist) {
+				return "", nil
+			}
+			return "", err
+		}
+		if stat.IsDirectoryLink() {
+			return strings.Join(parts[:i+1], "/"), nil
+		}
+	}
+	return "", nil
 }
 
 // ReadTarget returns the link target without following the link. It uses
