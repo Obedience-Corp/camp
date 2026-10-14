@@ -223,6 +223,7 @@ function Assert-ReadbackViaSeparateProcess {
     )
     $readbackPath = Join-Path $Root 'readback.ps1'
     $readbackOut = Join-Path $Root 'readback.out'
+    Remove-Item -LiteralPath $readbackOut -Force -ErrorAction SilentlyContinue
     $lines = @(
         '#Requires -Version 5.1'
         'Set-StrictMode -Version Latest'
@@ -239,6 +240,8 @@ function Assert-ReadbackViaSeparateProcess {
         'if ($list -notmatch [regex]::Escape($linkName)) { throw "camp project list missing link: $list" }'
         "`$linkPath = Join-Path `$campRoot ('projects\' + `$linkName)"
         'if (-not (Test-Path -LiteralPath $linkPath)) { throw "link missing in readback process" }'
+        '$payload = Get-Content -LiteralPath (Join-Path $linkPath ''external-only.txt'') -Raw'
+        'if ($payload -notmatch ''external-only-payload'') { throw "linked payload unreadable in readback process" }'
         "'separate-process project link readback ok' | Set-Content -LiteralPath `$outPath -Encoding utf8"
     )
     [System.IO.File]::WriteAllLines($readbackPath, $lines)
@@ -317,6 +320,66 @@ function Assert-CollisionAndDeniedMarkerRollback {
     }
 }
 
+function Get-VolumeSerialNumber {
+    param([string]$Drive)
+    $output = & fsutil fsinfo volumeinfo $Drive 2>&1 | Out-String
+    if ($LASTEXITCODE -ne 0 -or $output -notmatch '(?im)Volume Serial Number\s*:\s*(0x[0-9a-f]+)') {
+        throw "cannot read volume serial for $Drive`: $output"
+    }
+    return $Matches[1].ToLowerInvariant()
+}
+
+function Assert-CrossVolumeProjectLink {
+    $cSerial = Get-VolumeSerialNumber -Drive 'C:'
+    $dSerial = Get-VolumeSerialNumber -Drive 'D:'
+    if ($cSerial -eq $dSerial) {
+        throw "C: and D: have the same volume serial $cSerial; cross-volume proof requires distinct volumes"
+    }
+    Write-ProofMarker "cross-volume identities verified: C:=$cSerial D:=$dSerial"
+
+    $crossCamp = Join-Path $Root 'camp-cross-volume'
+    $crossSource = 'D:\external-cross-volume'
+    $crossName = 'cross-volume-app'
+    New-CampGitFixture -CampRoot $crossCamp -CampaignId 'camp-cross-volume-proof'
+    New-ExternalSource -SourceRoot $crossSource
+    $before = Get-SourceInventory -SourceRoot $crossSource
+
+    Push-Location $crossCamp
+    try {
+        $link = Invoke-CampCli -Arguments @('project', 'link', $crossSource, '--name', $crossName, '--yes', '--no-commit')
+        if ($link.Output -notmatch '(?i)linked project') {
+            throw "cross-volume link output unexpected: $($link.Output)"
+        }
+        $linkPath = Join-Path $crossCamp ('projects\' + $crossName)
+        $class = Get-DirectoryLinkClassification -LinkPath $linkPath
+        if ($class.Kind -ne 'junction' -or $class.ReparseTag -ne 0xA0000003) {
+            throw "cross-volume project link is not a junction: $($class.Detail)"
+        }
+        if (-not (Test-Path -LiteralPath (Join-Path $linkPath 'external-only.txt'))) {
+            throw 'cross-volume project link cannot read the source payload'
+        }
+        $list = Invoke-CampCli -Arguments @('project', 'list')
+        if ($list.Output -notmatch [regex]::Escape($crossName)) {
+            throw "cross-volume project missing from list: $($list.Output)"
+        }
+    } finally {
+        Pop-Location
+    }
+
+    Assert-ReadbackViaSeparateProcess -CampRoot $crossCamp -LinkName $crossName
+    Push-Location $crossCamp
+    try {
+        $null = Invoke-CampCli -Arguments @('project', 'unlink', $crossName, '--no-commit')
+        if (Test-Path -LiteralPath (Join-Path $crossCamp ('projects\' + $crossName))) {
+            throw 'cross-volume managed link remains after unlink'
+        }
+    } finally {
+        Pop-Location
+    }
+    Assert-InventoryUnchanged -Before $before -After (Get-SourceInventory -SourceRoot $crossSource) -Label 'cross-volume unlink'
+    Write-ProofMarker 'cross-volume junction project lifecycle verified'
+}
+
 Write-ProofMarker '=== directory-link identity ==='
 $id = (& whoami 2>&1 | Out-String).Trim()
 Write-ProofMarker "directory-link identity: $id"
@@ -389,5 +452,7 @@ Assert-InventoryUnchanged -Before $inventoryBefore -After $inventoryAfterUnlink 
 if (Test-Path -LiteralPath $mainMarker) {
     throw 'unlink left the managed .camp marker on the external source'
 }
+
+Assert-CrossVolumeProjectLink
 
 Write-ProofMarker 'Windows container directory-link proof passed'

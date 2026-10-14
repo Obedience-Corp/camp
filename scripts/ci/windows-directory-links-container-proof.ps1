@@ -220,22 +220,45 @@ function Count-TargetedTestRuns([string]$Output, [string]$Pattern) {
     return $count
 }
 
-function Initialize-ContainerFixtureACL([string]$ContainerId, [string]$WorkRoot) {
+function Get-ContainerUserSid([string]$ContainerId) {
+    $identity = Invoke-DockerExec -ContainerId $ContainerId -CmdLine 'whoami /user /fo csv /nh' -User $ContainerUserName
+    if ($identity -notmatch '(S-\d+(?:-\d+)+)') {
+        throw "cannot resolve $ContainerUserName SID: $identity"
+    }
+    return $Matches[1]
+}
+
+function Initialize-ContainerFixtureACL([string]$ContainerId, [string]$WorkRoot, [string]$UserSid) {
     $cmd = @(
         "mkdir $WorkRoot\tmp"
-        "icacls $WorkRoot /inheritance:r /T /C /Q"
-        "icacls $WorkRoot /grant:r ${ContainerUserName}:(OI)(CI)M /T /C /Q"
-        "icacls $WorkRoot /grant:r ContainerAdministrator:(OI)(CI)F /T /C /Q"
-        "icacls $WorkRoot /grant:r SYSTEM:(OI)(CI)F /T /C /Q"
+        "icacls $WorkRoot /grant `"*${UserSid}:(OI)(CI)M`" /T /C /Q"
     ) -join ' && '
     Invoke-DockerExec -ContainerId $ContainerId -CmdLine $cmd | Out-Null
+    Invoke-DockerExec -ContainerId $ContainerId -CmdLine "icacls D:\ /grant `"*${UserSid}:(OI)(CI)M`" /T /C /Q" | Out-Null
+}
+
+function Get-DistinctHostVolume {
+    $disks = @(Get-CimInstance Win32_LogicalDisk | Where-Object { $_.DriveType -eq 3 })
+    $systemDisk = $disks | Where-Object { $_.DeviceID -eq 'C:' } | Select-Object -First 1
+    if (-not $systemDisk -or -not $systemDisk.VolumeSerialNumber) {
+        throw 'cannot identify the host C: volume for cross-volume proof'
+    }
+    $other = $disks | Where-Object {
+        $_.DeviceID -ne 'C:' -and $_.VolumeSerialNumber -and
+        $_.VolumeSerialNumber -ne $systemDisk.VolumeSerialNumber
+    } | Select-Object -First 1
+    if (-not $other) {
+        throw 'no distinct writable host volume for cross-volume Windows proof; use a runner with two volumes'
+    }
+    return $other.DeviceID
 }
 
 function Initialize-DeniedCampFixture {
     param(
         [string]$ContainerId,
         [string]$WorkRoot,
-        [string]$DeniedYamlHost
+        [string]$DeniedYamlHost,
+        [string]$UserSid
     )
     $deniedCamp = "$WorkRoot\camp-denied"
     $containerYaml = "$deniedCamp\.campaign\campaign.yaml"
@@ -250,9 +273,7 @@ function Initialize-DeniedCampFixture {
         "git config user.email camp-dirlink-proof@users.noreply.github.com"
         "git add .campaign"
         "git commit -m init-denied-camp"
-        "icacls $deniedCamp\projects /inheritance:r /C /Q"
-        "icacls $deniedCamp\projects /grant:r ${ContainerUserName}:(CI)(R) /C /Q"
-        "icacls $deniedCamp\projects /grant:r ContainerAdministrator:(OI)(CI)F /C /Q"
+        "icacls $deniedCamp\projects /deny `"*${UserSid}:(OI)(CI)M`" /C /Q"
     ) -join ' && '
     Invoke-DockerExec -ContainerId $ContainerId -CmdLine $initCmd | Out-Null
 }
@@ -268,7 +289,11 @@ try {
     Report-DockerCapability
 
     $workHost = Join-Path $env:TEMP ("camp-windows-dirlink-proof-{0}" -f [guid]::NewGuid().ToString('n'))
+    $otherDrive = Get-DistinctHostVolume
+    $crossVolumeHost = Join-Path "$otherDrive\" ("camp-dirlink-cross-volume-{0}" -f [guid]::NewGuid().ToString('n'))
     New-Item -ItemType Directory -Path $workHost | Out-Null
+    New-Item -ItemType Directory -Path $crossVolumeHost | Out-Null
+    Write-Host "Cross-volume host fixture: $crossVolumeHost mounted as D: inside container"
     try {
         $compiled = [System.Collections.Generic.List[object]]::new()
         Write-Section 'Compile container_fs directory-link test binaries (host compile only; no FS mutations on host)'
@@ -296,7 +321,7 @@ try {
 
         Write-Section 'Windows Server Core fixture'
         Invoke-DockerCli -DockerArgs @('pull', $ContainerImage)
-        $createOut = & docker create --pull=never $ContainerImage cmd /c "ping -n 3600 127.0.0.1 > nul" 2>&1
+        $createOut = & docker create --pull=never -v "${crossVolumeHost}:D:" $ContainerImage cmd /c "ping -n 3600 127.0.0.1 > nul" 2>&1
         if ($LASTEXITCODE -ne 0) {
             throw "docker create failed: $($createOut | Out-String)"
         }
@@ -309,7 +334,9 @@ try {
         try {
             Invoke-DockerCli -DockerArgs @('start', $containerId) | Out-Null
             Invoke-DockerExec -ContainerId $containerId -CmdLine "mkdir $ContainerWork" | Out-Null
-            Initialize-ContainerFixtureACL -ContainerId $containerId -WorkRoot $ContainerWork
+            $userSid = Get-ContainerUserSid -ContainerId $containerId
+            Write-Host "ContainerUser SID: $userSid"
+            Initialize-ContainerFixtureACL -ContainerId $containerId -WorkRoot $ContainerWork -UserSid $userSid
 
             $gitRoot = Get-HostGitRoot
             Write-Host "Copying host Git from $gitRoot into container (needed before denied-camp admin fixture)"
@@ -320,7 +347,7 @@ try {
                 'name: denied'
                 'type: product'
             ) | Set-Content -LiteralPath $deniedYamlHost -Encoding utf8
-            Initialize-DeniedCampFixture -ContainerId $containerId -WorkRoot $ContainerWork -DeniedYamlHost $deniedYamlHost
+            Initialize-DeniedCampFixture -ContainerId $containerId -WorkRoot $ContainerWork -DeniedYamlHost $deniedYamlHost -UserSid $userSid
 
             foreach ($bin in $compiled) {
                 Invoke-DockerCli -DockerArgs @('cp', $bin.HostPath, "${containerId}:$($bin.ContainerPath)") | Out-Null
@@ -402,6 +429,7 @@ try {
         }
     } finally {
         Remove-Item -LiteralPath $workHost -Recurse -Force -ErrorAction SilentlyContinue
+        Remove-Item -LiteralPath $crossVolumeHost -Recurse -Force -ErrorAction SilentlyContinue
     }
 } finally {
     Pop-Location
