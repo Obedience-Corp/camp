@@ -87,13 +87,71 @@ Write-Output 'Camp PowerShell 5.1 navigation proof passed'
 
 # Direct CLI commands keep each argument as data, including a help flag after
 # the executable. The helper records what a real child process receives.
+# Windows PowerShell 5.1's native-command binder discards empty arguments and
+# embedded quotes. Build the Windows command line explicitly so this fixture
+# can prove what Camp does with values that actually reach its executable.
+function ConvertTo-WindowsArgument {
+    param([AllowEmptyString()][string]$Value)
+
+    $quoted = New-Object System.Text.StringBuilder
+    [void]$quoted.Append('"')
+    $backslashes = 0
+    foreach ($character in $Value.ToCharArray()) {
+        if ($character -eq '\') {
+            $backslashes++
+            continue
+        }
+        if ($character -eq '"') {
+            [void]$quoted.Append(('\' * (2 * $backslashes + 1)))
+            [void]$quoted.Append('"')
+            $backslashes = 0
+            continue
+        }
+        if ($backslashes -gt 0) {
+            [void]$quoted.Append(('\' * $backslashes))
+            $backslashes = 0
+        }
+        [void]$quoted.Append($character)
+    }
+    if ($backslashes -gt 0) { [void]$quoted.Append(('\' * (2 * $backslashes))) }
+    [void]$quoted.Append('"')
+    return $quoted.ToString()
+}
+
+function Invoke-LiteralCampCli {
+    param([string]$Executable, [string[]]$ArgumentValues)
+
+    $start = New-Object System.Diagnostics.ProcessStartInfo
+    $start.FileName = $Executable
+    $encodedArguments = New-Object 'System.Collections.Generic.List[string]'
+    foreach ($argument in $ArgumentValues) {
+        [void]$encodedArguments.Add((ConvertTo-WindowsArgument -Value $argument))
+    }
+    $start.Arguments = [string]::Join(' ', $encodedArguments)
+    $start.WorkingDirectory = (Get-Location).Path
+    $start.UseShellExecute = $false
+    $start.RedirectStandardOutput = $true
+    $start.RedirectStandardError = $true
+    $start.CreateNoWindow = $true
+    $process = [System.Diagnostics.Process]::Start($start)
+    try {
+        $stdout = $process.StandardOutput.ReadToEnd()
+        $stderr = $process.StandardError.ReadToEnd()
+        $process.WaitForExit()
+        if ($process.ExitCode -ne 0) {
+            throw "Camp CLI exit $($process.ExitCode): $stdout`n$stderr"
+        }
+    } finally {
+        $process.Dispose()
+    }
+}
+
 $fixture = Join-Path $projects 'fixture'
 [void][System.IO.Directory]::CreateDirectory((Join-Path $fixture '.git'))
 $wantArgs = @('two words', '', 'O''Brien "quoted"', "$unicode argument", 'a;b', '$(Write-Output injected)', '--help')
 $env:CAMP_PROBE_OUT = Join-Path $Root 'run-argv.json'
 Set-Location -LiteralPath $campRoot
-& $Camp run $Probe @wantArgs
-if ($LASTEXITCODE -ne 0) { throw "camp run argv proof failed ($LASTEXITCODE)" }
+Invoke-LiteralCampCli -Executable $Camp -ArgumentValues (@('run', $Probe) + $wantArgs)
 # Windows PowerShell 5.1 otherwise decodes BOM-less JSON using the local ANSI code page.
 $runRecord = Get-Content -LiteralPath $env:CAMP_PROBE_OUT -Raw -Encoding UTF8 | ConvertFrom-Json
 if ($runRecord.cwd -ne $campRoot -or $runRecord.camp_root -ne $campRoot) {
@@ -109,8 +167,7 @@ if ($LASTEXITCODE -ne 0 -or $help -notmatch 'Usage:' -or $help -notmatch 'Execut
 }
 
 $env:CAMP_PROBE_OUT = Join-Path $Root 'project-run-argv.json'
-& $Camp project run -p fixture -- $Probe @wantArgs
-if ($LASTEXITCODE -ne 0) { throw "camp project run argv proof failed ($LASTEXITCODE)" }
+Invoke-LiteralCampCli -Executable $Camp -ArgumentValues (@('project', 'run', '-p', 'fixture', '--', $Probe) + $wantArgs)
 $projectRecord = Get-Content -LiteralPath $env:CAMP_PROBE_OUT -Raw -Encoding UTF8 | ConvertFrom-Json
 if ($projectRecord.cwd -ne $fixture -or $projectRecord.camp_root -ne $campRoot) {
     throw "camp project run cwd/root mismatch: $($projectRecord | ConvertTo-Json -Compress)"
@@ -140,8 +197,7 @@ flows:
 [System.IO.File]::WriteAllText((Join-Path $flowsDir 'registry.yaml'), $registry,
     (New-Object System.Text.UTF8Encoding($false)))
 $env:CAMP_FLOW_OUT = Join-Path $Root 'flow-result.json'
-& $CampDev flow run winargs -- @wantArgs
-if ($LASTEXITCODE -ne 0) { throw "camp flow run winargs failed ($LASTEXITCODE)" }
+Invoke-LiteralCampCli -Executable $CampDev -ArgumentValues (@('flow', 'run', 'winargs', '--') + $wantArgs)
 $flowRecord = Get-Content -LiteralPath $env:CAMP_FLOW_OUT -Raw -Encoding UTF8 | ConvertFrom-Json
 if ($flowRecord.cwd -ne $fixture -or $flowRecord.process_cwd -ne $fixture -or
     $flowRecord.value -ne 'value with spaces') {
