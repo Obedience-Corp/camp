@@ -227,12 +227,18 @@ func linkedProjectTarget(projectPath string) (bool, string, error) {
 	if !st.IsDirectoryLink() {
 		return false, "", nil
 	}
-	target, err := filepath.EvalSymlinks(projectPath)
+	// Read the stored target first. On Windows, EvalSymlinks can report a
+	// junction's own path without an error, which would leave its external
+	// .camp marker behind after the junction is removed.
+	target, err := dirlink.ReadTarget(projectPath)
 	if err != nil {
-		target, err = dirlink.ReadTarget(projectPath)
+		target, err = filepath.EvalSymlinks(projectPath)
 		if err != nil {
 			return true, "", nil
 		}
+	}
+	if target != "" && !filepath.IsAbs(target) {
+		target = filepath.Join(filepath.Dir(projectPath), target)
 	}
 	return true, target, nil
 }

@@ -48,18 +48,24 @@ func TestUnlinkProject_RemovesLinkOnly(t *testing.T) {
 	if err := os.WriteFile(keep, []byte("data"), 0o644); err != nil {
 		t.Fatal(err)
 	}
-	res, err := AddLinked(context.Background(), root, source, LinkOptions{Name: "linked"})
+	_, err := AddLinked(context.Background(), root, source, LinkOptions{Name: "linked"})
 	if err != nil {
 		t.Fatal(err)
 	}
-	if _, err := UnlinkProject(context.Background(), root, res.Name, res.Source); err != nil {
-		t.Fatalf("UnlinkProject: %v", err)
+	if _, err := os.Stat(campaign.MarkerPath(source)); err != nil {
+		t.Fatalf("link marker missing before unlink: %v", err)
+	}
+	if _, err := Unlink(context.Background(), root, "linked", UnlinkOptions{}); err != nil {
+		t.Fatalf("Unlink: %v", err)
 	}
 	if _, err := os.Stat(keep); err != nil {
 		t.Fatalf("unlink removed external file: %v", err)
 	}
 	if _, err := os.Lstat(filepath.Join(root, "projects", "linked")); !os.IsNotExist(err) {
 		t.Fatalf("camp link still present: %v", err)
+	}
+	if _, err := os.Stat(campaign.MarkerPath(source)); !os.IsNotExist(err) {
+		t.Fatalf("unlink left managed .camp marker on external source: %v", err)
 	}
 }
 

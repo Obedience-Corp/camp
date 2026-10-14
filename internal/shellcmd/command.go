@@ -5,7 +5,6 @@ import (
 	"context"
 	"encoding/base64"
 	"encoding/binary"
-	"encoding/json"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -73,12 +72,13 @@ func powerShellScript(expression string, extraArgs []string) (string, error) {
 	expression = strings.TrimRight(expression, " \t\r\n")
 	script := "$ErrorActionPreference = 'Stop'\n"
 	if len(extraArgs) > 0 {
-		encodedArgs, err := json.Marshal(extraArgs)
-		if err != nil {
-			return "", camperrors.Wrap(err, "encoding command arguments")
+		literals := make([]string, len(extraArgs))
+		for i, arg := range extraArgs {
+			// Single-quoted PowerShell strings preserve metacharacters and
+			// embedded newlines. Doubling an apostrophe is the only escape.
+			literals[i] = "'" + strings.ReplaceAll(arg, "'", "''") + "'"
 		}
-		jsonLiteral := strings.ReplaceAll(string(encodedArgs), "'", "''")
-		script += "$campArgs = @('" + jsonLiteral + "' | ConvertFrom-Json)\n"
+		script += "$campArgs = [string[]]@(" + strings.Join(literals, ",") + ")\n"
 		script += "& { " + expression + " @args } @campArgs\n"
 	} else {
 		script += "& { " + expression + " }\n"
