@@ -11,6 +11,7 @@ import (
 	"runtime"
 	"strings"
 
+	"github.com/Obedience-Corp/camp/internal/dirlink"
 	camperrors "github.com/Obedience-Corp/camp/internal/errors"
 )
 
@@ -256,21 +257,69 @@ func AddPathsToTempIndex(ctx context.Context, repoPath, tmpPath string, paths []
 	if len(paths) == 0 {
 		return ErrNoFilesSpecified
 	}
-	return WithLockRetry(ctx, repoPath, retryProfile(retry, "add-temp-index"), func() error {
-		args := []string{"-C", repoPath, "add", "--"}
-		args = append(args, paths...)
-		cmd := exec.CommandContext(ctx, "git", args...)
-		cmd.Env = append(os.Environ(), "GIT_INDEX_FILE="+tmpPath)
-		out, err := cmd.CombinedOutput()
+	// Git for Windows can treat a junction as a directory (and even record an
+	// external repository as a gitlink). Capture named directory links before
+	// invoking git add, so neither staging nor hashing follows their targets.
+	regular := make([]string, 0, len(paths))
+	links := make([]BlobRef, 0)
+	for _, path := range paths {
+		abs := filepath.Join(repoPath, filepath.FromSlash(path))
+		st, err := dirlink.Lstat(abs)
 		if err != nil {
-			errType := ClassifyGitError(string(out), cmd.ProcessState.ExitCode())
-			if errType == GitErrorLock {
-				return &LockError{Path: "index.lock", Err: err}
+			if errors.Is(err, os.ErrNotExist) {
+				regular = append(regular, path) // git add records a deletion.
+				continue
 			}
-			return camperrors.NewGit("add (temp index)", "", errType.String(), strings.TrimSpace(string(out)), err)
+			return camperrors.Wrapf(err, "classify path for temp index %s", path)
 		}
-		return nil
-	})
+		if !st.IsDirectoryLink() {
+			regular = append(regular, path)
+			continue
+		}
+		captured, err := CaptureBlobs(ctx, repoPath, []string{path})
+		if err != nil {
+			return camperrors.Wrapf(err, "capture directory link for temp index %s", path)
+		}
+		links = append(links, captured...)
+	}
+	if len(regular) > 0 {
+		if err := WithLockRetry(ctx, repoPath, retryProfile(retry, "add-temp-index"), func() error {
+			args := []string{"-C", repoPath, "add", "--"}
+			args = append(args, regular...)
+			cmd := exec.CommandContext(ctx, "git", args...)
+			cmd.Env = append(os.Environ(), "GIT_INDEX_FILE="+tmpPath)
+			out, err := cmd.CombinedOutput()
+			if err != nil {
+				errType := ClassifyGitError(string(out), cmd.ProcessState.ExitCode())
+				if errType == GitErrorLock {
+					return &LockError{Path: "index.lock", Err: err}
+				}
+				return camperrors.NewGit("add (temp index)", "", errType.String(), strings.TrimSpace(string(out)), err)
+			}
+			return nil
+		}); err != nil {
+			return err
+		}
+	}
+	for _, ref := range links {
+		if err := WithLockRetry(ctx, repoPath, retryProfile(retry, "add-directory-link-temp-index"), func() error {
+			args := []string{"-C", repoPath, "update-index", "--add", "--cacheinfo", ref.Mode + "," + ref.SHA + "," + ref.Path}
+			cmd := exec.CommandContext(ctx, "git", args...)
+			cmd.Env = append(os.Environ(), "GIT_INDEX_FILE="+tmpPath)
+			out, err := cmd.CombinedOutput()
+			if err != nil {
+				errType := ClassifyGitError(string(out), cmd.ProcessState.ExitCode())
+				if errType == GitErrorLock {
+					return &LockError{Path: "index.lock", Err: err}
+				}
+				return camperrors.NewGit("update-index (temp index)", "", errType.String(), strings.TrimSpace(string(out)), err)
+			}
+			return nil
+		}); err != nil {
+			return camperrors.Wrapf(err, "stage directory link %s", ref.Path)
+		}
+	}
+	return nil
 }
 
 // ApplyCachedDiffToTempIndex applies the real index's staged diff for paths to tmpPath.
