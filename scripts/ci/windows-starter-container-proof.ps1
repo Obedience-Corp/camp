@@ -161,7 +161,7 @@ try {
                 "set TMP=$containerWork\tmp"
                 "mkdir $containerWork\tmp"
                 "cd /d $containerWork"
-                "$containerBin -test.v -test.count=1"
+                "$containerBin -test.v -test.count=1 -test.timeout=5m"
             ) -join ' && '
 
             Write-Section 'Run starter suite inside container (filesystem mutations on container FS)'

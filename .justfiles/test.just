@@ -117,3 +117,15 @@ integration-build:
 [no-cd]
 windows-starter-container-proof:
     pwsh -NoProfile -NonInteractive -File scripts/ci/windows-starter-container-proof.ps1
+
+# Cross-compile every selected Windows test target (compile-only; no execution on Linux/macOS).
+[no-cd]
+windows-test-compile-gate:
+    #!/usr/bin/env bash
+    set -euo pipefail
+    bash scripts/ci/compile-windows-test-targets.sh
+
+# Self-check that a deliberate Windows compile error fails the gate logic.
+[no-cd]
+windows-test-compile-gate-verify-failure:
+    bash scripts/ci/compile-windows-test-targets.sh --verify-failure-gate
