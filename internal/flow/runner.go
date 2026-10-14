@@ -2,6 +2,7 @@ package flow
 
 import (
 	"context"
+	"errors"
 	"os"
 	"path/filepath"
 	"strings"
@@ -41,7 +42,7 @@ func (r *Runner) Run(ctx context.Context, f Flow, extraArgs []string) error {
 
 	if err := cmd.Run(); err != nil {
 		if ctx.Err() != nil {
-			return camperrors.Newf("flow command cancelled: %w", ctx.Err())
+			return camperrors.Newf("flow command cancelled: %w", errors.Join(ctx.Err(), err))
 		}
 		return camperrors.Newf("executing flow command: %w", err)
 	}

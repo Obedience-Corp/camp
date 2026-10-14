@@ -85,7 +85,9 @@ func powerShellCommand(ctx context.Context, expression string, extraArgs []strin
 	if err != nil {
 		return nil, err
 	}
-	return exec.CommandContext(ctx, path, "-NoProfile", "-NonInteractive", "-EncodedCommand", encodePowerShell(script)), nil
+	cmd := exec.CommandContext(ctx, path, "-NoProfile", "-NonInteractive", "-EncodedCommand", encodePowerShell(script))
+	configurePowerShellCancellation(cmd)
+	return cmd, nil
 }
 
 func powerShellScript(expression string, extraArgs []string, dir string) (string, error) {

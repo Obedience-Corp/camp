@@ -30,7 +30,7 @@ func TestPowerShellFlowLiteralArgsAndWorkDir(t *testing.T) {
 			"FLOW_VALUE": "value with spaces",
 		},
 	}
-	wantArgs := []string{"two words", "a;b", "$(Write-Output injected)"}
+	wantArgs := []string{"two words", "", "O'Brien \"quoted\"", "日本語 argument", "a;b", "$(Write-Output injected)"}
 	if err := NewRunner(root).Run(context.Background(), f, wantArgs); err != nil {
 		t.Fatal(err)
 	}

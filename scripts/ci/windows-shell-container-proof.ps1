@@ -20,7 +20,8 @@ $TestNames = @(
 $FlowTestNames = @(
     'TestPowerShellFlowLiteralArgsAndWorkDir',
     'TestPowerShellFlowSyntaxFailureDoesNotRunPrefix',
-    'TestPowerShellFlowCancellationStopsFollowup'
+    'TestPowerShellFlowCancellationStopsFollowup',
+    'TestPowerShellFlowCancellationStopsDescendant'
 )
 $ShellCommandTestNames = @(
     'TestPowerShellCommandPreservesLiteralArguments',

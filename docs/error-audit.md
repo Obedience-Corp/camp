@@ -205,8 +205,8 @@ camp unregister nonexistent
 # Expected: "camp not found in registry: nonexistent..."
 
 # Invalid shell
-camp shell-init powershell
-# Expected: "unsupported shell: powershell..."
+camp shell-init nushell
+# Expected: "unsupported shell: nushell..." with supported shells listed
 
 # No panics on edge cases
 camp go $(printf '%s' {1..1000})  # Long input

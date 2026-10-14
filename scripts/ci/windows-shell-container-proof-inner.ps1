@@ -89,7 +89,7 @@ Write-Output 'Camp PowerShell 5.1 navigation proof passed'
 # the executable. The helper records what a real child process receives.
 $fixture = Join-Path $projects 'fixture'
 [void][System.IO.Directory]::CreateDirectory((Join-Path $fixture '.git'))
-$wantArgs = @('two words', 'a;b', '$(Write-Output injected)', '--help')
+$wantArgs = @('two words', '', 'O''Brien "quoted"', "$unicode argument", 'a;b', '$(Write-Output injected)', '--help')
 $env:CAMP_PROBE_OUT = Join-Path $Root 'run-argv.json'
 Set-Location -LiteralPath $campRoot
 & $Camp run $Probe @wantArgs
