@@ -110,19 +110,26 @@ function Start-CampSetupProcess {
         [string]$StderrPath
     )
     # Windows PowerShell 5.1 can leave Start-Process's ExitCode unset even
-    # after WaitForExit. Capture the native status in a file from cmd.exe.
-    $batchPath = "$StdoutPath.cmd"
+    # after WaitForExit. A child shell records the native $LASTEXITCODE itself.
+    $workerPath = "$StdoutPath.ps1"
     $exitPath = "$StdoutPath.exit"
-    $body = @(
-        '@echo off'
-        "`"$Camp`" setup --json 1>`"$StdoutPath`" 2>`"$StderrPath`""
-        'set "proof_exit_code=%ERRORLEVEL%"'
-        "echo %proof_exit_code%>`"$exitPath`""
-        'exit /b %proof_exit_code%'
-    ) -join "`r`n"
-    [System.IO.File]::WriteAllText($batchPath, $body, [System.Text.Encoding]::ASCII)
-    $proc = Start-Process -FilePath (Join-Path $env:SystemRoot 'System32\cmd.exe') `
-        -ArgumentList @('/d', '/c', $batchPath) -NoNewWindow -PassThru
+    $lines = @(
+        '$ErrorActionPreference = ''Stop'''
+        'try {'
+        "    & '$Camp' setup --json 1> '$StdoutPath' 2> '$StderrPath'"
+        '    $code = $LASTEXITCODE'
+        '    if ($null -eq $code) { $code = 1 }'
+        '} catch {'
+        "    `$_ | Out-String | Set-Content -LiteralPath '$StderrPath'"
+        '    $code = 1'
+        '}'
+        "[System.IO.File]::WriteAllText('$exitPath', [string]`$code)"
+        'exit $code'
+    )
+    [System.IO.File]::WriteAllLines($workerPath, $lines)
+    $proc = Start-Process -FilePath (Join-Path $PSHOME 'powershell.exe') `
+        -ArgumentList @('-NoProfile', '-ExecutionPolicy', 'Bypass', '-File', $workerPath) `
+        -NoNewWindow -PassThru
     return [pscustomobject]@{ Process = $proc; ExitPath = $exitPath }
 }
 
