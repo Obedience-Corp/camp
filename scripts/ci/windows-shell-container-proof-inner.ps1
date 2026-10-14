@@ -104,7 +104,7 @@ if ((@($runRecord.args) -join '|') -ne ($wantArgs -join '|')) {
 }
 
 $help = & $Camp run --help 2>&1 | Out-String
-if ($LASTEXITCODE -ne 0 -or $help -notmatch 'Usage:' -or $help -notmatch 'Execute command') {
+if ($LASTEXITCODE -ne 0 -or $help -notmatch 'Usage:' -or $help -notmatch 'Execute any command') {
     throw "camp run --help failed: $help"
 }
 
