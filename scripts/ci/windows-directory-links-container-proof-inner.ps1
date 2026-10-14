@@ -199,10 +199,17 @@ function Assert-GitCaptureDoesNotTraverseExternal {
         }
         $secret = Join-Path $SourceRoot 'post-link-secret.txt'
         'must-not-enter-camp-index' | Set-Content -LiteralPath $secret -Encoding utf8
-        & git add -A 2>&1 | Out-Null
-        $status = (& git status --porcelain 2>&1 | Out-String).Trim()
-        if ($status -match '(?i)external-only|post-link-secret|nested\\keep|nested/keep') {
-            throw "git add -A in camp pulled external tree into index/status: $status"
+        'camp-owned' | Set-Content -LiteralPath (Join-Path $CampRoot 'sweep-trigger.txt') -Encoding utf8
+        $null = Invoke-CampCli -Arguments @('commit', '--all', '-m', 'native junction sweep')
+        $sweepEntry = (& git ls-tree HEAD -- $linkRel 2>&1 | Out-String).Trim()
+        if ($LASTEXITCODE -ne 0 -or $sweepEntry -notmatch "^120000 blob [0-9a-f]{40,64}\t$([regex]::Escape($linkRel))$") {
+            throw "camp commit --all must preserve a mode-120000 link for ${linkRel}: $sweepEntry"
+        }
+        $sweepTracked = (& git ls-files 2>&1 | Out-String).Trim() -split "`n" | Where-Object { $_ }
+        foreach ($line in $sweepTracked) {
+            if ($line.StartsWith("$linkRel/") -or $line -match '(?i)external-only\.txt|post-link-secret|nested\\keep|nested/keep') {
+                throw "camp commit --all traversed the external source: $line"
+            }
         }
         Remove-Item -LiteralPath $secret -Force -ErrorAction SilentlyContinue
     } finally {
@@ -217,7 +224,7 @@ function Assert-GitCaptureDoesNotTraverseExternal {
     } finally {
         Pop-Location
     }
-    Write-ProofMarker 'git capture did not traverse external tree'
+    Write-ProofMarker 'project link and camp commit --all preserved mode-120000 without traversing external tree'
 }
 
 function Assert-ReadbackViaSeparateProcess {
@@ -248,7 +255,8 @@ function Assert-ReadbackViaSeparateProcess {
         'if ($payload -notmatch ''external-only-payload'') { throw "linked payload unreadable in readback process" }'
         "'separate-process project link readback ok' | Set-Content -LiteralPath `$outPath -Encoding utf8"
     )
-    [System.IO.File]::WriteAllLines($readbackPath, $lines)
+    # Windows PowerShell 5.1 needs a BOM to read Unicode literals in -File scripts.
+    [System.IO.File]::WriteAllLines($readbackPath, $lines, [System.Text.UTF8Encoding]::new($true))
     $proc = Start-Process -FilePath (Join-Path $PSHOME 'powershell.exe') -ArgumentList @(
         '-NoProfile', '-ExecutionPolicy', 'Bypass', '-File', $readbackPath
     ) -WorkingDirectory $CampRoot -PassThru -NoNewWindow
@@ -384,6 +392,41 @@ function Assert-CrossVolumeProjectLink {
     Write-ProofMarker 'cross-volume junction project lifecycle verified'
 }
 
+function Assert-UnicodeSpaceProjectLink {
+    $suffix = [char]0x97F3
+    $unicodeCamp = Join-Path $Root "camp main $suffix"
+    $unicodeSource = Join-Path $Root "external main $suffix"
+    $unicodeName = "linked app $suffix"
+    New-CampGitFixture -CampRoot $unicodeCamp -CampaignId 'camp-unicode-proof'
+    New-ExternalSource -SourceRoot $unicodeSource
+    $before = Get-SourceInventory -SourceRoot $unicodeSource
+
+    Push-Location $unicodeCamp
+    try {
+        $null = Invoke-CampCli -Arguments @('project', 'link', $unicodeSource, '--name', $unicodeName, '--yes', '--no-commit')
+        $linkPath = Join-Path $unicodeCamp ('projects\' + $unicodeName)
+        $class = Get-DirectoryLinkClassification -LinkPath $linkPath
+        if ($class.Kind -ne 'junction' -or $class.ReparseTag -ne 0xA0000003) {
+            throw "Unicode/space project link is not a junction: $($class.Detail)"
+        }
+    } finally {
+        Pop-Location
+    }
+
+    Assert-ReadbackViaSeparateProcess -CampRoot $unicodeCamp -LinkName $unicodeName
+    Push-Location $unicodeCamp
+    try {
+        $null = Invoke-CampCli -Arguments @('project', 'unlink', $unicodeName, '--no-commit')
+        if (Test-Path -LiteralPath (Join-Path $unicodeCamp ('projects\' + $unicodeName))) {
+            throw 'Unicode/space managed link remains after unlink'
+        }
+    } finally {
+        Pop-Location
+    }
+    Assert-InventoryUnchanged -Before $before -After (Get-SourceInventory -SourceRoot $unicodeSource) -Label 'Unicode/space unlink'
+    Write-ProofMarker 'Unicode and space junction project lifecycle verified'
+}
+
 Write-ProofMarker '=== directory-link identity ==='
 $id = (& whoami 2>&1 | Out-String).Trim()
 Write-ProofMarker "directory-link identity: $id"
@@ -458,5 +501,6 @@ if (Test-Path -LiteralPath $mainMarker) {
 }
 
 Assert-CrossVolumeProjectLink
+Assert-UnicodeSpaceProjectLink
 
 Write-ProofMarker 'Windows container directory-link proof passed'
