@@ -31,8 +31,30 @@ func createDirectorySymlink(opts CreateOptions) error {
 	if target == "" {
 		target = opts.TargetPath
 	}
-	if err := os.Symlink(target, opts.LinkPath); err != nil {
-		return camperrors.Wrap(err, directorySymlinkHint())
+	linkp, err := syscall.UTF16PtrFromString(fixLongPath(opts.LinkPath))
+	if err != nil {
+		return camperrors.Wrap(err, "directory symlink path")
+	}
+	// CreateSymbolicLink must receive the directory flag even when a network
+	// target is temporarily unreachable. os.Symlink probes the target first
+	// and creates a file symlink when that probe fails.
+	storedTarget := target
+	if filepath.IsAbs(target) {
+		storedTarget = fixLongPath(target)
+	}
+	targetp, err := syscall.UTF16PtrFromString(storedTarget)
+	if err != nil {
+		return camperrors.Wrap(err, "directory symlink target")
+	}
+	// This Windows flag is present in Go's os.Symlink but absent from the
+	// project's current x/sys/windows version.
+	const symbolicLinkFlagAllowUnprivilegedCreate = 0x2
+	flags := uint32(syscall.SYMBOLIC_LINK_FLAG_DIRECTORY | symbolicLinkFlagAllowUnprivilegedCreate)
+	if err := syscall.CreateSymbolicLink(linkp, targetp, flags); err != nil {
+		// The unprivileged flag is unsupported by older Windows releases.
+		if retryErr := syscall.CreateSymbolicLink(linkp, targetp, syscall.SYMBOLIC_LINK_FLAG_DIRECTORY); retryErr != nil {
+			return camperrors.Wrap(retryErr, directorySymlinkHint())
+		}
 	}
 	return nil
 }
