@@ -68,6 +68,10 @@ function New-CampGitFixture {
     try {
         & git init -b main 2>&1 | Out-Null
         if ($LASTEXITCODE -ne 0) { throw "git init failed in $CampRoot" }
+        # The proof writes LF fixtures; a host-inherited autocrlf=true would
+        # emit a Git warning on stderr, which PS 5.1 treats as terminating.
+        & git config core.autocrlf false
+        if ($LASTEXITCODE -ne 0) { throw "git config core.autocrlf failed in $CampRoot" }
         & git config user.name 'camp-dirlink-proof' 2>&1 | Out-Null
         & git config user.email 'camp-dirlink-proof@users.noreply.github.com' 2>&1 | Out-Null
         & git add .campaign 2>&1 | Out-Null
@@ -90,6 +94,8 @@ function New-ExternalSource {
     try {
         & git init -b main 2>&1 | Out-Null
         if ($LASTEXITCODE -ne 0) { throw "git init external source failed" }
+        & git config core.autocrlf false
+        if ($LASTEXITCODE -ne 0) { throw "git config core.autocrlf failed in $SourceRoot" }
         & git config user.name 'camp-dirlink-proof' 2>&1 | Out-Null
         & git config user.email 'camp-dirlink-proof@users.noreply.github.com' 2>&1 | Out-Null
         'readme' | Set-Content -LiteralPath (Join-Path $SourceRoot 'README.md') -Encoding utf8

@@ -43,9 +43,16 @@ if ($LASTEXITCODE -ne 0 -or [string]::IsNullOrWhiteSpace($integration)) {
 }
 Invoke-Expression $integration
 
-[Console]::OutputEncoding = New-Object System.Text.ASCIIEncoding
 $originalCodePage = [Console]::OutputEncoding.CodePage
-if ($originalCodePage -ne 20127) { throw "expected ASCII console encoding, got $originalCodePage" }
+# A redirected Server Core process may refuse the console encoding setter.
+# The shell wrapper must still decode Camp's UTF-8 output and leave the
+# original encoding intact in that environment.
+try {
+    [Console]::OutputEncoding = New-Object System.Text.ASCIIEncoding
+    $originalCodePage = [Console]::OutputEncoding.CodePage
+} catch {
+    if (-not [Console]::IsOutputRedirected) { throw }
+}
 
 Set-Location -LiteralPath $campRoot
 cgo p

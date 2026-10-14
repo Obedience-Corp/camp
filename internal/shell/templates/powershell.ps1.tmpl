@@ -11,13 +11,68 @@ function global:_camp_native_executable {
     return $native.Source
 }
 
+function global:_camp_quote_windows_argument {
+    param([string]$Value)
+    if ([string]::IsNullOrEmpty($Value)) { return '""' }
+    if ($Value -notmatch '[\s"]') { return $Value }
+
+    # ProcessStartInfo.Arguments needs Windows command-line quoting on .NET
+    # Framework, which does not provide ProcessStartInfo.ArgumentList.
+    $quoted = '"'
+    $slashes = 0
+    foreach ($character in $Value.ToCharArray()) {
+        if ($character -eq '\') { $slashes++; continue }
+        if ($character -eq '"') {
+            $quoted += ('\' * ($slashes * 2 + 1)) + '"'
+        } else {
+            $quoted += ('\' * $slashes) + $character
+        }
+        $slashes = 0
+    }
+    return $quoted + ('\' * ($slashes * 2)) + '"'
+}
+
+function global:_camp_native_utf8 {
+    param(
+        [string]$Native,
+        [string[]]$Arguments
+    )
+    $start = New-Object System.Diagnostics.ProcessStartInfo
+    $start.FileName = $Native
+    $start.Arguments = (@($Arguments | ForEach-Object { _camp_quote_windows_argument $_ }) -join ' ')
+    $start.UseShellExecute = $false
+    $start.RedirectStandardOutput = $true
+    $start.StandardOutputEncoding = New-Object System.Text.UTF8Encoding($false, $true)
+
+    $process = New-Object System.Diagnostics.Process
+    $process.StartInfo = $start
+    try {
+        if (-not $process.Start()) { throw "could not start camp executable: $Native" }
+        # Keep stderr attached to the caller so diagnostics stream normally;
+        # only stdout needs UTF-8 decoding for navigation and JSON output.
+        while (($line = $process.StandardOutput.ReadLine()) -ne $null) { Write-Output $line }
+        $process.WaitForExit()
+        $global:LASTEXITCODE = $process.ExitCode
+    } finally {
+        $process.Dispose()
+    }
+}
+
 function global:_camp_native {
     $native = _camp_native_executable
     # Go writes UTF-8 to pipes. Windows PowerShell 5.1 otherwise decodes
     # native output using the console code page, corrupting Unicode paths.
-    $previousEncoding = [Console]::OutputEncoding
+    # Server Core can refuse OutputEncoding changes when stdout is redirected;
+    # decode the child process's UTF-8 pipes directly in that case.
     try {
+        $previousEncoding = [Console]::OutputEncoding
         [Console]::OutputEncoding = New-Object System.Text.UTF8Encoding($false)
+    } catch {
+        if (-not [Console]::IsOutputRedirected) { throw }
+        _camp_native_utf8 -Native $native -Arguments @($args)
+        return
+    }
+    try {
         & $native @args
     } finally {
         [Console]::OutputEncoding = $previousEncoding

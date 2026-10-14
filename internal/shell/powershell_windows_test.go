@@ -31,22 +31,53 @@ func TestPowerShellNativeRestoresOutputEncoding(t *testing.T) {
 	}
 	const probe = `
 $ErrorActionPreference = 'Stop'
-function global:_camp_native_executable { return 'Test-CampNative' }
-function Test-CampNative {
-    if ([Console]::OutputEncoding.CodePage -ne 65001) { throw 'native command did not receive UTF-8 output encoding' }
-    if ($global:campTestFail) { throw 'mock native failure' }
-    $global:LASTEXITCODE = 0
-    return 'Project 日本語'
+$global:campTestNative = (Get-Command powershell.exe -CommandType Application | Select-Object -First 1).Source
+function global:_camp_native_executable { return $global:campTestNative }
+$originalEncoding = [Console]::OutputEncoding
+$changedEncoding = $false
+try {
+    [Console]::OutputEncoding = New-Object System.Text.ASCIIEncoding
+    $changedEncoding = $true
+} catch {
+    if (-not [Console]::IsOutputRedirected) { throw }
 }
-[Console]::OutputEncoding = New-Object System.Text.ASCIIEncoding
 $previousCodePage = [Console]::OutputEncoding.CodePage
-if ((_camp_native go p --print) -ne 'Project 日本語') { throw 'native output changed' }
-if ([Console]::OutputEncoding.CodePage -ne $previousCodePage) { throw 'successful native call changed session encoding' }
-$global:campTestFail = $true
-$failed = $false
-try { _camp_native go missing --print } catch { $failed = $_.Exception.Message -eq 'mock native failure' }
-if (-not $failed) { throw 'mock native failure did not propagate' }
-if ([Console]::OutputEncoding.CodePage -ne $previousCodePage) { throw 'failed native call changed session encoding' }
+$childScript = '$text = "Project " + [char]0x65E5 + [char]0x672C + [char]0x8A9E; $bytes = (New-Object System.Text.UTF8Encoding($false)).GetBytes($text + [char]10); $stream = [Console]::OpenStandardOutput(); $stream.Write($bytes, 0, $bytes.Length)'
+$childArgs = @('-NoProfile', '-NonInteractive', '-Command', $childScript)
+try {
+    # Exercise the direct UTF-8 pipe path even on hosts where the console
+    # setter succeeds. The -Command argument includes spaces and quotes.
+    if ((@(_camp_native_utf8 -Native $global:campTestNative -Arguments $childArgs) -join '') -ne 'Project 日本語') {
+        throw 'UTF-8 fallback changed Unicode native output or quoted arguments'
+    }
+    if ($LASTEXITCODE -ne 0) { throw "UTF-8 fallback exit code was $LASTEXITCODE" }
+    $null = _camp_native_utf8 -Native $global:campTestNative -Arguments @('-NoProfile', '-NonInteractive', '-Command', 'exit 7')
+    if ($LASTEXITCODE -ne 7) { throw "UTF-8 fallback failure exit code was $LASTEXITCODE" }
+
+    if ($changedEncoding) {
+        function Test-CampNative {
+            if ([Console]::OutputEncoding.CodePage -ne 65001) { throw 'native command did not receive UTF-8 output encoding' }
+            if ($global:campTestFail) { throw 'mock native failure' }
+            $global:LASTEXITCODE = 0
+            return 'Project 日本語'
+        }
+        function global:_camp_native_executable { return 'Test-CampNative' }
+        if ((_camp_native go p --print) -ne 'Project 日本語') { throw 'native output changed' }
+        if ([Console]::OutputEncoding.CodePage -ne $previousCodePage) { throw 'successful native call changed session encoding' }
+        $global:campTestFail = $true
+        $failed = $false
+        try { _camp_native go missing --print } catch { $failed = $_.Exception.Message -eq 'mock native failure' }
+        if (-not $failed) { throw 'mock native failure did not propagate' }
+        if ([Console]::OutputEncoding.CodePage -ne $previousCodePage) { throw 'failed native call changed session encoding' }
+    } else {
+        # On redirected Server Core the wrapper itself must take the fallback.
+        if ((@(_camp_native @childArgs) -join '') -ne 'Project 日本語') { throw 'redirected native output changed' }
+        if ($LASTEXITCODE -ne 0) { throw "redirected native exit code was $LASTEXITCODE" }
+        if ([Console]::OutputEncoding.CodePage -ne $previousCodePage) { throw 'fallback changed session encoding' }
+    }
+} finally {
+    if ($changedEncoding) { [Console]::OutputEncoding = $originalEncoding }
+}
 'PowerShell native encoding passed'
 `
 	cmd := exec.Command("powershell.exe", "-NoProfile", "-NonInteractive", "-Command", script+probe)
