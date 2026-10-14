@@ -38,6 +38,8 @@ Machine forms (one side only; both-remote is refused):
                     file on a machine registered in ~/.obey/machines.yaml
 
 See docs/transfer.md for the full grammar, transport, and skew guidance.
+On Windows, local camp-to-camp transfers work; machine endpoints are
+unavailable in this release.
 
 At least one side must reference a different camp or machine. For copies
 within the same camp on this machine, use 'camp copy' instead.`,
@@ -226,6 +228,9 @@ func completeCampaignPath(campRoot, pathPrefix, colonPrefix string) ([]string, c
 // runRemoteTransfer moves one file between this machine and a fleet member. The
 // far campaign root is resolved by the remote's own camp, never computed here.
 func runRemoteTransfer(ctx context.Context, cmd *cobra.Command, root string, src, dest transfer.Endpoint, force bool) error {
+	if err := remote.RequirePeerSupport(); err != nil {
+		return camperrors.Wrap(err, "camp transfer with a machine endpoint")
+	}
 	remoteEnd, localSpec, pull := dest, src.Spec, false
 	if src.IsRemote() {
 		remoteEnd, localSpec, pull = src, dest.Spec, true

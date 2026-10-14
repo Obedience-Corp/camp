@@ -1,5 +1,17 @@
 # Peer transport
 
+## Windows release scope
+
+The first native Windows release supports local Camp work and ordinary
+origin-backed `camp sync` and `camp clone`. Peer transfer through `--from` is
+unavailable on Windows: `camp sync --from`, `camp clone --from`, and
+`camp artifacts resolve --take-peer` fail before they copy or change files.
+Windows also cannot serve as the remote peer for those operations; both ends
+must be macOS or Linux. Run those peer operations between supported peers.
+`camp sync --verify-artifacts --from <machine>` only reads local snapshots;
+artifact conflict `--list` and `--take-local` remain local operations. The
+peer transport below applies to macOS and Linux.
+
 Camp can pull git objects and artifacts from another machine in your fleet instead of
 from origin. On a LAN or a tailnet that is usually much faster, and for a fresh machine
 it is the difference between a coffee break and a minute.

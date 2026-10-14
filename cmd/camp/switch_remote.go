@@ -36,6 +36,9 @@ func runRemoteSwitch(ctx context.Context, cmd *cobra.Command, msel cmdutil.Parse
 	if err := guardRemoteOutputFlags(msel.Machine, printOnly, jsonOut); err != nil {
 		return err
 	}
+	if err := remote.RequirePeerSupport(); err != nil {
+		return camperrors.Wrap(err, "camp switch to a remote machine")
+	}
 	mf, err := machines.Load()
 	if err != nil {
 		return err

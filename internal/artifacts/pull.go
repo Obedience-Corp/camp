@@ -16,6 +16,7 @@ import (
 	camperrors "github.com/Obedience-Corp/camp/internal/errors"
 	"github.com/Obedience-Corp/camp/internal/fsutil"
 	"github.com/Obedience-Corp/camp/internal/peer"
+	"github.com/Obedience-Corp/camp/internal/remote"
 	"github.com/Obedience-Corp/camp/internal/rsyncprobe"
 )
 
@@ -93,6 +94,9 @@ type Prober interface {
 func pull(ctx context.Context, campaignRoot string, src *peer.Source, result *PullResult, prober Prober) error {
 	if ctx.Err() != nil {
 		return ctx.Err()
+	}
+	if err := remote.RequirePeerSupport(); err != nil {
+		return err
 	}
 	if _, err := exec.LookPath("rsync"); err != nil {
 		return camperrors.New("rsync not found on PATH; artifact sync needs rsync on both machines")

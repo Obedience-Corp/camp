@@ -11,6 +11,7 @@ import (
 	camperrors "github.com/Obedience-Corp/camp/internal/errors"
 	"github.com/Obedience-Corp/camp/internal/jsoncontract"
 	"github.com/Obedience-Corp/camp/internal/peer"
+	"github.com/Obedience-Corp/camp/internal/remote"
 	"github.com/Obedience-Corp/camp/internal/ui"
 	"github.com/spf13/cobra"
 )
@@ -79,7 +80,10 @@ EXAMPLES:
   # re-pointed to the URL above and the delta fetched. The result is an
   # origin replica that arrived over the fast path; peer failures fall back
   # to plain origin cloning.
-  camp clone git@github.com:org/repo.git --from studio-mac`,
+  camp clone git@github.com:org/repo.git --from studio-mac
+
+On Windows, --from peer seeding is unavailable in this release. Omit --from
+to clone directly from origin.`,
 	Args: jsoncontract.Args(CloneJSONVersion, func() bool { return cloneOpts.json }, cobra.RangeArgs(1, 2)),
 	Annotations: map[string]string{
 		"agent_allowed": "false",
@@ -129,6 +133,11 @@ func init() {
 
 func runClone(cmd *cobra.Command, args []string) error {
 	ctx := cmd.Context()
+	if cloneOpts.from != "" {
+		if err := remote.RequirePeerSupport(); err != nil {
+			return camperrors.Wrap(err, "camp clone --from")
+		}
+	}
 
 	url := args[0]
 	var directory string

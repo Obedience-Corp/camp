@@ -193,6 +193,12 @@ func RunCampCommandReuseOnly(ctx context.Context, m *machines.Machine, args stri
 // the fallback exists. The per-process peer-table memo makes the repeated
 // resolution effectively free.
 func runCampCommand(ctx context.Context, m *machines.Machine, args string, reuseOnly bool) ([]byte, error) {
+	if err := ctx.Err(); err != nil {
+		return nil, err
+	}
+	if err := RequirePeerSupport(); err != nil {
+		return nil, err
+	}
 	if err := EnsureKeyAuth(m); err != nil {
 		return nil, err
 	}
@@ -265,6 +271,12 @@ type CampLocation struct {
 // path is an executable on that machine: an override that is wrong or a
 // machine that is down must not print as a healthy BINARY line.
 func RemoteCampLocation(ctx context.Context, m *machines.Machine) (CampLocation, error) {
+	if err := ctx.Err(); err != nil {
+		return CampLocation{}, err
+	}
+	if err := RequirePeerSupport(); err != nil {
+		return CampLocation{}, err
+	}
 	if err := EnsureKeyAuth(m); err != nil {
 		return CampLocation{}, err
 	}
