@@ -267,7 +267,7 @@ function Invoke-CompetingSetupInterruptBeforePublication([hashtable]$Layout) {
 
 function Assert-StagingClean([string]$CampsDir) {
     if (-not (Test-Path -LiteralPath $CampsDir)) { return }
-    $leftovers = @(Get-ChildItem -LiteralPath $CampsDir -Directory -Filter '.festival-setup-*' -ErrorAction SilentlyContinue)
+    $leftovers = @(Get-ChildItem -LiteralPath $CampsDir -Directory -Force -Filter '.festival-setup-*' -ErrorAction SilentlyContinue)
     if ($leftovers.Count -gt 0) {
         throw "unexpected staging directories: $($leftovers.FullName -join ', ')"
     }
@@ -282,7 +282,7 @@ function Read-RegistryCampaignCount([string]$RegistryPath) {
 
 function Get-StagingDirectories([string]$CampsDir) {
     if (-not (Test-Path -LiteralPath $CampsDir)) { return @() }
-    return @(Get-ChildItem -LiteralPath $CampsDir -Directory -Filter '.festival-setup-*' -ErrorAction SilentlyContinue)
+    return @(Get-ChildItem -LiteralPath $CampsDir -Directory -Force -Filter '.festival-setup-*' -ErrorAction SilentlyContinue)
 }
 
 function Assert-InterruptedPartialState([hashtable]$Layout) {
@@ -312,7 +312,7 @@ function Assert-InterruptedPartialState([hashtable]$Layout) {
     $normStaging = ($state.staging -replace '\\', '/').ToLowerInvariant()
     $found = $false
     foreach ($parent in $stageParents) {
-        $candidate = (Join-Path $parent.FullName 'festival' -replace '\\', '/').ToLowerInvariant()
+        $candidate = ((Join-Path $parent.FullName 'festival') -replace '\\', '/').ToLowerInvariant()
         if ($candidate -eq $normStaging) {
             $found = $true
             break
