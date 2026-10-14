@@ -279,11 +279,11 @@ try {
             Write-Section 'Run camp setup --json proof inside container'
             $setupOut = Invoke-DockerExecPowerShell $containerId $containerInner
             Write-Host $setupOut
-            if ($setupOut -notmatch 'concurrent setup passed') {
+            if ($setupOut -notmatch 'separate-process readback passed') {
                 throw "camp setup proof output missing success marker:`n$setupOut"
             }
             Write-Host ""
-            Write-Host 'Windows container camp setup proof: first creation, repeat setup, and concurrent setup verified'
+            Write-Host 'Windows container camp setup proof: process interrupt, fest-fail retry, occupied target, concurrent setup, and readback verified'
         } finally {
             & docker rm -f $containerId 2>&1 | Out-Null
         }
