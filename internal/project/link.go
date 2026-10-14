@@ -364,10 +364,9 @@ func UnlinkProject(ctx context.Context, campaignRoot, name, targetPath string) (
 // resolves to the same target as absTarget. Returns the name of the first
 // match, or "" if none. The ignorePath parameter is the destination path
 // under construction — typically equal to fullPath in AddLinked — which is
-// skipped to avoid false positives when the check runs before the new symlink
-// is even created. Both sides are passed through filepath.EvalSymlinks so
-// path-shape differences (e.g., /private/var vs /var on macOS) don't cause
-// false negatives.
+// skipped to avoid false positives when the check runs before the new link
+// is even created. SameFile handles Windows junctions, which EvalSymlinks
+// does not necessarily resolve to the target, and path spelling differences.
 func findExistingLinkToTarget(campaignRoot, absTarget, ignorePath string) (string, error) {
 	resolvedTarget, err := filepath.EvalSymlinks(absTarget)
 	if err != nil {
@@ -375,6 +374,7 @@ func findExistingLinkToTarget(campaignRoot, absTarget, ignorePath string) (strin
 		// the symlink creation path will surface a clearer error.
 		resolvedTarget = absTarget
 	}
+	targetInfo, targetInfoErr := os.Stat(absTarget)
 
 	projectsDir := filepath.Join(campaignRoot, "projects")
 	entries, err := os.ReadDir(projectsDir)
@@ -397,13 +397,15 @@ func findExistingLinkToTarget(campaignRoot, absTarget, ignorePath string) (strin
 		if entryPath == ignorePath {
 			continue
 		}
-		resolved, err := filepath.EvalSymlinks(entryPath)
-		if err != nil {
-			// Broken symlink — not a collision candidate; skip.
-			continue
-		}
-		if resolved == resolvedTarget {
+		resolved, resolveErr := filepath.EvalSymlinks(entryPath)
+		if resolveErr == nil && resolved == resolvedTarget {
 			return entry.Name(), nil
+		}
+		if targetInfoErr == nil {
+			entryInfo, statErr := os.Stat(entryPath)
+			if statErr == nil && os.SameFile(entryInfo, targetInfo) {
+				return entry.Name(), nil
+			}
 		}
 	}
 	return "", nil
