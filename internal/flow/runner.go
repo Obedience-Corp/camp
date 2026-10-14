@@ -30,11 +30,10 @@ func (r *Runner) Run(ctx context.Context, f Flow, extraArgs []string) error {
 
 	workDir := r.resolveWorkDir(f.WorkDir)
 
-	cmd, err := shellcmd.Command(ctx, f.Shell, f.Command, extraArgs)
+	cmd, err := shellcmd.CommandInDir(ctx, f.Shell, f.Command, extraArgs, workDir)
 	if err != nil {
 		return camperrors.Wrap(err, "resolving flow interpreter")
 	}
-	cmd.Dir = workDir
 	cmd.Env = r.mergeEnv(f.Env)
 	cmd.Stdin = os.Stdin
 	cmd.Stdout = os.Stdout

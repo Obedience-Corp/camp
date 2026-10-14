@@ -25,7 +25,7 @@ func ExecuteCommand(ctx context.Context, cmdStr, workDir, campaignRoot string, e
 	var cmd *exec.Cmd
 	if runtime.GOOS == "windows" {
 		var err error
-		cmd, err = shellcmd.Command(ctx, "powershell", cmdStr, extraArgs)
+		cmd, err = shellcmd.CommandInDir(ctx, "powershell", cmdStr, extraArgs, workDir)
 		if err != nil {
 			return camperrors.Wrap(err, "resolving PowerShell command interpreter")
 		}
@@ -35,8 +35,8 @@ func ExecuteCommand(ctx context.Context, cmdStr, workDir, campaignRoot string, e
 			fullCmd = fmt.Sprintf("%s %s", cmdStr, strings.Join(extraArgs, " "))
 		}
 		cmd = exec.CommandContext(ctx, "sh", "-c", fullCmd)
+		cmd.Dir = workDir
 	}
-	cmd.Dir = workDir
 	cmd.Stdout = os.Stdout
 	cmd.Stderr = os.Stderr
 	cmd.Stdin = os.Stdin

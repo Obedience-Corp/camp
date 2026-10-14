@@ -16,13 +16,13 @@ import (
 
 func TestPowerShellFlowLiteralArgsAndWorkDir(t *testing.T) {
 	root := t.TempDir()
-	workDir := filepath.Join(root, "Work With Spaces 日本語")
+	workDir := filepath.Join(root, "Work With Spaces 日本語 [one] O'Brien")
 	if err := os.Mkdir(workDir, 0o755); err != nil {
 		t.Fatal(err)
 	}
 	outFile := filepath.Join(root, "flow-result.json")
 	f := Flow{
-		Command: "& { $result = @{ cwd = $PWD.Path; value = $env:FLOW_VALUE; args = @($args) } | ConvertTo-Json -Compress; [IO.File]::WriteAllText($env:FLOW_OUT, $result) }\n",
+		Command: "& { $result = @{ cwd = $PWD.Path; process_cwd = [IO.Directory]::GetCurrentDirectory(); value = $env:FLOW_VALUE; args = @($args) } | ConvertTo-Json -Compress; [IO.File]::WriteAllText($env:FLOW_OUT, $result) }\n",
 		Shell:   powerShellFlowShell(),
 		WorkDir: filepath.Base(workDir),
 		Env: map[string]string{
@@ -39,14 +39,15 @@ func TestPowerShellFlowLiteralArgsAndWorkDir(t *testing.T) {
 		t.Fatal(err)
 	}
 	var got struct {
-		Cwd   string   `json:"cwd"`
-		Value string   `json:"value"`
-		Args  []string `json:"args"`
+		Cwd        string   `json:"cwd"`
+		ProcessCwd string   `json:"process_cwd"`
+		Value      string   `json:"value"`
+		Args       []string `json:"args"`
 	}
 	if err := json.Unmarshal(data, &got); err != nil {
 		t.Fatalf("flow result is not JSON: %v: %s", err, data)
 	}
-	if !strings.EqualFold(filepath.Clean(got.Cwd), workDir) || got.Value != "value with spaces" || strings.Join(got.Args, "\x00") != strings.Join(wantArgs, "\x00") {
+	if !strings.EqualFold(filepath.Clean(got.Cwd), workDir) || !strings.EqualFold(filepath.Clean(got.ProcessCwd), workDir) || got.Value != "value with spaces" || strings.Join(got.Args, "\x00") != strings.Join(wantArgs, "\x00") {
 		t.Fatalf("flow result = %+v, want cwd=%q value=%q args=%#v", got, workDir, "value with spaces", wantArgs)
 	}
 }

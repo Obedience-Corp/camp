@@ -128,7 +128,7 @@ version: 1
 flows:
   winargs:
     command: |
-      & { [string[]]$received = $args; $result = @{ cwd = $PWD.Path; value = $env:CAMP_FLOW_VALUE; args = $received } | ConvertTo-Json -Compress; [IO.File]::WriteAllText($env:CAMP_FLOW_OUT, $result) }
+      & { [string[]]$received = $args; $result = @{ cwd = $PWD.Path; process_cwd = [IO.Directory]::GetCurrentDirectory(); value = $env:CAMP_FLOW_VALUE; args = $received } | ConvertTo-Json -Compress; [IO.File]::WriteAllText($env:CAMP_FLOW_OUT, $result) }
     workdir: projects/fixture
     env:
       CAMP_FLOW_VALUE: value with spaces
@@ -143,7 +143,8 @@ $env:CAMP_FLOW_OUT = Join-Path $Root 'flow-result.json'
 & $CampDev flow run winargs -- @wantArgs
 if ($LASTEXITCODE -ne 0) { throw "camp flow run winargs failed ($LASTEXITCODE)" }
 $flowRecord = Get-Content -LiteralPath $env:CAMP_FLOW_OUT -Raw -Encoding UTF8 | ConvertFrom-Json
-if ($flowRecord.cwd -ne $fixture -or $flowRecord.value -ne 'value with spaces') {
+if ($flowRecord.cwd -ne $fixture -or $flowRecord.process_cwd -ne $fixture -or
+    $flowRecord.value -ne 'value with spaces') {
     throw "camp flow cwd/env mismatch: $($flowRecord | ConvertTo-Json -Compress)"
 }
 if ((@($flowRecord.args) -join '|') -ne ($wantArgs -join '|')) {

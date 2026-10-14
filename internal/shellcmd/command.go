@@ -19,14 +19,36 @@ import (
 // empty interpreter uses PowerShell on Windows and sh on other platforms.
 // Extra arguments remain distinct data values in both interpreters.
 func Command(ctx context.Context, interpreter, expression string, extraArgs []string) (*exec.Cmd, error) {
+	return command(ctx, interpreter, expression, extraArgs, "")
+}
+
+// CommandInDir creates a command for a shell expression in dir. PowerShell's
+// runspace location can differ from the process directory, so both are set.
+func CommandInDir(ctx context.Context, interpreter, expression string, extraArgs []string, dir string) (*exec.Cmd, error) {
+	if dir != "" {
+		absoluteDir, err := filepath.Abs(dir)
+		if err != nil {
+			return nil, camperrors.Wrap(err, "resolving shell working directory")
+		}
+		dir = absoluteDir
+	}
+	cmd, err := command(ctx, interpreter, expression, extraArgs, dir)
+	if err != nil {
+		return nil, err
+	}
+	cmd.Dir = dir
+	return cmd, nil
+}
+
+func command(ctx context.Context, interpreter, expression string, extraArgs []string, dir string) (*exec.Cmd, error) {
 	switch strings.ToLower(strings.TrimSpace(interpreter)) {
 	case "", "auto":
 		if runtime.GOOS == "windows" {
-			return powerShellCommand(ctx, expression, extraArgs)
+			return powerShellCommand(ctx, expression, extraArgs, dir)
 		}
 		return shCommand(ctx, expression, extraArgs)
 	case "powershell":
-		return powerShellCommand(ctx, expression, extraArgs)
+		return powerShellCommand(ctx, expression, extraArgs, dir)
 	case "sh":
 		return shCommand(ctx, expression, extraArgs)
 	default:
@@ -50,7 +72,7 @@ func shCommand(ctx context.Context, expression string, extraArgs []string) (*exe
 	return exec.CommandContext(ctx, sh, args...), nil
 }
 
-func powerShellCommand(ctx context.Context, expression string, extraArgs []string) (*exec.Cmd, error) {
+func powerShellCommand(ctx context.Context, expression string, extraArgs []string, dir string) (*exec.Cmd, error) {
 	name := "pwsh"
 	if runtime.GOOS == "windows" {
 		name = "powershell.exe"
@@ -59,18 +81,23 @@ func powerShellCommand(ctx context.Context, expression string, extraArgs []strin
 	if err != nil {
 		return nil, camperrors.Wrapf(err, "PowerShell interpreter %s was not found on PATH", name)
 	}
-	script, err := powerShellScript(expression, extraArgs)
+	script, err := powerShellScript(expression, extraArgs, dir)
 	if err != nil {
 		return nil, err
 	}
 	return exec.CommandContext(ctx, path, "-NoProfile", "-NonInteractive", "-EncodedCommand", encodePowerShell(script)), nil
 }
 
-func powerShellScript(expression string, extraArgs []string) (string, error) {
+func powerShellScript(expression string, extraArgs []string, dir string) (string, error) {
 	// YAML block scalars commonly end with a newline. Splatting must remain
 	// attached to the final command rather than becoming a new expression.
 	expression = strings.TrimRight(expression, " \t\r\n")
 	script := "$ErrorActionPreference = 'Stop'\n"
+	if dir != "" {
+		literal := "'" + strings.ReplaceAll(dir, "'", "''") + "'"
+		script += "[IO.Directory]::SetCurrentDirectory(" + literal + ")\n"
+		script += "Set-Location -LiteralPath " + literal + "\n"
+	}
 	if len(extraArgs) > 0 {
 		literals := make([]string, len(extraArgs))
 		for i, arg := range extraArgs {
