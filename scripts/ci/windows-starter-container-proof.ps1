@@ -156,11 +156,14 @@ function Resolve-FestSource {
 
 function Get-HostGitRoot {
     $gitCmd = (Get-Command git.exe -ErrorAction Stop).Source
-    $root = Resolve-Path (Join-Path (Split-Path -Parent $gitCmd) '..')
-    if (-not (Test-Path -LiteralPath (Join-Path $root 'cmd\git.exe'))) {
-        throw "host git layout unexpected at $root"
+    for ($dir = Split-Path -Parent $gitCmd; $dir; $dir = Split-Path -Parent $dir) {
+        if (Test-Path -LiteralPath (Join-Path $dir 'cmd\git.exe')) {
+            return $dir
+        }
+        $parent = Split-Path -Parent $dir
+        if ($parent -eq $dir) { break }
     }
-    return $root.Path
+    throw "host git layout unexpected at $gitCmd (no parent with cmd\git.exe)"
 }
 
 function Build-SetupProofBinaries([string]$WorkDir) {

@@ -51,15 +51,19 @@ function Use-StarterHome([hashtable]$Layout) {
 }
 
 function Invoke-CampSetupJson {
-    $raw = & $Camp setup --json 2>&1 | Out-String
-    $code = $LASTEXITCODE
-    if ($code -ne 0) {
-        throw "camp setup --json failed ($code): $raw"
+    $stamp = [guid]::NewGuid().ToString('n')
+    $stdoutPath = Join-Path $env:TEMP "setup-$stamp.json"
+    $stderrPath = Join-Path $env:TEMP "setup-$stamp.err"
+    $proc = Start-Process -FilePath $Camp -ArgumentList @('setup', '--json') -NoNewWindow -PassThru -Wait -RedirectStandardOutput $stdoutPath -RedirectStandardError $stderrPath
+    $raw = Get-Content -LiteralPath $stdoutPath -Raw
+    $stderr = Get-Content -LiteralPath $stderrPath -Raw
+    if ($proc.ExitCode -ne 0) {
+        throw "camp setup --json failed ($($proc.ExitCode)): stdout=$raw stderr=$stderr"
     }
     try {
         return ($raw.Trim() | ConvertFrom-Json)
     } catch {
-        throw "camp setup --json did not emit JSON: $raw"
+        throw "camp setup --json did not emit JSON: stdout=$raw stderr=$stderr"
     }
 }
 
