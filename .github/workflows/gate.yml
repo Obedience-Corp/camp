@@ -67,3 +67,21 @@ jobs:
 
       - name: Cross-build camp.exe (stable)
         run: BUILD_TAGS='' just build windows-x64-gate
+
+  windows-starter-lock:
+    name: windows-starter-lock
+    runs-on: windows-2025
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7
+
+      - name: Set up Go
+        uses: actions/setup-go@v7
+        with:
+          go-version-file: go.mod
+
+      - name: Install just
+        uses: extractions/setup-just@v4
+
+      - name: Starter lock proof in Windows container
+        run: just test windows-starter-container-proof

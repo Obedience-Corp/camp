@@ -64,7 +64,7 @@ var containerFSPackages = []containerFSPackage{
 	{ImportPath: "./internal/defercommit", MinTests: 2, TestPattern: "^TestAllowedForPaths(Keeps|Unreadable)"},
 	// Hop resume handoff and dungeon explorer command regressions.
 	{ImportPath: "./cmd/camp", MinTests: 25, TestPattern: "^Test(HopResumeFS|ExploreExecuteDoesNotWriteConfig|ExploreExecuteRefusesInvalidFlags|ExploreExecuteKeepsStderrJSONWhenAJobFailed)"},
-	{ImportPath: "./internal/starter", MinTests: 3},
+	{ImportPath: "./internal/starter", MinTests: 7},
 	{ImportPath: "./internal/clone", MinTests: 29},
 	{ImportPath: "./internal/sync", MinTests: 32},
 	{ImportPath: "./internal/commands/fresh", MinTests: 6},

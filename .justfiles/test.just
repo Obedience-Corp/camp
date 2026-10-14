@@ -111,3 +111,9 @@ integration-build:
     @mkdir -p bin/linux
     GOOS=linux GOARCH=$(go env GOARCH) go build -o bin/linux/camp ./cmd/camp
     @echo "Built bin/linux/camp"
+
+# LockFileEx starter proof: compile container_fs starter tests for Windows and
+# run them inside mcr.microsoft.com/windows/servercore:ltsc2025 (hosted windows-2025).
+[no-cd]
+windows-starter-container-proof:
+    go test -count=1 -tags=integration ./tests/integration/... -run '^TestWindowsStarterLockInContainer$' -timeout 20m
