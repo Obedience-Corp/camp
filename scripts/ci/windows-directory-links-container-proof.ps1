@@ -21,7 +21,7 @@ $ContainerUserName = 'ContainerUser'
 
 # Go -test.run regex (not .NET).
 # Matches the focused dirlink, project, Git, and skill link suites.
-$DefaultTestRunPattern = 'Test(.*DirectoryLink|AddLinked|UnlinkProject|Dirlink|CreateAndRead|RemoveDirectoryLink|GitCapture).*'
+$DefaultTestRunPattern = 'Test(.*DirectoryLink|AddLinked|UnlinkProject|Dirlink|CreateAndRead|RemoveDirectoryLink|GitCapture|CommitScopedParentDirectory).*'
 $TestRunPattern = if ($env:CAMP_WINDOWS_DIRLINK_TEST_RUN) { $env:CAMP_WINDOWS_DIRLINK_TEST_RUN.Trim() } else { $DefaultTestRunPattern }
 $MinTargetedTests = if ($env:CAMP_WINDOWS_DIRLINK_MIN_TESTS) { [int]$env:CAMP_WINDOWS_DIRLINK_MIN_TESTS } else { 5 }
 
@@ -42,6 +42,9 @@ $RequiredTestNames = @(
     'TestUnlinkProject_RejectsOrdinaryDirectory',
     'TestCaptureBlobsDoesNotFollowDirectoryLink',
     'TestCommitScoped_DirectoryLinkStagesOnlySymlink',
+    'TestStageAllDirectoryLinkStagesSymlink',
+    'TestStageAllOnlyDirectoryLink',
+    'TestCommitScopedParentDirectoryStagesLink',
     'TestSkillProjectionDirectoryLinkReadback',
     'TestGrokSkillsAliasDirectoryLink'
 )

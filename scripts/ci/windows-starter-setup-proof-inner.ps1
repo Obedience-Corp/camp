@@ -175,7 +175,22 @@ function Wait-ProcessExit {
 function Stop-ProcessTree {
     param([int]$RootPid)
     if ($RootPid -le 0) { return }
-    & (Join-Path $env:SystemRoot 'System32\taskkill.exe') /F /T /PID $RootPid 2>&1 | Out-Null
+    $taskkill = Join-Path $env:SystemRoot 'System32\taskkill.exe'
+    for ($attempt = 0; $attempt -lt 3; $attempt++) {
+        if (-not (Get-Process -Id $RootPid -ErrorAction SilentlyContinue)) { return }
+        # A descendant can exit while taskkill enumerates the tree. PowerShell
+        # treats taskkill's stderr as an error under Stop even if the root dies.
+        $previousPreference = $ErrorActionPreference
+        $ErrorActionPreference = 'Continue'
+        try {
+            $output = & $taskkill /F /T /PID $RootPid 2>&1
+        } finally {
+            $ErrorActionPreference = $previousPreference
+        }
+        Start-Sleep -Milliseconds 200
+        if (-not (Get-Process -Id $RootPid -ErrorAction SilentlyContinue)) { return }
+    }
+    throw "unable to terminate process tree rooted at $RootPid`: $($output | Out-String)"
 }
 
 function Stop-AllCampProcessesInFixture {

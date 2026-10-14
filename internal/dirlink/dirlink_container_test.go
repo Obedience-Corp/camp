@@ -14,6 +14,9 @@ func TestCreateAndReadDirectoryLink(t *testing.T) {
 	if err := os.MkdirAll(target, 0o755); err != nil {
 		t.Fatal(err)
 	}
+	if err := os.WriteFile(filepath.Join(target, "payload.txt"), []byte("linked target"), 0o644); err != nil {
+		t.Fatal(err)
+	}
 	link := filepath.Join(root, "projects", "linked")
 	if err := os.MkdirAll(filepath.Dir(link), 0o755); err != nil {
 		t.Fatal(err)
@@ -25,9 +28,20 @@ func TestCreateAndReadDirectoryLink(t *testing.T) {
 	if err != nil || !st.IsDirectoryLink() {
 		t.Fatalf("Lstat() = %+v, %v; want directory link", st, err)
 	}
-	resolved, err := filepath.EvalSymlinks(link)
-	if err != nil || resolved != target {
-		t.Fatalf("EvalSymlinks() = %q, %v; want %q", resolved, err, target)
+	stored, err := ReadTarget(link)
+	if err != nil || stored == "" {
+		t.Fatalf("ReadTarget() = %q, %v; want a stored target", stored, err)
+	}
+	linkInfo, err := os.Stat(link)
+	if err != nil {
+		t.Fatalf("stat link target: %v", err)
+	}
+	targetInfo, err := os.Stat(target)
+	if err != nil || !os.SameFile(linkInfo, targetInfo) {
+		t.Fatalf("link and target must identify the same directory: %v", err)
+	}
+	if data, err := os.ReadFile(filepath.Join(link, "payload.txt")); err != nil || string(data) != "linked target" {
+		t.Fatalf("read through directory link: %q, %v", data, err)
 	}
 }
 
