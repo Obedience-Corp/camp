@@ -651,22 +651,17 @@ func TestIntegration_WriterFailureStillLandsTheCommit(t *testing.T) {
 // commits exclude submodule refs, so only-submodule dirt used to pass
 // HasChanges, write-tree equal to HEAD, then land a no-op with a filler
 // message after the writer correctly reported "no staged changes".
-// `camp init` leaves HEAD unborn until the first commit. A deferred
-// --auto-write used to fail git.FullHash, print "Could not queue this commit",
-// and fall back to a synchronous write. Empty Parent is a valid KindCommitTree
-// snapshot, so the first --auto-write must enqueue and land as a root commit.
+// A repository whose HEAD is still unborn (a --no-git scaffold the user
+// git-inits by hand) used to make a deferred --auto-write fail git.FullHash,
+// print "Could not queue this commit", and fall back to a synchronous write.
+// Empty Parent is a valid KindCommitTree snapshot, so the first --auto-write
+// must enqueue and land as a root commit.
 func TestIntegration_AutoWriteDefersOnUnbornHead(t *testing.T) {
 	tc := GetSharedContainer(t)
 	tc.EnableDeferral()
 
 	campPath := "/campaigns/aw-defer-unborn"
-	_, err := tc.RunCamp("init", campPath, "--name", "aw-defer-unborn",
-		"-d", "Test campaign", "-m", "Test mission", "--type", "product")
-	require.NoError(t, err)
-
-	_, exitCode, err := tc.ExecCommand("git", "-C", campPath, "rev-parse", "--verify", "HEAD")
-	require.NoError(t, err)
-	require.NotEqual(t, 0, exitCode, "fixture is not reproducing an unborn HEAD; HEAD already resolves")
+	initUnbornHeadCampaign(t, tc, campPath, "aw-defer-unborn")
 
 	configureWriter(t, tc, campPath, "plain")
 	tc.Shell(t, fmt.Sprintf(`
@@ -721,13 +716,7 @@ func TestIntegration_DeferredCommitReappliesWhenUnbornHeadRaced(t *testing.T) {
 	tc.EnableDeferral()
 
 	campPath := "/campaigns/aw-defer-unborn-race"
-	_, err := tc.RunCamp("init", campPath, "--name", "aw-defer-unborn-race",
-		"-d", "Test campaign", "-m", "Test mission", "--type", "product")
-	require.NoError(t, err)
-
-	_, exitCode, err := tc.ExecCommand("git", "-C", campPath, "rev-parse", "--verify", "HEAD")
-	require.NoError(t, err)
-	require.NotEqual(t, 0, exitCode, "fixture is not reproducing an unborn HEAD; HEAD already resolves")
+	initUnbornHeadCampaign(t, tc, campPath, "aw-defer-unborn-race")
 
 	configureWriter(t, tc, campPath, "slow")
 	tc.Shell(t, fmt.Sprintf(`
@@ -780,13 +769,7 @@ func TestIntegration_DeferredCommitFailsWhenUnbornReapplyConflicts(t *testing.T)
 	tc.EnableDeferral()
 
 	campPath := "/campaigns/aw-defer-unborn-conflict"
-	_, err := tc.RunCamp("init", campPath, "--name", "aw-defer-unborn-conflict",
-		"-d", "Test campaign", "-m", "Test mission", "--type", "product")
-	require.NoError(t, err)
-
-	_, exitCode, err := tc.ExecCommand("git", "-C", campPath, "rev-parse", "--verify", "HEAD")
-	require.NoError(t, err)
-	require.NotEqual(t, 0, exitCode, "fixture is not reproducing an unborn HEAD; HEAD already resolves")
+	initUnbornHeadCampaign(t, tc, campPath, "aw-defer-unborn-conflict")
 
 	configureWriter(t, tc, campPath, "slow")
 	tc.Shell(t, fmt.Sprintf(`
@@ -998,4 +981,36 @@ func TestIntegration_SupersededJobIsNotOfferedForRetry(t *testing.T) {
 	require.NoError(t, err)
 	assert.Contains(t, jsonOut, `"superseded": true`,
 		"--json must carry the retryability of a failed job; output:\n%s", jsonOut)
+}
+
+// initUnbornHeadCampaign scaffolds a campaign whose repository has no commits.
+// camp init commits its own scaffold, so the fixture scaffolds with --no-git
+// and git-inits by hand, the way a user who declined git at init and added it
+// later ends up. It asserts the precondition so a future init change cannot
+// turn these tests into no-ops.
+func initUnbornHeadCampaign(t *testing.T, tc *TestContainer, campPath, name string) {
+	t.Helper()
+	_, err := tc.RunCamp("init", campPath, "--name", name,
+		"-d", "Test campaign", "-m", "Test mission", "--type", "product", "--no-git")
+	require.NoError(t, err)
+	gitInitWithoutCommit(t, tc, campPath)
+	requireUnbornHead(t, tc, campPath)
+}
+
+// gitInitWithoutCommit turns a directory into a repository with no commits.
+// CreateGitRepo is the wrong primitive here: it adds an initial commit so the
+// repository is valid for submodule work, which is exactly the state these
+// fixtures must not start in.
+func gitInitWithoutCommit(t *testing.T, tc *TestContainer, campPath string) {
+	t.Helper()
+	tc.Shell(t, "git init -q "+campPath)
+}
+
+// requireUnbornHead fails unless HEAD does not resolve. A GitOutput call would
+// fail the test on git's non-zero exit, so this checks the exit code itself.
+func requireUnbornHead(t *testing.T, tc *TestContainer, campPath string) {
+	t.Helper()
+	_, exitCode, err := tc.ExecCommand("git", "-C", campPath, "rev-parse", "--verify", "HEAD")
+	require.NoError(t, err)
+	require.NotEqual(t, 0, exitCode, "fixture is not reproducing an unborn HEAD; HEAD already resolves")
 }

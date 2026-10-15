@@ -25,14 +25,14 @@ func legacyCampaign(t *testing.T, tc *TestContainer, path, name string, extraArg
 	require.True(t, exists, "setup: expected a legacy visible dungeon")
 }
 
-// commitScaffold commits the freshly scaffolded campaign inside the container,
-// giving the repository the history a real legacy campaign would have. camp
-// init git-inits but does not commit, and the commit path builds its index
-// from HEAD.
+// commitScaffold gives the repository the history a real legacy campaign would
+// have. camp init commits its own scaffold, so this usually finds a clean tree;
+// it commits only what a test added on top (nested payloads and the like),
+// because the migrate commit path builds its index from HEAD.
 func commitScaffold(t *testing.T, tc *TestContainer, path string) {
 	t.Helper()
-	tc.Shell(t, "cd "+path+" && git add -A && git -c user.email=t@t -c user.name=t "+
-		"commit -q -m scaffold")
+	tc.Shell(t, "cd "+path+" && git add -A && { git diff --cached --quiet || "+
+		"git -c user.email=t@t -c user.name=t commit -q -m scaffold; }")
 }
 
 // TestDungeonMigrate_ConvertsEveryDiscoveredDungeon is the core acceptance
@@ -318,13 +318,17 @@ func TestDungeonMigrate_NoCommitLeavesChangesStaged(t *testing.T) {
 }
 
 // TestDungeonMigrate_UncommittedScaffoldSkipsCommit covers a campaign that was
-// git-init'd but never committed. There is no HEAD to build the commit index
-// from, so the moves land in the working tree and migrate says so, rather than
-// reporting failure after the directories have already moved.
+// git-init'd but never committed: scaffolded with --no-git and git-init'd by
+// hand afterwards, as camp init itself commits its scaffold. There is no HEAD
+// to build the commit index from, so the moves land in the working tree and
+// migrate says so, rather than reporting failure after the directories have
+// already moved.
 func TestDungeonMigrate_UncommittedScaffoldSkipsCommit(t *testing.T) {
 	tc := GetSharedContainer(t)
 	path := "/campaigns/migrate-unborn-head"
-	legacyCampaign(t, tc, path, "migrate-unborn-head")
+	legacyCampaign(t, tc, path, "migrate-unborn-head", "--no-git")
+	gitInitWithoutCommit(t, tc, path)
+	requireUnbornHead(t, tc, path)
 
 	out, err := tc.RunCampInDir(path, "dungeon", "migrate")
 	require.NoError(t, err, "migrate must not fail on a campaign with no commits: %s", out)
