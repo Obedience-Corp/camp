@@ -169,7 +169,7 @@ func TestGo_ShellInit(t *testing.T) {
 	tc := GetSharedContainer(t)
 
 	// Test shell-init for different shells
-	shells := []string{"bash", "zsh", "fish"}
+	shells := []string{"bash", "zsh", "fish", "powershell"}
 
 	for _, shell := range shells {
 		t.Run(shell, func(t *testing.T) {
@@ -185,7 +185,7 @@ func TestGo_ShellInit(t *testing.T) {
 func TestGo_ShellInit_InvalidShell(t *testing.T) {
 	tc := GetSharedContainer(t)
 
-	output, err := tc.RunCamp("shell-init", "powershell")
+	output, err := tc.RunCamp("shell-init", "tcsh")
 	require.Error(t, err, "camp shell-init should fail for unsupported shell")
 	assert.Contains(t, strings.ToLower(output), "unsupported", "error should mention unsupported")
 }

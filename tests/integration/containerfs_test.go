@@ -7,6 +7,7 @@ import (
 	"bufio"
 	"context"
 	"fmt"
+	"go/build/constraint"
 	"io/fs"
 	"os"
 	"os/exec"
@@ -349,9 +350,22 @@ func TestContainerFSPackagesAreAllRegistered(t *testing.T) {
 		len(tagged), containerFSTag, keysOf(tagged))
 }
 
-// fileHasContainerFSTag reports whether a file declares the container_fs build
-// constraint. Only the leading lines are read, matching the ratchet's own
-// mechanical check so the two cannot disagree about what "tagged" means.
+// containerFSLaneTags is the tag set the Linux lane compiles with: the
+// container_fs tag plus what GOOS=linux implies. A file whose constraint is
+// false under these tags never enters this lane, so it needs no registration.
+var containerFSLaneTags = map[string]bool{
+	containerFSTag: true,
+	"linux":        true,
+	"unix":         true,
+}
+
+// fileHasContainerFSTag reports whether a file's //go:build constraint selects
+// it for the Linux container lane. Only the leading lines are read. A file
+// tagged container_fs together with windows (the PowerShell and directory-link
+// proofs) evaluates false here: scripts/ci/windows-shell-container-proof.ps1
+// compiles and runs those on a Windows runner, not this lane. The hostfslint
+// ratchet only asks whether the tag appears at all, which is a looser question
+// on purpose.
 func fileHasContainerFSTag(p string) bool {
 	f, err := os.Open(p)
 	if err != nil {
@@ -361,9 +375,18 @@ func fileHasContainerFSTag(p string) bool {
 
 	scanner := bufio.NewScanner(f)
 	for i := 0; scanner.Scan() && i < 3; i++ {
-		if strings.HasPrefix(strings.TrimSpace(scanner.Text()), "//go:build "+containerFSTag) {
-			return true
+		line := strings.TrimSpace(scanner.Text())
+		if !constraint.IsGoBuild(line) {
+			continue
 		}
+		expr, parseErr := constraint.Parse(line)
+		if parseErr != nil {
+			return false
+		}
+		if !strings.Contains(line, containerFSTag) {
+			return false
+		}
+		return expr.Eval(func(tag string) bool { return containerFSLaneTags[tag] })
 	}
 	return false
 }

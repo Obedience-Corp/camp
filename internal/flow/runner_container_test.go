@@ -1,4 +1,4 @@
-//go:build container_fs
+//go:build windows && container_fs
 
 package flow
 
@@ -8,7 +8,6 @@ import (
 	"errors"
 	"os"
 	"path/filepath"
-	"runtime"
 	"strings"
 	"testing"
 	"time"
@@ -108,9 +107,10 @@ func TestPowerShellFlowCancellationStopsFollowup(t *testing.T) {
 	}
 }
 
+// powerShellFlowShell leaves Shell empty to prove that Windows defaults to
+// PowerShell. These tests run only in the Windows proof container
+// (scripts/ci/windows-shell-container-proof.ps1); the Linux lane has no
+// PowerShell to run them with.
 func powerShellFlowShell() string {
-	if runtime.GOOS == "windows" {
-		return "" // Prove that Windows defaults to PowerShell.
-	}
-	return "powershell"
+	return ""
 }

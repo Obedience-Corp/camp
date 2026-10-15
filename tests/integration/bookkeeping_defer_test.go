@@ -288,16 +288,7 @@ func TestIntegration_BookkeepingCommitLandsOnUnbornHead(t *testing.T) {
 	tc.EnableDeferral()
 
 	campPath := "/campaigns/bk-defer-unborn"
-	_, err := tc.RunCamp("init", campPath, "--name", "bk-defer-unborn",
-		"-d", "Test campaign", "-m", "Test mission", "--type", "product")
-	require.NoError(t, err)
-
-	// Confirm the fixture actually reproduces the precondition: no commit
-	// exists yet. A GitOutput call would fail the test on git's non-zero exit,
-	// so this checks the exit code itself instead.
-	_, exitCode, err := tc.ExecCommand("git", "-C", campPath, "rev-parse", "--verify", "HEAD")
-	require.NoError(t, err)
-	require.NotEqual(t, 0, exitCode, "fixture is not reproducing an unborn HEAD; HEAD already resolves")
+	initUnbornHeadCampaign(t, tc, campPath, "bk-defer-unborn")
 
 	stdout, stderr, exitCode, err := tc.RunCampSplitInDir(campPath, "intent", "add", "captured before first commit")
 	require.NoError(t, err)
