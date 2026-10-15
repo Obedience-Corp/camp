@@ -51,7 +51,7 @@ fest version
 
 Use `festival update` to update the suite. See the
 [installation guide](https://docs.fest.build/getting-started/installation/)
-for Linux packages and WSL2.
+for Windows Scoop and checked ZIP instructions, Linux packages, and other methods.
 
 ### Install Camp with Go
 
