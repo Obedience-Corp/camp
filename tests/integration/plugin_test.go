@@ -193,3 +193,105 @@ func TestPlugin_NoArgs_ShowsHelp(t *testing.T) {
 		"no plugin should be dispatched when camp is called with no args")
 	assert.Contains(t, output, "camp", "should show help output")
 }
+
+// TestPlugin_GroupSIGINTPreservesPluginExit is the real-dispatcher Ctrl+C
+// contract: SIGINT to camp's process group cancels NotifyContext, plugin
+// Execute interrupts (not Kill-first), plugin finalizes exit 6, camp
+// propagates 6 — not 255 from default CommandContext Kill.
+func TestPlugin_GroupSIGINTPreservesPluginExit(t *testing.T) {
+	tc := GetSharedContainer(t)
+	campaignPath := "/campaigns/plugin-group-sigint"
+	readyPath := "/tmp/plugin-sigint-ready"
+	finalPath := "/tmp/plugin-sigint-final"
+
+	_, err := tc.InitCampaign(campaignPath, "plugin-group-sigint", "product")
+	require.NoError(t, err)
+
+	plugin := `#!/bin/sh
+set -eu
+trap 'printf done > ` + finalPath + `; exit 6' INT
+printf ready > ` + readyPath + `
+while :; do sleep 0.05; done
+`
+	require.NoError(t, tc.WriteFile("/usr/local/bin/camp-sigintprobe", plugin))
+	_, _, err = tc.ExecCommand("chmod", "+x", "/usr/local/bin/camp-sigintprobe")
+	require.NoError(t, err)
+
+	// One docker-exec shell owns the lifecycle. setsid puts camp in its own
+	// session/group (terminal Ctrl+C model); the waiter stays outside that group.
+	// Results go to a file: session exec can drop mid-script stdout on signal paths.
+	// Group delivery is mandatory: no child-only INT fallback (that would not be Ctrl+C).
+	runner := `
+ready=` + readyPath + `
+final=` + finalPath + `
+result=/tmp/plugin-sigint.result
+rm -f "$ready" "$final" "$result" /tmp/plugin-sigint.out
+cleanup() {
+  kill -KILL -"$camp_pid" 2>/dev/null || kill -KILL "$camp_pid" 2>/dev/null || true
+}
+cd ` + campaignPath + ` || { echo "CD_FAIL" > "$result"; exit 1; }
+setsid /camp sigintprobe >/tmp/plugin-sigint.out 2>&1 &
+camp_pid=$!
+i=0
+while [ ! -f "$ready" ]; do
+  i=$((i+1))
+  if [ "$i" -gt 160 ]; then
+    echo "READY_TIMEOUT" > "$result"
+    cleanup
+    exit 99
+  fi
+  sleep 0.05
+done
+# Process-group existence is required for terminal Ctrl+C semantics.
+if ! kill -0 -"$camp_pid" 2>/dev/null; then
+  echo "GROUP_MISSING" > "$result"
+  cleanup
+  exit 98
+fi
+# Fail closed if group SIGINT cannot be delivered. Do not fall back to pid-only INT.
+if ! kill -INT -"$camp_pid"; then
+  echo "GROUP_INT_FAIL" > "$result"
+  cleanup
+  exit 97
+fi
+# Bound the wait so a wedged camp cannot hang the suite; force-kill on timeout.
+i=0
+while kill -0 "$camp_pid" 2>/dev/null; do
+  i=$((i+1))
+  if [ "$i" -gt 100 ]; then
+    echo "WAIT_TIMEOUT" > "$result"
+    cleanup
+    exit 96
+  fi
+  sleep 0.05
+done
+# wait's non-zero status is the plugin/camp exit we must observe; do not use set -e.
+if wait "$camp_pid"; then
+  code=0
+else
+  code=$?
+fi
+{
+  echo "GROUP_INT=ok"
+  echo "EXIT=$code"
+  if [ -f "$final" ]; then echo "FINAL=yes"; else echo "FINAL=no"; fi
+} > "$result"
+# Surface the observed exit on the runner shell so ExecCommand exit is checkable.
+exit "$code"
+`
+	_, code, err := tc.ExecCommand("sh", "-c", runner)
+	out, _, catErr := tc.ExecCommand("cat", "/tmp/plugin-sigint.result")
+	require.NoError(t, catErr, "result file missing; runner_exit=%d runner_err=%v", code, err)
+	assert.Contains(t, out, "GROUP_INT=ok",
+		"group SIGINT delivery must succeed (no child-only fallback); got %s (runner_exit=%d)", out, code)
+	assert.Contains(t, out, "EXIT=6",
+		"group SIGINT must preserve plugin exit 6, not Kill/-1→255; got %s (runner_exit=%d)", out, code)
+	assert.Contains(t, out, "FINAL=yes",
+		"plugin must run INT trap finalize before exit; got %s", out)
+	assert.Equal(t, 6, code,
+		"runner shell exit must match result EXIT=6; result=%s err=%v", out, err)
+	assert.NotContains(t, out, "READY_TIMEOUT")
+	assert.NotContains(t, out, "GROUP_MISSING")
+	assert.NotContains(t, out, "GROUP_INT_FAIL")
+	assert.NotContains(t, out, "WAIT_TIMEOUT")
+}

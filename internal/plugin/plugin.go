@@ -9,9 +9,20 @@ import (
 	"path/filepath"
 	"runtime"
 	"strings"
+	"time"
 
 	camperrors "github.com/Obedience-Corp/camp/internal/errors"
 )
+
+// pluginCancelGrace is how long a plugin gets after a polite interrupt before
+// camp kills it. Variable so container tests drive escalation without sleeping
+// the production grace.
+//
+// Camp's main NotifyContext cancels the plugin CommandContext on SIGINT/SIGTERM.
+// Go's default Cancel is Process.Kill, which turns a mid-mutation Ctrl+C into
+// exit -1/255 and drops the plugin's journaled JSON. Interrupt-first matches
+// hop preparation and lets plugins finalize OUTCOME_UNKNOWN within the bound.
+var pluginCancelGrace = 3 * time.Second
 
 // Prefix is the naming convention for camp plugin binaries.
 const Prefix = "camp-"
@@ -106,6 +117,10 @@ func Discover(ctx context.Context) ([]Plugin, error) {
 // Execute runs a plugin binary with the given arguments.
 // It connects stdin/stdout/stderr and sets CAMP_ROOT if campRoot is non-empty.
 // Returns a CommandError on non-zero exit code.
+//
+// Context cancellation interrupts the plugin first (bounded grace), then kills
+// an unresponsive child. The plugin's own exit status is preserved when it
+// exits during the grace window.
 func Execute(ctx context.Context, p Plugin, args []string, campRoot string) error {
 	if ctx.Err() != nil {
 		return ctx.Err()
@@ -115,6 +130,7 @@ func Execute(ctx context.Context, p Plugin, args []string, campRoot string) erro
 	cmd.Stdin = os.Stdin
 	cmd.Stdout = os.Stdout
 	cmd.Stderr = os.Stderr
+	configurePluginCancel(cmd)
 
 	env := os.Environ()
 	if campRoot != "" {

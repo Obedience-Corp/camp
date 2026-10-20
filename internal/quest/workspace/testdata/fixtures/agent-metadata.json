@@ -1,0 +1,35 @@
+{
+  "version": 2,
+  "workspaceTabs": [
+    {
+      "id": "agent-review",
+      "title": "Review",
+      "origin": "agent",
+      "customAgentNote": "keep-me",
+      "paneTree": {
+        "id": "split-review",
+        "type": "split",
+        "direction": "vertical",
+        "sizes": [50, 50],
+        "children": [
+          {
+            "id": "pane-file",
+            "type": "pane",
+            "content": {
+              "type": "file",
+              "filePath": "docs/json-contracts.md"
+            }
+          },
+          {
+            "id": "pane-web",
+            "type": "pane",
+            "content": {
+              "type": "webview",
+              "url": "https://example.test/docs"
+            }
+          }
+        ]
+      }
+    }
+  ]
+}
