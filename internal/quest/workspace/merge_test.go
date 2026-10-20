@@ -178,14 +178,85 @@ func TestMergePush_MigratesLegacyRootLayoutIntoUserTab(t *testing.T) {
 }
 
 func TestMergePush_MigratesEmptyWorkspaceTabsWithRootLayout(t *testing.T) {
-	legacy := []byte(`{
+	assertLegacyRootMigrates(t, []byte(`{
   "version": 2,
   "workspaceTabs": [],
   "paneTree": {"id":"pane-1","type":"pane","content":{"type":"file","filePath":"docs/README.md"}},
   "openFiles": [{"path":"docs/README.md","name":"README.md"}],
   "currentPath": "docs/README.md",
-  "activePaneId": "pane-1"
-}`)
+  "activePaneId": "pane-1",
+  "activeWorkspaceTabId": "workspace-tab-1",
+  "customDocNote": "keep-doc"
+}`))
+}
+
+func TestMergePush_MigratesNullWorkspaceTabsWithRootLayout(t *testing.T) {
+	assertLegacyRootMigrates(t, []byte(`{
+  "version": 2,
+  "workspaceTabs": null,
+  "paneTree": {"id":"pane-1","type":"pane","content":{"type":"file","filePath":"docs/README.md"}},
+  "openFiles": [{"path":"docs/README.md","name":"README.md"}],
+  "currentPath": "docs/README.md",
+  "activePaneId": "pane-1",
+  "activeWorkspaceTabId": "workspace-tab-1",
+  "customDocNote": "keep-doc"
+}`))
+}
+
+func TestMergePush_EmptyModernLayoutDoesNotInventUserTab(t *testing.T) {
+	cases := []struct {
+		name string
+		raw  []byte
+	}{
+		{name: "empty array", raw: []byte(`{"version":2,"workspaceTabs":[]}`)},
+		{name: "null tabs", raw: []byte(`{"version":2,"workspaceTabs":null}`)},
+		{name: "empty openFiles only", raw: []byte(`{"version":2,"workspaceTabs":[],"openFiles":[]}`)},
+		{name: "null root fields", raw: []byte(`{
+  "version": 2,
+  "workspaceTabs": [],
+  "paneTree": null,
+  "openFiles": null,
+  "currentPath": null,
+  "activePaneId": null,
+  "chainConfig": null
+}`)},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			spec := PushSpec{
+				ID:       "agent-a",
+				Title:    "Agent",
+				PaneTree: json.RawMessage(`{"id":"p","type":"pane","content":{"type":"empty"}}`),
+			}
+			if err := ValidatePushSpec("", &spec); err != nil {
+				t.Fatal(err)
+			}
+			got, err := MergePush(tc.raw, &spec)
+			if err != nil {
+				t.Fatal(err)
+			}
+			var doc map[string]json.RawMessage
+			if err := json.Unmarshal(got.Document, &doc); err != nil {
+				t.Fatal(err)
+			}
+			var tabs []map[string]json.RawMessage
+			if err := json.Unmarshal(doc["workspaceTabs"], &tabs); err != nil {
+				t.Fatal(err)
+			}
+			if len(tabs) != 1 {
+				t.Fatalf("invented user tab for empty modern layout: %s", got.Document)
+			}
+			var id string
+			_ = json.Unmarshal(tabs[0]["id"], &id)
+			if id != "agent-a" {
+				t.Fatalf("expected only agent tab, got %q in %s", id, got.Document)
+			}
+		})
+	}
+}
+
+func assertLegacyRootMigrates(t *testing.T, legacy []byte) {
+	t.Helper()
 	spec := PushSpec{
 		ID:       "agent-a",
 		Title:    "Agent",
@@ -205,6 +276,16 @@ func TestMergePush_MigratesEmptyWorkspaceTabsWithRootLayout(t *testing.T) {
 	if _, ok := doc["paneTree"]; ok {
 		t.Fatalf("root paneTree should be cleared after migration: %s", got.Document)
 	}
+	if note := string(doc["customDocNote"]); !strings.Contains(note, "keep-doc") {
+		t.Fatalf("document metadata lost: %s", got.Document)
+	}
+	var active string
+	if err := json.Unmarshal(doc["activeWorkspaceTabId"], &active); err != nil {
+		t.Fatal(err)
+	}
+	if active != DefaultUserTabID {
+		t.Fatalf("activeWorkspaceTabId=%q want %q", active, DefaultUserTabID)
+	}
 	var tabs []map[string]json.RawMessage
 	if err := json.Unmarshal(doc["workspaceTabs"], &tabs); err != nil {
 		t.Fatal(err)
@@ -212,8 +293,20 @@ func TestMergePush_MigratesEmptyWorkspaceTabsWithRootLayout(t *testing.T) {
 	if len(tabs) != 2 {
 		t.Fatalf("want migrated user tab + agent tab, got %d: %s", len(tabs), got.Document)
 	}
+	var userID, agentID string
+	_ = json.Unmarshal(tabs[0]["id"], &userID)
+	_ = json.Unmarshal(tabs[1]["id"], &agentID)
+	if userID != DefaultUserTabID {
+		t.Fatalf("migrated user tab id=%q", userID)
+	}
+	if agentID != "agent-a" {
+		t.Fatalf("agent tab id=%q", agentID)
+	}
+	if _, ok := tabs[0]["origin"]; ok {
+		t.Fatal("migrated legacy tab must not stamp origin=agent")
+	}
 	if !strings.Contains(string(tabs[0]["paneTree"]), "docs/README.md") {
-		t.Fatalf("empty workspaceTabs legacy paneTree lost: %s", tabs[0]["paneTree"])
+		t.Fatalf("legacy paneTree lost: %s", tabs[0]["paneTree"])
 	}
 }
 

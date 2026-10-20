@@ -122,15 +122,10 @@ func jsonNullOrEmptyArray(raw json.RawMessage) bool {
 
 // migrateLegacyRootDocument lifts root paneTree/openFiles/currentPath/
 // activePaneId/chainConfig into DefaultUserTabID without stamping origin=agent.
+// Detection matches festival-app parse_quest_ui_state / legacy_workspace_tab_state:
+// null or empty openFiles alone is not legacy, so a modern empty layout stays empty.
 func migrateLegacyRootDocument(doc map[string]json.RawMessage) (map[string]json.RawMessage, []json.RawMessage, error) {
-	hasLegacy := false
-	for _, key := range []string{"paneTree", "openFiles", "currentPath", "activePaneId", "chainConfig"} {
-		if _, ok := doc[key]; ok {
-			hasLegacy = true
-			break
-		}
-	}
-	if !hasLegacy {
+	if !hasLegacyRootLayout(doc) {
 		return doc, nil, nil
 	}
 
@@ -140,7 +135,11 @@ func migrateLegacyRootDocument(doc map[string]json.RawMessage) (map[string]json.
 	tab["id"] = id
 	tab["title"] = title
 	for _, key := range []string{"paneTree", "openFiles", "currentPath", "activePaneId", "chainConfig"} {
-		if v, ok := doc[key]; ok {
+		if v, ok := doc[key]; ok && !jsonIsNull(v) {
+			// Skip empty openFiles so the migrated tab matches app hydration.
+			if key == "openFiles" && jsonNullOrEmptyArray(v) {
+				continue
+			}
 			tab[key] = append(json.RawMessage(nil), v...)
 		}
 	}
@@ -149,6 +148,33 @@ func migrateLegacyRootDocument(doc map[string]json.RawMessage) (map[string]json.
 		return nil, nil, err
 	}
 	return doc, []json.RawMessage{tabRaw}, nil
+}
+
+// hasLegacyRootLayout mirrors festival-app legacy_workspace_tab_state: a root
+// layout exists when paneTree/currentPath/activePaneId/chainConfig is non-null
+// or openFiles is a non-empty array. Mere key presence of empty/null fields does
+// not invent a user tab.
+func hasLegacyRootLayout(doc map[string]json.RawMessage) bool {
+	if v, ok := doc["paneTree"]; ok && !jsonIsNull(v) {
+		return true
+	}
+	if v, ok := doc["currentPath"]; ok && !jsonIsNull(v) {
+		return true
+	}
+	if v, ok := doc["activePaneId"]; ok && !jsonIsNull(v) {
+		return true
+	}
+	if v, ok := doc["chainConfig"]; ok && !jsonIsNull(v) {
+		return true
+	}
+	if v, ok := doc["openFiles"]; ok && !jsonIsNull(v) && !jsonNullOrEmptyArray(v) {
+		return true
+	}
+	return false
+}
+
+func jsonIsNull(raw json.RawMessage) bool {
+	return string(bytesTrimSpace(raw)) == "null"
 }
 
 func buildAgentTab(spec *PushSpec) (json.RawMessage, error) {

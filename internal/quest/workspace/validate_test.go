@@ -40,6 +40,36 @@ func TestValidateDocument_RejectsFutureVersion(t *testing.T) {
 	}
 }
 
+func TestValidateDocument_AcceptsEmptyNullLegacyAndModernEmpty(t *testing.T) {
+	cases := []struct {
+		name    string
+		raw     []byte
+		wantErr bool
+	}{
+		{name: "missing tabs with paneTree", raw: []byte(`{"version":2,"paneTree":{"id":"p","type":"pane","content":{"type":"empty"}}}`)},
+		{name: "empty tabs with paneTree", raw: []byte(`{"version":2,"workspaceTabs":[],"paneTree":{"id":"p","type":"pane","content":{"type":"empty"}}}`)},
+		{name: "null tabs with paneTree", raw: []byte(`{"version":2,"workspaceTabs":null,"paneTree":{"id":"p","type":"pane","content":{"type":"empty"}}}`)},
+		{name: "modern empty array", raw: []byte(`{"version":2,"workspaceTabs":[]}`)},
+		{name: "modern null tabs", raw: []byte(`{"version":2,"workspaceTabs":null}`)},
+		{name: "empty openFiles only", raw: []byte(`{"version":2,"workspaceTabs":[],"openFiles":[]}`)},
+		{name: "missing tabs no legacy", raw: []byte(`{"version":2}`), wantErr: true},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			err := ValidateDocument("", tc.raw)
+			if tc.wantErr {
+				if err == nil {
+					t.Fatal("expected error")
+				}
+				return
+			}
+			if err != nil {
+				t.Fatalf("unexpected error: %v", err)
+			}
+		})
+	}
+}
+
 func TestValidatePushSpec_StripsRuntimeAndRequiresURL(t *testing.T) {
 	var spec PushSpec
 	if err := json.Unmarshal(fixture(t, "push-spec-valid.json"), &spec); err != nil {

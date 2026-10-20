@@ -54,7 +54,7 @@ the agent tab is appended. Unsupported `version` values above 2 are rejected.
 | Lock API | OS exclusive try-lock matching Rust `std::fs::File::try_lock` |
 | Wait | 5s bound + `context` cancellation (10ms poll) |
 | Generation | SHA-256 hex of exact on-disk UTF-8 bytes |
-| Write | Same-directory temp + fsync + rename (`fsutil.WriteFileAtomically`) |
+| Write | Same-directory temp + file fsync + rename + parent-dir fsync (`fsutil.WriteFileAtomically`; dir sync no-op on Windows) |
 | CAS | Re-read generation after merge; `PERSISTENCE_CONFLICT` if changed |
 
 Legacy writers that ignore `ui-state.lock` are outside the concurrency

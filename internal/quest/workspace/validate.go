@@ -32,13 +32,17 @@ func ValidateDocument(campaignRoot string, raw []byte) error {
 		}
 	}
 	tabsRaw, ok := doc["workspaceTabs"]
-	if !ok {
-		// Legacy root paneTree documents are accepted for show/validate of
-		// existing files; push migrates them into DefaultUserTabID.
-		if _, has := doc["paneTree"]; has {
+	if !ok || jsonNullOrEmptyArray(tabsRaw) {
+		// Legacy root layouts (missing/empty/null workspaceTabs) are accepted
+		// for show/validate; push migrates them into DefaultUserTabID.
+		if hasLegacyRootLayout(doc) {
 			return nil
 		}
-		return camperrors.Wrap(camperrors.ErrInvalidInput, "workspace document missing workspaceTabs")
+		if !ok {
+			return camperrors.Wrap(camperrors.ErrInvalidInput, "workspace document missing workspaceTabs")
+		}
+		// Empty/null without legacy fields is a valid modern empty layout.
+		return nil
 	}
 	var tabs []json.RawMessage
 	if err := json.Unmarshal(tabsRaw, &tabs); err != nil {

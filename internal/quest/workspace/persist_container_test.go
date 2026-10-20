@@ -137,6 +137,96 @@ func TestStorePush_ConcurrentIndependentTabs(t *testing.T) {
 	}
 }
 
+func TestStorePush_UnsupportedVersionLeavesBytesUnchanged(t *testing.T) {
+	root := t.TempDir()
+	mustMkdir(t, filepath.Join(root, "docs"))
+	questDir := filepath.Join(root, ".campaign", "quests", "demo")
+	mustMkdir(t, questDir)
+	uiPath := filepath.Join(questDir, FileName)
+	prior := []byte(`{
+  "version": 99,
+  "workspaceTabs": [],
+  "paneTree": {"id":"pane-1","type":"pane","content":{"type":"file","filePath":"docs/README.md"}}
+}`)
+	if err := os.WriteFile(uiPath, prior, 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	spec := PushSpec{
+		ID:       "agent-a",
+		Title:    "Agent",
+		PaneTree: json.RawMessage(`{"id":"p","type":"pane","content":{"type":"empty"}}`),
+	}
+	_, _, err := (&Store{}).Push(context.Background(), root, uiPath, &spec)
+	if err == nil {
+		t.Fatal("expected unsupported version rejection")
+	}
+	if !strings.Contains(err.Error(), "unsupported workspace document version") {
+		t.Fatalf("err=%v", err)
+	}
+	after, err := os.ReadFile(uiPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if string(after) != string(prior) {
+		t.Fatalf("rejected unsupported version must leave bytes unchanged\nbefore=%s\nafter=%s", prior, after)
+	}
+}
+
+func TestStorePush_MigratesNullWorkspaceTabsWithRootLayout(t *testing.T) {
+	root := t.TempDir()
+	mustMkdir(t, filepath.Join(root, "docs"))
+	questDir := filepath.Join(root, ".campaign", "quests", "demo")
+	mustMkdir(t, questDir)
+	uiPath := filepath.Join(questDir, FileName)
+	prior := []byte(`{
+  "version": 2,
+  "workspaceTabs": null,
+  "paneTree": {"id":"pane-1","type":"pane","content":{"type":"file","filePath":"docs/README.md"}},
+  "openFiles": [{"path":"docs/README.md","name":"README.md"}],
+  "currentPath": "docs/README.md",
+  "activePaneId": "pane-1",
+  "customDocNote": "keep-doc"
+}`)
+	if err := os.WriteFile(uiPath, prior, 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	spec := PushSpec{
+		ID:       "agent-a",
+		Title:    "Agent",
+		PaneTree: json.RawMessage(`{"id":"p","type":"pane","content":{"type":"empty"}}`),
+	}
+	got, _, err := (&Store{}).Push(context.Background(), root, uiPath, &spec)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got.Action != "appended" {
+		t.Fatalf("action=%s", got.Action)
+	}
+	raw, err := os.ReadFile(uiPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	body := string(raw)
+	if !strings.Contains(body, `"workspace-tab-1"`) || !strings.Contains(body, `"agent-a"`) {
+		t.Fatalf("missing migrated tabs: %s", body)
+	}
+	if !strings.Contains(body, "docs/README.md") {
+		t.Fatalf("legacy layout lost: %s", body)
+	}
+	if !strings.Contains(body, "keep-doc") {
+		t.Fatalf("document metadata lost: %s", body)
+	}
+	var doc map[string]any
+	if err := json.Unmarshal(raw, &doc); err != nil {
+		t.Fatal(err)
+	}
+	if _, ok := doc["paneTree"]; ok {
+		t.Fatalf("root paneTree must be cleared on disk: %s", body)
+	}
+}
+
 func TestAcquireOSLock_HonorsContextCancel(t *testing.T) {
 	dir := t.TempDir()
 	lockPath := filepath.Join(dir, LockFileName)
