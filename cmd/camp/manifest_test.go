@@ -180,6 +180,10 @@ func TestManifestCommand_AllRestrictedCommandsPresent(t *testing.T) {
 		expectedCommands["quest resume"] = false
 		expectedCommands["quest show"] = false
 		expectedCommands["quest unlink"] = false
+		expectedCommands["quest workspace"] = false
+		expectedCommands["quest workspace push"] = false
+		expectedCommands["quest workspace show"] = false
+		expectedCommands["quest workspace validate"] = false
 	}
 	if workitemCommandRegistered() {
 		expectedCommands["workitem"] = false
@@ -301,6 +305,10 @@ func TestManifestCommand_InteractiveFlags(t *testing.T) {
 		nonInteractiveCommands["quest resume"] = true
 		nonInteractiveCommands["quest show"] = true
 		nonInteractiveCommands["quest unlink"] = true
+		nonInteractiveCommands["quest workspace"] = true
+		nonInteractiveCommands["quest workspace push"] = true
+		nonInteractiveCommands["quest workspace show"] = true
+		nonInteractiveCommands["quest workspace validate"] = true
 	}
 	if workitemCommandRegistered() {
 		nonInteractiveCommands["workitem"] = true
