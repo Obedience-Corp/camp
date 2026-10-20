@@ -225,37 +225,28 @@ func TestInit(t *testing.T) {
 		t.Fatalf("unexpected version.Profile %q", version.Profile)
 	}
 
-	switch version.Profile {
-	case "stable":
-		if _, err := os.Stat(filepath.Join(campaignDir, quest.RootDirName)); !os.IsNotExist(err) {
-			t.Errorf("stable init should not create quest scaffold, stat err = %v", err)
+	// The quest dungeon follows the campaign's spelling like every other
+	// dungeon, so a hidden-default campaign scaffolds ".dungeon", not the
+	// legacy visible "dungeon".
+	expectedQuestPaths := []string{
+		quest.RootDirName,
+		filepath.Join(quest.RootDirName, quest.DefaultDirName, quest.FileName),
+		filepath.Join(quest.RootDirName, ".dungeon", "OBEY.md"),
+		filepath.Join(quest.RootDirName, ".dungeon", "completed", ".gitkeep"),
+		filepath.Join(quest.RootDirName, ".dungeon", "archived", ".gitkeep"),
+		filepath.Join(quest.RootDirName, ".dungeon", "someday", ".gitkeep"),
+	}
+	for _, relPath := range expectedQuestPaths {
+		path := filepath.Join(campaignDir, relPath)
+		if _, err := os.Stat(path); os.IsNotExist(err) {
+			t.Errorf("quest scaffold path %s was not created", relPath)
 		}
-	case "dev":
-		// The quest dungeon follows the campaign's spelling like every other
-		// dungeon, so a hidden-default campaign scaffolds ".dungeon", not the
-		// legacy visible "dungeon".
-		expectedQuestPaths := []string{
-			quest.RootDirName,
-			filepath.Join(quest.RootDirName, quest.DefaultDirName, quest.FileName),
-			filepath.Join(quest.RootDirName, ".dungeon", "OBEY.md"),
-			filepath.Join(quest.RootDirName, ".dungeon", "completed", ".gitkeep"),
-			filepath.Join(quest.RootDirName, ".dungeon", "archived", ".gitkeep"),
-			filepath.Join(quest.RootDirName, ".dungeon", "someday", ".gitkeep"),
-		}
-		for _, relPath := range expectedQuestPaths {
-			path := filepath.Join(campaignDir, relPath)
-			if _, err := os.Stat(path); os.IsNotExist(err) {
-				t.Errorf("quest scaffold path %s was not created", relPath)
-			}
-		}
+	}
 
-		// Verify .active file is NOT created (quest context is via --quest flag or CAMP_QUEST env var)
-		activePath := filepath.Join(campaignDir, quest.RootDirName, ".active")
-		if _, err := os.Stat(activePath); !os.IsNotExist(err) {
-			t.Errorf(".active file should not be created: %s", activePath)
-		}
-	default:
-		t.Fatalf("unexpected version.Profile %q", version.Profile)
+	// Verify .active file is NOT created (quest context is via --quest flag or CAMP_QUEST env var)
+	activePath := filepath.Join(campaignDir, quest.RootDirName, ".active")
+	if _, err := os.Stat(activePath); !os.IsNotExist(err) {
+		t.Errorf(".active file should not be created: %s", activePath)
 	}
 
 	// Check campaign.yaml was created
