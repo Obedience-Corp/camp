@@ -14,6 +14,7 @@ func TestQuestSchemaVersionsAreFrozen(t *testing.T) {
 		want string
 	}{
 		{"camp quest list --json", QuestListJSONVersion, "quest-list/v1alpha1"},
+		{"camp quest create --json", QuestCreateJSONVersion, "quest-create/v1alpha1"},
 		{"camp quest show --json", QuestShowJSONVersion, "quest-show/v1alpha1"},
 		{"camp quest links --json", QuestLinksJSONVersion, "quest-links/v1alpha1"},
 	}
