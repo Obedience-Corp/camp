@@ -1,0 +1,12 @@
+{
+  "id": "agent-escape",
+  "title": "Escape",
+  "paneTree": {
+    "id": "pane-1",
+    "type": "pane",
+    "content": {
+      "type": "file",
+      "filePath": "../outside.md"
+    }
+  }
+}

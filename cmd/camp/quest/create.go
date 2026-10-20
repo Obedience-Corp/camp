@@ -8,13 +8,17 @@ import (
 	"github.com/spf13/cobra"
 
 	camperrors "github.com/Obedience-Corp/camp/internal/errors"
-	"github.com/Obedience-Corp/camp/internal/git/commit"
+	"github.com/Obedience-Corp/camp/internal/jsoncontract"
 	"github.com/Obedience-Corp/camp/internal/ledger"
 	navtui "github.com/Obedience-Corp/camp/internal/nav/tui"
 	"github.com/Obedience-Corp/camp/internal/quest"
 	questtui "github.com/Obedience-Corp/camp/internal/quest/tui"
 	"github.com/Obedience-Corp/camp/pkg/ledgerkit"
 )
+
+const QuestCreateJSONVersion = "quest-create/v1alpha1"
+
+var questCreateJSON bool
 
 var questCreateCmd = &cobra.Command{
 	Use:   "create [name]",
@@ -42,19 +46,24 @@ Examples:
   camp quest create q2-reliability --no-editor --purpose "harden platform"
   camp quest create data-pipeline --description "..."  Non-interactive
   camp quest create -e customer-onboarding             Deep capture with $EDITOR
-  camp quest create launch --no-editor --workitem SC0001  Bind a festival workitem`,
-	Args: cobra.MaximumNArgs(1),
+  camp quest create launch --no-editor --workitem SC0001  Bind a festival workitem
+  camp quest create launch --json --no-editor          Structured create result
+  camp quest create launch --no-editor --open          Optional bounded app reveal`,
+	Args: jsoncontract.Args(QuestCreateJSONVersion, func() bool { return questCreateJSON }, cobra.MaximumNArgs(1)),
 	Annotations: map[string]string{
 		"agent_allowed": "true",
 		"agent_reason":  "Agents can use --no-editor or --description for non-interactive quest creation",
 	},
-	RunE: runQuestCreate,
+	RunE: jsoncontract.RunE(QuestCreateJSONVersion, func() bool { return questCreateJSON }, runQuestCreate),
 }
 
 func init() {
 	Cmd.AddCommand(questCreateCmd)
 
 	flags := questCreateCmd.Flags()
+	flags.BoolVar(&questCreateJSON, "json", false, "Output structured creation result (non-interactive)")
+	flags.Bool("open", false, "Optionally reveal the created quest in an already running app")
+	questCreateCmd.SetFlagErrorFunc(jsoncontract.FlagErrorFunc(QuestCreateJSONVersion, func() bool { return questCreateJSON }))
 	flags.String("purpose", "", "Short purpose statement")
 	flags.String("description", "", "Full description")
 	flags.String("tags", "", "Comma-separated tags")
@@ -80,6 +89,10 @@ func runQuestCreate(cmd *cobra.Command, args []string) error {
 	noCommit, _ := cmd.Flags().GetBool("no-commit")
 	workitemSel, _ := cmd.Flags().GetString("workitem")
 
+	if questCreateJSON && useEditor {
+		return camperrors.New("--json cannot be combined with --edit")
+	}
+
 	// Resolve the --workitem binding up-front so a bad selector fails before we
 	// open the TUI or create anything.
 	var boundPath string
@@ -92,7 +105,7 @@ func runQuestCreate(cmd *cobra.Command, args []string) error {
 	}
 
 	// Non-interactive path: flags provide all data
-	if noEditor || description != "" {
+	if noEditor || description != "" || questCreateJSON {
 		if name == "" {
 			return camperrors.New("quest name is required in non-interactive mode (provide a name argument or run interactively)")
 		}
@@ -163,20 +176,7 @@ func createQuestDirect(cmd *cobra.Command, name, purpose, description, tags stri
 		return err
 	}
 
-	result, err = bindWorkitem(cmd.Context(), qctx, result, boundPath)
-	if err != nil {
-		return err
-	}
-
-	emitQuestCreated(cmd, qctx, result)
-	printQuestCreated(qctx, result, boundPath)
-
-	if !noCommit {
-		if err := autoCommitQuest(cmd.Context(), qctx, commit.QuestCreate, result, "Created quest"); err != nil {
-			return camperrors.Wrap(err, "quest created, but auto-commit failed")
-		}
-	}
-	return nil
+	return finishQuestCreation(cmd, qctx, result, boundPath, noCommit)
 }
 
 func createQuestWithEditor(cmd *cobra.Command, name, purpose, description, tags string, noCommit bool, boundPath string) error {
@@ -194,20 +194,7 @@ func createQuestWithEditor(cmd *cobra.Command, name, purpose, description, tags 
 		return err
 	}
 
-	result, err = bindWorkitem(cmd.Context(), qctx, result, boundPath)
-	if err != nil {
-		return err
-	}
-
-	emitQuestCreated(cmd, qctx, result)
-	printQuestCreated(qctx, result, boundPath)
-
-	if !noCommit {
-		if err := autoCommitQuest(cmd.Context(), qctx, commit.QuestCreate, result, "Created quest"); err != nil {
-			return camperrors.Wrap(err, "quest created, but auto-commit failed")
-		}
-	}
-	return nil
+	return finishQuestCreation(cmd, qctx, result, boundPath, noCommit)
 }
 
 // bindWorkitem links a resolved workitem path to a freshly created quest through

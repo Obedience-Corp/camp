@@ -1,0 +1,30 @@
+{
+  "id": "agent-review",
+  "title": "Review",
+  "paneTree": {
+    "id": "split-review",
+    "type": "split",
+    "direction": "vertical",
+    "sizes": [50, 50],
+    "children": [
+      {
+        "id": "pane-file",
+        "type": "pane",
+        "content": {
+          "type": "file",
+          "filePath": "docs/json-contracts.md"
+        }
+      },
+      {
+        "id": "pane-web",
+        "type": "pane",
+        "content": {
+          "type": "webview",
+          "url": "https://example.test/docs",
+          "browserTabId": "runtime-must-strip"
+        }
+      }
+    ]
+  },
+  "activePaneId": "pane-file"
+}
