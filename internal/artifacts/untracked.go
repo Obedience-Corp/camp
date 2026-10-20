@@ -38,8 +38,10 @@ type UntrackedRoot struct {
 // The rule is the commit's, not root membership. Inside a mixed root size
 // decides, so a new small note beside the footage is still git's and is not
 // reported here. A file only counts while the large-file guard is in auto
-// mode: under block the commit refuses it and under off the commit stages it,
-// so in both cases git's "untracked" is already the truth about it.
+// mode, which is when the commit keeps it out: under block the commit
+// refuses it and under off the commit stages it, so in both cases git's
+// "untracked" is already the truth about it. --commit-large stages it for
+// that one commit.
 //
 // The work is bounded by the declared-root list. A camp with no roots pays for
 // one config read and runs no git command.

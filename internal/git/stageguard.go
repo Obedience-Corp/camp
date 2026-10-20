@@ -7,6 +7,7 @@ import (
 	"os/exec"
 	"strings"
 
+	"github.com/Obedience-Corp/camp/internal/artifacts"
 	camperrors "github.com/Obedience-Corp/camp/internal/errors"
 	"github.com/Obedience-Corp/camp/internal/stageguard"
 )
@@ -59,6 +60,13 @@ type StageOutcome struct {
 	// Limits is the policy that produced this outcome, so callers can render
 	// the threshold they were measured against without resolving it again.
 	Limits stageguard.GuardLimits
+	// RootsKept tallies untracked files inside declared artifact roots that
+	// stayed out of the index because size decided against them. It is not
+	// a guard finding, so Empty does not consult it.
+	RootsKept []RootTally
+	// RootsMoved are tracked files renamed into a declared root whose new
+	// path size kept out. git records the old path as deleted.
+	RootsMoved []RootMove
 	// Unavailable is set when the guard could not evaluate this repository and
 	// staging proceeded without it.
 	//
@@ -76,7 +84,7 @@ type StageOutcome struct {
 // CheckStaging evaluates the guard with directory links treated as single
 // link-target blobs, matching StageWithGuardOptions on Windows.
 func CheckStaging(ctx context.Context, repoPath string, limits stageguard.GuardLimits) ([]stageguard.GuardViolation, error) {
-	links, err := changedDirectoryLinks(ctx, repoPath)
+	links, err := changedDirectoryLinks(ctx, repoPath, limits.SkipDirs)
 	if err != nil {
 		return nil, err
 	}
@@ -221,7 +229,7 @@ func isStageEverything(files []string) bool {
 // quietly". The outcome carries Unavailable so the caller can report it; a
 // silent degradation would leave the user believing they were protected, which
 // is worse than either refusing or reporting.
-func runStageGuard(ctx context.Context, repoPath string, files []string, opts StageOptions, links []string) (*StageOutcome, []string, error) {
+func runStageGuard(ctx context.Context, repoPath string, files []string, opts StageOptions, links []string, rootAdds []stageguard.Candidate) (*StageOutcome, []string, error) {
 	if !isStageEverything(files) {
 		return nil, nil, nil
 	}
@@ -240,6 +248,11 @@ func runStageGuard(ctx context.Context, repoPath string, files []string, opts St
 		return &StageOutcome{Unavailable: camperrors.Wrapf(
 			err, "resolve staging guard limits for %s", repoPath)}, nil, nil
 	}
+	// Declared artifact roots are sized by the root plan instead, so the
+	// status walk does not list them a second time. The files that plan
+	// commits still count toward the bulk guard.
+	limits.SkipDirs = DeclaredArtifactRoots(repoPath)
+	limits.ExtraCandidates = rootAdds
 	if opts.CommitLarge {
 		limits.LargeFiles = stageguard.ModeOff
 		limits.Bulk = stageguard.ModeOff
@@ -308,6 +321,80 @@ func runStageGuard(ctx context.Context, repoPath string, files []string, opts St
 	outcome.Excluded = overThreshold
 	outcome.NestedRepos = nested
 	return outcome, outcome.excludedPathspecs(), nil
+}
+
+// DeclaredArtifactRoots reads artifact roots declared in repoPath.
+//
+// A repository that is not a campaign has no declaration file. That is an
+// empty list, not a failure: project commits do not declare roots.
+func DeclaredArtifactRoots(repoPath string) []string {
+	cfg, err := artifacts.Load(repoPath)
+	if err != nil || cfg == nil {
+		return nil
+	}
+	roots := make([]string, 0, len(cfg.Roots))
+	for _, root := range cfg.Roots {
+		path := artifacts.NormalizeRootPath(root.Path)
+		if path != "" {
+			roots = append(roots, path)
+		}
+	}
+	return roots
+}
+
+// rootExcludePathspecs returns the declared roots a stage-everything add
+// must exclude. It applies whatever the guard's mode, because a declared
+// root is a standing decision rather than a guard finding.
+//
+// A root git already ignores is left out: the add never enters it, and git
+// refuses an exclude pathspec that names an ignored directory. When git
+// cannot say which roots are ignored the stage stops, because excluding
+// every root fails the add for an ignored one and excluding none stages the
+// media.
+func rootExcludePathspecs(ctx context.Context, repoPath string, roots []string) ([]string, error) {
+	if len(roots) == 0 {
+		return nil, nil
+	}
+	trimmed := make([]string, 0, len(roots))
+	for _, root := range roots {
+		trimmed = append(trimmed, strings.TrimSuffix(root, "/"))
+	}
+	ignored, err := ignoredPaths(ctx, repoPath, trimmed)
+	if err != nil {
+		return nil, err
+	}
+	out := make([]string, 0, len(trimmed))
+	for _, root := range trimmed {
+		if !ignored[root] {
+			out = append(out, root)
+		}
+	}
+	return out, nil
+}
+
+// ignoredPaths reports which paths gitignore rules cover. check-ignore exits
+// 1 when none are, which is an answer rather than a failure.
+func ignoredPaths(ctx context.Context, repoPath string, paths []string) (map[string]bool, error) {
+	cmd := gitCmd(ctx, repoPath, "check-ignore", "-z", "--stdin")
+	cmd.Stdin = strings.NewReader(strings.Join(paths, "\x00") + "\x00")
+	var stderr bytes.Buffer
+	cmd.Stderr = &stderr
+	out, err := cmd.Output()
+	if err != nil {
+		var exitErr *exec.ExitError
+		if camperrors.As(err, &exitErr) && exitErr.ExitCode() == 1 {
+			return nil, nil
+		}
+		return nil, camperrors.Wrapf(err, "check which declared artifact roots are gitignored: %s",
+			strings.TrimSpace(stderr.String()))
+	}
+	ignored := make(map[string]bool)
+	for _, path := range strings.Split(string(out), "\x00") {
+		if path != "" {
+			ignored[path] = true
+		}
+	}
+	return ignored, nil
 }
 
 // applyGuardExclusions folds guard exclusions into the pathspec, composing

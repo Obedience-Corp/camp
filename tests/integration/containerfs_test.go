@@ -70,7 +70,8 @@ var containerFSPackages = []containerFSPackage{
 	{ImportPath: "./internal/sync", MinTests: 32},
 	{ImportPath: "./internal/commands/fresh", MinTests: 6},
 	// The dungeon-move commit tests need a real repository to commit into.
-	{ImportPath: "./internal/git", MinTests: 5, TestPattern: "^Test(CaptureBlobsDoesNotFollowDirectoryLink|CommitScoped_DirectoryLinkStagesOnlySymlink|StageAllDirectoryLinkStagesSymlink|StageAllOnlyDirectoryLink|CommitScopedParentDirectoryStagesLink)$"},
+	// The capture and install tests rebuild the index of a real repository.
+	{ImportPath: "./internal/git", MinTests: 15, TestPattern: "^Test(CaptureBlobsDoesNotFollowDirectoryLink|CommitScoped_DirectoryLinkStagesOnlySymlink|StageAllDirectoryLinkStagesSymlink|StageAllOnlyDirectoryLink|CommitScopedParentDirectoryStagesLink|InstallTreeKeepsCachedStatData|InstallTreeFinishFalseRestoresTheIndex|InstallTreeLeavesAnIndexChangedSinceInstall|InstallTreeDetectsAChangedIndexWithoutAChecksum|OperationInProgressSeesMergesAndConflicts|PlanRootContentSizeDecides|CaptureTreeAddsPathsLiterally|RootExcludePathspecsSkipsIgnoredRoots|PairMovesIntoRootsNamesTrackedFilesPastTheLimit|StageAllCommitsADirectoryLinkInsideARootAsItsLink)$"},
 	{ImportPath: "./internal/git/commit", MinTests: 1},
 	{ImportPath: "./internal/commands/workitem", MinTests: 10},
 	{ImportPath: "./internal/workitem", MinTests: 7},

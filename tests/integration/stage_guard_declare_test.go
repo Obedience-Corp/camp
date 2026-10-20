@@ -177,6 +177,11 @@ func TestIntegration_GuardReusesExistingRootWithTallyLine(t *testing.T) {
 
 	_, err := tc.RunCampInDir(campPath, "commit", "-m", "first cut")
 	require.NoError(t, err)
+	// The first commit's manifest record lands asynchronously. Settle it so
+	// the b-roll is the only change left.
+	settleQueue(t, tc, campPath)
+	require.Equal(t, "?? videos/my-video/footage.mp4",
+		tc.GitOutput(t, campPath, "status", "--porcelain"), "the fixture must be clean apart from the footage")
 
 	tc.Shell(t, fmt.Sprintf(`
 		cd %s
@@ -193,6 +198,9 @@ func TestIntegration_GuardReusesExistingRootWithTallyLine(t *testing.T) {
 	// commit: the excluded file is still an unstaged worktree change, so the
 	// ordinary has-changes check would otherwise say yes.
 	assert.Contains(t, output, "Nothing left to commit")
+	history := tc.GitOutput(t, campPath, "log", "--name-only", "--format=")
+	assert.NotContains(t, history, "broll.mp4")
+	assert.NotContains(t, history, "footage.mp4")
 	assert.NotContains(t, output, "is now an artifact root",
 		"an already-declared root must not re-teach what an artifact root is")
 

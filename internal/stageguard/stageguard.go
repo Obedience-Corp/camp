@@ -65,6 +65,14 @@ type GuardLimits struct {
 	// campaign root. It selects which remedy the CLI offers, since camp never
 	// auto-declares an artifact root inside a project.
 	ScopeProject bool
+	// SkipDirs are repo-relative directories the status walk must not descend
+	// into. Declared artifact roots are sized by their own plan, which keeps
+	// over-threshold media out without re-reporting it as a new finding.
+	SkipDirs []string
+	// ExtraCandidates are files a stage-everything operation adds that the
+	// status walk does not list, such as new small files inside a declared
+	// artifact root. They count toward the bulk guard like any other.
+	ExtraCandidates []Candidate
 }
 
 // ViolationKind distinguishes the guard that produced a violation, because

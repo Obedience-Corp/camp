@@ -222,6 +222,10 @@ func runCommit(cmd *cobra.Command, args []string) error {
 
 	// Stage if requested
 	if stageAll {
+		priorRoots, queued, err := queueBeforeStage(ctx, humanOut, campRoot, target)
+		if err != nil || queued {
+			return err
+		}
 		_, _ = fmt.Fprintln(humanOut, ui.Info("Staging changes..."))
 		// The guard error is routed through the JSON reporter for both
 		// branches, hoisted below. A submodule commit that returned it raw
@@ -261,7 +265,7 @@ func runCommit(cmd *cobra.Command, args []string) error {
 
 		// Act on what the guard decided and tell the user. Runs after staging
 		// so the declaration it may write lands in this same commit.
-		handling, err := cmdutil.HandleStageOutcome(ctx, humanOut, campRoot, target.Path, guardOutcome)
+		handling, reportedRoots, err := reportStageOutcome(ctx, humanOut, campRoot, target.Path, priorRoots, guardOutcome)
 		if err != nil {
 			return err
 		}
@@ -270,6 +274,9 @@ func runCommit(cmd *cobra.Command, args []string) error {
 		// ordinary has-changes check would say yes and git would then reject
 		// the empty commit. Report the no-op instead of failing.
 		empty, err := cmdutil.GuardExcludedEverything(ctx, target.Path, handling)
+		if err == nil && !empty && reportedRoots {
+			empty, err = nothingStaged(ctx, target.Path)
+		}
 		if err != nil {
 			return err
 		}
@@ -454,16 +461,6 @@ func commitJSONNoop(cmd *cobra.Command, result *commitJSONResult) error {
 		return emitBackgroundCommit(cmd.OutOrStdout(), result, backgroundNothingToCommit, nil)
 	}
 	return result.emit(cmd.OutOrStdout())
-}
-
-func worktreesRelPath(ctx context.Context, campRoot string) string {
-	worktreesPath := config.DefaultCampaignPaths().Worktrees
-	if cfg, err := config.LoadCampaignConfig(ctx, campRoot); err == nil {
-		if wt := cfg.Paths().Worktrees; wt != "" {
-			worktreesPath = wt
-		}
-	}
-	return strings.Trim(strings.TrimSpace(worktreesPath), "/")
 }
 
 func effectiveCommitAll(cmd *cobra.Command, amend, all bool) bool {

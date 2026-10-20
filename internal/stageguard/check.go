@@ -27,10 +27,11 @@ func CheckStagingWithDirectoryLinks(ctx context.Context, repoPath string, limits
 		return nil, ctx.Err()
 	}
 
-	candidates, dirs, err := enumerate(ctx, repoPath, nil, directoryLinks)
+	candidates, dirs, err := enumerate(ctx, repoPath, nil, limits.SkipDirs, directoryLinks)
 	if err != nil {
 		return nil, err
 	}
+	candidates = append(candidates, limits.ExtraCandidates...)
 
 	candidates, err = FilterLFSManaged(ctx, repoPath, candidates)
 	if err != nil {
@@ -77,7 +78,7 @@ func UntrackedOverThreshold(ctx context.Context, repoPath string, limits GuardLi
 		return nil, nil
 	}
 
-	candidates, _, err := enumerate(ctx, repoPath, dirs, nil)
+	candidates, _, err := enumerate(ctx, repoPath, dirs, nil, nil)
 	if err != nil {
 		return nil, err
 	}
