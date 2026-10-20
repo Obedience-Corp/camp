@@ -34,9 +34,28 @@ func dispatchPlugin(ctx context.Context) error {
 		return nil
 	}
 
-	// Never intercept help, completion, or Cobra internals.
+	// Delegate only an explicitly addressed plugin completion. Ordinary Camp
+	// commands never inspect or start a desktop integration.
+	if name == "__complete" || name == "__completeNoDesc" {
+		if argIdx+1 >= len(os.Args) {
+			return nil
+		}
+		pluginName := os.Args[argIdx+1]
+		if pluginName == "" || strings.HasPrefix(pluginName, "-") || isKnownCommand(pluginName) {
+			return nil
+		}
+		p, found := plugin.Lookup(pluginName)
+		if !found {
+			return nil
+		}
+		args := append([]string{name}, os.Args[argIdx+2:]...)
+		if err := plugin.Execute(ctx, p, args, ""); err != nil {
+			return err
+		}
+		return errPluginHandled
+	}
 	switch name {
-	case "help", "completion", "__complete", "__completeNoDesc":
+	case "help", "completion":
 		return nil
 	}
 
