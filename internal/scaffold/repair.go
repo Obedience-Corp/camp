@@ -155,11 +155,9 @@ func ComputeRepairPlan(ctx context.Context, dir string, opts InitOptions) (*Repa
 	computeStandardDungeonScaffoldChanges(absDir, plan, campaignSpelling)
 
 	// Phase 6: Account for imperative quest scaffold files created outside scaffold FS.
-	if version.Profile == "dev" {
-		computeQuestScaffoldChanges(absDir, plan, campaignSpelling)
-		if err := computeQuestSentinelDateChange(ctx, absDir, plan); err != nil {
-			return nil, err
-		}
+	computeQuestScaffoldChanges(absDir, plan, campaignSpelling)
+	if err := computeQuestSentinelDateChange(ctx, absDir, plan); err != nil {
+		return nil, err
 	}
 
 	// Phase 7: Detect misplaced completed/ dirs that should be in dungeon/completed/YYYY-MM-DD/.
@@ -313,12 +311,6 @@ func computeScaffoldChanges(ctx context.Context, absDir string, opts InitOptions
 	if err != nil {
 		return err
 	}
-	if version.Profile == "stable" {
-		stats.CreatedDirs = filterOutQuestScaffoldPaths(stats.CreatedDirs)
-		stats.CreatedFiles = filterOutQuestScaffoldPaths(stats.CreatedFiles)
-		stats.SkippedPaths = filterOutQuestScaffoldPaths(stats.SkippedPaths)
-	}
-
 	seen := repairSeenKeys(plan)
 	for _, d := range stats.CreatedDirs {
 		addRepairIfMissing(plan, seen, absDir, d, "directory", "missing directory", campaignSpelling, true)
