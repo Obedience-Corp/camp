@@ -349,3 +349,32 @@ func TestIntegration_CommitLargeSilencesGrowthInARoot(t *testing.T) {
 	size := strings.TrimSpace(tc.GitOutput(t, campPath, "cat-file", "-s", "HEAD:videos/my-video/script.md"))
 	assert.Equal(t, "3145728", size)
 }
+
+// A nested repository inside a root is named on its own line. The root is
+// never reported as kept out when a note in it was committed, and the media
+// tally still prints.
+const nestedRepoInRootScript = `
+		printf 'remember the b-roll\n' > videos/my-video/todo.md
+		git init -q videos/my-video/vendor-repo
+		printf 'vendored\n' > videos/my-video/vendor-repo/readme.md
+`
+
+func assertNestedRepoNamed(t *testing.T, tc *TestContainer, campPath, output string) {
+	t.Helper()
+	assert.Contains(t, output, "videos/my-video/vendor-repo/ is a nested repository, kept out of git", "output:\n%s", output)
+	assert.NotContains(t, output, "videos/my-video/ kept out of git", "output:\n%s", output)
+	assert.Contains(t, output, "videos/my-video/ +1 files (3.0 MB) kept out of git", "output:\n%s", output)
+	assertInHEAD(t, tc, campPath, []string{"videos/my-video/todo.md"},
+		[]string{"videos/my-video/vendor-repo", "videos/my-video/vendor-repo/readme.md"})
+	assertOnlyRootMediaLeft(t, tc, campPath, "videos/my-video/footage.mp4", "videos/my-video/vendor-repo/")
+}
+
+func TestIntegration_NestedRepoInDeclaredRootIsNamed(t *testing.T) {
+	tc, campPath, output := rootCommit(t, "nested-repo-in-root", false, nestedRepoInRootScript)
+	assertNestedRepoNamed(t, tc, campPath, output)
+}
+
+func TestIntegration_AutoWriteNestedRepoInDeclaredRootIsNamed(t *testing.T) {
+	tc, campPath, output := rootCommit(t, "aw-nested-repo-in-root", true, nestedRepoInRootScript)
+	assertNestedRepoNamed(t, tc, campPath, output)
+}

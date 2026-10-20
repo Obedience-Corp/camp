@@ -44,7 +44,8 @@ type RootTally struct {
 	Root  string
 	Files int
 	Bytes int64
-	Dirs  int
+	// NestedRepos are embedded repositories inside the root, kept out whole.
+	NestedRepos []string
 }
 
 // CommitPaths returns the repo-relative paths the plan commits.
@@ -224,7 +225,7 @@ func (p RootPlan) Tally(roots []string) []RootTally {
 	}
 	for _, dir := range p.KeptDirs {
 		if t := entry(dir); t != nil {
-			t.Dirs++
+			t.NestedRepos = append(t.NestedRepos, dir)
 		}
 	}
 	tallies := make([]RootTally, 0, len(order))

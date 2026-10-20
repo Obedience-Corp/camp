@@ -28,6 +28,14 @@ func queueBeforeStage(ctx context.Context, humanOut io.Writer, campRoot string, 
 	if err != nil {
 		return nil, false, err
 	}
+	// A skipped submodule pointer that is already staged would be reset from
+	// HEAD by installing the captured tree. The foreground keeps it staged,
+	// and refuses a projects/ pointer the way it always has.
+	for _, path := range skip {
+		if staged, stagedErr := git.HasStagedPathChange(ctx, target.Path, path); stagedErr != nil || staged {
+			return priorRoots, false, stagedErr
+		}
+	}
 	queued, err := cmdutil.TryQueueAutoWriteBeforeStage(
 		ctx, humanOut, campRoot, target.Path, commitJSONOut, commitAmend, skip,
 		defercommit.EnqueueOptions{
@@ -58,15 +66,24 @@ func nothingStaged(ctx context.Context, repoPath string) (bool, error) {
 	return !staged, err
 }
 
+// commitSkipPaths lists what the fast path leaves out of the capture. Only
+// a campaign-root commit without --include-refs leaves submodule pointers
+// out; a nested repository or --include-refs records them, as the
+// foreground stage does.
 func commitSkipPaths(ctx context.Context, campRoot string, target *git.TargetResult) ([]string, error) {
-	paths, err := git.ListSubmodulePaths(ctx, target.Path)
-	if err != nil {
-		return nil, err
+	if target.IsNestedRepo() {
+		return nil, nil
 	}
-	if !target.IsNestedRepo() {
-		if wt := worktreesRelPath(ctx, campRoot); wt != "" {
-			paths = append(paths, wt)
+	var paths []string
+	if !commitIncludeRefs {
+		subs, err := git.ListSubmodulePaths(ctx, target.Path)
+		if err != nil {
+			return nil, err
 		}
+		paths = subs
+	}
+	if wt := worktreesRelPath(ctx, campRoot); wt != "" {
+		paths = append(paths, wt)
 	}
 	return paths, nil
 }

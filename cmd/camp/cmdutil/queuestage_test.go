@@ -52,7 +52,7 @@ func TestPlanAutoWriteTakesRootContentFromThePlan(t *testing.T) {
 		t.Fatalf("newFiles = %v, want the root's new note only", newFiles)
 	}
 	tally := plan.Tally([]string{"videos/my-video"})
-	if len(tally) != 1 || tally[0].Files != 1 || tally[0].Bytes != 3<<20 || tally[0].Dirs != 0 {
+	if len(tally) != 1 || tally[0].Files != 1 || tally[0].Bytes != 3<<20 || len(tally[0].NestedRepos) != 0 {
 		t.Fatalf("tally = %+v, want only the kept-out b-roll", tally)
 	}
 	plan.Moved = []git.RootMove{{From: "notes/broll.mp4", To: "videos/my-video/broll.mp4", Size: 3 << 20}}

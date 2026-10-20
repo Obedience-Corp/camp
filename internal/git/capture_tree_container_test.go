@@ -285,7 +285,7 @@ func TestPlanRootContentSizeDecides(t *testing.T) {
 		t.Fatalf("kept dirs = %v, a nested repository stays out whole", plan.KeptDirs)
 	}
 	tally := plan.Tally(roots)
-	if len(tally) != 1 || tally[0].Files != 2 || tally[0].Bytes != 2*4096 || tally[0].Dirs != 1 {
+	if len(tally) != 1 || tally[0].Files != 2 || tally[0].Bytes != 2*4096 || !reflect.DeepEqual(tally[0].NestedRepos, []string{"videos/my-video/nested"}) {
 		t.Fatalf("tally = %+v", tally)
 	}
 

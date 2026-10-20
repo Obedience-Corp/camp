@@ -382,3 +382,60 @@ func TestIntegration_AutoWriteFallsBackWhenTheQueueCannotBeWritten(t *testing.T)
 	backups := tc.Shell(t, fmt.Sprintf("ls %s/.git/ | grep -c camp-before-queue || true", campPath))
 	assert.Equal(t, "0", strings.TrimSpace(backups), "the index backup must not be left behind")
 }
+
+// setupAutoWriteSubmoduleCampaign is a campaign with a projects/ submodule
+// whose checkout is one commit ahead of the recorded pointer.
+func setupAutoWriteSubmoduleCampaign(t *testing.T, tc *TestContainer, name string) (string, string) {
+	t.Helper()
+	tc.EnableDeferral()
+	campPath, projPath, _ := setupFreshCampaignWithSubmodule(t, tc, name)
+	configureWriter(t, tc, campPath, "plain")
+	out, err := tc.RunCampInDir(campPath, "commit", "-m", "configure the writer")
+	require.NoError(t, err, "output:\n%s", out)
+	settleQueue(t, tc, campPath)
+	tc.Shell(t, fmt.Sprintf(`
+		set -e
+		cd %s
+		printf 'moved\n' >> README.md
+		git add README.md
+		git -c user.email=t@t -c user.name=t commit -q -m "move the pointer"
+	`, projPath))
+	return campPath, projPath
+}
+
+// A campaign-root commit leaves submodule pointers out. One the user already
+// staged goes to the foreground, which refuses it and leaves it staged;
+// installing a captured tree would have reset it from HEAD.
+func TestIntegration_AutoWriteLeavesAStagedProjectPointerToTheForeground(t *testing.T) {
+	tc := GetSharedContainer(t)
+	campPath, _ := setupAutoWriteSubmoduleCampaign(t, tc, "aw-staged-pointer")
+	tc.Shell(t, fmt.Sprintf("set -e\ncd %s\ngit add projects/test-project\nprintf 'note\\n' > note.md", campPath))
+
+	stdout, stderr, exitCode, err := tc.RunCampSplitInDir(campPath, "commit", "--auto-write")
+	require.NoError(t, err)
+	combined := stdout + stderr
+	assert.Contains(t, combined, "Staging changes", "output:\n%s", combined)
+	assert.Contains(t, combined, "staged submodule ref(s) found", "output:\n%s", combined)
+	assert.NotEqual(t, 0, exitCode, "output:\n%s", combined)
+	assert.Contains(t, stagedPaths(t, tc, campPath), "projects/test-project", "the staged pointer must survive")
+}
+
+// --include-refs records submodule pointers, so the queued tree carries the
+// pointer the checkout moved to.
+func TestIntegration_AutoWriteIncludeRefsRecordsTheNewPointer(t *testing.T) {
+	tc := GetSharedContainer(t)
+	campPath, projPath := setupAutoWriteSubmoduleCampaign(t, tc, "aw-include-refs")
+	want := strings.TrimSpace(tc.GitOutput(t, projPath, "rev-parse", "HEAD"))
+	tc.Shell(t, fmt.Sprintf("set -e\ncd %s\nprintf 'note\\n' > note.md", campPath))
+
+	stdout, stderr, exitCode, err := tc.RunCampSplitInDir(campPath, "commit", "--auto-write", "--include-refs")
+	require.NoError(t, err)
+	combined := stdout + stderr
+	require.Equal(t, 0, exitCode, "output:\n%s", combined)
+	require.Contains(t, combined, "staged and queued", "output:\n%s", combined)
+	require.NotContains(t, combined, "Staging changes", "output:\n%s", combined)
+	settleQueue(t, tc, campPath)
+	assert.Equal(t, want, strings.TrimSpace(tc.GitOutput(t, campPath, "rev-parse", "HEAD:projects/test-project")))
+	assertInHEAD(t, tc, campPath, []string{"note.md"}, nil)
+	assert.Empty(t, tc.GitOutput(t, campPath, "status", "--porcelain"))
+}

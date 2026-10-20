@@ -244,10 +244,9 @@ func reportRootAdditions(out io.Writer, tallies []git.RootTally) {
 			_, _ = fmt.Fprintf(out, "%s %s/ +%s files (%s) kept out of git\n",
 				ui.SuccessIcon(), tally.Root, ui.FormatCount(tally.Files), ui.FormatBytes(tally.Bytes))
 			_, _ = fmt.Fprintln(out, ui.Dim("  Commit them anyway with --commit-large"))
-			continue
 		}
-		if tally.Dirs > 0 {
-			_, _ = fmt.Fprintf(out, "%s %s/ kept out of git\n", ui.SuccessIcon(), tally.Root)
+		for _, dir := range tally.NestedRepos {
+			_, _ = fmt.Fprintf(out, "%s %s/ is a nested repository, kept out of git\n", ui.SuccessIcon(), dir)
 		}
 	}
 }
