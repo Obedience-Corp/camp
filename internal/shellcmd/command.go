@@ -96,7 +96,7 @@ func powerShellScript(expression string, extraArgs []string, dir string) (string
 	expression = strings.TrimRight(expression, " \t\r\n")
 	script := "$ErrorActionPreference = 'Stop'\n"
 	if dir != "" {
-		literal := "'" + strings.ReplaceAll(dir, "'", "''") + "'"
+		literal := PowerShellLiteral(dir)
 		script += "[IO.Directory]::SetCurrentDirectory(" + literal + ")\n"
 		script += "Set-Location -LiteralPath " + literal + "\n"
 	}
@@ -105,7 +105,7 @@ func powerShellScript(expression string, extraArgs []string, dir string) (string
 		for i, arg := range extraArgs {
 			// Single-quoted PowerShell strings preserve metacharacters and
 			// embedded newlines. Doubling an apostrophe is the only escape.
-			literals[i] = "'" + strings.ReplaceAll(arg, "'", "''") + "'"
+			literals[i] = PowerShellLiteral(arg)
 		}
 		script += "$campArgs = [string[]]@(" + strings.Join(literals, ",") + ")\n"
 		script += "& { " + expression + " @args } @campArgs\n"

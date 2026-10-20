@@ -31,6 +31,7 @@ func CheckStagingWithDirectoryLinks(ctx context.Context, repoPath string, limits
 	if err != nil {
 		return nil, err
 	}
+	candidates = append(candidates, limits.ExtraCandidates...)
 
 	candidates, err = FilterLFSManaged(ctx, repoPath, candidates)
 	if err != nil {

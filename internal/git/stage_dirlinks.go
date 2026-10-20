@@ -16,8 +16,18 @@ import (
 // to the link entry itself. Windows Git may report a junction as a directory,
 // including files in its external target, so callers must exclude these roots
 // from git add before staging their link blobs explicitly.
-func changedDirectoryLinks(ctx context.Context, repoPath string) ([]string, error) {
-	out, err := StatusPorcelain(ctx, repoPath, "-uall")
+//
+// skip are directories the scan leaves out, such as declared artifact roots,
+// whose links the root plan finds instead.
+func changedDirectoryLinks(ctx context.Context, repoPath string, skip []string) ([]string, error) {
+	args := []string{"-uall"}
+	if len(skip) > 0 {
+		args = append(args, "--", ".")
+		for _, dir := range skip {
+			args = append(args, ":(exclude,literal)"+strings.TrimSuffix(dir, "/"))
+		}
+	}
+	out, err := StatusPorcelain(ctx, repoPath, args...)
 	if err != nil {
 		return nil, err
 	}

@@ -9,11 +9,8 @@ import (
 	"os/exec"
 	"path/filepath"
 	"runtime"
-	"sort"
 	"strings"
 
-	"github.com/Obedience-Corp/camp/internal/artifacts"
-	"github.com/Obedience-Corp/camp/internal/dirlink"
 	camperrors "github.com/Obedience-Corp/camp/internal/errors"
 )
 
@@ -252,71 +249,6 @@ func headResolvable(ctx context.Context, repoPath string) bool {
 	return cmd.Run() == nil
 }
 
-// AddPathsToTempIndex stages paths into the provided temp index.
-//
-// retry is optional: nil takes the interactive profile.
-func AddPathsToTempIndex(ctx context.Context, repoPath, tmpPath string, paths []string, retry *RetryConfig) error {
-	if len(paths) == 0 {
-		return ErrNoFilesSpecified
-	}
-	changedLinks, err := changedDirectoryLinks(ctx, repoPath)
-	if err != nil {
-		return err
-	}
-	// Git for Windows can treat a junction as a directory (and even record an
-	// external repository as a gitlink). Keep named links out of git add and
-	// write their link-target blobs to the temp index explicitly.
-	regular := make([]string, 0, len(paths))
-	linkSet := make(map[string]bool)
-	for _, path := range paths {
-		abs := filepath.Join(repoPath, filepath.FromSlash(path))
-		st, err := dirlink.Lstat(abs)
-		if err != nil {
-			if errors.Is(err, os.ErrNotExist) {
-				regular = append(regular, path) // git add records a deletion.
-				continue
-			}
-			return camperrors.Wrapf(err, "classify path for temp index %s", path)
-		}
-		if !st.IsDirectoryLink() {
-			regular = append(regular, path)
-			continue
-		}
-		linkSet[cleanStageScope(path)] = true
-	}
-	for _, link := range scopedDirectoryLinks(changedLinks, paths) {
-		linkSet[link] = true
-	}
-	links := make([]string, 0, len(linkSet))
-	for link := range linkSet {
-		links = append(links, link)
-	}
-	sort.Strings(links)
-	if len(regular) > 0 {
-		if err := WithLockRetry(ctx, repoPath, retryProfile(retry, "add-temp-index"), func() error {
-			args := []string{"-C", repoPath, "add", "--"}
-			args = append(args, regular...)
-			for _, link := range changedLinks {
-				args = append(args, ":(exclude,literal)"+link)
-			}
-			cmd := exec.CommandContext(ctx, "git", args...)
-			cmd.Env = append(os.Environ(), "GIT_INDEX_FILE="+tmpPath)
-			out, err := cmd.CombinedOutput()
-			if err != nil {
-				errType := ClassifyGitError(string(out), cmd.ProcessState.ExitCode())
-				if errType == GitErrorLock {
-					return &LockError{Path: "index.lock", Err: err}
-				}
-				return camperrors.NewGit("add (temp index)", "", errType.String(), strings.TrimSpace(string(out)), err)
-			}
-			return nil
-		}); err != nil {
-			return err
-		}
-	}
-	return stageDirectoryLinks(ctx, repoPath, tmpPath, links, retry)
-}
-
 // ApplyCachedDiffToTempIndex applies the real index's staged diff for paths to tmpPath.
 func ApplyCachedDiffToTempIndex(ctx context.Context, repoPath, tmpPath string, paths []string) error {
 	if len(paths) == 0 {
@@ -538,15 +470,26 @@ func StageWithGuard(ctx context.Context, repoPath string, files []string) (*Stag
 // StageWithGuardOptions stages like StageWithGuard under explicit guard
 // overrides, such as --commit-large.
 func StageWithGuardOptions(ctx context.Context, repoPath string, files []string, opts StageOptions) (*StageOutcome, error) {
-	links, err := changedDirectoryLinks(ctx, repoPath)
+	var roots []string
+	if isStageEverything(files) {
+		roots = DeclaredArtifactRoots(repoPath)
+	}
+	links, err := changedDirectoryLinks(ctx, repoPath, roots)
 	if err != nil {
 		return nil, err
 	}
-	outcome, excluded, err := runStageGuard(ctx, repoPath, files, opts, links)
+	plan, err := planStageRoots(ctx, repoPath, roots, opts.CommitLarge)
 	if err != nil {
 		return nil, err
 	}
-	staged := applyGuardExclusions(files, excluded)
+	outcome, excluded, err := runStageGuard(ctx, repoPath, files, opts, links, plan.Commit)
+	if err != nil {
+		return nil, err
+	}
+	staged, err := excludeStageRoots(ctx, repoPath, roots, applyGuardExclusions(files, excluded))
+	if err != nil {
+		return nil, err
+	}
 	linkScope := scopedDirectoryLinks(links, staged)
 	staged = excludeDirectoryLinks(staged, links)
 
@@ -558,31 +501,8 @@ func StageWithGuardOptions(ctx context.Context, repoPath string, files []string,
 	}); err != nil {
 		return nil, err
 	}
-	// The main add excludes declared artifact roots so new media is not
-	// staged. Tracked files inside those roots, such as a script beside the
-	// footage, still belong in the commit.
-	var trackedRoots []string
-	for _, root := range DeclaredArtifactRoots(repoPath) {
-		if artifacts.HasTrackedFiles(ctx, repoPath, root) {
-			trackedRoots = append(trackedRoots, root)
-		}
-	}
-	if len(trackedRoots) > 0 {
-		if err := StageTrackedChanges(ctx, repoPath, trackedRoots...); err != nil {
-			return nil, err
-		}
-	}
-	// A tracked file moved into a root is not new media. git add -u records
-	// the deletion and the exclude keeps the new path out, which drops the
-	// content. Stage the destination when it is the same blob.
-	moved, err := RelocatedIntoRoots(ctx, repoPath, DeclaredArtifactRoots(repoPath))
-	if err != nil {
+	if outcome, err = finishStageRoots(ctx, repoPath, roots, plan, outcome); err != nil {
 		return nil, err
-	}
-	if len(moved) > 0 {
-		if err := StageFiles(ctx, repoPath, moved...); err != nil {
-			return nil, err
-		}
 	}
 	if err := stageDirectoryLinks(ctx, repoPath, "", linkScope, nil); err != nil {
 		return nil, err
