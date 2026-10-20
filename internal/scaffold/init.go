@@ -168,7 +168,10 @@ func Init(ctx context.Context, dir string, opts InitOptions) (*InitResult, error
 	// Run scaffold (handles directories and template files)
 	if !opts.DryRun {
 		// Use guild-scaffold to create the scaffold structure
-		embeddedFS := embeddedScaffoldFS()
+		embeddedFS, err := campaignScaffoldFS(ctx, absDir)
+		if err != nil {
+			return nil, err
+		}
 		templateFS, err := fs.Sub(embeddedFS, "campaign/templates")
 		if err != nil {
 			return nil, camperrors.Wrap(err, "failed to get template sub-fs")

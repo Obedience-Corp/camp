@@ -289,7 +289,10 @@ func computeScaffoldChanges(ctx context.Context, absDir string, opts InitOptions
 	}
 
 	scaffoldPath := "campaign/scaffold.yaml"
-	embeddedFS := embeddedScaffoldFS()
+	embeddedFS, err := campaignScaffoldFS(ctx, absDir)
+	if err != nil {
+		return err
+	}
 	templateFS, err := fs.Sub(embeddedFS, "campaign/templates")
 	if err != nil {
 		return err

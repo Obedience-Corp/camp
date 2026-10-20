@@ -28,6 +28,8 @@ Examples:
   camp quest create data-pipeline --description "..."  Non-interactive
   camp quest create -e customer-onboarding             Deep capture with $EDITOR
   camp quest create launch --no-editor --workitem SC0001  Bind a festival workitem
+  camp quest create launch --json --no-editor          Structured create result
+  camp quest create launch --no-editor --open          Optional bounded app reveal
 
 ```
 camp quest create [name] [flags]
@@ -39,8 +41,10 @@ camp quest create [name] [flags]
       --description string   Full description
   -e, --edit                 Open in $EDITOR for deep capture
   -h, --help                 help for create
+      --json                 Output structured creation result (non-interactive)
       --no-commit            Don't create a git commit
       --no-editor            Skip editor and create directly from flags
+      --open                 Optionally reveal the created quest in an already running app
       --purpose string       Short purpose statement
       --tags string          Comma-separated tags
       --workitem string      Bind a workitem by selector (ref, id, key, path, slug, or festival id)

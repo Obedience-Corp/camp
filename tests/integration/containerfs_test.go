@@ -86,6 +86,9 @@ var containerFSPackages = []containerFSPackage{
 	{ImportPath: "./internal/nav/index", MinTests: 2},
 	// The initial-commit tests git-init a campaign and commit its scaffold.
 	{ImportPath: "./cmd/camp/init", MinTests: 3},
+	// Init and repair must not mint a second qst_default after the default
+	// quest moves into the quest dungeon, and the repair plan must match.
+	{ImportPath: "./internal/scaffold", MinTests: 5, TestPattern: "^Test(Init_RepairRestoresQuestScaffold|DefaultQuestScaffold_(FreshInitCreatesDefault|RepairAfterCompleteKeepsDungeonDefault|RepairAfterArchiveKeepsDungeonDefault|RepairPlanMatchesInit))$"},
 	// The artifact notice detectors read declarations, committed manifests,
 	// snapshots, and dismissals staged in a campaign.
 	{ImportPath: "./internal/notice", MinTests: 21},
