@@ -34,9 +34,12 @@ Unknown document/tab keys are preserved across Camp push.
 
 ## Legacy root layouts
 
-Documents with a root `paneTree` and no `workspaceTabs` are migrated on
-push into user tab `workspace-tab-1` (Festival app default identity) before
-the agent tab is appended. Unsupported `version` values above 2 are rejected.
+When `workspaceTabs` is missing, null, or empty, a real legacy root layout is
+migrated into user tab `workspace-tab-1` before the agent tab is appended. A
+non-null `paneTree`, `currentPath`, `activePaneId`, or `chainConfig`, or a non-empty
+`openFiles` list identifies a legacy layout. Empty modern layouts do not acquire
+an extra user tab. Unsupported `version` values above 2 are rejected without
+changing the file.
 
 ## Push rules
 
@@ -56,6 +59,12 @@ the agent tab is appended. Unsupported `version` values above 2 are rejected.
 | Generation | SHA-256 hex of exact on-disk UTF-8 bytes |
 | Write | Same-directory temp + file fsync + rename + parent-dir fsync (`fsutil.WriteFileAtomically`; dir sync no-op on Windows) |
 | CAS | Re-read generation after merge; `PERSISTENCE_CONFLICT` if changed |
+
+On Unix, a directory-sync or close error can be returned after the replacement
+is already visible. Inspect `camp quest workspace show <quest> --json` before
+deciding how to recover; an error does not prove the prior file is unchanged.
+On Windows, the content file is synced but directory sync is a no-op, so this
+contract does not promise directory-entry survival after power loss.
 
 Legacy writers that ignore `ui-state.lock` are outside the concurrency
 guarantee; Camp still refuses to overwrite a detected mid-merge change.
