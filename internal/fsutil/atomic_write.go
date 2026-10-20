@@ -68,6 +68,9 @@ func SyncDir(dir string) error {
 	if err != nil {
 		return err
 	}
-	defer f.Close()
-	return f.Sync()
+	syncErr := f.Sync()
+	if closeErr := f.Close(); syncErr == nil {
+		syncErr = closeErr
+	}
+	return syncErr
 }
