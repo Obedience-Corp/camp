@@ -572,6 +572,18 @@ func StageWithGuardOptions(ctx context.Context, repoPath string, files []string,
 			return nil, err
 		}
 	}
+	// A tracked file moved into a root is not new media. git add -u records
+	// the deletion and the exclude keeps the new path out, which drops the
+	// content. Stage the destination when it is the same blob.
+	moved, err := RelocatedIntoRoots(ctx, repoPath, DeclaredArtifactRoots(repoPath))
+	if err != nil {
+		return nil, err
+	}
+	if len(moved) > 0 {
+		if err := StageFiles(ctx, repoPath, moved...); err != nil {
+			return nil, err
+		}
+	}
 	if err := stageDirectoryLinks(ctx, repoPath, "", linkScope, nil); err != nil {
 		return nil, err
 	}

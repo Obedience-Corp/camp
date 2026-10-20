@@ -294,6 +294,9 @@ func runCommit(cmd *cobra.Command, args []string) error {
 		if err != nil {
 			return err
 		}
+		if err := cmdutil.ReportTrackedGrowthInRoots(ctx, humanOut, target.Path, priorRoots); err != nil {
+			return err
+		}
 		jsonResult.applyGuardHandling(handling)
 		// The excluded file is still an unstaged worktree change, so the
 		// ordinary has-changes check would say yes and git would then reject

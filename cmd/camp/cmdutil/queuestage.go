@@ -53,13 +53,11 @@ func TryQueueAutoWriteBeforeStage(
 		return false, err
 	}
 	roots := git.DeclaredArtifactRoots(repoPath)
-	paths, additions, foreground := planAutoWrite(tracked, untracked, roots, skip, func(rel string) (int64, bool) {
-		info, statErr := os.Lstat(filepath.Join(repoPath, filepath.FromSlash(strings.TrimSuffix(rel, "/"))))
-		if statErr != nil {
-			return 0, false
-		}
-		return info.Size(), info.Mode().IsRegular()
-	}, limits.MaxFileSize)
+	moved, err := git.RelocatedIntoRoots(ctx, repoPath, roots)
+	if err != nil {
+		return false, err
+	}
+	paths, additions, foreground := planAutoWrite(tracked, untracked, roots, skip, moved, lstatSize(repoPath), limits.MaxFileSize)
 	if foreground {
 		return false, nil
 	}
@@ -78,7 +76,14 @@ func TryQueueAutoWriteBeforeStage(
 	if err != nil {
 		return false, err
 	}
+	// The worker only moves HEAD. The index has to already hold this tree,
+	// or the landed commit shows up as a staged undo.
+	finish, err := git.InstallTree(ctx, repoPath, tree)
+	if err != nil {
+		return false, err
+	}
 	if _, err := defercommit.EnqueueTree(ctx, campRoot, repoPath, tree, opts); err != nil {
+		_ = finish(false)
 		if errors.Is(err, git.ErrNoChanges) {
 			_, _ = fmt.Fprintln(out, ui.Success("Nothing to commit"))
 			return true, nil
@@ -86,6 +91,9 @@ func TryQueueAutoWriteBeforeStage(
 		_, _ = fmt.Fprintln(out, ui.Warning(fmt.Sprintf(
 			"Could not queue this commit (%v); staging in the foreground.", err)))
 		return false, nil
+	}
+	if err := finish(true); err != nil {
+		return false, err
 	}
 	_, _ = fmt.Fprintln(out, ui.Success(DeferredCommitLine(len(paths))))
 	_, _ = fmt.Fprintln(out, ui.Dim("  camp jobs   see it land"))
@@ -104,13 +112,7 @@ func ReportDeclaredRootAdditions(ctx context.Context, out io.Writer, repoPath st
 	if err != nil {
 		return false, err
 	}
-	_, additions, _ := planAutoWrite(nil, untracked, roots, nil, func(rel string) (int64, bool) {
-		info, statErr := os.Lstat(filepath.Join(repoPath, filepath.FromSlash(strings.TrimSuffix(rel, "/"))))
-		if statErr != nil {
-			return 0, false
-		}
-		return info.Size(), info.Mode().IsRegular()
-	}, 0)
+	_, additions, _ := planAutoWrite(nil, untracked, roots, nil, nil, lstatSize(repoPath), 0)
 	reportRootAdditions(out, additions)
 	return len(additions) > 0, nil
 }
@@ -135,13 +137,64 @@ func reportRootAdditions(out io.Writer, additions []rootAddition) {
 	}
 }
 
+// lstatSize reports the worktree size of a repo-relative path.
+//
+// Symlinks count. Their own length is the size, and the target is not
+// followed. Only a missing path or a directory is skipped.
+func lstatSize(repoPath string) func(rel string) (int64, bool) {
+	return func(rel string) (int64, bool) {
+		info, err := os.Lstat(filepath.Join(repoPath, filepath.FromSlash(strings.TrimSuffix(rel, "/"))))
+		if err != nil || info.IsDir() {
+			return 0, false
+		}
+		return info.Size(), true
+	}
+}
+
+// ReportTrackedGrowthInRoots prints the threshold warning for a tracked file
+// inside an already-declared root.
+//
+// The status walk skips those roots so it does not stat every untracked
+// file there. A same-path edit is still committed, and it still has to be
+// said out loud. diff --name-only finds it without that walk.
+func ReportTrackedGrowthInRoots(ctx context.Context, out io.Writer, repoPath string, roots []string) error {
+	if len(roots) == 0 {
+		return nil
+	}
+	limits, err := stageguard.ResolveLimits(ctx, repoPath)
+	if err != nil || limits.MaxFileSize <= 0 || limits.LargeFiles == stageguard.ModeOff {
+		return err
+	}
+	changed, err := git.ChangedNames(ctx, repoPath)
+	if err != nil {
+		return err
+	}
+	sizeOf := lstatSize(repoPath)
+	for _, path := range changed {
+		if matchingRoot(path, roots) == "" {
+			continue
+		}
+		size, ok := sizeOf(path)
+		if !ok || size <= limits.MaxFileSize {
+			continue
+		}
+		renderTrackedGrowth(out, stageguard.GuardViolation{
+			Kind: stageguard.TrackedGrowth,
+			Path: path,
+			Size: size,
+		}, limits)
+	}
+	return nil
+}
+
 // planAutoWrite decides whether an --auto-write commit can be captured
 // without the full staging guard.
 //
-// sizeOf reports the worktree size of a repo-relative path and whether it is
-// a regular file. A false ok means the path is missing or not a file.
+// sizeOf reports the worktree size of a repo-relative path. A false ok means
+// the path is missing or a directory. forceInclude are moves of tracked
+// content into a declared root; they are committed, not kept out.
 func planAutoWrite(
-	tracked, untracked, roots, skip []string,
+	tracked, untracked, roots, skip, forceInclude []string,
 	sizeOf func(rel string) (int64, bool),
 	maxSize int64,
 ) (paths []string, additions []rootAddition, foreground bool) {
@@ -165,7 +218,7 @@ func planAutoWrite(
 		// A file that grew past the threshold still has to be said out loud,
 		// which the full guard does. Deletions have no size and stay here.
 		if size, ok := sizeOf(path); ok && maxSize > 0 && size > maxSize {
-			return nil, nil, true
+			foreground = true
 		}
 		paths = append(paths, path)
 	}
@@ -175,6 +228,10 @@ func planAutoWrite(
 			continue
 		}
 		if root := matchingRoot(strings.TrimSuffix(path, "/"), roots); root != "" {
+			if !strings.HasSuffix(path, "/") && forcePath(path, forceInclude) {
+				paths = append(paths, path)
+				continue
+			}
 			entry := add(root)
 			if strings.HasSuffix(path, "/") {
 				entry.dirs++
@@ -189,21 +246,20 @@ func planAutoWrite(
 			continue
 		}
 		if strings.HasSuffix(path, "/") {
-			// Camp's own state tree is not a dump of content to commit, and
-			// an empty directory cannot be added. A directory anywhere else
-			// might be a nested repository or a bulk drop, which the full
-			// guard has to see before the command returns.
-			if strings.HasPrefix(path, ".campaign/") {
-				continue
-			}
-			return nil, nil, true
+			// A collapsed untracked directory may hold a skill, a nested
+			// repository, or a bulk drop. The full guard has to see it.
+			// Ignored cache directories never appear in this list.
+			// Keep scanning so a tally later in the list is not discarded.
+			foreground = true
+			continue
 		}
 		size, ok := sizeOf(path)
 		if !ok {
 			continue
 		}
 		if maxSize > 0 && size > maxSize {
-			return nil, nil, true
+			foreground = true
+			continue
 		}
 		paths = append(paths, path)
 	}
@@ -212,7 +268,16 @@ func planAutoWrite(
 	for _, root := range order {
 		additions = append(additions, *byRoot[root])
 	}
-	return paths, additions, false
+	return paths, additions, foreground
+}
+
+func forcePath(path string, include []string) bool {
+	for _, candidate := range include {
+		if candidate == path {
+			return true
+		}
+	}
+	return false
 }
 
 func matchingRoot(path string, roots []string) string {

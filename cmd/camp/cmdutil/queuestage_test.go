@@ -13,6 +13,7 @@ func TestPlanAutoWriteLeavesDeclaredRootsOut(t *testing.T) {
 		[]string{"videos/my-video/broll.mp4", "videos/my-video/takes/"},
 		[]string{"videos/my-video"},
 		[]string{"projects/camp"},
+		nil,
 		func(rel string) (int64, bool) {
 			size, ok := sizes[rel]
 			return size, ok
@@ -39,6 +40,7 @@ func TestPlanAutoWriteStopsForANewLargeFile(t *testing.T) {
 		[]string{"releases/big.bin"},
 		nil,
 		nil,
+		nil,
 		func(string) (int64, bool) { return 30 << 20, true },
 		10<<20,
 	)
@@ -53,6 +55,7 @@ func TestPlanAutoWriteStopsForAnUntrackedDirectory(t *testing.T) {
 		[]string{"vendor/"},
 		nil,
 		nil,
+		nil,
 		func(string) (int64, bool) { return 0, false },
 		10<<20,
 	)
@@ -61,28 +64,39 @@ func TestPlanAutoWriteStopsForAnUntrackedDirectory(t *testing.T) {
 	}
 }
 
-func TestPlanAutoWriteIgnoresCampStateDirectories(t *testing.T) {
-	paths, additions, foreground := planAutoWrite(
+func TestPlanAutoWriteSendsCampDirectoriesToTheGuard(t *testing.T) {
+	_, _, foreground := planAutoWrite(
 		nil,
-		[]string{".campaign/artifacts/", "videos/my-video/broll.mp4", "caption.md"},
+		[]string{".campaign/skills/demo/"},
+		nil,
+		nil,
+		nil,
+		func(string) (int64, bool) { return 12, true },
+		10<<20,
+	)
+	if !foreground {
+		t.Fatal("a new directory under .campaign must reach the guard")
+	}
+}
+
+func TestPlanAutoWriteCommitsAMoveIntoARoot(t *testing.T) {
+	paths, additions, foreground := planAutoWrite(
+		[]string{"notes/readme.md"},
+		[]string{"videos/my-video/readme.md"},
 		[]string{"videos/my-video"},
 		nil,
-		func(rel string) (int64, bool) {
-			if rel == "videos/my-video/broll.mp4" {
-				return 3 << 20, true
-			}
-			return 12, true
-		},
+		[]string{"videos/my-video/readme.md"},
+		func(string) (int64, bool) { return 20, true },
 		10<<20,
 	)
 	if foreground {
-		t.Fatal("camp's own untracked directories must not force the full guard")
+		t.Fatal("a tracked move into a root is not a new artifact file")
 	}
-	if len(paths) != 1 || paths[0] != "caption.md" {
+	if len(paths) != 2 {
 		t.Fatalf("paths = %v", paths)
 	}
-	if len(additions) != 1 || additions[0].files != 1 {
-		t.Fatalf("additions = %+v", additions)
+	if len(additions) != 0 {
+		t.Fatalf("additions = %+v, the moved file must not be kept out", additions)
 	}
 }
 
@@ -92,6 +106,7 @@ func TestPlanAutoWriteSkipsSubmodules(t *testing.T) {
 		nil,
 		nil,
 		[]string{"projects/camp"},
+		nil,
 		func(string) (int64, bool) { return 10, true },
 		10<<20,
 	)
