@@ -17,6 +17,7 @@ func TestQuestSchemaVersionsAreFrozen(t *testing.T) {
 		{"camp quest create --json", QuestCreateJSONVersion, "quest-create/v1alpha1"},
 		{"camp quest show --json", QuestShowJSONVersion, "quest-show/v1alpha1"},
 		{"camp quest links --json", QuestLinksJSONVersion, "quest-links/v1alpha1"},
+		{"camp quest workspace --json", QuestWorkspaceJSONVersion, "quest-workspace/v1alpha1"},
 	}
 
 	for _, tt := range tests {

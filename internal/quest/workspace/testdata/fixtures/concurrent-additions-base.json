@@ -1,0 +1,18 @@
+{
+  "version": 2,
+  "activeWorkspaceTabId": "user-main",
+  "workspaceTabs": [
+    {
+      "id": "user-main",
+      "title": "User",
+      "paneTree": {
+        "id": "pane-user",
+        "type": "pane",
+        "content": {
+          "type": "file",
+          "filePath": "README.md"
+        }
+      }
+    }
+  ]
+}

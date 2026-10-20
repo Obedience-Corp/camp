@@ -1,0 +1,21 @@
+{
+  "version": 2,
+  "updatedAt": "2026-10-19T18:00:00Z",
+  "activeWorkspaceTabId": "workspace-tab-1",
+  "workspaceTabs": [
+    {
+      "id": "workspace-tab-1",
+      "title": "Tab 1",
+      "paneTree": {
+        "id": "pane-1",
+        "type": "pane",
+        "content": {
+          "type": "file",
+          "filePath": "docs/README.md"
+        }
+      },
+      "openFiles": [],
+      "activePaneId": "pane-1"
+    }
+  ]
+}
