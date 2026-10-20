@@ -430,8 +430,7 @@ Where it lives:
   the rule that its help text never warns about a frozen contract.
 - `cmd/camp/compat_schema_versions_test.go` and
   `cmd/camp/quest/compat_schema_versions_test.go` pin the published schema
-  strings that live in command packages `internal/compat` cannot import. The
-  quest one is behind the dev build profile.
+  strings that live in command packages `internal/compat` cannot import.
 - `tests/integration/compat_oldstate_test.go` is the containerized half:
   discovery from a campaign-era workspace, a pre-org registry, a v1 `.camp`
   marker, `camp init --repair` against old state, the `.campaign/` subtree a
@@ -474,9 +473,10 @@ just test integration                           # the full containerized suite
 containerized lane before you spend the time on it.
 
 `just gate-fast` already runs the unit suite in the dev profile, which is the
-only profile that compiles the quest surfaces, and `just gate` adds the stable
-profile on top. Running `BUILD_TAGS=dev just test unit` by hand is worth it
-only when you want the dev-profile signal without the rest of the gate.
+only profile that compiles the flow, audit, and event surfaces, and `just gate`
+adds the stable profile on top. Running `BUILD_TAGS=dev just test unit` by hand
+is worth it only when you want the dev-profile signal without the rest of the
+gate.
 
 ### Reading a failure
 

@@ -92,7 +92,7 @@ this normalizes paths such as `/tmp` to `/private/tmp`. Consumers should use
 the `campaign_root` from the payload instead of resolving roots independently.
 
 The `camp status all --json` campaign-root repo entry uses `.` as its relative
-path. Dev-profile quest JSON (`quest list`, `quest show`, `quest links`)
+path. Quest JSON (`quest list`, `quest show`, `quest links`)
 follows the same path rule and carries `campaign_root` in its envelope.
 
 ## Field Rules

@@ -1,12 +1,9 @@
-//go:build dev
-
 package quest
 
 import "testing"
 
 // TestQuestSchemaVersionsAreFrozen pins the quest surfaces' published schema
-// strings. They live behind the dev build profile, so `just test unit` misses
-// them and only `BUILD_TAGS=dev just test unit` runs this file.
+// strings.
 func TestQuestSchemaVersionsAreFrozen(t *testing.T) {
 	tests := []struct {
 		name string
