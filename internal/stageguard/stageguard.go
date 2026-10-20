@@ -65,6 +65,10 @@ type GuardLimits struct {
 	// campaign root. It selects which remedy the CLI offers, since camp never
 	// auto-declares an artifact root inside a project.
 	ScopeProject bool
+	// SkipDirs are repo-relative directories the status walk must not descend
+	// into. Declared artifact roots are already decided; listing every file
+	// under them again is what makes a repeat commit wait on media.
+	SkipDirs []string
 }
 
 // ViolationKind distinguishes the guard that produced a violation, because

@@ -12,6 +12,7 @@ import (
 	"sort"
 	"strings"
 
+	"github.com/Obedience-Corp/camp/internal/artifacts"
 	"github.com/Obedience-Corp/camp/internal/dirlink"
 	camperrors "github.com/Obedience-Corp/camp/internal/errors"
 )
@@ -556,6 +557,20 @@ func StageWithGuardOptions(ctx context.Context, repoPath string, files []string,
 		return executeStage(ctx, repoPath, staged)
 	}); err != nil {
 		return nil, err
+	}
+	// The main add excludes declared artifact roots so new media is not
+	// staged. Tracked files inside those roots, such as a script beside the
+	// footage, still belong in the commit.
+	var trackedRoots []string
+	for _, root := range DeclaredArtifactRoots(repoPath) {
+		if artifacts.HasTrackedFiles(ctx, repoPath, root) {
+			trackedRoots = append(trackedRoots, root)
+		}
+	}
+	if len(trackedRoots) > 0 {
+		if err := StageTrackedChanges(ctx, repoPath, trackedRoots...); err != nil {
+			return nil, err
+		}
 	}
 	if err := stageDirectoryLinks(ctx, repoPath, "", linkScope, nil); err != nil {
 		return nil, err

@@ -15,6 +15,7 @@ import (
 	"strings"
 
 	"github.com/Obedience-Corp/camp/internal/autowrite"
+	camperrors "github.com/Obedience-Corp/camp/internal/errors"
 	"github.com/Obedience-Corp/camp/internal/git"
 	"github.com/Obedience-Corp/camp/internal/jobs"
 )
@@ -247,6 +248,54 @@ type Enqueued struct {
 	Tree string
 	// Parent is the HEAD the tree was captured against.
 	Parent string
+}
+
+// EnqueueTree queues a commit of a tree that was captured without staging
+// the user's index.
+//
+// Same job as Enqueue. The tree is supplied because the caller built it in a
+// temporary index: the real index still belongs to the user, and a background
+// git add into it would sweep in whatever they edited next.
+func EnqueueTree(ctx context.Context, campaignRoot, repoPath, tree string, opts EnqueueOptions) (*Enqueued, error) {
+	if ctx.Err() != nil {
+		return nil, ctx.Err()
+	}
+	if strings.TrimSpace(tree) == "" {
+		return nil, camperrors.New("cannot queue an empty tree")
+	}
+	parent, _, err := git.ResolveHeadSHA(ctx, repoPath)
+	if err != nil {
+		return nil, err
+	}
+	parentTree, err := git.TreeSHA(ctx, repoPath, parent)
+	if err != nil {
+		return nil, err
+	}
+	if tree == parentTree {
+		return nil, git.ErrNoChanges
+	}
+	direction, err := jobs.CaptureDirectionContext(ctx, repoPath, tree)
+	if err != nil {
+		return nil, err
+	}
+	repo := jobs.RepoForPath(campaignRoot, repoPath)
+	job, err := jobs.Enqueue(ctx, campaignRoot, jobs.Job{
+		Kind:          jobs.KindCommitTree,
+		Class:         jobs.ClassCommit,
+		Repo:          repo,
+		Tree:          tree,
+		Direction:     direction,
+		Parent:        parent,
+		AutoWrite:     true,
+		Env:           opts.WriterEnv,
+		MessagePrefix: opts.MessagePrefix,
+		Then:          opts.Then,
+	})
+	if err != nil {
+		return nil, err
+	}
+	jobs.SpawnIfNeeded(ctx, campaignRoot, repo)
+	return &Enqueued{Job: job, Tree: tree, Parent: parent}, nil
 }
 
 // Enqueue captures the staged tree and queues a commit against it.

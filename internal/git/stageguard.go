@@ -7,6 +7,7 @@ import (
 	"os/exec"
 	"strings"
 
+	"github.com/Obedience-Corp/camp/internal/artifacts"
 	camperrors "github.com/Obedience-Corp/camp/internal/errors"
 	"github.com/Obedience-Corp/camp/internal/stageguard"
 )
@@ -240,6 +241,10 @@ func runStageGuard(ctx context.Context, repoPath string, files []string, opts St
 		return &StageOutcome{Unavailable: camperrors.Wrapf(
 			err, "resolve staging guard limits for %s", repoPath)}, nil, nil
 	}
+	// Declared artifact roots are already decided. Leaving them in the
+	// status walk makes every later commit stat that tree again just to
+	// reprint a size. They are still excluded from the index below.
+	limits.SkipDirs = DeclaredArtifactRoots(repoPath)
 	if opts.CommitLarge {
 		limits.LargeFiles = stageguard.ModeOff
 		limits.Bulk = stageguard.ModeOff
@@ -259,7 +264,7 @@ func runStageGuard(ctx context.Context, repoPath string, files []string, opts St
 			err, "evaluate staging guard for %s", repoPath)}, nil, nil
 	}
 	if len(violations) == 0 {
-		return nil, nil, nil
+		return nil, rootExcludePathspecs(limits.SkipDirs), nil
 	}
 
 	outcome := &StageOutcome{Limits: limits}
@@ -307,7 +312,37 @@ func runStageGuard(ctx context.Context, repoPath string, files []string, opts St
 	// refusal about the wrong subject.
 	outcome.Excluded = overThreshold
 	outcome.NestedRepos = nested
-	return outcome, outcome.excludedPathspecs(), nil
+	return outcome, append(outcome.excludedPathspecs(), rootExcludePathspecs(limits.SkipDirs)...), nil
+}
+
+// DeclaredArtifactRoots reads artifact roots declared in repoPath.
+//
+// A repository that is not a campaign has no declaration file. That is an
+// empty list, not a failure: project commits do not declare roots.
+func DeclaredArtifactRoots(repoPath string) []string {
+	cfg, err := artifacts.Load(repoPath)
+	if err != nil || cfg == nil {
+		return nil
+	}
+	roots := make([]string, 0, len(cfg.Roots))
+	for _, root := range cfg.Roots {
+		path := artifacts.NormalizeRootPath(root.Path)
+		if path != "" {
+			roots = append(roots, path)
+		}
+	}
+	return roots
+}
+
+func rootExcludePathspecs(roots []string) []string {
+	if len(roots) == 0 {
+		return nil
+	}
+	out := make([]string, len(roots))
+	for i, root := range roots {
+		out[i] = strings.TrimSuffix(root, "/")
+	}
+	return out
 }
 
 // applyGuardExclusions folds guard exclusions into the pathspec, composing

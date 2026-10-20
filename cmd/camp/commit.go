@@ -222,6 +222,31 @@ func runCommit(cmd *cobra.Command, args []string) error {
 
 	// Stage if requested
 	if stageAll {
+		// Roots declared before this command. A root created while handling
+		// the guard is reported there; listing it again would say the
+		// exclusion twice.
+		priorRoots := git.DeclaredArtifactRoots(target.Path)
+		// --auto-write can capture the tree without walking declared artifact
+		// roots or locking the user's index. A first exclusion still falls
+		// through so the report prints before this command returns.
+		if commitAutoWrite && !commitBackground {
+			skip, skipErr := commitSkipPaths(ctx, campRoot, target)
+			if skipErr != nil {
+				return skipErr
+			}
+			queued, queueErr := cmdutil.TryQueueAutoWriteBeforeStage(
+				ctx, humanOut, campRoot, target.Path, commitJSONOut, commitAmend, skip,
+				defercommit.EnqueueOptions{
+					WriterEnv:     workitemEnvForCommit(ctx, campRoot, commitWorkitem),
+					MessagePrefix: commitTagPrefix(ctx, campRoot),
+				})
+			if queueErr != nil {
+				return queueErr
+			}
+			if queued {
+				return nil
+			}
+		}
 		_, _ = fmt.Fprintln(humanOut, ui.Info("Staging changes..."))
 		// The guard error is routed through the JSON reporter for both
 		// branches, hoisted below. A submodule commit that returned it raw
@@ -265,6 +290,10 @@ func runCommit(cmd *cobra.Command, args []string) error {
 		if err != nil {
 			return err
 		}
+		reportedRoots, err := cmdutil.ReportDeclaredRootAdditions(ctx, humanOut, target.Path, priorRoots)
+		if err != nil {
+			return err
+		}
 		jsonResult.applyGuardHandling(handling)
 		// The excluded file is still an unstaged worktree change, so the
 		// ordinary has-changes check would say yes and git would then reject
@@ -272,6 +301,13 @@ func runCommit(cmd *cobra.Command, args []string) error {
 		empty, err := cmdutil.GuardExcludedEverything(ctx, target.Path, handling)
 		if err != nil {
 			return err
+		}
+		if !empty && reportedRoots {
+			staged, stagedErr := git.HasStagedChanges(ctx, target.Path)
+			if stagedErr != nil {
+				return stagedErr
+			}
+			empty = !staged
 		}
 		if empty && !commitAmend {
 			cmdutil.ReportNothingLeftToCommit(humanOut)
@@ -454,6 +490,19 @@ func commitJSONNoop(cmd *cobra.Command, result *commitJSONResult) error {
 		return emitBackgroundCommit(cmd.OutOrStdout(), result, backgroundNothingToCommit, nil)
 	}
 	return result.emit(cmd.OutOrStdout())
+}
+
+func commitSkipPaths(ctx context.Context, campRoot string, target *git.TargetResult) ([]string, error) {
+	paths, err := git.ListSubmodulePaths(ctx, target.Path)
+	if err != nil {
+		return nil, err
+	}
+	if !target.IsNestedRepo() {
+		if wt := worktreesRelPath(ctx, campRoot); wt != "" {
+			paths = append(paths, wt)
+		}
+	}
+	return paths, nil
 }
 
 func worktreesRelPath(ctx context.Context, campRoot string) string {

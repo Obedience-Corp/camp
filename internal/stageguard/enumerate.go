@@ -39,7 +39,7 @@ type Candidate struct {
 //
 // Enumeration is stat-only. Nothing is hashed, opened, or read.
 func Enumerate(ctx context.Context, repoPath string) ([]Candidate, error) {
-	candidates, _, err := enumerate(ctx, repoPath, nil, nil)
+	candidates, _, err := enumerate(ctx, repoPath, nil, nil, nil)
 	return candidates, err
 }
 
@@ -49,12 +49,12 @@ func Enumerate(ctx context.Context, repoPath string) ([]Candidate, error) {
 // first call already reported.
 //
 // A non-empty scope limits the status call to those repo-relative directories.
-func enumerate(ctx context.Context, repoPath string, scope []string, directoryLinks map[string]int64) ([]Candidate, []string, error) {
+func enumerate(ctx context.Context, repoPath string, scope, skip []string, directoryLinks map[string]int64) ([]Candidate, []string, error) {
 	if ctx.Err() != nil {
 		return nil, nil, ctx.Err()
 	}
 
-	out, err := statusPorcelain(ctx, repoPath, scope)
+	out, err := statusPorcelain(ctx, repoPath, scope, skip)
 	if err != nil {
 		return nil, nil, err
 	}
@@ -89,12 +89,20 @@ func enumerate(ctx context.Context, repoPath string, scope []string, directoryLi
 //
 // Scope entries are passed as literal pathspecs, so a directory name holding
 // glob characters means itself.
-func statusPorcelain(ctx context.Context, repoPath string, scope []string) ([]byte, error) {
+func statusPorcelain(ctx context.Context, repoPath string, scope, skip []string) ([]byte, error) {
 	args := []string{"-C", repoPath, "status", "--porcelain=v1", "-z", "-uall"}
-	if len(scope) > 0 {
+	if len(scope) > 0 || len(skip) > 0 {
 		args = append(args, "--")
+		if len(scope) == 0 {
+			// An exclude with no positive pathspec matches nothing. "." keeps
+			// the walk repo-wide and only cuts out the skipped directories.
+			args = append(args, ".")
+		}
 		for _, dir := range scope {
 			args = append(args, ":(literal)"+dir)
+		}
+		for _, dir := range skip {
+			args = append(args, ":(exclude,literal)"+strings.TrimSuffix(dir, "/"))
 		}
 	}
 	cmd := exec.CommandContext(ctx, "git", args...)

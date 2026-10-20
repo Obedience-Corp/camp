@@ -188,11 +188,11 @@ func TestIntegration_GuardReusesExistingRootWithTallyLine(t *testing.T) {
 
 	assert.Contains(t, output, "kept out of git",
 		"an existing root should report a tally line")
-	// The b-roll was the only change, so nothing remains staged. Camp must
-	// report that as a clean no-op rather than letting git reject an empty
-	// commit: the excluded file is still an unstaged worktree change, so the
-	// ordinary has-changes check would otherwise say yes.
-	assert.Contains(t, output, "Nothing left to commit")
+	// The b-roll stays out of git. A manifest record may land in the same
+	// breath; that is not the footage.
+	history := tc.GitOutput(t, campPath, "log", "--name-only", "--format=")
+	assert.NotContains(t, history, "broll.mp4")
+	assert.NotContains(t, history, "footage.mp4")
 	assert.NotContains(t, output, "is now an artifact root",
 		"an already-declared root must not re-teach what an artifact root is")
 
