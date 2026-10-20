@@ -96,15 +96,46 @@ func decodeDocument(existing []byte) (map[string]json.RawMessage, []json.RawMess
 	}
 	tabsRaw, ok := doc["workspaceTabs"]
 	if !ok {
-		// Normalize legacy root-pane documents into an empty tab list for push;
-		// do not invent a user tab from legacy fields (app hydrate owns that).
-		return doc, nil, nil
+		// Preserve legacy root layouts by migrating them into the stable user
+		// tab identity the Festival app already uses (workspace-tab-1).
+		return migrateLegacyRootDocument(doc)
 	}
 	var tabs []json.RawMessage
 	if err := json.Unmarshal(tabsRaw, &tabs); err != nil {
 		return nil, nil, camperrors.Wrap(camperrors.ErrInvalidInput, "workspaceTabs must be an array")
 	}
 	return doc, tabs, nil
+}
+
+// migrateLegacyRootDocument lifts root paneTree/openFiles/currentPath/
+// activePaneId/chainConfig into DefaultUserTabID without stamping origin=agent.
+func migrateLegacyRootDocument(doc map[string]json.RawMessage) (map[string]json.RawMessage, []json.RawMessage, error) {
+	hasLegacy := false
+	for _, key := range []string{"paneTree", "openFiles", "currentPath", "activePaneId", "chainConfig"} {
+		if _, ok := doc[key]; ok {
+			hasLegacy = true
+			break
+		}
+	}
+	if !hasLegacy {
+		return doc, nil, nil
+	}
+
+	tab := map[string]json.RawMessage{}
+	id, _ := json.Marshal(DefaultUserTabID)
+	title, _ := json.Marshal(DefaultUserTabTitle)
+	tab["id"] = id
+	tab["title"] = title
+	for _, key := range []string{"paneTree", "openFiles", "currentPath", "activePaneId", "chainConfig"} {
+		if v, ok := doc[key]; ok {
+			tab[key] = append(json.RawMessage(nil), v...)
+		}
+	}
+	tabRaw, err := json.Marshal(tab)
+	if err != nil {
+		return nil, nil, err
+	}
+	return doc, []json.RawMessage{tabRaw}, nil
 }
 
 func buildAgentTab(spec *PushSpec) (json.RawMessage, error) {

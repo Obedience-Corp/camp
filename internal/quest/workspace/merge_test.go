@@ -123,6 +123,60 @@ func TestMergePush_EmptyDocument(t *testing.T) {
 	}
 }
 
+func TestMergePush_MigratesLegacyRootLayoutIntoUserTab(t *testing.T) {
+	legacy := []byte(`{
+  "version": 2,
+  "paneTree": {"id":"pane-1","type":"pane","content":{"type":"file","filePath":"docs/README.md"}},
+  "openFiles": [{"path":"docs/README.md","name":"README.md"}],
+  "currentPath": "docs/README.md",
+  "activePaneId": "pane-1"
+}`)
+	if err := ValidateDocument("", legacy); err != nil {
+		t.Fatal(err)
+	}
+	spec := PushSpec{
+		ID:       "agent-a",
+		Title:    "Agent",
+		PaneTree: json.RawMessage(`{"id":"p","type":"pane","content":{"type":"empty"}}`),
+	}
+	if err := ValidatePushSpec("", &spec); err != nil {
+		t.Fatal(err)
+	}
+	got, err := MergePush(legacy, &spec)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var doc map[string]json.RawMessage
+	if err := json.Unmarshal(got.Document, &doc); err != nil {
+		t.Fatal(err)
+	}
+	if _, ok := doc["paneTree"]; ok {
+		t.Fatalf("root paneTree should be cleared after migration: %s", got.Document)
+	}
+	var tabs []map[string]json.RawMessage
+	if err := json.Unmarshal(doc["workspaceTabs"], &tabs); err != nil {
+		t.Fatal(err)
+	}
+	if len(tabs) != 2 {
+		t.Fatalf("want migrated user tab + agent tab, got %d: %s", len(tabs), got.Document)
+	}
+	var userID, agentID string
+	_ = json.Unmarshal(tabs[0]["id"], &userID)
+	_ = json.Unmarshal(tabs[1]["id"], &agentID)
+	if userID != DefaultUserTabID {
+		t.Fatalf("migrated user tab id=%q", userID)
+	}
+	if agentID != "agent-a" {
+		t.Fatalf("agent tab id=%q", agentID)
+	}
+	if _, ok := tabs[0]["origin"]; ok {
+		t.Fatal("migrated legacy tab must not stamp origin=agent")
+	}
+	if !strings.Contains(string(tabs[0]["paneTree"]), "docs/README.md") {
+		t.Fatalf("legacy paneTree lost: %s", tabs[0]["paneTree"])
+	}
+}
+
 func TestGenerationStable(t *testing.T) {
 	a := Generation([]byte(`{"version":2}`))
 	b := Generation([]byte(`{"version":2}`))

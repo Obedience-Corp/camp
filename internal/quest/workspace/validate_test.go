@@ -29,6 +29,17 @@ func TestValidateDocument_ValidAndInvalidFixtures(t *testing.T) {
 	}
 }
 
+func TestValidateDocument_RejectsFutureVersion(t *testing.T) {
+	raw := []byte(`{"version":99,"workspaceTabs":[]}`)
+	err := ValidateDocument("", raw)
+	if err == nil {
+		t.Fatal("expected future version rejection")
+	}
+	if !strings.Contains(err.Error(), "unsupported workspace document version") {
+		t.Fatalf("err=%v", err)
+	}
+}
+
 func TestValidatePushSpec_StripsRuntimeAndRequiresURL(t *testing.T) {
 	var spec PushSpec
 	if err := json.Unmarshal(fixture(t, "push-spec-valid.json"), &spec); err != nil {

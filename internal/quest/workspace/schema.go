@@ -24,6 +24,13 @@ const (
 	// OriginUser marks interactive user tabs when explicitly stamped.
 	OriginUser = "user"
 
+	// DefaultUserTabID matches festival-app DEFAULT_WORKSPACE_TAB_ID for
+	// legacy root-paneTree → workspaceTabs migration.
+	DefaultUserTabID = "workspace-tab-1"
+
+	// DefaultUserTabTitle matches festival-app DEFAULT_WORKSPACE_TAB_TITLE.
+	DefaultUserTabTitle = "Tab 1"
+
 	// DefaultLockWait matches festival-app ui_state_merge.rs (5s).
 	DefaultLockWait = 5 * time.Second
 )

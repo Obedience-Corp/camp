@@ -21,10 +21,20 @@ func ValidateDocument(campaignRoot string, raw []byte) error {
 	if err := json.Unmarshal(raw, &doc); err != nil {
 		return camperrors.Wrap(camperrors.ErrInvalidInput, "workspace document is not JSON object")
 	}
+	if verRaw, ok := doc["version"]; ok {
+		var ver int
+		if err := json.Unmarshal(verRaw, &ver); err != nil {
+			return camperrors.Wrap(camperrors.ErrInvalidInput, "workspace document version must be an integer")
+		}
+		if ver > DocumentVersion {
+			return camperrors.Wrapf(camperrors.ErrInvalidInput,
+				"unsupported workspace document version %d (max %d)", ver, DocumentVersion)
+		}
+	}
 	tabsRaw, ok := doc["workspaceTabs"]
 	if !ok {
 		// Legacy root paneTree documents are accepted for show/validate of
-		// existing files; push always writes version 2.
+		// existing files; push migrates them into DefaultUserTabID.
 		if _, has := doc["paneTree"]; has {
 			return nil
 		}

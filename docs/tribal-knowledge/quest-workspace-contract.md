@@ -32,6 +32,12 @@ Document version **2** (festival-app compatible):
 
 Unknown document/tab keys are preserved across Camp push.
 
+## Legacy root layouts
+
+Documents with a root `paneTree` and no `workspaceTabs` are migrated on
+push into user tab `workspace-tab-1` (Festival app default identity) before
+the agent tab is appended. Unsupported `version` values above 2 are rejected.
+
 ## Push rules
 
 1. Validate the entire tab before any write.
