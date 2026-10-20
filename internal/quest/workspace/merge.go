@@ -95,9 +95,10 @@ func decodeDocument(existing []byte) (map[string]json.RawMessage, []json.RawMess
 		return nil, nil, camperrors.Wrap(camperrors.ErrInvalidInput, "existing ui-state.json is not a JSON object")
 	}
 	tabsRaw, ok := doc["workspaceTabs"]
-	if !ok {
-		// Preserve legacy root layouts by migrating them into the stable user
-		// tab identity the Festival app already uses (workspace-tab-1).
+	// Empty/null workspaceTabs with root layout fields is still legacy: the
+	// Festival app hydrates that shape as Tab 1. Migrate instead of treating
+	// the document as an empty tab list and erasing root panes on push.
+	if !ok || jsonNullOrEmptyArray(tabsRaw) {
 		return migrateLegacyRootDocument(doc)
 	}
 	var tabs []json.RawMessage
@@ -105,6 +106,18 @@ func decodeDocument(existing []byte) (map[string]json.RawMessage, []json.RawMess
 		return nil, nil, camperrors.Wrap(camperrors.ErrInvalidInput, "workspaceTabs must be an array")
 	}
 	return doc, tabs, nil
+}
+
+func jsonNullOrEmptyArray(raw json.RawMessage) bool {
+	trimmed := bytesTrimSpace(raw)
+	if len(trimmed) == 0 || string(trimmed) == "null" {
+		return true
+	}
+	var tabs []json.RawMessage
+	if err := json.Unmarshal(trimmed, &tabs); err != nil {
+		return false
+	}
+	return len(tabs) == 0
 }
 
 // migrateLegacyRootDocument lifts root paneTree/openFiles/currentPath/
