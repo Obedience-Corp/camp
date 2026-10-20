@@ -1,0 +1,21 @@
+{
+  "version": 2,
+  "workspaceTabs": [
+    {
+      "id": "broken",
+      "title": "Broken",
+      "paneTree": {
+        "id": "split-1",
+        "type": "split",
+        "direction": "diagonal",
+        "children": [
+          {
+            "id": "pane-1",
+            "type": "pane",
+            "content": { "type": "empty" }
+          }
+        ]
+      }
+    }
+  ]
+}
