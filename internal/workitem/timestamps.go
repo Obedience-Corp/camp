@@ -6,6 +6,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"sort"
 	"strings"
 	"time"
 
@@ -16,7 +17,13 @@ import (
 // using git ls-files for file enumeration with a filepath.WalkDir fallback.
 // Returns (earliest, latest). If no files are found, returns the directory mtime.
 func ScanDirTimestamps(ctx context.Context, dir string) (earliest, latest time.Time) {
-	files, err := listTrackedFiles(ctx, dir)
+	var files []string
+	var err error
+	if index, ok := ctx.Value(trackedFileIndexKey{}).(*trackedFileIndex); ok && index.contains(dir) && !hasNestedGitBoundary(index.root, dir) {
+		files = index.filesUnder(dir)
+	} else {
+		files, err = listTrackedFiles(ctx, dir)
+	}
 	if err != nil || len(files) == 0 {
 		// Fallback to directory mtime
 		if info, statErr := os.Stat(dir); statErr == nil {
@@ -45,6 +52,64 @@ func ScanDirTimestamps(ctx context.Context, dir string) (earliest, latest time.T
 		}
 	}
 	return earliest, latest
+}
+
+// The index lives only for one Discover call. Other timestamp callers retain
+// their existing per-directory Git and filesystem fallback behavior.
+type trackedFileIndexKey struct{}
+
+type trackedFileIndex struct {
+	root  string
+	files []string
+}
+
+func newTrackedFileIndex(ctx context.Context, root string) *trackedFileIndex {
+	cmd := exec.CommandContext(ctx, "git", "ls-files", "-z", "--cached", "--others", "--exclude-standard")
+	cmd.Dir = root
+	out, err := cmd.Output()
+	if err != nil {
+		return nil
+	}
+
+	index := &trackedFileIndex{root: filepath.Clean(root)}
+	for _, part := range bytes.Split(out, []byte{0}) {
+		if len(part) == 0 {
+			continue
+		}
+		path := filepath.Join(root, string(part))
+		if !shouldIgnoreFile(path) {
+			index.files = append(index.files, path)
+		}
+	}
+	sort.Strings(index.files)
+	return index
+}
+
+func (index *trackedFileIndex) contains(dir string) bool {
+	rel, err := filepath.Rel(index.root, dir)
+	return err == nil && rel != ".." && !strings.HasPrefix(rel, ".."+string(filepath.Separator))
+}
+
+func (index *trackedFileIndex) filesUnder(dir string) []string {
+	prefix := filepath.Clean(dir) + string(filepath.Separator)
+	start := sort.SearchStrings(index.files, prefix)
+	end := start
+	for end < len(index.files) && strings.HasPrefix(index.files[end], prefix) {
+		end++
+	}
+	return index.files[start:end]
+}
+
+func hasNestedGitBoundary(root, dir string) bool {
+	for path := filepath.Clean(dir); path != filepath.Clean(root); path = filepath.Dir(path) {
+		if _, err := os.Lstat(filepath.Join(path, ".git")); err == nil {
+			return true
+		}
+		if parent := filepath.Dir(path); parent == path {
+			break
+		}
+	}
+	return false
 }
 
 // ScanFileTimestamps returns a single file's mtime as both created and updated,

@@ -10,6 +10,11 @@ import (
 // Checks context cancellation between each discovery stage since each may spawn
 // git subprocesses.
 func Discover(ctx context.Context, campaignRoot string, resolver *paths.Resolver) ([]WorkItem, error) {
+	// A workitem listing can contain hundreds of directories. Snapshot the Git
+	// file set once so timestamp scans do not launch Git for every item.
+	if index := newTrackedFileIndex(ctx, campaignRoot); index != nil {
+		ctx = context.WithValue(ctx, trackedFileIndexKey{}, index)
+	}
 	var items []WorkItem
 
 	intents, err := discoverIntents(ctx, campaignRoot, resolver)
