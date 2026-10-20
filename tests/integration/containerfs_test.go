@@ -91,6 +91,8 @@ var containerFSPackages = []containerFSPackage{
 	{ImportPath: "./internal/notice", MinTests: 21},
 	// Quest workspace lock/push mutate ui-state.json under OS flock.
 	{ImportPath: "./internal/quest/workspace", MinTests: 5},
+	// Plugin discovery/execute fixtures + Interrupt-first cancel (Linux containers).
+	{ImportPath: "./internal/plugin", MinTests: 8},
 	// The dungeon explorer feed, text sanitizing, cache round trip, and
 	// metadata fingerprints stage dungeons on disk and edit them in place.
 	{ImportPath: "./internal/dungeon/explore", MinTests: 36, TestPattern: "^Test(BuildEmptyStatusDirectories|BuildMetadataYAMLCompatibility|CachePathConfinement|CacheWriteSymlinks|BuildFeed|BuildSanitizesRepositoryText|CacheKeepsDirectoryItems|RefreshSeesInPlaceMetadataEdits|RefreshRetriesCachedMetadataFailure|WorkitemMarkerWinsOverFestivalArtifacts|ReadRegularRejectsSpecialFiles|BuildSpecialMarkdownDoesNotBlock|BuildHoldingDirectoryItems|BuildFestivalGoalSuppliesMissingName|BuildContinuesPastUnreadableDirectory|BuildKeepsReadableItemsWhenFingerprintFails|BuildWorkitemIDWithoutRef|CacheDiscardsEarlierSchemas|CacheHonorsCancelledContext|BuildFestivalGoalFillsInForUnusableFestYAML|BuildWorkitemReadmeFillsInForMalformedMarker|BuildMarkdownFrontmatterAsWritten|BuildReportsAnUnreadableDirectoryOnce|DecodeReplayOversizeFileKeepsPoster|BuildBoundsHostileMetadata|RefreshSeesPermissionChange|SaveCacheSweepsStaleTempFiles|BuildKeepsFieldsBesideAWronglyTypedOne|BuildFestivalGoalSuppliesMissingDate|BuildSurvivesMetadataTheYAMLDecoderCannotRead|CacheIsReadAgainInAnotherTimeZone|BuildReadsANestedDungeonOnce|BuildFollowsACampRootThatIsALink|CacheLeavesOutAnIndexJSONCannotCarry|BuildWarnsWhenMetadataPassesTheReadLimit|BuildKeepsTheFirstOfARepeatedFrontmatterKey)$"},
