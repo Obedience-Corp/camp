@@ -3,9 +3,12 @@ package main
 import (
 	"bytes"
 	"encoding/json"
+	"strings"
 	"testing"
 
 	"github.com/spf13/cobra"
+
+	"github.com/Obedience-Corp/camp/internal/version"
 )
 
 // findCmd finds a command in the root tree by path (e.g. "create", "dungeon list").
@@ -20,6 +23,12 @@ func findCmd(path ...string) *cobra.Command {
 func questCommandsRegistered() bool {
 	cmd, _, err := rootCmd.Find([]string{"quest"})
 	return err == nil && cmd != nil && cmd.Name() == "quest"
+}
+
+// quest workspace is dev-only, so the profile decides whether its rows must
+// be present; probing the command tree would let a lost registration pass.
+func questWorkspaceInProfile() bool {
+	return version.Profile == "dev"
 }
 
 func workitemCommandRegistered() bool {
@@ -180,6 +189,8 @@ func TestManifestCommand_AllRestrictedCommandsPresent(t *testing.T) {
 		expectedCommands["quest resume"] = false
 		expectedCommands["quest show"] = false
 		expectedCommands["quest unlink"] = false
+	}
+	if questWorkspaceInProfile() {
 		expectedCommands["quest workspace"] = false
 		expectedCommands["quest workspace push"] = false
 		expectedCommands["quest workspace show"] = false
@@ -208,6 +219,13 @@ func TestManifestCommand_AllRestrictedCommandsPresent(t *testing.T) {
 	for path, found := range expectedCommands {
 		if !found {
 			t.Errorf("restricted command %q not found in manifest output", path)
+		}
+	}
+	if !questWorkspaceInProfile() {
+		for _, cmd := range manifest.Commands {
+			if cmd.Path == "quest workspace" || strings.HasPrefix(cmd.Path, "quest workspace ") {
+				t.Errorf("dev-only command %q is in the %s manifest", cmd.Path, version.Profile)
+			}
 		}
 	}
 
@@ -305,6 +323,8 @@ func TestManifestCommand_InteractiveFlags(t *testing.T) {
 		nonInteractiveCommands["quest resume"] = true
 		nonInteractiveCommands["quest show"] = true
 		nonInteractiveCommands["quest unlink"] = true
+	}
+	if questWorkspaceInProfile() {
 		nonInteractiveCommands["quest workspace"] = true
 		nonInteractiveCommands["quest workspace push"] = true
 		nonInteractiveCommands["quest workspace show"] = true

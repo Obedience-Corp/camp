@@ -3456,6 +3456,7 @@ Initialize a new camp directory structure.
 
 Creates the standard camp directories:
   .campaign/              - Camp configuration and metadata
+  .campaign/quests/       - Quest execution contexts
   .campaign/intents/      - System-managed intent state
   projects/               - Project repositories (submodules or worktrees)
   projects/worktrees/     - Git worktrees for parallel development
@@ -6499,6 +6500,827 @@ camp push all [git push flags] [flags]
 ```
 ---
 
+## camp quest
+
+Manage working contexts within a camp
+
+### Synopsis
+
+Manage working contexts within a camp.
+
+A quest is a long-lived working context: a sub-initiative that may span
+multiple projects, agent sessions, documents, and festivals over days or
+weeks. Think of it as the current "what am I working on" scope, not a
+single task or feature ticket.
+
+Quests live under .campaign/quests/ and are orthogonal to planning (which
+lives in festivals). A quest groups related activity; a festival plans and
+executes specific deliverables within that activity.
+
+Examples:
+  camp quest create "q2-reliability" --purpose "harden platform for Q2 launch"
+  camp quest create "data-pipeline-rethink" --no-editor
+  camp quest list
+  camp quest pause q2-reliability
+  camp quest complete data-pipeline-rethink
+
+```
+camp quest [flags]
+```
+
+### Options
+
+```
+  -h, --help   help for quest
+```
+
+### Options inherited from parent commands
+
+```
+      --no-color   disable colored output
+```
+---
+
+## camp quest archive
+
+Archive a quest
+
+```
+camp quest archive <quest> [flags]
+```
+
+### Options
+
+```
+  -h, --help        help for archive
+      --no-commit   Don't create a git commit
+```
+
+### Options inherited from parent commands
+
+```
+      --no-color   disable colored output
+```
+---
+
+## camp quest checklist
+
+List the checklist for a quest
+
+### Synopsis
+
+List the checklist (workitem-aware todos) owned by a quest.
+
+A checklist is the thin layer between a quest and its workitems: an ordered set
+of work units, each optionally linked to a workitem, so an initiative can be
+divided across agents and sessions without promoting everything into a festival.
+
+Examples:
+  camp quest checklist samantha
+  camp quest checklist samantha --open
+  camp quest checklist samantha --json
+
+```
+camp quest checklist <quest> [flags]
+```
+
+### Options
+
+```
+  -h, --help   help for checklist
+      --json   Emit JSON output
+      --open   Show only open items (not done or dropped)
+```
+
+### Options inherited from parent commands
+
+```
+      --no-color   disable colored output
+```
+---
+
+## camp quest clear
+
+Clear the current terminal's quest context
+
+### Synopsis
+
+Clear the terminal-local quest context by unsetting CAMP_QUEST.
+
+The shell wrapper installed by 'camp shell-init' evaluates this automatically.
+Without the wrapper:
+
+  eval "$(camp quest clear --shell bash)"
+
+```
+camp quest clear [flags]
+```
+
+### Options
+
+```
+  -h, --help           help for clear
+      --shell string   Shell dialect: posix (bash/zsh) or fish (default posix)
+```
+
+### Options inherited from parent commands
+
+```
+      --no-color   disable colored output
+```
+---
+
+## camp quest complete
+
+Mark a quest completed
+
+```
+camp quest complete <quest> [flags]
+```
+
+### Options
+
+```
+  -h, --help        help for complete
+      --no-commit   Don't create a git commit
+```
+
+### Options inherited from parent commands
+
+```
+      --no-color   disable colored output
+```
+---
+
+## camp quest create
+
+Create a new quest
+
+### Synopsis
+
+Create a new working context within a camp.
+
+A quest is a long-lived scope of work: not a single feature or task, but a
+broader initiative that may span projects, sessions, and festivals.
+
+CAPTURE MODES:
+  TUI (default)         Step-through form (name, purpose, description, tags)
+  Non-interactive       Provide --no-editor or --description for agent use
+  Deep (--edit)         Full YAML template in $EDITOR
+
+A quest may optionally be bound to a workitem at creation time. Pass
+--workitem <selector> to bind non-interactively (the selector accepts a
+workitem ref, stable id, key, path, directory slug, or festival id), or pick
+one from the optional binding step in the interactive TUI. The binding is
+stored exactly as "camp quest link" would store it, so it renders through
+"camp quest show" and "camp quest links" with no extra steps.
+
+Examples:
+  camp quest create                                    Interactive TUI
+  camp quest create q2-reliability                     TUI with name pre-filled
+  camp quest create q2-reliability --no-editor --purpose "harden platform"
+  camp quest create data-pipeline --description "..."  Non-interactive
+  camp quest create -e customer-onboarding             Deep capture with $EDITOR
+  camp quest create launch --no-editor --workitem SC0001  Bind a festival workitem
+  camp quest create launch --json --no-editor          Structured create result
+  camp quest create launch --no-editor --open          Optional bounded app reveal
+
+```
+camp quest create [name] [flags]
+```
+
+### Options
+
+```
+      --description string   Full description
+  -e, --edit                 Open in $EDITOR for deep capture
+  -h, --help                 help for create
+      --json                 Output structured creation result (non-interactive)
+      --no-commit            Don't create a git commit
+      --no-editor            Skip editor and create directly from flags
+      --open                 Optionally reveal the created quest in an already running app
+      --purpose string       Short purpose statement
+      --tags string          Comma-separated tags
+      --workitem string      Bind a workitem by selector (ref, id, key, path, slug, or festival id)
+```
+
+### Options inherited from parent commands
+
+```
+      --no-color   disable colored output
+```
+---
+
+## camp quest edit
+
+Edit an existing quest
+
+### Synopsis
+
+Edit quest metadata in your preferred editor.
+
+This opens a temporary YAML file, validates the edited result, and writes the
+updated quest back to its canonical location.
+
+Examples:
+  camp quest edit platform-launch
+
+```
+camp quest edit <quest> [flags]
+```
+
+### Options
+
+```
+  -h, --help        help for edit
+      --no-commit   Don't create a git commit
+```
+
+### Options inherited from parent commands
+
+```
+      --no-color   disable colored output
+```
+---
+
+## camp quest item
+
+Manage checklist items on a quest
+
+### Synopsis
+
+Manage the ordered checklist items owned by a quest.
+
+Items are the thin unit of work under a quest. Each item may optionally link a
+workitem so one design/explore packet can back several slices of work.
+
+Examples:
+  camp quest item add samantha "Ship meeting recorder" --workitem samantha-meeting-recorder
+  camp quest item done samantha 01eedb
+  camp quest item rank samantha 01eedb 15
+  camp quest item link-workitem samantha 01eedb samantha-remote-access
+
+```
+camp quest item [flags]
+```
+
+### Options
+
+```
+  -h, --help   help for item
+```
+
+### Options inherited from parent commands
+
+```
+      --no-color   disable colored output
+```
+---
+
+## camp quest item add
+
+Add a checklist item to a quest
+
+```
+camp quest item add <quest> <title> [flags]
+```
+
+### Options
+
+```
+  -h, --help              help for add
+      --json              Emit JSON output
+      --no-commit         Don't create a git commit
+      --notes string      Short note (depth belongs in the workitem)
+      --rank int          Explicit sort rank (default: appended after the last item)
+      --status string     Initial status: open|doing|done|dropped (default open)
+      --workitem string   Link a workitem by id, key, path, or ref
+```
+
+### Options inherited from parent commands
+
+```
+      --no-color   disable colored output
+```
+---
+
+## camp quest item done
+
+Mark a checklist item done
+
+```
+camp quest item done <quest> <item> [flags]
+```
+
+### Options
+
+```
+  -h, --help        help for done
+      --json        Emit JSON output
+      --no-commit   Don't create a git commit
+```
+
+### Options inherited from parent commands
+
+```
+      --no-color   disable colored output
+```
+---
+
+## camp quest item edit
+
+Edit a checklist item's title, notes, or status
+
+```
+camp quest item edit <quest> <item> [flags]
+```
+
+### Options
+
+```
+  -h, --help            help for edit
+      --json            Emit JSON output
+      --no-commit       Don't create a git commit
+      --notes string    New note
+      --status string   New status: open|doing|done|dropped
+      --title string    New title
+```
+
+### Options inherited from parent commands
+
+```
+      --no-color   disable colored output
+```
+---
+
+## camp quest item link-workitem
+
+Link a workitem to a checklist item
+
+```
+camp quest item link-workitem <quest> <item> <selector> [flags]
+```
+
+### Options
+
+```
+  -h, --help        help for link-workitem
+      --json        Emit JSON output
+      --no-commit   Don't create a git commit
+```
+
+### Options inherited from parent commands
+
+```
+      --no-color   disable colored output
+```
+---
+
+## camp quest item rank
+
+Set a checklist item's sort rank
+
+```
+camp quest item rank <quest> <item> <rank> [flags]
+```
+
+### Options
+
+```
+  -h, --help        help for rank
+      --json        Emit JSON output
+      --no-commit   Don't create a git commit
+```
+
+### Options inherited from parent commands
+
+```
+      --no-color   disable colored output
+```
+---
+
+## camp quest item reopen
+
+Reopen a completed checklist item
+
+```
+camp quest item reopen <quest> <item> [flags]
+```
+
+### Options
+
+```
+  -h, --help        help for reopen
+      --json        Emit JSON output
+      --no-commit   Don't create a git commit
+```
+
+### Options inherited from parent commands
+
+```
+      --no-color   disable colored output
+```
+---
+
+## camp quest item unlink-workitem
+
+Remove the workitem link from a checklist item
+
+```
+camp quest item unlink-workitem <quest> <item> [flags]
+```
+
+### Options
+
+```
+  -h, --help        help for unlink-workitem
+      --json        Emit JSON output
+      --no-commit   Don't create a git commit
+```
+
+### Options inherited from parent commands
+
+```
+      --no-color   disable colored output
+```
+---
+
+## camp quest link
+
+Link a camp artifact to a quest
+
+### Synopsis
+
+Associate a camp artifact (intent, design, festival, project, document)
+with a quest for traceability.
+
+The link type is auto-detected from the path:
+  .campaign/intents/ → intent
+  workflow/design/   → design
+  workflow/explore/  → explore
+  festivals/         → festival
+  projects/          → project
+  (other)            → document
+
+Use --type to override auto-detection.
+
+Examples:
+  camp quest link myquest .campaign/intents/inbox/some-intent.md
+  camp quest link myquest projects/camp
+  camp quest link myquest docs/spec.md --type spec
+
+```
+camp quest link <quest> <path> [flags]
+```
+
+### Options
+
+```
+  -h, --help          help for link
+      --no-commit     Don't create a git commit
+      --type string   Override auto-detected link type
+```
+
+### Options inherited from parent commands
+
+```
+      --no-color   disable colored output
+```
+---
+
+## camp quest links
+
+List linked artifacts for a quest
+
+### Synopsis
+
+Display all camp artifacts linked to a quest.
+
+Default output is a table. Use --json for machine-readable output.
+
+Examples:
+  camp quest links myquest
+  camp quest links myquest --json
+
+```
+camp quest links <quest> [flags]
+```
+
+### Options
+
+```
+  -h, --help   help for links
+      --json   Output as JSON
+```
+
+### Options inherited from parent commands
+
+```
+      --no-color   disable colored output
+```
+---
+
+## camp quest list
+
+List quests
+
+### Synopsis
+
+List quests in the current camp.
+
+In a terminal, 'camp quest list' (with no flags) opens an interactive
+browser that uses the same TUI components as 'camp list' (boxed frame,
+status-grouped rows, collapsing help). Press j/k to move, y to copy the
+quest path, f to cycle live / all / dungeon, and g or enter to jump to
+the selected quest when shell integration is loaded:
+
+  eval "$(camp shell-init zsh)"   # or bash / sh
+  camp shell-init fish | source   # fish
+  Invoke-Expression (& camp shell-init powershell | Out-String)   # PowerShell
+  camp quest list                 # interactive browser; g cds into the quest
+
+Piped or with --json it prints that format instead. --status/--all/--dungeon
+print the filtered table. -i forces the browser (and still prints the table
+when stdout is not a terminal).
+
+```
+camp quest list [flags]
+```
+
+### Options
+
+```
+      --all              Include dungeon quests
+      --dungeon          Show only dungeon quests
+  -h, --help             help for list
+  -i, --interactive      Open the interactive quest browser (prints the table when stdout is not a terminal)
+      --json             Emit JSON output
+      --status strings   Filter by quest status
+```
+
+### Options inherited from parent commands
+
+```
+      --no-color   disable colored output
+```
+---
+
+## camp quest pause
+
+Pause an active quest
+
+```
+camp quest pause <quest> [flags]
+```
+
+### Options
+
+```
+  -h, --help        help for pause
+      --no-commit   Don't create a git commit
+```
+
+### Options inherited from parent commands
+
+```
+      --no-color   disable colored output
+```
+---
+
+## camp quest rename
+
+Rename a quest
+
+### Synopsis
+
+Rename a quest without changing its immutable directory slug.
+
+Examples:
+  camp quest rename cost-reduction infrastructure-efficiency
+
+```
+camp quest rename <quest> <new-name> [flags]
+```
+
+### Options
+
+```
+  -h, --help        help for rename
+      --no-commit   Don't create a git commit
+```
+
+### Options inherited from parent commands
+
+```
+      --no-color   disable colored output
+```
+---
+
+## camp quest restore
+
+Restore a quest from the dungeon
+
+```
+camp quest restore <quest> [flags]
+```
+
+### Options
+
+```
+  -h, --help        help for restore
+      --no-commit   Don't create a git commit
+```
+
+### Options inherited from parent commands
+
+```
+      --no-color   disable colored output
+```
+---
+
+## camp quest resume
+
+Resume a paused quest
+
+```
+camp quest resume <quest> [flags]
+```
+
+### Options
+
+```
+  -h, --help        help for resume
+      --no-commit   Don't create a git commit
+```
+
+### Options inherited from parent commands
+
+```
+      --no-color   disable colored output
+```
+---
+
+## camp quest show
+
+Show quest metadata
+
+### Synopsis
+
+Show quest metadata in human-readable, JSON, or raw YAML form.
+
+Examples:
+  camp quest show qst_default
+  camp quest show platform-launch --json
+  camp quest show platform-launch --yaml
+
+```
+camp quest show <quest> [flags]
+```
+
+### Options
+
+```
+  -h, --help   help for show
+      --json   Output JSON
+      --yaml   Output raw YAML
+```
+
+### Options inherited from parent commands
+
+```
+      --no-color   disable colored output
+```
+---
+
+## camp quest status
+
+Show the active terminal quest context
+
+```
+camp quest status [flags]
+```
+
+### Options
+
+```
+  -h, --help   help for status
+      --json   Emit JSON output
+```
+
+### Options inherited from parent commands
+
+```
+      --no-color   disable colored output
+```
+---
+
+## camp quest unlink
+
+Remove a linked artifact from a quest
+
+### Synopsis
+
+Remove the association between a camp artifact and a quest.
+
+The path must match exactly as it was linked (camp-root-relative).
+
+Examples:
+  camp quest unlink myquest .campaign/intents/inbox/some-intent.md
+  camp quest unlink myquest projects/camp
+
+```
+camp quest unlink <quest> <path> [flags]
+```
+
+### Options
+
+```
+  -h, --help        help for unlink
+      --no-commit   Don't create a git commit
+```
+
+### Options inherited from parent commands
+
+```
+      --no-color   disable colored output
+```
+---
+
+## camp quest update
+
+Update quest metadata
+
+### Synopsis
+
+Update quest metadata without opening an editor.
+
+Omitted fields are left unchanged. Provide an empty value to clear a field.
+
+Examples:
+  camp quest update platform-launch --purpose "harden launch path"
+  camp quest update platform-launch --description ""
+  camp quest update platform-launch --purpose "..." --description "..."
+
+```
+camp quest update <quest> [flags]
+```
+
+### Options
+
+```
+      --description string   Full description
+  -h, --help                 help for update
+      --no-commit            Don't create a git commit
+      --purpose string       Short purpose statement
+```
+
+### Options inherited from parent commands
+
+```
+      --no-color   disable colored output
+```
+---
+
+## camp quest use
+
+Activate a quest for the current terminal
+
+### Synopsis
+
+Activate a quest as the working context for the current terminal.
+
+This prints shell code that sets CAMP_QUEST for the current shell, so
+child processes (including camp itself) inherit the quest. It is terminal-local:
+other terminals in the same camp keep their own context.
+
+The shell wrapper installed by 'camp shell-init' evaluates this automatically.
+To activate without the wrapper:
+
+  eval "$(camp quest use billing --shell bash)"
+
+Examples:
+  camp quest use billing
+  camp quest use billing --allow-dungeon
+
+```
+camp quest use <quest> [flags]
+```
+
+### Options
+
+```
+      --allow-dungeon   Allow activating a completed or archived quest
+  -h, --help            help for use
+      --shell string    Shell dialect: posix (bash/zsh) or fish (default posix)
+```
+
+### Options inherited from parent commands
+
+```
+      --no-color   disable colored output
+```
+---
+
 ## camp refs-sync
 
 Sync submodule ref pointers in camp root
@@ -9232,7 +10054,7 @@ camp workitem adopt [dir] [flags]
   -h, --help                  help for adopt
       --id string             override the generated id
       --project stringArray   add a related project path (repeatable, e.g. projects/camp)
-      --quest string          quest ID to associate (requires dev-profile camp; forward-compatible flag)
+      --quest string          capture quest_id from this quest (defaults to CAMP_QUEST env var if set)
       --tag stringArray       add a tag (repeatable, normalized to lowercase kebab-case)
       --title string          human-readable title
       --type string           workitem type (feature, bug, chore, or custom) (default "feature")
@@ -9462,7 +10284,7 @@ camp workitem create <slug> [flags]
       --id string             override the generated id
       --json                  emit a structured JSON result
       --project stringArray   add a related project path (repeatable, e.g. projects/camp)
-      --quest string          quest ID to associate (requires dev-profile camp; forward-compatible flag)
+      --quest string          capture quest_id from this quest (defaults to CAMP_QUEST env var if set)
       --tag stringArray       add a tag (repeatable, normalized to lowercase kebab-case)
       --title string          human-readable title
       --type string           workitem type (feature, bug, chore, or custom); when omitted, inferred from a workflow/<type>/ cwd, --dir, or --file (default "feature")

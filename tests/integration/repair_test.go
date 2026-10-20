@@ -97,6 +97,66 @@ func TestInitRepair_RestoresMissingQuestScaffoldWithoutActiveFile(t *testing.T) 
 	assert.False(t, activeExists, "repair should not create quests/.active")
 }
 
+// A camp initialized while init pruned the quest scaffold gets it back lazily
+// from `camp quest list`. Repair must keep that scaffold and every quest in it.
+func TestInitRepair_KeepsQuestScaffoldCreatedByQuestList(t *testing.T) {
+	tc := GetSharedContainer(t)
+	path := setupRepairCampaign(t, tc, "repair-keeps-lazy-quests")
+	questRoot := path + "/" + quest.RootDirName
+
+	_, exitCode, err := tc.ExecCommand("rm", "-rf", questRoot)
+	require.NoError(t, err)
+	require.Zero(t, exitCode)
+	tc.GitOutput(t, path, "add", "-A")
+	tc.GitOutput(t, path, "commit", "-m", "simulate a camp without the quest scaffold")
+
+	out, err := tc.RunCampInDir(path, "quest", "list")
+	require.NoError(t, err, out)
+	assert.Contains(t, out, "default", "quest list should recreate the default quest")
+
+	out, err = tc.RunCampInDir(path, "quest", "create", "kept",
+		"--no-editor", "--purpose", "survive repair", "--no-commit")
+	require.NoError(t, err, out)
+
+	runRepair(t, tc, path)
+
+	defaultQuest := fmt.Sprintf("%s/%s/%s", questRoot, quest.DefaultDirName, quest.FileName)
+	exists, err := tc.CheckFileExists(defaultQuest)
+	require.NoError(t, err)
+	assert.True(t, exists, "repair should keep %s", defaultQuest)
+
+	out, err = tc.RunCampInDir(path, "quest", "list")
+	require.NoError(t, err, out)
+	assert.Contains(t, out, "default", "repair should keep the default quest")
+	assert.Contains(t, out, "kept", "repair should keep user quests")
+}
+
+// Completing the default quest moves it into the quest dungeon as qst_default.
+// Repair must leave it addressable there instead of restoring a second default.
+func TestInitRepair_KeepsCompletedDefaultQuestInDungeon(t *testing.T) {
+	tc := GetSharedContainer(t)
+	path := setupRepairCampaign(t, tc, "repair-completed-default")
+	defaultQuest := fmt.Sprintf("%s/%s/%s/%s", path, quest.RootDirName, quest.DefaultDirName, quest.FileName)
+
+	out, err := tc.RunCampInDir(path, "quest", "complete", quest.DefaultQuestName)
+	require.NoError(t, err, out)
+
+	preview, err := tc.RunCampInDir(path, "init", "--repair", "--dry-run")
+	require.NoError(t, err, preview)
+	assert.NotContains(t, preview, quest.DefaultDirName+"/"+quest.FileName,
+		"repair preview should not offer a second default quest")
+
+	runRepair(t, tc, path)
+
+	exists, err := tc.CheckFileExists(defaultQuest)
+	require.NoError(t, err)
+	assert.False(t, exists, "repair should not recreate %s", defaultQuest)
+
+	out, err = tc.RunCampInDir(path, "quest", "show", quest.DefaultQuestID, "--json")
+	require.NoError(t, err, out)
+	assert.Regexp(t, `"status":\s*"completed"`, out, "qst_default should still resolve to the completed quest")
+}
+
 func TestInitRepair_RestoresMissingSkillFiles(t *testing.T) {
 	tc := GetSharedContainer(t)
 	path := setupRepairCampaign(t, tc, "repair-skill-files")

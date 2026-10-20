@@ -20,21 +20,17 @@ import (
 	"github.com/Obedience-Corp/camp/internal/scaffold"
 	intskills "github.com/Obedience-Corp/camp/internal/skills"
 	"github.com/Obedience-Corp/camp/internal/ui"
-	"github.com/Obedience-Corp/camp/internal/version"
 	"github.com/Obedience-Corp/camp/pkg/ledgerkit"
 	"github.com/spf13/cobra"
 )
 
 func initLongDescription() string {
-	questLine := ""
-	if version.Profile == "dev" {
-		questLine = "  .campaign/quests/       - Quest execution contexts\n"
-	}
 	return `Initialize a new camp directory structure.
 
 Creates the standard camp directories:
   .campaign/              - Camp configuration and metadata
-` + questLine + `  .campaign/intents/      - System-managed intent state
+  .campaign/quests/       - Quest execution contexts
+  .campaign/intents/      - System-managed intent state
   projects/               - Project repositories (submodules or worktrees)
   projects/worktrees/     - Git worktrees for parallel development
   festivals/              - Festival methodology workspace (via fest init)

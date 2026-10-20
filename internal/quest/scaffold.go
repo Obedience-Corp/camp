@@ -129,7 +129,7 @@ func ensureDefaultQuest(ctx context.Context, campaignRoot string, result *Scaffo
 	// default in that state would mint a second quest sharing that identity and
 	// leave the historical default ambiguous and unaddressable, so only create a
 	// fresh default when none exists anywhere.
-	exists, err := defaultQuestExists(ctx, campaignRoot)
+	exists, err := DefaultQuestExists(ctx, campaignRoot)
 	if err != nil {
 		return err
 	}
@@ -145,9 +145,9 @@ func ensureDefaultQuest(ctx context.Context, campaignRoot string, result *Scaffo
 	return nil
 }
 
-// defaultQuestExists reports whether a quest with the fixed default identity is
+// DefaultQuestExists reports whether a quest with the fixed default identity is
 // present anywhere in the campaign, including the quest dungeon.
-func defaultQuestExists(ctx context.Context, campaignRoot string) (bool, error) {
+func DefaultQuestExists(ctx context.Context, campaignRoot string) (bool, error) {
 	if !Exists(campaignRoot) {
 		return false, nil
 	}
