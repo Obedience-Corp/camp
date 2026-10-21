@@ -4,9 +4,11 @@ package integration
 
 import (
 	"encoding/json"
-	"github.com/stretchr/testify/require"
 	"strings"
 	"testing"
+
+	"github.com/stretchr/testify/require"
+	"gopkg.in/yaml.v3"
 )
 
 func TestIntegration_SettingsExplicitCampaign(t *testing.T) {
@@ -50,4 +52,59 @@ func TestIntegration_SettingsExplicitCampaign(t *testing.T) {
 	afterB, err := tc.ReadFile(b + "/.campaign/campaign.yaml")
 	require.NoError(t, err)
 	require.Equal(t, beforeB, afterB)
+}
+
+func TestIntegration_SettingsExplicitCampaignRejectsWithoutWrites(t *testing.T) {
+	tc := GetSharedContainer(t)
+	const a = "/test/settings-readonly-a"
+	const b = "/test/settings-readonly-b"
+	for _, name := range []string{"settings-readonly-a", "settings-readonly-b"} {
+		out, err := tc.RunCamp("init", "/test/"+name, "--name", name, "-d", "Read-only validation test", "-m", "original", "--no-git", "--force")
+		require.NoError(t, err, out)
+	}
+	const manifestPath = b + "/.campaign/campaign.yaml"
+	original, err := tc.ReadFile(manifestPath)
+	require.NoError(t, err)
+	// Hash every camp configuration file to catch rewrites and newly created
+	// files, including jumps.yaml and local settings, on either failure path.
+	snapshot := func(root string) string {
+		return tc.Shell(t, "cd "+root+" && find .campaign -type f -exec sha256sum {} \\; | sort")
+	}
+	for _, defect := range []string{"missing-id", "mismatched-id", "missing-manifest"} {
+		for _, verb := range []string{"get", "set"} {
+			for _, cwd := range []string{a, b} {
+				t.Run(defect+"/"+verb+"/"+strings.TrimPrefix(cwd, "/test/"), func(t *testing.T) {
+					var manifest map[string]any
+					require.NoError(t, yaml.Unmarshal([]byte(original), &manifest))
+					if defect == "missing-id" {
+						delete(manifest, "id")
+					} else if defect == "mismatched-id" {
+						manifest["id"] = "00000000-0000-4000-8000-000000000001"
+					}
+					data, err := yaml.Marshal(manifest)
+					require.NoError(t, err)
+					require.NoError(t, tc.WriteFile(manifestPath, string(data)))
+					tc.Shell(t, "rm -f "+b+"/.campaign/settings/jumps.yaml")
+					if defect == "missing-manifest" {
+						tc.Shell(t, "rm "+manifestPath)
+					}
+					beforeA, beforeB := snapshot(a), snapshot(b)
+					args := []string{"settings", verb, "local.campaign.mission"}
+					if verb == "set" {
+						args = append(args, "must-not-write")
+					}
+					args = append(args, "--campaign", "settings-readonly-b")
+					out, err := tc.RunCampInDir(cwd, args...)
+					require.Error(t, err, out)
+					if defect == "missing-manifest" {
+						require.Contains(t, out, "load target camp")
+					} else {
+						require.Contains(t, out, "identity no longer matches")
+					}
+					require.Equal(t, beforeA, snapshot(a), "changed the other camp on rejection")
+					require.Equal(t, beforeB, snapshot(b), "changed the selected camp on rejection")
+				})
+			}
+		}
+	}
 }

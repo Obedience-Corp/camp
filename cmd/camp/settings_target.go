@@ -38,7 +38,9 @@ func settingsTargetContext(cmd *cobra.Command) (context.Context, error) {
 	if err != nil {
 		return nil, err
 	}
-	cfg, err := config.LoadCampaignConfig(ctx, selected.Path)
+	// Identity validation must not backfill an ID or create jumps.yaml before
+	// accepting the target: a rejected get or set must leave the camp untouched.
+	cfg, err := config.ReadCampaignConfig(ctx, selected.Path)
 	if err != nil {
 		return nil, camperrors.Wrap(err, "load target camp")
 	}
