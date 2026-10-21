@@ -7681,6 +7681,386 @@ camp settings [flags]
 ```
 ---
 
+## camp settings catalog
+
+List camp documents
+
+### Synopsis
+
+List documents under the selected camp's .campaign directory.
+
+Prints the settings-documents/v1alpha1 catalog, including known schemas that
+are absent. Nothing is created or rewritten.
+
+```
+camp settings catalog [flags]
+```
+
+### Examples
+
+```
+  camp settings catalog
+  camp settings catalog --json
+  camp settings catalog --campaign my-camp --json
+```
+
+### Options
+
+```
+  -c, --campaign string   Target camp by exact registered name or ID (independent of cwd)
+  -h, --help              help for catalog
+      --json              emit a structured JSON result
+```
+
+### Options inherited from parent commands
+
+```
+      --no-color   disable colored output
+```
+---
+
+## camp settings document
+
+Read and edit camp documents
+
+### Synopsis
+
+Read, validate, and edit documents under the selected camp's .campaign directory.
+
+Paths are relative to .campaign. Known catalog IDs are accepted wherever a path is.
+Reads and validation do not create or rewrite files. Mutations require
+--expected-revision and return the persisted snapshot.
+
+### Options
+
+```
+  -h, --help   help for document
+```
+
+### Options inherited from parent commands
+
+```
+      --no-color   disable colored output
+```
+---
+
+## camp settings document action
+
+Run an owner action on a camp document
+
+### Synopsis
+
+Run one supported owner action. The JSON body is read from stdin.
+
+--stdin and a non-empty --expected-revision are required. The response is the
+persisted snapshot with applied:true. Unsupported actions are errors.
+
+```
+camp settings document action <path> <action> [flags]
+```
+
+### Examples
+
+```
+  camp settings document action settings/pins.json pin --expected-revision absent --stdin
+  camp settings document action settings/pins.json unpin --expected-revision sha256:abc --stdin --json
+  camp settings document action settings/workitems.json workitem-priority --campaign my-camp --expected-revision absent --stdin --json
+```
+
+### Options
+
+```
+  -c, --campaign string            Target camp by exact registered name or ID (independent of cwd)
+      --expected-revision string   Revision the edit must match (absent or sha256:<hex>)
+  -h, --help                       help for action
+      --json                       emit a structured JSON result
+      --stdin                      read the request body from stdin
+```
+
+### Options inherited from parent commands
+
+```
+      --no-color   disable colored output
+```
+---
+
+## camp settings document create
+
+Create a camp document from stdin
+
+### Synopsis
+
+Create one absent document from the raw UTF-8 bytes on stdin.
+
+--stdin and --expected-revision absent are required. An existing path is refused.
+The response is the persisted snapshot.
+
+```
+camp settings document create <path> [flags]
+```
+
+### Examples
+
+```
+  camp settings document create notes/readme.md --expected-revision absent --stdin
+  camp settings document create notes/readme.md --expected-revision absent --stdin --json
+  camp settings document create notes/readme.md --campaign my-camp --expected-revision absent --stdin --json
+```
+
+### Options
+
+```
+  -c, --campaign string            Target camp by exact registered name or ID (independent of cwd)
+      --expected-revision string   Revision the edit must match (absent or sha256:<hex>)
+  -h, --help                       help for create
+      --json                       emit a structured JSON result
+      --stdin                      read the request body from stdin
+```
+
+### Options inherited from parent commands
+
+```
+      --no-color   disable colored output
+```
+---
+
+## camp settings document delete
+
+Delete a camp document
+
+### Synopsis
+
+Delete one document inside .campaign.
+
+A non-empty --expected-revision is required. The response is an absent snapshot
+for the original path.
+
+```
+camp settings document delete <path> [flags]
+```
+
+### Examples
+
+```
+  camp settings document delete notes/done.md --expected-revision sha256:abc
+  camp settings document delete notes/done.md --expected-revision sha256:abc --json
+  camp settings document delete notes/done.md --campaign my-camp --expected-revision sha256:abc --json
+```
+
+### Options
+
+```
+  -c, --campaign string            Target camp by exact registered name or ID (independent of cwd)
+      --expected-revision string   Revision the edit must match (absent or sha256:<hex>)
+  -h, --help                       help for delete
+      --json                       emit a structured JSON result
+```
+
+### Options inherited from parent commands
+
+```
+      --no-color   disable colored output
+```
+---
+
+## camp settings document get
+
+Print one camp document
+
+### Synopsis
+
+Print one document under the selected camp's .campaign directory.
+
+<path> is a relative path or a known catalog ID. Missing files stay absent.
+Nothing is created or rewritten.
+
+```
+camp settings document get <path> [flags]
+```
+
+### Examples
+
+```
+  camp settings document get campaign.yaml
+  camp settings document get settings/local.json --json
+  camp settings document get campaign.yaml --campaign my-camp --json
+```
+
+### Options
+
+```
+  -c, --campaign string   Target camp by exact registered name or ID (independent of cwd)
+  -h, --help              help for get
+      --json              emit a structured JSON result
+```
+
+### Options inherited from parent commands
+
+```
+      --no-color   disable colored output
+```
+---
+
+## camp settings document patch
+
+Patch a camp document from stdin
+
+### Synopsis
+
+Apply a JSON patch from stdin to one document.
+
+The body is {"changes":[{"op":"set"|"remove","path":["key"],"value":...}]}.
+--stdin and a non-empty --expected-revision are required. Comments and unknown
+keys are preserved. The response is the persisted snapshot.
+
+```
+camp settings document patch <path> [flags]
+```
+
+### Examples
+
+```
+  camp settings document patch settings/jumps.yaml --expected-revision sha256:abc --stdin
+  camp settings document patch settings/jumps.yaml --expected-revision sha256:abc --stdin --json
+  camp settings document patch settings/jumps.yaml --campaign my-camp --expected-revision sha256:abc --stdin --json
+```
+
+### Options
+
+```
+  -c, --campaign string            Target camp by exact registered name or ID (independent of cwd)
+      --expected-revision string   Revision the edit must match (absent or sha256:<hex>)
+  -h, --help                       help for patch
+      --json                       emit a structured JSON result
+      --stdin                      read the request body from stdin
+```
+
+### Options inherited from parent commands
+
+```
+      --no-color   disable colored output
+```
+---
+
+## camp settings document rename
+
+Rename a camp document
+
+### Synopsis
+
+Rename one document to <destination> inside .campaign.
+
+A non-empty --expected-revision is required. An existing destination is refused.
+The response is the destination snapshot.
+
+```
+camp settings document rename <path> <destination> [flags]
+```
+
+### Examples
+
+```
+  camp settings document rename notes/readme.md notes/done.md --expected-revision sha256:abc
+  camp settings document rename notes/readme.md notes/done.md --expected-revision sha256:abc --json
+  camp settings document rename notes/readme.md notes/done.md --campaign my-camp --expected-revision sha256:abc --json
+```
+
+### Options
+
+```
+  -c, --campaign string            Target camp by exact registered name or ID (independent of cwd)
+      --expected-revision string   Revision the edit must match (absent or sha256:<hex>)
+  -h, --help                       help for rename
+      --json                       emit a structured JSON result
+```
+
+### Options inherited from parent commands
+
+```
+      --no-color   disable colored output
+```
+---
+
+## camp settings document set
+
+Replace a camp document from stdin
+
+### Synopsis
+
+Replace one document with the raw UTF-8 bytes from stdin.
+
+--stdin and a non-empty --expected-revision are required. The write is refused
+when the current revision differs. The response is the persisted snapshot.
+
+```
+camp settings document set <path> [flags]
+```
+
+### Examples
+
+```
+  camp settings document set settings/jumps.yaml --expected-revision sha256:abc --stdin
+  camp settings document set settings/jumps.yaml --expected-revision sha256:abc --stdin --json
+  camp settings document set settings/jumps.yaml --campaign my-camp --expected-revision sha256:abc --stdin --json
+```
+
+### Options
+
+```
+  -c, --campaign string            Target camp by exact registered name or ID (independent of cwd)
+      --expected-revision string   Revision the edit must match (absent or sha256:<hex>)
+  -h, --help                       help for set
+      --json                       emit a structured JSON result
+      --stdin                      read the request body from stdin
+```
+
+### Options inherited from parent commands
+
+```
+      --no-color   disable colored output
+```
+---
+
+## camp settings document validate
+
+Validate camp document source from stdin
+
+### Synopsis
+
+Validate candidate document bytes without writing them.
+
+<path> is a relative path or a known catalog ID. --stdin is required and reads
+raw UTF-8 source. An invalid candidate is a result with valid:false.
+Nothing is created or rewritten.
+
+```
+camp settings document validate <path> [flags]
+```
+
+### Examples
+
+```
+  camp settings document validate campaign.yaml --stdin
+  camp settings document validate settings/local.json --stdin --json
+  camp settings document validate campaign.yaml --campaign my-camp --stdin --json
+```
+
+### Options
+
+```
+  -c, --campaign string   Target camp by exact registered name or ID (independent of cwd)
+  -h, --help              help for validate
+      --json              emit a structured JSON result
+      --stdin             read document source from stdin
+```
+
+### Options inherited from parent commands
+
+```
+      --no-color   disable colored output
+```
+---
+
 ## camp settings get
 
 Print camp settings

@@ -1,0 +1,69 @@
+{
+  "schema_version": "settings-documents/v1alpha1",
+  "camp_id": "00000000-0000-4000-8000-000000000001",
+  "camp_root": "/fixture/camp",
+  "id": "campaign_manifest",
+  "path": "campaign.yaml",
+  "title": "Camp manifest",
+  "scope": "camp",
+  "format": "yaml",
+  "owner": "camp",
+  "exists": true,
+  "capabilities": {
+    "read": true,
+    "source_edit": true,
+    "create": false,
+    "rename": false,
+    "delete": false,
+    "form": true,
+    "actions": []
+  },
+  "fields": [
+    {
+      "path": [
+        "id"
+      ],
+      "label": "ID",
+      "type": "string",
+      "read_only": true
+    },
+    {
+      "path": [
+        "mission"
+      ],
+      "label": "Mission",
+      "type": "string"
+    },
+    {
+      "path": [
+        "concepts"
+      ],
+      "label": "Concepts",
+      "type": "array",
+      "items": {
+        "path": [],
+        "label": "Concept",
+        "type": "object",
+        "properties": [
+          {
+            "path": [
+              "name"
+            ],
+            "label": "Name",
+            "type": "string"
+          }
+        ]
+      }
+    }
+  ],
+  "revision": "sha256:5d7c74bae1fae30081cfe64a2c852747364b3b524fb9b687b7cd09e9dd237dd5",
+  "content": "id: 00000000-0000-4000-8000-000000000001\nname: fixture\ntype: personal\nmission: Build useful tools\n",
+  "values": {
+    "id": "00000000-0000-4000-8000-000000000001",
+    "name": "fixture",
+    "type": "personal",
+    "mission": "Build useful tools"
+  },
+  "diagnostics": [],
+  "applied": false
+}

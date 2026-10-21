@@ -1,0 +1,7 @@
+{
+  "changes": [
+    {"op": "set", "path": ["mission"], "value": "Build reliable tools"},
+    {"op": "set", "path": ["intents", "tags"], "value": ["feature", "bug"]},
+    {"op": "remove", "path": ["description"]}
+  ]
+}

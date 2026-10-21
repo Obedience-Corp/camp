@@ -5,7 +5,6 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
-	"strings"
 	"time"
 
 	camperrors "github.com/Obedience-Corp/camp/internal/errors"
@@ -93,15 +92,18 @@ func (s *Store) Get(name string) (Pin, bool) {
 
 // Add creates a new pin. Returns error if name already exists.
 func (s *Store) Add(name, path string) error {
-	if _, exists := s.Get(name); exists {
+	return s.AddPin(Pin{Name: name, Path: path})
+}
+
+// AddPin appends a pin and stamps CreatedAt. Path and AbsPath are stored as given.
+// A name that already exists is rejected.
+func (s *Store) AddPin(in Pin) error {
+	if _, exists := s.Get(in.Name); exists {
 		return camperrors.Wrapf(camperrors.ErrAlreadyExists,
-			"pin %q already exists (use 'camp unpin %s' first)", name, name)
+			"pin %q already exists (use 'camp unpin %s' first)", in.Name, in.Name)
 	}
-	s.pins = append(s.pins, Pin{
-		Name:      name,
-		Path:      path,
-		CreatedAt: time.Now(),
-	})
+	in.CreatedAt = time.Now()
+	s.pins = append(s.pins, in)
 	return nil
 }
 
@@ -114,6 +116,30 @@ func (s *Store) Remove(name string) error {
 		}
 	}
 	return camperrors.Wrapf(camperrors.ErrNotFound, "pin %q not found", name)
+}
+
+// Decode parses pins JSON into the store. It does not touch the filesystem.
+// Empty input and JSON null become an empty list. On error the store is unchanged.
+func (s *Store) Decode(data []byte) error {
+	if len(data) == 0 {
+		s.pins = nil
+		return nil
+	}
+	var pins []Pin
+	if err := json.Unmarshal(data, &pins); err != nil {
+		return camperrors.Wrap(err, "parse pins")
+	}
+	s.pins = pins
+	return nil
+}
+
+// Encode serializes the current pins. It does not touch the filesystem.
+func (s *Store) Encode() ([]byte, error) {
+	data, err := json.MarshalIndent(s.pins, "", "  ")
+	if err != nil {
+		return nil, camperrors.Wrap(err, "marshal pins")
+	}
+	return data, nil
 }
 
 // FindByPath returns the pin whose path matches, or false if not found.
@@ -211,7 +237,7 @@ func (s *Store) MigrateAbsoluteToRelative(root string) bool {
 			}
 
 			rel, err := filepath.Rel(root, resolved)
-			if err == nil && rel != ".." && !strings.HasPrefix(rel, "../") {
+			if err == nil && filepath.IsLocal(rel) {
 				s.pins[i].Path = rel
 				changed = true
 			} else if resolved != p.Path {
@@ -219,7 +245,7 @@ func (s *Store) MigrateAbsoluteToRelative(root string) bool {
 				// the original cleaned path in case the resolved form
 				// diverged (e.g. /tmp vs /private/tmp on macOS for deleted dirs)
 				rel2, err2 := filepath.Rel(root, filepath.Clean(p.Path))
-				if err2 == nil && rel2 != ".." && !strings.HasPrefix(rel2, "../") {
+				if err2 == nil && filepath.IsLocal(rel2) {
 					s.pins[i].Path = rel2
 					changed = true
 				} else {

@@ -1,0 +1,15 @@
+{
+  "path": ["shortcuts"],
+  "label": "Shortcuts",
+  "type": "object",
+  "additional_properties": {
+    "path": [],
+    "label": "Shortcut",
+    "type": "object",
+    "properties": [
+      {"path": ["path"], "label": "Path", "type": "string"},
+      {"path": ["command"], "label": "Command", "type": "string"},
+      {"path": ["workdir"], "label": "Workdir", "type": "string"}
+    ]
+  }
+}

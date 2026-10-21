@@ -1,0 +1,7 @@
+{
+  "schema_version": "settings-documents/v1alpha1",
+  "error": {
+    "code": "revision_conflict",
+    "message": "Document changed since it was read; reload and compare before saving"
+  }
+}

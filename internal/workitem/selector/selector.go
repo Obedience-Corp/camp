@@ -21,6 +21,8 @@ type ResolveOptions struct {
 	// found. Reserved for interactive callers; commit-path resolvers should
 	// leave this false.
 	AllowFuzzy bool
+	// ReadOnly loads camp config without writing a generated id or default jumps.yaml.
+	ReadOnly bool
 }
 
 var (
@@ -53,7 +55,7 @@ func Resolve(ctx context.Context, root string, query string, opts ResolveOptions
 		return nil, camperrors.NewValidation("selector", "selector must not be empty", nil)
 	}
 
-	items, err := discover(ctx, root)
+	items, err := discover(ctx, root, opts)
 	if err != nil {
 		return nil, err
 	}
@@ -111,8 +113,16 @@ func Resolve(ctx context.Context, root string, query string, opts ResolveOptions
 	return nil, notFound(query, items)
 }
 
-func discover(ctx context.Context, root string) ([]workitem.WorkItem, error) {
-	cfg, err := config.LoadCampaignConfig(ctx, root)
+func discover(ctx context.Context, root string, opts ResolveOptions) ([]workitem.WorkItem, error) {
+	var (
+		cfg *config.CampaignConfig
+		err error
+	)
+	if opts.ReadOnly {
+		cfg, err = config.ReadCampaignConfig(ctx, root)
+	} else {
+		cfg, err = config.LoadCampaignConfig(ctx, root)
+	}
 	if err != nil {
 		return nil, camperrors.Wrap(err, "load camp config")
 	}
