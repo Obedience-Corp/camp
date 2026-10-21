@@ -34,6 +34,7 @@ func TestDoctor_MissingRefIsWarning(t *testing.T) {
 	writeLegacyWorkitem(t, root, "legacy")
 
 	cmd := &cobra.Command{}
+	cmd.Flags().Bool("verbose", true, "")
 	var stdout bytes.Buffer
 	cmd.SetOut(&stdout)
 	cmd.SetErr(&bytes.Buffer{})
@@ -58,6 +59,7 @@ func TestDoctor_FixBackfillsRefAndPreservesFields(t *testing.T) {
 	}
 
 	cmd := &cobra.Command{}
+	cmd.Flags().Bool("verbose", true, "")
 	cmd.SetOut(&bytes.Buffer{})
 	cmd.SetErr(&bytes.Buffer{})
 	if err := runDoctor(context.Background(), cmd, false, true); err != nil {
@@ -119,6 +121,7 @@ func TestDoctor_FixUpdatesEmptyRefWithoutDuplicateKey(t *testing.T) {
 	}
 
 	cmd := &cobra.Command{}
+	cmd.Flags().Bool("verbose", true, "")
 	cmd.SetOut(&bytes.Buffer{})
 	cmd.SetErr(&bytes.Buffer{})
 	if err := runDoctor(context.Background(), cmd, false, true); err != nil {
@@ -156,6 +159,7 @@ func TestDoctor_FixHandlesCollisionsAcrossManyWorkitems(t *testing.T) {
 	}
 
 	cmd := &cobra.Command{}
+	cmd.Flags().Bool("verbose", true, "")
 	cmd.SetOut(&bytes.Buffer{})
 	cmd.SetErr(&bytes.Buffer{})
 	if err := runDoctor(context.Background(), cmd, false, true); err != nil {

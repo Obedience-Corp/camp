@@ -265,6 +265,16 @@ Report health issues in the link registry.
 camp workitem doctor [flags]
 ```
 
+The terminal report separates errors, warnings that need review, and expected
+state that needs no action. Missing worktrees with the same unavailable parent
+project share one explanation, with every affected path listed. Counts describe
+findings; an informational summary can cover several worktrees.
+
+Use `camp workitem doctor --verbose` for finding codes, link IDs, and exact
+per-link removal commands. Use `--json` for the stable, ungrouped findings.
+`--fix` reports when the remaining findings have no automatic repair; rerunning
+it will not remove references whose ownership Camp cannot establish.
+
 Doctor checks for:
 
 - Links whose `workitem_id` no longer resolves on disk (orphaned workitem).

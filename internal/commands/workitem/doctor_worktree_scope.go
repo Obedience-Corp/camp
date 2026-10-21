@@ -70,9 +70,12 @@ func machineLocalFinding(root string, layout links.ScopeLayout, link links.Link)
 		}
 	}
 	return docFinding{
-		Code:     codeScopeNotLocal,
-		Severity: docSeverityWarning,
-		Target:   "link:" + link.ID,
+		scopePath:    link.Scope.Path,
+		scopeProject: link.Scope.ProjectFor(layout),
+		scopeKind:    link.Scope.Kind,
+		Code:         codeScopeNotLocal,
+		Severity:     docSeverityWarning,
+		Target:       "link:" + link.ID,
 		Message: "scope path " + link.Scope.Path + " is not on this machine" +
 			" (" + string(link.Scope.Kind) + " scopes are machine-local)",
 		FixHint: "expected if the worktree or submodule lives on another machine;" +
@@ -102,9 +105,10 @@ func collapseWorktreeGone(findings []docFinding) []docFinding {
 		return kept
 	}
 	return append(kept, docFinding{
-		Code:     codeWorktreeGone,
-		Severity: docSeverityInfo,
-		Target:   "registry",
+		worktreeCount: count,
+		Code:          codeWorktreeGone,
+		Severity:      docSeverityInfo,
+		Target:        "registry",
 		Message: strconv.Itoa(count) + " worktree link(s) point at worktrees that are gone;" +
 			" their projects are still present, so the workitems stay linked to them",
 		FixHint: "no action needed; `camp workitem links` names them, and" +

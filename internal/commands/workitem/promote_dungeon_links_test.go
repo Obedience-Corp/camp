@@ -56,6 +56,7 @@ func seedExampleLink(t *testing.T, root string) string {
 func doctorOutput(t *testing.T, fix bool) string {
 	t.Helper()
 	cmd := &cobra.Command{}
+	cmd.Flags().Bool("verbose", true, "")
 	var stdout bytes.Buffer
 	cmd.SetOut(&stdout)
 	cmd.SetErr(&bytes.Buffer{})
