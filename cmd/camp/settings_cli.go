@@ -271,7 +271,7 @@ func runSettingsGet(ctx context.Context, cmd *cobra.Command, args []string, json
 	return printSettingsAll(cmd.OutOrStdout(), cfg, local, inCampaign, effective, effectivePrefs)
 }
 
-// resolveSettingValue returns the value for a key, loading campaign.yaml for the
+// resolveSettingValue returns the value for a key, reading campaign.yaml for the
 // campaign scalar twins and delegating everything else to settingsValueFor so
 // existing keys resolve exactly as before.
 func resolveSettingValue(ctx context.Context, key string, cfg *config.GlobalConfig, local *config.LocalSettings, inCampaign bool) (any, error) {
@@ -303,9 +303,9 @@ func campaignScalarGet(ctx context.Context, key string) (any, error) {
 	if err != nil || root == "" {
 		return nil, errSettingsLocalOutsideCampaign(key)
 	}
-	cfg, err := config.LoadCampaignConfig(ctx, root)
+	cfg, err := config.ReadCampaignConfig(ctx, root)
 	if err != nil {
-		return nil, camperrors.Wrap(err, "loading campaign.yaml")
+		return nil, camperrors.Wrap(err, "reading campaign.yaml")
 	}
 	switch key {
 	case settingsKeyLocalCampaignName:
@@ -490,16 +490,16 @@ func setCampaignScalar(ctx context.Context, cmd *cobra.Command, key, value strin
 	if err != nil || root == "" {
 		return errSettingsLocalOutsideCampaign(key)
 	}
-	cfg, err := config.LoadCampaignConfig(ctx, root)
+	cfg, err := config.ReadCampaignConfig(ctx, root)
 	if err != nil {
-		return camperrors.Wrap(err, "loading campaign.yaml")
+		return camperrors.Wrap(err, "reading campaign.yaml")
 	}
 	display, err := applyCampaignScalarKey(cfg, key, value)
 	if err != nil {
 		return err
 	}
-	// Same load-time invariant as SaveCampaignConfig consumers: refuse empty
-	// or illegal names before they brick subsequent camp commands.
+	// Refuse empty or illegal names before saving campaign.yaml; reading the
+	// existing config must not create jumps.yaml on validation failures.
 	if err := config.ValidateCampaignConfig(cfg); err != nil {
 		return camperrors.Wrap(err, "invalid campaign.yaml")
 	}

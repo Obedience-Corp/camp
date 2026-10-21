@@ -108,3 +108,59 @@ func TestIntegration_SettingsExplicitCampaignRejectsWithoutWrites(t *testing.T) 
 		}
 	}
 }
+
+func TestIntegration_SettingsCampaignScalarReadAndRejectedSetDoNotWrite(t *testing.T) {
+	tc := GetSharedContainer(t)
+	const a = "/test/settings-scalar-readonly-a"
+	const b = "/test/settings-scalar-readonly-b"
+	for _, name := range []string{"settings-scalar-readonly-a", "settings-scalar-readonly-b"} {
+		out, err := tc.RunCamp("init", "/test/"+name, "--name", name, "-d", "Scalar read-only test", "-m", "original", "--no-git", "--force")
+		require.NoError(t, err, out)
+	}
+	tc.Shell(t, "rm -f "+a+"/.campaign/settings/jumps.yaml "+b+"/.campaign/settings/jumps.yaml")
+	beforeA, err := tc.ReadFile(a + "/.campaign/campaign.yaml")
+	require.NoError(t, err)
+	beforeB, err := tc.ReadFile(b + "/.campaign/campaign.yaml")
+	require.NoError(t, err)
+	assertUnchanged := func() {
+		t.Helper()
+		afterA, err := tc.ReadFile(a + "/.campaign/campaign.yaml")
+		require.NoError(t, err)
+		require.Equal(t, beforeA, afterA, "changed the current camp")
+		afterB, err := tc.ReadFile(b + "/.campaign/campaign.yaml")
+		require.NoError(t, err)
+		require.Equal(t, beforeB, afterB, "changed the selected camp")
+		tc.Shell(t, "test ! -e "+a+"/.campaign/settings/jumps.yaml && test ! -e "+b+"/.campaign/settings/jumps.yaml")
+	}
+
+	for _, args := range [][]string{
+		{"settings", "get", "local.campaign.mission", "--campaign", "settings-scalar-readonly-b"},
+		{"settings", "set", "local.campaign.type", "invalid", "--campaign", "settings-scalar-readonly-b"},
+	} {
+		out, err := tc.RunCampInDir(a, args...)
+		if args[1] == "get" {
+			require.NoError(t, err, out)
+			require.Equal(t, "original", strings.TrimSpace(out))
+		} else {
+			require.Error(t, err, out)
+			require.Contains(t, out, "unknown camp type")
+		}
+		assertUnchanged()
+	}
+
+	// The same read path is used when no explicit camp is selected.
+	out, err := tc.RunCampInDir(b, "settings", "get", "local.campaign.mission")
+	require.NoError(t, err, out)
+	require.Equal(t, "original", strings.TrimSpace(out))
+	assertUnchanged()
+
+	out, err = tc.RunCampInDir(a, "settings", "set", "local.campaign.mission", "updated", "--campaign", "settings-scalar-readonly-b")
+	require.NoError(t, err, out)
+	afterB, err := tc.ReadFile(b + "/.campaign/campaign.yaml")
+	require.NoError(t, err)
+	require.NotEqual(t, beforeB, afterB, "accepted set did not save the selected camp")
+	out, err = tc.RunCampInDir(a, "settings", "get", "local.campaign.mission", "--campaign", "settings-scalar-readonly-b")
+	require.NoError(t, err, out)
+	require.Equal(t, "updated", strings.TrimSpace(out))
+	tc.Shell(t, "test ! -e "+a+"/.campaign/settings/jumps.yaml && test ! -e "+b+"/.campaign/settings/jumps.yaml")
+}
