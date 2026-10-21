@@ -7724,13 +7724,15 @@ camp settings get [key] [flags]
   camp settings get global.theme
   camp settings get effective.commit.sync_project_refs
   camp settings get --json
+  camp settings get local.campaign.name --campaign my-camp
 ```
 
 ### Options
 
 ```
-  -h, --help   help for get
-      --json   emit a structured JSON result
+  -c, --campaign string   Target camp by exact registered name or ID (independent of cwd)
+  -h, --help              help for get
+      --json              emit a structured JSON result
 ```
 
 ### Options inherited from parent commands
@@ -7751,7 +7753,7 @@ Set a camp setting non-interactively.
 Accepts the same keys as 'camp settings get'. Theme values are one of
 adaptive, light, dark, or high-contrast. Boolean values accept true/false.
 Setting local.theme_override to 'inherit' clears the override; local.* keys
-require running inside a camp.
+require running inside a camp or an explicit --campaign target.
 
 ```
 camp settings set <key> <value> [flags]
@@ -7764,12 +7766,14 @@ camp settings set <key> <value> [flags]
   camp settings set global.verbose true
   camp settings set local.theme_override light
   camp settings set local.theme_override inherit
+  camp settings set local.theme_override dark --campaign my-camp
 ```
 
 ### Options
 
 ```
-  -h, --help   help for set
+  -c, --campaign string   Target camp by exact registered name or ID (independent of cwd)
+  -h, --help              help for set
 ```
 
 ### Options inherited from parent commands
