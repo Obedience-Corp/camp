@@ -46,6 +46,153 @@ func TestIntegration_SettingsDocuments_SelectsOtherCamp(t *testing.T) {
 	require.Equal(t, beforeA, documentTreeHash(t, tc, a))
 }
 
+func TestIntegration_SettingsDocuments_SameNameUsesExplicitID(t *testing.T) {
+	tc := GetSharedContainer(t)
+	a, b := initDocumentCamps(t, tc, "settings-docs-same-name")
+	idA, idB := documentCampID(t, tc, a), documentCampID(t, tc, b)
+	require.NotEqual(t, idA, idB)
+	// Seed a duplicate-label registry directly: registration itself prompts to
+	// replace name collisions, while existing registries can contain them.
+	registryPath := strings.TrimSpace(tc.Shell(t, `printf '%s' "${CAMP_REGISTRY_PATH:-${XDG_CONFIG_HOME:-$HOME/.obey}/campaign/registry.json}"`))
+	if tc.Shell(t, `test -n "$XDG_CONFIG_HOME" && printf yes || true`) == "yes" {
+		registryPath = strings.TrimSpace(tc.Shell(t, `printf '%s' "${CAMP_REGISTRY_PATH:-$XDG_CONFIG_HOME/obey/campaign/registry.json}"`))
+	}
+	raw, err := tc.ReadFile(registryPath)
+	require.NoError(t, err)
+	var registry map[string]any
+	require.NoError(t, json.Unmarshal([]byte(raw), &registry))
+	for _, root := range []string{a, b} {
+		manifest, err := tc.ReadFile(root + "/.campaign/campaign.yaml")
+		require.NoError(t, err)
+		var values map[string]any
+		require.NoError(t, yaml.Unmarshal([]byte(manifest), &values))
+		values["name"] = "Same display name"
+		encoded, err := yaml.Marshal(values)
+		require.NoError(t, err)
+		require.NoError(t, tc.WriteFile(root+"/.campaign/campaign.yaml", string(encoded)))
+		registry["campaigns"].(map[string]any)[values["id"].(string)].(map[string]any)["name"] = "Same display name"
+	}
+	encoded, err := json.Marshal(registry)
+	require.NoError(t, err)
+	require.NoError(t, tc.WriteFile(registryPath, string(encoded)))
+	beforeA := documentTreeHash(t, tc, a)
+	stdin := writeDocumentStdin(t, tc, "/tmp/settings-docs-id.txt", "explicit ID selected B\n")
+	stdout, stderr, code := runSettingsDocument(t, tc, a, stdin,
+		"settings", "document", "create", "notes/by-id.txt", "--campaign", idB,
+		"--expected-revision", "absent", "--stdin", "--json")
+	require.Equal(t, 0, code, stderr)
+	written := decodeDocumentSnapshot(t, stdout)
+	require.True(t, written.Applied)
+	require.Equal(t, idB, written.CampID)
+	require.Equal(t, b, written.CampRoot)
+	reopened := documentGet(t, tc, "/tmp", idB, "notes/by-id.txt")
+	require.NotNil(t, reopened.Content)
+	require.Equal(t, "explicit ID selected B\n", *reopened.Content)
+	require.Equal(t, written.Revision, reopened.Revision)
+	require.Equal(t, beforeA, documentTreeHash(t, tc, a))
+	require.Equal(t, idA, documentGet(t, tc, b, idA, "campaign.yaml").CampID)
+}
+
+func TestIntegration_SettingsDocuments_FullConfigurationReopensWithoutExecuting(t *testing.T) {
+	tc := GetSharedContainer(t)
+	a, b := initDocumentCamps(t, tc, "settings-docs-full")
+	beforeA := documentTreeHash(t, tc, a)
+	const sentinel = "/tmp/settings-docs-command-must-not-run"
+	command := "touch " + sentinel
+	manifest, err := tc.ReadFile(b + "/.campaign/campaign.yaml")
+	require.NoError(t, err)
+	type edit struct {
+		path  []string
+		value any
+	}
+	concepts := []any{map[string]any{"name": "workflow", "children": []any{map[string]any{"name": "design", "path": "workflow/design", "children": []any{map[string]any{"name": "drafts", "path": "workflow/design/drafts"}}}}}}
+	steps := []any{map[string]any{"name": "acceptance", "run": command, "dir": "scripts", "continue_on_error": true}}
+	cases := []struct {
+		path, seed string
+		edits      []edit
+	}{
+		{path: "campaign.yaml", seed: manifest + "\n# preserve acceptance comment\ncustom_note: untouched\n", edits: []edit{
+			{[]string{"mission"}, "Ship complete Camp management"},
+			{[]string{"intents", "tags"}, []any{"delivery", "camp"}},
+			{[]string{"concepts"}, concepts},
+			{[]string{"workflows", "categories", "delivery"}, map[string]any{"label": "Delivery", "description": "Acceptance workflow"}},
+			{[]string{"workflows", "category_by_type", "feature"}, "delivery"},
+			{[]string{"hooks", "commit_message", "command"}, command},
+		}},
+		{path: "settings/jumps.yaml", seed: "# preserve acceptance comment\ncustom_note: untouched\npaths:\n  projects: projects/\n", edits: []edit{
+			{[]string{"shortcuts", "acceptance", "path"}, "docs/"},
+			{[]string{"shortcuts", "acceptance-command", "command"}, command},
+			{[]string{"shortcuts", "acceptance-command", "workdir"}, "workflow/design"},
+		}},
+		{path: "settings/fresh.yaml", seed: "# preserve acceptance comment\ncustom_note: untouched\ncompleted_runs: off\n", edits: []edit{
+			{[]string{"projects", "demo", "branch"}, "release"},
+			{[]string{"projects", "demo", "push_upstream"}, false},
+			{[]string{"projects", "demo", "follow_up"}, steps},
+			{[]string{"follow_up"}, steps},
+		}},
+		{path: "settings/allowlist.json", seed: `{"version":1,"inherit_defaults":true,"commands":{"kept":{"allowed":false}},"custom_note":"untouched"}`, edits: []edit{
+			{[]string{"inherit_defaults"}, false},
+			{[]string{"commands", "./scripts/acceptance"}, map[string]any{"allowed": true, "description": "Explicit fixture command"}},
+		}},
+	}
+	for _, sample := range cases {
+		t.Run(sample.path, func(t *testing.T) {
+			require.NoError(t, tc.WriteFile(b+"/.campaign/"+sample.path, sample.seed))
+			initial := documentGet(t, tc, a, "settings-docs-full-b", sample.path)
+			changes := make([]map[string]any, 0, len(sample.edits))
+			for _, change := range sample.edits {
+				changes = append(changes, map[string]any{"op": "set", "path": change.path, "value": change.value})
+			}
+			body, err := json.Marshal(map[string]any{"changes": changes})
+			require.NoError(t, err)
+			stdin := writeDocumentStdin(t, tc, "/tmp/settings-docs-full.patch", string(body))
+			stdout, stderr, code := runSettingsDocument(t, tc, a, stdin, "settings", "document", "patch", sample.path, "--campaign", "settings-docs-full-b", "--expected-revision", initial.Revision, "--stdin", "--json")
+			require.Equal(t, 0, code, stderr)
+			written := decodeDocumentSnapshot(t, stdout)
+			require.True(t, written.Applied)
+			// A separate CLI process reopens the selected camp from outside both camps.
+			reopened := documentGet(t, tc, "/tmp", "settings-docs-full-b", sample.path)
+			require.Equal(t, written.Revision, reopened.Revision)
+			require.Equal(t, b, reopened.CampRoot)
+			onDisk, err := tc.ReadFile(b + "/.campaign/" + sample.path)
+			require.NoError(t, err)
+			require.NotNil(t, reopened.Content)
+			require.Equal(t, onDisk, *reopened.Content)
+			var sourceValues map[string]any
+			if strings.HasSuffix(sample.path, ".json") {
+				require.NoError(t, json.Unmarshal([]byte(onDisk), &sourceValues))
+			} else {
+				require.NoError(t, yaml.Unmarshal([]byte(onDisk), &sourceValues))
+				require.Contains(t, onDisk, "# preserve acceptance comment")
+			}
+			require.Equal(t, "untouched", sourceValues["custom_note"])
+			for _, change := range sample.edits {
+				require.Equal(t, change.value, documentValueAt(t, sourceValues, change.path), "source path %v", change.path)
+				require.Equal(t, change.value, documentValueAt(t, reopened.Values, change.path), "CLI values path %v", change.path)
+			}
+			if sample.path == "settings/allowlist.json" {
+				require.Equal(t, false, documentValueAt(t, sourceValues, []string{"commands", "kept", "allowed"}))
+			}
+			exists, err := tc.CheckFileExists(sentinel)
+			require.NoError(t, err)
+			require.False(t, exists, "editing configuration executed a stored command")
+			require.Equal(t, beforeA, documentTreeHash(t, tc, a), "explicit write changed the cwd camp")
+		})
+	}
+}
+
+func documentValueAt(t *testing.T, value any, path []string) any {
+	t.Helper()
+	var current any = value
+	for _, key := range path {
+		object, ok := current.(map[string]any)
+		require.True(t, ok, "object at %s in %v: %#v", key, path, current)
+		current, ok = object[key]
+		require.True(t, ok, "missing %s in %v", key, path)
+	}
+	return current
+}
+
 func TestIntegration_SettingsDocuments_SetPatchPreservesAndStaleRevisionRefuses(t *testing.T) {
 	tc := GetSharedContainer(t)
 	_, b := initDocumentCamps(t, tc, "settings-docs-patch")
@@ -426,6 +573,7 @@ type documentSnapshot struct {
 	Revision      string  `json:"revision"`
 	Content       *string `json:"content"`
 	Applied       bool    `json:"applied"`
+	Values        any     `json:"values"`
 }
 
 type documentError struct {

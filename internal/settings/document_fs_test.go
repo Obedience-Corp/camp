@@ -264,6 +264,33 @@ func TestDocumentFS_InvalidCandidateWritesNothing(t *testing.T) {
 	assertFile(t, root, "settings/jumps.yaml", valid)
 }
 
+func TestDocumentFS_DeniedWriteLeavesTreeUnchanged(t *testing.T) {
+	if os.Geteuid() == 0 {
+		t.Skip("permission denial requires the nonroot Docker verification lane")
+	}
+	svc, root := newDocumentFixture(t)
+	seed := []byte("unchanged\n")
+	writeRel(t, root, "locked/file.txt", seed)
+	parent := campFile(root, "locked")
+	if err := os.Chmod(parent, 0o555); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = os.Chmod(parent, 0o755) })
+	before := stampCampaign(t, root)
+	snap, err := svc.Set(t.Context(), "locked/file.txt", RevisionOf(seed), []byte("denied\n"))
+	assertUnapplied(t, snap, err)
+	if !errors.Is(err, fs.ErrPermission) {
+		t.Fatalf("write error = %v, want permission denied", err)
+	}
+	assertStamp(t, root, before)
+	snap, err = svc.Create(t.Context(), "locked/new/file.txt", RevisionAbsent, []byte("denied\n"))
+	assertUnapplied(t, snap, err)
+	if !errors.Is(err, fs.ErrPermission) {
+		t.Fatalf("create error = %v, want permission denied", err)
+	}
+	assertStamp(t, root, before)
+}
+
 func TestDocumentFS_RevisionConflictPreservesExternalBytes(t *testing.T) {
 	svc, root := newDocumentFixture(t)
 	ctx := t.Context()
