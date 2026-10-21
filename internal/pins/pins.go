@@ -5,7 +5,6 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
-	"strings"
 	"time"
 
 	camperrors "github.com/Obedience-Corp/camp/internal/errors"
@@ -238,7 +237,7 @@ func (s *Store) MigrateAbsoluteToRelative(root string) bool {
 			}
 
 			rel, err := filepath.Rel(root, resolved)
-			if err == nil && rel != ".." && !strings.HasPrefix(rel, "../") {
+			if err == nil && filepath.IsLocal(rel) {
 				s.pins[i].Path = rel
 				changed = true
 			} else if resolved != p.Path {
@@ -246,7 +245,7 @@ func (s *Store) MigrateAbsoluteToRelative(root string) bool {
 				// the original cleaned path in case the resolved form
 				// diverged (e.g. /tmp vs /private/tmp on macOS for deleted dirs)
 				rel2, err2 := filepath.Rel(root, filepath.Clean(p.Path))
-				if err2 == nil && rel2 != ".." && !strings.HasPrefix(rel2, "../") {
+				if err2 == nil && filepath.IsLocal(rel2) {
 					s.pins[i].Path = rel2
 					changed = true
 				} else {

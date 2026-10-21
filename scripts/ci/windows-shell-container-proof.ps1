@@ -30,7 +30,8 @@ $ShellCommandTestNames = @(
 )
 $ArtifactTestNames = @(
     'TestArtifactWindowsNativeShellLaunch',
-    'TestArtifactWindowsNativeMissingAssociation'
+    'TestArtifactWindowsNativeMissingAssociation',
+    'TestBuildPinForPathWindowsContainment'
 )
 $PeerTestSuites = @(
     @{ Package = 'remote'; Test = 'TestWindowsSSHPeerFailsBeforeDial' },

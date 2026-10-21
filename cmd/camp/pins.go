@@ -5,7 +5,6 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
-	"strings"
 	"text/tabwriter"
 	"time"
 
@@ -156,7 +155,7 @@ func runPin(cmd *cobra.Command, args []string) error {
 	}
 
 	relPath, relErr := filepath.Rel(campaignRoot, logicalPath)
-	insideCampaign := relErr == nil && relPath != ".." && !strings.HasPrefix(relPath, ".."+string(filepath.Separator))
+	insideCampaign := relErr == nil && filepath.IsLocal(relPath)
 	var pin pins.Pin
 	var display string
 	if insideCampaign {
@@ -200,7 +199,7 @@ func buildPinForPath(ctx context.Context, absPath, campaignRoot string) (pins.Pi
 	if err != nil {
 		return pins.Pin{}, "", camperrors.Wrapf(err, "compute relative path for %q", absPath)
 	}
-	if relPath != ".." && !strings.HasPrefix(relPath, "../") {
+	if filepath.IsLocal(relPath) {
 		return pins.Pin{Path: relPath}, relPath, nil
 	}
 

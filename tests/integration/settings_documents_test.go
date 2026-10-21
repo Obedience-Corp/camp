@@ -419,6 +419,58 @@ func TestIntegration_SettingsDocuments_StdinAndArgsJSONErrors(t *testing.T) {
 	require.False(t, exists)
 }
 
+func TestIntegration_SettingsDocuments_PinContainment(t *testing.T) {
+	tc := GetSharedContainer(t)
+	a, b := initDocumentCamps(t, tc, "settings-docs-pin-boundary")
+	idB := documentCampID(t, tc, b)
+	const external = "/test/settings-docs-pin-outside"
+	tc.Shell(t, "mkdir -p "+shellQuote(external)+" "+shellQuote(b+"/..named")+" && ln -s "+shellQuote(external)+" "+shellQuote(b+"/linked"))
+	beforeA, beforeB := documentTreeHash(t, tc, a), documentTreeHash(t, tc, b)
+	revision := documentGet(t, tc, a, idB, "settings/pins.json").Revision
+	body := writeDocumentStdin(t, tc, "/tmp/settings-docs-pin-boundary.json", `{"name":"outside","path":"`+external+`"}`)
+	_, stderr, code := runSettingsDocument(t, tc, a, body, "settings", "document", "action", "settings/pins.json", "pin", "--campaign", idB, "--expected-revision", revision, "--stdin", "--json")
+	require.NotEqual(t, 0, code)
+	require.Contains(t, stderr, "outside the camp root")
+	require.Contains(t, stderr, "camp attach")
+	require.Equal(t, beforeB, documentTreeHash(t, tc, b), "unattached external pin changed the store")
+
+	out, err := tc.RunCampInDir(b, "attach", external)
+	require.NoError(t, err, out)
+	for _, sample := range []struct{ name, path, field, expected string }{
+		{"attached", external, "abs_path", external},
+		{"logical-link", "linked", "path", "linked"},
+		{"dot-prefix", "..named", "path", "..named"},
+	} {
+		payload, err := json.Marshal(map[string]string{"name": sample.name, "path": sample.path})
+		require.NoError(t, err)
+		body = writeDocumentStdin(t, tc, "/tmp/settings-docs-pin-boundary.json", string(payload))
+		stdout, stderr, code := runSettingsDocument(t, tc, a, body, "settings", "document", "action", "settings/pins.json", "pin", "--campaign", idB, "--expected-revision", revision, "--stdin", "--json")
+		require.Equal(t, 0, code, stderr)
+		written := decodeDocumentSnapshot(t, stdout)
+		require.True(t, written.Applied)
+		revision = written.Revision
+		reopened := documentGet(t, tc, "/tmp", idB, "settings/pins.json")
+		require.Equal(t, revision, reopened.Revision)
+		require.NotNil(t, reopened.Content)
+		var rows []map[string]any
+		require.NoError(t, json.Unmarshal([]byte(*reopened.Content), &rows))
+		var row map[string]any
+		for _, candidate := range rows {
+			if candidate["name"] == sample.name {
+				row = candidate
+			}
+		}
+		require.NotNil(t, row)
+		require.Equal(t, sample.expected, row[sample.field])
+		other := "path"
+		if sample.field == "path" {
+			other = "abs_path"
+		}
+		require.NotContains(t, row, other)
+	}
+	require.Equal(t, beforeA, documentTreeHash(t, tc, a), "pin action changed the cwd camp")
+}
+
 func TestIntegration_SettingsDocuments_OwnerActionsPersist(t *testing.T) {
 	tc := GetSharedContainer(t)
 	_, b := initDocumentCamps(t, tc, "settings-docs-actions")

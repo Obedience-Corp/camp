@@ -305,7 +305,7 @@ func (s Service) resolvePinTarget(ctx context.Context, rawPath string) (pins.Pin
 		return pins.Pin{}, camperrors.Newf("path %q is not a directory", logicalPath)
 	}
 	relPath, relErr := filepath.Rel(s.Root, logicalPath)
-	inside := relErr == nil && relPath != ".." && !strings.HasPrefix(relPath, ".."+string(filepath.Separator))
+	inside := relErr == nil && filepath.IsLocal(relPath)
 	if inside {
 		return pins.Pin{Path: relPath}, nil
 	}
@@ -317,7 +317,7 @@ func (s Service) resolvePinTarget(ctx context.Context, rawPath string) (pins.Pin
 	if err != nil {
 		return pins.Pin{}, camperrors.Wrapf(err, "compute relative path for %q", absPath)
 	}
-	if relPath != ".." && !strings.HasPrefix(relPath, "../") {
+	if filepath.IsLocal(relPath) {
 		return pins.Pin{Path: relPath}, nil
 	}
 	attached, err := markerResolvesToCampaign(ctx, absPath, s.Root)
