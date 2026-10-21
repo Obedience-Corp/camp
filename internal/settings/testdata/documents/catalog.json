@@ -1,0 +1,70 @@
+{
+  "schema_version": "settings-documents/v1alpha1",
+  "camp_id": "00000000-0000-4000-8000-000000000001",
+  "camp_root": "/fixture/camp",
+  "documents": [
+    {
+      "id": "campaign_manifest",
+      "path": "campaign.yaml",
+      "title": "Camp manifest",
+      "scope": "camp",
+      "format": "yaml",
+      "owner": "camp",
+      "exists": true,
+      "capabilities": {
+        "read": true,
+        "source_edit": true,
+        "create": false,
+        "rename": false,
+        "delete": false,
+        "form": true,
+        "actions": []
+      },
+      "fields": [
+        {
+          "path": [
+            "id"
+          ],
+          "label": "ID",
+          "type": "string",
+          "read_only": true
+        },
+        {
+          "path": [
+            "mission"
+          ],
+          "label": "Mission",
+          "type": "string"
+        },
+        {
+          "path": [
+            "concepts"
+          ],
+          "label": "Concepts",
+          "type": "array",
+          "items": {
+            "path": [],
+            "label": "Concept",
+            "type": "object",
+            "properties": [
+              {
+                "path": [
+                  "name"
+                ],
+                "label": "Name",
+                "type": "string"
+              }
+            ]
+          }
+        }
+      ]
+    }
+  ],
+  "limits": {
+    "max_depth": 16,
+    "max_entries": 10000,
+    "max_document_bytes": 1048576
+  },
+  "truncated": false,
+  "diagnostics": []
+}

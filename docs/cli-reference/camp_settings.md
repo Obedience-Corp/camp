@@ -43,5 +43,7 @@ camp settings [flags]
 ### SEE ALSO
 
 * [camp](camp.md)	 - Manage your camps and the projects and festivals inside them
+* [camp settings catalog](camp_settings_catalog.md)	 - List camp documents
+* [camp settings document](camp_settings_document.md)	 - Read and edit camp documents
 * [camp settings get](camp_settings_get.md)	 - Print camp settings
 * [camp settings set](camp_settings_set.md)	 - Set a camp setting
