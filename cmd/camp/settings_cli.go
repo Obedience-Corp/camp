@@ -11,7 +11,6 @@ import (
 
 	"github.com/spf13/cobra"
 
-	"github.com/Obedience-Corp/camp/internal/campaign"
 	"github.com/Obedience-Corp/camp/internal/config"
 	camperrors "github.com/Obedience-Corp/camp/internal/errors"
 	"github.com/Obedience-Corp/camp/internal/jsoncontract"
@@ -185,7 +184,8 @@ key and are edited only through the interactive 'camp settings' TUI.`,
 		Example: `  camp settings get
   camp settings get global.theme
   camp settings get effective.commit.sync_project_refs
-  camp settings get --json`,
+  camp settings get --json
+  camp settings get local.campaign.name --campaign my-camp`,
 		Args:         jsoncontract.Args(SettingsJSONVersion, func() bool { return jsonOut }, cobra.MaximumNArgs(1)),
 		SilenceUsage: true,
 		Annotations: map[string]string{
@@ -193,16 +193,21 @@ key and are edited only through the interactive 'camp settings' TUI.`,
 			"agent_reason":  "Read-only settings output with --json support",
 		},
 		RunE: jsoncontract.RunE(SettingsJSONVersion, func() bool { return jsonOut }, func(cmd *cobra.Command, args []string) error {
-			return runSettingsGet(cmd.Context(), cmd, args, jsonOut)
+			ctx, err := settingsTargetContext(cmd)
+			if err != nil {
+				return err
+			}
+			return runSettingsGet(ctx, cmd, args, jsonOut)
 		}),
 	}
 	cmd.SetFlagErrorFunc(jsoncontract.FlagErrorFunc(SettingsJSONVersion, func() bool { return jsonOut }))
 	cmd.Flags().BoolVar(&jsonOut, "json", false, "emit a structured JSON result")
+	addSettingsCampaignFlag(cmd)
 	return cmd
 }
 
 func newSettingsSetCmd() *cobra.Command {
-	return &cobra.Command{
+	cmd := &cobra.Command{
 		Use:   "set <key> <value>",
 		Short: "Set a camp setting",
 		Long: `Set a camp setting non-interactively.
@@ -210,11 +215,12 @@ func newSettingsSetCmd() *cobra.Command {
 Accepts the same keys as 'camp settings get'. Theme values are one of
 adaptive, light, dark, or high-contrast. Boolean values accept true/false.
 Setting local.theme_override to 'inherit' clears the override; local.* keys
-require running inside a camp.`,
+require running inside a camp or an explicit --campaign target.`,
 		Example: `  camp settings set global.theme dark
   camp settings set global.verbose true
   camp settings set local.theme_override light
-  camp settings set local.theme_override inherit`,
+  camp settings set local.theme_override inherit
+  camp settings set local.theme_override dark --campaign my-camp`,
 		Args:         cobra.ExactArgs(2),
 		SilenceUsage: true,
 		Annotations: map[string]string{
@@ -222,9 +228,15 @@ require running inside a camp.`,
 			"agent_reason":  "Non-interactive settings mutation with validated values",
 		},
 		RunE: func(cmd *cobra.Command, args []string) error {
-			return runSettingsSet(cmd.Context(), cmd, args[0], args[1])
+			ctx, err := settingsTargetContext(cmd)
+			if err != nil {
+				return err
+			}
+			return runSettingsSet(ctx, cmd, args[0], args[1])
 		},
 	}
+	addSettingsCampaignFlag(cmd)
+	return cmd
 }
 
 func runSettingsGet(ctx context.Context, cmd *cobra.Command, args []string, jsonOut bool) error {
@@ -233,7 +245,7 @@ func runSettingsGet(ctx context.Context, cmd *cobra.Command, args []string, json
 		return camperrors.Wrap(err, "loading global config")
 	}
 
-	root, rootErr := campaign.DetectCached(ctx)
+	root, rootErr := settingsCampaignRoot(ctx)
 	inCampaign := rootErr == nil && root != ""
 
 	var local *config.LocalSettings
@@ -259,7 +271,7 @@ func runSettingsGet(ctx context.Context, cmd *cobra.Command, args []string, json
 	return printSettingsAll(cmd.OutOrStdout(), cfg, local, inCampaign, effective, effectivePrefs)
 }
 
-// resolveSettingValue returns the value for a key, loading campaign.yaml for the
+// resolveSettingValue returns the value for a key, reading campaign.yaml for the
 // campaign scalar twins and delegating everything else to settingsValueFor so
 // existing keys resolve exactly as before.
 func resolveSettingValue(ctx context.Context, key string, cfg *config.GlobalConfig, local *config.LocalSettings, inCampaign bool) (any, error) {
@@ -270,7 +282,7 @@ func resolveSettingValue(ctx context.Context, key string, cfg *config.GlobalConf
 	case settingsKeyEffectiveCommitSyncRefs, settingsKeyEffectiveCommitDisableTags:
 		root := ""
 		if inCampaign {
-			if r, err := campaign.DetectCached(ctx); err == nil {
+			if r, err := settingsCampaignRoot(ctx); err == nil {
 				root = r
 			}
 		}
@@ -287,13 +299,13 @@ func resolveSettingValue(ctx context.Context, key string, cfg *config.GlobalConf
 }
 
 func campaignScalarGet(ctx context.Context, key string) (any, error) {
-	root, err := campaign.DetectCached(ctx)
+	root, err := settingsCampaignRoot(ctx)
 	if err != nil || root == "" {
 		return nil, errSettingsLocalOutsideCampaign(key)
 	}
-	cfg, err := config.LoadCampaignConfig(ctx, root)
+	cfg, err := config.ReadCampaignConfig(ctx, root)
 	if err != nil {
-		return nil, camperrors.Wrap(err, "loading campaign.yaml")
+		return nil, camperrors.Wrap(err, "reading campaign.yaml")
 	}
 	switch key {
 	case settingsKeyLocalCampaignName:
@@ -474,20 +486,20 @@ func runSettingsSet(ctx context.Context, cmd *cobra.Command, key, value string) 
 }
 
 func setCampaignScalar(ctx context.Context, cmd *cobra.Command, key, value string) error {
-	root, err := campaign.DetectCached(ctx)
+	root, err := settingsCampaignRoot(ctx)
 	if err != nil || root == "" {
 		return errSettingsLocalOutsideCampaign(key)
 	}
-	cfg, err := config.LoadCampaignConfig(ctx, root)
+	cfg, err := config.ReadCampaignConfig(ctx, root)
 	if err != nil {
-		return camperrors.Wrap(err, "loading campaign.yaml")
+		return camperrors.Wrap(err, "reading campaign.yaml")
 	}
 	display, err := applyCampaignScalarKey(cfg, key, value)
 	if err != nil {
 		return err
 	}
-	// Same load-time invariant as SaveCampaignConfig consumers: refuse empty
-	// or illegal names before they brick subsequent camp commands.
+	// Refuse empty or illegal names before saving campaign.yaml; reading the
+	// existing config must not create jumps.yaml on validation failures.
 	if err := config.ValidateCampaignConfig(cfg); err != nil {
 		return camperrors.Wrap(err, "invalid campaign.yaml")
 	}
@@ -658,7 +670,7 @@ func applyGlobalSetting(cfg *config.GlobalConfig, key, value string) (string, er
 }
 
 func setLocalThemeOverride(ctx context.Context, cmd *cobra.Command, value string) error {
-	root, err := campaign.DetectCached(ctx)
+	root, err := settingsCampaignRoot(ctx)
 	if err != nil || root == "" {
 		return errSettingsLocalOutsideCampaign(settingsKeyLocalThemeOverride)
 	}
@@ -689,7 +701,7 @@ func setLocalThemeOverride(ctx context.Context, cmd *cobra.Command, value string
 }
 
 func setLocalCommitPref(ctx context.Context, cmd *cobra.Command, key, value string) error {
-	root, err := campaign.DetectCached(ctx)
+	root, err := settingsCampaignRoot(ctx)
 	if err != nil || root == "" {
 		return errSettingsLocalOutsideCampaign(key)
 	}
