@@ -255,6 +255,7 @@ func TestDoctor_BrokenLinkIsError(t *testing.T) {
 	}
 
 	cmd := &cobra.Command{}
+	cmd.Flags().Bool("verbose", true, "")
 	var stdout bytes.Buffer
 	cmd.SetOut(&stdout)
 	cmd.SetErr(&bytes.Buffer{})

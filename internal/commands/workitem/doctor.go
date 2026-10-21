@@ -73,6 +73,12 @@ type docFinding struct {
 	// auto_fixable / fix_hint fields.
 	renameFrom string
 	renameTo   string
+
+	// Presentation context stays outside the versioned JSON contract.
+	scopePath     string
+	scopeProject  string
+	scopeKind     links.ScopeKind
+	worktreeCount int
 }
 
 // errDoctorIssues triggers a non-zero exit from cobra after we have already
@@ -104,6 +110,7 @@ rewriting projects: entries whose path git recorded as a project rename. Use
 	}
 	cmd.SetFlagErrorFunc(jsoncontract.FlagErrorFunc(WorkitemDoctorJSONVersion, func() bool { return jsonOut }))
 	cmd.Flags().BoolVar(&jsonOut, "json", false, "emit a structured JSON result")
+	cmd.Flags().Bool("verbose", false, "show finding codes, targets, and per-link removal commands")
 	cmd.Flags().BoolVar(&fix, "fix", false, "auto-repair findings tagged auto_fixable")
 	return cmd
 }
@@ -176,7 +183,7 @@ func runDoctor(ctx context.Context, cmd *cobra.Command, jsonOut, fix bool) error
 				}
 				return errDoctorIssues
 			}
-			if err := emitDocHuman(cmd.OutOrStdout(), []docFinding{parseFinding}); err != nil {
+			if err := emitDoctorReport(cmd, []docFinding{parseFinding}, fix); err != nil {
 				return err
 			}
 			return camperrors.Wrap(loadErr, "load links registry")
@@ -189,7 +196,7 @@ func runDoctor(ctx context.Context, cmd *cobra.Command, jsonOut, fix bool) error
 			return err
 		}
 	} else {
-		if err := emitDocHuman(cmd.OutOrStdout(), findings); err != nil {
+		if err := emitDoctorReport(cmd, findings, fix); err != nil {
 			return err
 		}
 	}
@@ -613,27 +620,6 @@ func repointLinkByID(registry *links.Links, linkID, newID, newKey string) bool {
 		}
 	}
 	return false
-}
-
-func emitDocHuman(w io.Writer, findings []docFinding) error {
-	if len(findings) == 0 {
-		_, err := fmt.Fprintln(w, "doctor: 0 findings")
-		return err
-	}
-	if _, err := fmt.Fprintf(w, "doctor: %d finding(s)\n", len(findings)); err != nil {
-		return err
-	}
-	for _, f := range findings {
-		if _, err := fmt.Fprintf(w, "  [%s] %s %s — %s\n", f.Severity, f.Code, f.Target, f.Message); err != nil {
-			return err
-		}
-		if f.FixHint != "" {
-			if _, err := fmt.Fprintln(w, "    hint: "+f.FixHint); err != nil {
-				return err
-			}
-		}
-	}
-	return nil
 }
 
 func emitDocJSON(w io.Writer, findings []docFinding) error {

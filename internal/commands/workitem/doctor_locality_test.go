@@ -39,6 +39,7 @@ func seedLink(t *testing.T, root string, kind links.ScopeKind, path string) stri
 func runDoctorCapturing(t *testing.T, fix bool) string {
 	t.Helper()
 	cmd := &cobra.Command{}
+	cmd.Flags().Bool("verbose", true, "")
 	var stdout bytes.Buffer
 	cmd.SetOut(&stdout)
 	cmd.SetErr(&bytes.Buffer{})
