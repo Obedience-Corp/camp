@@ -116,10 +116,10 @@ func TestParseMetadataKeepsFieldsBesideABadOne(t *testing.T) {
 	}
 
 	for doc, want := range map[string]string{
-		"- a\n- b\n":                       "not a list of key: value lines",
-		"just a sentence\n":                "not a list of key: value lines",
-		"metadata: a sentence\n":           "metadata is not a list of key: value lines",
-		"metadata:\n  status_history: x\n": "status_history is not a list",
+		"- a\n- b\n":                                         "not a list of key: value lines",
+		"just a sentence\n":                                  "not a list of key: value lines",
+		"metadata: a sentence\n":                             "metadata is not a list of key: value lines",
+		"metadata:\n  status_history: x\n":                   "status_history is not a list",
 		"metadata:\n  status_history:\n    - not an entry\n": "status_history is not a list of key: value lines",
 	} {
 		if _, err := parseFestMeta(doc); err == nil || err.Error() != want {

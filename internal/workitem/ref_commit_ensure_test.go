@@ -134,10 +134,10 @@ func TestEnsureRefForCommit_BackfillFailureReturnsEmptyWithWarning(t *testing.T)
 	writeFile(t, filepath.Join(root, rel), "no frontmatter\n")
 
 	wi := WorkItem{
-		WorkflowType: WorkflowTypeIntent,
-		ItemKind:     ItemKindFile,
-		SourceID:     "broken-20260101",
-		RelativePath: rel,
+		WorkflowType:   WorkflowTypeIntent,
+		ItemKind:       ItemKindFile,
+		SourceID:       "broken-20260101",
+		RelativePath:   rel,
 		SourceMetadata: map[string]any{},
 	}
 
