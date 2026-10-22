@@ -296,6 +296,12 @@ func Init(ctx context.Context, dir string, opts InitOptions) (*InitResult, error
 	}
 	result.FilesCreated = append(result.FilesCreated, config.CampaignConfigPath(absDir))
 
+	if !opts.DryRun {
+		if err := updateShippedSkills(ctx, absDir, result); err != nil {
+			return nil, err
+		}
+	}
+
 	// Repair: rewrite a default quest still stamped with the sentinel date.
 	if opts.Repair && !opts.DryRun && opts.RepairPlan != nil {
 		if err := applyQuestDateBackfill(ctx, opts.RepairPlan.QuestDateBackfill); err != nil {

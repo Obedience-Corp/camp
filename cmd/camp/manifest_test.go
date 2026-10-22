@@ -174,6 +174,7 @@ func TestManifestCommand_AllRestrictedCommandsPresent(t *testing.T) {
 		"skills link":   false,
 		"skills status": false,
 		"skills unlink": false,
+		"skills update": false,
 	}
 	if questCommandsRegistered() {
 		expectedCommands["quest archive"] = false
@@ -310,6 +311,7 @@ func TestManifestCommand_InteractiveFlags(t *testing.T) {
 		"skills link":   true,
 		"skills status": true,
 		"skills unlink": true,
+		"skills update": true,
 	}
 	if questCommandsRegistered() {
 		nonInteractiveCommands["quest archive"] = true

@@ -90,6 +90,7 @@ var manifestAgentAllowedReasons = map[string]string{
 	"skills link":                "Non-interactive skill link operation",
 	"skills status":              "Read-only skill status",
 	"skills unlink":              "Non-interactive skill unlink operation",
+	"skills update":              "Non-interactive; preserves local edits unless --force, which prints an undo",
 	"status":                     "Read-only git status",
 	"status all":                 "Read-only multi-repository status",
 	"switch":                     "Non-interactive with explicit camp argument",

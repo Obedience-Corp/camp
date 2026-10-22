@@ -185,10 +185,14 @@ func printRepairDiff(plan *scaffold.RepairPlan, w Writers) {
 				ui.Dim("("+c.Description+")"),
 			)
 		case scaffold.RepairPreserve:
+			note := "(user-defined, preserved)"
+			if c.Category == scaffold.RepairSkillCategory {
+				note = "(" + c.Description + ")"
+			}
 			writef(w.HumanOut, "  %s  %s  %s\n",
 				ui.Dim("✓"),
 				ui.Value(c.Key),
-				ui.Dim("(user-defined, preserved)"),
+				ui.Dim(note),
 			)
 		case scaffold.RepairMigrate:
 			writef(w.HumanOut, "  %s  %s  %s\n",

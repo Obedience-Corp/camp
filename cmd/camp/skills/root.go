@@ -5,7 +5,7 @@ import "github.com/spf13/cobra"
 // Cmd is the scaffold root for the skills command family.
 var Cmd = &cobra.Command{
 	Use:     "skills",
-	Short:   "Manage camp skill directory links",
+	Short:   "Manage camp skill bundles and their directory links",
 	GroupID: "campaign",
 	Long: `Manage camp skill bundle projection for tool interoperability.
 
@@ -22,8 +22,9 @@ at projects/worktrees/<name>/ is accepted; package subdirs under it are not.
 
 Commands:
   link     Project per-skill symlinks into a tool-specific skills directory
-  status   Show projection status for tool-specific skills directories
+  status   Show projection status and shipped bundle states
   unlink   Remove projected skill symlinks
+  update   Refresh shipped skill bundles to this camp version
 
 Examples:
   camp skills link --tool claude    Project skills into .claude/skills/
@@ -31,6 +32,7 @@ Examples:
   camp skills link --worktrees      Project into tools and every project worktree
   camp skills link --worktrees-only Project into project worktrees only
   camp skills status                Show all skill projection states
+  camp skills update                Refresh outdated shipped skill bundles
   camp skills unlink --tool claude  Remove projected symlinks from .claude/skills/`,
 	RunE: func(cmd *cobra.Command, args []string) error {
 		return cmd.Help()
