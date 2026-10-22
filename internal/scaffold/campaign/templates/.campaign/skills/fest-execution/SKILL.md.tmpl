@@ -8,8 +8,15 @@ description: Execute active festival tasks. Use when finding the next task, mark
 ## Core Loop
 
 ```text
-fest next -> do work -> fest task completed|blocked -> fest commit -> fest validate -> repeat
+fest next -> do work -> verify acceptance -> fest task completed|blocked --yes -> fest commit -> fest validate -> repeat
 ```
+
+## Acceptance Before Completion
+
+Before changing code, identify the task's observable outcome and the evidence that
+proves it. Use existing requirements; do not ask the user to repeat decisions. Verify
+current paths and APIs when the plan is stale. Mark a task completed only after that
+evidence exists, and report failed or unavailable checks explicitly.
 
 ## Link + Navigation Contract (Critical)
 
@@ -24,17 +31,32 @@ fest link --show
 fgo           # toggle festival <-> linked project
 fgo project   # jump to linked project
 fgo fest      # jump back to linked festival
+fgo <festival-name-or-id>  # navigate to a named festival in the current camp
 ```
+
+When a user must run a festival command manually, give them `fgo <festival-name-or-id>`
+followed by the command. If the user's terminal is in a different camp, first give
+`csw <owning-camp>`; `fgo` searches the current camp. Avoid a machine-specific `cd`
+path. If shell integration is unavailable, use `cd "$(fest go <festival-name-or-id> --print)"`.
 
 If the execution project path changes (moved repo, new worktree, new checkout), relink before continuing work.
 
 ## Task State
 
 ```bash
-fest task completed
-fest task blocked --reason "..."
-fest task reset
+fest task completed --yes
+fest task blocked --reason "..." --yes
+fest task reset --yes
+fest task defer <task> --reason "why this blocker can wait" --yes
 ```
+
+Without `--yes` these commands prompt for the task number in a terminal; agents pass `--yes`.
+
+A deferral keeps the task blocked and brings it back after independent work. Work ready
+tasks first. Defer only for a documented external blocker after recording actual unblock
+attempts, when you can name specific independent work that will proceed. Put the blocker,
+the attempts, and the next work in the reason. Do not defer to avoid difficult or unclear
+work; ask for a decision when you cannot establish an independent path.
 
 Do not mix command families:
 
@@ -54,8 +76,11 @@ fest deps
 ```bash
 fest workflow status
 fest workflow advance
-fest workflow skip --reason "..."
 ```
+
+`fest workflow skip` is a human-only TTY override, not an autonomous fallback. Follow the
+configured gate and existing authorization; resolve autonomous checkpoints with evidence
+and escalate unresolved product decisions.
 
 ## Validation
 

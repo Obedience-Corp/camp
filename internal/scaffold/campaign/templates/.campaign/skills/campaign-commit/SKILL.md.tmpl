@@ -18,6 +18,7 @@ A camp was previously called a campaign; this skill applies whichever word the u
 ## Rules
 
 - Never run raw `git commit` anywhere in a camp; staging with `git add` is fine.
+- The camp root stays on `main`. Do not `checkout -b` there, and do not open pull requests for camp files. Capture commits go straight to `main` with `camp commit`. Branches and pull requests belong in `projects/*` product repos (`camp p commit`, then that repo's review path).
 - Keep submodule commits and root pointer sync as separate, explicit actions.
 - Do not add agent co-author trailers unless explicitly requested.
 - Do not bypass hooks with `--no-verify` without clear justification.
