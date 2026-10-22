@@ -259,7 +259,7 @@ func TestSkillsUpdate_UnknownSlugListsShippedBundles(t *testing.T) {
 	out, err := tc.RunCampInDir(path, "skills", "update", "no-such-bundle")
 	require.Error(t, err)
 	assert.Contains(t, out, "unknown shipped skill bundle no-such-bundle")
-	assert.Contains(t, out, "campaign-commit, campaign-structure")
+	assert.Regexp(t, `shipped bundles: .*\bcampaign-commit\b`, out)
 }
 
 func TestInitRepair_UpdatesOutdatedSkillAndCommits(t *testing.T) {
