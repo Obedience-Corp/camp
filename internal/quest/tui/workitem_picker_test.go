@@ -121,8 +121,8 @@ func TestWorkitemPicker_ViewShowsSkipRowAndHelp(t *testing.T) {
 
 func TestWindowBounds(t *testing.T) {
 	tests := []struct {
-		name              string
-		cursor, n, size   int
+		name               string
+		cursor, n, size    int
 		wantStart, wantEnd int
 	}{
 		{"fits", 0, 3, 8, 0, 3},

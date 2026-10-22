@@ -106,11 +106,11 @@ func TestRemoteLoaderSeam(t *testing.T) {
 			t.Errorf("filter.org = %q", filter.org)
 		}
 		return []campaignEntry{
-				{Name: "lance-arch", Machine: "archdtop", Path: "/r"},
-			}, []remoteResult{
-				{machineID: "archdtop", rows: []campaignEntry{{Name: "lance-arch", Machine: "archdtop"}}},
-				{machineID: "dead", err: errors.New("timeout")},
-			}, nil
+			{Name: "lance-arch", Machine: "archdtop", Path: "/r"},
+		}, []remoteResult{
+			{machineID: "archdtop", rows: []campaignEntry{{Name: "lance-arch", Machine: "archdtop"}}},
+			{machineID: "dead", err: errors.New("timeout")},
+		}, nil
 	})
 	rows, results, err := loader(context.Background(), listFilter{org: "obey"})
 	if err != nil {

@@ -167,7 +167,7 @@ func TestJobsTUIHelpFollowsSelection(t *testing.T) {
 		Job:   jobs.Job{ID: "job-fail", Seq: 1, Kind: jobs.KindCommitTree, CreatedAt: "2026-07-28T11:30:00.000Z"},
 		State: "failed", Lane: ".",
 	}, {
-		Job: jobs.Job{ID: "job-run", Seq: 2, Kind: jobs.KindCommitTree, CreatedAt: "2026-07-28T12:00:00.000Z"},
+		Job:   jobs.Job{ID: "job-run", Seq: 2, Kind: jobs.KindCommitTree, CreatedAt: "2026-07-28T12:00:00.000Z"},
 		State: "running", Lane: ".", Stuck: true, Stalled: true, StalledReason: "no live worker",
 	}}
 	m := newTestJobsModel(entries)

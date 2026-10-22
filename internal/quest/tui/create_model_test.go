@@ -325,9 +325,9 @@ func TestQuestCreateModel_ResultIsNilWhenCancelled(t *testing.T) {
 func advanceToTagsEnter(m QuestCreateModel) QuestCreateModel {
 	m = typeText(m, "bound-quest")
 	m = sendKey(m, tea.KeyMsg{Type: tea.KeyEnter})
-	m = sendKey(m, tea.KeyMsg{Type: tea.KeyEnter})     // purpose (empty)
-	m = sendKey(m, tea.KeyMsg{Type: tea.KeyCtrlS})     // skip description
-	m = sendKey(m, tea.KeyMsg{Type: tea.KeyEnter})     // tags Enter
+	m = sendKey(m, tea.KeyMsg{Type: tea.KeyEnter}) // purpose (empty)
+	m = sendKey(m, tea.KeyMsg{Type: tea.KeyCtrlS}) // skip description
+	m = sendKey(m, tea.KeyMsg{Type: tea.KeyEnter}) // tags Enter
 	return m
 }
 
