@@ -2,6 +2,7 @@ package skills
 
 import (
 	"context"
+	"io/fs"
 	"strings"
 	"testing"
 	"testing/fstest"
@@ -230,5 +231,44 @@ func TestActionFor(t *testing.T) {
 		if got := actionFor(c.state, c.force); got != c.want {
 			t.Errorf("actionFor(%q, force=%v) = %q, want %q", c.state, c.force, got, c.want)
 		}
+	}
+}
+
+func TestClassify_SymlinkedFilesAreNeverReplaced(t *testing.T) {
+	shipped := []ShippedFile{
+		{Bundle: "alpha", Path: "SKILL.md", Content: []byte("alpha v2\n")},
+		{Bundle: "beta", Path: "SKILL.md", Content: []byte("beta v2\n")},
+		{Bundle: "gamma", Path: "SKILL.md", Content: []byte("gamma v2\n")},
+		{Bundle: "delta", Path: "SKILL.md", Content: []byte("delta v2\n")},
+	}
+	fsys := fstest.MapFS{
+		"shared/alpha.md":      {Data: []byte("alpha v1\n")},
+		"shared/gamma.md":      {Data: []byte("gamma v2\n")},
+		"shared/beta/SKILL.md": {Data: []byte("beta v1\n")},
+		"alpha/SKILL.md":       {Data: []byte("../shared/alpha.md"), Mode: fs.ModeSymlink},
+		"beta":                 {Data: []byte("shared/beta"), Mode: fs.ModeSymlink},
+		"gamma/SKILL.md":       {Data: []byte("../shared/gamma.md"), Mode: fs.ModeSymlink},
+		"delta/SKILL.md":       {Data: []byte("../shared/gone.md"), Mode: fs.ModeSymlink},
+		ManifestFileName: {Data: []byte(manifestYAML(map[string]map[string]string{
+			"alpha": {"SKILL.md": HashContent([]byte("alpha v1\n"))},
+		}))},
+	}
+	inv, err := Classify(t.Context(), fsys, shipped)
+	if err != nil {
+		t.Fatalf("Classify() error = %v", err)
+	}
+	want := map[string]ShippedState{
+		"alpha": ShippedSymlink,
+		"beta":  ShippedSymlink,
+		"gamma": ShippedCurrent,
+		"delta": ShippedSymlink,
+	}
+	for _, f := range inv.Files {
+		if f.State != want[f.Bundle] {
+			t.Errorf("%s state = %q, want %q", f.RelPath(), f.State, want[f.Bundle])
+		}
+	}
+	if got := actionFor(ShippedSymlink, true); got != ActionPreserve {
+		t.Errorf("actionFor(symlink, force) = %q, want preserve: --force never writes through a symlink", got)
 	}
 }

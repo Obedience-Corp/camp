@@ -34,6 +34,8 @@ func bundleStatusEntries(ctx context.Context, root, skillsDir string) ([]skillSt
 			entry.Suggestion = fmt.Sprintf("run 'camp skills update %s' to refresh it", b.Slug)
 		case intskills.ShippedModified:
 			entry.Suggestion = fmt.Sprintf("local changes are preserved; run 'camp skills update --force %s' to replace them", b.Slug)
+		case intskills.ShippedSymlink:
+			entry.Suggestion = "a shipped file is reached through a symlink; camp never replaces symlinked skill files"
 		case intskills.ShippedUnknown:
 			entry.Suggestion = fmt.Sprintf("differs with no record of what camp shipped; run 'camp skills update --force %s' to replace it", b.Slug)
 		}

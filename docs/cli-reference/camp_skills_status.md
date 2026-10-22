@@ -11,9 +11,10 @@ Reports whether each tool's skills directory has projected entries from
 .campaign/skills/, is partially projected, missing, broken, or blocked.
 
 Each shipped bundle is reported as current, outdated (unchanged since an older
-camp wrote it), modified (changed locally), missing, or unknown (differs with no
-record of what camp shipped). 'camp skills update' refreshes outdated and
-missing bundles and preserves modified ones unless --force is given.
+camp wrote it), modified (changed locally), missing, unknown (differs with no
+record of what camp shipped), or symlink (differs through a symlink, which camp
+never replaces). 'camp skills update' refreshes outdated and missing bundles and
+preserves modified ones unless --force is given.
 
 Examples:
   camp skills status          Show projection states in table format

@@ -15,6 +15,7 @@ Each shipped file is compared with this version's content and with
   outdated   unchanged since camp wrote it, so it is replaced
   modified   changed locally, so it is preserved unless --force
   unknown    differs with no record of what camp wrote, preserved unless --force
+  symlink    a symlinked file or directory that differs; never replaced, even with --force
 
 Every preserved file is reported with the command that replaces it. With
 --force, camp first secures a one-command undo per bundle and prints it:

@@ -25,6 +25,7 @@ Each shipped file is compared with this version's content and with
   outdated   unchanged since camp wrote it, so it is replaced
   modified   changed locally, so it is preserved unless --force
   unknown    differs with no record of what camp wrote, preserved unless --force
+  symlink    a symlinked file or directory that differs; never replaced, even with --force
 
 Every preserved file is reported with the command that replaces it. With
 --force, camp first secures a one-command undo per bundle and prints it:
@@ -89,6 +90,8 @@ func printSkillsUpdate(out io.Writer, res *intskills.UpdateResult) error {
 		switch {
 		case f.Action == intskills.ActionKeep:
 			current++
+		case f.State == intskills.ShippedSymlink:
+			lines = append(lines, fmt.Sprintf("left %s alone: it is a symlink, and camp never replaces symlinked skill files", f.RelPath()))
 		case f.Action == intskills.ActionPreserve:
 			lines = append(lines, fmt.Sprintf("preserved %s (%s); run 'camp skills update --force %s' to replace it",
 				f.RelPath(), stateNote(f.State), f.Bundle))
@@ -103,7 +106,7 @@ func printSkillsUpdate(out io.Writer, res *intskills.UpdateResult) error {
 		if u.BackupDir != "" {
 			lines = append(lines, fmt.Sprintf("backed up replaced %s files to %s", u.Bundle, u.BackupDir))
 		}
-		lines = append(lines, fmt.Sprintf("undo %s: %s", u.Bundle, u.Command))
+		lines = append(lines, fmt.Sprintf("undo %s: %s (camp skills status then shows %s as modified)", u.Bundle, u.Command, u.Bundle))
 	}
 	lines = append(lines, fmt.Sprintf("%d file(s) already current", current))
 	switch {

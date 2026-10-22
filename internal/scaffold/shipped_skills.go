@@ -84,6 +84,9 @@ func computeSkillChanges(ctx context.Context, absDir string, plan *RepairPlan) e
 		case intskills.ShippedUnknown:
 			change.Type = RepairPreserve
 			change.Description = fmt.Sprintf("modified or outdated, run camp skills update --force %s", f.Bundle)
+		case intskills.ShippedSymlink:
+			change.Type = RepairPreserve
+			change.Description = "symlink, left alone; camp never replaces symlinked skill files"
 		default:
 			continue
 		}

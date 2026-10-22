@@ -23,7 +23,7 @@ const (
 	ActionUpdate FileAction = "update"
 	// ActionReplace overwrites a modified or unknown file under --force.
 	ActionReplace FileAction = "replace"
-	// ActionPreserve leaves a modified or unknown file alone.
+	// ActionPreserve leaves a modified, unknown, or symlinked file alone.
 	ActionPreserve FileAction = "preserve"
 	// ActionKeep leaves a current file alone.
 	ActionKeep FileAction = "keep"
@@ -40,6 +40,8 @@ func actionFor(state ShippedState, force bool) FileAction {
 		return ActionAdd
 	case state == ShippedOutdated:
 		return ActionUpdate
+	case state == ShippedSymlink:
+		return ActionPreserve
 	case state.Preserved() && force:
 		return ActionReplace
 	case state.Preserved():
@@ -96,7 +98,8 @@ type UpdateResult struct {
 
 // Update brings the shipped skill bundles under Root to the shipped content:
 // it writes missing and outdated files, preserves modified and unknown files
-// unless Force is set, and then records the manifest. Before replacing any
+// unless Force is set, never writes through a symlink, and then records the
+// manifest. Before replacing any
 // modified file it secures an undo per bundle. On error, including context
 // cancellation, the result lists what was already written.
 func Update(ctx context.Context, opts UpdateOptions) (*UpdateResult, error) {

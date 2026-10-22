@@ -255,7 +255,7 @@ func RunFlow(ctx context.Context, p Params, w Writers, isInteractive bool) error
 			return nil
 		}
 
-		if plan.HasChanges() {
+		if plan.HasChanges() || plan.HasSkillNotices() {
 			printRepairDiff(plan, w)
 		}
 		if skillsPending {

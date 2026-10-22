@@ -5,6 +5,7 @@ import (
 	"context"
 	"errors"
 	"io/fs"
+	"strings"
 
 	camperrors "github.com/Obedience-Corp/camp/internal/errors"
 )
@@ -26,18 +27,23 @@ const (
 	ShippedUnknown ShippedState = "unknown"
 	// ShippedMissing means the file does not exist.
 	ShippedMissing ShippedState = "missing"
+	// ShippedSymlink means the file, or a directory above it inside the
+	// bundle, is a symlink whose content differs; camp never writes through it.
+	ShippedSymlink ShippedState = "symlink"
 )
 
 // Preserved reports whether an update without --force leaves the file alone.
 func (s ShippedState) Preserved() bool {
-	return s == ShippedModified || s == ShippedUnknown
+	return s == ShippedModified || s == ShippedUnknown || s == ShippedSymlink
 }
 
 func (s ShippedState) rank() int {
 	switch s {
 	case ShippedModified:
-		return 4
+		return 5
 	case ShippedUnknown:
+		return 4
+	case ShippedSymlink:
 		return 3
 	case ShippedOutdated:
 		return 2
@@ -93,9 +99,20 @@ func Classify(ctx context.Context, skillsFS fs.FS, shipped []ShippedFile) (*Inve
 }
 
 func classifyFile(skillsFS fs.FS, manifest *Manifest, f ShippedFile) (ShippedState, error) {
-	disk, err := fs.ReadFile(skillsFS, f.Bundle+"/"+f.Path)
+	name := f.Bundle + "/" + f.Path
+	linked, err := throughSymlink(skillsFS, name)
 	if errors.Is(err, fs.ErrNotExist) {
 		return ShippedMissing, nil
+	}
+	if err != nil {
+		return "", camperrors.Wrapf(err, "inspect %s", f.RelPath())
+	}
+	disk, err := fs.ReadFile(skillsFS, name)
+	if linked {
+		if err == nil && bytes.Equal(disk, f.Content) {
+			return ShippedCurrent, nil
+		}
+		return ShippedSymlink, nil
 	}
 	if err != nil {
 		return "", camperrors.Wrapf(err, "read %s", f.RelPath())
@@ -112,6 +129,20 @@ func classifyFile(skillsFS fs.FS, manifest *Manifest, f ShippedFile) (ShippedSta
 	default:
 		return ShippedModified, nil
 	}
+}
+
+func throughSymlink(skillsFS fs.FS, name string) (bool, error) {
+	parts := strings.Split(name, "/")
+	for i := range parts {
+		info, err := fs.Lstat(skillsFS, strings.Join(parts[:i+1], "/"))
+		if err != nil {
+			return false, err
+		}
+		if info.Mode()&fs.ModeSymlink != 0 {
+			return true, nil
+		}
+	}
+	return false, nil
 }
 
 // Bundles aggregates file states per bundle in first-seen order. A preserved state

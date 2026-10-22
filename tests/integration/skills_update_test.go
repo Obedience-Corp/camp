@@ -163,7 +163,7 @@ func TestSkillsUpdate_ForceCommittedBundlePrintsGitUndo(t *testing.T) {
 	out, err := tc.RunCampInDir(path, "skills", "update", "--force", "fest-execution")
 	require.NoError(t, err, out)
 	assert.Contains(t, out, "replaced .campaign/skills/fest-execution/SKILL.md (changed locally)")
-	assert.Contains(t, out, "undo fest-execution: git checkout HEAD -- .campaign/skills/fest-execution")
+	assert.Contains(t, out, "undo fest-execution: git checkout HEAD -- .campaign/skills/fest-execution (camp skills status then shows fest-execution as modified)")
 	assert.NotContains(t, out, ".backup")
 	content, err := tc.ReadFile(skillFile(path, "fest-execution"))
 	require.NoError(t, err)
@@ -173,6 +173,36 @@ func TestSkillsUpdate_ForceCommittedBundlePrintsGitUndo(t *testing.T) {
 	content, err = tc.ReadFile(skillFile(path, "fest-execution"))
 	require.NoError(t, err)
 	assert.Contains(t, content, localSkillRule, "the printed undo must restore the local edit")
+
+	status, err := tc.RunCampInDir(path, "skills", "status")
+	require.NoError(t, err, status)
+	assert.Equal(t, "modified", bundleStateLine(t, status, "fest-execution"), "the undo note must describe what status shows")
+}
+
+func TestSkillsUpdate_LeavesSymlinkedFileAlone(t *testing.T) {
+	tc := GetSharedContainer(t)
+	path := initSkillsUpdateCamp(t, tc, "skills-update-symlink")
+	makeOutdated(t, tc, path, "fest-execution")
+	tc.Shell(t, fmt.Sprintf("cd %s && mv .campaign/skills/fest-execution/SKILL.md shared-skill.md && "+
+		"ln -s ../../../shared-skill.md .campaign/skills/fest-execution/SKILL.md && sync", path))
+	sharedBefore := sha256In(t, tc, path+"/shared-skill.md")
+
+	status, err := tc.RunCampInDir(path, "skills", "status")
+	require.NoError(t, err, status)
+	assert.Equal(t, "symlink", bundleStateLine(t, status, "fest-execution"))
+
+	out, err := tc.RunCampInDir(path, "skills", "update", "--force", "fest-execution")
+	require.NoError(t, err, out)
+	assert.Contains(t, out, "left .campaign/skills/fest-execution/SKILL.md alone: it is a symlink, and camp never replaces symlinked skill files")
+	assert.NotContains(t, out, "undo fest-execution")
+	_, exitCode, err := tc.ExecCommand("test", "-L", skillFile(path, "fest-execution"))
+	require.NoError(t, err)
+	assert.Equal(t, 0, exitCode, "update must not de-link a symlinked skill file")
+	assert.Equal(t, sharedBefore, sha256In(t, tc, path+"/shared-skill.md"), "update must not write through the symlink")
+
+	repair, err := tc.RunCampInDir(path, "init", "--repair", "--dry-run")
+	require.NoError(t, err, repair)
+	assert.Contains(t, repair, "symlink, left alone; camp never replaces symlinked skill files")
 }
 
 func TestSkillsUpdate_ForceUncommittedEditBacksUp(t *testing.T) {

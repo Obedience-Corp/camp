@@ -83,3 +83,63 @@ func TestUpdateForceOutsideGitBacksUpBeforeReplacing(t *testing.T) {
 		t.Fatalf("live file = %q, %v; want the shipped content", live, err)
 	}
 }
+
+func TestUpdateLeavesSymlinkedFilesAlone(t *testing.T) {
+	root := t.TempDir()
+	skillsDir := filepath.Join(root, ".campaign", "skills")
+	shared := filepath.Join(root, "shared")
+	for _, dir := range []string{filepath.Join(skillsDir, "alpha"), filepath.Join(shared, "beta")} {
+		if err := os.MkdirAll(dir, 0o755); err != nil {
+			t.Fatal(err)
+		}
+	}
+	stale := []byte("alpha v1\n")
+	if err := os.WriteFile(filepath.Join(shared, "alpha.md"), stale, 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(shared, "beta", "SKILL.md"), []byte("beta v1\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Symlink("../../../shared/alpha.md", filepath.Join(skillsDir, "alpha", "SKILL.md")); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Symlink("../../shared/beta", filepath.Join(skillsDir, "beta")); err != nil {
+		t.Fatal(err)
+	}
+	manifest := &Manifest{SchemaVersion: ManifestSchemaVersion, CampVersion: "v1"}
+	manifest.set("alpha", "SKILL.md", HashContent(stale))
+	if err := writeManifest(skillsDir, manifest); err != nil {
+		t.Fatal(err)
+	}
+
+	shipped := []ShippedFile{
+		{Bundle: "alpha", Path: "SKILL.md", Content: []byte("alpha v2\n")},
+		{Bundle: "beta", Path: "SKILL.md", Content: []byte("beta v2\n")},
+	}
+	res, err := Update(t.Context(), UpdateOptions{Root: root, Shipped: shipped, Force: true, CampVersion: "v2"})
+	if err != nil {
+		t.Fatalf("Update() error = %v", err)
+	}
+	for _, f := range res.Files {
+		if f.State != ShippedSymlink || f.Action != ActionPreserve || f.Written {
+			t.Errorf("%s = state %q action %q written %v; want a preserved symlink", f.RelPath(), f.State, f.Action, f.Written)
+		}
+	}
+	if len(res.Undo) != 0 {
+		t.Errorf("Undo = %+v, want none: nothing was replaced", res.Undo)
+	}
+	for _, link := range []string{filepath.Join(skillsDir, "alpha", "SKILL.md"), filepath.Join(skillsDir, "beta")} {
+		info, err := os.Lstat(link)
+		if err != nil || info.Mode()&fs.ModeSymlink == 0 {
+			t.Errorf("%s is no longer a symlink (err %v)", link, err)
+		}
+	}
+	for path, want := range map[string]string{
+		filepath.Join(shared, "alpha.md"):         "alpha v1\n",
+		filepath.Join(shared, "beta", "SKILL.md"): "beta v1\n",
+	} {
+		if got, err := os.ReadFile(path); err != nil || string(got) != want {
+			t.Errorf("shared target %s = %q, %v; want it untouched", path, got, err)
+		}
+	}
+}
