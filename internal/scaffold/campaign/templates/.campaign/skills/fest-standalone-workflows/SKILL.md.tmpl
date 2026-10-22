@@ -22,7 +22,7 @@ Run from the directory that should own the workflow:
 mkdir -p workflow/explore/my-workflow
 cd workflow/explore/my-workflow
 
-fest create workflow my-workflow --no-init --steps '{
+fest create workflow my-workflow --steps '{
   "title": "My Workflow",
   "description": "A lightweight guided loop.",
   "steps": [
@@ -44,13 +44,15 @@ fest create workflow my-workflow --no-init --steps '{
 fest next
 ```
 
-For the current standalone first-run flow, include `--no-init` before running
-`fest next`.
+Outside a festival phase, `fest create workflow` writes `WORKFLOW.md`, initializes
+`.workflow/` runtime state, and starts a tracked run in one step, so `fest next` works
+immediately. `--no-init` is the advanced opt-out that writes only the document; after
+it you must run `fest workflow init` and `fest workflow start` yourself.
 
 For human interactive creation, run the command without `--steps` from a TTY:
 
 ```bash
-fest create workflow my-workflow --no-init
+fest create workflow my-workflow
 ```
 
 It prompts for title, intent, and step lines in `Name|Goal` form.
@@ -95,5 +97,5 @@ fest next
 - Passing `--path` for standalone workflow creation. In standalone mode, run
   the command from the target directory; `--path` is for festival phase targets.
 - Using `title` inside each step. Step objects require `name` and `goal`.
-- Omitting `--no-init` in the current standalone first-run flow and expecting
-  immediate `fest next` behavior.
+- Assuming `--no-init` is required before `fest next` will work. It is not: the
+  default already initializes the run, and `--no-init` disables that.

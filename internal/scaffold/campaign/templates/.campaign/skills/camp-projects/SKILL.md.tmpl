@@ -76,6 +76,19 @@ camp refs-sync
 camp refs-sync projects/camp
 ```
 
+## Scope-Safe Status and Sync
+
+```bash
+camp status          # camp root
+camp status --sub    # submodule detected from the current directory
+camp status all      # every submodule
+
+camp pull --sub
+camp push --sub
+```
+
+Use the `all` forms only when broad workspace churn is intended.
+
 ## Other Project Operations
 
 ```bash
