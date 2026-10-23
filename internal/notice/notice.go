@@ -33,6 +33,9 @@ type Notice struct {
 	Message string
 	// Command fixes it.
 	Command string
+	// Action labels the Command line. Empty means "run"; a notice whose fix
+	// is a page to read rather than a command to type says "see".
+	Action string
 }
 
 // Detector reports a Notice for campaignRoot, or nil when it has nothing to
@@ -70,7 +73,11 @@ func Detect(ctx context.Context, campaignRoot string, detectors ...Detector) []N
 // the integration tests that assert on its text.
 func Render(w io.Writer, notices []Notice) {
 	for _, n := range notices {
+		action := n.Action
+		if action == "" {
+			action = "run"
+		}
 		_, _ = fmt.Fprintf(w, "%s %s %s\n", ui.WarningIcon(), ui.Warning("notice:"), n.Message)
-		_, _ = fmt.Fprintf(w, "  %s %s\n", ui.Dim("run:"), ui.Accent(n.Command))
+		_, _ = fmt.Fprintf(w, "  %s %s\n", ui.Dim(action+":"), ui.Accent(n.Command))
 	}
 }

@@ -4,7 +4,7 @@ go 1.26.0
 
 require (
 	github.com/Obedience-Corp/build-util v0.1.0
-	github.com/Obedience-Corp/obey-shared v0.5.0
+	github.com/Obedience-Corp/obey-shared v0.5.1-0.20261023224406-ae6cb59c1c31
 	github.com/alecthomas/chroma/v2 v2.27.0
 	github.com/aymanbagabas/go-osc52/v2 v2.0.1
 	github.com/charmbracelet/bubbles v1.0.0

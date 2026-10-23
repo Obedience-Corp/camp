@@ -32,6 +32,7 @@ func TestPublishedSchemaVersionsAreFrozen(t *testing.T) {
 		{"camp fresh show-workflow --json", fresh.JSONSchemaVersion, "fresh-workflow/v1"},
 		{"camp flow items", flow.WorkflowItemsSchemaVersion, "workflow-items/v1alpha1"},
 		{"camp version --json", version.SchemaVersion, "version/v1alpha1"},
+		{"camp version --check --json", version.CheckSchemaVersion, "version-check/v1alpha1"},
 		{"quest checklist", quest.ChecklistSchemaV1, "quest-checklist/v1alpha1"},
 		{"camp dungeon explore --json", explore.SchemaVersion, "camp-dungeon-explore/v1"},
 	}

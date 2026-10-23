@@ -82,6 +82,7 @@ func newVersionTestCommand(t *testing.T) (*cobra.Command, *bytes.Buffer) {
 	cmd := &cobra.Command{Use: "version"}
 	cmd.Flags().BoolP("short", "s", false, "show only version number")
 	cmd.Flags().Bool("json", false, "output as JSON")
+	cmd.Flags().Bool("check", false, "check for a newer Festival suite release")
 
 	out := new(bytes.Buffer)
 	cmd.SetOut(out)

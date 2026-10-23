@@ -63,8 +63,9 @@ var containerFSPackages = []containerFSPackage{
 	// Deferred commits must preserve hooks and trailers against real repositories.
 	{ImportPath: "./internal/jobs", MinTests: 6, TestPattern: "^Test(ExecuteCommit|CaptureDirection)"},
 	{ImportPath: "./internal/defercommit", MinTests: 2, TestPattern: "^TestAllowedForPaths(Keeps|Unreadable)"},
-	// Hop resume handoff and dungeon explorer command regressions.
-	{ImportPath: "./cmd/camp", MinTests: 25, TestPattern: "^Test(HopResumeFS|ExploreExecuteDoesNotWriteConfig|ExploreExecuteRefusesInvalidFlags|ExploreExecuteKeepsStderrJSONWhenAJobFailed)"},
+	// Hop resume handoff, dungeon explorer command regressions, and the suite
+	// update notice and version --check, which read and write ~/.obey.
+	{ImportPath: "./cmd/camp", MinTests: 31, TestPattern: "^Test(HopResumeFS|ExploreExecuteDoesNotWriteConfig|ExploreExecuteRefusesInvalidFlags|ExploreExecuteKeepsStderrJSONWhenAJobFailed|SuiteUpdateFS)"},
 	{ImportPath: "./internal/starter", MinTests: 7},
 	{ImportPath: "./internal/clone", MinTests: 29},
 	{ImportPath: "./internal/sync", MinTests: 32},
