@@ -4,7 +4,6 @@ import (
 	"context"
 	"fmt"
 	"io"
-	"os"
 
 	"github.com/Obedience-Corp/camp/internal/scaffold"
 	intskills "github.com/Obedience-Corp/camp/internal/skills"
@@ -12,12 +11,12 @@ import (
 
 const bundleStatusTool = "bundle"
 
-func bundleStatusEntries(ctx context.Context, root, skillsDir string) ([]skillStatusEntry, error) {
+func bundleStatusEntries(ctx context.Context, root string) ([]skillStatusEntry, error) {
 	shipped, err := scaffold.ShippedSkills(ctx, root)
 	if err != nil {
 		return nil, err
 	}
-	inv, err := intskills.Classify(ctx, os.DirFS(skillsDir), shipped)
+	inv, err := intskills.ClassifyCamp(ctx, root, shipped)
 	if err != nil {
 		return nil, err
 	}
@@ -37,7 +36,7 @@ func bundleStatusEntries(ctx context.Context, root, skillsDir string) ([]skillSt
 		case intskills.ShippedSymlink:
 			entry.Suggestion = "a shipped file is reached through a symlink; camp never replaces symlinked skill files"
 		case intskills.ShippedUnknown:
-			entry.Suggestion = fmt.Sprintf("differs with no record of what camp shipped; run 'camp skills update --force %s' to replace it", b.Slug)
+			entry.Suggestion = fmt.Sprintf("differs with no record or git history of what camp shipped; run 'camp skills update --force %s' to replace it", b.Slug)
 		}
 		entries = append(entries, entry)
 	}

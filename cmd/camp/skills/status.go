@@ -32,8 +32,10 @@ Reports whether each tool's skills directory has projected entries from
 Each shipped bundle is reported as current, outdated (unchanged since an older
 camp wrote it), modified (changed locally), missing, unknown (differs with no
 record of what camp shipped), or symlink (differs through a symlink, which camp
-never replaces). 'camp skills update' refreshes outdated and missing bundles and
-preserves modified ones unless --force is given.
+never replaces). The record is .campaign/skills/.shipped.yaml; for a file it
+does not cover, a single commit with no change since in git also counts as
+outdated. 'camp skills update' refreshes outdated and missing bundles and
+preserves modified and unknown ones unless --force is given.
 
 Examples:
   camp skills status          Show projection states in table format
@@ -79,7 +81,7 @@ func runSkillsStatus(cmd *cobra.Command, _ []string) error {
 	if err != nil {
 		return err
 	}
-	bundleEntries, err := bundleStatusEntries(ctx, root, skillsDir)
+	bundleEntries, err := bundleStatusEntries(ctx, root)
 	if err != nil {
 		return err
 	}

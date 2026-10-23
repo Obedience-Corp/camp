@@ -227,6 +227,36 @@ func TestIntegration_Init_GitignoreLocalState(t *testing.T) {
 		"camp init must seed .campaign/.gitignore with workitems/current.yaml: %s", gi)
 	assert.Contains(t, gi, "events/",
 		"camp init must seed .campaign/.gitignore with events/: %s", gi)
+	assert.Contains(t, gi, "skills/.backup/",
+		"camp init must seed .campaign/.gitignore with skills/.backup/: %s", gi)
+}
+
+func TestIntegration_InitRepair_AppendsSkillsBackupIfMissing(t *testing.T) {
+	tc := GetSharedContainer(t)
+	path := setupRepairCampaign(t, tc, "repair-gitignore-skills-backup")
+
+	gi, err := tc.ReadFile(path + "/.campaign/.gitignore")
+	require.NoError(t, err)
+	stripped := strings.ReplaceAll(gi, "skills/.backup/\n", "")
+	require.NotEqual(t, gi, stripped, "fixture must have the skills/.backup/ rule so we can remove it")
+	require.NoError(t, tc.WriteFile(path+"/.campaign/.gitignore", stripped))
+	tc.Shell(t, "cd "+path+" && git add .campaign/.gitignore && git commit -qm 'older camp gitignore' && sync")
+
+	dry, err := tc.RunCampInDir(path, "init", "--repair", "--dry-run")
+	require.NoError(t, err, dry)
+	assert.Contains(t, dry, "missing skills/.backup/ entries")
+
+	runRepair(t, tc, path)
+
+	after, err := tc.ReadFile(path + "/.campaign/.gitignore")
+	require.NoError(t, err)
+	assert.Contains(t, after, "skills/.backup/", "repair must append skills/.backup/ when missing")
+	assert.Empty(t, tc.GitOutput(t, path, "status", "--porcelain", "--", ".campaign/.gitignore"),
+		"repair must commit the gitignore it appended to")
+	checkOut := tc.Shell(t, "cd "+path+" && mkdir -p .campaign/skills/.backup/fest-execution-x && "+
+		"touch .campaign/skills/.backup/fest-execution-x/SKILL.md && "+
+		"git check-ignore -v .campaign/skills/.backup/fest-execution-x/SKILL.md")
+	assert.Contains(t, checkOut, ".campaign/.gitignore:", "the camp gitignore must be the rule that ignores skills update backups")
 }
 
 func TestIntegration_InitRepair_AppendsCurrentYamlIfMissing(t *testing.T) {

@@ -5,8 +5,11 @@ import (
 	"context"
 	"errors"
 	"io/fs"
+	"os"
+	"path/filepath"
 	"strings"
 
+	"github.com/Obedience-Corp/camp/internal/campaign"
 	camperrors "github.com/Obedience-Corp/camp/internal/errors"
 )
 
@@ -18,12 +21,13 @@ const (
 	// ShippedCurrent means the file is byte-identical to the shipped content.
 	ShippedCurrent ShippedState = "current"
 	// ShippedOutdated means the file still holds what camp last wrote, from an
-	// older version, so replacing it loses nothing.
+	// older version, so replacing it loses nothing. The manifest proves it, or,
+	// for a file the manifest does not record, git history does.
 	ShippedOutdated ShippedState = "outdated"
 	// ShippedModified means the file was changed after camp wrote it.
 	ShippedModified ShippedState = "modified"
-	// ShippedUnknown means the file differs and the manifest has no record of
-	// what camp wrote, so a local edit cannot be ruled out.
+	// ShippedUnknown means the file differs and neither the manifest nor git
+	// history shows what camp wrote, so a local edit cannot be ruled out.
 	ShippedUnknown ShippedState = "unknown"
 	// ShippedMissing means the file does not exist.
 	ShippedMissing ShippedState = "missing"
@@ -58,6 +62,9 @@ func (s ShippedState) rank() int {
 type FileStatus struct {
 	ShippedFile
 	State ShippedState
+	// GitEvidence marks an outdated file the manifest does not record, shown
+	// unchanged since camp wrote it by git history alone.
+	GitEvidence bool
 }
 
 // BundleStatus is the aggregate state of one shipped bundle.
@@ -73,10 +80,19 @@ type Inventory struct {
 	Manifest *Manifest
 }
 
+// ClassifyCamp classifies the shipped skill files of the camp at root, with
+// that camp's git history as evidence for files the manifest does not record.
+func ClassifyCamp(ctx context.Context, root string, shipped []ShippedFile) (*Inventory, error) {
+	skillsDir := filepath.Join(root, campaign.CampaignDir, SkillsSubdir)
+	return Classify(ctx, os.DirFS(skillsDir), shipped, NewGitProvenance(root))
+}
+
 // Classify compares each shipped file with its copy in skillsFS, rooted at
-// .campaign/skills/, and with the manifest stored there. Files camp does not
-// ship are never read.
-func Classify(ctx context.Context, skillsFS fs.FS, shipped []ShippedFile) (*Inventory, error) {
+// .campaign/skills/, and with the manifest stored there. A differing file the
+// manifest does not record is outdated when prov shows it unchanged since camp
+// wrote it, and unknown otherwise; a nil prov offers no such evidence. Files
+// camp does not ship are never read.
+func Classify(ctx context.Context, skillsFS fs.FS, shipped []ShippedFile, prov Provenance) (*Inventory, error) {
 	if err := ctx.Err(); err != nil {
 		return nil, err
 	}
@@ -89,46 +105,53 @@ func Classify(ctx context.Context, skillsFS fs.FS, shipped []ShippedFile) (*Inve
 		if err := ctx.Err(); err != nil {
 			return nil, err
 		}
-		state, err := classifyFile(skillsFS, manifest, f)
+		status, err := classifyFile(ctx, skillsFS, manifest, prov, f)
 		if err != nil {
 			return nil, err
 		}
-		inv.Files = append(inv.Files, FileStatus{ShippedFile: f, State: state})
+		inv.Files = append(inv.Files, status)
 	}
 	return inv, nil
 }
 
-func classifyFile(skillsFS fs.FS, manifest *Manifest, f ShippedFile) (ShippedState, error) {
+func classifyFile(ctx context.Context, skillsFS fs.FS, manifest *Manifest, prov Provenance, f ShippedFile) (FileStatus, error) {
+	status := FileStatus{ShippedFile: f}
 	name := f.Bundle + "/" + f.Path
 	linked, err := throughSymlink(skillsFS, name)
 	if errors.Is(err, fs.ErrNotExist) {
-		return ShippedMissing, nil
+		status.State = ShippedMissing
+		return status, nil
 	}
 	if err != nil {
-		return "", camperrors.Wrapf(err, "inspect %s", f.RelPath())
+		return status, camperrors.Wrapf(err, "inspect %s", f.RelPath())
 	}
 	disk, err := fs.ReadFile(skillsFS, name)
-	if linked {
-		if err == nil && bytes.Equal(disk, f.Content) {
-			return ShippedCurrent, nil
-		}
-		return ShippedSymlink, nil
-	}
-	if err != nil {
-		return "", camperrors.Wrapf(err, "read %s", f.RelPath())
-	}
-	if bytes.Equal(disk, f.Content) {
-		return ShippedCurrent, nil
+	switch {
+	case linked && err == nil && bytes.Equal(disk, f.Content):
+		status.State = ShippedCurrent
+		return status, nil
+	case linked:
+		status.State = ShippedSymlink
+		return status, nil
+	case err != nil:
+		return status, camperrors.Wrapf(err, "read %s", f.RelPath())
+	case bytes.Equal(disk, f.Content):
+		status.State = ShippedCurrent
+		return status, nil
 	}
 	recorded, ok := manifest.recorded(f.Bundle, f.Path)
 	switch {
-	case !ok:
-		return ShippedUnknown, nil
-	case recorded == HashContent(disk):
-		return ShippedOutdated, nil
+	case ok && recorded == HashContent(disk):
+		status.State = ShippedOutdated
+	case ok:
+		status.State = ShippedModified
+	case prov != nil && prov.WrittenOnce(ctx, f.RelPath()):
+		status.State = ShippedOutdated
+		status.GitEvidence = true
 	default:
-		return ShippedModified, nil
+		status.State = ShippedUnknown
 	}
+	return status, nil
 }
 
 func throughSymlink(skillsFS fs.FS, name string) (bool, error) {

@@ -7,6 +7,7 @@ import (
 	"os"
 	"path/filepath"
 	"strconv"
+	"strings"
 	"time"
 
 	camperrors "github.com/Obedience-Corp/camp/internal/errors"
@@ -18,15 +19,18 @@ const backupStampLayout = "20060102T150405Z"
 
 func secureUndo(ctx context.Context, root, skillsDir string, stamp time.Time, files []FileOutcome) ([]Undo, error) {
 	var order []string
-	replaced := make(map[string][]FileOutcome)
+	covered := make(map[string][]FileOutcome)
+	forced := make(map[string]bool)
 	for _, out := range files {
-		if out.Action != ActionReplace {
+		gitUpdate := out.Action == ActionUpdate && out.GitEvidence
+		if out.Action != ActionReplace && !gitUpdate {
 			continue
 		}
-		if _, seen := replaced[out.Bundle]; !seen {
+		if _, seen := covered[out.Bundle]; !seen {
 			order = append(order, out.Bundle)
 		}
-		replaced[out.Bundle] = append(replaced[out.Bundle], out)
+		covered[out.Bundle] = append(covered[out.Bundle], out)
+		forced[out.Bundle] = forced[out.Bundle] || out.Action == ActionReplace
 	}
 
 	undos := make([]Undo, 0, len(order))
@@ -35,11 +39,17 @@ func secureUndo(ctx context.Context, root, skillsDir string, stamp time.Time, fi
 			return undos, err
 		}
 		bundleRel := shippedSkillsPrefix + bundle
-		if gitRestores(ctx, root, bundleRel, replaced[bundle]) {
+		if !forced[bundle] {
+			// Git evidence means each file is committed and clean, so checking
+			// out just those files restores them without touching the rest.
+			undos = append(undos, Undo{Bundle: bundle, Command: "git checkout HEAD -- " + relPaths(covered[bundle])})
+			continue
+		}
+		if gitRestores(ctx, root, bundleRel, covered[bundle]) {
 			undos = append(undos, Undo{Bundle: bundle, Command: "git checkout HEAD -- " + bundleRel})
 			continue
 		}
-		dir, err := backupReplaced(skillsDir, bundle+"-"+stamp.Format(backupStampLayout), replaced[bundle])
+		dir, err := backupReplaced(skillsDir, bundle+"-"+stamp.Format(backupStampLayout), covered[bundle])
 		if err != nil {
 			return undos, err
 		}
@@ -51,6 +61,14 @@ func secureUndo(ctx context.Context, root, skillsDir string, stamp time.Time, fi
 		})
 	}
 	return undos, nil
+}
+
+func relPaths(files []FileOutcome) string {
+	paths := make([]string, 0, len(files))
+	for _, out := range files {
+		paths = append(paths, out.RelPath())
+	}
+	return strings.Join(paths, " ")
 }
 
 func gitRestores(ctx context.Context, root, bundleRel string, files []FileOutcome) bool {
