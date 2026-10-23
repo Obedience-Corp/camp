@@ -3,6 +3,7 @@ package scaffold
 import (
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 	"testing"
 
@@ -78,6 +79,21 @@ func TestGitignoreHasRule(t *testing.T) {
 					tc.content, tc.entry, got, tc.want)
 			}
 		})
+	}
+}
+
+func TestCampaignGitignoreRequiredRules_IgnoreSkillsBackups(t *testing.T) {
+	if skillsBackupGitignoreRule != "skills/.backup/" {
+		t.Fatalf("skillsBackupGitignoreRule = %q, want the .campaign-relative skills backup directory", skillsBackupGitignoreRule)
+	}
+	if !slices.Contains(campaignGitignoreRequiredRules, skillsBackupGitignoreRule) {
+		t.Fatal("repair must append the skills backup rule to existing camps")
+	}
+	fallback := campaignGitignoreRuleComment("unlisted/")
+	for _, rule := range campaignGitignoreRequiredRules {
+		if campaignGitignoreRuleComment(rule) == fallback {
+			t.Errorf("required rule %q has no comment of its own", rule)
+		}
 	}
 }
 

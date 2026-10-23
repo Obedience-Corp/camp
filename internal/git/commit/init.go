@@ -12,5 +12,5 @@ type InitOptions struct {
 // the scaffold's own paths so an init inside an existing repository never
 // sweeps unrelated working-tree changes into the campaign's first commit.
 func Init(ctx context.Context, opts InitOptions) Result {
-	return doCommit(ctx, opts.Options, "Init", "scaffold camp workspace", opts.Description)
+	return doCommit(ctx, opts.Options, initAction, initSubject, opts.Description)
 }

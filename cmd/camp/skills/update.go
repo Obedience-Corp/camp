@@ -18,17 +18,24 @@ var skillsUpdateCmd = &cobra.Command{
 this camp version ships. With no slug, every shipped bundle is checked.
 
 Each shipped file is compared with this version's content and with
-.campaign/skills/.shipped.yaml, the record of what camp last wrote:
+.campaign/skills/.shipped.yaml, the record of what camp last wrote. Camps
+created before that record existed have none, so for a file it does not cover
+camp reads git history instead: a file whose only commit is camp init's or
+camp repair's, unchanged since, still holds what camp wrote and is replaced
+without --force. A file first committed any other way stays unknown.
 
   missing    written
   current    left alone
-  outdated   unchanged since camp wrote it, so it is replaced
+  outdated   unchanged since camp wrote it, per the record or git, so it is replaced
   modified   changed locally, so it is preserved unless --force
-  unknown    differs with no record of what camp wrote, preserved unless --force
+  unknown    differs and neither the record nor git shows what camp wrote;
+             preserved unless --force
   symlink    a symlinked file or directory that differs; never replaced, even with --force
 
-Every preserved file is reported with the command that replaces it. With
---force, camp first secures a one-command undo per bundle and prints it:
+Every preserved file is reported with the command that replaces it. A file
+replaced on git evidence alone is reported with the command that restores it,
+'git checkout HEAD -- <file>...'. With --force, camp first secures a
+one-command undo per bundle and prints it:
 'git checkout HEAD -- .campaign/skills/<slug>' when the bundle is committed and
 unchanged, otherwise a copy of the replaced files under .campaign/skills/.backup/.
 
@@ -94,11 +101,11 @@ func printSkillsUpdate(out io.Writer, res *intskills.UpdateResult) error {
 			lines = append(lines, fmt.Sprintf("left %s alone: it is a symlink, and camp never replaces symlinked skill files", f.RelPath()))
 		case f.Action == intskills.ActionPreserve:
 			lines = append(lines, fmt.Sprintf("preserved %s (%s); run 'camp skills update --force %s' to replace it",
-				f.RelPath(), stateNote(f.State), f.Bundle))
+				f.RelPath(), stateNote(f.FileStatus), f.Bundle))
 		case res.DryRun:
-			lines = append(lines, fmt.Sprintf("would %s %s (%s)", f.Action, f.RelPath(), stateNote(f.State)))
+			lines = append(lines, fmt.Sprintf("would %s %s (%s)", f.Action, f.RelPath(), stateNote(f.FileStatus)))
 		case f.Written:
-			lines = append(lines, fmt.Sprintf("%s %s (%s)", pastTense(f.Action), f.RelPath(), stateNote(f.State)))
+			lines = append(lines, fmt.Sprintf("%s %s (%s)", pastTense(f.Action), f.RelPath(), stateNote(f.FileStatus)))
 			added = added || f.Action == intskills.ActionAdd
 		}
 	}
@@ -137,15 +144,18 @@ func pastTense(a intskills.FileAction) string {
 	}
 }
 
-func stateNote(s intskills.ShippedState) string {
-	switch s {
+func stateNote(f intskills.FileStatus) string {
+	switch f.State {
 	case intskills.ShippedMissing:
 		return "missing"
 	case intskills.ShippedOutdated:
+		if f.GitEvidence {
+			return "unchanged since camp wrote it, per git history"
+		}
 		return "outdated"
 	case intskills.ShippedModified:
 		return "changed locally"
 	default:
-		return "differs, no record of what camp shipped"
+		return "differs, no record or git history of what camp shipped"
 	}
 }

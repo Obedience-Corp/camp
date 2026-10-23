@@ -83,9 +83,11 @@ Usually tool-managed; avoid hand-editing unless you are debugging:
 ### `.campaign/.gitignore`
 
 Camp scaffolds a local `.gitignore` here to keep machine-local runtime state
-out of git. It excludes items such as `state.yaml`, `cache/`, and the local
-event ledger under `events/`. Running `camp init --repair` adds missing default
-rules without replacing user-authored entries.
+out of git. It excludes items such as `state.yaml`, `cache/`, the local event
+ledger under `events/`, and `skills/.backup/`, where a forced
+`camp skills update` keeps undo copies of replaced files outside git. Running
+`camp init --repair` adds missing default rules without replacing
+user-authored entries.
 
 ### `.campaign/campaign.yaml`
 

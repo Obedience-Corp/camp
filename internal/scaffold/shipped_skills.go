@@ -19,6 +19,10 @@ const RepairSkillCategory = "skill"
 
 const campaignRecipePath = "campaign/scaffold.yaml"
 
+// skillsBackupGitignoreRule keeps the copies a forced skills update makes
+// outside git, under .campaign/skills/.backup/, out of commits.
+const skillsBackupGitignoreRule = intskills.SkillsSubdir + "/" + intskills.BackupDirName + "/"
+
 // ShippedSkills renders the skill bundles this camp version ships, with the
 // template vars of the camp at absDir, through the scaffold engine init uses.
 func ShippedSkills(ctx context.Context, absDir string) ([]intskills.ShippedFile, error) {
@@ -62,7 +66,7 @@ func computeSkillChanges(ctx context.Context, absDir string, plan *RepairPlan) e
 	if err != nil {
 		return err
 	}
-	inv, err := intskills.Classify(ctx, os.DirFS(skillsDir(absDir)), shipped)
+	inv, err := intskills.ClassifyCamp(ctx, absDir, shipped)
 	if err != nil {
 		return camperrors.Wrap(err, "classify shipped skills")
 	}
@@ -78,6 +82,9 @@ func computeSkillChanges(ctx context.Context, absDir string, plan *RepairPlan) e
 		case intskills.ShippedOutdated:
 			change.Type = RepairModify
 			change.Description = "outdated shipped skill, update to this camp version"
+			if f.GitEvidence {
+				change.Description = "unchanged since camp wrote it per git history, update to this camp version"
+			}
 		case intskills.ShippedModified:
 			change.Type = RepairPreserve
 			change.Description = fmt.Sprintf("modified locally, preserved; run camp skills update --force %s to replace", f.Bundle)

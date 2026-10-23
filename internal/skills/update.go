@@ -78,7 +78,8 @@ type FileOutcome struct {
 	Written bool
 }
 
-// Undo restores the files a forced update replaced in one bundle.
+// Undo restores the files an update replaced in one bundle: those --force
+// replaced and those git history alone showed outdated.
 type Undo struct {
 	Bundle string
 	// Command is the one-command undo, run from the camp root.
@@ -99,8 +100,8 @@ type UpdateResult struct {
 // Update brings the shipped skill bundles under Root to the shipped content:
 // it writes missing and outdated files, preserves modified and unknown files
 // unless Force is set, never writes through a symlink, and then records the
-// manifest. Before replacing any
-// modified file it secures an undo per bundle. On error, including context
+// manifest. Before replacing a modified file, or an outdated file known only
+// from git history, it secures an undo per bundle. On error, including context
 // cancellation, the result lists what was already written.
 func Update(ctx context.Context, opts UpdateOptions) (*UpdateResult, error) {
 	if err := ctx.Err(); err != nil {
@@ -111,7 +112,7 @@ func Update(ctx context.Context, opts UpdateOptions) (*UpdateResult, error) {
 		return nil, err
 	}
 	skillsDir := filepath.Join(opts.Root, campaign.CampaignDir, SkillsSubdir)
-	inv, err := Classify(ctx, os.DirFS(skillsDir), opts.Shipped)
+	inv, err := ClassifyCamp(ctx, opts.Root, opts.Shipped)
 	if err != nil {
 		return nil, err
 	}

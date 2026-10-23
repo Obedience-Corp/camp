@@ -47,7 +47,7 @@ func skillsFSFixture() fstest.MapFS {
 }
 
 func TestClassify_FileStates(t *testing.T) {
-	inv, err := Classify(t.Context(), skillsFSFixture(), shippedFixture())
+	inv, err := Classify(t.Context(), skillsFSFixture(), shippedFixture(), nil)
 	if err != nil {
 		t.Fatalf("Classify() error = %v", err)
 	}
@@ -72,7 +72,7 @@ func TestClassify_FileStates(t *testing.T) {
 func TestClassify_WithoutManifestDifferingFilesAreUnknown(t *testing.T) {
 	fsys := skillsFSFixture()
 	delete(fsys, ManifestFileName)
-	inv, err := Classify(t.Context(), fsys, shippedFixture())
+	inv, err := Classify(t.Context(), fsys, shippedFixture(), nil)
 	if err != nil {
 		t.Fatalf("Classify() error = %v", err)
 	}
@@ -89,7 +89,7 @@ func TestClassify_WithoutManifestDifferingFilesAreUnknown(t *testing.T) {
 func TestClassify_CanceledContext(t *testing.T) {
 	ctx, cancel := context.WithCancel(t.Context())
 	cancel()
-	if _, err := Classify(ctx, skillsFSFixture(), shippedFixture()); err == nil {
+	if _, err := Classify(ctx, skillsFSFixture(), shippedFixture(), nil); err == nil {
 		t.Fatal("Classify() with a canceled context returned no error")
 	}
 }
@@ -97,14 +97,14 @@ func TestClassify_CanceledContext(t *testing.T) {
 func TestClassify_UnreadableManifestIsAnError(t *testing.T) {
 	fsys := skillsFSFixture()
 	fsys[ManifestFileName] = &fstest.MapFile{Data: []byte("bundles: [not, a, map\n")}
-	_, err := Classify(t.Context(), fsys, shippedFixture())
+	_, err := Classify(t.Context(), fsys, shippedFixture(), nil)
 	if err == nil || !strings.Contains(err.Error(), "remove it to rebuild") {
 		t.Fatalf("Classify() error = %v, want a parse error naming the remedy", err)
 	}
 }
 
 func TestInventoryBundles_PreservedStatesOutrankRefreshable(t *testing.T) {
-	inv, err := Classify(t.Context(), skillsFSFixture(), shippedFixture())
+	inv, err := Classify(t.Context(), skillsFSFixture(), shippedFixture(), nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -132,7 +132,7 @@ func TestInventoryBundles_PreservedStatesOutrankRefreshable(t *testing.T) {
 }
 
 func TestNextManifest_RecordsWrittenAndKeepsPreservedRecords(t *testing.T) {
-	inv, err := Classify(t.Context(), skillsFSFixture(), shippedFixture())
+	inv, err := Classify(t.Context(), skillsFSFixture(), shippedFixture(), nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -169,7 +169,7 @@ func TestManifestStale(t *testing.T) {
 	shipped := []ShippedFile{{Bundle: "alpha", Path: "SKILL.md", Content: []byte("alpha v2\n")}}
 	current := fstest.MapFS{"alpha/SKILL.md": {Data: []byte("alpha v2\n")}}
 
-	inv, err := Classify(t.Context(), current, shipped)
+	inv, err := Classify(t.Context(), current, shipped, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -180,7 +180,7 @@ func TestManifestStale(t *testing.T) {
 	current[ManifestFileName] = &fstest.MapFile{Data: []byte(manifestYAML(map[string]map[string]string{
 		"alpha": {"SKILL.md": HashContent([]byte("alpha v2\n"))},
 	}))}
-	if inv, err = Classify(t.Context(), current, shipped); err != nil {
+	if inv, err = Classify(t.Context(), current, shipped, nil); err != nil {
 		t.Fatal(err)
 	}
 	if inv.ManifestStale() {
@@ -188,7 +188,7 @@ func TestManifestStale(t *testing.T) {
 	}
 
 	current["alpha/SKILL.md"] = &fstest.MapFile{Data: []byte("alpha edited\n")}
-	if inv, err = Classify(t.Context(), current, shipped); err != nil {
+	if inv, err = Classify(t.Context(), current, shipped, nil); err != nil {
 		t.Fatal(err)
 	}
 	if inv.ManifestStale() {
@@ -253,7 +253,7 @@ func TestClassify_SymlinkedFilesAreNeverReplaced(t *testing.T) {
 			"alpha": {"SKILL.md": HashContent([]byte("alpha v1\n"))},
 		}))},
 	}
-	inv, err := Classify(t.Context(), fsys, shipped)
+	inv, err := Classify(t.Context(), fsys, shipped, nil)
 	if err != nil {
 		t.Fatalf("Classify() error = %v", err)
 	}

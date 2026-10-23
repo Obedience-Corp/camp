@@ -249,7 +249,9 @@ func TestSkillsUpdate_DryRunWritesNothing(t *testing.T) {
 	assert.False(t, exists)
 }
 
-func TestSkillsUpdate_LegacyCampWithoutManifest(t *testing.T) {
+// A second commit to a skill file in a camp without a manifest is an edit
+// camp did not make, so git history cannot vouch for it.
+func TestSkillsUpdate_LegacyFileCommittedTwiceStaysUnknown(t *testing.T) {
 	tc := GetSharedContainer(t)
 	path := initSkillsUpdateCamp(t, tc, "skills-update-legacy")
 	require.NoError(t, tc.WriteFile(skillFile(path, "campaign-commit"), staleCommitSkill))

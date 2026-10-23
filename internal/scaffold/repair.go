@@ -731,6 +731,7 @@ const (
 var campaignGitignoreRequiredRules = []string{
 	campaignEventsGitignoreRule,
 	currentWorkitemGitignoreRule,
+	skillsBackupGitignoreRule,
 }
 
 // appendGitignoreEntryIfMissing appends a single line to the campaign
@@ -750,6 +751,8 @@ func campaignGitignoreRuleComment(entry string) string {
 		return "# Local campaign event ledger (append-only runtime history)"
 	case currentWorkitemGitignoreRule:
 		return "# Per-machine current-workitem selection (do not share across machines)"
+	case skillsBackupGitignoreRule:
+		return "# Local undo copies of skill files camp skills update --force replaced"
 	default:
 		return "# Machine-local campaign state"
 	}

@@ -366,6 +366,9 @@ settings/workitems.json
 
 # Legacy leftover: removed camp workitem current command; keep ignored if present
 workitems/current.yaml
+
+# Local undo copies of skill files camp skills update --force replaced
+skills/.backup/
 `
 			if err := os.WriteFile(gitignorePath, []byte(gitignoreContent), 0644); err != nil {
 				return nil, camperrors.Wrap(err, "failed to create .gitignore")
