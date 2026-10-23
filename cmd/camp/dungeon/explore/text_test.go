@@ -155,15 +155,15 @@ func TestExploreReaderMeasuresKeycapsAsDrawn(t *testing.T) {
 	}
 }
 
-// padWidth measured with cellWidth and cut with ansi.Truncate, which counts
-// some sequences wider. Text that already filled its width exactly was cut
-// again: the row lost its ellipsis and the highlight ended short.
+// padWidth measures with cellWidth and cuts with ansi.Truncate, and the two
+// can disagree about a cluster. Text that already filled its width exactly
+// was once cut again: the row lost its ellipsis and the highlight ended short.
 func TestExplorePadWidthKeepsTextThatAlreadyFits(t *testing.T) {
-	// An ASCII base, a combining mark, and U+FE0F: one cell by cellWidth,
-	// three by ansi.
-	odd := "e\u0301\ufe0f"
-	if cellWidth(odd) >= ansi.StringWidth(odd) {
-		t.Fatalf("%q no longer measures wider by ansi (%d) than by cellWidth (%d); pick another", odd, ansi.StringWidth(odd), cellWidth(odd))
+	// A regional-indicator flag: one two-cell cluster by ansi, four cells by
+	// cellWidth, which counts the parts.
+	odd := "\U0001F1FA\U0001F1F8"
+	if cellWidth(odd) == ansi.StringWidth(odd) {
+		t.Fatalf("%q measures the same by ansi (%d) and cellWidth (%d); pick another", odd, ansi.StringWidth(odd), cellWidth(odd))
 	}
 	for _, text := range []string{"ab" + odd + "cd…", odd + odd + "…", "plain…"} {
 		width := cellWidth(text)
