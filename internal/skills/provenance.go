@@ -4,6 +4,7 @@ import (
 	"context"
 	"strings"
 	"sync"
+	"time"
 
 	"github.com/Obedience-Corp/camp/internal/git"
 	"github.com/Obedience-Corp/camp/internal/git/commit"
@@ -25,9 +26,8 @@ type Provenance interface {
 // what camp wrote. Before the manifest existed camp never rewrote a shipped
 // file, so any second commit touching it is someone else's edit. Any user
 // commit, including a camp commit --all sweep, could carry an edit made before
-// it, so a file whose only commit is not camp's stays unknown. Repair commits
-// from before repair staged only its own files could also sweep in an edit;
-// that narrow gap is accepted for camps that predate the manifest.
+// it, so a file whose only commit is not camp's stays unknown, and so does one
+// whose only commit is a repair from before repair staged only its own files.
 type GitProvenance struct {
 	root    string
 	mu      sync.Mutex
@@ -109,19 +109,22 @@ type fileHistory struct {
 
 const commitMarker = "\x01"
 
-// skillHistory reads every commit touching scope, with its subject, in one
-// git call. Each commit prints as the marker and subject, then its paths.
+// skillHistory reads every commit touching scope, with its committer date and
+// subject, in one git call. Each commit prints as the marker, the strict ISO
+// date, a space, and the subject, then its paths.
 func skillHistory(ctx context.Context, root, scope string) (map[string]fileHistory, error) {
 	// -c lists a merge's own edits: files that differ from every parent.
-	out, err := git.Output(ctx, root, "log", "--format="+commitMarker+"%s", "--name-only", "--no-renames", "-c", "-z", "--relative", "--", scope)
+	out, err := git.Output(ctx, root, "log", "--format="+commitMarker+"%cI %s", "--name-only", "--no-renames", "-c", "-z", "--relative", "--", scope)
 	if err != nil {
 		return nil, err
 	}
 	history := make(map[string]fileHistory)
 	byCamp := false
 	for field := range strings.SplitSeq(out, "\x00") {
-		if subject, ok := strings.CutPrefix(field, commitMarker); ok {
-			byCamp = commit.IsScaffoldCommit(subject)
+		if header, ok := strings.CutPrefix(field, commitMarker); ok {
+			date, subject, _ := strings.Cut(header, " ")
+			committed, _ := time.Parse(time.RFC3339, date)
+			byCamp = commit.IsScaffoldCommit(subject, committed)
 			continue
 		}
 		path := strings.TrimPrefix(field, "\n")

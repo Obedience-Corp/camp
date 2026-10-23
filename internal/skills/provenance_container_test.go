@@ -43,6 +43,35 @@ func commitAll(t *testing.T, dir, msg string) {
 	gitIn(t, dir, "commit", "-q", "-m", msg)
 }
 
+func commitAllAt(t *testing.T, dir, msg, date string) {
+	t.Helper()
+	gitIn(t, dir, "add", "-A")
+	cmd := exec.Command("git", "-C", dir, "commit", "-q", "-m", msg)
+	cmd.Env = append(os.Environ(), "GIT_COMMITTER_DATE="+date, "GIT_AUTHOR_DATE="+date)
+	if out, err := cmd.CombinedOutput(); err != nil {
+		t.Fatalf("commit at %s: %v\n%s", date, err, out)
+	}
+}
+
+func TestGitProvenanceRepairBeforeSelectiveStagingOffersNoEvidence(t *testing.T) {
+	root := t.TempDir()
+	writeSkill(t, root, "init/SKILL.md", "v1\n")
+	gitIn(t, root, "init", "-q")
+	commitAllAt(t, root, campInitSubject, "2026-01-20T10:00:00-07:00")
+	writeSkill(t, root, "early/SKILL.md", "v1\n")
+	commitAllAt(t, root, campLegacyRepairSubject, "2026-03-03T15:28:34-07:00")
+	writeSkill(t, root, "late/SKILL.md", "v1\n")
+	commitAllAt(t, root, campLegacyRepairSubject, "2026-03-03T15:28:35-07:00")
+
+	got := writtenOnceAnswers(t, root, "init/SKILL.md", "early/SKILL.md", "late/SKILL.md")
+	want := map[string]bool{"init/SKILL.md": true, "late/SKILL.md": true}
+	for rel, ok := range got {
+		if ok != want[rel] {
+			t.Errorf("WrittenOnce(%s) = %v, want %v: whole-tree repair commits before the cutoff are not evidence", rel, ok, want[rel])
+		}
+	}
+}
+
 func writtenOnceAnswers(t *testing.T, root string, rels ...string) map[string]bool {
 	t.Helper()
 	prov := NewGitProvenance(root)
