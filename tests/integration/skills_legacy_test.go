@@ -17,13 +17,14 @@ const (
 
 // makeLegacyCamp rebuilds a fresh camp the way a camp older than the manifest
 // looks: no .shipped.yaml, and campaign-commit holding stale content that the
-// camp's only commit wrote. It returns the hash of the shipped content.
+// camp's only commit, camp init's, wrote. It returns the hash of the shipped
+// content.
 func makeLegacyCamp(t *testing.T, tc *TestContainer, path string) (shippedHash string) {
 	t.Helper()
 	shippedHash = sha256In(t, tc, skillFile(path, "campaign-commit"))
 	require.NoError(t, tc.WriteFile(skillFile(path, "campaign-commit"), staleCommitSkill))
 	tc.Shell(t, "cd "+path+" && rm -rf .git "+path+skillsManifest+
-		" && git init -q && git add -A && git commit -qm 'camp init' && sync")
+		" && git init -q && git add -A && git commit -qm '[legacy:1a2b3c4d] Init: scaffold camp workspace' && sync")
 	return shippedHash
 }
 
@@ -93,6 +94,12 @@ func TestSkillsUpdate_LegacyCampWithoutGitEvidenceStaysUnknown(t *testing.T) {
 	status, err = tc.RunCampInDir(path, "skills", "status")
 	require.NoError(t, err, status)
 	assert.Equal(t, "unknown", bundleStateLine(t, status, "campaign-commit"), "without git there is no evidence")
+
+	tc.Shell(t, "cd "+path+" && git init -q && git add -A && git commit -qm '[legacy:1a2b3c4d] Evil jarvis testing' && sync")
+	status, err = tc.RunCampInDir(path, "skills", "status")
+	require.NoError(t, err, status)
+	assert.Equal(t, "unknown", bundleStateLine(t, status, "campaign-commit"),
+		"a user's only commit may carry an edit made before it, so it is not camp's evidence")
 }
 
 func TestInitRepair_LegacyCampUpdatesOnGitEvidenceAndCommits(t *testing.T) {

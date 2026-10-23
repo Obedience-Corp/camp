@@ -83,7 +83,7 @@ var containerFSPackages = []containerFSPackage{
 	// and the index scan adds worktrees on top of them.
 	{ImportPath: "./internal/dirlink", MinTests: 3},
 	{ImportPath: "./internal/project", MinTests: 5},
-	{ImportPath: "./internal/skills", MinTests: 10, TestPattern: "^Test(SkillProjectionDirectoryLinkReadback|GrokSkillsAliasDirectoryLink|UpdateCancelStopsAfterFileInFlight|UpdateForceOutsideGitBacksUpBeforeReplacing|UpdateLeavesSymlinkedFilesAlone|GitProvenanceWrittenOnce|GitProvenanceCancelledScanIsNotKept|GitProvenanceCampBelowGitRoot|GitProvenanceWithoutUsableHistoryOffersNoEvidence|UpdateReplacesGitEvidenceFileWithUndo)$"},
+	{ImportPath: "./internal/skills", MinTests: 11, TestPattern: "^Test(SkillProjectionDirectoryLinkReadback|GrokSkillsAliasDirectoryLink|UpdateCancelStopsAfterFileInFlight|UpdateForceOutsideGitBacksUpBeforeReplacing|UpdateLeavesSymlinkedFilesAlone|GitProvenanceWrittenOnce|GitProvenanceCancelledScanIsNotKept|GitProvenanceUserFirstCommitOffersNoEvidence|GitProvenanceCampBelowGitRoot|GitProvenanceWithoutUsableHistoryOffersNoEvidence|UpdateReplacesGitEvidenceFileWithUndo)$"},
 	{ImportPath: "./internal/nav/index", MinTests: 2},
 	// The initial-commit tests git-init a campaign and commit its scaffold.
 	{ImportPath: "./cmd/camp/init", MinTests: 3},

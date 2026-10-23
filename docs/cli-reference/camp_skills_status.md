@@ -14,8 +14,8 @@ Each shipped bundle is reported as current, outdated (unchanged since an older
 camp wrote it), modified (changed locally), missing, unknown (differs with no
 record of what camp shipped), or symlink (differs through a symlink, which camp
 never replaces). The record is .campaign/skills/.shipped.yaml; for a file it
-does not cover, a single commit with no change since in git also counts as
-outdated. 'camp skills update' refreshes outdated and missing bundles and
+does not cover, a lone camp init or camp repair commit with no change since in
+git also counts as outdated. 'camp skills update' refreshes outdated and missing bundles and
 preserves modified and unknown ones unless --force is given.
 
 Examples:

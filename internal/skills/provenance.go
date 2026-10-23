@@ -6,6 +6,7 @@ import (
 	"sync"
 
 	"github.com/Obedience-Corp/camp/internal/git"
+	"github.com/Obedience-Corp/camp/internal/git/commit"
 )
 
 // Provenance supplies evidence, beyond the manifest, that a shipped skill file
@@ -18,9 +19,15 @@ type Provenance interface {
 	WrittenOnce(ctx context.Context, relPath string) (bool, error)
 }
 
-// GitProvenance answers WrittenOnce from the git history of a camp root.
-// Before the manifest existed camp wrote each shipped file once and never
-// rewrote it, so any second commit touching the file is someone else's edit.
+// GitProvenance answers WrittenOnce from the git history of a camp root. Its
+// evidence is a commit camp itself made: camp init and camp repair write a
+// shipped file and commit it in one process, so the blob that commit holds is
+// what camp wrote. Before the manifest existed camp never rewrote a shipped
+// file, so any second commit touching it is someone else's edit. Any user
+// commit, including a camp commit --all sweep, could carry an edit made before
+// it, so a file whose only commit is not camp's stays unknown. Repair commits
+// from before repair staged only its own files could also sweep in an edit;
+// that narrow gap is accepted for camps that predate the manifest.
 type GitProvenance struct {
 	root    string
 	mu      sync.Mutex
@@ -50,7 +57,8 @@ func (p *GitProvenance) WrittenOnce(ctx context.Context, relPath string) (bool, 
 }
 
 // writtenOnce returns the camp-root-relative skill paths that are tracked,
-// match HEAD in the index and the work tree, and appear in exactly one commit.
+// match HEAD in the index and the work tree, and appear in exactly one commit,
+// a camp init or camp repair commit.
 // A shallow clone hides older commits, so it offers no evidence; so does any
 // git failure, such as a camp that is not a repository or has no commits. A
 // failure while ctx is done returns ctx's error instead.
@@ -75,26 +83,57 @@ func writtenOnce(ctx context.Context, root string) (map[string]bool, error) {
 	if err != nil {
 		return nil, ctx.Err()
 	}
-	// -c lists a merge's own edits: files that differ from every parent.
-	touched, err := gitPaths(ctx, root, "log", "--format=", "--name-only", "--no-renames", "-c", "-z", "--relative", "--", scope)
+	history, err := skillHistory(ctx, root, scope)
 	if err != nil {
 		return nil, ctx.Err()
 	}
 
-	commits := make(map[string]int, len(touched))
-	for _, p := range touched {
-		commits[p]++
-	}
 	for _, p := range append(dirty, staged...) {
-		commits[p] = -1
+		delete(history, p)
 	}
 	written := make(map[string]bool)
 	for _, p := range tracked {
-		if commits[p] == 1 {
+		if h := history[p]; h.commits == 1 && h.byCamp {
 			written[p] = true
 		}
 	}
 	return written, nil
+}
+
+// fileHistory counts the commits that touched a file and records whether the
+// oldest of them was a camp init or repair commit.
+type fileHistory struct {
+	commits int
+	byCamp  bool
+}
+
+const commitMarker = "\x01"
+
+// skillHistory reads every commit touching scope, with its subject, in one
+// git call. Each commit prints as the marker and subject, then its paths.
+func skillHistory(ctx context.Context, root, scope string) (map[string]fileHistory, error) {
+	// -c lists a merge's own edits: files that differ from every parent.
+	out, err := git.Output(ctx, root, "log", "--format="+commitMarker+"%s", "--name-only", "--no-renames", "-c", "-z", "--relative", "--", scope)
+	if err != nil {
+		return nil, err
+	}
+	history := make(map[string]fileHistory)
+	byCamp := false
+	for field := range strings.SplitSeq(out, "\x00") {
+		if subject, ok := strings.CutPrefix(field, commitMarker); ok {
+			byCamp = commit.IsScaffoldCommit(subject)
+			continue
+		}
+		path := strings.TrimPrefix(field, "\n")
+		if path == "" {
+			continue
+		}
+		h := history[path]
+		h.commits++
+		h.byCamp = byCamp
+		history[path] = h
+	}
+	return history, nil
 }
 
 func gitPaths(ctx context.Context, root string, args ...string) ([]string, error) {

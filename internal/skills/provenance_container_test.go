@@ -31,6 +31,12 @@ func writeSkill(t *testing.T, root, rel, content string) {
 	}
 }
 
+const (
+	campInitSubject         = "[demo:1a2b3c4d] Init: scaffold camp workspace"
+	campRepairNowSubject    = "[demo:1a2b3c4d] Repair: camp repair"
+	campLegacyRepairSubject = "[OBEY-CAMPAIGN-1a2b3c4d] Repair: campaign repair"
+)
+
 func commitAll(t *testing.T, dir, msg string) {
 	t.Helper()
 	gitIn(t, dir, "add", "-A")
@@ -55,7 +61,7 @@ func TestGitProvenanceCancelledScanIsNotKept(t *testing.T) {
 	root := t.TempDir()
 	writeSkill(t, root, "once/SKILL.md", "v1\n")
 	gitIn(t, root, "init", "-q")
-	commitAll(t, root, "camp init")
+	commitAll(t, root, campInitSubject)
 	prov := NewGitProvenance(root)
 
 	cancelled, cancel := context.WithCancel(t.Context())
@@ -75,9 +81,9 @@ func TestGitProvenanceWrittenOnce(t *testing.T) {
 		writeSkill(t, root, rel, "v1\n")
 	}
 	gitIn(t, root, "init", "-q", "-b", "main")
-	commitAll(t, root, "camp init")
+	commitAll(t, root, campInitSubject)
 	writeSkill(t, root, "twice/SKILL.md", "v1 plus an edit\n")
-	commitAll(t, root, "edit a skill")
+	commitAll(t, root, campRepairNowSubject)
 
 	gitIn(t, root, "checkout", "-q", "-b", "side")
 	if err := os.WriteFile(filepath.Join(root, "side.md"), []byte("side\n"), 0o644); err != nil {
@@ -89,19 +95,39 @@ func TestGitProvenanceWrittenOnce(t *testing.T) {
 	writeSkill(t, root, "merged/SKILL.md", "edited inside the merge\n")
 	commitAll(t, root, "merge side with an edit")
 
+	writeSkill(t, root, "repaired-legacy/SKILL.md", "v1\n")
+	commitAll(t, root, campLegacyRepairSubject)
+	writeSkill(t, root, "repaired/SKILL.md", "v1\n")
+	commitAll(t, root, campRepairNowSubject)
+	writeSkill(t, root, "swept/SKILL.md", "v1 plus an edit before camp commit swept it in\n")
+	commitAll(t, root, "[demo:1a2b3c4d] Update")
+
 	writeSkill(t, root, "dirty/SKILL.md", "uncommitted edit\n")
 	writeSkill(t, root, "staged/SKILL.md", "staged edit\n")
 	gitIn(t, root, "add", ".campaign/skills/staged/SKILL.md")
 	writeSkill(t, root, "staged/SKILL.md", "v1\n")
 	writeSkill(t, root, "untracked/SKILL.md", "v1\n")
 
-	got := writtenOnceAnswers(t, root, "once/SKILL.md", "twice/SKILL.md", "merged/SKILL.md",
+	got := writtenOnceAnswers(t, root, "once/SKILL.md", "repaired-legacy/SKILL.md", "repaired/SKILL.md",
+		"twice/SKILL.md", "merged/SKILL.md", "swept/SKILL.md",
 		"dirty/SKILL.md", "staged/SKILL.md", "untracked/SKILL.md", "absent/SKILL.md")
-	want := map[string]bool{"once/SKILL.md": true}
+	want := map[string]bool{"once/SKILL.md": true, "repaired-legacy/SKILL.md": true, "repaired/SKILL.md": true}
 	for rel, ok := range got {
 		if ok != want[rel] {
 			t.Errorf("WrittenOnce(%s) = %v, want %v", rel, ok, want[rel])
 		}
+	}
+}
+
+func TestGitProvenanceUserFirstCommitOffersNoEvidence(t *testing.T) {
+	root := t.TempDir()
+	writeSkill(t, root, "once/SKILL.md", "v1\n")
+	writeSkill(t, root, "once/SKILL.md", "v1 plus an edit made before the first commit\n")
+	gitIn(t, root, "init", "-q")
+	commitAll(t, root, "[ironman:4ba7f4bf] Evil jarvis testing")
+
+	if writtenOnceAnswers(t, root, "once/SKILL.md")["once/SKILL.md"] {
+		t.Fatal("WrittenOnce() = true for a file whose only commit is a user's; that commit may carry an edit")
 	}
 }
 
@@ -110,7 +136,7 @@ func TestGitProvenanceCampBelowGitRoot(t *testing.T) {
 	root := filepath.Join(top, "camps", "mine")
 	writeSkill(t, root, "once/SKILL.md", "v1\n")
 	gitIn(t, top, "init", "-q")
-	commitAll(t, top, "camp init")
+	commitAll(t, top, campInitSubject)
 
 	if got := writtenOnceAnswers(t, root, "once/SKILL.md"); !got["once/SKILL.md"] {
 		t.Fatal("WrittenOnce() = false for a camp below the git root; paths must be camp-root relative")
@@ -129,9 +155,9 @@ func TestGitProvenanceWithoutUsableHistoryOffersNoEvidence(t *testing.T) {
 	origin := t.TempDir()
 	writeSkill(t, origin, "once/SKILL.md", "v1\n")
 	gitIn(t, origin, "init", "-q")
-	commitAll(t, origin, "camp init")
+	commitAll(t, origin, campInitSubject)
 	writeSkill(t, origin, "once/SKILL.md", "v1 plus an edit\n")
-	commitAll(t, origin, "edit a skill")
+	commitAll(t, origin, campRepairNowSubject)
 	shallow := filepath.Join(t.TempDir(), "clone")
 	gitIn(t, origin, "clone", "-q", "--depth", "1", "file://"+origin, shallow)
 
@@ -147,7 +173,7 @@ func TestUpdateReplacesGitEvidenceFileWithUndo(t *testing.T) {
 	writeSkill(t, root, "alpha/SKILL.md", "alpha v1\n")
 	writeSkill(t, root, "beta/SKILL.md", "beta v1\n")
 	gitIn(t, root, "init", "-q")
-	commitAll(t, root, "camp init")
+	commitAll(t, root, campInitSubject)
 	writeSkill(t, root, "beta/SKILL.md", "beta v1 plus my rule\n")
 	commitAll(t, root, "my rule")
 	shipped := []ShippedFile{

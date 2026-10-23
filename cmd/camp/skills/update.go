@@ -20,8 +20,9 @@ this camp version ships. With no slug, every shipped bundle is checked.
 Each shipped file is compared with this version's content and with
 .campaign/skills/.shipped.yaml, the record of what camp last wrote. Camps
 created before that record existed have none, so for a file it does not cover
-camp reads git history instead: a file committed once and unchanged since still
-holds what camp wrote, and is replaced without --force.
+camp reads git history instead: a file whose only commit is camp init's or
+camp repair's, unchanged since, still holds what camp wrote and is replaced
+without --force. A file first committed any other way stays unknown.
 
   missing    written
   current    left alone
