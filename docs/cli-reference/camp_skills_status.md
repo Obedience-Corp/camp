@@ -1,13 +1,20 @@
 ## camp skills status
 
-Show the current state of projected skill bundle symlinks
+Show skill bundle projection links and shipped bundle states
 
 ### Synopsis
 
-Show projection status for camp skill bundles across tool targets.
+Show projection status for camp skill bundles across tool targets, and
+how each bundle camp ships compares with this camp version.
 
 Reports whether each tool's skills directory has projected entries from
 .campaign/skills/, is partially projected, missing, broken, or blocked.
+
+Each shipped bundle is reported as current, outdated (unchanged since an older
+camp wrote it), modified (changed locally), missing, unknown (differs with no
+record of what camp shipped), or symlink (differs through a symlink, which camp
+never replaces). 'camp skills update' refreshes outdated and missing bundles and
+preserves modified ones unless --force is given.
 
 Examples:
   camp skills status          Show projection states in table format
@@ -33,4 +40,4 @@ camp skills status [flags]
 
 ### SEE ALSO
 
-* [camp skills](camp_skills.md)	 - Manage camp skill directory links
+* [camp skills](camp_skills.md)	 - Manage camp skill bundles and their directory links

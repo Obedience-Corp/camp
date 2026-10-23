@@ -22,11 +22,18 @@ var skillsStatusJSON bool
 
 var skillsStatusCmd = &cobra.Command{
 	Use:   "status",
-	Short: "Show the current state of projected skill bundle symlinks",
-	Long: `Show projection status for camp skill bundles across tool targets.
+	Short: "Show skill bundle projection links and shipped bundle states",
+	Long: `Show projection status for camp skill bundles across tool targets, and
+how each bundle camp ships compares with this camp version.
 
 Reports whether each tool's skills directory has projected entries from
 .campaign/skills/, is partially projected, missing, broken, or blocked.
+
+Each shipped bundle is reported as current, outdated (unchanged since an older
+camp wrote it), modified (changed locally), missing, unknown (differs with no
+record of what camp shipped), or symlink (differs through a symlink, which camp
+never replaces). 'camp skills update' refreshes outdated and missing bundles and
+preserves modified ones unless --force is given.
 
 Examples:
   camp skills status          Show projection states in table format
@@ -72,17 +79,23 @@ func runSkillsStatus(cmd *cobra.Command, _ []string) error {
 	if err != nil {
 		return err
 	}
+	bundleEntries, err := bundleStatusEntries(ctx, root, skillsDir)
+	if err != nil {
+		return err
+	}
 	if len(slugs) == 0 {
 		if skillsStatusJSON {
-			if _, err := fmt.Fprintln(out, "[]"); err != nil {
-				return err
+			data, err := json.MarshalIndent(append([]skillStatusEntry{}, bundleEntries...), "", "  ")
+			if err != nil {
+				return camperrors.Wrap(err, "marshal JSON")
 			}
-		} else {
-			if _, err := fmt.Fprintln(out, "No skill bundles found in .campaign/skills/"); err != nil {
-				return err
-			}
+			_, err = fmt.Fprintln(out, string(data))
+			return err
 		}
-		return nil
+		if _, err := fmt.Fprintln(out, "No skill bundles found in .campaign/skills/"); err != nil {
+			return err
+		}
+		return printBundleStatus(out, bundleEntries)
 	}
 
 	var entries []skillStatusEntry
@@ -159,7 +172,7 @@ func runSkillsStatus(cmd *cobra.Command, _ []string) error {
 	}
 
 	if skillsStatusJSON {
-		data, err := json.MarshalIndent(entries, "", "  ")
+		data, err := json.MarshalIndent(append(entries, bundleEntries...), "", "  ")
 		if err != nil {
 			return camperrors.Wrap(err, "marshal JSON")
 		}
@@ -198,6 +211,9 @@ func runSkillsStatus(cmd *cobra.Command, _ []string) error {
 				}
 				break
 			}
+		}
+		if err := printBundleStatus(out, bundleEntries); err != nil {
+			return err
 		}
 	}
 

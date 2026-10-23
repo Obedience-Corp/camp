@@ -148,6 +148,10 @@ func ComputeRepairPlan(ctx context.Context, dir string, opts InitOptions) (*Repa
 		return nil, err
 	}
 
+	if err := computeSkillChanges(ctx, absDir, plan); err != nil {
+		return nil, err
+	}
+
 	// Phase 4: Check for missing .gitignore and CLAUDE.md symlink.
 	computeMiscFileChanges(absDir, plan)
 
