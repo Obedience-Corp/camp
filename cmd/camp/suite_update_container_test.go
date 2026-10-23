@@ -311,7 +311,7 @@ func TestSuiteUpdateFSVersionCheck(t *testing.T) {
 			t.Fatal(err)
 		}
 		if !strings.Contains(human.String(), "festival suite latest: 0.3.20 (cached ") ||
-			!strings.Contains(human.String(), "could not reach GitHub to refresh)") {
+			!strings.Contains(human.String(), "refresh from GitHub failed)") {
 			t.Fatalf("human output hides the failed refresh:\n%s", human.String())
 		}
 	})

@@ -134,7 +134,7 @@ func TestVersionCheck_HumanOutput(t *testing.T) {
 		{
 			name: "release unknown",
 			info: versionCheckInfo{CampVersion: "0.16.3", CurrentVersion: "0.3.20", Source: updatecheck.Source, RefreshError: "dial tcp: i/o timeout"},
-			want: "camp 0.16.3 (festival suite 0.3.20)\nfestival suite latest: unknown (could not reach GitHub)\n",
+			want: "camp 0.16.3 (festival suite 0.3.20)\nfestival suite latest: unknown (could not refresh from GitHub)\n",
 		},
 	}
 	for _, tc := range cases {
@@ -151,10 +151,10 @@ func TestVersionCheck_HumanOutput(t *testing.T) {
 }
 
 func TestVersionCheck_FlagRoutesToCheck(t *testing.T) {
-	stubSuiteCheck(t, updatecheck.Result{CurrentVersion: "0.3.24", LatestVersion: "0.3.24"})
-	prevBundle := version.Bundle
-	t.Cleanup(func() { version.Bundle = prevBundle })
-	version.Bundle = "v0.3.24"
+	locals := stubSuiteCheck(t, updatecheck.Result{CurrentVersion: "0.3.24", LatestVersion: "0.3.24"})
+	prevBundle, prevVersion := version.Bundle, version.Version
+	t.Cleanup(func() { version.Bundle, version.Version = prevBundle, prevVersion })
+	version.Bundle, version.Version = "v0.3.24", "0.16.3"
 
 	cmd, out := newVersionTestCommand(t)
 	for _, flag := range []string{"check", "short"} {
@@ -165,8 +165,12 @@ func TestVersionCheck_FlagRoutesToCheck(t *testing.T) {
 	if err := runVersion(cmd, nil); err != nil {
 		t.Fatal(err)
 	}
-	if !bytes.Contains(out.Bytes(), []byte("up to date\n")) {
-		t.Fatalf("--check --short did not print the check: %q", out.String())
+	if len(*locals) != 1 || (*locals)[0] != "v0.3.24" {
+		t.Fatalf("checker got %v, want the suite bundle v0.3.24", *locals)
+	}
+	want := "camp 0.16.3 (festival suite 0.3.24)\nfestival suite latest: 0.3.24\nup to date\n"
+	if out.String() != want {
+		t.Fatalf("--check --short output = %q, want %q", out.String(), want)
 	}
 }
 
@@ -195,7 +199,7 @@ func TestVersionCheck_ReportsAFailedRefresh(t *testing.T) {
 		t.Fatal(err)
 	}
 	want := "camp 0.16.3 (festival suite 0.3.20)\n" +
-		"festival suite latest: 0.3.20 (cached 2026-10-20T09:00:00Z; could not reach GitHub to refresh)\n" +
+		"festival suite latest: 0.3.20 (cached 2026-10-20T09:00:00Z; refresh from GitHub failed)\n" +
 		"up to date\n"
 	if out.String() != want {
 		t.Fatalf("output = %q, want %q", out.String(), want)

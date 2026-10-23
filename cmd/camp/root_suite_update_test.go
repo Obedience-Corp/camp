@@ -155,6 +155,24 @@ func TestSuiteNotice_HomeFailureSkipsTheChecker(t *testing.T) {
 	}
 }
 
+// pathutil.Home rejects only an empty HOME; a relative one would put the
+// cache under whatever directory camp ran in.
+func TestSuiteNotice_RelativeHomeSkipsTheChecker(t *testing.T) {
+	for _, home := range []string{".", "rel"} {
+		calls := stubSuiteNotice(t, "v0.3.20", &updatecheck.Notice{Message: "m", Command: "c"})
+		suiteHome = func() (string, error) { return home, nil }
+		_, leaf := newSuiteTestTree(t)
+
+		maybeNotifySuiteUpdate(leaf, &bytes.Buffer{})
+		if len(*calls) != 0 {
+			t.Fatalf("HOME=%q reached the checker: %+v", home, *calls)
+		}
+		if _, ok := suiteCheckOptions(); ok {
+			t.Fatalf("HOME=%q produced cache options", home)
+		}
+	}
+}
+
 // The post-run hook is the only entry point, so the lifecycle cases go
 // through cobra: a failed command, --help, and a group command printing help
 // must never reach the checker.

@@ -113,12 +113,12 @@ func renderSuiteNotice(w io.Writer, n updatecheck.Notice) {
 	}})
 }
 
-// suiteCheckOptions resolves the shared cache through camp's home resolver,
-// so a missing or blank HOME skips the check instead of writing a cache
-// relative to the working directory.
+// suiteCheckOptions resolves the shared cache through camp's home resolver.
+// A missing, blank, or relative HOME skips the check instead of writing a
+// cache under the working directory, where camp commit would pick it up.
 func suiteCheckOptions() (updatecheck.Options, bool) {
 	home, err := suiteHome()
-	if err != nil {
+	if err != nil || !filepath.IsAbs(home) {
 		return updatecheck.Options{}, false
 	}
 	exe, err := os.Executable()

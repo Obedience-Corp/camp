@@ -36,7 +36,7 @@ type versionCheckInfo struct {
 
 const (
 	suiteSkipNotRelease = "not a festival suite release build"
-	suiteSkipNoHome     = "cannot determine home directory"
+	suiteSkipNoHome     = "cannot determine an absolute home directory"
 )
 
 func runVersionCheck(cmd *cobra.Command, jsonOut bool) error {
@@ -119,11 +119,11 @@ func writeVersionCheck(w io.Writer, info versionCheckInfo) error {
 	case info.SkipReason != "":
 		lines = append(lines, "festival suite update check skipped: "+info.SkipReason)
 	case info.LatestVersion == "":
-		lines = append(lines, "festival suite latest: unknown (could not reach GitHub)")
+		lines = append(lines, "festival suite latest: unknown (could not refresh from GitHub)")
 	default:
 		latest := "festival suite latest: " + info.LatestVersion
 		if info.RefreshError != "" {
-			latest += " (cached " + info.CheckedAt + "; could not reach GitHub to refresh)"
+			latest += " (cached " + info.CheckedAt + "; refresh from GitHub failed)"
 		}
 		lines = append(lines, latest)
 		switch {
