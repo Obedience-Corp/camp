@@ -141,15 +141,27 @@ func classifyFile(ctx context.Context, skillsFS fs.FS, manifest *Manifest, prov 
 	}
 	recorded, ok := manifest.recorded(f.Bundle, f.Path)
 	switch {
-	case ok && recorded == HashContent(disk):
+	case !ok:
+		return classifyUnrecorded(ctx, prov, status)
+	case recorded == HashContent(disk):
 		status.State = ShippedOutdated
-	case ok:
-		status.State = ShippedModified
-	case prov != nil && prov.WrittenOnce(ctx, f.RelPath()):
-		status.State = ShippedOutdated
-		status.GitEvidence = true
 	default:
-		status.State = ShippedUnknown
+		status.State = ShippedModified
+	}
+	return status, nil
+}
+
+func classifyUnrecorded(ctx context.Context, prov Provenance, status FileStatus) (FileStatus, error) {
+	status.State = ShippedUnknown
+	if prov == nil {
+		return status, nil
+	}
+	once, err := prov.WrittenOnce(ctx, status.RelPath())
+	if err != nil {
+		return status, err
+	}
+	if once {
+		status.State, status.GitEvidence = ShippedOutdated, true
 	}
 	return status, nil
 }

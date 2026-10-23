@@ -13,8 +13,9 @@ import (
 type Provenance interface {
 	// WrittenOnce reports whether the file at relPath, a slash path relative
 	// to the camp root, is committed, unchanged since, and touched by exactly
-	// one commit. Any doubt, including a git failure, reports false.
-	WrittenOnce(ctx context.Context, relPath string) bool
+	// one commit. It returns an error only when ctx ends; any other doubt,
+	// including a git failure, reports false.
+	WrittenOnce(ctx context.Context, relPath string) (bool, error)
 }
 
 // GitProvenance answers WrittenOnce from the git history of a camp root.
@@ -22,7 +23,8 @@ type Provenance interface {
 // rewrote it, so any second commit touching the file is someone else's edit.
 type GitProvenance struct {
 	root    string
-	load    sync.Once
+	mu      sync.Mutex
+	loaded  bool
 	written map[string]bool
 }
 
@@ -32,38 +34,51 @@ func NewGitProvenance(root string) *GitProvenance {
 	return &GitProvenance{root: root}
 }
 
-// WrittenOnce implements Provenance.
-func (p *GitProvenance) WrittenOnce(ctx context.Context, relPath string) bool {
-	p.load.Do(func() { p.written = writtenOnce(ctx, p.root) })
-	return p.written[relPath]
+// WrittenOnce implements Provenance. A scan that ctx cut short is not kept,
+// so a later question with a live context scans again.
+func (p *GitProvenance) WrittenOnce(ctx context.Context, relPath string) (bool, error) {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	if !p.loaded {
+		written, err := writtenOnce(ctx, p.root)
+		if err != nil {
+			return false, err
+		}
+		p.written, p.loaded = written, true
+	}
+	return p.written[relPath], nil
 }
 
 // writtenOnce returns the camp-root-relative skill paths that are tracked,
 // match HEAD in the index and the work tree, and appear in exactly one commit.
 // A shallow clone hides older commits, so it offers no evidence; so does any
-// git failure, such as a camp that is not a repository or has no commits.
-func writtenOnce(ctx context.Context, root string) map[string]bool {
+// git failure, such as a camp that is not a repository or has no commits. A
+// failure while ctx is done returns ctx's error instead.
+func writtenOnce(ctx context.Context, root string) (map[string]bool, error) {
+	if err := ctx.Err(); err != nil {
+		return nil, err
+	}
 	shallow, err := git.Output(ctx, root, "rev-parse", "--is-shallow-repository")
 	if err != nil || shallow != "false" {
-		return nil
+		return nil, ctx.Err()
 	}
 	scope := strings.TrimSuffix(shippedSkillsPrefix, "/")
 	tracked, err := gitPaths(ctx, root, "ls-files", "-z", "--", scope)
 	if err != nil {
-		return nil
+		return nil, ctx.Err()
 	}
 	dirty, err := gitPaths(ctx, root, "diff", "--name-only", "-z", "--relative", "HEAD", "--", scope)
 	if err != nil {
-		return nil
+		return nil, ctx.Err()
 	}
 	staged, err := gitPaths(ctx, root, "diff", "--cached", "--name-only", "-z", "--relative", "HEAD", "--", scope)
 	if err != nil {
-		return nil
+		return nil, ctx.Err()
 	}
 	// -c lists a merge's own edits: files that differ from every parent.
 	touched, err := gitPaths(ctx, root, "log", "--format=", "--name-only", "--no-renames", "-c", "-z", "--relative", "--", scope)
 	if err != nil {
-		return nil
+		return nil, ctx.Err()
 	}
 
 	commits := make(map[string]int, len(touched))
@@ -79,7 +94,7 @@ func writtenOnce(ctx context.Context, root string) map[string]bool {
 			written[p] = true
 		}
 	}
-	return written
+	return written, nil
 }
 
 func gitPaths(ctx context.Context, root string, args ...string) ([]string, error) {

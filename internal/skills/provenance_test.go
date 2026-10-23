@@ -2,6 +2,7 @@ package skills
 
 import (
 	"context"
+	"errors"
 	"io/fs"
 	"slices"
 	"testing"
@@ -11,12 +12,13 @@ import (
 
 type fakeProvenance struct {
 	once  map[string]bool
+	err   error
 	asked []string
 }
 
-func (p *fakeProvenance) WrittenOnce(_ context.Context, relPath string) bool {
+func (p *fakeProvenance) WrittenOnce(_ context.Context, relPath string) (bool, error) {
 	p.asked = append(p.asked, relPath)
-	return p.once[relPath]
+	return p.once[relPath], p.err
 }
 
 func TestClassify_GitEvidenceDecidesUnrecordedFiles(t *testing.T) {
@@ -97,6 +99,16 @@ func TestClassify_ManifestRecordOutranksGitEvidence(t *testing.T) {
 	}
 	if !slices.Equal(prov.asked, []string{".campaign/skills/delta/SKILL.md"}) {
 		t.Errorf("provenance asked about %v, want only delta: a manifest record is never second-guessed", prov.asked)
+	}
+}
+
+func TestClassify_ProvenanceContextErrorIsReturned(t *testing.T) {
+	fsys := skillsFSFixture()
+	delete(fsys, ManifestFileName)
+	prov := &fakeProvenance{err: context.Canceled}
+	inv, err := Classify(t.Context(), fsys, shippedFixture(), prov)
+	if !errors.Is(err, context.Canceled) || inv != nil {
+		t.Fatalf("Classify() = %v, %v; want context.Canceled and no partial inventory", inv, err)
 	}
 }
 

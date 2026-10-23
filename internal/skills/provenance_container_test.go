@@ -3,6 +3,8 @@
 package skills
 
 import (
+	"context"
+	"errors"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -40,9 +42,31 @@ func writtenOnceAnswers(t *testing.T, root string, rels ...string) map[string]bo
 	prov := NewGitProvenance(root)
 	got := make(map[string]bool, len(rels))
 	for _, rel := range rels {
-		got[rel] = prov.WrittenOnce(t.Context(), ".campaign/skills/"+rel)
+		once, err := prov.WrittenOnce(t.Context(), ".campaign/skills/"+rel)
+		if err != nil {
+			t.Fatalf("WrittenOnce(%s) error = %v", rel, err)
+		}
+		got[rel] = once
 	}
 	return got
+}
+
+func TestGitProvenanceCancelledScanIsNotKept(t *testing.T) {
+	root := t.TempDir()
+	writeSkill(t, root, "once/SKILL.md", "v1\n")
+	gitIn(t, root, "init", "-q")
+	commitAll(t, root, "camp init")
+	prov := NewGitProvenance(root)
+
+	cancelled, cancel := context.WithCancel(t.Context())
+	cancel()
+	if _, err := prov.WrittenOnce(cancelled, ".campaign/skills/once/SKILL.md"); !errors.Is(err, context.Canceled) {
+		t.Fatalf("WrittenOnce(cancelled) error = %v, want context.Canceled", err)
+	}
+	once, err := prov.WrittenOnce(t.Context(), ".campaign/skills/once/SKILL.md")
+	if err != nil || !once {
+		t.Fatalf("WrittenOnce() after a cancelled scan = %v, %v; want true from a fresh scan", once, err)
+	}
 }
 
 func TestGitProvenanceWrittenOnce(t *testing.T) {
