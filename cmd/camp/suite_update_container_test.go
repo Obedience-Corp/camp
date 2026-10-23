@@ -22,9 +22,6 @@ import (
 	"github.com/Obedience-Corp/camp/internal/version"
 )
 
-// suiteFSFixture is a container HOME with the real checker wired in, both
-// streams reporting a terminal, and a release server that counts requests so
-// "no network" is asserted rather than assumed.
 // suiteFSQuietEnv is every variable that would suppress the notice, cleared
 // so each case controls exactly one.
 var suiteFSQuietEnv = []string{
@@ -32,6 +29,9 @@ var suiteFSQuietEnv = []string{
 	"OBEY_AGENT", "OBEY_SESSION_ID", "CLAUDE_CODE", "CLAUDECODE", "CLAUDE_CODE_SESSION_ID", "CODEX_TASK",
 }
 
+// suiteFSFixture is a container HOME with the real checker wired in, both
+// streams reporting a terminal, and a release server that counts requests so
+// "no network" is asserted rather than assumed.
 type suiteFSFixture struct {
 	home     string
 	cache    string
@@ -273,7 +273,7 @@ func TestSuiteUpdateFSVersionCheck(t *testing.T) {
 		if err != nil {
 			t.Fatal(err)
 		}
-		if info.CurrentVersion != "0.3.20" || info.CampVersion != "0.16.3" || info.LatestVersion != "0.3.24" || !info.UpdateAvailable {
+		if info.CurrentVersion != "0.3.20" || info.ComponentVersion != "0.16.3" || info.LatestVersion != "0.3.24" || !info.UpdateAvailable {
 			t.Fatalf("check = %+v", info)
 		}
 		if info.UpgradeCommand == "" || info.CheckedAt == "" {

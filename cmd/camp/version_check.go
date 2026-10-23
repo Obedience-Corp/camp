@@ -14,24 +14,25 @@ import (
 	"github.com/Obedience-Corp/camp/internal/version"
 )
 
-// versionCheckInfo is the camp version --check --json contract. Versions
-// compared are suite versions: current_version is the festival release this
-// binary shipped in, and camp_version is camp's own component version.
+// versionCheckInfo is the camp version --check --json contract, shared key
+// for key with fest version --check --json. Versions compared are suite
+// versions: current_version is the festival release this binary shipped in,
+// and component_version is camp's own version.
 type versionCheckInfo struct {
-	SchemaVersion   string `json:"schema_version"`
-	Product         string `json:"product"`
-	CampVersion     string `json:"camp_version"`
-	CurrentVersion  string `json:"current_version"`
-	LatestVersion   string `json:"latest_version,omitempty"`
-	LatestTag       string `json:"latest_tag,omitempty"`
-	Source          string `json:"source"`
-	UpdateAvailable bool   `json:"update_available"`
-	UpgradeKind     string `json:"upgrade_kind,omitempty"`
-	UpgradeCommand  string `json:"upgrade_command,omitempty"`
-	CheckedAt       string `json:"checked_at,omitempty"`
-	FromCache       bool   `json:"from_cache"`
-	RefreshError    string `json:"refresh_error,omitempty"`
-	SkipReason      string `json:"skip_reason,omitempty"`
+	SchemaVersion    string `json:"schema_version"`
+	Product          string `json:"product"`
+	ComponentVersion string `json:"component_version"`
+	CurrentVersion   string `json:"current_version"`
+	LatestVersion    string `json:"latest_version,omitempty"`
+	LatestTag        string `json:"latest_tag,omitempty"`
+	Source           string `json:"source"`
+	UpdateAvailable  bool   `json:"update_available"`
+	UpgradeKind      string `json:"upgrade_kind,omitempty"`
+	UpgradeCommand   string `json:"upgrade_command,omitempty"`
+	CheckedAt        string `json:"checked_at,omitempty"`
+	FromCache        bool   `json:"from_cache"`
+	RefreshError     string `json:"refresh_error,omitempty"`
+	SkipReason       string `json:"skip_reason,omitempty"`
 }
 
 const (
@@ -65,10 +66,10 @@ func runVersionCheck(cmd *cobra.Command, jsonOut bool) error {
 // compare, so it reads no cache and makes no request.
 func suiteVersionCheck(ctx context.Context, campVersion, bundle string) (versionCheckInfo, error) {
 	info := versionCheckInfo{
-		SchemaVersion: version.CheckSchemaVersion,
-		Product:       "camp",
-		CampVersion:   campVersion,
-		Source:        updatecheck.Source,
+		SchemaVersion:    version.CheckSchemaVersion,
+		Product:          "camp",
+		ComponentVersion: campVersion,
+		Source:           updatecheck.Source,
 	}
 	if bundle == "" {
 		info.SkipReason = suiteSkipNotRelease
@@ -111,9 +112,9 @@ func suiteVersionCheck(ctx context.Context, campVersion, bundle string) (version
 func writeVersionCheck(w io.Writer, info versionCheckInfo) error {
 	lines := []string{}
 	if info.CurrentVersion == "" {
-		lines = append(lines, "camp "+info.CampVersion)
+		lines = append(lines, "camp "+info.ComponentVersion)
 	} else {
-		lines = append(lines, fmt.Sprintf("camp %s (festival suite %s)", info.CampVersion, info.CurrentVersion))
+		lines = append(lines, fmt.Sprintf("camp %s (festival suite %s)", info.ComponentVersion, info.CurrentVersion))
 	}
 	switch {
 	case info.SkipReason != "":

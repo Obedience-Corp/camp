@@ -82,18 +82,18 @@ func TestVersionCheck_JSONContract(t *testing.T) {
 		t.Fatal(err)
 	}
 	want := map[string]any{
-		"schema_version":   version.CheckSchemaVersion,
-		"product":          "camp",
-		"camp_version":     "0.16.3",
-		"current_version":  "0.3.20",
-		"latest_version":   "0.3.24",
-		"latest_tag":       "v0.3.24",
-		"source":           updatecheck.Source,
-		"update_available": true,
-		"upgrade_kind":     "run",
-		"upgrade_command":  "festival update",
-		"checked_at":       "2026-10-23T12:00:00Z",
-		"from_cache":       false,
+		"schema_version":    version.CheckSchemaVersion,
+		"product":           "camp",
+		"component_version": "0.16.3",
+		"current_version":   "0.3.20",
+		"latest_version":    "0.3.24",
+		"latest_tag":        "v0.3.24",
+		"source":            updatecheck.Source,
+		"update_available":  true,
+		"upgrade_kind":      "run",
+		"upgrade_command":   "festival update",
+		"checked_at":        "2026-10-23T12:00:00Z",
+		"from_cache":        false,
 	}
 	if len(got) != len(want) {
 		t.Fatalf("keys = %v, want %v", got, want)
@@ -113,27 +113,27 @@ func TestVersionCheck_HumanOutput(t *testing.T) {
 	}{
 		{
 			name: "update with a command",
-			info: versionCheckInfo{CampVersion: "0.16.3", CurrentVersion: "0.3.20", LatestVersion: "0.3.24", UpdateAvailable: true, UpgradeKind: "run", UpgradeCommand: "festival update"},
+			info: versionCheckInfo{ComponentVersion: "0.16.3", CurrentVersion: "0.3.20", LatestVersion: "0.3.24", UpdateAvailable: true, UpgradeKind: "run", UpgradeCommand: "festival update"},
 			want: "camp 0.16.3 (festival suite 0.3.20)\nfestival suite latest: 0.3.24\nupdate available\nrun: festival update\n",
 		},
 		{
 			name: "update with a page",
-			info: versionCheckInfo{CampVersion: "0.16.3", CurrentVersion: "0.3.20", LatestVersion: "0.3.24", UpdateAvailable: true, UpgradeKind: "see", UpgradeCommand: "https://example.test/latest"},
+			info: versionCheckInfo{ComponentVersion: "0.16.3", CurrentVersion: "0.3.20", LatestVersion: "0.3.24", UpdateAvailable: true, UpgradeKind: "see", UpgradeCommand: "https://example.test/latest"},
 			want: "camp 0.16.3 (festival suite 0.3.20)\nfestival suite latest: 0.3.24\nupdate available\nsee: https://example.test/latest\n",
 		},
 		{
 			name: "current",
-			info: versionCheckInfo{CampVersion: "0.16.3", CurrentVersion: "0.3.24", LatestVersion: "0.3.24"},
+			info: versionCheckInfo{ComponentVersion: "0.16.3", CurrentVersion: "0.3.24", LatestVersion: "0.3.24"},
 			want: "camp 0.16.3 (festival suite 0.3.24)\nfestival suite latest: 0.3.24\nup to date\n",
 		},
 		{
 			name: "ahead of the release",
-			info: versionCheckInfo{CampVersion: "0.16.3", CurrentVersion: "0.3.25", LatestVersion: "0.3.24"},
+			info: versionCheckInfo{ComponentVersion: "0.16.3", CurrentVersion: "0.3.25", LatestVersion: "0.3.24"},
 			want: "camp 0.16.3 (festival suite 0.3.25)\nfestival suite latest: 0.3.24\nnewer than the latest festival suite release\n",
 		},
 		{
 			name: "release unknown",
-			info: versionCheckInfo{CampVersion: "0.16.3", CurrentVersion: "0.3.20", Source: updatecheck.Source, RefreshError: "dial tcp: i/o timeout"},
+			info: versionCheckInfo{ComponentVersion: "0.16.3", CurrentVersion: "0.3.20", Source: updatecheck.Source, RefreshError: "dial tcp: i/o timeout"},
 			want: "camp 0.16.3 (festival suite 0.3.20)\nfestival suite latest: unknown (could not refresh from GitHub)\n",
 		},
 	}
