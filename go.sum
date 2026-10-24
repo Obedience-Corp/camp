@@ -10,8 +10,8 @@ github.com/Microsoft/go-winio v0.6.2 h1:F2VQgta7ecxGYO8k3ZZz3RS8fVIXVxONVUPlNERo
 github.com/Microsoft/go-winio v0.6.2/go.mod h1:yd8OoFMLzJbo9gZq8j5qaps8bJ9aShtEA8Ipt1oGCvU=
 github.com/Obedience-Corp/build-util v0.1.0 h1:I+R+HWEMTdi27ZOVtfMsxYzno7hx/t/cPc6D3VyNrdQ=
 github.com/Obedience-Corp/build-util v0.1.0/go.mod h1:DEzIemlbEpZYOmEG1xnOWinLrsKxC/0gG8JFNm6M438=
-github.com/Obedience-Corp/obey-shared v0.5.1-0.20261023224406-ae6cb59c1c31 h1:N0gYCEueHUmEKIdnxqpQmG8aAnKCttHzoyQgqazd2ck=
-github.com/Obedience-Corp/obey-shared v0.5.1-0.20261023224406-ae6cb59c1c31/go.mod h1:DX1dmJr5VYGYgGjzZQyHqsoX1DkOYNureTT1j5tGSb8=
+github.com/Obedience-Corp/obey-shared v0.5.1-0.20261023224919-a44992efb7df h1:ICndnUxYkZYxc3o0ram5e2I4/rNflK1CLjMLUjPnfP8=
+github.com/Obedience-Corp/obey-shared v0.5.1-0.20261023224919-a44992efb7df/go.mod h1:DX1dmJr5VYGYgGjzZQyHqsoX1DkOYNureTT1j5tGSb8=
 github.com/alecthomas/assert/v2 v2.11.0 h1:2Q9r3ki8+JYXvGsDyBXwH3LcJ+WK5D0gc5E8vS6K3D0=
 github.com/alecthomas/assert/v2 v2.11.0/go.mod h1:Bze95FyfUr7x34QZrjL+XP+0qgp/zg8yS+TtBj1WA3k=
 github.com/alecthomas/chroma/v2 v2.27.0 h1:FodwmyOBgJULFYmDqibcp9pvfDLWdtPRh9v/r5BXYZs=
