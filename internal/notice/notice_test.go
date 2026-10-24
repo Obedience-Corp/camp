@@ -27,6 +27,18 @@ func TestRender_PlainWhenColorDisabled(t *testing.T) {
 	}
 }
 
+func TestRender_ActionLabelsTheFixLine(t *testing.T) {
+	withColorProfile(t, termenv.Ascii)
+
+	var out strings.Builder
+	Render(&out, []Notice{{ID: "x", Message: "a newer release exists", Command: "https://example.test/releases", Action: "see"}})
+
+	want := "⚠ notice: a newer release exists\n  see: https://example.test/releases\n"
+	if got := out.String(); got != want {
+		t.Fatalf("Render() = %q, want %q", got, want)
+	}
+}
+
 func TestRender_StyledWhenColorEnabled(t *testing.T) {
 	withColorProfile(t, termenv.TrueColor)
 

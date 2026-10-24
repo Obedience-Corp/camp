@@ -9,6 +9,9 @@ import (
 
 const SchemaVersion = "version/v1alpha1"
 
+// CheckSchemaVersion versions the camp version --check --json contract.
+const CheckSchemaVersion = "version-check/v1alpha1"
+
 var (
 	// Version is the semantic version (set via ldflags)
 	Version = "dev"
