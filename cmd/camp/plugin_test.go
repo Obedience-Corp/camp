@@ -1,6 +1,13 @@
 package main
 
-import "testing"
+import (
+	"os"
+	"path/filepath"
+	"slices"
+	"testing"
+
+	"github.com/spf13/cobra"
+)
 
 func TestIsKnownCommand(t *testing.T) {
 	tests := []struct {
@@ -112,5 +119,35 @@ func TestFindFirstPositionalArg(t *testing.T) {
 					tt.args, gotName, gotIdx, tt.wantName, tt.wantIdx)
 			}
 		})
+	}
+}
+
+func TestCompletePluginNames(t *testing.T) {
+	dir := t.TempDir()
+	script := []byte("#!/bin/sh\nexit 0\n")
+	if err := os.WriteFile(filepath.Join(dir, "camp-zzzfake"), script, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(dir, "camp-init"), script, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("PATH", dir)
+
+	got, dir1 := completePluginNames(rootCmd, nil, "zz")
+	if want := []string{"zzzfake\tplugin (camp-zzzfake)"}; !slices.Equal(got, want) {
+		t.Errorf("prefix zz: got %q, want %q", got, want)
+	}
+	if dir1 != cobra.ShellCompDirectiveNoFileComp {
+		t.Errorf("directive = %v", dir1)
+	}
+
+	got, dir2 := completePluginNames(rootCmd, nil, "init")
+	if len(got) != 0 || dir2 != cobra.ShellCompDirectiveNoFileComp {
+		t.Errorf("known command: got %q, %v", got, dir2)
+	}
+
+	got, dir3 := completePluginNames(rootCmd, []string{"x"}, "zz")
+	if len(got) != 0 || dir3 != cobra.ShellCompDirectiveNoFileComp {
+		t.Errorf("non-empty args: got %q, %v", got, dir3)
 	}
 }
