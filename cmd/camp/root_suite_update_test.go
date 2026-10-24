@@ -357,18 +357,6 @@ func TestSuiteNoticeSuppressed(t *testing.T) {
 	})
 }
 
-func TestSuiteAgentRun(t *testing.T) {
-	for _, key := range suiteAgentEnv {
-		env := map[string]string{key: "1"}
-		if !suiteAgentRun(func(k string) string { return env[k] }) {
-			t.Errorf("%s did not mark an agent run", key)
-		}
-	}
-	if suiteAgentRun(func(string) string { return "" }) {
-		t.Error("an empty environment was classified as an agent run")
-	}
-}
-
 func withSuiteColorProfile(t *testing.T, p termenv.Profile) {
 	t.Helper()
 	prev := lipgloss.ColorProfile()

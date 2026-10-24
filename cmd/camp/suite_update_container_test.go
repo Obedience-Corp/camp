@@ -43,7 +43,7 @@ func newSuiteFSFixture(t *testing.T, bundle, latest string) suiteFSFixture {
 	withSuiteColorProfile(t, termenv.Ascii)
 	home := t.TempDir()
 	t.Setenv("HOME", home)
-	for _, key := range append(suiteFSQuietEnv, suiteAgentEnv...) {
+	for _, key := range suiteFSQuietEnv {
 		t.Setenv(key, "")
 	}
 
@@ -162,7 +162,7 @@ func TestSuiteUpdateFSSuppressedPathsDoNoWork(t *testing.T) {
 		{"GITHUB_ACTIONS", func(t *testing.T) { t.Setenv("GITHUB_ACTIONS", "true") }, nil},
 		{"opt-out", func(t *testing.T) { t.Setenv(updatecheck.EnvNoUpdateCheck, "1") }, nil},
 		{"agent", func(t *testing.T) { t.Setenv("CLAUDECODE", "1") }, nil},
-		{"camp agent session", func(t *testing.T) { t.Setenv("OBEY_SESSION", "s-1") }, nil},
+		{"obey agent session", func(t *testing.T) { t.Setenv("OBEY_SESSION_ID", "s-1") }, nil},
 		{"stderr not a terminal", func(*testing.T) { stderrIsTTY = func() bool { return false } }, nil},
 		{"stdout captured", func(*testing.T) { stdoutIsTTY = func() bool { return false } }, nil},
 		{"--json", nil, func(t *testing.T) *cobra.Command {

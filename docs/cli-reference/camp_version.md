@@ -17,7 +17,8 @@ says so. --check takes precedence over --short.
 
 Human commands at a terminal print a two-line notice on stderr, at most once
 per new suite release, when this camp is behind it. Set
-FESTIVAL_NO_UPDATE_CHECK=1 to turn off the notice and the check behind it.
+FESTIVAL_NO_UPDATE_CHECK=1 to turn off that notice and the GitHub request
+behind it; version --check still checks.
 
 Examples:
   camp version                  Show full version info

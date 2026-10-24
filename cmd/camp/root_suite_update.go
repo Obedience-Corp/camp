@@ -34,11 +34,6 @@ var (
 // the user ran, so it gets no notice.
 var suiteHelpRendered bool
 
-// suiteAgentEnv adds the agent marker camp's ledger honors (internal/ledger)
-// that the shared package's own agent list does not carry. An agent
-// transcript is not a human who can upgrade.
-var suiteAgentEnv = []string{"OBEY_SESSION"}
-
 // suiteMachineFormats are --format values a program parses.
 var suiteMachineFormats = map[string]bool{"json": true, "yaml": true, "simple": true}
 
@@ -91,10 +86,7 @@ func maybeNotifySuiteUpdate(cmd *cobra.Command, w io.Writer) {
 	if !ok {
 		return
 	}
-	opts.Suppress = updatecheck.SuppressInput{
-		StderrIsTTY: stderrIsTTY(),
-		AgentMode:   suiteAgentRun(os.Getenv),
-	}
+	opts.Suppress = updatecheck.SuppressInput{StderrIsTTY: stderrIsTTY()}
 	ctx := cmd.Context()
 	if ctx == nil {
 		ctx = context.Background()
@@ -175,13 +167,4 @@ func suiteFlagSelected(cmd *cobra.Command, name string) bool {
 		return f.Value.String() == "true"
 	}
 	return f.Changed && f.Value.String() != ""
-}
-
-func suiteAgentRun(getenv func(string) string) bool {
-	for _, key := range suiteAgentEnv {
-		if getenv(key) != "" {
-			return true
-		}
-	}
-	return false
 }
