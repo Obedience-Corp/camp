@@ -91,3 +91,34 @@ func TestReadme_RendersCampaignVars(t *testing.T) {
 	assert.NotContains(t, readme, "<no value>", "README template vars must render through the engine")
 	assert.Contains(t, readme, "# readme-render", "README must render the campaign name")
 }
+
+func TestQuestList_NoScaffoldNeverCreatesQuestFiles(t *testing.T) {
+	tc := GetSharedContainer(t)
+	path := "/campaigns/quest-no-scaffold"
+	_, err := tc.InitCampaign(path, "quest-no-scaffold", "product")
+	require.NoError(t, err)
+
+	out, err := tc.RunCampInDir(path, "quest", "list", "--json", "--no-scaffold")
+	require.NoError(t, err, out)
+	assert.Contains(t, out, "qst_default", "initialized camp must still list with --no-scaffold")
+
+	questsDir := path + "/.campaign/quests"
+	_, exitCode, err := tc.ExecCommand("rm", "-rf", questsDir)
+	require.NoError(t, err)
+	require.Equal(t, 0, exitCode)
+
+	stderr, exitCode, err := tc.ExecCommand("sh", "-c", "cd "+path+" && /camp quest list --json --no-scaffold 2>&1 1>/dev/null")
+	require.NoError(t, err)
+	assert.NotEqual(t, 0, exitCode, "uninitialized quest system must fail under --no-scaffold")
+	assert.Contains(t, stderr, "quest system not initialized", stderr)
+
+	_, exitCode, err = tc.ExecCommand("test", "-e", questsDir)
+	require.NoError(t, err)
+	assert.Equal(t, 1, exitCode, "--no-scaffold must not create %s", questsDir)
+
+	out, err = tc.RunCampInDir(path, "quest", "list", "--json")
+	require.NoError(t, err, out)
+	_, exitCode, err = tc.ExecCommand("test", "-d", questsDir)
+	require.NoError(t, err)
+	assert.Equal(t, 0, exitCode, "default listing still scaffolds %s", questsDir)
+}

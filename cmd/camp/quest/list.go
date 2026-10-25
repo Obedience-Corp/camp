@@ -8,10 +8,11 @@ import (
 const QuestListJSONVersion = "quest-list/v1alpha1"
 
 var (
-	questListAll      bool
-	questListDungeon  bool
-	questListJSON     bool
-	questListStatuses []string
+	questListAll        bool
+	questListDungeon    bool
+	questListJSON       bool
+	questListNoScaffold bool
+	questListStatuses   []string
 )
 
 var questListCmd = &cobra.Command{
@@ -46,6 +47,9 @@ func init() {
 		"Open the interactive quest browser (prints the table when stdout is not a terminal)")
 	questListCmd.Flags().String("path-output", "", "Write the selected quest path to a file (shell integration)")
 	_ = questListCmd.Flags().MarkHidden("path-output")
+	questListCmd.Flags().BoolVar(&questListNoScaffold, "no-scaffold", false,
+		"Never create the quest scaffold; fail when the quest system is not initialized (read-only callers such as shell completion)")
+	_ = questListCmd.Flags().MarkHidden("no-scaffold")
 	questListCmd.SetFlagErrorFunc(jsoncontract.FlagErrorFunc(QuestListJSONVersion, func() bool { return questListJSON }))
 }
 
@@ -54,7 +58,8 @@ func runQuestList(cmd *cobra.Command, args []string) error {
 	// Ensure the quest scaffold (and the default quest) exists before listing so
 	// a freshly-opened campaign always has at least one quest instead of failing
 	// with ErrNotInitialized. This is what guarantees "you always have a quest".
-	qctx, err := loadQuestCommandContext(ctx, true)
+	// --no-scaffold opts out for read-only callers, which must not create files.
+	qctx, err := loadQuestCommandContext(ctx, !questListNoScaffold)
 	if err != nil {
 		return err
 	}
