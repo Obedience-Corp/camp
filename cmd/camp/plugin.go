@@ -155,6 +155,36 @@ func isKnownCommand(name string) bool {
 	return false
 }
 
+func init() {
+	// Assigned in init to avoid an initialization cycle with isKnownCommand.
+	rootCmd.ValidArgsFunction = completePluginNames
+}
+
+// completePluginNames offers discovered plugin names as the first positional
+// argument of the root command. Cobra appends these to the built-in
+// subcommand candidates.
+func completePluginNames(cmd *cobra.Command, args []string, toComplete string) ([]string, cobra.ShellCompDirective) {
+	if len(args) > 0 {
+		return nil, cobra.ShellCompDirectiveNoFileComp
+	}
+	ctx := cmd.Context()
+	if ctx == nil {
+		ctx = context.Background()
+	}
+	plugins, err := plugin.Discover(ctx)
+	if err != nil {
+		return nil, cobra.ShellCompDirectiveNoFileComp
+	}
+	var out []string
+	for _, p := range plugins {
+		if !strings.HasPrefix(p.Name, toComplete) || isKnownCommand(p.Name) {
+			continue
+		}
+		out = append(out, fmt.Sprintf("%s\tplugin (camp-%s)", p.Name, p.Name))
+	}
+	return out, cobra.ShellCompDirectiveNoFileComp
+}
+
 var pluginsCmd = &cobra.Command{
 	Use:     "plugins",
 	Short:   "List discovered camp plugins on PATH",
