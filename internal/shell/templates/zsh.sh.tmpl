@@ -801,8 +801,27 @@ cie() {
   camp intent explore "$@"
 }
 
+# Use Cobra's directive-aware completion for plugins and commands without a
+# shell-specific completer. Load it once on demand, keeping our navigation and
+# command-run wrappers registered even when the generated script calls compdef.
+_camp_cobra_complete() {
+  if (( ! $+functions[_camp_generated] )); then
+    local saved_camp_completion="${functions[_camp]}" generated
+    generated=$(command camp completion zsh) || return
+    eval "$generated" || return
+    functions[_camp_generated]="${functions[_camp]}"
+    functions[_camp]="$saved_camp_completion"
+    compdef _camp camp
+  fi
+  _camp_generated "$@"
+}
+
 # Camp command completion
 _camp() {
+  case "${words[2]:-}" in
+    go|init|project|shell-init|register|unregister|switch|sw) ;;
+    *) _camp_cobra_complete "$@"; return ;;
+  esac
   # _arguments -C rebases (and may re-invoke with alternate splits of)
   # $words/$CURRENT/$line while it resolves the '*::arg:->args' spec below,
   # so a snapshot taken before calling it is the only reliable way to see
