@@ -19,6 +19,7 @@ import (
 	"github.com/Obedience-Corp/camp/internal/paths"
 	"github.com/Obedience-Corp/camp/internal/triage"
 	"github.com/Obedience-Corp/camp/internal/ui"
+	"github.com/Obedience-Corp/camp/internal/ui/interaction"
 	wkitem "github.com/Obedience-Corp/camp/internal/workitem"
 	wkaudit "github.com/Obedience-Corp/camp/internal/workitem/audit"
 	"github.com/Obedience-Corp/camp/internal/workitem/links"
@@ -612,7 +613,7 @@ func resolveSweepMode(configured string, terminal, jsonOut, dryRun bool) string 
 // caller guards). When nothing is eligible and nothing was skipped, RunFreshSweep
 // is silent and mutates nothing.
 func RunFreshSweep(ctx context.Context, out io.Writer, mode string) error {
-	mode = resolveSweepMode(mode, ui.IsTerminal(), false, false)
+	mode = resolveSweepMode(mode, ui.IsTerminal() || interaction.Available(ctx), false, false)
 	if mode == FreshSweepModeOff {
 		// The caller is supposed to have skipped the call entirely; returning
 		// here as well means a missed guard costs a no-op rather than a

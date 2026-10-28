@@ -8,8 +8,6 @@ import (
 	"path/filepath"
 	"strings"
 
-	"github.com/charmbracelet/huh"
-
 	"github.com/Obedience-Corp/camp/internal/campaign"
 	wkcmd "github.com/Obedience-Corp/camp/internal/commands/workitem"
 	"github.com/Obedience-Corp/camp/internal/config"
@@ -17,6 +15,7 @@ import (
 	"github.com/Obedience-Corp/camp/internal/git"
 	"github.com/Obedience-Corp/camp/internal/paths"
 	"github.com/Obedience-Corp/camp/internal/ui"
+	"github.com/Obedience-Corp/camp/internal/ui/interaction"
 	"github.com/Obedience-Corp/camp/internal/ui/theme"
 	wkitem "github.com/Obedience-Corp/camp/internal/workitem"
 	"github.com/Obedience-Corp/camp/internal/workitem/links"
@@ -104,7 +103,7 @@ func handleMergedBackstop(ctx context.Context, out io.Writer, root, projectPath 
 
 	// FESTIVAL_RULES rule 2: inference evidence prompts on a TTY or reports; it
 	// never acts on its own. A non-TTY (agent) run always reports.
-	if mode == "prompt" && ui.IsTerminal() {
+	if mode == "prompt" && (ui.IsTerminal() || interaction.Available(ctx)) {
 		promoteMergedMatches(ctx, out, cfg, root, surviving)
 		return
 	}
@@ -175,11 +174,8 @@ func backstopPromptDescription(m MergedBackstopMatch) string {
 }
 
 func confirmMergedPromote(ctx context.Context, title, description string) (bool, error) {
-	var promote bool
-	form := huh.NewForm(huh.NewGroup(
-		huh.NewConfirm().Title(title).Description(description).Affirmative("Promote").Negative("Skip").Value(&promote),
-	))
-	if err := theme.RunForm(ctx, form); err != nil {
+	promote, err := interaction.Confirm(ctx, title, description, "Promote", "Skip")
+	if err != nil {
 		if theme.IsCancelled(err) {
 			return false, nil
 		}
@@ -189,13 +185,8 @@ func confirmMergedPromote(ctx context.Context, title, description string) (bool,
 }
 
 func confirmMergedSkipAll(ctx context.Context, remaining int) (bool, error) {
-	var skipAll bool
-	form := huh.NewForm(huh.NewGroup(
-		huh.NewConfirm().
-			Title(fmt.Sprintf("Skip all %d remaining without asking?", remaining)).
-			Affirmative("Skip all").Negative("Keep asking").Value(&skipAll),
-	))
-	if err := theme.RunForm(ctx, form); err != nil {
+	skipAll, err := interaction.Confirm(ctx, fmt.Sprintf("Skip all %d remaining without asking?", remaining), "", "Skip all", "Keep asking")
+	if err != nil {
 		if theme.IsCancelled(err) {
 			return false, nil
 		}

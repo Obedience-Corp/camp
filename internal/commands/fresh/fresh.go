@@ -276,6 +276,9 @@ Examples:
 		},
 	}
 
+	freshCmd.Flags().Bool("interaction-json", false, "Stream Fresh output and native UI questions as NDJSON; read answers from stdin")
+	wrapInteraction(freshCmd)
+
 	// Persistent flags are inherited by subcommands (e.g. fresh all --dry-run)
 	freshCmd.PersistentFlags().StringVarP(&freshBranch, "branch", "b", "", "Branch to create after syncing (overrides config)")
 	freshCmd.PersistentFlags().BoolVar(&freshNoBranch, "no-branch", false, "Skip branch creation even if configured")

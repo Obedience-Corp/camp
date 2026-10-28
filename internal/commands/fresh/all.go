@@ -73,5 +73,7 @@ Examples:
 	}
 	cmd.Flags().BoolVar(&allNoDrain, "no-drain", false,
 		"Do not wait for camp's queued commits first")
+	cmd.Flags().Bool("interaction-json", false, "Stream Fresh output and native UI questions as NDJSON; read answers from stdin")
+	wrapInteraction(cmd)
 	return cmd
 }
