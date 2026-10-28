@@ -4,7 +4,11 @@
 
 # camp
 
-<p align="center"><a href="https://github.com/Obedience-Corp/camp/stargazers"><img src="https://img.shields.io/github/stars/Obedience-Corp/camp?style=social" alt="Star camp on GitHub"></a></p><a href="https://github.com/Obedience-Corp/festival"><img src="https://img.shields.io/badge/built%20with-Festival-7c3aed.svg" alt="Built with Festival"></a>
+<p align="center">
+  <a href="https://github.com/Obedience-Corp/camp/stargazers"><img src="https://img.shields.io/github/stars/Obedience-Corp/camp?style=social" alt="Star camp on GitHub">
+  <a href="https://github.com/Obedience-Corp/festival"><img src="https://img.shields.io/badge/built%20with-Festival-7c3aed.svg" alt="Built with Festival"></a>
+
+</p>
 
 
 > **Easily manage hundreds of projects and millions of planning documents.** Part of [Festival](https://github.com/Obedience-Corp/festival). Camp handles the workspace: your projects, tools, ideas, and context. [fest](https://github.com/Obedience-Corp/fest) handles the planning and execution inside it.
