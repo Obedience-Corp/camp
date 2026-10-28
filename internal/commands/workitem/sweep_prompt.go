@@ -8,7 +8,6 @@ import (
 	"path/filepath"
 	"strings"
 
-	"github.com/charmbracelet/huh"
 	"github.com/spf13/cobra"
 
 	dungeoncmd "github.com/Obedience-Corp/camp/cmd/camp/dungeon"
@@ -17,6 +16,7 @@ import (
 	"github.com/Obedience-Corp/camp/internal/ledger"
 	navindex "github.com/Obedience-Corp/camp/internal/nav/index"
 	"github.com/Obedience-Corp/camp/internal/ui"
+	"github.com/Obedience-Corp/camp/internal/ui/interaction"
 	"github.com/Obedience-Corp/camp/internal/ui/theme"
 	wkitem "github.com/Obedience-Corp/camp/internal/workitem"
 	wkaudit "github.com/Obedience-Corp/camp/internal/workitem/audit"
@@ -108,52 +108,31 @@ func askSweepAnswer(ctx context.Context, work *sweepWork, cand wkitem.SweepCandi
 	title := sweepPromptTitle(cand)
 	description := sweepPromptDescription(work, cand)
 
-	if cand.Disposition != wkitem.DispositionRoute {
-		answer := answerAcknowledge
-		form := huh.NewForm(huh.NewGroup(
-			huh.NewSelect[sweepAnswer]().Title(title).Description(description).
-				Options(
-					huh.NewOption("Promote - shelve it in dungeon/completed", answerCompleted),
-					huh.NewOption("Keep active - don't ask about this completed run again", answerAcknowledge),
-					huh.NewOption("Recurring - don't ask after completed runs", answerRecurring),
-				).Value(&answer),
-		))
-		if err := theme.RunForm(ctx, form); err != nil {
-			if theme.IsCancelled(err) {
-				return answerAcknowledge, true, nil
-			}
-			return answerAcknowledge, false, err
-		}
-		return answer, false, nil
+	options := []interaction.Option{
+		{Value: string(answerCompleted), Label: "Promote - shelve it in dungeon/completed"},
+		{Value: string(answerAcknowledge), Label: "Keep active - don't ask about this completed run again"},
+		{Value: string(answerRecurring), Label: "Recurring - don't ask after completed runs"},
 	}
+	if cand.Disposition == wkitem.DispositionRoute {
+		options = append([]interaction.Option{
+			{Value: string(answerRouteDocs), Label: "Route to docs - move the findings into a docs/ subdirectory"},
+			{Value: string(answerCompleted), Label: "Mark completed - shelve it in dungeon/completed"},
+			{Value: string(answerSomeday), Label: "Someday - shelve it in dungeon/someday"},
+			{Value: string(answerArchived), Label: "Archive - shelve it in dungeon/archived"},
+		}, options[1:]...)
+	}
+	answer, err := interaction.Choose(ctx, interaction.Prompt{Title: title, Description: description, Options: options, Default: string(answerAcknowledge)})
+	if err != nil {
+		return answerAcknowledge, theme.IsCancelled(err), errIfNotCancelled(err)
+	}
+	return sweepAnswer(answer), false, nil
+}
 
-	// Options before Value, and not the other way around. huh's Select resolves
-	// the pointer's current value against the option list at the moment Value is
-	// called, so setting it first leaves the list unresolved and the form renders
-	// with a single row where five belong. That is invisible to a unit test and
-	// was caught by tests/tui/sweep_prompt_pty.py.
-	answer := answerAcknowledge
-	form := huh.NewForm(huh.NewGroup(
-		huh.NewSelect[sweepAnswer]().
-			Title(title).
-			Description(description).
-			Options(
-				huh.NewOption("Route to docs - move the findings into a docs/ subdirectory", answerRouteDocs),
-				huh.NewOption("Mark completed - shelve it in dungeon/completed", answerCompleted),
-				huh.NewOption("Someday - shelve it in dungeon/someday", answerSomeday),
-				huh.NewOption("Archive - shelve it in dungeon/archived", answerArchived),
-				huh.NewOption("Keep active - don't ask about this completed run again", answerAcknowledge),
-				huh.NewOption("Recurring - don't ask after completed runs", answerRecurring),
-			).
-			Value(&answer),
-	))
-	if err := theme.RunForm(ctx, form); err != nil {
-		if theme.IsCancelled(err) {
-			return answerAcknowledge, true, nil
-		}
-		return answerAcknowledge, false, err
+func errIfNotCancelled(err error) error {
+	if theme.IsCancelled(err) {
+		return nil
 	}
-	return answer, false, nil
+	return err
 }
 
 func sweepPromptTitle(cand wkitem.SweepCandidate) string {

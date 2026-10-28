@@ -11,6 +11,7 @@ import (
 
 	"github.com/Obedience-Corp/camp/internal/crawl"
 	camperrors "github.com/Obedience-Corp/camp/internal/errors"
+	"github.com/Obedience-Corp/camp/internal/ui/interaction"
 )
 
 // actionDocs is the dungeon-specific extension action for routing
@@ -182,6 +183,25 @@ func runTriageCrawlWithPrompt(ctx context.Context, svc *Service, parentPath stri
 // question, and docs routing must have one picker and one set of boundary rules
 // regardless of which command reached it.
 func PromptDocsDestination(ctx context.Context, itemName string, campaignRoot string) (string, error) {
+	if interaction.Available(ctx) {
+		dirs, err := listDocsSubdirectories(campaignRoot)
+		if err != nil {
+			return "", err
+		}
+		if len(dirs) == 0 {
+			return "", camperrors.New("docs/ has no subdirectories to route into")
+		}
+		options := make([]interaction.Option, 0, len(dirs))
+		for _, dir := range dirs {
+			options = append(options, interaction.Option{Value: dir, Label: "docs/" + dir})
+		}
+		value, err := interaction.Choose(ctx, interaction.Prompt{Title: "Route " + itemName + " to docs", Description: "Choose an existing docs subdirectory. Cancel leaves the workitem in place.", Options: options, Default: dirs[0]})
+		if interaction.Cancelled(err) {
+			return "", ErrCrawlAborted
+		}
+		return value, err
+	}
+
 	return runDocsBrowser(ctx, itemName, campaignRoot)
 }
 
