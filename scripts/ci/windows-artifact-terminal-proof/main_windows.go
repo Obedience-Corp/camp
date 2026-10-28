@@ -86,10 +86,14 @@ func run(workRoot string) error {
 	if err := os.MkdirAll(media, 0o700); err != nil {
 		return err
 	}
+	// Do not expose the handler marker until cmd has finished writing it.
+	markerPath := filepath.Join(workRoot, "artifact-opened.txt")
+	handler := "@echo off\r\necho opened>\"" + markerPath + ".pending\"\r\n" +
+		"move /y \"" + markerPath + ".pending\" \"" + markerPath + "\" >nul\r\n"
 	for name, content := range map[string]string{
 		".campaign/campaign.yaml":  "id: aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee\nname: artifact-terminal\ntype: product\n",
 		".campaign/artifacts.yaml": "version: 1\nroots:\n  - path: media\n    policy: always\n",
-		"media/" + firstName:       "@echo off\r\necho opened>\"" + filepath.Join(workRoot, "artifact-opened.txt") + "\"\r\n",
+		"media/" + firstName:       handler,
 		"media/" + secondName:      "remove after the explorer loads",
 	} {
 		if err := os.WriteFile(filepath.Join(root, filepath.FromSlash(name)), []byte(content), 0o600); err != nil {
