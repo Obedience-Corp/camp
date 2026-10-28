@@ -19,7 +19,10 @@ func TestArtifactWindowsNativeShellLaunch(t *testing.T) {
 	marker := filepath.Join(root, "opened.txt")
 	scriptName := "open [artifact].cmd"
 	script := filepath.Join(root, scriptName)
-	content := "@echo off\r\necho opened>\"" + marker + "\"\r\n"
+	// Publish only after echo closes the file: ShellExecute returns before the
+	// handler finishes, and cmd redirection creates an empty file first.
+	content := "@echo off\r\necho opened>\"" + marker + ".pending\"\r\n" +
+		"move /y \"" + marker + ".pending\" \"" + marker + "\" >nul\r\n"
 	if err := os.WriteFile(script, []byte(content), 0600); err != nil {
 		t.Fatal(err)
 	}

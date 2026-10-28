@@ -63,7 +63,7 @@ function Invoke-DockerExec([string]$ContainerId, [string]$CmdLine, [string]$User
     return $text
 }
 
-function Invoke-DockerProof([string[]]$DockerArgs, [string]$PassMarker,
+function Invoke-DockerCapture([string[]]$DockerArgs,
     [string]$Label, [int]$TimeoutSeconds = 300) {
     # PowerShell's native stderr pipeline can interpret the child PS 5.1
     # CLIXML stream as malformed XML, hiding the actual proof error.
@@ -87,14 +87,18 @@ function Invoke-DockerProof([string[]]$DockerArgs, [string]$PassMarker,
         }
         $process.WaitForExit()
         [string]$message = $stdout.GetAwaiter().GetResult() + $stderr.GetAwaiter().GetResult()
-        $exitCode = $process.ExitCode
-        $hasMarker = $message.Contains($PassMarker)
-        Write-Host $message
-        if ($exitCode -ne 0 -or -not $hasMarker) {
-            throw "$Label failed (exit $exitCode); required marker: $PassMarker"
-        }
+        return [pscustomobject]@{ Text = $message; ExitCode = $process.ExitCode }
     } finally {
         $process.Dispose()
+    }
+}
+
+function Invoke-DockerProof([string[]]$DockerArgs, [string]$PassMarker,
+    [string]$Label, [int]$TimeoutSeconds = 300) {
+    $result = Invoke-DockerCapture -DockerArgs $DockerArgs -Label $Label -TimeoutSeconds $TimeoutSeconds
+    Write-Host $result.Text
+    if ($result.ExitCode -ne 0 -or -not $result.Text.Contains($PassMarker)) {
+        throw "$Label failed (exit $($result.ExitCode)); required marker: $PassMarker"
     }
 }
 
@@ -211,8 +215,9 @@ try {
                 $containerId, "$ContainerWork\shell.test.exe",
                 '-test.v', '-test.count=1', '-test.timeout=5m', "-test.run=$testRun"
             )
-            $testOut = & docker @testArgs 2>&1 | Out-String
-            if ($LASTEXITCODE -ne 0) { throw "native shell tests failed: $testOut" }
+            $testResult = Invoke-DockerCapture -DockerArgs $testArgs -Label 'native shell tests' -TimeoutSeconds 330
+            $testOut = $testResult.Text
+            if ($testResult.ExitCode -ne 0) { throw "native shell tests failed: $testOut" }
             foreach ($name in $TestNames) {
                 if ($testOut -notmatch ('(?m)^--- PASS: ' + [regex]::Escape($name) + ' \(')) {
                     throw "native shell test did not pass: $name`n$testOut"
@@ -233,8 +238,9 @@ try {
                     $containerId, "$ContainerWork\$($suite.Exe)",
                     '-test.v', '-test.count=1', "-test.timeout=$($suite.Timeout)", "-test.run=$suiteRun"
                 )
-                $suiteOut = & docker @suiteArgs 2>&1 | Out-String
-                if ($LASTEXITCODE -ne 0) { throw "native $($suite.Exe) tests failed: $suiteOut" }
+                $suiteResult = Invoke-DockerCapture -DockerArgs $suiteArgs -Label "native $($suite.Exe) tests" -TimeoutSeconds 330
+                $suiteOut = $suiteResult.Text
+                if ($suiteResult.ExitCode -ne 0) { throw "native $($suite.Exe) tests failed: $suiteOut" }
                 foreach ($name in $suite.Names) {
                     if ($suiteOut -notmatch ('(?m)^--- PASS: ' + [regex]::Escape($name) + ' \(')) {
                         throw "native test did not pass: $name`n$suiteOut"
@@ -251,8 +257,9 @@ try {
                     $containerId, "$ContainerWork\$($peerSuite.Package).test.exe",
                     '-test.v', '-test.count=1', '-test.timeout=2m', "-test.run=^$($peerSuite.Test)$"
                 )
-                $peerTestOut = & docker @peerTestArgs 2>&1 | Out-String
-                if ($LASTEXITCODE -ne 0 -or
+                $peerResult = Invoke-DockerCapture -DockerArgs $peerTestArgs -Label "native $($peerSuite.Package) tests" -TimeoutSeconds 150
+                $peerTestOut = $peerResult.Text
+                if ($peerResult.ExitCode -ne 0 -or
                     $peerTestOut -notmatch ('(?m)^--- PASS: ' + [regex]::Escape($peerSuite.Test) + ' \(')) {
                     throw "native $($peerSuite.Package) test did not pass: $($peerSuite.Test)`n$peerTestOut"
                 }
