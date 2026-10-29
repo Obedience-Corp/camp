@@ -179,6 +179,18 @@ func runCommit(cmd *cobra.Command, args []string) error {
 		return camperrors.New("amend without a message requires --no-edit or --message")
 	}
 
+	// Keep setup before the drain, staging and the queue fast path.
+	autoWrite := commitAutoWrite
+	if autoWrite {
+		manual, err := cmdutil.EnsureCommitWriter(cmd, campRoot, !commitJSONOut && !commitBackground)
+		if err != nil {
+			return err
+		}
+		if manual != "" {
+			commitMessage, autoWrite = manual, false
+		}
+	}
+
 	if commitBackground {
 		jsonResult.Repo = target.Path
 		if err := requireBackgroundCommit(ctx, campRoot, target.Path); err != nil {
@@ -209,7 +221,7 @@ func runCommit(cmd *cobra.Command, args []string) error {
 
 	// Get commit message - prompt if not provided
 	message := commitMessage
-	if !commitAutoWrite && message == "" && !commitAmend {
+	if !autoWrite && message == "" && !commitAmend {
 		var promptErr error
 		message, promptErr = ui.PromptCommitMessageSimple(ctx, executor, !target.IsNestedRepo() && !commitIncludeRefs)
 		if promptErr != nil {
@@ -222,7 +234,7 @@ func runCommit(cmd *cobra.Command, args []string) error {
 
 	// Stage if requested
 	if stageAll {
-		priorRoots, queued, err := queueBeforeStage(ctx, humanOut, campRoot, target)
+		priorRoots, queued, err := queueBeforeStage(ctx, humanOut, campRoot, target, autoWrite)
 		if err != nil || queued {
 			return err
 		}
@@ -343,7 +355,7 @@ func runCommit(cmd *cobra.Command, args []string) error {
 	// staging, the guard, any artifact-root declaration. Only the message
 	// writer and the commit object move to the background, which is the part
 	// that can take an LLM call.
-	if commitAutoWrite {
+	if autoWrite {
 		deferred, deferErr := cmdutil.TryDeferAutoWrite(
 			ctx, humanOut, campRoot, target.Path, commitJSONOut, commitAmend,
 			defercommit.EnqueueOptions{
@@ -362,7 +374,7 @@ func runCommit(cmd *cobra.Command, args []string) error {
 		}
 	}
 
-	if commitAutoWrite {
+	if autoWrite {
 		_, _ = fmt.Fprintln(humanOut, ui.Info("Writing commit message..."))
 		var hookErr error
 		extraEnv := workitemEnvForCommit(ctx, campRoot, commitWorkitem)

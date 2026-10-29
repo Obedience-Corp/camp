@@ -210,37 +210,15 @@ func SaveCampaignConfig(ctx context.Context, campaignRoot string, cfg *CampaignC
 	return nil
 }
 
-// commentedHooksPlaceholder returns a commented-out hooks block to append to
-// campaign.yaml when no hooks are configured. Surfacing the option as a
-// discoverable comment lets users opt into commit --auto-write without having
-// to read the docs first. The example is intentionally generic: the command
-// can be any tool that prints the desired commit message to stdout.
+// commentedHooksPlaceholder keeps first-use setup discoverable without a manual in YAML.
 func commentedHooksPlaceholder() []byte {
 	return []byte(`
+# Automatic commit messages: camp settings commit-writer
+# Runs in the target repo; stdout becomes the message.
 # hooks:
 #   commit_message:
-#     # Command run from the target repo working tree by 'camp commit --auto-write'
-#     # (-aw). Its stdout is used verbatim as the commit message. Any tool works;
-#     # 'ob commit --print-session-id' is one example; progress and any
-#     # session_id= line on stderr are forwarded to the terminal (session_id is
-#     # emitted when the hook finishes, not while it is generating). Amend
-#     # auto-write invocations receive CAMP_COMMIT_AMEND=1.
-#     #
-#     # Run as written, so any bound of the writer's own belongs here rather
-#     # than in camp. A deferred run has nobody watching it and can afford to
-#     # be more patient than one you are waiting on, which is worth spending on
-#     # a local model.
 #     command: ob commit --print-session-id
-#     # How long a deferred run of that command may take before camp stops it
-#     # and writes the commit message itself. Foreground runs are not bounded:
-#     # you are watching those and can interrupt them yourself. Default 12m.
 #     timeout: 12m
-#     # How long a deferred commit keeps asking a writer that says it is
-#     # temporarily unavailable — exit 75, which is how a writer reports that
-#     # its daemon is down rather than that it failed. Camp retries with a
-#     # backoff for this long, then writes the message itself so the commit
-#     # still lands. The wait also ends the moment any camp command needs the
-#     # queue. Default 1h; "0" writes the message immediately.
 #     retry_window: 1h
 `)
 }

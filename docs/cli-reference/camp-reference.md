@@ -7721,6 +7721,27 @@ camp settings catalog [flags]
 ```
 ---
 
+## camp settings commit-writer
+
+Set up or change automatic commit messages for this camp
+
+```
+camp settings commit-writer [flags]
+```
+
+### Options
+
+```
+  -h, --help   help for commit-writer
+```
+
+### Options inherited from parent commands
+
+```
+      --no-color   disable colored output
+```
+---
+
 ## camp settings document
 
 Read and edit camp documents
