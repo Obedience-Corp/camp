@@ -45,21 +45,11 @@ import (
 
 // ErrCommitMessageHookNotConfigured is returned when --auto-write is requested
 // but .campaign/campaign.yaml does not configure hooks.commit_message.command.
-var ErrCommitMessageHookNotConfigured = errors.New(`auto-write commit message command is not configured
+var ErrCommitMessageHookNotConfigured = errors.New(`automatic commit messages aren't configured for this camp
 
-Configure a command in .campaign/campaign.yaml. It is run from the target
-repository's working tree and its stdout is used verbatim as the commit
-message, so any tool that emits a message on stdout works.
-
-hooks:
-  commit_message:
-    command: <your-commit-message-tool>
-
-Example (using the obey CLI):
-
-hooks:
-  commit_message:
-    command: ob commit --print-session-id`)
+Run 'camp settings commit-writer' to set up a writer, or set
+hooks.commit_message.command in .campaign/campaign.yaml.
+Use 'camp commit -m "your message"' for a manual commit`)
 
 // ErrCommitMessageHookEmptyOutput is returned when the hook succeeds but writes
 // no commit message to stdout.

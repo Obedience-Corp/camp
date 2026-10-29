@@ -139,6 +139,22 @@ func runProjectCommit(cmd *cobra.Command, args []string) error {
 		fmt.Printf("Project: %s\n", ui.Value(relPath))
 	}
 
+	if projectCommitAutoWrite && projectCommitMessage != "" {
+		return camperrors.Newf("--auto-write cannot be used with --message")
+	}
+
+	autoWrite := projectCommitAutoWrite
+	manual := ""
+	if autoWrite {
+		manual, err = cmdutil.EnsureCommitWriter(cmd, campRoot, true)
+		if err != nil {
+			return err
+		}
+		if manual != "" {
+			autoWrite = false
+		}
+	}
+
 	// Drain this repository's lane before staging, so anything camp already
 	// promised to commit here is in history rather than racing the user's
 	// commit. A worktree drains as its own lane, which is what its own path
@@ -155,13 +171,12 @@ func runProjectCommit(cmd *cobra.Command, args []string) error {
 		return camperrors.Wrap(err, "failed to initialize git")
 	}
 
-	if projectCommitAutoWrite && projectCommitMessage != "" {
-		return camperrors.Newf("--auto-write cannot be used with --message")
-	}
-
 	// Get commit message - prompt if not provided
 	message := projectCommitMessage
-	if !projectCommitAutoWrite && message == "" && !projectCommitAmend {
+	if manual != "" {
+		message = manual
+	}
+	if !autoWrite && message == "" && !projectCommitAmend {
 		var promptErr error
 		message, promptErr = ui.PromptCommitMessageSimple(ctx, executor, false)
 		if promptErr != nil {
@@ -216,7 +231,7 @@ func runProjectCommit(cmd *cobra.Command, args []string) error {
 
 	// Deferral point, same as camp commit: staging and the guard already ran
 	// in the foreground; only the writer and the commit object move.
-	if projectCommitAutoWrite {
+	if autoWrite {
 		deferred, deferErr := cmdutil.TryDeferAutoWrite(
 			ctx, os.Stdout, campRoot, resolvedPath, false, projectCommitAmend,
 			projectDeferOptions(ctx, campRoot, resolvedPath, relPath, cfg))
@@ -232,7 +247,7 @@ func runProjectCommit(cmd *cobra.Command, args []string) error {
 		}
 	}
 
-	if projectCommitAutoWrite {
+	if autoWrite {
 		fmt.Println(ui.Info("Writing commit message..."))
 		var hookErr error
 		extraEnv := workitemEnvForProjectCommit(ctx, campRoot, resolvedPath, projectCommitWorkitem)

@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"strings"
 
@@ -9,7 +10,9 @@ import (
 	"github.com/charmbracelet/huh"
 	"github.com/spf13/cobra"
 
+	"github.com/Obedience-Corp/camp/cmd/camp/cmdutil"
 	"github.com/Obedience-Corp/camp/internal/config"
+	"github.com/Obedience-Corp/camp/internal/git"
 	"github.com/Obedience-Corp/camp/internal/pathutil"
 	"github.com/Obedience-Corp/camp/internal/settings"
 	"github.com/Obedience-Corp/camp/internal/ui"
@@ -52,6 +55,7 @@ func init() {
 	rootCmd.AddCommand(settingsCmd)
 	settingsCmd.AddCommand(newSettingsGetCmd())
 	settingsCmd.AddCommand(newSettingsSetCmd())
+	settingsCmd.AddCommand(newCommitWriterSettingsCmd())
 }
 
 func runSettings(cmd *cobra.Command, args []string) error {
@@ -71,6 +75,7 @@ func runSettings(cmd *cobra.Command, args []string) error {
 	options := []huh.Option[string]{
 		huh.NewOption("Global Settings", "global"),
 		huh.NewOption("Local Settings (this camp)", "local"),
+		huh.NewOption("Automatic commit messages", "commit-writer"),
 		huh.NewOption("Exit", "exit"),
 	}
 
@@ -94,6 +99,14 @@ func runSettings(cmd *cobra.Command, args []string) error {
 		switch choice {
 		case "exit", "":
 			return nil
+		case "commit-writer":
+			if !inCampaign {
+				fmt.Println(ui.Warning("Run settings inside a camp to configure automatic commit messages."))
+				continue
+			}
+			if _, err := cmdutil.ConfigureCommitWriter(cmd, campaignRoot, false); err != nil && !errors.Is(err, git.ErrCommitCancelled) {
+				return err
+			}
 		case "global":
 			if err := runScopeMenu(ctx, cat, settings.ScopeGlobal, campaignRoot); err != nil {
 				return err

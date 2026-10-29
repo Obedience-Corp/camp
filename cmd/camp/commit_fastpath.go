@@ -19,9 +19,9 @@ import (
 // a temporary index without the status walk or a lock on the user's index.
 // Anything the guard would report still falls through so it prints before
 // this command returns.
-func queueBeforeStage(ctx context.Context, humanOut io.Writer, campRoot string, target *git.TargetResult) ([]string, bool, error) {
+func queueBeforeStage(ctx context.Context, humanOut io.Writer, campRoot string, target *git.TargetResult, autoWrite bool) ([]string, bool, error) {
 	priorRoots := git.DeclaredArtifactRoots(target.Path)
-	if !commitAutoWrite || commitBackground || commitLarge {
+	if !autoWrite || commitBackground || commitLarge {
 		return priorRoots, false, nil
 	}
 	skip, err := commitSkipPaths(ctx, campRoot, target)

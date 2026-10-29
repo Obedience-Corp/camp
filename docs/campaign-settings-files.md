@@ -12,6 +12,28 @@ For the full `.campaign/` directory layout, including `quests/`, `skills/`,
 `cache/`, and `leverage/`, see
 [campaign-directory-reference.md](campaign-directory-reference.md).
 
+## Automatic commit messages
+
+Run `camp settings commit-writer` to configure or change this camp's message
+writer. An interactive `camp commit --auto-write` or `camp p commit --auto-write`
+opens the same setup when no command is configured, then resumes the commit.
+
+Choose Obey if `ob` is installed, install it with `festival install obey`, or
+enter a custom command. Custom commands run in the target repository and print
+the commit message to stdout. The setup saves `hooks.commit_message.command`
+in `.campaign/campaign.yaml`, preserving other settings. During a commit you
+can also enter a one-time manual message without configuring a writer.
+
+Scripts, JSON output, and background commits never open setup. Configure the
+command beforehand or supply a manual message with `-m`. A configured writer's
+runtime errors remain errors; they do not reopen setup.
+
+```yaml
+hooks:
+  commit_message:
+    command: ob commit --print-session-id
+```
+
 ## Quick Reference
 
 | File | Scope | Format | Created by | Edit directly? |
