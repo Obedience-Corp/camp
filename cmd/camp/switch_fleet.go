@@ -7,6 +7,7 @@ import (
 	"io"
 	"sort"
 	"strings"
+	"time"
 
 	"github.com/spf13/cobra"
 
@@ -19,6 +20,11 @@ import (
 // errFleetMiss means no other machine has a camp for this query. Callers keep
 // the local "not found" error in that case.
 var errFleetMiss = errors.New("no matching camp on another machine")
+
+// Fleet discovery is interactive: an unrelated offline peer must not consume
+// the full SSH timeout before a healthy match can be selected. Explicit
+// machine:camp switches keep the normal remote timeout.
+const fleetLookupTimeout = 3 * time.Second
 
 // fleetCamp is one camp name known to live on a machine other than this one.
 type fleetCamp struct {
@@ -150,13 +156,13 @@ func ambiguousFleetError(query string, hits []fleetCamp) error {
 // The hop origin is enumerated like every other machine, even before adoption.
 var fleetEnumerator = enumerateRemoteFor
 
-func lookupFleetCampaign(ctx context.Context, query string, scope cmdutil.CampaignScope) (fleetCamp, error) {
+func lookupFleetCampaign(ctx context.Context, query string, scope cmdutil.CampaignScope) (fleetCamp, []remoteResult, error) {
 	if err := ctx.Err(); err != nil {
-		return fleetCamp{}, err
+		return fleetCamp{}, nil, err
 	}
 	mf, err := machines.Load()
 	if err != nil {
-		return fleetCamp{}, err
+		return fleetCamp{}, nil, err
 	}
 	targets := append([]machines.Machine(nil), mf.Machines...)
 	if origin, ok := sessionHopOrigin(); ok && insideSSHSession() {
@@ -166,15 +172,19 @@ func lookupFleetCampaign(ctx context.Context, query string, scope cmdutil.Campai
 		}
 	}
 	filter := listFilterFromScope(scope)
-	results := fanOutRemote(ctx, targets, fleetEnumerator(filter))
+	lookupCtx, cancel := context.WithTimeout(ctx, fleetLookupTimeout)
+	defer cancel()
+	results := fanOutRemote(lookupCtx, targets, fleetEnumerator(filter))
+	// A discovery deadline skips slow peers; cancellation of the command itself
+	// still aborts the switch, even if another peer already returned a match.
 	if err := ctx.Err(); err != nil {
-		return fleetCamp{}, err
+		return fleetCamp{}, nil, err
 	}
 	var live []fleetCamp
-	var failed []string
+	var failed []remoteResult
 	for _, result := range results {
 		if result.err != nil {
-			failed = append(failed, result.machineID+": "+formatUnreachableErr(result.err))
+			failed = append(failed, result)
 			continue
 		}
 		// Re-filter locally too: older remote binaries may ignore filters.
@@ -185,18 +195,26 @@ func lookupFleetCampaign(ctx context.Context, query string, scope cmdutil.Campai
 			})
 		}
 	}
-	// Unreachable machines may contain another match. Neither uniqueness nor
-	// absence can be established from a partial scan, regardless of the rows
-	// that the successful machines returned.
+	// Resolve among machines that answered. An unavailable peer is not evidence
+	// of ambiguity and must not veto a healthy match. Keep failures for a warning
+	// on success, or diagnostics when none of the reachable camps matched.
+	hit, err := matchFleetCamps(query, live)
+	if !errors.Is(err, errFleetMiss) {
+		return hit, failed, err
+	}
 	if len(failed) > 0 {
+		details := make([]string, 0, len(failed))
+		for _, result := range failed {
+			details = append(details, result.machineID+": "+formatUnreachableErr(result.err))
+		}
 		verdict := "fleet lookup incomplete"
 		if len(failed) == len(results) {
 			verdict = "every remote machine failed to answer"
 		}
-		return fleetCamp{}, camperrors.Newf("camp %q: %s; failed machines: %s\nHint: run 'camp machine diagnose' or select a known target with 'csw machine:camp'",
-			query, verdict, strings.Join(failed, "; "))
+		return fleetCamp{}, failed, camperrors.Newf("camp %q: %s; failed machines: %s\nHint: run 'camp machine diagnose' or select a known target with 'csw machine:camp'",
+			query, verdict, strings.Join(details, "; "))
 	}
-	return matchFleetCamps(query, live)
+	return fleetCamp{}, nil, errFleetMiss
 }
 
 func scopedFleetName(org, name string) string {
@@ -258,7 +276,7 @@ func dispatchFleetSwitch(ctx context.Context, cmd *cobra.Command, raw string, sc
 	if strings.TrimSpace(parsed.Campaign) == "" {
 		return false, nil
 	}
-	hit, err := lookupFleetCampaign(ctx, parsed.Campaign, scope)
+	hit, failed, err := lookupFleetCampaign(ctx, parsed.Campaign, scope)
 	if errors.Is(err, errFleetMiss) {
 		return false, nil
 	}
@@ -267,6 +285,13 @@ func dispatchFleetSwitch(ctx context.Context, cmd *cobra.Command, raw string, sc
 	}
 	if hit.Machine == machines.LocalMachineID || isSelfMachine(ctx, hit.Machine) {
 		return false, nil
+	}
+	if len(failed) > 0 {
+		ids := make([]string, 0, len(failed))
+		for _, result := range failed {
+			ids = append(ids, result.machineID)
+		}
+		_, _ = fmt.Fprintf(cmd.ErrOrStderr(), "camp: skipped unavailable machines: %s (run 'camp machine diagnose' for details)\n", strings.Join(ids, ", "))
 	}
 	reportFleetMatch(cmd.ErrOrStderr(), parsed.Campaign, hit)
 	msel, err := fleetSwitchSelector(hit, parsed.HasTab, parsed.Tab)

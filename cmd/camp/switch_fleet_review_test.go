@@ -9,6 +9,8 @@ import (
 	"reflect"
 	"strings"
 	"testing"
+	"testing/synctest"
+	"time"
 
 	"github.com/Obedience-Corp/camp/cmd/camp/cmdutil"
 	"github.com/Obedience-Corp/camp/internal/config"
@@ -236,7 +238,7 @@ func TestResumeSwitchArgsKeepsScope(t *testing.T) {
 	}
 }
 
-func TestRunSwitchRejectsPartialFleetResults(t *testing.T) {
+func TestRunSwitchPartialFleetResults(t *testing.T) {
 	for _, withLocal := range []bool{false, true} {
 		for _, hasCandidate := range []bool{false, true} {
 			name := map[bool]string{false: "empty", true: "local"}[withLocal] +
@@ -254,14 +256,33 @@ func TestRunSwitchRejectsPartialFleetResults(t *testing.T) {
 					return nil, nil
 				})
 				prev := resolveRemoteRoot
-				resolveRemoteRoot = func(context.Context, *machines.Machine, string) (string, error) {
-					t.Error("partial fleet lookup must not select a target")
-					return "", errors.New("unexpected remote resolution")
+				resolved := false
+				resolveRemoteRoot = func(_ context.Context, m *machines.Machine, selector string) (string, error) {
+					resolved = true
+					if !hasCandidate || m.ID != "remote-a" || selector != "notes-id" {
+						t.Errorf("unexpected remote resolution: %s:%s", m.ID, selector)
+					}
+					return "/remote/notes", nil
 				}
 				t.Cleanup(func() { resolveRemoteRoot = prev })
 
 				cmd, out := fleetReviewCmd(cmdutil.CampaignScope{}, true)
+				warnings := &bytes.Buffer{}
+				cmd.SetErr(warnings)
+				// Resolve without emitting an actual hop or pushing a snapshot.
+				if hasCandidate {
+					_ = cmd.Flags().Set("shell-connect", "false")
+				}
 				err := runSwitch(cmd, []string{"notes"})
+				if hasCandidate {
+					if !resolved || err == nil || !strings.Contains(err.Error(), "resolved remote-a:notes-id -> /remote/notes") {
+						t.Fatalf("reachable match was blocked: %v, resolved=%v", err, resolved)
+					}
+					if !strings.Contains(warnings.String(), "skipped unavailable machines: remote-b") {
+						t.Fatalf("missing partial lookup warning: %s", warnings)
+					}
+					return
+				}
 				if err == nil || errors.Is(err, errFleetMiss) {
 					t.Fatalf("partial results must be reported as incomplete, got %v", err)
 				}
@@ -275,5 +296,55 @@ func TestRunSwitchRejectsPartialFleetResults(t *testing.T) {
 				}
 			})
 		}
+	}
+}
+
+func TestFleetLookupBoundsUnresponsiveMachines(t *testing.T) {
+	fleetReviewEnv(t, false)
+	writeReviewMachines(t)
+	stubFleet(t, func(ctx context.Context, m *machines.Machine) ([]campaignEntry, error) {
+		if m.ID == "remote-b" {
+			<-ctx.Done()
+			return nil, ctx.Err()
+		}
+		return []campaignEntry{{ID: "notes-id", Name: "notes", Status: config.StatusActive}}, nil
+	})
+
+	synctest.Test(t, func(t *testing.T) {
+		start := time.Now()
+		cmd, _ := fleetReviewCmd(cmdutil.CampaignScope{}, false)
+		// --print refuses a remote target before dialing it; getting that error
+		// proves discovery selected the healthy machine despite the slow peer.
+		_ = cmd.Flags().Set("print", "true")
+		err := runSwitch(cmd, []string{"not"})
+		if err == nil || !strings.Contains(err.Error(), "remote target remote-a: --print is local-only") {
+			t.Fatalf("healthy match was blocked: %v", err)
+		}
+		if elapsed := time.Since(start); elapsed > 3*time.Second {
+			t.Fatalf("fleet discovery took %s, want at most 3s", elapsed)
+		}
+	})
+}
+
+func TestPartialFleetStillRejectsAmbiguousMatches(t *testing.T) {
+	fleetReviewEnv(t, false)
+	writeReviewMachines(t)
+	stubFleet(t, func(_ context.Context, m *machines.Machine) ([]campaignEntry, error) {
+		if m.ID == "remote-b" {
+			return nil, errors.New("offline")
+		}
+		return []campaignEntry{
+			{ID: "personal-id", Name: "notes", Org: "personal", Status: config.StatusActive},
+			{ID: "work-id", Name: "notes", Org: "work", Status: config.StatusActive},
+		}, nil
+	})
+	cmd, out := fleetReviewCmd(cmdutil.CampaignScope{}, true)
+	err := runSwitch(cmd, []string{"notes"})
+	if err == nil || !strings.Contains(err.Error(), "more than one remote camp") ||
+		!strings.Contains(err.Error(), "remote-a:personal/notes") || !strings.Contains(err.Error(), "remote-a:work/notes") {
+		t.Fatalf("ambiguity lost on partial lookup: %v", err)
+	}
+	if out.Len() != 0 {
+		t.Fatalf("ambiguous lookup emitted a shell command: %s", out)
 	}
 }

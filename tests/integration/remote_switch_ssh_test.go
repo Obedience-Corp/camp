@@ -91,4 +91,22 @@ machines:
 		require.Contains(t, out, root)
 	}
 
+	// An unrelated unavailable peer must not prevent fuzzy fleet selection.
+	// Capture streams separately: csw evaluates stdout as a shell command.
+	require.NoError(t, tc.WriteFile("/root/.ssh/config", "Host unavailable-peer\n  HostName 127.0.0.1\n  Port 1\n"))
+	require.NoError(t, tc.WriteFile("/root/.obey/machines.yaml", machinesYAML+`  - id: offline
+    host: unavailable-peer
+    auth_method: ssh-agent
+`))
+	_, code, err := tc.ExecCommand("sh", "-c",
+		"CAMP_REGISTRY_PATH=/tmp/fleet-empty-registry.json /camp switch remote-smoke --all --shell-connect >/tmp/fleet-out 2>/tmp/fleet-err")
+	require.NoError(t, err)
+	stdout := tc.Shell(t, "cat /tmp/fleet-out")
+	stderr := tc.Shell(t, "cat /tmp/fleet-err")
+	require.Zero(t, code, "reachable camp was blocked: %s", stderr)
+	require.Contains(t, stderr, "skipped unavailable machines: offline")
+	require.Contains(t, stderr, "Matched: remote-smoke -> self:"+campaignName)
+	require.Len(t, strings.Split(strings.TrimSpace(stdout), "\n"), 1)
+	require.True(t, strings.HasPrefix(stdout, "ssh -t "))
+	require.Contains(t, stdout, root)
 }
