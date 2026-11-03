@@ -126,6 +126,21 @@ function global:_camp_browse {
     }
 }
 
+function global:_camp_app_follow {
+    if ([string]::IsNullOrEmpty($env:FESTIVAL_APP_TERMINAL_BINDING)) { return }
+    $navigationExitCode = $global:LASTEXITCODE
+    try {
+        $context = @(_camp_native app terminal switch-completed --shell-context --timeout 1s)
+        if ($LASTEXITCODE -ne 0 -or $context.Count -ne 1) { throw 'App did not acknowledge the switch' }
+        $env:OBEY_APP_TERMINAL_CONTEXT = [string]$context[0]
+    } catch {
+        $env:OBEY_APP_TERMINAL_CONTEXT = ''
+        [Console]::Error.WriteLine('camp: terminal switched; app could not follow. Run csw again to retry.')
+    } finally {
+        $global:LASTEXITCODE = $navigationExitCode
+    }
+}
+
 function global:camp {
     if ($args.Count -eq 0) {
         _camp_native
@@ -170,6 +185,7 @@ function global:camp {
             throw "camp switch failed (exit $LASTEXITCODE); current directory unchanged"
         }
         _camp_set_location -Output $destination -Command 'camp switch'
+        _camp_app_follow
         return
     }
 

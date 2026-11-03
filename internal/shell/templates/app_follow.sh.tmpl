@@ -1,0 +1,14 @@
+{{define "app_follow_posix"}}# Follow explicit local camp switches in an embedded app terminal. The helper
+# returns JSON, never executable shell code. UI failure must not fail a cd.
+_camp_app_follow() {
+  [ -n "${FESTIVAL_APP_TERMINAL_BINDING:-}" ] || return 0
+  local camp_app_context
+  if camp_app_context=$(command camp app terminal switch-completed --shell-context --timeout 1s); then
+    export OBEY_APP_TERMINAL_CONTEXT="$camp_app_context"
+  else
+    export OBEY_APP_TERMINAL_CONTEXT=""
+    echo 'camp: terminal switched; app could not follow. Run csw again to retry.' >&2
+  fi
+  return 0
+}
+{{end}}
