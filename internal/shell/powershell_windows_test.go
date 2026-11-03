@@ -145,3 +145,70 @@ if (($global:campTestArgs -join '|') -ne 'go|--print') { throw '--print was chan
 		t.Fatalf("fresh PowerShell navigation proof failed: %v\n%s", err, out)
 	}
 }
+
+// All probes replace command discovery and invocation in memory. No plugin or
+// fixture files are installed, and only the child process environment changes.
+func TestPowerShellAppFollowDiagnostics(t *testing.T) {
+	script, err := Generate("powershell")
+	if err != nil {
+		t.Fatal(err)
+	}
+	const probe = `
+$ErrorActionPreference = 'Stop'
+function global:Get-Command {
+    param($Name, $CommandType, $ErrorAction)
+    if ($Name -ne 'camp-app' -or $CommandType -ne 'Application') { throw 'unexpected command lookup' }
+    $global:pluginChecks++
+    if (-not $global:pluginMissing) { return [PSCustomObject]@{ Source = 'mock-camp-app' } }
+}
+function global:_camp_native {
+    $global:pluginCalls++
+    if ($global:pluginMissing) { throw 'missing plugin was invoked' }
+    if ($global:pluginFails) { $global:LASTEXITCODE = 8; return }
+    $global:LASTEXITCODE = 0
+    return '{"campaignId":"destination"}'
+}
+foreach ($case in @('missing', 'failure', 'success', 'external')) {
+    $global:pluginChecks = 0
+    $global:pluginCalls = 0
+    $global:pluginMissing = $case -eq 'missing' -or $case -eq 'external'
+    $global:pluginFails = $case -eq 'failure'
+    $env:FESTIVAL_APP_TERMINAL_BINDING = if ($case -eq 'external') { '' } else { 'binding' }
+    $env:OBEY_APP_TERMINAL_CONTEXT = 'original'
+    $global:LASTEXITCODE = 17
+    $errors = New-Object System.IO.StringWriter
+    $previousError = [Console]::Error
+    try {
+        [Console]::SetError($errors)
+        _camp_app_follow
+    } finally {
+        [Console]::SetError($previousError)
+    }
+    $message = $errors.ToString()
+    if ($LASTEXITCODE -ne 17) { throw "$case changed the navigation exit code" }
+    switch ($case) {
+        'missing' {
+            if ($pluginCalls -ne 0 -or $pluginChecks -ne 1) { throw 'missing plugin was dispatched' }
+            if ($env:OBEY_APP_TERMINAL_CONTEXT) { throw 'missing plugin retained stale context' }
+            if ($message -notmatch 'Install camp-app' -or $message -match 'Run csw again to retry\.') { throw 'missing plugin diagnostic is not actionable' }
+        }
+        'failure' {
+            if ($pluginCalls -ne 1 -or $env:OBEY_APP_TERMINAL_CONTEXT) { throw 'failed sync did not clear context' }
+            if ($message -notmatch 'Run csw again to retry\.' -or $message -match 'Install camp-app') { throw 'transient failure lost retry advice' }
+        }
+        'success' {
+            if ($pluginCalls -ne 1 -or $env:OBEY_APP_TERMINAL_CONTEXT -ne '{"campaignId":"destination"}' -or $message) { throw 'successful sync failed' }
+        }
+        'external' {
+            if ($pluginChecks -ne 0 -or $pluginCalls -ne 0 -or $env:OBEY_APP_TERMINAL_CONTEXT -ne 'original' -or $message) { throw 'external shell attempted app sync' }
+        }
+    }
+}
+'PowerShell app follow diagnostics passed'
+`
+	cmd := exec.Command("powershell.exe", "-NoProfile", "-NonInteractive", "-Command", script+probe)
+	out, err := cmd.CombinedOutput()
+	if err != nil || !strings.Contains(string(out), "PowerShell app follow diagnostics passed") {
+		t.Fatalf("PowerShell app follow diagnostics failed: %v\n%s", err, out)
+	}
+}

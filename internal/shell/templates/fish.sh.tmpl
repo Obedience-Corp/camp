@@ -28,12 +28,17 @@ end
 
 function _camp_app_follow
     test -n "$FESTIVAL_APP_TERMINAL_BINDING"; or return 0
+    if not command -v camp-app >/dev/null 2>&1
+        set -gx OBEY_APP_TERMINAL_CONTEXT ""
+        echo '{{template "app_follow_missing" .}}' >&2
+        return 0
+    end
     set -l camp_app_context (command camp app terminal switch-completed --shell-context --timeout 1s)
     if test $status -eq 0
         set -gx OBEY_APP_TERMINAL_CONTEXT "$camp_app_context"
     else
         set -gx OBEY_APP_TERMINAL_CONTEXT ""
-        echo 'camp: terminal switched; app could not follow. Run csw again to retry.' >&2
+        echo '{{template "app_follow_retry" .}}' >&2
     end
     return 0
 end
