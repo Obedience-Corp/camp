@@ -26,6 +26,23 @@ function __camp_is_first_arg_drill
     string match -rq '[/@]' -- $token
 end
 
+function _camp_app_follow
+    test -n "$FESTIVAL_APP_TERMINAL_BINDING"; or return 0
+    if not command -v camp-app >/dev/null 2>&1
+        set -gx OBEY_APP_TERMINAL_CONTEXT ""
+        echo '{{template "app_follow_missing" .}}' >&2
+        return 0
+    end
+    set -l camp_app_context (command camp app terminal switch-completed --shell-context --timeout 1s)
+    if test $status -eq 0
+        set -gx OBEY_APP_TERMINAL_CONTEXT "$camp_app_context"
+    else
+        set -gx OBEY_APP_TERMINAL_CONTEXT ""
+        echo '{{template "app_follow_retry" .}}' >&2
+    end
+    return 0
+end
+
 # A hop line is `ssh -t ...`. Run it through hop-resume so a later switch on
 # the far side can unwind back into THIS shell and keep going. A plain `exit`
 # or `cd` line is eval'd as camp printed it.
@@ -96,7 +113,14 @@ function camp --description "Camp CLI wrapper with directory-changing support"
             if test "$cmd_status" -ne 0
                 return $cmd_status
             end
+            if string match -q 'ssh *' -- "$line"; and test -n "$FESTIVAL_APP_TERMINAL_BINDING"
+                set -gx OBEY_APP_TERMINAL_CONTEXT ""
+                echo 'camp: app context following is not available for remote hops yet.' >&2
+            end
             _camp_eval_connect "$line"
+            set -l camp_switch_status $status
+            test $camp_switch_status -eq 0; or return $camp_switch_status
+            _camp_app_follow
         case go g
             set -l rest $argv[2..-1]
             set -l passthrough 0

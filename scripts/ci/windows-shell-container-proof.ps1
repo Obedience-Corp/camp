@@ -14,6 +14,7 @@ $ContainerUserName = 'ContainerUser'
 $TestNames = @(
     'TestPowerShellNavigationFunctionsInFreshSession',
     'TestPowerShellNativeRestoresOutputEncoding',
+    'TestPowerShellAppFollowDiagnostics',
     'TestPowerShellUnicodeDirectoryNavigation',
     'TestPowerShellBrowserPathOutput'
 )
