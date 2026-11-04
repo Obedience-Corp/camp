@@ -1,5 +1,7 @@
+{{/* Includes discovery, ownership lookup, destination loading and durable saves. */}}
+{{define "app_follow_timeout"}}5s{{end}}
 {{define "app_follow_missing"}}camp: terminal switched; camp-app is not on PATH. Install camp-app and add it to PATH, then run csw again.{{end}}
-{{define "app_follow_retry"}}camp: terminal switched; app could not follow. Run csw again to retry.{{end}}
+{{define "app_follow_retry"}}camp: terminal switched; app synchronization was not confirmed. Run csw again to retry.{{end}}
 {{define "app_follow_posix"}}# Follow explicit local camp switches in an embedded app terminal. The helper
 # returns JSON, never executable shell code. UI failure must not fail a cd.
 _camp_app_follow() {
@@ -10,7 +12,7 @@ _camp_app_follow() {
     return 0
   fi
   local camp_app_context
-  if camp_app_context=$(command camp app terminal switch-completed --shell-context --timeout 1s); then
+  if camp_app_context=$(command camp app terminal switch-completed --shell-context --timeout {{template "app_follow_timeout" .}}); then
     export OBEY_APP_TERMINAL_CONTEXT="$camp_app_context"
   else
     export OBEY_APP_TERMINAL_CONTEXT=""

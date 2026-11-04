@@ -162,6 +162,7 @@ function global:Get-Command {
     if (-not $global:pluginMissing) { return [PSCustomObject]@{ Source = 'mock-camp-app' } }
 }
 function global:_camp_native {
+    if (($args -join '|') -ne 'app|terminal|switch-completed|--shell-context|--timeout|5s') { throw 'unexpected follow arguments or deadline' }
     $global:pluginCalls++
     if ($global:pluginMissing) { throw 'missing plugin was invoked' }
     if ($global:pluginFails) { $global:LASTEXITCODE = 8; return }
@@ -194,7 +195,7 @@ foreach ($case in @('missing', 'failure', 'success', 'external')) {
         }
         'failure' {
             if ($pluginCalls -ne 1 -or $env:OBEY_APP_TERMINAL_CONTEXT) { throw 'failed sync did not clear context' }
-            if ($message -notmatch 'Run csw again to retry\.' -or $message -match 'Install camp-app') { throw 'transient failure lost retry advice' }
+            if ($message -notmatch 'Run csw again to retry\.' -or $message -match 'Install camp-app' -or $message -notmatch 'app synchronization was not confirmed') { throw 'transient failure lost retry advice' }
         }
         'success' {
             if ($pluginCalls -ne 1 -or $env:OBEY_APP_TERMINAL_CONTEXT -ne '{"campaignId":"destination"}' -or $message) { throw 'successful sync failed' }
