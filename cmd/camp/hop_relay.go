@@ -460,6 +460,7 @@ func serveHopRelay(ctx context.Context, fromFar io.Reader, toFar io.Writer, hop 
 		winding     chan outcome // a cancelled preparation that has not returned yet
 		notBefore   time.Time    // the next preparation may start no sooner
 		waiting     int          // the request held until it may be prepared, 0 when none
+		observing   bool
 		held        hopResumeRequest
 		spaced      <-chan time.Time // the held request may be prepared now
 		overdue     <-chan time.Time // it waited too long on a cancelled preparation
@@ -529,6 +530,7 @@ func serveHopRelay(ctx context.Context, fromFar io.Reader, toFar io.Writer, hop 
 			return respond(to, errHopAlreadySwitching)
 		}
 		seq = to
+		observing = request.Observation != nil
 		prepareCtx, cancelPrepare := context.WithTimeout(ctx, hopResumeTimeout-time.Second)
 		stop = cancelPrepare
 		done := make(chan outcome, 1)
@@ -604,6 +606,10 @@ func serveHopRelay(ctx context.Context, fromFar io.Reader, toFar io.Writer, hop 
 				abandon()
 				continue
 			}
+			if observing {
+				abandon()
+				continue
+			}
 			follow, acked, unconfirmed = result.follow, true, time.After(hopAckBackstop)
 		case frame := <-frames:
 			switch {
@@ -658,6 +664,9 @@ func hopRelayRequest(raw json.RawMessage) (hopResumeRequest, error) {
 		return hopResumeRequest{}, errHopRelayVersion
 	}
 	request := envelope.Request
+	if request.Observation != nil {
+		return request, request.Observation.validate()
+	}
 	selector, err := sanitizeResumeSelector(request.Selector)
 	if err != nil {
 		return hopResumeRequest{}, err

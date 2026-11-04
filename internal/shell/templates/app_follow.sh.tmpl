@@ -5,6 +5,11 @@
 {{define "app_follow_posix"}}# Follow explicit local camp switches in an embedded app terminal. The helper
 # returns JSON, never executable shell code. UI failure must not fail a cd.
 _camp_app_follow() {
+  if [ -n "${CAMP_APP_FOLLOW_HOP:-}" ]; then
+    export OBEY_APP_TERMINAL_CONTEXT=""
+    _camp_remote_enter
+    return 0
+  fi
   [ -n "${FESTIVAL_APP_TERMINAL_BINDING:-}" ] || return 0
   if ! command -v camp-app >/dev/null 2>&1; then
     export OBEY_APP_TERMINAL_CONTEXT=""
@@ -19,5 +24,32 @@ _camp_app_follow() {
     echo '{{template "app_follow_retry" .}}' >&2
   fi
   return 0
+}
+{{end}}
+
+{{define "remote_follow_posix"}}
+# Reports use the existing private hop relay. No local App credentials travel
+# to this shell. Directory hints are scoped data on the terminal stream.
+_camp_remote_enter() {
+  [ -n "${CAMP_APP_FOLLOW_HOP:-}" ] || return 0
+  _CAMP_REPORT_SEQUENCE=$(( ${_CAMP_REPORT_SEQUENCE:-0} + 1 ))
+  _CAMP_REPORT_READY=1
+  if ! command camp hop-resume report --sequence "$_CAMP_REPORT_SEQUENCE"; then
+    echo 'camp: remote terminal is available; app following was not confirmed. Run csw again to retry.' >&2
+  fi
+  _CAMP_REPORT_CWD=""
+  return 0
+}
+_camp_remote_prompt() {
+  local camp_prompt_status=$?
+  if [ -n "${CAMP_APP_FOLLOW_HOP:-}" ]; then
+    [ "${_CAMP_REPORT_READY:-}" = 1 ] || _camp_remote_enter
+    if [ "${_CAMP_REPORT_CWD:-}" != "$PWD" ]; then
+      _CAMP_REPORT_SEQUENCE=$(( ${_CAMP_REPORT_SEQUENCE:-0} + 1 ))
+      command camp hop-resume cwd --sequence "$_CAMP_REPORT_SEQUENCE"
+      _CAMP_REPORT_CWD=$PWD
+    fi
+  fi
+  return "$camp_prompt_status"
 }
 {{end}}

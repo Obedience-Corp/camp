@@ -556,6 +556,9 @@ func emitShellConnect(w io.Writer, isRemote bool, path string, e remote.Endpoint
 	if origin != "" {
 		inner = "export " + HopOriginEnvVar + "=" + remote.ShellQuote(origin) + " && " + inner
 	}
+	if e.Machine != nil && e.Machine.ID != "" && os.Getenv("FESTIVAL_APP_TERMINAL_BINDING") != "" {
+		inner = "export " + remote.ShellQuote(hopMachineEnv+"="+e.Machine.ID) + " && " + inner
+	}
 	// Quote every opt token, not just target/inner: ControlPath (under $HOME) and
 	// an -i identity file may hold spaces/metacharacters, which would otherwise
 	// split the eval'd line into the wrong argv before ssh ever runs.

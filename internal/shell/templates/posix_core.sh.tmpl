@@ -28,7 +28,8 @@ if ! (_camp_v=outer; _camp_probe() { local _camp_v=inner; [ "$_camp_v" = inner ]
 fi
 unset -f _camp_probe 2>/dev/null || true
 {{end}}
-{{define "posix_wrapper"}}{{template "app_follow_posix" .}}
+{{define "posix_wrapper"}}{{template "remote_follow_posix" .}}
+{{template "app_follow_posix" .}}
 # A hop line is `ssh -t ...`. Run it through hop-resume so a later switch on
 # the far side can unwind back into THIS shell and keep going. A plain `exit`
 # or `cd` line is eval'd as camp printed it.
@@ -130,16 +131,14 @@ camp() {
       # target, `ssh -t ...` to hop to a machine: target. On error camp
       # prints to stderr and exits non-zero (empty stdout), so we propagate.
       line=$(command camp switch "$@" --shell-connect) || return "$?"
-      case "$line" in
-        ssh\ *)
-          if [ -n "${FESTIVAL_APP_TERMINAL_BINDING:-}" ]; then
-            export OBEY_APP_TERMINAL_CONTEXT=""
-            echo 'camp: app context following is not available for remote hops yet.' >&2
-          fi
-          ;;
-      esac
-      _camp_eval_connect "$line" || return $?
-      _camp_app_follow
+      local camp_switch_status=0
+      _camp_eval_connect "$line" || camp_switch_status=$?
+      if [ "$camp_switch_status" -eq 0 ]; then
+        _camp_app_follow
+      else
+        case "$line" in ssh\ *) _camp_app_follow ;; esac
+      fi
+      return "$camp_switch_status"
       ;;
     go|g)
       shift

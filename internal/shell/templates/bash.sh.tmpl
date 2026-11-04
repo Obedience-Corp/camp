@@ -69,3 +69,20 @@ _camp_complete() {
   esac
 }
 complete -F _camp_complete camp
+
+if [ -n "${CAMP_APP_FOLLOW_HOP:-}" ]; then
+  case "$(declare -p PROMPT_COMMAND 2>/dev/null)" in
+    'declare -a '*)
+      case " ${PROMPT_COMMAND[*]} " in
+        *' _camp_remote_prompt '*) ;;
+        *) PROMPT_COMMAND=(_camp_remote_prompt "${PROMPT_COMMAND[@]}") ;;
+      esac
+      ;;
+    *)
+      case ";${PROMPT_COMMAND:-};" in
+        *';_camp_remote_prompt;'*) ;;
+        *) PROMPT_COMMAND="_camp_remote_prompt${PROMPT_COMMAND:+; $PROMPT_COMMAND}" ;;
+      esac
+      ;;
+  esac
+fi
