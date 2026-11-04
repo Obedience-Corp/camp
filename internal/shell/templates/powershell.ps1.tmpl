@@ -135,7 +135,7 @@ function global:_camp_app_follow {
             [Console]::Error.WriteLine('{{template "app_follow_missing" .}}')
             return
         }
-        $context = @(_camp_native app terminal switch-completed --shell-context --timeout 1s)
+        $context = @(_camp_native app terminal switch-completed --shell-context --timeout {{template "app_follow_timeout" .}})
         if ($LASTEXITCODE -ne 0 -or $context.Count -ne 1) { throw 'App did not acknowledge the switch' }
         $env:OBEY_APP_TERMINAL_CONTEXT = [string]$context[0]
     } catch {
