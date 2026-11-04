@@ -184,3 +184,45 @@ func appFollowTestEnv(t *testing.T) []string {
 	}
 	return append(exploreShellEnv(""), "CAMP_APP_FOLLOW_TEST_BINARY="+binary)
 }
+
+func TestRemotePromptReportsActualCwdAndPreservesStatus(t *testing.T) {
+	for _, name := range []string{"bash", "zsh"} {
+		t.Run(name, func(t *testing.T) {
+			binary, err := exec.LookPath(name)
+			if err != nil {
+				t.Skip(name + " unavailable")
+			}
+			script, err := Generate(name)
+			if err != nil {
+				t.Fatal(err)
+			}
+			stub := `command() {
+ if [ "$1" = "-v" ]; then return 0; fi
+ if [ "$1 $2 $3" = "camp hop-resume report" ]; then printf 'ENTER:%s\\n' "$PWD"; return 0; fi
+ if [ "$1 $2 $3" = "camp hop-resume cwd" ]; then printf 'CWD:%s\\n' "$PWD"; return 0; fi
+ return 0
+}
+`
+			action := `export CAMP_APP_FOLLOW_HOP=0123456789abcdef
+false
+_camp_remote_prompt
+printf 'STATUS:%s\\n' "$?"
+_camp_remote_prompt
+cd /
+_camp_remote_prompt
+_camp_app_follow
+`
+			cmd := exec.Command(binary)
+			cmd.Env = appFollowTestEnv(t)
+			cmd.Stdin = strings.NewReader(stub + script + "\n" + action)
+			raw, err := cmd.CombinedOutput()
+			if err != nil {
+				t.Fatalf("%v: %s", err, raw)
+			}
+			out := string(raw)
+			if !strings.Contains(out, "STATUS:1") || strings.Count(out, "ENTER:") != 2 || strings.Count(out, "CWD:") != 2 || !strings.Contains(out, "CWD:/") {
+				t.Fatalf("incorrect prompt lifecycle: %s", out)
+			}
+		})
+	}
+}

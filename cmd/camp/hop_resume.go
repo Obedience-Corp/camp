@@ -88,9 +88,10 @@ var hopResumeRunCmd = &cobra.Command{
 }
 
 type hopResumeRequest struct {
-	Selector string                `json:"selector"`
-	Scope    cmdutil.CampaignScope `json:"scope"`
-	Host     string                `json:"host,omitempty"`
+	Observation *hopObservation       `json:"observation,omitempty"`
+	Selector    string                `json:"selector"`
+	Scope       cmdutil.CampaignScope `json:"scope"`
+	Host        string                `json:"host,omitempty"`
 }
 
 func sendHopResume(ctx context.Context, selector string, scope cmdutil.CampaignScope, host string) error {
@@ -204,6 +205,9 @@ func sanitizeResumeSelector(raw string) (string, error) {
 type hopSurroundings struct {
 	prepare  func(context.Context, hopResumeRequest) (string, error)
 	terminal func() (in, out *os.File, inherited bool, release func(), err error)
+	// App-opened terminals bypass emitShellConnect, so their opening coordinator
+	// supplies the origin that lets remote csw unwind instead of nesting SSH.
+	origin string
 }
 
 // runHopResume runs one outbound ssh line with a resume socket forwarded to
@@ -244,6 +248,14 @@ func runHop(ctx context.Context, line string, around hopSurroundings) (string, e
 
 	resumeCtx, cancelResume := context.WithCancel(ctx)
 	defer cancelResume()
+	prepareFollow, endFollow := followHop(ctx, &hop, relayID, out, around.prepare)
+	defer endFollow()
+	around.prepare = prepareFollow
+	if around.origin != "" {
+		// Stamp after followHop reads the leading machine metadata. A later
+		// origin already emitted by camp switch remains authoritative.
+		hop.remoteCmd = "export " + HopOriginEnvVar + "=" + remote.ShellQuote(around.origin) + " && " + hop.remoteCmd
+	}
 	onward := new(hopSwitch)
 	got := make(chan string, 2)
 	go func() {
@@ -465,6 +477,9 @@ func mapHopResume(request hopResumeRequest, registry *machines.File) (hopResumeR
 }
 
 func prepareHopResume(ctx context.Context, request hopResumeRequest) (string, error) {
+	if request.Observation != nil {
+		return "", camperrors.New("hop-resume: app following is not enabled for this hop")
+	}
 	if err := printableHopRequest(request); err != nil {
 		return "", err
 	}
@@ -486,7 +501,12 @@ func serveHopResume(ctx context.Context, ln net.Listener, hop *hopSwitch, prepar
 			return "", err
 		}
 		reserved := false
+		observation := false
 		follow, err := acceptHopResume(ctx, conn, func(ctx context.Context, request hopResumeRequest) (string, error) {
+			if request.Observation != nil {
+				observation = true
+				return prepare(ctx, request)
+			}
 			if !hop.reserve() {
 				return "", errHopAlreadySwitching
 			}
@@ -499,7 +519,7 @@ func serveHopResume(ctx context.Context, ln net.Listener, hop *hopSwitch, prepar
 			return follow, nil
 		})
 		_ = conn.Close()
-		if err == nil {
+		if err == nil && !observation {
 			return follow, nil
 		}
 		if reserved {
@@ -524,10 +544,13 @@ func acceptHopResume(ctx context.Context, conn net.Conn, prepare func(context.Co
 		err = camperrors.New("hop-resume: unsupported request version; update camp on both machines and hop again")
 	}
 	request := envelope.Request
-	if err == nil {
+	if err == nil && request.Observation != nil {
+		err = request.Observation.validate()
+	}
+	if err == nil && request.Observation == nil {
 		request.Selector, err = sanitizeResumeSelector(request.Selector)
 	}
-	if err == nil && request.Selector == "" {
+	if err == nil && request.Observation == nil && request.Selector == "" {
 		err = camperrors.New("hop-resume: empty selector")
 	}
 	var follow string
