@@ -205,6 +205,9 @@ func sanitizeResumeSelector(raw string) (string, error) {
 type hopSurroundings struct {
 	prepare  func(context.Context, hopResumeRequest) (string, error)
 	terminal func() (in, out *os.File, inherited bool, release func(), err error)
+	// App-opened terminals bypass emitShellConnect, so their opening coordinator
+	// supplies the origin that lets remote csw unwind instead of nesting SSH.
+	origin string
 }
 
 // runHopResume runs one outbound ssh line with a resume socket forwarded to
@@ -248,6 +251,11 @@ func runHop(ctx context.Context, line string, around hopSurroundings) (string, e
 	prepareFollow, endFollow := followHop(ctx, &hop, relayID, out, around.prepare)
 	defer endFollow()
 	around.prepare = prepareFollow
+	if around.origin != "" {
+		// Stamp after followHop reads the leading machine metadata. A later
+		// origin already emitted by camp switch remains authoritative.
+		hop.remoteCmd = "export " + HopOriginEnvVar + "=" + remote.ShellQuote(around.origin) + " && " + hop.remoteCmd
+	}
 	onward := new(hopSwitch)
 	got := make(chan string, 2)
 	go func() {

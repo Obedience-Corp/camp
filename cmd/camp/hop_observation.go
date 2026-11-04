@@ -123,6 +123,10 @@ func sendHopObservation(ctx context.Context, report *hopObservation) error {
 
 // The local coordinator, never the remote report, supplies the machine and
 // native terminal binding. Only this hop's private relay can reach prepare.
+// An onward csw on B sends its selector back to A and exits B's shell (see
+// dispatchRemoteSwitch/emitHopUnwind). A prepares and opens C with its local
+// binding and a fresh follow scope; B never needs App credentials or a nested
+// observation-forwarding coordinator.
 func followHop(ctx context.Context, hop *hopLine, id string, out io.Writer, prepare func(context.Context, hopResumeRequest) (string, error)) (func(context.Context, hopResumeRequest) (string, error), func()) {
 	noop := func() {}
 	if os.Getenv("FESTIVAL_APP_TERMINAL_BINDING") == "" {
@@ -210,8 +214,12 @@ func (h hopLine) machineID() string {
 func init() {
 	hopResumeCmd.AddCommand(&cobra.Command{Use: "terminal <ssh-line>", Hidden: true, Args: cobra.ExactArgs(1), RunE: func(cmd *cobra.Command, args []string) error {
 		line := args[0]
+		around := hopSurroundings{
+			prepare: prepareHopResume, terminal: openHopTerminal,
+			origin: hopOriginForEmit(cmd.Context(), cmd),
+		}
 		for strings.HasPrefix(line, "ssh ") {
-			next, err := runHopResume(cmd.Context(), line)
+			next, err := runHop(cmd.Context(), line, around)
 			if err != nil {
 				return err
 			}
