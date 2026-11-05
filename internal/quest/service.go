@@ -74,6 +74,10 @@ func (s *Service) CreateWithEditorOptions(ctx context.Context, opts CreateOption
 }
 
 func (s *Service) Create(ctx context.Context, name, purpose, description string, tags []string) (*MutationResult, error) {
+	return s.create(ctx, name, purpose, description, tags, false)
+}
+
+func (s *Service) create(ctx context.Context, name, purpose, description string, tags []string, fallback bool) (*MutationResult, error) {
 	if err := s.ensureInitialized(); err != nil {
 		return nil, err
 	}
@@ -100,6 +104,7 @@ func (s *Service) Create(ctx context.Context, name, purpose, description string,
 		CreatedAt:   now,
 		UpdatedAt:   now,
 		Tags:        normalizeTags(tags),
+		Default:     fallback,
 	}
 	path := QuestPathForDir(dir)
 	if err := Save(ctx, path, q); err != nil {

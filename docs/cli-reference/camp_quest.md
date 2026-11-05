@@ -46,6 +46,7 @@ camp quest [flags]
 * [camp quest clear](camp_quest_clear.md)	 - Clear the current terminal's quest context
 * [camp quest complete](camp_quest_complete.md)	 - Mark a quest completed
 * [camp quest create](camp_quest_create.md)	 - Create a new quest
+* [camp quest default](camp_quest_default.md)	 - Resolve or create an open default quest
 * [camp quest edit](camp_quest_edit.md)	 - Edit an existing quest
 * [camp quest item](camp_quest_item.md)	 - Manage checklist items on a quest
 * [camp quest link](camp_quest_link.md)	 - Link a camp artifact to a quest

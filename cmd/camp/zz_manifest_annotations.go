@@ -51,6 +51,7 @@ var manifestAgentAllowedReasons = map[string]string{
 	"quest checklist":            "Read-only quest checklist listing",
 	"quest complete":             "Non-interactive quest completion with explicit selector",
 	"quest create":               "Non-interactive quest creation with explicit arguments",
+	"quest default":              "Idempotent non-interactive default quest resolution",
 	"quest item add":             "Non-interactive checklist item creation",
 	"quest item done":            "Non-interactive checklist item completion",
 	"quest item edit":            "Non-interactive checklist item edit",

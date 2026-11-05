@@ -180,6 +180,7 @@ func TestManifestCommand_AllRestrictedCommandsPresent(t *testing.T) {
 		expectedCommands["quest archive"] = false
 		expectedCommands["quest complete"] = false
 		expectedCommands["quest create"] = false
+		expectedCommands["quest default"] = false
 		expectedCommands["quest edit"] = false
 		expectedCommands["quest link"] = false
 		expectedCommands["quest links"] = false
@@ -317,6 +318,7 @@ func TestManifestCommand_InteractiveFlags(t *testing.T) {
 		nonInteractiveCommands["quest archive"] = true
 		nonInteractiveCommands["quest complete"] = true
 		nonInteractiveCommands["quest create"] = true
+		nonInteractiveCommands["quest default"] = true
 		nonInteractiveCommands["quest link"] = true
 		nonInteractiveCommands["quest links"] = true
 		nonInteractiveCommands["quest pause"] = true
