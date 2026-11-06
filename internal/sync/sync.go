@@ -7,12 +7,14 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"sort"
 	"strings"
 	gosync "sync"
 
 	"github.com/Obedience-Corp/camp/internal/artifacts"
 	camperrors "github.com/Obedience-Corp/camp/internal/errors"
 	"github.com/Obedience-Corp/camp/internal/git"
+	"github.com/Obedience-Corp/camp/internal/pathutil"
 	"github.com/Obedience-Corp/camp/internal/remote"
 	"github.com/Obedience-Corp/camp/internal/rsyncprobe"
 )
@@ -79,13 +81,13 @@ func (s *Syncer) Sync(ctx context.Context) (*SyncResult, error) {
 		return result, nil
 	}
 
-	// Phase 1.5: Clean orphaned gitlinks before URL sync
-	removedOrphans, orphanErr := s.cleanOrphanedGitlinks(ctx)
+	// Phase 1.5: Report orphaned gitlinks without changing the index.
+	orphans, orphanErr := s.reportOrphanedGitlinks(ctx)
 	if orphanErr != nil {
-		result.Warnings = append(result.Warnings, fmt.Sprintf("orphan cleanup warning: %v", orphanErr))
+		result.Warnings = append(result.Warnings, fmt.Sprintf("orphan inventory warning: %v", orphanErr))
 	}
-	for _, path := range removedOrphans {
-		result.Warnings = append(result.Warnings, fmt.Sprintf("removed orphaned gitlink: %s", path))
+	for _, orphan := range orphans {
+		result.Warnings = append(result.Warnings, fmt.Sprintf("orphaned gitlink without .gitmodules declaration: %s", orphan.Path))
 	}
 
 	// Phase 1.7: Reverse-sync local filesystem URLs
@@ -507,16 +509,25 @@ func (s *Syncer) updateSubmodule(ctx context.Context, path string) SubmoduleResu
 		}
 	}
 
-	// Use shared graceful init (handles stale refs with fallback)
-	if err := git.InitSubmoduleGraceful(ctx, s.repoRoot, path); err != nil {
-		result.Success = false
-		result.Error = &SyncError{Op: "init", Submodule: path, Cause: err}
-		return result
-	}
-
-	// Initialize nested submodules within this submodule
 	subDir := filepath.Join(s.repoRoot, path)
 	initialized, identityErr := git.IsWorktreeRoot(ctx, subDir)
+	if identityErr != nil {
+		result.Success = false
+		result.Error = &SyncError{Op: "identify", Submodule: path, Cause: identityErr}
+		return result
+	}
+	// An initialized local branch belongs to the user. Updating it through
+	// the gitlink would detach HEAD before the checkout policy can inspect it.
+	if !initialized {
+		outcome, err := git.InitSubmoduleGracefulResult(ctx, s.repoRoot, path)
+		result.StaleRefFallback = outcome.StaleRefFallback
+		if err != nil {
+			result.Success = false
+			result.Error = &SyncError{Op: "init", Submodule: path, Cause: err}
+			return result
+		}
+	}
+	initialized, identityErr = git.IsWorktreeRoot(ctx, subDir)
 	if identityErr != nil {
 		result.Success = false
 		result.Error = &SyncError{Op: "identify", Submodule: path, Cause: identityErr}
@@ -527,28 +538,83 @@ func (s *Syncer) updateSubmodule(ctx context.Context, path string) SubmoduleResu
 		result.Error = &SyncError{Op: "identify", Submodule: path, Cause: git.ErrSubmoduleNotInitialized}
 		return result
 	}
-	cmd := exec.CommandContext(ctx, "git", "-C", subDir, "submodule", "update", "--init", "--recursive")
-	if output, nestedErr := cmd.CombinedOutput(); nestedErr != nil {
-		// Nested failure is non-fatal for the parent submodule
-		result.Error = &SyncError{Op: "nested-init", Submodule: path, Cause: camperrors.Wrapf(ErrNestedSubmodules, "%s", strings.TrimSpace(string(output)))}
-	}
-
 	// Checkout default branch instead of leaving on detached HEAD.
-	branch, checkoutErr := git.CheckoutDefaultBranch(ctx, subDir)
+	branch, checkoutErr := git.CheckoutSubmoduleBranch(ctx, s.repoRoot, path, true)
 	if checkoutErr != nil {
 		result.Success = false
 		result.Error = &SyncError{Op: "checkout", Submodule: path, Cause: checkoutErr}
 		return result
 	}
 	result.CheckedOutBranch = branch
+	result.RecordedCommit, _ = s.recordedGitlinkSHA(ctx, path)
 	if warning, driftErr := s.reconcileCheckoutDrift(ctx, path, subDir, branch); driftErr != nil {
 		result.Success = false
 		result.Error = &SyncError{Op: "drift", Submodule: path, Cause: driftErr}
+		return result
 	} else if warning != "" {
 		result.DriftWarning = warning
 	}
+	result.Commit, _ = git.Output(ctx, subDir, "rev-parse", "HEAD")
 
+	// Each child must select its branch before its own children are listed.
+	if nestedErr := s.initializeNestedSelected(ctx, subDir, path); nestedErr != nil {
+		result.Success = false
+		result.Error = nestedErr
+		return result
+	}
 	return result
+}
+
+// initializeNestedSelected walks declarations in each selected checkout. It
+// never removes a child that disappeared from a newer parent revision.
+func (s *Syncer) initializeNestedSelected(ctx context.Context, ownerDir, ownerPath string) error {
+	paths, err := git.ListSubmodulePaths(ctx, ownerDir)
+	if err != nil {
+		return &SyncError{Op: "list-nested", Submodule: ownerPath, Cause: err}
+	}
+	sort.Strings(paths)
+	for _, path := range paths {
+		fullPath := filepath.Join(ownerPath, path)
+		if err := pathutil.ValidateSubmodulePath(ownerDir, path); err != nil {
+			return &SyncError{Op: "validate-path", Submodule: fullPath, Cause: err}
+		}
+		if ctx.Err() != nil {
+			return &SyncError{Op: "nested-init", Submodule: fullPath, Cause: ctx.Err()}
+		}
+		childDir := filepath.Join(ownerDir, path)
+		// Sync a changed URL from this parent's final .gitmodules before init.
+		cmd := exec.CommandContext(ctx, "git", "-C", ownerDir, "submodule", "sync", "--", path)
+		if output, err := cmd.CombinedOutput(); err != nil {
+			return &SyncError{Op: "nested-url-sync", Submodule: fullPath, Cause: camperrors.WrapJoinf(git.ErrSubmoduleSync, err, "%s", strings.TrimSpace(string(output)))}
+		}
+		initialized, err := git.IsWorktreeRoot(ctx, childDir)
+		if err != nil {
+			return &SyncError{Op: "identify", Submodule: fullPath, Cause: err}
+		}
+		if !initialized {
+			if err := git.InitSubmoduleGraceful(ctx, ownerDir, path); err != nil {
+				return &SyncError{Op: "nested-init", Submodule: fullPath, Cause: err}
+			}
+		}
+		initialized, err = git.IsWorktreeRoot(ctx, childDir)
+		if err != nil || !initialized {
+			if err == nil {
+				err = git.ErrSubmoduleNotInitialized
+			}
+			return &SyncError{Op: "identify", Submodule: fullPath, Cause: err}
+		}
+		branch, err := git.CheckoutSubmoduleBranch(ctx, ownerDir, path, true)
+		if err != nil {
+			return &SyncError{Op: "nested-checkout", Submodule: fullPath, Cause: err}
+		}
+		if _, err := s.reconcileCheckoutDriftInOwner(ctx, ownerDir, path, childDir, branch); err != nil {
+			return &SyncError{Op: "nested-drift", Submodule: fullPath, Cause: err}
+		}
+		if err := s.initializeNestedSelected(ctx, childDir, fullPath); err != nil {
+			return err
+		}
+	}
+	return nil
 }
 
 // peerFetch pulls objects for one submodule from the configured peer ahead of
@@ -620,9 +686,9 @@ func (s *Syncer) verifySubmodules(ctx context.Context) ([]SubmoduleResult, error
 	return results, nil
 }
 
-// cleanOrphanedGitlinks detects and removes gitlink entries in the index that
-// have no corresponding .gitmodules declaration.
-func (s *Syncer) cleanOrphanedGitlinks(ctx context.Context) ([]string, error) {
+// reportOrphanedGitlinks inventories undeclared gitlinks without mutating
+// either the index or their working directories.
+func (s *Syncer) reportOrphanedGitlinks(ctx context.Context) ([]git.OrphanedGitlink, error) {
 	if ctx.Err() != nil {
 		return nil, ctx.Err()
 	}
@@ -632,16 +698,7 @@ func (s *Syncer) cleanOrphanedGitlinks(ctx context.Context) ([]string, error) {
 		return nil, err
 	}
 
-	if len(orphans) == 0 {
-		return nil, nil
-	}
-
-	removed, err := git.RemoveOrphanedGitlinks(ctx, s.repoRoot, orphans)
-	if err != nil {
-		return removed, err
-	}
-
-	return removed, nil
+	return orphans, nil
 }
 
 // reverseSyncLocalURLs detects submodules where .gitmodules has a local
@@ -727,7 +784,57 @@ func (s *Syncer) validateUpdate(ctx context.Context) error {
 		return &SyncError{Op: "validate", Cause: camperrors.Wrap(err, ErrSubmoduleValidation.Error())}
 	}
 
-	return validateSubmoduleStatusOutput(string(output))
+	// A selected branch can intentionally advance beyond its owner's gitlink
+	// at any depth. Compare each '+' entry with its immediate owner's pin.
+	for _, line := range strings.Split(string(output), "\n") {
+		if strings.HasPrefix(line, "+") {
+			fields := strings.Fields(line)
+			if len(fields) >= 2 {
+				path := fields[1]
+				ownerDir, recorded, pinErr := s.findRecordedGitlink(ctx, path)
+				if pinErr != nil {
+					return pinErr
+				}
+				actual := strings.TrimPrefix(fields[0], "+")
+				advanced, ancestryErr := git.IsAncestor(ctx, filepath.Join(s.repoRoot, path), recorded, actual)
+				if ancestryErr != nil {
+					return &SyncError{Op: "validate-ancestry", Submodule: path, Cause: camperrors.Wrapf(ancestryErr, "owner %s", ownerDir)}
+				}
+				if advanced {
+					continue
+				}
+			}
+		}
+		if err := validateSubmoduleStatusOutput(line); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+func (s *Syncer) findRecordedGitlink(ctx context.Context, fullPath string) (string, string, error) {
+	if err := pathutil.ValidateSubmodulePath(s.repoRoot, fullPath); err != nil {
+		return "", "", err
+	}
+	for cut := strings.LastIndex(fullPath, "/"); cut >= 0; cut = strings.LastIndex(fullPath[:cut], "/") {
+		ownerDir := filepath.Join(s.repoRoot, fullPath[:cut])
+		initialized, err := git.IsWorktreeRoot(ctx, ownerDir)
+		if err != nil {
+			return "", "", err
+		}
+		if !initialized {
+			continue
+		}
+		pin, err := recordedGitlinkSHAInOwner(ctx, ownerDir, fullPath[cut+1:])
+		if err == nil {
+			return ownerDir, pin, nil
+		}
+	}
+	pin, err := recordedGitlinkSHAInOwner(ctx, s.repoRoot, fullPath)
+	if err != nil {
+		return "", "", err
+	}
+	return s.repoRoot, pin, nil
 }
 
 func validateSubmoduleStatusOutput(output string) error {
@@ -776,6 +883,10 @@ func validateSubmoduleStatusOutput(output string) error {
 }
 
 func (s *Syncer) reconcileCheckoutDrift(ctx context.Context, path, subDir, branch string) (string, error) {
+	return s.reconcileCheckoutDriftInOwner(ctx, s.repoRoot, path, subDir, branch)
+}
+
+func (s *Syncer) reconcileCheckoutDriftInOwner(ctx context.Context, ownerDir, path, subDir, branch string) (string, error) {
 	if ctx.Err() != nil {
 		return "", ctx.Err()
 	}
@@ -783,7 +894,7 @@ func (s *Syncer) reconcileCheckoutDrift(ctx context.Context, path, subDir, branc
 		return "", nil
 	}
 
-	recordedSHA, err := s.recordedGitlinkSHA(ctx, path)
+	recordedSHA, err := recordedGitlinkSHAInOwner(ctx, ownerDir, path)
 	if err != nil {
 		return "", err
 	}
@@ -796,6 +907,17 @@ func (s *Syncer) reconcileCheckoutDrift(ctx context.Context, path, subDir, branc
 	recordedSHA = strings.TrimSpace(recordedSHA)
 	branchSHA = strings.TrimSpace(branchSHA)
 	if branchSHA == recordedSHA {
+		return "", nil
+	}
+	// Clone and sync intentionally select the branch tip. A branch that
+	// descends from the recorded gitlink is a legitimate checkout policy,
+	// even though git submodule status marks it with '+'.
+	advanced, err := git.IsAncestor(ctx, subDir, recordedSHA, branchSHA)
+	if err != nil {
+		return fmt.Sprintf("%s: cannot verify whether %s extends recorded %s: %v",
+			path, shortSHA(branchSHA), shortSHA(recordedSHA), err), nil
+	}
+	if advanced {
 		return "", nil
 	}
 
@@ -820,7 +942,11 @@ func (s *Syncer) reconcileCheckoutDrift(ctx context.Context, path, subDir, branc
 }
 
 func (s *Syncer) recordedGitlinkSHA(ctx context.Context, path string) (string, error) {
-	output, err := git.Output(ctx, s.repoRoot, "ls-files", "-s", "--", path)
+	return recordedGitlinkSHAInOwner(ctx, s.repoRoot, path)
+}
+
+func recordedGitlinkSHAInOwner(ctx context.Context, ownerDir, path string) (string, error) {
+	output, err := git.Output(ctx, ownerDir, "ls-files", "-s", "--", path)
 	if err != nil {
 		return "", err
 	}

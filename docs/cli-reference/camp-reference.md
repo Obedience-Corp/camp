@@ -424,18 +424,19 @@ Clone a camp repository and initialize all submodules.
 This command provides a single-step setup for new devices:
 
   1. CLONE REPOSITORY
-     Clones the camp repository with recursive submodules.
+     Clones the camp repository, then initializes submodules.
 
   2. SYNCHRONIZE URLs
      Copies URLs from .gitmodules to .git/config, ensuring
      URL consistency across all submodules.
 
   3. UPDATE SUBMODULES
-     Fetches and checks out the correct commits for all submodules.
+     Selects each submodule's declared branch (or remote default)
+     before discovering children in that checkout.
 
   4. VALIDATE SETUP
-     Verifies all submodules are initialized, at correct commits,
-     and have matching URLs.
+     Verifies declared submodules are initialized and checks URLs
+     and recorded gitlinks against the selected checkouts.
 
   5. REGISTER CAMP
      If .campaign/campaign.yaml exists, registers the camp
@@ -9061,7 +9062,10 @@ The sync command performs three critical operations:
      that occur when remote URLs change.
 
   3. SUBMODULE UPDATE
-     Fetches and checks out the correct commits for all submodules.
+     Preserves existing local branches, fast-forwards them safely when
+     behind a recorded gitlink, and discovers children after checkout.
+
+Orphaned gitlinks are reported without removing them from the index.
 
 This order is critical: sync-before-update prevents silent code deletion
 when URLs change on remote repositories.

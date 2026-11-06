@@ -95,6 +95,11 @@ type SubmoduleResult struct {
 	NewURL string
 	// CheckedOutBranch is the default branch checked out after submodule update.
 	CheckedOutBranch string
+	// RecordedCommit is the owner's gitlink; Commit is the selected checkout.
+	RecordedCommit string
+	Commit         string
+	// StaleRefFallback reports recovery from a missing recorded commit.
+	StaleRefFallback bool
 	// DriftWarning describes detected gitlink drift for this submodule.
 	DriftWarning string
 	// PeerFetched indicates objects were fetched from the configured peer

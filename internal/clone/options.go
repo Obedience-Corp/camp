@@ -121,6 +121,10 @@ type SubmoduleResult struct {
 	Success bool
 	// Commit is the HEAD commit hash after initialization.
 	Commit string
+	// RecordedCommit is the superproject gitlink before branch selection.
+	RecordedCommit string
+	// StaleRefFallback reports recovery from a missing recorded commit.
+	StaleRefFallback bool
 	// Error contains any error that occurred during initialization.
 	Error error
 	// PeerSeeded indicates the submodule's objects were cloned from the

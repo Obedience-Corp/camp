@@ -201,12 +201,9 @@ func parseSubmoduleStatus(line string) SubmoduleResult {
 	return result
 }
 
-// cleanOrphanedGitlinks detects and removes gitlink entries in the index that
-// have no corresponding .gitmodules declaration. These orphans cause
-// `git submodule sync` and `git submodule status` to fail with
-// "no submodule mapping found in .gitmodules", which cascades and prevents
-// other submodules from initializing properly.
-func (c *Cloner) cleanOrphanedGitlinks(ctx context.Context, dir string) ([]string, error) {
+// reportOrphanedGitlinks inventories undeclared gitlinks without changing
+// the freshly cloned repository's index or working directories.
+func (c *Cloner) reportOrphanedGitlinks(ctx context.Context, dir string) ([]gitpkg.OrphanedGitlink, error) {
 	if ctx.Err() != nil {
 		return nil, ctx.Err()
 	}
@@ -216,16 +213,7 @@ func (c *Cloner) cleanOrphanedGitlinks(ctx context.Context, dir string) ([]strin
 		return nil, err
 	}
 
-	if len(orphans) == 0 {
-		return nil, nil
-	}
-
-	removed, err := gitpkg.RemoveOrphanedGitlinks(ctx, dir, orphans)
-	if err != nil {
-		return removed, err
-	}
-
-	return removed, nil
+	return orphans, nil
 }
 
 // gitCloneFromPeer clones the root repository from the peer copy, then
@@ -473,34 +461,15 @@ func (c *Cloner) forceCheckoutSubmodule(ctx context.Context, repoDir, subPath st
 	return nil
 }
 
-// checkoutSubmoduleBranch checks out the remote's default branch instead of detached HEAD.
-// Uses the parent-aware detection (checks .gitmodules branch key) then falls back to
-// the shared CheckoutDefaultBranch utility.
+// checkoutSubmoduleBranch applies the shared parent-aware branch policy.
 func (c *Cloner) checkoutSubmoduleBranch(ctx context.Context, repoDir, subPath string) error {
-	if ctx.Err() != nil {
-		return ctx.Err()
-	}
-
-	subDir := filepath.Join(repoDir, subPath)
-
-	// Try parent-aware detection first (has access to .gitmodules branch key)
-	branch, err := gitpkg.DetectDefaultBranchWithParent(ctx, repoDir, subPath, subDir)
-	if err != nil {
-		// Fall back to standard detection
-		_, err = gitpkg.CheckoutDefaultBranch(ctx, subDir)
-		return err
-	}
-
-	// Checkout the detected branch
-	cmd := exec.CommandContext(ctx, "git", "-C", subDir, "checkout", branch)
-	output, err := cmd.CombinedOutput()
+	_, err := gitpkg.CheckoutSubmoduleBranch(ctx, repoDir, subPath, false)
 	if err != nil {
 		return &SubmoduleError{
 			Op: "checkout-branch", Submodule: subPath,
-			Cause: camperrors.WrapJoinf(gitpkg.ErrBranchCheckout, err, "%s in %s: %s", branch, subPath, strings.TrimSpace(string(output))),
+			Cause: err,
 		}
 	}
-
 	return nil
 }
 
@@ -535,89 +504,12 @@ func (c *Cloner) getSubmoduleCommit(ctx context.Context, repoDir, subPath string
 // initSubmoduleGraceful initializes a single submodule, handling stale commit references.
 // If the recorded commit doesn't exist on the remote, it falls back to cloning at the
 // remote's default branch instead.
-func (c *Cloner) initSubmoduleGraceful(ctx context.Context, repoDir, subPath string) error {
-	if ctx.Err() != nil {
-		return ctx.Err()
-	}
-
-	if err := pathutil.ValidateSubmodulePath(repoDir, subPath); err != nil {
-		return &SubmoduleError{Op: "validate-path", Submodule: subPath, Cause: err}
-	}
-
-	// Atomic init + update to avoid lock contention in parallel execution
-	cmd := exec.CommandContext(ctx, "git", "-C", repoDir, "submodule", "update", "--init", subPath)
-	output, err := cmd.CombinedOutput()
-
-	if err == nil {
-		initialized, identityErr := gitpkg.IsWorktreeRoot(ctx, filepath.Join(repoDir, subPath))
-		if identityErr != nil {
-			return &SubmoduleError{Op: "identify", Submodule: subPath, Cause: identityErr}
-		}
-		if !initialized {
-			return &SubmoduleError{Op: "identify", Submodule: subPath, Cause: gitpkg.ErrSubmoduleNotInitialized}
-		}
-		return nil // Success
-	}
-
-	outputStr := string(output)
-
-	// Step 3: Check if error is stale reference
-	// Common error messages for stale commits:
-	// - "not our ref" - remote doesn't have the commit
-	// - "did not contain" - fetched but commit missing
-	// - "reference is not a tree" - commit doesn't exist
-	if strings.Contains(outputStr, "not our ref") ||
-		strings.Contains(outputStr, "did not contain") ||
-		strings.Contains(outputStr, "reference is not a tree") {
-		// Stale reference - fall back to default branch
-		return c.initSubmoduleFromDefaultBranch(ctx, repoDir, subPath)
-	}
-
-	return &SubmoduleError{
-		Op: "update", Submodule: subPath,
-		Cause: camperrors.WrapJoinf(gitpkg.ErrSubmoduleUpdate, err, "%s", strings.TrimSpace(outputStr)),
-	}
-}
-
-// initSubmoduleFromDefaultBranch clones a submodule at its remote's default branch
-// instead of the recorded (possibly stale) commit. This is used as a fallback when
-// the recorded commit no longer exists on the remote.
-func (c *Cloner) initSubmoduleFromDefaultBranch(ctx context.Context, repoDir, subPath string) error {
-	if ctx.Err() != nil {
-		return ctx.Err()
-	}
-
-	if err := pathutil.ValidateSubmodulePath(repoDir, subPath); err != nil {
-		return &SubmoduleError{Op: "validate-path", Submodule: subPath, Cause: err}
-	}
-
-	// Get submodule URL
-	url, err := c.gitSubmoduleURL(ctx, repoDir, subPath)
+func (c *Cloner) initSubmoduleGraceful(ctx context.Context, repoDir, subPath string) (gitpkg.InitSubmoduleResult, error) {
+	outcome, err := gitpkg.InitSubmoduleGracefulResult(ctx, repoDir, subPath)
 	if err != nil {
-		return &SubmoduleError{Op: "url-resolve", Submodule: subPath, Cause: err}
+		return outcome, &SubmoduleError{Op: "init", Submodule: subPath, Cause: err}
 	}
-
-	subDir := filepath.Join(repoDir, subPath)
-
-	// Remove empty submodule directory if exists
-	if err := os.RemoveAll(subDir); err != nil {
-		return &SubmoduleError{
-			Op: "remove-stale", Submodule: subPath,
-			Cause: camperrors.WrapJoin(gitpkg.ErrStaleRef, err, ""),
-		}
-	}
-
-	// Clone directly to submodule path (will use remote's default branch)
-	cmd := exec.CommandContext(ctx, "git", "clone", url, subDir)
-	output, err := cmd.CombinedOutput()
-	if err != nil {
-		return &SubmoduleError{
-			Op: "clone-default-branch", Submodule: subPath,
-			Cause: camperrors.WrapJoinf(ErrCloneFailed, err, "%s", strings.TrimSpace(string(output))),
-		}
-	}
-
-	return nil
+	return outcome, nil
 }
 
 // initNestedSubmodulesGraceful initializes nested submodules within a submodule,
@@ -650,18 +542,18 @@ func (c *Cloner) initNestedSubmodulesGraceful(ctx context.Context, repoDir, subP
 		}
 
 		// Use graceful init for each nested submodule
-		if err := c.initSubmoduleGraceful(ctx, subDir, nested.Path); err != nil {
+		if _, err := c.initSubmoduleGraceful(ctx, subDir, nested.Path); err != nil {
 			warnings = append(warnings,
-				fmt.Sprintf("nested submodule %s/%s: %v (using default branch fallback)", subPath, nested.Path, err))
-
-			// Try fallback directly
-			if fbErr := c.initSubmoduleFromDefaultBranch(ctx, subDir, nested.Path); fbErr != nil {
-				warnings = append(warnings,
-					fmt.Sprintf("nested submodule %s/%s fallback failed: %v", subPath, nested.Path, fbErr))
-				continue
-			}
+				fmt.Sprintf("nested submodule %s/%s: %v", subPath, nested.Path, err))
+			continue
 		}
 		count++
+		// A nested repository can itself introduce children on its selected
+		// branch. Switch it before looking at its .gitmodules.
+		if err := c.checkoutSubmoduleBranch(ctx, subDir, nested.Path); err != nil {
+			warnings = append(warnings,
+				fmt.Sprintf("nested submodule %s/%s checkout: %v", subPath, nested.Path, err))
+		}
 
 		// Recursively initialize any sub-nested submodules
 		nestedCount, nestedWarnings := c.initNestedSubmodulesGraceful(ctx, subDir, nested.Path)

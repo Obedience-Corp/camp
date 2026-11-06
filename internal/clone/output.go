@@ -56,12 +56,14 @@ type SubmodulesOutput struct {
 
 // SubmoduleJSONResult represents a single submodule result.
 type SubmoduleJSONResult struct {
-	Name    string `json:"name"`
-	Path    string `json:"path"`
-	URL     string `json:"url"`
-	Success bool   `json:"success"`
-	Commit  string `json:"commit,omitempty"`
-	Error   string `json:"error,omitempty"`
+	Name             string `json:"name"`
+	Path             string `json:"path"`
+	URL              string `json:"url"`
+	Success          bool   `json:"success"`
+	Commit           string `json:"commit,omitempty"`
+	RecordedCommit   string `json:"recordedCommit,omitempty"`
+	StaleRefFallback bool   `json:"staleRefFallback,omitempty"`
+	Error            string `json:"error,omitempty"`
 }
 
 // URLChangeOutput represents a URL that was updated.
@@ -145,11 +147,13 @@ func (r *CloneResult) JSON() ([]byte, error) {
 	var subResults []SubmoduleJSONResult
 	for _, sub := range r.Submodules {
 		result := SubmoduleJSONResult{
-			Name:    sub.Name,
-			Path:    sub.Path,
-			URL:     sub.URL,
-			Success: sub.Success,
-			Commit:  sub.Commit,
+			Name:             sub.Name,
+			Path:             sub.Path,
+			URL:              sub.URL,
+			Success:          sub.Success,
+			Commit:           sub.Commit,
+			RecordedCommit:   sub.RecordedCommit,
+			StaleRefFallback: sub.StaleRefFallback,
 		}
 		if sub.Error != nil {
 			result.Error = sub.Error.Error()

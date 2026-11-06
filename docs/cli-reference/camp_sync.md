@@ -17,7 +17,10 @@ The sync command performs three critical operations:
      that occur when remote URLs change.
 
   3. SUBMODULE UPDATE
-     Fetches and checks out the correct commits for all submodules.
+     Preserves existing local branches, fast-forwards them safely when
+     behind a recorded gitlink, and discovers children after checkout.
+
+Orphaned gitlinks are reported without removing them from the index.
 
 This order is critical: sync-before-update prevents silent code deletion
 when URLs change on remote repositories.

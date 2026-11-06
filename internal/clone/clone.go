@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"path/filepath"
+	"strings"
 	"sync"
 
 	camperrors "github.com/Obedience-Corp/camp/internal/errors"
@@ -84,15 +85,14 @@ func (c *Cloner) Clone(ctx context.Context) (*CloneResult, error) {
 		result.Branch = branch
 	}
 
-	// Phase 1.5: Clean orphaned gitlinks before submodule operations
+	// Phase 1.5: Inventory orphaned gitlinks without changing the clone's index.
 	if !c.options.NoSubmodules {
-		removed, err := c.cleanOrphanedGitlinks(ctx, targetDir)
+		orphans, err := c.reportOrphanedGitlinks(ctx, targetDir)
 		if err != nil {
-			result.Warnings = append(result.Warnings, fmt.Sprintf("orphan cleanup warning: %v", err))
+			result.Warnings = append(result.Warnings, fmt.Sprintf("orphan inventory warning: %v", err))
 		}
-		for _, path := range removed {
-			c.progress.Verbose(fmt.Sprintf("Removed orphaned gitlink: %s", path))
-			result.Warnings = append(result.Warnings, fmt.Sprintf("removed orphaned gitlink: %s", path))
+		for _, orphan := range orphans {
+			result.Warnings = append(result.Warnings, fmt.Sprintf("orphaned gitlink without .gitmodules declaration: %s", orphan.Path))
 		}
 	}
 
@@ -228,7 +228,7 @@ func (c *Cloner) Clone(ctx context.Context) (*CloneResult, error) {
 				}
 
 				// Step 1: Initialize submodule gracefully (handles stale refs)
-				subErr := c.initSubmoduleGraceful(ctx, targetDir, sub.Path)
+				initOutcome, subErr := c.initSubmoduleGraceful(ctx, targetDir, sub.Path)
 				if subErr == nil {
 					initialized, identityErr := gitpkg.IsWorktreeRoot(ctx, filepath.Join(targetDir, sub.Path))
 					if identityErr != nil {
@@ -238,12 +238,13 @@ func (c *Cloner) Clone(ctx context.Context) (*CloneResult, error) {
 					}
 				}
 				r.result = SubmoduleResult{
-					Name:       sub.Name,
-					Path:       sub.Path,
-					URL:        sub.URL,
-					Success:    subErr == nil,
-					Error:      subErr,
-					PeerSeeded: peerSeeded,
+					Name:             sub.Name,
+					Path:             sub.Path,
+					URL:              sub.URL,
+					Success:          subErr == nil,
+					Error:            subErr,
+					PeerSeeded:       peerSeeded,
+					StaleRefFallback: initOutcome.StaleRefFallback,
 				}
 
 				if subErr != nil {
@@ -262,25 +263,34 @@ func (c *Cloner) Clone(ctx context.Context) (*CloneResult, error) {
 					}
 				}
 
-				// Step 3: Initialize nested submodules (recursively with graceful handling)
+				// Step 3: Select the final parent checkout before discovering its children.
+				if r.result.Success {
+					if err := c.checkoutSubmoduleBranch(ctx, targetDir, sub.Path); err != nil {
+						r.result.Success = false
+						r.result.Error = err
+						r.warnings = append(r.warnings, fmt.Sprintf("submodule %s checkout: %v", sub.Path, err))
+					} else {
+						r.branchOK = true
+					}
+				}
+
+				// Step 4: Discover children from the selected branch, not the
+				// earlier gitlink snapshot.
 				if r.result.Success {
 					count, warnings := c.initNestedSubmodulesGraceful(ctx, targetDir, sub.Path)
 					r.nestedCount = count
 					r.warnings = append(r.warnings, warnings...)
 				}
 
-				// Step 4: Checkout branch instead of detached HEAD
-				if r.result.Success {
-					if err := c.checkoutSubmoduleBranch(ctx, targetDir, sub.Path); err != nil {
-						c.progress.Verbose(fmt.Sprintf("Could not checkout branch for %s: %v", sub.Path, err))
-					} else {
-						r.branchOK = true
-					}
-				}
-
 				// Get commit hash if initialized
 				if r.result.Success {
 					r.result.Commit, _ = c.getSubmoduleCommit(ctx, targetDir, sub.Path)
+					if pin, err := gitpkg.Output(ctx, targetDir, "ls-files", "-s", "--", sub.Path); err == nil {
+						fields := strings.Fields(pin)
+						if len(fields) >= 2 && fields[0] == "160000" {
+							r.result.RecordedCommit = fields[1]
+						}
+					}
 				}
 
 				results[idx] = r
