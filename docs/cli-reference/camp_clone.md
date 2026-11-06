@@ -38,6 +38,10 @@ complete top-level subtrees, and failed excludes cancelled skips.
 Normal output shows each failed module and its original Git error.
 --no-validate skips checks but still reports failed initialization and exits 3
 when the root clone is usable. --no-submodules intentionally skips setup.
+A partial clone with a usable root remains registered. From that directory,
+run 'camp sync --dry-run', repair the reported cause, then retry the affected
+path with 'camp sync projects/<path>' and finish with 'camp sync'.
+See docs/guides/clone-sync-recovery.md for the safe recovery sequence.
 
 EXIT CODES:
   0  Success

@@ -27,6 +27,9 @@ func NewLinkCommand(newResolver CampaignResolverFactory) *cobra.Command {
 
 The folder stays where it is. Camp adds a shortcut at projects/<name>
 and a .camp file in that folder. This is not a git submodule.
+For an already tracked but broken local shortcut, use 'camp project repair
+<name>' to preview candidates; repair preserves the checkout's existing
+.camp owner and requires explicit apply.
 
 In a terminal, paste or type a path, or move through folders.
 Enter links the folder. Tab opens a folder. Then name it, choose

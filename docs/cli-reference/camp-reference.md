@@ -453,6 +453,10 @@ complete top-level subtrees, and failed excludes cancelled skips.
 Normal output shows each failed module and its original Git error.
 --no-validate skips checks but still reports failed initialization and exits 3
 when the root clone is usable. --no-submodules intentionally skips setup.
+A partial clone with a usable root remains registered. From that directory,
+run 'camp sync --dry-run', repair the reported cause, then retry the affected
+path with 'camp sync projects/<path>' and finish with 'camp sync'.
+See docs/guides/clone-sync-recovery.md for the safe recovery sequence.
 
 EXIT CODES:
   0  Success
@@ -5412,6 +5416,9 @@ Link an existing local directory into a camp.
 
 The folder stays where it is. Camp adds a shortcut at projects/<name>
 and a .camp file in that folder. This is not a git submodule.
+For an already tracked but broken local shortcut, use 'camp project repair
+<name>' to preview candidates; repair preserves the checkout's existing
+.camp owner and requires explicit apply.
 
 In a terminal, paste or type a path, or move through folders.
 Enter links the folder. Tab opens a folder. Then name it, choose
@@ -5991,6 +5998,9 @@ Preview never changes the link, checkout, marker, or Git index. --apply
 requires --path and replaces only a still-broken link; --undo restores the
 saved old target. Repair changes a tracked symlink in the camp working tree
 when that link is tracked. Neither action commits or changes checkout ownership.
+Undo state is stored beside the local camp registry. The normal 'project link'
+command creates a new shortcut and may attach the checkout; repair only
+replaces an existing broken shortcut. See docs/guides/clone-sync-recovery.md.
 
 Examples:
   camp project repair obey-voice
@@ -9126,6 +9136,11 @@ Orphaned gitlinks are reported without removing them from the index.
 Normal output shows failed paths and original errors. JSON results include
 ordered module results, nested child paths, owners, errors, and counts.
 Initialized counts verified top-level checkouts; failed excludes skips.
+After a partial clone, 'camp sync --dry-run' checks local work before retry.
+'camp sync projects/<path>' retries one module; a final 'camp sync' checks all.
+Use 'camp status --show-refs' to see root gitlink changes separately. A broken
+machine-local project link is optional and can be previewed with
+'camp project repair <name>'. See docs/guides/clone-sync-recovery.md.
 
 This order is critical: sync-before-update prevents silent code deletion
 when URLs change on remote repositories.

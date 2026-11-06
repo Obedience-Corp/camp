@@ -96,7 +96,8 @@ func runCloneExitCodePartialFailure(t *testing.T) error {
 	t.Helper()
 
 	return determineCloneExitCode(&intclone.CloneResult{
-		Success: false,
+		Success:   false,
+		Directory: t.TempDir(),
 		Submodules: []intclone.SubmoduleResult{
 			{Name: "alpha", Success: true},
 			{Name: "beta", Success: false},

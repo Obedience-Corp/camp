@@ -23,6 +23,9 @@ Preview never changes the link, checkout, marker, or Git index. --apply
 requires --path and replaces only a still-broken link; --undo restores the
 saved old target. Repair changes a tracked symlink in the camp working tree
 when that link is tracked. Neither action commits or changes checkout ownership.
+Undo state is stored beside the local camp registry. The normal 'project link'
+command creates a new shortcut and may attach the checkout; repair only
+replaces an existing broken shortcut. See docs/guides/clone-sync-recovery.md.
 
 Examples:
   camp project repair obey-voice

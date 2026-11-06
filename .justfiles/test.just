@@ -112,6 +112,18 @@ integration-build:
     GOOS=linux GOARCH=$(go env GOARCH) go build -o bin/linux/camp ./cmd/camp
     @echo "Built bin/linux/camp"
 
+# Run the 54-module partial clone -> targeted/full sync journey in isolation.
+[no-cd]
+clone-sync-recovery:
+    #!/usr/bin/env sh
+    set -eu
+    mkdir -p bin/linux
+    GOOS=linux GOARCH=$(go env GOARCH) go build -o bin/linux/camp ./cmd/camp
+    docker run --rm --network none \
+      -v "$PWD/bin/linux/camp:/camp:ro" \
+      -v "$PWD/tests/integration/clone_sync_recovery.sh:/fixture.sh:ro" \
+      node:24-bookworm sh /fixture.sh
+
 # LockFileEx starter proof plus real camp setup --json (camp.exe, fest.exe, git in container).
 # PowerShell lane bypasses tests/integration TestMain (Unix docker.sock / Colima probe).
 # Runs on windows-2025 CI only.
