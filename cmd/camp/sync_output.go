@@ -6,6 +6,7 @@ import (
 	"os"
 	"time"
 
+	"github.com/Obedience-Corp/camp/internal/git"
 	"github.com/Obedience-Corp/camp/internal/sync"
 	"github.com/Obedience-Corp/camp/internal/ui"
 )
@@ -347,6 +348,14 @@ func formatSyncJSON(result *sync.SyncResult, preflight *sync.PreflightResult, dr
 		"total":     len(result.UpdateResults),
 		"succeeded": countSucceeded(result.UpdateResults),
 		"failed":    countFailed(result.UpdateResults),
+	}
+	var nestedResults []git.NestedResult
+	for _, sub := range result.UpdateResults {
+		nestedResults = append(nestedResults, sub.Nested...)
+	}
+	if len(nestedResults) > 0 {
+		updateResults["nestedSummary"] = git.SummarizeNestedResults(nestedResults)
+		updateResults["nestedResults"] = git.NestedResultOutputs(nestedResults)
 	}
 
 	// Build warnings

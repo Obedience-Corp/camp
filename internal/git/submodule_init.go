@@ -135,8 +135,12 @@ func DetectDefaultBranchWithParent(ctx context.Context, repoDir, subPath, subDir
 
 	// An explicit branch is a checkout policy, even when origin/HEAD names a
 	// different branch. Git's special "." value inherits the parent's branch.
+	name, nameErr := SubmoduleNameForPath(ctx, repoDir, subPath)
+	if nameErr != nil {
+		return "", nameErr
+	}
 	cmd := exec.CommandContext(ctx, "git", "-C", repoDir,
-		"config", "-f", ".gitmodules", fmt.Sprintf("submodule.%s.branch", subPath))
+		"config", "-f", ".gitmodules", fmt.Sprintf("submodule.%s.branch", name))
 	output, err := cmd.Output()
 	if err == nil {
 		branch := strings.TrimSpace(string(output))
@@ -363,9 +367,13 @@ func CheckoutDefaultBranch(ctx context.Context, subDir string) (string, error) {
 
 // getSubmoduleURL returns the URL for a submodule, trying .gitmodules then .git/config.
 func getSubmoduleURL(ctx context.Context, repoDir, subPath string) (string, error) {
+	name, nameErr := SubmoduleNameForPath(ctx, repoDir, subPath)
+	if nameErr != nil {
+		return "", nameErr
+	}
 	// Try .gitmodules first
 	cmd := exec.CommandContext(ctx, "git", "-C", repoDir,
-		"config", "-f", ".gitmodules", fmt.Sprintf("submodule.%s.url", subPath))
+		"config", "-f", ".gitmodules", fmt.Sprintf("submodule.%s.url", name))
 	output, err := cmd.Output()
 	if err == nil {
 		return strings.TrimSpace(string(output)), nil
@@ -373,7 +381,7 @@ func getSubmoduleURL(ctx context.Context, repoDir, subPath string) (string, erro
 
 	// Fall back to .git/config
 	cmd = exec.CommandContext(ctx, "git", "-C", repoDir,
-		"config", fmt.Sprintf("submodule.%s.url", subPath))
+		"config", fmt.Sprintf("submodule.%s.url", name))
 	output, err = cmd.Output()
 	if err == nil {
 		return strings.TrimSpace(string(output)), nil

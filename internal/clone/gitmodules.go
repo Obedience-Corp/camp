@@ -2,8 +2,12 @@ package clone
 
 import (
 	"context"
+	"os"
 	"os/exec"
+	"path/filepath"
 	"strings"
+
+	camperrors "github.com/Obedience-Corp/camp/internal/errors"
 )
 
 // SubmoduleInfo contains parsed submodule information from .gitmodules.
@@ -22,11 +26,16 @@ func parseGitmodules(ctx context.Context, repoPath string) ([]SubmoduleInfo, err
 		return nil, ctx.Err()
 	}
 
+	if _, err := os.Stat(filepath.Join(repoPath, ".gitmodules")); err != nil {
+		if os.IsNotExist(err) {
+			return nil, nil
+		}
+		return nil, camperrors.Wrapf(err, "read .gitmodules in %s", repoPath)
+	}
 	cmd := exec.CommandContext(ctx, "git", "-C", repoPath, "config", "-f", ".gitmodules", "--list")
-	output, err := cmd.Output()
+	output, err := cmd.CombinedOutput()
 	if err != nil {
-		// No .gitmodules file means no submodules
-		return nil, nil
+		return nil, camperrors.Wrapf(err, "parse .gitmodules in %s: %s", repoPath, strings.TrimSpace(string(output)))
 	}
 
 	// Parse output: submodule.<name>.path=<path>, submodule.<name>.url=<url>

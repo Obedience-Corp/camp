@@ -129,6 +129,13 @@ func (s *Syncer) Sync(ctx context.Context) (*SyncResult, error) {
 			result.Warnings = append(result.Warnings, sub.PeerWarning)
 		}
 	}
+	if ctx.Err() != nil {
+		result.Success = false
+		if len(result.Errors) == 0 {
+			result.Errors = append(result.Errors, ctx.Err())
+		}
+		return result, nil
+	}
 
 	// Phase 4: Post-update validation
 	if err := s.validateUpdate(ctx); err != nil {
@@ -480,9 +487,11 @@ func (s *Syncer) updateSubmodules(ctx context.Context) ([]SubmoduleResult, error
 		}(i, path)
 	}
 	wg.Wait()
-
-	if err := ctx.Err(); err != nil {
-		return nil, err
+	for i, path := range paths {
+		if results[i].Path == "" {
+			results[i] = SubmoduleResult{Path: path, Name: path, Success: false,
+				Error: &SyncError{Op: "skip", Submodule: path, Cause: ctx.Err()}}
+		}
 	}
 
 	return results, nil
@@ -557,43 +566,86 @@ func (s *Syncer) updateSubmodule(ctx context.Context, path string) SubmoduleResu
 	result.Commit, _ = git.Output(ctx, subDir, "rev-parse", "HEAD")
 
 	// Each child must select its branch before its own children are listed.
-	if nestedErr := s.initializeNestedSelected(ctx, subDir, path); nestedErr != nil {
+	result.Nested = s.initializeNestedSelected(ctx, subDir, path, map[string]bool{})
+	if nestedWarnings := git.NestedWarnings(result.Nested); len(nestedWarnings) > 0 {
+		if result.DriftWarning != "" {
+			result.DriftWarning += "\n"
+		}
+		result.DriftWarning += strings.Join(nestedWarnings, "\n")
+	}
+	if nestedErr := git.NestedFailures(result.Nested); nestedErr != nil {
 		result.Success = false
 		result.Error = nestedErr
-		return result
 	}
 	return result
 }
 
 // initializeNestedSelected walks declarations in each selected checkout. It
 // never removes a child that disappeared from a newer parent revision.
-func (s *Syncer) initializeNestedSelected(ctx context.Context, ownerDir, ownerPath string) error {
+func (s *Syncer) initializeNestedSelected(ctx context.Context, ownerDir, ownerPath string, visited map[string]bool) []git.NestedResult {
+	if ctx.Err() != nil {
+		return []git.NestedResult{{Owner: ownerPath, Path: ownerPath, Skipped: true,
+			Operation: "list", Error: &git.NestedError{Owner: ownerPath, Path: ownerPath, Op: "list", Cause: ctx.Err()}}}
+	}
+	actualOwner, err := filepath.EvalSymlinks(ownerDir)
+	if err != nil {
+		return []git.NestedResult{{Owner: ownerPath, Path: ownerPath, Attempted: true,
+			Operation: "identify", Error: &git.NestedError{Owner: ownerPath, Path: ownerPath, Op: "identify", Cause: err}}}
+	}
+	if visited[actualOwner] {
+		return []git.NestedResult{{Owner: ownerPath, Path: ownerPath, Attempted: true,
+			Operation: "cycle", Error: &git.NestedError{Owner: ownerPath, Path: ownerPath, Op: "cycle", Cause: camperrors.Newf("repository already visited: %s", actualOwner)}}}
+	}
+	visited[actualOwner] = true
+	defer delete(visited, actualOwner)
 	paths, err := git.ListSubmodulePaths(ctx, ownerDir)
 	if err != nil {
-		return &SyncError{Op: "list-nested", Submodule: ownerPath, Cause: err}
+		return []git.NestedResult{{Owner: ownerPath, Path: ownerPath, Attempted: true,
+			Operation: "list", Error: &git.NestedError{Owner: ownerPath, Path: ownerPath, Op: "list", Cause: err}}}
 	}
 	sort.Strings(paths)
+	results := make([]git.NestedResult, 0, len(paths))
 	for _, path := range paths {
 		fullPath := filepath.Join(ownerPath, path)
-		if err := pathutil.ValidateSubmodulePath(ownerDir, path); err != nil {
-			return &SyncError{Op: "validate-path", Submodule: fullPath, Cause: err}
+		r := git.NestedResult{Owner: ownerPath, Path: fullPath, Name: path}
+		fail := func(op string, cause error) {
+			r.Operation = op
+			r.Error = &git.NestedError{Owner: ownerPath, Path: fullPath, Op: op, Cause: cause}
 		}
 		if ctx.Err() != nil {
-			return &SyncError{Op: "nested-init", Submodule: fullPath, Cause: ctx.Err()}
+			r.Skipped = true
+			fail("skip", ctx.Err())
+			results = append(results, r)
+			continue
+		}
+		r.Attempted = true
+		if err := pathutil.ValidateSubmodulePath(ownerDir, path); err != nil {
+			fail("validate-path", err)
+			results = append(results, r)
+			continue
 		}
 		childDir := filepath.Join(ownerDir, path)
-		// Sync a changed URL from this parent's final .gitmodules before init.
-		cmd := exec.CommandContext(ctx, "git", "-C", ownerDir, "submodule", "sync", "--", path)
-		if output, err := cmd.CombinedOutput(); err != nil {
-			return &SyncError{Op: "nested-url-sync", Submodule: fullPath, Cause: camperrors.WrapJoinf(git.ErrSubmoduleSync, err, "%s", strings.TrimSpace(string(output)))}
-		}
 		initialized, err := git.IsWorktreeRoot(ctx, childDir)
 		if err != nil {
-			return &SyncError{Op: "identify", Submodule: fullPath, Cause: err}
+			fail("identify", err)
+			results = append(results, r)
+			continue
+		}
+		if initialized {
+			cmd := exec.CommandContext(ctx, "git", "-C", ownerDir, "submodule", "sync", "--", path)
+			if output, err := cmd.CombinedOutput(); err != nil {
+				fail("sync-url", camperrors.WrapJoinf(git.ErrSubmoduleSync, err, "%s", strings.TrimSpace(string(output))))
+				results = append(results, r)
+				continue
+			}
 		}
 		if !initialized {
-			if err := git.InitSubmoduleGraceful(ctx, ownerDir, path); err != nil {
-				return &SyncError{Op: "nested-init", Submodule: fullPath, Cause: err}
+			outcome, err := git.InitSubmoduleGracefulResult(ctx, ownerDir, path)
+			r.StaleRefFallback = outcome.StaleRefFallback
+			if err != nil {
+				fail("init", err)
+				results = append(results, r)
+				continue
 			}
 		}
 		initialized, err = git.IsWorktreeRoot(ctx, childDir)
@@ -601,20 +653,36 @@ func (s *Syncer) initializeNestedSelected(ctx context.Context, ownerDir, ownerPa
 			if err == nil {
 				err = git.ErrSubmoduleNotInitialized
 			}
-			return &SyncError{Op: "identify", Submodule: fullPath, Cause: err}
+			fail("identify", err)
+			results = append(results, r)
+			continue
 		}
+		r.Initialized = true
 		branch, err := git.CheckoutSubmoduleBranch(ctx, ownerDir, path, true)
 		if err != nil {
-			return &SyncError{Op: "nested-checkout", Submodule: fullPath, Cause: err}
+			fail("checkout", err)
+			results = append(results, r)
+			continue
 		}
-		if _, err := s.reconcileCheckoutDriftInOwner(ctx, ownerDir, path, childDir, branch); err != nil {
-			return &SyncError{Op: "nested-drift", Submodule: fullPath, Cause: err}
+		r.Branch = branch
+		r.RecordedCommit, _ = recordedGitlinkSHAInOwner(ctx, ownerDir, path)
+		warning, err := s.reconcileCheckoutDriftInOwner(ctx, ownerDir, path, childDir, branch)
+		if err != nil {
+			fail("drift", err)
+			results = append(results, r)
+			continue
 		}
-		if err := s.initializeNestedSelected(ctx, childDir, fullPath); err != nil {
-			return err
+		r.Warning = warning
+		r.Commit, _ = git.Output(ctx, childDir, "rev-parse", "HEAD")
+		r.Children = s.initializeNestedSelected(ctx, childDir, fullPath, visited)
+		if err := git.NestedFailures(r.Children); err != nil {
+			fail("children", err)
+		} else {
+			r.Success = true
 		}
+		results = append(results, r)
 	}
-	return nil
+	return results
 }
 
 // peerFetch pulls objects for one submodule from the configured peer ahead of

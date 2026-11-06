@@ -211,9 +211,13 @@ func GetDeclaredURL(ctx context.Context, repoRoot, submodulePath string) (string
 		return "", ctx.Err()
 	}
 
+	name, nameErr := SubmoduleNameForPath(ctx, repoRoot, submodulePath)
+	if nameErr != nil {
+		return "", nameErr
+	}
 	cmd := exec.CommandContext(ctx, "git", "-C", repoRoot,
 		"config", "-f", ".gitmodules",
-		fmt.Sprintf("submodule.%s.url", submodulePath))
+		fmt.Sprintf("submodule.%s.url", name))
 
 	output, err := cmd.Output()
 	if err != nil {
@@ -235,8 +239,12 @@ func GetActiveURL(ctx context.Context, repoRoot, submodulePath string) (string, 
 		return "", ctx.Err()
 	}
 
+	name, nameErr := SubmoduleNameForPath(ctx, repoRoot, submodulePath)
+	if nameErr != nil {
+		return "", nameErr
+	}
 	cmd := exec.CommandContext(ctx, "git", "-C", repoRoot,
-		"config", fmt.Sprintf("submodule.%s.url", submodulePath))
+		"config", fmt.Sprintf("submodule.%s.url", name))
 
 	output, err := cmd.Output()
 	if err != nil {

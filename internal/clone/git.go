@@ -3,10 +3,12 @@ package clone
 import (
 	"bufio"
 	"context"
+	"errors"
 	"fmt"
 	"os"
 	"os/exec"
 	"path/filepath"
+	"sort"
 	"strings"
 
 	camperrors "github.com/Obedience-Corp/camp/internal/errors"
@@ -141,24 +143,15 @@ func (c *Cloner) gitSubmoduleURL(ctx context.Context, dir, submodulePath string)
 	if ctx.Err() != nil {
 		return "", ctx.Err()
 	}
-
-	// Try to get URL from .gitmodules
-	cmd := exec.CommandContext(ctx, "git", "-C", dir,
-		"config", "-f", ".gitmodules", fmt.Sprintf("submodule.%s.url", submodulePath))
-	output, err := cmd.Output()
-	if err == nil {
-		return strings.TrimSpace(string(output)), nil
+	url, declaredErr := gitpkg.GetDeclaredURL(ctx, dir, submodulePath)
+	if declaredErr == nil {
+		return url, nil
 	}
-
-	// Fall back to .git/config
-	cmd = exec.CommandContext(ctx, "git", "-C", dir,
-		"config", fmt.Sprintf("submodule.%s.url", submodulePath))
-	output, err = cmd.Output()
-	if err == nil {
-		return strings.TrimSpace(string(output)), nil
+	url, activeErr := gitpkg.GetActiveURL(ctx, dir, submodulePath)
+	if activeErr == nil {
+		return url, nil
 	}
-
-	return "", camperrors.Wrapf(gitpkg.ErrSubmoduleURL, "%s", submodulePath)
+	return "", camperrors.WrapJoinf(gitpkg.ErrSubmoduleURL, errors.Join(declaredErr, activeErr), "%s", submodulePath)
 }
 
 // parseSubmoduleStatus parses a line from git submodule status output.
@@ -512,54 +505,96 @@ func (c *Cloner) initSubmoduleGraceful(ctx context.Context, repoDir, subPath str
 	return outcome, nil
 }
 
-// initNestedSubmodulesGraceful initializes nested submodules within a submodule,
-// handling stale commit references gracefully by falling back to default branch.
-func (c *Cloner) initNestedSubmodulesGraceful(ctx context.Context, repoDir, subPath string) (int, []string) {
+// initNestedSubmodulesGraceful returns one result per child of the selected
+// checkout. A failed child does not prevent independent siblings from running.
+func (c *Cloner) initNestedSubmodulesGraceful(ctx context.Context, repoDir, subPath string) []gitpkg.NestedResult {
+	return c.initNestedSelected(ctx, filepath.Join(repoDir, subPath), subPath, map[string]bool{})
+}
+
+func (c *Cloner) initNestedSelected(ctx context.Context, ownerDir, ownerPath string, visited map[string]bool) []gitpkg.NestedResult {
 	if ctx.Err() != nil {
-		return 0, nil
+		return []gitpkg.NestedResult{{Owner: ownerPath, Path: ownerPath, Skipped: true,
+			Operation: "list", Error: &gitpkg.NestedError{Owner: ownerPath, Path: ownerPath, Op: "list", Cause: ctx.Err()}}}
 	}
-
-	subDir := filepath.Join(repoDir, subPath)
-
-	// Check if this submodule has its own .gitmodules
-	nestedSubs, err := parseGitmodules(ctx, subDir)
-	if err != nil || len(nestedSubs) == 0 {
-		return 0, nil // No nested submodules
+	actualOwner, err := filepath.EvalSymlinks(ownerDir)
+	if err != nil {
+		return []gitpkg.NestedResult{{Owner: ownerPath, Path: ownerPath, Attempted: true,
+			Operation: "identify", Error: &gitpkg.NestedError{Owner: ownerPath, Path: ownerPath, Op: "identify", Cause: err}}}
 	}
-
-	var warnings []string
-	count := 0
-
+	if visited[actualOwner] {
+		return []gitpkg.NestedResult{{Owner: ownerPath, Path: ownerPath, Attempted: true,
+			Operation: "cycle", Error: &gitpkg.NestedError{Owner: ownerPath, Path: ownerPath, Op: "cycle", Cause: camperrors.Newf("repository already visited: %s", actualOwner)}}}
+	}
+	visited[actualOwner] = true
+	defer delete(visited, actualOwner)
+	nestedSubs, err := parseGitmodules(ctx, ownerDir)
+	if err != nil {
+		return []gitpkg.NestedResult{{Owner: ownerPath, Path: ownerPath, Attempted: true,
+			Operation: "list", Error: &gitpkg.NestedError{Owner: ownerPath, Path: ownerPath, Op: "list", Cause: err}}}
+	}
+	sort.Slice(nestedSubs, func(i, j int) bool { return nestedSubs[i].Path < nestedSubs[j].Path })
+	results := make([]gitpkg.NestedResult, 0, len(nestedSubs))
 	for _, nested := range nestedSubs {
+		fullPath := filepath.Join(ownerPath, nested.Path)
+		r := gitpkg.NestedResult{Owner: ownerPath, Path: fullPath, Name: nested.Name, URL: nested.URL}
+		fail := func(op string, cause error) {
+			r.Operation = op
+			r.Error = &gitpkg.NestedError{Owner: ownerPath, Path: fullPath, Op: op, Cause: cause}
+		}
 		if ctx.Err() != nil {
-			break
-		}
-
-		if err := pathutil.ValidateSubmodulePath(subDir, nested.Path); err != nil {
-			warnings = append(warnings,
-				fmt.Sprintf("nested submodule %s/%s: invalid path: %v", subPath, nested.Path, err))
+			r.Skipped = true
+			fail("skip", ctx.Err())
+			results = append(results, r)
 			continue
 		}
-
-		// Use graceful init for each nested submodule
-		if _, err := c.initSubmoduleGraceful(ctx, subDir, nested.Path); err != nil {
-			warnings = append(warnings,
-				fmt.Sprintf("nested submodule %s/%s: %v", subPath, nested.Path, err))
+		r.Attempted = true
+		if err := pathutil.ValidateSubmodulePath(ownerDir, nested.Path); err != nil {
+			fail("validate-path", err)
+			results = append(results, r)
 			continue
 		}
-		count++
-		// A nested repository can itself introduce children on its selected
-		// branch. Switch it before looking at its .gitmodules.
-		if err := c.checkoutSubmoduleBranch(ctx, subDir, nested.Path); err != nil {
-			warnings = append(warnings,
-				fmt.Sprintf("nested submodule %s/%s checkout: %v", subPath, nested.Path, err))
+		childDir := filepath.Join(ownerDir, nested.Path)
+		initialized, identityErr := gitpkg.IsWorktreeRoot(ctx, childDir)
+		if identityErr != nil {
+			fail("identify", identityErr)
+			results = append(results, r)
+			continue
 		}
-
-		// Recursively initialize any sub-nested submodules
-		nestedCount, nestedWarnings := c.initNestedSubmodulesGraceful(ctx, subDir, nested.Path)
-		count += nestedCount
-		warnings = append(warnings, nestedWarnings...)
+		if initialized {
+			cmd := exec.CommandContext(ctx, "git", "-C", ownerDir, "submodule", "sync", "--", nested.Path)
+			if output, err := cmd.CombinedOutput(); err != nil {
+				fail("sync-url", camperrors.Wrapf(err, "%s", strings.TrimSpace(string(output))))
+				results = append(results, r)
+				continue
+			}
+		}
+		outcome, err := c.initSubmoduleGraceful(ctx, ownerDir, nested.Path)
+		if err != nil {
+			fail("init", err)
+			results = append(results, r)
+			continue
+		}
+		r.Initialized = true
+		r.StaleRefFallback = outcome.StaleRefFallback
+		if err := c.checkoutSubmoduleBranch(ctx, ownerDir, nested.Path); err != nil {
+			fail("checkout", err)
+			results = append(results, r)
+			continue
+		}
+		r.Commit, _ = gitpkg.Output(ctx, childDir, "rev-parse", "HEAD")
+		if pin, err := gitpkg.Output(ctx, ownerDir, "ls-files", "-s", "--", nested.Path); err == nil {
+			fields := strings.Fields(pin)
+			if len(fields) >= 2 && fields[0] == "160000" {
+				r.RecordedCommit = fields[1]
+			}
+		}
+		r.Children = c.initNestedSelected(ctx, childDir, fullPath, visited)
+		if err := gitpkg.NestedFailures(r.Children); err != nil {
+			fail("children", err)
+		} else {
+			r.Success = true
+		}
+		results = append(results, r)
 	}
-
-	return count, warnings
+	return results
 }

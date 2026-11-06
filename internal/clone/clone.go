@@ -130,7 +130,7 @@ func (c *Cloner) Clone(ctx context.Context) (*CloneResult, error) {
 		c.progress.StartPhase("Initializing submodules")
 		submoduleInfos, err := parseGitmodules(ctx, targetDir)
 		if err != nil {
-			result.Warnings = append(result.Warnings, fmt.Sprintf("could not parse .gitmodules: %v", err))
+			result.Errors = append(result.Errors, &SubmoduleError{Op: "parse-gitmodules", Cause: err})
 		}
 
 		// Determine parallelism
@@ -161,7 +161,6 @@ func (c *Cloner) Clone(ctx context.Context) (*CloneResult, error) {
 
 		for i, sub := range submoduleInfos {
 			if ctx.Err() != nil {
-				result.Errors = append(result.Errors, ctx.Err())
 				break
 			}
 
@@ -273,16 +272,6 @@ func (c *Cloner) Clone(ctx context.Context) (*CloneResult, error) {
 						r.branchOK = true
 					}
 				}
-
-				// Step 4: Discover children from the selected branch, not the
-				// earlier gitlink snapshot.
-				if r.result.Success {
-					count, warnings := c.initNestedSubmodulesGraceful(ctx, targetDir, sub.Path)
-					r.nestedCount = count
-					r.warnings = append(r.warnings, warnings...)
-				}
-
-				// Get commit hash if initialized
 				if r.result.Success {
 					r.result.Commit, _ = c.getSubmoduleCommit(ctx, targetDir, sub.Path)
 					if pin, err := gitpkg.Output(ctx, targetDir, "ls-files", "-s", "--", sub.Path); err == nil {
@@ -290,6 +279,17 @@ func (c *Cloner) Clone(ctx context.Context) (*CloneResult, error) {
 						if len(fields) >= 2 && fields[0] == "160000" {
 							r.result.RecordedCommit = fields[1]
 						}
+					}
+				}
+
+				// Step 4: Discover children from the selected branch, not the
+				// earlier gitlink snapshot.
+				if r.result.Success {
+					r.result.Nested = c.initNestedSubmodulesGraceful(ctx, targetDir, sub.Path)
+					r.nestedCount = gitpkg.SummarizeNestedResults(r.result.Nested).Initialized
+					if nestedErr := gitpkg.NestedFailures(r.result.Nested); nestedErr != nil {
+						r.result.Success = false
+						r.result.Error = nestedErr
 					}
 				}
 
@@ -346,7 +346,14 @@ func (c *Cloner) Clone(ctx context.Context) (*CloneResult, error) {
 		if branchCount > 0 {
 			c.progress.Message(fmt.Sprintf("Checked out branches for %d submodules", branchCount))
 		}
-		c.progress.EndPhase("Submodule initialization", true)
+		c.progress.EndPhase("Submodule initialization", failed == 0)
+	}
+	if ctx.Err() != nil {
+		if len(result.Errors) == 0 {
+			result.Errors = append(result.Errors, ctx.Err())
+		}
+		result.Success = false
+		return result, nil
 	}
 
 	// Phase 4: Validation (unless --no-validate)
@@ -415,9 +422,13 @@ func (c *Cloner) validate(ctx context.Context, dir string) *ValidationResult {
 	// Use parseGitmodules as the canonical list (same source as Phase 3)
 	declared, err := parseGitmodules(ctx, dir)
 	if err != nil {
+		result.Passed = false
+		result.AllInitialized = false
+		result.CorrectCommits = false
+		result.URLsMatch = false
 		result.Issues = append(result.Issues, ValidationIssue{
 			Description: fmt.Sprintf("could not parse .gitmodules: %v", err),
-			Severity:    SeverityWarning,
+			Severity:    SeverityError,
 		})
 		return result
 	}

@@ -10,6 +10,7 @@
 package clone
 
 import (
+	"github.com/Obedience-Corp/camp/internal/git"
 	"github.com/Obedience-Corp/camp/internal/peer"
 	"github.com/Obedience-Corp/camp/internal/sync"
 )
@@ -125,6 +126,8 @@ type SubmoduleResult struct {
 	RecordedCommit string
 	// StaleRefFallback reports recovery from a missing recorded commit.
 	StaleRefFallback bool
+	// Nested contains the children discovered from this selected checkout.
+	Nested []git.NestedResult
 	// Error contains any error that occurred during initialization.
 	Error error
 	// PeerSeeded indicates the submodule's objects were cloned from the

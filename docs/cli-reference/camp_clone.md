@@ -27,6 +27,9 @@ This command provides a single-step setup for new devices:
      If .campaign/campaign.yaml exists, registers the camp
      in the global registry for navigation and discovery.
 
+JSON results include a nested child tree and attempted/skipped/initialized
+counts when recursive submodules are declared.
+
 EXIT CODES:
   0  Success
   1  Runtime failure (clone failed before usable camp)

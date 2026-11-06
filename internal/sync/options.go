@@ -10,6 +10,7 @@ package sync
 
 import (
 	"github.com/Obedience-Corp/camp/internal/artifacts"
+	"github.com/Obedience-Corp/camp/internal/git"
 	"github.com/Obedience-Corp/camp/internal/peer"
 )
 
@@ -100,6 +101,8 @@ type SubmoduleResult struct {
 	Commit         string
 	// StaleRefFallback reports recovery from a missing recorded commit.
 	StaleRefFallback bool
+	// Nested contains children discovered from this selected checkout.
+	Nested []git.NestedResult
 	// DriftWarning describes detected gitlink drift for this submodule.
 	DriftWarning string
 	// PeerFetched indicates objects were fetched from the configured peer

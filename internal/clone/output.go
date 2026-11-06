@@ -4,6 +4,8 @@ import (
 	"encoding/json"
 	"fmt"
 	"strings"
+
+	"github.com/Obedience-Corp/camp/internal/git"
 )
 
 // JSONOutput represents the complete clone result for JSON output.
@@ -48,22 +50,24 @@ type ClonePhaseOutput struct {
 
 // SubmodulesOutput represents submodule initialization results.
 type SubmodulesOutput struct {
-	Total       int                   `json:"total"`
-	Initialized int                   `json:"initialized"`
-	Failed      int                   `json:"failed"`
-	Results     []SubmoduleJSONResult `json:"results,omitempty"`
+	Total         int                   `json:"total"`
+	Initialized   int                   `json:"initialized"`
+	Failed        int                   `json:"failed"`
+	Results       []SubmoduleJSONResult `json:"results,omitempty"`
+	NestedSummary *git.NestedSummary    `json:"nestedSummary,omitempty"`
 }
 
 // SubmoduleJSONResult represents a single submodule result.
 type SubmoduleJSONResult struct {
-	Name             string `json:"name"`
-	Path             string `json:"path"`
-	URL              string `json:"url"`
-	Success          bool   `json:"success"`
-	Commit           string `json:"commit,omitempty"`
-	RecordedCommit   string `json:"recordedCommit,omitempty"`
-	StaleRefFallback bool   `json:"staleRefFallback,omitempty"`
-	Error            string `json:"error,omitempty"`
+	Name             string                   `json:"name"`
+	Path             string                   `json:"path"`
+	URL              string                   `json:"url"`
+	Success          bool                     `json:"success"`
+	Commit           string                   `json:"commit,omitempty"`
+	RecordedCommit   string                   `json:"recordedCommit,omitempty"`
+	StaleRefFallback bool                     `json:"staleRefFallback,omitempty"`
+	Error            string                   `json:"error,omitempty"`
+	Nested           []git.NestedResultOutput `json:"nested,omitempty"`
 }
 
 // URLChangeOutput represents a URL that was updated.
@@ -145,6 +149,7 @@ func (r *CloneResult) JSON() ([]byte, error) {
 	initialized := 0
 	failed := 0
 	var subResults []SubmoduleJSONResult
+	var nestedResults []git.NestedResult
 	for _, sub := range r.Submodules {
 		result := SubmoduleJSONResult{
 			Name:             sub.Name,
@@ -154,7 +159,9 @@ func (r *CloneResult) JSON() ([]byte, error) {
 			Commit:           sub.Commit,
 			RecordedCommit:   sub.RecordedCommit,
 			StaleRefFallback: sub.StaleRefFallback,
+			Nested:           git.NestedResultOutputs(sub.Nested),
 		}
+		nestedResults = append(nestedResults, sub.Nested...)
 		if sub.Error != nil {
 			result.Error = sub.Error.Error()
 			failed++
@@ -169,6 +176,10 @@ func (r *CloneResult) JSON() ([]byte, error) {
 		Initialized: initialized,
 		Failed:      failed,
 		Results:     subResults,
+	}
+	if len(nestedResults) > 0 {
+		summary := git.SummarizeNestedResults(nestedResults)
+		output.Submodules.NestedSummary = &summary
 	}
 
 	// Convert URL changes

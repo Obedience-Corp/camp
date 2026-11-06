@@ -442,6 +442,9 @@ This command provides a single-step setup for new devices:
      If .campaign/campaign.yaml exists, registers the camp
      in the global registry for navigation and discovery.
 
+JSON results include a nested child tree and attempted/skipped/initialized
+counts when recursive submodules are declared.
+
 EXIT CODES:
   0  Success
   1  Runtime failure (clone failed before usable camp)
@@ -9066,6 +9069,7 @@ The sync command performs three critical operations:
      behind a recorded gitlink, and discovers children after checkout.
 
 Orphaned gitlinks are reported without removing them from the index.
+JSON results include nested child paths, owners, errors, and counts.
 
 This order is critical: sync-before-update prevents silent code deletion
 when URLs change on remote repositories.

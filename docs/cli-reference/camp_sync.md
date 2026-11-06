@@ -21,6 +21,7 @@ The sync command performs three critical operations:
      behind a recorded gitlink, and discovers children after checkout.
 
 Orphaned gitlinks are reported without removing them from the index.
+JSON results include nested child paths, owners, errors, and counts.
 
 This order is critical: sync-before-update prevents silent code deletion
 when URLs change on remote repositories.
