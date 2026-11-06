@@ -45,6 +45,7 @@ Schema versions in this release:
 | `camp leverage --json` | `leverage/v1alpha1` | Existing leverage result shape; refusals use the JSON error envelope. |
 | `camp leverage history --json` | `leverage-history/v1alpha1` | Existing history result shape; refusals use the JSON error envelope. |
 | `camp quest list --json` | `quest-list/v1alpha1` | Emits `schema_version`, `campaign_root`, and `items` with camp-relative paths. |
+| `camp quest default --json` | `quest-default/v1alpha1` | Resolves the newest open fallback or creates a fresh default with a distinct ID. Emits `campaign_root`, `quest`, and `created`; closed defaults remain unchanged. Renewed default metadata carries additive `default: true` in quest list/show output. |
 | `camp quest create --json` (dev) | `quest-create/v1alpha1` | Creates noninteractively, returning quest identity, relative path, binding, commit state, and partial errors. `--open` makes a bounded optional `camp-app` reveal after local success; missing plugin/app never invalidates the created quest. |
 | `camp quest show --json` | `quest-show/v1alpha1` | Emits `schema_version`, `campaign_root`, and `quest` with camp-relative paths. |
 | `camp quest links --json` | `quest-links/v1alpha1` | Emits `schema_version`, `campaign_root`, and `links` with camp-relative paths. |
