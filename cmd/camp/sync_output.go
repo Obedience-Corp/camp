@@ -369,6 +369,15 @@ func formatSyncJSON(result *sync.SyncResult, preflight *sync.PreflightResult, dr
 		// already reads camelCase here; one odd key would be the surprise.
 		"drainWaitedMs": drainWaited.Milliseconds(),
 	}
+	// Counts alone hide the cause of a failed update. Preserve the existing
+	// success contract and add diagnostics only when an operation failed.
+	if len(result.Errors) > 0 {
+		errors := make([]string, 0, len(result.Errors))
+		for _, err := range result.Errors {
+			errors = append(errors, err.Error())
+		}
+		output["errors"] = errors
+	}
 
 	// Peer-transport keys appear only when the feature ran, keeping default
 	// `camp sync --json` byte-identical for existing consumers.

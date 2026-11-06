@@ -339,7 +339,10 @@ func (c *Cloner) seedSubmoduleFromPeer(ctx context.Context, repoDir string, sub 
 	}
 
 	initCmd := exec.CommandContext(ctx, "git", "-C", repoDir, "submodule", "init", sub.Path)
-	_ = initCmd.Run() // may already be initialized, matching InitSubmoduleGraceful
+	if output, err := initCmd.CombinedOutput(); err != nil {
+		return camperrors.Wrapf(err, "register peer-seeded submodule %s: %s",
+			sub.Path, strings.TrimSpace(string(output)))
+	}
 
 	updateArgs := []string{"-C", repoDir,
 		"-c", "submodule." + sub.Name + ".url=" + c.peer.URL(sub.Path)}
@@ -546,6 +549,13 @@ func (c *Cloner) initSubmoduleGraceful(ctx context.Context, repoDir, subPath str
 	output, err := cmd.CombinedOutput()
 
 	if err == nil {
+		initialized, identityErr := gitpkg.IsWorktreeRoot(ctx, filepath.Join(repoDir, subPath))
+		if identityErr != nil {
+			return &SubmoduleError{Op: "identify", Submodule: subPath, Cause: identityErr}
+		}
+		if !initialized {
+			return &SubmoduleError{Op: "identify", Submodule: subPath, Cause: gitpkg.ErrSubmoduleNotInitialized}
+		}
 		return nil // Success
 	}
 

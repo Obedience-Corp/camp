@@ -85,7 +85,7 @@ camp clone <url> [directory] [flags]
       --no-register     Skip auto-registration in global camp registry
       --no-submodules   Skip submodule initialization
       --no-validate     Skip post-clone validation
-  -p, --parallel int    Number of parallel submodule initializations (default 4)
+  -p, --parallel int    Maximum initialization workers; operations sharing a superproject are serialized to avoid Git config/index contention (default 4)
   -v, --verbose         Show detailed output for each operation
 ```
 

@@ -179,15 +179,19 @@ func InitSubmoduleGraceful(ctx context.Context, repoDir, subPath string) error {
 		return camperrors.WrapJoinf(ErrSubmoduleInit, err, "%s", subPath)
 	}
 
-	// Step 1: Register the submodule (init without update)
-	cmd := exec.CommandContext(ctx, "git", "-C", repoDir, "submodule", "init", subPath)
-	_ = cmd.Run() // Ignore error, may already be initialized
-
-	// Step 2: Try normal update
-	cmd = exec.CommandContext(ctx, "git", "-C", repoDir, "submodule", "update", subPath)
+	// Register and update in one Git operation. A failed registration must not
+	// turn the following update into a successful no-op on an empty child.
+	cmd := exec.CommandContext(ctx, "git", "-C", repoDir, "submodule", "update", "--init", subPath)
 	output, err := cmd.CombinedOutput()
 
 	if err == nil {
+		initialized, identityErr := IsWorktreeRoot(ctx, filepath.Join(repoDir, subPath))
+		if identityErr != nil {
+			return camperrors.WrapJoinf(ErrSubmoduleInit, identityErr, "%s: verify repository identity", subPath)
+		}
+		if !initialized {
+			return camperrors.WrapJoinf(ErrSubmoduleInit, ErrSubmoduleNotInitialized, "%s: update returned without initializing a repository", subPath)
+		}
 		return nil
 	}
 

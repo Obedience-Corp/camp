@@ -4,8 +4,11 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"path/filepath"
 	"sync"
 
+	camperrors "github.com/Obedience-Corp/camp/internal/errors"
+	gitpkg "github.com/Obedience-Corp/camp/internal/git"
 	"github.com/Obedience-Corp/camp/internal/remote"
 )
 
@@ -144,7 +147,6 @@ func (c *Cloner) Clone(ctx context.Context) (*CloneResult, error) {
 			index       int
 			result      SubmoduleResult
 			warnings    []string
-			staleRef    bool
 			nestedCount int
 			branchOK    bool
 			// seed records which transport delivered this submodule. Written
@@ -181,6 +183,18 @@ func (c *Cloner) Clone(ctx context.Context) (*CloneResult, error) {
 					}
 					return
 				}
+				// Peer seeding, registration, update, checkout, and nested discovery
+				// may all touch the same superproject Git state. Serialize the full
+				// pipeline for this owner, including the stale-object fallback.
+				release, lockErr := gitpkg.LockSubmoduleOwner(ctx, targetDir)
+				if lockErr != nil {
+					results[idx] = subInitResult{index: idx, result: SubmoduleResult{
+						Name: sub.Name, Path: sub.Path, URL: sub.URL,
+						Success: false, Error: camperrors.Wrapf(lockErr, "init %s in %s", sub.Path, targetDir),
+					}}
+					return
+				}
+				defer release()
 
 				r := subInitResult{index: idx}
 				c.progress.Verbose(fmt.Sprintf("Initializing submodule: %s", sub.Path))
@@ -215,6 +229,14 @@ func (c *Cloner) Clone(ctx context.Context) (*CloneResult, error) {
 
 				// Step 1: Initialize submodule gracefully (handles stale refs)
 				subErr := c.initSubmoduleGraceful(ctx, targetDir, sub.Path)
+				if subErr == nil {
+					initialized, identityErr := gitpkg.IsWorktreeRoot(ctx, filepath.Join(targetDir, sub.Path))
+					if identityErr != nil {
+						subErr = camperrors.Wrapf(identityErr, "identify initialized submodule %s", sub.Path)
+					} else if !initialized {
+						subErr = camperrors.Wrapf(gitpkg.ErrSubmoduleNotInitialized, "identify initialized submodule %s", sub.Path)
+					}
+				}
 				r.result = SubmoduleResult{
 					Name:       sub.Name,
 					Path:       sub.Path,
@@ -225,16 +247,8 @@ func (c *Cloner) Clone(ctx context.Context) (*CloneResult, error) {
 				}
 
 				if subErr != nil {
-					if c.isStaleRefError(subErr) {
-						r.staleRef = true
-						r.warnings = append(r.warnings,
-							fmt.Sprintf("submodule %s had stale commit reference, using default branch", sub.Path))
-						r.result.Success = true
-						r.result.Error = nil
-					} else {
-						r.warnings = append(r.warnings,
-							fmt.Sprintf("submodule %s: %v", sub.Path, subErr))
-					}
+					r.warnings = append(r.warnings,
+						fmt.Sprintf("submodule %s: %v", sub.Path, subErr))
 				}
 
 				// Step 2: Verify working tree has files
@@ -279,19 +293,25 @@ func (c *Cloner) Clone(ctx context.Context) (*CloneResult, error) {
 		failed := 0
 		nestedCount := 0
 		branchCount := 0
-		staleRefCount := 0
 		peerSeededCount := 0
 
-		for _, r := range results {
+		for i, r := range results {
+			if r.result.Path == "" {
+				// Cancellation can stop scheduling before the last goroutine was
+				// launched. Keep those paths visible in ordered results.
+				sub := submoduleInfos[i]
+				r.result = SubmoduleResult{Name: sub.Name, Path: sub.Path, URL: sub.URL,
+					Error: ctx.Err()}
+			}
 			result.Submodules = append(result.Submodules, r.result)
 			result.Warnings = append(result.Warnings, r.warnings...)
 			if r.result.Success {
 				succeeded++
 			} else {
 				failed++
-			}
-			if r.staleRef {
-				staleRefCount++
+				if r.result.Error != nil {
+					result.Errors = append(result.Errors, r.result.Error)
+				}
 			}
 			nestedCount += r.nestedCount
 			if r.branchOK {
@@ -309,9 +329,6 @@ func (c *Cloner) Clone(ctx context.Context) (*CloneResult, error) {
 
 		if peerSeededCount > 0 && c.peer != nil {
 			c.progress.Message(fmt.Sprintf("Seeded %d submodules from peer %s", peerSeededCount, c.peer.ID()))
-		}
-		if staleRefCount > 0 {
-			c.progress.Message(fmt.Sprintf("Recovered %d submodules with stale commit references", staleRefCount))
 		}
 		if nestedCount > 0 {
 			c.progress.Message(fmt.Sprintf("Initialized %d nested submodules", nestedCount))

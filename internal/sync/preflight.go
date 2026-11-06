@@ -129,10 +129,16 @@ func (s *Syncer) checkUncommittedChanges(ctx context.Context, paths []string) ([
 		}
 
 		fullPath := filepath.Join(s.repoRoot, path)
+		initialized, err := git.IsWorktreeRoot(ctx, fullPath)
+		if err != nil {
+			return nil, &SyncError{Op: "identify", Submodule: path, Cause: err}
+		}
+		if !initialized {
+			continue
+		}
 		hasChanges, err := git.HasChanges(ctx, fullPath)
 		if err != nil {
-			// Submodule might not be initialized
-			continue
+			return nil, &SyncError{Op: "status", Submodule: path, Cause: err}
 		}
 
 		if hasChanges {
@@ -179,6 +185,13 @@ func (s *Syncer) checkUnpushedCommits(ctx context.Context, paths []string) ([]Su
 		}
 
 		fullPath := filepath.Join(s.repoRoot, path)
+		initialized, err := git.IsWorktreeRoot(ctx, fullPath)
+		if err != nil {
+			return nil, &SyncError{Op: "identify", Submodule: path, Cause: err}
+		}
+		if !initialized {
+			continue
+		}
 
 		// Check for commits ahead of upstream
 		// This will fail if no upstream is configured, which is fine
@@ -246,10 +259,17 @@ func (s *Syncer) checkDetachedHEADs(ctx context.Context, paths []string) ([]Deta
 		}
 
 		fullPath := filepath.Join(s.repoRoot, path)
+		initialized, err := git.IsWorktreeRoot(ctx, fullPath)
+		if err != nil {
+			return nil, &SyncError{Op: "identify", Submodule: path, Cause: err}
+		}
+		if !initialized {
+			continue
+		}
 
 		// Check if HEAD is detached
 		cmd := exec.CommandContext(ctx, "git", "-C", fullPath, "symbolic-ref", "-q", "HEAD")
-		err := cmd.Run()
+		err = cmd.Run()
 		if err == nil {
 			// HEAD is attached to a branch
 			continue

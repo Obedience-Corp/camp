@@ -112,7 +112,7 @@ func init() {
 	cloneCmd.Flags().IntVar(&cloneOpts.depth, "depth", 0,
 		"Shallow clone depth (0 = full history)")
 	cloneCmd.Flags().IntVarP(&cloneOpts.parallel, "parallel", "p", 4,
-		"Number of parallel submodule initializations")
+		"Maximum initialization workers; operations sharing a superproject are serialized to avoid Git config/index contention")
 	cloneCmd.Flags().BoolVar(&cloneOpts.noSubmodules, "no-submodules", false,
 		"Skip submodule initialization")
 	cloneCmd.Flags().BoolVar(&cloneOpts.noValidate, "no-validate", false,

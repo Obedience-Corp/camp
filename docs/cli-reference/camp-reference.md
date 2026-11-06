@@ -500,7 +500,7 @@ camp clone <url> [directory] [flags]
       --no-register     Skip auto-registration in global camp registry
       --no-submodules   Skip submodule initialization
       --no-validate     Skip post-clone validation
-  -p, --parallel int    Number of parallel submodule initializations (default 4)
+  -p, --parallel int    Maximum initialization workers; operations sharing a superproject are serialized to avoid Git config/index contention (default 4)
   -v, --verbose         Show detailed output for each operation
 ```
 
@@ -9129,7 +9129,7 @@ camp sync [submodule...] [flags]
       --no-drain           Do not wait for camp's queued commits first
       --no-fetch           Skip fetching from remote (use local refs only)
       --no-probe-cache     Re-probe the rsync engine on both machines instead of using the cached 24h verdict
-  -p, --parallel int       Number of parallel git operations (git guards superproject ops with repo lockfiles that fail fast on contention; lower this if a slow disk surfaces transient lock errors) (default 4)
+  -p, --parallel int       Maximum update workers; operations sharing a superproject are serialized to avoid Git config/index contention (default 4)
   -v, --verbose            Show detailed output for each submodule
       --verify-artifacts   Check artifact roots against last-transfer snapshots (no transfer)
 ```

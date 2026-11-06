@@ -465,6 +465,15 @@ func (s *Syncer) updateSubmodules(ctx context.Context) ([]SubmoduleResult, error
 				return
 			}
 
+			release, lockErr := git.LockSubmoduleOwner(ctx, s.repoRoot)
+			if lockErr != nil {
+				results[idx] = SubmoduleResult{
+					Path: path, Name: path, Success: false,
+					Error: &SyncError{Op: "init", Submodule: path, Cause: lockErr},
+				}
+				return
+			}
+			defer release()
 			results[idx] = s.updateSubmodule(ctx, path)
 		}(i, path)
 	}
@@ -507,6 +516,17 @@ func (s *Syncer) updateSubmodule(ctx context.Context, path string) SubmoduleResu
 
 	// Initialize nested submodules within this submodule
 	subDir := filepath.Join(s.repoRoot, path)
+	initialized, identityErr := git.IsWorktreeRoot(ctx, subDir)
+	if identityErr != nil {
+		result.Success = false
+		result.Error = &SyncError{Op: "identify", Submodule: path, Cause: identityErr}
+		return result
+	}
+	if !initialized {
+		result.Success = false
+		result.Error = &SyncError{Op: "identify", Submodule: path, Cause: git.ErrSubmoduleNotInitialized}
+		return result
+	}
 	cmd := exec.CommandContext(ctx, "git", "-C", subDir, "submodule", "update", "--init", "--recursive")
 	if output, nestedErr := cmd.CombinedOutput(); nestedErr != nil {
 		// Nested failure is non-fatal for the parent submodule
@@ -563,6 +583,19 @@ func (s *Syncer) verifySubmodules(ctx context.Context) ([]SubmoduleResult, error
 		}
 
 		fullPath := filepath.Join(s.repoRoot, path)
+		initialized, identityErr := git.IsWorktreeRoot(ctx, fullPath)
+		if identityErr != nil {
+			result.Success = false
+			result.Error = &SyncError{Op: "identify", Submodule: path, Cause: identityErr}
+			results = append(results, result)
+			continue
+		}
+		if !initialized {
+			result.Success = false
+			result.Error = &SyncError{Op: "identify", Submodule: path, Cause: git.ErrSubmoduleNotInitialized}
+			results = append(results, result)
+			continue
+		}
 
 		// Check if submodule directory exists and has content
 		cmd := exec.CommandContext(ctx, "git", "-C", fullPath, "rev-parse", "HEAD")
