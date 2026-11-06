@@ -67,12 +67,12 @@ var containerFSPackages = []containerFSPackage{
 	// update notice and version --check, which read and write ~/.obey.
 	{ImportPath: "./cmd/camp", MinTests: 31, TestPattern: "^Test(HopResumeFS|ExploreExecuteDoesNotWriteConfig|ExploreExecuteRefusesInvalidFlags|ExploreExecuteKeepsStderrJSONWhenAJobFailed|SuiteUpdateFS)"},
 	{ImportPath: "./internal/starter", MinTests: 7},
-	{ImportPath: "./internal/clone", MinTests: 29},
+	{ImportPath: "./internal/clone", MinTests: 30},
 	{ImportPath: "./internal/sync", MinTests: 32},
 	{ImportPath: "./internal/commands/fresh", MinTests: 6},
 	// The dungeon-move commit tests need a real repository to commit into.
 	// The capture and install tests rebuild the index of a real repository.
-	{ImportPath: "./internal/git", MinTests: 16, TestPattern: "^Test(CaptureBlobsDoesNotFollowDirectoryLink|CommitScoped_DirectoryLinkStagesOnlySymlink|StageAllDirectoryLinkStagesSymlink|StageAllOnlyDirectoryLink|CommitScopedParentDirectoryStagesLink|InstallTreeKeepsCachedStatData|InstallTreeFinishFalseRestoresTheIndex|InstallTreeLeavesAnIndexChangedSinceInstall|InstallTreeDetectsAChangedIndexWithoutAChecksum|OperationInProgressSeesMergesAndConflicts|PlanRootContentSizeDecides|CaptureTreeAddsPathsLiterally|RootExcludePathspecsSkipsIgnoredRoots|PairMovesIntoRootsNamesTrackedFilesPastTheLimit|StageAllCommitsADirectoryLinkInsideARootAsItsLink|IsWorktreeRoot_DoesNotClimbToParent)$"},
+	{ImportPath: "./internal/git", MinTests: 17, TestPattern: "^Test(CaptureBlobsDoesNotFollowDirectoryLink|CommitScoped_DirectoryLinkStagesOnlySymlink|StageAllDirectoryLinkStagesSymlink|StageAllOnlyDirectoryLink|CommitScopedParentDirectoryStagesLink|InstallTreeKeepsCachedStatData|InstallTreeFinishFalseRestoresTheIndex|InstallTreeLeavesAnIndexChangedSinceInstall|InstallTreeDetectsAChangedIndexWithoutAChecksum|OperationInProgressSeesMergesAndConflicts|PlanRootContentSizeDecides|CaptureTreeAddsPathsLiterally|RootExcludePathspecsSkipsIgnoredRoots|PairMovesIntoRootsNamesTrackedFilesPastTheLimit|StageAllCommitsADirectoryLinkInsideARootAsItsLink|IsWorktreeRoot_DoesNotClimbToParent|InventorySubmodulesOwnerRelative)$"},
 	{ImportPath: "./internal/git/commit", MinTests: 1},
 	{ImportPath: "./internal/commands/workitem", MinTests: 10},
 	{ImportPath: "./internal/workitem", MinTests: 7},

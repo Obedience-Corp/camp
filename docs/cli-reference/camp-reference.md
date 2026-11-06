@@ -437,13 +437,17 @@ This command provides a single-step setup for new devices:
   4. VALIDATE SETUP
      Verifies declared submodules are initialized and checks URLs
      and recorded gitlinks against the selected checkouts.
+     Reports declarations without gitlinks and gitlinks without
+     declarations separately for each owning repository.
 
   5. REGISTER CAMP
      If .campaign/campaign.yaml exists, registers the camp
      in the global registry for navigation and discovery.
 
 JSON results include a nested child tree and attempted/skipped/initialized
-counts when recursive submodules are declared.
+counts when recursive submodules are declared. Validation keeps its boolean
+checks and adds checkStates (passed, failed, skipped, or unavailable).
+With --no-submodules, validation reports skipped checks.
 
 EXIT CODES:
   0  Success

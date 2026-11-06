@@ -35,6 +35,39 @@ func TestCloneResult_JSON_Success(t *testing.T) {
 	}
 }
 
+func TestCloneResult_JSON_SkippedValidation(t *testing.T) {
+	result := &CloneResult{Success: true, Validation: &ValidationResult{
+		Passed: true, CheckStates: map[string]string{
+			"allInitialized": "skipped", "correctCommits": "skipped", "urlsMatch": "skipped",
+		},
+	}}
+	encoded, err := result.JSON()
+	if err != nil {
+		t.Fatal(err)
+	}
+	var output JSONOutput
+	if err := json.Unmarshal(encoded, &output); err != nil {
+		t.Fatal(err)
+	}
+	if output.Validation == nil || output.Validation.CheckStates["correctCommits"] != "skipped" || output.Validation.Checks.CorrectCommits {
+		t.Fatalf("skipped JSON validation = %+v", output.Validation)
+	}
+	if !strings.Contains(result.Format(), "Validation: skipped (--no-submodules)") {
+		t.Fatalf("format should disclose skipped validation: %s", result.Format())
+	}
+}
+
+func TestCloneResult_Format_PassedWithWarning(t *testing.T) {
+	result := &CloneResult{Success: true, Validation: &ValidationResult{Passed: true,
+		Issues: []ValidationIssue{{Submodule: "projects/orphan", Severity: SeverityWarning,
+			Description: "gitlink has no declaration"}},
+	}}
+	formatted := result.Format()
+	if !strings.Contains(formatted, "[projects/orphan] gitlink has no declaration") {
+		t.Fatalf("passed validation omitted warning: %s", formatted)
+	}
+}
+
 func TestCloneResult_JSON_WithSubmodules(t *testing.T) {
 	result := &CloneResult{
 		Success:   true,

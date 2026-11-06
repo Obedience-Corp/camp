@@ -1,9 +1,9 @@
 // Package clone provides single-command campaign setup with submodule initialization.
 //
 // The clone package implements a four-phase approach to campaign setup:
-//  1. Clone the repository with recursive submodules
+//  1. Clone the repository without recursive submodules
 //  2. Synchronize URLs from .gitmodules to .git/config
-//  3. Update submodules to ensure all are at correct commits
+//  3. Initialize submodules with selected branch checkout
 //  4. Validate the setup (all initialized, correct commits, matching URLs)
 //
 // This provides a reliable single-command bootstrap experience for new devices.
@@ -139,16 +139,18 @@ type SubmoduleResult struct {
 type ValidationResult struct {
 	// Passed indicates whether all validation checks passed.
 	Passed bool
-	// AllInitialized indicates all declared submodules have content.
+	// AllInitialized is true only when every declared gitlink was checked and initialized.
 	AllInitialized bool
-	// CorrectCommits indicates all submodules are at expected commits.
+	// CorrectCommits is true only when every required checkout was checked against its owner's gitlink policy.
 	CorrectCommits bool
-	// URLsMatch indicates .gitmodules and .git/config URLs match.
+	// URLsMatch is true only when every required active URL was checked against its owner's declaration.
 	URLsMatch bool
 	// Issues contains any validation problems found.
 	Issues []ValidationIssue
 	// CheckResults contains per-check pass/fail status.
 	CheckResults map[string]bool
+	// CheckStates distinguishes passed, failed, skipped, and unavailable checks.
+	CheckStates map[string]string
 }
 
 // ValidationIssue represents a validation problem found during post-clone checks.

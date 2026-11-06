@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"os"
 	"os/exec"
+	"path"
 	"path/filepath"
 	"strings"
 	"time"
@@ -77,17 +78,31 @@ func resolveSubmoduleURL(ctx context.Context, repoDir, url string) string {
 	if err != nil || remoteURL == "" {
 		return url
 	}
-	// filepath.Join is wrong here (would strip the scheme); use path.Join on
-	// the path component only, then reassemble.
+	return resolveRelativeSubmoduleURL(remoteURL, url)
+}
+
+// Git treats the first ../ as the move from a repository to its sibling.
+// Remaining parent segments are normalized inside the remote's path, leaving
+// scheme and scp-style host prefixes intact.
+func resolveRelativeSubmoduleURL(remoteURL, relativeURL string) string {
 	base := strings.TrimSuffix(remoteURL, "/")
-	// Strip trailing component to get the "parent" remote dir.
-	slash := strings.LastIndex(base, "/")
-	if slash < 0 {
-		return url
+	prefix, remotePath := "", base
+	if scheme := strings.Index(base, "://"); scheme >= 0 {
+		pathStart := strings.IndexByte(base[scheme+3:], '/')
+		if pathStart < 0 {
+			return relativeURL
+		}
+		pathStart += scheme + 3
+		prefix, remotePath = base[:pathStart], base[pathStart:]
+	} else if colon := strings.IndexByte(base, ':'); colon >= 0 && !strings.HasPrefix(base, "/") {
+		prefix, remotePath = base[:colon+1], base[colon+1:]
 	}
-	parent := base[:slash]
-	rel := strings.TrimPrefix(url, "../")
-	return parent + "/" + rel
+	slash := strings.LastIndexByte(remotePath, '/')
+	if slash < 0 {
+		return relativeURL
+	}
+	relativeURL = strings.TrimPrefix(relativeURL, "../")
+	return prefix + path.Clean(remotePath[:slash]+"/"+relativeURL)
 }
 
 // DetectDefaultBranch determines the default branch for a submodule using

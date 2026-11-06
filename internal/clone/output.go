@@ -79,9 +79,10 @@ type URLChangeOutput struct {
 
 // JSONValidation represents validation results in JSON.
 type JSONValidation struct {
-	Passed bool             `json:"passed"`
-	Checks ValidationChecks `json:"checks"`
-	Issues []JSONIssue      `json:"issues,omitempty"`
+	Passed      bool              `json:"passed"`
+	Checks      ValidationChecks  `json:"checks"`
+	CheckStates map[string]string `json:"checkStates,omitempty"`
+	Issues      []JSONIssue       `json:"issues,omitempty"`
 }
 
 // ValidationChecks contains per-check results.
@@ -194,7 +195,8 @@ func (r *CloneResult) JSON() ([]byte, error) {
 	// Convert validation
 	if r.Validation != nil {
 		output.Validation = &JSONValidation{
-			Passed: r.Validation.Passed,
+			Passed:      r.Validation.Passed,
+			CheckStates: r.Validation.CheckStates,
 			Checks: ValidationChecks{
 				AllInitialized: r.Validation.AllInitialized,
 				CorrectCommits: r.Validation.CorrectCommits,
@@ -285,22 +287,24 @@ func (r *CloneResult) Format() string {
 
 	// Validation section
 	if r.Validation != nil {
-		if r.Validation.Passed {
+		if r.Validation.CheckStates["allInitialized"] == "skipped" {
+			sb.WriteString("Validation: skipped (--no-submodules)\n")
+		} else if r.Validation.Passed {
 			sb.WriteString("Validation: ✓ All checks passed\n")
 		} else {
 			sb.WriteString("Validation: ✗ Issues detected\n")
-			for _, issue := range r.Validation.Issues {
-				var icon string
-				switch issue.Severity {
-				case SeverityError:
-					icon = "✗"
-				case SeverityWarning:
-					icon = "⚠"
-				default:
-					icon = "ℹ"
-				}
-				sb.WriteString(fmt.Sprintf("  %s [%s] %s\n", icon, issue.Submodule, issue.Description))
+		}
+		for _, issue := range r.Validation.Issues {
+			var icon string
+			switch issue.Severity {
+			case SeverityError:
+				icon = "✗"
+			case SeverityWarning:
+				icon = "⚠"
+			default:
+				icon = "ℹ"
 			}
+			fmt.Fprintf(&sb, "  %s [%s] %s\n", icon, issue.Submodule, issue.Description)
 		}
 		sb.WriteString("\n")
 	}

@@ -227,6 +227,20 @@ func TestValidate_AllInitialized(t *testing.T) {
 	}
 }
 
+func TestValidate_ActiveURLMismatch(t *testing.T) {
+	repoDir := setupTestRepo(t)
+	setupSubmodule(t, repoDir, "projects/sub")
+	runGit(t, repoDir, "config", "submodule.projects/sub.url", "/tmp/different-repository")
+
+	result := NewCloner().validate(context.Background(), repoDir)
+	if result.Passed || result.URLsMatch || result.CheckStates["urlsMatch"] != "failed" {
+		t.Fatalf("URL mismatch = %+v, want failed URL check", result)
+	}
+	if !result.AllInitialized || !result.CorrectCommits {
+		t.Fatalf("independent checks = %+v, want initialized and commit passed", result)
+	}
+}
+
 func TestClone_NoSubmodulesSkipsValidation(t *testing.T) {
 	if testing.Short() {
 		t.Skip("skipping integration test in short mode")

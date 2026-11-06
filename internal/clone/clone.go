@@ -397,14 +397,14 @@ func (c *Cloner) Clone(ctx context.Context) (*CloneResult, error) {
 }
 
 // validate runs post-clone validation checks.
-// Uses parseGitmodules as the canonical source of expected submodules (consistent
-// with Phase 3 initialization). Extra submodules found by git submodule status
-// but not declared in .gitmodules are reported as warnings, not errors.
+// Compares declarations and gitlinks within each repository that owns them.
 func (c *Cloner) validate(ctx context.Context, dir string) *ValidationResult {
 	if ctx.Err() != nil {
-		return &ValidationResult{Passed: false, Issues: []ValidationIssue{
-			{Description: "context cancelled", Severity: SeverityError},
-		}}
+		return &ValidationResult{Passed: false,
+			CheckStates: map[string]string{"allInitialized": "unavailable", "correctCommits": "unavailable", "urlsMatch": "unavailable"},
+			Issues: []ValidationIssue{
+				{Description: "context cancelled", Severity: SeverityError},
+			}}
 	}
 
 	result := &ValidationResult{
@@ -412,74 +412,122 @@ func (c *Cloner) validate(ctx context.Context, dir string) *ValidationResult {
 		AllInitialized: true,
 		CorrectCommits: true,
 		URLsMatch:      true,
+		CheckStates:    map[string]string{"allInitialized": "passed", "correctCommits": "passed", "urlsMatch": "passed"},
+	}
+	setState := func(check, state string) {
+		current := result.CheckStates[check]
+		if current == "failed" || (current == "unavailable" && state != "failed") {
+			return
+		}
+		result.CheckStates[check] = state
 	}
 
 	// --no-submodules leaves declared entries uninitialized on purpose.
 	if c.options.NoSubmodules {
+		result.AllInitialized = false
+		result.CorrectCommits = false
+		result.URLsMatch = false
+		for check := range result.CheckStates {
+			result.CheckStates[check] = "skipped"
+		}
+		result.CheckResults = map[string]bool{"allInitialized": false, "correctCommits": false, "urlsMatch": false}
 		return result
 	}
 
-	// Use parseGitmodules as the canonical list (same source as Phase 3)
-	declared, err := parseGitmodules(ctx, dir)
-	if err != nil {
+	inventory := gitpkg.InventorySubmodules(ctx, dir)
+	for _, inventoryErr := range inventory.Errors {
 		result.Passed = false
 		result.AllInitialized = false
 		result.CorrectCommits = false
 		result.URLsMatch = false
+		setState("allInitialized", "unavailable")
+		setState("correctCommits", "unavailable")
+		setState("urlsMatch", "unavailable")
 		result.Issues = append(result.Issues, ValidationIssue{
-			Description: fmt.Sprintf("could not parse .gitmodules: %v", err),
-			Severity:    SeverityError,
+			CheckID: "metadata", Description: inventoryErr.Error(), Severity: SeverityError,
 		})
-		return result
 	}
-
-	// Build set of declared paths
-	declaredPaths := make(map[string]bool, len(declared))
-	for _, sub := range declared {
-		declaredPaths[sub.Path] = true
-	}
-
-	// Get actual submodule state from git
-	statusResults, err := c.gitSubmoduleStatus(ctx, dir)
-	if err != nil {
-		result.Issues = append(result.Issues, ValidationIssue{
-			Description: fmt.Sprintf("could not check submodule status: %v", err),
-			Severity:    SeverityWarning,
-		})
-		return result
-	}
-
-	// Build status lookup by path
-	statusByPath := make(map[string]SubmoduleResult, len(statusResults))
-	for _, sr := range statusResults {
-		statusByPath[sr.Path] = sr
-	}
-
-	// Validate declared submodules (from .gitmodules)
-	for _, sub := range declared {
-		sr, found := statusByPath[sub.Path]
-		if !found || !sr.Success {
-			result.AllInitialized = false
+	for _, entry := range inventory.Entries {
+		switch entry.State {
+		case gitpkg.InventoryDeclarationOnly:
 			result.Passed = false
+			result.AllInitialized = false
+			result.CorrectCommits = false
+			result.URLsMatch = false
+			setState("allInitialized", "failed")
+			setState("correctCommits", "unavailable")
+			setState("urlsMatch", "unavailable")
 			result.Issues = append(result.Issues, ValidationIssue{
-				Submodule:   sub.Path,
-				Description: "not initialized",
+				CheckID: "declaration_without_gitlink", Submodule: entry.Path,
+				Description: "declared in .gitmodules but has no gitlink; reconcile the declaration and index",
 				Severity:    SeverityError,
-				FixCommand:  "git submodule update --init " + sub.Path,
-				AutoFixable: true,
 			})
-		}
-	}
-
-	// Report undeclared submodules (found by git status but not in .gitmodules) as warnings
-	for _, sr := range statusResults {
-		if !declaredPaths[sr.Path] && !sr.Success {
+		case gitpkg.InventoryGitlinkOnly:
 			result.Issues = append(result.Issues, ValidationIssue{
-				Submodule:   sr.Path,
-				Description: "not in .gitmodules but has a gitlink entry",
+				CheckID: "gitlink_without_declaration", Submodule: entry.Path,
+				Description: "gitlink has no .gitmodules declaration in its owning repository",
 				Severity:    SeverityWarning,
 			})
+		case gitpkg.InventoryUninitialized:
+			result.Passed = false
+			result.AllInitialized = false
+			result.CorrectCommits = false
+			setState("allInitialized", "failed")
+			setState("correctCommits", "unavailable")
+			result.Issues = append(result.Issues, ValidationIssue{
+				CheckID: "not_initialized", Submodule: entry.Path,
+				Description: "not initialized", Severity: SeverityError,
+				FixCommand: "camp sync", AutoFixable: true,
+			})
+		case gitpkg.InventoryInvalidPath, gitpkg.InventoryUnknownMapping:
+			// The inventory already records the metadata or path error.
+			continue
 		}
+		if entry.State != gitpkg.InventoryMatched && entry.State != gitpkg.InventoryUninitialized {
+			continue
+		}
+		if entry.State == gitpkg.InventoryMatched {
+			matches, err := gitpkg.SelectedCommitMatches(ctx, dir, entry)
+			switch {
+			case err != nil:
+				result.CorrectCommits = false
+				result.Passed = false
+				setState("correctCommits", "unavailable")
+				result.Issues = append(result.Issues, ValidationIssue{CheckID: "correct_commits", Submodule: entry.Path,
+					Description: camperrors.Wrapf(err, "compare checkout with gitlink in owner %s", entry.Owner).Error(), Severity: SeverityError})
+			case !matches:
+				result.CorrectCommits = false
+				result.Passed = false
+				setState("correctCommits", "failed")
+				result.Issues = append(result.Issues, ValidationIssue{CheckID: "correct_commits", Submodule: entry.Path,
+					Description: "checkout diverges from owning repository's recorded gitlink; inspect branch history before updating", Severity: SeverityError})
+			}
+		}
+		matchesURL, active, urlErr := gitpkg.InventoryURLMatches(ctx, dir, entry)
+		switch {
+		case urlErr != nil || active == "":
+			result.URLsMatch = false
+			result.Passed = false
+			setState("urlsMatch", "unavailable")
+			description := "active URL is unavailable in owning repository"
+			if urlErr != nil {
+				description = urlErr.Error()
+			}
+			result.Issues = append(result.Issues, ValidationIssue{CheckID: "urls_match", Submodule: entry.Path,
+				Description: description, Severity: SeverityError})
+		case !matchesURL:
+			result.URLsMatch = false
+			result.Passed = false
+			setState("urlsMatch", "failed")
+			result.Issues = append(result.Issues, ValidationIssue{CheckID: "urls_match", Submodule: entry.Path,
+				Description: fmt.Sprintf("active URL %q differs from declaration %q in owner %s; run 'camp sync' to synchronize", active, entry.DeclaredURL, entry.Owner),
+				Severity:    SeverityError, FixCommand: "camp sync", AutoFixable: true})
+		}
+	}
+	result.CheckResults = map[string]bool{
+		"allInitialized": result.AllInitialized,
+		"correctCommits": result.CorrectCommits,
+		"urlsMatch":      result.URLsMatch,
 	}
 
 	return result

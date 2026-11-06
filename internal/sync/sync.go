@@ -3,6 +3,7 @@ package sync
 import (
 	"bufio"
 	"context"
+	"errors"
 	"fmt"
 	"os"
 	"os/exec"
@@ -25,7 +26,7 @@ import (
 //  1. Pre-flight checks: Detect uncommitted changes, unpushed commits, and URL mismatches
 //  2. URL synchronization: Copy URLs from .gitmodules to .git/config
 //  3. Submodule update: Initialize and update all submodules
-//  4. Post-update validation: Verify all submodules are at expected commits
+//  4. Post-update validation: Verify owner metadata, selected commits, and active URLs
 //
 // In safe mode (default), sync aborts if pre-flight checks detect uncommitted
 // changes or unpushed commits. Use WithForce(true) to skip safety checks.
@@ -138,9 +139,22 @@ func (s *Syncer) Sync(ctx context.Context) (*SyncResult, error) {
 	}
 
 	// Phase 4: Post-update validation
-	if err := s.validateUpdate(ctx); err != nil {
+	validationWarnings, validationErrors := s.validateInventory(ctx)
+	for _, warning := range validationWarnings {
+		found := false
+		for _, existing := range result.Warnings {
+			if warning == existing {
+				found = true
+				break
+			}
+		}
+		if !found {
+			result.Warnings = append(result.Warnings, warning)
+		}
+	}
+	if len(validationErrors) > 0 {
 		result.Success = false
-		result.Errors = append(result.Errors, err)
+		result.Errors = append(result.Errors, validationErrors...)
 	}
 
 	// Phase 5: Artifact pull rides the peer connection when one is
@@ -831,78 +845,60 @@ func (s *Syncer) reverseSyncLocalURLs(ctx context.Context) ([]URLChange, error) 
 	return changes, nil
 }
 
-// validateUpdate checks that all submodules are at expected commits.
+// validateUpdate retains the package-level validation contract for callers
+// that need one error. Sync reports each inventory error independently.
 func (s *Syncer) validateUpdate(ctx context.Context) error {
-	if ctx.Err() != nil {
-		return ctx.Err()
-	}
-
-	// git submodule status --recursive
-	cmd := exec.CommandContext(ctx, "git", "-C", s.repoRoot,
-		"submodule", "status", "--recursive")
-	output, err := cmd.CombinedOutput()
-	if err != nil {
-		// Handle "no submodule mapping" errors gracefully - these indicate
-		// orphaned gitlinks that weren't fully cleaned up. Don't fail the
-		// entire validation for this.
-		outputStr := string(output)
-		if strings.Contains(outputStr, "no submodule mapping found") {
-			return nil
-		}
-		return &SyncError{Op: "validate", Cause: camperrors.Wrap(err, ErrSubmoduleValidation.Error())}
-	}
-
-	// A selected branch can intentionally advance beyond its owner's gitlink
-	// at any depth. Compare each '+' entry with its immediate owner's pin.
-	for _, line := range strings.Split(string(output), "\n") {
-		if strings.HasPrefix(line, "+") {
-			fields := strings.Fields(line)
-			if len(fields) >= 2 {
-				path := fields[1]
-				ownerDir, recorded, pinErr := s.findRecordedGitlink(ctx, path)
-				if pinErr != nil {
-					return pinErr
-				}
-				actual := strings.TrimPrefix(fields[0], "+")
-				advanced, ancestryErr := git.IsAncestor(ctx, filepath.Join(s.repoRoot, path), recorded, actual)
-				if ancestryErr != nil {
-					return &SyncError{Op: "validate-ancestry", Submodule: path, Cause: camperrors.Wrapf(ancestryErr, "owner %s", ownerDir)}
-				}
-				if advanced {
-					continue
-				}
-			}
-		}
-		if err := validateSubmoduleStatusOutput(line); err != nil {
-			return err
-		}
-	}
-	return nil
+	_, validationErrors := s.validateInventory(ctx)
+	return errors.Join(validationErrors...)
 }
 
-func (s *Syncer) findRecordedGitlink(ctx context.Context, fullPath string) (string, string, error) {
-	if err := pathutil.ValidateSubmodulePath(s.repoRoot, fullPath); err != nil {
-		return "", "", err
+// validateInventory checks each child against the metadata and gitlink in its
+// immediate owning repository. An orphan mapping never hides later failures.
+func (s *Syncer) validateInventory(ctx context.Context) ([]string, []error) {
+	if ctx.Err() != nil {
+		return nil, []error{ctx.Err()}
 	}
-	for cut := strings.LastIndex(fullPath, "/"); cut >= 0; cut = strings.LastIndex(fullPath[:cut], "/") {
-		ownerDir := filepath.Join(s.repoRoot, fullPath[:cut])
-		initialized, err := git.IsWorktreeRoot(ctx, ownerDir)
-		if err != nil {
-			return "", "", err
+	inventory := git.InventorySubmodules(ctx, s.repoRoot)
+	var warnings []string
+	var validationErrors []error
+	for _, inventoryErr := range inventory.Errors {
+		validationErrors = append(validationErrors, &SyncError{Op: "validate-metadata", Cause: inventoryErr})
+	}
+	for _, entry := range inventory.Entries {
+		switch entry.State {
+		case git.InventoryDeclarationOnly:
+			validationErrors = append(validationErrors, &SyncError{Op: "validate-metadata", Submodule: entry.Path,
+				Cause: camperrors.Newf("declared in owner %s .gitmodules without an index gitlink; reconcile metadata", entry.Owner)})
+		case git.InventoryGitlinkOnly:
+			warnings = append(warnings, fmt.Sprintf("orphaned gitlink without .gitmodules declaration: %s", entry.Path))
+		case git.InventoryUninitialized:
+			validationErrors = append(validationErrors, &SyncError{Op: "validate-init", Submodule: entry.Path,
+				Cause: camperrors.Wrapf(git.ErrSubmoduleNotInitialized, "owner %s; run 'camp sync'", entry.Owner)})
+		case git.InventoryMatched:
+			matches, err := git.SelectedCommitMatches(ctx, s.repoRoot, entry)
+			if err != nil {
+				validationErrors = append(validationErrors, &SyncError{Op: "validate-ancestry", Submodule: entry.Path,
+					Cause: camperrors.Wrapf(err, "owner %s", entry.Owner)})
+			} else if !matches {
+				validationErrors = append(validationErrors, &SyncError{Op: "validate-drift", Submodule: entry.Path,
+					Cause: camperrors.Newf("checkout diverges from owner %s gitlink; inspect branch history before updating", entry.Owner)})
+			}
 		}
-		if !initialized {
+		if entry.State != git.InventoryMatched && entry.State != git.InventoryUninitialized {
 			continue
 		}
-		pin, err := recordedGitlinkSHAInOwner(ctx, ownerDir, fullPath[cut+1:])
-		if err == nil {
-			return ownerDir, pin, nil
+		matchesURL, active, err := git.InventoryURLMatches(ctx, s.repoRoot, entry)
+		if err != nil {
+			validationErrors = append(validationErrors, &SyncError{Op: "validate-url", Submodule: entry.Path, Cause: err})
+		} else if active == "" {
+			validationErrors = append(validationErrors, &SyncError{Op: "validate-url", Submodule: entry.Path,
+				Cause: camperrors.Newf("active URL unavailable in owner %s", entry.Owner)})
+		} else if !matchesURL {
+			validationErrors = append(validationErrors, &SyncError{Op: "validate-url", Submodule: entry.Path,
+				Cause: camperrors.Newf("active URL %q differs from declaration %q in owner %s; run 'camp sync'", active, entry.DeclaredURL, entry.Owner)})
 		}
 	}
-	pin, err := recordedGitlinkSHAInOwner(ctx, s.repoRoot, fullPath)
-	if err != nil {
-		return "", "", err
-	}
-	return s.repoRoot, pin, nil
+	return warnings, validationErrors
 }
 
 func validateSubmoduleStatusOutput(output string) error {

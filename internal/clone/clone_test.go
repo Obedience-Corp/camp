@@ -27,6 +27,14 @@ func TestValidate_NoSubmodulesDoesNotFailMissingSubmodules(t *testing.T) {
 	if len(result.Issues) != 0 {
 		t.Fatalf("validate().Issues = %v, want none", result.Issues)
 	}
+	for _, check := range []string{"allInitialized", "correctCommits", "urlsMatch"} {
+		if got := result.CheckStates[check]; got != "skipped" {
+			t.Errorf("check %s state = %q, want skipped", check, got)
+		}
+	}
+	if result.AllInitialized || result.CorrectCommits || result.URLsMatch {
+		t.Errorf("skipped validation booleans = %+v, want false", result)
+	}
 }
 
 func TestValidate_ContextCanceled(t *testing.T) {
