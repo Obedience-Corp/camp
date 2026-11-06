@@ -68,12 +68,21 @@ func TestCloneResult_Format_PassedWithWarning(t *testing.T) {
 	}
 }
 
+func TestCloneResult_Format_InitializedParentWithFailedChild(t *testing.T) {
+	result := &CloneResult{Success: false, Submodules: []SubmoduleResult{
+		{Path: "projects/parent", Initialized: true, Success: false, Error: errors.New("child failed")},
+	}}
+	if got := result.Format(); !strings.Contains(got, "Submodules: 1/1 initialized (1 failed, 0 skipped)") {
+		t.Fatalf("format conflated checkout and subtree status: %s", got)
+	}
+}
+
 func TestCloneResult_JSON_WithSubmodules(t *testing.T) {
 	result := &CloneResult{
 		Success:   true,
 		Directory: "/tmp/test-repo",
 		Submodules: []SubmoduleResult{
-			{Name: "sub1", Path: "path/sub1", URL: "https://example.com/sub1", Success: true, Commit: "abc123"},
+			{Name: "sub1", Path: "path/sub1", URL: "https://example.com/sub1", Success: true, Initialized: true, Commit: "abc123"},
 			{Name: "sub2", Path: "path/sub2", URL: "https://example.com/sub2", Success: false, Error: errors.New("clone failed")},
 		},
 	}

@@ -9,6 +9,7 @@ import (
 
 	"github.com/Obedience-Corp/camp/internal/clone"
 	camperrors "github.com/Obedience-Corp/camp/internal/errors"
+	"github.com/Obedience-Corp/camp/internal/git"
 	"github.com/Obedience-Corp/camp/internal/jsoncontract"
 	"github.com/Obedience-Corp/camp/internal/peer"
 	"github.com/Obedience-Corp/camp/internal/remote"
@@ -48,6 +49,11 @@ JSON results include a nested child tree and attempted/skipped/initialized
 counts when recursive submodules are declared. Validation keeps its boolean
 checks and adds checkStates (passed, failed, skipped, or unavailable).
 With --no-submodules, validation reports skipped checks.
+The initialized count is verified top-level checkouts; succeeded counts
+complete top-level subtrees, and failed excludes cancelled skips.
+Normal output shows each failed module and its original Git error.
+--no-validate skips checks but still reports failed initialization and exits 3
+when the root clone is usable. --no-submodules intentionally skips setup.
 
 EXIT CODES:
   0  Success
@@ -268,21 +274,36 @@ func formatCloneHuman(result *clone.CloneResult, verbose bool) {
 
 	// Submodules section
 	if len(result.Submodules) > 0 {
-		successCount := 0
+		initialized, failed, skipped := 0, 0, 0
 		for _, sub := range result.Submodules {
-			if sub.Success {
-				successCount++
+			if sub.Initialized {
+				initialized++
+			}
+			if sub.Skipped {
+				skipped++
+			} else if !sub.Success {
+				failed++
 			}
 		}
-
-		fmt.Printf("Submodules: %d/%d initialized\n", successCount, len(result.Submodules))
-		if verbose {
-			for _, sub := range result.Submodules {
-				if sub.Success {
+		fmt.Printf("Submodules: %d/%d initialized", initialized, len(result.Submodules))
+		if failed > 0 || skipped > 0 {
+			fmt.Printf(" (%d failed, %d skipped)", failed, skipped)
+		}
+		fmt.Println()
+		for _, sub := range result.Submodules {
+			if sub.Success {
+				if verbose {
 					fmt.Printf("  %s %s\n", ui.SuccessIcon(), sub.Path)
-				} else {
-					fmt.Fprintf(os.Stderr, "  %s %s - %v\n", ui.ErrorIcon(), sub.Path, sub.Error)
 				}
+				continue
+			}
+			if sub.Skipped {
+				fmt.Fprintf(os.Stderr, "  %s %s (skipped): %v\n", ui.WarningIcon(), sub.Path, sub.Error)
+			} else if len(sub.Nested) > 0 {
+				fmt.Fprintf(os.Stderr, "  %s %s (children failed)\n", ui.ErrorIcon(), sub.Path)
+				formatCloneNestedFailures(sub.Nested)
+			} else {
+				fmt.Fprintf(os.Stderr, "  %s %s (%s): %v\n", ui.ErrorIcon(), sub.Path, sub.Operation, sub.Error)
 			}
 		}
 		fmt.Println()
@@ -303,24 +324,26 @@ func formatCloneHuman(result *clone.CloneResult, verbose bool) {
 
 	// Validation section
 	if result.Validation != nil {
-		if result.Validation.Passed {
+		if result.Validation.CheckStates["allInitialized"] == "skipped" {
+			fmt.Println("Validation: skipped (--no-submodules)")
+		} else if result.Validation.Passed {
 			fmt.Println("Validation: " + ui.SuccessIcon() + " All checks passed")
 		} else {
 			fmt.Println("Validation: " + ui.ErrorIcon() + " Issues detected")
-			for _, issue := range result.Validation.Issues {
-				var icon string
-				switch issue.Severity {
-				case clone.SeverityError:
-					icon = ui.ErrorIcon()
-				case clone.SeverityWarning:
-					icon = ui.WarningIcon()
-				default:
-					icon = ui.InfoIcon()
-				}
-				fmt.Printf("  %s [%s] %s\n", icon, issue.Submodule, issue.Description)
-				if issue.FixCommand != "" && verbose {
-					fmt.Printf("      Fix: %s\n", issue.FixCommand)
-				}
+		}
+		for _, issue := range result.Validation.Issues {
+			var icon string
+			switch issue.Severity {
+			case clone.SeverityError:
+				icon = ui.ErrorIcon()
+			case clone.SeverityWarning:
+				icon = ui.WarningIcon()
+			default:
+				icon = ui.InfoIcon()
+			}
+			fmt.Printf("  %s [%s] %s\n", icon, issue.Submodule, issue.Description)
+			if issue.FixCommand != "" {
+				fmt.Printf("      Fix: %s\n", issue.FixCommand)
 			}
 		}
 		fmt.Println()
@@ -335,9 +358,16 @@ func formatCloneHuman(result *clone.CloneResult, verbose bool) {
 		}
 		fmt.Println()
 	}
+	if len(result.OptionalLinks) > 0 {
+		fmt.Printf("Optional project links: %d unresolved (local setup skipped)\n", len(result.OptionalLinks))
+		for _, link := range result.OptionalLinks {
+			fmt.Printf("  %s %s → %s\n", ui.WarningIcon(), link.Path, link.Target)
+		}
+		fmt.Println()
+	}
 
 	// Warnings section
-	if len(result.Warnings) > 0 && verbose {
+	if len(result.Warnings) > 0 {
 		fmt.Println("Warnings:")
 		for _, warning := range result.Warnings {
 			fmt.Printf("  %s %s\n", ui.WarningIcon(), warning)
@@ -346,12 +376,36 @@ func formatCloneHuman(result *clone.CloneResult, verbose bool) {
 	}
 
 	// Errors section
-	if len(result.Errors) > 0 {
+	var unshownErrors []error
+	for _, err := range result.Errors {
+		shown := false
+		for _, sub := range result.Submodules {
+			if sub.Error != nil && err.Error() == sub.Error.Error() {
+				shown = true
+				break
+			}
+		}
+		if !shown {
+			unshownErrors = append(unshownErrors, err)
+		}
+	}
+	if len(unshownErrors) > 0 {
 		fmt.Println("Errors:")
-		for _, err := range result.Errors {
+		for _, err := range unshownErrors {
 			fmt.Printf("  %s %s\n", ui.ErrorIcon(), err.Error())
 		}
 		fmt.Println()
+	}
+}
+
+func formatCloneNestedFailures(results []git.NestedResult) {
+	for _, nested := range results {
+		if nested.Skipped {
+			fmt.Fprintf(os.Stderr, "    %s %s (skipped): %v\n", ui.WarningIcon(), nested.Path, nested.Error)
+		} else if nested.Error != nil && (nested.Operation != "children" || len(nested.Children) == 0) {
+			fmt.Fprintf(os.Stderr, "    %s %s (owner %s, %s): %v\n", ui.ErrorIcon(), nested.Path, nested.Owner, nested.Operation, nested.Error)
+		}
+		formatCloneNestedFailures(nested.Children)
 	}
 }
 
@@ -360,17 +414,17 @@ func determineCloneExitCode(result *clone.CloneResult) error {
 	if result.Success {
 		return nil
 	}
+	if result.Directory == "" {
+		return camperrors.NewCommand("camp clone", clone.ExitCloneFailed, "", nil)
+	}
 
-	// Check for partial failure (some submodules failed)
+	// A usable root with any failed required module is a partial clone, even
+	// when every module failed or validation was deliberately skipped.
 	if len(result.Submodules) > 0 {
-		failed := 0
 		for _, sub := range result.Submodules {
 			if !sub.Success {
-				failed++
+				return camperrors.NewCommand("camp clone", clone.ExitPartialSuccess, "", nil)
 			}
-		}
-		if failed > 0 && failed < len(result.Submodules) {
-			return camperrors.NewCommand("camp clone", clone.ExitPartialSuccess, "", nil)
 		}
 	}
 
@@ -379,6 +433,7 @@ func determineCloneExitCode(result *clone.CloneResult) error {
 		return camperrors.NewCommand("camp clone", clone.ExitValidationFailed, "", nil)
 	}
 
-	// General failure
-	return camperrors.NewCommand("camp clone", clone.ExitCloneFailed, "", nil)
+	// The cloned root is usable even if setup failed before a module result
+	// could be recorded (for example, malformed metadata).
+	return camperrors.NewCommand("camp clone", clone.ExitPartialSuccess, "", nil)
 }

@@ -33,6 +33,11 @@ JSON results include a nested child tree and attempted/skipped/initialized
 counts when recursive submodules are declared. Validation keeps its boolean
 checks and adds checkStates (passed, failed, skipped, or unavailable).
 With --no-submodules, validation reports skipped checks.
+The initialized count is verified top-level checkouts; succeeded counts
+complete top-level subtrees, and failed excludes cancelled skips.
+Normal output shows each failed module and its original Git error.
+--no-validate skips checks but still reports failed initialization and exits 3
+when the root clone is usable. --no-submodules intentionally skips setup.
 
 EXIT CODES:
   0  Success

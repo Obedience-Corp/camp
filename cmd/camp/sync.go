@@ -38,7 +38,9 @@ The sync command performs three critical operations:
      behind a recorded gitlink, and discovers children after checkout.
 
 Orphaned gitlinks are reported without removing them from the index.
-JSON results include nested child paths, owners, errors, and counts.
+Normal output shows failed paths and original errors. JSON results include
+ordered module results, nested child paths, owners, errors, and counts.
+Initialized counts verified top-level checkouts; failed excludes skips.
 
 This order is critical: sync-before-update prevents silent code deletion
 when URLs change on remote repositories.
@@ -47,7 +49,7 @@ EXIT CODES:
   0  Success
   1  Runtime failure (including pre-flight, sync, or update failure)
   2  Usage error (bad flags or args)
-  3  Post-sync validation failed
+  3  Validation-only failure (updates completed)
 
 EXAMPLES:
   # Sync all submodules (recommended default)
@@ -251,10 +253,17 @@ func runSync(cmd *cobra.Command, args []string) error {
 	// Format and display output
 	formatSyncResult(result, opts, preflight)
 
-	// Return appropriate exit code
+	return determineSyncExitCode(result, syncOpts)
+}
+
+// determineSyncExitCode keeps operation and validation failures distinct.
+func determineSyncExitCode(result *sync.SyncResult, opts syncFlags) error {
 	if !result.Success {
-		if !result.PreflightPassed && !syncOpts.force {
+		if !result.PreflightPassed && !opts.force {
 			return camperrors.NewCommand("camp sync", sync.ExitPreflightFailed, "", nil)
+		}
+		if result.ValidationFailed && !result.OperationFailed && !opts.artifactsOnly && !opts.verifyArtifacts {
+			return camperrors.NewCommand("camp sync", sync.ExitValidationFailed, "", nil)
 		}
 		return camperrors.NewCommand("camp sync", sync.ExitSyncFailed, "", nil)
 	}

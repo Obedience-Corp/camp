@@ -10,6 +10,7 @@ import (
 
 	camperrors "github.com/Obedience-Corp/camp/internal/errors"
 	gitpkg "github.com/Obedience-Corp/camp/internal/git"
+	"github.com/Obedience-Corp/camp/internal/project"
 	"github.com/Obedience-Corp/camp/internal/remote"
 )
 
@@ -78,6 +79,11 @@ func (c *Cloner) Clone(ctx context.Context) (*CloneResult, error) {
 	}
 	c.progress.EndPhase("Clone", true)
 	result.Directory = targetDir
+	if links, linkErr := project.ListBrokenLinks(targetDir); linkErr != nil {
+		result.Warnings = append(result.Warnings, fmt.Sprintf("optional project link inventory: %v", linkErr))
+	} else {
+		result.OptionalLinks = links
+	}
 
 	// Get the branch that was cloned
 	branch, err := c.gitGetBranch(ctx, targetDir)
@@ -177,7 +183,7 @@ func (c *Cloner) Clone(ctx context.Context) (*CloneResult, error) {
 						index: idx,
 						result: SubmoduleResult{
 							Name: sub.Name, Path: sub.Path, URL: sub.URL,
-							Success: false, Error: ctx.Err(),
+							Success: false, Skipped: true, Operation: "skip", Error: ctx.Err(),
 						},
 					}
 					return
@@ -187,9 +193,14 @@ func (c *Cloner) Clone(ctx context.Context) (*CloneResult, error) {
 				// pipeline for this owner, including the stale-object fallback.
 				release, lockErr := gitpkg.LockSubmoduleOwner(ctx, targetDir)
 				if lockErr != nil {
+					skipped := errors.Is(lockErr, context.Canceled) || errors.Is(lockErr, context.DeadlineExceeded)
+					op := "init"
+					if skipped {
+						op = "skip"
+					}
 					results[idx] = subInitResult{index: idx, result: SubmoduleResult{
 						Name: sub.Name, Path: sub.Path, URL: sub.URL,
-						Success: false, Error: camperrors.Wrapf(lockErr, "init %s in %s", sub.Path, targetDir),
+						Success: false, Skipped: skipped, Operation: op, Error: camperrors.Wrapf(lockErr, "%s %s in %s", op, sub.Path, targetDir),
 					}}
 					return
 				}
@@ -241,6 +252,8 @@ func (c *Cloner) Clone(ctx context.Context) (*CloneResult, error) {
 					Path:             sub.Path,
 					URL:              sub.URL,
 					Success:          subErr == nil,
+					Initialized:      subErr == nil,
+					Operation:        "init",
 					Error:            subErr,
 					PeerSeeded:       peerSeeded,
 					StaleRefFallback: initOutcome.StaleRefFallback,
@@ -266,6 +279,7 @@ func (c *Cloner) Clone(ctx context.Context) (*CloneResult, error) {
 				if r.result.Success {
 					if err := c.checkoutSubmoduleBranch(ctx, targetDir, sub.Path); err != nil {
 						r.result.Success = false
+						r.result.Operation = "checkout"
 						r.result.Error = err
 						r.warnings = append(r.warnings, fmt.Sprintf("submodule %s checkout: %v", sub.Path, err))
 					} else {
@@ -289,6 +303,7 @@ func (c *Cloner) Clone(ctx context.Context) (*CloneResult, error) {
 					r.nestedCount = gitpkg.SummarizeNestedResults(r.result.Nested).Initialized
 					if nestedErr := gitpkg.NestedFailures(r.result.Nested); nestedErr != nil {
 						r.result.Success = false
+						r.result.Operation = "children"
 						r.result.Error = nestedErr
 					}
 				}
@@ -311,7 +326,7 @@ func (c *Cloner) Clone(ctx context.Context) (*CloneResult, error) {
 				// launched. Keep those paths visible in ordered results.
 				sub := submoduleInfos[i]
 				r.result = SubmoduleResult{Name: sub.Name, Path: sub.Path, URL: sub.URL,
-					Error: ctx.Err()}
+					Skipped: true, Operation: "skip", Error: ctx.Err()}
 			}
 			result.Submodules = append(result.Submodules, r.result)
 			result.Warnings = append(result.Warnings, r.warnings...)
@@ -387,13 +402,27 @@ func (c *Cloner) Clone(ctx context.Context) (*CloneResult, error) {
 		}
 	}
 
-	// Phase 6: Determine overall success
-	// Success if no fatal errors and validation passed (if run)
-	// Registration failures do not affect overall success
-	result.Success = len(result.Errors) == 0 &&
+	// Phase 6: Required operations determine success even when optional
+	// validation was skipped. Registration and local link setup are optional.
+	operationsPassed := true
+	for _, sub := range result.Submodules {
+		if !sub.Success || !nestedCheckoutSucceeded(sub.Nested) {
+			operationsPassed = false
+		}
+	}
+	result.Success = operationsPassed && len(result.Errors) == 0 &&
 		(result.Validation == nil || result.Validation.Passed)
 
 	return result, nil
+}
+
+func nestedCheckoutSucceeded(results []gitpkg.NestedResult) bool {
+	for _, result := range results {
+		if !result.Success || !nestedCheckoutSucceeded(result.Children) {
+			return false
+		}
+	}
+	return true
 }
 
 // validate runs post-clone validation checks.

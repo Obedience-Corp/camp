@@ -16,6 +16,7 @@ import (
 	camperrors "github.com/Obedience-Corp/camp/internal/errors"
 	"github.com/Obedience-Corp/camp/internal/git"
 	"github.com/Obedience-Corp/camp/internal/pathutil"
+	"github.com/Obedience-Corp/camp/internal/project"
 	"github.com/Obedience-Corp/camp/internal/remote"
 	"github.com/Obedience-Corp/camp/internal/rsyncprobe"
 )
@@ -43,6 +44,11 @@ func (s *Syncer) Sync(ctx context.Context) (*SyncResult, error) {
 	}
 
 	result := &SyncResult{Success: true}
+	if links, linkErr := project.ListBrokenLinks(s.repoRoot); linkErr != nil {
+		result.Warnings = append(result.Warnings, fmt.Sprintf("optional project link inventory: %v", linkErr))
+	} else {
+		result.OptionalLinks = links
+	}
 
 	// Phase 1: Pre-flight checks (reuse cached result if available)
 	var preflight *PreflightResult
@@ -56,7 +62,7 @@ func (s *Syncer) Sync(ctx context.Context) (*SyncResult, error) {
 		}
 	}
 	result.PreflightPassed = preflight.Passed
-	result.Warnings = s.collectWarnings(preflight)
+	result.Warnings = append(result.Warnings, s.collectWarnings(preflight)...)
 
 	// In safe mode, abort if pre-flight failed
 	if !preflight.Passed && !s.options.Force {
@@ -102,6 +108,7 @@ func (s *Syncer) Sync(ctx context.Context) (*SyncResult, error) {
 	urlChanges, err := s.syncURLs(ctx)
 	if err != nil {
 		result.Success = false
+		result.OperationFailed = true
 		result.Errors = append(result.Errors, err)
 		return result, nil
 	}
@@ -111,6 +118,7 @@ func (s *Syncer) Sync(ctx context.Context) (*SyncResult, error) {
 	updateResults, err := s.updateSubmodules(ctx)
 	if err != nil {
 		result.Success = false
+		result.OperationFailed = true
 		result.Errors = append(result.Errors, err)
 		return result, nil
 	}
@@ -118,12 +126,14 @@ func (s *Syncer) Sync(ctx context.Context) (*SyncResult, error) {
 	for _, sub := range updateResults {
 		if !sub.Success {
 			result.Success = false
+			result.OperationFailed = true
 			if sub.Error != nil {
 				result.Errors = append(result.Errors, sub.Error)
 			}
 		}
 		if sub.DriftWarning != "" {
 			result.Success = false
+			result.OperationFailed = true
 			result.Warnings = append(result.Warnings, sub.DriftWarning)
 		}
 		if sub.PeerWarning != "" {
@@ -132,6 +142,7 @@ func (s *Syncer) Sync(ctx context.Context) (*SyncResult, error) {
 	}
 	if ctx.Err() != nil {
 		result.Success = false
+		result.OperationFailed = true
 		if len(result.Errors) == 0 {
 			result.Errors = append(result.Errors, ctx.Err())
 		}
@@ -140,6 +151,7 @@ func (s *Syncer) Sync(ctx context.Context) (*SyncResult, error) {
 
 	// Phase 4: Post-update validation
 	validationWarnings, validationErrors := s.validateInventory(ctx)
+	result.ValidationRan = true
 	for _, warning := range validationWarnings {
 		found := false
 		for _, existing := range result.Warnings {
@@ -154,14 +166,22 @@ func (s *Syncer) Sync(ctx context.Context) (*SyncResult, error) {
 	}
 	if len(validationErrors) > 0 {
 		result.Success = false
+		result.ValidationFailed = true
 		result.Errors = append(result.Errors, validationErrors...)
+	}
+	if ctx.Err() != nil {
+		result.OperationFailed = true
 	}
 
 	// Phase 5: Artifact pull rides the peer connection when one is
 	// configured; policy=always roots only, and failures degrade to
 	// warnings (the accelerated sync must not be worse than a plain one).
 	if s.peer != nil && !s.options.GitOnly {
+		beforeErrors := len(result.Errors)
 		s.pullArtifacts(ctx, result)
+		if len(result.Errors) > beforeErrors {
+			result.OperationFailed = true
+		}
 	}
 
 	return result, nil
@@ -483,16 +503,22 @@ func (s *Syncer) updateSubmodules(ctx context.Context) ([]SubmoduleResult, error
 					Path:    path,
 					Name:    path,
 					Success: false,
-					Error:   &SyncError{Op: "update", Submodule: path, Cause: ctx.Err()},
+					Skipped: true,
+					Error:   &SyncError{Op: "skip", Submodule: path, Cause: ctx.Err()},
 				}
 				return
 			}
 
 			release, lockErr := git.LockSubmoduleOwner(ctx, s.repoRoot)
 			if lockErr != nil {
+				skipped := errors.Is(lockErr, context.Canceled) || errors.Is(lockErr, context.DeadlineExceeded)
+				op := "init"
+				if skipped {
+					op = "skip"
+				}
 				results[idx] = SubmoduleResult{
-					Path: path, Name: path, Success: false,
-					Error: &SyncError{Op: "init", Submodule: path, Cause: lockErr},
+					Path: path, Name: path, Success: false, Skipped: skipped,
+					Error: &SyncError{Op: op, Submodule: path, Cause: lockErr},
 				}
 				return
 			}
@@ -503,7 +529,7 @@ func (s *Syncer) updateSubmodules(ctx context.Context) ([]SubmoduleResult, error
 	wg.Wait()
 	for i, path := range paths {
 		if results[i].Path == "" {
-			results[i] = SubmoduleResult{Path: path, Name: path, Success: false,
+			results[i] = SubmoduleResult{Path: path, Name: path, Success: false, Skipped: true,
 				Error: &SyncError{Op: "skip", Submodule: path, Cause: ctx.Err()}}
 		}
 	}
@@ -561,6 +587,7 @@ func (s *Syncer) updateSubmodule(ctx context.Context, path string) SubmoduleResu
 		result.Error = &SyncError{Op: "identify", Submodule: path, Cause: git.ErrSubmoduleNotInitialized}
 		return result
 	}
+	result.Initialized = true
 	// Checkout default branch instead of leaving on detached HEAD.
 	branch, checkoutErr := git.CheckoutSubmoduleBranch(ctx, s.repoRoot, path, true)
 	if checkoutErr != nil {

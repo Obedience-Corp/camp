@@ -12,6 +12,7 @@ import (
 	"github.com/Obedience-Corp/camp/internal/artifacts"
 	"github.com/Obedience-Corp/camp/internal/git"
 	"github.com/Obedience-Corp/camp/internal/peer"
+	"github.com/Obedience-Corp/camp/internal/project"
 )
 
 // SyncOptions configures sync behavior.
@@ -51,6 +52,12 @@ type SyncOptions struct {
 type SyncResult struct {
 	// Success indicates whether the overall sync succeeded.
 	Success bool
+	// OperationFailed reports a required update, URL, or artifact failure.
+	OperationFailed bool
+	// ValidationFailed reports at least one post-update validation failure.
+	ValidationFailed bool
+	// ValidationRan distinguishes completed validation from skipped phases.
+	ValidationRan bool
 	// PreflightPassed indicates whether pre-flight checks passed.
 	PreflightPassed bool
 	// URLChanges lists URLs that were synchronized.
@@ -63,6 +70,8 @@ type SyncResult struct {
 	ArtifactVerifies []ArtifactVerify
 	// Warnings contains non-fatal issues encountered.
 	Warnings []string
+	// OptionalLinks are broken local project links skipped during setup.
+	OptionalLinks []project.BrokenProjectLink
 	// Errors contains fatal errors that occurred.
 	Errors []error
 }
@@ -82,6 +91,10 @@ type SubmoduleResult struct {
 	Path string
 	// Success indicates whether this submodule synced successfully.
 	Success bool
+	// Initialized records verified checkout identity even if later phases fail.
+	Initialized bool
+	// Skipped means cancellation prevented this top-level attempt.
+	Skipped bool
 	// Error contains any error that occurred during sync.
 	Error error
 	// WasClean indicates the submodule had no uncommitted changes.

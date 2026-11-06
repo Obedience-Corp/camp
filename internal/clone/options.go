@@ -12,6 +12,7 @@ package clone
 import (
 	"github.com/Obedience-Corp/camp/internal/git"
 	"github.com/Obedience-Corp/camp/internal/peer"
+	"github.com/Obedience-Corp/camp/internal/project"
 	"github.com/Obedience-Corp/camp/internal/sync"
 )
 
@@ -57,6 +58,8 @@ type CloneResult struct {
 	Errors []error
 	// Warnings contains non-fatal issues encountered.
 	Warnings []string
+	// OptionalLinks are broken local project links skipped during setup.
+	OptionalLinks []project.BrokenProjectLink
 	// Registration contains auto-registration results (nil if skipped or not a campaign).
 	Registration *RegistrationResult
 	// Seed records which transport delivered each repository when a peer was
@@ -120,6 +123,12 @@ type SubmoduleResult struct {
 	URL string
 	// Success indicates whether this submodule was initialized successfully.
 	Success bool
+	// Initialized records verified checkout identity, even when a child later fails.
+	Initialized bool
+	// Skipped means cancellation prevented this top-level attempt.
+	Skipped bool
+	// Operation identifies the failed or skipped stage.
+	Operation string
 	// Commit is the HEAD commit hash after initialization.
 	Commit string
 	// RecordedCommit is the superproject gitlink before branch selection.
@@ -323,7 +332,7 @@ const (
 	ExitSuccess = 0
 	// ExitCloneFailed indicates the clone failed (no campaign created).
 	ExitCloneFailed = 1
-	// ExitPartialSuccess indicates some submodules failed to initialize.
+	// ExitPartialSuccess indicates a usable root with failed required module setup.
 	ExitPartialSuccess = 3
 	// ExitValidationFailed indicates post-clone validation failed.
 	ExitValidationFailed = 3

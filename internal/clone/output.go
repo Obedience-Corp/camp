@@ -6,24 +6,32 @@ import (
 	"strings"
 
 	"github.com/Obedience-Corp/camp/internal/git"
+	"github.com/Obedience-Corp/camp/internal/project"
 )
 
 // JSONOutput represents the complete clone result for JSON output.
 type JSONOutput struct {
-	Success      bool              `json:"success"`
-	Directory    string            `json:"directory"`
-	Branch       string            `json:"branch,omitempty"`
-	Clone        ClonePhaseOutput  `json:"clone"`
-	Submodules   SubmodulesOutput  `json:"submodules"`
-	URLChanges   []URLChangeOutput `json:"urlChanges,omitempty"`
-	Validation   *JSONValidation   `json:"validation,omitempty"`
-	Registration *JSONRegistration `json:"registration,omitempty"`
-	Errors       []string          `json:"errors,omitempty"`
-	Warnings     []string          `json:"warnings,omitempty"`
+	Success       bool                 `json:"success"`
+	Directory     string               `json:"directory"`
+	Branch        string               `json:"branch,omitempty"`
+	Clone         ClonePhaseOutput     `json:"clone"`
+	Submodules    SubmodulesOutput     `json:"submodules"`
+	URLChanges    []URLChangeOutput    `json:"urlChanges,omitempty"`
+	Validation    *JSONValidation      `json:"validation,omitempty"`
+	Registration  *JSONRegistration    `json:"registration,omitempty"`
+	Errors        []string             `json:"errors,omitempty"`
+	Warnings      []string             `json:"warnings,omitempty"`
+	OptionalLinks *OptionalLinksOutput `json:"optionalLinks,omitempty"`
 	// Seed reports which transport delivered each repository. It is a pointer
 	// with omitempty so a clone that used no peer emits no "seed" key at all,
 	// which is what keeps default --json output byte-identical.
 	Seed *SeedOutput `json:"seed,omitempty"`
+}
+
+// OptionalLinksOutput records local link setup skipped on this machine.
+type OptionalLinksOutput struct {
+	Skipped int                         `json:"skipped"`
+	Results []project.BrokenProjectLink `json:"results"`
 }
 
 // SeedOutput summarises peer seeding for a clone.
@@ -53,6 +61,8 @@ type SubmodulesOutput struct {
 	Total         int                   `json:"total"`
 	Initialized   int                   `json:"initialized"`
 	Failed        int                   `json:"failed"`
+	Skipped       int                   `json:"skipped"`
+	Succeeded     int                   `json:"succeeded"`
 	Results       []SubmoduleJSONResult `json:"results,omitempty"`
 	NestedSummary *git.NestedSummary    `json:"nestedSummary,omitempty"`
 }
@@ -63,6 +73,9 @@ type SubmoduleJSONResult struct {
 	Path             string                   `json:"path"`
 	URL              string                   `json:"url"`
 	Success          bool                     `json:"success"`
+	Initialized      bool                     `json:"initialized"`
+	Skipped          bool                     `json:"skipped"`
+	Operation        string                   `json:"operation,omitempty"`
 	Commit           string                   `json:"commit,omitempty"`
 	RecordedCommit   string                   `json:"recordedCommit,omitempty"`
 	StaleRefFallback bool                     `json:"staleRefFallback,omitempty"`
@@ -121,6 +134,9 @@ func (r *CloneResult) JSON() ([]byte, error) {
 		},
 		Warnings: r.Warnings,
 	}
+	if len(r.OptionalLinks) > 0 {
+		output.OptionalLinks = &OptionalLinksOutput{Skipped: len(r.OptionalLinks), Results: r.OptionalLinks}
+	}
 
 	// Convert errors to strings
 	for _, err := range r.Errors {
@@ -149,6 +165,8 @@ func (r *CloneResult) JSON() ([]byte, error) {
 	// Convert submodule results
 	initialized := 0
 	failed := 0
+	skipped := 0
+	succeeded := 0
 	var subResults []SubmoduleJSONResult
 	var nestedResults []git.NestedResult
 	for _, sub := range r.Submodules {
@@ -157,6 +175,9 @@ func (r *CloneResult) JSON() ([]byte, error) {
 			Path:             sub.Path,
 			URL:              sub.URL,
 			Success:          sub.Success,
+			Initialized:      sub.Initialized,
+			Skipped:          sub.Skipped,
+			Operation:        sub.Operation,
 			Commit:           sub.Commit,
 			RecordedCommit:   sub.RecordedCommit,
 			StaleRefFallback: sub.StaleRefFallback,
@@ -165,9 +186,16 @@ func (r *CloneResult) JSON() ([]byte, error) {
 		nestedResults = append(nestedResults, sub.Nested...)
 		if sub.Error != nil {
 			result.Error = sub.Error.Error()
-			failed++
-		} else if sub.Success {
+		}
+		if sub.Initialized {
 			initialized++
+		}
+		if sub.Skipped {
+			skipped++
+		} else if !sub.Success {
+			failed++
+		} else {
+			succeeded++
 		}
 		subResults = append(subResults, result)
 	}
@@ -176,6 +204,8 @@ func (r *CloneResult) JSON() ([]byte, error) {
 		Total:       len(r.Submodules),
 		Initialized: initialized,
 		Failed:      failed,
+		Skipped:     skipped,
+		Succeeded:   succeeded,
 		Results:     subResults,
 	}
 	if len(nestedResults) > 0 {
@@ -269,13 +299,22 @@ func (r *CloneResult) Format() string {
 
 	// Submodules section
 	if len(r.Submodules) > 0 {
-		successCount := 0
+		initialized, failed, skipped := 0, 0, 0
 		for _, sub := range r.Submodules {
-			if sub.Success {
-				successCount++
+			if sub.Initialized {
+				initialized++
+			}
+			if sub.Skipped {
+				skipped++
+			} else if !sub.Success {
+				failed++
 			}
 		}
-		sb.WriteString(fmt.Sprintf("Submodules: %d/%d initialized\n", successCount, len(r.Submodules)))
+		fmt.Fprintf(&sb, "Submodules: %d/%d initialized", initialized, len(r.Submodules))
+		if failed > 0 || skipped > 0 {
+			fmt.Fprintf(&sb, " (%d failed, %d skipped)", failed, skipped)
+		}
+		sb.WriteString("\n")
 		sb.WriteString("\n")
 	}
 
@@ -315,6 +354,13 @@ func (r *CloneResult) Format() string {
 			sb.WriteString(fmt.Sprintf("Registration: ✓ Registered as %q\n", r.Registration.CampaignName))
 		} else if r.Registration.Error != nil {
 			sb.WriteString(fmt.Sprintf("Registration: ⚠ %v\n", r.Registration.Error))
+		}
+		sb.WriteString("\n")
+	}
+	if len(r.OptionalLinks) > 0 {
+		fmt.Fprintf(&sb, "Optional project links: %d unresolved (local setup skipped)\n", len(r.OptionalLinks))
+		for _, link := range r.OptionalLinks {
+			fmt.Fprintf(&sb, "  ⚠ %s → %s\n", link.Path, link.Target)
 		}
 		sb.WriteString("\n")
 	}
