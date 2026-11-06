@@ -21,7 +21,7 @@ func (s Status) String() string {
 }
 
 const (
-	// DefaultQuestID is the fixed ID for the campaign fallback quest.
+	// DefaultQuestID is the original fallback identity, retained for compatibility.
 	DefaultQuestID = "qst_default"
 	// DefaultQuestName is the human-readable default quest name.
 	DefaultQuestName = "default"
@@ -51,6 +51,7 @@ type Quest struct {
 	UpdatedAt   time.Time `yaml:"updated_at" json:"updated_at"`
 	Tags        []string  `yaml:"tags,omitempty" json:"tags,omitempty"`
 	Links       []Link    `yaml:"links,omitempty" json:"links,omitempty"`
+	Default     bool      `yaml:"default,omitempty" json:"default,omitempty"`
 
 	Slug string `yaml:"-" json:"slug"`
 	Path string `yaml:"-" json:"path"`
@@ -72,9 +73,10 @@ func (q *Quest) Clone() *Quest {
 	return &clone
 }
 
-// IsDefault reports whether the quest is the fixed campaign default quest.
+// IsDefault reports whether a quest belongs to the camp's fallback lineage.
+// The original fixed identity remains recognized for existing camps.
 func (q *Quest) IsDefault() bool {
-	return q != nil && q.ID == DefaultQuestID
+	return q != nil && (q.ID == DefaultQuestID || q.Default)
 }
 
 // Validate returns a user-facing validation error, or nil if valid.

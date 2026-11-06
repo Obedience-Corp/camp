@@ -145,8 +145,8 @@ func ensureDefaultQuest(ctx context.Context, campaignRoot string, result *Scaffo
 	return nil
 }
 
-// DefaultQuestExists reports whether a quest with the fixed default identity is
-// present anywhere in the campaign, including the quest dungeon.
+// DefaultQuestExists reports whether a fallback quest is present anywhere in
+// the camp, including historical defaults in the quest dungeon.
 func DefaultQuestExists(ctx context.Context, campaignRoot string) (bool, error) {
 	if !Exists(campaignRoot) {
 		return false, nil

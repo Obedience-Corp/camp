@@ -60,6 +60,8 @@ type containerFSPackage struct {
 // containerFSPackages are the suites migrated under D007. The counts are the
 // tests actually behind the tag at migration time.
 var containerFSPackages = []containerFSPackage{
+	{ImportPath: "./internal/quest", MinTests: 2, TestPattern: "^TestEnsureDefault"},
+	{ImportPath: "./pkg/commitkit", MinTests: 1},
 	// Deferred commits must preserve hooks and trailers against real repositories.
 	{ImportPath: "./internal/jobs", MinTests: 6, TestPattern: "^Test(ExecuteCommit|CaptureDirection)"},
 	{ImportPath: "./internal/defercommit", MinTests: 2, TestPattern: "^TestAllowedForPaths(Keeps|Unreadable)"},
