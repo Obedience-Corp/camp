@@ -81,9 +81,9 @@ func resolveSubmoduleURL(ctx context.Context, repoDir, url string) string {
 	return resolveRelativeSubmoduleURL(remoteURL, url)
 }
 
-// Git treats the first ../ as the move from a repository to its sibling.
-// Remaining parent segments are normalized inside the remote's path, leaving
-// scheme and scp-style host prefixes intact.
+// Git resolves ./ below the repository URL and ../ beside it. Remaining
+// parent segments are normalized inside the remote's path, leaving scheme
+// and scp-style host prefixes intact.
 func resolveRelativeSubmoduleURL(remoteURL, relativeURL string) string {
 	base := strings.TrimSuffix(remoteURL, "/")
 	prefix, remotePath := "", base
@@ -97,12 +97,35 @@ func resolveRelativeSubmoduleURL(remoteURL, relativeURL string) string {
 	} else if colon := strings.IndexByte(base, ':'); colon >= 0 && !strings.HasPrefix(base, "/") {
 		prefix, remotePath = base[:colon+1], base[colon+1:]
 	}
-	slash := strings.LastIndexByte(remotePath, '/')
-	if slash < 0 {
-		return relativeURL
+	basePath := remotePath
+	if strings.HasPrefix(relativeURL, "../") {
+		slash := strings.LastIndexByte(remotePath, '/')
+		if slash >= 0 {
+			basePath = remotePath[:slash]
+		} else {
+			basePath = ""
+		}
+		relativeURL = strings.TrimPrefix(relativeURL, "../")
 	}
-	relativeURL = strings.TrimPrefix(relativeURL, "../")
-	return prefix + path.Clean(remotePath[:slash]+"/"+relativeURL)
+	return prefix + path.Clean(basePath+"/"+relativeURL)
+}
+
+// RefreshSubmoduleOrigin replaces peer-derived tracking refs with the real
+// origin's refs before a seeded checkout selects its branch.
+func RefreshSubmoduleOrigin(ctx context.Context, subDir string) error {
+	if err := ctx.Err(); err != nil {
+		return err
+	}
+	cmd := exec.CommandContext(ctx, "git", "-C", subDir, "fetch", "--prune", "--prune-tags", "--tags",
+		"origin", "+refs/heads/*:refs/remotes/origin/*")
+	if output, err := cmd.CombinedOutput(); err != nil {
+		return camperrors.WrapJoinf(ErrSubmoduleUpdate, err, "refresh origin refs in %s: %s", subDir, strings.TrimSpace(string(output)))
+	}
+	cmd = exec.CommandContext(ctx, "git", "-C", subDir, "remote", "set-head", "origin", "--auto")
+	if output, err := cmd.CombinedOutput(); err != nil {
+		return camperrors.WrapJoinf(ErrBranchDetection, err, "set origin HEAD in %s: %s", subDir, strings.TrimSpace(string(output)))
+	}
+	return nil
 }
 
 // DetectDefaultBranch determines the default branch for a submodule using

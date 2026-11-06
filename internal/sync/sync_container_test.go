@@ -48,6 +48,55 @@ func TestSync_CleanRepo(t *testing.T) {
 	}
 }
 
+func TestUpdateSubmoduleFetchesNewRecordedCommit(t *testing.T) {
+	for _, noFetch := range []bool{false, true} {
+		t.Run(fmt.Sprintf("no-fetch=%v", noFetch), func(t *testing.T) {
+			ctx := context.Background()
+			repoRoot := setupTestRepo(t)
+			subPath := setupSubmodule(t, repoRoot, "projects/sub")
+			initial := NewSyncer(repoRoot).updateSubmodule(ctx, "projects/sub")
+			if !initial.Success {
+				t.Fatalf("initial sync: %v", initial.Error)
+			}
+			oldSHA := strings.TrimSpace(gitOutput(t, subPath, "rev-parse", "HEAD"))
+			origin := strings.TrimSpace(gitOutput(t, subPath, "remote", "get-url", "origin"))
+			createFile(t, filepath.Join(origin, "new.txt"), "new recorded commit")
+			runGit(t, origin, "add", "new.txt")
+			runGit(t, origin, "commit", "-qm", "advance pin")
+			newSHA := strings.TrimSpace(gitOutput(t, origin, "rev-parse", "HEAD"))
+			runGit(t, repoRoot, "update-index", "--cacheinfo", "160000,"+newSHA+",projects/sub")
+			syncer := NewSyncer(repoRoot, WithNoFetch(noFetch))
+			result := syncer.updateSubmodule(ctx, "projects/sub")
+			if noFetch {
+				if result.Success || result.Error == nil || !strings.Contains(result.Error.Error(), "--no-fetch") {
+					t.Fatalf("no-fetch result = %+v, want explicit missing commit failure", result)
+				}
+				if got := strings.TrimSpace(gitOutput(t, subPath, "rev-parse", "HEAD")); got != oldSHA {
+					t.Fatalf("no-fetch moved local branch to %s, want %s", got, oldSHA)
+				}
+				return
+			}
+			if !result.Success || result.DriftWarning != "" {
+				t.Fatalf("sync result = %+v, want successful fast-forward", result)
+			}
+			if got := strings.TrimSpace(gitOutput(t, subPath, "rev-parse", "HEAD")); got != newSHA {
+				t.Fatalf("local branch = %s, want pinned %s", got, newSHA)
+			}
+		})
+	}
+}
+
+func gitOutput(t *testing.T, dir string, args ...string) string {
+	t.Helper()
+	cmd := exec.Command("git", args...)
+	cmd.Dir = dir
+	output, err := cmd.CombinedOutput()
+	if err != nil {
+		t.Fatalf("git %v: %v: %s", args, err, output)
+	}
+	return string(output)
+}
+
 func TestSync_DryRun(t *testing.T) {
 	ctx := context.Background()
 	repoRoot := setupTestRepo(t)

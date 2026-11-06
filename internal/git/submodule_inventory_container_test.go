@@ -126,3 +126,34 @@ func inventoryGit(t *testing.T, dir string, args ...string) string {
 	}
 	return string(output)
 }
+
+func TestResolveRelativeURLMatchesGitSubmoduleInit(t *testing.T) {
+	base := t.TempDir()
+	parentRemote := filepath.Join(base, "parent.git")
+	childRemote := filepath.Join(parentRemote, "child")
+	inventoryGit(t, base, "init", "-q", "--bare", "-b", "main", parentRemote)
+	inventoryGit(t, base, "init", "-q", "-b", "main", childRemote)
+	if err := os.WriteFile(filepath.Join(childRemote, "README"), []byte("child\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	inventoryGit(t, childRemote, "add", "README")
+	inventoryGit(t, childRemote, "commit", "-qm", "child")
+	source := filepath.Join(base, "source")
+	inventoryGit(t, base, "clone", parentRemote, source)
+	inventoryGit(t, source, "submodule", "add", childRemote, "projects/child")
+	inventoryGit(t, source, "config", "-f", ".gitmodules", "submodule.projects/child.url", "./child")
+	inventoryGit(t, source, "add", ".gitmodules", "projects/child")
+	inventoryGit(t, source, "commit", "-qm", "add relative child")
+	inventoryGit(t, source, "push", "origin", "main")
+	checkout := filepath.Join(base, "checkout")
+	inventoryGit(t, base, "clone", parentRemote, checkout)
+	inventoryGit(t, checkout, "submodule", "init")
+	active, err := GetActiveURL(context.Background(), checkout, "projects/child")
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := resolveRelativeSubmoduleURL(parentRemote, "./child")
+	if active != want {
+		t.Fatalf("Git initialized URL %q; Camp resolved %q", active, want)
+	}
+}

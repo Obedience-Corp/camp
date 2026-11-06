@@ -2,6 +2,8 @@ package project
 
 import (
 	"context"
+	"crypto/sha256"
+	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -19,6 +21,7 @@ import (
 type LinkRepairState struct {
 	CampaignID string `json:"campaignId"`
 	Name       string `json:"name"`
+	LinkPath   string `json:"linkPath"`
 	OldTarget  string `json:"oldTarget"`
 	NewTarget  string `json:"newTarget"`
 	OriginKey  string `json:"originKey,omitempty"`
@@ -30,7 +33,7 @@ func ApplyLinkRepair(ctx context.Context, campaignRoot string, reviewed *RepairP
 	if reviewed == nil || reviewed.Selected == nil {
 		return nil, camperrors.Wrap(camperrors.ErrInvalidInput, "select a checkout with --path before applying repair")
 	}
-	return withRepairLock(ctx, campaignRoot, reviewed.Name, func(statePath string) (*LinkRepairState, error) {
+	return withRepairLock(ctx, campaignRoot, reviewed.Name, func(statePath, linkPath string) (*LinkRepairState, error) {
 		if _, err := os.Stat(statePath); err == nil {
 			return nil, camperrors.Wrap(camperrors.ErrConflict, "repair undo state already exists; undo it before applying another repair")
 		} else if !errors.Is(err, os.ErrNotExist) {
@@ -52,7 +55,7 @@ func ApplyLinkRepair(ctx context.Context, campaignRoot string, reviewed *RepairP
 		if err != nil {
 			return nil, err
 		}
-		state := &LinkRepairState{CampaignID: cfg.ID, Name: fresh.Name, OldTarget: fresh.OldTarget, NewTarget: fresh.Selected.Path, OriginKey: fresh.Selected.OriginKey}
+		state := &LinkRepairState{CampaignID: cfg.ID, Name: fresh.Name, LinkPath: linkPath, OldTarget: fresh.OldTarget, NewTarget: fresh.Selected.Path, OriginKey: fresh.Selected.OriginKey}
 		data, err := json.MarshalIndent(state, "", "  ")
 		if err != nil {
 			return nil, err
@@ -63,7 +66,6 @@ func ApplyLinkRepair(ctx context.Context, campaignRoot string, reviewed *RepairP
 			}
 			return nil, camperrors.Wrap(err, "save link repair undo state")
 		}
-		linkPath := filepath.Join(campaignRoot, fresh.Path)
 		if err := swapRepairLink(linkPath, fresh.OldTarget, fresh.Selected.Path, fresh.Selected.Path, true); err != nil {
 			// Keep undo evidence if rollback itself failed or the new link
 			// remains in place. Only discard it once the old link is verified.
@@ -81,7 +83,7 @@ func ApplyLinkRepair(ctx context.Context, campaignRoot string, reviewed *RepairP
 // UndoLinkRepair restores the exact saved target after verifying that the
 // current link is still the one written by ApplyLinkRepair.
 func UndoLinkRepair(ctx context.Context, campaignRoot, name string) (*LinkRepairState, error) {
-	return withRepairLock(ctx, campaignRoot, name, func(statePath string) (*LinkRepairState, error) {
+	return withRepairLock(ctx, campaignRoot, name, func(statePath, linkPath string) (*LinkRepairState, error) {
 		data, err := os.ReadFile(statePath)
 		if err != nil {
 			return nil, camperrors.Wrap(err, "read link repair undo state")
@@ -94,10 +96,9 @@ func UndoLinkRepair(ctx context.Context, campaignRoot, name string) (*LinkRepair
 		if err != nil {
 			return nil, err
 		}
-		if state.CampaignID != cfg.ID || state.Name != name {
+		if state.CampaignID != cfg.ID || state.Name != name || state.LinkPath != linkPath {
 			return nil, camperrors.Wrap(camperrors.ErrConflict, "repair undo state belongs to another camp or project")
 		}
-		linkPath := filepath.Join(campaignRoot, "projects", name)
 		if current, err := dirlink.ReadTarget(linkPath); err == nil && current == state.OldTarget {
 			// A process may stop after saving undo state but before changing
 			// the link. Clear the stale state without touching the old entry.
@@ -116,11 +117,19 @@ func UndoLinkRepair(ctx context.Context, campaignRoot, name string) (*LinkRepair
 	})
 }
 
-func withRepairLock(ctx context.Context, root, name string, run func(string) (*LinkRepairState, error)) (*LinkRepairState, error) {
+func withRepairLock(ctx context.Context, root, name string, run func(string, string) (*LinkRepairState, error)) (*LinkRepairState, error) {
 	if err := ValidateProjectName(name); err != nil {
 		return nil, err
 	}
-	if _, err := config.ReadCampaignConfig(ctx, root); err != nil {
+	canonicalRoot, err := filepath.EvalSymlinks(root)
+	if err != nil {
+		return nil, camperrors.Wrap(err, "resolve camp checkout for link repair")
+	}
+	canonicalRoot, err = filepath.Abs(canonicalRoot)
+	if err != nil {
+		return nil, err
+	}
+	if _, err := config.ReadCampaignConfig(ctx, canonicalRoot); err != nil {
 		return nil, err
 	}
 	registryPath, err := config.RegistryPath()
@@ -137,11 +146,14 @@ func withRepairLock(ctx context.Context, root, name string, run func(string) (*L
 		return nil, err
 	}
 	defer release()
-	cfg, err := config.ReadCampaignConfig(ctx, root)
+	cfg, err := config.ReadCampaignConfig(ctx, canonicalRoot)
 	if err != nil {
 		return nil, err
 	}
-	return run(filepath.Join(stateDir, cfg.ID+"-"+name+".json"))
+	linkPath := filepath.Join(canonicalRoot, "projects", name)
+	digest := sha256.Sum256([]byte(linkPath))
+	stateName := cfg.ID + "-" + name + "-" + hex.EncodeToString(digest[:16]) + ".json"
+	return run(filepath.Join(stateDir, stateName), linkPath)
 }
 
 func swapRepairLink(linkPath, expected, targetPath, storeTarget string, requireTarget bool) error {

@@ -565,6 +565,7 @@ func (s *Syncer) updateSubmodule(ctx context.Context, path string) SubmoduleResu
 		result.Error = &SyncError{Op: "identify", Submodule: path, Cause: identityErr}
 		return result
 	}
+	wasInitialized := initialized
 	// An initialized local branch belongs to the user. Updating it through
 	// the gitlink would detach HEAD before the checkout policy can inspect it.
 	if !initialized {
@@ -588,6 +589,13 @@ func (s *Syncer) updateSubmodule(ctx context.Context, path string) SubmoduleResu
 		return result
 	}
 	result.Initialized = true
+	if wasInitialized {
+		if err := s.ensureRecordedCommitAvailable(ctx, s.repoRoot, subDir, path); err != nil {
+			result.Success = false
+			result.Error = &SyncError{Op: "fetch", Submodule: path, Cause: err}
+			return result
+		}
+	}
 	// Checkout default branch instead of leaving on detached HEAD.
 	branch, checkoutErr := git.CheckoutSubmoduleBranch(ctx, s.repoRoot, path, true)
 	if checkoutErr != nil {
@@ -672,6 +680,7 @@ func (s *Syncer) initializeNestedSelected(ctx context.Context, ownerDir, ownerPa
 			results = append(results, r)
 			continue
 		}
+		wasInitialized := initialized
 		if initialized {
 			cmd := exec.CommandContext(ctx, "git", "-C", ownerDir, "submodule", "sync", "--", path)
 			if output, err := cmd.CombinedOutput(); err != nil {
@@ -699,6 +708,13 @@ func (s *Syncer) initializeNestedSelected(ctx context.Context, ownerDir, ownerPa
 			continue
 		}
 		r.Initialized = true
+		if wasInitialized {
+			if err := s.ensureRecordedCommitAvailable(ctx, ownerDir, childDir, path); err != nil {
+				fail("fetch", err)
+				results = append(results, r)
+				continue
+			}
+		}
 		branch, err := git.CheckoutSubmoduleBranch(ctx, ownerDir, path, true)
 		if err != nil {
 			fail("checkout", err)
@@ -973,6 +989,57 @@ func validateSubmoduleStatusOutput(output string) error {
 	return scanner.Err()
 }
 
+// ensureRecordedCommitAvailable fetches a newly pinned object into an existing
+// checkout without changing its branch or worktree. Git's submodule update
+// fetches this for a new checkout, but sync deliberately skips that update for
+// an initialized branch so it must fetch the object separately.
+func (s *Syncer) ensureRecordedCommitAvailable(ctx context.Context, ownerDir, subDir, path string) error {
+	if err := ctx.Err(); err != nil {
+		return err
+	}
+	recorded, err := recordedGitlinkSHAInOwner(ctx, ownerDir, path)
+	if err != nil {
+		return err
+	}
+	hasCommit := func() bool {
+		return exec.CommandContext(ctx, "git", "-C", subDir, "cat-file", "-e", recorded+"^{commit}").Run() == nil
+	}
+	if hasCommit() {
+		return nil
+	}
+	if err := ctx.Err(); err != nil {
+		return err
+	}
+	if s.options.NoFetch {
+		return camperrors.Newf("recorded commit %s is unavailable locally and --no-fetch was set", recorded)
+	}
+	fetch := func(refspec string) error {
+		cmd := exec.CommandContext(ctx, "git", "-C", subDir, "fetch", "--no-tags", "origin", refspec)
+		output, err := cmd.CombinedOutput()
+		if err != nil {
+			return camperrors.Wrapf(err, "fetch %s from origin: %s", refspec, strings.TrimSpace(string(output)))
+		}
+		return nil
+	}
+	branchErr := fetch("+refs/heads/*:refs/remotes/origin/*")
+	if err := ctx.Err(); err != nil {
+		return err
+	}
+	if hasCommit() {
+		return nil
+	}
+	if pinErr := fetch(recorded); pinErr != nil {
+		return errors.Join(branchErr, pinErr)
+	}
+	if err := ctx.Err(); err != nil {
+		return err
+	}
+	if !hasCommit() {
+		return camperrors.Newf("origin did not provide recorded commit %s for %s", recorded, path)
+	}
+	return nil
+}
+
 func (s *Syncer) reconcileCheckoutDrift(ctx context.Context, path, subDir, branch string) (string, error) {
 	return s.reconcileCheckoutDriftInOwner(ctx, s.repoRoot, path, subDir, branch)
 }
@@ -1028,8 +1095,7 @@ func (s *Syncer) reconcileCheckoutDriftInOwner(ctx context.Context, ownerDir, pa
 			path, branch, shortSHA(branchSHA), shortSHA(recordedSHA), strings.TrimSpace(string(output))), nil
 	}
 
-	return fmt.Sprintf("%s: local %s tip %s != recorded %s (fast-forwarded)",
-		path, branch, shortSHA(branchSHA), shortSHA(recordedSHA)), nil
+	return "", nil
 }
 
 func (s *Syncer) recordedGitlinkSHA(ctx context.Context, path string) (string, error) {

@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"os/exec"
 	"path/filepath"
 	"strings"
 	"sync"
@@ -262,6 +263,22 @@ func (c *Cloner) Clone(ctx context.Context) (*CloneResult, error) {
 				if subErr != nil {
 					r.warnings = append(r.warnings,
 						fmt.Sprintf("submodule %s: %v", sub.Path, subErr))
+				}
+				if r.result.Success && (r.seed.Method == SeedMethodPackCopy || r.seed.Method == SeedMethodBundle) {
+					// Cold seeds carry objects but may lack the real origin's
+					// tracking refs. Refresh before mandatory branch selection.
+					cmd := exec.CommandContext(ctx, "git", "-C", targetDir, "submodule", "sync", "--", sub.Path)
+					if output, syncErr := cmd.CombinedOutput(); syncErr != nil {
+						subErr = camperrors.Wrapf(syncErr, "sync seeded %s URL: %s", sub.Path, strings.TrimSpace(string(output)))
+					} else {
+						subErr = gitpkg.RefreshSubmoduleOrigin(ctx, filepath.Join(targetDir, sub.Path))
+					}
+					if subErr != nil {
+						r.result.Success = false
+						r.result.Operation = "fetch"
+						r.result.Error = subErr
+						r.warnings = append(r.warnings, fmt.Sprintf("submodule %s origin refresh: %v", sub.Path, subErr))
+					}
 				}
 
 				// Step 2: Verify working tree has files

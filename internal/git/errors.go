@@ -114,6 +114,9 @@ var (
 
 	// ErrSubmoduleURL indicates a submodule URL could not be resolved.
 	ErrSubmoduleURL = errors.New("could not resolve submodule URL")
+	// ErrSubmodulePathNotFound means no declaration maps this path. Local
+	// submodule config may still retain a URL after the declaration is removed.
+	ErrSubmodulePathNotFound = errors.New("submodule path not found in .gitmodules")
 
 	// ErrSubmoduleClone indicates a submodule clone at default branch failed.
 	ErrSubmoduleClone = errors.New("submodule clone failed")
