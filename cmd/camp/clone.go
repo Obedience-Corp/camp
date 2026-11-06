@@ -362,6 +362,7 @@ func formatCloneHuman(result *clone.CloneResult, verbose bool) {
 		fmt.Printf("Optional project links: %d unresolved (local setup skipped)\n", len(result.OptionalLinks))
 		for _, link := range result.OptionalLinks {
 			fmt.Printf("  %s %s → %s\n", ui.WarningIcon(), link.Path, link.Target)
+			fmt.Printf("      Optional: camp project repair %s\n", filepath.Base(link.Path))
 		}
 		fmt.Println()
 	}

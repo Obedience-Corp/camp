@@ -5,6 +5,7 @@ import (
 	"os"
 	"path/filepath"
 
+	"github.com/Obedience-Corp/camp/internal/dirlink"
 	camperrors "github.com/Obedience-Corp/camp/internal/errors"
 )
 
@@ -28,11 +29,15 @@ func ListBrokenLinks(campaignRoot string) ([]BrokenProjectLink, error) {
 	}
 	var broken []BrokenProjectLink
 	for _, entry := range entries {
-		if entry.Type()&os.ModeSymlink == 0 {
+		isLink, err := dirlink.DirEntryIsDirectoryLink(entry, filepath.Join(projectsDir, entry.Name()))
+		if err != nil {
+			return broken, camperrors.Wrapf(err, "inspect project link %s", entry.Name())
+		}
+		if !isLink {
 			continue
 		}
 		path := filepath.Join(projectsDir, entry.Name())
-		target, err := os.Readlink(path)
+		target, err := dirlink.ReadTarget(path)
 		if err != nil {
 			return broken, camperrors.Wrapf(err, "read project link %s", path)
 		}
@@ -41,7 +46,7 @@ func ListBrokenLinks(campaignRoot string) ([]BrokenProjectLink, error) {
 		} else if !errors.Is(err, os.ErrNotExist) {
 			return broken, camperrors.Wrapf(err, "inspect project link %s", path)
 		}
-		broken = append(broken, BrokenProjectLink{Path: filepath.Join("projects", entry.Name()), Target: target})
+		broken = append(broken, BrokenProjectLink{Path: filepath.ToSlash(filepath.Join("projects", entry.Name())), Target: target})
 	}
 	return broken, nil
 }

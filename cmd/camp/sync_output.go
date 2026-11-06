@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"os"
+	"path/filepath"
 	"sort"
 	"time"
 
@@ -91,6 +92,7 @@ func formatOptionalLinkSection(result *sync.SyncResult) {
 	fmt.Printf("Optional project links: %d unresolved (local setup skipped)\n", len(result.OptionalLinks))
 	for _, link := range result.OptionalLinks {
 		fmt.Printf("  %s %s → %s\n", ui.WarningIcon(), link.Path, link.Target)
+		fmt.Printf("      Optional: camp project repair %s\n", filepath.Base(link.Path))
 	}
 }
 
