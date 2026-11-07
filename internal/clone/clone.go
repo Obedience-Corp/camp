@@ -294,7 +294,7 @@ func (c *Cloner) Clone(ctx context.Context) (*CloneResult, error) {
 
 				// Step 3: Select the final parent checkout before discovering its children.
 				if r.result.Success {
-					if err := c.checkoutSubmoduleBranch(ctx, targetDir, sub.Path); err != nil {
+					if err := c.checkoutSubmoduleBranch(ctx, targetDir, sub.Path, peerSeeded); err != nil {
 						r.result.Success = false
 						r.result.Operation = "checkout"
 						r.result.Error = err

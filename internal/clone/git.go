@@ -148,7 +148,7 @@ func (c *Cloner) gitSubmoduleURL(ctx context.Context, dir, submodulePath string)
 		return url, nil
 	}
 	url, activeErr := gitpkg.GetActiveURL(ctx, dir, submodulePath)
-	if activeErr == nil {
+	if activeErr == nil && url != "" {
 		return url, nil
 	}
 	return "", camperrors.WrapJoinf(gitpkg.ErrSubmoduleURL, errors.Join(declaredErr, activeErr), "%s", submodulePath)
@@ -446,8 +446,13 @@ func (c *Cloner) forceCheckoutSubmodule(ctx context.Context, repoDir, subPath st
 }
 
 // checkoutSubmoduleBranch applies the shared parent-aware branch policy.
-func (c *Cloner) checkoutSubmoduleBranch(ctx context.Context, repoDir, subPath string) error {
-	_, err := gitpkg.CheckoutSubmoduleBranch(ctx, repoDir, subPath, false)
+func (c *Cloner) checkoutSubmoduleBranch(ctx context.Context, repoDir, subPath string, fromOrigin bool) error {
+	var err error
+	if fromOrigin {
+		_, err = gitpkg.CheckoutSubmoduleBranchFromOrigin(ctx, repoDir, subPath)
+	} else {
+		_, err = gitpkg.CheckoutSubmoduleBranch(ctx, repoDir, subPath, false)
+	}
 	if err != nil {
 		return &SubmoduleError{
 			Op: "checkout-branch", Submodule: subPath,
@@ -567,7 +572,7 @@ func (c *Cloner) initNestedSelected(ctx context.Context, ownerDir, ownerPath str
 		}
 		r.Initialized = true
 		r.StaleRefFallback = outcome.StaleRefFallback
-		if err := c.checkoutSubmoduleBranch(ctx, ownerDir, nested.Path); err != nil {
+		if err := c.checkoutSubmoduleBranch(ctx, ownerDir, nested.Path, false); err != nil {
 			fail("checkout", err)
 			results = append(results, r)
 			continue

@@ -527,6 +527,9 @@ func (s *Syncer) updateSubmodules(ctx context.Context) ([]SubmoduleResult, error
 		}(i, path)
 	}
 	wg.Wait()
+	if err := ctx.Err(); err != nil {
+		return nil, err
+	}
 	for i, path := range paths {
 		if results[i].Path == "" {
 			results[i] = SubmoduleResult{Path: path, Name: path, Success: false, Skipped: true,

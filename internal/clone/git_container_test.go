@@ -309,6 +309,59 @@ func TestGitCloneFromPeer_SubmoduleLandsOnOriginNotPeerTip(t *testing.T) {
 	}
 }
 
+func TestGitCloneFromPeer_NamedBundleBranchUsesOrigin(t *testing.T) {
+	ctx := context.Background()
+	origin := setupTestRepo(t)
+	subWork := setupSubmodule(t, origin, "projects/sub")
+	want := strings.TrimSpace(gitTestOutput(t, subWork, "rev-parse", "HEAD"))
+	peerRoot := filepath.Join(t.TempDir(), "peer-campaign")
+	runGit(t, t.TempDir(), "clone", origin, peerRoot)
+	runGit(t, peerRoot, "-c", "protocol.file.allow=always", "submodule", "update", "--init")
+	peerSub := filepath.Join(peerRoot, "projects/sub")
+	runGit(t, peerSub, "checkout", "-B", "main")
+	createFile(t, filepath.Join(peerSub, "peer-private.txt"), "unpublished commit")
+	runGit(t, peerSub, "add", "peer-private.txt")
+	runGit(t, peerSub, "commit", "-qm", "unpublished peer commit")
+	createFile(t, filepath.Join(peerSub, "dirty-peer.txt"), "force bundle seed")
+
+	target := filepath.Join(t.TempDir(), "cloned")
+	cloner := NewCloner(WithURL(origin), WithDirectory(target), WithNoRegister(true),
+		WithPeer(peer.FromPath("peerbox", peerRoot)))
+	result, err := cloner.Clone(ctx)
+	if err != nil || !result.Success {
+		t.Fatalf("Clone() err=%v success=%v errors=%v warnings=%v", err, result.Success, result.Errors, result.Warnings)
+	}
+	var subSeed string
+	for _, seed := range result.Seed {
+		if seed.Repo == "projects/sub" {
+			subSeed = seed.Method
+		}
+	}
+	if subSeed != SeedMethodBundle {
+		t.Fatalf("submodule seed = %q, want bundle; all seeds: %+v", subSeed, result.Seed)
+	}
+	targetSub := filepath.Join(target, "projects/sub")
+	if got := strings.TrimSpace(gitTestOutput(t, targetSub, "rev-parse", "HEAD")); got != want {
+		t.Fatalf("cloned submodule commit = %s, want origin %s", got, want)
+	}
+	for _, name := range []string{"peer-private.txt", "dirty-peer.txt"} {
+		if _, err := os.Stat(filepath.Join(targetSub, name)); !os.IsNotExist(err) {
+			t.Fatalf("cloned submodule contains %s from peer: %v", name, err)
+		}
+	}
+}
+
+func gitTestOutput(t *testing.T, dir string, args ...string) string {
+	t.Helper()
+	cmd := exec.Command("git", args...)
+	cmd.Dir = dir
+	output, err := cmd.CombinedOutput()
+	if err != nil {
+		t.Fatalf("git %v: %v: %s", args, err, output)
+	}
+	return string(output)
+}
+
 func TestGitClone_Integration(t *testing.T) {
 	if testing.Short() {
 		t.Skip("skipping integration test in short mode")

@@ -101,11 +101,14 @@ func resolveRelativeSubmoduleURL(remoteURL, relativeURL string) string {
 	if strings.HasPrefix(relativeURL, "../") {
 		slash := strings.LastIndexByte(remotePath, '/')
 		if slash >= 0 {
-			basePath = remotePath[:slash]
+			basePath = remotePath[:slash+1]
 		} else {
 			basePath = ""
 		}
 		relativeURL = strings.TrimPrefix(relativeURL, "../")
+	}
+	if basePath == "" {
+		return prefix + path.Clean(relativeURL)
 	}
 	return prefix + path.Clean(basePath+"/"+relativeURL)
 }
@@ -238,6 +241,25 @@ func CheckoutSubmoduleBranch(ctx context.Context, repoDir, subPath string, prese
 	output, err := cmd.CombinedOutput()
 	if err != nil {
 		return "", camperrors.WrapJoinf(ErrBranchCheckout, err, "%s in %s: %s", branch, subPath, strings.TrimSpace(string(output)))
+	}
+	return branch, nil
+}
+
+// CheckoutSubmoduleBranchFromOrigin anchors a fresh peer-seeded checkout to
+// the real origin. A bundle or peer clone can carry a local branch with
+// unpublished commits, even after origin's tracking refs have been refreshed.
+func CheckoutSubmoduleBranchFromOrigin(ctx context.Context, repoDir, subPath string) (string, error) {
+	if err := ctx.Err(); err != nil {
+		return "", err
+	}
+	subDir := filepath.Join(repoDir, subPath)
+	branch, err := DetectDefaultBranchWithParent(ctx, repoDir, subPath, subDir)
+	if err != nil {
+		return "", err
+	}
+	cmd := exec.CommandContext(ctx, "git", "-C", subDir, "checkout", "-B", branch, "refs/remotes/origin/"+branch)
+	if output, err := cmd.CombinedOutput(); err != nil {
+		return "", camperrors.WrapJoinf(ErrBranchCheckout, err, "%s in %s from origin: %s", branch, subPath, strings.TrimSpace(string(output)))
 	}
 	return branch, nil
 }

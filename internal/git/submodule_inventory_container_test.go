@@ -156,4 +156,18 @@ func TestResolveRelativeURLMatchesGitSubmoduleInit(t *testing.T) {
 	if active != want {
 		t.Fatalf("Git initialized URL %q; Camp resolved %q", active, want)
 	}
+	// An scp-style remote can be relative to the remote user's home.
+	// Git does not insert a slash after the host when ../ reaches that root.
+	inventoryGit(t, checkout, "config", "--unset", "submodule.projects/child.url")
+	inventoryGit(t, checkout, "config", "-f", ".gitmodules", "submodule.projects/child.url", "../child.git")
+	inventoryGit(t, checkout, "remote", "set-url", "origin", "git@example.com:parent.git")
+	inventoryGit(t, checkout, "submodule", "init")
+	active, err = GetActiveURL(context.Background(), checkout, "projects/child")
+	if err != nil {
+		t.Fatal(err)
+	}
+	want = resolveRelativeSubmoduleURL("git@example.com:parent.git", "../child.git")
+	if active != want {
+		t.Fatalf("Git initialized home-relative URL %q; Camp resolved %q", active, want)
+	}
 }

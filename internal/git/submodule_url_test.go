@@ -11,6 +11,8 @@ func TestResolveRelativeSubmoduleURL(t *testing.T) {
 		{"ssh://git@example.com/org/parent.git", "./child.git", "ssh://git@example.com/org/parent.git/child.git"},
 		{"https://example.com/org/parent", "./child", "https://example.com/org/parent/child"},
 		{"git@example.com:org/parent", "./child", "git@example.com:org/parent/child"},
+		{"git@example.com:parent.git", "../child.git", "git@example.com:child.git"},
+		{"git@example.com:/parent.git", "../child.git", "git@example.com:/child.git"},
 		{"/tmp/org/parent", "./child", "/tmp/org/parent/child"},
 	}
 	for _, test := range tests {

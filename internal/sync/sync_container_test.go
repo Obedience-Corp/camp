@@ -26,6 +26,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/Obedience-Corp/camp/internal/git"
 	"github.com/Obedience-Corp/camp/internal/peer"
 )
 
@@ -302,25 +303,21 @@ func TestUpdateSubmodules_PartialFailureIsolation(t *testing.T) {
 	}
 }
 
-// Mid-flight cancellation must abort promptly through the concurrent paths
-// (spawn-loop break, semaphore-wait select, in-flight git subprocesses) and
-// still honor the contract of returning (nil, context.Canceled). Six
-// submodules at parallelism 1 take well over a second of git work, so a
-// 150ms cancel reliably lands while workers are in flight; if timing ever
-// degenerates to cancel-before-entry, the assertions still hold via the
-// entry guard.
+// Holding the owner lock keeps a worker in flight independent of machine
+// speed. Cancellation must return (nil, context.Canceled), not partial results.
 func TestUpdateSubmodules_ContextCanceledMidFlight(t *testing.T) {
 	repoRoot := setupTestRepo(t)
 	for i := range 6 {
 		setupSubmodule(t, repoRoot, fmt.Sprintf("projects/sub%d", i))
 	}
+	release, err := git.LockSubmoduleOwner(context.Background(), repoRoot)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer release()
 
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
-	go func() {
-		time.Sleep(150 * time.Millisecond)
-		cancel()
-	}()
 
 	syncer := NewSyncer(repoRoot, WithParallel(1))
 
@@ -333,6 +330,8 @@ func TestUpdateSubmodules_ContextCanceledMidFlight(t *testing.T) {
 		results, err := syncer.updateSubmodules(ctx)
 		done <- outcome{results, err}
 	}()
+	time.Sleep(20 * time.Millisecond)
+	cancel()
 
 	select {
 	case got := <-done:
