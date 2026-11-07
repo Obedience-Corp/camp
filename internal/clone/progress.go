@@ -63,7 +63,7 @@ func (r *ConsoleReporter) EndSubmodules(succeeded, failed int) {
 	if failed == 0 {
 		fmt.Fprintf(r.w, "  ✓ All submodules initialized\n")
 	} else {
-		fmt.Fprintf(r.w, "  ⚠ %d submodules failed to initialize\n", failed)
+		_, _ = fmt.Fprintf(r.w, "  ⚠ %d submodule trees incomplete\n", failed)
 	}
 }
 

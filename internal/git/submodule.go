@@ -50,7 +50,7 @@ func SubmoduleNameForPath(ctx context.Context, repoRoot, submodulePath string) (
 		match = name
 	}
 	if match == "" {
-		return "", camperrors.Newf("submodule path %q not found in .gitmodules", submodulePath)
+		return "", camperrors.Wrapf(ErrSubmodulePathNotFound, "%q", submodulePath)
 	}
 	return match, nil
 }
@@ -211,9 +211,13 @@ func GetDeclaredURL(ctx context.Context, repoRoot, submodulePath string) (string
 		return "", ctx.Err()
 	}
 
+	name, nameErr := SubmoduleNameForPath(ctx, repoRoot, submodulePath)
+	if nameErr != nil {
+		return "", nameErr
+	}
 	cmd := exec.CommandContext(ctx, "git", "-C", repoRoot,
 		"config", "-f", ".gitmodules",
-		fmt.Sprintf("submodule.%s.url", submodulePath))
+		fmt.Sprintf("submodule.%s.url", name))
 
 	output, err := cmd.Output()
 	if err != nil {
@@ -235,8 +239,17 @@ func GetActiveURL(ctx context.Context, repoRoot, submodulePath string) (string, 
 		return "", ctx.Err()
 	}
 
+	name, nameErr := SubmoduleNameForPath(ctx, repoRoot, submodulePath)
+	if nameErr != nil {
+		if !errors.Is(nameErr, ErrSubmodulePathNotFound) {
+			return "", nameErr
+		}
+		// An initialized, path-named module may retain local config after its
+		// declaration is removed. Ambiguous declarations still fail above.
+		name = submodulePath
+	}
 	cmd := exec.CommandContext(ctx, "git", "-C", repoRoot,
-		"config", fmt.Sprintf("submodule.%s.url", submodulePath))
+		"config", fmt.Sprintf("submodule.%s.url", name))
 
 	output, err := cmd.Output()
 	if err != nil {

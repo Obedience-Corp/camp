@@ -4,8 +4,14 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"os/exec"
+	"path/filepath"
+	"strings"
 	"sync"
 
+	camperrors "github.com/Obedience-Corp/camp/internal/errors"
+	gitpkg "github.com/Obedience-Corp/camp/internal/git"
+	"github.com/Obedience-Corp/camp/internal/project"
 	"github.com/Obedience-Corp/camp/internal/remote"
 )
 
@@ -74,6 +80,11 @@ func (c *Cloner) Clone(ctx context.Context) (*CloneResult, error) {
 	}
 	c.progress.EndPhase("Clone", true)
 	result.Directory = targetDir
+	if links, linkErr := project.ListBrokenLinks(targetDir); linkErr != nil {
+		result.Warnings = append(result.Warnings, fmt.Sprintf("optional project link inventory: %v", linkErr))
+	} else {
+		result.OptionalLinks = links
+	}
 
 	// Get the branch that was cloned
 	branch, err := c.gitGetBranch(ctx, targetDir)
@@ -81,15 +92,14 @@ func (c *Cloner) Clone(ctx context.Context) (*CloneResult, error) {
 		result.Branch = branch
 	}
 
-	// Phase 1.5: Clean orphaned gitlinks before submodule operations
+	// Phase 1.5: Inventory orphaned gitlinks without changing the clone's index.
 	if !c.options.NoSubmodules {
-		removed, err := c.cleanOrphanedGitlinks(ctx, targetDir)
+		orphans, err := c.reportOrphanedGitlinks(ctx, targetDir)
 		if err != nil {
-			result.Warnings = append(result.Warnings, fmt.Sprintf("orphan cleanup warning: %v", err))
+			result.Warnings = append(result.Warnings, fmt.Sprintf("orphan inventory warning: %v", err))
 		}
-		for _, path := range removed {
-			c.progress.Verbose(fmt.Sprintf("Removed orphaned gitlink: %s", path))
-			result.Warnings = append(result.Warnings, fmt.Sprintf("removed orphaned gitlink: %s", path))
+		for _, orphan := range orphans {
+			result.Warnings = append(result.Warnings, fmt.Sprintf("orphaned gitlink without .gitmodules declaration: %s", orphan.Path))
 		}
 	}
 
@@ -127,7 +137,7 @@ func (c *Cloner) Clone(ctx context.Context) (*CloneResult, error) {
 		c.progress.StartPhase("Initializing submodules")
 		submoduleInfos, err := parseGitmodules(ctx, targetDir)
 		if err != nil {
-			result.Warnings = append(result.Warnings, fmt.Sprintf("could not parse .gitmodules: %v", err))
+			result.Errors = append(result.Errors, &SubmoduleError{Op: "parse-gitmodules", Cause: err})
 		}
 
 		// Determine parallelism
@@ -144,7 +154,6 @@ func (c *Cloner) Clone(ctx context.Context) (*CloneResult, error) {
 			index       int
 			result      SubmoduleResult
 			warnings    []string
-			staleRef    bool
 			nestedCount int
 			branchOK    bool
 			// seed records which transport delivered this submodule. Written
@@ -159,7 +168,6 @@ func (c *Cloner) Clone(ctx context.Context) (*CloneResult, error) {
 
 		for i, sub := range submoduleInfos {
 			if ctx.Err() != nil {
-				result.Errors = append(result.Errors, ctx.Err())
 				break
 			}
 
@@ -176,11 +184,28 @@ func (c *Cloner) Clone(ctx context.Context) (*CloneResult, error) {
 						index: idx,
 						result: SubmoduleResult{
 							Name: sub.Name, Path: sub.Path, URL: sub.URL,
-							Success: false, Error: ctx.Err(),
+							Success: false, Skipped: true, Operation: "skip", Error: ctx.Err(),
 						},
 					}
 					return
 				}
+				// Peer seeding, registration, update, checkout, and nested discovery
+				// may all touch the same superproject Git state. Serialize the full
+				// pipeline for this owner, including the stale-object fallback.
+				release, lockErr := gitpkg.LockSubmoduleOwner(ctx, targetDir)
+				if lockErr != nil {
+					skipped := errors.Is(lockErr, context.Canceled) || errors.Is(lockErr, context.DeadlineExceeded)
+					op := "init"
+					if skipped {
+						op = "skip"
+					}
+					results[idx] = subInitResult{index: idx, result: SubmoduleResult{
+						Name: sub.Name, Path: sub.Path, URL: sub.URL,
+						Success: false, Skipped: skipped, Operation: op, Error: camperrors.Wrapf(lockErr, "%s %s in %s", op, sub.Path, targetDir),
+					}}
+					return
+				}
+				defer release()
 
 				r := subInitResult{index: idx}
 				c.progress.Verbose(fmt.Sprintf("Initializing submodule: %s", sub.Path))
@@ -188,8 +213,8 @@ func (c *Cloner) Clone(ctx context.Context) (*CloneResult, error) {
 				// Step 0: Seed objects from the peer when one is configured.
 				// Cold-seed copy first when the peer declared this repo
 				// quiescent, then the git-clone-from-peer path, then origin —
-				// each step degrades to the next with a warning rather than
-				// failing the submodule.
+				// a failed step falls back only when it left no peer module.
+				// Any peer-derived module must verify the real origin below.
 				peerSeeded := false
 				if c.peer != nil {
 					method, reason, coldErr := c.coldSeedSubmodule(ctx, targetDir, sub)
@@ -203,9 +228,21 @@ func (c *Cloner) Clone(ctx context.Context) (*CloneResult, error) {
 							reason = coldErr.Error()
 						}
 						if seedErr := c.seedSubmoduleFromPeer(ctx, targetDir, sub); seedErr != nil {
-							r.warnings = append(r.warnings,
-								fmt.Sprintf("peer seed %s: %v (initializing from origin)", sub.Path, seedErr))
-							r.seed = SeedRepoResult{Repo: sub.Path, Method: SeedMethodOrigin, Reason: seedErr.Error()}
+							modulePresent, inspectErr := peerModulePresent(targetDir, sub)
+							if inspectErr != nil {
+								seedErr = errors.Join(seedErr, inspectErr)
+								modulePresent = true // An unknown partial seed must be treated as peer-derived.
+							}
+							if modulePresent {
+								peerSeeded = true
+								r.seed = SeedRepoResult{Repo: sub.Path, Method: SeedMethodPeerClone, Reason: seedErr.Error()}
+								r.warnings = append(r.warnings,
+									fmt.Sprintf("peer seed %s incomplete: %v (verifying with origin)", sub.Path, seedErr))
+							} else {
+								r.seed = SeedRepoResult{Repo: sub.Path, Method: SeedMethodOrigin, Reason: seedErr.Error()}
+								r.warnings = append(r.warnings,
+									fmt.Sprintf("peer seed %s: %v (initializing from origin)", sub.Path, seedErr))
+							}
 						} else {
 							peerSeeded = true
 							r.seed = SeedRepoResult{Repo: sub.Path, Method: SeedMethodPeerClone, Reason: reason}
@@ -214,26 +251,45 @@ func (c *Cloner) Clone(ctx context.Context) (*CloneResult, error) {
 				}
 
 				// Step 1: Initialize submodule gracefully (handles stale refs)
-				subErr := c.initSubmoduleGraceful(ctx, targetDir, sub.Path)
+				initOutcome, subErr := c.initSubmoduleGraceful(ctx, targetDir, sub.Path)
+				if subErr == nil {
+					initialized, identityErr := gitpkg.IsWorktreeRoot(ctx, filepath.Join(targetDir, sub.Path))
+					if identityErr != nil {
+						subErr = camperrors.Wrapf(identityErr, "identify initialized submodule %s", sub.Path)
+					} else if !initialized {
+						subErr = camperrors.Wrapf(gitpkg.ErrSubmoduleNotInitialized, "identify initialized submodule %s", sub.Path)
+					}
+				}
 				r.result = SubmoduleResult{
-					Name:       sub.Name,
-					Path:       sub.Path,
-					URL:        sub.URL,
-					Success:    subErr == nil,
-					Error:      subErr,
-					PeerSeeded: peerSeeded,
+					Name:             sub.Name,
+					Path:             sub.Path,
+					URL:              sub.URL,
+					Success:          subErr == nil,
+					Initialized:      subErr == nil,
+					Operation:        "init",
+					Error:            subErr,
+					PeerSeeded:       peerSeeded,
+					StaleRefFallback: initOutcome.StaleRefFallback,
 				}
 
 				if subErr != nil {
-					if c.isStaleRefError(subErr) {
-						r.staleRef = true
-						r.warnings = append(r.warnings,
-							fmt.Sprintf("submodule %s had stale commit reference, using default branch", sub.Path))
-						r.result.Success = true
-						r.result.Error = nil
+					r.warnings = append(r.warnings,
+						fmt.Sprintf("submodule %s: %v", sub.Path, subErr))
+				}
+				if r.result.Success && peerSeeded {
+					// Every peer-derived module, including one left by an incomplete
+					// seed, must refresh the real origin before branch selection.
+					cmd := exec.CommandContext(ctx, "git", "-C", targetDir, "submodule", "sync", "--", sub.Path)
+					if output, syncErr := cmd.CombinedOutput(); syncErr != nil {
+						subErr = camperrors.Wrapf(syncErr, "sync seeded %s URL: %s", sub.Path, strings.TrimSpace(string(output)))
 					} else {
-						r.warnings = append(r.warnings,
-							fmt.Sprintf("submodule %s: %v", sub.Path, subErr))
+						subErr = gitpkg.RefreshSubmoduleOrigin(ctx, filepath.Join(targetDir, sub.Path))
+					}
+					if subErr != nil {
+						r.result.Success = false
+						r.result.Operation = "fetch"
+						r.result.Error = subErr
+						r.warnings = append(r.warnings, fmt.Sprintf("submodule %s origin refresh: %v", sub.Path, subErr))
 					}
 				}
 
@@ -248,25 +304,37 @@ func (c *Cloner) Clone(ctx context.Context) (*CloneResult, error) {
 					}
 				}
 
-				// Step 3: Initialize nested submodules (recursively with graceful handling)
+				// Step 3: Select the final parent checkout before discovering its children.
 				if r.result.Success {
-					count, warnings := c.initNestedSubmodulesGraceful(ctx, targetDir, sub.Path)
-					r.nestedCount = count
-					r.warnings = append(r.warnings, warnings...)
-				}
-
-				// Step 4: Checkout branch instead of detached HEAD
-				if r.result.Success {
-					if err := c.checkoutSubmoduleBranch(ctx, targetDir, sub.Path); err != nil {
-						c.progress.Verbose(fmt.Sprintf("Could not checkout branch for %s: %v", sub.Path, err))
+					if err := c.checkoutSubmoduleBranch(ctx, targetDir, sub.Path, peerSeeded); err != nil {
+						r.result.Success = false
+						r.result.Operation = "checkout"
+						r.result.Error = err
+						r.warnings = append(r.warnings, fmt.Sprintf("submodule %s checkout: %v", sub.Path, err))
 					} else {
 						r.branchOK = true
 					}
 				}
-
-				// Get commit hash if initialized
 				if r.result.Success {
 					r.result.Commit, _ = c.getSubmoduleCommit(ctx, targetDir, sub.Path)
+					if pin, err := gitpkg.Output(ctx, targetDir, "ls-files", "-s", "--", sub.Path); err == nil {
+						fields := strings.Fields(pin)
+						if len(fields) >= 2 && fields[0] == "160000" {
+							r.result.RecordedCommit = fields[1]
+						}
+					}
+				}
+
+				// Step 4: Discover children from the selected branch, not the
+				// earlier gitlink snapshot.
+				if r.result.Success {
+					r.result.Nested = c.initNestedSubmodulesGraceful(ctx, targetDir, sub.Path)
+					r.nestedCount = gitpkg.SummarizeNestedResults(r.result.Nested).Initialized
+					if nestedErr := gitpkg.NestedFailures(r.result.Nested); nestedErr != nil {
+						r.result.Success = false
+						r.result.Operation = "children"
+						r.result.Error = nestedErr
+					}
 				}
 
 				results[idx] = r
@@ -279,19 +347,25 @@ func (c *Cloner) Clone(ctx context.Context) (*CloneResult, error) {
 		failed := 0
 		nestedCount := 0
 		branchCount := 0
-		staleRefCount := 0
 		peerSeededCount := 0
 
-		for _, r := range results {
+		for i, r := range results {
+			if r.result.Path == "" {
+				// Cancellation can stop scheduling before the last goroutine was
+				// launched. Keep those paths visible in ordered results.
+				sub := submoduleInfos[i]
+				r.result = SubmoduleResult{Name: sub.Name, Path: sub.Path, URL: sub.URL,
+					Skipped: true, Operation: "skip", Error: ctx.Err()}
+			}
 			result.Submodules = append(result.Submodules, r.result)
 			result.Warnings = append(result.Warnings, r.warnings...)
 			if r.result.Success {
 				succeeded++
 			} else {
 				failed++
-			}
-			if r.staleRef {
-				staleRefCount++
+				if r.result.Error != nil {
+					result.Errors = append(result.Errors, r.result.Error)
+				}
 			}
 			nestedCount += r.nestedCount
 			if r.branchOK {
@@ -310,16 +384,20 @@ func (c *Cloner) Clone(ctx context.Context) (*CloneResult, error) {
 		if peerSeededCount > 0 && c.peer != nil {
 			c.progress.Message(fmt.Sprintf("Seeded %d submodules from peer %s", peerSeededCount, c.peer.ID()))
 		}
-		if staleRefCount > 0 {
-			c.progress.Message(fmt.Sprintf("Recovered %d submodules with stale commit references", staleRefCount))
-		}
 		if nestedCount > 0 {
 			c.progress.Message(fmt.Sprintf("Initialized %d nested submodules", nestedCount))
 		}
 		if branchCount > 0 {
 			c.progress.Message(fmt.Sprintf("Checked out branches for %d submodules", branchCount))
 		}
-		c.progress.EndPhase("Submodule initialization", true)
+		c.progress.EndPhase("Submodule initialization", failed == 0)
+	}
+	if ctx.Err() != nil {
+		if len(result.Errors) == 0 {
+			result.Errors = append(result.Errors, ctx.Err())
+		}
+		result.Success = false
+		return result, nil
 	}
 
 	// Phase 4: Validation (unless --no-validate)
@@ -353,24 +431,38 @@ func (c *Cloner) Clone(ctx context.Context) (*CloneResult, error) {
 		}
 	}
 
-	// Phase 6: Determine overall success
-	// Success if no fatal errors and validation passed (if run)
-	// Registration failures do not affect overall success
-	result.Success = len(result.Errors) == 0 &&
+	// Phase 6: Required operations determine success even when optional
+	// validation was skipped. Registration and local link setup are optional.
+	operationsPassed := true
+	for _, sub := range result.Submodules {
+		if !sub.Success || !nestedCheckoutSucceeded(sub.Nested) {
+			operationsPassed = false
+		}
+	}
+	result.Success = operationsPassed && len(result.Errors) == 0 &&
 		(result.Validation == nil || result.Validation.Passed)
 
 	return result, nil
 }
 
+func nestedCheckoutSucceeded(results []gitpkg.NestedResult) bool {
+	for _, result := range results {
+		if !result.Success || !nestedCheckoutSucceeded(result.Children) {
+			return false
+		}
+	}
+	return true
+}
+
 // validate runs post-clone validation checks.
-// Uses parseGitmodules as the canonical source of expected submodules (consistent
-// with Phase 3 initialization). Extra submodules found by git submodule status
-// but not declared in .gitmodules are reported as warnings, not errors.
+// Compares declarations and gitlinks within each repository that owns them.
 func (c *Cloner) validate(ctx context.Context, dir string) *ValidationResult {
 	if ctx.Err() != nil {
-		return &ValidationResult{Passed: false, Issues: []ValidationIssue{
-			{Description: "context cancelled", Severity: SeverityError},
-		}}
+		return &ValidationResult{Passed: false,
+			CheckStates: map[string]string{"allInitialized": "unavailable", "correctCommits": "unavailable", "urlsMatch": "unavailable"},
+			Issues: []ValidationIssue{
+				{Description: "context cancelled", Severity: SeverityError},
+			}}
 	}
 
 	result := &ValidationResult{
@@ -378,70 +470,122 @@ func (c *Cloner) validate(ctx context.Context, dir string) *ValidationResult {
 		AllInitialized: true,
 		CorrectCommits: true,
 		URLsMatch:      true,
+		CheckStates:    map[string]string{"allInitialized": "passed", "correctCommits": "passed", "urlsMatch": "passed"},
+	}
+	setState := func(check, state string) {
+		current := result.CheckStates[check]
+		if current == "failed" || (current == "unavailable" && state != "failed") {
+			return
+		}
+		result.CheckStates[check] = state
 	}
 
 	// --no-submodules leaves declared entries uninitialized on purpose.
 	if c.options.NoSubmodules {
-		return result
-	}
-
-	// Use parseGitmodules as the canonical list (same source as Phase 3)
-	declared, err := parseGitmodules(ctx, dir)
-	if err != nil {
-		result.Issues = append(result.Issues, ValidationIssue{
-			Description: fmt.Sprintf("could not parse .gitmodules: %v", err),
-			Severity:    SeverityWarning,
-		})
-		return result
-	}
-
-	// Build set of declared paths
-	declaredPaths := make(map[string]bool, len(declared))
-	for _, sub := range declared {
-		declaredPaths[sub.Path] = true
-	}
-
-	// Get actual submodule state from git
-	statusResults, err := c.gitSubmoduleStatus(ctx, dir)
-	if err != nil {
-		result.Issues = append(result.Issues, ValidationIssue{
-			Description: fmt.Sprintf("could not check submodule status: %v", err),
-			Severity:    SeverityWarning,
-		})
-		return result
-	}
-
-	// Build status lookup by path
-	statusByPath := make(map[string]SubmoduleResult, len(statusResults))
-	for _, sr := range statusResults {
-		statusByPath[sr.Path] = sr
-	}
-
-	// Validate declared submodules (from .gitmodules)
-	for _, sub := range declared {
-		sr, found := statusByPath[sub.Path]
-		if !found || !sr.Success {
-			result.AllInitialized = false
-			result.Passed = false
-			result.Issues = append(result.Issues, ValidationIssue{
-				Submodule:   sub.Path,
-				Description: "not initialized",
-				Severity:    SeverityError,
-				FixCommand:  "git submodule update --init " + sub.Path,
-				AutoFixable: true,
-			})
+		result.AllInitialized = false
+		result.CorrectCommits = false
+		result.URLsMatch = false
+		for check := range result.CheckStates {
+			result.CheckStates[check] = "skipped"
 		}
+		result.CheckResults = map[string]bool{"allInitialized": false, "correctCommits": false, "urlsMatch": false}
+		return result
 	}
 
-	// Report undeclared submodules (found by git status but not in .gitmodules) as warnings
-	for _, sr := range statusResults {
-		if !declaredPaths[sr.Path] && !sr.Success {
+	inventory := gitpkg.InventorySubmodules(ctx, dir)
+	for _, inventoryErr := range inventory.Errors {
+		result.Passed = false
+		result.AllInitialized = false
+		result.CorrectCommits = false
+		result.URLsMatch = false
+		setState("allInitialized", "unavailable")
+		setState("correctCommits", "unavailable")
+		setState("urlsMatch", "unavailable")
+		result.Issues = append(result.Issues, ValidationIssue{
+			CheckID: "metadata", Description: inventoryErr.Error(), Severity: SeverityError,
+		})
+	}
+	for _, entry := range inventory.Entries {
+		switch entry.State {
+		case gitpkg.InventoryDeclarationOnly:
+			result.Passed = false
+			result.AllInitialized = false
+			result.CorrectCommits = false
+			result.URLsMatch = false
+			setState("allInitialized", "failed")
+			setState("correctCommits", "unavailable")
+			setState("urlsMatch", "unavailable")
 			result.Issues = append(result.Issues, ValidationIssue{
-				Submodule:   sr.Path,
-				Description: "not in .gitmodules but has a gitlink entry",
+				CheckID: "declaration_without_gitlink", Submodule: entry.Path,
+				Description: "declared in .gitmodules but has no gitlink; reconcile the declaration and index",
+				Severity:    SeverityError,
+			})
+		case gitpkg.InventoryGitlinkOnly:
+			result.Issues = append(result.Issues, ValidationIssue{
+				CheckID: "gitlink_without_declaration", Submodule: entry.Path,
+				Description: "gitlink has no .gitmodules declaration in its owning repository",
 				Severity:    SeverityWarning,
 			})
+		case gitpkg.InventoryUninitialized:
+			result.Passed = false
+			result.AllInitialized = false
+			result.CorrectCommits = false
+			setState("allInitialized", "failed")
+			setState("correctCommits", "unavailable")
+			result.Issues = append(result.Issues, ValidationIssue{
+				CheckID: "not_initialized", Submodule: entry.Path,
+				Description: "not initialized", Severity: SeverityError,
+				FixCommand: "camp sync", AutoFixable: true,
+			})
+		case gitpkg.InventoryInvalidPath, gitpkg.InventoryUnknownMapping:
+			// The inventory already records the metadata or path error.
+			continue
 		}
+		if entry.State != gitpkg.InventoryMatched && entry.State != gitpkg.InventoryUninitialized {
+			continue
+		}
+		if entry.State == gitpkg.InventoryMatched {
+			matches, err := gitpkg.SelectedCommitMatches(ctx, dir, entry)
+			switch {
+			case err != nil:
+				result.CorrectCommits = false
+				result.Passed = false
+				setState("correctCommits", "unavailable")
+				result.Issues = append(result.Issues, ValidationIssue{CheckID: "correct_commits", Submodule: entry.Path,
+					Description: camperrors.Wrapf(err, "compare checkout with gitlink in owner %s", entry.Owner).Error(), Severity: SeverityError})
+			case !matches:
+				result.CorrectCommits = false
+				result.Passed = false
+				setState("correctCommits", "failed")
+				result.Issues = append(result.Issues, ValidationIssue{CheckID: "correct_commits", Submodule: entry.Path,
+					Description: "checkout diverges from owning repository's recorded gitlink; inspect branch history before updating", Severity: SeverityError})
+			}
+		}
+		matchesURL, active, urlErr := gitpkg.InventoryURLMatches(ctx, dir, entry)
+		switch {
+		case urlErr != nil || active == "":
+			result.URLsMatch = false
+			result.Passed = false
+			setState("urlsMatch", "unavailable")
+			description := "active URL is unavailable in owning repository"
+			if urlErr != nil {
+				description = urlErr.Error()
+			}
+			result.Issues = append(result.Issues, ValidationIssue{CheckID: "urls_match", Submodule: entry.Path,
+				Description: description, Severity: SeverityError})
+		case !matchesURL:
+			result.URLsMatch = false
+			result.Passed = false
+			setState("urlsMatch", "failed")
+			result.Issues = append(result.Issues, ValidationIssue{CheckID: "urls_match", Submodule: entry.Path,
+				Description: fmt.Sprintf("active URL %q differs from declaration %q in owner %s; run 'camp sync' to synchronize", active, entry.DeclaredURL, entry.Owner),
+				Severity:    SeverityError, FixCommand: "camp sync", AutoFixable: true})
+		}
+	}
+	result.CheckResults = map[string]bool{
+		"allInitialized": result.AllInitialized,
+		"correctCommits": result.CorrectCommits,
+		"urlsMatch":      result.URLsMatch,
 	}
 
 	return result

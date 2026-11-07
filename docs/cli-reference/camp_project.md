@@ -55,6 +55,7 @@ camp project [flags]
 * [camp project remote](camp_project_remote.md)	 - Manage remotes for a project
 * [camp project remove](camp_project_remove.md)	 - Remove a project from camp
 * [camp project rename](camp_project_rename.md)	 - Rename a managed project
+* [camp project repair](camp_project_repair.md)	 - Preview repair of a broken local project link
 * [camp project run](camp_project_run.md)	 - Run a command inside a project directory, like cr but project-scoped
 * [camp project stage](camp_project_stage.md)	 - Stage changes in a project submodule
 * [camp project unlink](camp_project_unlink.md)	 - Unlink a linked project from a camp

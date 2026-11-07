@@ -424,22 +424,39 @@ Clone a camp repository and initialize all submodules.
 This command provides a single-step setup for new devices:
 
   1. CLONE REPOSITORY
-     Clones the camp repository with recursive submodules.
+     Clones the camp repository, then initializes submodules.
 
   2. SYNCHRONIZE URLs
      Copies URLs from .gitmodules to .git/config, ensuring
      URL consistency across all submodules.
 
   3. UPDATE SUBMODULES
-     Fetches and checks out the correct commits for all submodules.
+     Selects each submodule's declared branch (or remote default)
+     before discovering children in that checkout.
 
   4. VALIDATE SETUP
-     Verifies all submodules are initialized, at correct commits,
-     and have matching URLs.
+     Verifies declared submodules are initialized and checks URLs
+     and recorded gitlinks against the selected checkouts.
+     Reports declarations without gitlinks and gitlinks without
+     declarations separately for each owning repository.
 
   5. REGISTER CAMP
      If .campaign/campaign.yaml exists, registers the camp
      in the global registry for navigation and discovery.
+
+JSON results include a nested child tree and attempted/skipped/initialized
+counts when recursive submodules are declared. Validation keeps its boolean
+checks and adds checkStates (passed, failed, skipped, or unavailable).
+With --no-submodules, validation reports skipped checks.
+The initialized count is verified top-level checkouts; succeeded counts
+complete top-level subtrees, and failed excludes cancelled skips.
+Normal output shows each failed module and its original Git error.
+--no-validate skips checks but still reports failed initialization and exits 3
+when the root clone is usable. --no-submodules intentionally skips setup.
+A partial clone with a usable root remains registered. From that directory,
+run 'camp sync --dry-run', repair the reported cause, then retry the affected
+path with 'camp sync projects/<path>' and finish with 'camp sync'.
+See docs/guides/clone-sync-recovery.md for the safe recovery sequence.
 
 EXIT CODES:
   0  Success
@@ -500,7 +517,7 @@ camp clone <url> [directory] [flags]
       --no-register     Skip auto-registration in global camp registry
       --no-submodules   Skip submodule initialization
       --no-validate     Skip post-clone validation
-  -p, --parallel int    Number of parallel submodule initializations (default 4)
+  -p, --parallel int    Maximum initialization workers; operations sharing a superproject are serialized to avoid Git config/index contention (default 4)
   -v, --verbose         Show detailed output for each operation
 ```
 
@@ -5399,6 +5416,9 @@ Link an existing local directory into a camp.
 
 The folder stays where it is. Camp adds a shortcut at projects/<name>
 and a .camp file in that folder. This is not a git submodule.
+For an already tracked but broken local shortcut, use 'camp project repair
+<name>' to preview candidates; repair preserves the checkout's existing
+.camp owner and requires explicit apply.
 
 In a terminal, paste or type a path, or move through folders.
 Enter links the folder. Tab opens a folder. Then name it, choose
@@ -5954,6 +5974,54 @@ camp project rename [current] [new] [flags]
       --no-verify           Skip remote connectivity verification
       --remote-url string   Explicitly update the project's origin URL
       --yes                 Apply immediately without the review screen
+```
+
+### Options inherited from parent commands
+
+```
+      --no-color   disable colored output
+```
+---
+
+## camp project repair
+
+Preview repair of a broken local project link
+
+### Synopsis
+
+Inspect a broken projects/<name> link and possible local checkouts.
+
+Discovery searches registered camps for checkouts with the same project name.
+The preview shows each checkout's origin and existing .camp owner. A matching
+folder name is only a discovery hint; select the intended checkout with --path.
+Preview never changes the link, checkout, marker, or Git index. --apply
+requires --path and replaces only a still-broken link; --undo restores the
+saved old target. Repair changes a tracked symlink in the camp working tree
+when that link is tracked. Neither action commits or changes checkout ownership.
+Undo state is stored beside the local camp registry. The normal 'project link'
+command creates a new shortcut and may attach the checkout; repair only
+replaces an existing broken shortcut. See docs/guides/clone-sync-recovery.md.
+
+Examples:
+  camp project repair obey-voice
+  camp project repair obey-voice --path ~/code/obey-voice
+  camp project repair obey-voice --path ~/code/obey-voice --apply
+  camp project repair obey-voice --undo
+  camp project repair obey-voice --campaign obey-campaign --json
+
+```
+camp project repair <name> [flags]
+```
+
+### Options
+
+```
+      --apply             Apply the selected repair without committing
+  -c, --campaign string   Target camp by registered name or ID
+  -h, --help              help for repair
+      --json              Output preview as JSON
+      --path string       Inspect an explicit local checkout
+      --undo              Restore the saved original link target
 ```
 
 ### Options inherited from parent commands
@@ -9098,7 +9166,18 @@ The sync command performs three critical operations:
      that occur when remote URLs change.
 
   3. SUBMODULE UPDATE
-     Fetches and checks out the correct commits for all submodules.
+     Preserves existing local branches, fast-forwards them safely when
+     behind a recorded gitlink, and discovers children after checkout.
+
+Orphaned gitlinks are reported without removing them from the index.
+Normal output shows failed paths and original errors. JSON results include
+ordered module results, nested child paths, owners, errors, and counts.
+Initialized counts verified top-level checkouts; failed excludes skips.
+After a partial clone, 'camp sync --dry-run' checks local work before retry.
+'camp sync projects/<path>' retries one module; a final 'camp sync' checks all.
+Use 'camp status --show-refs' to see root gitlink changes separately. A broken
+machine-local project link is optional and can be previewed with
+'camp project repair <name>'. See docs/guides/clone-sync-recovery.md.
 
 This order is critical: sync-before-update prevents silent code deletion
 when URLs change on remote repositories.
@@ -9107,7 +9186,7 @@ EXIT CODES:
   0  Success
   1  Runtime failure (including pre-flight, sync, or update failure)
   2  Usage error (bad flags or args)
-  3  Post-sync validation failed
+  3  Validation-only failure (updates completed)
 
 EXAMPLES:
   # Sync all submodules (recommended default)
@@ -9166,7 +9245,7 @@ camp sync [submodule...] [flags]
       --no-drain           Do not wait for camp's queued commits first
       --no-fetch           Skip fetching from remote (use local refs only)
       --no-probe-cache     Re-probe the rsync engine on both machines instead of using the cached 24h verdict
-  -p, --parallel int       Number of parallel git operations (git guards superproject ops with repo lockfiles that fail fast on contention; lower this if a slow disk surfaces transient lock errors) (default 4)
+  -p, --parallel int       Maximum update workers; operations sharing a superproject are serialized to avoid Git config/index contention (default 4)
   -v, --verbose            Show detailed output for each submodule
       --verify-artifacts   Check artifact roots against last-transfer snapshots (no transfer)
 ```

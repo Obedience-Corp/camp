@@ -67,7 +67,7 @@ func TestConsoleReporter_EndSubmodules_SomeFailed(t *testing.T) {
 
 	r.EndSubmodules(3, 2)
 
-	if !strings.Contains(buf.String(), "2 submodules failed") {
+	if !strings.Contains(buf.String(), "2 submodule trees incomplete") {
 		t.Errorf("EndSubmodules should show failure count")
 	}
 }

@@ -26,6 +26,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/Obedience-Corp/camp/internal/git"
 	"github.com/Obedience-Corp/camp/internal/peer"
 )
 
@@ -46,6 +47,55 @@ func TestSync_CleanRepo(t *testing.T) {
 	if !result.PreflightPassed {
 		t.Error("Sync().PreflightPassed = false, want true")
 	}
+}
+
+func TestUpdateSubmoduleFetchesNewRecordedCommit(t *testing.T) {
+	for _, noFetch := range []bool{false, true} {
+		t.Run(fmt.Sprintf("no-fetch=%v", noFetch), func(t *testing.T) {
+			ctx := context.Background()
+			repoRoot := setupTestRepo(t)
+			subPath := setupSubmodule(t, repoRoot, "projects/sub")
+			initial := NewSyncer(repoRoot).updateSubmodule(ctx, "projects/sub")
+			if !initial.Success {
+				t.Fatalf("initial sync: %v", initial.Error)
+			}
+			oldSHA := strings.TrimSpace(gitOutput(t, subPath, "rev-parse", "HEAD"))
+			origin := strings.TrimSpace(gitOutput(t, subPath, "remote", "get-url", "origin"))
+			createFile(t, filepath.Join(origin, "new.txt"), "new recorded commit")
+			runGit(t, origin, "add", "new.txt")
+			runGit(t, origin, "commit", "-qm", "advance pin")
+			newSHA := strings.TrimSpace(gitOutput(t, origin, "rev-parse", "HEAD"))
+			runGit(t, repoRoot, "update-index", "--cacheinfo", "160000,"+newSHA+",projects/sub")
+			syncer := NewSyncer(repoRoot, WithNoFetch(noFetch))
+			result := syncer.updateSubmodule(ctx, "projects/sub")
+			if noFetch {
+				if result.Success || result.Error == nil || !strings.Contains(result.Error.Error(), "--no-fetch") {
+					t.Fatalf("no-fetch result = %+v, want explicit missing commit failure", result)
+				}
+				if got := strings.TrimSpace(gitOutput(t, subPath, "rev-parse", "HEAD")); got != oldSHA {
+					t.Fatalf("no-fetch moved local branch to %s, want %s", got, oldSHA)
+				}
+				return
+			}
+			if !result.Success || result.DriftWarning != "" {
+				t.Fatalf("sync result = %+v, want successful fast-forward", result)
+			}
+			if got := strings.TrimSpace(gitOutput(t, subPath, "rev-parse", "HEAD")); got != newSHA {
+				t.Fatalf("local branch = %s, want pinned %s", got, newSHA)
+			}
+		})
+	}
+}
+
+func gitOutput(t *testing.T, dir string, args ...string) string {
+	t.Helper()
+	cmd := exec.Command("git", args...)
+	cmd.Dir = dir
+	output, err := cmd.CombinedOutput()
+	if err != nil {
+		t.Fatalf("git %v: %v: %s", args, err, output)
+	}
+	return string(output)
 }
 
 func TestSync_DryRun(t *testing.T) {
@@ -253,25 +303,21 @@ func TestUpdateSubmodules_PartialFailureIsolation(t *testing.T) {
 	}
 }
 
-// Mid-flight cancellation must abort promptly through the concurrent paths
-// (spawn-loop break, semaphore-wait select, in-flight git subprocesses) and
-// still honor the contract of returning (nil, context.Canceled). Six
-// submodules at parallelism 1 take well over a second of git work, so a
-// 150ms cancel reliably lands while workers are in flight; if timing ever
-// degenerates to cancel-before-entry, the assertions still hold via the
-// entry guard.
+// Holding the owner lock keeps a worker in flight independent of machine
+// speed. Cancellation must return (nil, context.Canceled), not partial results.
 func TestUpdateSubmodules_ContextCanceledMidFlight(t *testing.T) {
 	repoRoot := setupTestRepo(t)
 	for i := range 6 {
 		setupSubmodule(t, repoRoot, fmt.Sprintf("projects/sub%d", i))
 	}
+	release, err := git.LockSubmoduleOwner(context.Background(), repoRoot)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer release()
 
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
-	go func() {
-		time.Sleep(150 * time.Millisecond)
-		cancel()
-	}()
 
 	syncer := NewSyncer(repoRoot, WithParallel(1))
 
@@ -284,6 +330,8 @@ func TestUpdateSubmodules_ContextCanceledMidFlight(t *testing.T) {
 		results, err := syncer.updateSubmodules(ctx)
 		done <- outcome{results, err}
 	}()
+	time.Sleep(20 * time.Millisecond)
+	cancel()
 
 	select {
 	case got := <-done:

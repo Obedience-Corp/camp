@@ -124,46 +124,55 @@ func (s *Syncer) checkUncommittedChanges(ctx context.Context, paths []string) ([
 
 	var results []SubmoduleStatus
 	for _, path := range paths {
-		if ctx.Err() != nil {
-			return nil, ctx.Err()
-		}
-
-		fullPath := filepath.Join(s.repoRoot, path)
-		hasChanges, err := git.HasChanges(ctx, fullPath)
-		if err != nil {
-			// Submodule might not be initialized
-			continue
-		}
-
-		if hasChanges {
-			details := s.getChangesDetails(ctx, fullPath)
-			results = append(results, SubmoduleStatus{
-				Path:    path,
-				Details: details,
-			})
+		if err := s.collectNonSubmoduleChanges(ctx, filepath.Join(s.repoRoot, path), path, &results); err != nil {
+			return nil, err
 		}
 	}
 
 	return results, nil
 }
 
-// getChangesDetails returns a summary of changes in a repository.
-func (s *Syncer) getChangesDetails(ctx context.Context, repoPath string) string {
-	cmd := exec.CommandContext(ctx, "git", "-C", repoPath, "status", "--porcelain")
-	output, err := cmd.Output()
+// collectNonSubmoduleChanges checks real file edits at every initialized
+// level. A child on its selected branch can differ from its owner's gitlink
+// without making the owner's own files dirty.
+func (s *Syncer) collectNonSubmoduleChanges(ctx context.Context, repoPath, displayPath string, results *[]SubmoduleStatus) error {
+	if ctx.Err() != nil {
+		return ctx.Err()
+	}
+	initialized, err := git.IsWorktreeRoot(ctx, repoPath)
 	if err != nil {
-		return ""
+		return &SyncError{Op: "identify", Submodule: displayPath, Cause: err}
+	}
+	if !initialized {
+		return nil
+	}
+	cmd := exec.CommandContext(ctx, "git", "-C", repoPath, "status", "--porcelain", "--ignore-submodules=all")
+	output, err := cmd.CombinedOutput()
+	if err != nil {
+		return &SyncError{Op: "status", Submodule: displayPath, Cause: camperrors.Wrapf(err, "%s", strings.TrimSpace(string(output)))}
 	}
 
 	lines := strings.Split(strings.TrimSpace(string(output)), "\n")
-	if len(lines) == 0 || (len(lines) == 1 && lines[0] == "") {
-		return ""
+	if len(lines) > 0 && lines[0] != "" {
+		details := strings.Join(lines, ", ")
+		if len(lines) > 3 {
+			details = fmt.Sprintf("%d files changed", len(lines))
+		}
+		*results = append(*results, SubmoduleStatus{Path: displayPath, Details: details})
 	}
-
-	if len(lines) <= 3 {
-		return strings.Join(lines, ", ")
+	children, err := git.ListSubmodulePaths(ctx, repoPath)
+	if err != nil {
+		return &SyncError{Op: "list-nested", Submodule: displayPath, Cause: err}
 	}
-	return fmt.Sprintf("%d files changed", len(lines))
+	for _, child := range children {
+		if err := pathutil.ValidateSubmodulePath(repoPath, child); err != nil {
+			return &SyncError{Op: "validate-path", Submodule: filepath.Join(displayPath, child), Cause: err}
+		}
+		if err := s.collectNonSubmoduleChanges(ctx, filepath.Join(repoPath, child), filepath.Join(displayPath, child), results); err != nil {
+			return err
+		}
+	}
+	return nil
 }
 
 // checkUnpushedCommits is the internal implementation that accepts pre-fetched paths.
@@ -179,6 +188,13 @@ func (s *Syncer) checkUnpushedCommits(ctx context.Context, paths []string) ([]Su
 		}
 
 		fullPath := filepath.Join(s.repoRoot, path)
+		initialized, err := git.IsWorktreeRoot(ctx, fullPath)
+		if err != nil {
+			return nil, &SyncError{Op: "identify", Submodule: path, Cause: err}
+		}
+		if !initialized {
+			continue
+		}
 
 		// Check for commits ahead of upstream
 		// This will fail if no upstream is configured, which is fine
@@ -246,10 +262,17 @@ func (s *Syncer) checkDetachedHEADs(ctx context.Context, paths []string) ([]Deta
 		}
 
 		fullPath := filepath.Join(s.repoRoot, path)
+		initialized, err := git.IsWorktreeRoot(ctx, fullPath)
+		if err != nil {
+			return nil, &SyncError{Op: "identify", Submodule: path, Cause: err}
+		}
+		if !initialized {
+			continue
+		}
 
 		// Check if HEAD is detached
 		cmd := exec.CommandContext(ctx, "git", "-C", fullPath, "symbolic-ref", "-q", "HEAD")
-		err := cmd.Run()
+		err = cmd.Run()
 		if err == nil {
 			// HEAD is attached to a branch
 			continue

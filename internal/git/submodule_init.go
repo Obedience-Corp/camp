@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"os"
 	"os/exec"
+	"path"
 	"path/filepath"
 	"strings"
 	"time"
@@ -77,17 +78,57 @@ func resolveSubmoduleURL(ctx context.Context, repoDir, url string) string {
 	if err != nil || remoteURL == "" {
 		return url
 	}
-	// filepath.Join is wrong here (would strip the scheme); use path.Join on
-	// the path component only, then reassemble.
+	return resolveRelativeSubmoduleURL(remoteURL, url)
+}
+
+// Git resolves ./ below the repository URL and ../ beside it. Remaining
+// parent segments are normalized inside the remote's path, leaving scheme
+// and scp-style host prefixes intact.
+func resolveRelativeSubmoduleURL(remoteURL, relativeURL string) string {
 	base := strings.TrimSuffix(remoteURL, "/")
-	// Strip trailing component to get the "parent" remote dir.
-	slash := strings.LastIndex(base, "/")
-	if slash < 0 {
-		return url
+	prefix, remotePath := "", base
+	if scheme := strings.Index(base, "://"); scheme >= 0 {
+		pathStart := strings.IndexByte(base[scheme+3:], '/')
+		if pathStart < 0 {
+			return relativeURL
+		}
+		pathStart += scheme + 3
+		prefix, remotePath = base[:pathStart], base[pathStart:]
+	} else if colon := strings.IndexByte(base, ':'); colon >= 0 && !strings.HasPrefix(base, "/") {
+		prefix, remotePath = base[:colon+1], base[colon+1:]
 	}
-	parent := base[:slash]
-	rel := strings.TrimPrefix(url, "../")
-	return parent + "/" + rel
+	basePath := remotePath
+	if strings.HasPrefix(relativeURL, "../") {
+		slash := strings.LastIndexByte(remotePath, '/')
+		if slash >= 0 {
+			basePath = remotePath[:slash+1]
+		} else {
+			basePath = ""
+		}
+		relativeURL = strings.TrimPrefix(relativeURL, "../")
+	}
+	if basePath == "" {
+		return prefix + path.Clean(relativeURL)
+	}
+	return prefix + path.Clean(basePath+"/"+relativeURL)
+}
+
+// RefreshSubmoduleOrigin replaces peer-derived tracking refs with the real
+// origin's refs before a seeded checkout selects its branch.
+func RefreshSubmoduleOrigin(ctx context.Context, subDir string) error {
+	if err := ctx.Err(); err != nil {
+		return err
+	}
+	cmd := exec.CommandContext(ctx, "git", "-C", subDir, "fetch", "--prune", "--prune-tags", "--tags",
+		"origin", "+refs/heads/*:refs/remotes/origin/*")
+	if output, err := cmd.CombinedOutput(); err != nil {
+		return camperrors.WrapJoinf(ErrSubmoduleUpdate, err, "refresh origin refs in %s: %s", subDir, strings.TrimSpace(string(output)))
+	}
+	cmd = exec.CommandContext(ctx, "git", "-C", subDir, "remote", "set-head", "origin", "--auto")
+	if output, err := cmd.CombinedOutput(); err != nil {
+		return camperrors.WrapJoinf(ErrBranchDetection, err, "set origin HEAD in %s: %s", subDir, strings.TrimSpace(string(output)))
+	}
+	return nil
 }
 
 // DetectDefaultBranch determines the default branch for a submodule using
@@ -126,31 +167,42 @@ func DetectDefaultBranch(ctx context.Context, subDir string) (string, error) {
 	return "", camperrors.Wrapf(ErrBranchDetection, "%s", subDir)
 }
 
-// DetectDefaultBranchWithParent determines the default branch for a submodule,
-// also checking the parent repo's .gitmodules for a branch key.
+// DetectDefaultBranchWithParent selects an explicit .gitmodules branch when
+// present, then falls back to the remote's default branch.
 func DetectDefaultBranchWithParent(ctx context.Context, repoDir, subPath, subDir string) (string, error) {
 	if ctx.Err() != nil {
 		return "", ctx.Err()
 	}
 
-	// Strategy 1: Check symbolic-ref (populated after clone/fetch, no network)
-	cmd := exec.CommandContext(ctx, "git", "-C", subDir, "symbolic-ref", "refs/remotes/origin/HEAD")
+	// An explicit branch is a checkout policy, even when origin/HEAD names a
+	// different branch. Git's special "." value inherits the parent's branch.
+	name, nameErr := SubmoduleNameForPath(ctx, repoDir, subPath)
+	if nameErr != nil {
+		return "", nameErr
+	}
+	cmd := exec.CommandContext(ctx, "git", "-C", repoDir,
+		"config", "-f", ".gitmodules", fmt.Sprintf("submodule.%s.branch", name))
 	output, err := cmd.Output()
 	if err == nil {
-		ref := strings.TrimSpace(string(output))
-		branch := strings.TrimPrefix(ref, "refs/remotes/origin/")
-		if branch != ref && branch != "" {
+		branch := strings.TrimSpace(string(output))
+		if branch == "." {
+			parentBranch, parentErr := Output(ctx, repoDir, "symbolic-ref", "--quiet", "--short", "HEAD")
+			if parentErr == nil && strings.TrimSpace(parentBranch) != "" {
+				return strings.TrimSpace(parentBranch), nil
+			}
+		}
+		if branch != "" && branch != "." {
 			return branch, nil
 		}
 	}
 
-	// Strategy 2: Check .gitmodules for explicit branch key
-	cmd = exec.CommandContext(ctx, "git", "-C", repoDir,
-		"config", "-f", ".gitmodules", fmt.Sprintf("submodule.%s.branch", subPath))
+	// Check symbolic-ref (populated after clone/fetch, no network).
+	cmd = exec.CommandContext(ctx, "git", "-C", subDir, "symbolic-ref", "refs/remotes/origin/HEAD")
 	output, err = cmd.Output()
 	if err == nil {
-		branch := strings.TrimSpace(string(output))
-		if branch != "" && branch != "." {
+		ref := strings.TrimSpace(string(output))
+		branch := strings.TrimPrefix(ref, "refs/remotes/origin/")
+		if branch != ref && branch != "" {
 			return branch, nil
 		}
 	}
@@ -167,28 +219,89 @@ func DetectDefaultBranchWithParent(ctx context.Context, repoDir, subPath, subDir
 	return "", camperrors.Wrapf(ErrBranchDetection, "%s", subPath)
 }
 
+// CheckoutSubmoduleBranch selects the owner's declared branch, or the remote
+// default. Sync can preserve an already selected local branch; clone selects
+// the declared branch after its fresh initialization.
+func CheckoutSubmoduleBranch(ctx context.Context, repoDir, subPath string, preserveCurrent bool) (string, error) {
+	if ctx.Err() != nil {
+		return "", ctx.Err()
+	}
+	subDir := filepath.Join(repoDir, subPath)
+	if preserveCurrent {
+		current, err := Output(ctx, subDir, "symbolic-ref", "--quiet", "--short", "HEAD")
+		if err == nil && strings.TrimSpace(current) != "" {
+			return strings.TrimSpace(current), nil
+		}
+	}
+	branch, err := DetectDefaultBranchWithParent(ctx, repoDir, subPath, subDir)
+	if err != nil {
+		return "", err
+	}
+	cmd := exec.CommandContext(ctx, "git", "-C", subDir, "checkout", branch)
+	output, err := cmd.CombinedOutput()
+	if err != nil {
+		return "", camperrors.WrapJoinf(ErrBranchCheckout, err, "%s in %s: %s", branch, subPath, strings.TrimSpace(string(output)))
+	}
+	return branch, nil
+}
+
+// CheckoutSubmoduleBranchFromOrigin anchors a fresh peer-seeded checkout to
+// the real origin. A bundle or peer clone can carry a local branch with
+// unpublished commits, even after origin's tracking refs have been refreshed.
+func CheckoutSubmoduleBranchFromOrigin(ctx context.Context, repoDir, subPath string) (string, error) {
+	if err := ctx.Err(); err != nil {
+		return "", err
+	}
+	subDir := filepath.Join(repoDir, subPath)
+	branch, err := DetectDefaultBranchWithParent(ctx, repoDir, subPath, subDir)
+	if err != nil {
+		return "", err
+	}
+	cmd := exec.CommandContext(ctx, "git", "-C", subDir, "checkout", "-B", branch, "refs/remotes/origin/"+branch)
+	if output, err := cmd.CombinedOutput(); err != nil {
+		return "", camperrors.WrapJoinf(ErrBranchCheckout, err, "%s in %s from origin: %s", branch, subPath, strings.TrimSpace(string(output)))
+	}
+	return branch, nil
+}
+
 // InitSubmoduleGraceful initializes a single submodule, handling stale commit references.
 // If the recorded commit doesn't exist on the remote, it falls back to cloning at the
 // remote's default branch instead.
 func InitSubmoduleGraceful(ctx context.Context, repoDir, subPath string) error {
+	_, err := InitSubmoduleGracefulResult(ctx, repoDir, subPath)
+	return err
+}
+
+// InitSubmoduleResult records whether the recorded commit was unavailable.
+type InitSubmoduleResult struct {
+	StaleRefFallback bool
+}
+
+// InitSubmoduleGracefulResult has the same safe initialization behavior and
+// reports whether recovery from an unavailable gitlink was necessary.
+func InitSubmoduleGracefulResult(ctx context.Context, repoDir, subPath string) (InitSubmoduleResult, error) {
 	if ctx.Err() != nil {
-		return ctx.Err()
+		return InitSubmoduleResult{}, ctx.Err()
 	}
 
 	if err := pathutil.ValidateSubmodulePath(repoDir, subPath); err != nil {
-		return camperrors.WrapJoinf(ErrSubmoduleInit, err, "%s", subPath)
+		return InitSubmoduleResult{}, camperrors.WrapJoinf(ErrSubmoduleInit, err, "%s", subPath)
 	}
 
-	// Step 1: Register the submodule (init without update)
-	cmd := exec.CommandContext(ctx, "git", "-C", repoDir, "submodule", "init", subPath)
-	_ = cmd.Run() // Ignore error, may already be initialized
-
-	// Step 2: Try normal update
-	cmd = exec.CommandContext(ctx, "git", "-C", repoDir, "submodule", "update", subPath)
+	// Register and update in one Git operation. A failed registration must not
+	// turn the following update into a successful no-op on an empty child.
+	cmd := exec.CommandContext(ctx, "git", "-C", repoDir, "submodule", "update", "--init", subPath)
 	output, err := cmd.CombinedOutput()
 
 	if err == nil {
-		return nil
+		initialized, identityErr := IsWorktreeRoot(ctx, filepath.Join(repoDir, subPath))
+		if identityErr != nil {
+			return InitSubmoduleResult{}, camperrors.WrapJoinf(ErrSubmoduleInit, identityErr, "%s: verify repository identity", subPath)
+		}
+		if !initialized {
+			return InitSubmoduleResult{}, camperrors.WrapJoinf(ErrSubmoduleInit, ErrSubmoduleNotInitialized, "%s: update returned without initializing a repository", subPath)
+		}
+		return InitSubmoduleResult{}, nil
 	}
 
 	outputStr := string(output)
@@ -197,10 +310,13 @@ func InitSubmoduleGraceful(ctx context.Context, repoDir, subPath string) error {
 	if strings.Contains(outputStr, "not our ref") ||
 		strings.Contains(outputStr, "did not contain") ||
 		strings.Contains(outputStr, "reference is not a tree") {
-		return InitFromDefaultBranch(ctx, repoDir, subPath)
+		if fallbackErr := InitFromDefaultBranch(ctx, repoDir, subPath); fallbackErr != nil {
+			return InitSubmoduleResult{}, fallbackErr
+		}
+		return InitSubmoduleResult{StaleRefFallback: true}, nil
 	}
 
-	return camperrors.WrapJoinf(ErrSubmoduleUpdate, err, "%s: %s", subPath, strings.TrimSpace(outputStr))
+	return InitSubmoduleResult{}, camperrors.WrapJoinf(ErrSubmoduleUpdate, err, "%s: %s", subPath, strings.TrimSpace(outputStr))
 }
 
 // InitFromDefaultBranch clones a submodule at its remote's default branch
@@ -311,9 +427,13 @@ func CheckoutDefaultBranch(ctx context.Context, subDir string) (string, error) {
 
 // getSubmoduleURL returns the URL for a submodule, trying .gitmodules then .git/config.
 func getSubmoduleURL(ctx context.Context, repoDir, subPath string) (string, error) {
+	name, nameErr := SubmoduleNameForPath(ctx, repoDir, subPath)
+	if nameErr != nil {
+		return "", nameErr
+	}
 	// Try .gitmodules first
 	cmd := exec.CommandContext(ctx, "git", "-C", repoDir,
-		"config", "-f", ".gitmodules", fmt.Sprintf("submodule.%s.url", subPath))
+		"config", "-f", ".gitmodules", fmt.Sprintf("submodule.%s.url", name))
 	output, err := cmd.Output()
 	if err == nil {
 		return strings.TrimSpace(string(output)), nil
@@ -321,7 +441,7 @@ func getSubmoduleURL(ctx context.Context, repoDir, subPath string) (string, erro
 
 	// Fall back to .git/config
 	cmd = exec.CommandContext(ctx, "git", "-C", repoDir,
-		"config", fmt.Sprintf("submodule.%s.url", subPath))
+		"config", fmt.Sprintf("submodule.%s.url", name))
 	output, err = cmd.Output()
 	if err == nil {
 		return strings.TrimSpace(string(output)), nil

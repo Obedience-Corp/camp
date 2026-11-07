@@ -2,9 +2,11 @@ package git
 
 import (
 	"context"
+	"errors"
 	"os"
 	"os/exec"
 	"path/filepath"
+	"sort"
 	"strings"
 
 	camperrors "github.com/Obedience-Corp/camp/internal/errors"
@@ -20,15 +22,17 @@ func ListSubmodulePaths(ctx context.Context, repoRoot string) ([]string, error) 
 	// git resolves the same relative path and its failure already means "no
 	// submodules", so a missing file costs a stat instead of a spawn.
 	if _, err := os.Stat(filepath.Join(repoRoot, ".gitmodules")); err != nil {
-		return nil, nil
+		if errors.Is(err, os.ErrNotExist) {
+			return nil, nil
+		}
+		return nil, camperrors.Wrapf(err, "read .gitmodules in %s", repoRoot)
 	}
 
 	cmd := exec.CommandContext(ctx, "git", "-C", repoRoot,
 		"config", "-f", ".gitmodules", "--list")
-	output, err := cmd.Output()
+	output, err := cmd.CombinedOutput()
 	if err != nil {
-		// No .gitmodules means no submodules
-		return nil, nil
+		return nil, camperrors.Wrapf(err, "parse .gitmodules in %s: %s", repoRoot, strings.TrimSpace(string(output)))
 	}
 
 	var paths []string
@@ -43,6 +47,7 @@ func ListSubmodulePaths(ctx context.Context, repoRoot string) ([]string, error) 
 		paths = append(paths, parts[1])
 	}
 
+	sort.Strings(paths)
 	return paths, nil
 }
 

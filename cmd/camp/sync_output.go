@@ -2,10 +2,14 @@ package main
 
 import (
 	"encoding/json"
+	"errors"
 	"fmt"
 	"os"
+	"path/filepath"
+	"sort"
 	"time"
 
+	"github.com/Obedience-Corp/camp/internal/git"
 	"github.com/Obedience-Corp/camp/internal/sync"
 	"github.com/Obedience-Corp/camp/internal/ui"
 )
@@ -29,6 +33,7 @@ func formatSyncHuman(result *sync.SyncResult, opts syncOptions, preflight *sync.
 
 	// Pre-flight checks section
 	formatPreflightSection(preflight, opts.verbose)
+	formatOptionalLinkSection(result)
 
 	// Handle preflight failure - don't show more sections
 	if !result.PreflightPassed && !opts.force {
@@ -53,8 +58,16 @@ func formatSyncHuman(result *sync.SyncResult, opts syncOptions, preflight *sync.
 
 	// Update results section
 	formatUpdateSection(result, opts.verbose)
+	if result.ValidationRan {
+		if result.ValidationFailed {
+			fmt.Printf("Validation: %s Issues detected\n", ui.ErrorIcon())
+		} else {
+			fmt.Printf("Validation: %s All checks passed\n", ui.SuccessIcon())
+		}
+	}
 	formatArtifactsSection(result, opts.verbose)
 	formatWarningsSection(result.Warnings)
+	formatSyncErrors(result)
 
 	// Final status
 	fmt.Println()
@@ -69,6 +82,17 @@ func formatSyncHuman(result *sync.SyncResult, opts syncOptions, preflight *sync.
 		fmt.Fprintln(os.Stderr, ui.Error("Artifact verification found discrepancies. See details above."))
 	default:
 		fmt.Fprintln(os.Stderr, ui.Error("Sync failed. See errors or warnings above."))
+	}
+}
+
+func formatOptionalLinkSection(result *sync.SyncResult) {
+	if len(result.OptionalLinks) == 0 {
+		return
+	}
+	fmt.Printf("Optional project links: %d unresolved (local setup skipped)\n", len(result.OptionalLinks))
+	for _, link := range result.OptionalLinks {
+		fmt.Printf("  %s %s → %s\n", ui.WarningIcon(), link.Path, link.Target)
+		fmt.Printf("      Optional: camp project repair %s\n", filepath.Base(link.Path))
 	}
 }
 
@@ -165,19 +189,28 @@ func formatUpdateSection(result *sync.SyncResult, verbose bool) {
 
 	succeeded := 0
 	failed := 0
+	skipped := 0
+	initialized := 0
 	for _, sub := range result.UpdateResults {
+		if sub.Initialized {
+			initialized++
+		}
 		if sub.Success {
 			succeeded++
 			if verbose {
 				fmt.Printf("  %s %s\n", ui.SuccessIcon(), sub.Path)
 			}
+		} else if sub.Skipped {
+			skipped++
+			fmt.Printf("  %s %s (skipped): %v\n", ui.WarningIcon(), sub.Path, sub.Error)
 		} else {
 			failed++
-			fmt.Printf("  %s %s", ui.ErrorIcon(), sub.Path)
+			fmt.Printf("  %s %s (%s)", ui.ErrorIcon(), sub.Path, syncOperation(sub.Error))
 			if sub.Error != nil {
 				fmt.Printf(" - %s", sub.Error.Error())
 			}
 			fmt.Println()
+			formatSyncNestedFailures(sub.Nested)
 		}
 	}
 
@@ -185,10 +218,56 @@ func formatUpdateSection(result *sync.SyncResult, verbose bool) {
 	total := len(result.UpdateResults)
 	if failed == 0 {
 		if !verbose {
-			fmt.Printf("  %s %d/%d submodules updated\n", ui.SuccessIcon(), succeeded, total)
+			fmt.Printf("  %s %d/%d submodules updated", ui.SuccessIcon(), succeeded, total)
+			if skipped > 0 {
+				fmt.Printf(" (%d skipped)", skipped)
+			}
+			fmt.Println()
 		}
 	} else {
-		fmt.Printf("  %s %d/%d submodules failed\n", ui.ErrorIcon(), failed, total)
+		fmt.Printf("  %s %d/%d submodules failed (%d initialized, %d skipped)\n", ui.ErrorIcon(), failed, total, initialized, skipped)
+	}
+}
+
+func syncOperation(err error) string {
+	var syncErr *sync.SyncError
+	if errors.As(err, &syncErr) {
+		return syncErr.Op
+	}
+	return "update"
+}
+
+func formatSyncNestedFailures(results []git.NestedResult) {
+	for _, nested := range results {
+		if nested.Skipped {
+			fmt.Printf("    %s %s (skipped): %v\n", ui.WarningIcon(), nested.Path, nested.Error)
+		} else if nested.Error != nil && (nested.Operation != "children" || len(nested.Children) == 0) {
+			fmt.Printf("    %s %s (owner %s, %s): %v\n", ui.ErrorIcon(), nested.Path, nested.Owner, nested.Operation, nested.Error)
+		}
+		formatSyncNestedFailures(nested.Children)
+	}
+}
+
+func formatSyncErrors(result *sync.SyncResult) {
+	var unshown []error
+	for _, err := range result.Errors {
+		shown := false
+		for _, sub := range result.UpdateResults {
+			if sub.Error != nil && err.Error() == sub.Error.Error() {
+				shown = true
+				break
+			}
+		}
+		if !shown {
+			unshown = append(unshown, err)
+		}
+	}
+	if len(unshown) == 0 {
+		return
+	}
+	fmt.Fprintln(os.Stderr, "Errors:")
+	for _, err := range unshown {
+		fmt.Fprintf(os.Stderr, "  %s %v\n", ui.ErrorIcon(), err)
 	}
 }
 
@@ -330,6 +409,9 @@ func formatSyncJSON(result *sync.SyncResult, preflight *sync.PreflightResult, dr
 			}
 			preflightSubmodules = append(preflightSubmodules, sub)
 		}
+		sort.Slice(preflightSubmodules, func(i, j int) bool {
+			return preflightSubmodules[i]["name"].(string) < preflightSubmodules[j]["name"].(string)
+		})
 	}
 
 	// Build URL changes
@@ -341,12 +423,52 @@ func formatSyncJSON(result *sync.SyncResult, preflight *sync.PreflightResult, dr
 			"new":       change.NewURL,
 		}
 	}
+	sort.Slice(urlChanges, func(i, j int) bool { return urlChanges[i]["submodule"] < urlChanges[j]["submodule"] })
 
 	// Build update results
 	updateResults := map[string]interface{}{
-		"total":     len(result.UpdateResults),
-		"succeeded": countSucceeded(result.UpdateResults),
-		"failed":    countFailed(result.UpdateResults),
+		"total":       len(result.UpdateResults),
+		"succeeded":   countSucceeded(result.UpdateResults),
+		"failed":      countFailed(result.UpdateResults),
+		"skipped":     countSkipped(result.UpdateResults),
+		"initialized": countInitialized(result.UpdateResults),
+	}
+	ordered := append([]sync.SubmoduleResult(nil), result.UpdateResults...)
+	sort.Slice(ordered, func(i, j int) bool { return ordered[i].Path < ordered[j].Path })
+	if len(ordered) > 0 {
+		items := make([]map[string]interface{}, 0, len(ordered))
+		for _, sub := range ordered {
+			item := map[string]interface{}{
+				"owner": ".", "path": sub.Path, "name": sub.Name,
+				"success": sub.Success, "initialized": sub.Initialized, "skipped": sub.Skipped,
+				"operation": syncOperation(sub.Error),
+			}
+			if sub.Error != nil {
+				item["error"] = sub.Error.Error()
+			}
+			if sub.RecordedCommit != "" {
+				item["recordedCommit"] = sub.RecordedCommit
+			}
+			if sub.Commit != "" {
+				item["commit"] = sub.Commit
+			}
+			if sub.CheckedOutBranch != "" {
+				item["branch"] = sub.CheckedOutBranch
+			}
+			if len(sub.Nested) > 0 {
+				item["nested"] = git.NestedResultOutputs(sub.Nested)
+			}
+			items = append(items, item)
+		}
+		updateResults["results"] = items
+	}
+	var nestedResults []git.NestedResult
+	for _, sub := range ordered {
+		nestedResults = append(nestedResults, sub.Nested...)
+	}
+	if len(nestedResults) > 0 {
+		updateResults["nestedSummary"] = git.SummarizeNestedResults(nestedResults)
+		updateResults["nestedResults"] = git.NestedResultOutputs(nestedResults)
 	}
 
 	// Build warnings
@@ -368,6 +490,23 @@ func formatSyncJSON(result *sync.SyncResult, preflight *sync.PreflightResult, dr
 		// snake_case camp uses in newer schemas. An agent parsing sync output
 		// already reads camelCase here; one odd key would be the surprise.
 		"drainWaitedMs": drainWaited.Milliseconds(),
+	}
+	if result.ValidationRan {
+		output["validation"] = map[string]bool{"passed": !result.ValidationFailed}
+	}
+	if len(result.OptionalLinks) > 0 {
+		output["optionalLinks"] = map[string]interface{}{
+			"skipped": len(result.OptionalLinks), "results": result.OptionalLinks,
+		}
+	}
+	// Counts alone hide the cause of a failed update. Preserve the existing
+	// success contract and add diagnostics only when an operation failed.
+	if len(result.Errors) > 0 {
+		errors := make([]string, 0, len(result.Errors))
+		for _, err := range result.Errors {
+			errors = append(errors, err.Error())
+		}
+		output["errors"] = errors
 	}
 
 	// Peer-transport keys appear only when the feature ran, keeping default
@@ -419,7 +558,27 @@ func countSucceeded(results []sync.SubmoduleResult) int {
 func countFailed(results []sync.SubmoduleResult) int {
 	count := 0
 	for _, r := range results {
-		if !r.Success {
+		if !r.Success && !r.Skipped {
+			count++
+		}
+	}
+	return count
+}
+
+func countSkipped(results []sync.SubmoduleResult) int {
+	count := 0
+	for _, r := range results {
+		if r.Skipped {
+			count++
+		}
+	}
+	return count
+}
+
+func countInitialized(results []sync.SubmoduleResult) int {
+	count := 0
+	for _, r := range results {
+		if r.Initialized {
 			count++
 		}
 	}

@@ -34,7 +34,18 @@ The sync command performs three critical operations:
      that occur when remote URLs change.
 
   3. SUBMODULE UPDATE
-     Fetches and checks out the correct commits for all submodules.
+     Preserves existing local branches, fast-forwards them safely when
+     behind a recorded gitlink, and discovers children after checkout.
+
+Orphaned gitlinks are reported without removing them from the index.
+Normal output shows failed paths and original errors. JSON results include
+ordered module results, nested child paths, owners, errors, and counts.
+Initialized counts verified top-level checkouts; failed excludes skips.
+After a partial clone, 'camp sync --dry-run' checks local work before retry.
+'camp sync projects/<path>' retries one module; a final 'camp sync' checks all.
+Use 'camp status --show-refs' to see root gitlink changes separately. A broken
+machine-local project link is optional and can be previewed with
+'camp project repair <name>'. See docs/guides/clone-sync-recovery.md.
 
 This order is critical: sync-before-update prevents silent code deletion
 when URLs change on remote repositories.
@@ -43,7 +54,7 @@ EXIT CODES:
   0  Success
   1  Runtime failure (including pre-flight, sync, or update failure)
   2  Usage error (bad flags or args)
-  3  Post-sync validation failed
+  3  Validation-only failure (updates completed)
 
 EXAMPLES:
   # Sync all submodules (recommended default)
@@ -119,7 +130,7 @@ func init() {
 	syncCmd.Flags().BoolVarP(&syncOpts.verbose, "verbose", "v", false,
 		"Show detailed output for each submodule")
 	syncCmd.Flags().IntVarP(&syncOpts.parallel, "parallel", "p", 4,
-		"Number of parallel git operations (git guards superproject ops with repo lockfiles that fail fast on contention; lower this if a slow disk surfaces transient lock errors)")
+		"Maximum update workers; operations sharing a superproject are serialized to avoid Git config/index contention")
 	syncCmd.Flags().BoolVar(&syncOpts.noFetch, "no-fetch", false,
 		"Skip fetching from remote (use local refs only)")
 	syncCmd.Flags().BoolVar(&syncOpts.json, "json", false,
@@ -247,10 +258,17 @@ func runSync(cmd *cobra.Command, args []string) error {
 	// Format and display output
 	formatSyncResult(result, opts, preflight)
 
-	// Return appropriate exit code
+	return determineSyncExitCode(result, syncOpts)
+}
+
+// determineSyncExitCode keeps operation and validation failures distinct.
+func determineSyncExitCode(result *sync.SyncResult, opts syncFlags) error {
 	if !result.Success {
-		if !result.PreflightPassed && !syncOpts.force {
+		if !result.PreflightPassed && !opts.force {
 			return camperrors.NewCommand("camp sync", sync.ExitPreflightFailed, "", nil)
+		}
+		if result.ValidationFailed && !result.OperationFailed && !opts.artifactsOnly && !opts.verifyArtifacts {
+			return camperrors.NewCommand("camp sync", sync.ExitValidationFailed, "", nil)
 		}
 		return camperrors.NewCommand("camp sync", sync.ExitSyncFailed, "", nil)
 	}

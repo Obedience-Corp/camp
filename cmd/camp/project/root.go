@@ -6,6 +6,7 @@ import (
 	projectlinked "github.com/Obedience-Corp/camp/cmd/camp/project/linked"
 	projectremote "github.com/Obedience-Corp/camp/cmd/camp/project/remote"
 	projectworktree "github.com/Obedience-Corp/camp/cmd/camp/project/worktree"
+	"github.com/Obedience-Corp/camp/internal/config"
 	"github.com/spf13/cobra"
 )
 
@@ -48,6 +49,13 @@ func init() {
 	}
 	Cmd.AddCommand(projectlinked.NewLinkCommand(linkResolverFactory))
 	Cmd.AddCommand(projectlinked.NewUnlinkCommand(linkResolverFactory))
+	Cmd.AddCommand(projectlinked.NewRepairCommand(func(stderr io.Writer, usageLine string) projectlinked.CampaignResolver {
+		resolver := newProjectCampaignResolver(stderr, usageLine)
+		resolver.loadCurrent = config.ReadCampaignConfigFromCwd
+		resolver.loadCampaign = config.ReadCampaignConfig
+		resolver.updateAccess = nil
+		return resolver
+	}))
 	Cmd.AddCommand(projectremote.Cmd)
 	Cmd.AddCommand(projectworktree.Cmd)
 }

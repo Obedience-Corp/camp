@@ -1,16 +1,18 @@
 // Package clone provides single-command campaign setup with submodule initialization.
 //
 // The clone package implements a four-phase approach to campaign setup:
-//  1. Clone the repository with recursive submodules
+//  1. Clone the repository without recursive submodules
 //  2. Synchronize URLs from .gitmodules to .git/config
-//  3. Update submodules to ensure all are at correct commits
+//  3. Initialize submodules with selected branch checkout
 //  4. Validate the setup (all initialized, correct commits, matching URLs)
 //
 // This provides a reliable single-command bootstrap experience for new devices.
 package clone
 
 import (
+	"github.com/Obedience-Corp/camp/internal/git"
 	"github.com/Obedience-Corp/camp/internal/peer"
+	"github.com/Obedience-Corp/camp/internal/project"
 	"github.com/Obedience-Corp/camp/internal/sync"
 )
 
@@ -56,6 +58,8 @@ type CloneResult struct {
 	Errors []error
 	// Warnings contains non-fatal issues encountered.
 	Warnings []string
+	// OptionalLinks are broken local project links skipped during setup.
+	OptionalLinks []project.BrokenProjectLink
 	// Registration contains auto-registration results (nil if skipped or not a campaign).
 	Registration *RegistrationResult
 	// Seed records which transport delivered each repository when a peer was
@@ -119,8 +123,20 @@ type SubmoduleResult struct {
 	URL string
 	// Success indicates whether this submodule was initialized successfully.
 	Success bool
+	// Initialized records verified checkout identity, even when a child later fails.
+	Initialized bool
+	// Skipped means cancellation prevented this top-level attempt.
+	Skipped bool
+	// Operation identifies the failed or skipped stage.
+	Operation string
 	// Commit is the HEAD commit hash after initialization.
 	Commit string
+	// RecordedCommit is the superproject gitlink before branch selection.
+	RecordedCommit string
+	// StaleRefFallback reports recovery from a missing recorded commit.
+	StaleRefFallback bool
+	// Nested contains the children discovered from this selected checkout.
+	Nested []git.NestedResult
 	// Error contains any error that occurred during initialization.
 	Error error
 	// PeerSeeded indicates the submodule's objects were cloned from the
@@ -132,16 +148,18 @@ type SubmoduleResult struct {
 type ValidationResult struct {
 	// Passed indicates whether all validation checks passed.
 	Passed bool
-	// AllInitialized indicates all declared submodules have content.
+	// AllInitialized is true only when every declared gitlink was checked and initialized.
 	AllInitialized bool
-	// CorrectCommits indicates all submodules are at expected commits.
+	// CorrectCommits is true only when every required checkout was checked against its owner's gitlink policy.
 	CorrectCommits bool
-	// URLsMatch indicates .gitmodules and .git/config URLs match.
+	// URLsMatch is true only when every required active URL was checked against its owner's declaration.
 	URLsMatch bool
 	// Issues contains any validation problems found.
 	Issues []ValidationIssue
 	// CheckResults contains per-check pass/fail status.
 	CheckResults map[string]bool
+	// CheckStates distinguishes passed, failed, skipped, and unavailable checks.
+	CheckStates map[string]string
 }
 
 // ValidationIssue represents a validation problem found during post-clone checks.
@@ -314,7 +332,7 @@ const (
 	ExitSuccess = 0
 	// ExitCloneFailed indicates the clone failed (no campaign created).
 	ExitCloneFailed = 1
-	// ExitPartialSuccess indicates some submodules failed to initialize.
+	// ExitPartialSuccess indicates a usable root with failed required module setup.
 	ExitPartialSuccess = 3
 	// ExitValidationFailed indicates post-clone validation failed.
 	ExitValidationFailed = 3
