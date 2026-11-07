@@ -307,10 +307,10 @@ func (c *Cloner) repointOrigin(ctx context.Context, dir string) error {
 // instead of origin. The peer URL is supplied for that single `git submodule
 // update` invocation via -c, so the parent's persisted config keeps the
 // declared origin URL; afterwards the freshly created module's origin remote
-// (which git set from the -c value) is re-pointed at the declared URL. No
-// origin fetch runs here: the recorded gitlink SHA is either present from the
-// peer (checkout proceeds with zero origin traffic) or the caller's graceful
-// init fetches the delta from origin.
+// (which git set from the -c value) is re-pointed at the declared URL.
+// Origin verification runs in the caller after initialization. Keeping that
+// step outside this helper also covers a module that was created before a
+// later peer-seed operation failed.
 func (c *Cloner) seedSubmoduleFromPeer(ctx context.Context, repoDir string, sub SubmoduleInfo) error {
 	if ctx.Err() != nil {
 		return ctx.Err()
@@ -360,12 +360,24 @@ func (c *Cloner) seedSubmoduleFromPeer(ctx context.Context, repoDir string, sub 
 		return repointErr
 	}
 
-	// Explicitly populate origin/* before checkout. A peer-created module may
-	// have no remote fetch refspec, so a plain `git fetch origin` is insufficient.
-	if err := gitpkg.RefreshSubmoduleOrigin(ctx, subDir); err != nil {
-		return camperrors.Wrapf(err, "refresh %s from origin after peer seed", sub.Path)
-	}
 	return nil
+}
+
+// peerModulePresent reports whether a failed seed left peer-derived state in
+// this fresh clone. The caller must verify origin before selecting a branch
+// whenever either the worktree or its module repository exists.
+func peerModulePresent(repoDir string, sub SubmoduleInfo) (bool, error) {
+	for _, candidate := range []string{
+		filepath.Join(repoDir, sub.Path, ".git"),
+		filepath.Join(repoDir, ".git", "modules", sub.Name),
+	} {
+		if _, err := os.Lstat(candidate); err == nil {
+			return true, nil
+		} else if !errors.Is(err, os.ErrNotExist) {
+			return false, camperrors.Wrapf(err, "inspect partial peer seed for %s", sub.Path)
+		}
+	}
+	return false, nil
 }
 
 // RepoNameFromURL returns the repository name a clone of url would produce,

@@ -213,8 +213,8 @@ func (c *Cloner) Clone(ctx context.Context) (*CloneResult, error) {
 				// Step 0: Seed objects from the peer when one is configured.
 				// Cold-seed copy first when the peer declared this repo
 				// quiescent, then the git-clone-from-peer path, then origin —
-				// each step degrades to the next with a warning rather than
-				// failing the submodule.
+				// a failed step falls back only when it left no peer module.
+				// Any peer-derived module must verify the real origin below.
 				peerSeeded := false
 				if c.peer != nil {
 					method, reason, coldErr := c.coldSeedSubmodule(ctx, targetDir, sub)
@@ -228,9 +228,21 @@ func (c *Cloner) Clone(ctx context.Context) (*CloneResult, error) {
 							reason = coldErr.Error()
 						}
 						if seedErr := c.seedSubmoduleFromPeer(ctx, targetDir, sub); seedErr != nil {
-							r.warnings = append(r.warnings,
-								fmt.Sprintf("peer seed %s: %v (initializing from origin)", sub.Path, seedErr))
-							r.seed = SeedRepoResult{Repo: sub.Path, Method: SeedMethodOrigin, Reason: seedErr.Error()}
+							modulePresent, inspectErr := peerModulePresent(targetDir, sub)
+							if inspectErr != nil {
+								seedErr = errors.Join(seedErr, inspectErr)
+								modulePresent = true // An unknown partial seed must be treated as peer-derived.
+							}
+							if modulePresent {
+								peerSeeded = true
+								r.seed = SeedRepoResult{Repo: sub.Path, Method: SeedMethodPeerClone, Reason: seedErr.Error()}
+								r.warnings = append(r.warnings,
+									fmt.Sprintf("peer seed %s incomplete: %v (verifying with origin)", sub.Path, seedErr))
+							} else {
+								r.seed = SeedRepoResult{Repo: sub.Path, Method: SeedMethodOrigin, Reason: seedErr.Error()}
+								r.warnings = append(r.warnings,
+									fmt.Sprintf("peer seed %s: %v (initializing from origin)", sub.Path, seedErr))
+							}
 						} else {
 							peerSeeded = true
 							r.seed = SeedRepoResult{Repo: sub.Path, Method: SeedMethodPeerClone, Reason: reason}
@@ -264,9 +276,9 @@ func (c *Cloner) Clone(ctx context.Context) (*CloneResult, error) {
 					r.warnings = append(r.warnings,
 						fmt.Sprintf("submodule %s: %v", sub.Path, subErr))
 				}
-				if r.result.Success && (r.seed.Method == SeedMethodPackCopy || r.seed.Method == SeedMethodBundle) {
-					// Cold seeds carry objects but may lack the real origin's
-					// tracking refs. Refresh before mandatory branch selection.
+				if r.result.Success && peerSeeded {
+					// Every peer-derived module, including one left by an incomplete
+					// seed, must refresh the real origin before branch selection.
 					cmd := exec.CommandContext(ctx, "git", "-C", targetDir, "submodule", "sync", "--", sub.Path)
 					if output, syncErr := cmd.CombinedOutput(); syncErr != nil {
 						subErr = camperrors.Wrapf(syncErr, "sync seeded %s URL: %s", sub.Path, strings.TrimSpace(string(output)))
