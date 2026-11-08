@@ -51,17 +51,18 @@ type SCCResult struct {
 // Verified field names against scc v3.6.0. Note that "Name", "Lines", "Code"
 // etc. are PascalCase in the JSON output (scc convention).
 type LanguageEntry struct {
-	Name               string `json:"Name"`
-	Bytes              int    `json:"Bytes"`
-	CodeBytes          int    `json:"CodeBytes"`
-	Lines              int    `json:"Lines"`
-	Code               int    `json:"Code"`
-	Comment            int    `json:"Comment"`
-	Blank              int    `json:"Blank"`
-	Complexity         int    `json:"Complexity"`
-	Count              int    `json:"Count"`
-	WeightedComplexity int    `json:"WeightedComplexity"`
-	ULOC               int    `json:"ULOC"`
+	Files              []ScannedFile `json:"Files,omitempty"`
+	Name               string        `json:"Name"`
+	Bytes              int           `json:"Bytes"`
+	CodeBytes          int           `json:"CodeBytes"`
+	Lines              int           `json:"Lines"`
+	Code               int           `json:"Code"`
+	Comment            int           `json:"Comment"`
+	Blank              int           `json:"Blank"`
+	Complexity         int           `json:"Complexity"`
+	Count              int           `json:"Count"`
+	WeightedComplexity int           `json:"WeightedComplexity"`
+	ULOC               int           `json:"ULOC"`
 }
 
 // LeverageScore holds the computed leverage metrics for one project
