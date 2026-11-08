@@ -2,8 +2,11 @@ package leverage
 
 import (
 	"fmt"
+	"math"
+	"os"
 	"time"
 
+	"github.com/Obedience-Corp/camp/internal/campaign"
 	camperrors "github.com/Obedience-Corp/camp/internal/errors"
 
 	"github.com/Obedience-Corp/camp/internal/jsoncontract"
@@ -20,20 +23,33 @@ var leverageJSON bool
 
 func init() {
 	Cmd.Args = jsoncontract.Args(LeverageJSONVersion, func() bool { return leverageJSON }, cobra.MaximumNArgs(1))
-	Cmd.RunE = jsoncontract.RunE(LeverageJSONVersion, func() bool { return leverageJSON }, runLeverage)
+	Cmd.RunE = func(cmd *cobra.Command, args []string) error {
+		err := runLeverage(cmd, args)
+		if done, ok := err.(*camperrors.CommandError); ok && done.Err == nil {
+			return err
+		}
+		if err != nil && leverageJSON {
+			return jsoncontract.RenderError(cmd, LeverageJSONVersion, err)
+		}
+		return err
+	}
 	Cmd.Flags().BoolVar(&leverageJSON, "json", false, "output as JSON")
 	Cmd.Flags().StringP("project", "p", "", "filter by project name")
 	Cmd.Flags().Int("people", 0, "override team size (0 = auto-detect from git)")
 	Cmd.Flags().Bool("no-legend", false, "hide the leverage formula legend")
 	Cmd.Flags().BoolP("verbose", "v", false, "show diagnostic details (config, project resolution, exclusions)")
 	Cmd.Flags().String("author", "", "filter by author email (git substring match: 'alice@co' matches 'alice@co.com')")
-	Cmd.Flags().Bool("by-author", false, "show per-author leverage breakdown")
+	Cmd.Flags().Bool("by-author", false, "show a read-only per-author leverage breakdown")
+	Cmd.Flags().Float64("author-threshold", 1, "minimum ownership percentage shown with --by-author (0 shows all)")
 	Cmd.Flags().String("dir", "", "score a specific directory (skips camp project resolution)")
 	addNoCommitFlag(Cmd)
 	Cmd.SetFlagErrorFunc(jsoncontract.FlagErrorFunc(LeverageJSONVersion, func() bool { return leverageJSON }))
 }
 
 func runLeverage(cmd *cobra.Command, args []string) error {
+	if err := validateReportFlags(cmd); err != nil {
+		return err
+	}
 	targetDir, err := resolveTargetDir(cmd, args)
 	if err != nil {
 		return err
@@ -47,6 +63,23 @@ func runLeverage(cmd *cobra.Command, args []string) error {
 	}
 
 	ctx := cmd.Context()
+	root, detectErr := campaign.DetectCached(ctx)
+	if detectErr != nil {
+		if !camperrors.Is(detectErr, campaign.ErrNotInCampaign) {
+			return detectErr
+		}
+		if project, _ := cmd.Flags().GetString("project"); project != "" {
+			return camperrors.New("--project requires a camp; use a repository path instead")
+		}
+		cwd, err := os.Getwd()
+		if err != nil {
+			return err
+		}
+		return runLeverageDir(cmd, cwd)
+	}
+	if byAuthor, _ := cmd.Flags().GetBool("by-author"); byAuthor {
+		return runRepositoryReport(cmd, "", root)
+	}
 
 	projectFilter, _ := cmd.Flags().GetString("project")
 	peopleOverride, _ := cmd.Flags().GetInt("people")
@@ -218,5 +251,28 @@ func runLeverage(cmd *cobra.Command, args []string) error {
 		subject: "update scores",
 		report:  renderScoreReport(agg, scores, cfg, opts),
 	})
+	return nil
+}
+
+func validateReportFlags(cmd *cobra.Command) error {
+	byAuthor, _ := cmd.Flags().GetBool("by-author")
+	author, _ := cmd.Flags().GetString("author")
+	people, _ := cmd.Flags().GetInt("people")
+	threshold, _ := cmd.Flags().GetFloat64("author-threshold")
+	if byAuthor && author != "" {
+		return camperrors.New("--author and --by-author are mutually exclusive")
+	}
+	if people < 0 {
+		return camperrors.New("--people must be nonnegative")
+	}
+	if people > 0 && (byAuthor || author != "") {
+		return camperrors.New("--people is only available for the repository or camp summary")
+	}
+	if cmd.Flags().Changed("author-threshold") && !byAuthor {
+		return camperrors.New("--author-threshold requires --by-author")
+	}
+	if math.IsNaN(threshold) || math.IsInf(threshold, 0) || threshold < 0 || threshold > 100 {
+		return camperrors.New("--author-threshold must be a finite percentage from 0 to 100")
+	}
 	return nil
 }

@@ -1,11 +1,8 @@
 package leverage
 
 import (
-	"path/filepath"
 	"strings"
 	"testing"
-
-	intleverage "github.com/Obedience-Corp/camp/internal/leverage"
 )
 
 func executeLeverageDir(t *testing.T, args ...string) (string, error) {
@@ -43,109 +40,7 @@ func TestLeverageDir_NonexistentDir(t *testing.T) {
 	}
 }
 
-func TestLeverageDir_TableOutput(t *testing.T) {
-	origRunner := sccRunner
-	origPopulate := populateMetrics
-	t.Cleanup(func() { sccRunner = origRunner; populateMetrics = origPopulate })
-	populateMetrics = stubPopulateMetrics()
-
-	sccRunner = &mockRunner{
-		results: map[string]*intleverage.SCCResult{
-			"camp": sampleResult(10.68, 18.72, 2251607, 65641),
-		},
-	}
-
-	output, err := executeLeverageDir(t, "--dir", ".")
-	if err != nil {
-		t.Fatalf("command failed: %v", err)
-	}
-	if !strings.Contains(output, "Directory Leverage") {
-		t.Errorf("output should contain 'Directory Leverage'\nGot:\n%s", output)
-	}
-	if strings.Contains(output, "Campaign Leverage") {
-		t.Errorf("output should NOT contain 'Campaign Leverage' in directory mode\nGot:\n%s", output)
-	}
-	if strings.Contains(output, "camp leverage config") {
-		t.Errorf("output should NOT suggest 'camp leverage config' in directory mode\nGot:\n%s", output)
-	}
-	for _, want := range []string{"PROJECT", "FILES", "CODE", "LEVERAGE", "COCOMO Estimate:", "person-months"} {
-		if !strings.Contains(output, want) {
-			t.Errorf("output missing %q\nGot:\n%s", want, output)
-		}
-	}
-}
-
-func TestLeverageDir_JSONOutput(t *testing.T) {
-	origRunner := sccRunner
-	origPopulate := populateMetrics
-	t.Cleanup(func() { sccRunner = origRunner; populateMetrics = origPopulate })
-	populateMetrics = stubPopulateMetrics()
-
-	sccRunner = &mockRunner{
-		results: map[string]*intleverage.SCCResult{
-			"camp": sampleResult(10.68, 18.72, 2251607, 65641),
-		},
-	}
-
-	output, err := executeLeverageDir(t, "--dir", ".", "--json")
-	if err != nil {
-		t.Fatalf("command failed: %v", err)
-	}
-	if !strings.Contains(output, `"campaign"`) {
-		t.Errorf("JSON output missing 'campaign' key\nGot:\n%s", output)
-	}
-	if !strings.Contains(output, `"projects"`) {
-		t.Errorf("JSON output missing 'projects' key\nGot:\n%s", output)
-	}
-}
-
-func TestLeverageDir_PositionalArg(t *testing.T) {
-	origRunner := sccRunner
-	origPopulate := populateMetrics
-	t.Cleanup(func() { sccRunner = origRunner; populateMetrics = origPopulate })
-	populateMetrics = stubPopulateMetrics()
-
-	sccRunner = &mockRunner{
-		results: map[string]*intleverage.SCCResult{
-			"camp": sampleResult(10.68, 18.72, 2251607, 65641),
-		},
-	}
-
-	output, err := executeLeverageDir(t, ".")
-	if err != nil {
-		t.Fatalf("command failed: %v", err)
-	}
-	if !strings.Contains(output, "Directory Leverage") {
-		t.Errorf("positional arg should trigger directory mode\nGot:\n%s", output)
-	}
-}
-
-func TestLeverageDir_OutsideCampaign(t *testing.T) {
-	origRunner := sccRunner
-	origPopulate := populateMetrics
-	t.Cleanup(func() { sccRunner = origRunner; populateMetrics = origPopulate })
-	populateMetrics = stubPopulateMetrics()
-
-	tmpDir := t.TempDir()
-	dirName := filepath.Base(tmpDir)
-
-	sccRunner = &mockRunner{
-		results: map[string]*intleverage.SCCResult{
-			dirName: sampleResult(2.0, 6.0, 500000, 10000),
-		},
-	}
-
-	output, err := executeLeverageDir(t, "--dir", tmpDir)
-	if err != nil {
-		t.Fatalf("command failed: %v", err)
-	}
-	if !strings.Contains(output, "Directory Leverage") {
-		t.Errorf("output should contain 'Directory Leverage'\nGot:\n%s", output)
-	}
-	if strings.Contains(output, "Campaign Leverage") {
-		t.Errorf("output should NOT contain 'Campaign Leverage'\nGot:\n%s", output)
-	}
-}
+// Directory reporting with real Git/scc runs in the containerized repository report suite.
 
 func TestResolveTargetDir(t *testing.T) {
 	tests := []struct {

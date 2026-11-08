@@ -67,7 +67,7 @@ camp [flags]
 * [camp idea](camp_idea.md)	 - Manage camp ideas
 * [camp init](camp_init.md)	 - Initialize a new camp
 * [camp jobs](camp_jobs.md)	 - Inspect and run camp's deferred commit queue
-* [camp leverage](camp_leverage.md)	 - Compute leverage scores for the camp's projects
+* [camp leverage](camp_leverage.md)	 - Compute leverage scores for a repository or camp
 * [camp lifecycle](camp_lifecycle.md)	 - Manage camp lifecycle status
 * [camp list](camp_list.md)	 - List all registered camps
 * [camp log](camp_log.md)	 - Show git log of the camp
