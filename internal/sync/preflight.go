@@ -374,3 +374,28 @@ func (s *Syncer) RunPreflight(ctx context.Context) (*PreflightResult, error) {
 
 	return result, nil
 }
+
+// collectWarnings gathers warning messages from preflight results.
+func (s *Syncer) collectWarnings(preflight *PreflightResult) []string {
+	var warnings []string
+
+	// In force mode, uncommitted changes become warnings instead of errors
+	if s.options.Force {
+		for _, status := range preflight.UncommittedChanges {
+			warnings = append(warnings, fmt.Sprintf("uncommitted changes in %s: %s", status.Path, status.Details))
+		}
+		for _, status := range preflight.UnpushedCommits {
+			warnings = append(warnings, fmt.Sprintf("unpushed commits in %s: %s", status.Path, status.Details))
+		}
+	}
+
+	// Detached HEADs are always warnings
+	for _, detached := range preflight.DetachedHEADs {
+		if detached.HasLocalWork {
+			warnings = append(warnings, fmt.Sprintf("detached HEAD with %d local commits in %s",
+				detached.LocalCommits, detached.Path))
+		}
+	}
+
+	return warnings
+}
