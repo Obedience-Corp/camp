@@ -47,7 +47,7 @@ type RemoveResult struct {
 	Steps []string
 	// RecoveryInstructions describes manual steps needed if removal was partial.
 	RecoveryInstructions []string
-	// Warnings records non-fatal follow-up notes from linked-project cleanup.
+	// Warnings records non-fatal follow-up notes from project cleanup.
 	Warnings []string
 }
 
@@ -133,6 +133,9 @@ func Remove(ctx context.Context, campaignRoot, name string, opts RemoveOptions) 
 				result.WorktreeDeleted = true
 			}
 		}
+		if !opts.Delete {
+			cleanupEmptyProjectWorktree(ctx, campaignRoot, name, opts.DryRun, result)
+		}
 		return result, nil
 	}
 
@@ -216,7 +219,58 @@ func Remove(ctx context.Context, campaignRoot, name string, opts RemoveOptions) 
 		}
 	}
 
+	if !opts.Delete {
+		cleanupEmptyProjectWorktree(ctx, campaignRoot, name, false, result)
+	}
 	return result, nil
+}
+
+// cleanupEmptyProjectWorktree removes the holder created by project add/new.
+// Use Remove, never RemoveAll: content added since inspection must survive.
+func cleanupEmptyProjectWorktree(ctx context.Context, root, name string, dryRun bool, result *RemoveResult) {
+	path := campaignProjectWorktreePath(ctx, root, name)
+	warn := func(err error) {
+		result.Warnings = append(result.Warnings, fmt.Sprintf("worktree directory %s retained: %v", path, err))
+	}
+	if err := ctx.Err(); err != nil {
+		warn(err)
+		return
+	}
+	if err := pathutil.ValidateBoundary(root, path); err != nil {
+		warn(err)
+		return
+	}
+	info, err := os.Lstat(path)
+	if os.IsNotExist(err) {
+		return
+	}
+	if err != nil {
+		warn(err)
+		return
+	}
+	if !info.IsDir() {
+		warn(errors.New("not a directory"))
+		return
+	}
+	entries, err := os.ReadDir(path)
+	if err != nil {
+		warn(err)
+		return
+	}
+	if len(entries) != 0 {
+		warn(errors.New("contains files; inspect and remove manually when no longer needed"))
+		return
+	}
+	if dryRun {
+		addStep(result, fmt.Sprintf("would delete empty worktree directory %s", path))
+	} else {
+		if err := os.Remove(path); err != nil {
+			warn(err)
+			return
+		}
+		addStep(result, fmt.Sprintf("deleted empty worktree directory %s", path))
+	}
+	result.WorktreeDeleted = true
 }
 
 func linkedProjectTarget(projectPath string) (bool, string, error) {

@@ -21,7 +21,8 @@ var projectRemoveCmd = &cobra.Command{
 
 By default, this only removes the project from git submodule tracking.
 The project directory is removed from the working tree by git rm. Pass --delete
-to also remove any worktree directories managed by camp.
+to also remove nonempty worktree directories managed by camp. Empty worktree
+directories are cleaned up automatically.
 
 For linked projects, prefer 'camp project unlink'. Linked projects are
 machine-local symlinks and are never deleted through this command.
@@ -103,6 +104,9 @@ func runProjectRemove(cmd *cobra.Command, args []string) error {
 		}
 		if result.WorktreeDeleted {
 			fmt.Printf("    %s Delete worktrees for %s\n", ui.BulletIcon(), ui.Dim(result.Name))
+		}
+		for _, warning := range result.Warnings {
+			fmt.Printf("  %s %s\n", ui.WarningIcon(), ui.Warning(warning))
 		}
 		return nil
 	}
