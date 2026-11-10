@@ -15,10 +15,16 @@ import (
 	"github.com/Obedience-Corp/camp/internal/workitem/priority"
 )
 
+// promoteCampaign builds a legacy camp whose root dungeon is visible, so a
+// type's first dungeon follows that spelling whatever dungeon_hidden says.
 func promoteCampaign(t *testing.T) string {
 	t.Helper()
+	t.Setenv("XDG_CONFIG_HOME", filepath.Join("testdata", "no-global-config"))
 	root := t.TempDir()
 	writeFile(t, filepath.Join(root, ".campaign", "campaign.yaml"), "id: test-campaign\nname: Test\ntype: product\n")
+	if err := os.MkdirAll(filepath.Join(root, "dungeon"), 0o755); err != nil {
+		t.Fatalf("MkdirAll root dungeon: %v", err)
+	}
 	return root
 }
 

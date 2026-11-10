@@ -75,7 +75,12 @@ func TestDetectFromCwd_ActiveItemPointsAtEstablishedHiddenDungeon(t *testing.T) 
 	}
 }
 
+// noGlobalConfig points the global config at a directory that holds none, so
+// dungeon_hidden takes its built-in default.
+const noGlobalConfig = "testdata/no-global-config"
+
 func TestDetectFromCwd(t *testing.T) {
+	t.Setenv("XDG_CONFIG_HOME", noGlobalConfig)
 	const root = "/campaign"
 
 	tests := []struct {
@@ -97,7 +102,7 @@ func TestDetectFromCwd(t *testing.T) {
 			wantSlug: "myslug",
 			wantSrc:  "/campaign/workflow/design/myslug",
 			wantPar:  "/campaign/workflow/design",
-			wantDun:  "/campaign/workflow/design/dungeon",
+			wantDun:  "/campaign/workflow/design/.dungeon",
 		},
 		{
 			name:     "active workitem subdir",
@@ -106,7 +111,7 @@ func TestDetectFromCwd(t *testing.T) {
 			wantSlug: "myslug",
 			wantSrc:  "/campaign/workflow/design/myslug",
 			wantPar:  "/campaign/workflow/design",
-			wantDun:  "/campaign/workflow/design/dungeon",
+			wantDun:  "/campaign/workflow/design/.dungeon",
 		},
 		{
 			name:     "active workitem deep subdir",
@@ -115,7 +120,7 @@ func TestDetectFromCwd(t *testing.T) {
 			wantSlug: "topic",
 			wantSrc:  "/campaign/workflow/explore/topic",
 			wantPar:  "/campaign/workflow/explore",
-			wantDun:  "/campaign/workflow/explore/dungeon",
+			wantDun:  "/campaign/workflow/explore/.dungeon",
 		},
 		{
 			name:     "dungeon legacy flat layout",
@@ -432,6 +437,7 @@ func TestDetectFromCwd_FestivalResidentTypeIsNotThePath(t *testing.T) {
 
 // A workflow item's Type comes from its path, so a disagreeing marker is ignored.
 func TestDetectFromCwd_WorkflowUnaffectedByMarker(t *testing.T) {
+	t.Setenv("XDG_CONFIG_HOME", noGlobalConfig)
 	root := t.TempDir()
 	if resolved, err := filepath.EvalSymlinks(root); err == nil {
 		root = resolved
@@ -445,10 +451,35 @@ func TestDetectFromCwd_WorkflowUnaffectedByMarker(t *testing.T) {
 	if loc.Type != "design" {
 		t.Errorf("Type=%q want design (path wins for workflow items, not the marker)", loc.Type)
 	}
-	if want := filepath.Join(root, "workflow", "design", "dungeon"); loc.DungeonPath != want {
+	if want := filepath.Join(root, "workflow", "design", ".dungeon"); loc.DungeonPath != want {
 		t.Errorf("DungeonPath=%q want %q", loc.DungeonPath, want)
 	}
 	if loc.InDungeon {
 		t.Error("InDungeon = true, want false")
+	}
+}
+
+// A type folder with no dungeon yet must take the camp's spelling. With no
+// dungeon anywhere in the camp, that falls through to dungeon_hidden.
+func TestDetectFromCwd_NewTypeDungeonFollowsSetting(t *testing.T) {
+	tests := []struct {
+		name      string
+		configDir string
+		want      string
+	}{
+		{name: "default is hidden", configDir: noGlobalConfig, want: "/campaign/workflow/content/.dungeon"},
+		{name: "explicit false is visible", configDir: "testdata/visible-config", want: "/campaign/workflow/content/dungeon"},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Setenv("XDG_CONFIG_HOME", tc.configDir)
+			got, err := DetectFromCwd("/campaign", "/campaign/workflow/content/article")
+			if err != nil {
+				t.Fatalf("DetectFromCwd: %v", err)
+			}
+			if filepath.ToSlash(got.DungeonPath) != tc.want {
+				t.Errorf("DungeonPath=%q want %q", got.DungeonPath, tc.want)
+			}
+		})
 	}
 }

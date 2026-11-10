@@ -17,6 +17,7 @@ import (
 	"github.com/Obedience-Corp/camp/internal/paths"
 	"github.com/Obedience-Corp/camp/internal/ui"
 	wkitem "github.com/Obedience-Corp/camp/internal/workitem"
+	"github.com/Obedience-Corp/camp/internal/workitem/locate"
 	"github.com/Obedience-Corp/camp/internal/workitem/selector"
 )
 
@@ -217,9 +218,9 @@ func resolveWorkitemDungeonTarget(ctx context.Context, campaignRoot string, item
 	parentRel := filepath.FromSlash(strings.Join(parts[:2], "/"))
 	itemName := parts[2]
 	parentPath := filepath.Join(campaignRoot, parentRel)
-	dungeonPath, err := resolveWorkitemTypeDungeonPath(ctx, campaignRoot, parentPath)
+	dungeonPath, err := locate.TypeDungeonPath(ctx, campaignRoot, parentPath)
 	if err != nil {
-		return nil, err
+		return nil, camperrors.Wrap(err, "resolving workitem dungeon")
 	}
 
 	return &resolvedWorkitemDungeonTarget{
@@ -238,24 +239,6 @@ func isWorkitemDungeonMovePath(parts []string) bool {
 		parts[2] != "" &&
 		!spelling.IsDungeonName(parts[1]) &&
 		!spelling.IsDungeonName(parts[2])
-}
-
-// resolveWorkitemTypeDungeonPath uses spelling.NameForNew so an existing
-// type-local dungeon wins; otherwise the campaign spelling / dungeon_hidden.
-func resolveWorkitemTypeDungeonPath(ctx context.Context, campaignRoot, parentPath string) (string, error) {
-	globalCfg, err := config.LoadGlobalConfig(ctx)
-	if err != nil {
-		return "", camperrors.Wrap(err, "loading global config")
-	}
-	campaignName, err := spelling.CampaignName(ctx, campaignRoot, globalCfg.ResolveDungeonHidden())
-	if err != nil {
-		return "", camperrors.Wrap(err, "resolving camp dungeon spelling")
-	}
-	name, err := spelling.NameForNew(ctx, parentPath, campaignName)
-	if err != nil {
-		return "", camperrors.Wrap(err, "resolving workitem dungeon spelling")
-	}
-	return filepath.Join(parentPath, name), nil
 }
 
 func formatWorkitemMatches(matches []wkitem.WorkItem) string {
