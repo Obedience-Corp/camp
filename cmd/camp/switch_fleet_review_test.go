@@ -14,6 +14,7 @@ import (
 
 	"github.com/Obedience-Corp/camp/cmd/camp/cmdutil"
 	"github.com/Obedience-Corp/camp/internal/config"
+	camperrors "github.com/Obedience-Corp/camp/internal/errors"
 	"github.com/Obedience-Corp/camp/internal/machines"
 	"github.com/Obedience-Corp/camp/internal/remote"
 	"github.com/spf13/cobra"
@@ -144,7 +145,7 @@ func TestRunSwitchOriginOnlyPreservesScope(t *testing.T) {
 		t.Run(tc.name, func(t *testing.T) {
 			fleetReviewEnv(t, false)
 			t.Setenv("SSH_TTY", "/dev/pts/3")
-			t.Setenv(HopOriginEnvVar, "v1;host=origin.example;user=alex;id=origin;campaign=notes")
+			t.Setenv(HopOriginEnvVar, "v1;host=origin.example;user=alex;id=origin;campaign=elsewhere")
 			t.Setenv(hopResumeSockEnv, "/tmp/review-resume.sock")
 			stubFleet(t, func(_ context.Context, m *machines.Machine) ([]campaignEntry, error) {
 				if m.Host != "origin.example" {
@@ -346,5 +347,111 @@ func TestPartialFleetStillRejectsAmbiguousMatches(t *testing.T) {
 	}
 	if out.Len() != 0 {
 		t.Fatalf("ambiguous lookup emitted a shell command: %s", out)
+	}
+}
+
+func TestRunSwitchOriginCampUnwindsWithoutFleetLookup(t *testing.T) {
+	cases := []struct {
+		name, query string
+		scope       cmdutil.CampaignScope
+		fastPath    bool
+	}{
+		{"bare-name-returns-without-status-check", "notes", cmdutil.CampaignScope{}, true},
+		{"separator-insensitive", "No_Tes", cmdutil.CampaignScope{}, true},
+		{"other-camp", "journal", cmdutil.CampaignScope{}, false},
+		{"tab", "notes@p", cmdutil.CampaignScope{}, false},
+		{"org-prefix", "work/notes", cmdutil.CampaignScope{}, false},
+		{"scoped", "notes", cmdutil.CampaignScope{Status: "inactive"}, false},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			fleetReviewEnv(t, false)
+			t.Setenv("SSH_TTY", "/dev/pts/3")
+			t.Setenv(HopOriginEnvVar, "v1;host=origin.example;user=alex;id=origin;campaign=notes")
+			t.Setenv(hopResumeSockEnv, "")
+			t.Setenv(hopResumeRelayEnv, "")
+			enumerated := false
+			stubFleet(t, func(context.Context, *machines.Machine) ([]campaignEntry, error) {
+				enumerated = true
+				return nil, errors.New("offline")
+			})
+			cmd, out := fleetReviewCmd(tc.scope, true)
+			err := runSwitch(cmd, []string{tc.query})
+			if !tc.fastPath {
+				if !enumerated || err == nil || out.Len() != 0 {
+					t.Fatalf("expected the fleet lookup to run and fail: enumerated=%v err=%v out=%q", enumerated, err, out)
+				}
+				return
+			}
+			if err != nil {
+				t.Fatal(err)
+			}
+			if enumerated {
+				t.Fatal("returning to the origin camp dialed the fleet")
+			}
+			if out.String() != "exit\n" {
+				t.Fatalf("out = %q, want a bare exit", out)
+			}
+		})
+	}
+}
+
+func TestOriginCampShortcutNeedsALiveHop(t *testing.T) {
+	fleetReviewEnv(t, false)
+	t.Setenv(HopOriginEnvVar, "v1;host=origin.example;user=alex;id=origin;campaign=notes")
+	parsed := cmdutil.ParseSwitchSelector("notes")
+	if namesHopOriginCamp(parsed, cmdutil.CampaignScope{}) {
+		t.Fatal("a stale origin payload in a fresh shell must not unwind it")
+	}
+	t.Setenv("SSH_TTY", "/dev/pts/3")
+	if !namesHopOriginCamp(parsed, cmdutil.CampaignScope{}) {
+		t.Fatal("origin camp not recognized inside the hop")
+	}
+}
+
+func TestFleetLookupFailureIsOneMachinePerLine(t *testing.T) {
+	fleetReviewEnv(t, false)
+	t.Setenv("SSH_TTY", "/dev/pts/3")
+	t.Setenv(HopOriginEnvVar, "v1;host=origin.example;user=alex;id=origin;campaign=notes")
+	origin, _ := sessionHopOrigin()
+	originMachine, _ := originTarget(origin)
+	originID := originMachine.ID
+	const url = "https://login.tailscale.com/a/l11df79793a4f4c"
+	timeout := camperrors.Wrapf(context.DeadlineExceeded, "ssh to %s timed out", "remote-d.example")
+	err := fleetLookupFailure("journal", "every remote machine failed to answer", []remoteResult{
+		{machineID: originID, err: camperrors.NewCommand("ssh origin.example", 255,
+			"# Tailscale SSH requires an additional check.\n# To authenticate, visit: "+url+"\n", errors.New("exit status 255"))},
+		{machineID: "remote-b", err: camperrors.Wrapf(
+			camperrors.NewCommand("ssh remote-b.example", 127, "camp: not found", errors.New("exit status 127")),
+			"remote camp not found on remote-b")},
+		{machineID: "remote-c", err: camperrors.NewCommand("ssh remote-c.example", 1,
+			"** WARNING: connection is not using a post-quantum key exchange algorithm.\n** This session may be vulnerable.\nkex_exchange_identification: Connection closed by remote host\n", errors.New("exit status 1"))},
+		{machineID: "remote-d", err: timeout},
+	})
+	lines := strings.Split(err.Error(), "\n")
+	has := func(want string) bool {
+		for _, line := range lines {
+			if strings.TrimSpace(line) == want {
+				return true
+			}
+		}
+		return false
+	}
+	for _, want := range []string{
+		url,
+		originID + ": Tailscale SSH needs a browser approval, then retry:",
+		"remote-b: camp is not installed there, or not on its login-shell PATH",
+		"remote-c: kex_exchange_identification: Connection closed by remote host",
+		"remote-d: timed out",
+	} {
+		if !has(want) {
+			t.Errorf("no line %q in:\n%s", want, err)
+		}
+	}
+	if !strings.Contains(err.Error(), "'csw -' returns to it and 'csw "+originID+":<camp>'") {
+		t.Errorf("origin failure did not offer the no-connection routes:\n%s", err)
+	}
+	if strings.Contains(err.Error(), "post-quantum") {
+		t.Errorf("ssh warning banner reported as the failure:\n%s", err)
 	}
 }
