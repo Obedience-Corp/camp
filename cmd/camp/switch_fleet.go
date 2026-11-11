@@ -15,6 +15,7 @@ import (
 	camperrors "github.com/Obedience-Corp/camp/internal/errors"
 	"github.com/Obedience-Corp/camp/internal/machines"
 	navfuzzy "github.com/Obedience-Corp/camp/internal/nav/fuzzy"
+	"github.com/Obedience-Corp/camp/internal/remote"
 )
 
 // errFleetMiss means no other machine has a camp for this query. Callers keep
@@ -203,18 +204,88 @@ func lookupFleetCampaign(ctx context.Context, query string, scope cmdutil.Campai
 		return hit, failed, err
 	}
 	if len(failed) > 0 {
-		details := make([]string, 0, len(failed))
-		for _, result := range failed {
-			details = append(details, result.machineID+": "+formatUnreachableErr(result.err))
-		}
 		verdict := "fleet lookup incomplete"
 		if len(failed) == len(results) {
 			verdict = "every remote machine failed to answer"
 		}
-		return fleetCamp{}, failed, camperrors.Newf("camp %q: %s; failed machines: %s\nHint: run 'camp machine diagnose' or select a known target with 'csw machine:camp'",
-			query, verdict, strings.Join(details, "; "))
+		return fleetCamp{}, failed, fleetLookupFailure(query, verdict, failed)
 	}
 	return fleetCamp{}, nil, errFleetMiss
+}
+
+// fleetLookupFailure gives each failed machine its own line. A Tailscale
+// approval URL gets a line to itself so it survives terminal wrapping and can
+// be opened or copied whole.
+func fleetLookupFailure(query, verdict string, failed []remoteResult) error {
+	var b strings.Builder
+	fmt.Fprintf(&b, "camp %q: %s; failed machines:", query, verdict)
+	originID, originFailed := "", false
+	if origin, ok := sessionHopOrigin(); ok && insideSSHSession() {
+		m, _ := originTarget(origin)
+		originID = m.ID
+	}
+	for _, result := range failed {
+		b.WriteString("\n  " + fleetFailureLine(result))
+		if originID != "" && result.machineID == originID {
+			originFailed = true
+		}
+	}
+	if originFailed {
+		fmt.Fprintf(&b, "\nHint: %s opened this session. 'csw -' returns to it and 'csw %s:<camp>' switches to a camp on it, both without a new connection",
+			originID, originID)
+	}
+	b.WriteString("\nHint: run 'camp machine diagnose' or select a known target with 'csw machine:camp'")
+	return camperrors.New(b.String())
+}
+
+func fleetFailureLine(result remoteResult) string {
+	id := result.machineID
+	if url := remote.TailscaleCheckURL(result.err); url != "" {
+		return id + ": Tailscale SSH needs a browser approval, then retry:\n      " + url
+	}
+	if detail := remote.HopFailureDetail(result.err); detail != "" {
+		return id + ": " + detail
+	}
+	if remote.IsCampNotFound(result.err) {
+		return id + ": camp is not installed there, or not on its login-shell PATH"
+	}
+	if errors.Is(result.err, context.DeadlineExceeded) {
+		return id + ": timed out"
+	}
+	var cmdErr *camperrors.CommandError
+	if errors.As(result.err, &cmdErr) && cmdErr.ExitCode != 0 {
+		return id + ": " + firstSSHFailureLine(cmdErr)
+	}
+	return id + ": " + formatUnreachableErr(result.err)
+}
+
+// firstSSHFailureLine skips OpenSSH's "** WARNING" banner lines, which precede
+// the real failure and are not the reason the command failed.
+func firstSSHFailureLine(cmdErr *camperrors.CommandError) string {
+	for _, line := range strings.Split(cmdErr.Stderr, "\n") {
+		line = strings.TrimSpace(line)
+		if line == "" || strings.HasPrefix(line, "**") {
+			continue
+		}
+		return line
+	}
+	return fmt.Sprintf("ssh exited with code %d", cmdErr.ExitCode)
+}
+
+// namesHopOriginCamp reports whether a bare query names the camp this hop was
+// opened from. The shell underneath is still in that camp, so returning needs
+// no lookup and no connection. A scope, org, or tab is a real selection the
+// fleet path must resolve, so those do not qualify. The origin wins over a
+// same-named camp on another machine.
+func namesHopOriginCamp(parsed cmdutil.ParsedSwitchSelector, scope cmdutil.CampaignScope) bool {
+	if parsed.Org != "" || parsed.HasTab || scope.Org != "" || scope.Status != "" || scope.All {
+		return false
+	}
+	if !insideSSHSession() {
+		return false
+	}
+	origin, ok := sessionHopOrigin()
+	return ok && sameCampaignName(origin.Campaign, parsed.Campaign)
 }
 
 func scopedFleetName(org, name string) string {
@@ -269,6 +340,9 @@ func dispatchFleetSwitch(ctx context.Context, cmd *cobra.Command, raw string, sc
 	parsed, err := parseSwitchArg(raw, scope)
 	if err != nil {
 		return true, err
+	}
+	if namesHopOriginCamp(parsed, scope) {
+		return true, emitHopUnwind(cmd, "", printOnly, shellConnect, jsonOut)
 	}
 	if parsed.Org != "" {
 		scope.Org = parsed.Org
