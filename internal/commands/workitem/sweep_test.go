@@ -37,12 +37,10 @@ func TestExecuteSweepCandidates_ContextCancelledPropagates(t *testing.T) {
 	}
 }
 
-// TestResolveSweepLocation_WorkflowHome locks today's pass-through behavior:
-// a design item resolves to its type-local dungeon at workflow/design/dungeon,
-// outside a dungeon. When phase 3 adds festivals/ support to DetectFromCwd this
-// baseline stays valid and the festivals/ negative case below flips; that is
-// the visible seam this task exists to create.
+// A live workflow item resolves to its type-local dungeon. With no dungeon in
+// the camp yet, that is the default hidden workflow/design/.dungeon.
 func TestResolveSweepLocation_WorkflowHome(t *testing.T) {
+	pinGlobalConfig(t)
 	root := t.TempDir()
 	itemRel := filepath.Join("workflow", "design", "some-item")
 	if err := os.MkdirAll(filepath.Join(root, itemRel), 0o755); err != nil {
@@ -56,11 +54,11 @@ func TestResolveSweepLocation_WorkflowHome(t *testing.T) {
 	if loc.InDungeon {
 		t.Errorf("InDungeon = true, want false for a live workflow home")
 	}
-	wantDungeon := filepath.Join(root, "workflow", "design", "dungeon")
+	wantDungeon := filepath.Join(root, "workflow", "design", ".dungeon")
 	// EvalSymlinks resolves the temp root (macOS /var -> /private/var), so
 	// compare on the resolved root rather than the raw t.TempDir() value.
 	if resolved, rerr := filepath.EvalSymlinks(root); rerr == nil {
-		wantDungeon = filepath.Join(resolved, "workflow", "design", "dungeon")
+		wantDungeon = filepath.Join(resolved, "workflow", "design", ".dungeon")
 	}
 	if loc.DungeonPath != wantDungeon {
 		t.Errorf("DungeonPath = %q, want %q", loc.DungeonPath, wantDungeon)

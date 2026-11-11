@@ -76,6 +76,7 @@ func TestDetectFromCwd_ActiveItemPointsAtEstablishedHiddenDungeon(t *testing.T) 
 }
 
 func TestDetectFromCwd(t *testing.T) {
+	pinGlobalConfig(t, noGlobalConfig)
 	const root = "/campaign"
 
 	tests := []struct {
@@ -97,7 +98,7 @@ func TestDetectFromCwd(t *testing.T) {
 			wantSlug: "myslug",
 			wantSrc:  "/campaign/workflow/design/myslug",
 			wantPar:  "/campaign/workflow/design",
-			wantDun:  "/campaign/workflow/design/dungeon",
+			wantDun:  "/campaign/workflow/design/.dungeon",
 		},
 		{
 			name:     "active workitem subdir",
@@ -106,7 +107,7 @@ func TestDetectFromCwd(t *testing.T) {
 			wantSlug: "myslug",
 			wantSrc:  "/campaign/workflow/design/myslug",
 			wantPar:  "/campaign/workflow/design",
-			wantDun:  "/campaign/workflow/design/dungeon",
+			wantDun:  "/campaign/workflow/design/.dungeon",
 		},
 		{
 			name:     "active workitem deep subdir",
@@ -115,7 +116,7 @@ func TestDetectFromCwd(t *testing.T) {
 			wantSlug: "topic",
 			wantSrc:  "/campaign/workflow/explore/topic",
 			wantPar:  "/campaign/workflow/explore",
-			wantDun:  "/campaign/workflow/explore/dungeon",
+			wantDun:  "/campaign/workflow/explore/.dungeon",
 		},
 		{
 			name:     "dungeon legacy flat layout",
@@ -432,6 +433,7 @@ func TestDetectFromCwd_FestivalResidentTypeIsNotThePath(t *testing.T) {
 
 // A workflow item's Type comes from its path, so a disagreeing marker is ignored.
 func TestDetectFromCwd_WorkflowUnaffectedByMarker(t *testing.T) {
+	pinGlobalConfig(t, noGlobalConfig)
 	root := t.TempDir()
 	if resolved, err := filepath.EvalSymlinks(root); err == nil {
 		root = resolved
@@ -445,7 +447,7 @@ func TestDetectFromCwd_WorkflowUnaffectedByMarker(t *testing.T) {
 	if loc.Type != "design" {
 		t.Errorf("Type=%q want design (path wins for workflow items, not the marker)", loc.Type)
 	}
-	if want := filepath.Join(root, "workflow", "design", "dungeon"); loc.DungeonPath != want {
+	if want := filepath.Join(root, "workflow", "design", ".dungeon"); loc.DungeonPath != want {
 		t.Errorf("DungeonPath=%q want %q", loc.DungeonPath, want)
 	}
 	if loc.InDungeon {

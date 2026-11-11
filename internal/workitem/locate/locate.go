@@ -9,6 +9,7 @@ import (
 	"path/filepath"
 	"strings"
 
+	"github.com/Obedience-Corp/camp/internal/config"
 	"github.com/Obedience-Corp/camp/internal/dungeon/spelling"
 	"github.com/Obedience-Corp/camp/internal/dungeon/statuspath"
 	camperrors "github.com/Obedience-Corp/camp/internal/errors"
@@ -85,20 +86,40 @@ func detectWorkflowItem(campaignRoot string, parts []string) (*Location, error) 
 }
 
 func workflowActive(campaignRoot, typeName, slug string) (*Location, error) {
-	parentRel := filepath.Join("workflow", typeName)
-	sourceRel := filepath.Join("workflow", typeName, slug)
-	resolved, err := spelling.Resolve(context.Background(), filepath.Join(campaignRoot, parentRel))
+	parentPath := filepath.Join(campaignRoot, "workflow", typeName)
+	dungeonPath, err := TypeDungeonPath(context.Background(), campaignRoot, parentPath)
 	if err != nil {
 		return nil, err
 	}
-	dungeonRel := filepath.Join("workflow", typeName, resolved.Name)
 	return &Location{
 		Type:        typeName,
 		Slug:        slug,
-		ParentPath:  filepath.Join(campaignRoot, parentRel),
-		SourcePath:  filepath.Join(campaignRoot, sourceRel),
-		DungeonPath: filepath.Join(campaignRoot, dungeonRel),
+		ParentPath:  parentPath,
+		SourcePath:  filepath.Join(parentPath, slug),
+		DungeonPath: dungeonPath,
 	}, nil
+}
+
+// TypeDungeonPath returns the dungeon a workflow type folder uses: the one it
+// already has, or else the camp's spelling, so a type's first dungeon never
+// lands beside the other spelling.
+func TypeDungeonPath(ctx context.Context, campaignRoot, typeDir string) (string, error) {
+	resolved, err := spelling.Resolve(ctx, typeDir)
+	if err != nil {
+		return "", err
+	}
+	if resolved.Exists {
+		return resolved.Path, nil
+	}
+	globalCfg, err := config.ReadGlobalConfig(ctx)
+	if err != nil {
+		return "", camperrors.Wrap(err, "reading global config")
+	}
+	name, err := spelling.CampaignName(ctx, campaignRoot, globalCfg.ResolveDungeonHidden())
+	if err != nil {
+		return "", camperrors.Wrap(err, "resolving camp dungeon spelling")
+	}
+	return filepath.Join(typeDir, name), nil
 }
 
 func workflowDungeon(campaignRoot, typeName string, parts []string) (*Location, error) {
