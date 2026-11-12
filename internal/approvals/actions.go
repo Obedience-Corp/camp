@@ -2,9 +2,19 @@
 // request (pkg/approvalkit) is acted on.
 //
 // The ledger is untrusted input. It is a plain file any process in the camp can
-// append to, so nothing here runs anything a request says to run. A request
-// names a source kind; the command for that kind is fixed in this package, and
-// the directory it runs in is checked to be inside the camp.
+// append to, and it arrives from other machines by git pull, so nothing here
+// runs anything a request says to run. A request names a source kind; the
+// command for that kind is fixed in this package, and the directory it runs in
+// is checked to be inside the camp.
+//
+// What a forged request can still do: choose which directory inside the camp
+// fest is started in. A camp holds cloned repositories, so that directory can
+// be one whose contents the user did not write, and fest will read its workflow
+// files and configuration there. Check runs 'fest workflow status' in it, and a
+// decision runs 'fest workflow approve' or 'reject' in it only after Check has
+// confirmed that fest itself reports a workflow there waiting at the recorded
+// step. Neither command runs hooks or a judge: those need --auto, which is
+// never passed.
 package approvals
 
 import (
@@ -14,6 +24,7 @@ import (
 	"os/exec"
 	"strconv"
 	"strings"
+	"time"
 
 	camperrors "github.com/Obedience-Corp/camp/internal/errors"
 	"github.com/Obedience-Corp/camp/pkg/approvalkit"
@@ -91,6 +102,11 @@ type Readiness struct {
 	// Reason explains a request that is not actionable, in words fit to show
 	// beside it.
 	Reason string
+	// SourceAnswered is true when the source was read on this machine and said
+	// it is not waiting at the recorded step. It separates "camp knows this
+	// request is stale" from "camp cannot tell from here", which is what a
+	// bulk cleanup has to know before it clears anything.
+	SourceAnswered bool
 }
 
 // sourceStatus is the part of 'fest workflow status --json' camp reads.
@@ -105,15 +121,25 @@ type sourceStatus struct {
 // statusModeGate is the status mode fest reports for a phase gate.
 const statusModeGate = "gate"
 
+// statusTimeout bounds one source status call. Listing asks every pending
+// request's source, and requests whose source is gone stay listed until they
+// are withdrawn, so one source that hangs must not hold up the whole list.
+const statusTimeout = 5 * time.Second
+
 // statusRunner runs the source's status command in dir and returns its stdout.
 // A variable so tests do not need fest installed.
 var statusRunner = func(ctx context.Context, dir string) ([]byte, error) {
+	ctx, cancel := context.WithTimeout(ctx, statusTimeout)
+	defer cancel()
 	cmd := exec.CommandContext(ctx, festBinary, "workflow", "status", "--json")
 	cmd.Dir = dir
 	var stderr bytes.Buffer
 	cmd.Stderr = &stderr
 	out, err := cmd.Output()
 	if err != nil {
+		if ctx.Err() == context.DeadlineExceeded {
+			return nil, camperrors.New("it did not answer within " + statusTimeout.String())
+		}
 		msg := strings.TrimSpace(stderr.String())
 		if msg == "" {
 			msg = err.Error()
@@ -151,24 +177,52 @@ func Check(ctx context.Context, campaignRoot string, p approvalkit.Pending) Read
 		return Readiness{Reason: "its source status could not be parsed"}
 	}
 	if status.Complete || status.CurrentStep == nil {
-		return Readiness{Reason: "its source is no longer waiting"}
+		return Readiness{Reason: "its source is no longer waiting", SourceAnswered: true}
 	}
 	// A phase's workflow and its gate share a directory and both number their
 	// steps from 1, so the step alone cannot tell them apart: a request for
 	// workflow step 1 must not be actionable because the gate is at its step 1.
 	if (p.SourceKind == approvalkit.SourcePhaseGate) != (status.Mode == statusModeGate) {
-		return Readiness{Reason: "its source is no longer waiting"}
+		return Readiness{Reason: "its source is no longer waiting", SourceAnswered: true}
 	}
 	if *status.CurrentStep != p.Step {
-		return Readiness{Reason: "its source is at step " + strconv.Itoa(*status.CurrentStep) + ", not step " + strconv.Itoa(p.Step)}
+		return Readiness{
+			Reason:         "its source is at step " + strconv.Itoa(*status.CurrentStep) + ", not step " + strconv.Itoa(p.Step),
+			SourceAnswered: true,
+		}
 	}
 	return Readiness{Actionable: true, Dir: dir}
 }
 
+// firstLine returns the first line of a source's error output with control
+// characters removed: it is shown beside the request, and it comes from a
+// program run in a directory the ledger chose.
 func firstLine(s string) string {
 	s = strings.TrimSpace(s)
 	if i := strings.IndexByte(s, '\n'); i >= 0 {
 		s = s[:i]
 	}
-	return s
+	return approvalkit.CleanLine(s)
+}
+
+// CheckAll runs Check for every request, a few at a time, and returns the
+// results in the same order. Each check starts a source process, so running
+// them one after another makes a long list slow to open.
+func CheckAll(ctx context.Context, campaignRoot string, pending []approvalkit.Pending) []Readiness {
+	const workers = 4
+	out := make([]Readiness, len(pending))
+	sem := make(chan struct{}, workers)
+	done := make(chan struct{})
+	for i := range pending {
+		go func(i int) {
+			sem <- struct{}{}
+			out[i] = Check(ctx, campaignRoot, pending[i])
+			<-sem
+			done <- struct{}{}
+		}(i)
+	}
+	for range pending {
+		<-done
+	}
+	return out
 }

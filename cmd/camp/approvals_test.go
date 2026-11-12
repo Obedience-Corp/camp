@@ -2,6 +2,8 @@ package main
 
 import (
 	"context"
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 	"time"
@@ -12,6 +14,21 @@ import (
 	"github.com/Obedience-Corp/camp/pkg/approvalkit"
 	"github.com/Obedience-Corp/camp/pkg/ledgerkit"
 )
+
+// approvalCamp is a throwaway camp root holding the fixture's source directory,
+// so the directory the browser re-resolves before running a command exists.
+func approvalCamp(t *testing.T) (root, dir string) {
+	t.Helper()
+	root = t.TempDir()
+	dir = filepath.Join(root, "workflow", "explore", "demo")
+	if err := os.MkdirAll(dir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if resolved, err := filepath.EvalSymlinks(dir); err == nil {
+		dir = resolved
+	}
+	return root, dir
+}
 
 func approvalFixture(id string, actionable bool) approvalRow {
 	row := approvalRow{Pending: approvalkit.Pending{
@@ -151,8 +168,49 @@ func TestApprovalsTUI_ApproveShowsTheCommandAndWaits(t *testing.T) {
 	if cancelled.mode != approvalsBrowse || cmd != nil {
 		t.Fatalf("n must cancel without running anything")
 	}
+
+	// The fixture's directory does not exist, so confirming must refuse: the
+	// directory is resolved again at the moment of running.
+	refused, cmd := press(t, m, "y")
+	if cmd != nil || !refused.statusErr || !strings.Contains(refused.status, "directory changed") {
+		t.Fatalf("y with an unresolvable directory must run nothing: status=%q", refused.status)
+	}
+}
+
+func TestApprovalsTUI_ConfirmRunsOnlyInTheDirectoryThatWasShown(t *testing.T) {
+	root, dir := approvalCamp(t)
+	row := approvalFixture("ap-1", true)
+	row.ready.Dir = dir
+	m := newApprovalsTUIModel(context.Background(), approvalsSnapshot{campRoot: root, rows: []approvalRow{row}})
+
+	m, _ = press(t, m, "a")
 	if _, cmd := press(t, m, "y"); cmd == nil {
-		t.Fatal("y must hand off to the source's command")
+		t.Fatal("y must hand off to the source's command when the directory still resolves to what was shown")
+	}
+
+	// The same path now resolves somewhere else.
+	moved := m
+	moved.pendingRow.ready.Dir = filepath.Join(root, "elsewhere")
+	after, cmd := press(t, moved, "y")
+	if cmd != nil || !strings.Contains(after.status, "directory changed") {
+		t.Fatalf("a directory that resolves differently must run nothing: status=%q", after.status)
+	}
+}
+
+func TestApprovalIsStale(t *testing.T) {
+	cases := []struct {
+		r    approvals.Readiness
+		want bool
+	}{
+		{approvals.Readiness{Actionable: true, Dir: "/x"}, false},
+		{approvals.Readiness{Reason: "its source is no longer waiting", SourceAnswered: true}, true},
+		{approvals.Readiness{Reason: "its directory is not on this machine"}, false},
+		{approvals.Readiness{Reason: "its source could not be read: boom"}, false},
+	}
+	for _, c := range cases {
+		if got := approvalIsStale(c.r); got != c.want {
+			t.Errorf("approvalIsStale(%+v) = %v", c.r, got)
+		}
 	}
 }
 

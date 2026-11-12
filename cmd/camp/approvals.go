@@ -43,7 +43,7 @@ through it: the source's command requires a person at a terminal.
 The ledger lives in .campaign/approvals and is committed, so a request made on
 one machine shows up on your others after a push and pull. Each event is
 committed when it is recorded; listing also commits any that were missed (pass
---no-commit to skip that). A request
+--no-commit to skip that; --json never commits). A request
 whose source is not on this machine, or has moved on, is still listed and
 marked as not actionable here.
 
@@ -53,7 +53,8 @@ Examples:
   camp approvals --json            # the same, for scripts and agents
   camp approvals show <id>         # one request in full
   camp approvals path <id>         # the source directory, to cd into
-  camp approvals withdraw <id> --reason "..."   # clear a request whose source is gone`,
+  camp approvals withdraw <id> --reason "..."   # clear a request whose source is gone
+  camp approvals withdraw --stale               # clear every request whose source moved on`,
 	Args: cobra.NoArgs,
 	RunE: jsoncontract.RunE(ApprovalsJSONVersion, func() bool { return approvalsOpts.json }, runApprovalsList),
 }
@@ -83,7 +84,7 @@ It fails when the directory is not on this machine or is not inside this camp.`,
 }
 
 var approvalsWithdrawCmd = &cobra.Command{
-	Use:   "withdraw <id>",
+	Use:   "withdraw [id]",
 	Short: "Clear a request whose source is no longer waiting",
 	Long: `Record that a request is no longer waiting, without approving or rejecting
 anything.
@@ -92,8 +93,18 @@ Use it for a request that outlived its source: the workflow was deleted, the
 worktree is gone, or the request was recorded by mistake. Withdrawing only
 removes the request from this list. It does not unblock anything, because the
 ledger never grants an approval: if the source is in fact still waiting, it
-reports itself again the next time it is advanced.`,
-	Args: cobra.ExactArgs(1),
+reports itself again the next time it is advanced.
+
+--stale withdraws, without naming them, every request whose source is on this
+machine and reports that it is no longer waiting at the recorded step. A
+request whose source cannot be read here (its directory is on another machine,
+or camp does not know its kind) is left alone, because this machine cannot tell
+whether it is still waiting.
+
+Examples:
+  camp approvals withdraw ap-1b9b5140 --reason "workflow deleted"
+  camp approvals withdraw --stale`,
+	Args: cobra.MaximumNArgs(1),
 	Annotations: map[string]string{
 		"agent_allowed": "false",
 		"agent_reason":  "Clearing a pending approval request is a human decision",
@@ -119,6 +130,7 @@ var approvalsOpts struct {
 	interactive bool
 	noCommit    bool
 	reason      string
+	stale       bool
 }
 
 func init() {
@@ -131,8 +143,9 @@ func init() {
 	approvalsCmd.Flags().BoolVar(&approvalsOpts.noCommit, "no-commit", false,
 		"Do not commit uncommitted approval events")
 	approvalsWithdrawCmd.Flags().StringVar(&approvalsOpts.reason, "reason", "",
-		"Why the request is being withdrawn (required)")
-	_ = approvalsWithdrawCmd.MarkFlagRequired("reason")
+		"Why the request is being withdrawn (required with an id)")
+	approvalsWithdrawCmd.Flags().BoolVar(&approvalsOpts.stale, "stale", false,
+		"Withdraw every request whose source reports it is no longer waiting")
 
 	approvalsCmd.AddCommand(approvalsShowCmd, approvalsPathCmd, approvalsWithdrawCmd, approvalsCommitCmd)
 	rootCmd.AddCommand(approvalsCmd)
@@ -164,9 +177,10 @@ func loadApprovals(ctx context.Context, campRoot string) (approvalsSnapshot, err
 	if err != nil {
 		return snap, camperrors.Wrap(err, "reading approvals")
 	}
+	ready := approvals.CheckAll(ctx, campRoot, pending)
 	snap.rows = make([]approvalRow, 0, len(pending))
-	for _, p := range pending {
-		snap.rows = append(snap.rows, approvalRow{Pending: p, ready: approvals.Check(ctx, campRoot, p)})
+	for i, p := range pending {
+		snap.rows = append(snap.rows, approvalRow{Pending: p, ready: ready[i]})
 	}
 	snap.behind, snap.behindKnown = git.BehindUpstream(ctx, campRoot)
 	snap.uncommitted = approvalkit.Uncommitted(ctx, campRoot)
@@ -200,7 +214,14 @@ func runApprovalsList(cmd *cobra.Command, _ []string) error {
 	if err != nil {
 		return camperrors.Wrap(err, "not in a camp")
 	}
-	note := commitApprovals(ctx, campRoot)
+	// --json is what agents and apps poll. It only reads: a caller that asks
+	// for a list should not find it made a commit, or ran the repository's
+	// commit hooks. The uncommitted count in the document says when
+	// 'camp approvals commit' is worth running.
+	note := ""
+	if !approvalsOpts.json {
+		note = commitApprovals(ctx, campRoot)
+	}
 	snap, err := loadApprovals(ctx, campRoot)
 	if err != nil {
 		return err
@@ -479,6 +500,15 @@ func runApprovalsPath(cmd *cobra.Command, args []string) error {
 
 func runApprovalsWithdraw(cmd *cobra.Command, args []string) error {
 	ctx := cmd.Context()
+	if approvalsOpts.stale {
+		if len(args) > 0 {
+			return camperrors.New("pass an id or --stale, not both")
+		}
+		return runApprovalsWithdrawStale(cmd)
+	}
+	if len(args) != 1 {
+		return camperrors.New("name the request to withdraw, or pass --stale")
+	}
 	reason := strings.TrimSpace(approvalsOpts.reason)
 	if reason == "" {
 		return camperrors.New("--reason is required")
@@ -487,19 +517,71 @@ func runApprovalsWithdraw(cmd *cobra.Command, args []string) error {
 	if err != nil {
 		return err
 	}
+	if err := withdrawApproval(ctx, cmd, snap.campRoot, row.Pending, reason); err != nil {
+		return err
+	}
+	if note := commitApprovals(ctx, snap.campRoot); note != "" {
+		_, _ = fmt.Fprintln(cmd.ErrOrStderr(), note)
+	}
+	return nil
+}
+
+// withdrawApproval records that p's source is waiting on nothing and prints
+// each request that cleared. A source has one request waiting at a time, so
+// this is normally just p; if it had more, they are all named.
+func withdrawApproval(ctx context.Context, cmd *cobra.Command, campRoot string, p approvalkit.Pending, reason string) error {
 	writerID, err := ledgerkit.ResolveWriterID(ctx)
 	if err != nil {
 		return camperrors.Wrap(err, "resolving this machine's ledger writer id")
 	}
-	rec, err := approvalkit.NewRecorder(snap.campRoot, writerID, ledger.ResolveActor(ctx))
+	rec, err := approvalkit.NewRecorder(campRoot, writerID, ledger.ResolveActor(ctx))
 	if err != nil {
 		return err
 	}
-	if _, err := rec.SetWaiting(ctx, row.Source, nil, approvalkit.OutcomeWithdrawn, reason); err != nil {
+	change, err := rec.SetWaiting(ctx, p.Source, nil, approvalkit.OutcomeWithdrawn, reason)
+	if err != nil {
 		return camperrors.Wrap(err, "recording the withdrawal")
 	}
-	_, _ = fmt.Fprintf(cmd.OutOrStdout(), "withdrew %s: %s\n", row.ID, row.Title)
-	if note := commitApprovals(ctx, snap.campRoot); note != "" {
+	for _, resolved := range change.Resolved {
+		_, _ = fmt.Fprintf(cmd.OutOrStdout(), "withdrew %s: %s\n", resolved.ID, resolved.Title)
+	}
+	return nil
+}
+
+// approvalIsStale reports whether camp read the request's source on this
+// machine and the source said it is not waiting at the recorded step. Any other
+// reason a request is not actionable (its directory is elsewhere, its kind is
+// unknown, the source could not be read) means camp does not know, and --stale
+// must not clear on a guess.
+func approvalIsStale(r approvals.Readiness) bool {
+	return !r.Actionable && r.SourceAnswered
+}
+
+func runApprovalsWithdrawStale(cmd *cobra.Command) error {
+	ctx := cmd.Context()
+	campRoot, err := campaign.DetectCached(ctx)
+	if err != nil {
+		return camperrors.Wrap(err, "not in a camp")
+	}
+	snap, err := loadApprovals(ctx, campRoot)
+	if err != nil {
+		return err
+	}
+	withdrawn := 0
+	for _, row := range snap.rows {
+		if !approvalIsStale(row.ready) {
+			continue
+		}
+		if err := withdrawApproval(ctx, cmd, campRoot, row.Pending, "source reports "+row.ready.Reason); err != nil {
+			return err
+		}
+		withdrawn++
+	}
+	if withdrawn == 0 {
+		_, _ = fmt.Fprintln(cmd.OutOrStdout(), "no stale requests: nothing here has a source that reports it moved on")
+		return nil
+	}
+	if note := commitApprovals(ctx, campRoot); note != "" {
 		_, _ = fmt.Fprintln(cmd.ErrOrStderr(), note)
 	}
 	return nil

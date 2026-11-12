@@ -76,7 +76,7 @@ through it: the source's command requires a person at a terminal.
 The ledger lives in .campaign/approvals and is committed, so a request made on
 one machine shows up on your others after a push and pull. Each event is
 committed when it is recorded; listing also commits any that were missed (pass
---no-commit to skip that). A request
+--no-commit to skip that; --json never commits). A request
 whose source is not on this machine, or has moved on, is still listed and
 marked as not actionable here.
 
@@ -87,6 +87,7 @@ Examples:
   camp approvals show <id>         # one request in full
   camp approvals path <id>         # the source directory, to cd into
   camp approvals withdraw <id> --reason "..."   # clear a request whose source is gone
+  camp approvals withdraw --stale               # clear every request whose source moved on
 
 ```
 camp approvals [flags]
@@ -214,15 +215,26 @@ removes the request from this list. It does not unblock anything, because the
 ledger never grants an approval: if the source is in fact still waiting, it
 reports itself again the next time it is advanced.
 
+--stale withdraws, without naming them, every request whose source is on this
+machine and reports that it is no longer waiting at the recorded step. A
+request whose source cannot be read here (its directory is on another machine,
+or camp does not know its kind) is left alone, because this machine cannot tell
+whether it is still waiting.
+
+Examples:
+  camp approvals withdraw ap-1b9b5140 --reason "workflow deleted"
+  camp approvals withdraw --stale
+
 ```
-camp approvals withdraw <id> [flags]
+camp approvals withdraw [id] [flags]
 ```
 
 ### Options
 
 ```
   -h, --help            help for withdraw
-      --reason string   Why the request is being withdrawn (required)
+      --reason string   Why the request is being withdrawn (required with an id)
+      --stale           Withdraw every request whose source reports it is no longer waiting
 ```
 
 ### Options inherited from parent commands

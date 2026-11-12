@@ -20,7 +20,7 @@ through it: the source's command requires a person at a terminal.
 The ledger lives in .campaign/approvals and is committed, so a request made on
 one machine shows up on your others after a push and pull. Each event is
 committed when it is recorded; listing also commits any that were missed (pass
---no-commit to skip that). A request
+--no-commit to skip that; --json never commits). A request
 whose source is not on this machine, or has moved on, is still listed and
 marked as not actionable here.
 
@@ -31,6 +31,7 @@ Examples:
   camp approvals show <id>         # one request in full
   camp approvals path <id>         # the source directory, to cd into
   camp approvals withdraw <id> --reason "..."   # clear a request whose source is gone
+  camp approvals withdraw --stale               # clear every request whose source moved on
 
 ```
 camp approvals [flags]

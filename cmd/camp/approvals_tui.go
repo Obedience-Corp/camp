@@ -243,6 +243,14 @@ func (m approvalsTUIModel) updateConfirm(key tea.KeyMsg) (tea.Model, tea.Cmd) {
 	switch key.String() {
 	case "y", "Y":
 		m.mode = approvalsBrowse
+		// The directory was resolved when the list loaded. Resolve it again
+		// now and require the same answer, so a path swapped for a symlink in
+		// between cannot send the command somewhere else.
+		dir, err := approvalkit.ResolveCwd(m.snap.campRoot, m.pendingRow.Cwd)
+		if err != nil || dir != m.pendingRow.ready.Dir {
+			m.setStatus("the source directory changed since the list loaded; press r to refresh", true)
+			return m, nil
+		}
 		// The source's own command takes the terminal: it is the only thing
 		// that can record the decision, and for an approval it asks the person
 		// to type a confirmation itself.
@@ -263,16 +271,17 @@ func (m approvalsTUIModel) openDocument() (tea.Model, tea.Cmd) {
 	if !ok {
 		return m, nil
 	}
-	if row.Doc == "" || !approvalkit.IsCampRelative(row.Doc) {
+	if row.Doc == "" {
 		m.setStatus("this request names no source document", true)
 		return m, nil
 	}
-	dir, err := approvalkit.ResolveCwd(m.snap.campRoot, filepath.ToSlash(filepath.Dir(row.Doc)))
+	// The file itself is resolved, not just its directory: a document that is
+	// a symlink to somewhere outside the camp is refused.
+	path, err := approvalkit.ResolveFile(m.snap.campRoot, row.Doc)
 	if err != nil {
-		m.setStatus("the source document is not on this machine", true)
+		m.setStatus("the source document is not available on this machine", true)
 		return m, nil
 	}
-	path := filepath.Join(dir, filepath.Base(row.Doc))
 	viewer := strings.TrimSpace(os.Getenv("PAGER"))
 	if viewer == "" {
 		viewer = "less"

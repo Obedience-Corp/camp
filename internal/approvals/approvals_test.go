@@ -136,6 +136,45 @@ func TestCheck(t *testing.T) {
 			if r.Actionable || r.Dir != "" || !strings.Contains(r.Reason, c.reason) {
 				t.Fatalf("readiness = %+v, want reason containing %q", r, c.reason)
 			}
+			// Only a source that answered "not waiting here" is known stale.
+			wantAnswered := strings.Contains(c.reason, "no longer waiting") || strings.Contains(c.reason, "not step")
+			if r.SourceAnswered != wantAnswered {
+				t.Fatalf("SourceAnswered = %v for %q", r.SourceAnswered, c.reason)
+			}
 		})
+	}
+}
+
+func TestCheckStripsControlCharactersFromSourceErrors(t *testing.T) {
+	root := t.TempDir()
+	if err := os.MkdirAll(filepath.Join(root, "w"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	withStatus(t, "", errors.New("boom\x1b[2J\x07 here"))
+	r := Check(context.Background(), root, pending(approvalkit.SourceStandaloneCheckpoint, 1, "w"))
+	if strings.ContainsAny(r.Reason, "\x1b\x07") || !strings.Contains(r.Reason, "boom[2J here") {
+		t.Fatalf("reason = %q", r.Reason)
+	}
+}
+
+func TestCheckAllKeepsOrder(t *testing.T) {
+	root := t.TempDir()
+	var list []approvalkit.Pending
+	for i := 1; i <= 9; i++ {
+		// Unknown kinds answer without starting a process, with the kind in
+		// the reason, so order is observable.
+		list = append(list, pending("kind-"+string(rune('0'+i)), i, "x"))
+	}
+	got := CheckAll(context.Background(), root, list)
+	if len(got) != len(list) {
+		t.Fatalf("results = %d, want %d", len(got), len(list))
+	}
+	for i, r := range got {
+		if !strings.Contains(r.Reason, list[i].SourceKind) {
+			t.Fatalf("result %d is out of order: %q", i, r.Reason)
+		}
+	}
+	if got := CheckAll(context.Background(), root, nil); len(got) != 0 {
+		t.Fatalf("empty list: %v", got)
 	}
 }
