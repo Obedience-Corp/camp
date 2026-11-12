@@ -65,6 +65,15 @@ func TestFold(t *testing.T) {
 			ev("y", "2026-01-01T00:00:03Z", KindApproved, map[string]any{}),
 			nil,
 		}, []string{"a"}},
+		{"a resolution that names its request resolves it even when its clock is behind", []*ledgerkit.Event{
+			ev("b", "2026-01-01T00:00:01Z", KindApproved, map[string]any{"key": key, "request_id": "a"}),
+			ev("a", "2026-01-01T00:00:05Z", KindRequested, reqPayload(src, 2)),
+		}, nil},
+		{"a resolution naming an older request leaves a newer one for the same key pending", []*ledgerkit.Event{
+			ev("a", "2026-01-01T00:00:01Z", KindRequested, reqPayload(src, 2)),
+			ev("c", "2026-01-01T00:00:03Z", KindRequested, reqPayload(src, 2)),
+			ev("b", "2026-01-01T00:00:09Z", KindRejected, map[string]any{"key": key, "request_id": "a"}),
+		}, []string{"c"}},
 		{"different steps and sources are independent, oldest first", []*ledgerkit.Event{
 			ev("b", "2026-01-01T00:00:02Z", KindRequested, reqPayload("standalone:other", 1)),
 			ev("a", "2026-01-01T00:00:01Z", KindRequested, reqPayload(src, 2)),

@@ -200,13 +200,31 @@ func shortID(eventID string) string {
 
 // Fold derives the pending set from ledger events.
 //
-// events must be ordered oldest first (ledgerkit readers return them that way).
-// A request is pending when it has an approval_requested event and no later
-// resolution for the same key. A newer request for a key replaces an older
-// one, which is how the same step waiting again after a rejection shows once.
+// A request is pending when no resolution names it. Resolutions written by this
+// package carry the id of the request they resolve, and that id is what Fold
+// matches on, not timestamps: a request made on one machine and resolved on
+// another whose clock is behind would otherwise look resolved-before-requested
+// and stay pending forever.
+//
+// events should be ordered oldest first (ledgerkit readers return them that
+// way). Order only matters in two cases: when one key has more than one
+// unresolved request the newest is the one shown, and a resolution that names
+// no request (written by something other than this package) resolves whatever
+// was requested for its key before it.
+//
 // Events of other kinds, and events without a key, are ignored rather than
 // rejected so a newer writer cannot break an older reader.
 func Fold(events []*ledgerkit.Event) []Pending {
+	resolved := make(map[string]bool)
+	for _, ev := range events {
+		if ev == nil || !isResolution(ev.Kind) {
+			continue
+		}
+		if id := payloadString(ev.Payload, "request_id"); id != "" {
+			resolved[id] = true
+		}
+	}
+
 	pending := make(map[string]Pending)
 	for _, ev := range events {
 		if ev == nil {
@@ -216,11 +234,15 @@ func Fold(events []*ledgerkit.Event) []Pending {
 		if key == "" {
 			continue
 		}
-		switch ev.Kind {
-		case KindRequested:
-			pending[key] = pendingFromEvent(ev, key)
-		case KindApproved, KindRejected, KindWithdrawn:
-			delete(pending, key)
+		switch {
+		case ev.Kind == KindRequested:
+			if !resolved[ev.ID] {
+				pending[key] = pendingFromEvent(ev, key)
+			}
+		case isResolution(ev.Kind):
+			if payloadString(ev.Payload, "request_id") == "" {
+				delete(pending, key)
+			}
 		}
 	}
 	out := make([]Pending, 0, len(pending))
@@ -234,6 +256,10 @@ func Fold(events []*ledgerkit.Event) []Pending {
 		return out[i].EventID < out[j].EventID
 	})
 	return out
+}
+
+func isResolution(kind ledgerkit.Kind) bool {
+	return kind == KindApproved || kind == KindRejected || kind == KindWithdrawn
 }
 
 func pendingFromEvent(ev *ledgerkit.Event, key string) Pending {
