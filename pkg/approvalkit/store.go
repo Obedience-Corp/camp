@@ -19,7 +19,7 @@ import (
 // camp and fest each link their own copy of this package and share one index
 // file, so a binary with older rules would otherwise leave behind a pending set
 // that a newer binary reads as current.
-const indexVersion = 2
+const indexVersion = 3
 
 // index is the cached pending set plus how much of each shard it has seen.
 type index struct {

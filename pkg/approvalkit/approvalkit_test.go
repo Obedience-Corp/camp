@@ -74,6 +74,16 @@ func TestFold(t *testing.T) {
 			ev("c", "2026-01-01T00:00:03Z", KindRequested, reqPayload(src, 2)),
 			ev("b", "2026-01-01T00:00:09Z", KindRejected, map[string]any{"key": key, "request_id": "a"}),
 		}, []string{"c"}},
+		{"a decision settles an earlier duplicate request for the same key", []*ledgerkit.Event{
+			ev("a", "2026-01-01T00:00:01Z", KindRequested, reqPayload(src, 2)),
+			ev("b", "2026-01-01T00:00:02Z", KindRequested, reqPayload(src, 2)),
+			ev("c", "2026-01-01T00:00:03Z", KindApproved, map[string]any{"key": key, "request_id": "b"}),
+		}, nil},
+		{"a decision does not settle a different key", []*ledgerkit.Event{
+			ev("a", "2026-01-01T00:00:01Z", KindRequested, reqPayload(src, 2)),
+			ev("b", "2026-01-01T00:00:02Z", KindRequested, reqPayload(src, 3)),
+			ev("c", "2026-01-01T00:00:03Z", KindApproved, map[string]any{"key": RequestKey(src, 3), "request_id": "b"}),
+		}, []string{"a"}},
 		{"different steps and sources are independent, oldest first", []*ledgerkit.Event{
 			ev("b", "2026-01-01T00:00:02Z", KindRequested, reqPayload("standalone:other", 1)),
 			ev("a", "2026-01-01T00:00:01Z", KindRequested, reqPayload(src, 2)),

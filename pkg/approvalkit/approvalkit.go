@@ -200,16 +200,21 @@ func shortID(eventID string) string {
 
 // Fold derives the pending set from ledger events.
 //
-// A request is pending when no resolution names it. Resolutions written by this
-// package carry the id of the request they resolve, and that id is what Fold
-// matches on, not timestamps: a request made on one machine and resolved on
-// another whose clock is behind would otherwise look resolved-before-requested
-// and stay pending forever.
+// A request is pending when no resolution covers it. Resolutions written by
+// this package carry the id of the request they resolve, and that id is what
+// Fold matches on, not timestamps: a request made on one machine and resolved
+// on another whose clock is behind would otherwise look resolved-before-
+// requested and stay pending forever.
+//
+// A resolution covers the request it names and every earlier request for the
+// same key. Two machines that share a source but have not yet exchanged ledgers
+// can each record a request for the same checkpoint; the decision then names
+// only one of them, and it settles both, because they asked the same question.
 //
 // events should be ordered oldest first (ledgerkit readers return them that
-// way). Order only matters in two cases: when one key has more than one
-// unresolved request the newest is the one shown, and a resolution that names
-// no request (written by something other than this package) resolves whatever
+// way). Order decides which requests count as earlier, which unresolved request
+// is shown when a key has more than one, and what a resolution that names no
+// request (written by something other than this package) resolves: whatever
 // was requested for its key before it.
 //
 // Events of other kinds, and events without a key, are ignored rather than
@@ -225,7 +230,8 @@ func Fold(events []*ledgerkit.Event) []Pending {
 		}
 	}
 
-	pending := make(map[string]Pending)
+	// requests holds, per key, the requests not yet covered, oldest first.
+	requests := make(map[string][]*ledgerkit.Event)
 	for _, ev := range events {
 		if ev == nil {
 			continue
@@ -236,18 +242,26 @@ func Fold(events []*ledgerkit.Event) []Pending {
 		}
 		switch {
 		case ev.Kind == KindRequested:
-			if !resolved[ev.ID] {
-				pending[key] = pendingFromEvent(ev, key)
+			if resolved[ev.ID] {
+				// Named by a resolution: it and everything asked before it for
+				// this key are settled.
+				requests[key] = nil
+				continue
 			}
+			requests[key] = append(requests[key], ev)
 		case isResolution(ev.Kind):
 			if payloadString(ev.Payload, "request_id") == "" {
-				delete(pending, key)
+				requests[key] = nil
 			}
 		}
 	}
-	out := make([]Pending, 0, len(pending))
-	for _, p := range pending {
-		out = append(out, p)
+
+	out := make([]Pending, 0, len(requests))
+	for key, open := range requests {
+		if len(open) == 0 {
+			continue
+		}
+		out = append(out, pendingFromEvent(open[len(open)-1], key))
 	}
 	sort.Slice(out, func(i, j int) bool {
 		if out[i].RequestedAt != out[j].RequestedAt {
