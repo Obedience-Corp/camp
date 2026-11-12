@@ -19,7 +19,7 @@ import (
 // camp and fest each link their own copy of this package and share one index
 // file, so a binary with older rules would otherwise leave behind a pending set
 // that a newer binary reads as current.
-const indexVersion = 4
+const indexVersion = 5
 
 // index is the cached pending set plus how much of each shard it has seen.
 type index struct {
@@ -251,6 +251,42 @@ func (r *Recorder) SetWaiting(ctx context.Context, source string, want *Request,
 		}
 	}
 	return change, nil
+}
+
+// Resolve records that one pending request stopped waiting, and nothing else.
+//
+// SetWaiting speaks for a whole source: it is what a source calls about its own
+// state. Resolve is for a reader acting on a single row, such as clearing a
+// request whose source is gone. It resolves that request and the duplicates
+// listed with it, and leaves any other request from the same source pending.
+//
+// The request is looked up again by its event id, so a row that was resolved
+// since the caller read it records nothing and reports resolved false.
+func (r *Recorder) Resolve(ctx context.Context, p Pending, outcome Outcome, reason string) (resolved bool, err error) {
+	if err := ctx.Err(); err != nil {
+		return false, err
+	}
+	pending, err := Load(ctx, r.campaignRoot)
+	if err != nil {
+		return false, err
+	}
+	var current *Pending
+	for i := range pending {
+		if pending[i].EventID == p.EventID {
+			current = &pending[i]
+			break
+		}
+	}
+	if current == nil {
+		return false, nil
+	}
+	if err := r.writer.Append(ctx, r.resolutionEvent(*current, outcome, reason)); err != nil {
+		return false, err
+	}
+	if _, err := Load(ctx, r.campaignRoot); err != nil {
+		return true, err
+	}
+	return true, nil
 }
 
 func (r *Recorder) envelope(kind ledgerkit.Kind, scope ledgerkit.Scope) *ledgerkit.Event {

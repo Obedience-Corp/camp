@@ -27,7 +27,8 @@ func reqPayload(source string, step int) map[string]any {
 func TestFold(t *testing.T) {
 	const src = "standalone:workflow/explore/x"
 	key := RequestKey(src, 2)
-	resolved := map[string]any{"key": key}
+	// resolved names request "a", as every resolution this package writes does.
+	resolved := map[string]any{"key": key, "request_id": "a", "resolves": []any{"a"}}
 
 	tests := []struct {
 		name   string
@@ -63,6 +64,9 @@ func TestFold(t *testing.T) {
 			ev("a", "2026-01-01T00:00:01Z", KindRequested, reqPayload(src, 2)),
 			ev("x", "2026-01-01T00:00:02Z", ledgerkit.Kind("approval_from_the_future"), resolved),
 			ev("y", "2026-01-01T00:00:03Z", KindApproved, map[string]any{}),
+			// A resolution that quotes the key but names no request resolves
+			// nothing: quoting a key must not be enough to hide a request.
+			ev("z", "2026-01-01T00:00:04Z", KindWithdrawn, map[string]any{"key": key}),
 			nil,
 		}, []string{"a"}},
 		{"a resolution that names its request resolves it even when its clock is behind", []*ledgerkit.Event{
@@ -388,7 +392,7 @@ func TestIndexIsDisposableAndCatchesUp(t *testing.T) {
 	if pending, err = Load(ctx, root); err != nil || len(pending) != 2 {
 		t.Fatalf("after a remote request arrived: %+v, %v", pending, err)
 	}
-	arrive("remote-2", KindApproved, map[string]any{"key": RequestKey(src, 1)})
+	arrive("remote-2", KindApproved, map[string]any{"key": RequestKey(src, 1), "request_id": pending[0].EventID})
 	pending, err = Load(ctx, root)
 	if err != nil || len(pending) != 1 || pending[0].Source != "remote" {
 		t.Fatalf("after a remote approval arrived: %+v, %v", pending, err)
@@ -633,5 +637,93 @@ func TestResolveFile(t *testing.T) {
 		if _, err := ResolveFile(root, bad); err == nil {
 			t.Errorf("ResolveFile(%q) must fail", bad)
 		}
+	}
+}
+
+func TestFoldStripsBidiAndFormatCharacters(t *testing.T) {
+	payload := reqPayload("s", 1)
+	// RLO, PDF, an isolate pair, a zero-width space and joiner, a BOM, and the
+	// line and paragraph separators.
+	payload["title"] = "pay \u202egnp.exe\u202c to \u2066bob\u2069\u200b\u200d\ufeff\u2028\u2029!"
+	payload["body"] = "first\u2028second\n\u202ethird"
+	payload["source"] = "s"
+	got := Fold([]*ledgerkit.Event{ev("a", "2026-01-01T00:00:01Z", KindRequested, payload)})
+	if len(got) != 1 {
+		t.Fatalf("pending = %d", len(got))
+	}
+	if got[0].Title != "pay gnp.exe to bob!" {
+		t.Errorf("title = %q", got[0].Title)
+	}
+	if got[0].Body != "firstsecond\nthird" {
+		t.Errorf("body = %q", got[0].Body)
+	}
+	// Ordinary non-ASCII text is untouched.
+	payload["title"] = "Überprüfung 審査 ✅"
+	if got := Fold([]*ledgerkit.Event{ev("a", "2026-01-01T00:00:01Z", KindRequested, payload)}); got[0].Title != "Überprüfung 審査 ✅" {
+		t.Errorf("non-ASCII text was altered: %q", got[0].Title)
+	}
+}
+
+func TestSourceIsCleanedConsistentlyWithItsKey(t *testing.T) {
+	payload := reqPayload("s", 1)
+	payload["source"] = "wor\x1bk\u202eflow"
+	got := Fold([]*ledgerkit.Event{ev("a", "2026-01-01T00:00:01Z", KindRequested, payload)})
+	if len(got) != 1 || got[0].Source != "workflow" || got[0].Key != RequestKey("workflow", 1) {
+		t.Fatalf("source and key must be cleaned together: %+v", got)
+	}
+}
+
+func TestResolveClearsOnlyTheChosenRequest(t *testing.T) {
+	ctx := context.Background()
+	root := t.TempDir()
+	const src = "s"
+	rec := recorder(t, root, "wone")
+	if _, err := rec.SetWaiting(ctx, src, request(src, 1), OutcomeWithdrawn, ""); err != nil {
+		t.Fatal(err)
+	}
+	// A second request from the same source at another step, as another
+	// machine's shard would deliver it.
+	other, err := ledgerkit.NewWriterIn(root, Dir, "wtwo")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := other.Append(ctx, ev("live-request", ledgerkit.NowUTC(time.Now().Add(time.Second)), KindRequested, reqPayload(src, 4))); err != nil {
+		t.Fatal(err)
+	}
+	pending, err := Load(ctx, root)
+	if err != nil || len(pending) != 2 {
+		t.Fatalf("pending = %+v, %v", pending, err)
+	}
+	var stale Pending
+	for _, p := range pending {
+		if p.Step == 1 {
+			stale = p
+		}
+	}
+
+	resolved, err := rec.Resolve(ctx, stale, OutcomeWithdrawn, "source gone")
+	if err != nil || !resolved {
+		t.Fatalf("resolve: %v, %v", resolved, err)
+	}
+	pending, err = Load(ctx, root)
+	if err != nil || len(pending) != 1 || pending[0].Step != 4 {
+		t.Fatalf("only the chosen request may be cleared, got %+v, %v", pending, err)
+	}
+
+	// Resolving a row that is already gone records nothing.
+	resolved, err = rec.Resolve(ctx, stale, OutcomeWithdrawn, "again")
+	if err != nil || resolved {
+		t.Fatalf("second resolve: %v, %v", resolved, err)
+	}
+	reader, _ := ledgerkit.NewReaderIn(root, Dir)
+	events, _, _ := reader.Read(ctx)
+	withdrawn := 0
+	for _, e := range events {
+		if e.Kind == KindWithdrawn {
+			withdrawn++
+		}
+	}
+	if withdrawn != 1 {
+		t.Fatalf("withdrawn events = %d, want 1", withdrawn)
 	}
 }

@@ -41,6 +41,7 @@ import (
 	"sort"
 	"strconv"
 	"strings"
+	"unicode"
 	"unicode/utf8"
 
 	camperrors "github.com/Obedience-Corp/camp/internal/errors"
@@ -235,9 +236,11 @@ func shortID(eventID string) string {
 // request.
 //
 // events should be ordered oldest first (ledgerkit readers return them that
-// way). Order decides only which duplicate is shown, and what a resolution
-// that names no request resolves (one written by something other than this
-// package): whatever was requested for its key before it.
+// way). Order decides only which duplicate is shown.
+//
+// A resolution that names no request resolves nothing. Every resolution this
+// package writes names what it resolves, and resolving by key instead would let
+// a line hide another source's request by quoting its key.
 //
 // Events of other kinds, and requests without a source or step, are ignored
 // rather than rejected so a newer writer cannot break an older reader.
@@ -258,21 +261,14 @@ func Fold(events []*ledgerkit.Event) []Pending {
 		if ev == nil {
 			continue
 		}
-		switch {
-		case ev.Kind == KindRequested:
-			key := requestKeyOf(ev.Payload)
-			if key == "" || resolved[ev.ID] {
-				continue
-			}
-			open[key] = append(open[key], ev)
-		case isResolution(ev.Kind):
-			if len(resolvedIDs(ev.Payload)) == 0 {
-				// A resolution that names nothing: resolve by key and order.
-				if key := payloadString(ev.Payload, "key"); key != "" {
-					delete(open, key)
-				}
-			}
+		if ev.Kind != KindRequested {
+			continue
 		}
+		key := requestKeyOf(ev.Payload)
+		if key == "" || resolved[ev.ID] {
+			continue
+		}
+		open[key] = append(open[key], ev)
 	}
 
 	out := make([]Pending, 0, len(open))
@@ -298,7 +294,9 @@ func Fold(events []*ledgerkit.Event) []Pending {
 // requestKeyOf derives a request's key from the source and step it carries.
 // Empty when either is missing.
 func requestKeyOf(payload map[string]any) string {
-	source := payloadString(payload, "source")
+	// Cleaned the same way as the Source field a reader sees, so a request's
+	// key and its source always agree.
+	source := cleanLine(payloadString(payload, "source"))
 	step := payloadInt(payload, "step")
 	if strings.TrimSpace(source) == "" || step < 1 {
 		return ""
@@ -342,7 +340,7 @@ func pendingFromEvent(ev *ledgerkit.Event, key string) Pending {
 		ID:          shortID(ev.ID),
 		EventID:     ev.ID,
 		Key:         key,
-		Source:      payloadString(ev.Payload, "source"),
+		Source:      cleanLine(payloadString(ev.Payload, "source")),
 		SourceKind:  cleanLine(payloadString(ev.Payload, "source_kind")),
 		Step:        payloadInt(ev.Payload, "step"),
 		StepName:    cleanLine(payloadString(ev.Payload, "step_name")),
@@ -397,11 +395,22 @@ func stripControls(s string, keepLayout bool) string {
 	return b.String()
 }
 
-// isControl reports C0 and C1 control characters, DEL, and the Unicode
-// replacement of an invalid byte, which is how a raw escape byte in invalid
-// UTF-8 would otherwise slip through.
+// isControl reports the characters that can change how surrounding text is
+// displayed rather than being text themselves:
+//
+//   - C0 and C1 controls and DEL, which carry terminal escape sequences;
+//   - Unicode format characters (category Cf): bidirectional overrides and
+//     isolates, which can reorder what a line appears to say, and zero-width
+//     characters, which can hide a difference between two strings;
+//   - the line and paragraph separators (Zl, Zp), which break a line without
+//     being a newline;
+//   - the replacement of an invalid byte, which is how a raw escape byte in
+//     invalid UTF-8 would otherwise slip through.
 func isControl(r rune) bool {
-	return r < 0x20 || r == 0x7f || (r >= 0x80 && r <= 0x9f) || r == utf8.RuneError
+	if r < 0x20 || r == 0x7f || (r >= 0x80 && r <= 0x9f) || r == utf8.RuneError {
+		return true
+	}
+	return unicode.Is(unicode.Cf, r) || unicode.Is(unicode.Zl, r) || unicode.Is(unicode.Zp, r)
 }
 
 func payloadString(p map[string]any, name string) string {
