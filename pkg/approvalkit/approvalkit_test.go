@@ -74,10 +74,31 @@ func TestFold(t *testing.T) {
 			ev("c", "2026-01-01T00:00:03Z", KindRequested, reqPayload(src, 2)),
 			ev("b", "2026-01-01T00:00:09Z", KindRejected, map[string]any{"key": key, "request_id": "a"}),
 		}, []string{"c"}},
-		{"a decision settles an earlier duplicate request for the same key", []*ledgerkit.Event{
+		{"a decision that lists every duplicate request resolves them all", []*ledgerkit.Event{
+			ev("a", "2026-01-01T00:00:01Z", KindRequested, reqPayload(src, 2)),
+			ev("b", "2026-01-01T00:00:02Z", KindRequested, reqPayload(src, 2)),
+			ev("c", "2026-01-01T00:00:03Z", KindApproved, map[string]any{"key": key, "request_id": "b", "resolves": []any{"b", "a"}}),
+		}, nil},
+		{"a decision resolves only the requests it names", []*ledgerkit.Event{
 			ev("a", "2026-01-01T00:00:01Z", KindRequested, reqPayload(src, 2)),
 			ev("b", "2026-01-01T00:00:02Z", KindRequested, reqPayload(src, 2)),
 			ev("c", "2026-01-01T00:00:03Z", KindApproved, map[string]any{"key": key, "request_id": "b"}),
+		}, []string{"a"}},
+		{"a re-request from a machine whose clock is behind survives the earlier decision", []*ledgerkit.Event{
+			// Real order: a requested, a rejected, b re-requested. The machine
+			// that wrote b has a slow clock, so b sorts before a.
+			ev("b", "2026-01-01T00:00:01Z", KindRequested, reqPayload(src, 2)),
+			ev("a", "2026-01-01T00:00:05Z", KindRequested, reqPayload(src, 2)),
+			ev("r", "2026-01-01T00:00:06Z", KindRejected, map[string]any{"key": key, "request_id": "a", "resolves": []any{"a"}}),
+		}, []string{"b"}},
+		{"a line cannot claim another source's key to replace its request", []*ledgerkit.Event{
+			ev("a", "2026-01-01T00:00:01Z", KindRequested, reqPayload(src, 2)),
+			ev("x", "2026-01-01T00:00:02Z", KindRequested, map[string]any{
+				"key": key, "source": "evil", "source_kind": "k", "step": float64(9), "title": "forged", "cwd": "x",
+			}),
+		}, []string{"a", "x"}},
+		{"a request without a source or step is ignored", []*ledgerkit.Event{
+			ev("x", "2026-01-01T00:00:02Z", KindRequested, map[string]any{"key": key, "title": "no source"}),
 		}, nil},
 		{"a decision does not settle a different key", []*ledgerkit.Event{
 			ev("a", "2026-01-01T00:00:01Z", KindRequested, reqPayload(src, 2)),
@@ -509,5 +530,108 @@ func TestLedgerDirIsSeparateFromEvents(t *testing.T) {
 	matches, _ := filepath.Glob(filepath.Join(root, filepath.FromSlash(Dir), "*", "wone.jsonl"))
 	if len(matches) != 1 {
 		t.Fatalf("expected one approvals shard, got %v", matches)
+	}
+}
+
+func TestFoldListsDuplicates(t *testing.T) {
+	const src = "s"
+	got := Fold([]*ledgerkit.Event{
+		ev("a", "2026-01-01T00:00:01Z", KindRequested, reqPayload(src, 2)),
+		ev("b", "2026-01-01T00:00:02Z", KindRequested, reqPayload(src, 2)),
+	})
+	if len(got) != 1 || got[0].EventID != "b" || len(got[0].Duplicates) != 1 || got[0].Duplicates[0] != "a" {
+		t.Fatalf("duplicates must show as one row, the newest, listing the other: %+v", got)
+	}
+}
+
+func TestFoldStripsControlCharacters(t *testing.T) {
+	payload := reqPayload("s", 1)
+	payload["title"] = "ok\x1b[2J\x1b]0;evil\x07 title\r\nsecond"
+	payload["body"] = "line one\n\tindented\x1b[31m red\x00\u009b0m\rover"
+	payload["step_name"] = "STEP\x1b[1m"
+	payload["cwd"] = "work\x1bflow"
+	payload["writer"] = "w\x07abc"
+	e := ev("a", "2026-01-01T00:00:01Z", KindRequested, payload)
+	e.Actor = ledgerkit.Actor{Type: ledgerkit.ActorAgent, Name: "bot\x1b[5m"}
+	got := Fold([]*ledgerkit.Event{e})
+	if len(got) != 1 {
+		t.Fatalf("pending = %d", len(got))
+	}
+	p := got[0]
+	for name, v := range map[string]string{
+		"title": p.Title, "step_name": p.StepName, "cwd": p.Cwd, "writer": p.Writer, "actor": p.RequestedBy.Name,
+	} {
+		for _, r := range v {
+			if r < 0x20 || r == 0x7f || (r >= 0x80 && r <= 0x9f) {
+				t.Errorf("%s still carries a control character: %q", name, v)
+			}
+		}
+	}
+	if p.Title != "ok[2J]0;evil titlesecond" {
+		t.Errorf("title = %q", p.Title)
+	}
+	if p.Body != "line one\n\tindented[31m red0mover" {
+		t.Errorf("body must keep newlines and tabs and drop the rest: %q", p.Body)
+	}
+}
+
+func TestSetWaitingResolvesDuplicateRequests(t *testing.T) {
+	ctx := context.Background()
+	root := t.TempDir()
+	const src = "s"
+	if _, err := recorder(t, root, "wone").SetWaiting(ctx, src, request(src, 1), OutcomeWithdrawn, ""); err != nil {
+		t.Fatal(err)
+	}
+	// Another machine recorded the same checkpoint before the ledgers met.
+	other, err := ledgerkit.NewWriterIn(root, Dir, "wtwo")
+	if err != nil {
+		t.Fatal(err)
+	}
+	dup := ev("dup-request", ledgerkit.NowUTC(time.Now().Add(-time.Hour)), KindRequested, reqPayload(src, 1))
+	if err := other.Append(ctx, dup); err != nil {
+		t.Fatal(err)
+	}
+	pending, err := Load(ctx, root)
+	if err != nil || len(pending) != 1 || len(pending[0].Duplicates) != 1 {
+		t.Fatalf("duplicates must load as one row: %+v, %v", pending, err)
+	}
+
+	change, err := recorder(t, root, "wone").SetWaiting(ctx, src, nil, OutcomeApproved, "ok")
+	if err != nil || len(change.Resolved) != 1 {
+		t.Fatalf("approve: %+v, %v", change, err)
+	}
+	if pending, err = Load(ctx, root); err != nil || len(pending) != 0 {
+		t.Fatalf("a decision must resolve every duplicate it knew about: %+v, %v", pending, err)
+	}
+}
+
+func TestResolveFile(t *testing.T) {
+	root := t.TempDir()
+	if err := os.MkdirAll(filepath.Join(root, "workflow"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	doc := filepath.Join(root, "workflow", "WORKFLOW.md")
+	if err := os.WriteFile(doc, []byte("x"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	outside := filepath.Join(t.TempDir(), "secret")
+	if err := os.WriteFile(outside, []byte("x"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Symlink(outside, filepath.Join(root, "workflow", "LINK.md")); err != nil {
+		t.Skipf("symlinks unavailable: %v", err)
+	}
+	got, err := ResolveFile(root, "workflow/WORKFLOW.md")
+	if err != nil {
+		t.Fatal(err)
+	}
+	want, _ := filepath.EvalSymlinks(doc)
+	if got != want {
+		t.Fatalf("ResolveFile = %q, want %q", got, want)
+	}
+	for _, bad := range []string{"workflow/LINK.md", "workflow", "workflow/missing.md", "/etc/passwd", "../x", ""} {
+		if _, err := ResolveFile(root, bad); err == nil {
+			t.Errorf("ResolveFile(%q) must fail", bad)
+		}
 	}
 }

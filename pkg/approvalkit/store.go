@@ -19,7 +19,7 @@ import (
 // camp and fest each link their own copy of this package and share one index
 // file, so a binary with older rules would otherwise leave behind a pending set
 // that a newer binary reads as current.
-const indexVersion = 3
+const indexVersion = 4
 
 // index is the cached pending set plus how much of each shard it has seen.
 type index struct {
@@ -220,6 +220,9 @@ func (r *Recorder) SetWaiting(ctx context.Context, source string, want *Request,
 		}
 	}
 
+	// Load-then-append takes no lock. Two commands racing on one source can
+	// both record the same request; Fold shows them as one row and a decision
+	// resolves both, so the race costs a duplicate line, not a wrong answer.
 	pending, err := Load(ctx, r.campaignRoot)
 	if err != nil {
 		return change, err
@@ -293,7 +296,10 @@ func (r *Recorder) resolutionEvent(p Pending, outcome Outcome, reason string) *l
 		"key":        p.Key,
 		"source":     p.Source,
 		"request_id": p.EventID,
-		"writer":     r.writerID,
+		// Every open request this row stands for. Fold matches on these ids
+		// alone, so the list is what makes a duplicate request resolve.
+		"resolves": p.requestIDs(),
+		"writer":   r.writerID,
 	}
 	if reason = strings.TrimSpace(reason); reason != "" {
 		payload["reason"] = reason
@@ -345,6 +351,36 @@ func ResolveCwd(campaignRoot, cwd string) (string, error) {
 	}
 	if !info.IsDir() {
 		return "", camperrors.New("approvalkit: cwd is not a directory: " + cwd)
+	}
+	return abs, nil
+}
+
+// ResolveFile turns a request's campaign-relative document path into an
+// absolute file a reader may open. Like ResolveCwd it fails unless the path
+// stays inside the campaign root after symlinks are resolved, and it requires a
+// regular file, so a document that is a symlink to somewhere else is refused.
+func ResolveFile(campaignRoot, doc string) (string, error) {
+	if !IsCampRelative(doc) {
+		return "", camperrors.New("approvalkit: document is not inside the camp: " + doc)
+	}
+	root, err := filepath.EvalSymlinks(campaignRoot)
+	if err != nil {
+		return "", camperrors.Wrap(err, "approvalkit: resolve camp root")
+	}
+	abs, err := filepath.EvalSymlinks(filepath.Join(root, filepath.FromSlash(doc)))
+	if err != nil {
+		return "", camperrors.Wrap(err, "approvalkit: resolve document "+doc)
+	}
+	rel, err := filepath.Rel(root, abs)
+	if err != nil || rel == ".." || strings.HasPrefix(filepath.ToSlash(rel), "../") {
+		return "", camperrors.New("approvalkit: document resolves outside the camp: " + doc)
+	}
+	info, err := os.Stat(abs)
+	if err != nil {
+		return "", camperrors.Wrap(err, "approvalkit: stat document "+doc)
+	}
+	if !info.Mode().IsRegular() {
+		return "", camperrors.New("approvalkit: document is not a regular file: " + doc)
 	}
 	return abs, nil
 }

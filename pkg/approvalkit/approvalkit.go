@@ -19,6 +19,13 @@
 // the index has not seen, which is also how a request that arrived by git pull
 // shows up.
 //
+// # What the ledger keeps
+//
+// The ledger is committed, so everything in a request stays in the camp's git
+// history: its title, the step's goal, actions and output (up to 8 KiB), who
+// asked, and the writer id of the machine. Do not put secrets in a checkpoint
+// step's text.
+//
 // # Authority
 //
 // The ledger never grants anything. It is a plain file that any process can
@@ -34,6 +41,7 @@ import (
 	"sort"
 	"strconv"
 	"strings"
+	"unicode/utf8"
 
 	camperrors "github.com/Obedience-Corp/camp/internal/errors"
 	"github.com/Obedience-Corp/camp/pkg/ledgerkit"
@@ -185,6 +193,16 @@ type Pending struct {
 	// Writer is the ledger writer id of the machine that recorded the request.
 	Writer string          `json:"writer,omitempty"`
 	Scope  ledgerkit.Scope `json:"scope"`
+	// Duplicates lists the event ids of other open requests for the same key:
+	// the same checkpoint reported more than once, by two machines that had
+	// not yet exchanged ledgers or by two commands racing. One row is shown
+	// for all of them, and a decision resolves every one it knows about.
+	Duplicates []string `json:"duplicates,omitempty"`
+}
+
+// requestIDs returns every open request this row stands for.
+func (p Pending) requestIDs() []string {
+	return append([]string{p.EventID}, p.Duplicates...)
 }
 
 // shortID derives the selectable handle from an event id. Event ids are
@@ -200,68 +218,73 @@ func shortID(eventID string) string {
 
 // Fold derives the pending set from ledger events.
 //
-// A request is pending when no resolution covers it. Resolutions written by
-// this package carry the id of the request they resolve, and that id is what
-// Fold matches on, not timestamps: a request made on one machine and resolved
-// on another whose clock is behind would otherwise look resolved-before-
-// requested and stay pending forever.
+// A request is pending until a resolution names it. Matching is by request id
+// and nothing else: resolutions written by this package list every request
+// they resolve, so neither a clock that is behind nor the order two machines'
+// events happen to sort in can make a live request look resolved or a resolved
+// one look live. A decision made on one machine resolves exactly the requests
+// that machine knew about.
 //
-// A resolution covers the request it names and every earlier request for the
-// same key. Two machines that share a source but have not yet exchanged ledgers
-// can each record a request for the same checkpoint; the decision then names
-// only one of them, and it settles both, because they asked the same question.
+// The same checkpoint can be open more than once (two machines that had not
+// exchanged ledgers, or two commands racing, each recorded it). Those requests
+// share a key and are shown as one row, the newest, with the others listed in
+// Duplicates so a decision resolves them all.
+//
+// A request's key is derived from its own source and step, not read from the
+// event, so a line cannot claim another source's key to hide or replace its
+// request.
 //
 // events should be ordered oldest first (ledgerkit readers return them that
-// way). Order decides which requests count as earlier, which unresolved request
-// is shown when a key has more than one, and what a resolution that names no
-// request (written by something other than this package) resolves: whatever
-// was requested for its key before it.
+// way). Order decides only which duplicate is shown, and what a resolution
+// that names no request resolves (one written by something other than this
+// package): whatever was requested for its key before it.
 //
-// Events of other kinds, and events without a key, are ignored rather than
-// rejected so a newer writer cannot break an older reader.
+// Events of other kinds, and requests without a source or step, are ignored
+// rather than rejected so a newer writer cannot break an older reader.
 func Fold(events []*ledgerkit.Event) []Pending {
 	resolved := make(map[string]bool)
 	for _, ev := range events {
 		if ev == nil || !isResolution(ev.Kind) {
 			continue
 		}
-		if id := payloadString(ev.Payload, "request_id"); id != "" {
+		for _, id := range resolvedIDs(ev.Payload) {
 			resolved[id] = true
 		}
 	}
 
-	// requests holds, per key, the requests not yet covered, oldest first.
-	requests := make(map[string][]*ledgerkit.Event)
+	// open holds, per key, the requests no resolution has named, oldest first.
+	open := make(map[string][]*ledgerkit.Event)
 	for _, ev := range events {
 		if ev == nil {
 			continue
 		}
-		key := payloadString(ev.Payload, "key")
-		if key == "" {
-			continue
-		}
 		switch {
 		case ev.Kind == KindRequested:
-			if resolved[ev.ID] {
-				// Named by a resolution: it and everything asked before it for
-				// this key are settled.
-				requests[key] = nil
+			key := requestKeyOf(ev.Payload)
+			if key == "" || resolved[ev.ID] {
 				continue
 			}
-			requests[key] = append(requests[key], ev)
+			open[key] = append(open[key], ev)
 		case isResolution(ev.Kind):
-			if payloadString(ev.Payload, "request_id") == "" {
-				requests[key] = nil
+			if len(resolvedIDs(ev.Payload)) == 0 {
+				// A resolution that names nothing: resolve by key and order.
+				if key := payloadString(ev.Payload, "key"); key != "" {
+					delete(open, key)
+				}
 			}
 		}
 	}
 
-	out := make([]Pending, 0, len(requests))
-	for key, open := range requests {
-		if len(open) == 0 {
+	out := make([]Pending, 0, len(open))
+	for key, reqs := range open {
+		if len(reqs) == 0 {
 			continue
 		}
-		out = append(out, pendingFromEvent(open[len(open)-1], key))
+		p := pendingFromEvent(reqs[len(reqs)-1], key)
+		for _, other := range reqs[:len(reqs)-1] {
+			p.Duplicates = append(p.Duplicates, other.ID)
+		}
+		out = append(out, p)
 	}
 	sort.Slice(out, func(i, j int) bool {
 		if out[i].RequestedAt != out[j].RequestedAt {
@@ -272,28 +295,113 @@ func Fold(events []*ledgerkit.Event) []Pending {
 	return out
 }
 
+// requestKeyOf derives a request's key from the source and step it carries.
+// Empty when either is missing.
+func requestKeyOf(payload map[string]any) string {
+	source := payloadString(payload, "source")
+	step := payloadInt(payload, "step")
+	if strings.TrimSpace(source) == "" || step < 1 {
+		return ""
+	}
+	return RequestKey(source, step)
+}
+
+// resolvedIDs returns the request ids a resolution names: request_id plus the
+// resolves list.
+func resolvedIDs(payload map[string]any) []string {
+	var ids []string
+	if id := payloadString(payload, "request_id"); id != "" {
+		ids = append(ids, id)
+	}
+	if list, ok := payload["resolves"].([]any); ok {
+		for _, v := range list {
+			if id, ok := v.(string); ok && id != "" {
+				ids = append(ids, id)
+			}
+		}
+	}
+	if list, ok := payload["resolves"].([]string); ok {
+		for _, id := range list {
+			if id != "" {
+				ids = append(ids, id)
+			}
+		}
+	}
+	return ids
+}
+
 func isResolution(kind ledgerkit.Kind) bool {
 	return kind == KindApproved || kind == KindRejected || kind == KindWithdrawn
 }
 
 func pendingFromEvent(ev *ledgerkit.Event, key string) Pending {
+	actor := ev.Actor
+	actor.Name = cleanLine(actor.Name)
+	actor.Session = cleanLine(actor.Session)
 	return Pending{
 		ID:          shortID(ev.ID),
 		EventID:     ev.ID,
 		Key:         key,
 		Source:      payloadString(ev.Payload, "source"),
-		SourceKind:  payloadString(ev.Payload, "source_kind"),
+		SourceKind:  cleanLine(payloadString(ev.Payload, "source_kind")),
 		Step:        payloadInt(ev.Payload, "step"),
-		StepName:    payloadString(ev.Payload, "step_name"),
-		Title:       payloadString(ev.Payload, "title"),
-		Body:        payloadString(ev.Payload, "body"),
-		Cwd:         payloadString(ev.Payload, "cwd"),
-		Doc:         payloadString(ev.Payload, "doc"),
-		RequestedAt: ev.TS,
-		RequestedBy: ev.Actor,
-		Writer:      payloadString(ev.Payload, "writer"),
+		StepName:    cleanLine(payloadString(ev.Payload, "step_name")),
+		Title:       cleanLine(payloadString(ev.Payload, "title")),
+		Body:        cleanText(payloadString(ev.Payload, "body")),
+		Cwd:         cleanLine(payloadString(ev.Payload, "cwd")),
+		Doc:         cleanLine(payloadString(ev.Payload, "doc")),
+		RequestedAt: cleanLine(ev.TS),
+		RequestedBy: actor,
+		Writer:      cleanLine(payloadString(ev.Payload, "writer")),
 		Scope:       ev.Scope,
 	}
+}
+
+// cleanLine and cleanText remove control characters from ledger text before a
+// reader sees it. The ledger is a committed file that arrives by git pull, so
+// a request written elsewhere could otherwise carry terminal escape sequences
+// that restyle or overwrite what a person is reading when they decide. cleanLine
+// is for single-line fields and drops every control character; cleanText is for
+// the body and keeps newlines and tabs.
+func cleanLine(s string) string { return stripControls(s, false) }
+
+func cleanText(s string) string { return stripControls(s, true) }
+
+// CleanLine removes control characters from text that will be shown on one
+// line. It is exported for readers that display text which did not come
+// through a Pending, such as a source's error output.
+func CleanLine(s string) string { return cleanLine(s) }
+
+func stripControls(s string, keepLayout bool) string {
+	clean := true
+	for _, r := range s {
+		if isControl(r) && (!keepLayout || (r != '\n' && r != '\t')) {
+			clean = false
+			break
+		}
+	}
+	if clean {
+		return s
+	}
+	var b strings.Builder
+	b.Grow(len(s))
+	for _, r := range s {
+		if isControl(r) {
+			if keepLayout && (r == '\n' || r == '\t') {
+				b.WriteRune(r)
+			}
+			continue
+		}
+		b.WriteRune(r)
+	}
+	return b.String()
+}
+
+// isControl reports C0 and C1 control characters, DEL, and the Unicode
+// replacement of an invalid byte, which is how a raw escape byte in invalid
+// UTF-8 would otherwise slip through.
+func isControl(r rune) bool {
+	return r < 0x20 || r == 0x7f || (r >= 0x80 && r <= 0x9f) || r == utf8.RuneError
 }
 
 func payloadString(p map[string]any, name string) string {
