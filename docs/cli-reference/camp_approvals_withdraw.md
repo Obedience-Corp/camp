@@ -13,11 +13,16 @@ removes the request from this list. It does not unblock anything, because the
 ledger never grants an approval: if the source is in fact still waiting, it
 reports itself again the next time it is advanced.
 
---stale withdraws, without naming them, every request whose source is on this
-machine and reports that it is no longer waiting at the recorded step. A
-request whose source cannot be read here (its directory is on another machine,
-or camp does not know its kind) is left alone, because this machine cannot tell
-whether it is still waiting.
+--stale withdraws, without naming them, every request that can no longer be
+decided: its source is on this machine and has finished, or is already past the
+recorded step. Everything else is left alone. A source that is behind the
+recorded step usually means this checkout has not caught up after a pull, and a
+request whose source cannot be read here may be waiting on another machine; a
+withdrawal is recorded in the shared ledger, so it would clear the request
+there too.
+
+Withdrawing clears that one request. Another request from the same source
+stays pending.
 
 Examples:
   camp approvals withdraw ap-1b9b5140 --reason "workflow deleted"

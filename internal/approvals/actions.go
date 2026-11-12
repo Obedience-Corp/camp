@@ -102,11 +102,15 @@ type Readiness struct {
 	// Reason explains a request that is not actionable, in words fit to show
 	// beside it.
 	Reason string
-	// SourceAnswered is true when the source was read on this machine and said
-	// it is not waiting at the recorded step. It separates "camp knows this
-	// request is stale" from "camp cannot tell from here", which is what a
-	// bulk cleanup has to know before it clears anything.
-	SourceAnswered bool
+	// Over is true only when the source, read on this machine, shows the
+	// request can never be decided: the source has finished, or it is past the
+	// recorded step. It is what a bulk cleanup may act on.
+	//
+	// A source that is behind the recorded step is not over. Source state can
+	// lag the ledger after a pull, so "behind" usually means this checkout has
+	// not caught up, and the request is live on the machine that made it. A
+	// withdrawal is written to the shared ledger and would clear it there too.
+	Over bool
 }
 
 // sourceStatus is the part of 'fest workflow status --json' camp reads.
@@ -176,19 +180,31 @@ func Check(ctx context.Context, campaignRoot string, p approvalkit.Pending) Read
 	if err := json.Unmarshal(out, &status); err != nil {
 		return Readiness{Reason: "its source status could not be parsed"}
 	}
-	if status.Complete || status.CurrentStep == nil {
-		return Readiness{Reason: "its source is no longer waiting", SourceAnswered: true}
+	if status.Complete {
+		return Readiness{Reason: "its source has finished", Over: true}
+	}
+	if status.CurrentStep == nil {
+		return Readiness{Reason: "its source is not at any step"}
 	}
 	// A phase's workflow and its gate share a directory and both number their
 	// steps from 1, so the step alone cannot tell them apart: a request for
 	// workflow step 1 must not be actionable because the gate is at its step 1.
-	if (p.SourceKind == approvalkit.SourcePhaseGate) != (status.Mode == statusModeGate) {
-		return Readiness{Reason: "its source is no longer waiting", SourceAnswered: true}
+	gateCurrent := status.Mode == statusModeGate
+	if p.SourceKind == approvalkit.SourcePhaseGate && !gateCurrent {
+		// The gate only becomes current once the workflow is complete, so
+		// here the workflow is still running: behind, not over.
+		return Readiness{Reason: "its phase has not reached the gate on this machine"}
+	}
+	if p.SourceKind != approvalkit.SourcePhaseGate && gateCurrent {
+		// The gate being current means the workflow this request belongs to
+		// is complete.
+		return Readiness{Reason: "its workflow has finished; the phase gate is current", Over: true}
 	}
 	if *status.CurrentStep != p.Step {
 		return Readiness{
-			Reason:         "its source is at step " + strconv.Itoa(*status.CurrentStep) + ", not step " + strconv.Itoa(p.Step),
-			SourceAnswered: true,
+			Reason: "its source is at step " + strconv.Itoa(*status.CurrentStep) + ", not step " + strconv.Itoa(p.Step),
+			// Past the step: over. Before it: this checkout is behind.
+			Over: *status.CurrentStep > p.Step,
 		}
 	}
 	return Readiness{Actionable: true, Dir: dir}

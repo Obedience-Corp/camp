@@ -54,7 +54,7 @@ Examples:
   camp approvals show <id>         # one request in full
   camp approvals path <id>         # the source directory, to cd into
   camp approvals withdraw <id> --reason "..."   # clear a request whose source is gone
-  camp approvals withdraw --stale               # clear every request whose source moved on`,
+  camp approvals withdraw --stale               # clear every request whose source moved past it`,
 	Args: cobra.NoArgs,
 	RunE: jsoncontract.RunE(ApprovalsJSONVersion, func() bool { return approvalsOpts.json }, runApprovalsList),
 }
@@ -95,11 +95,16 @@ removes the request from this list. It does not unblock anything, because the
 ledger never grants an approval: if the source is in fact still waiting, it
 reports itself again the next time it is advanced.
 
---stale withdraws, without naming them, every request whose source is on this
-machine and reports that it is no longer waiting at the recorded step. A
-request whose source cannot be read here (its directory is on another machine,
-or camp does not know its kind) is left alone, because this machine cannot tell
-whether it is still waiting.
+--stale withdraws, without naming them, every request that can no longer be
+decided: its source is on this machine and has finished, or is already past the
+recorded step. Everything else is left alone. A source that is behind the
+recorded step usually means this checkout has not caught up after a pull, and a
+request whose source cannot be read here may be waiting on another machine; a
+withdrawal is recorded in the shared ledger, so it would clear the request
+there too.
+
+Withdrawing clears that one request. Another request from the same source
+stays pending.
 
 Examples:
   camp approvals withdraw ap-1b9b5140 --reason "workflow deleted"
@@ -526,9 +531,9 @@ func runApprovalsWithdraw(cmd *cobra.Command, args []string) error {
 	return nil
 }
 
-// withdrawApproval records that p's source is waiting on nothing and prints
-// each request that cleared. A source has one request waiting at a time, so
-// this is normally just p; if it had more, they are all named.
+// withdrawApproval records that one request is no longer waiting. It resolves
+// that request (and the duplicates shown with it) and nothing else: another
+// request from the same source, which may be live, stays pending.
 func withdrawApproval(ctx context.Context, cmd *cobra.Command, campRoot string, p approvalkit.Pending, reason string) error {
 	writerID, err := ledgerkit.ResolveWriterID(ctx)
 	if err != nil {
@@ -538,23 +543,25 @@ func withdrawApproval(ctx context.Context, cmd *cobra.Command, campRoot string, 
 	if err != nil {
 		return err
 	}
-	change, err := rec.SetWaiting(ctx, p.Source, nil, approvalkit.OutcomeWithdrawn, reason)
+	resolved, err := rec.Resolve(ctx, p, approvalkit.OutcomeWithdrawn, reason)
 	if err != nil {
 		return camperrors.Wrap(err, "recording the withdrawal")
 	}
-	for _, resolved := range change.Resolved {
-		_, _ = fmt.Fprintf(cmd.OutOrStdout(), "withdrew %s: %s\n", resolved.ID, resolved.Title)
+	if !resolved {
+		_, _ = fmt.Fprintf(cmd.OutOrStdout(), "%s is no longer pending\n", p.ID)
+		return nil
 	}
+	_, _ = fmt.Fprintf(cmd.OutOrStdout(), "withdrew %s: %s\n", p.ID, p.Title)
 	return nil
 }
 
-// approvalIsStale reports whether camp read the request's source on this
-// machine and the source said it is not waiting at the recorded step. Any other
-// reason a request is not actionable (its directory is elsewhere, its kind is
-// unknown, the source could not be read) means camp does not know, and --stale
-// must not clear on a guess.
+// approvalIsStale reports whether a request can never be decided: its source,
+// read on this machine, has finished or is past the recorded step. A source
+// that is behind the step, cannot be read here, or is of an unknown kind is not
+// stale: camp cannot tell from this machine, and a withdrawal is shared with
+// every other one.
 func approvalIsStale(r approvals.Readiness) bool {
-	return !r.Actionable && r.SourceAnswered
+	return !r.Actionable && r.Over
 }
 
 func runApprovalsWithdrawStale(cmd *cobra.Command) error {
@@ -578,7 +585,7 @@ func runApprovalsWithdrawStale(cmd *cobra.Command) error {
 		withdrawn++
 	}
 	if withdrawn == 0 {
-		_, _ = fmt.Fprintln(cmd.OutOrStdout(), "no stale requests: nothing here has a source that reports it moved on")
+		_, _ = fmt.Fprintln(cmd.OutOrStdout(), "no stale requests: nothing here has a source that has finished or moved past its step")
 		return nil
 	}
 	if note := commitApprovals(ctx, campRoot); note != "" {

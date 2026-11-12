@@ -31,7 +31,7 @@ Examples:
   camp approvals show <id>         # one request in full
   camp approvals path <id>         # the source directory, to cd into
   camp approvals withdraw <id> --reason "..."   # clear a request whose source is gone
-  camp approvals withdraw --stale               # clear every request whose source moved on
+  camp approvals withdraw --stale               # clear every request whose source moved past it
 
 ```
 camp approvals [flags]

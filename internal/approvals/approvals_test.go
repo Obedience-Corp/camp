@@ -110,24 +110,29 @@ func TestCheck(t *testing.T) {
 			t.Fatalf("readiness = %+v", r)
 		}
 	})
+	gate := pending(approvalkit.SourcePhaseGate, 2, "workflow/explore/x")
 	cases := []struct {
 		name   string
 		p      approvalkit.Pending
 		status string
 		err    error
 		reason string
+		over   bool
 	}{
-		{"unknown kind", pending("shell", 2, "workflow/explore/x"), `{"current_step":2}`, nil, "cannot act"},
-		{"outside the camp", pending(approvalkit.SourceStandaloneCheckpoint, 2, "../elsewhere"), `{"current_step":2}`, nil, "outside this camp"},
-		{"absolute path", pending(approvalkit.SourceStandaloneCheckpoint, 2, "/etc"), `{"current_step":2}`, nil, "outside this camp"},
-		{"not on this machine", pending(approvalkit.SourceStandaloneCheckpoint, 2, "projects/worktrees/a/b"), `{"current_step":2}`, nil, "not on this machine"},
-		{"source moved to another step", here, `{"current_step":3,"complete":false}`, nil, "at step 3, not step 2"},
-		{"source finished", here, `{"complete":true}`, nil, "no longer waiting"},
-		{"workflow request while the gate is current", here, `{"mode":"gate","current_step":2}`, nil, "no longer waiting"},
-		{"gate request while the workflow is current", pending(approvalkit.SourcePhaseGate, 2, "workflow/explore/x"), `{"mode":"workflow","current_step":2}`, nil, "no longer waiting"},
-		{"source has no current step", here, `{"complete":false}`, nil, "no longer waiting"},
-		{"status unreadable", here, ``, errors.New("fest: not found\nmore"), "could not be read: fest: not found"},
-		{"status not json", here, `not json`, nil, "could not be parsed"},
+		{"unknown kind", pending("shell", 2, "workflow/explore/x"), `{"current_step":2}`, nil, "cannot act", false},
+		{"outside the camp", pending(approvalkit.SourceStandaloneCheckpoint, 2, "../elsewhere"), `{"current_step":2}`, nil, "outside this camp", false},
+		{"absolute path", pending(approvalkit.SourceStandaloneCheckpoint, 2, "/etc"), `{"current_step":2}`, nil, "outside this camp", false},
+		{"not on this machine", pending(approvalkit.SourceStandaloneCheckpoint, 2, "projects/worktrees/a/b"), `{"current_step":2}`, nil, "not on this machine", false},
+		{"source past the step is over", here, `{"current_step":3,"complete":false}`, nil, "at step 3, not step 2", true},
+		// A checkout that has not caught up after a pull reports an older
+		// step. The request is live elsewhere and must not be cleared.
+		{"source behind the step is not over", here, `{"current_step":1,"complete":false}`, nil, "at step 1, not step 2", false},
+		{"source finished is over", here, `{"complete":true}`, nil, "has finished", true},
+		{"source at no step is unknown", here, `{"complete":false}`, nil, "not at any step", false},
+		{"workflow request while the gate is current is over", here, `{"mode":"gate","current_step":2}`, nil, "phase gate is current", true},
+		{"gate request before the phase reaches the gate is not over", gate, `{"mode":"workflow","current_step":2}`, nil, "has not reached the gate", false},
+		{"status unreadable", here, ``, errors.New("fest: not found\nmore"), "could not be read: fest: not found", false},
+		{"status not json", here, `not json`, nil, "could not be parsed", false},
 	}
 	for _, c := range cases {
 		t.Run(c.name, func(t *testing.T) {
@@ -136,10 +141,8 @@ func TestCheck(t *testing.T) {
 			if r.Actionable || r.Dir != "" || !strings.Contains(r.Reason, c.reason) {
 				t.Fatalf("readiness = %+v, want reason containing %q", r, c.reason)
 			}
-			// Only a source that answered "not waiting here" is known stale.
-			wantAnswered := strings.Contains(c.reason, "no longer waiting") || strings.Contains(c.reason, "not step")
-			if r.SourceAnswered != wantAnswered {
-				t.Fatalf("SourceAnswered = %v for %q", r.SourceAnswered, c.reason)
+			if r.Over != c.over {
+				t.Fatalf("Over = %v, want %v (%s)", r.Over, c.over, r.Reason)
 			}
 		})
 	}

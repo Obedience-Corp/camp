@@ -203,7 +203,8 @@ func TestApprovalIsStale(t *testing.T) {
 		want bool
 	}{
 		{approvals.Readiness{Actionable: true, Dir: "/x"}, false},
-		{approvals.Readiness{Reason: "its source is no longer waiting", SourceAnswered: true}, true},
+		{approvals.Readiness{Reason: "its source has finished", Over: true}, true},
+		{approvals.Readiness{Reason: "its source is at step 1, not step 2"}, false},
 		{approvals.Readiness{Reason: "its directory is not on this machine"}, false},
 		{approvals.Readiness{Reason: "its source could not be read: boom"}, false},
 	}
