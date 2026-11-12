@@ -51,10 +51,14 @@ func CommitMessage(ctx context.Context, campaignRoot string) string {
 // Commit commits the camp's approvals ledger directory and nothing else.
 //
 // A request that is never committed never reaches the user's other machines,
-// which is the reason the ledger is committed at all. Whoever records an event
-// calls this afterwards, so the event is in the camp's history as soon as it
-// exists. Only .campaign/approvals is staged, through a temporary index, so
-// nothing the user has staged or left dirty is touched.
+// which is the reason the ledger is committed at all. Recording an event does
+// not commit it: one commit per request and per decision is noise in the camp's
+// history, and a request only travels at the next push anyway. The ledger is
+// committed in batches instead, by the camp's ordinary commits (it is a tracked
+// path like any other) and by this function, which 'camp approvals' calls so
+// nothing is left behind before the user looks. Only .campaign/approvals is
+// staged, through a temporary index, so nothing the user has staged or left
+// dirty is touched.
 //
 // It never prompts and never blocks on a missing precondition: a camp with no
 // ledger, or one that is not a git repository, yields a result with a Reason,
