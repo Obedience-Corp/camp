@@ -14,7 +14,12 @@ import (
 
 // indexVersion is the on-disk format of the pending index. A different version
 // is treated as a missing index and rebuilt.
-const indexVersion = 1
+//
+// Bump it whenever Fold's rules change, not only when the file's shape does.
+// camp and fest each link their own copy of this package and share one index
+// file, so a binary with older rules would otherwise leave behind a pending set
+// that a newer binary reads as current.
+const indexVersion = 2
 
 // index is the cached pending set plus how much of each shard it has seen.
 type index struct {
