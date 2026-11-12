@@ -51,6 +51,17 @@ func AcquireFileLock(ctx context.Context, lockPath string) (func(), error) {
 // Production callers should keep using AcquireFileLock. A timeout of 0 or
 // negative uses the 5s production default.
 func AcquireFileLockTimeout(ctx context.Context, lockPath string, timeout time.Duration) (func(), error) {
+	return waitForFileLock(ctx, lockPath, timeout, func() (func(), bool, error) {
+		return tryAcquireFileLock(lockPath)
+	})
+}
+
+// waitForFileLock retries tryAcquire until it acquires the lock, returns a
+// hard error, the context ends, or timeout elapses. A transient create denial
+// is contention: another writer is mid-release. If the wait times out while
+// creates are still denied, the underlying error is returned so a persistent
+// access denial is not disguised as a holder timeout.
+func waitForFileLock(ctx context.Context, lockName string, timeout time.Duration, tryAcquire func() (func(), bool, error)) (func(), error) {
 	if timeout <= 0 {
 		timeout = defaultLockTimeout
 	}
@@ -59,7 +70,13 @@ func AcquireFileLockTimeout(ctx context.Context, lockPath string, timeout time.D
 		if err := ctx.Err(); err != nil {
 			return nil, err
 		}
-		release, acquired, err := tryAcquireFileLock(lockPath)
+		release, acquired, err := tryAcquire()
+		var denial *transientDenialError
+		if errors.As(err, &denial) {
+			err = nil
+		} else {
+			denial = nil
+		}
 		if err != nil {
 			return nil, err
 		}
@@ -67,8 +84,11 @@ func AcquireFileLockTimeout(ctx context.Context, lockPath string, timeout time.D
 			return release, nil
 		}
 		if time.Now().After(deadline) {
+			if denial != nil {
+				return nil, camperrors.Wrap(denial.err, "acquire lock")
+			}
 			return nil, camperrors.Wrap(camperrors.ErrTimeout,
-				"timeout acquiring lock at "+lockPath+" (another camp invocation holds it?)")
+				"timeout acquiring lock at "+lockName+" (another camp invocation holds it?)")
 		}
 		if f := onContendedLock; f != nil {
 			f()
@@ -107,10 +127,27 @@ func createFileLock(lockPath string) (func(), bool, error) {
 			_ = os.Remove(lockPath)
 		}, true, nil
 	}
+	return nil, false, classifyLockCreateError(err)
+}
+
+// transientDenialError marks an exclusive create that the OS denied while
+// another writer may be releasing the lock.
+type transientDenialError struct{ err error }
+
+func (e *transientDenialError) Error() string { return e.err.Error() }
+func (e *transientDenialError) Unwrap() error { return e.err }
+
+// classifyLockCreateError maps an O_CREATE|O_EXCL failure to nil when the lock
+// is held, *transientDenialError when the denial may be a release in flight,
+// or a wrapped hard error.
+func classifyLockCreateError(err error) error {
 	if errors.Is(err, fs.ErrExist) {
-		return nil, false, nil
+		return nil
 	}
-	return nil, false, camperrors.Wrap(err, "acquire lock")
+	if isTransientCreateDenial(err) {
+		return &transientDenialError{err: err}
+	}
+	return camperrors.Wrap(err, "acquire lock")
 }
 
 func removeStaleLock(lockPath string) (bool, error) {

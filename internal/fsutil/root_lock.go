@@ -20,31 +20,9 @@ import (
 // deadline, matching AcquireFileLock. Every open, stat, rename, and remove
 // stays on root.
 func AcquireRootFileLock(ctx context.Context, root *os.Root, name string) (func(), error) {
-	deadline := time.Now().Add(defaultLockTimeout)
-	for {
-		if err := ctx.Err(); err != nil {
-			return nil, err
-		}
-		release, acquired, err := tryAcquireRootFileLock(root, name)
-		if err != nil {
-			return nil, err
-		}
-		if acquired {
-			return release, nil
-		}
-		if time.Now().After(deadline) {
-			return nil, camperrors.Wrap(camperrors.ErrTimeout,
-				"timeout acquiring lock at "+name+" (another camp invocation holds it?)")
-		}
-		if f := onContendedLock; f != nil {
-			f()
-		}
-		select {
-		case <-ctx.Done():
-			return nil, ctx.Err()
-		case <-time.After(lockRetryDelay):
-		}
-	}
+	return waitForFileLock(ctx, name, defaultLockTimeout, func() (func(), bool, error) {
+		return tryAcquireRootFileLock(root, name)
+	})
 }
 
 func tryAcquireRootFileLock(root *os.Root, name string) (func(), bool, error) {
@@ -97,10 +75,7 @@ func createRootFileLock(root *os.Root, name string) (func(), bool, error) {
 			}
 		}, true, nil
 	}
-	if errors.Is(err, fs.ErrExist) {
-		return nil, false, nil
-	}
-	return nil, false, camperrors.Wrap(err, "acquire lock")
+	return nil, false, classifyLockCreateError(err)
 }
 
 func removeStaleRootLock(root *os.Root, name string) (bool, error) {
