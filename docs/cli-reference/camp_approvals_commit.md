@@ -6,9 +6,9 @@ Commit approval events that are not committed yet
 
 Commit .campaign/approvals and nothing else.
 
-Approval events are committed when they are recorded, and listing approvals
-commits any that were missed. This does only the commit, for a script or before
-a push, when an earlier commit could not be made.
+Approval events are written uncommitted and picked up by the camp's next
+ordinary commit or by listing approvals. This does only the commit, for a
+script or before a push, so a request made on this machine is not left behind.
 
 ```
 camp approvals commit [flags]

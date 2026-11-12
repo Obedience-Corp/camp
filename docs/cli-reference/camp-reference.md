@@ -74,9 +74,10 @@ approval itself. Agents can read this list with --json. They cannot approve
 through it: the source's command requires a person at a terminal.
 
 The ledger lives in .campaign/approvals and is committed, so a request made on
-one machine shows up on your others after a push and pull. Each event is
-committed when it is recorded; listing also commits any that were missed (pass
---no-commit to skip that; --json never commits). A request
+one machine shows up on your others after a push and pull. Recording an event
+does not commit it: events are committed with the camp's next ordinary commit,
+and listing commits any still outstanding (pass --no-commit to skip that;
+--json never commits). A request
 whose source is not on this machine, or has moved on, is still listed and
 marked as not actionable here.
 
@@ -118,9 +119,9 @@ Commit approval events that are not committed yet
 
 Commit .campaign/approvals and nothing else.
 
-Approval events are committed when they are recorded, and listing approvals
-commits any that were missed. This does only the commit, for a script or before
-a push, when an earlier commit could not be made.
+Approval events are written uncommitted and picked up by the camp's next
+ordinary commit or by listing approvals. This does only the commit, for a
+script or before a push, so a request made on this machine is not left behind.
 
 ```
 camp approvals commit [flags]
