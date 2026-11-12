@@ -54,6 +54,185 @@ camp [flags]
 ```
 ---
 
+## camp approvals
+
+See what in this camp is waiting on your approval
+
+### Synopsis
+
+List everything in this camp that is waiting on a human to approve.
+
+Agents stop for a human in several places: a festival workflow checkpoint, a
+phase gate, a checkpoint in a standalone WORKFLOW.md. Each one records a request
+in the camp's approvals ledger when it starts waiting and a resolution when it
+stops, so this is the one place to look.
+
+Run bare to browse the list, read what each request asks, and approve or reject
+it. Approving hands your terminal to the source's own command, run from the
+source's directory and pinned to the step you were shown; camp never records an
+approval itself. Agents can read this list with --json. They cannot approve
+through it: the source's command requires a person at a terminal.
+
+The ledger lives in .campaign/approvals and is committed, so a request made on
+one machine shows up on your others after a push and pull. Each event is
+committed when it is recorded; listing also commits any that were missed (pass
+--no-commit to skip that). A request
+whose source is not on this machine, or has moved on, is still listed and
+marked as not actionable here.
+
+Examples:
+  camp approvals                   # interactive browser in a TTY; table otherwise
+  camp approvals --plain           # always print the table
+  camp approvals --json            # the same, for scripts and agents
+  camp approvals show <id>         # one request in full
+  camp approvals path <id>         # the source directory, to cd into
+  camp approvals withdraw <id> --reason "..."   # clear a request whose source is gone
+
+```
+camp approvals [flags]
+```
+
+### Options
+
+```
+  -h, --help          help for approvals
+  -i, --interactive   Open the interactive approvals browser (prints the table when stdout is not a terminal)
+      --json          Emit a structured JSON result
+      --no-commit     Do not commit uncommitted approval events
+      --plain         Print the table even when stdout is a terminal
+```
+
+### Options inherited from parent commands
+
+```
+      --no-color   disable colored output
+```
+---
+
+## camp approvals commit
+
+Commit approval events that are not committed yet
+
+### Synopsis
+
+Commit .campaign/approvals and nothing else.
+
+Approval events are committed when they are recorded, and listing approvals
+commits any that were missed. This does only the commit, for a script or before
+a push, when an earlier commit could not be made.
+
+```
+camp approvals commit [flags]
+```
+
+### Options
+
+```
+  -h, --help   help for commit
+```
+
+### Options inherited from parent commands
+
+```
+      --json       Emit a structured JSON result
+      --no-color   disable colored output
+```
+---
+
+## camp approvals path
+
+Print the directory of a request's source
+
+### Synopsis
+
+Print the absolute directory a request's source lives in, and nothing else,
+so a shell can use it:
+
+  cd "$(camp approvals path <id>)"
+
+It fails when the directory is not on this machine or is not inside this camp.
+
+```
+camp approvals path <id> [flags]
+```
+
+### Options
+
+```
+  -h, --help   help for path
+```
+
+### Options inherited from parent commands
+
+```
+      --json       Emit a structured JSON result
+      --no-color   disable colored output
+```
+---
+
+## camp approvals show
+
+Show one approval request in full
+
+### Synopsis
+
+Print everything a request says: what is asked, which step is waiting, where
+its source lives, who asked, and whether it can be acted on from this machine.
+
+<id> is the short id from 'camp approvals', or an unambiguous prefix of it.
+
+```
+camp approvals show <id> [flags]
+```
+
+### Options
+
+```
+  -h, --help   help for show
+```
+
+### Options inherited from parent commands
+
+```
+      --json       Emit a structured JSON result
+      --no-color   disable colored output
+```
+---
+
+## camp approvals withdraw
+
+Clear a request whose source is no longer waiting
+
+### Synopsis
+
+Record that a request is no longer waiting, without approving or rejecting
+anything.
+
+Use it for a request that outlived its source: the workflow was deleted, the
+worktree is gone, or the request was recorded by mistake. Withdrawing only
+removes the request from this list. It does not unblock anything, because the
+ledger never grants an approval: if the source is in fact still waiting, it
+reports itself again the next time it is advanced.
+
+```
+camp approvals withdraw <id> [flags]
+```
+
+### Options
+
+```
+  -h, --help            help for withdraw
+      --reason string   Why the request is being withdrawn (required)
+```
+
+### Options inherited from parent commands
+
+```
+      --json       Emit a structured JSON result
+      --no-color   disable colored output
+```
+---
+
 ## camp artifacts
 
 Explore artifact files and manage declared roots
