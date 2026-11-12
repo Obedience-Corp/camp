@@ -6,6 +6,7 @@ import (
 	"context"
 	"encoding/json"
 	"io"
+	"path/filepath"
 	"sort"
 	"time"
 
@@ -39,6 +40,18 @@ func NewReader(campaignRoot string) (*Reader, error) {
 		return nil, camperrors.New("ledgerkit: empty camp root")
 	}
 	return &Reader{store: osShardStore{campaignRoot: campaignRoot}}, nil
+}
+
+// NewReaderIn is NewReader for a ledger kept in dir (relative to the campaign
+// root) instead of EventsDir. See NewWriterIn.
+func NewReaderIn(campaignRoot, dir string) (*Reader, error) {
+	if campaignRoot == "" {
+		return nil, camperrors.New("ledgerkit: empty camp root")
+	}
+	if err := validateLedgerDir(dir); err != nil {
+		return nil, err
+	}
+	return &Reader{store: osShardStore{campaignRoot: campaignRoot, dir: filepath.ToSlash(filepath.Clean(dir))}}, nil
 }
 
 // Read returns every event across all shards, ordered by ts then id and

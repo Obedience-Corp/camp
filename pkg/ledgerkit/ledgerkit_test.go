@@ -5,6 +5,7 @@ import (
 	"context"
 	"encoding/json"
 	"io"
+	"path/filepath"
 	"strings"
 	"testing"
 	"time"
@@ -293,4 +294,41 @@ func TestTwoWriterMergeConflictFree(t *testing.T) {
 	require.Len(t, merged, 2)
 	assert.Equal(t, "id-a1", merged[0].ID)
 	assert.Equal(t, "id-b1", merged[1].ID)
+}
+
+func TestLedgerDirOverride(t *testing.T) {
+	ts := time.Date(2026, 3, 9, 0, 0, 0, 0, time.UTC)
+	if got, want := ShardPathIn("/camp", "", "wA", ts), ShardPath("/camp", "wA", ts); got != want {
+		t.Fatalf("empty dir must mean the event ledger: %q != %q", got, want)
+	}
+	got := filepath.ToSlash(ShardPathIn("/camp", ".campaign/approvals", "wA", ts))
+	if got != "/camp/.campaign/approvals/2026-03/wA.jsonl" {
+		t.Fatalf("ShardPathIn = %q", got)
+	}
+	for _, bad := range []string{"", " ", "/abs", "..", "../x", "."} {
+		if _, err := NewWriterIn("/camp", bad, "wA"); err == nil {
+			t.Errorf("NewWriterIn(dir=%q) must fail", bad)
+		}
+		if _, err := NewReaderIn("/camp", bad); err == nil {
+			t.Errorf("NewReaderIn(dir=%q) must fail", bad)
+		}
+	}
+	mem := newMemOpener()
+	w, err := NewWriterIn("/camp", ".campaign/approvals", "wA")
+	if err != nil {
+		t.Fatal(err)
+	}
+	w.open = mem.open
+	e := &Event{V: 1, ID: "e1", TS: NowUTC(ts), Kind: KindCreated, Source: SourceCommand}
+	if err := w.Append(context.Background(), e); err != nil {
+		t.Fatal(err)
+	}
+	if len(mem.shards) != 1 {
+		t.Fatalf("shards = %d, want 1", len(mem.shards))
+	}
+	for path := range mem.shards {
+		if filepath.ToSlash(path) != "/camp/.campaign/approvals/2026-03/wA.jsonl" {
+			t.Fatalf("wrote %q", path)
+		}
+	}
 }
