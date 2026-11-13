@@ -6,6 +6,7 @@ import (
 	"io"
 	"os"
 	"path/filepath"
+	"strings"
 	"time"
 
 	camperrors "github.com/Obedience-Corp/camp/internal/errors"
@@ -27,7 +28,10 @@ type shardOpener func(path string) (io.WriteCloser, error)
 type Writer struct {
 	campaignRoot string
 	writerID     string
-	open         shardOpener
+	// dir is the ledger directory relative to the campaign root. Empty means
+	// EventsDir, so a zero-constructed Writer writes the campaign event ledger.
+	dir  string
+	open shardOpener
 }
 
 // NewWriter returns a Writer for the campaign at campaignRoot writing as
@@ -41,6 +45,47 @@ func NewWriter(campaignRoot, writerID string) (*Writer, error) {
 		return nil, camperrors.New("ledgerkit: empty writer id")
 	}
 	return &Writer{campaignRoot: campaignRoot, writerID: writerID, open: osAppend}, nil
+}
+
+// NewWriterIn is NewWriter for a ledger kept somewhere other than EventsDir.
+//
+// dir is relative to the campaign root. It exists because one envelope and one
+// sharding scheme serve more than one ledger: the campaign event ledger is
+// machine-local (EventsDir is gitignored), while a ledger that has to travel
+// between machines lives in its own committed directory. The shards are laid
+// out identically, <dir>/<YYYY-MM>/<writer>.jsonl, so the same reader, cursor,
+// and merge-conflict-free guarantee apply to both.
+func NewWriterIn(campaignRoot, dir, writerID string) (*Writer, error) {
+	w, err := NewWriter(campaignRoot, writerID)
+	if err != nil {
+		return nil, err
+	}
+	if err := validateLedgerDir(dir); err != nil {
+		return nil, err
+	}
+	w.dir = filepath.ToSlash(filepath.Clean(dir))
+	return w, nil
+}
+
+// validateLedgerDir rejects a ledger directory that would escape the campaign
+// root or name nothing.
+func validateLedgerDir(dir string) error {
+	if strings.TrimSpace(dir) == "" {
+		return camperrors.New("ledgerkit: empty ledger directory")
+	}
+	clean := filepath.ToSlash(filepath.Clean(dir))
+	if filepath.IsAbs(dir) || clean == "." || clean == ".." || strings.HasPrefix(clean, "../") {
+		return camperrors.New("ledgerkit: ledger directory must be relative to the camp root: " + dir)
+	}
+	return nil
+}
+
+// ledgerDir resolves an optional ledger directory to the default.
+func ledgerDir(dir string) string {
+	if dir == "" {
+		return EventsDir
+	}
+	return dir
 }
 
 // osAppend is the default shard opener: it creates the month directory and
@@ -61,8 +106,14 @@ func osAppend(path string) (io.WriteCloser, error) {
 // file in a month, so cross-writer merges are file-adds git resolves without
 // conflict (D002). It is a pure function for testability.
 func ShardPath(campaignRoot, writerID string, ts time.Time) string {
+	return ShardPathIn(campaignRoot, EventsDir, writerID, ts)
+}
+
+// ShardPathIn is ShardPath for a ledger kept in dir (relative to the campaign
+// root). An empty dir means EventsDir.
+func ShardPathIn(campaignRoot, dir, writerID string, ts time.Time) string {
 	month := ts.UTC().Format("2006-01")
-	return filepath.Join(campaignRoot, EventsDir, month, writerID+".jsonl")
+	return filepath.Join(campaignRoot, filepath.FromSlash(ledgerDir(dir)), month, writerID+".jsonl")
 }
 
 // encodeEvent marshals an event to a single newline-terminated JSON line. It
@@ -110,7 +161,7 @@ func (w *Writer) Append(ctx context.Context, ev *Event) error {
 	if open == nil {
 		open = osAppend // safe to zero-construct: default to the real filesystem
 	}
-	path := ShardPath(w.campaignRoot, w.writerID, shardTime(ev))
+	path := ShardPathIn(w.campaignRoot, w.dir, w.writerID, shardTime(ev))
 	f, err := open(path)
 	if err != nil {
 		return err

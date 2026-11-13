@@ -36,12 +36,15 @@ type shardStore interface {
 // osShardStore is the real filesystem-backed shard store rooted at a campaign.
 type osShardStore struct {
 	campaignRoot string
+	// dir is the ledger directory relative to the campaign root; empty means
+	// EventsDir.
+	dir string
 }
 
 func (s osShardStore) abs(rel string) string { return filepath.Join(s.campaignRoot, rel) }
 
 func (s osShardStore) list() ([]shardRef, error) {
-	pattern := filepath.Join(s.campaignRoot, EventsDir, "*", "*.jsonl")
+	pattern := filepath.Join(s.campaignRoot, filepath.FromSlash(ledgerDir(s.dir)), "*", "*.jsonl")
 	matches, err := filepath.Glob(pattern)
 	if err != nil {
 		return nil, camperrors.Wrapf(err, "ledgerkit: glob shards under %s", s.campaignRoot)
