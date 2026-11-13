@@ -184,15 +184,20 @@ func recordJumpAt(ctx context.Context, campaignRoot, srcAbs, destAbs string, now
 	if info, err := os.Stat(srcAbs); err != nil || !info.IsDir() {
 		return camperrors.Newf("invalid location: %s does not exist or is not a directory", srcAbs)
 	}
-	toggle := NavigationEntry{
-		Location: srcAbs,
-		Rel:      deriveRelWrite(campaignRoot, srcAbs),
-		Time:     now,
-		Kind:     KindToggle,
+	var toggle *NavigationEntry
+	toggleRel := ""
+	if InsideRoot(campaignRoot, srcAbs) {
+		toggleRel = deriveRelWrite(campaignRoot, srcAbs)
+		toggle = &NavigationEntry{
+			Location: srcAbs,
+			Rel:      toggleRel,
+			Time:     now,
+			Kind:     KindToggle,
+		}
 	}
 	destRel := deriveRelWrite(campaignRoot, destAbs)
 	var visit *NavigationEntry
-	if destAbs != "" && destRel != "" && destRel != toggle.Rel && !hasDotDot(destRel) {
+	if destAbs != "" && destRel != "" && destRel != toggleRel && !hasDotDot(destRel) && InsideRoot(campaignRoot, destAbs) {
 		visit = &NavigationEntry{
 			Location: destAbs,
 			Rel:      destRel,
@@ -201,7 +206,9 @@ func recordJumpAt(ctx context.Context, campaignRoot, srcAbs, destAbs string, now
 		}
 	}
 	return rewriteHistory(ctx, campaignRoot, func(entries []NavigationEntry) []NavigationEntry {
-		entries = appendUnique(entries, toggle)
+		if toggle != nil {
+			entries = appendUnique(entries, *toggle)
+		}
 		if visit != nil {
 			entries = appendUnique(entries, *visit)
 		}

@@ -88,6 +88,9 @@ var containerFSPackages = []containerFSPackage{
 	{ImportPath: "./internal/project", MinTests: 5},
 	{ImportPath: "./internal/skills", MinTests: 12, TestPattern: "^Test(SkillProjectionDirectoryLinkReadback|GrokSkillsAliasDirectoryLink|UpdateCancelStopsAfterFileInFlight|UpdateForceOutsideGitBacksUpBeforeReplacing|UpdateLeavesSymlinkedFilesAlone|GitProvenanceWrittenOnce|GitProvenanceCancelledScanIsNotKept|GitProvenanceUserFirstCommitOffersNoEvidence|GitProvenanceRepairBeforeSelectiveStagingOffersNoEvidence|GitProvenanceCampBelowGitRoot|GitProvenanceWithoutUsableHistoryOffersNoEvidence|UpdateReplacesGitEvidenceFileWithUndo)$"},
 	{ImportPath: "./internal/nav/index", MinTests: 2},
+	// Nav history is camp-scoped: out-of-root toggles are never stored and polluted logs are skipped.
+	{ImportPath: "./internal/state", MinTests: 7, TestPattern: "^TestNavScope"},
+	{ImportPath: "./cmd/camp/navigation", MinTests: 2, TestPattern: "^TestHandleToggle(IgnoresOutOfRootHistory|FromOutsideRootRecordsNothing)$"},
 	// The initial-commit tests git-init a campaign and commit its scaffold.
 	{ImportPath: "./cmd/camp/init", MinTests: 3},
 	// Init and repair must not mint a second qst_default after the default

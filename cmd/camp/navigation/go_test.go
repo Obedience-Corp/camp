@@ -54,7 +54,12 @@ func TestHandleToggle_ReturnsLastLocation(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	// CWD must differ from target for toggle to work
+	here := filepath.Join(campaignRoot, "here")
+	if err := os.MkdirAll(here, 0755); err != nil {
+		t.Fatal(err)
+	}
+	t.Chdir(here)
+
 	cwd, _ := os.Getwd()
 	cwdReal, _ := evalSymlinks(cwd)
 	targetReal, _ := evalSymlinks(target)
@@ -96,7 +101,11 @@ func TestHandleToggle_AlreadyAtLastLocation(t *testing.T) {
 	ctx := context.Background()
 	campaignRoot := t.TempDir()
 
-	// Save CWD as the last location
+	here := filepath.Join(campaignRoot, "here")
+	if err := os.MkdirAll(here, 0755); err != nil {
+		t.Fatal(err)
+	}
+	t.Chdir(here)
 	cwd, _ := os.Getwd()
 	if err := state.SetLastLocation(ctx, campaignRoot, cwd); err != nil {
 		t.Fatal(err)

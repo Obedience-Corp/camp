@@ -46,7 +46,7 @@ func TestSaveEntryRoundTrip(t *testing.T) {
 	tmpDir := t.TempDir()
 	ctx := context.Background()
 	entry := NavigationEntry{
-		Location: "/test/path",
+		Location: filepath.Join(tmpDir, "test", "path"),
 		Time:     time.Date(2026, 1, 20, 3, 15, 0, 0, time.UTC),
 	}
 

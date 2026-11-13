@@ -83,6 +83,9 @@ func LoadHistory(ctx context.Context, campaignRoot string) ([]NavigationEntry, e
 // Unique-(rel, kind) LRU is capped at maxUniqueEntries. Last writer wins;
 // there is no file lock (same as historical SaveEntry).
 func SaveEntry(ctx context.Context, campaignRoot string, entry NavigationEntry) error {
+	if entry.Location != "" && !InsideRoot(campaignRoot, entry.Location) {
+		return ctx.Err()
+	}
 	return rewriteHistory(ctx, campaignRoot, func(entries []NavigationEntry) []NavigationEntry {
 		return appendUnique(entries, fillEntry(campaignRoot, entry))
 	})
@@ -137,7 +140,8 @@ func GetLastN(ctx context.Context, campaignRoot string, n int) ([]NavigationEntr
 }
 
 // GetLastLocation retrieves the most recent location from navigation history.
-// Returns empty string if no location has been saved yet.
+// Entries outside the camp root are skipped. Returns empty string if no
+// in-camp location has been saved yet.
 // Returns error only for I/O or parsing problems, not missing state.
 func GetLastLocation(ctx context.Context, campaignRoot string) (string, error) {
 	if ctx.Err() != nil {
@@ -150,7 +154,7 @@ func GetLastLocation(ctx context.Context, campaignRoot string) (string, error) {
 	}
 
 	for i := len(entries) - 1; i >= 0; i-- {
-		if kindKey(entries[i]) == KindToggle {
+		if kindKey(entries[i]) == KindToggle && InsideRoot(campaignRoot, entries[i].Location) {
 			return entries[i].Location, nil
 		}
 	}
