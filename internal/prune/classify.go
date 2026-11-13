@@ -63,11 +63,20 @@ func planWorktree(ctx context.Context, projectPath string, entry worktree.GitWor
 		return worktreePlan{action: actionError, reason: fmt.Sprintf("dirty check for worktree: %s", err)}
 	}
 	changes := parseStatusV2(status)
-	if len(changes) == 0 {
-		return worktreePlan{action: actionRemove}
-	}
 	keep := func(why string) worktreePlan {
 		return worktreePlan{action: actionKeep, reason: why + ": " + entry.Path, skip: SkipReasonDirtyWorktree}
+	}
+	// A linked worktree keeps its submodule repositories in its own git dir,
+	// so commits made there and never pushed go with it, clean or not.
+	unpushed, err := worktree.NewGitWorktree(projectPath).UnpushedSubmoduleCommits(ctx, entry.Path)
+	if err != nil {
+		return worktreePlan{action: actionError, reason: fmt.Sprintf("submodule check for worktree: %s", err)}
+	}
+	if unpushed != "" {
+		return worktreePlan{action: actionKeep, reason: "worktree with submodule commits on no remote: " + entry.Path}
+	}
+	if len(changes) == 0 {
+		return worktreePlan{action: actionRemove}
 	}
 	if !opts.SaveDirty {
 		return keep("dirty worktree")
@@ -81,9 +90,20 @@ func planWorktree(ctx context.Context, projectPath string, entry worktree.GitWor
 		if c.submoduleDirty {
 			return keep("dirty worktree with uncommitted changes inside submodule " + c.path)
 		}
-		info, err := os.Lstat(filepath.Join(entry.Path, c.path))
+		if strings.HasSuffix(c.path, "/") {
+			// Git reports an untracked folder as one entry only when it is a
+			// repository of its own. A save would record a pointer to it and
+			// none of its files.
+			return keep("dirty worktree holding another git repository at " + c.path)
+		}
+		full := filepath.Join(entry.Path, c.path)
+		info, err := os.Lstat(full)
 		if err != nil {
-			continue // deleted in the worktree
+			// Deleted in the worktree: the folder it left records when.
+			if dir, derr := os.Lstat(filepath.Dir(full)); derr == nil && dir.ModTime().After(newest) {
+				newest = dir.ModTime()
+			}
+			continue
 		}
 		if info.Mode().IsRegular() {
 			bytes += info.Size()
@@ -98,11 +118,6 @@ func planWorktree(ctx context.Context, projectPath string, entry worktree.GitWor
 	}
 	if age := now.Sub(newest); !newest.IsZero() && age < RecentEditWindow {
 		return keep(fmt.Sprintf("dirty worktree edited %s ago", age.Round(time.Minute)))
-	}
-	if unpushed, err := worktree.NewGitWorktree(projectPath).UnpushedSubmoduleCommits(ctx, entry.Path); err != nil {
-		return worktreePlan{action: actionError, reason: fmt.Sprintf("submodule check for worktree: %s", err)}
-	} else if unpushed != "" {
-		return keep("dirty worktree with submodule commits on no remote")
 	}
 	if _, err := git.Output(ctx, projectPath, "rev-parse", "--verify", "--quiet", savedRefName(branch)); err == nil {
 		return keep("dirty worktree, and earlier saved edits for this branch still exist")

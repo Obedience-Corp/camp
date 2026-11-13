@@ -80,6 +80,17 @@ func saveWorktreeEdits(ctx context.Context, projectPath, wtPath, branch string) 
 	if err != nil {
 		return "", camperrors.Wrap(err, "resolve worktree HEAD")
 	}
+	// A gitlink the branch tip does not have is a nested repository: the
+	// commit would hold a pointer to it and none of its files.
+	added, err := git.Output(ctx, wtPath, "diff-tree", "-r", "--no-renames", "--diff-filter=A", "--format=", head, tree)
+	if err != nil {
+		return "", camperrors.Wrap(err, "inspect uncommitted edits")
+	}
+	for _, line := range strings.Split(added, "\n") {
+		if fields := strings.Fields(line); len(fields) >= 2 && fields[1] == "160000" {
+			return "", camperrors.New("the edits include another git repository, which cannot be saved")
+		}
+	}
 	message := "camp prune: uncommitted edits from " + branch + "\n\n" +
 		savedBranchTrailer + branch + "\n" + savedWorktreeTrailer + wtPath + "\n"
 	commit, err := git.Output(ctx, wtPath,

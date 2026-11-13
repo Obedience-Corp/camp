@@ -26,7 +26,7 @@ git -C %[1]s config user.name Test
 git -C %[1]s checkout -b %[3]s
 printf 'one\n' > %[1]s/keep.txt
 printf 'gone\n' > %[1]s/remove.txt
-printf '%[3]s\n' > %[1]s/%[3]s.txt
+printf '%[3]s\n' > "%[1]s/$(printf '%%s' '%[3]s' | tr / -).txt"
 git -C %[1]s add . && git -C %[1]s commit -m 'feature'
 git -C %[1]s checkout main
 git -C %[1]s merge --no-ff %[3]s -m 'Merge %[3]s'
@@ -34,7 +34,7 @@ git -C %[1]s worktree add %[2]s %[3]s
 printf 'one\nedited\n' > %[2]s/keep.txt
 rm %[2]s/remove.txt
 printf 'new\n' > %[2]s/untracked.txt
-touch -d "@$(( $(date +%%s) - 259200 ))" %[2]s/keep.txt %[2]s/untracked.txt
+touch -d "@$(( $(date +%%s) - 259200 ))" %[2]s/keep.txt %[2]s/untracked.txt %[2]s
 `, projPath, wt, branch))
 	return wt
 }
@@ -121,6 +121,14 @@ func TestPrune_DirtyWorktreeKeptWhenSavingIsNotSafe(t *testing.T) {
 		"locked": {
 			prepare: `git -C %[2]s worktree lock %[1]s`,
 			want:    "locked worktree",
+		},
+		"holds another repository": {
+			prepare: `git init -q %[1]s/copy && printf 'x\n' > %[1]s/copy/file.txt && git -C %[1]s/copy add . && git -C %[1]s/copy -c user.name=t -c user.email=t@t commit -qm copy && touch -d "@$(( $(date +%%s) - 259200 ))" %[1]s/copy %[1]s/copy/file.txt`,
+			want:    "another git repository",
+		},
+		"a file deleted just now": {
+			prepare: `touch %[1]s`,
+			want:    "edited",
 		},
 		"merge in progress": {
 			prepare: `touch "$(git -C %[1]s rev-parse --git-path MERGE_HEAD)"`,
@@ -307,4 +315,66 @@ func TestPrune_PromptListsOnlyWhatWillHappen(t *testing.T) {
 		assert.True(t, exists, "answering no must remove nothing: %s", wt)
 	}
 	assert.Empty(t, tc.GitOutput(t, projPath, "for-each-ref", "refs/camp/pruned/"))
+}
+
+func TestPrune_SavedEditsRoundTripForASlashedBranch(t *testing.T) {
+	tc := GetSharedContainer(t)
+	campPath, projPath, _ := setupPruneCampaign(t, tc, "prune-save-slash")
+	wt := addMergedWorktree(t, tc, campPath, projPath, "feat/nested-name")
+
+	out, err := tc.RunCampInDir(campPath, "project", "prune", "--project", "proj", "--force")
+	require.NoError(t, err)
+	assert.Contains(t, out, "--restore feat/nested-name")
+
+	listed, err := tc.RunCampInDir(campPath, "project", "prune", "--project", "proj", "--saved")
+	require.NoError(t, err)
+	assert.Contains(t, listed, "feat/nested-name")
+
+	_, err = tc.RunCampInDir(campPath, "project", "prune", "--project", "proj", "--restore", "feat/nested-name")
+	require.NoError(t, err)
+	assert.Equal(t, "feat/nested-name", tc.GitOutput(t, wt, "branch", "--show-current"))
+	assert.Contains(t, tc.GitOutput(t, wt, "status", "--porcelain"), "?? untracked.txt")
+}
+
+// A linked worktree keeps its submodule repositories in its own git dir. A
+// commit made there and never pushed exists nowhere else, so even a worktree
+// that looks clean must be kept.
+func TestPrune_WorktreeWithUnpushedSubmoduleCommitIsKept(t *testing.T) {
+	tc := GetSharedContainer(t)
+	campPath, projPath, _ := setupPruneCampaign(t, tc, "prune-sub-unpushed")
+	wt := campPath + "/projects/worktrees/proj/with-sub"
+	tc.Shell(t, fmt.Sprintf(`
+set -e
+git init -q --bare /test/prune-sub-unpushed-lib.git
+git clone -q /test/prune-sub-unpushed-lib.git /test/prune-sub-unpushed-lib
+cd /test/prune-sub-unpushed-lib
+git config user.email t@t && git config user.name T
+printf 'lib\n' > lib.txt && git add . && git commit -qm lib && git branch -M main && git push -q origin main
+git --git-dir /test/prune-sub-unpushed-lib.git symbolic-ref HEAD refs/heads/main
+cd %[1]s
+git config user.email t@t && git config user.name T
+git -c protocol.file.allow=always submodule add -q /test/prune-sub-unpushed-lib.git lib
+git commit -qm 'add lib'
+git checkout -q -b with-sub
+printf 'x\n' > x.txt && git add . && git commit -qm x
+git checkout -q main
+git merge -q --no-ff with-sub -m 'Merge with-sub'
+git worktree add -q %[2]s with-sub
+cd %[2]s
+git -c protocol.file.allow=always submodule update -q --init
+cd lib
+git config user.email t@t && git config user.name T
+git checkout -q -b local-only
+printf 'unpushed\n' > only-here.txt && git add . && git commit -qm 'unpushed work'
+git checkout -q --detach HEAD~1
+`, projPath, wt))
+	require.Empty(t, tc.GitOutput(t, wt, "status", "--porcelain"), "the fixture worktree must look clean")
+
+	out, err := tc.RunCampInDir(campPath, "project", "prune", "--project", "proj", "--force")
+	require.NoError(t, err)
+	assert.Contains(t, out, "submodule commits on no remote")
+	exists, err := tc.CheckDirExists(wt)
+	require.NoError(t, err)
+	assert.True(t, exists, "the worktree must be kept")
+	assert.Contains(t, tc.GitOutput(t, projPath, "branch"), "with-sub")
 }

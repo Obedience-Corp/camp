@@ -503,6 +503,9 @@ func executeFresh(ctx context.Context, name, path string, opts freshOptions) err
 		default:
 			pruneStep.Finish("nothing to prune", ui.StatusMuted)
 		}
+		for _, note := range pr.Notes {
+			freshDetail(note)
+		}
 		for _, r := range pr.Results {
 			switch r.Status {
 			case prune.StatusEditsSaved:
