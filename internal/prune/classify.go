@@ -18,8 +18,10 @@ const (
 	SavedEditsMaxBytes = 50 << 20
 
 	// RecentEditWindow keeps a dirty worktree whose files changed this
-	// recently: it is probably still in use.
-	RecentEditWindow = 24 * time.Hour
+	// recently. Uncommitted edits on a merged branch are usually leftovers,
+	// but they can be the start of follow-up work, so only a worktree nobody
+	// has touched for this long is treated as abandoned.
+	RecentEditWindow = 14 * 24 * time.Hour
 )
 
 type worktreeAction int
@@ -117,7 +119,7 @@ func planWorktree(ctx context.Context, projectPath string, entry worktree.GitWor
 			bytes>>20, SavedEditsMaxBytes>>20))
 	}
 	if age := now.Sub(newest); !newest.IsZero() && age < RecentEditWindow {
-		return keep(fmt.Sprintf("dirty worktree edited %s ago", age.Round(time.Minute)))
+		return keep("dirty worktree edited " + formatAge(age) + " ago")
 	}
 	if _, err := git.Output(ctx, projectPath, "rev-parse", "--verify", "--quiet", savedRefName(branch)); err == nil {
 		return keep("dirty worktree, and earlier saved edits for this branch still exist")
@@ -189,4 +191,15 @@ func operationInProgress(ctx context.Context, wtPath string) string {
 		}
 	}
 	return ""
+}
+
+func formatAge(age time.Duration) string {
+	switch {
+	case age >= 48*time.Hour:
+		return fmt.Sprintf("%d days", int(age.Hours()/24))
+	case age >= 2*time.Hour:
+		return fmt.Sprintf("%d hours", int(age.Hours()))
+	default:
+		return age.Round(time.Minute).String()
+	}
 }

@@ -13,8 +13,8 @@ Protected branches (default branch, current branch) are never deleted.
 
 A merged branch's worktree is removed with it. When that worktree holds
 uncommitted edits, they are saved first and the command prints how to restore
-them; saved edits are dropped after 30 days. The worktree is kept instead when
-it is locked, was edited in the last 24 hours, has a merge or rebase in
+them; saved edits are dropped after 90 days. The worktree is kept instead when
+it is locked, was edited in the last 14 days, has a merge or rebase in
 progress, holds more than 50 MiB of uncommitted files, or has changes inside a
 submodule that a save could not capture.
 

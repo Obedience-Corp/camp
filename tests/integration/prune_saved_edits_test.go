@@ -34,7 +34,7 @@ git -C %[1]s worktree add %[2]s %[3]s
 printf 'one\nedited\n' > %[2]s/keep.txt
 rm %[2]s/remove.txt
 printf 'new\n' > %[2]s/untracked.txt
-touch -d "@$(( $(date +%%s) - 259200 ))" %[2]s/keep.txt %[2]s/untracked.txt %[2]s
+touch -d "@$(( $(date +%%s) - 1728000 ))" %[2]s/keep.txt %[2]s/untracked.txt %[2]s
 `, projPath, wt, branch))
 	return wt
 }
@@ -106,8 +106,8 @@ func TestPrune_DirtyWorktreeKeptWhenSavingIsNotSafe(t *testing.T) {
 		args    []string
 		want    string
 	}{
-		"edited recently": {
-			prepare: `touch %[1]s/keep.txt`,
+		"edited two days ago": {
+			prepare: `touch -d "@$(( $(date +%%s) - 172800 ))" %[1]s/keep.txt`,
 			want:    "edited",
 		},
 		"keep-dirty flag": {
@@ -115,7 +115,7 @@ func TestPrune_DirtyWorktreeKeptWhenSavingIsNotSafe(t *testing.T) {
 			want: "dirty worktree",
 		},
 		"over the size limit": {
-			prepare: `dd if=/dev/zero of=%[1]s/big.bin bs=1M count=51 && touch -d "@$(( $(date +%%s) - 259200 ))" %[1]s/big.bin`,
+			prepare: `dd if=/dev/zero of=%[1]s/big.bin bs=1M count=51 && touch -d "@$(( $(date +%%s) - 1728000 ))" %[1]s/big.bin`,
 			want:    "save limit",
 		},
 		"locked": {
@@ -123,7 +123,7 @@ func TestPrune_DirtyWorktreeKeptWhenSavingIsNotSafe(t *testing.T) {
 			want:    "locked worktree",
 		},
 		"holds another repository": {
-			prepare: `git init -q %[1]s/copy && printf 'x\n' > %[1]s/copy/file.txt && git -C %[1]s/copy add . && git -C %[1]s/copy -c user.name=t -c user.email=t@t commit -qm copy && touch -d "@$(( $(date +%%s) - 259200 ))" %[1]s/copy %[1]s/copy/file.txt`,
+			prepare: `git init -q %[1]s/copy && printf 'x\n' > %[1]s/copy/file.txt && git -C %[1]s/copy add . && git -C %[1]s/copy -c user.name=t -c user.email=t@t commit -qm copy && touch -d "@$(( $(date +%%s) - 1728000 ))" %[1]s/copy %[1]s/copy/file.txt`,
 			want:    "another git repository",
 		},
 		"a file deleted just now": {
@@ -191,7 +191,7 @@ Camp-Pruned-Branch: $1
 Camp-Pruned-Worktree: /nowhere/$1")
   git update-ref "refs/camp/pruned/$1" "$c"
 }
-make_saved old-edits "@$(( $(date +%%s) - 45 * 86400 )) +0000"
+make_saved old-edits "@$(( $(date +%%s) - 120 * 86400 )) +0000"
 make_saved new-edits "@$(( $(date +%%s) - 2 * 86400 )) +0000"
 `, projPath))
 

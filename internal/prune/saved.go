@@ -21,7 +21,7 @@ const (
 
 	// SavedRetention is how long saved edits are kept before a later prune
 	// pass drops them.
-	SavedRetention = 30 * 24 * time.Hour
+	SavedRetention = 90 * 24 * time.Hour
 
 	savedBranchTrailer   = "Camp-Pruned-Branch: "
 	savedWorktreeTrailer = "Camp-Pruned-Worktree: "

@@ -206,7 +206,7 @@ git -C %[4]s merge --no-ff origin/feat-dirty -m 'Merge feat-dirty'
 git -C %[4]s push origin main
 git -C %[4]s push origin --delete feat-dirty
 printf 'left behind\n' > %[2]s/notes.txt
-touch -d "@$(( $(date +%%s) - 259200 ))" %[2]s/notes.txt
+touch -d "@$(( $(date +%%s) - 1728000 ))" %[2]s/notes.txt
 `, projectDir, wt, bareDir, peer))
 
 	preview, err := tc.RunCampInDir(projectDir, "fresh", "--dry-run", "--no-branch", "--no-push", "--no-follow-up")
