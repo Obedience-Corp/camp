@@ -640,9 +640,9 @@ func TestOriginTargetTransientLeavesAuthMethodEmpty(t *testing.T) {
 
 func TestIsSelfMachine(t *testing.T) {
 	// This machine's own derived id, computed the same way the payload builder
-	// computes it, so the test asserts the shared derivation rather than a
-	// hardcoded hostname.
-	host, err := detectReachableName(context.Background(), nil)
+	// computes it (Tailscale name first, then hostname), so the test asserts the
+	// shared derivation rather than a hardcoded hostname.
+	host, err := detectReachableName(context.Background(), runTailscaleStatusForSelf)
 	if err != nil {
 		t.Fatal(err)
 	}
