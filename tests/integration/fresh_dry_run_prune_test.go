@@ -182,3 +182,54 @@ printf 'uncommitted\n' >> %[2]s/README.md
 		tc.GitOutput(t, projectDir, "for-each-ref", "--format=%(refname:short)", "refs/heads"),
 		"the real run must delete exactly the previewed branches")
 }
+
+// camp fresh prunes without asking, so a merged branch's dirty worktree must
+// have its edits saved before it goes, and fresh must say how to get them back.
+func TestFresh_SavesUncommittedEditsBeforeRemovingAMergedWorktree(t *testing.T) {
+	skipIfShort(t)
+	tc := GetSharedContainer(t)
+	const name = "fresh-saves-dirty"
+	_, projectDir, bareDir := setupFreshCampaignWithSubmodule(t, tc, name)
+	wt := worktreePath(name, "dirty")
+	peer := "/test/" + name + "-peer"
+	tc.Shell(t, fmt.Sprintf(`
+set -e
+git -C %[1]s worktree add -b feat-dirty %[2]s main
+printf 'done\n' > %[2]s/done.txt
+git -C %[2]s add done.txt
+git -C %[2]s commit -m 'Dirty feature'
+git -C %[2]s push -u origin feat-dirty
+git clone %[3]s %[4]s
+git -C %[4]s config user.email peer@test.com
+git -C %[4]s config user.name Peer
+git -C %[4]s merge --no-ff origin/feat-dirty -m 'Merge feat-dirty'
+git -C %[4]s push origin main
+git -C %[4]s push origin --delete feat-dirty
+printf 'left behind\n' > %[2]s/notes.txt
+printf 'dist/\n' >> "$(git -C %[2]s rev-parse --path-format=absolute --git-common-dir)/info/exclude"
+mkdir %[2]s/dist && printf 'built\n' > %[2]s/dist/out.txt
+touch -d "@$(( $(date +%%s) - 1728000 ))" %[2]s/notes.txt
+`, projectDir, wt, bareDir, peer))
+
+	preview, err := tc.RunCampInDir(projectDir, "fresh", "--dry-run", "--no-branch", "--no-push", "--no-follow-up")
+	require.NoError(t, err, preview)
+	assert.Contains(t, freshPruneSection(t, preview), "would save uncommitted edits from feat-dirty")
+	assert.Contains(t, freshPruneSection(t, preview), "ignored folders not saved: dist/")
+	exists, err := tc.CheckDirExists(wt)
+	require.NoError(t, err)
+	require.True(t, exists, "a dry run must remove nothing")
+
+	out, err := tc.RunCampInDir(projectDir, "fresh", "--no-branch", "--no-push", "--no-follow-up")
+	require.NoError(t, err, out)
+	section := freshPruneSection(t, out)
+	assert.Contains(t, section, "saved uncommitted edits from feat-dirty")
+	assert.Contains(t, section, "camp project prune --restore feat-dirty")
+	assert.Contains(t, section, "ignored folders not saved: dist/", "fresh has no prompt, so its summary must name what is deleted unsaved")
+
+	exists, err = tc.CheckDirExists(wt)
+	require.NoError(t, err)
+	assert.False(t, exists, "the merged worktree should be removed once its edits are saved")
+	saved := tc.GitOutput(t, projectDir, "for-each-ref", "--format=%(refname)", "refs/camp/pruned/")
+	require.Contains(t, saved, "feat-dirty")
+	assert.Contains(t, tc.GitOutput(t, projectDir, "ls-tree", "-r", "--name-only", strings.TrimSpace(saved)), "notes.txt")
+}

@@ -29,6 +29,9 @@ type InteractiveStep struct {
 	Input   string
 	// WaitTimeout overrides the default screen wait for asynchronous loads.
 	WaitTimeout time.Duration
+	// Before runs once the awaited screen is up and before Input is sent, so
+	// a test can change the fixture while a prompt is open.
+	Before func()
 }
 
 // defaultInteractiveTimeout bounds a full interactive TTY session. Deep
@@ -123,6 +126,10 @@ func (tc *TestContainer) runCampInteractive(dir string, env map[string]string, t
 			}
 		} else {
 			time.Sleep(250 * time.Millisecond)
+		}
+
+		if step.Before != nil {
+			step.Before()
 		}
 
 		if step.Input != "" {

@@ -37,6 +37,18 @@ var worktreeSkillExcludePatterns = []string{
 	".grok/",
 }
 
+// IsWorktreeProjectionDir reports whether a worktree-relative folder, written
+// as git prints it with a trailing slash, is one camp projects skills into and
+// can project again.
+func IsWorktreeProjectionDir(rel string) bool {
+	for _, pattern := range worktreeSkillExcludePatterns {
+		if rel == pattern {
+			return true
+		}
+	}
+	return false
+}
+
 // WorktreeProjection is one worktree destination after projection.
 type WorktreeProjection struct {
 	// Path is the absolute worktree root.
