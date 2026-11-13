@@ -25,24 +25,25 @@ Camp manages your camps. A camp is one context in your life: your job, a side pr
 </p>
 <p align="center"><em><code>camp wi</code>: one queue for every kind of work in the camp.</em></p>
 
-## A Home Repo for your coding agents
+## A context hub for your coding agents
 
 If you run Claude Code, Codex, or another agent across several repos, a camp is
-a [Home Repo](https://www.aihero.dev/the-home-repo-pattern): one repository
-holding your skills, `AGENTS.md`, and shared docs, with every other repo one
-directory away. Start your agent in the camp root and it can work in any of them.
+their context hub: one repository holding your skills, `AGENTS.md`, and shared
+docs, with every other repo one directory away. Start your agent in the camp
+root and it can work in any of them. (This is the setup some people call the
+["home repo" pattern](https://www.aihero.dev/the-home-repo-pattern).)
 
 ```bash
-camp init acme-home && cd acme-home
+camp init acme && cd acme
 camp project add git@github.com:acme/storefront.git
 camp project add git@github.com:acme/payments-api.git
 camp project worktree add refund-fix --project payments-api   # a second agent, same repo
-camp clone git@github.com:acme/acme-home.git                   # on a new machine
+camp clone git@github.com:acme/acme.git                        # on a new machine
 ```
 
 Skills in `.campaign/skills/` are linked into `.claude/skills/` and
 `.agents/skills/`, and into every worktree camp creates. The full setup is in
-[The Home Repo Pattern with Camp](https://docs.fest.build/guides/home-repo-pattern/).
+[A Camp as Your Agents' Context Hub](https://docs.fest.build/guides/context-hub/).
 
 Both demos run the current CLI against synthetic data. [Recording details](docs/images/demos/README.md).
 
