@@ -8,6 +8,7 @@ import (
 	"path/filepath"
 	"reflect"
 	"sort"
+	"strings"
 	"sync"
 	"testing"
 	"time"
@@ -1185,6 +1186,24 @@ func TestRegistryFile_Schema_StaysAlignedWithRegisteredCampaign(t *testing.T) {
 	for key := range rcKeys {
 		if _, ok := persisted[key]; !ok {
 			t.Errorf("RegisteredCampaign field %q is written but registryfile.Campaign cannot read it back; update internal/config/registryfile/registryfile.go", key)
+		}
+	}
+}
+
+func TestRegistryListAll_SortedByName(t *testing.T) {
+	reg := NewRegistry()
+	for id, name := range map[string]string{"1": "zeta", "2": "Alpha", "3": "alpha", "4": "beta", "5": "alpha"} {
+		reg.Campaigns[id] = RegisteredCampaign{ID: id, Name: name}
+	}
+	// case-insensitive name, then exact name ("Alpha" < "alpha"), then ID
+	want := []string{"2", "3", "5", "4", "1"}
+	for i := 0; i < 100; i++ {
+		var got []string
+		for _, c := range reg.ListAll() {
+			got = append(got, c.ID)
+		}
+		if strings.Join(got, ",") != strings.Join(want, ",") {
+			t.Fatalf("iteration %d: got %v, want %v", i, got, want)
 		}
 	}
 }

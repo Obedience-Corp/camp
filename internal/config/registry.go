@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"sort"
 	"strings"
 	"time"
 
@@ -397,7 +398,22 @@ func (r *Registry) ListAll() []RegisteredCampaign {
 	for _, c := range r.Campaigns {
 		campaigns = append(campaigns, c)
 	}
+	sort.Slice(campaigns, func(i, j int) bool {
+		return CampaignNameLess(campaigns[i], campaigns[j])
+	})
 	return campaigns
+}
+
+// CampaignNameLess orders campaigns by name case-insensitively, then by exact
+// name, then by ID, so ordering never depends on map iteration.
+func CampaignNameLess(a, b RegisteredCampaign) bool {
+	if la, lb := strings.ToLower(a.Name), strings.ToLower(b.Name); la != lb {
+		return la < lb
+	}
+	if a.Name != b.Name {
+		return a.Name < b.Name
+	}
+	return a.ID < b.ID
 }
 
 // List returns all campaign names in the registry.
