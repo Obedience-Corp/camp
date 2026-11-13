@@ -70,17 +70,29 @@ func (g *GitWorktree) verifyNothingUnsaved(ctx context.Context, path string) err
 			path, strings.TrimRight(status, "\n"))
 	}
 
-	unpushed, err := g.runIn(ctx, path, "submodule", "foreach", "--recursive", "--quiet",
-		`c=$(git rev-list --max-count=1 HEAD --branches --not --remotes); [ -z "$c" ] || echo "$displaypath $c"`)
+	unpushed, err := g.UnpushedSubmoduleCommits(ctx, path)
 	if err != nil {
-		return GitOperationFailed(project, "submodule foreach", err)
+		return err
 	}
-	if strings.TrimSpace(unpushed) != "" {
+	if unpushed != "" {
 		return camperrors.Wrapf(camperrors.ErrInvalidInput,
 			"worktree %s has submodule commits that are on no remote and would be lost; push them, or pass --force to discard them:\n%s",
 			path, strings.TrimRight(unpushed, "\n"))
 	}
 	return nil
+}
+
+// UnpushedSubmoduleCommits lists, one "<submodule> <commit>" per line, the
+// submodules of the worktree at path that hold commits on no remote. A linked
+// worktree keeps those repositories inside its own git dir, so they are lost
+// with it.
+func (g *GitWorktree) UnpushedSubmoduleCommits(ctx context.Context, path string) (string, error) {
+	out, err := g.runIn(ctx, path, "submodule", "foreach", "--recursive", "--quiet",
+		`c=$(git rev-list --max-count=1 HEAD --branches --not --remotes); [ -z "$c" ] || echo "$displaypath $c"`)
+	if err != nil {
+		return "", GitOperationFailed(filepath.Base(g.projectPath), "submodule foreach", err)
+	}
+	return strings.TrimSpace(out), nil
 }
 
 func (g *GitWorktree) runIn(ctx context.Context, dir string, args ...string) (string, error) {

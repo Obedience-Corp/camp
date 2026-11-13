@@ -462,7 +462,9 @@ func executeFresh(ctx context.Context, name, path string, opts freshOptions) err
 		pruneOpts := prune.Options{
 			DryRun:        opts.dryRun,
 			Force:         true,  // Skip confirmation — fresh is deliberate
-			DiscardDirty:  false, // preserve dirty worktrees (new guard); fresh should not destroy uncommitted work
+			DiscardDirty:  false, // fresh never destroys uncommitted work
+			SaveDirty:     true,  // a merged branch's dirty worktree is removed after its edits are saved
+			MergedPRs:     prune.GitHubMergedPRHeads,
 			Remote:        opts.pruneRemote,
 			BaseRef:       syncState.pruneBaseRef(opts.dryRun),
 			RefreshRemote: false,
@@ -500,6 +502,14 @@ func executeFresh(ctx context.Context, name, path string, opts freshOptions) err
 			}
 		default:
 			pruneStep.Finish("nothing to prune", ui.StatusMuted)
+		}
+		for _, r := range pr.Results {
+			switch r.Status {
+			case prune.StatusEditsSaved:
+				freshDetail(fmt.Sprintf("saved uncommitted edits from %s; %s", r.Branch, r.Detail))
+			case prune.StatusEditsWouldSave:
+				freshDetail(fmt.Sprintf("would save uncommitted edits from %s before removing its worktree", r.Branch))
+			}
 		}
 		if pr.Pruned > 0 {
 			detail := fmt.Sprintf("%d stale refs", pr.Pruned)

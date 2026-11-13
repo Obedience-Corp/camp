@@ -3,8 +3,10 @@ package prune
 import (
 	"context"
 	"fmt"
+	"os"
 	"path/filepath"
 	"strings"
+	"time"
 
 	"github.com/Obedience-Corp/camp/internal/git"
 	"github.com/Obedience-Corp/camp/internal/ui"
@@ -25,6 +27,9 @@ const (
 	StatusWouldPrune          Status = "would prune"
 	StatusWorktreeRemoved     Status = "wt removed"
 	StatusWorktreeWouldRemove Status = "wt would remove"
+	StatusEditsSaved          Status = "edits saved"
+	StatusEditsWouldSave      Status = "would save edits"
+	StatusSavedExpired        Status = "saved edits expired"
 
 	SkipReasonActiveWorktree SkipReason = "active_worktree"
 	SkipReasonDirtyWorktree  SkipReason = "dirty_worktree"
@@ -46,6 +51,17 @@ type Options struct {
 	// (for the branch-worktree removal path). When false (default), dirty
 	// branch worktrees are skipped with SkipReasonDirtyWorktree.
 	DiscardDirty bool
+
+	// SaveDirty removes a merged branch's worktree even when it holds
+	// uncommitted edits, after saving those edits under SavedRefPrefix. When
+	// false, such a worktree is kept, as it also is when the edits cannot be
+	// saved safely (see planWorktree). DiscardDirty takes precedence.
+	SaveDirty bool
+
+	// MergedPRs, when set, is asked about branches whose upstream is gone but
+	// whose commits are not patch-equivalent to BaseRef, the usual result of
+	// a squash merge after the default branch moved on.
+	MergedPRs MergedPRHeads
 
 	// RefreshRemote causes Execute to run 'git fetch --prune <remote>'
 	// before checking upstream:track state. Required for gone-upstream
@@ -95,6 +111,8 @@ type ProjectResult struct {
 	Results []Result
 	Pruned  int // remote refs pruned
 	Error   string
+	// Notes are facts about the pass that belong to no single branch.
+	Notes []string
 }
 
 // Execute runs the prune logic for a single project.
@@ -154,7 +172,22 @@ func Execute(ctx context.Context, name, path string, opts Options) ProjectResult
 		})
 		gone = nil
 	}
+	// A branch git already sees as merged needs no second opinion, and must
+	// not also be reported as kept.
+	gone = withoutBranches(gone, merged)
 	equivalentGone, unsafeGone := partitionGoneByMergeEquivalence(ctx, path, baseRef, gone, &pr)
+	mergedByPR, unsafeGone := partitionByMergedPR(ctx, path, baseRef, unsafeGone, opts.MergedPRs, &pr)
+	equivalentGone = append(equivalentGone, mergedByPR...)
+	if opts.SaveDirty && !opts.DryRun {
+		expired, err := expireSaved(ctx, path, time.Now())
+		for _, b := range expired {
+			pr.Results = append(pr.Results, Result{Branch: b, Status: StatusSavedExpired,
+				Detail: fmt.Sprintf("saved more than %d days ago", int(SavedRetention.Hours()/24))})
+		}
+		if err != nil {
+			pr.Results = append(pr.Results, Result{Branch: "(saved edits)", Status: StatusError, Detail: err.Error()})
+		}
+	}
 
 	// Record gone-but-not-merge-equivalent branches as skipped so the user
 	// sees why they were not auto-deleted.
@@ -289,6 +322,23 @@ func unionBranches(merged, gone []string) ([]string, map[string]struct{}) {
 	return out, forced
 }
 
+func withoutBranches(branches, exclude []string) []string {
+	if len(branches) == 0 || len(exclude) == 0 {
+		return branches
+	}
+	skip := make(map[string]struct{}, len(exclude))
+	for _, b := range exclude {
+		skip[b] = struct{}{}
+	}
+	kept := make([]string, 0, len(branches))
+	for _, b := range branches {
+		if _, drop := skip[b]; !drop {
+			kept = append(kept, b)
+		}
+	}
+	return kept
+}
+
 func deleteDetachedWorktrees(ctx context.Context, path, baseRef string, opts Options, pr *ProjectResult) {
 	wt := worktree.NewGitWorktree(path)
 	entries, err := wt.List(ctx)
@@ -320,6 +370,21 @@ func deleteDetachedWorktrees(ctx context.Context, path, baseRef string, opts Opt
 		}
 
 		if _, skip := skipPaths[filepath.Clean(entry.Path)]; skip {
+			continue
+		}
+
+		if _, err := os.Lstat(entry.Path); os.IsNotExist(err) {
+			// The folder is gone; only git's registration is left.
+			result := Result{Branch: formatDetachedWorktreeLabel(entry.Commit)}
+			if opts.DryRun {
+				result.Status = StatusWorktreeWouldRemove
+				result.Detail = "folder already gone, registration would be dropped: " + entry.Path
+			} else {
+				result.Status = StatusWorktreeRemoved
+				result.Detail = "folder was already gone, registration dropped: " + entry.Path
+				removedAny = true
+			}
+			pr.Results = append(pr.Results, result)
 			continue
 		}
 
@@ -454,8 +519,11 @@ func deleteLocalBranches(ctx context.Context, path string, merged []string, forc
 		delete(wtMap, git.CurrentBranch(ctx, path))
 	}
 	branchesToDelete := make([]string, 0, len(merged))
-	worktreesToRemove := make(map[string]worktree.GitWorktreeEntry)
+	plans := make(map[string]worktreePlan)
+	now := time.Now()
 
+	// Decide every worktree before asking anything, so the confirmation lists
+	// exactly what the pass will do.
 	for _, branch := range merged {
 		entry, hasWT := wtMap[branch]
 		if hasWT && opts.SkipWorktreeBranches {
@@ -471,11 +539,23 @@ func deleteLocalBranches(ctx context.Context, path string, merged []string, forc
 			})
 			continue
 		}
-
-		branchesToDelete = append(branchesToDelete, branch)
 		if hasWT {
-			worktreesToRemove[branch] = entry
+			plan := planWorktree(ctx, path, entry, branch, opts, now)
+			switch plan.action {
+			case actionKeep:
+				detail := plan.reason
+				if opts.DryRun {
+					detail = "would keep " + detail
+				}
+				pr.Results = append(pr.Results, Result{Branch: branch, Status: StatusSkipped, Detail: detail, SkipReason: plan.skip})
+				continue
+			case actionError:
+				pr.Results = append(pr.Results, Result{Branch: branch, Status: StatusError, Detail: plan.reason})
+				continue
+			}
+			plans[branch] = plan
 		}
+		branchesToDelete = append(branchesToDelete, branch)
 	}
 
 	if len(branchesToDelete) == 0 {
@@ -490,11 +570,10 @@ func deleteLocalBranches(ctx context.Context, path string, merged []string, forc
 			if _, isForced := forced[b]; isForced {
 				suffix = " (gone upstream — force delete)"
 			}
-			if _, hasWT := worktreesToRemove[b]; hasWT {
-				fmt.Printf("  %s %s%s (has worktree — will be removed)\n", ui.Dim("-"), b, suffix)
-			} else {
-				fmt.Printf("  %s %s%s\n", ui.Dim("-"), b, suffix)
+			if plan, hasWT := plans[b]; hasWT {
+				suffix += " " + promptWorktreeNote(plan.action)
 			}
+			fmt.Printf("  %s %s%s\n", ui.Dim("-"), b, suffix)
 		}
 		fmt.Print("\nProceed? [y/N] ")
 		var answer string
@@ -511,63 +590,22 @@ func deleteLocalBranches(ctx context.Context, path string, merged []string, forc
 		}
 	}
 
-	// Remove worktrees first for branches that have them.
 	wt := worktree.NewGitWorktree(path)
 	skipBranchDelete := make(map[string]struct{})
-	for branch, entry := range worktreesToRemove {
-		if !opts.DiscardDirty {
-			clean, err := detachedWorktreeClean(ctx, entry.Path)
-			if err != nil {
-				skipBranchDelete[branch] = struct{}{}
-				pr.Results = append(pr.Results, Result{
-					Branch: branch,
-					Status: StatusError,
-					Detail: fmt.Sprintf("dirty check for worktree: %s", err),
-				})
-				continue
-			}
-			if !clean {
-				detail := fmt.Sprintf("dirty worktree: %s", entry.Path)
-				if opts.DryRun {
-					detail = fmt.Sprintf("would keep dirty worktree: %s", entry.Path)
-				}
-				skipBranchDelete[branch] = struct{}{}
-				pr.Results = append(pr.Results, Result{
-					Branch:     branch,
-					Status:     StatusSkipped,
-					Detail:     detail,
-					SkipReason: SkipReasonDirtyWorktree,
-				})
-				continue
-			}
-		}
-
-		if opts.DryRun {
-			pr.Results = append(pr.Results, Result{
-				Branch: branch,
-				Status: StatusWorktreeWouldRemove,
-				Detail: entry.Path,
-			})
+	for _, branch := range branchesToDelete {
+		plan, hasWT := plans[branch]
+		if !hasWT {
 			continue
 		}
-		if err := wt.Remove(ctx, entry.Path, true); err != nil {
+		results, ok := removePlannedWorktree(ctx, wt, path, branch, wtMap[branch], plan, opts)
+		pr.Results = append(pr.Results, results...)
+		if !ok {
 			skipBranchDelete[branch] = struct{}{}
-			pr.Results = append(pr.Results, Result{
-				Branch: branch,
-				Status: StatusError,
-				Detail: fmt.Sprintf("worktree remove: %s", err),
-			})
-		} else {
-			pr.Results = append(pr.Results, Result{
-				Branch: branch,
-				Status: StatusWorktreeRemoved,
-				Detail: entry.Path,
-			})
 		}
 	}
 
 	// Clean stale worktree refs after removals.
-	if !opts.DryRun && len(worktreesToRemove) > 0 {
+	if !opts.DryRun && len(plans) > 0 {
 		appendWorktreePruneError(ctx, wt, pr)
 	}
 
@@ -691,4 +729,71 @@ func pruneTrackingRefs(ctx context.Context, path string, opts Options, pr *Proje
 	} else {
 		pr.Pruned = count
 	}
+}
+
+func promptWorktreeNote(action worktreeAction) string {
+	switch action {
+	case actionSaveAndRemove:
+		return "(has worktree — uncommitted edits will be saved, then it is removed)"
+	case actionDropRegistration:
+		return "(worktree folder is already gone — its registration will be dropped)"
+	default:
+		return "(has worktree — will be removed)"
+	}
+}
+
+// removePlannedWorktree carries out one worktree plan. ok is false when the
+// worktree is still there, in which case its branch must be kept too.
+//
+// A dirty worktree is removed only after its edits are saved and read back. No
+// failure here falls back to deleting anything.
+func removePlannedWorktree(ctx context.Context, wt *worktree.GitWorktree, projectPath, branch string, entry worktree.GitWorktreeEntry, plan worktreePlan, opts Options) (results []Result, ok bool) {
+	restore := "restore with: camp project prune --restore " + branch
+	if opts.DryRun {
+		switch plan.action {
+		case actionSaveAndRemove:
+			results = append(results, Result{Branch: branch, Status: StatusEditsWouldSave, Detail: entry.Path})
+		case actionDropRegistration:
+			return []Result{{Branch: branch, Status: StatusWorktreeWouldRemove, Detail: "folder already gone, registration would be dropped: " + entry.Path}}, true
+		}
+		return append(results, Result{Branch: branch, Status: StatusWorktreeWouldRemove, Detail: entry.Path}), true
+	}
+
+	if plan.action == actionDropRegistration {
+		if _, err := wt.Prune(ctx, false); err != nil {
+			return []Result{{Branch: branch, Status: StatusError, Detail: fmt.Sprintf("worktree prune: %s", err)}}, false
+		}
+		return []Result{{Branch: branch, Status: StatusWorktreeRemoved, Detail: "folder was already gone, registration dropped: " + entry.Path}}, true
+	}
+
+	savedRef := ""
+	if plan.action == actionSaveAndRemove {
+		ref, err := saveWorktreeEdits(ctx, projectPath, entry.Path, branch)
+		if err != nil {
+			return []Result{{Branch: branch, Status: StatusSkipped, SkipReason: SkipReasonDirtyWorktree,
+				Detail: fmt.Sprintf("dirty worktree kept, its edits could not be saved (%s): %s", err, entry.Path)}}, false
+		}
+		savedRef = ref
+	}
+
+	if err := wt.Remove(ctx, entry.Path, true); err != nil {
+		detail := fmt.Sprintf("worktree remove: %s", err)
+		if savedRef != "" {
+			// The worktree may be partly removed, so the saved copy stays.
+			detail += "; its edits are saved, " + restore + " once the folder is cleared"
+		}
+		return []Result{{Branch: branch, Status: StatusError, Detail: detail}}, false
+	}
+	if _, err := os.Lstat(entry.Path); err == nil {
+		detail := "git removed the worktree but files remain in " + entry.Path
+		if savedRef != "" {
+			detail += "; its edits are saved, " + restore + " once the folder is cleared"
+		}
+		return []Result{{Branch: branch, Status: StatusError, Detail: detail}}, false
+	}
+
+	if savedRef != "" {
+		results = append(results, Result{Branch: branch, Status: StatusEditsSaved, Detail: restore})
+	}
+	return append(results, Result{Branch: branch, Status: StatusWorktreeRemoved, Detail: entry.Path}), true
 }

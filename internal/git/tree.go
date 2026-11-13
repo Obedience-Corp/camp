@@ -740,3 +740,18 @@ func CommitBlobs(ctx context.Context, repoPath string, refs []BlobRef, opts *Com
 	}
 	return ResetIndexToHead(ctx, repoPath, changed, opts.Retry)
 }
+
+// OutputWithEnv is RunWithEnv for commands whose stdout is the result, such as
+// `git write-tree` against a scratch index.
+func OutputWithEnv(ctx context.Context, repoPath string, env []string, args ...string) (string, error) {
+	cmd := gitCmd(ctx, repoPath, args...)
+	cmd.Env = gitEnv(env)
+	var stderr bytes.Buffer
+	cmd.Stderr = &stderr
+	out, err := cmd.Output()
+	if err != nil {
+		return "", camperrors.Wrapf(err, "git %s: %s",
+			strings.Join(args, " "), strings.TrimSpace(stderr.String()))
+	}
+	return strings.TrimSpace(string(out)), nil
+}
