@@ -56,8 +56,12 @@ func runGit(t *testing.T, dir string, env []string, args ...string) string {
 func setupRepoWithNestedSubmodule(t *testing.T) (string, string) {
 	t.Helper()
 
+	// Name the branch. Without -b the bare repository's HEAD follows the
+	// machine's init.defaultBranch, which is "master" wherever it is unset, and
+	// the push to main below then fails with "src refspec main does not match
+	// any": the seed clone is on the default branch, not on main.
 	nestedBare := t.TempDir()
-	runGit(t, "", nil, "init", "--bare", nestedBare)
+	runGit(t, "", nil, "init", "--bare", "-b", "main", nestedBare)
 
 	nestedSeed := t.TempDir()
 	runGit(t, "", nil, "clone", nestedBare, nestedSeed)
@@ -68,7 +72,7 @@ func setupRepoWithNestedSubmodule(t *testing.T) (string, string) {
 	}
 	runGit(t, nestedSeed, nil, "add", ".")
 	runGit(t, nestedSeed, nil, "commit", "-m", "init nested")
-	runGit(t, nestedSeed, nil, "push", "origin", "main")
+	runGit(t, nestedSeed, nil, "push", "origin", "HEAD:main")
 
 	parent := initTestRepo(t)
 	if err := os.WriteFile(filepath.Join(parent, "README.md"), []byte("parent\n"), 0o644); err != nil {
