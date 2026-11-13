@@ -2,12 +2,10 @@ package main
 
 import (
 	"context"
-	"fmt"
 	"os"
 	"os/exec"
 	"path/filepath"
 	"strings"
-	"time"
 
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/spf13/cobra"
@@ -15,8 +13,6 @@ import (
 
 	"github.com/Obedience-Corp/camp/internal/approvals"
 	camperrors "github.com/Obedience-Corp/camp/internal/errors"
-	"github.com/Obedience-Corp/camp/internal/jobs"
-	"github.com/Obedience-Corp/camp/internal/ui"
 	"github.com/Obedience-Corp/camp/pkg/approvalkit"
 )
 
@@ -48,6 +44,8 @@ type approvalsTUIModel struct {
 	ctx    context.Context
 	snap   approvalsSnapshot
 	cursor int
+	// scroll is the first visible line of the selected request.
+	scroll int
 	mode   approvalsMode
 
 	// pending is the decision being confirmed, fixed when the confirm opens so
@@ -78,6 +76,12 @@ func (m *approvalsTUIModel) clampCursor() {
 	if m.cursor < 0 {
 		m.cursor = 0
 	}
+}
+
+// clampScroll keeps the request scrolled to a line that exists.
+func (m *approvalsTUIModel) clampScroll() {
+	visible, total := m.requestViewport()
+	m.scroll = max(min(m.scroll, total-visible), 0)
 }
 
 func (m approvalsTUIModel) selected() (approvalRow, bool) {
@@ -117,6 +121,7 @@ func (m approvalsTUIModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	switch msg := msg.(type) {
 	case tea.WindowSizeMsg:
 		m.width, m.height = msg.Width, msg.Height
+		m.clampScroll()
 		return m, nil
 	case approvalsRefreshedMsg:
 		m.busy = false
@@ -126,6 +131,7 @@ func (m approvalsTUIModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 		m.snap = msg.snap
 		m.clampCursor()
+		m.clampScroll()
 		if msg.note != "" && m.status == "" {
 			m.setStatus(msg.note, strings.HasPrefix(msg.note, "Warning"))
 		}
@@ -160,18 +166,27 @@ func (m approvalsTUIModel) updateBrowse(key tea.KeyMsg) (tea.Model, tea.Cmd) {
 	if m.busy {
 		return m, nil
 	}
+	// A status line describes the last key only.
+	m.setStatus("", false)
 	switch key.String() {
 	case "up", "k":
 		m.cursor--
 		m.clampCursor()
-		m.setStatus("", false)
+		m.scroll = 0
 	case "down", "j":
 		m.cursor++
 		m.clampCursor()
-		m.setStatus("", false)
+		m.scroll = 0
+	case "pgdown", "ctrl+d", "ctrl+f":
+		visible, _ := m.requestViewport()
+		m.scroll += max(visible-1, 1)
+		m.clampScroll()
+	case "pgup", "ctrl+u", "ctrl+b":
+		visible, _ := m.requestViewport()
+		m.scroll -= max(visible-1, 1)
+		m.clampScroll()
 	case "r":
 		m.busy = true
-		m.setStatus("", false)
 		return m, refreshApprovalsCmd(m.ctx, m.snap.campRoot)
 	case "a":
 		return m.beginDecision(approvals.Approve)
@@ -291,117 +306,6 @@ func (m approvalsTUIModel) openDocument() (tea.Model, tea.Cmd) {
 	return m, tea.ExecProcess(c, func(err error) tea.Msg {
 		return approvalsRanMsg{what: "viewing " + filepath.Base(path), err: err}
 	})
-}
-
-func (m approvalsTUIModel) contentWidth() int {
-	if m.width <= 0 {
-		return 100
-	}
-	return max(m.width-2, 40)
-}
-
-func (m approvalsTUIModel) View() string {
-	if m.quitting {
-		return ""
-	}
-	w := m.contentWidth()
-	var lines []string
-	switch m.mode {
-	case approvalsConfirm:
-		lines = m.confirmLines(w)
-	case approvalsReason:
-		lines = m.reasonLines(w)
-	default:
-		lines = m.browseLines(w)
-	}
-	budget := 0
-	if m.height > 0 {
-		budget = m.height
-	}
-	return ui.FitFullscreenView(strings.Join(ui.CapFrame(lines, w, budget), "\n"), m.height)
-}
-
-func (m approvalsTUIModel) browseLines(w int) []string {
-	now := time.Now()
-	summary := ui.CountLabel(len(m.snap.rows), "approval", "approvals") + " waiting on you"
-	if m.busy {
-		summary += "  .  working…"
-	}
-	lines := []string{jobsHeaderStyle.Render("camp approvals") + "  " + jobsMutedStyle.Render(summary)}
-	for _, note := range approvalsNotices(m.snap) {
-		lines = append(lines, jobsStallStyle.Render(ui.Truncate(note, w)))
-	}
-	lines = append(lines, "")
-
-	if len(m.snap.rows) == 0 {
-		lines = append(lines, jobsMutedStyle.Render("Nothing is waiting on your approval."))
-	}
-	for i, row := range m.snap.rows {
-		marker := "  "
-		style := jobsPrimary
-		if i == m.cursor {
-			marker, style = "> ", jobsSelStyle
-		}
-		if !row.ready.Actionable {
-			style = jobsMutedStyle
-			if i == m.cursor {
-				style = jobsStallStyle
-			}
-		}
-		line := fmt.Sprintf("%s%-12s %-9s %6s  %s", marker, row.ID, approvalSourceLabel(row.SourceKind),
-			jobs.ShortDuration(approvalAge(row.Pending, now)), row.Title)
-		lines = append(lines, style.Render(ui.Truncate(line, w)))
-	}
-
-	if row, ok := m.selected(); ok {
-		lines = append(lines, "", jobsMutedStyle.Render(strings.Repeat("─", min(w, 60))))
-		lines = append(lines, approvalDetailLines(row, now, w)...)
-	}
-
-	lines = append(lines, "")
-	if m.status != "" {
-		style := jobsMutedStyle
-		if m.statusErr {
-			style = jobsFailedStyle
-		}
-		lines = append(lines, style.Render(ui.Truncate(m.status, w)))
-	}
-	lines = append(lines, jobsMutedStyle.Render("↑/↓ move  .  a approve  .  x reject  .  o open document  .  r refresh  .  q quit"))
-	return lines
-}
-
-func (m approvalsTUIModel) reasonLines(w int) []string {
-	return []string{
-		jobsHeaderStyle.Render("Reject " + m.pendingRow.ID),
-		jobsPrimary.Render(ui.Truncate(m.pendingRow.Title, w)),
-		"",
-		"Reason (the agent reads this to revise the work):",
-		"> " + m.reason + "█",
-		"",
-		jobsMutedStyle.Render("enter continue  .  esc cancel"),
-	}
-}
-
-func (m approvalsTUIModel) confirmLines(w int) []string {
-	verb := "Approve"
-	note := "The command will ask you to confirm before anything is recorded."
-	if m.pendingDecision == approvals.Reject {
-		verb = "Reject"
-		note = "The step stays blocked until the revised work is submitted again."
-	}
-	lines := []string{
-		jobsHeaderStyle.Render(verb + " " + m.pendingRow.ID + "?"),
-		jobsPrimary.Render(ui.Truncate(m.pendingRow.Title, w)),
-		"",
-		"camp will hand your terminal to this command:",
-		"",
-		"  " + jobsSelStyle.Render(shellQuoteArgv(m.pendingArgv)),
-		"  " + jobsMutedStyle.Render("in "+m.pendingRow.ready.Dir),
-		"",
-	}
-	lines = append(lines, wrapApprovalText(note, w)...)
-	lines = append(lines, "", jobsMutedStyle.Render("y run it  .  n cancel"))
-	return lines
 }
 
 // shellQuoteArgv renders a command for display so the user sees exactly what
