@@ -133,15 +133,14 @@ func resolveCampaignFromCandidates(query string, candidates []config.RegisteredC
 			query, scopeDescription(scope), campaignIDs(exactNameMatches)))
 	}
 
-	names := campaignNames(candidates)
-	matches := fuzzy.Filter(names, query)
-	if len(matches) == 0 {
+	ranked := rankFuzzyCandidates(candidates, query)
+	if len(ranked) == 0 {
 		return config.RegisteredCampaign{}, &CampaignNotFoundError{
 			Msg: fmt.Sprintf("camp %q not found%s", query, scopeDescription(scope)),
 		}
 	}
 
-	bestName := matches[0].Target
+	bestName := ranked[0].Name
 	var fuzzyMatches []config.RegisteredCampaign
 	for _, c := range candidates {
 		if c.Name == bestName {
@@ -157,6 +156,34 @@ func resolveCampaignFromCandidates(query string, candidates []config.RegisteredC
 		_, _ = fmt.Fprintf(matchWriter, "Matched: %s -> %s\n", query, fuzzyMatches[0].Name)
 	}
 	return fuzzyMatches[0], nil
+}
+
+func rankFuzzyCandidates(candidates []config.RegisteredCampaign, query string) []config.RegisteredCampaign {
+	type scored struct {
+		camp  config.RegisteredCampaign
+		score int
+	}
+	var hits []scored
+	for _, c := range candidates {
+		if score, _ := fuzzy.Score(query, c.Name); score > 0 {
+			hits = append(hits, scored{camp: c, score: score})
+		}
+	}
+	sort.SliceStable(hits, func(i, j int) bool {
+		a, b := hits[i], hits[j]
+		if a.score != b.score {
+			return a.score > b.score
+		}
+		if !a.camp.LastAccess.Equal(b.camp.LastAccess) {
+			return a.camp.LastAccess.After(b.camp.LastAccess)
+		}
+		return config.CampaignNameLess(a.camp, b.camp)
+	})
+	out := make([]config.RegisteredCampaign, len(hits))
+	for i, h := range hits {
+		out[i] = h.camp
+	}
+	return out
 }
 
 func campaignNames(campaigns []config.RegisteredCampaign) []string {
