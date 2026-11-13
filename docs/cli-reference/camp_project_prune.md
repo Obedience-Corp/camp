@@ -13,10 +13,13 @@ Protected branches (default branch, current branch) are never deleted.
 
 A merged branch's worktree is removed with it. When that worktree holds
 uncommitted edits, they are saved first and the command prints how to restore
-them; saved edits are dropped after 90 days. The worktree is kept instead when
-it is locked, was edited in the last 14 days, has a merge or rebase in
-progress, holds more than 50 MiB of uncommitted files, or has changes inside a
-submodule that a save could not capture.
+them; saved edits are dropped after 90 days. Files git ignores one by one, such
+as .env.local, are saved with them. Folders ignored as a whole, such as
+node_modules/ or a build folder, are deleted and not saved; the confirmation
+and the result name them. The worktree is kept instead when it is locked, was
+edited in the last 14 days, has a merge or rebase in progress, holds more than
+50 MiB of uncommitted and ignored files, or has changes inside a submodule
+that a save could not capture.
 
 A branch whose upstream is gone is treated as merged when its commits match a
 commit on the default branch, or when GitHub (through the gh CLI) reports a
@@ -41,7 +44,7 @@ camp project prune [project-name] [flags]
 ### Options
 
 ```
-      --discard-dirty    Remove worktrees with uncommitted changes without saving them
+      --discard-dirty    Remove worktrees with uncommitted changes without saving them (unpushed submodule commits still keep a worktree)
       --drop string      Delete the saved edits for this branch
   -n, --dry-run          Preview without deleting
   -f, --force            Skip local branch deletion confirmation

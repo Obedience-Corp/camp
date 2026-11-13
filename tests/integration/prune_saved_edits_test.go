@@ -15,7 +15,8 @@ import (
 // addMergedWorktree merges a branch into main and gives it a worktree holding
 // uncommitted edits of every kind: a modified file, a deleted file and an
 // untracked file. The edits are aged past the recent-edit window unless the
-// test re-touches them.
+// test re-touches them. The branch also tracks nested/deep/file.txt, left
+// unedited, for tests that delete a whole folder.
 func addMergedWorktree(t *testing.T, tc *TestContainer, campPath, projPath, branch string) string {
 	t.Helper()
 	wt := campPath + "/projects/worktrees/proj/" + branch
@@ -26,6 +27,7 @@ git -C %[1]s config user.name Test
 git -C %[1]s checkout -b %[3]s
 printf 'one\n' > %[1]s/keep.txt
 printf 'gone\n' > %[1]s/remove.txt
+mkdir -p %[1]s/nested/deep && printf 'deep\n' > %[1]s/nested/deep/file.txt
 printf '%[3]s\n' > "%[1]s/$(printf '%%s' '%[3]s' | tr / -).txt"
 git -C %[1]s add . && git -C %[1]s commit -m 'feature'
 git -C %[1]s checkout main
@@ -129,6 +131,24 @@ func TestPrune_DirtyWorktreeKeptWhenSavingIsNotSafe(t *testing.T) {
 		"a file deleted just now": {
 			prepare: `touch %[1]s`,
 			want:    "edited",
+		},
+		"a whole folder deleted just now": {
+			// The deleted file's own folder is gone, so only the worktree
+			// root still records when it happened.
+			prepare: `rm -rf %[1]s/nested`,
+			want:    "edited",
+		},
+		"an ignored file edited just now": {
+			prepare: `printf '.env.local\n' >> "$(git -C %[1]s rev-parse --path-format=absolute --git-common-dir)/info/exclude" && printf 'TOKEN=1\n' > %[1]s/.env.local`,
+			want:    "edited",
+		},
+		"ignored files over the size limit": {
+			prepare: `printf '*.bin\n' >> "$(git -C %[1]s rev-parse --path-format=absolute --git-common-dir)/info/exclude" && dd if=/dev/zero of=%[1]s/model.bin bs=1M count=51 && touch -d "@$(( $(date +%%s) - 1728000 ))" %[1]s/model.bin %[1]s`,
+			want:    "save limit",
+		},
+		"an ignored folder that is a repository": {
+			prepare: `printf 'scratch/\n' >> "$(git -C %[1]s rev-parse --path-format=absolute --git-common-dir)/info/exclude" && git init -q %[1]s/scratch && touch -d "@$(( $(date +%%s) - 1728000 ))" %[1]s/scratch %[1]s`,
+			want:    "another git repository",
 		},
 		"merge in progress": {
 			prepare: `touch "$(git -C %[1]s rev-parse --git-path MERGE_HEAD)"`,
@@ -370,11 +390,105 @@ git checkout -q --detach HEAD~1
 `, projPath, wt))
 	require.Empty(t, tc.GitOutput(t, wt, "status", "--porcelain"), "the fixture worktree must look clean")
 
+	// --discard-dirty gives up uncommitted changes, not commits.
+	for _, extra := range [][]string{nil, {"--discard-dirty"}} {
+		args := append([]string{"project", "prune", "--project", "proj", "--force"}, extra...)
+		out, err := tc.RunCampInDir(campPath, args...)
+		require.NoError(t, err)
+		assert.Contains(t, out, "submodule commits on no remote", "args %v", extra)
+		exists, err := tc.CheckDirExists(wt)
+		require.NoError(t, err)
+		assert.True(t, exists, "the worktree must be kept with args %v", extra)
+		assert.Contains(t, tc.GitOutput(t, projPath, "branch"), "with-sub")
+	}
+}
+
+// ignoreInProject adds patterns to the project's local exclude file, which all
+// of its worktrees share.
+func ignoreInProject(t *testing.T, tc *TestContainer, wt string, patterns ...string) {
+	t.Helper()
+	tc.Shell(t, fmt.Sprintf(`printf '%%s\n' %s >> "$(git -C %s rev-parse --path-format=absolute --git-common-dir)/info/exclude"`,
+		strings.Join(patterns, " "), wt))
+}
+
+// A file git ignores by name is where local config and secrets live, so it is
+// saved and restored with the edits. A folder ignored as a whole is deleted,
+// and every stage says so.
+func TestPrune_IgnoredFilesAreSavedAndIgnoredFoldersAreNamed(t *testing.T) {
+	tc := GetSharedContainer(t)
+	campPath, projPath, _ := setupPruneCampaign(t, tc, "prune-ignored")
+	wt := addMergedWorktree(t, tc, campPath, projPath, "with-ignored")
+	ignoreInProject(t, tc, wt, ".env.local", "node_modules/", ".claude/")
+	tc.Shell(t, fmt.Sprintf(`
+set -e
+printf 'TOKEN=secret\n' > %[1]s/.env.local
+mkdir -p %[1]s/node_modules/dep && printf 'x\n' > %[1]s/node_modules/dep/index.js
+mkdir -p %[1]s/.claude/skills && printf 'x\n' > %[1]s/.claude/skills/projected.md
+touch -d "@$(( $(date +%%s) - 1728000 ))" %[1]s/.env.local %[1]s/node_modules %[1]s/node_modules/dep/index.js %[1]s
+`, wt))
+
+	dry, err := tc.RunCampInDir(campPath, "project", "prune", "--project", "proj", "--dry-run")
+	require.NoError(t, err)
+	assert.Contains(t, dry, "would save edits")
+	assert.Contains(t, dry, "ignored folders not saved: node_modules/")
+	assert.NotContains(t, dry, ".claude/", "folders camp projects into a worktree are not worth naming")
+
+	prompt, err := tc.RunCampInteractiveInDir(campPath, "Proceed?", "n\n", "project", "prune", "--project", "proj")
+	require.NoError(t, err, prompt)
+	assert.Contains(t, prompt, "ignored folders not saved: node_modules/")
+
 	out, err := tc.RunCampInDir(campPath, "project", "prune", "--project", "proj", "--force")
 	require.NoError(t, err)
-	assert.Contains(t, out, "submodule commits on no remote")
+	assert.Contains(t, out, "edits saved")
+	assert.Contains(t, out, "kept until")
+	assert.Contains(t, out, "ignored folders not saved: node_modules/")
 	exists, err := tc.CheckDirExists(wt)
 	require.NoError(t, err)
-	assert.True(t, exists, "the worktree must be kept")
-	assert.Contains(t, tc.GitOutput(t, projPath, "branch"), "with-sub")
+	require.False(t, exists, "the worktree should be removed")
+
+	_, err = tc.RunCampInDir(campPath, "project", "prune", "--project", "proj", "--restore", "with-ignored")
+	require.NoError(t, err)
+	content, err := tc.ReadFile(wt + "/.env.local")
+	require.NoError(t, err, "the ignored file must come back")
+	assert.Equal(t, "TOKEN=secret\n", content)
+	status := tc.GitOutput(t, wt, "status", "--porcelain")
+	assert.NotContains(t, status, ".env.local", "a restored ignored file must still be ignored")
+	assert.Contains(t, status, "M keep.txt")
+	exists, err = tc.CheckDirExists(wt + "/node_modules")
+	require.NoError(t, err)
+	assert.False(t, exists, "an ignored folder is not saved")
+}
+
+// The plan is made before the confirmation. A worktree edited while the prompt
+// is open must be kept, whether it was going to be saved or was clean.
+func TestPrune_WorktreeEditedDuringThePromptIsKept(t *testing.T) {
+	tc := GetSharedContainer(t)
+	campPath, projPath, _ := setupPruneCampaign(t, tc, "prune-recheck")
+	dirty := addMergedWorktree(t, tc, campPath, projPath, "edited-late")
+	clean := addMergedWorktree(t, tc, campPath, projPath, "clean-then-edited")
+	tc.Shell(t, fmt.Sprintf(`git -C %[1]s checkout -q -- . && rm %[1]s/untracked.txt`, clean))
+	require.Empty(t, tc.GitOutput(t, clean, "status", "--porcelain"), "the second fixture worktree must start clean")
+
+	out, err := tc.RunCampInteractiveStepsInDir(campPath, []InteractiveStep{{
+		WaitFor: "Proceed?",
+		Input:   "y\n",
+		Before: func() {
+			tc.Shell(t, fmt.Sprintf(`printf 'late\n' >> %s/keep.txt && printf 'late\n' > %s/new.txt`, dirty, clean))
+		},
+	}}, "project", "prune", "--project", "proj")
+	require.NoError(t, err, out)
+	assert.Contains(t, out, "changed while prune was running")
+
+	for _, wt := range []string{dirty, clean} {
+		exists, err := tc.CheckDirExists(wt)
+		require.NoError(t, err)
+		assert.True(t, exists, "a worktree edited during the prompt must be kept: %s", wt)
+	}
+	branches := tc.GitOutput(t, projPath, "branch")
+	assert.Contains(t, branches, "edited-late")
+	assert.Contains(t, branches, "clean-then-edited")
+	assert.Empty(t, tc.GitOutput(t, projPath, "for-each-ref", "refs/camp/pruned/"))
+	content, err := tc.ReadFile(clean + "/new.txt")
+	require.NoError(t, err)
+	assert.Equal(t, "late\n", content)
 }

@@ -29,10 +29,13 @@ Protected branches (default branch, current branch) are never deleted.
 
 A merged branch's worktree is removed with it. When that worktree holds
 uncommitted edits, they are saved first and the command prints how to restore
-them; saved edits are dropped after 90 days. The worktree is kept instead when
-it is locked, was edited in the last 14 days, has a merge or rebase in
-progress, holds more than 50 MiB of uncommitted files, or has changes inside a
-submodule that a save could not capture.
+them; saved edits are dropped after 90 days. Files git ignores one by one, such
+as .env.local, are saved with them. Folders ignored as a whole, such as
+node_modules/ or a build folder, are deleted and not saved; the confirmation
+and the result name them. The worktree is kept instead when it is locked, was
+edited in the last 14 days, has a merge or rebase in progress, holds more than
+50 MiB of uncommitted and ignored files, or has changes inside a submodule
+that a save could not capture.
 
 A branch whose upstream is gone is treated as merged when its commits match a
 commit on the default branch, or when GitHub (through the gh CLI) reports a
@@ -74,7 +77,7 @@ func init() {
 	projectPruneCmd.PersistentFlags().BoolVarP(&pruneForce, "force", "f", false, "Skip local branch deletion confirmation")
 	projectPruneCmd.PersistentFlags().BoolVar(&pruneRemote, "remote", false, "Also prune stale remote tracking refs")
 	projectPruneCmd.PersistentFlags().BoolVar(&pruneRemoteDelete, "remote-delete", false, "Also delete merged branches on origin (destructive)")
-	projectPruneCmd.PersistentFlags().BoolVar(&pruneDiscardDirty, "discard-dirty", false, "Remove worktrees with uncommitted changes without saving them")
+	projectPruneCmd.PersistentFlags().BoolVar(&pruneDiscardDirty, "discard-dirty", false, "Remove worktrees with uncommitted changes without saving them (unpushed submodule commits still keep a worktree)")
 	projectPruneCmd.PersistentFlags().BoolVar(&pruneKeepDirty, "keep-dirty", false, "Keep every worktree that has uncommitted changes")
 	projectPruneCmd.Flags().BoolVar(&pruneListSaved, "saved", false, "List uncommitted edits saved from removed worktrees")
 	projectPruneCmd.Flags().StringVar(&pruneRestore, "restore", "", "Recreate the removed worktree for this branch with its saved edits")
@@ -167,7 +170,7 @@ func renderSavedEdits(ctx context.Context, name, path string) error {
 	}
 	rows := make([][]string, 0, len(saved))
 	for _, s := range saved {
-		rows = append(rows, []string{s.Branch, formatSavedBytes(s.Bytes),
+		rows = append(rows, []string{s.Branch, formatSavedBytes(prune.SavedSize(ctx, path, s.Commit)),
 			s.SavedAt.Format("2006-01-02"), s.Expires.Format("2006-01-02"), s.Worktree})
 	}
 	fmt.Printf("\n%s %s\n", ui.Subheader("Saved edits:"), ui.Value(name))

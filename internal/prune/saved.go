@@ -37,7 +37,6 @@ type SavedEdits struct {
 	Commit   string
 	SavedAt  time.Time
 	Expires  time.Time
-	Bytes    int64
 }
 
 // savedRefName gives every branch a ref exactly one level below the prefix, so
@@ -48,12 +47,13 @@ func savedRefName(branch string) string {
 }
 
 // saveWorktreeEdits records the worktree's whole uncommitted state (staged,
-// unstaged and untracked files; ignored files are left out) as one commit on
-// top of its HEAD and points the branch's saved ref at it.
+// unstaged and untracked files, plus the individually ignored files named in
+// ignoredFiles) as one commit on top of its HEAD and points the branch's saved
+// ref at it. Folders ignored as a whole are left out.
 //
 // The worktree is not touched: the state is staged in a scratch copy of its
 // index, so a later failure leaves it exactly as it was.
-func saveWorktreeEdits(ctx context.Context, projectPath, wtPath, branch string) (string, error) {
+func saveWorktreeEdits(ctx context.Context, projectPath, wtPath, branch string, ignoredFiles []string) (string, error) {
 	ref := savedRefName(branch)
 	if _, err := git.Output(ctx, projectPath, "rev-parse", "--verify", "--quiet", ref); err == nil {
 		return "", camperrors.Newf("saved edits for %s already exist; restore or drop them first", branch)
@@ -68,9 +68,19 @@ func saveWorktreeEdits(ctx context.Context, projectPath, wtPath, branch string) 
 	if err := copyFile(indexPath, scratch); err != nil {
 		return "", camperrors.Wrap(err, "copy worktree index")
 	}
-	env := []string{"GIT_INDEX_FILE=" + scratch}
+	// The helpers replace the environment, so start from the process's own:
+	// without HOME git would miss the user's global ignore file and filters.
+	env := append(os.Environ(), "GIT_INDEX_FILE="+scratch)
 	if err := git.RunWithEnv(ctx, wtPath, env, "add", "-A"); err != nil {
 		return "", camperrors.Wrap(err, "stage uncommitted edits")
+	}
+	if len(ignoredFiles) > 0 {
+		// Literal, NUL-separated paths: a file name is never read as a glob.
+		paths := strings.Join(ignoredFiles, "\x00") + "\x00"
+		if err := git.RunWithEnvInput(ctx, wtPath, append(env, "GIT_LITERAL_PATHSPECS=1"), paths,
+			"add", "-f", "--pathspec-from-file=-", "--pathspec-file-nul"); err != nil {
+			return "", camperrors.Wrap(err, "stage ignored files")
+		}
 	}
 	tree, err := git.OutputWithEnv(ctx, wtPath, env, "write-tree")
 	if err != nil {
@@ -95,7 +105,7 @@ func saveWorktreeEdits(ctx context.Context, projectPath, wtPath, branch string) 
 		savedBranchTrailer + branch + "\n" + savedWorktreeTrailer + wtPath + "\n"
 	commit, err := git.Output(ctx, wtPath,
 		"-c", "user.name="+savedIdentityName, "-c", "user.email="+savedIdentityEmail,
-		"commit-tree", tree, "-p", head, "-m", message)
+		"commit-tree", "--no-gpg-sign", tree, "-p", head, "-m", message)
 	if err != nil {
 		return "", camperrors.Wrap(err, "commit uncommitted edits")
 	}
@@ -126,16 +136,24 @@ func copyFile(src, dst string) error {
 	return out.Close()
 }
 
-// ListSaved returns the saved edits in a project, oldest first.
+// ListSaved returns the saved edits in a project, oldest first. It runs one
+// git command however many there are.
 func ListSaved(ctx context.Context, projectPath string) ([]SavedEdits, error) {
 	out, err := git.Output(ctx, projectPath, "for-each-ref",
-		"--format=%(refname)%09%(objectname)%09%(committerdate:unix)", SavedRefPrefix)
+		"--format=%(refname)%09%(objectname)%09%(committerdate:unix)%0a%(contents)%00", SavedRefPrefix)
 	if err != nil {
 		return nil, camperrors.Wrap(err, "list saved edits")
 	}
+	return parseSavedRefs(out), nil
+}
+
+// parseSavedRefs reads NUL-separated records of a "<ref>\t<commit>\t<unix>"
+// line followed by the commit message.
+func parseSavedRefs(out string) []SavedEdits {
 	var saved []SavedEdits
-	for _, line := range strings.Split(out, "\n") {
-		fields := strings.Split(line, "\t")
+	for _, record := range strings.Split(out, "\x00") {
+		header, body, _ := strings.Cut(strings.TrimLeft(record, "\n"), "\n")
+		fields := strings.Split(header, "\t")
 		if len(fields) != 3 {
 			continue
 		}
@@ -145,10 +163,6 @@ func ListSaved(ctx context.Context, projectPath string) ([]SavedEdits, error) {
 		}
 		entry := SavedEdits{Ref: fields[0], Commit: fields[1], SavedAt: time.Unix(unix, 0)}
 		entry.Expires = entry.SavedAt.Add(SavedRetention)
-		body, err := git.Output(ctx, projectPath, "show", "-s", "--format=%B", entry.Commit)
-		if err != nil {
-			continue
-		}
 		for _, l := range strings.Split(body, "\n") {
 			if v, ok := strings.CutPrefix(l, savedBranchTrailer); ok {
 				entry.Branch = strings.TrimSpace(v)
@@ -160,15 +174,15 @@ func ListSaved(ctx context.Context, projectPath string) ([]SavedEdits, error) {
 		if entry.Branch == "" {
 			continue
 		}
-		entry.Bytes = savedBytes(ctx, projectPath, entry.Commit)
 		saved = append(saved, entry)
 	}
 	sort.Slice(saved, func(i, j int) bool { return saved[i].SavedAt.Before(saved[j].SavedAt) })
-	return saved, nil
+	return saved
 }
 
-// savedBytes sums the size of the files the saved commit changed or added.
-func savedBytes(ctx context.Context, projectPath, commit string) int64 {
+// SavedSize sums the size of the files a saved commit changed or added. It
+// costs a git command per file, so only the --saved listing asks for it.
+func SavedSize(ctx context.Context, projectPath, commit string) int64 {
 	out, err := git.Output(ctx, projectPath, "diff-tree", "-r", "--no-renames", "--diff-filter=AM",
 		"--format=", commit+"^", commit)
 	if err != nil {

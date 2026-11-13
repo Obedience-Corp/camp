@@ -98,6 +98,9 @@ type Result struct {
 	Status     Status
 	Detail     string
 	SkipReason SkipReason
+	// Note names what a worktree removal deletes without saving. It is also
+	// part of Detail; callers that print their own summary read it here.
+	Note string
 }
 
 // ProjectResult holds all results for a single project.

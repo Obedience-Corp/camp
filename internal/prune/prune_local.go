@@ -105,7 +105,7 @@ func deleteLocalBranches(ctx context.Context, path string, merged []string, forc
 				suffix = " (gone upstream — force delete)"
 			}
 			if plan, hasWT := plans[b]; hasWT {
-				suffix += " " + promptWorktreeNote(plan.action)
+				suffix += " " + promptWorktreeNote(plan)
 			}
 			fmt.Printf("  %s %s%s\n", ui.Dim("-"), b, suffix)
 		}
@@ -131,6 +131,17 @@ func deleteLocalBranches(ctx context.Context, path string, merged []string, forc
 		plan, hasWT := plans[branch]
 		if !hasWT {
 			continue
+		}
+		if !opts.DryRun {
+			// The plan was made before the prompt. Check again now, so an edit
+			// made while it was open is neither lost nor missed by the save.
+			fresh := planWorktree(ctx, path, wtMap[branch], branch, opts, time.Now())
+			if fresh.action != plan.action {
+				pr.Results = append(pr.Results, changedSincePlanned(branch, wtMap[branch].Path, fresh))
+				skipBranchDelete[branch] = struct{}{}
+				continue
+			}
+			plan = fresh
 		}
 		results, ok := removePlannedWorktree(ctx, wt, path, branch, wtMap[branch], plan, opts)
 		pr.Results = append(pr.Results, results...)
@@ -186,15 +197,32 @@ func deleteLocalBranches(ctx context.Context, path string, merged []string, forc
 	}
 }
 
-func promptWorktreeNote(action worktreeAction) string {
-	switch action {
+func promptWorktreeNote(plan worktreePlan) string {
+	switch plan.action {
 	case actionSaveAndRemove:
-		return "(has worktree — uncommitted edits will be saved, then it is removed)"
+		note := "(has worktree — uncommitted edits will be saved, then it is removed"
+		if dirs := ignoredDirsNote(plan.ignoredDirs); dirs != "" {
+			note += "; " + dirs
+		}
+		return note + ")"
 	case actionDropRegistration:
 		return "(worktree folder is already gone — its registration will be dropped)"
 	default:
 		return "(has worktree — will be removed)"
 	}
+}
+
+// changedSincePlanned reports a worktree whose state no longer matches what
+// the pass announced. It is kept, along with its branch.
+func changedSincePlanned(branch, wtPath string, fresh worktreePlan) Result {
+	if fresh.action == actionError {
+		return Result{Branch: branch, Status: StatusError, Detail: fresh.reason}
+	}
+	detail := "worktree changed while prune was running, kept: " + wtPath
+	if fresh.action == actionKeep {
+		detail = "worktree changed while prune was running, kept as " + fresh.reason
+	}
+	return Result{Branch: branch, Status: StatusSkipped, Detail: detail, SkipReason: fresh.skip}
 }
 
 // removePlannedWorktree carries out one worktree plan. ok is false when the
@@ -204,6 +232,11 @@ func promptWorktreeNote(action worktreeAction) string {
 // failure here falls back to deleting anything.
 func removePlannedWorktree(ctx context.Context, wt *worktree.GitWorktree, projectPath, branch string, entry worktree.GitWorktreeEntry, plan worktreePlan, opts Options) (results []Result, ok bool) {
 	restore := "restore with: camp project prune --restore " + branch
+	removed := entry.Path
+	note := ignoredDirsNote(plan.ignoredDirs)
+	if note != "" {
+		removed += " (" + note + ")"
+	}
 	if opts.DryRun {
 		switch plan.action {
 		case actionSaveAndRemove:
@@ -211,7 +244,7 @@ func removePlannedWorktree(ctx context.Context, wt *worktree.GitWorktree, projec
 		case actionDropRegistration:
 			return []Result{{Branch: branch, Status: StatusWorktreeWouldRemove, Detail: "folder already gone, registration would be dropped: " + entry.Path}}, true
 		}
-		return append(results, Result{Branch: branch, Status: StatusWorktreeWouldRemove, Detail: entry.Path}), true
+		return append(results, Result{Branch: branch, Status: StatusWorktreeWouldRemove, Detail: removed, Note: note}), true
 	}
 
 	if plan.action == actionDropRegistration {
@@ -223,7 +256,7 @@ func removePlannedWorktree(ctx context.Context, wt *worktree.GitWorktree, projec
 
 	savedRef := ""
 	if plan.action == actionSaveAndRemove {
-		ref, err := saveWorktreeEdits(ctx, projectPath, entry.Path, branch)
+		ref, err := saveWorktreeEdits(ctx, projectPath, entry.Path, branch, plan.ignoredFiles)
 		if err != nil {
 			return []Result{{Branch: branch, Status: StatusSkipped, SkipReason: SkipReasonDirtyWorktree,
 				Detail: fmt.Sprintf("dirty worktree kept, its edits could not be saved (%s): %s", err, entry.Path)}}, false
@@ -248,7 +281,8 @@ func removePlannedWorktree(ctx context.Context, wt *worktree.GitWorktree, projec
 	}
 
 	if savedRef != "" {
-		results = append(results, Result{Branch: branch, Status: StatusEditsSaved, Detail: restore})
+		until := time.Now().Add(SavedRetention).Format("2006-01-02")
+		results = append(results, Result{Branch: branch, Status: StatusEditsSaved, Detail: restore + " (kept until " + until + ")"})
 	}
-	return append(results, Result{Branch: branch, Status: StatusWorktreeRemoved, Detail: entry.Path}), true
+	return append(results, Result{Branch: branch, Status: StatusWorktreeRemoved, Detail: removed, Note: note}), true
 }

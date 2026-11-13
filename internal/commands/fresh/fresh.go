@@ -230,6 +230,10 @@ func executeFresh(ctx context.Context, name, path string, opts freshOptions) err
 				freshDetail(fmt.Sprintf("saved uncommitted edits from %s; %s", r.Branch, r.Detail))
 			case prune.StatusEditsWouldSave:
 				freshDetail(fmt.Sprintf("would save uncommitted edits from %s before removing its worktree", r.Branch))
+			case prune.StatusWorktreeRemoved, prune.StatusWorktreeWouldRemove:
+				if r.Note != "" {
+					freshDetail(fmt.Sprintf("worktree of %s: %s", r.Branch, r.Note))
+				}
 			}
 		}
 		if pr.Pruned > 0 {

@@ -28,7 +28,7 @@ camp project prune all [flags]
 ### Options inherited from parent commands
 
 ```
-      --discard-dirty   Remove worktrees with uncommitted changes without saving them
+      --discard-dirty   Remove worktrees with uncommitted changes without saving them (unpushed submodule commits still keep a worktree)
   -n, --dry-run         Preview without deleting
   -f, --force           Skip local branch deletion confirmation
       --keep-dirty      Keep every worktree that has uncommitted changes

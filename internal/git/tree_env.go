@@ -41,3 +41,18 @@ func OutputWithEnv(ctx context.Context, repoPath string, env []string, args ...s
 	}
 	return strings.TrimSpace(string(out)), nil
 }
+
+// RunWithEnvInput is RunWithEnv for commands that read their arguments from
+// stdin, such as `git add --pathspec-from-file=-` against a scratch index.
+func RunWithEnvInput(ctx context.Context, repoPath string, env []string, input string, args ...string) error {
+	cmd := gitCmd(ctx, repoPath, args...)
+	cmd.Env = gitEnv(env)
+	cmd.Stdin = strings.NewReader(input)
+	var stderr bytes.Buffer
+	cmd.Stderr = &stderr
+	if err := cmd.Run(); err != nil {
+		return camperrors.Wrapf(err, "git %s: %s",
+			strings.Join(args, " "), strings.TrimSpace(stderr.String()))
+	}
+	return nil
+}

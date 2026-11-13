@@ -206,12 +206,15 @@ git -C %[4]s merge --no-ff origin/feat-dirty -m 'Merge feat-dirty'
 git -C %[4]s push origin main
 git -C %[4]s push origin --delete feat-dirty
 printf 'left behind\n' > %[2]s/notes.txt
+printf 'dist/\n' >> "$(git -C %[2]s rev-parse --path-format=absolute --git-common-dir)/info/exclude"
+mkdir %[2]s/dist && printf 'built\n' > %[2]s/dist/out.txt
 touch -d "@$(( $(date +%%s) - 1728000 ))" %[2]s/notes.txt
 `, projectDir, wt, bareDir, peer))
 
 	preview, err := tc.RunCampInDir(projectDir, "fresh", "--dry-run", "--no-branch", "--no-push", "--no-follow-up")
 	require.NoError(t, err, preview)
 	assert.Contains(t, freshPruneSection(t, preview), "would save uncommitted edits from feat-dirty")
+	assert.Contains(t, freshPruneSection(t, preview), "ignored folders not saved: dist/")
 	exists, err := tc.CheckDirExists(wt)
 	require.NoError(t, err)
 	require.True(t, exists, "a dry run must remove nothing")
@@ -221,6 +224,7 @@ touch -d "@$(( $(date +%%s) - 1728000 ))" %[2]s/notes.txt
 	section := freshPruneSection(t, out)
 	assert.Contains(t, section, "saved uncommitted edits from feat-dirty")
 	assert.Contains(t, section, "camp project prune --restore feat-dirty")
+	assert.Contains(t, section, "ignored folders not saved: dist/", "fresh has no prompt, so its summary must name what is deleted unsaved")
 
 	exists, err = tc.CheckDirExists(wt)
 	require.NoError(t, err)
