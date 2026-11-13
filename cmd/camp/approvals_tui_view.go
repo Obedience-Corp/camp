@@ -9,32 +9,40 @@ import (
 	"github.com/charmbracelet/lipgloss"
 
 	"github.com/Obedience-Corp/camp/internal/approvals"
+	tuistyles "github.com/Obedience-Corp/camp/internal/intent/tui"
 	"github.com/Obedience-Corp/camp/internal/jobs"
 	"github.com/Obedience-Corp/camp/internal/ui"
 )
 
-// Colour carries one meaning each on this screen: accent marks the selected
-// request, green and red mark the two decisions, warning marks a request that
-// cannot be decided here. Everything else is weight, spacing and position, so
-// the screen reads the same with colour off.
+// The browser is built from what camp's other two-pane browsers use: the
+// shared title style and focus cursor, the machine browser's pane borders and
+// display-width wrapping, and the jobs palette. What is its own is the use of
+// colour for the decisions: green and red mark approve and reject, warning
+// marks a request that cannot be decided here.
 var (
+	apHeading = jobsTitleStyle
 	apTitle   = lipgloss.NewStyle().Foreground(jobsPal.TextPrimary).Bold(true)
 	apText    = jobsPrimary
 	apMuted   = jobsMutedStyle
-	apAccent  = lipgloss.NewStyle().Foreground(jobsPal.Accent).Bold(true)
 	apCommand = lipgloss.NewStyle().Foreground(jobsPal.AccentAlt).Bold(true)
 	apApprove = lipgloss.NewStyle().Foreground(jobsPal.Success).Bold(true)
 	apReject  = lipgloss.NewStyle().Foreground(jobsPal.Error).Bold(true)
 	apWarn    = jobsStallStyle
-	// Frames stay quiet so the accent bar is the only orange on screen.
-	apBorder = lipgloss.NewStyle().Foreground(jobsPal.TextMuted)
 )
 
 const (
 	approvalsReadingWidth = 92
-	apSelGlyph            = "▌ "
-	apKeyGap              = "   "
+	// approvalsPaneRows are the rows a pane adds to its body: two borders and
+	// the title line.
+	approvalsPaneRows = 3
 )
+
+func approvalCursor(selected bool) string {
+	if selected {
+		return tuistyles.FocusCursor() + " "
+	}
+	return tuistyles.EmptyCursor() + " "
+}
 
 type approvalsLayoutMode int
 
@@ -88,12 +96,12 @@ func (m approvalsTUIModel) layout() approvalsLayout {
 			need = max(need, len(approvalRequestLines(row, time.Time{}, l.detailW-4)))
 		}
 		need = max(need, 3*len(m.snap.rows)-1)
-		l.detailH = min(avail, max(need+2, 8))
+		l.detailH = min(avail, max(need+approvalsPaneRows, 8))
 		l.listH = l.detailH
 	default:
 		l.mode = approvalsStacked
-		l.listH = min(max(len(m.snap.rows), 1), 4) + 2
-		l.detailH = min(avail-l.listH, max(need+2, 6))
+		l.listH = min(max(len(m.snap.rows), 1), 4) + approvalsPaneRows
+		l.detailH = min(avail-l.listH, max(need+approvalsPaneRows, 6))
 		if l.detailH < 5 {
 			l.mode = approvalsCompact
 		}
@@ -111,7 +119,7 @@ func (m approvalsTUIModel) requestViewport() (visible, total int) {
 	if l.mode == approvalsCompact || l.detailH == 0 {
 		return 0, 0
 	}
-	return l.detailH - 2, len(approvalRequestLines(row, time.Now(), l.detailW-4))
+	return l.detailH - approvalsPaneRows, len(approvalRequestLines(row, time.Now(), l.detailW-4))
 }
 
 func (m approvalsTUIModel) View() string {
@@ -140,7 +148,7 @@ func (m approvalsTUIModel) browseLines(l approvalsLayout) []string {
 	if m.busy {
 		summary += " · working…"
 	}
-	lines := []string{" " + apTitle.Render("Approvals") + "  " + apMuted.Render(summary)}
+	lines := []string{" " + apHeading.Render("Approvals") + "  " + apMuted.Render(summary)}
 	for _, note := range l.notices {
 		lines = append(lines, " "+apWarn.Render(ui.Truncate(note, l.w-1)))
 	}
@@ -186,7 +194,7 @@ func (m approvalsTUIModel) compactBody(row approvalRow, l approvalsLayout, now t
 	for i := start; i < end; i++ {
 		body = append(body, approvalRowLine(m.snap.rows[i], i == m.cursor, l.w, now))
 	}
-	body = append(body, "", apMuted.Bold(true).Render("Request "+row.ID))
+	body = append(body, "", apHeading.Render("Request "+row.ID))
 	return append(body, approvalRequestLines(row, now, l.w)...)
 }
 
@@ -196,7 +204,7 @@ func (m approvalsTUIModel) listPane(w, h int, roomy bool, now time.Time) []strin
 	total := len(m.snap.rows)
 	capacity := total
 	if h > 0 {
-		capacity = h - 2
+		capacity = h - approvalsPaneRows
 		if roomy {
 			capacity = (capacity + 1) / 3
 		}
@@ -213,21 +221,21 @@ func (m approvalsTUIModel) listPane(w, h int, roomy bool, now time.Time) []strin
 		if i > start {
 			body = append(body, "")
 		}
-		glyph, title := "  ", apText
+		title := apText
 		if selected {
-			glyph, title = apAccent.Render(apSelGlyph), apTitle
+			title = apTitle
 		}
 		meta := apMuted.Render(approvalRowMeta(r, now))
 		if !r.ready.Actionable {
 			meta = apWarn.Render("not actionable here")
 		}
-		body = append(body, glyph+title.Render(ui.Truncate(r.Title, inner-2)), glyph+meta)
+		body = append(body, approvalCursor(selected)+title.Render(ui.Truncate(r.Title, inner-2)), approvalCursor(false)+meta)
 	}
 	foot := ""
 	if end-start < total {
 		foot = fmt.Sprintf("%d–%d of %d", start+1, end, total)
 	}
-	return approvalsPane(fmt.Sprintf("Waiting (%d)", total), foot, body, w, h, apBorder)
+	return approvalsPane(fmt.Sprintf("Waiting (%d)", total), foot, body, w, h, true)
 }
 
 func approvalRowMeta(r approvalRow, now time.Time) string {
@@ -242,9 +250,9 @@ func approvalRowLine(r approvalRow, selected bool, w int, now time.Time) string 
 	if !r.ready.Actionable {
 		meta, metaStyle = "not actionable", apWarn
 	}
-	glyph, titleStyle := "  ", apText
+	glyph, titleStyle := approvalCursor(selected), apText
 	if selected {
-		glyph, titleStyle = apAccent.Render(apSelGlyph), apTitle
+		titleStyle = apTitle
 	}
 	room := w - 2 - 2 - lipgloss.Width(meta)
 	if room < 8 {
@@ -258,12 +266,12 @@ func approvalRowLine(r approvalRow, selected bool, w int, now time.Time) string 
 func (m approvalsTUIModel) requestPane(row approvalRow, w, h int, now time.Time) []string {
 	body := approvalRequestLines(row, now, w-4)
 	foot := ""
-	if visible := h - 2; h > 0 && len(body) > visible {
+	if visible := h - approvalsPaneRows; h > 0 && len(body) > visible {
 		top := min(max(m.scroll, 0), len(body)-visible)
 		foot = fmt.Sprintf("%d–%d of %d lines", top+1, top+visible, len(body))
 		body = body[top : top+visible]
 	}
-	return approvalsPane("Request "+row.ID, foot, body, w, h, apBorder)
+	return approvalsPane("Request "+row.ID, foot, body, w, h, false)
 }
 
 // A label is "Goal:" or "Note 1:" opening a line, not "See https://…".
@@ -320,54 +328,52 @@ func approvalRequestLines(row approvalRow, now time.Time, w int) []string {
 	return lines
 }
 
-// approvalWrap wraps at word boundaries and then splits anything still too
-// long, such as a path, so no text is ever cut off at the pane edge.
+// approvalWrap wraps at word boundaries, keeping a line's indent, and then
+// splits anything still too wide (a path, a URL) with the machine browser's
+// display-width wrap, so no text is ever cut off at the pane edge.
 func approvalWrap(s string, w int) []string {
 	if w <= 0 {
 		return []string{s}
 	}
 	var out []string
 	for _, line := range wrapApprovalText(s, w) {
-		r := []rune(line)
-		for len(r) > w {
-			out = append(out, string(r[:w]))
-			r = r[w:]
+		if lipgloss.Width(line) <= w {
+			out = append(out, line)
+			continue
 		}
-		out = append(out, string(r))
+		out = append(out, hardWrapDisplayWidth(line, w)...)
 	}
 	return out
 }
 
-// approvalsPane draws a titled box exactly w wide. With h > 0 it is exactly h
-// tall; otherwise it is as tall as its body. foot sits in the bottom border.
-func approvalsPane(title, foot string, body []string, w, h int, border lipgloss.Style) []string {
+// approvalsPane draws a pane in the machine browser's style, exactly w wide.
+// Its first row is the title, with note (a count, a scroll range) at the
+// right. With h > 0 it is exactly h tall; otherwise as tall as its body.
+func approvalsPane(title, note string, body []string, w, h int, focused bool) []string {
 	inner := max(w-4, 1)
-	rule := func(n int) string { return border.Render(strings.Repeat("─", max(n, 0))) }
-	title = ui.Truncate(title, max(w-6, 1))
-	top := border.Render("╭─ ") + apMuted.Bold(true).Render(title) + " " + rule(w-5-lipgloss.Width(title)) + border.Render("╮")
-	bottom := border.Render("╰") + rule(w-2) + border.Render("╯")
-	if foot = ui.Truncate(foot, max(w-6, 0)); foot != "" {
-		bottom = border.Render("╰") + rule(w-5-lipgloss.Width(foot)) + " " + apMuted.Render(foot) + " " + border.Render("─╯")
+	head := apHeading.Render(ui.Truncate(title, inner))
+	if gap := inner - lipgloss.Width(head) - lipgloss.Width(note); note != "" && gap >= 2 {
+		head += strings.Repeat(" ", gap) + apMuted.Render(note)
 	}
+	lines := append([]string{head}, body...)
 	if h > 0 {
-		rows := max(h-2, 0)
-		if len(body) > rows {
-			body = body[:rows]
+		rows := max(h-2, 1)
+		if len(lines) > rows {
+			lines = lines[:rows]
 		}
-		for len(body) < rows {
-			body = append(body, "")
+		for len(lines) < rows {
+			lines = append(lines, "")
 		}
 	}
-	out := make([]string, 0, len(body)+2)
-	out = append(out, top)
-	side := border.Render("│")
-	for _, line := range body {
-		line = ui.ClampWidth(line, inner)
-		pad := strings.Repeat(" ", max(inner-lipgloss.Width(line), 0))
-		out = append(out, side+" "+line+pad+" "+side)
+	style := machinePaneBlurred
+	if focused {
+		style = machinePaneFocused
 	}
-	return append(out, bottom)
+	return strings.Split(style.Width(max(w-2, 1)).Render(strings.Join(ui.ClampLines(lines, inner), "\n")), "\n")
 }
+
+// approvalsKeyGap separates key hints the way camp's other browsers do.
+var approvalsKeyGap = apMuted.Render(" · ")
 
 func approvalKeyHint(key, label string, style lipgloss.Style) string {
 	return style.Render(key) + " " + apMuted.Render(label)
@@ -377,21 +383,21 @@ func approvalKeyHint(key, label string, style lipgloss.Style) string {
 func (m approvalsTUIModel) keyBar(w int) string {
 	row, ok := m.selected()
 	if !ok {
-		return " " + approvalKeyHint("r", "refresh", apTitle) + apKeyGap + approvalKeyHint("q", "quit", apTitle)
+		return " " + approvalKeyHint("r", "refresh", apTitle) + approvalsKeyGap + approvalKeyHint("q", "quit", apTitle)
 	}
-	decide := approvalKeyHint("a", "approve", apApprove) + apKeyGap + approvalKeyHint("x", "reject", apReject)
+	decide := approvalKeyHint("a", "approve", apApprove) + approvalsKeyGap + approvalKeyHint("x", "reject", apReject)
 	decideShort := decide
 	if !row.ready.Actionable {
 		decide, decideShort = apWarn.Render("not actionable here"), apWarn.Render("not actionable")
 	}
 	scroll := ""
 	if visible, total := m.requestViewport(); total > visible && visible > 0 {
-		scroll = apKeyGap + approvalKeyHint("pgup/pgdn", "scroll", apTitle)
+		scroll = approvalsKeyGap + approvalKeyHint("pgup/pgdn", "scroll", apTitle)
 	}
-	full := decide + apKeyGap + approvalKeyHint("o", "open document", apTitle) + apKeyGap +
-		approvalKeyHint("↑↓", "select", apTitle) + scroll + apKeyGap +
-		approvalKeyHint("r", "refresh", apTitle) + apKeyGap + approvalKeyHint("q", "quit", apTitle)
-	short := decideShort + apKeyGap + approvalKeyHint("o", "open", apTitle) + apKeyGap + approvalKeyHint("q", "quit", apTitle)
+	full := decide + approvalsKeyGap + approvalKeyHint("o", "open document", apTitle) + approvalsKeyGap +
+		approvalKeyHint("↑↓", "select", apTitle) + scroll + approvalsKeyGap +
+		approvalKeyHint("r", "refresh", apTitle) + approvalsKeyGap + approvalKeyHint("q", "quit", apTitle)
+	short := decideShort + approvalsKeyGap + approvalKeyHint("o", "open", apTitle) + approvalsKeyGap + approvalKeyHint("q", "quit", apTitle)
 	return " " + ui.CollapseHelp(w-1, full, short, decideShort)
 }
 
@@ -400,17 +406,17 @@ func (m approvalsTUIModel) keyBar(w int) string {
 // command, its directory and the keys are never the rows that get cut.
 func approvalsDialog(title string, body, essential []string, keys string, w, h int) []string {
 	framed := w >= 44
-	if framed && h > 0 && len(body)+6 > h {
+	if framed && h > 0 && len(body)+7 > h {
 		framed = false
 	}
 	if !framed {
-		lines := append([]string{apTitle.Render(title)}, essential...)
+		lines := append([]string{apHeading.Render(title)}, essential...)
 		if h > 0 && len(lines) > h-1 {
 			lines = lines[:max(h-1, 0)]
 		}
 		return append(lines, keys)
 	}
-	lines := approvalsPane(title, "", append(append([]string{""}, body...), ""), min(w, 100), 0, apBorder)
+	lines := approvalsPane(title, "", append(append([]string{""}, body...), ""), min(w, 100), 0, true)
 	return append(lines, "", " "+keys)
 }
 
@@ -441,7 +447,7 @@ func (m approvalsTUIModel) reasonLines(w, h int) []string {
 		input = append(input, prefix+apText.Render(l))
 	}
 	body = append(body, input...)
-	keys := approvalKeyHint("enter", "continue", apTitle) + apKeyGap + approvalKeyHint("esc", "cancel", apTitle)
+	keys := approvalKeyHint("enter", "continue", apTitle) + approvalsKeyGap + approvalKeyHint("esc", "cancel", apTitle)
 	return approvalsDialog("Reject "+m.pendingRow.ID, body, input, keys, w, h)
 }
 
@@ -474,6 +480,6 @@ func (m approvalsTUIModel) confirmLines(w, h int) []string {
 	for _, l := range approvalWrap(note, inner) {
 		body = append(body, apText.Render(l))
 	}
-	keys := approvalKeyHint("y", "run it", runStyle) + apKeyGap + approvalKeyHint("n", "cancel", apTitle)
+	keys := approvalKeyHint("y", "run it", runStyle) + approvalsKeyGap + approvalKeyHint("n", "cancel", apTitle)
 	return approvalsDialog(verb+" "+m.pendingRow.ID+"?", body, command, keys, w, h)
 }

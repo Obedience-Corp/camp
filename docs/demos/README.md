@@ -37,6 +37,7 @@ recording is the stable command surface a reader can install. Pass
 | Project link browser | [project-link.tape](project-link.tape) | [project-link.gif](project-link.gif) | (fixture: `fixtures/project-link-fixture.sh`) |
 | Switch selector geometry | [switch-selector.tape](switch-selector.tape) | private gist | (fixture: `fixtures/switch-selector-fixture.sh`) |
 | Deferred jobs browser | [jobs-tui.tape](jobs-tui.tape) | [jobs-tui.gif](jobs-tui.gif) | (fixture: `fixtures/jobs-tui-fixture.sh`) |
+| Approval inbox browser | [approvals-tui.tape](approvals-tui.tape) | [approvals-tui.gif](approvals-tui.gif) | (fixture: `fixtures/approvals-tui-fixture.sh`; needs `fest` on PATH) |
 | Notice browser | [notify-browse.tape](notify-browse.tape) | [notify-browse.gif](notify-browse.gif) | (fixture: `fixtures/notify-fixture.sh`) |
 | Tailscale SSH approval | [machine-tailscale-check.tape](machine-tailscale-check.tape) | private gist | (PR evidence bundle) |
 | OpenSSH login denied | [machine-auth-denied.tape](machine-auth-denied.tape) | private gist | (PR evidence bundle) |
