@@ -197,6 +197,10 @@ func WarnTo(w io.Writer) func(error) {
 	}
 }
 
+// ResolveActor reports who is running the current command, for callers outside
+// this package that record their own ledger events.
+func ResolveActor(ctx context.Context) ledgerkit.Actor { return resolveActor(ctx) }
+
 // resolveActor determines who ran the command. Session is an opaque passthrough
 // from obey when present (D009 Q11); its presence, or a known agent marker,
 // classifies the actor as an agent, else human.
