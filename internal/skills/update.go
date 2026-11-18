@@ -42,6 +42,8 @@ func actionFor(state ShippedState, force bool) FileAction {
 		return ActionUpdate
 	case state == ShippedSymlink:
 		return ActionPreserve
+	case state == ShippedDeclined, state == ShippedAhead, state == ShippedProviderMissing:
+		return ActionKeep
 	case state.Preserved() && force:
 		return ActionReplace
 	case state.Preserved():
@@ -57,8 +59,15 @@ type UpdateOptions struct {
 	Root string
 	// Shipped is the rendered set of shipped skill files.
 	Shipped []ShippedFile
-	// Slugs limits the update to these bundles; empty means every shipped bundle.
+	// Plugins are validated plugin bundles; only those named in Slugs are
+	// written.
+	Plugins []PluginBundle
+	// Slugs limits the update to these bundles; empty means every bundle camp
+	// ships, never a plugin bundle.
 	Slugs []string
+	// Auto marks an automatic request: a declined plugin bundle is left alone
+	// and Force is refused.
+	Auto bool
 	// Force replaces modified and unknown files after securing an undo.
 	Force bool
 	// DryRun classifies and reports without writing anything.
@@ -95,6 +104,8 @@ type UpdateResult struct {
 	Undo            []Undo
 	ManifestWritten bool
 	DryRun          bool
+	// Plugins is how the plugin rules decided each plugin bundle in scope.
+	Plugins map[string]PluginNote
 }
 
 // Update brings the shipped skill bundles under Root to the shipped content:
@@ -107,22 +118,22 @@ func Update(ctx context.Context, opts UpdateOptions) (*UpdateResult, error) {
 	if err := ctx.Err(); err != nil {
 		return nil, err
 	}
-	scope, err := scopeBundles(opts.Shipped, opts.Slugs)
+	if opts.Auto && opts.Force {
+		return nil, camperrors.New("an automatic update never replaces local changes; --auto cannot be combined with --force")
+	}
+	scope, err := scopeBundles(opts.Shipped, opts.Plugins, opts.Slugs)
 	if err != nil {
 		return nil, err
 	}
+	plugins := scopedPlugins(opts.Plugins, scope)
 	skillsDir := filepath.Join(opts.Root, campaign.CampaignDir, SkillsSubdir)
-	inv, err := ClassifyCamp(ctx, opts.Root, opts.Shipped)
+	inv, err := ClassifyCamp(ctx, opts.Root, withPluginFiles(opts.Shipped, plugins))
 	if err != nil {
 		return nil, err
 	}
 
-	res := &UpdateResult{DryRun: opts.DryRun}
-	for _, f := range inv.Files {
-		if scope[f.Bundle] {
-			res.Files = append(res.Files, FileOutcome{FileStatus: f, Action: actionFor(f.State, opts.Force)})
-		}
-	}
+	res := &UpdateResult{DryRun: opts.DryRun, Plugins: inv.applyPluginRules(plugins, opts.Auto)}
+	res.Files = plannedOutcomes(inv, scope, opts.Force)
 	if opts.DryRun {
 		return res, nil
 	}
@@ -168,7 +179,24 @@ func Update(ctx context.Context, opts UpdateOptions) (*UpdateResult, error) {
 	return res, nil
 }
 
-func scopeBundles(shipped []ShippedFile, slugs []string) (map[string]bool, error) {
+// plannedOutcomes is what Update does with each file in scope. A plugin file
+// camp could not inspect is left alone, even with force.
+func plannedOutcomes(inv *Inventory, scope map[string]bool, force bool) []FileOutcome {
+	var outcomes []FileOutcome
+	for _, f := range inv.Files {
+		if !scope[f.Bundle] {
+			continue
+		}
+		action := actionFor(f.State, force)
+		if f.Problem != "" {
+			action = ActionPreserve
+		}
+		outcomes = append(outcomes, FileOutcome{FileStatus: f, Action: action})
+	}
+	return outcomes
+}
+
+func scopeBundles(shipped []ShippedFile, plugins []PluginBundle, slugs []string) (map[string]bool, error) {
 	all := ShippedSlugs(shipped)
 	if len(slugs) == 0 {
 		slugs = all
@@ -176,16 +204,43 @@ func scopeBundles(shipped []ShippedFile, slugs []string) (map[string]bool, error
 	scope := make(map[string]bool, len(slugs))
 	var unknown []string
 	for _, slug := range slugs {
-		if !slices.Contains(all, slug) {
+		offered := slices.ContainsFunc(plugins, func(b PluginBundle) bool { return b.Name == slug })
+		if !slices.Contains(all, slug) && !offered {
 			unknown = append(unknown, slug)
 		}
 		scope[slug] = true
 	}
 	if len(unknown) > 0 {
-		return nil, camperrors.Newf("unknown shipped skill bundle %s; shipped bundles: %s",
-			strings.Join(unknown, ", "), strings.Join(all, ", "))
+		return nil, UnknownBundleError(unknown, all)
 	}
 	return scope, nil
+}
+
+// UnknownBundleError is the refusal for named bundles camp does not ship.
+func UnknownBundleError(unknown, shipped []string) error {
+	return camperrors.Newf("unknown shipped skill bundle %s; shipped bundles: %s",
+		strings.Join(unknown, ", "), strings.Join(shipped, ", "))
+}
+
+func scopedPlugins(plugins []PluginBundle, scope map[string]bool) []PluginBundle {
+	var named []PluginBundle
+	for _, b := range plugins {
+		if scope[b.Name] {
+			named = append(named, b)
+		}
+	}
+	return named
+}
+
+func withPluginFiles(shipped []ShippedFile, plugins []PluginBundle) []ShippedFile {
+	if len(plugins) == 0 {
+		return shipped
+	}
+	files := slices.Clone(shipped)
+	for _, b := range plugins {
+		files = append(files, b.Files...)
+	}
+	return files
 }
 
 func writeShipped(skillsDir string, f ShippedFile) error {

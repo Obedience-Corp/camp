@@ -197,7 +197,7 @@ func TestManifestStale(t *testing.T) {
 }
 
 func TestScopeBundles_UnknownSlugListsShippedBundles(t *testing.T) {
-	_, err := scopeBundles(shippedFixture(), []string{"alpha", "nope"})
+	_, err := scopeBundles(shippedFixture(), nil, []string{"alpha", "nope"})
 	if err == nil {
 		t.Fatal("scopeBundles() accepted an unknown slug")
 	}
@@ -207,7 +207,7 @@ func TestScopeBundles_UnknownSlugListsShippedBundles(t *testing.T) {
 		}
 	}
 
-	scope, err := scopeBundles(shippedFixture(), nil)
+	scope, err := scopeBundles(shippedFixture(), nil, nil)
 	if err != nil || len(scope) != 5 {
 		t.Fatalf("scopeBundles(nil) = %v, %v; want every shipped bundle", scope, err)
 	}

@@ -1,0 +1,1 @@
+{"schemaVersion":"camp.app/v1","requestId":"01900000-0000-7000-8000-000000000000","ok":false,"outcome":"rejected","target":null,"revision":null,"persistence":"notApplicable","data":null,"error":{"code":"INVALID_ARGUMENT","message":"unknown command \"skill\" for \"camp-app\"","retryable":false,"details":null}}

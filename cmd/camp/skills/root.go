@@ -21,6 +21,7 @@ Only git checkouts are projected (directory must contain .git). A loose git root
 at projects/worktrees/<name>/ is accepted; package subdirs under it are not.
 
 Commands:
+  decline  Remove a plugin skill bundle and keep it out of this camp
   link     Project per-skill symlinks into a tool-specific skills directory
   status   Show projection status and shipped bundle states
   unlink   Remove projected skill symlinks
