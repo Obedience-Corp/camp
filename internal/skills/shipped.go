@@ -24,6 +24,10 @@ type ShippedFile struct {
 	Path string
 	// Content is the rendered file content.
 	Content []byte
+	// Plugin names the plugin that offers this file; empty for camp's own.
+	Plugin string
+	// PluginVersion is the version of the plugin that offers this file.
+	PluginVersion string
 }
 
 // RelPath returns the camp-root-relative slash path of the file.

@@ -86,7 +86,7 @@ var containerFSPackages = []containerFSPackage{
 	// and the index scan adds worktrees on top of them.
 	{ImportPath: "./internal/dirlink", MinTests: 3},
 	{ImportPath: "./internal/project", MinTests: 5},
-	{ImportPath: "./internal/skills", MinTests: 12, TestPattern: "^Test(SkillProjectionDirectoryLinkReadback|GrokSkillsAliasDirectoryLink|UpdateCancelStopsAfterFileInFlight|UpdateForceOutsideGitBacksUpBeforeReplacing|UpdateLeavesSymlinkedFilesAlone|GitProvenanceWrittenOnce|GitProvenanceCancelledScanIsNotKept|GitProvenanceUserFirstCommitOffersNoEvidence|GitProvenanceRepairBeforeSelectiveStagingOffersNoEvidence|GitProvenanceCampBelowGitRoot|GitProvenanceWithoutUsableHistoryOffersNoEvidence|UpdateReplacesGitEvidenceFileWithUndo)$"},
+	{ImportPath: "./internal/skills", MinTests: 32, TestPattern: "^Test(DeclineLeavesFoldersOutsideTheCampAlone|DeclineFailureAfterTheBackupKeepsTheRestore|DeclineCutShortAfterEachStepIsDeclinedAndResumes|UpdatePluginBundleWithAnOddShapeIsKept|DeclineResumesFromEveryIntermediateState|DeclineRefusesOddShapesPrecisely|UpdateWithoutPluginsKeepsPluginRecordsAndWritesLikeATwin|UpdatePluginBundleAddsThenUpdatesAndRecordsTheWriter|UpdatePluginBundlePreservesEditAndForceBacksUp|UpdatePluginBundleAheadWritesNothingEvenForced|UpdatePluginBundleAutoLeavesDeclinedAlone|UpdatePluginBundleNeverWritesThroughASymlink|UpdateWithPluginsButNoSlugsRefreshesOnlyCampBundles|DeclineRemovesBundleAndLinksAndRecordsIt|DeclineKeepsForeignEntries|DeclineRefusesAnEditUnlessForcedAndBacksUpUntrackedFiles|DeclineRefusesSymlinksEvenForced|DeclineWithoutABundleOnlyRecordsIt|LinkBundlesFolderCases|LinkBundlesLeavesUnmanagedFoldersAndConflicts|SkillProjectionDirectoryLinkReadback|GrokSkillsAliasDirectoryLink|UpdateCancelStopsAfterFileInFlight|UpdateForceOutsideGitBacksUpBeforeReplacing|UpdateLeavesSymlinkedFilesAlone|GitProvenanceWrittenOnce|GitProvenanceCancelledScanIsNotKept|GitProvenanceUserFirstCommitOffersNoEvidence|GitProvenanceRepairBeforeSelectiveStagingOffersNoEvidence|GitProvenanceCampBelowGitRoot|GitProvenanceWithoutUsableHistoryOffersNoEvidence|UpdateReplacesGitEvidenceFileWithUndo)$"},
 	{ImportPath: "./internal/nav/index", MinTests: 2},
 	// The initial-commit tests git-init a campaign and commit its scaffold.
 	{ImportPath: "./cmd/camp/init", MinTests: 3},
@@ -98,8 +98,9 @@ var containerFSPackages = []containerFSPackage{
 	{ImportPath: "./internal/notice", MinTests: 21},
 	// Quest workspace lock/push mutate ui-state.json under OS flock.
 	{ImportPath: "./internal/quest/workspace", MinTests: 5},
-	// Plugin discovery/execute fixtures + Interrupt-first cancel (Linux containers).
-	{ImportPath: "./internal/plugin", MinTests: 8},
+	// Plugin discovery/execute fixtures + Interrupt-first cancel (Linux containers),
+	// and the bounded Output call camp uses to ask camp-app for skill bundles.
+	{ImportPath: "./internal/plugin", MinTests: 15},
 	// Settings documents stage a disposable camp. Symlink swaps stay in this lane.
 	{ImportPath: "./internal/settings", MinTests: 44},
 	// The dungeon explorer feed, text sanitizing, cache round trip, and

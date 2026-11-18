@@ -8911,6 +8911,7 @@ Only git checkouts are projected (directory must contain .git). A loose git root
 at projects/worktrees/<name>/ is accepted; package subdirs under it are not.
 
 Commands:
+  decline  Remove a plugin skill bundle and keep it out of this camp
   link     Project per-skill symlinks into a tool-specific skills directory
   status   Show projection status and shipped bundle states
   unlink   Remove projected skill symlinks
@@ -8933,6 +8934,51 @@ camp skills [flags]
 
 ```
   -h, --help   help for skills
+```
+
+### Options inherited from parent commands
+
+```
+      --no-color   disable colored output
+```
+---
+
+## camp skills decline
+
+Remove a plugin skill bundle and keep it out of this camp
+
+### Synopsis
+
+Remove a skill bundle a plugin offered, such as festival-app from camp-app,
+together with the links camp projected for it, and record in
+.campaign/skills/.shipped.yaml that this camp declined it. The record travels
+with the camp, so an automatic request ('camp skills update --auto') never adds
+the bundle again, on any machine. Naming it in 'camp skills update <slug>'
+adds it back.
+
+A bundle with files camp did not write is refused unless --force, which first
+secures an undo: 'git checkout' when the bundle is committed and clean,
+otherwise a copy under .campaign/skills/.backup/. A bundle that is, or holds, a
+symlink is always refused. Bundles camp ships cannot be declined.
+
+```
+camp skills decline <slug> [flags]
+```
+
+### Examples
+
+```
+  camp skills decline festival-app          Remove the Festival app skill from this camp
+  camp skills decline festival-app --force  Remove it even though it was edited
+  camp skills decline festival-app --json   Machine-readable result
+```
+
+### Options
+
+```
+  -f, --force   Also remove a bundle with local changes, after securing an undo
+  -h, --help    help for decline
+      --json    Print one result as JSON
 ```
 
 ### Options inherited from parent commands
@@ -9111,6 +9157,21 @@ unchanged, otherwise a copy of the replaced files under .campaign/skills/.backup
 
 Files camp does not ship, such as references/ or local bundles, are never touched.
 
+A plugin can offer skill bundles too. Naming one, such as festival-app, asks
+the camp-app plugin on PATH for it ('camp-app skill --json', with a 5 second
+limit) and writes it the same way, recording the camp-app version that wrote
+it. camp-app is asked only when a request names a bundle camp does not ship;
+a refresh with no slug never asks it. A bundle written by a newer camp-app
+than this machine has is left alone (ahead). 'camp skills decline <slug>'
+removes a plugin bundle and keeps it out of this camp.
+
+  --auto   an automatic request: adds or refreshes, leaves a declined bundle
+           alone, cannot be combined with --force, and never fails because
+           camp-app is missing or too old
+  --link   then links the named bundles into .claude/skills and .agents/skills
+           where those folders already hold camp's links; never creates one
+  --json   prints one result, schema skills-update/v1alpha1
+
 ```
 camp skills update [slug...] [flags]
 ```
@@ -9122,14 +9183,20 @@ camp skills update [slug...] [flags]
   camp skills update --dry-run                Show what would change
   camp skills update campaign-commit          Refresh one bundle
   camp skills update --force campaign-commit  Replace local changes in one bundle
+  camp skills update festival-app             Add or refresh the Festival app skill from camp-app
+  camp skills update festival-app --auto --link --json
+                                              What the Festival app runs on camp open
 ```
 
 ### Options
 
 ```
+      --auto      Automatic request: leave declined bundles alone; refuses --force
   -n, --dry-run   Show what would change without writing anything
   -f, --force     Also replace locally modified files, after printing an undo
   -h, --help      help for update
+      --json      Print one result as JSON
+      --link      Link the named bundles into tool folders that already hold camp's links
 ```
 
 ### Options inherited from parent commands

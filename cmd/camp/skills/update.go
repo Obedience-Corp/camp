@@ -1,15 +1,23 @@
 package skills
 
 import (
+	"context"
 	"fmt"
-	"io"
+	"path/filepath"
 
 	"github.com/Obedience-Corp/camp/internal/campaign"
+	camperrors "github.com/Obedience-Corp/camp/internal/errors"
+	"github.com/Obedience-Corp/camp/internal/jsoncontract"
 	"github.com/Obedience-Corp/camp/internal/scaffold"
 	intskills "github.com/Obedience-Corp/camp/internal/skills"
 	"github.com/Obedience-Corp/camp/internal/version"
 	"github.com/spf13/cobra"
 )
+
+// SkillsUpdateJSONVersion is the schema of `camp skills update --json`.
+const SkillsUpdateJSONVersion = "skills-update/v1alpha1"
+
+var skillsUpdateJSON bool
 
 var skillsUpdateCmd = &cobra.Command{
 	Use:   "update [slug...]",
@@ -39,17 +47,35 @@ one-command undo per bundle and prints it:
 'git checkout HEAD -- .campaign/skills/<slug>' when the bundle is committed and
 unchanged, otherwise a copy of the replaced files under .campaign/skills/.backup/.
 
-Files camp does not ship, such as references/ or local bundles, are never touched.`,
+Files camp does not ship, such as references/ or local bundles, are never touched.
+
+A plugin can offer skill bundles too. Naming one, such as festival-app, asks
+the camp-app plugin on PATH for it ('camp-app skill --json', with a 5 second
+limit) and writes it the same way, recording the camp-app version that wrote
+it. camp-app is asked only when a request names a bundle camp does not ship;
+a refresh with no slug never asks it. A bundle written by a newer camp-app
+than this machine has is left alone (ahead). 'camp skills decline <slug>'
+removes a plugin bundle and keeps it out of this camp.
+
+  --auto   an automatic request: adds or refreshes, leaves a declined bundle
+           alone, cannot be combined with --force, and never fails because
+           camp-app is missing or too old
+  --link   then links the named bundles into .claude/skills and .agents/skills
+           where those folders already hold camp's links; never creates one
+  --json   prints one result, schema skills-update/v1alpha1`,
 	Example: `  camp skills update                          Refresh every shipped bundle
   camp skills update --dry-run                Show what would change
   camp skills update campaign-commit          Refresh one bundle
-  camp skills update --force campaign-commit  Replace local changes in one bundle`,
+  camp skills update --force campaign-commit  Replace local changes in one bundle
+  camp skills update festival-app             Add or refresh the Festival app skill from camp-app
+  camp skills update festival-app --auto --link --json
+                                              What the Festival app runs on camp open`,
 	Args: cobra.ArbitraryArgs,
 	Annotations: map[string]string{
 		"agent_allowed": "true",
 		"agent_reason":  "Non-interactive; preserves local edits unless --force, which prints an undo",
 	},
-	RunE: runSkillsUpdate,
+	RunE: jsoncontract.RunE(SkillsUpdateJSONVersion, func() bool { return skillsUpdateJSON }, runSkillsUpdate),
 }
 
 func init() {
@@ -58,12 +84,22 @@ func init() {
 	flags := skillsUpdateCmd.Flags()
 	flags.BoolP("force", "f", false, "Also replace locally modified files, after printing an undo")
 	flags.BoolP("dry-run", "n", false, "Show what would change without writing anything")
+	flags.Bool("auto", false, "Automatic request: leave declined bundles alone; refuses --force")
+	flags.Bool("link", false, "Link the named bundles into tool folders that already hold camp's links")
+	flags.BoolVar(&skillsUpdateJSON, "json", false, "Print one result as JSON")
+	skillsUpdateCmd.SetFlagErrorFunc(jsoncontract.FlagErrorFunc(SkillsUpdateJSONVersion, func() bool { return skillsUpdateJSON }))
 }
 
 func runSkillsUpdate(cmd *cobra.Command, args []string) error {
 	ctx := cmd.Context()
-	force, _ := cmd.Flags().GetBool("force")
-	dryRun, _ := cmd.Flags().GetBool("dry-run")
+	req := updateRequest{args: args}
+	req.force, _ = cmd.Flags().GetBool("force")
+	req.dryRun, _ = cmd.Flags().GetBool("dry-run")
+	req.auto, _ = cmd.Flags().GetBool("auto")
+	link, _ := cmd.Flags().GetBool("link")
+	if req.auto && req.force {
+		return usageError(cmd, skillsUpdateJSON, "--auto", "--auto cannot be combined with --force: an automatic request never replaces local changes")
+	}
 
 	root, err := campaign.DetectCached(ctx)
 	if err != nil {
@@ -73,89 +109,63 @@ func runSkillsUpdate(cmd *cobra.Command, args []string) error {
 	if err != nil {
 		return err
 	}
-
-	res, err := intskills.Update(ctx, intskills.UpdateOptions{
-		Root:        root,
-		Shipped:     shipped,
-		Slugs:       args,
-		Force:       force,
-		DryRun:      dryRun,
-		CampVersion: version.Version,
-	})
-	if res != nil {
-		if printErr := printSkillsUpdate(cmd.OutOrStdout(), res); printErr != nil && err == nil {
-			err = printErr
-		}
+	core := updateCore{sources: campPlanSources(), update: intskills.Update}
+	plan, res, err := core.run(ctx, root, shipped, req)
+	var links []intskills.BundleLink
+	if err == nil && link {
+		skillsDir := filepath.Join(root, campaign.CampaignDir, intskills.SkillsSubdir)
+		links, err = intskills.LinkBundles(root, skillsDir, linkSlugs(skillsDir, args, res, plan), req.dryRun)
+	}
+	if res == nil || (skillsUpdateJSON && err != nil) {
+		return err
+	}
+	out := updateOutput{res: res, plan: plan, links: links, link: link}
+	if printErr := out.print(cmd.OutOrStdout(), cmd.ErrOrStderr(), skillsUpdateJSON); printErr != nil && err == nil {
+		err = printErr
 	}
 	return err
 }
 
-func printSkillsUpdate(out io.Writer, res *intskills.UpdateResult) error {
-	var lines []string
-	current, added := 0, false
-	for _, f := range res.Files {
-		switch {
-		case f.Action == intskills.ActionKeep:
-			current++
-		case f.State == intskills.ShippedSymlink:
-			lines = append(lines, fmt.Sprintf("left %s alone: it is a symlink, and camp never replaces symlinked skill files", f.RelPath()))
-		case f.Action == intskills.ActionPreserve:
-			lines = append(lines, fmt.Sprintf("preserved %s (%s); run 'camp skills update --force %s' to replace it",
-				f.RelPath(), stateNote(f.FileStatus), f.Bundle))
-		case res.DryRun:
-			lines = append(lines, fmt.Sprintf("would %s %s (%s)", f.Action, f.RelPath(), stateNote(f.FileStatus)))
-		case f.Written:
-			lines = append(lines, fmt.Sprintf("%s %s (%s)", pastTense(f.Action), f.RelPath(), stateNote(f.FileStatus)))
-			added = added || f.Action == intskills.ActionAdd
-		}
-	}
-	for _, u := range res.Undo {
-		if u.BackupDir != "" {
-			lines = append(lines, fmt.Sprintf("backed up replaced %s files to %s", u.Bundle, u.BackupDir))
-		}
-		lines = append(lines, fmt.Sprintf("undo %s: %s (camp skills status then shows %s as modified)", u.Bundle, u.Command, u.Bundle))
-	}
-	lines = append(lines, fmt.Sprintf("%d file(s) already current", current))
-	switch {
-	case res.DryRun:
-		lines = append(lines, "dry run: nothing written")
-	case res.ManifestWritten:
-		lines = append(lines, "recorded .campaign/skills/"+intskills.ManifestFileName)
-	}
-	if added {
-		lines = append(lines, "run 'camp skills link' to project added bundles into tool skill directories")
-	}
-	for _, line := range lines {
-		if _, err := fmt.Fprintln(out, line); err != nil {
-			return err
-		}
-	}
-	return nil
+// updateRequest is one `camp skills update` invocation.
+type updateRequest struct {
+	args                []string
+	auto, force, dryRun bool
 }
 
-func pastTense(a intskills.FileAction) string {
-	switch a {
-	case intskills.ActionAdd:
-		return "added"
-	case intskills.ActionUpdate:
-		return "updated"
-	default:
-		return "replaced"
-	}
+// updateCore plans a request and runs Update with the scope it settles on.
+// Its sources and its update function are dependencies, so the decision of
+// what Update gets, and whether it runs at all, is testable without a camp.
+type updateCore struct {
+	sources planSources
+	update  func(context.Context, intskills.UpdateOptions) (*intskills.UpdateResult, error)
 }
 
-func stateNote(f intskills.FileStatus) string {
-	switch f.State {
-	case intskills.ShippedMissing:
-		return "missing"
-	case intskills.ShippedOutdated:
-		if f.GitEvidence {
-			return "unchanged since camp wrote it, per git history"
-		}
-		return "outdated"
-	case intskills.ShippedModified:
-		return "changed locally"
-	default:
-		return "differs, no record or git history of what camp shipped"
+func (c updateCore) run(ctx context.Context, root string, shipped []intskills.ShippedFile, req updateRequest) (pluginPlan, *intskills.UpdateResult, error) {
+	plan, err := planPluginSlugs(ctx, c.sources, root, shipped, req.args, req.auto)
+	if err != nil {
+		return plan, nil, err
 	}
+	slugs, run := updateScope(req.args, plan)
+	if !run {
+		return plan, &intskills.UpdateResult{DryRun: req.dryRun}, nil
+	}
+	res, err := c.update(ctx, intskills.UpdateOptions{
+		Root: root, Shipped: shipped, Plugins: plan.bundles, Slugs: slugs,
+		Auto: req.auto, Force: req.force, DryRun: req.dryRun, CampVersion: version.Version,
+	})
+	return plan, res, err
+}
+
+// usageError refuses an invocation shape with exit code 2, as a JSON
+// envelope when asked for JSON.
+func usageError(cmd *cobra.Command, asJSON bool, field, message string) error {
+	err := camperrors.NewValidation(field, message, nil)
+	if asJSON {
+		return err
+	}
+	cmd.SilenceUsage = true
+	if _, printErr := fmt.Fprintln(cmd.ErrOrStderr(), "Error: "+message); printErr != nil {
+		return printErr
+	}
+	return camperrors.NewCommand(cmd.CommandPath(), 2, "", err)
 }

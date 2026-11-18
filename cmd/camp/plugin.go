@@ -35,7 +35,10 @@ func dispatchPlugin(ctx context.Context) error {
 	}
 
 	// Delegate only an explicitly addressed plugin completion. Ordinary Camp
-	// commands never inspect or start a desktop integration.
+	// commands never inspect or start a desktop integration. camp calls
+	// camp-app itself only for a user action: terminal hops, quest create
+	// --open, and 'camp skills update <slug>' or 'camp skills decline <slug>'
+	// naming a plugin skill bundle, which run 'camp-app skill --json'.
 	if name == "__complete" || name == "__completeNoDesc" {
 		if argIdx+1 >= len(os.Args) {
 			return nil

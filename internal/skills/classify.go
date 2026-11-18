@@ -34,6 +34,14 @@ const (
 	// ShippedSymlink means the file, or a directory above it inside the
 	// bundle, is a symlink whose content differs; camp never writes through it.
 	ShippedSymlink ShippedState = "symlink"
+	// ShippedDeclined means this camp declined the plugin bundle on purpose.
+	ShippedDeclined ShippedState = "declined"
+	// ShippedProviderMissing means the camp records the plugin bundle and its
+	// plugin is not installed here or offers no skills camp reads.
+	ShippedProviderMissing ShippedState = "provider-missing"
+	// ShippedAhead means a newer plugin version than this machine has wrote
+	// the plugin bundle, so this machine leaves it alone.
+	ShippedAhead ShippedState = "ahead"
 )
 
 // Preserved reports whether an update without --force leaves the file alone.
@@ -43,6 +51,12 @@ func (s ShippedState) Preserved() bool {
 
 func (s ShippedState) rank() int {
 	switch s {
+	case ShippedDeclined:
+		return 8
+	case ShippedProviderMissing:
+		return 7
+	case ShippedAhead:
+		return 6
 	case ShippedModified:
 		return 5
 	case ShippedUnknown:
@@ -65,6 +79,10 @@ type FileStatus struct {
 	// GitEvidence marks an outdated file the manifest does not record, shown
 	// unchanged since camp wrote it by git history alone.
 	GitEvidence bool
+	// Problem says why a plugin file could not be inspected, such as its
+	// bundle being a file or the file being a folder. Such a file is unknown
+	// and left alone, even with --force.
+	Problem string
 }
 
 // BundleStatus is the aggregate state of one shipped bundle.
@@ -78,6 +96,11 @@ type Inventory struct {
 	Files []FileStatus
 	// Manifest is the recorded manifest, nil when the camp has none.
 	Manifest *Manifest
+	// pluginDirs holds each plugin bundle the manifest records whose
+	// directory exists in the camp.
+	pluginDirs map[string]bool
+	// plugins holds the plugin bundles classified in this run.
+	plugins map[string]pluginRun
 }
 
 // ClassifyCamp classifies the shipped skill files of the camp at root, with
@@ -101,11 +124,15 @@ func Classify(ctx context.Context, skillsFS fs.FS, shipped []ShippedFile, prov P
 		return nil, err
 	}
 	inv := &Inventory{Manifest: manifest, Files: make([]FileStatus, 0, len(shipped))}
+	inv.pluginDirs = presentPluginDirs(skillsFS, manifest)
 	for _, f := range shipped {
 		if err := ctx.Err(); err != nil {
 			return nil, err
 		}
 		status, err := classifyFile(ctx, skillsFS, manifest, prov, f)
+		if err != nil && f.Plugin != "" && ctx.Err() == nil {
+			status, err = FileStatus{ShippedFile: f, State: ShippedUnknown, Problem: pluginProblem(skillsFS, f, err)}, nil
+		}
 		if err != nil {
 			return nil, err
 		}
@@ -116,6 +143,10 @@ func Classify(ctx context.Context, skillsFS fs.FS, shipped []ShippedFile, prov P
 
 func classifyFile(ctx context.Context, skillsFS fs.FS, manifest *Manifest, prov Provenance, f ShippedFile) (FileStatus, error) {
 	status := FileStatus{ShippedFile: f}
+	if f.Plugin != "" {
+		// Git history shows what camp init wrote, never what a plugin wrote.
+		prov = nil
+	}
 	name := f.Bundle + "/" + f.Path
 	linked, err := throughSymlink(skillsFS, name)
 	if errors.Is(err, fs.ErrNotExist) {
@@ -166,6 +197,41 @@ func classifyUnrecorded(ctx context.Context, prov Provenance, status FileStatus)
 	return status, nil
 }
 
+// presentPluginDirs reports which recorded plugin bundles still have a
+// directory. A directory that cannot be inspected counts as present, so its
+// record is kept and an unreadable plugin bundle never fails a camp update.
+// pluginProblem names what is at a plugin file's path that camp cannot read.
+func pluginProblem(skillsFS fs.FS, f ShippedFile, err error) string {
+	if info, statErr := fs.Lstat(skillsFS, f.Bundle); statErr == nil && !info.IsDir() {
+		return shippedSkillsPrefix + f.Bundle + " is a file, not a folder"
+	}
+	if info, statErr := fs.Lstat(skillsFS, f.Bundle+"/"+f.Path); statErr == nil && info.IsDir() {
+		return f.RelPath() + " is a folder, not a file"
+	}
+	cause := err
+	if inner := errors.Unwrap(err); inner != nil {
+		cause = inner
+	}
+	return f.RelPath() + " cannot be read: " + cause.Error()
+}
+
+func presentPluginDirs(skillsFS fs.FS, manifest *Manifest) map[string]bool {
+	present := make(map[string]bool)
+	for slug := range manifest.providers() {
+		if !fs.ValidPath(slug) || strings.Contains(slug, "/") {
+			continue
+		}
+		info, err := fs.Stat(skillsFS, slug)
+		switch {
+		case err == nil:
+			present[slug] = info.IsDir()
+		case !errors.Is(err, fs.ErrNotExist):
+			present[slug] = true
+		}
+	}
+	return present
+}
+
 func throughSymlink(skillsFS fs.FS, name string) (bool, error) {
 	parts := strings.Split(name, "/")
 	for i := range parts {
@@ -201,10 +267,14 @@ func (inv *Inventory) Bundles() []BundleStatus {
 
 // NextManifest returns the manifest to record once every file in written holds
 // its shipped content: current and written files record the shipped hash and
-// every other file keeps its previous record, if any.
+// every other file keeps its previous record, if any. A plugin bundle's record
+// is kept while its directory exists or it is declined, whether or not its
+// plugin is installed; a bundle camp no longer ships is dropped.
 func (inv *Inventory) NextManifest(campVersion string, written map[string]bool) *Manifest {
 	next := &Manifest{SchemaVersion: ManifestSchemaVersion, CampVersion: campVersion}
+	classified := make(map[string]bool)
 	for _, f := range inv.Files {
+		classified[f.Bundle] = true
 		if f.State == ShippedCurrent || written[f.RelPath()] {
 			next.set(f.Bundle, f.Path, f.Hash())
 			continue
@@ -213,7 +283,29 @@ func (inv *Inventory) NextManifest(campVersion string, written map[string]bool) 
 			next.set(f.Bundle, f.Path, hash)
 		}
 	}
+	for slug, run := range inv.plugins {
+		if rec, ok := inv.pluginRecord(slug, run, written); ok {
+			next.setProvider(slug, rec)
+		}
+	}
+	inv.carryPluginRecords(next, classified)
 	return next
+}
+
+// carryPluginRecords copies forward the plugin bundles this run did not
+// classify, with any hashes they have.
+func (inv *Inventory) carryPluginRecords(next *Manifest, classified map[string]bool) {
+	for slug, rec := range inv.Manifest.providers() {
+		if classified[slug] || (!rec.Declined && !inv.pluginDirs[slug]) {
+			continue
+		}
+		next.setProvider(slug, rec)
+		// A declined bundle normally has no hashes; a decline cut short keeps
+		// them until its folder is gone, and they must survive a rewrite.
+		for rel, hash := range inv.Manifest.Bundles[slug] {
+			next.set(slug, rel, hash)
+		}
+	}
 }
 
 // ManifestStale reports whether an update without --force would record

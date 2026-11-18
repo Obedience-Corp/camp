@@ -27,6 +27,45 @@ type Manifest struct {
 	SchemaVersion string                       `yaml:"schema_version"`
 	CampVersion   string                       `yaml:"camp_version"`
 	Bundles       map[string]map[string]string `yaml:"bundles"`
+	// Providers names the plugin that wrote each plugin bundle, or records that
+	// this camp declined it. A bundle without an entry came from camp.
+	Providers ProviderRecords `yaml:"providers,omitempty"`
+}
+
+// ProviderRecords maps a plugin bundle to its record. It is read leniently,
+// entry by entry: an entry that does not decode is skipped and every other
+// entry kept, and a value that is not a mapping counts as no records. A hand
+// edit never breaks a command that only refreshes camp's own bundles, and one
+// bad entry never erases a decline beside it.
+type ProviderRecords map[string]ProviderRecord
+
+// UnmarshalYAML implements yaml.Unmarshaler.
+func (p *ProviderRecords) UnmarshalYAML(value *yaml.Node) error {
+	*p = nil
+	if value.Kind != yaml.MappingNode {
+		return nil
+	}
+	records := make(ProviderRecords)
+	for i := 0; i+1 < len(value.Content); i += 2 {
+		var slug string
+		var rec ProviderRecord
+		if value.Content[i].Decode(&slug) != nil || value.Content[i+1].Decode(&rec) != nil {
+			continue
+		}
+		records[slug] = rec
+	}
+	if len(records) > 0 {
+		*p = records
+	}
+	return nil
+}
+
+// ProviderRecord is the plugin that offered a bundle and the plugin version
+// that last wrote it. A declined bundle keeps its record and has no files.
+type ProviderRecord struct {
+	Plugin   string `yaml:"plugin"`
+	Version  string `yaml:"version,omitempty"`
+	Declined bool   `yaml:"declined,omitempty"`
 }
 
 func (m *Manifest) recorded(bundle, rel string) (string, bool) {
@@ -38,9 +77,10 @@ func (m *Manifest) recorded(bundle, rel string) (string, bool) {
 }
 
 func (m *Manifest) sameRecords(other *Manifest) bool {
-	return maps.EqualFunc(m.records(), other.records(), func(a, b map[string]string) bool {
+	sameBundles := maps.EqualFunc(m.records(), other.records(), func(a, b map[string]string) bool {
 		return maps.Equal(a, b)
 	})
+	return sameBundles && maps.Equal(m.providers(), other.providers())
 }
 
 func (m *Manifest) records() map[string]map[string]string {
@@ -48,6 +88,20 @@ func (m *Manifest) records() map[string]map[string]string {
 		return nil
 	}
 	return m.Bundles
+}
+
+func (m *Manifest) providers() ProviderRecords {
+	if m == nil {
+		return nil
+	}
+	return m.Providers
+}
+
+func (m *Manifest) setProvider(bundle string, rec ProviderRecord) {
+	if m.Providers == nil {
+		m.Providers = make(ProviderRecords)
+	}
+	m.Providers[bundle] = rec
 }
 
 func (m *Manifest) set(bundle, rel, hash string) {
