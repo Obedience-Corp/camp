@@ -20,8 +20,13 @@ func (m listTUIModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case remoteLoadedMsg:
 		return m.applyRemoteLoaded(msg)
 	case tea.KeyMsg:
-		if m.overlay != listOverlayNone {
+		switch m.overlay {
+		case listOverlayMove:
 			return m.updateOverlay(msg)
+		case listOverlayOrgs:
+			return m.updateOrgPicker(msg)
+		case listOverlayHelp:
+			return m.updateHelp(msg)
 		}
 		return m.updateBrowse(msg)
 	}
@@ -34,6 +39,7 @@ func (m listTUIModel) applyRemoteLoaded(msg remoteLoadedMsg) (tea.Model, tea.Cmd
 		m.setStatus("remote load failed: "+msg.err.Error(), true)
 		return m, nil
 	}
+	pickedOrg := m.pickedOrg()
 	// Drop any prior remote rows, then append the fresh fan-out.
 	locals := make([]campaignEntry, 0, m.localCount)
 	for _, e := range m.all {
@@ -44,6 +50,10 @@ func (m listTUIModel) applyRemoteLoaded(msg remoteLoadedMsg) (tea.Model, tea.Cmd
 	m.all = append(locals, msg.rows...)
 	m.remoteOn = true
 	m.rebuildVisible()
+	if m.overlay == listOverlayOrgs {
+		// Remote-only orgs can insert rows above the picker's highlight.
+		m.pointOrgPickerAt(pickedOrg)
+	}
 
 	var unreach []string
 	for _, r := range msg.results {
@@ -118,9 +128,15 @@ func (m listTUIModel) updateBrowse(key tea.KeyMsg) (tea.Model, tea.Cmd) {
 			}
 		}
 		return m, nil
+	case "o":
+		m.openOrgPicker()
+		return m, nil
+	case "?":
+		m.overlay = listOverlayHelp
+		return m, nil
 	case "f":
 		m.activeOnly = !m.activeOnly
-		m.rebuildVisible()
+		m.rebuildKeepingSelection()
 		return m, nil
 	case "r":
 		if !m.machinesConfigured {

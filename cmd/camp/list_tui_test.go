@@ -555,17 +555,14 @@ func TestListTUI_NoAutoLoadWithoutMachines(t *testing.T) {
 	}
 }
 
-func TestListTUI_RemoteListFilterMirrorsView(t *testing.T) {
-	m := newTestListModel(t)
-	m.orgFilter = "obey"
-	m.activeOnly = false
+func TestListTUI_RemoteListFilterIsUnscoped(t *testing.T) {
+	m := listTUIModel{orgFilter: "obey", activeOnly: true}
 	f := m.remoteListFilter()
-	if f.org != "obey" || !f.all {
-		t.Errorf("filter = %+v, want org=obey all=true", f)
+	if !reflect.DeepEqual(f, listFilter{all: true}) {
+		t.Errorf("filter = %+v, want all statuses and no org: the browser filters remote rows locally", f)
 	}
-	m.activeOnly = true
-	if f := m.remoteListFilter(); f.all {
-		t.Error("active-only view must not request all statuses from remotes")
+	if got := remoteListArgs(f); got != "list --json --all" {
+		t.Errorf("remote args = %q, want %q", got, "list --json --all")
 	}
 }
 

@@ -27,6 +27,8 @@ type listOverlay int
 const (
 	listOverlayNone listOverlay = iota
 	listOverlayMove
+	listOverlayOrgs
+	listOverlayHelp
 )
 
 type listTUIModel struct {
@@ -34,6 +36,8 @@ type listTUIModel struct {
 
 	fallback   string
 	orgFilter  string
+	orgs       []string // registry orgs, including ones with no camps
+	orgCursor  int
 	all        []campaignEntry
 	visible    []campaignEntry
 	cursor     int
@@ -155,18 +159,19 @@ func newListTUIModel(ctx context.Context, reg *config.Registry, orgFilter string
 	return m
 }
 
-// remoteListFilter mirrors the browser's current view (org + active-only) for
-// the remote fan-out so local and remote rows filter consistently.
+// remoteListFilter fetches every remote camp regardless of the browser's org
+// and active-only state: both can change after the fetch, and rebuildVisible
+// applies them locally to remote rows the same way it does to local ones.
 func (m listTUIModel) remoteListFilter() listFilter {
-	filter := listFilter{org: m.orgFilter}
-	if !m.activeOnly {
-		filter.all = true
-	}
-	return filter
+	return listFilter{all: true}
 }
 
 func (m *listTUIModel) loadFromRegistry(reg *config.Registry) {
 	m.fallback = reg.FallbackOrg()
+	m.orgs = make([]string, 0, len(reg.Orgs))
+	for _, o := range reg.Orgs {
+		m.orgs = append(m.orgs, o.Name)
+	}
 	// Preserve remote rows across registry reload after local mutate.
 	var remotes []campaignEntry
 	if m.remoteOn {
@@ -187,7 +192,7 @@ func (m *listTUIModel) loadFromRegistry(reg *config.Registry) {
 func (m *listTUIModel) rebuildVisible() {
 	out := make([]campaignEntry, 0, len(m.all))
 	for _, e := range m.all {
-		if m.orgFilter != "" && e.Org != m.orgFilter {
+		if m.orgFilter != "" && orgLabel(e.Org) != m.orgFilter {
 			continue
 		}
 		if m.activeOnly && e.Status != config.StatusActive {
@@ -200,24 +205,50 @@ func (m *listTUIModel) rebuildVisible() {
 }
 
 func (m *listTUIModel) reload() error {
-	selID := ""
-	if m.cursor < len(m.visible) {
-		selID = m.visible[m.cursor].ID
-	}
+	sel, hadSel := m.selectedKey()
 	reg, err := config.LoadRegistry(m.ctx)
 	if err != nil {
 		return camperrors.Wrap(err, "failed to reload registry")
 	}
 	m.loadFromRegistry(reg)
-	if selID != "" {
-		for i, e := range m.visible {
-			if e.ID == selID {
-				m.cursor = i
-				break
-			}
-		}
+	if hadSel {
+		m.selectKey(sel)
 	}
 	return nil
+}
+
+// listRowKey identifies a row across rebuilds; the same camp ID can appear
+// once locally and once per remote machine.
+type listRowKey struct{ machine, id string }
+
+func (m listTUIModel) selectedKey() (listRowKey, bool) {
+	if m.cursor >= len(m.visible) {
+		return listRowKey{}, false
+	}
+	e := m.visible[m.cursor]
+	return listRowKey{machine: e.Machine, id: e.ID}, true
+}
+
+// rebuildKeepingSelection reapplies the filters, keeping the cursor on the
+// same camp when it is still visible and moving it to the top otherwise.
+func (m *listTUIModel) rebuildKeepingSelection() {
+	sel, hadSel := m.selectedKey()
+	m.rebuildVisible()
+	if !hadSel || !m.selectKey(sel) {
+		m.cursor = 0
+	}
+}
+
+// selectKey moves the cursor to the row with key k and reports whether it is
+// still visible; the cursor is left unchanged when it is not.
+func (m *listTUIModel) selectKey(k listRowKey) bool {
+	for i, e := range m.visible {
+		if e.Machine == k.machine && e.ID == k.id {
+			m.cursor = i
+			return true
+		}
+	}
+	return false
 }
 
 func (m listTUIModel) Init() tea.Cmd {
@@ -293,13 +324,5 @@ func nextLifecycleStatus(s string) string {
 }
 
 func (m listTUIModel) orgNamesCSV() string {
-	seen := map[string]bool{}
-	var names []string
-	for _, e := range m.all {
-		if !seen[e.Org] {
-			seen[e.Org] = true
-			names = append(names, e.Org)
-		}
-	}
-	return strings.Join(names, ", ")
+	return strings.Join(m.orgNames(), ", ")
 }
