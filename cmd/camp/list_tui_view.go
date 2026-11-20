@@ -41,6 +41,8 @@ const (
 	listMinBoxWidth  = 30
 	listMinBoxHeight = 8
 	listMinFooterH   = 6
+
+	listMinHeaderWindow = 3 // window lines needed to keep org headers while scrolling
 )
 
 func listStatusCell(status string) string {
@@ -100,8 +102,13 @@ func (m listTUIModel) View() string {
 	if m.quitting {
 		return ""
 	}
-	if m.overlay != listOverlayNone {
+	switch m.overlay {
+	case listOverlayMove:
 		return m.overlayView()
+	case listOverlayOrgs:
+		return m.orgPickerView()
+	case listOverlayHelp:
+		return m.helpView()
 	}
 
 	lay := m.layout()
@@ -136,18 +143,25 @@ func (m listTUIModel) frame(lines []string, lay listLayout) string {
 }
 
 // bodyLines renders the campaign rows for the current window. Org headers are
-// kept while the whole list fits the height budget; once the list must scroll
-// it degrades to a flat, cursor-centered window with a position indicator so
-// the selection always stays on screen.
+// kept whenever there is room for at least three window lines: once the list
+// must scroll, the window is centered on the cursor and its top line shows the
+// org of the first row in view. Below that it degrades to a flat window. The
+// selection is always on screen.
 func (m listTUIModel) bodyLines(lay listLayout) []string {
 	total := len(m.visible)
 	if total == 0 {
-		return []string{listMutedStyle.Render("no camps to show")}
+		return []string{listMutedStyle.Render(m.emptyMessage())}
 	}
 
+	lines := m.bodyLineList()
 	budget := lay.listRows
-	if budget <= 0 || total+m.distinctOrgs() <= budget {
-		return m.renderRange(0, total, true, lay.cw)
+	if budget <= 0 || len(lines) <= budget {
+		return m.renderLines(lines, lay.cw)
+	}
+	if budget-1 >= listMinHeaderWindow {
+		if out, ok := m.headerWindow(lines, budget-1, lay.cw); ok {
+			return out
+		}
 	}
 
 	showIndicator := total > budget && budget >= 2
@@ -156,25 +170,130 @@ func (m listTUIModel) bodyLines(lay listLayout) []string {
 		rows = budget - 1
 	}
 	start, end := ui.WindowRange(m.cursor, total, rows)
-	out := m.renderRange(start, end, false, lay.cw)
+	out := make([]string, 0, rows+1)
+	for i := start; i < end; i++ {
+		out = append(out, m.rowLine(m.visible[i], i == m.cursor, lay.cw))
+	}
 	if showIndicator {
-		out = append(out, listMutedStyle.Render(fmt.Sprintf("  [%d-%d of %d]", start+1, end, total)))
+		out = append(out, listIndicator(start, end, total))
 	}
 	return out
 }
 
-func (m listTUIModel) renderRange(start, end int, headers bool, cw int) []string {
-	var out []string
+// listBodyLine is an org header or the index of a row in m.visible.
+type listBodyLine struct {
+	header bool
+	org    string
+	row    int
+}
+
+func (m listTUIModel) bodyLineList() []listBodyLine {
+	out := make([]listBodyLine, 0, len(m.visible)+8)
 	prevOrg := ""
-	for i := start; i < end; i++ {
-		e := m.visible[i]
-		if headers && e.Org != prevOrg {
-			out = append(out, listOrgHeader.Render(e.Org))
+	for i, e := range m.visible {
+		if i == 0 || e.Org != prevOrg {
+			out = append(out, listBodyLine{header: true, org: e.Org})
 			prevOrg = e.Org
 		}
-		out = append(out, m.rowLine(e, i == m.cursor, cw))
+		out = append(out, listBodyLine{org: e.Org, row: i})
 	}
 	return out
+}
+
+// headerWindow shows at most capacity lines containing the cursor plus a
+// camp-count indicator. The top line is always an org header: a camp row there
+// is replaced by its org's header (sticky), or dropped when the next org's
+// header follows it. A trailing header with no rows is dropped. Of the windows
+// that keep the cursor on screen it picks the one drawing the most lines, then
+// the one with the cursor nearest the middle.
+func (m listTUIModel) headerWindow(lines []listBodyLine, capacity, cw int) ([]string, bool) {
+	cur := 0
+	for i, l := range lines {
+		if !l.header && l.row == m.cursor {
+			cur = i
+			break
+		}
+	}
+	var window []listBodyLine
+	bestOff := 0
+	for start := max(cur-capacity+1, 0); start <= cur; start++ {
+		w, pos, ok := headerWindowAt(lines, start, min(start+capacity, len(lines)), cur)
+		if !ok {
+			continue
+		}
+		off := pos - len(w)/2
+		if off < 0 {
+			off = -off
+		}
+		if window == nil || len(w) > len(window) || (len(w) == len(window) && off < bestOff) {
+			window, bestOff = w, off
+		}
+	}
+	if window == nil {
+		return nil, false
+	}
+
+	out := m.renderLines(window, cw)
+	first, last := -1, -1
+	for _, l := range window {
+		if l.header {
+			continue
+		}
+		if first < 0 {
+			first = l.row
+		}
+		last = l.row
+	}
+	return append(out, listIndicator(first, last+1, len(m.visible))), true
+}
+
+// headerWindowAt normalizes lines[start:end] and returns it with the cursor's
+// position in it; ok is false when the cursor line would not be drawn.
+func headerWindowAt(lines []listBodyLine, start, end, cur int) ([]listBodyLine, int, bool) {
+	w := append([]listBodyLine(nil), lines[start:end]...)
+	pos := cur - start
+	if !w[0].header {
+		if pos == 0 {
+			return nil, 0, false
+		}
+		if w[1].header {
+			w = w[1:]
+			pos--
+		} else {
+			w[0] = listBodyLine{header: true, org: w[0].org}
+		}
+	}
+	if w[len(w)-1].header {
+		w = w[:len(w)-1]
+	}
+	return w, pos, true
+}
+
+func (m listTUIModel) renderLines(lines []listBodyLine, cw int) []string {
+	out := make([]string, 0, len(lines))
+	for _, l := range lines {
+		if l.header {
+			out = append(out, listOrgHeader.Render(orgLabel(l.org)))
+			continue
+		}
+		out = append(out, m.rowLine(m.visible[l.row], l.row == m.cursor, cw))
+	}
+	return out
+}
+
+func (m listTUIModel) emptyMessage() string {
+	camps := "camps"
+	if m.activeOnly {
+		camps = "active camps"
+	}
+	if m.orgFilter != "" {
+		return fmt.Sprintf("no %s in org %q", camps, m.orgFilter)
+	}
+	return "no " + camps + " to show"
+}
+
+func listIndicator(start, end, total int) string {
+	return listMutedStyle.Render(fmt.Sprintf("  [%d-%d of %d]", start+1, end, total))
 }
 
 func (m listTUIModel) rowLine(e campaignEntry, selected bool, cw int) string {
@@ -220,14 +339,6 @@ func listColumns(rem int) (nameW int, statusOn bool, pathW int) {
 	return nameW, true, nameBudget - 2 - nameW
 }
 
-func (m listTUIModel) distinctOrgs() int {
-	seen := map[string]bool{}
-	for _, e := range m.visible {
-		seen[e.Org] = true
-	}
-	return len(seen)
-}
-
 func (m listTUIModel) topBar() string {
 	mode := "all"
 	if m.activeOnly {
@@ -238,19 +349,15 @@ func (m listTUIModel) topBar() string {
 	} else if m.remoteLoading {
 		mode += " · loading remotes…"
 	}
-	return listTitleStyle.Render("Camps") + "  " +
-		listMutedStyle.Render(fmt.Sprintf("%s  .  showing: %s", ui.CountLabel(len(m.all), "camp", "camps"), mode))
-}
-
-func (m listTUIModel) footer(cw int) string {
-	long := "g: go . j/k: move . s: status . m: org . y: copy . f: filter . q: quit"
-	mid := "j/k move . g go . f filter . q quit"
-	if m.machinesConfigured {
-		long = "g: go . j/k: move . s: status . m: org . y: copy . f: filter . r: remotes . q: quit"
-		mid = "j/k move . g go . r remotes . q quit"
+	count := ui.CountLabel(len(m.all), "camp", "camps")
+	if len(m.visible) != len(m.all) {
+		count = fmt.Sprintf("%d of %s", len(m.visible), count)
 	}
-	help := ui.CollapseHelp(cw, long, mid, "q quit")
-	return listHelpStyle.Render(help)
+	info := fmt.Sprintf("%s  .  showing: %s", count, mode)
+	if m.orgFilter != "" {
+		info += "  .  org: " + m.orgFilter
+	}
+	return listTitleStyle.Render("Camps") + "  " + listMutedStyle.Render(info)
 }
 
 func (m listTUIModel) statusLine() string {
