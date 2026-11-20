@@ -182,9 +182,9 @@ type orgShape struct {
 
 // userShapedOrgs mirrors a real registry whose names were truncated at ~74 cols.
 var userShapedOrgs = []orgShape{
-	{"default", 7, 7}, {"author", 1, 1}, {"blockhead", 5, 3}, {"devtools", 2, 2},
-	{"examples", 1, 1}, {"festival-demo", 2, 2}, {"job-search", 2, 1}, {"obc", 7, 7},
-	{"personal", 3, 3},
+	{"default", 7, 7}, {"design", 1, 1}, {"marketing", 5, 3}, {"devtools", 2, 2},
+	{"examples", 1, 1}, {"festival-demo", 2, 2}, {"operations", 2, 1}, {"web", 7, 7},
+	{"research", 3, 3},
 }
 
 // shapedOrgModel builds a browser over an in-memory registry; nothing touches disk.
@@ -360,10 +360,10 @@ func TestOrgView_MemberStatusAligned(t *testing.T) {
 
 	m := sizedOrg(shapedOrgModel(userShapedOrgs), 74, 34)
 	m.members = []orgMember{
-		{ID: "1", Name: "bh", Status: config.StatusActive},
-		{ID: "2", Name: "bh-site", Status: config.StatusInactive},
-		{ID: "3", Name: "blockhead-ops-dash", Status: config.StatusActive},
-		{ID: "4", Name: "blockhead-camp-5", Status: config.StatusReference},
+		{ID: "1", Name: "mk", Status: config.StatusActive},
+		{ID: "2", Name: "mk-site", Status: config.StatusInactive},
+		{ID: "3", Name: "marketing-ops-dash", Status: config.StatusActive},
+		{ID: "4", Name: "marketing-camp-5", Status: config.StatusReference},
 	}
 	m.pane = paneMembers
 	uitest.AssertBounded(t, m.View(), 74, 34)
