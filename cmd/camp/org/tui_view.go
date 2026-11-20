@@ -43,6 +43,7 @@ const (
 	orgRowPrefixW    = 2 // "> " / "  "
 	orgHereMarkW     = 2 // "* " / "  "
 	orgNameMinW      = 4
+	orgPaneTitle     = "Orgs"
 )
 
 // orgLayout is the size-dependent shape of a frame. Zero cw/listRows means
@@ -72,8 +73,8 @@ func (m orgTUIModel) layout() orgLayout {
 				usable -= 2 * orgPaneOverheadW
 			}
 			usable = max(usable, 2)
-			// Orgs stay narrower; members get the remaining share.
-			l.orgW = max(usable/3, orgNameMinW)
+			// Orgs size to their content, capped at half; members get the rest.
+			l.orgW = max(min(m.orgPaneNaturalW(), usable/2), orgNameMinW)
 			if l.orgW > usable-1 {
 				l.orgW = max(usable/2, 1)
 			}
@@ -206,7 +207,7 @@ func (m orgTUIModel) totalCampaigns() int {
 
 func (m orgTUIModel) renderOrgPane(lay orgLayout) string {
 	cw := lay.orgW
-	lines := []string{ui.ClampWidth(orgTitleStyle.Render("Orgs"), cw)}
+	lines := []string{ui.ClampWidth(orgTitleStyle.Render(orgPaneTitle), cw)}
 	lines = append(lines, m.orgListLines(lay)...)
 	return m.finishPane(paneOrgs, lines, cw, lay)
 }
@@ -233,7 +234,14 @@ func (m orgTUIModel) finishPane(p orgPane, lines []string, cw int, lay orgLayout
 			lines = lines[:want]
 		}
 	}
-	content := strings.Join(ui.ClampLines(lines, cw), "\n")
+	lines = ui.ClampLines(lines, cw)
+	if cw > 0 {
+		// Fill the allotted width so pane edges stay put as content changes.
+		for i, ln := range lines {
+			lines[i] = padTo(ln, cw)
+		}
+	}
+	content := strings.Join(lines, "\n")
 	if !lay.boxed {
 		return content
 	}
@@ -285,22 +293,75 @@ func (m orgTUIModel) memberListLines(lay orgLayout) []string {
 }
 
 func (m orgTUIModel) renderOrgRange(start, end, cw int) []string {
+	nameW, countW := m.orgColumnWidths()
+	cols := fitRowColumns(cw-orgRowPrefixW, nameW, countW)
 	out := make([]string, 0, end-start)
 	for i := start; i < end; i++ {
-		out = append(out, m.orgRow(i, cw))
+		out = append(out, m.orgRow(i, cw, cols))
 	}
 	return out
 }
 
 func (m orgTUIModel) renderMemberRange(start, end, cw int) []string {
+	nameW, statusW := 0, 0
+	for _, mem := range m.members {
+		nameW = max(nameW, lipgloss.Width(mem.Name))
+		statusW = max(statusW, lipgloss.Width(mem.Status))
+	}
+	cols := fitRowColumns(cw-orgRowPrefixW-orgHereMarkW, nameW, statusW)
 	out := make([]string, 0, end-start)
 	for i := start; i < end; i++ {
-		out = append(out, m.memberRow(i, cw))
+		out = append(out, m.memberRow(i, cw, cols))
 	}
 	return out
 }
 
-func (m orgTUIModel) orgRow(i, cw int) string {
+// rowColumns is the shared name column of a list, so trailing labels align.
+type rowColumns struct {
+	nameW     int
+	showLabel bool
+}
+
+// fitRowColumns fits the longest name plus one label column into rem. The
+// label is dropped when it would squeeze names below orgNameMinW.
+func fitRowColumns(rem, longestName, labelW int) rowColumns {
+	if rem >= orgNameMinW+1+labelW {
+		return rowColumns{nameW: min(longestName, rem-1-labelW), showLabel: true}
+	}
+	return rowColumns{nameW: min(longestName, max(rem, 0))}
+}
+
+func orgCountLabel(o orgCount) string {
+	return fmt.Sprintf("%d (%d active)", o.Campaigns, o.Active)
+}
+
+// orgColumnWidths measures every org, not the scroll window, so the count
+// column and pane width do not move as the cursor scrolls.
+func (m orgTUIModel) orgColumnWidths() (nameW, countW int) {
+	for _, o := range m.orgs {
+		nameW = max(nameW, lipgloss.Width(o.Org))
+		countW = max(countW, lipgloss.Width(orgCountLabel(o)))
+	}
+	return nameW, countW
+}
+
+// orgPaneNaturalW is the content width that shows every org untruncated,
+// never narrower than the pane title or the widest scroll indicator.
+func (m orgTUIModel) orgPaneNaturalW() int {
+	nameW, countW := m.orgColumnWidths()
+	n := len(m.orgs)
+	indW := lipgloss.Width(fmt.Sprintf("[%d-%d of %d]", n, n, n))
+	return max(orgRowPrefixW+nameW+1+countW, lipgloss.Width(orgPaneTitle), indW)
+}
+
+func padTo(s string, w int) string {
+	if gap := w - lipgloss.Width(s); gap > 0 {
+		return s + strings.Repeat(" ", gap)
+	}
+	return s
+}
+
+func (m orgTUIModel) orgRow(i, cw int, cols rowColumns) string {
 	o := m.orgs[i]
 	selected := i == m.orgCursor
 	focused := selected && m.pane == paneOrgs
@@ -318,26 +379,16 @@ func (m orgTUIModel) orgRow(i, cw int) string {
 		return ui.ClampWidth(prefix, cw)
 	}
 
-	// Prefer name; append counts only when they fit after a minimum name width.
-	countPlain := fmt.Sprintf("%d (%d active)", o.Campaigns, o.Active)
-	countW := lipgloss.Width(countPlain)
-	nameW := rem
-	showCounts := false
-	if rem >= orgNameMinW+1+countW {
-		showCounts = true
-		nameW = rem - 1 - countW
-	}
-	name := styleOrgName(ui.Truncate(o.Org, nameW), focused, selected)
-	// Pad plain runes before styling width is hard; clamp the finished row.
+	name := styleOrgName(padTo(ui.Truncate(o.Org, cols.nameW), cols.nameW), focused, selected)
 	row := prefix + name
-	if showCounts {
+	if cols.showLabel {
 		row += " " + orgCountStyle.Render(fmt.Sprintf("%d", o.Campaigns)) +
 			" " + orgActiveStyle.Render(fmt.Sprintf("(%d active)", o.Active))
 	}
 	return ui.ClampWidth(row, cw)
 }
 
-func (m orgTUIModel) memberRow(i, cw int) string {
+func (m orgTUIModel) memberRow(i, cw int, cols rowColumns) string {
 	mem := m.members[i]
 	selected := i == m.memCursor
 	focused := selected && m.pane == paneMembers
@@ -362,17 +413,9 @@ func (m orgTUIModel) memberRow(i, cw int) string {
 		return ui.ClampWidth(prefix+here, cw)
 	}
 
-	statusPlain := mem.Status
-	statusW := lipgloss.Width(statusPlain)
-	nameW := rem
-	showStatus := false
-	if rem >= orgNameMinW+1+statusW {
-		showStatus = true
-		nameW = rem - 1 - statusW
-	}
-	name := styleOrgName(ui.Truncate(mem.Name, nameW), focused, selected)
+	name := styleOrgName(padTo(ui.Truncate(mem.Name, cols.nameW), cols.nameW), focused, selected)
 	row := prefix + here + name
-	if showStatus {
+	if cols.showLabel {
 		row += " " + styleMemberStatus(mem.Status)
 	}
 	return ui.ClampWidth(row, cw)
