@@ -25,7 +25,7 @@ func newAddMetadataTestCmd(t *testing.T, args ...string) *cobra.Command {
 func TestResolveAddMetadata_AllFlags(t *testing.T) {
 	cmd := newAddMetadataTestCmd(t,
 		"--priority", "high", "--horizon", "now",
-		"--blocked-by", " first-20260101-000001 ", "--blocked-by", "AC0002",
+		"--blocked-by", " first-20260101-000001 ", "--blocked-by", "EX0001",
 		"--depends-on", "second-20260101-000002",
 		"--promotion-criteria", "  The contract is agreed  ",
 	)
@@ -40,7 +40,7 @@ func TestResolveAddMetadata_AllFlags(t *testing.T) {
 	if opts.Priority != intentcore.PriorityHigh || opts.Horizon != intentcore.HorizonNow {
 		t.Fatalf("priority/horizon = %q/%q", opts.Priority, opts.Horizon)
 	}
-	if !slices.Equal(opts.BlockedBy, []string{"first-20260101-000001", "AC0002"}) {
+	if !slices.Equal(opts.BlockedBy, []string{"first-20260101-000001", "EX0001"}) {
 		t.Fatalf("BlockedBy = %q", opts.BlockedBy)
 	}
 	if !slices.Equal(opts.DependsOn, []string{"second-20260101-000002"}) {

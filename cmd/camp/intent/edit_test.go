@@ -239,7 +239,7 @@ func TestBuildUpdateOptions_UnchangedFields(t *testing.T) {
 func TestBuildUpdateOptions_DependenciesAndCriteria(t *testing.T) {
 	cmd := newEditTestCmd()
 	_ = cmd.Flags().Set(flagBlockedBy, "first-20260101-000001")
-	_ = cmd.Flags().Set(flagBlockedBy, "AC0002")
+	_ = cmd.Flags().Set(flagBlockedBy, "EX0001")
 	_ = cmd.Flags().Set(flagDependsOn, "second-20260101-000002")
 	_ = cmd.Flags().Set(flagPromotionCriteria, "The contract is agreed")
 
@@ -247,7 +247,7 @@ func TestBuildUpdateOptions_DependenciesAndCriteria(t *testing.T) {
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
-	if opts.BlockedBy == nil || strings.Join(*opts.BlockedBy, ",") != "first-20260101-000001,AC0002" {
+	if opts.BlockedBy == nil || strings.Join(*opts.BlockedBy, ",") != "first-20260101-000001,EX0001" {
 		t.Fatalf("BlockedBy = %v", opts.BlockedBy)
 	}
 	if opts.DependsOn == nil || strings.Join(*opts.DependsOn, ",") != "second-20260101-000002" {

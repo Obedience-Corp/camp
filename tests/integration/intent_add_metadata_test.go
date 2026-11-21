@@ -67,7 +67,7 @@ func TestIntentAdd_OneCallCapturesCompleteIntent(t *testing.T) {
 	script := `cd ` + camp + ` && /camp intent add "Login returns 500 after password reset" \
   --type bug --concept projects/camp --priority high --horizon next \
   --tag auth --tag login \
-  --blocked-by "reset-flow-20260101-000001" --depends-on "AC0002" --depends-on "odd: \"ref\" #1" \
+  --blocked-by "reset-flow-20260101-000001" --depends-on "EX0001" --depends-on "odd: \"ref\" #1" \
   --promotion-criteria "Decide: \"ship\" or # wait?" \
   --json --body-file - 2>/tmp/one_call_stderr <<'EOF'
 Logging in right after a password reset returns a 500.
@@ -98,7 +98,7 @@ EOF`
 	assert.Equal(t, "next", item.Horizon)
 	assert.Equal(t, []string{"auth", "login"}, item.Tags)
 	assert.Equal(t, []string{"reset-flow-20260101-000001"}, item.BlockedBy)
-	assert.Equal(t, []string{"AC0002", `odd: "ref" #1`}, item.DependsOn)
+	assert.Equal(t, []string{"EX0001", `odd: "ref" #1`}, item.DependsOn)
 	assert.Equal(t, `Decide: "ship" or # wait?`, item.PromotionCriteria)
 
 	content, err := tc.ReadFile(camp + "/" + created.Path)
@@ -200,7 +200,7 @@ func TestIntentAdd_EditorCaptureKeepsMetadataFlags(t *testing.T) {
 	tc.Shell(t, "chmod +x /tmp/append-editor.sh")
 
 	out := tc.Shell(t, "cd "+camp+" && EDITOR=/tmp/append-editor.sh /camp intent add -e 'Editor capture' "+
-		"--priority low --horizon someday --depends-on AC0002 --promotion-criteria 'Owner agrees' "+
+		"--priority low --horizon someday --depends-on EX0001 --promotion-criteria 'Owner agrees' "+
 		"--body 'Prefilled body' --no-commit 2>&1")
 	require.Contains(t, out, "Idea created")
 
@@ -209,7 +209,7 @@ func TestIntentAdd_EditorCaptureKeepsMetadataFlags(t *testing.T) {
 	item := showIntentMetadata(t, tc, camp, strings.TrimSuffix(files[0], ".md"))
 	assert.Equal(t, "low", item.Priority)
 	assert.Equal(t, "someday", item.Horizon)
-	assert.Equal(t, []string{"AC0002"}, item.DependsOn)
+	assert.Equal(t, []string{"EX0001"}, item.DependsOn)
 	assert.Equal(t, "Owner agrees", item.PromotionCriteria)
 
 	content, err := tc.ReadFile(camp + "/.campaign/intents/inbox/" + files[0])
@@ -238,7 +238,7 @@ func TestIntentAdd_FormCaptureKeepsMetadataFlags(t *testing.T) {
 			{WaitFor: "Idea created", Input: ""},
 		},
 		"intent", "add", "--no-commit",
-		"--priority", "high", "--horizon", "now", "--blocked-by", "AC0002", "--promotion-criteria", "Owner agrees",
+		"--priority", "high", "--horizon", "now", "--blocked-by", "EX0001", "--promotion-criteria", "Owner agrees",
 	)
 	require.NoError(t, err, "intent add TTY session failed; output:\n%s", output)
 
@@ -248,7 +248,7 @@ func TestIntentAdd_FormCaptureKeepsMetadataFlags(t *testing.T) {
 	assert.Equal(t, "form-capture", item.Title)
 	assert.Equal(t, "high", item.Priority)
 	assert.Equal(t, "now", item.Horizon)
-	assert.Equal(t, []string{"AC0002"}, item.BlockedBy)
+	assert.Equal(t, []string{"EX0001"}, item.BlockedBy)
 	assert.Equal(t, "Owner agrees", item.PromotionCriteria)
 }
 
@@ -282,13 +282,13 @@ func TestIntentEdit_SetsDependenciesAndCriteria(t *testing.T) {
 	require.NoError(t, json.Unmarshal([]byte(stdout), &created))
 
 	_, err = tc.RunCampInDir(camp, "intent", "edit", created.ID,
-		"--blocked-by", "first-20260101-000001", "--blocked-by", "AC0002",
+		"--blocked-by", "first-20260101-000001", "--blocked-by", "EX0001",
 		"--depends-on", "second-20260101-000002",
 		"--promotion-criteria", "The contract is agreed")
 	require.NoError(t, err)
 
 	item := showIntentMetadata(t, tc, camp, created.ID)
-	assert.Equal(t, []string{"first-20260101-000001", "AC0002"}, item.BlockedBy)
+	assert.Equal(t, []string{"first-20260101-000001", "EX0001"}, item.BlockedBy)
 	assert.Equal(t, []string{"second-20260101-000002"}, item.DependsOn)
 	assert.Equal(t, "The contract is agreed", item.PromotionCriteria)
 
@@ -297,6 +297,19 @@ func TestIntentEdit_SetsDependenciesAndCriteria(t *testing.T) {
 	for _, field := range []string{`"field":"blocked_by"`, `"field":"depends_on"`, `"field":"promotion_criteria"`} {
 		assert.Contains(t, audit, field)
 	}
+
+	_, err = tc.RunCampInDir(camp, "intent", "edit", created.ID, "--promotion-criteria", "  Padded criteria\n")
+	require.NoError(t, err)
+	item = showIntentMetadata(t, tc, camp, created.ID)
+	assert.Equal(t, "Padded criteria", item.PromotionCriteria)
+
+	invalid, exitCode, err := tc.ExecCommand("sh", "-c",
+		"cd "+camp+` && /camp intent edit `+created.ID+` --promotion-criteria "$(printf 'caf\351')" 2>&1`)
+	require.NoError(t, err)
+	require.NotEqual(t, 0, exitCode, "invalid UTF-8 criteria should be rejected: %s", invalid)
+	assert.Contains(t, invalid, "not valid UTF-8")
+	item = showIntentMetadata(t, tc, camp, created.ID)
+	assert.Equal(t, "Padded criteria", item.PromotionCriteria, "a rejected edit must not change the criteria")
 
 	_, err = tc.RunCampInDir(camp, "intent", "edit", created.ID, "--blocked-by", "")
 	require.NoError(t, err)

@@ -486,7 +486,7 @@ func TestRenderTemplate_MetadataRoundTrip(t *testing.T) {
 				Priority:          "high",
 				Horizon:           "now",
 				BlockedBy:         []string{"fix-login-20260119-153412"},
-				DependsOn:         []string{"AC0002", "other-20260119-153413"},
+				DependsOn:         []string{"EX0001", "other-20260119-153413"},
 				PromotionCriteria: "The API contract is agreed",
 			},
 		},

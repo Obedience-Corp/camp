@@ -68,7 +68,7 @@ func TestNormalizeDependencyRefs(t *testing.T) {
 		wantErr bool
 	}{
 		{name: "nil stays nil"},
-		{name: "trims and keeps order", in: []string{" b-20260101-000001 ", "AC0002"}, want: []string{"b-20260101-000001", "AC0002"}},
+		{name: "trims and keeps order", in: []string{" b-20260101-000001 ", "EX0001"}, want: []string{"b-20260101-000001", "EX0001"}},
 		{name: "drops duplicates", in: []string{"a", "b", "a"}, want: []string{"a", "b"}},
 		{name: "keeps yaml metacharacters", in: []string{`odd: "ref" #1`}, want: []string{`odd: "ref" #1`}},
 		{name: "rejects empty", in: []string{"a", ""}, wantErr: true},
