@@ -17,7 +17,7 @@ Capture the whole intent in one command. Put the body on stdin:
 
 ```bash
 camp intent add "Login returns 500 after password reset" \
-  --type bug --concept projects/camp --priority high --horizon next \
+  --type bug --concept projects/my-api --priority high --horizon next \
   --tag auth --body-file - <<'EOF'
 What is wrong or wanted, in a few sentences.
 
@@ -31,7 +31,7 @@ EOF
 | --- | --- |
 | `--body-file -` / `--body "text"` | Description (markdown) |
 | `--type` | `idea`, `feature`, `bug`, `research`, `chore` |
-| `--concept` | Owning area, for example `projects/camp` |
+| `--concept` | Owning area, for example `projects/my-api` |
 | `--tag` | Tag, repeatable |
 | `--priority` | `low`, `medium`, `high` |
 | `--horizon` | `now`, `next`, `later`, `someday` |
@@ -42,7 +42,8 @@ EOF
 A title alone is still a valid capture: `camp intent add "idea"`. Write the body
 when you have the context, because the reader will not.
 
-Without a terminal, `add` needs the title argument.
+Without a terminal, `add` needs the title argument. `--body-file -` reads stdin
+until it closes, so always give it a heredoc or a pipe.
 
 ```bash
 camp intent list

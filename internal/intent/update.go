@@ -79,6 +79,14 @@ func (s *IntentService) UpdateDirect(ctx context.Context, id string, opts Update
 		opts.DependsOn = &refs
 	}
 
+	if opts.PromotionCriteria != nil {
+		criteria, cerr := NormalizePromotionCriteria(*opts.PromotionCriteria)
+		if cerr != nil {
+			return nil, nil, cerr
+		}
+		opts.PromotionCriteria = &criteria
+	}
+
 	intent, err := s.Find(ctx, id)
 	if err != nil {
 		return nil, nil, err

@@ -74,6 +74,7 @@ func TestNormalizeDependencyRefs(t *testing.T) {
 		{name: "rejects empty", in: []string{"a", ""}, wantErr: true},
 		{name: "rejects whitespace only", in: []string{"   "}, wantErr: true},
 		{name: "rejects newline", in: []string{"a\nb"}, wantErr: true},
+		{name: "rejects invalid utf-8", in: []string{"caf\xe9"}, wantErr: true},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
@@ -94,5 +95,56 @@ func TestNormalizeDependencyRefs(t *testing.T) {
 				t.Fatalf("got %q, want %q", got, tt.want)
 			}
 		})
+	}
+}
+
+func TestNormalizePromotionCriteria(t *testing.T) {
+	got, err := NormalizePromotionCriteria("  The contract is agreed\n")
+	if err != nil || got != "The contract is agreed" {
+		t.Fatalf("got %q, %v", got, err)
+	}
+	if got, err := NormalizePromotionCriteria("   "); err != nil || got != "" {
+		t.Fatalf("whitespace-only criteria = %q, %v, want empty", got, err)
+	}
+	if _, err := NormalizePromotionCriteria("caf\xe9"); !errors.Is(err, camperrors.ErrInvalidInput) {
+		t.Fatalf("invalid UTF-8 error = %v, want ErrInvalidInput", err)
+	}
+}
+
+func TestNormalizeCreateOptions_RejectsInvalidMetadata(t *testing.T) {
+	tests := []struct {
+		name string
+		opts CreateOptions
+	}{
+		{name: "priority", opts: CreateOptions{Priority: "high\nassigned_to: someone"}},
+		{name: "horizon", opts: CreateOptions{Horizon: "soon"}},
+		{name: "blocked_by", opts: CreateOptions{BlockedBy: []string{""}}},
+		{name: "depends_on", opts: CreateOptions{DependsOn: []string{"a\nb"}}},
+		{name: "promotion_criteria", opts: CreateOptions{PromotionCriteria: "\xff"}},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if _, err := normalizeCreateOptions(tt.opts); !errors.Is(err, camperrors.ErrInvalidInput) {
+				t.Fatalf("error = %v, want ErrInvalidInput", err)
+			}
+		})
+	}
+
+	got, err := normalizeCreateOptions(CreateOptions{
+		Priority:          PriorityHigh,
+		Horizon:           HorizonNow,
+		BlockedBy:         []string{" a ", "a"},
+		PromotionCriteria: " ready ",
+	})
+	if err != nil {
+		t.Fatalf("valid options: %v", err)
+	}
+	if got.Priority != PriorityHigh || got.Horizon != HorizonNow ||
+		!slices.Equal(got.BlockedBy, []string{"a"}) || got.PromotionCriteria != "ready" {
+		t.Fatalf("unexpected normalized options: %+v", got)
+	}
+
+	if _, err := normalizeCreateOptions(CreateOptions{Title: "defaults"}); err != nil {
+		t.Fatalf("empty metadata should be accepted: %v", err)
 	}
 }

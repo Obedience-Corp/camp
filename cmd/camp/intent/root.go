@@ -33,8 +33,8 @@ command below; the storage path is .campaign/intents/ either way.
 Examples:
   camp idea add "Add dark mode toggle"         Fast capture to inbox
   camp idea add -e "Refactor auth system"      Deep capture with editor
-  camp idea add "Fix login" --type bug --priority high --body-file -
-                                               Complete idea in one command, body on stdin
+  camp idea add "Fix login" --type bug --priority high --body "Returns 500"
+                                               Complete idea in one command
   camp idea list                               List all ideas
   camp idea list --status active               List active ideas
   camp idea edit add-dark                      Edit idea (fuzzy match)

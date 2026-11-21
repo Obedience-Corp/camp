@@ -88,7 +88,7 @@ ONE-CALL CAPTURE:
 
 Examples:
   camp idea add "Add dark mode"        Ultra-fast capture
-  camp idea add -c obey-campaign "Add dark mode"
+  camp idea add -c my-camp "Add dark mode"
   camp idea add                        Fast TUI (3-step form)
   camp idea add --campaign             Pick a target camp interactively
   camp idea add --full                 Full TUI (includes body)
@@ -176,6 +176,8 @@ func runIntentAdd(cmd *cobra.Command, args []string) error {
 		return err
 	}
 
+	body = strings.TrimRight(body, "\r\n")
+
 	// --full + body flags = usage error (body in TUI conflicts with programmatic body)
 	if fullMode && bodySet {
 		return camperrors.Wrap(camperrors.ErrInvalidInput, "--full and --body/--body-file are mutually exclusive")
@@ -241,7 +243,7 @@ func runIntentAdd(cmd *cobra.Command, args []string) error {
 	// Programmatic flags like --body/--concept/--author supplement a title,
 	// they don't replace it.
 	if !navtui.IsTerminal() {
-		return camperrors.Wrap(camperrors.ErrInvalidInput, "title argument required in non-interactive mode (use 'camp idea add \"<title>\" --body-file -'; see 'camp idea add --help')")
+		return camperrors.Wrap(camperrors.ErrInvalidInput, "title argument required in non-interactive mode (use 'camp idea add \"<title>\" --body \"<description>\"'; see 'camp idea add --help')")
 	}
 
 	// TUI path: use git config author (human), unless --author overrides

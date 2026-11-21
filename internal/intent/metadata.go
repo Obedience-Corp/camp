@@ -3,6 +3,7 @@ package intent
 import (
 	"strings"
 	"unicode"
+	"unicode/utf8"
 
 	camperrors "github.com/Obedience-Corp/camp/internal/errors"
 )
@@ -58,9 +59,7 @@ func invalidChoiceError[T ~string](field, value string, valid []T) error {
 		"invalid %s %q (valid: %s)", field, value, strings.Join(names, ", "))
 }
 
-// NormalizeDependencyRefs trims each reference, removes duplicates while
-// keeping order, and rejects references that are empty or span lines. field
-// names the frontmatter key in the error.
+// NormalizeDependencyRefs trims, de-duplicates and validates dependency references.
 func NormalizeDependencyRefs(field string, refs []string) ([]string, error) {
 	if len(refs) == 0 {
 		return nil, nil
@@ -71,6 +70,9 @@ func NormalizeDependencyRefs(field string, refs []string) ([]string, error) {
 		ref := strings.TrimSpace(raw)
 		if ref == "" {
 			return nil, camperrors.Wrapf(camperrors.ErrInvalidInput, "%s reference must not be empty", field)
+		}
+		if !utf8.ValidString(ref) {
+			return nil, camperrors.Wrapf(camperrors.ErrInvalidInput, "%s reference %q is not valid UTF-8", field, ref)
 		}
 		if strings.ContainsFunc(ref, unicode.IsControl) {
 			return nil, camperrors.Wrapf(camperrors.ErrInvalidInput,
@@ -83,4 +85,13 @@ func NormalizeDependencyRefs(field string, refs []string) ([]string, error) {
 		out = append(out, ref)
 	}
 	return out, nil
+}
+
+// NormalizePromotionCriteria trims the criteria and rejects invalid UTF-8.
+func NormalizePromotionCriteria(criteria string) (string, error) {
+	criteria = strings.TrimSpace(criteria)
+	if !utf8.ValidString(criteria) {
+		return "", camperrors.Wrap(camperrors.ErrInvalidInput, "promotion_criteria is not valid UTF-8")
+	}
+	return criteria, nil
 }

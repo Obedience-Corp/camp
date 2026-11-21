@@ -76,6 +76,8 @@ func TestResolveAddMetadata_RejectsInvalidValues(t *testing.T) {
 		{name: "empty blocked-by", args: []string{"--blocked-by", ""}, want: []string{"--blocked-by", "must not be empty"}},
 		{name: "empty depends-on", args: []string{"--depends-on", "ok", "--depends-on", " "}, want: []string{"--depends-on", "must not be empty"}},
 		{name: "multi-line depends-on", args: []string{"--depends-on", "a\nb"}, want: []string{"--depends-on", "single line"}},
+		{name: "invalid utf-8 blocked-by", args: []string{"--blocked-by", "caf\xe9"}, want: []string{"--blocked-by", "not valid UTF-8"}},
+		{name: "invalid utf-8 criteria", args: []string{"--promotion-criteria", "caf\xe9"}, want: []string{"--promotion-criteria", "not valid UTF-8"}},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {

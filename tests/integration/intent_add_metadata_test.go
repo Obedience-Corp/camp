@@ -7,6 +7,7 @@ import (
 	"encoding/json"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -55,9 +56,6 @@ func inboxFiles(t *testing.T, tc *TestContainer, camp string) []string {
 	return strings.Fields(out)
 }
 
-// TestIntentAdd_OneCallCapturesCompleteIntent runs the documented one-call
-// form without a terminal: title, stdin body and every metadata flag in a
-// single command, then reads each value back through `intent show --json`.
 func TestIntentAdd_OneCallCapturesCompleteIntent(t *testing.T) {
 	tc := GetSharedContainer(t)
 
@@ -105,7 +103,7 @@ EOF`
 
 	content, err := tc.ReadFile(camp + "/" + created.Path)
 	require.NoError(t, err)
-	assert.Contains(t, content, "## Description\n\nLogging in right after a password reset returns a 500.\n\nFound while testing the reset flow.\n\nDone when: the first login after a reset succeeds.\n")
+	assert.Contains(t, content, "## Description\n\nLogging in right after a password reset returns a 500.\n\nFound while testing the reset flow.\n\nDone when: the first login after a reset succeeds.\n\n## Context\n")
 
 	assert.Len(t, inboxFiles(t, tc, camp), 1)
 
@@ -121,8 +119,6 @@ EOF`
 	assert.Empty(t, tc.GitOutput(t, camp, "status", "--porcelain", "--", ".campaign/intents"))
 }
 
-// TestIntentAdd_DefaultsUnchangedWithoutMetadataFlags pins the frontmatter a
-// title-only capture writes, so the new flags cannot change the default file.
 func TestIntentAdd_DefaultsUnchangedWithoutMetadataFlags(t *testing.T) {
 	tc := GetSharedContainer(t)
 
@@ -140,8 +136,6 @@ func TestIntentAdd_DefaultsUnchangedWithoutMetadataFlags(t *testing.T) {
 	assert.Contains(t, content, "tags: []\n\npriority: medium\nhorizon: later\n\nblocked_by: []\ndepends_on: []\n\npromotion_criteria: >\n  What needs to be true before this can become a Festival?\n---\n")
 }
 
-// TestIntentAdd_InvalidMetadataWritesNothing covers the rejected-flag cases:
-// each must fail with a message naming the flag and leave no file or commit.
 func TestIntentAdd_InvalidMetadataWritesNothing(t *testing.T) {
 	tc := GetSharedContainer(t)
 
@@ -195,8 +189,69 @@ func TestIntentAdd_InvalidMetadataWritesNothing(t *testing.T) {
 	assert.Equal(t, before, commitCount(t, tc, camp), "rejected captures must not commit")
 }
 
-// TestIntentAdd_NoTitleWithoutTerminalNamesOneCallForm checks the error an
-// agent sees when it omits the title.
+func TestIntentAdd_EditorCaptureKeepsMetadataFlags(t *testing.T) {
+	tc := GetSharedContainer(t)
+
+	camp := "/campaigns/intent-editor-metadata"
+	_, err := tc.InitCampaign(camp, "intent-editor-metadata", "product")
+	require.NoError(t, err)
+
+	require.NoError(t, tc.WriteFile("/tmp/append-editor.sh", "#!/bin/sh\nprintf '\\nAdded in the editor.\\n' >> \"$1\"\n"))
+	tc.Shell(t, "chmod +x /tmp/append-editor.sh")
+
+	out := tc.Shell(t, "cd "+camp+" && EDITOR=/tmp/append-editor.sh /camp intent add -e 'Editor capture' "+
+		"--priority low --horizon someday --depends-on AC0002 --promotion-criteria 'Owner agrees' "+
+		"--body 'Prefilled body' --no-commit 2>&1")
+	require.Contains(t, out, "Idea created")
+
+	files := inboxFiles(t, tc, camp)
+	require.Len(t, files, 1)
+	item := showIntentMetadata(t, tc, camp, strings.TrimSuffix(files[0], ".md"))
+	assert.Equal(t, "low", item.Priority)
+	assert.Equal(t, "someday", item.Horizon)
+	assert.Equal(t, []string{"AC0002"}, item.DependsOn)
+	assert.Equal(t, "Owner agrees", item.PromotionCriteria)
+
+	content, err := tc.ReadFile(camp + "/.campaign/intents/inbox/" + files[0])
+	require.NoError(t, err)
+	assert.Contains(t, content, "Prefilled body")
+	assert.Contains(t, content, "Added in the editor.")
+}
+
+func TestIntentAdd_FormCaptureKeepsMetadataFlags(t *testing.T) {
+	tc := GetSharedContainer(t)
+
+	camp := "/campaigns/intent-form-metadata"
+	_, err := tc.InitCampaign(camp, "intent-form-metadata", "product")
+	require.NoError(t, err)
+
+	output, err := tc.runCampInteractive(
+		camp,
+		nil,
+		45*time.Second,
+		[]InteractiveStep{
+			{WaitFor: "enter continue", Input: "form-capture\r"},
+			{WaitFor: "Select type", Input: ""},
+			{WaitFor: "type to filter", Input: "\r"},
+			{WaitFor: "(none)", Input: "\r"},
+			{WaitFor: "Ctrl+S: save", Input: "\x13"},
+			{WaitFor: "Idea created", Input: ""},
+		},
+		"intent", "add", "--no-commit",
+		"--priority", "high", "--horizon", "now", "--blocked-by", "AC0002", "--promotion-criteria", "Owner agrees",
+	)
+	require.NoError(t, err, "intent add TTY session failed; output:\n%s", output)
+
+	files := inboxFiles(t, tc, camp)
+	require.Len(t, files, 1)
+	item := showIntentMetadata(t, tc, camp, strings.TrimSuffix(files[0], ".md"))
+	assert.Equal(t, "form-capture", item.Title)
+	assert.Equal(t, "high", item.Priority)
+	assert.Equal(t, "now", item.Horizon)
+	assert.Equal(t, []string{"AC0002"}, item.BlockedBy)
+	assert.Equal(t, "Owner agrees", item.PromotionCriteria)
+}
+
 func TestIntentAdd_NoTitleWithoutTerminalNamesOneCallForm(t *testing.T) {
 	tc := GetSharedContainer(t)
 
@@ -207,12 +262,10 @@ func TestIntentAdd_NoTitleWithoutTerminalNamesOneCallForm(t *testing.T) {
 	out, err := tc.RunCampInDir(camp, "intent", "add", "--body", "a body without a title")
 	require.Error(t, err)
 	assert.Contains(t, out, "title argument required in non-interactive mode")
-	assert.Contains(t, out, `camp idea add "<title>" --body-file -`)
+	assert.Contains(t, out, `camp idea add "<title>" --body "<description>"`)
 	assert.Empty(t, inboxFiles(t, tc, camp))
 }
 
-// TestIntentEdit_SetsDependenciesAndCriteria covers the edit flags that mirror
-// the new add flags, including clearing a list and the audit trail.
 func TestIntentEdit_SetsDependenciesAndCriteria(t *testing.T) {
 	tc := GetSharedContainer(t)
 
@@ -257,8 +310,6 @@ func TestIntentEdit_SetsDependenciesAndCriteria(t *testing.T) {
 	assert.Empty(t, tc.GitOutput(t, camp, "status", "--porcelain", "--", ".campaign/intents"))
 }
 
-// TestInit_ScaffoldTeachesOneCallCapture checks that a new camp's agent-facing
-// text shows the one-call form rather than a title-only capture.
 func TestInit_ScaffoldTeachesOneCallCapture(t *testing.T) {
 	tc := GetSharedContainer(t)
 
@@ -274,7 +325,7 @@ func TestInit_ScaffoldTeachesOneCallCapture(t *testing.T) {
 
 	structure, err := tc.ReadFile(camp + "/.campaign/skills/campaign-structure/SKILL.md")
 	require.NoError(t, err)
-	assert.Contains(t, structure, `camp intent add "<title>" --body-file -`)
+	assert.Contains(t, structure, `camp intent add "<title>" --body "<description>"`)
 
 	guide, err := tc.ReadFile(camp + "/.campaign/intents/OBEY.md")
 	require.NoError(t, err)

@@ -1,8 +1,6 @@
 package intent
 
 import (
-	"strings"
-
 	"github.com/spf13/cobra"
 	"github.com/spf13/pflag"
 
@@ -79,14 +77,15 @@ func resolveAddMetadata(cmd *cobra.Command, createNote bool) (addMetadata, error
 	meta.dependsOn = refs
 
 	criteria, _ := flags.GetString(flagPromotionCriteria)
-	meta.promotionCriteria = strings.TrimSpace(criteria)
+	meta.promotionCriteria, err = intent.NormalizePromotionCriteria(criteria)
+	if err != nil {
+		return meta, camperrors.Wrap(err, "--"+flagPromotionCriteria)
+	}
 
 	return meta, nil
 }
 
-// stringArrayFlag returns the values given for a repeatable flag.
-// FlagSet.GetStringArray round-trips through CSV and drops a lone empty
-// value, which would hide `--blocked-by ""` from validation.
+// GetStringArray drops a lone empty value; read the flag value directly.
 func stringArrayFlag(flags *pflag.FlagSet, name string) []string {
 	flag := flags.Lookup(name)
 	if flag == nil || !flag.Changed {

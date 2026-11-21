@@ -61,7 +61,7 @@ type CreateOptions struct {
 	Body      string    // Description/body content for the intent
 	Tags      []string  // Optional frontmatter tags
 	Timestamp time.Time // Optional; defaults to time.Now()
-	// Lifecycle metadata. Empty values keep the template defaults.
+	// Empty lifecycle metadata keeps the template defaults.
 	Priority          Priority
 	Horizon           Horizon
 	BlockedBy         []string
@@ -100,8 +100,6 @@ func renderForCreate(data TemplateData, opts CreateOptions, status Status) (stri
 	return RenderTemplate(data)
 }
 
-// normalizeCreateOptions validates and normalizes the list-valued options
-// shared by every create path.
 func normalizeCreateOptions(opts CreateOptions) (CreateOptions, error) {
 	tags, err := validateAndNormalizeTags(opts.Tags)
 	if err != nil {
@@ -113,6 +111,19 @@ func normalizeCreateOptions(opts CreateOptions) (CreateOptions, error) {
 	}
 	if opts.DependsOn, err = NormalizeDependencyRefs("depends_on", opts.DependsOn); err != nil {
 		return opts, err
+	}
+	if opts.PromotionCriteria, err = NormalizePromotionCriteria(opts.PromotionCriteria); err != nil {
+		return opts, err
+	}
+	if opts.Priority != "" {
+		if opts.Priority, err = ParsePriority(string(opts.Priority)); err != nil {
+			return opts, err
+		}
+	}
+	if opts.Horizon != "" {
+		if opts.Horizon, err = ParseHorizon(string(opts.Horizon)); err != nil {
+			return opts, err
+		}
 	}
 	return opts, nil
 }

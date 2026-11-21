@@ -346,8 +346,7 @@ func buildUpdateOptions(cmd *cobra.Command) (intent.UpdateOptions, error) {
 	return opts, nil
 }
 
-// replacementRefs maps a single empty value to an empty list, so
-// `--blocked-by ""` clears the list the way `--tag ""` clears tags.
+// A single empty value clears the list.
 func replacementRefs(values []string) []string {
 	if len(values) == 1 && strings.TrimSpace(values[0]) == "" {
 		return []string{}

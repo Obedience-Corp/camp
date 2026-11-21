@@ -50,7 +50,7 @@ ONE-CALL CAPTURE:
 
 Examples:
   camp idea add "Add dark mode"        Ultra-fast capture
-  camp idea add -c obey-campaign "Add dark mode"
+  camp idea add -c my-camp "Add dark mode"
   camp idea add                        Fast TUI (3-step form)
   camp idea add --campaign             Pick a target camp interactively
   camp idea add --full                 Full TUI (includes body)
