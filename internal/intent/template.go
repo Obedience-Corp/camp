@@ -30,15 +30,20 @@ var noteTemplate *template.Template
 
 // TemplateData contains the values to substitute into the intent template.
 type TemplateData struct {
-	ID        string
-	Title     string
-	Type      string
-	Concept   string // Full concept path (e.g., "projects/camp")
-	Status    string // Lifecycle/category directory (defaults to inbox)
-	Author    string
-	CreatedAt string   // Formatted as RFC3339 so same-day age math is accurate.
-	Body      string   // Description/body content
-	Tags      []string // Optional frontmatter tags
+	ID                string
+	Title             string
+	Type              string
+	Concept           string // Full concept path (e.g., "projects/camp")
+	Status            string // Lifecycle/category directory (defaults to inbox)
+	Author            string
+	CreatedAt         string   // Formatted as RFC3339 so same-day age math is accurate.
+	Body              string   // Description/body content
+	Tags              []string // Optional frontmatter tags
+	Priority          string
+	Horizon           string
+	BlockedBy         []string
+	DependsOn         []string
+	PromotionCriteria string
 }
 
 // RenderTemplate generates an intent file from a template with the given data.

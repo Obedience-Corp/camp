@@ -8,14 +8,18 @@ created_at: {{ .CreatedAt }}
 author: {{ .Author }}
 tags: [{{ range $i, $t := .Tags }}{{ if $i }}, {{ end }}{{ $t }}{{ end }}]
 
-priority: medium
-horizon: later
+priority: {{ if .Priority }}{{ .Priority }}{{ else }}medium{{ end }}
+horizon: {{ if .Horizon }}{{ .Horizon }}{{ else }}later{{ end }}
 
-blocked_by: []
-depends_on: []
+blocked_by: [{{ range $i, $d := .BlockedBy }}{{ if $i }}, {{ end }}{{ yamlQuote $d }}{{ end }}]
+depends_on: [{{ range $i, $d := .DependsOn }}{{ if $i }}, {{ end }}{{ yamlQuote $d }}{{ end }}]
 
+{{ if .PromotionCriteria -}}
+promotion_criteria: {{ yamlQuote .PromotionCriteria }}
+{{- else -}}
 promotion_criteria: >
   What needs to be true before this can become a Festival?
+{{- end }}
 ---
 
 # {{ .Title }}

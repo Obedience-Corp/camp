@@ -94,32 +94,17 @@ func isValidStatus(s Status) bool {
 
 // isValidType returns true if the type is a known valid value.
 func isValidType(t Type) bool {
-	switch t {
-	case TypeIdea, TypeFeature, TypeBug, TypeResearch, TypeChore, TypeFeedback:
-		return true
-	default:
-		return false
-	}
+	return slices.Contains(AllTypes(), t)
 }
 
 // isValidPriority returns true if the priority is a known valid value.
 func isValidPriority(p Priority) bool {
-	switch p {
-	case PriorityLow, PriorityMedium, PriorityHigh:
-		return true
-	default:
-		return false
-	}
+	return slices.Contains(AllPriorities(), p)
 }
 
 // isValidHorizon returns true if the horizon is a known valid value.
 func isValidHorizon(h Horizon) bool {
-	switch h {
-	case HorizonNow, HorizonNext, HorizonLater, HorizonSomeday:
-		return true
-	default:
-		return false
-	}
+	return slices.Contains(AllHorizons(), h)
 }
 
 // IsValid returns true if the intent passes all validation checks.

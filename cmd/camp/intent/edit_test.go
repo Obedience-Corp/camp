@@ -25,6 +25,9 @@ func newEditTestCmd() *cobra.Command {
 	flags.String("priority", "", "")
 	flags.String("horizon", "", "")
 	flags.String("author", "", "")
+	flags.StringArray(flagBlockedBy, nil, "")
+	flags.StringArray(flagDependsOn, nil, "")
+	flags.String(flagPromotionCriteria, "", "")
 	return cmd
 }
 
@@ -140,6 +143,7 @@ func TestHasProgrammaticEditFlags_AllFlags(t *testing.T) {
 	flags := []string{
 		"title", "body", "body-file", "append-body", "append-body-file",
 		"set-type", "set-status", "set-concept", "priority", "horizon", "author",
+		flagBlockedBy, flagDependsOn, flagPromotionCriteria,
 	}
 	for _, f := range flags {
 		t.Run(f, func(t *testing.T) {
@@ -229,5 +233,53 @@ func TestBuildUpdateOptions_UnchangedFields(t *testing.T) {
 		opts.Type != nil || opts.Status != nil || opts.Concept != nil ||
 		opts.Author != nil || opts.Priority != nil || opts.Horizon != nil {
 		t.Fatal("expected all fields to be nil when no flags changed")
+	}
+}
+
+func TestBuildUpdateOptions_DependenciesAndCriteria(t *testing.T) {
+	cmd := newEditTestCmd()
+	_ = cmd.Flags().Set(flagBlockedBy, "first-20260101-000001")
+	_ = cmd.Flags().Set(flagBlockedBy, "EX0001")
+	_ = cmd.Flags().Set(flagDependsOn, "second-20260101-000002")
+	_ = cmd.Flags().Set(flagPromotionCriteria, "The contract is agreed")
+
+	opts, err := buildUpdateOptions(cmd)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if opts.BlockedBy == nil || strings.Join(*opts.BlockedBy, ",") != "first-20260101-000001,EX0001" {
+		t.Fatalf("BlockedBy = %v", opts.BlockedBy)
+	}
+	if opts.DependsOn == nil || strings.Join(*opts.DependsOn, ",") != "second-20260101-000002" {
+		t.Fatalf("DependsOn = %v", opts.DependsOn)
+	}
+	if opts.PromotionCriteria == nil || *opts.PromotionCriteria != "The contract is agreed" {
+		t.Fatalf("PromotionCriteria = %v", opts.PromotionCriteria)
+	}
+}
+
+func TestBuildUpdateOptions_DependenciesUnsetStayNil(t *testing.T) {
+	opts, err := buildUpdateOptions(newEditTestCmd())
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if opts.BlockedBy != nil || opts.DependsOn != nil || opts.PromotionCriteria != nil {
+		t.Fatal("expected dependency and criteria fields to be nil when no flags changed")
+	}
+}
+
+func TestBuildUpdateOptions_EmptyDependencyClearsList(t *testing.T) {
+	cmd := newEditTestCmd()
+	_ = cmd.Flags().Set(flagBlockedBy, "")
+
+	opts, err := buildUpdateOptions(cmd)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if opts.BlockedBy == nil || len(*opts.BlockedBy) != 0 {
+		t.Fatalf("BlockedBy = %v, want an empty replacement list", opts.BlockedBy)
+	}
+	if opts.DependsOn != nil {
+		t.Fatalf("DependsOn = %v, want nil", opts.DependsOn)
 	}
 }

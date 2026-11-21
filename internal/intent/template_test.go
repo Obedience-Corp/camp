@@ -1,6 +1,7 @@
 package intent
 
 import (
+	"slices"
 	"strings"
 	"testing"
 	"time"
@@ -440,5 +441,120 @@ func TestRenderTemplate_RoundTripPreservesCreatedAtTime(t *testing.T) {
 	}
 	if !parsed.CreatedAt.Equal(ts) {
 		t.Fatalf("CreatedAt = %s, want %s", parsed.CreatedAt.Format(time.RFC3339), ts.Format(time.RFC3339))
+	}
+}
+
+func TestRenderTemplate_DefaultMetadataBlock(t *testing.T) {
+	output, err := RenderTemplate(TemplateData{
+		ID:        "defaults-20260119-153412",
+		Title:     "Defaults",
+		Type:      "idea",
+		Status:    "inbox",
+		CreatedAt: "2026-01-19T15:34:12Z",
+	})
+	if err != nil {
+		t.Fatalf("RenderTemplate: %v", err)
+	}
+
+	want := `tags: []
+
+priority: medium
+horizon: later
+
+blocked_by: []
+depends_on: []
+
+promotion_criteria: >
+  What needs to be true before this can become a Festival?
+---
+
+# Defaults
+`
+	if !strings.Contains(output, want) {
+		t.Fatalf("default metadata block changed.\nwant block:\n%s\ngot:\n%s", want, output)
+	}
+}
+
+func TestRenderTemplate_MetadataRoundTrip(t *testing.T) {
+	tests := []struct {
+		name string
+		data TemplateData
+	}{
+		{
+			name: "plain values",
+			data: TemplateData{
+				Priority:          "high",
+				Horizon:           "now",
+				BlockedBy:         []string{"fix-login-20260119-153412"},
+				DependsOn:         []string{"EX0001", "other-20260119-153413"},
+				PromotionCriteria: "The API contract is agreed",
+			},
+		},
+		{
+			name: "yaml metacharacters",
+			data: TemplateData{
+				Priority:          "low",
+				Horizon:           "someday",
+				BlockedBy:         []string{`ref: with "quotes" #1`, "a, b", "[x]"},
+				DependsOn:         []string{"- dash", "{brace}", `back\slash`},
+				PromotionCriteria: `Decide: "ship" or # wait? {yes} [no]`,
+			},
+		},
+		{
+			name: "multi-line criteria",
+			data: TemplateData{
+				PromotionCriteria: "First: the design is accepted.\nSecond: \"owner\" signs off.\n\n- a list item",
+			},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			data := tt.data
+			data.ID = "meta-20260119-153412"
+			data.Title = "Metadata"
+			data.Type = "feature"
+			data.Status = "inbox"
+			data.CreatedAt = "2026-01-19T15:34:12Z"
+			data.Body = "Body text"
+
+			output, err := RenderTemplate(data)
+			if err != nil {
+				t.Fatalf("RenderTemplate: %v", err)
+			}
+			parsed, err := ParseIntent([]byte(output))
+			if err != nil {
+				t.Fatalf("ParseIntent: %v\n%s", err, output)
+			}
+
+			wantPriority, wantHorizon := tt.data.Priority, tt.data.Horizon
+			if wantPriority == "" {
+				wantPriority = "medium"
+			}
+			if wantHorizon == "" {
+				wantHorizon = "later"
+			}
+			if string(parsed.Priority) != wantPriority {
+				t.Errorf("priority = %q, want %q", parsed.Priority, wantPriority)
+			}
+			if string(parsed.Horizon) != wantHorizon {
+				t.Errorf("horizon = %q, want %q", parsed.Horizon, wantHorizon)
+			}
+			if !slices.Equal(parsed.BlockedBy, tt.data.BlockedBy) {
+				t.Errorf("blocked_by = %q, want %q", parsed.BlockedBy, tt.data.BlockedBy)
+			}
+			if !slices.Equal(parsed.DependsOn, tt.data.DependsOn) {
+				t.Errorf("depends_on = %q, want %q", parsed.DependsOn, tt.data.DependsOn)
+			}
+			if parsed.PromotionCriteria != tt.data.PromotionCriteria {
+				t.Errorf("promotion_criteria = %q, want %q", parsed.PromotionCriteria, tt.data.PromotionCriteria)
+			}
+			if !strings.Contains(parsed.Content, "## Description\n\nBody text\n") {
+				t.Errorf("body not rendered under Description:\n%s", parsed.Content)
+			}
+			if errs := parsed.Validate(); len(errs) > 0 {
+				t.Errorf("rendered intent is invalid: %v", errs)
+			}
+		})
 	}
 }

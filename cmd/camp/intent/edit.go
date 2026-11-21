@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"os"
+	"strings"
 
 	"github.com/ktr0731/go-fuzzyfinder"
 	"github.com/spf13/cobra"
@@ -33,17 +34,20 @@ PICKER / EDITOR PATH:
   If no ID is provided, shows a fuzzy picker to select an idea.
 
 PROGRAMMATIC FLAGS (skip $EDITOR):
-  --title            Set a new title
-  --body             Replace the body with a literal string
-  --body-file        Replace the body from a file (- for stdin)
-  --append-body      Append text to the existing body
-  --append-body-file Append text from a file (- for stdin)
-  --set-type         Change the idea type
-  --set-status       Change the idea status
-  --set-concept      Change the concept field
-  --priority         Change priority (low, medium, high)
-  --horizon          Change horizon (now, next, later, someday)
-  --author           Override the author attribution
+  --title               Set a new title
+  --body                Replace the body with a literal string
+  --body-file           Replace the body from a file (- for stdin)
+  --append-body         Append text to the existing body
+  --append-body-file    Append text from a file (- for stdin)
+  --set-type            Change the idea type
+  --set-status          Change the idea status
+  --set-concept         Change the concept field
+  --priority            Change priority (low, medium, high)
+  --horizon             Change horizon (now, next, later, someday)
+  --blocked-by          Replace the blocked-by list (repeatable; "" clears it)
+  --depends-on          Replace the depends-on list (repeatable; "" clears it)
+  --promotion-criteria  Replace the promotion criteria
+  --author              Override the author attribution
 
 MUTUAL EXCLUSIVITY:
   --body vs --body-file
@@ -91,6 +95,9 @@ func init() {
 	flags.String("horizon", "", "Change horizon (now, next, later, someday)")
 	flags.String("author", "", "Override the author attribution")
 	flags.StringArray("tag", nil, "Replace the idea's tags (repeatable)")
+	flags.StringArray(flagBlockedBy, nil, "Replace the blocked-by list with idea or festival IDs (repeatable; \"\" clears it)")
+	flags.StringArray(flagDependsOn, nil, "Replace the depends-on list with idea or festival IDs (repeatable; \"\" clears it)")
+	flags.String(flagPromotionCriteria, "", "Replace the promotion criteria")
 	flags.Bool("no-commit", false, "Don't create a git commit")
 }
 
@@ -321,7 +328,30 @@ func buildUpdateOptions(cmd *cobra.Command) (intent.UpdateOptions, error) {
 		opts.Tags = &v
 	}
 
+	if cmd.Flags().Changed(flagBlockedBy) {
+		v := replacementRefs(stringArrayFlag(cmd.Flags(), flagBlockedBy))
+		opts.BlockedBy = &v
+	}
+
+	if cmd.Flags().Changed(flagDependsOn) {
+		v := replacementRefs(stringArrayFlag(cmd.Flags(), flagDependsOn))
+		opts.DependsOn = &v
+	}
+
+	if cmd.Flags().Changed(flagPromotionCriteria) {
+		v, _ := cmd.Flags().GetString(flagPromotionCriteria)
+		opts.PromotionCriteria = &v
+	}
+
 	return opts, nil
+}
+
+// A single empty value clears the list.
+func replacementRefs(values []string) []string {
+	if len(values) == 1 && strings.TrimSpace(values[0]) == "" {
+		return []string{}
+	}
+	return values
 }
 
 // hasProgrammaticEditFlags returns true if any update flag (as opposed to
@@ -330,6 +360,7 @@ func hasProgrammaticEditFlags(cmd *cobra.Command) bool {
 	programmaticFlags := []string{
 		"title", "body", "body-file", "append-body", "append-body-file",
 		"set-type", "set-status", "set-concept", "priority", "horizon", "author", "tag",
+		flagBlockedBy, flagDependsOn, flagPromotionCriteria,
 	}
 	for _, name := range programmaticFlags {
 		if cmd.Flags().Changed(name) {
