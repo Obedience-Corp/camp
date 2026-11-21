@@ -29,6 +29,10 @@ type UpdateOptions struct {
 	Horizon  *Horizon
 
 	Tags *[]string // Replaces the intent's tags
+
+	BlockedBy         *[]string // Replaces the blocked_by list
+	DependsOn         *[]string // Replaces the depends_on list
+	PromotionCriteria *string
 }
 
 // hasChanges returns true if any field in the options is set.
@@ -36,7 +40,8 @@ func (o *UpdateOptions) hasChanges() bool {
 	return o.Title != nil || o.Body != nil || o.Append != nil ||
 		o.Type != nil || o.Status != nil || o.Concept != nil ||
 		o.Author != nil || o.Priority != nil || o.Horizon != nil ||
-		o.Tags != nil
+		o.Tags != nil || o.BlockedBy != nil || o.DependsOn != nil ||
+		o.PromotionCriteria != nil
 }
 
 // UpdateDirect applies programmatic field updates to an existing intent
@@ -57,6 +62,21 @@ func (s *IntentService) UpdateDirect(ctx context.Context, id string, opts Update
 			return nil, nil, terr
 		}
 		opts.Tags = &normTags
+	}
+
+	if opts.BlockedBy != nil {
+		refs, rerr := NormalizeDependencyRefs("blocked_by", *opts.BlockedBy)
+		if rerr != nil {
+			return nil, nil, rerr
+		}
+		opts.BlockedBy = &refs
+	}
+	if opts.DependsOn != nil {
+		refs, rerr := NormalizeDependencyRefs("depends_on", *opts.DependsOn)
+		if rerr != nil {
+			return nil, nil, rerr
+		}
+		opts.DependsOn = &refs
 	}
 
 	intent, err := s.Find(ctx, id)
@@ -124,6 +144,21 @@ func (s *IntentService) UpdateDirect(ctx context.Context, id string, opts Update
 	if opts.Tags != nil && !slices.Equal(intent.Tags, *opts.Tags) {
 		changes = append(changes, audit.FieldChange{Field: "tags", Old: strings.Join(intent.Tags, ","), New: strings.Join(*opts.Tags, ",")})
 		intent.Tags = *opts.Tags
+	}
+
+	if opts.BlockedBy != nil && !slices.Equal(intent.BlockedBy, *opts.BlockedBy) {
+		changes = append(changes, audit.FieldChange{Field: "blocked_by", Old: strings.Join(intent.BlockedBy, ","), New: strings.Join(*opts.BlockedBy, ",")})
+		intent.BlockedBy = *opts.BlockedBy
+	}
+
+	if opts.DependsOn != nil && !slices.Equal(intent.DependsOn, *opts.DependsOn) {
+		changes = append(changes, audit.FieldChange{Field: "depends_on", Old: strings.Join(intent.DependsOn, ","), New: strings.Join(*opts.DependsOn, ",")})
+		intent.DependsOn = *opts.DependsOn
+	}
+
+	if opts.PromotionCriteria != nil && *opts.PromotionCriteria != intent.PromotionCriteria {
+		changes = append(changes, audit.FieldChange{Field: "promotion_criteria", Old: truncateForAudit(intent.PromotionCriteria), New: truncateForAudit(*opts.PromotionCriteria)})
+		intent.PromotionCriteria = *opts.PromotionCriteria
 	}
 
 	if len(changes) == 0 {

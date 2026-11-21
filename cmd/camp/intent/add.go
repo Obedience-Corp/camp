@@ -55,15 +55,36 @@ Use --full when you want to add a body description in the form.
 Use --edit when you need the complete template in your editor.
 
 PROGRAMMATIC (agent) FLAGS:
-  --body              Set idea body from a literal string
-  --body-file         Read idea body from a file (- for stdin)
-  --concept           Set the concept field (e.g., "projects/camp")
-  --note              Create a note instead of a lifecycle idea
-  --author            Override the default author attribution
+  --body                Set idea body from a literal string
+  --body-file           Read idea body from a file (- for stdin)
+  --concept             Set the concept field (e.g., "projects/camp")
+  --tag                 Add a tag (repeatable)
+  --priority            Set priority (low, medium, high)
+  --horizon             Set horizon (now, next, later, someday)
+  --blocked-by          Idea or festival ID this is blocked by (repeatable)
+  --depends-on          Idea or festival ID this depends on (repeatable)
+  --promotion-criteria  What must be true before this can become a festival
+  --note                Create a note instead of a lifecycle idea
+  --author              Override the default author attribution
+  --json                Print the created idea's id and path as JSON
 
   --body and --body-file are mutually exclusive.
   --full + body flags is a usage error.
   --edit + body flags pre-fills the editor template.
+
+ONE-CALL CAPTURE:
+  A title plus flags creates the complete idea in one command. Put a
+  multi-line markdown body on stdin with --body-file -:
+
+    camp idea add "Login returns 500 after password reset" \
+      --type bug --concept projects/camp --priority high --horizon next \
+      --tag auth --body-file - <<'EOF'
+    What is wrong or wanted, in a few sentences.
+
+    Where it came from.
+
+    Done when: the observable result that closes it.
+    EOF
 
 Examples:
   camp idea add "Add dark mode"        Ultra-fast capture
@@ -77,6 +98,7 @@ Examples:
   camp idea add -t feature "New API"   Set type explicitly
   camp idea add "Fix login" --body "The login page returns 500"
   camp idea add "Migrate DB" --body-file spec.md --concept projects/camp
+  camp idea add "Fix login" --priority high --horizon now --blocked-by <id>
   echo "body" | camp idea add "Idea" --body-file -`,
 	}
 	jsonRequested := func() bool { return jsonOut }
@@ -100,6 +122,7 @@ Examples:
 	flags.Bool("note", false, "Create a note instead of a lifecycle idea")
 	flags.String("author", "", "Override the default author attribution")
 	flags.StringArray("tag", nil, "Add a tag (repeatable)")
+	registerAddMetadataFlags(flags)
 
 	return cmd
 }
@@ -135,6 +158,16 @@ func runIntentAdd(cmd *cobra.Command, args []string) error {
 	}
 	if jsonOut && len(args) == 0 {
 		return camperrors.Wrap(camperrors.ErrInvalidInput, "--json requires a title argument")
+	}
+
+	if !createNote {
+		if _, err := intent.ParseType(intentType); err != nil {
+			return camperrors.Wrap(err, "--type")
+		}
+	}
+	metadata, err := resolveAddMetadata(cmd, createNote)
+	if err != nil {
+		return err
 	}
 
 	// Resolve body from --body / --body-file (mutual exclusivity checked inside)
@@ -187,6 +220,7 @@ func runIntentAdd(cmd *cobra.Command, args []string) error {
 			Concept: conceptFlag,
 			Tags:    tagsFlag,
 		}
+		metadata.apply(&opts)
 
 		if createNote {
 			if useEditor {
@@ -207,7 +241,7 @@ func runIntentAdd(cmd *cobra.Command, args []string) error {
 	// Programmatic flags like --body/--concept/--author supplement a title,
 	// they don't replace it.
 	if !navtui.IsTerminal() {
-		return camperrors.Wrap(camperrors.ErrInvalidInput, "title argument required in non-interactive mode (use 'camp idea add <title>')")
+		return camperrors.Wrap(camperrors.ErrInvalidInput, "title argument required in non-interactive mode (use 'camp idea add \"<title>\" --body-file -'; see 'camp idea add --help')")
 	}
 
 	// TUI path: use git config author (human), unless --author overrides
@@ -248,6 +282,7 @@ func runIntentAdd(cmd *cobra.Command, args []string) error {
 			Author:  saved.Author,
 			Tags:    mergeTags(tagsFlag, saved.Tags),
 		}
+		metadata.apply(&savedOpts)
 		if createNote {
 			created, err := createNoteWithoutCommit(ctx, svc, intentsDir, campaignRoot, savedOpts)
 			if err != nil {
@@ -282,6 +317,7 @@ func runIntentAdd(cmd *cobra.Command, args []string) error {
 		Author:  result.Author,
 		Tags:    mergeTags(tagsFlag, result.Tags),
 	}
+	metadata.apply(&opts)
 
 	if createNote {
 		created, err := createNoteWithoutCommit(ctx, svc, intentsDir, campaignRoot, opts)

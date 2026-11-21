@@ -15,17 +15,20 @@ PICKER / EDITOR PATH:
   If no ID is provided, shows a fuzzy picker to select an idea.
 
 PROGRAMMATIC FLAGS (skip $EDITOR):
-  --title            Set a new title
-  --body             Replace the body with a literal string
-  --body-file        Replace the body from a file (- for stdin)
-  --append-body      Append text to the existing body
-  --append-body-file Append text from a file (- for stdin)
-  --set-type         Change the idea type
-  --set-status       Change the idea status
-  --set-concept      Change the concept field
-  --priority         Change priority (low, medium, high)
-  --horizon          Change horizon (now, next, later, someday)
-  --author           Override the author attribution
+  --title               Set a new title
+  --body                Replace the body with a literal string
+  --body-file           Replace the body from a file (- for stdin)
+  --append-body         Append text to the existing body
+  --append-body-file    Append text from a file (- for stdin)
+  --set-type            Change the idea type
+  --set-status          Change the idea status
+  --set-concept         Change the concept field
+  --priority            Change priority (low, medium, high)
+  --horizon             Change horizon (now, next, later, someday)
+  --blocked-by          Replace the blocked-by list (repeatable; "" clears it)
+  --depends-on          Replace the depends-on list (repeatable; "" clears it)
+  --promotion-criteria  Replace the promotion criteria
+  --author              Override the author attribution
 
 MUTUAL EXCLUSIVITY:
   --body vs --body-file
@@ -54,23 +57,26 @@ camp idea edit [id] [flags]
 ### Options
 
 ```
-      --append-body string        Append text to the existing body
-      --append-body-file string   Append text from file (- for stdin, 10 MiB cap)
-      --author string             Override the author attribution
-      --body string               Replace the idea body
-      --body-file string          Replace body from file (- for stdin, 10 MiB cap)
-  -h, --help                      help for edit
-      --horizon string            Change horizon (now, next, later, someday)
-      --no-commit                 Don't create a git commit
-      --priority string           Change priority (low, medium, high)
-  -p, --project string            Filter picker by project
-      --set-concept string        Change the concept field
-      --set-status string         Change the idea status
-      --set-type string           Change the type (idea, feature, bug, research, chore)
-  -s, --status string             Filter picker by status
-      --tag stringArray           Replace the idea's tags (repeatable)
-      --title string              Set a new title
-  -t, --type string               Filter picker by type
+      --append-body string          Append text to the existing body
+      --append-body-file string     Append text from file (- for stdin, 10 MiB cap)
+      --author string               Override the author attribution
+      --blocked-by stringArray      Replace the blocked-by list with idea or festival IDs (repeatable; "" clears it)
+      --body string                 Replace the idea body
+      --body-file string            Replace body from file (- for stdin, 10 MiB cap)
+      --depends-on stringArray      Replace the depends-on list with idea or festival IDs (repeatable; "" clears it)
+  -h, --help                        help for edit
+      --horizon string              Change horizon (now, next, later, someday)
+      --no-commit                   Don't create a git commit
+      --priority string             Change priority (low, medium, high)
+  -p, --project string              Filter picker by project
+      --promotion-criteria string   Replace the promotion criteria
+      --set-concept string          Change the concept field
+      --set-status string           Change the idea status
+      --set-type string             Change the type (idea, feature, bug, research, chore)
+  -s, --status string               Filter picker by status
+      --tag stringArray             Replace the idea's tags (repeatable)
+      --title string                Set a new title
+  -t, --type string                 Filter picker by type
 ```
 
 ### Options inherited from parent commands

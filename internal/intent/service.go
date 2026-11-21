@@ -61,6 +61,12 @@ type CreateOptions struct {
 	Body      string    // Description/body content for the intent
 	Tags      []string  // Optional frontmatter tags
 	Timestamp time.Time // Optional; defaults to time.Now()
+	// Lifecycle metadata. Empty values keep the template defaults.
+	Priority          Priority
+	Horizon           Horizon
+	BlockedBy         []string
+	DependsOn         []string
+	PromotionCriteria string
 	// Folder is a note-only relative path under notes/ (e.g. "reading/papers").
 	// Empty means the notes root. Ignored for non-note creates.
 	Folder string
@@ -80,13 +86,35 @@ func createStatus(category Category, folder string) (Status, error) {
 
 // renderForCreate renders the right template for the category and stamps the
 // frontmatter status to match the storage root.
-func renderForCreate(data TemplateData, category Category, tags []string, status Status) (string, error) {
+func renderForCreate(data TemplateData, opts CreateOptions, status Status) (string, error) {
 	data.Status = string(status)
-	data.Tags = tags
-	if category == CategoryNote {
+	data.Tags = opts.Tags
+	if opts.Category == CategoryNote {
 		return RenderNote(data)
 	}
+	data.Priority = string(opts.Priority)
+	data.Horizon = string(opts.Horizon)
+	data.BlockedBy = opts.BlockedBy
+	data.DependsOn = opts.DependsOn
+	data.PromotionCriteria = opts.PromotionCriteria
 	return RenderTemplate(data)
+}
+
+// normalizeCreateOptions validates and normalizes the list-valued options
+// shared by every create path.
+func normalizeCreateOptions(opts CreateOptions) (CreateOptions, error) {
+	tags, err := validateAndNormalizeTags(opts.Tags)
+	if err != nil {
+		return opts, err
+	}
+	opts.Tags = tags
+	if opts.BlockedBy, err = NormalizeDependencyRefs("blocked_by", opts.BlockedBy); err != nil {
+		return opts, err
+	}
+	if opts.DependsOn, err = NormalizeDependencyRefs("depends_on", opts.DependsOn); err != nil {
+		return opts, err
+	}
+	return opts, nil
 }
 
 // CreateDirect creates a new intent directly without opening an editor.
@@ -96,11 +124,10 @@ func (s *IntentService) CreateDirect(ctx context.Context, opts CreateOptions) (*
 		return nil, camperrors.Wrap(err, "context cancelled")
 	}
 
-	normTags, err := validateAndNormalizeTags(opts.Tags)
+	opts, err := normalizeCreateOptions(opts)
 	if err != nil {
 		return nil, err
 	}
-	opts.Tags = normTags
 
 	ts := opts.Timestamp
 	if ts.IsZero() {
@@ -121,7 +148,7 @@ func (s *IntentService) CreateDirect(ctx context.Context, opts CreateOptions) (*
 	}
 
 	// Render template (note vs intent) and stamp the matching status
-	content, err := renderForCreate(data, opts.Category, opts.Tags, status)
+	content, err := renderForCreate(data, opts, status)
 	if err != nil {
 		return nil, camperrors.Wrap(err, "rendering template")
 	}
@@ -162,11 +189,10 @@ func (s *IntentService) CreateWithEditor(ctx context.Context, opts CreateOptions
 		return nil, camperrors.Wrap(err, "context cancelled")
 	}
 
-	normTags, err := validateAndNormalizeTags(opts.Tags)
+	opts, err := normalizeCreateOptions(opts)
 	if err != nil {
 		return nil, err
 	}
-	opts.Tags = normTags
 
 	ts := opts.Timestamp
 	if ts.IsZero() {
@@ -187,7 +213,7 @@ func (s *IntentService) CreateWithEditor(ctx context.Context, opts CreateOptions
 	}
 
 	// Render template (note vs intent) and stamp the matching status
-	content, err := renderForCreate(data, opts.Category, opts.Tags, status)
+	content, err := renderForCreate(data, opts, status)
 	if err != nil {
 		return nil, camperrors.Wrap(err, "rendering template")
 	}

@@ -39,6 +39,12 @@ type TemplateData struct {
 	CreatedAt string   // Formatted as RFC3339 so same-day age math is accurate.
 	Body      string   // Description/body content
 	Tags      []string // Optional frontmatter tags
+	// Lifecycle metadata. Empty values render the template defaults.
+	Priority          string
+	Horizon           string
+	BlockedBy         []string
+	DependsOn         []string
+	PromotionCriteria string
 }
 
 // RenderTemplate generates an intent file from a template with the given data.
