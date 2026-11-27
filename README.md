@@ -13,7 +13,7 @@
 
 > **Easily manage hundreds of projects and millions of planning documents.** Part of [Festival](https://github.com/Obedience-Corp/festival). Camp handles the workspace: your projects, tools, ideas, and context. [fest](https://github.com/Obedience-Corp/fest) handles the planning and execution inside it.
 
-Camp manages your camps. A camp is one context in your life: your job, a side project, your taxes. Each camp holds the projects you work on and hosts the festivals you run in them. Move between camps, projects, and workstations with your plans and context in reach.
+Camp manages your agent workspaces/context documents. A camp is one context in your life: your job, a side project, your taxes. Each camp holds the projects you work on and hosts the festivals you run in them. Move between camps, projects, and workstations with your plans and context in reach.
 
 <p align="center">
   <img src="docs/images/demos/cgo-navigation.gif" alt="cgo jumping to a project and design directory with fuzzy matching, then csw switching between two sample camps" width="700">
